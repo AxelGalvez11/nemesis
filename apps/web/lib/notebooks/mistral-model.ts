@@ -7,13 +7,25 @@
  * second canonical document type would be the fifth time this repository built a rich model and
  * flattened it at a boundary, so there is not one: Mistral maps onto what exists.
  *
- * 🔴 MARKDOWN IS THE STRUCTURE SOURCE, NOT THE `blocks` ARRAY. Mistral's per-page markdown is its
- * documented, stable output; `include_blocks` adds labelled regions whose exact schema is not
- * something this code should bet a whole document on. So structure is derived from markdown — which
- * is deterministic, testable without a network, and degrades to "one paragraph" rather than to
- * nothing — and the block/image arrays are used only to ENRICH what markdown already established,
- * never to define it. When a locality fact is missing, the field is absent. Nothing here invents a
- * rectangle, a heading level, or a page number.
+ * 🔴🔴 THE LABELLED `blocks` ARRAY IS THE STRUCTURE SOURCE, AND READING THE PAGE MARKDOWN INSTEAD
+ * SILENTLY DESTROYS EVERY TABLE. This was written the other way round first, from the published
+ * response schema, and one probe against a real 24-page drug chart proved it wrong: Mistral does
+ * NOT inline a table into its page markdown. It writes a REFERENCE — `[tbl-0.html](tbl-0.html)` —
+ * and puts the HTML in `blocks[].content` and `pages[].tables[]`. A markdown-first reader turns all
+ * 28 tables in that file into the literal paragraph "tbl-0.html", which is the fifth time this
+ * repository would have built a rich document model and flattened it at a boundary.
+ *
+ * The unit tests did not catch it and could not have: they fed markdown that already contained
+ * `<table>`, so they exercised the mapper in isolation while claiming to test the wiring. A guard
+ * whose input arrives the way a test finds convenient, rather than the way the producer delivers
+ * it, proves nothing about the producer.
+ *
+ * Markdown remains the fallback for a page the vendor labelled nothing on, and there the `tbl-N`
+ * references are resolved against `pages[].tables` rather than being read as links.
+ *
+ * 🔴 A BLOCK'S BOX IS ITS BOX. Every labelled block carries `top_left_*`/`bottom_right_*` in page
+ * pixels, so every paragraph, list and table gets a real `rect` — which is what lets a citation
+ * highlight where it came from. Nothing here invents one: no page dimensions means no rectangle.
  *
  * 🔴 WORD FILES COLLAPSE TO ONE `body` UNIT, AND THAT IS NOT A LOSS. Mistral renders a .docx and
  * reports the pages of ITS rendering. Word paginates at layout time, so those page numbers are a
@@ -24,7 +36,7 @@
 
 import { buildDocument, type DocBlock, type DocFormat, type DocRect, type DocUnit, type DocumentModel } from "@nemesis/shared";
 
-import { findHtmlTables } from "./mistral-tables";
+import { findHtmlTables, tableFromHtml, tableFromPipes } from "./mistral-tables";
 import type { MistralImage, MistralOcrResponse, MistralPage } from "./mistral-ocr";
 
 type PendingBlock = Omit<DocBlock, "id">;
@@ -106,6 +118,11 @@ export function imageRefOf(text: string): { alt: string; ref: string } | null {
  *  Deliberately conservative: it removes wrappers, never content. PURE. */
 export function plainText(markdown: string): string {
   return markdown
+    // 🔴 MEASURED ON A REAL DECK, NOT DEFENSIVE. PowerPoint's soft line break survives conversion
+    // as a literal vertical tab, and its punctuation arrives backslash-escaped ("Ph\\.d\\."), so a
+    // learner would be shown control characters and stray backslashes in the title of slide one.
+    .replace(/[\v\f]/g, " ")
+    .replace(/\\([.,;:!?()\[\]{}<>+=|~^$#&%@*_-])/g, "$1")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")
@@ -179,8 +196,29 @@ export function blocksFromMarkdown(input: {
       push({ kind: "paragraph", text: plainText(joined) });
     };
 
+    // A run of consecutive pipe lines is one table. Office files arrive this way — no labelled
+    // blocks, no HTML — so without this a Word table becomes a run of pipe-filled paragraphs.
+    let pipes: string[] = [];
+    const flushPipes = () => {
+      if (pipes.length === 0) return;
+      const rows = pipes;
+      pipes = [];
+      const table = tableFromPipes(rows);
+      if (table) push({ kind: "table", table, text: "" });
+      // Not a grid after all (a single stray line, or one column) — keep the text rather than
+      // dropping it, because losing the words is worse than losing the shape.
+      else for (const row of rows) push({ kind: "paragraph", text: plainText(row) });
+    };
+
     for (const rawLine of (segment.text ?? "").split(/\r?\n/)) {
       const line = rawLine.trimEnd();
+      const trimmed = line.trim();
+      if (trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length > 2) {
+        flush();
+        pipes.push(line);
+        continue;
+      }
+      flushPipes();
       if (!line.trim()) {
         flush();
         continue;
@@ -207,10 +245,109 @@ export function blocksFromMarkdown(input: {
       }
       paragraph.push(line.trim());
     }
+    flushPipes();
     flush();
   }
 
   return blocks;
+}
+
+/**
+ * A labelled block's own kind, when its label tells us something markdown cannot.
+ *
+ * 🔴 THE LABEL DISAMBIGUATES WHAT SYNTAX ALONE CANNOT. Mistral's list blocks use `o` and `▪` for
+ * nested levels — not markdown markers — so a syntax-only reader files them as prose. The vendor
+ * has already said "this region is a list"; using that is what the label is for. PURE.
+ */
+export function blockKindOf(type: string | null | undefined): string {
+  return (type ?? "").trim().toLowerCase();
+}
+
+/** A nested-bullet line, using the glyphs Mistral emits inside a `list` block. PURE. */
+function looseListItem(line: string): { depth: number; marker: string; text: string } | null {
+  const match = /^(\s*)([o•▪‣·–—])\s+(.*)$/.exec(line);
+  if (!match) return null;
+  const glyph = match[2] ?? "-";
+  return {
+    // The glyph IS the level in this notation: `-` outer, `o` next, `▪` next again.
+    depth: glyph === "o" ? 1 : glyph === "-" ? 0 : 2,
+    marker: glyph,
+    text: (match[3] ?? "").trim(),
+  };
+}
+
+/**
+ * One labelled block as Nemesis blocks.
+ *
+ * Returns several where the vendor grouped several — a `list` block routinely holds four bullets —
+ * and every one of them carries the same rectangle, because that is the region the vendor located.
+ */
+export function blocksFromLabelled(input: {
+  content: string;
+  rect: DocRect | undefined;
+  stack: Array<{ level: number; text: string }>;
+  tables: ReadonlyMap<string, NonNullable<ReturnType<typeof tableFromHtml>>>;
+  type: string;
+  unit: number;
+}): PendingBlock[] {
+  const { content, rect, stack, unit } = input;
+  const kind = blockKindOf(input.type);
+  const withRect = (block: Omit<PendingBlock, "headingPath" | "unit">): PendingBlock =>
+    ({ ...block, headingPath: pathOf(stack), unit, ...(rect ? { rect } : {}) }) as PendingBlock;
+
+  if (kind === "table") {
+    // The HTML is in this block's own content. A reference is resolved too, for the shape where
+    // the block carries the id rather than the markup.
+    const inline = findHtmlTables(content)[0]?.table;
+    const referenced = inline ?? input.tables.get(tableRefOf(content) ?? "");
+    if (referenced) return [withRect({ kind: "table", table: referenced, text: "" })];
+    // A table we could not read is still a located region, and saying so beats dropping it.
+    return [withRect({ kind: "paragraph", text: plainText(content) })];
+  }
+
+  if (kind === "header" || kind === "footer") {
+    const text = plainText(content);
+    return text ? [withRect({ kind: kind === "header" ? "pageHeader" : "pageFooter", text })] : [];
+  }
+
+  if (kind === "caption") {
+    const text = plainText(content);
+    return text ? [withRect({ kind: "caption", text })] : [];
+  }
+
+  if (kind === "image" || kind === "figure") {
+    const image = imageRefOf(content);
+    return [withRect({ figure: image?.ref ? { ref: image.ref } : {}, kind: "figure", text: image?.alt ?? "" })];
+  }
+
+  if (kind === "list") {
+    const out: PendingBlock[] = [];
+    for (const raw of content.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      const item = listItemOf(line) ?? looseListItem(line);
+      out.push(
+        item
+          ? withRect({ depth: item.depth, kind: "listItem", marker: item.marker, text: plainText(item.text) })
+          // The vendor called this region a list; a line whose marker we do not recognise is still
+          // one of its items, and demoting it to prose would break the run.
+          : withRect({ depth: 0, kind: "listItem", marker: "-", text: plainText(line) }),
+      );
+    }
+    return out;
+  }
+
+  // `title`, `text`, and everything unrecognised go through the markdown reader, which handles the
+  // heading stack, equations, inline images and stray tables. An unknown label costs nothing.
+  return blocksFromMarkdown({ markdown: content, stack, unit }).map((block) =>
+    rect && !block.rect ? { ...block, rect } : block,
+  );
+}
+
+/** The `tbl-N.html` id a markdown reference names, or null. PURE. */
+export function tableRefOf(text: string): string | null {
+  const match = /\[([^\]]*\.html)\]\(([^)\s]+)\)/.exec(text.trim());
+  return match ? (match[2] ?? match[1] ?? null) : null;
 }
 
 /** The figures Mistral located on a page that the markdown did not already name, so a page whose
@@ -273,23 +410,55 @@ export function modelFromMistral(
       });
     }
 
-    const header = (page.header ?? "").trim();
-    if (header) {
-      blocks.push({ headingPath: pathOf(stack), kind: "pageHeader", text: plainText(header), unit });
+    // The page's own table objects, by id, so a `[tbl-0.html](tbl-0.html)` reference resolves to a
+    // grid instead of being read as a link to a file that does not exist.
+    const tables = new Map<string, NonNullable<ReturnType<typeof tableFromHtml>>>();
+    for (const table of page.tables ?? []) {
+      const id = (table.id ?? "").trim();
+      const html = table.content ?? table.html ?? table.markdown ?? "";
+      if (!id || !html) continue;
+      const built = tableFromHtml(html);
+      if (built) tables.set(id, built);
     }
 
-    const pageBlocks = blocksFromMarkdown({ markdown: page.markdown, stack, unit });
+    const labelled = page.blocks ?? [];
+    let pageBlocks: PendingBlock[];
+    if (labelled.length > 0) {
+      pageBlocks = labelled.flatMap((block) =>
+        blocksFromLabelled({
+          content: block.content ?? block.markdown ?? "",
+          rect: rectFrom(block, page.dimensions),
+          stack,
+          tables,
+          type: block.type ?? "",
+          unit,
+        }),
+      );
+    } else {
+      // No labels on this page. Read the markdown, and resolve table references rather than
+      // letting them become the paragraph "tbl-0.html".
+      pageBlocks = blocksFromMarkdown({ markdown: page.markdown, stack, unit }).flatMap((block) => {
+        const ref = block.kind === "paragraph" ? tableRefOf(block.text) : null;
+        const table = ref ? tables.get(ref) : undefined;
+        return table ? [{ ...block, kind: "table" as const, table, text: "" }] : [block];
+      });
+      // Only when the vendor labelled nothing: the page-level header/footer fields. When blocks
+      // exist they already carry these AND their rectangles, and taking both would print each twice.
+      const header = (page.header ?? "").trim();
+      const footer = (page.footer ?? "").trim();
+      if (header) {
+        pageBlocks.unshift({ headingPath: pathOf(stack), kind: "pageHeader", text: plainText(header), unit });
+      }
+      if (footer) {
+        pageBlocks.push({ headingPath: pathOf(stack), kind: "pageFooter", text: plainText(footer), unit });
+      }
+    }
     blocks.push(...pageBlocks);
 
     const named = new Set(
       pageBlocks.flatMap((block) => (block.figure?.ref ? [block.figure.ref] : [])),
     );
     blocks.push(...locatedFigures(page, unit, pathOf(stack), named));
-
-    const footer = (page.footer ?? "").trim();
-    if (footer) {
-      blocks.push({ headingPath: pathOf(stack), kind: "pageFooter", text: plainText(footer), unit });
-    }
   }
 
   if (units.length === 0 || blocks.length === 0) return null;

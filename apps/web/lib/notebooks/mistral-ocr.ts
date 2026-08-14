@@ -59,22 +59,41 @@ export interface MistralImage {
   image_base64?: string | null;
 }
 
-/** One block Mistral labelled, when `include_blocks` is on. */
+/**
+ * One region Mistral labelled, when `include_blocks` is on.
+ *
+ * 🔴 SHAPE CONFIRMED AGAINST THE LIVE API, NOT AGAINST THE DOCUMENTATION. The box arrives as four
+ * flat page-pixel numbers — the same spelling `images` uses, not a nested `bbox` — and the text
+ * arrives as `content` carrying its own markdown syntax (`# `, `- `, and a whole `<table>` for a
+ * table block). Observed types so far: title · text · list · table · caption · header · footer.
+ * `markdown` is kept as an alternate spelling because reading a field that never appears costs
+ * nothing, and guessing wrong about which one exists cost a whole document's tables once already.
+ */
 export interface MistralBlock {
   type?: string | null;
-  /** The vendor has used both spellings across shapes; both are read, neither is required. */
   content?: string | null;
   markdown?: string | null;
-  bbox?: unknown;
-  confidence?: number | null;
+  top_left_x?: number | null;
+  top_left_y?: number | null;
+  bottom_right_x?: number | null;
+  bottom_right_y?: number | null;
+  confidence_scores?: Record<string, unknown> | null;
 }
 
+/**
+ * One table, held apart from the page's prose.
+ *
+ * 🔴 `id` IS LOAD-BEARING. The page markdown refers to a table as `[tbl-0.html](tbl-0.html)` and
+ * never inlines it, so this id is the only thing connecting the reference to the grid. Reading the
+ * markdown without resolving it turns every table in the document into the text "tbl-0.html".
+ */
 export interface MistralTable {
+  id?: string | null;
   /** Rendered per `table_format` — HTML when we asked for HTML. */
   content?: string | null;
+  format?: string | null;
   markdown?: string | null;
   html?: string | null;
-  bbox?: unknown;
 }
 
 export interface MistralPage {
@@ -86,6 +105,7 @@ export interface MistralPage {
   footer?: string | null;
   dimensions?: { dpi?: number | null; height?: number | null; width?: number | null } | null;
   confidence_scores?: Record<string, unknown> | null;
+  hyperlinks?: string[] | null;
   blocks?: MistralBlock[] | null;
 }
 
@@ -166,19 +186,33 @@ export function mistralMime(fileName: string, mimeType: string): string {
 /**
  * Whether this file goes to Mistral at all.
  *
- * 🔴 A DELIBERATELY SHORT LIST, AND TEXT/CSV/XLSX ARE NOT ON IT. Nemesis already reads those
- * deterministically — no model call, no heuristic, exact cell references and formulas preserved.
- * Sending a spreadsheet to an OCR model would replace an exact answer with an approximate one and
- * pay for the privilege. The brief says as much: keep local handling where the vendor adds nothing.
+ * 🔴🔴 PDF ONLY, AND THAT IS A MEASURED RESULT RATHER THAN A CAUTIOUS ONE. Every other format this
+ * repository handles STATES its own structure — a .docx, a .pptx, a .xlsx and a .csv are markup, so
+ * reading the markup is exact and reading a picture of it is a guess. Measured on the owner's own
+ * course files, 2026-08-13, same file through both lanes:
  *
- * 🔴 AND `image` IS NOT ON IT EITHER, WHICH IS A DIFFERENT REASON. A standalone picture goes to
- * Gemini with a prompt that asks it to DESCRIBE what it shows; OCR would transcribe the words in a
+ *     .docx  local 6 tables (4 columns each, from Word's XML)   vs  Mistral 0
+ *            — Mistral renders the document and emits a pipe table that breaks apart wherever a
+ *              cell contains a line break, so the grid is unrecoverable from its output
+ *     .pptx  local 209 blocks, 152 with rectangles, 20 figures  vs  Mistral 100 blocks, 0, 0
+ *            — and 8,677 characters against 6,348
+ *
+ * 🔴 ON PDF THE RESULT IS THE OPPOSITE, AND DECISIVELY SO. A PDF is not markup; it is instructions
+ * for painting glyphs, and a font whose "ti" is one ligature paints something pdf.js cannot map
+ * back. On the 24-page drug chart: local recovered 9,098 words of which 60 were corrupted across 39
+ * distinct spellings — `ac1on`, `indica1ons`, `contraindica1ons`, `palpita2ons` — while Mistral
+ * recovered 16,823 words with none. The word "contraindication" appears 34 times in the local read
+ * and 64 in Mistral's. A learner asked what the contraindications are would have been taught from
+ * text that says "contraindica1ons".
+ *
+ * 🔴 AND `image` IS NOT ON IT EITHER, WHICH IS A THIRD REASON. A standalone picture goes to Gemini
+ * with a prompt that asks it to DESCRIBE what it shows; OCR would transcribe the words in a
  * photograph of a whiteboard and say nothing about the diagram drawn beside them. Those are
  * different questions, and the existing lane already asks the better one. A scanned PDF is still
  * covered — it arrives as `pdf`. PURE.
  */
 export function mistralHandles(kind: string): boolean {
-  return kind === "pdf" || kind === "docx" || kind === "pptx";
+  return kind === "pdf";
 }
 
 /** The request body for one document. PURE, and separated so a test can assert the exact
@@ -204,9 +238,15 @@ export function buildMistralRequest(input: {
     confidence_scores_granularity: "block",
     extract_header: true,
     extract_footer: true,
-    // Images are LOCATED but not returned as bytes. Their rectangles are what a locator needs; the
-    // pixels would multiply the response size for something the reader renders from the original.
-    include_image_base64: false,
+    // 🔴 `image_limit: 0`, NOT `include_image_base64: false`, AND THE DIFFERENCE IS A 400 ON EVERY
+    // OFFICE FILE. Measured: Mistral rejects the latter for .docx and .pptx outright — "extracted
+    // images can only be returned in base64 ... try setting image_limit=0 instead" — so the flag
+    // that reads as the obvious way to decline pixels silently turned every Word and PowerPoint
+    // upload into a fall-back to the local parser, while PDFs went on working perfectly.
+    //
+    // Images are still LOCATED; their rectangles are what a locator needs, and the pixels would
+    // multiply the response size for something the reader renders from the original file anyway.
+    image_limit: 0,
   });
 }
 

@@ -208,11 +208,15 @@ test("a reply that is not the OCR shape is refused rather than half-read", () =>
   assert.equal(ok?.pages.length, 1);
 });
 
-test("spreadsheets and images stay local; documents go to the vendor", () => {
-  // Nemesis reads a workbook exactly — cell references, formulas, merges. Sending it to an OCR
-  // model would replace an exact answer with an approximate one and pay for it.
-  for (const kind of ["xlsx", "csv", "text", "image"]) assert.equal(mistralHandles(kind), false, kind);
-  for (const kind of ["pdf", "docx", "pptx"]) assert.equal(mistralHandles(kind), true, kind);
+test("only PDFs go to the vendor — every format that states its own structure stays local", () => {
+  // 🔴 MEASURED, NOT CAUTIOUS. A .docx/.pptx/.xlsx/.csv is markup, so reading the markup is exact
+  // and reading a render of it is a guess: the local lane got 6 tables out of a Word activity where
+  // Mistral got 0, and 209 blocks out of a deck where Mistral got 100. A PDF is not markup, and
+  // there the result reverses — see `mistralHandles`.
+  for (const kind of ["xlsx", "csv", "text", "image", "docx", "pptx"]) {
+    assert.equal(mistralHandles(kind), false, kind);
+  }
+  assert.equal(mistralHandles("pdf"), true);
   assert.equal(mistralMime("lecture.pptx", ""),
     "application/vnd.openxmlformats-officedocument.presentationml.presentation");
   assert.equal(mistralMime("scan", "application/octet-stream"), "application/pdf");

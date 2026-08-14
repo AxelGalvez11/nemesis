@@ -182,6 +182,77 @@ export function tableFromHtml(html: string): DocTable | null {
   };
 }
 
+/**
+ * A markdown pipe table as a `DocTable`, or null.
+ *
+ * 🔴 THE THIRD SHAPE THIS VENDOR EMITS, AND THE ONE THAT ONLY SHOWS UP ON OFFICE FILES.
+ * `table_format: "html"` governs PDFs. A .docx and a .pptx come back with no labelled blocks at
+ * all and their tables written inline as `| a | b |` — measured, not documented. Without this a
+ * Word table becomes a run of paragraphs full of pipe characters, which is how a grid dies
+ * quietly on exactly the formats a student writes their own notes in.
+ *
+ * Pipe syntax cannot express a merged cell, so `cells` is deliberately ABSENT here rather than
+ * fabricated one-per-position: absent means "this producer has no merge information", which is
+ * true, and is a different claim from "there are no merges". PURE.
+ */
+export function tableFromPipes(lines: readonly string[]): DocTable | null {
+  const split = (line: string): string[] =>
+    line
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      // An escaped pipe is content, not a boundary.
+      .split(/(?<!\\)\|/)
+      .map((cell) => cellTextOf(cell.replace(/\\\|/g, "|")));
+
+  const rows = lines.filter((line) => line.includes("|")).map(split);
+  if (rows.length < 2) return null;
+
+  // The delimiter row (`---`, `:--:`) is markdown SAYING the row above it is a header. It is the
+  // only header evidence this syntax carries, so its absence means zero header rows, not one.
+  const isDelimiter = (row: readonly string[]) =>
+    row.length > 0 && row.every((cell) => /^:?-{1,}:?$/.test(cell.trim()));
+  const delimiterAt = rows.findIndex(isDelimiter);
+  const headerRows = delimiterAt === 1 ? 1 : 0;
+  const body = rows.filter((row) => !isDelimiter(row));
+  if (body.length === 0) return null;
+
+  const width = Math.max(...body.map((row) => row.length));
+  if (width < 2 || width > MAX_COLUMNS) return null;
+  const padded = body.slice(0, MAX_ROWS).map((row) => [...row, ...Array(width - row.length).fill("")]);
+
+  const named = headerRows > 0 ? (padded[0] ?? []).map((value) => value.trim()) : [];
+  const columns = named.some((value) => value.length > 0) ? named : undefined;
+  return {
+    headerRows,
+    rows: padded,
+    ...(columns ? { columns, headerSource: "present" as const } : {}),
+  };
+}
+
+/** Where a run of consecutive pipe-table lines starts and ends inside a block of text. PURE. */
+export function findPipeTables(source: string): Array<{ end: number; start: number; table: DocTable }> {
+  const lines = source.split("\n");
+  const found: Array<{ end: number; start: number; table: DocTable }> = [];
+  let run: number[] = [];
+  const flush = () => {
+    if (run.length >= 2) {
+      const table = tableFromPipes(run.map((index) => lines[index] ?? ""));
+      if (table) found.push({ end: run[run.length - 1]!, start: run[0]!, table });
+    }
+    run = [];
+  };
+  lines.forEach((line, index) => {
+    // A table line both starts and ends with a pipe once trimmed — a sentence merely containing
+    // one is prose, and treating it as a row would eat the paragraph around it.
+    const trimmed = line.trim();
+    if (trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length > 2) run.push(index);
+    else flush();
+  });
+  flush();
+  return found;
+}
+
 /** Every `<table>` in a fragment of markdown-with-HTML, in document order, with the span each
  *  occupied so the caller can splice the surrounding prose back together. PURE. */
 export function findHtmlTables(source: string): Array<{ end: number; start: number; table: DocTable }> {
