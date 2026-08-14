@@ -50,6 +50,25 @@ export interface CanvasTerritory {
   /** Replayed through `saveKnowledge` on a hit — idempotent by identity, so it converges on the
    *  rows that already exist and picks up any enrichment they have gained since. */
   objects: KnowledgeObject[];
+  /**
+   * Set ONLY when a completed build produced nothing — the rules it produced nothing UNDER.
+   *
+   * 🔴🔴 THIS EXISTS BECAUSE "FOUND NOTHING" WAS INDISTINGUISHABLE FROM "NEVER TRIED", AND THE
+   * DIFFERENCE IS PAID FOR ON EVERY OPEN. The marker is written last and only on a build that
+   * resolved something, so a document neither lane could read wrote no marker at all — and the next
+   * open rebuilt, and the next, and every one of them spent model calls to reach the same empty
+   * answer. Recording only "built" would fix the cost and create a worse bug: the canvas would
+   * insist for ever that it had been done, and a better parser or a better extractor could never
+   * reach that document again.
+   *
+   * 🔴 SO IT IS A FINGERPRINT, NOT A BOOLEAN. It names the rules in force when nothing was found;
+   * when those rules change, the stored answer stops applying and the document gets exactly one
+   * more chance under the new ones. "We tried and found nothing" is a claim with a shelf life, and
+   * this is the shelf life written down.
+   *
+   * Absent on every ordinary territory, which is what keeps a non-empty one unambiguous.
+   */
+  emptyUnder?: string;
 }
 
 /**
@@ -62,11 +81,40 @@ export type TerritoryMiss =
   /** Nothing has been built for this canvas yet — the ordinary first open. */
   | "never-built"
   /** Built under older identity rules, so replaying it would write keys that no longer converge. */
-  | "identity-version-changed";
+  | "identity-version-changed"
+  /** A previous build found nothing, but the rules have changed since — worth one more attempt. */
+  | "empty-under-older-rules";
 
 export type TerritoryReuse =
   | { reuse: true; objects: readonly KnowledgeObject[] }
-  | { reuse: false; miss: TerritoryMiss };
+  | { reuse: false; miss: TerritoryMiss }
+  /**
+   * Built under these exact rules, and there was nothing to find.
+   *
+   * 🔴 NEITHER A HIT NOR A MISS, AND FORCING IT TO BE EITHER IS THE BUG. As a hit it would replay an
+   * empty list and the caller would treat the canvas as taught. As a miss it would rebuild, which is
+   * the unbounded spend this whole field exists to stop. It is its own answer: do not build, and do
+   * not pretend there is anything here.
+   */
+  | { reuse: "known-empty" };
+
+/**
+ * The rules in force for a build, as one comparable string.
+ *
+ * 🔴 EVERY VERSION THAT COULD CHANGE THE ANSWER, AND NOTHING ELSE. If any lane's rules move, a
+ * document that yielded nothing deserves another look; if none have, it does not. Leaving one out
+ * would strand documents behind an improvement that was supposed to reach them — which is precisely
+ * the failure a plain "we tried" boolean would have had for all of them at once.
+ *
+ * 🔴 IT DOES NOT CARRY THE DOCUMENT'S PARSE VERSION, AND THAT GAP IS STATED RATHER THAN HIDDEN. A
+ * re-parse of the same file can genuinely change what is extractable, and this fingerprint will not
+ * notice. Reaching it means a query per source at exactly the point the caller is trying to avoid
+ * work; the honest cost is that a re-parsed document needs an extraction-rules bump to be revisited,
+ * and those two things move together in practice.
+ */
+export function buildRules(versions: readonly string[]): string {
+  return [...versions].sort().join("+");
+}
 
 /**
  * What this canvas is ABOUT — frozen at the first build, after which the title is only a label.
@@ -107,10 +155,25 @@ export function frozenTopic(input: { stored: CanvasTerritory | null; title: stri
 export function territoryReuse(input: {
   stored: CanvasTerritory | null;
   identityVersion: number;
+  /**
+   * The rules in force now — see `buildRules`. Only consulted for a territory that found nothing.
+   *
+   * Absent means "do not revisit empty builds", which is the conservative reading for a caller that
+   * does not track rules: it can only suppress a rebuild, never cause one.
+   */
+  rules?: string;
 }): TerritoryReuse {
-  const { identityVersion, stored } = input;
+  const { identityVersion, rules, stored } = input;
   if (!stored) return { miss: "never-built", reuse: false };
   if (stored.identityVersion !== identityVersion) return { miss: "identity-version-changed", reuse: false };
+  // 🔴 CHECKED BEFORE THE HIT, BECAUSE AN EMPTY TERRITORY WOULD OTHERWISE READ AS A SUCCESSFUL ONE.
+  // The identity check comes first on purpose: rules that moved matter less than keys that no longer
+  // converge, and a version rebuild should not be pre-empted by a stale empty marker.
+  if (stored.emptyUnder) {
+    return stored.emptyUnder === rules
+      ? { reuse: "known-empty" }
+      : { miss: "empty-under-older-rules", reuse: false };
+  }
   return { objects: stored.objects, reuse: true };
 }
 
@@ -132,15 +195,29 @@ export function materialSubject(librarySourceIds: readonly string[]): string {
  * something written by an older shape of this code. Every failure returns null, and null means
  * "build one", so a corrupt cache costs a rebuild rather than a blank canvas.
  *
- * 🔴 AN EMPTY `objects` IS A MISS. Nothing writes one — a build that resolved nothing marks nothing
- * — but if one ever existed, replaying it would resolve no objectives and leave the learner with a
- * canvas that has nothing to ask, for ever, because the marker would keep insisting it was built.
+ * 🔴 AN EMPTY `objects` IS A MISS **UNLESS IT SAYS WHY**. An empty list on its own is the shape a
+ * corrupt or older row would have, and replaying it would leave the learner with a canvas that has
+ * nothing to ask, for ever, because the marker would keep insisting it was built. An empty list
+ * carrying `emptyUnder` is a different thing entirely: a deliberate record that a completed build
+ * found nothing, stamped with the rules it found nothing under. The presence of the stamp is what
+ * separates "we recorded an answer" from "this row is broken", and it is why the empty case could
+ * not simply be allowed through.
  */
 export function readTerritory(value: unknown): CanvasTerritory | null {
   if (typeof value !== "object" || value === null) return null;
-  const row = value as { topic?: unknown; identityVersion?: unknown; objects?: unknown };
+  const row = value as { topic?: unknown; identityVersion?: unknown; objects?: unknown; emptyUnder?: unknown };
   if (typeof row.topic !== "string" || !row.topic.trim()) return null;
   if (typeof row.identityVersion !== "number" || !Number.isFinite(row.identityVersion)) return null;
-  if (!Array.isArray(row.objects) || row.objects.length === 0) return null;
-  return { identityVersion: row.identityVersion, objects: row.objects as KnowledgeObject[], topic: row.topic };
+  if (!Array.isArray(row.objects)) return null;
+  const emptyUnder = typeof row.emptyUnder === "string" && row.emptyUnder.trim() ? row.emptyUnder : null;
+  if (row.objects.length === 0 && !emptyUnder) return null;
+  // 🔴 A NON-EMPTY LIST NEVER CARRIES THE STAMP. Both together would be a row claiming to be both a
+  // territory and the absence of one, and every consumer would have to pick which half to believe.
+  if (row.objects.length > 0 && emptyUnder) return null;
+  return {
+    ...(emptyUnder ? { emptyUnder } : {}),
+    identityVersion: row.identityVersion,
+    objects: row.objects as KnowledgeObject[],
+    topic: row.topic,
+  };
 }
