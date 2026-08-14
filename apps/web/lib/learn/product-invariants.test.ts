@@ -234,8 +234,15 @@ test("🔴🔴 I11 · a prerequisite failure changes what is presented next — 
     objectives[1]!.objective.identityKey,
     "the step the missed one starts from, not the unrelated one that sorts first",
   );
+  // 🔴 NARROWED ON THE ARM RATHER THAN READ OFF A BARE FIELD. `selection` moved under `rationale`
+  // when a second controller started producing decisions, because the value function's trace is
+  // system state that only the structured policy holds — the baseline arm has a sentence a model
+  // wrote, and a shared field would have invited a reader to treat the two as the same kind of
+  // thing. `decideNext` can only ever answer `nemesis_policy`, so this narrowing is total.
+  assert.equal(decision?.rationale.by, "nemesis_policy");
   assert.ok(
-    decision?.selection.reasons.includes("unlocks-other-work"),
+    decision?.rationale.by === "nemesis_policy" &&
+      decision.rationale.selection.reasons.includes("unlocks-other-work"),
     "and it says why, in the product's own vocabulary",
   );
 });

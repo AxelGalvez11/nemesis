@@ -45,7 +45,15 @@ import {
   unobtainedEvidence,
   type RetrievalPrompt,
 } from "@/lib/learn/objective-task";
-import { decideNext, supportedObjectives, type PolicyDecision } from "@/lib/learn/policy-runtime";
+import { supportedObjectives } from "@/lib/learn/policy-runtime";
+import { strategyFor } from "@/lib/learn/strategy-registry";
+import {
+  conflictingStrategy,
+  resolveStrategy,
+  type StrategyOutcome,
+  type TeachingDecision,
+  type TeachingStrategyId,
+} from "@/lib/learn/teaching-strategy";
 import type { TeachingAction } from "@/lib/learn/teaching-policy";
 import { isAdmissionOfNotKnowing, isEchoOfTheCue } from "@/lib/learn/response-admission";
 import {
@@ -113,7 +121,19 @@ export interface PolicyRuntime {
    * provenance statement must not quietly narrow with it.
    */
   claims: readonly KnowledgeObject[];
-  decision: PolicyDecision | null;
+  decision: TeachingDecision | null;
+  /**
+   * Which teaching controller is running this session.
+   *
+   * 🔴 REPORTED ALL THE WAY TO THE SURFACE, FOR THE REASON `forced` IS. A session running the
+   * baseline arm that looked identical to an ordinary one would make "which controller produced
+   * this?" unanswerable by using the product — the exact cost the old `?policy=1` opt-in incurred,
+   * and the reason it was replaced by a bypass that declares itself.
+   *
+   * 🔴 IT IS FIXED FOR THE SESSION. Derived from stable inputs on every render rather than held in
+   * state, so a reload, a remount or a second tab all resolve the same arm. See `resolveStrategy`.
+   */
+  strategy: TeachingStrategyId;
   /** The question on screen, when the policy asked for one. */
   prompt: RetrievalPrompt | null;
   /**
@@ -269,11 +289,44 @@ export function knowledgeSignature(canvas: LearningCanvas): string {
  * a forced session that looked like an owned one would make "did ownership work?" unanswerable by
  * looking, which is exactly what the old `?policy=1` cost.
  */
-export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverride): PolicyRuntime {
+export function usePolicyRuntime(
+  canvas: LearningCanvas,
+  override: PolicyOverride,
+  /**
+   * Which teaching controller to run, when a URL asked for one. `null` is the ordinary case.
+   *
+   * 🔴 A SECOND PARAMETER RATHER THAN A SECOND MEANING FOR `override`. `PolicyOverride` answers
+   * whether this runtime may run at all and whether ownership is being bypassed; this answers which
+   * controller runs when it does. Folding them together would make "run the baseline arm" and "skip
+   * the ownership check" the same switch, and one arm would silently be running on canvases the
+   * other was refused — which is not a comparison, it is two different populations.
+   */
+  strategyOverride: TeachingStrategyId | null = null,
+): PolicyRuntime {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
   const enabled = policyAllowed(override);
   const forced = policyForced(override);
+  /**
+   * 🔴 DERIVED ON EVERY RENDER, NEVER STORED, WHICH IS THE WHOLE OF "THE ARM MUST NOT SILENTLY SWITCH
+   * HALFWAY THROUGH". Held in `useState` it would survive re-renders and die on a reload, so a
+   * learner who refreshed mid-canvas could finish under a controller that did not start them — while
+   * every evidence row stayed stamped with whichever arm was live when it was written. The
+   * comparison would then contain sessions that are a blend of both, labelled as one, and nothing in
+   * the data could find them. `resolveStrategy` is a pure function of `(override, uid, canvasId)`,
+   * so it answers the same thing in every tab, after every reload, for ever.
+   *
+   * 🔴 `randomise: false` IS THE SHIPPED STATE AND TURNING IT ON IS THE OWNER'S CALL. With it off,
+   * every learner who has not typed an arm into the URL gets `nemesis_policy` — today's behaviour
+   * exactly — so landing this changes nothing for anybody until someone decides to run the
+   * experiment. The mechanism is complete; the enrolment is not switched on.
+   */
+  const { strategy } = resolveStrategy({
+    canvasId: canvas.id,
+    learnerId: uid,
+    override: strategyOverride,
+    randomise: false,
+  });
 
   const [status, setStatus] = useState<PolicyRuntime["status"]>(enabled ? "loading" : "unavailable");
   const [knowledge, setKnowledge] = useState<CanvasKnowledge>({
@@ -458,13 +511,85 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   // any further in would be a curriculum wearing a Minimap's clothes (§14.7).
   const inFocus = useMemo(() => applyFocus(supported, focus), [focus, supported]);
 
-  const next = useMemo(
+  /**
+   * EVERY INPUT THE CONTROLLER READS, AS ONE KEY.
+   *
+   * 🔴🔴 THIS IS WHAT REPLACED A `useMemo`, AND IT IS THE PRICE OF THE SECOND ARM. While the decision
+   * was a memo it could not disagree with the state it was computed from: React recomputed it in the
+   * same render as any input change. A controller that reaches a model cannot be a memo, so the
+   * decision is now state, and state can be STALE — it can hold a choice made from evidence that has
+   * since moved. That is the same class of defect as the `recording` race this file already
+   * documents at length ("records the echo as a demonstration"), arriving from the other direction:
+   * there, evidence lagged the answer; here, the decision lags the evidence.
+   *
+   * 🔴 SO THE DECISION CARRIES THE FINGERPRINT OF WHAT PRODUCED IT AND IS REFUSED WHEN THEY DISAGREE.
+   * Same construction as `knowledgeSignature` and `mintedFor` above. A decision from a superseded
+   * input set is dropped rather than shown — which costs a turn, visibly, instead of asking a
+   * question about a learner state that no longer exists.
+   *
+   * 🔴 `evidence.length` IS NOT ENOUGH ON ITS OWN AND THE ROW IDS ARE IN THE KEY FOR A REASON. Two
+   * reads can return the same COUNT with different rows — a re-read after a write that replaced
+   * nothing, or a focus change that swapped which objectives are in scope. Counting alone would
+   * declare those identical and let a stale decision through.
+   */
+  const decisionInputs = useMemo(
     () =>
-      status === "ready"
-        ? decideNext({ actedOn, correctionsShown, evidence, now: decidedAt, objectives: inFocus })
-        : null,
-    [actedOn, correctionsShown, decidedAt, evidence, inFocus, status],
+      [
+        strategy,
+        decidedAt.getTime(),
+        inFocus.map((entry) => entry.objective.identityKey).join(","),
+        evidence.map((row) => row.id).join(","),
+        actedOn.join(","),
+        [...correctionsShown].sort().join(","),
+      ].join("|"),
+    [actedOn, correctionsShown, decidedAt, evidence, inFocus, strategy],
   );
+
+  const [decided, setDecided] = useState<{ inputs: string; outcome: StrategyOutcome } | null>(null);
+
+  useEffect(() => {
+    if (status !== "ready") {
+      setDecided(null);
+      return;
+    }
+    let live = true;
+    // 🔴 BOTH ARMS GO THROUGH THIS EFFECT, INCLUDING THE ONE THAT CANNOT BLOCK. Running
+    // `nemesis_policy` synchronously in a memo and `llm_teacher` here would put the two controllers
+    // at different points in the React lifecycle — settling in different frames, against different
+    // reads of the same state — and "only the teaching controller changes" would be false in the one
+    // place the experiment cannot tolerate it.
+    const abort = new AbortController();
+    void (async () => {
+      const outcome = await strategyFor(strategy).decide({
+        actedOn,
+        correctionsShown,
+        evidence,
+        now: decidedAt,
+        objectives: inFocus,
+        signal: abort.signal,
+        uid,
+      });
+      if (!live) return;
+      if (outcome.refusal) {
+        // 🔴 COUNTED, NEVER RECOVERED FROM. There is deliberately no "if the baseline refused, ask
+        // the structured policy" here: that would make the two arms one arm and report them as
+        // equivalent. A refusal is a turn the learner did not get, and it has to be visible as that.
+        canvasCapture("canvas_strategy_refused", canvas, { reason: outcome.refusal, strategy });
+      }
+      setDecided({ inputs: decisionInputs, outcome });
+    })();
+    return () => {
+      live = false;
+      abort.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decisionInputs, status]);
+
+  // 🔴 THE FINGERPRINT GATE. A decision computed from inputs that have since changed is not shown —
+  // see `decisionInputs`. Reading it anyway is how the surface asks a question about a learner state
+  // that no longer exists, and how `mintedFor` below could mint a prompt for a superseded decision,
+  // which is the idempotency key for the evidence it produces.
+  const next = decided && decided.inputs === decisionInputs ? decided.outcome.decision : null;
 
   /**
    * The decision, with the exposition corrected to describe WHAT IS ON SCREEN.
@@ -679,11 +804,15 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
           occurredAt: new Date().toISOString(),
           prompt: active,
           responseText: said,
+          // 🔴 THE ARM THAT CHOSE THIS OPPORTUNITY, ON THE NON-ATTEMPT PATH TOO. Someone giving up
+          // on a question is an outcome the experiment cares about at least as much as a judged
+          // answer, and a row without an arm is a row the comparison cannot see.
+          teachingStrategy: strategy,
           ...(tookMs !== undefined ? { tookMs } : {}),
         }),
       );
     },
-    [canvas, decision, prompt, record, uid],
+    [canvas, decision, prompt, record, strategy, uid],
   );
 
   const submit = useCallback(
@@ -778,6 +907,12 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
         confidence: evaluation.confidence,
         objective: decision.objective.identityKey,
         stage: "policy",
+        // 🔴 ON THE EVENT AS WELL AS ON THE ROW, AND THE TWO ANSWER DIFFERENT QUESTIONS. The row is
+        // the durable record a comparison is computed from; the event is what makes a live funnel
+        // splittable by arm without waiting for anyone to query the database. Neither is derivable
+        // from the other: PostHog cannot see `learner_evidence`, and the evidence log deliberately
+        // holds no interaction events.
+        strategy,
         verdict: evaluation.verdict,
         via,
       });
@@ -797,11 +932,16 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
           judgement: judgementOf([outcomeFor(decision.objective, evaluation)]),
           prompt: active,
           responseText: said,
+          // 🔴 WHICH CONTROLLER CHOSE THIS QUESTION. The experiment's grouping key, written at the
+          // one point where the arm is unambiguous. Everything downstream of here — the judge, the
+          // verdict, the row shape — is identical between arms by construction, which is what makes
+          // this single field the whole of the difference.
+          teachingStrategy: strategy,
           ...(tookMs !== undefined ? { tookMs } : {}),
         }),
       );
     },
-    [admitNothing, canvas, decision, judging, prompt, record, uid],
+    [admitNothing, canvas, decision, judging, prompt, record, strategy, uid],
   );
 
   /** Kept as a capability with no control on the recall surface: the caller decides whether to
@@ -898,6 +1038,35 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
   const territories = useMemo(() => availableTerritories(supported), [supported]);
   const claims = useMemo(() => knowledge.objectives.map((entry) => entry.knowledge), [knowledge]);
 
+  /**
+   * 🔴🔴 "THE ARM MUST NOT SILENTLY SWITCH HALFWAY THROUGH", MADE CHECKABLE RATHER THAN PROMISED.
+   *
+   * `resolveStrategy` is deterministic, so in principle this can never fire — which is exactly why
+   * it is worth watching. The ways it COULD fire are all real and all silent: a URL override added
+   * to a session already in progress, randomisation switched on while sessions are live, or a future
+   * editor moving the assignment into `useState` and reintroducing the defect the derivation exists
+   * to prevent. Any of those produces perfectly ordinary rows split across two controllers under one
+   * label, and no metric computed afterwards can detect it.
+   *
+   * 🔴 IT REPORTS AND DOES NOT BLOCK. Refusing to teach on a mismatch would turn a reporting problem
+   * into an outage for the learner, who has done nothing wrong and whose evidence is still valid —
+   * what is compromised is one session's membership in an experiment, not the session.
+   */
+  const conflict = useMemo(
+    () => conflictingStrategy({ canvasId: canvas.id, evidence, running: strategy }),
+    [canvas.id, evidence, strategy],
+  );
+  const reportedConflict = useRef<string | null>(null);
+  useEffect(() => {
+    if (!conflict) return;
+    // Once per (canvas, pair), not once per render: this sits downstream of `evidence`, which is
+    // re-read after every answer.
+    const seen = `${canvas.id}:${conflict}:${strategy}`;
+    if (reportedConflict.current === seen) return;
+    reportedConflict.current = seen;
+    canvasCapture("canvas_strategy_conflict", canvas, { running: strategy, stored: conflict });
+  }, [canvas, conflict, strategy]);
+
   return {
     acknowledge,
     admitUnknown,
@@ -919,6 +1088,7 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     recording,
     setFocus,
     status,
+    strategy,
     submit,
     task,
     territories,

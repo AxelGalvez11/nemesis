@@ -99,6 +99,8 @@ test("🔴 the declared evidence fields are the ones a demonstration actually wr
   const [resolved] = objectivesForKnowledge(knowledge);
   const objective = { ...resolved!, rowId: "row-1" };
   const built = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf([

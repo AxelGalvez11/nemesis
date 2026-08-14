@@ -512,7 +512,7 @@ sentences — it exists to stop the code and the matrix drifting apart, not to f
 knowledge_types: association
 cognitive_operations: recall
 # The fields one judged demonstration writes. 🔴 `absent` always means NOT OBSERVED.
-evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseText, scaffoldRung, scaffoldingLevel, taskId, verdict
+evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseText, scaffoldRung, scaffoldingLevel, taskId, teachingStrategy, verdict
 ```
 
 ### Implemented

@@ -55,6 +55,8 @@ function judged(input: {
   occurredAt?: string;
 }) {
   return evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: input.occurredAt ?? "2026-08-11T12:00:00.000Z",
     judgement: judgementOf([outcomeFor(input.objective ?? GENERIC_TO_BRAND, input.evaluation ?? EVALUATION)]),
@@ -171,6 +173,8 @@ test("a judged answer always obtained a demonstration — including a wrong one"
 test("🔴 an opportunity that produced nothing carries NO verdict", () => {
   const prompt = askedAbout(GENERIC_TO_BRAND, "p1");
   const [evidence] = unobtainedEvidence({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-11T12:00:00.000Z",
     prompt,
@@ -251,6 +255,8 @@ test("🔴 responseId identifies the ANSWER, never the objective", () => {
     task: "name",
   });
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf([outcomeFor(GENERIC_TO_BRAND, EVALUATION), outcomeFor(BRAND_TO_GENERIC, EVALUATION)]),
@@ -293,6 +299,8 @@ test("an unobtained demonstration carries the same answer identity", () => {
   // group with anything else that submission produced rather than looking like a separate event.
   const prompt = askedAbout(GENERIC_TO_BRAND, "answer-1");
   const [nothing] = unobtainedEvidence({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     prompt,
@@ -329,6 +337,8 @@ const CHAIN_PROMPT = promptTargeting({
 
 test("🔴 acceptance 1+2: one submission across three objectives is ONE performance", () => {
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
@@ -352,6 +362,8 @@ test("🔴 acceptance 3: an objective the answer did not address is NOT demonstr
   // shown, and nothing about it was contradicted. Recording it as `incorrect` would teach against a
   // mistake they did not make; leaving no row at all would read as never having been asked.
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf([outcomeFor(CHAIN[0]!, EVALUATION), outcomeFor(CHAIN[1]!, EVALUATION)]),
@@ -373,6 +385,8 @@ test("🔴 acceptance 4: a double submit is one row per objective, not two", () 
   // The same answer arriving twice — a double click, a replayed effect, a network retry. Every row
   // keeps its `(objective, responseId)` pair, which is what the unique index collapses on.
   const first = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
@@ -380,6 +394,8 @@ test("🔴 acceptance 4: a double submit is one row per objective, not two", () 
     responseText: "the whole mechanism",
   });
   const again = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     // A later clock, because the second arrival really is later. It must change nothing that the
     // index conflicts on.
@@ -405,6 +421,8 @@ test("🔴 a judged outcome for an objective the task did not target writes NO r
   // an untargeted outcome starts writing a row: the count is right, the ids are right, and the
   // extra row looks exactly like a real one.
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf([
@@ -425,6 +443,8 @@ test("🔴 an admission covers every objective it was asked about", () => {
   // two reading as never asked, and "never asked" and "asked, nothing came back" call for different
   // teaching.
   const rows = unobtainedEvidence({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     prompt: CHAIN_PROMPT,
@@ -442,6 +462,8 @@ test("🔴 the operation is the TASK'S, identical on every row it writes", () =>
   // One answer was one cognitive demand. Rows that disagreed about which operation produced them
   // would describe a learner who did several different things at once.
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
@@ -480,6 +502,8 @@ function writesFrom(rows: readonly EvidenceToRecord[]): readonly EvidenceToRecor
 test("🔴 RUNTIME-006: a judge that could not be reached writes NOTHING, for any target", () => {
   const written = writesFrom(
     evidenceForSubmission({
+      // Pre-experiment boundary test: no controller chose this, and `null` says so.
+      teachingStrategy: null,
       canvasId: "c1",
       judgement: noJudgement(),
       occurredAt: "2026-08-12T00:00:00.000Z",
@@ -497,6 +521,8 @@ test("🔴 RUNTIME-006: a judge that could not be reached writes NOTHING, for an
 test("🔴 RUNTIME-006: a judge that RAN and established nothing writes a row per target", () => {
   const written = writesFrom(
     evidenceForSubmission({
+      // Pre-experiment boundary test: no controller chose this, and `null` says so.
+      teachingStrategy: null,
       canvasId: "c1",
       judgement: judgementOf([]),
       occurredAt: "2026-08-12T00:00:00.000Z",
@@ -520,6 +546,8 @@ test("🔴 RUNTIME-006: the two emptinesses produce OPPOSITE writes — that is 
     occurredAt: "2026-08-12T00:00:00.000Z",
     prompt: CHAIN_PROMPT,
     responseText: "same answer, same targets, same everything else",
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
   } as const;
 
   const ranAndFoundNothing = writesFrom(evidenceForSubmission({ ...shared, judgement: judgementOf([]) }));
@@ -539,6 +567,8 @@ test("🔴 RUNTIME-006: an admission is an ACCOUNT, not an outage — it still w
   // silently delete the record of someone telling us they did not know.
   const written = writesFrom(
     unobtainedEvidence({
+      // Pre-experiment boundary test: no controller chose this, and `null` says so.
+      teachingStrategy: null,
       canvasId: "c1",
       occurredAt: "2026-08-12T00:00:00.000Z",
       prompt: CHAIN_PROMPT,
@@ -561,6 +591,8 @@ test("🔴 RUNTIME-006: an unreached judge does not even mint a performance", ()
   // here as a performance the learner never completed, and `demonstrationCount` is what the policy
   // reads to decide whether something has been practised.
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     judgement: noJudgement(),
     occurredAt: "2026-08-12T00:00:00.000Z",

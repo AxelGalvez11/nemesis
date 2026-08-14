@@ -11,16 +11,14 @@
 // same evidence and it returns the same decision; run it after evidence lands and it returns
 // whatever that new state deserves. The loop lives outside: decide → ask → evidence → decide.
 
-import type { DeclaredMode } from "./canvas-continue";
-import { type Exposition } from "./cognitive-mode";
 import { projectLearnerState, type LearnerEvidence, type LearnerObjectiveState } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
-import type { StoredObjective } from "./learner-store";
-import { mostValuable, value, type ActionValue } from "./next-action-value";
+import { mostValuable, value } from "./next-action-value";
 import { terminologyFriction, type TermLookup } from "./learner-friction";
 import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
 import { runtimeCanStage } from "./runtime-support";
-import { chooseNextTeachingAction, expositionOf, type TeachingAction } from "./teaching-policy";
+import { chooseNextTeachingAction, expositionOf } from "./teaching-policy";
+import type { TeachingDecision } from "./teaching-strategy";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import { interveningActs } from "./working-memory";
 
@@ -39,40 +37,17 @@ const STUCK_STATUSES: readonly LearnerObjectiveState["status"][] = [
   "partial",
 ];
 
-export interface PolicyDecision {
-  objective: StoredObjective;
-  knowledge: KnowledgeObject;
-  state: LearnerObjectiveState;
-  action: TeachingAction;
-  /** This objective's own evidence, newest last — what the decision was made from. */
-  evidence: LearnerEvidence[];
-  /**
-   * What the learner is being asked to take in, and for how long — §39.
-   *
-   * 🔴 CARRIED UP FROM THE ACTION, NEVER RE-DERIVED. The policy decided it, at the point where it
-   * decided what to emit; this is a projection of that decision so the surface can read it without
-   * pattern-matching on the action type. A second derivation here would be a second opinion about
-   * the same emission, and the two would drift.
-   */
-  exposition: Exposition;
-  /**
-   * The same mode, flat, because that is the shape the Canvas reads structurally.
-   *
-   * 🔴 DERIVED FROM `exposition` IN THE ONE PLACE BOTH ARE SET, so they cannot disagree. It exists
-   * because `declaredCognitiveMode` in canvas-continue.ts reads `decision.cognitiveMode` — it was
-   * written against this property before it existed, deliberately, so that landing the producer
-   * changes nothing on the consumer side. Two fields, one assignment, one source.
-   */
-  cognitiveMode: DeclaredMode;
-  /**
-   * What made this the most valuable thing to do, and what it scored against the alternatives.
-   *
-   * 🔴 THE POLICY TRACE, AND IT IS SYSTEM STATE RATHER THAN MODEL REASONING. `action.because` is a
-   * sentence for a person; this is the named terms the selector weighed, which is what a test can
-   * assert on and what answers "why this and not that" without anyone reading a float.
-   */
-  selection: ActionValue;
-}
+/**
+ * 🔴 THE DECISION SHAPE MOVED TO `teaching-strategy.ts` AND IS NO LONGER THIS FILE'S TO OWN. Two
+ * controllers produce it now — this one and `llm_teacher` — and a type defined in the structured
+ * policy's own file, named after it, would make the other arm a guest in someone else's shape. That
+ * is how a second rendering path gets added "just for the other one", and there must stay exactly
+ * one Canvas.
+ *
+ * `PolicyDecision` was the old name. It is deliberately not kept as an alias: two names for one type
+ * is how the next reader ends up believing they are two things.
+ */
+export type { TeachingDecision } from "./teaching-strategy";
 
 /**
  * The one thing to do next across this canvas's objectives, or null when nothing is owed.
@@ -138,7 +113,7 @@ export function decideNext(input: {
    * evidence log, ordinary curiosity starts moving a learner's status toward "does not know this".
    */
   lookups?: readonly TermLookup[];
-}): PolicyDecision | null {
+}): TeachingDecision | null {
   const actedInOrder = input.actedOn ?? [];
   // Derived, never passed in beside the list — see `actedOn`.
   const acted = new Set(actedInOrder);
@@ -256,15 +231,29 @@ export function decideNext(input: {
   // 🔴 A HELD OBJECTIVE IS STILL BETTER THAN A BLANK PAGE. When everything advances or defers there
   // is nothing owed, and the honest answer is the held one rather than an empty surface — being
   // shown something twice is a much smaller failure than a canvas with nothing on it.
-  if (winner) return { ...winner.decision, selection: winner.value };
+  // 🔴 `rationale` REPLACED A BARE `selection`, AND THE VALUE IS UNCHANGED. The scorer's trace is
+  // exactly what it was; what is new is that it now says WHO produced it, because a second
+  // controller can also fill this field and the two must never be mistaken for each other. This
+  // one is system state a test can assert on; the other arm's is a sentence a model wrote.
+  if (winner) {
+    return { ...winner.decision, rationale: { by: "nemesis_policy", selection: winner.value } };
+  }
   const held = decisions.find((decision) => decision.action.type === "defer");
-  return held ? { ...held, selection: value({
-    action: held.action,
-    evidence: held.evidence,
-    interveningActs: interveningActs(held.objective.identityKey, actedInOrder),
-    knowledge: held.knowledge,
-    state: held.state,
-  }) } : null;
+  return held
+    ? {
+        ...held,
+        rationale: {
+          by: "nemesis_policy",
+          selection: value({
+            action: held.action,
+            evidence: held.evidence,
+            interveningActs: interveningActs(held.objective.identityKey, actedInOrder),
+            knowledge: held.knowledge,
+            state: held.state,
+          }),
+        },
+      }
+    : null;
 }
 
 export function supportedObjectives(objectives: readonly ResolvedObjective[]): ResolvedObjective[] {
