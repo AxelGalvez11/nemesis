@@ -259,6 +259,47 @@ test("🔴 a prerequisite still never outranks an answer the learner is owed", (
   assert.ok(score(owedAnswer) > score(hub));
 });
 
+// ── friction: the one signal the learner volunteers ─────────────────────────
+
+test("🔴🔴 material whose words the learner keeps looking up is worth more than one they never queried", () => {
+  // Owner: "simplifies language under terminology friction". The response to friction is to change
+  // HOW something is asked — which means Nemesis must still choose it. Pushing it down would make
+  // Nemesis avoid exactly the material the learner has told it they are stuck on.
+  const stuckOnWords = at({ terminologyFriction: true });
+  const plain = at();
+  assert.ok(score(stuckOnWords) > score(plain));
+  assert.ok(reasons(stuckOnWords).includes("terminology-in-the-way"));
+});
+
+test("🔴🔴 but no amount of looking words up outranks a single wrong answer", () => {
+  // 🔴 THE ORDERING THAT KEEPS FRICTION FROM BECOMING EVIDENCE BY THE BACK DOOR. Reaching for a
+  // dictionary is the learner telling us the wording is hard; producing a wrong answer is them
+  // showing us a gap. The second is stronger, and if friction could outrank it the two would be
+  // interchangeable in everything downstream — which is exactly the collapse `learner-friction.ts`
+  // and its separate table exist to prevent.
+  const lookedUpTwice = at({ terminologyFriction: true });
+  const missedTwice = at({
+    evidence: [miss("a"), miss("b")],
+    interveningActs: 2,
+    state: state({ evidenceCount: 2, lastEvidenceAt: "2026-08-14T12:00:00.000Z", status: "incorrect" }),
+  });
+  assert.ok(score(missedTwice) > score(lookedUpTwice));
+});
+
+test("🔴 friction on something already demonstrated does not drag it back", () => {
+  const proven = state({
+    demonstratedAt: "independent",
+    evidenceCount: 2,
+    lastEvidenceAt: "2026-08-14T12:00:00.000Z",
+    status: "correct",
+  });
+  assert.equal(
+    score(at({ state: proven, terminologyFriction: true })),
+    score(at({ state: proven })),
+    "needing a definition on the way to the right answer is not a reason to re-teach it",
+  );
+});
+
 // ── the trace ───────────────────────────────────────────────────────────────
 
 test("🔴 every decision carries the terms that produced it", () => {

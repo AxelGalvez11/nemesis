@@ -55,6 +55,8 @@ export type SelectionReason =
   | "due-again"
   /** Other material the learner is stuck on starts where this one ends — I11's edge, walked. */
   | "unlocks-other-work"
+  /** The learner keeps having to look up this material's own vocabulary. The WORDS are the barrier. */
+  | "terminology-in-the-way"
   /** Worked very recently. Asking now would measure the last few minutes, not learning. */
   | "just-worked"
   /** Other material has intervened since this was last touched, which is what makes it askable. */
@@ -155,6 +157,21 @@ const PER_BLOCKED_DEPENDENT = 100;
 const MAX_BLOCKED_DEPENDENTS = 3;
 
 /**
+ * The learner keeps looking up this material's own words.
+ *
+ * 🔴 IT RAISES THE VALUE RATHER THAN LOWERING IT, WHICH IS NOT OBVIOUS AND IS THE OWNER'S CALL.
+ * "Asking this again will just fail again" argues for pushing it down; the owner's instruction is
+ * *"simplifies language under terminology friction"* — the response to friction is to change HOW the
+ * thing is asked, never to quietly stop asking it. Pushing it down would make Nemesis avoid exactly
+ * the material a learner has actively told it they are stuck on.
+ *
+ * 🔴 AND IT IS DELIBERATELY SMALLER THAN ONE UNRESOLVED ATTEMPT. Friction is the learner reaching
+ * for a dictionary; a missed answer is the learner producing something wrong. The second is stronger
+ * evidence of a gap, and no amount of looking words up should outrank it.
+ */
+const TERMINOLOGY_FRICTION = 90;
+
+/**
  * Working memory, as a penalty rather than a filter.
  *
  * 🔴 A PENALTY, NOT AN EXCLUSION, AND THAT IS DELIBERATE. The old selector filtered `defer` out of
@@ -190,6 +207,17 @@ export interface ValueInput {
    * does not compute the graph, and the conservative one: it can only fail to promote.
    */
   blockedDependents?: number;
+  /**
+   * The learner keeps having to look up terms this objective is built from.
+   *
+   * 🔴 FRICTION, NEVER EVIDENCE. Looking a word up is not an attempt and contradicts nothing — see
+   * `learner-friction.ts` for why it lives in its own table and never reaches `projectLearnerState`.
+   * It arrives here as a separate input for exactly that reason: the day someone folds it into the
+   * evidence log, a learner's curiosity starts moving their status toward "does not know this".
+   *
+   * Absent means none observed, which is the honest default for a caller that does not read lookups.
+   */
+  terminologyFriction?: boolean;
 }
 
 /** Attempts that came back wrong, partial, or with nothing shown — the learner's own signal. */
@@ -209,7 +237,14 @@ function unresolvedAttempts(evidence: readonly LearnerEvidence[]): number {
  * score, so "why did Nemesis ask me this?" is answerable by replaying it rather than by guessing.
  */
 export function value(input: ValueInput): ActionValue {
-  const { action, blockedDependents = 0, evidence, interveningActs, state } = input;
+  const {
+    action,
+    blockedDependents = 0,
+    evidence,
+    interveningActs,
+    state,
+    terminologyFriction = false,
+  } = input;
   const reasons: SelectionReason[] = [];
   let score: number;
 
@@ -272,6 +307,18 @@ export function value(input: ValueInput): ActionValue {
     // the thread just as badly as asking the same question again.
     delta += blocked * PER_BLOCKED_DEPENDENT;
     reasons.push("unlocks-other-work");
+  }
+
+  if (terminologyFriction && state.status !== "correct") {
+    // 🔴 THE LEARNER TOLD US THIS DIRECTLY, WITHOUT BEING ASKED — they stopped and looked up a word
+    // this objective is built from, more than once. That is the only signal in the whole selector
+    // the learner volunteers rather than produces under a question.
+    //
+    // 🔴 NOT ON SOMETHING ALREADY DEMONSTRATED, for the same reason as the prerequisite term: having
+    // needed a definition on the way to producing the answer is not a reason to come back to
+    // material they have proved.
+    delta += TERMINOLOGY_FRICTION;
+    reasons.push("terminology-in-the-way");
   }
 
   if (interveningActs >= DISPLACEMENT) {
