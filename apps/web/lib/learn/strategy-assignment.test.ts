@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import type { LearnerEvidence } from "./learner-evidence";
@@ -98,6 +99,47 @@ test("🔴 the URL vocabulary is the STORED vocabulary — no friendly aliases",
   assert.equal(strategyOverrideFrom("ai"), null);
   assert.equal(strategyOverrideFrom("1"), null);
   assert.equal(strategyOverrideFrom(null), null);
+});
+
+test("🔴🔴 the RUNTIME derives the arm, it does not store it", () => {
+  // 🔴 THE TEST ABOVE PROVES `resolveStrategy` IS DETERMINISTIC. IT CANNOT PROVE THE HOOK CALLS IT.
+  // The defect that would slip past everything else is someone moving the arm into `useState` —
+  // `resolveStrategy` stays perfectly deterministic, every assertion in this file still passes, and
+  // the session silently acquires exactly the property the derivation exists to prevent: an arm that
+  // survives a re-render and dies on a reload, so a learner who refreshes mid-canvas can finish
+  // under a controller that did not start them. Every row they wrote is still stamped with whichever
+  // arm was live at the time, so the comparison ends up holding blended sessions labelled as one.
+  //
+  // There is no React renderer in this suite, so the mechanism is asserted at the source. That is
+  // weaker than exercising it and much stronger than nothing — and it is calibrated below.
+  const hook = readFileSync(
+    new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(hook.includes("resolveStrategy({"), "the runtime must derive the arm on every render");
+  // 🔴 THE BINDING, NOT THE TYPE. An earlier version of this matched `useState[^\n]*Strategy` and
+  // went red on `useState<StrategyOutcome>` — which is the DECISION, and is legitimately state: it
+  // is the result of an async controller call and has nowhere else to live. What must never be
+  // state is the ARM, so the check is on the two ways an arm-shaped binding can appear.
+  assert.ok(!storedArm.test(hook), "🔴 the arm must never be held in state — derive it instead");
+});
+
+/** A `useState` binding that holds the arm itself. See the guard above for why it is the binding
+ *  that is matched and not the type. */
+const storedArm = /const \[strategy[,\]]|setStrategy\b/;
+
+test("🔴 CALIBRATION: that guard fails when the arm is put into state", () => {
+  // The defect reproduced against the real pattern the assertion applies. Without this, the check
+  // above could be passing because the file happens not to contain a string rather than because the
+  // rule holds.
+  const asIfStored = "const [strategy, setStrategy] = useState<TeachingStrategyId>(DEFAULT_STRATEGY);";
+  assert.ok(storedArm.test(asIfStored), "if this passes, the check above is not testing what it says");
+  // ...and it must NOT fire on the decision state that legitimately exists, or the guard would be
+  // unmaintainable: whoever hit it would delete it rather than work out what it meant.
+  assert.ok(
+    !storedArm.test("const [decided, setDecided] = useState<{ outcome: StrategyOutcome } | null>(null);"),
+    "the guard must not fire on the async decision, which has nowhere else to live",
+  );
 });
 
 // ── The switch-detector ─────────────────────────────────────────────────────────────────────────
