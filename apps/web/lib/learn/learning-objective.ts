@@ -193,9 +193,21 @@ function causalObjectives(object: KnowledgeObject, relation: CausalRelation): Le
   const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
   const parameters: ObjectiveParameters = { inputRole: CAUSE_ROLE, outputRole: EFFECT_ROLE };
   const cue = relation.cause.text;
+  // 🔴 THE CONSEQUENCE, NOT THE WHOLE CLAIM — AND THE WHOLE CLAIM IS WHAT I SHIPPED FIRST. `answer`
+  // is displayed as `cue → answer`, which reads correctly for a pair ("losartan → Cozaar") and
+  // absurdly for an edge whose statement CONTAINS its own cue: the live correction printed
+  // "Increasing resistance → Increasing resistance — decreases — current". The cue is the cause, so
+  // the answer is everything the source said FOLLOWS from it, and nothing else.
+  //
+  // 🔴 THE QUALIFIER RIDES ALONG, because dropping it changes the claim rather than shortening it —
+  // "decreases current" and "decreases current when voltage is held constant" are different facts,
+  // and the second is the one the document made. It is also what the judge is given as the
+  // reference answer, so a learner who states the bound is not marked down for exceeding it.
+  const consequence = relation.negated ? `does not ${relation.relation}` : relation.relation;
+  const bound = relation.qualifier ? ` (${relation.qualifier})` : "";
   return [
     {
-      answer: object.statement,
+      answer: `${consequence} ${relation.effect.text}${bound}`,
       capability: "predict",
       cue,
       identityKey: objectiveIdentityKey({ capability: "predict", knowledgeIdentityKey: knowledge, parameters }),

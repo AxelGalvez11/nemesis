@@ -343,3 +343,35 @@ test("🔴 no combination is admitted that nothing mints", () => {
   assert.equal(runtimeCanStage("causal", "predict"), true);
   assert.equal(runtimeCanStage("association", "recall"), true);
 });
+
+test("🔴 the answer is the CONSEQUENCE, so 'cue → answer' does not print the cue twice", () => {
+  // 🔴 MEASURED ON THE LIVE CANVAS, NOT REASONED ABOUT. The first version used the whole statement,
+  // which reads correctly for a pair ("losartan → Cozaar") and absurdly for an edge that contains
+  // its own cue: the correction painted "Increasing resistance → Increasing resistance — decreases
+  // — current". The cue is the cause; the answer is what follows from it.
+  const [objective] = objectivesForKnowledge(CAUSAL);
+  assert.equal(objective?.cue, "incorporation of a stop codon");
+  assert.equal(objective?.answer.includes(objective.cue), false, "the answer must not repeat the cue");
+  assert.match(objective!.answer, /pre-mature termination/);
+});
+
+test("🔴 a bounding condition rides along with the answer, because dropping it changes the claim", () => {
+  // "decreases current" and "decreases current when voltage is held constant" are different facts,
+  // and the second is the one the document made. It is also the judge's reference answer, so a
+  // learner who states the bound is not marked down for exceeding it.
+  const bounded = causalKnowledgeFrom({
+    anchors: [],
+    index: 0,
+    model: "m",
+    relation: { ...EDGE, qualifier: "when voltage is held constant", qualifierKind: "conditional" },
+    unitId: "b1",
+  });
+  assert.match(objectivesForKnowledge(bounded)[0]!.answer, /when voltage is held constant/);
+});
+
+test("🔴 a denied edge says so in its answer, not the opposite of what the source said", () => {
+  const denied = causalKnowledgeFrom({
+    anchors: [], index: 0, model: "m", relation: { ...EDGE, negated: true }, unitId: "b1",
+  });
+  assert.match(objectivesForKnowledge(denied)[0]!.answer, /does not/);
+});
