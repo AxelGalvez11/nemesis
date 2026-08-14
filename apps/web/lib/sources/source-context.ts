@@ -159,8 +159,20 @@ export interface CanonicalSourceUnit {
     /** Named parts of a labelled diagram and where they sit (§46.6). Absent for the majority of
      *  figures — photographs and charts without named parts — which is not a gap. */
     labels?: readonly { readonly text: string; readonly x: number; readonly y: number }[];
-    /** The picture itself, so a spatial question can render it. The format's own name for it. */
+    /** The format's own name for the picture — a zip entry, an XObject.
+     *
+     *  🔴 PROVENANCE, NOT AN ADDRESS. `ppt/media/image3.png` names the picture inside the
+     *  original container and resolves to nothing outside it. It was once handed to an
+     *  `<img src>`, which made the browser ask this application for a path that has never
+     *  existed. Use `asset` to show a figure; use this to say which figure it is. */
     ref?: string;
+    /** Where the picture is actually stored, when ingestion kept it (#619).
+     *
+     *  🔴 ABSENT MEANS THERE IS NOTHING TO SHOW, AND THE SURFACE MUST HONOUR THAT. A figure
+     *  parsed before figure assets existed, or one whose upload was refused, has a caption
+     *  and no pixels. Rendering a placeholder image for it puts a broken picture in front of
+     *  a learner mid-question; rendering nothing loses only what was never there. */
+    asset?: { path: string; mime: string; width?: number; height?: number };
   };
   anchor: CanonicalSourceAnchor;
 }
@@ -434,6 +446,21 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
             // dropped; `document-boundary.test.ts` exists because of them.
             ...(block.figure?.labels?.length ? { labels: block.figure.labels } : {}),
             ...(block.figure?.ref ? { ref: block.figure.ref } : {}),
+            // 🔴 THE SAME BOUNDARY, AND THE SAME FAILURE MODE ONE FIELD OVER. Without this
+            // line every stored figure asset stops here: extraction sees no picture, the
+            // spatial lane has nothing to render, and #619 stores 20 MB per deck that no
+            // learner ever sees. Nothing would look broken — a diagram would simply never
+            // be asked about.
+            ...(block.figure?.asset
+              ? {
+                  asset: {
+                    mime: block.figure.asset.mime,
+                    path: block.figure.asset.path,
+                    ...(block.figure.asset.width ? { width: block.figure.asset.width } : {}),
+                    ...(block.figure.asset.height ? { height: block.figure.asset.height } : {}),
+                  },
+                }
+              : {}),
           },
         }
       : {}),

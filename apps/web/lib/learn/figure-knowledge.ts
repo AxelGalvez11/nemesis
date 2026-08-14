@@ -20,8 +20,10 @@ import { knowledgeIdentityKey } from "./knowledge-identity";
 import type { KnowledgeObject, UnanchoredProvenance } from "./knowledge-types";
 
 export interface FigureSource {
-  /** How the surface fetches the picture — the document model's own figure key. */
+  /** WHICH picture this is, in the document's own vocabulary. Identity, not an address. */
   readonly imageRef: string;
+  /** WHERE it is stored, when ingestion kept it. Absent means there are no pixels to show. */
+  readonly assetPath?: string;
   /** What vision said the figure shows, with the machine-readable label line already stripped. */
   readonly caption: string;
   readonly labels: readonly FigureLabel[];
@@ -66,6 +68,11 @@ export function figureKnowledge(source: FigureSource): KnowledgeObject | null {
       caption: source.caption.trim() || undefined,
       imageRef: source.imageRef,
       labels: source.labels,
+      // 🔴 CARRIED, NOT RE-DERIVED. The path is minted during ingestion from a hash of the
+      // stored bytes; nothing downstream can reconstruct it from the entry name, so if it is
+      // dropped here the picture is unreachable for good and the only symptom is a spatial
+      // objective that never gets offered.
+      ...(source.assetPath ? { assetPath: source.assetPath } : {}),
     },
     id: knowledgeIdentityKey(base),
     identityKey: knowledgeIdentityKey(base),
