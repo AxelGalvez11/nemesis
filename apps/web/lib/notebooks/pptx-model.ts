@@ -61,6 +61,12 @@ const FIGURE_LINE = /^\[(Figure|Recurring graphic): ([\s\S]+)\]$/;
 export function pptxToModel(
   input: PptxModelInput,
   descriptions: ReadonlyMap<string, string> = new Map(),
+  // 🔴 KEYED BY THE PICTURE'S OWN NAME, NOT THREADED THROUGH THE MERGED TEXT (§46.6). The
+  // description reaches a block by being appended as a LINE and re-parsed out of it here, which is
+  // fine for a sentence and hopeless for structured data — one stray newline and the labels are
+  // prose again. `describeFiguresWithVision` already returns everything keyed by image name, and
+  // that same name is the block's `ref`, so the labels ride the key instead of the text.
+  labels: ReadonlyMap<string, readonly { text: string; x: number; y: number }[]> = new Map(),
 ): DocumentModel {
   const merged = mergeImageDescriptions(input.slides, descriptions, input.images);
   // The same grouping `mergeImageDescriptions` used, so the picture behind each
@@ -136,10 +142,15 @@ export function pptxToModel(
           // The description is a `figure` block's description, never its text.
           // A generated sentence sitting in `text` becomes quotable as the
           // deck's own words, and citations search text.
-          figure: {
-            description: figure[2]!.trim(),
-            ref: note?.name ?? `slide-${index + 1}-figure-${slideBlocks.length}`,
-          },
+          figure: (() => {
+            const ref = note?.name ?? `slide-${index + 1}-figure-${slideBlocks.length}`;
+            const named = note?.name ? labels.get(note.name) : undefined;
+            return {
+              description: figure[2]!.trim(),
+              ref,
+              ...(named && named.length > 0 ? { labels: named } : {}),
+            };
+          })(),
           headingPath,
           kind: "figure",
           text: "",

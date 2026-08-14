@@ -22,6 +22,7 @@ import { test } from "node:test";
 import { parseFigureDescriptions } from "../pdf/vision";
 import { descriptionWithoutLabels, parseFigureLabels, type FigureLabel } from "./figure-labels";
 import { figureKnowledge } from "./figure-knowledge";
+import { extractKnowledgeObjects } from "./knowledge-extraction";
 import { normalizeForIdentity } from "./knowledge-identity";
 import { objectiveIdentityBasis, objectivesForKnowledge } from "./learning-objective";
 
@@ -223,4 +224,53 @@ test("🔴 adding labelKey did NOT move any existing objective's identity", () =
     }),
     "objective|spatial:v1:jkl|locate|in=-,out=-|dir=-|label=glow plug",
   );
+});
+
+test("🔴 §46.6: a deck of diagrams with NO TABLE still yields questions — the lane's own use case", () => {
+  // 🔴 THE BUG THIS EXISTS FOR WAS MINE, AND IT WAS INVISIBLE. `extractKnowledgeObjects` returns
+  // early when a document has no table. I first put the figure lane BELOW that return, so a slide
+  // deck of anatomy diagrams — the exact document image occlusion exists for — produced nothing.
+  // Every unit test still passed: the parser, the knowledge builder and the objective builder were
+  // all correct, and nothing ever called them. That is this repo's most-repeated failure shape.
+  const context = {
+    capabilities: { semanticUnits: true },
+    contentIntegrity: "intact",
+    quality: "full",
+    sourceId: "deck-1",
+    sourceKind: "pptx",
+    title: "Cylinder anatomy",
+    units: [
+      {
+        anchor: { quote: "Figure 3", sourceId: "deck-1", unit: 0 },
+        figure: {
+          caption: "Figure 3",
+          description: "A cross-section of a four-stroke diesel cylinder.",
+          labels: [
+            { text: "piston", x: 0.5, y: 0.72 },
+            { text: "glow plug", x: 0.66, y: 0.2 },
+          ],
+          ref: "image1.png",
+        },
+        index: 0,
+        text: "Figure 3",
+        type: "figure",
+        unit: 0,
+      },
+    ],
+  } as unknown as Parameters<typeof extractKnowledgeObjects>[0];
+
+  const extraction = extractKnowledgeObjects(context);
+  assert.equal(extraction.objects.length, 1, "a labelled diagram in a table-less deck produced no knowledge");
+  assert.equal(extraction.objects[0]?.type, "spatial");
+  assert.equal(
+    extraction.outcome,
+    "complete",
+    "a document whose diagrams taught something is not degraded because it had no grid",
+  );
+  assert.deepEqual(extraction.refusals, [], "there is nothing to refuse — the diagrams were read");
+
+  // And it reaches the learner as two askable questions.
+  const objectives = objectivesForKnowledge(extraction.objects[0]!);
+  assert.equal(objectives.length, 2);
+  assert.deepEqual(objectives.map((o) => o.capability), ["locate", "locate"]);
 });
