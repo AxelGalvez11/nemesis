@@ -120,11 +120,24 @@ export async function runParseOnThread(
     workerData: { bytes: transfer, fileName, mimeType },
     transferList: [transfer],
     // A parse must not be able to read the environment it did not need. The
-    // vision key is the exception: the PDF lane calls Gemini for figures.
+    // EXTRACTION keys are the exception: the PDF lane calls Gemini for figures,
+    // and every lane may call Mistral to read the document itself.
+    //
+    // 🔴🔴 A KEY MISSING FROM THIS LIST DOES NOT FAIL — IT DOWNGRADES, SILENTLY, AND ONLY ON
+    // ONE OF THE TWO LANES. `parseDocument` falls back to the local extractors whenever a
+    // provider is unconfigured, which is correct behaviour and is exactly what makes the
+    // omission invisible: the synchronous upload would read a document with Mistral while the
+    // background worker read the SAME document with pdf.js, and `parsed_documents` would hold
+    // whichever lane wrote last. That is the precise failure `parse-document.ts` exists to
+    // prevent ("one function, one answer"), reintroduced one level down where no test that
+    // calls `parseDocument` directly can see it. ADD THE VARIABLE HERE WHENEVER A PROVIDER IS
+    // ADDED THERE; `parse-run.test.ts` asserts this list against what the parser reads.
     env: {
       GEMINI_API_KEY: process.env.GEMINI_API_KEY,
       GEMINI_VISION_MODEL: process.env.GEMINI_VISION_MODEL,
       GOOGLE_GENERATIVE_AI_API_KEY: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+      MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
+      MISTRAL_OCR_MODEL: process.env.MISTRAL_OCR_MODEL,
     },
     resourceLimits: {
       // Node's own ceiling, below ours, so V8 throws a catchable OOM inside the

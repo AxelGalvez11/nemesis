@@ -41,6 +41,9 @@ import {
   xlsxCoverage,
   csvCoverage,
 } from "./extract-coverage";
+import { mistralCoverage } from "./extract-coverage";
+import { mistralHandles, readWithMistral } from "./mistral-ocr";
+import { modelFromMistral, titleFromMistral, unitKindFor } from "./mistral-model";
 import { csvToModel } from "./csv-model";
 import { readCsv } from "./csv-structure";
 import { readTextDocument } from "./text-structure";
@@ -199,6 +202,101 @@ function hasStructure(model: DocumentModel | undefined): model is DocumentModel 
 }
 
 /**
+ * How a Mistral-read document identifies itself in `parsed_documents.parser_version` and in
+ * `coverage.parserVersion`.
+ *
+ * 🔴 THE PROVIDER AND THE MODEL, NOT A DATE. Every other parse in this table is stamped
+ * `extract-YYYY-MM-DD`, which answers "which build of ours" — a useful question when we own the
+ * extractor and a useless one when we do not. What matters for a vendor read is WHO read it and
+ * WITH WHAT, because that is the pair that changes underneath us without a deploy.
+ */
+export const MISTRAL_PARSER_PREFIX = "mistral/";
+
+/** What the coverage record calls a Mistral-read unit, per format. */
+function coverageKindFor(kind: DocumentKind): "page" | "slide" | "document" {
+  if (kind === "pptx") return "slide";
+  if (kind === "pdf") return "page";
+  return "document";
+}
+
+/**
+ * Try the extraction vendor. `null` means "use the local extractors" and never means "this file
+ * is bad" — a verdict about the FILE is only ever reached by the lane that actually read it.
+ *
+ * 🔴 IT RETURNS A WHOLE `ParseOutcome` RATHER THAN FILLING IN THE SHARED LOCALS ABOVE. The
+ * alternative — set `text`/`model`/`coverage` and fall through the format chain — would put the
+ * vendor inside the definite-assignment chain that every existing format depends on, so a mistake
+ * here could change what a CSV does. This way the local lanes are byte-for-byte what they were.
+ */
+async function parseWithMistral(
+  bytes: Uint8Array,
+  fileName: string,
+  mimeType: string,
+  kind: DocumentKind,
+): Promise<ParseOutcome | null> {
+  const outcome = await readWithMistral(bytes, fileName, mimeType);
+  if (!outcome.ok) {
+    // `not-configured` is the ordinary state of a local checkout and of any preview deploy without
+    // the key, so it is not worth a line in the log; everything else is a provider fact worth
+    // seeing next to the document it happened to.
+    if (outcome.reason !== "not-configured") {
+      console.warn(
+        JSON.stringify({
+          event: "mistral_fell_back",
+          kind,
+          ms: outcome.durationMs,
+          reason: outcome.reason,
+        }),
+      );
+    }
+    return null;
+  }
+
+  const model = modelFromMistral(outcome.response, kind, titleFromMistral(outcome.response));
+  if (!model) {
+    console.warn(JSON.stringify({ event: "mistral_unmappable", kind, pages: outcome.response.pages.length }));
+    return null;
+  }
+
+  const unitsRead = new Set(
+    model.blocks.filter((block) => block.text.trim() || block.table).map((block) => block.unit),
+  ).size;
+  const figures = model.blocks.filter((block) => block.kind === "figure").length;
+
+  let coverage = mistralCoverage({
+    figures,
+    unitKind: coverageKindFor(kind),
+    units: model.units.length,
+    unitsRead,
+  });
+  // The vendor's own answer, so a silent model change on their side is visible on ours. Recorded
+  // even when it differs from what we asked for — especially then.
+  coverage = { ...coverage, parserVersion: `${MISTRAL_PARSER_PREFIX}${outcome.response.model || "unknown"}` };
+
+  const full = documentToText(model);
+  const capped = capText(full, TEXT_CAP);
+  coverage = withTruncation(coverage, extractCut(TEXT_CAP, capped.text.length, full.length));
+  const text = capped.text.trim();
+
+  const document: ParsedDocument = {
+    coverage,
+    kind,
+    model,
+    readBy: `${MISTRAL_PARSER_PREFIX}${outcome.response.model || "unknown"}`,
+    skippedFigures: 0,
+    text,
+    title: model.title,
+  };
+
+  // The same refusal the local lanes make, for the same reason: a document with structure and no
+  // readable text is worth remembering even though there is nothing to show a student yet.
+  if (!text) {
+    return hasStructure(model) ? { document, kind, ok: false, reason: "no-text" } : null;
+  }
+  return { document, ok: true };
+}
+
+/**
  * Read a document.
  *
  * `bytes` may be DETACHED by this call when the file is a PDF — pdf.js takes
@@ -232,6 +330,21 @@ export async function parseDocument(
   // name has lost its extension).
   const kind = kindFor(fileName, mimeType) ?? sniffKind(bytes);
   if (!kind) return { ok: false, reason: "unsupported" };
+
+  // 🔴 THE VENDOR GETS FIRST REFUSAL, AND A REFUSAL COSTS NOTHING. Extraction is infrastructure
+  // (owner, 2026-08-13): Mistral answers "what is in this document and where", and everything
+  // below this line stays exactly as it was for the cases it declines. `null` means "not
+  // configured, or it did not work" — never a verdict about the file — so the local extractors
+  // run unchanged and an upload can never fail because a provider did.
+  //
+  // 🔴 BEFORE THE `image` GUARDS ON PURPOSE. Those guards exist to protect the Gemini call; a
+  // provider that does not need them must not be gated by them. `mistralHandles` excludes images
+  // anyway, so today this is ordering that documents an intent rather than ordering that changes
+  // an outcome — which is precisely when it is cheap to get right.
+  if (mistralHandles(kind)) {
+    const read = await parseWithMistral(bytes, fileName, mimeType, kind);
+    if (read) return read;
+  }
 
   if (kind === "image") {
     if (bytes.byteLength > VISION_MAX_BYTES) return { ok: false, reason: "too-large-image" };

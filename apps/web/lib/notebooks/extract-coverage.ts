@@ -13,6 +13,7 @@
 
 import {
   buildCoverage,
+  type CoverageUnitKind,
   type ExtractionCoverage,
   type FigureCoverage,
   type FigureSkipReason,
@@ -408,5 +409,45 @@ export function singleUnitCoverage(input: {
     }),
     "document",
     1,
+  );
+}
+
+/**
+ * What a Mistral read actually covered.
+ *
+ * 🔴 EVERY UNIT IT READ IS COUNTED AS `vision`, NOT `native`, AND THAT IS THE TRUTHFUL WORD.
+ * Mistral Document AI reads the RENDERED page — it is an optical model, not a text-layer
+ * extractor. Counting its output as native would claim the file's own text layer was used, which
+ * is the claim a later reader would rely on when deciding whether a page needs a vision pass at
+ * all. The distinction is the whole reason the two counters exist.
+ *
+ * 🔴 A LOCATED FIGURE IS `not-examined`, NEVER `described`. Mistral says where the pictures are;
+ * it does not say what they show. `not-examined` means "nobody looked, and nobody decided not to",
+ * which is exactly right and is what lets a later vision pass enrich this document instead of
+ * believing the work was already done. Calling them described would put the lie one level down.
+ */
+export function mistralCoverage(input: {
+  unitKind: CoverageUnitKind;
+  units: number;
+  unitsRead: number;
+  figures: number;
+  truncation?: readonly TruncationRecord[];
+}): ExtractionCoverage {
+  const read = Math.max(0, Math.min(input.unitsRead, input.units));
+  return orUnaccounted(
+    buildCoverage({
+      figures:
+        input.figures > 0
+          ? { described: 0, found: input.figures, reasons: { "not-examined": input.figures }, skipped: input.figures }
+          : undefined,
+      truncation: input.truncation,
+      unitKind: input.unitKind,
+      units: input.units,
+      unitsNative: 0,
+      unitsUnread: input.units - read,
+      unitsVision: read,
+    }),
+    input.unitKind,
+    input.units,
   );
 }
