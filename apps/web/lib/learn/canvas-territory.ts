@@ -51,6 +51,19 @@ export interface CanvasTerritory {
    *  rows that already exist and picks up any enrichment they have gained since. */
   objects: KnowledgeObject[];
   /**
+   * The rules under which this canvas's material has already been read for MECHANISMS.
+   *
+   * 🔴 ITS OWN KEY, BESIDE THE PAIR LANE'S, BECAUSE THE TWO LANES ARE INDEPENDENT AND THEIR MARKERS
+   * MUST BE TOO. Reading mechanisms is not a fallback for the pair lane failing — a document can
+   * carry a glossary and a mechanism, and finding one says nothing about the other. Sharing one
+   * marker would mean the first lane to run silenced the second for ever.
+   *
+   * 🔴 AND IT IS A RULES FINGERPRINT, NOT A BOOLEAN, for the same reason `emptyUnder` is: a document
+   * that yielded no mechanisms deserves another read when the extractor improves, and a flag would
+   * lock it out permanently. Absent means never read.
+   */
+  mechanismsUnder?: string;
+  /**
    * Set ONLY when a completed build produced nothing — the rules it produced nothing UNDER.
    *
    * 🔴🔴 THIS EXISTS BECAUSE "FOUND NOTHING" WAS INDISTINGUISHABLE FROM "NEVER TRIED", AND THE
@@ -205,7 +218,13 @@ export function materialSubject(librarySourceIds: readonly string[]): string {
  */
 export function readTerritory(value: unknown): CanvasTerritory | null {
   if (typeof value !== "object" || value === null) return null;
-  const row = value as { topic?: unknown; identityVersion?: unknown; objects?: unknown; emptyUnder?: unknown };
+  const row = value as {
+    topic?: unknown;
+    identityVersion?: unknown;
+    objects?: unknown;
+    emptyUnder?: unknown;
+    mechanismsUnder?: unknown;
+  };
   if (typeof row.topic !== "string" || !row.topic.trim()) return null;
   if (typeof row.identityVersion !== "number" || !Number.isFinite(row.identityVersion)) return null;
   if (!Array.isArray(row.objects)) return null;
@@ -214,8 +233,11 @@ export function readTerritory(value: unknown): CanvasTerritory | null {
   // 🔴 A NON-EMPTY LIST NEVER CARRIES THE STAMP. Both together would be a row claiming to be both a
   // territory and the absence of one, and every consumer would have to pick which half to believe.
   if (row.objects.length > 0 && emptyUnder) return null;
+  const mechanismsUnder =
+    typeof row.mechanismsUnder === "string" && row.mechanismsUnder.trim() ? row.mechanismsUnder : null;
   return {
     ...(emptyUnder ? { emptyUnder } : {}),
+    ...(mechanismsUnder ? { mechanismsUnder } : {}),
     identityVersion: row.identityVersion,
     objects: row.objects as KnowledgeObject[],
     topic: row.topic,
