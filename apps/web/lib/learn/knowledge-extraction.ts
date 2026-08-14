@@ -36,6 +36,7 @@ import {
 
 import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } from "./knowledge-identity";
 import type { KnowledgeObject } from "./knowledge-types";
+import { subjectColumnOf } from "./table-subject-column";
 
 /** Stamped onto every object, so a corpus extracted under older rules can be found and redone
  *  rather than silently mixed in with a newer one. Bump it whenever the rules below change what
@@ -68,6 +69,15 @@ export type ExtractionRefusalReason =
    *  two perfectly real relationships, and a later lane that can say WHICH columns pair and why
    *  should extract both. What is refused here is guessing, not the table. */
   | "table-not-pairs"
+  /** A grid wide enough to hold relations, but nothing in it says what each row is ABOUT.
+   *
+   *  🔴 DISTINCT FROM `table-not-pairs`, AND THE DIFFERENCE IS WHAT WE LEARNED. `table-not-pairs`
+   *  said "this lane only reads two columns" — a statement about the extractor. This says "this
+   *  grid is keyed by a date or a counter, or no column holds distinct values" — a statement about
+   *  the DOCUMENT, and the honest answer for a timetable, an agenda or a numeric matrix. Collapsing
+   *  them would hide which grids are refused because they carry no subject and which are refused
+   *  because nobody built the lane. */
+  | "table-no-subject"
   /** A grid of pairs, but every row was unusable — empty cells, or cells the length of essays. */
   | "table-rows-unusable";
 
@@ -165,11 +175,17 @@ function pairsFromTable(
   const table = { headerRows: content.headerRows, rows: content.rows };
   const width = Math.max(0, ...table.rows.map((row) => row.length));
 
-  // 🔴 EXACTLY TWO COLUMNS, AND THE STRICTNESS IS THE POINT. A three-column schedule — date,
-  // topic, room — would yield "8-17 ↔ Exam 1", which is a calendar entry wearing an association's
-  // clothes, and a student would then be drilled on it. When a wider grid genuinely holds pairs,
-  // the right answer is a rule that can say WHICH two columns and why, not a default to the first
-  // two. Refusing until then costs a missed glossary; guessing costs a false one.
+  // 🔴 A WIDER GRID IS NOW READ, AND THE OLD COMMENT HERE EXPLAINED EXACTLY WHAT IT TOOK. It said:
+  // *"a three-column schedule — date, topic, room — would yield '8-17 ↔ Exam 1', which is a calendar
+  // entry wearing an association's clothes... the right answer is a rule that can say WHICH two
+  // columns and why, not a default to the first two."* `subjectColumnOf` is that rule, and the
+  // schedule is still refused — see `table-subject-column.ts`, where the timetable is the
+  // load-bearing test.
+  //
+  // 🔴 THE TWO-COLUMN PATH BELOW IS UNCHANGED ON PURPOSE. It does not require a distinct first
+  // column and never has; routing it through the subject rule would start refusing glossaries that
+  // repeat a term across rows, which is a regression dressed as a generalisation.
+  if (width > 2) return relationsFromWideTable(unit, content, table);
   if (width !== 2) {
     return {
       objects: [],
@@ -247,6 +263,113 @@ function pairsFromTable(
       objects,
       refusal: {
         detail: "This table has two columns but no row that could be read as a usable pair.",
+        reason: "table-rows-unusable",
+        unitId: unit.id,
+      },
+    };
+  }
+
+  return { objects };
+}
+
+/**
+ * An n-column grid becomes n−1 named relations per row — the lane the drug chart needed.
+ *
+ * 🔴 ONE OBJECT PER RELATION, NEVER ONE PER ROW. A row reading `lisinopril | ACE inhibitor |
+ * hypertension | cough | pregnancy | potassium` is not one fact. It is five, and a learner can
+ * hold any of them without the others. Storing the row would make it a single indivisible piece of
+ * knowledge, so nothing could ever discover that someone knows the class and not the monitoring
+ * parameter — the same reasoning `CausalRelation` gives for storing edges rather than mechanisms.
+ *
+ * 🔴 THE RELATION IS NAMED BY THE SOURCE'S OWN HEADER, NEVER BY AN INTERPRETATION OF IT (owner,
+ * 2026-08-14). A column headed `Class` yields the relation `class`. It does NOT yield `is_a`:
+ * deciding that "class" means class-membership is subject-matter inference, it would need a
+ * hand-maintained vocabulary per field, and the same code has to read `Case | Holding |
+ * Jurisdiction` and `Material | Yield strength | Density`. An interpretation may be attached later
+ * as a clearly-marked reading, and nothing downstream may branch on it.
+ *
+ * 🔴 THE TYPE STAYS `association` FOR THE SAME REASON. Calling a `Class` column `classification`
+ * would be that same inference wearing a different field's name.
+ */
+function relationsFromWideTable(
+  unit: CanonicalSourceUnit,
+  content: { columns?: readonly string[] },
+  table: { headerRows: number; rows: readonly (readonly string[])[] },
+): { objects: KnowledgeObject[]; refusal?: ExtractionRefusal } {
+  const dataRows = table.rows.slice(Math.max(0, table.headerRows));
+  const width = Math.max(0, ...table.rows.map((row) => row.length));
+  const subject = subjectColumnOf(dataRows, width);
+
+  if (!subject) {
+    return {
+      objects: [],
+      refusal: {
+        detail: `This ${width}-column grid is keyed by a date or a counter, or no column holds a distinct value on every row, so nothing states what each row is about.`,
+        reason: "table-no-subject",
+        unitId: unit.id,
+      },
+    };
+  }
+
+  // Same resolution as the two-column lane: `columns` first, because a table split across pages
+  // prints its header once and every continuation fragment would otherwise be unnamed.
+  const columnNames = content.columns?.length
+    ? content.columns
+    : table.headerRows > 0
+      ? table.rows[0]
+      : undefined;
+  const subjectHeader = columnNames?.[subject.index];
+  const subjectRole = subjectHeader ? normalizeForIdentity(subjectHeader) : null;
+  const objects: KnowledgeObject[] = [];
+
+  for (const [rowIndex, row] of dataRows.entries()) {
+    const left = (row[subject.index] ?? "").trim();
+    if (!left || left.length > MAX_CELL_CHARS) continue;
+
+    for (let column = 0; column < width; column += 1) {
+      if (column === subject.index) continue;
+      const right = (row[column] ?? "").trim();
+      if (!right || right.length > MAX_CELL_CHARS) continue;
+      // A cell repeating the subject states nothing; usually a spanned heading filled across.
+      if (left === right) continue;
+
+      const objectHeader = columnNames?.[column];
+      const objectRole = objectHeader ? normalizeForIdentity(objectHeader) : null;
+      const relationKind = relationKindFromHeader(
+        subjectHeader && objectHeader ? [subjectHeader, objectHeader] : undefined,
+      );
+      // 🔴 THE COLUMN IS IN THE ID, so two relations from one row are two objects rather than one
+      // overwriting the other — and so "where did this come from" resolves to a cell.
+      const id = `${unit.id}:r${rowIndex + 1}c${column + 1}`;
+      const object: KnowledgeObject = {
+        derivation: "table-row",
+        extractionVersion: EXTRACTION_VERSION,
+        id,
+        pair: {
+          id,
+          left,
+          right,
+          ...(subjectRole && objectRole ? { leftRole: subjectRole, rightRole: objectRole } : {}),
+          ...(headingOf(unit) ? { groupLabel: headingOf(unit)! } : {}),
+        },
+        sourceAnchors: [anchorForRow(unit, left, right)],
+        // 🔴 THE COLUMN NAME IS IN THE STATEMENT WHEN THE GRID PRINTED ONE, because a wide table
+        // gives one subject SEVERAL relations and `lisinopril — cough` alone cannot say which of
+        // the five it is. Without the header there is nothing honest to add, so nothing is added.
+        statement: objectHeader ? `${left} — ${objectHeader.trim()}: ${right}` : `${left} — ${right}`,
+        type: "association",
+        unanchoredProvenance: [],
+        ...(relationKind ? { relationKind } : {}),
+      };
+      objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+    }
+  }
+
+  if (objects.length === 0) {
+    return {
+      objects,
+      refusal: {
+        detail: `This ${width}-column grid names a subject column but no row could be read as a usable relation.`,
         reason: "table-rows-unusable",
         unitId: unit.id,
       },
