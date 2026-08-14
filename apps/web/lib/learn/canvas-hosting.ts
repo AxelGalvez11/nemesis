@@ -176,18 +176,66 @@ export function composeSurface(input: {
    * task that has quietly stopped making room for a document that IS there.
    */
   hasReadingMaterial?: boolean;
+  /**
+   * The learner has asked for something to read, in this session.
+   *
+   * 🔴🔴 THE ONE THING THAT LETS THE DOCUMENT PAINT WHILE A TASK IS UP, AND IT HAS TO BE ASKED FOR.
+   * *"Never explain the material merely because it exists. Explain what the learner needs because of
+   * what they just demonstrated."* — owner, 2026-08-14, after meeting his own canvas: it asked a
+   * real question and then printed **"What Acceptance B1 Covers"** beneath it, several paragraphs
+   * telling him what the document he had just uploaded contained.
+   *
+   * 🔴 SESSION STATE, PASSED IN, NEVER DURABLE — the same shape as `correctionsShown`. It is a fact
+   * about what the RUNTIME has been asked for, never a claim about the learner, and it resets when
+   * the session does. Deriving it from the blocks themselves is impossible: a summary the learner
+   * requested and a summary nobody asked for are the same rows.
+   *
+   * Absent means "they have not asked", which is the suppressing direction and the honest default.
+   */
+  learnerAskedForContent?: boolean;
 }): CanvasRegions {
-  const { canvasState, hasReadingMaterial = true, policyPresenting } = input;
+  const {
+    canvasState,
+    hasReadingMaterial = true,
+    learnerAskedForContent = false,
+    policyPresenting,
+  } = input;
   const evidenceStage = isEvidenceStage(canvasState);
   const reading = READING_STATES.includes(canvasState);
   const policy = policyPresenting;
 
   return {
-    // 🔴 A hosted task does NOT suppress reading. This single `true` is the behaviour change of
-    // 7b: material the policy cannot represent stays on screen instead of being hidden behind a
-    // runtime that took the page (§14.1 — the answer to zero owned canvases is composition, never
-    // a lower coverage bar).
-    document: reading || PRE_CONTENT_STATES.includes(canvasState),
+    // 🔴🔴 A HOSTED TASK NOW *DOES* SUPPRESS READING, AND THIS REVERSES A DELIBERATE DECISION. The
+    // comment here used to read: *"A hosted task does NOT suppress reading… material the policy
+    // cannot represent stays on screen instead of being hidden behind a runtime that took the
+    // page."* That was written to answer §12's measured "the policy owned 0 of 6 canvases", and the
+    // reasoning was sound for the problem it had.
+    //
+    // The owner has overturned it, having met the result: his canvas asked *"What follows from
+    // increasing resistance, and why?"* and then printed **"What Acceptance B1 Covers"** underneath,
+    // several paragraphs telling him what the document he had just uploaded contained. His rule:
+    //
+    //     "Never explain the material merely because it exists. Explain what the learner needs
+    //      because of what they just demonstrated."
+    //     "The source is the knowledge substrate, not the page layout."
+    //     "Could the learner meaningfully perform the current cognitive action without this text?
+    //      If yes, do not render the text."
+    //
+    // 🔴 THE OLD CONCERN IS ANSWERED RATHER THAN IGNORED. Hiding material was thought to make it
+    // unreachable; the owner's answer is that this is the intended behaviour — *"Nemesis should be
+    // willing to read 70 slides and initially show the learner one question"* — and the material
+    // stays reachable through its sources and by asking. Compression around the learner IS the
+    // product; a document rendered in full because it exists is the thing being replaced.
+    //
+    // 🔴 AND IT IS NOT AN UNCONDITIONAL SUPPRESSION, because "Summarize this" writes into the same
+    // blocks. Content the learner ASKED for still paints — see `learnerAskedForContent`. Suppressing
+    // that too would answer a request with a blank page, which is a different defect wearing this
+    // fix's clothes.
+    // 🔴 THE READING BODY IS GATED; THE PRE-CONTENT SURFACE IS NOT. A canvas that has not begun is
+    // not "material competing with a task" — it is the canvas itself, with its composer. Gating it
+    // too was my first version and it took three guards red, which is exactly what they are for.
+    document:
+      PRE_CONTENT_STATES.includes(canvasState) || (reading && (!policy || learnerAskedForContent)),
     // 🔴 THE LEGACY ARM IS NOW A FALLBACK: it paints only where the policy has nothing to say.
     //
     // The exclusion is still one-directional and still expressed in exactly one place — the
