@@ -1,40 +1,28 @@
 "use client";
 
-// The app's landing surface: one composer, and the learner's sessions below it.
+// The app's landing surface: a question, a composer, and nothing else.
 //
 // 🔴 NOT A DASHBOARD. No "Good afternoon", no streak, no "4 sessions today", no cards due. The
 // first thing someone sees is the place they type, because the product's whole claim is that
 // they should not have to decide which tool they want before they can start. Type, upload or
 // record — all three create a Canvas session, and that is the only entry path there is.
 //
-// 🔴 AND THIS IS THE LIBRARY. There is no /library navigation item any more, because the
-// learner's durable collection is their Canvas sessions, not a pile of PDFs and notes. Scrolling
-// down IS the library experience; a second page showing the same information differently is
-// exactly what was removed.
+// 🔴 AND NOT A FILE BROWSER EITHER (owner 2026-08-14, marking a screenshot green above the
+// composer and red below it). This surface used to list every canvas the learner had ever made,
+// under the reasoning that their durable collection IS their canvases so the landing page should
+// be that collection. Two attempts at it — a list below a fold, then a list lifted onto the first
+// screen — were both answering the wrong question. A landing page that shows a learner their
+// backlog invites them to browse it; the point of the product is that they arrive with something
+// to learn and start immediately.
 //
-// The composer MORPHS rather than being replaced (§24). It is one fixed element whose position
-// transitions from the centre of the first screen to the bottom dock as the sessions come into
-// view — not a big one that disappears and a small one that appears, which is two components
-// pretending to be continuous and always shows the seam.
+// So what remains is what the owner circled: the question, the composer, and the one line saying
+// what the composer accepts. Everything else was removed rather than rearranged.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Ellipsis, Folder as FolderIcon, Inbox, PanelsTopLeft, Pin, PinOff, Trash2, type LucideIcon } from "lucide-react";
-
 import { Codicon } from "@/components/desktop-ui/codicon";
-import {
-  createFolder,
-  deleteCanvas,
-  listCanvases,
-  listFolders,
-  setCanvasFolder,
-  setCanvasPinned,
-  type CanvasSummary,
-  type Folder,
-} from "@/lib/learn/canvas-store";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
-import { cn } from "@/lib/utils";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { putPending } from "./pending-attachment";
@@ -43,8 +31,6 @@ import { useCanvasDictation } from "./use-canvas-dictation";
 
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const router = useRouter();
-  const [sessions, setSessions] = useState<CanvasSummary[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
   const [text, setText] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   /** The whole page is a drop target, not just the composer — the copy has always said "drop a
@@ -76,16 +62,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
       document.removeEventListener("keydown", onKey);
     };
   }, [addOpen]);
-
-  const refresh = useCallback(async () => {
-    const [rows, dirs] = await Promise.all([listCanvases(userId), listFolders(userId)]);
-    setSessions(rows);
-    setFolders(dirs);
-  }, [userId]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   // Dictation writes into the same box typing does — the composer has one value, whatever produced
   // it. Keyed on both flags so the final transcript still lands after recognition stops.
@@ -136,26 +112,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    *  canvas: speech recognition mishears, and auto-submitting would open a canvas on a topic the
    *  learner never said. */
   const acceptDictation = () => dictation.stop();
-
-  // 🔴 THE TITLE FILTER WENT WITH THE SEARCH BOX. Nothing could set a query once the field was
-  // removed, so it was a `useMemo` that always returned `sessions` — dead code kept "for later",
-  // which is how a surface accumulates machinery nobody can reach. When finding a canvas becomes a
-  // real problem it comes back as one control, with the filter next to it.
-  const filtered = sessions;
-
-  const pinned = filtered.filter((session) => session.pinnedAt);
-  const unpinned = filtered.filter((session) => !session.pinnedAt);
-  const byFolder = new Map<string, CanvasSummary[]>();
-  const loose: CanvasSummary[] = [];
-  for (const session of unpinned) {
-    if (session.folderId) byFolder.set(session.folderId, [...(byFolder.get(session.folderId) ?? []), session]);
-    else loose.push(session);
-  }
-
-  const act = async (job: Promise<unknown>) => {
-    await job;
-    await refresh();
-  };
 
   return (
     <main
@@ -372,86 +328,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           </p>
         </section>
 
-        {/* 🔴 NO SECTION HEADING AND NO SEARCH FIELD (owner 2026-08-14, pointing at both). The rows
-            ARE the section: "YOUR CANVASES" over a list of the learner's canvases names what is
-            already obvious, and a search box beside it is chrome for a problem nobody has at six
-            items. The reference's landing has neither — composer, then rows. */}
-        <section className="mt-8 w-full max-w-[768px]">
-
-          {/* 🔴 NO LONGER "Whatever you start above will appear here." (§46.5). That sentence
-              pointed at an element the learner is already looking at and explained where its
-              output would land — onboarding narration for a page with one composer on it. What
-              remains states the condition and nothing else; the heading above it already says
-              what is empty. */}
-          {sessions.length === 0 && (
-            <p className="mt-6 text-[length:var(--canvas-text-body)] text-(--ui-text-tertiary)">Nothing yet.</p>
-          )}
-
-          {pinned.length > 0 && (
-            <Group label="Pinned">
-              {pinned.map((session) => (
-                <SessionRow
-                  folders={folders}
-                  key={session.id}
-                  onDelete={() => void act(deleteCanvas(userId, session.id))}
-                  onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
-                  onOpen={() => router.push(`/learn?c=${session.id}`)}
-                  onPin={() => void act(setCanvasPinned(userId, session.id, false))}
-                  pinned
-                  session={session}
-                />
-              ))}
-            </Group>
-          )}
-
-          {folders
-            .filter((folder) => (byFolder.get(folder.id) ?? []).length > 0)
-            .map((folder) => (
-              <Group key={folder.id} label={folder.name}>
-                {(byFolder.get(folder.id) ?? []).map((session) => (
-                  <SessionRow
-                    folders={folders}
-                    key={session.id}
-                    onDelete={() => void act(deleteCanvas(userId, session.id))}
-                    onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
-                    onOpen={() => router.push(`/learn?c=${session.id}`)}
-                    onPin={() => void act(setCanvasPinned(userId, session.id, true))}
-                    session={session}
-                  />
-                ))}
-              </Group>
-            ))}
-
-          {loose.length > 0 && (
-            <Group label={folders.length > 0 ? "Unfiled" : null}>
-              {loose.map((session) => (
-                <SessionRow
-                  folders={folders}
-                  key={session.id}
-                  onDelete={() => void act(deleteCanvas(userId, session.id))}
-                  onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
-                  onOpen={() => router.push(`/learn?c=${session.id}`)}
-                  onPin={() => void act(setCanvasPinned(userId, session.id, true))}
-                  session={session}
-                />
-              ))}
-            </Group>
-          )}
-
-          {sessions.length > 0 && (
-            <button
-              className="mt-8 flex items-center gap-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
-              onClick={() => {
-                const name = window.prompt("Folder name");
-                if (name?.trim()) void act(createFolder(userId, name.trim()));
-              }}
-              type="button"
-            >
-              <Codicon name="new-folder" size="0.75rem" />
-              New folder
-            </button>
-          )}
-        </section>
       </div>
 
       {/* An interrupted recording is offered back here, above the composer — the one place the
@@ -473,153 +349,4 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 
     </main>
   );
-}
-
-function Group({ label, children }: { label: string | null; children: React.ReactNode }) {
-  return (
-    <div className="mt-7">
-      {label && <p className="mb-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">{label}</p>}
-      <div>{children}</div>
-    </div>
-  );
-}
-
-/** One session. Minimal on purpose (§26): a name, when it was last worked, and how many things
- *  are worth checking. NOT 87% mastery, 32 flashcards, 15 minutes studied, 7-day streak — that
- *  is a dashboard pretending to be progress, and it is not the product. */
-function SessionRow({
-  session,
-  folders,
-  pinned,
-  onOpen,
-  onPin,
-  onMove,
-  onDelete,
-}: {
-  session: CanvasSummary;
-  folders: Folder[];
-  pinned?: boolean;
-  onOpen: () => void;
-  onPin: () => void;
-  onMove: (folderId: string | null) => void;
-  onDelete: () => void;
-}) {
-  const [menu, setMenu] = useState(false);
-
-  return (
-    <div className="group relative -mx-3 flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-(--ui-bg-tertiary)/60">
-      <button className="flex min-w-0 flex-1 items-center gap-2.5 text-left" onClick={onOpen} type="button">
-        {/* Same pairing as the Library's list (§38.3): a row says what kind of thing it is, and
-            nothing that would have to be derived from data this app does not reliably hold. */}
-        <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={2} />
-        <span className="min-w-0 flex-1">
-          <p className="truncate text-[length:var(--canvas-text-body)] text-(--ui-text-primary)">{session.title || "New canvas"}</p>
-          <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">{describeWhen(session.updatedAt)}</p>
-        </span>
-        {pinned && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={2} />}
-      </button>
-
-      {/* 🔴 THE SAME DEFECT THE LIBRARY HAD, ON THE SURFACE THE LEARNER ACTUALLY LANDS ON (§38.3).
-          This carried `opacity-0` with `group-hover:opacity-100`, so pin, move and delete were
-          invisible until the pointer crossed the row — and absent entirely on a touch screen. The
-          Library's list was measured and fixed first; this is the same list of the same objects,
-          one surface earlier, and fixing only one would have left the owner looking at the
-          unfixed one. The label names ITS row rather than being the same words on every row. */}
-      <button
-        aria-label={`Actions for ${session.title || "New canvas"}`}
-        className="shrink-0 rounded-md p-1 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:bg-(--ui-bg-tertiary) focus-visible:text-(--ui-text-primary)"
-        onClick={() => setMenu((current) => !current)}
-        type="button"
-      >
-        <Ellipsis size={14} strokeWidth={2} />
-      </button>
-
-      {menu && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setMenu(false)} />
-          <div className="absolute right-2 top-9 z-40 w-[13rem] rounded-xl bg-(--ui-bg-elevated) p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
-            <RowAction
-              icon={pinned ? PinOff : Pin}
-              label={pinned ? "Unpin" : "Pin to top"}
-              onClick={() => {
-                setMenu(false);
-                onPin();
-              }}
-            />
-            {folders.map((folder) => (
-              <RowAction
-                icon={FolderIcon}
-                key={folder.id}
-                label={`Move to ${folder.name}`}
-                onClick={() => {
-                  setMenu(false);
-                  onMove(folder.id);
-                }}
-              />
-            ))}
-            {session.folderId && (
-              <RowAction
-                icon={Inbox}
-                label="Remove from folder"
-                onClick={() => {
-                  setMenu(false);
-                  onMove(null);
-                }}
-              />
-            )}
-            <RowAction
-              danger
-              icon={Trash2}
-              label="Delete"
-              onClick={() => {
-                setMenu(false);
-                onDelete();
-              }}
-            />
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** 🔴 `icon` IS REQUIRED, NOT OPTIONAL (§38.3). An optional one is an action that can go
- *  undecorated, which is how this menu came to be four lines of plain text. */
-function RowAction({
-  danger,
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  danger?: boolean;
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={cn(
-        "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--canvas-text-small)] transition-colors hover:bg-(--ui-bg-tertiary)",
-        danger ? "text-(--ui-text-tertiary) hover:text-red-500" : "text-(--ui-text-secondary)",
-      )}
-      onClick={onClick}
-      type="button"
-    >
-      <Icon className="shrink-0 opacity-70" size={13} strokeWidth={2} />
-      <span className="truncate">{label}</span>
-    </button>
-  );
-}
-
-/** Relative, and honest about not knowing. */
-function describeWhen(iso: string): string {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return "";
-  const minutes = Math.floor((Date.now() - then) / 60_000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return days === 1 ? "Yesterday" : `${days} days ago`;
 }

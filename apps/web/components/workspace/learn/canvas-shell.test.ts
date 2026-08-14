@@ -296,48 +296,59 @@ test("🔴 §46.5: the landing surface never tells the learner which way to scro
   }
 });
 
-test("🔴 §46.5: the canvases are ON the first screen — there is no fold to discover", () => {
-  // 🔴 THIS GUARD REPLACES ONE I WROTE THREE HOURS EARLIER, AND THE REPLACEMENT IS STRICTER.
-  // The old version asserted a 56px `--first-screen-lift` that left the canvases peeking above the
-  // fold, on the reasoning that §46.5 bans instructional scroll hints so the LAYOUT had to hint
-  // instead. The owner's answer to that: "remove the scrolldown to see canvases list". A sliver of
-  // a hidden list is still a hint about scrolling, just drawn instead of written — and the honest
-  // fix is not to hide the learner's own work in the first place.
+test("🔴 §46.5: the front door is the composer, and nothing is filed below it", () => {
+  // 🔴 THIS GUARD HAS NOW REPLACED TWO EARLIER ONES, AND THE HISTORY IS THE POINT.
+  //   v1 asserted a 56px `--first-screen-lift` that left the canvases peeking above the fold —
+  //      reasoning that §46.5 bans instructional scroll hints, so the LAYOUT had to hint instead.
+  //   v2 removed the fold and asserted the canvases sat ON the first screen.
+  //   v3 — this one — is what the owner actually wanted: no canvas list on this surface at all.
+  //      They marked a screenshot green around the greeting and composer, red around the list:
+  //      "i dont want this at all. i dont want whats in red, only whats in green".
   //
-  // So the property is now the strong form: the front door does not build a full-viewport screen
-  // with content underneath it at all.
+  // Both earlier versions were rearranging a thing that should not have been there. A landing
+  // page that shows a learner their backlog invites them to browse it, and the product's claim is
+  // that they arrive with something to learn and begin immediately.
   const source = read("canvas-home.tsx");
   const copy = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-  assert.equal(
-    /--first-screen-lift/.test(copy),
-    false,
-    "the lift is back — that variable exists only to hide the canvases below a fold and peek at them",
-  );
-  assert.equal(
-    /\bh-full\b[^"]*\bmin-h-\[26rem\]/.test(copy),
-    false,
-    "the first screen is a full viewport again, which puts the learner's canvases back below it",
-  );
-
-  // 🔴 AND THE DOCKING MACHINERY MUST NOT COME BACK WITH IT. The composer morphed between a centred
-  // and a docked position as the page scrolled; with nothing below the fold there is no scroll to
-  // track and no second position. A moving part kept for a problem the page no longer has is how
-  // the fold gets quietly reintroduced to justify it.
-  for (const dead of ["DOCK_AFTER_PX", "setDocked", "docked ?"]) {
+  // 🔴 THE PROPERTY IS "NOTHING ENUMERATES THE LEARNER'S CANVASES HERE", NOT "THE WORD sessions IS
+  // ABSENT". A guard matching one identifier would go green the moment the list came back under a
+  // different name, which is precisely how it would come back.
+  for (const [pattern, why] of [
+    [/\blistCanvases\b/, "the front door fetches the canvas list again"],
+    [/\blistFolders\b/, "the front door fetches folders again — folders exist to organise a list"],
+    [/\.map\(\s*\(?\s*session/, "the front door renders a row per canvas again"],
+    [/\bpinnedAt\b/, "pinning is a property of a list, and there is no list here"],
+  ] as const) {
     assert.equal(
-      copy.includes(dead),
+      pattern.test(copy),
       false,
-      `${dead} is back — the composer only needs two positions if something is hidden below the fold`,
+      `${why}. §46.5 v3: the landing surface is the greeting, the composer and its hint line — nothing else.`,
     );
   }
 
-  // The composer is in normal flow, under the greeting, with the rows under it.
+  // 🔴 AND THE FOLD MACHINERY MUST NOT RETURN WITH IT. With nothing below the composer there is no
+  // scroll to track and no second position to morph into. A moving part kept for a problem the
+  // page no longer has is how the fold gets quietly reintroduced to justify it.
+  for (const dead of ["--first-screen-lift", "DOCK_AFTER_PX", "setDocked", "docked ?"]) {
+    assert.equal(
+      copy.includes(dead),
+      false,
+      `${dead} is back — that machinery only exists to hide something below a fold`,
+    );
+  }
   assert.equal(
     /pointer-events-none absolute inset-x-0 z-30/.test(copy),
     false,
-    "the composer is floating over the page again instead of sitting in the column with the rows",
+    "the composer is floating over the page again instead of sitting in the column",
   );
+
+  // 🔴 AND THE GREEN HALF MUST STILL BE THERE. Every assertion above is satisfied by an empty
+  // file, which is the failure mode this repo has already met: a guard that only forbids passes
+  // perfectly against a deleted feature. So the surface must still hold what the owner kept.
+  assert.ok(/What are you working on\?/.test(source), "the greeting is gone");
+  assert.ok(/ASK_PLACEHOLDER|Ask Nemesis/.test(source), "the composer is gone");
+  assert.ok(/CanvasRecorder/.test(source), "dictation and recording left the composer");
 });
 
 test("🔴 §46.3: the Canvas has ONE type scale, and it has five steps", () => {
