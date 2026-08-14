@@ -66,6 +66,20 @@ export interface ShellNavigationInput {
 export interface ShellNavigation {
   readonly focusMode: boolean;
   readonly sidebarVisible: boolean;
+  /**
+   * The collapsed sidebar is an ICON RAIL, not an empty column (owner 2026-08-14: "i want the
+   * sidebar to be like this, not fully hidden ... but it should not appear in canvas mode").
+   *
+   * 🔴 THIS IS A THIRD STATE, NOT A RENAME OF `navToggleShowing`. The file above documents two
+   * ways the rail leaves the screen — collapsed with a toggle, and suppressed with nothing — and
+   * calls them "identical in a screenshot". A rail is the case where it does NOT leave: the
+   * destinations stay reachable in one press instead of two, and the column keeps occupying real
+   * layout, so nothing floats over the surface's top-left corner.
+   *
+   * 🔴 NEVER TOGETHER WITH THE FLOATING TOGGLE. The rail carries its own expand control, so both
+   * showing would put two "open the sidebar" affordances 40px apart.
+   */
+  readonly railVisible: boolean;
   /** The floating reopen control renders. */
   readonly navToggleShowing: boolean;
   /** Why the rail is off screen: a surface claimed the whole viewport, rather than a route being
@@ -98,9 +112,15 @@ export function shellNavigation({
     IMMERSIVE_ROUTES.has(route) ||
     (libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(route));
   const sidebarVisible = sidebarOpen && !focusMode;
+  // 🔴 A PHONE GETS NO RAIL. On a narrow viewport the sidebar is an OVERLAY, so a permanent
+  // 56px column would eat screen width from a surface that has none to spare and would sit under
+  // the overlay it is supposed to replace. The floating toggle stays the right answer there, which
+  // is why this is the only clause that keeps `navToggleShowing` alive.
+  const railVisible = !sidebarVisible && !focusMode && !narrowViewport;
   return {
     focusMode,
-    navToggleShowing: !sidebarVisible && !focusMode,
+    navToggleShowing: !sidebarVisible && !focusMode && !railVisible,
+    railVisible,
     sidebarVisible,
     surfaceOwnsExit: immersiveClaimed,
   };
@@ -125,7 +145,12 @@ export function shellNavigation({
  * whether it carries an exit and this function should not pretend otherwise.
  */
 export function navigationReachable(nav: ShellNavigation): boolean {
-  return nav.sidebarVisible || nav.navToggleShowing || nav.surfaceOwnsExit;
+  // 🔴 `railVisible` STRENGTHENS THIS CLAUSE, IT DOES NOT WIDEN IT. The rail IS navigation on
+  // screen — four destinations, one press each — so it satisfies the invariant more directly than
+  // `navToggleShowing`, which only promises a control that would reveal navigation. It is listed
+  // separately rather than folded into `sidebarVisible` because the two differ in what a learner
+  // can read: the rail shows glyphs, the sidebar shows labels.
+  return nav.sidebarVisible || nav.railVisible || nav.navToggleShowing || nav.surfaceOwnsExit;
 }
 
 /** The grandfathered case: an old-style immersive ROUTE, which asserts nothing about its exit. */

@@ -233,7 +233,7 @@ export function CanvasManager({
           <Search
             className="pointer-events-none absolute left-[9px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
             size={13}
-            strokeWidth={1.7}
+            strokeWidth={2}
           />
           <input
             aria-label="Search canvases"
@@ -252,7 +252,7 @@ export function CanvasManager({
           <ArrowUpDown
             className="pointer-events-none absolute left-[9px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
             size={13}
-            strokeWidth={1.7}
+            strokeWidth={2}
           />
           <select
             aria-label="Sort canvases"
@@ -273,7 +273,7 @@ export function CanvasManager({
           }}
           type="button"
         >
-          <FolderPlus size={13} strokeWidth={1.7} />
+          <FolderPlus size={13} strokeWidth={2} />
           New folder
         </button>
       </div>
@@ -307,7 +307,7 @@ export function CanvasManager({
                   }}
                   type="button"
                 >
-                  <FolderIcon size={13} strokeWidth={1.7} />
+                  <FolderIcon size={13} strokeWidth={2} />
                   {folders.find((entry) => entry.id === current.parentId)?.name ?? "…"}
                 </button>
               </>
@@ -318,7 +318,7 @@ export function CanvasManager({
               <>
                 <span aria-hidden="true">/</span>
                 <span className="flex items-center gap-1.5 px-[8px] py-[4px] text-(--ui-text-primary)">
-                  <FolderIcon size={13} strokeWidth={1.7} />
+                  <FolderIcon size={13} strokeWidth={2} />
                   {current.name}
                 </span>
               </>
@@ -327,7 +327,7 @@ export function CanvasManager({
               <>
                 <span aria-hidden="true">/</span>
                 <span className="flex items-center gap-1.5 px-[8px] py-[4px] text-(--ui-text-primary)">
-                  <Inbox size={13} strokeWidth={1.7} />
+                  <Inbox size={13} strokeWidth={2} />
                   Unfiled
                 </span>
               </>
@@ -372,7 +372,7 @@ export function CanvasManager({
               />
             ) : (
               <button className="flex flex-1 items-center gap-2 text-left" onClick={() => open(folder)} type="button">
-                <FolderIcon className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={1.7} />
+                <FolderIcon className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={2} />
                 <span className="truncate text-[14px] text-(--ui-text-primary)">{folder.name}</span>
               </button>
             )}
@@ -418,10 +418,10 @@ export function CanvasManager({
                     Nothing here is derived from the canvas's CONTENTS, because `canvas_sources` is
                     empty in production and a count over it would render 0 on a canvas that has
                     material attached (see the header note). */}
-                <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={13} strokeWidth={1.7} />
+                <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={13} strokeWidth={2} />
                 <span className="truncate text-[14px] text-(--ui-text-primary)">{canvas.title || "Untitled canvas"}</span>
                 {/* The learner's own mark, kept — the one honest per-canvas distinction there is. */}
-                {canvas.pinnedAt && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={1.8} />}
+                {canvas.pinnedAt && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={2} />}
               </button>
             )}
             <span className="w-[110px] shrink-0 text-right text-[13px] text-(--ui-text-quaternary)">
@@ -587,7 +587,7 @@ function ScopeTab({
       onClick={onClick}
       type="button"
     >
-      <Icon size={13} strokeWidth={1.7} />
+      <Icon size={13} strokeWidth={2} />
       {label}
     </button>
   );
@@ -636,7 +636,7 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name: string }) {
         }}
         type="button"
       >
-        <Ellipsis size={14} strokeWidth={1.8} />
+        <Ellipsis size={14} strokeWidth={2} />
       </button>
       {open && (
         <div className="absolute right-0 top-full z-40 mt-1 max-h-[260px] w-[190px] overflow-y-auto rounded-xl bg-(--ui-bg-elevated) p-1 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)">
@@ -656,7 +656,7 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name: string }) {
               }}
               type="button"
             >
-              <action.icon className="shrink-0 opacity-70" size={13} strokeWidth={1.7} />
+              <action.icon className="shrink-0 opacity-70" size={13} strokeWidth={2} />
               <span className="truncate">{action.label}</span>
             </button>
           ))}

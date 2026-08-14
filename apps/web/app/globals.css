@@ -14,6 +14,28 @@
 @config "../tailwind.config.ts";
 @plugin "@tailwindcss/typography";
 
+/* §46.4 — ICONS CARRY REAL WEIGHT.
+   🔴 CODICONS ARE A FONT, NOT SVG, SO THERE IS NO `stroke-width` TO RAISE. They are glyphs from
+   @vscode/codicons, drawn hairline-thin by design for a 12px editor gutter, and they are the
+   product's dominant icon system — 57 files render one. Painting a stroke along the glyph edge is
+   the only way to add weight without touching `font-size`, and font-size is explicitly not
+   available: §46.3 makes size a layout property, never an emphasis one, and growing these would
+   move every control they sit in.
+   🔴 THE VALUE IS SUB-PIXEL ON PURPOSE. The stroke is centred on the glyph outline, so it eats
+   inward as well as outward; past roughly half a pixel the counters in small glyphs (the hole in
+   a folder, the gap in a kebab) start closing and the icon reads as a blob at 13px. 0.4px is the
+   most weight these carry while every counter stays open at the smallest size in use.
+   Set as a variable so a surface that needs a different weight can override it rather than
+   redeclaring the rule. */
+[data-workspace],
+:root {
+  --icon-stroke-weight: 0.4px;
+}
+
+.codicon {
+  -webkit-text-stroke: var(--icon-stroke-weight) currentColor;
+}
+
 @keyframes nemesis-record-workspace-enter {
   from { opacity: 0; transform: translateY(2rem); }
   to { opacity: 1; transform: translateY(0); }

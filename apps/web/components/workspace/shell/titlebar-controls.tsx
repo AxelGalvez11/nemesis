@@ -34,7 +34,7 @@ export function TitlebarControls({ onToggleSidebar }: TitlebarControlsProps) {
             tabler's sidebar-with-an-arrow, which drew a second meaning ("expand") onto a control
             whose meaning is "the sidebar". Under §38.1 this toggle no longer appears inside a
             canvas at all; it is still the rail's icon everywhere the rail can be reached. */}
-        <PanelLeft size={14} strokeWidth={1.7} />
+        <PanelLeft size={14} strokeWidth={2} />
       </Button>
     </div>
   );
