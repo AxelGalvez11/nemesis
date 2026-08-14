@@ -33,7 +33,7 @@
 // theirs — ChatGPT's composer is a denser multi-row layout ours does not share the shape of, so
 // matching its every internal margin would be copying a number, not a proportion.
 //
-// 🔴 THE INPUT TEXT SIZE IS WRITTEN `text-[16px]`, NOT `text-[1rem]` — MEASURED AND STRUCTURAL,
+// 🔴 THE INPUT TEXT SIZE IS WRITTEN `text-[16px]`, NOT A SCALE TOKEN — MEASURED AND STRUCTURAL,
 // NOT A JUDGEMENT CALL. `apps/web`'s root is 112.5% (`html{font-size:112.5%}`), so `1rem` here
 // renders at 18px, not 16 — the literal px value is the only way to land on the number that
 // matters. ChatGPT's own measured input is also exactly 16px, which is not a coincidence: iOS
@@ -361,7 +361,7 @@ export function CanvasComposer({
                 title={source.title}
               >
                 <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
-                <span className="truncate text-[0.75rem] text-(--ui-text-tertiary)">{source.title}</span>
+                <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{source.title}</span>
               </span>
             ))}
           </div>
@@ -379,10 +379,10 @@ export function CanvasComposer({
                 about to act on, something Nemesis just said, or a leftover. One word of label and
                 a mark that means "quotation" turn it into an object with a purpose. */}
             <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="quote" size="0.6875rem" />
-            <span className="shrink-0 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
+            <span className="shrink-0 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
               {selected.length === 1 ? "Selected" : `${selected.length} selected`}
             </span>
-            <span className="truncate text-[0.75rem] text-(--ui-text-tertiary)">
+            <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
               {selected.length === 1
                 ? `“${selected[0]?.content.slice(0, 60) ?? ""}${(selected[0]?.content.length ?? 0) > 60 ? "…" : ""}”`
                 : ""}
@@ -466,7 +466,7 @@ export function CanvasComposer({
                 role="menu"
               >
                 <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
                   onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
                   role="menuitem"
                   type="button"
@@ -475,7 +475,7 @@ export function CanvasComposer({
                   Upload material
                 </button>
                 <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[0.875rem] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
                   onClick={() => { setAddOpen(false); onRecord(); }}
                   role="menuitem"
                   type="button"
@@ -526,8 +526,10 @@ export function CanvasComposer({
                 // to scroll. The effect promotes it to `auto` if the answer ever exceeds the cap.
                 className={cn(
                   "min-h-[1.75rem] w-full min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1",
-                  // 16px, not 1rem -- see the file header. MEASURED: ChatGPT's own input is also
-                  // exactly 16px/26px line-height.
+                  // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
+                  // 16px, not a scale token -- see the file header. The value is a platform
+                  // threshold, not a typographic choice, so it must not move when the scale does.
+                  // MEASURED: ChatGPT's own input is also exactly 16px/26px line-height.
                   "text-[16px] leading-[26px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
                   // 🔴 HEIGHT ONLY, AND SHORT ENOUGH TO BE INVISIBLE AS A DELAY. `transition-all`
                   // here would animate colour and opacity on every keystroke and make typing feel
@@ -615,7 +617,7 @@ export function CanvasComposer({
         </div>
 
         {dictation.error && !listening && (
-          <p className="mt-2 pl-4 text-[0.75rem] text-(--ui-text-tertiary)">{dictation.error}</p>
+          <p className="mt-2 pl-4 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}
       </div>
     </div>

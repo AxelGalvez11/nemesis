@@ -10,6 +10,11 @@ import { test } from "node:test";
 
 const SOURCE = readFile(new URL("./canvas-policy-view.tsx", import.meta.url), "utf8");
 
+/** 🔴 THE OWNERSHIP COLOUR MOVED INTO ITS OWN COMPONENT (§46.2), SO THE GUARD FOLLOWED IT. Checking
+ *  only this file would now pass while `LearnerUtterance` painted the learner's words by verdict —
+ *  the same defect §35.1 exists for, one file over. */
+const UTTERANCE = readFile(new URL("./learner-utterance.tsx", import.meta.url), "utf8");
+
 test("🔴 a degraded source is never told it means the learner is done", async () => {
   const source = await SOURCE;
 
@@ -92,7 +97,16 @@ test("🔴 §K: the surviving arm never narrates the learner's own turn back at 
 
   // ...and the quote itself must still be RENDERED, or this test would pass by deleting the
   // context rather than the narration.
-  assert.match(rendered, /[“"]\{feedback\.answer\}[”"]/, "the learner's own words stopped being shown at all");
+  // 🔴 THIS USED TO REQUIRE QUOTE MARKS AROUND THE ANSWER, AND THAT WAS THE SHAPE, NOT THE
+  // PROPERTY. §46.2 replaced the quoted line with `LearnerUtterance`, whose tinted ground says
+  // authorship structurally; punctuation reads as "someone said this", which is true of every line
+  // on the screen. What must still hold is that the learner's own words are RENDERED, or this test
+  // would pass by deleting the context rather than the narration.
+  assert.match(
+    rendered,
+    /<LearnerUtterance[^>]*>\{feedback\.answer\}<\/LearnerUtterance>/,
+    "the learner's own words stopped being shown at all",
+  );
 
   // No stage label and no step counter reach this arm either. These are the other three §K
   // literals' shapes; asserting them here means deleting the legacy arm cannot quietly
@@ -205,10 +219,33 @@ test("🔴 §35.1: the learner's words are BLUE in every case — blue is author
   // 🔴 THE DEFECT THIS REPLACES WAS SHIPPED AND EXPLICIT. A `VERDICT_TONE` map painted the
   // learner's own answer green / amber / red by verdict, under a comment reading "THE COLOUR IS
   // THE FEEDBACK". Their sentence and Nemesis's judgement of it were the same object.
-  assert.match(rendered, /const LEARNER_VOICE = "text-\(--ui-learner\)"/);
+  // 🔴 THE ELEMENT MOVED (§46.2); THE RULE DID NOT. The colour used to be a `LEARNER_VOICE`
+  // constant applied at this one call site. It now lives inside `LearnerUtterance`, so the check
+  // is in two parts: this file must route the learner's words through that component, and that
+  // component must paint them with the ownership token unconditionally. Checking only the first
+  // would let the second colour them by verdict; checking only the second would let this file
+  // stop using it. Both, or the guarantee has a seam.
+  const utterance = stripComments(await UTTERANCE);
   assert.match(rendered, /\{feedback\.answer\}/);
-  const quoteLine = /<p className=\{`[^`]*\$\{LEARNER_VOICE\}`\}>[^<]*\{feedback\.answer\}/.exec(rendered);
-  assert.ok(quoteLine, "the learner's quote must take the ownership colour");
+  const quoteLine = /<LearnerUtterance[^>]*>\{feedback\.answer\}<\/LearnerUtterance>/.exec(rendered);
+  assert.ok(quoteLine, "the learner's words must render through LearnerUtterance");
+  assert.match(
+    utterance,
+    /text-\(--ui-learner\)/,
+    "LearnerUtterance stopped painting the learner's words with the ownership token",
+  );
+
+  // 🔴 AND THE COMPONENT MUST NOT BE ABLE TO TAKE A VERDICT AT ALL. This is stronger than the
+  // check it replaces: the old one proved one call site passed no grade, which stays green the
+  // moment a second call site passes one. A component with no such prop cannot be handed a grade
+  // from anywhere.
+  for (const forbidden of ["verdict", "correct", "passed", "evaluation", "status"]) {
+    assert.doesNotMatch(
+      utterance,
+      new RegExp(`\\b${forbidden}\\??:\\s`),
+      `LearnerUtterance accepts \`${forbidden}\` — ownership is not a spectrum, and a prop is all it takes for the grade to come back`,
+    );
+  }
 
   // 🔴 NO VERDICT-KEYED COLOUR MAY EXIST ON THIS SURFACE AT ALL. Asserting only "the quote is
   // blue" would stay green if someone reintroduced the map and applied it somewhere else on the

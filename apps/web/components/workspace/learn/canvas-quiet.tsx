@@ -36,17 +36,17 @@ export function CanvasQuiet({ onRetry }: { onRetry: () => void }) {
       role="status"
       style={{ paddingTop: TOP_INSET }}
     >
-      <p className="text-[0.9375rem] text-(--ui-text-secondary)">
+      <p className="text-[length:var(--canvas-text-body)] text-(--ui-text-secondary)">
         Nemesis has your material but hasn&rsquo;t found anything to ask you about yet.
       </p>
       {/* Two moves, and both of them exist. Typing is the one the composer below already offers —
           said out loud because a learner looking at an empty canvas has no reason to believe the
           box at the bottom will do anything. */}
-      <p className="mt-2 text-[0.875rem] text-(--ui-text-quaternary)">
+      <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
         Tell it what you want to work on, or try again — your canvas is safe either way.
       </p>
       <button
-        className="mt-5 rounded-full px-4 py-2 text-[0.8125rem] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+        className="mt-5 rounded-full px-4 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
         onClick={onRetry}
         type="button"
       >
