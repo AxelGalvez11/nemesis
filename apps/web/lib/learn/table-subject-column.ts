@@ -73,6 +73,20 @@ function isEnumeratedColumn(values: readonly string[]): boolean {
   return values.length > 0 && values.every((value) => WORD_THEN_NUMBER.test(value.trim()));
 }
 
+/**
+ * Whether the leftmost column holds paragraphs rather than names.
+ *
+ * Exported so a refusal can say WHICH thing went wrong. "This grid is keyed by a date" and "this
+ * grid's first column is a paragraph" are different facts about a document and lead to different
+ * work — the second is the compound `Class / Mechanism of Action` cell that needs a model-assisted
+ * lane, and reporting it as the first would send someone looking for a calendar.
+ */
+export function firstColumnIsProse(dataRows: readonly (readonly string[])[]): boolean {
+  const values = dataRows.map((row) => (row[0] ?? "").trim()).filter(Boolean);
+  if (values.length === 0) return false;
+  return values.filter((value) => value.length > MAX_SUBJECT_CHARS).length > values.length / 2;
+}
+
 export interface SubjectColumn {
   /** Zero-based index into each row. */
   index: number;
@@ -102,13 +116,26 @@ export interface SubjectColumn {
 export function subjectColumnOf(
   dataRows: readonly (readonly string[])[],
   width: number,
+  options: { headerStated?: boolean } = {},
 ): SubjectColumn | null {
   if (width < 2 || dataRows.length === 0) return null;
 
-  // A single data row cannot demonstrate that anything is distinct — with one row EVERY column is
-  // trivially unique, so the strongest signal is unavailable and the leftmost column would win by
-  // default. Refusing is the honest answer; one row is not a pattern.
-  if (dataRows.length < 2) return null;
+  // 🔴 A SINGLE DATA ROW LOSES THE STRONGEST SIGNAL, AND A REAL DOCUMENT FORCED THIS BRANCH. With
+  // one row every column is trivially distinct, so uniqueness says nothing. The first version
+  // refused outright — and then the owner's own drug chart returned zero, because a table split
+  // across 24 pages arrives as 24 FRAGMENTS OF ONE ROW EACH. Refusing single-row fragments does not
+  // refuse an edge case there; it refuses the entire document.
+  //
+  // What carries the decision instead is the header the author printed. A named header row is the
+  // document stating its own columns, and the leftmost named column being the subject is an
+  // ordinary typographic convention rather than a claim about meaning. The dangerous case survives
+  // unchanged: a schedule's first column is written as a date, and the index test below still
+  // refuses it.
+  //
+  // 🔴 THIS IS WEAKER EVIDENCE THAN DISTINCTNESS AND IS DELIBERATELY GATED ON THE HEADER. A
+  // headerless single-row fragment is still refused — there, taking column 0 would be exactly the
+  // "default to the first two columns" this whole module replaced.
+  if (dataRows.length < 2 && !options.headerStated) return null;
 
   // 🔴🔴 AN INDEX-KEYED TABLE HAS NO SUBJECT AT ALL, AND THIS IS A RULE ABOUT THE TABLE RATHER THAN
   // ABOUT ANY ONE COLUMN. Skipping the index column and reading on is not enough: in
@@ -126,6 +153,23 @@ export function subjectColumnOf(
   if (leading.length > 0 && (leading.every((value) => isIndexShaped(value)) || isEnumeratedColumn(leading))) {
     return null;
   }
+
+  // 🔴🔴 FALLING THROUGH A COLUMN THAT IS TOO LONG CHANGES WHAT THE ROW IS ABOUT, AND A REAL
+  // DOCUMENT PROVED IT. On the owner's drug chart the first column is headed
+  // `Class / Mechanism of Action` and holds `Dihydropyridine CCBs (calcium channel blockers)`
+  // followed by 900 characters of mechanism. Disqualified for length, the search moved right and
+  // chose the MEMBERS column — so every class-level claim was attached to the string
+  // `"Amlodipine (Norvasc) Felodipine (Plendil) Isradipine (DynaCirc)…"`, which is not an entity at
+  // all, and the row stopped being about the class the author wrote it about.
+  //
+  // Falling through a column that REPEATS is different and stays allowed: a repeating column is
+  // stating a property shared by several rows, so the row was never about it. Falling through one
+  // that is merely too long is losing the subject and taking the next thing along.
+  //
+  // 🔴 SO THIS REFUSES INSTEAD, per the standing rule that ambiguity must REDUCE output rather than
+  // produce a guessed relationship. Naming the class inside a compound `Class / Mechanism` cell is
+  // real work — it is the model-assisted case — and it is not something to guess at here.
+  if (firstColumnIsProse(dataRows)) return null;
 
   for (let column = 0; column < width; column += 1) {
     const values = dataRows.map((row) => (row[column] ?? "").trim());

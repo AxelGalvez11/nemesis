@@ -36,7 +36,8 @@ import {
 
 import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } from "./knowledge-identity";
 import type { KnowledgeObject } from "./knowledge-types";
-import { subjectColumnOf } from "./table-subject-column";
+import { segmentCell } from "./cell-segmentation";
+import { firstColumnIsProse, subjectColumnOf } from "./table-subject-column";
 
 /** Stamped onto every object, so a corpus extracted under older rules can be found and redone
  *  rather than silently mixed in with a newer one. Bump it whenever the rules below change what
@@ -298,13 +299,15 @@ function relationsFromWideTable(
 ): { objects: KnowledgeObject[]; refusal?: ExtractionRefusal } {
   const dataRows = table.rows.slice(Math.max(0, table.headerRows));
   const width = Math.max(0, ...table.rows.map((row) => row.length));
-  const subject = subjectColumnOf(dataRows, width);
+  const subject = subjectColumnOf(dataRows, width, { headerStated: Boolean(content.columns?.length || table.headerRows > 0) });
 
   if (!subject) {
     return {
       objects: [],
       refusal: {
-        detail: `This ${width}-column grid is keyed by a date or a counter, or no column holds a distinct value on every row, so nothing states what each row is about.`,
+        detail: firstColumnIsProse(dataRows)
+          ? `This ${width}-column grid's first column holds a paragraph rather than a name, so what each row is about could not be read without guessing at it.`
+          : `This ${width}-column grid is keyed by a date or a counter, or no column holds a distinct value on every row, so nothing states what each row is about.`,
         reason: "table-no-subject",
         unitId: unit.id,
       },
@@ -328,40 +331,69 @@ function relationsFromWideTable(
 
     for (let column = 0; column < width; column += 1) {
       if (column === subject.index) continue;
-      const right = (row[column] ?? "").trim();
-      if (!right || right.length > MAX_CELL_CHARS) continue;
+      const cell = (row[column] ?? "").trim();
+      if (!cell) continue;
       // A cell repeating the subject states nothing; usually a spanned heading filled across.
-      if (left === right) continue;
+      if (left === cell) continue;
 
       const objectHeader = columnNames?.[column];
       const objectRole = objectHeader ? normalizeForIdentity(objectHeader) : null;
-      const relationKind = relationKindFromHeader(
-        subjectHeader && objectHeader ? [subjectHeader, objectHeader] : undefined,
-      );
-      // 🔴 THE COLUMN IS IN THE ID, so two relations from one row are two objects rather than one
-      // overwriting the other — and so "where did this come from" resolves to a cell.
-      const id = `${unit.id}:r${rowIndex + 1}c${column + 1}`;
-      const object: KnowledgeObject = {
-        derivation: "table-row",
-        extractionVersion: EXTRACTION_VERSION,
-        id,
-        pair: {
+      // 🔴 THE OTHER CELLS OF THIS ROW ARE THE ONLY EVIDENCE ALLOWED FOR RE-SCOPING. See
+      // `cell-segmentation.ts`: a sub-heading that repeats a string the row already printed is the
+      // author narrowing a claim; anything else is a qualifier over the row subject.
+      const otherCells = row.filter((_, index) => index !== column).map((value) => String(value ?? ""));
+
+      for (const [part, segment] of segmentCell(cell, otherCells).entries()) {
+        const right = segment.value.trim();
+        // 🔴 THE LENGTH LIMIT NOW APPLIES TO THE CLAIM, NOT THE CELL, and that is the whole unlock.
+        // The real chart's cells run past 600 characters while every claim inside them is a few
+        // words; measuring the container rejected all of them.
+        if (!right || right.length > MAX_CELL_CHARS || right === left) continue;
+
+        // 🔴🔴 THE SUBJECT IS THE ROW'S, UNLESS THE SOURCE ITSELF NARROWED IT. This single line is
+        // where a class-level assertion could silently become a drug-level one. A cell listing the
+        // members of a class does NOT license attaching that class's adverse effects to each of
+        // them — the table never said that, and a learner would be drilled on an invention.
+        const entity = segment.scopedTo ?? left;
+        const scoped = Boolean(segment.scopedTo);
+        // When the claim has been narrowed, the subject no longer comes from the subject column, so
+        // its header would be a false role and the paired relation kind a false relationship.
+        const base = scoped
+          ? objectRole
+          : relationKindFromHeader(subjectHeader && objectHeader ? [subjectHeader, objectHeader] : undefined);
+        // 🔴 THE SUB-LABEL IS PART OF THE RELATION, WHICH IS PART OF IDENTITY. Without it
+        // `Rare, but serious: hepatoxicity` and `Common: flushing` are the same kind of claim, and
+        // a rare serious harm is taught as a routine one.
+        const relationKind = segment.qualifier
+          ? `${base ?? UNQUALIFIED}#${normalizeForIdentity(segment.qualifier)}`
+          : base;
+        // 🔴 ROW, COLUMN AND THE PART WITHIN THE CELL, so two claims from one cell are two objects
+        // and "where did this come from" resolves to a span rather than to a grid.
+        const id = `${unit.id}:r${rowIndex + 1}c${column + 1}p${part + 1}`;
+        const object: KnowledgeObject = {
+          derivation: "table-row",
+          extractionVersion: EXTRACTION_VERSION,
           id,
-          left,
-          right,
-          ...(subjectRole && objectRole ? { leftRole: subjectRole, rightRole: objectRole } : {}),
-          ...(headingOf(unit) ? { groupLabel: headingOf(unit)! } : {}),
-        },
-        sourceAnchors: [anchorForRow(unit, left, right)],
-        // 🔴 THE COLUMN NAME IS IN THE STATEMENT WHEN THE GRID PRINTED ONE, because a wide table
-        // gives one subject SEVERAL relations and `lisinopril — cough` alone cannot say which of
-        // the five it is. Without the header there is nothing honest to add, so nothing is added.
-        statement: objectHeader ? `${left} — ${objectHeader.trim()}: ${right}` : `${left} — ${right}`,
-        type: "association",
-        unanchoredProvenance: [],
-        ...(relationKind ? { relationKind } : {}),
-      };
-      objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+          pair: {
+            id,
+            left: entity,
+            right,
+            ...(!scoped && subjectRole && objectRole ? { leftRole: subjectRole, rightRole: objectRole } : {}),
+            ...(scoped && objectRole ? { rightRole: objectRole } : {}),
+            ...(headingOf(unit) ? { groupLabel: headingOf(unit)! } : {}),
+          },
+          // The claim's own words are the quote, so the locator resolves to the span that produced
+          // it rather than to the whole cell.
+          sourceAnchors: [{ ...unit.anchor, quote: { exact: right } }],
+          // 🔴 THE COLUMN NAME AND SUB-LABEL ARE IN THE STATEMENT, because a wide table gives one
+          // subject SEVERAL relations and `lisinopril — cough` alone cannot say which.
+          statement: statementFor(entity, objectHeader, segment.qualifier, right),
+          type: "association",
+          unanchoredProvenance: [],
+          ...(relationKind ? { relationKind } : {}),
+        };
+        objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+      }
     }
   }
 
@@ -377,6 +409,21 @@ function relationsFromWideTable(
   }
 
   return { objects };
+}
+
+/** Stands in for the relation when a grid named no columns, so a sub-label still has something to
+ *  qualify. Never a wildcard: `UNSTATED` and this are both "the source did not say". */
+const UNQUALIFIED = "unstated";
+
+/** One line naming the claim, with whatever the source printed to disambiguate it. */
+function statementFor(
+  entity: string,
+  header: string | undefined,
+  qualifier: string | undefined,
+  value: string,
+): string {
+  const dimension = [header?.trim(), qualifier?.trim()].filter(Boolean).join(" › ");
+  return dimension ? `${entity} — ${dimension}: ${value}` : `${entity} — ${value}`;
 }
 
 function headingOf(unit: CanonicalSourceUnit): string | null {

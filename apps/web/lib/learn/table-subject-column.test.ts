@@ -96,6 +96,31 @@ test("🔴🔴 A SCHEDULE HAS NO SUBJECT COLUMN, and this is the test the whole 
   assert.equal(subjectColumnOf(weeks, 3), null);
 });
 
+test("🔴🔴 A PROSE FIRST COLUMN REFUSES — it must NOT fall through onto the members column", () => {
+  // Measured on the owner's real chart. Column 0 is headed `Class / Mechanism of Action` and holds
+  // the class name followed by 900 characters of mechanism; column 1 lists the class's members.
+  //
+  // 🔴 Falling through produced 30 claims whose subject was the string
+  // `"Amlodipine (Norvasc) Felodipine (Plendil) Isradipine (DynaCirc)…"` — not an entity at all —
+  // and silently moved every class-level assertion onto a list of drugs. Refusing is the honest
+  // answer until the compound cell can be read without guessing.
+  const mechanism = `Dihydropyridine CCBs (calcium channel blockers) ${"Inhibit Ca from entering slow channels. ".repeat(12)}`;
+  const chart = rowsOf([mechanism, "Amlodipine (Norvasc) Felodipine (Plendil)", "peripheral edema"]);
+  assert.equal(subjectColumnOf(chart, 3, { headerStated: true }), null);
+});
+
+test("🔴 a single row is readable only when the author printed a header", () => {
+  // A 24-page table arrives as 24 one-row fragments, so refusing single rows outright refuses the
+  // whole document. The header carries the decision — and without one, taking column 0 would be
+  // the "default to the first column" this module exists to replace.
+  const oneRow = rowsOf(["lisinopril", "ACE inhibitor", "hypertension"]);
+  assert.deepEqual(subjectColumnOf(oneRow, 3, { headerStated: true }), { index: 0, populated: 1 });
+  assert.equal(subjectColumnOf(oneRow, 3), null);
+
+  // 🔴 And the schedule is STILL refused on one row — the index test does not depend on distinctness.
+  assert.equal(subjectColumnOf(rowsOf(["8-17", "Exam 1", "Room 214"]), 3, { headerStated: true }), null);
+});
+
 test("a matrix of numbers has no subject column", () => {
   const matrix = rowsOf(["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]);
   assert.equal(subjectColumnOf(matrix, 3), null);
