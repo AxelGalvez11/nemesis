@@ -36,10 +36,6 @@ const source = readFileSync(join(import.meta.dirname, "canvas-manager.tsx"), "ut
 /** 🔴 THE SAME LIST OF THE SAME OBJECTS LIVES ON THE FRONT DOOR, one surface earlier, and it had
  *  the identical defect. Fixing only the Library would have left the owner looking at the unfixed
  *  one first, so the guard covers both files rather than the one that was measured. */
-const home = readFileSync(
-  join(import.meta.dirname, "..", "learn", "canvas-home.tsx"),
-  "utf8",
-);
 
 /** 🔴 THE CODE, NOT THE PROSE. This file's own header explains why there is no source count by
  *  naming `canvas_sources`, so a guard reading the whole file would fail on the sentence that
@@ -129,24 +125,19 @@ test("decoration stayed inside §19 — no cards, no badges, no colour", () => {
   assert.ok(!/\bgradient\b/.test(code), "no gradients (§28)");
 });
 
-test("🔴 the front door's session list carries the same fix, not just the Library's", () => {
-  // The row control: drawn at rest on both surfaces.
-  const button = /<button\s+aria-label=\{`Actions for[\s\S]{0,700}?<\/button>/.exec(home);
-  assert.ok(button, "expected a per-row action button on the front door too");
-  assert.ok(!/\bopacity-0\b/.test(button[0]), "the front door's row control must not start invisible");
-  assert.ok(!/group-hover:opacity/.test(button[0]), "hover cannot be the only thing that draws it");
-  assert.ok(!/aria-label="Session options"/.test(home), "one label for every row names none of them");
-
-  // The menu: every action drawn, and `icon` required so none can be added undecorated.
-  assert.match(home, /icon: LucideIcon;/);
-  assert.ok(!/icon\?: LucideIcon/.test(home), "an optional icon is an action that can go undecorated");
-  assert.match(home, /<Icon className="shrink-0 opacity-70"/);
-  const actions = home.match(/<RowAction\b/g) ?? [];
-  assert.ok(actions.length >= 4, `expected the session actions: got ${actions.length}`);
-
-  // And the row says what it is, the same way the Library's does.
-  assert.match(home, /<PanelsTopLeft className="shrink-0/);
-});
+// 🔴 THE FRONT DOOR HALF OF THIS FIX RETIRED WITH THE SURFACE IT GUARDED (owner 2026-08-14).
+// There used to be a twin of the test below asserting that `canvas-home.tsx` drew its row control
+// at rest, labelled each row individually, and gave every menu action an icon — because the same
+// list was rendered on two surfaces and fixing one had left the other invisible on touch.
+//
+// The front door no longer lists canvases at all: the owner marked a screenshot green around the
+// greeting and composer and red around the list. So the assertions below now cover the ONLY
+// surface that enumerates a learner's canvases, which is this one, reached from `/library`.
+//
+// 🔴 COVERAGE DID NOT MOVE, IT NARROWED — and that is worth saying out loud, because a deleted
+// test usually means a lost guarantee. `canvas-shell.test.ts` §46.5 now asserts the complement:
+// that nothing on the front door enumerates canvases. Between them the pair still says where a
+// list may exist and how it must behave when it does.
 
 test("going back up out of a folder is a control, not a word", () => {
   // 🔴 THE LEAST VISIBLE FUNCTION ON THE SURFACE, and the one the top-level screenshots could not
