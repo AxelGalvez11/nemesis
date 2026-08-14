@@ -18,6 +18,28 @@
 // defect as writing `?? 0` into an evidence row: it turns "we did not observe this" into "we
 // observed none of it", and the two are opposite. Each one says so in its own comment, and the
 // comparison prints "not instrumented" rather than a tie.
+//
+// ── HOW THE COMPARISON IS ACTUALLY RUN TODAY, STATED PLAINLY ────────────────────────────────────
+//
+// 🔴 THESE FUNCTIONS TAKE ROWS IN MEMORY, AND THERE IS NO ENDPOINT THAT FEEDS THEM AT SCALE.
+// `loadEvidence` needs a `StoredObjective[]` and caps at 1,000 rows, so it answers "this learner, on
+// this canvas's objectives" and not "every row in the experiment". Saying "the outcomes are
+// queryable" without saying that would be the overclaim this file exists to avoid — so: the
+// grouping is done in SQL, and these functions are what turns one learner's rows into the summary.
+//
+// The sweep that establishes the arms are separable at all, verified against production:
+//
+//     select coalesce(teaching_strategy, '(none)') as arm,
+//            count(*)                                              as rows,
+//            count(distinct response_id)                           as interactions,
+//            count(*) filter (where objective_evidence = 'demonstrated') as demonstrated
+//     from public.learner_evidence
+//     group by 1 order by 2 desc;
+//
+// 🔴 IT RETURNS ONE ROW, `(none)`, AND THAT IS THE CORRECT ANSWER RATHER THAN A BROKEN ONE. No
+// session has run under an arm yet, because randomisation is off and nobody has typed the override.
+// "No rows carry an arm" and "the grouping does not work" look identical from a distance, which is
+// exactly why the query was run before anyone claimed the second.
 
 import { performanceKey, type LearnerEvidence } from "./learner-evidence";
 import { TEACHING_STRATEGIES, type TeachingStrategyId } from "./teaching-strategy";

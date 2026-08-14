@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { learnEntryFromSearch, learnSurface } from "./learn-entry";
 import type { LearnerEvidence } from "./learner-evidence";
 import {
   conflictingStrategy,
@@ -88,6 +89,32 @@ test("🔴 an override outranks randomisation and SAYS SO, so hand-picked sessio
   // Without this, a developer exercising an arm would be indistinguishable from a randomised
   // enrolment, and a result would silently include sessions somebody chose.
   assert.equal(assignment.assignedBy, "override");
+});
+
+test("🔴🔴 the switch ARRIVES from a real URL — parsing it correctly is not the same claim", () => {
+  // 🔴 THE DELIVERABLE IS "THE OWNER CAN SWITCH ARMS", AND EVERY OTHER TEST HERE ONLY PROVES
+  // `strategyOverrideFrom` HANDLES A STRING. That is a different claim from the parameter reaching
+  // it. `/learn` classifies its surface through `learnEntryFrom`, and if that whitelist had altered
+  // the surface for an unknown key — or if anything on the route rebuilt the query — the owner would
+  // paste the URL, get `nemesis_policy`, and see a baseline arm behaving conservatively rather than
+  // a switch that never fired. Both were checked; this pins them.
+  //
+  // Exercised through `URLSearchParams` because that is exactly what the page hands both readers.
+  const pasted = new URLSearchParams("?c=3be94cc6-0000-0000-0000-000000000000&teacher=llm_teacher");
+  assert.equal(strategyOverrideFrom(pasted.get("teacher")), "llm_teacher");
+
+  // 🔴 AND THE EXTRA PARAMETER MUST NOT CHANGE WHICH SURFACE OPENS. `learnEntryFrom` reads `c`,
+  // `ask` and `new` and nothing else, so an unknown key is inert — but that is a property worth
+  // asserting rather than assuming, because the failure is a canvas URL that silently lands on the
+  // front door and the arm never gets a chance to run at all.
+  const entry = learnEntryFromSearch("?c=3be94cc6-0000-0000-0000-000000000000&teacher=llm_teacher");
+  assert.equal(learnSurface(entry), "canvas");
+  assert.equal(entry.c, "3be94cc6-0000-0000-0000-000000000000");
+
+  // Both switches coexist: they answer different questions and must not collide.
+  const both = new URLSearchParams("?c=abc&policy=force&teacher=llm_teacher");
+  assert.equal(strategyOverrideFrom(both.get("teacher")), "llm_teacher");
+  assert.equal(both.get("policy"), "force");
 });
 
 test("🔴 the URL vocabulary is the STORED vocabulary — no friendly aliases", () => {
