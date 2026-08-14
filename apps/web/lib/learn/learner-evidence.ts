@@ -14,6 +14,7 @@
 import { TRUSTED_ENOUGH_TO_UPDATE_STATE } from "./canvas-judge";
 import type { ObjectiveCapability } from "./learning-objective";
 import { entails, higherRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
+import type { TeachingStrategyId } from "./teaching-strategy";
 
 /**
  * Two INDEPENDENT facts, kept independent.
@@ -142,6 +143,25 @@ export interface LearnerEvidence {
   responseText?: string | null;
   /** Which task produced this. Provenance only — 🔴 never a filter for reading state back. */
   taskId?: string | null;
+  /**
+   * Which teaching controller chose the opportunity this row came out of.
+   *
+   * 🔴 AN OBSERVATION ABOUT THE OPPORTUNITY, WHICH IS WHY IT SITS IN THIS BLOCK AND NOWHERE NEAR
+   * `verdict`. It records who decided to put this question in front of this person at this moment.
+   * It says nothing about the person, and nothing may ever read it as though it did — a projection
+   * that treated one arm's evidence as weaker would be interpreting the experiment into the learner
+   * model, which is the exact "inference stored as observation" defect the whole block forbids.
+   *
+   * 🔴 NOTHING IN THE TEACHING LOOP READS IT. `projectLearnerState` ignores it and a test asserts
+   * that it does. Both arms produce the same kind of evidence about the same objectives, so a
+   * learner's state must come out identical whichever controller asked — otherwise the arm would be
+   * changing the measurement as well as the teaching, and no comparison between them would mean
+   * anything. It exists to be GROUPED BY, afterwards, in `strategy-outcomes.ts`.
+   *
+   * 🔴 ABSENT MEANS THE ROW PREDATES THE STRATEGY LAYER. Never defaulted, never backfilled — see
+   * `20260814T03_evidence_teaching_strategy.sql`. It never means `nemesis_policy`.
+   */
+  teachingStrategy?: TeachingStrategyId | null;
 }
 
 /**

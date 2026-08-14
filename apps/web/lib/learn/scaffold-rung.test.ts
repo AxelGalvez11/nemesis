@@ -268,6 +268,8 @@ test("🔴 NEMESIS MUST NOT INFER B BECAUSE THE OVERALL ANSWER WAS GOOD", () => 
   // about WHY Na⁺ moves inward. The judge speaks about A and C only; the fan-out is total over the
   // targets, so B still gets a row — and that row must say `not_addressed`.
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "canvas-1",
     judgement: judgementOf([
       outcomeFor({ identityKey: "A-inward-ion" }, GOOD),
@@ -292,6 +294,8 @@ test("🔴 NEMESIS MUST NOT INFER B BECAUSE THE OVERALL ANSWER WAS GOOD", () => 
 
 test("🔴 every row of one submission records the rung the TASK set", () => {
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     judgement: judgementOf([outcomeFor({ identityKey: "A-inward-ion" }, GOOD)]),
     occurredAt: AT,
@@ -317,6 +321,8 @@ test("🔴 a scaffolded prompt records ITS rung, not the default", () => {
     task: "name",
   });
   const [written] = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     judgement: judgementOf([outcomeFor({ identityKey: "obj-1" }, GOOD)]),
     occurredAt: AT,
@@ -338,6 +344,8 @@ test("🔴 an answer that produced nothing is `nothing_produced` on targets, nev
   // the admission path writing the second, an "I don't know" left the learner at `unknown`, the
   // policy took its `unknown` branch, and the same question came back instead of the answer.
   const rows = unobtainedEvidence({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     occurredAt: AT,
     prompt: PHASE_0,
@@ -358,6 +366,8 @@ test("🔴 silence about ONE target among several is still `not_addressed`", () 
   // and produced nothing" would show them a correction for something they were never asked. The
   // discriminator is whether the account named anything AT ALL, not whether it named this target.
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     judgement: judgementOf([outcomeFor({ identityKey: "A-inward-ion" }, GOOD)]),
     occurredAt: AT,
@@ -378,6 +388,8 @@ test("🔴 a contradicted objective is recorded as contradicted, not as silence"
   // The other direction, and it has to hold or `not_addressed` becomes a value that swallows real
   // negative evidence — which would be the same defect pointing the other way.
   const [written] = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     judgement: judgementOf([
       outcomeFor({ identityKey: "A-inward-ion" }, { ...GOOD, verdict: "misconception" }),

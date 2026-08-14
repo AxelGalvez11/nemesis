@@ -203,6 +203,8 @@ test("🔴 the judge is told the two ends of the edge, not just the source's sen
 test("🔴 an account is judged, recorded as a prediction, and moves the learner's state", () => {
   const asked = retrievalPromptFor({ knowledge: CAUSAL, objective: PREDICT }, "p-causal");
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: "c1",
     judgement: judgementOf([
       outcomeFor(PREDICT, {
@@ -234,6 +236,8 @@ test("🔴 an account is judged, recorded as a prediction, and moves the learner
 test("🔴 an opportunity that produced nothing is not recorded as a wrong account", () => {
   const asked = retrievalPromptFor({ knowledge: CAUSAL, objective: PREDICT }, "p-causal");
   const rows = unobtainedEvidence({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     occurredAt: NOW.toISOString(),
     prompt: asked,
@@ -267,6 +271,8 @@ test("🔴🔴 a causal correction is DELIBERATE where an association's is TRANS
   const answered = (objective: StoredObjective, knowledge: KnowledgeObject) => {
     const asked = retrievalPromptFor({ knowledge, objective }, `p-${objective.rowId}`);
     const rows = evidenceForSubmission({
+      // Pre-experiment boundary test: no controller chose this, and `null` says so.
+      teachingStrategy: null,
       canvasId: null,
       judgement: judgementOf([outcomeFor(objective, wrongAnswer)]),
       occurredAt: NOW.toISOString(),
@@ -303,6 +309,8 @@ test("🔴🔴 a causal correction is DELIBERATE where an association's is TRANS
 test("🔴 a named competing model separates the pair before asking again", () => {
   const asked = retrievalPromptFor({ knowledge: CAUSAL, objective: PREDICT }, "p-causal");
   const rows = evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     judgement: judgementOf([
       outcomeFor(PREDICT, {

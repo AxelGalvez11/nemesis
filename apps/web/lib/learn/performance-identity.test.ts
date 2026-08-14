@@ -45,6 +45,11 @@ const RECORD: EvidenceToRecord = {
   scaffoldRung: "independent",
   scaffoldingLevel: 0,
   taskId: "task-1",
+  // 🔴 THE BASELINE ARM ON PURPOSE, NOT THE DEFAULT. A fixture carrying `nemesis_policy` would pass
+  // this round trip identically while proving less: `nemesis_policy` is what a broken reader that
+  // fell back to a default would also produce. `llm_teacher` can only arrive here by genuinely
+  // surviving write, select and read.
+  teachingStrategy: "llm_teacher",
   verdict: "understood",
 };
 
@@ -113,6 +118,7 @@ const COLUMN_TO_FIELD: Record<string, keyof LearnerEvidence | null> = {
   scaffold_rung: "scaffoldRung",
   scaffolding_level: "scaffoldingLevel",
   task_id: "taskId",
+  teaching_strategy: "teachingStrategy",
   verdict: "verdict",
 };
 

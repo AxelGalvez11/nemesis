@@ -73,6 +73,8 @@ const RECORD_FOR_COLUMNS = {
 /** The one row a single-objective judged answer produces. */
 function judged(response: { text: string; via: "typed" | "spoken"; tookMs?: number }) {
   return evidenceForSubmission({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf([outcomeFor(OBJECTIVE, EVALUATION)]),
@@ -154,6 +156,8 @@ test("scaffolding records what was offered — one state, and it is observed rat
 
 test("🔴 'I don't know' records the same observations and still is not a wrong answer", () => {
   const built = unobtainedEvidence({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     occurredAt: "2026-08-12T00:00:00.000Z",
     prompt: PROMPT,
@@ -174,6 +178,8 @@ test("🔴 a reveal with nothing typed leaves latency ABSENT rather than 0", () 
   // A zero would assert an instantaneous answer that never happened, which is the same defect as
   // absence-as-negative-evidence wearing a different hat.
   const built = unobtainedEvidence({
+    // Pre-experiment boundary test: no controller chose this, and `null` says so.
+    teachingStrategy: null,
     canvasId: null,
     occurredAt: "2026-08-12T00:00:00.000Z",
     prompt: PROMPT,

@@ -15,6 +15,7 @@ import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
+import type { TeachingStrategyId } from "@/lib/learn/teaching-strategy";
 import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
@@ -63,6 +64,7 @@ export function LearningCanvas({
   canvasId,
   openingAsk = null,
   policyOverride = null,
+  strategyOverride = null,
 }: {
   canvasId: string | null;
   /** What the learner typed on the home surface before this canvas existed.
@@ -77,6 +79,13 @@ export function LearningCanvas({
    *  from what its sources contain (`policyOwnsCanvas`), so there is nothing here for an ordinary
    *  visit to say. See policy-override.ts. */
   policyOverride?: PolicyOverride;
+  /** Which teaching controller to run, when a URL asked for one — the internal development switch.
+   *
+   *  🔴 THE DEFAULT IS `null`, WHICH IS `nemesis_policy`. There is no control for this anywhere on
+   *  the surface and there must not be: contract §27 rules that a learner must not keep choosing
+   *  which engine to invoke, and an arm picker is exactly that. See the parameter's own comment in
+   *  the `/learn` page, where the rules live. */
+  strategyOverride?: TeachingStrategyId | null;
 }) {
   const router = useRouter();
   // 🔴 DEFINED BEFORE THE EARLY RETURN, so both render branches use the same one. The processing
@@ -85,7 +94,7 @@ export function LearningCanvas({
   const leave = useCallback(() => router.push(CANVAS_EXIT_ROUTE), [router]);
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
-  const policy = usePolicyRuntime(canvas, policyOverride);
+  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */

@@ -41,6 +41,23 @@ export type CanvasEvent =
   // Which teaching action the policy chose, and why. The distribution is how we find out
   // whether the loop is actually adapting or quietly advancing past everything.
   | "canvas_action_chosen"
+  // 🔴 A TEACHING CONTROLLER COULD NOT DECIDE, AND WHY — the reason tally that keeps the A/B
+  // comparison honest. Same construction as `canvas_causal_refused`: a controller that produced
+  // nothing and a controller that is BROKEN both look like an empty screen, and only a named reason
+  // separates a canvas where nothing was owed from a model that will not follow its instructions.
+  //
+  // 🔴 IT MATTERS MOST FOR THE ARM IT USUALLY FIRES ON. The `llm_teacher` baseline has no fallback
+  // to the structured policy — deliberately, because a fallback would make the two arms the same
+  // arm — so a refusal is a turn the learner did not get. If this rate is material, that arm's
+  // outcome numbers are measuring an arm that only half ran, and nothing in the evidence log would
+  // say so on its own. Names and counts only, never the material.
+  | "canvas_strategy_refused"
+  // 🔴 THE ARM RUNNING THIS CANVAS DISAGREES WITH THE ARM ALREADY RECORDED ON ITS EVIDENCE. Should be
+  // unreachable: assignment is derived from stable inputs rather than held in state. Emitted anyway,
+  // because the failure it names is silent by construction — a session that switched controllers
+  // halfway produces perfectly ordinary-looking rows under one label, and no metric can detect it
+  // after the fact.
+  | "canvas_strategy_conflict"
   // 🔴 An INTERACTION signal, not a verdict. "I don't know" says the learner reported their own
   // state; what that means for the concept is decided by combining it with performance evidence,
   // never by this event on its own.

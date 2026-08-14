@@ -40,6 +40,7 @@ import { CanvasHome } from "@/components/workspace/learn/canvas-home";
 import { LearningCanvas } from "@/components/workspace/learn/learning-canvas";
 import { learnEntryFrom, learnSurface } from "@/lib/learn/learn-entry";
 import { policyOverrideFrom } from "@/lib/learn/policy-override";
+import { strategyOverrideFrom } from "@/lib/learn/teaching-strategy";
 
 function LearnSurface() {
   // A canvas is addressable by `?c=<id>` rather than by path segment. The original reason is now
@@ -69,6 +70,28 @@ function LearnSurface() {
   // would have to be `NEXT_PUBLIC_*`, which Next inlines at BUILD time — turning "emergency
   // rollback" into a redeploy, against a Vercel account with a daily build cap.
   const policyOverride = policyOverrideFrom(params.get("policy"));
+  // WHICH TEACHING CONTROLLER RUNS — the internal development switch, and the only way to reach the
+  // baseline arm today.
+  //
+  //     ?teacher=nemesis_policy   the structured cognition engine. Also the default.
+  //     ?teacher=llm_teacher      the same model, given an adaptive-teaching objective, choosing.
+  //
+  // 🔴 NOT EXPOSED TO LEARNERS, AND "NOT EXPOSED" MEANS THERE IS NO CONTROL — no toggle, no menu, no
+  // setting. Contract §27 rules that a learner must not keep deciding which engine to invoke, and a
+  // visible arm picker would be exactly that, dressed as an experiment. Someone who does not type
+  // this parameter cannot reach the baseline, and nothing on screen tells them it exists.
+  //
+  // 🔴 A QUERY PARAMETER RATHER THAN AN ENVIRONMENT FLAG, FOR THE REASON DIRECTLY ABOVE AND ONE MORE.
+  // `NEXT_PUBLIC_*` is inlined at BUILD time, so switching arms would cost a redeploy against a
+  // daily build cap — but worse, it would be global: every session on the deployment would move at
+  // once, and two arms that never run concurrently cannot be compared against each other's cohort.
+  // A parameter is per-session, which is what an experiment needs.
+  //
+  // 🔴 IT IS AN OVERRIDE, NOT THE ASSIGNMENT MECHANISM. Random assignment is built and switched off
+  // (`resolveStrategy`'s `randomise`); this is how a developer exercises an arm deliberately, and it
+  // is recorded as `assignedBy: "override"` so a later analysis can exclude hand-picked sessions
+  // from a randomised result.
+  const strategyOverride = strategyOverrideFrom(params.get("teacher"));
   const { session } = useAuth();
 
   // `?new=1` — a canvas the learner has already started by dropping material on the front door.
@@ -84,7 +107,14 @@ function LearnSurface() {
   // RENDERS THE `×` WITH NO CONDITION AROUND IT. That chain is what makes §38.2 true for a deep
   // link, a hard refresh, a return from sign-in, a topic, dropped material and the processing
   // state alike — rather than six places each remembering to include an exit.
-  return <LearningCanvas canvasId={canvasId} openingAsk={ask} policyOverride={policyOverride} />;
+  return (
+    <LearningCanvas
+      canvasId={canvasId}
+      openingAsk={ask}
+      policyOverride={policyOverride}
+      strategyOverride={strategyOverride}
+    />
+  );
 }
 
 export default function LearnPage() {

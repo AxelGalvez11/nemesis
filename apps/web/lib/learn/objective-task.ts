@@ -18,6 +18,7 @@ import type { EvidenceVerdict } from "./learner-evidence";
 import type { LearningObjective, ObjectiveCapability } from "./learning-objective";
 import type { EvidenceToRecord, StoredObjective } from "./learner-store";
 import type { ObjectiveEvidence, ScaffoldRung } from "./scaffold-rung";
+import type { TeachingStrategyId } from "./teaching-strategy";
 
 /** Which evaluator's judgement this is. Recorded on every row: evidence from a different judge is
  *  a different claim, and after the fact nothing else can tell them apart. */
@@ -431,6 +432,17 @@ export function evidenceForSubmission(input: {
   judgement: Judgement;
   canvasId: string | null;
   occurredAt: string;
+  /**
+   * Which teaching controller chose the opportunity this answer came out of.
+   *
+   * 🔴 PASSED IN, NEVER DERIVED HERE, AND NOT OPTIONAL-WITH-A-DEFAULT. This boundary cannot know
+   * which controller ran — it receives a prompt and a judgement, and both look identical whichever
+   * arm produced them, which is the entire point of the design. A default of `nemesis_policy` would
+   * therefore be a guess that is right most of the time and silently wrong for exactly the rows the
+   * experiment exists to count. `null` is the honest value for a caller that has no arm, and it is
+   * what the legacy path passes.
+   */
+  teachingStrategy: TeachingStrategyId | null;
 }): EvidenceToRecord[] {
   const { judgement, prompt } = input;
 
@@ -459,6 +471,7 @@ export function evidenceForSubmission(input: {
       prompt,
       responseText: input.responseText,
       target,
+      teachingStrategy: input.teachingStrategy,
       ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
     }),
   );
@@ -529,6 +542,7 @@ function rowForTarget(input: {
   canvasId: string | null;
   occurredAt: string;
   tookMs?: number;
+  teachingStrategy: TeachingStrategyId | null;
 }): EvidenceToRecord {
   const { outcome, prompt } = input;
   return {
@@ -574,6 +588,11 @@ function rowForTarget(input: {
     responseText: input.responseText,
     scaffoldingLevel: prompt.scaffoldingLevel,
     taskId: prompt.id,
+    // 🔴 IDENTICAL ON EVERY ROW THIS SUBMISSION WRITES, like the rung and the latency. One
+    // controller chose one opportunity; whatever that one answer turned out to establish across
+    // however many objectives, it was all chosen by the same arm. Deriving it per row would be a
+    // second reading of one fact, and the two could disagree.
+    teachingStrategy: input.teachingStrategy,
     // 🔴 NULL WHENEVER NOTHING WAS SHOWN, AND NEVER `incorrect`. An objective the answer did not
     // address was not contradicted — nothing came back about it at all. Recording absence as a
     // wrong answer is absence of evidence stored as negative evidence, and the learner is then
@@ -622,6 +641,10 @@ export function unobtainedEvidence(input: {
   responseText: string | null;
   canvasId: string | null;
   occurredAt: string;
+  /** Which controller chose the opportunity that produced nothing. 🔴 A non-attempt is an outcome
+   *  the experiment cares about as much as a judged one — an arm whose questions people give up on
+   *  is telling us something, and a row without an arm is a row the comparison cannot see. */
+  teachingStrategy: TeachingStrategyId | null;
   /**
    * How long the attempt took, when anything measured it.
    *
@@ -651,6 +674,7 @@ export function unobtainedEvidence(input: {
     occurredAt: input.occurredAt,
     prompt: input.prompt,
     responseText: input.responseText,
+    teachingStrategy: input.teachingStrategy,
     ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
   });
 }

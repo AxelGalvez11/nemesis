@@ -15,6 +15,7 @@ import type { LearnerEvidence, EvidenceVerdict } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
 import { objectivesForKnowledge, type LearningObjective, type ObjectiveCapability } from "./learning-objective";
 import { readRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
+import { isTeachingStrategy, type TeachingStrategyId } from "./teaching-strategy";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 
 /**
@@ -388,6 +389,19 @@ export interface EvidenceToRecord {
   responseLatencyMs?: number | null;
   /** How much assistance the runtime offered during the attempt. 0 is the prompt alone. */
   scaffoldingLevel?: number | null;
+  /**
+   * Which teaching controller chose this opportunity — the experiment's grouping key.
+   *
+   * 🔴 AN OBSERVATION, LIKE EVERY FIELD IN THIS BLOCK: which controller decided, known before the
+   * learner answered, never inferred from what came back. It belongs here for exactly the reason
+   * `scaffoldRung` does — the runtime knows it at the moment it sets the task.
+   *
+   * 🔴 OPTIONAL AND NULLABLE BECAUSE ABSENT IS A REAL STATE. A caller outside the strategy layer —
+   * the legacy six-stage path, a future import, a repair script — genuinely does not know which arm
+   * a row belongs to, and `nemesis_policy` would be a fabrication rather than a default. Every
+   * metric excludes absent rows rather than assuming one.
+   */
+  teachingStrategy?: TeachingStrategyId | null;
 }
 
 /**
@@ -434,6 +448,11 @@ export function evidenceRow(userId: string, evidence: EvidenceToRecord): Record<
     scaffold_rung: evidence.scaffoldRung ?? null,
     scaffolding_level: evidence.scaffoldingLevel ?? null,
     task_id: evidence.taskId ?? null,
+    // 🔴 `?? null` MEANS "NO ARM RECORDED", AND IT MUST NEVER BECOME `?? DEFAULT_STRATEGY`. Writing
+    // the control arm's name onto a row nobody assigned would enrol it into an experiment it was
+    // never part of, and the resulting comparison would silently include rows from paths that have
+    // no controller at all. Absent is the honest value and every metric already handles it.
+    teaching_strategy: evidence.teachingStrategy ?? null,
     user_id: userId,
     verdict: evidence.verdict,
   };
@@ -493,7 +512,7 @@ export const EVIDENCE_COLUMNS: readonly string[] = [
  * from the write shape, and this literal cannot drift from the derived list.
  */
 export const EVIDENCE_SELECT =
-  "id,objective_id,canvas_id,confidence,demonstration_obtained,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_text,scaffold_rung,scaffolding_level,task_id,verdict";
+  "id,objective_id,canvas_id,confidence,demonstration_obtained,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_text,scaffold_rung,scaffolding_level,task_id,teaching_strategy,verdict";
 
 export async function recordEvidence(userId: string | null, evidence: EvidenceToRecord): Promise<boolean> {
   if (!userId) return false;
@@ -588,5 +607,12 @@ export function evidenceFromRow(
     ...(row.response_id == null ? {} : { responseId: row.response_id as string }),
     ...(row.response_text == null ? {} : { responseText: row.response_text as string }),
     ...(row.task_id == null ? {} : { taskId: row.task_id as string }),
+    // 🔴 VALIDATED, NOT CAST — the same rule `scaffold_rung` above is under, and for a sharper
+    // reason. This comes out of a text column that a migration, a manual fix or an older writer
+    // could put anything into, and `as TeachingStrategyId` would let an unknown string flow into
+    // every grouping in `strategy-outcomes.ts`, where it becomes a THIRD cohort that each metric
+    // reports separately and nobody notices — an experiment quietly running three arms. An
+    // unrecognised value reads as absent, which is what an unrecognised value means.
+    ...(isTeachingStrategy(row.teaching_strategy) ? { teachingStrategy: row.teaching_strategy } : {}),
   };
 }

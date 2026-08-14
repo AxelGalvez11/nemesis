@@ -1032,3 +1032,83 @@ knows the knowledge type, and it knows whether it is exposing an answer or teach
 consequence.** The Canvas must not infer it from the verdict, the component type, or the
 length of the text. That is §36's *"the UI is downstream of this state machine"* applied to
 the one control the product has.
+
+---
+
+# 40. 🔴 THE TEACHING-STRATEGY LAYER — §34 is a bet, and this is the instrument that measures it
+
+*(Owner directive, 2026-08-14. Engineering: this section SCOPES the experiment; it does not
+amend §34, which continues to govern the product.)*
+
+> 🔴 **WORDING AWAITING THE OWNER'S CONFIRMATION.** §34 is the owner's ruling and this document is
+> theirs. This section was drafted by engineering so the contract is not silent while code that
+> *looks* like it contradicts §34 sits in the tree. **What it describes is what shipped, and it is
+> accurate.** What is unsettled is whether the owner wants it worded this way, filed as its own
+> section, or folded into §34 as an amendment. Read it as a proposal about placement, not about facts.
+
+§34 rules that the Nemesis policy is **explicit, not an LLM improvising each turn**. §37 says the
+same thing from the other side: *do not over-engineer v1 with a learned policy; start
+interpretable*. Both are **bets** — that structured cognition beats a good model given a good
+teaching objective. A bet nobody measures is a belief.
+
+So the Canvas can now run with either of two **teaching controllers** behind it, and the owner's
+question is whether the structured engine adds value beyond giving the model a strong teaching
+goal.
+
+```
+sources + learner context ──→ teaching strategy ──→ next Canvas action
+```
+
+| Arm | What decides the next action |
+|---|---|
+| `nemesis_policy` | The full cognition path: knowledge objects, projected learner state, prerequisites, scaffolding, spacing, action ranking, misconception repair. **The default, and the product.** |
+| `llm_teacher` | The same model family, given an explicit adaptive-teaching objective, choosing for itself. **The baseline being measured against.** |
+
+## What is held constant — this is the whole design
+
+**Only the teaching controller changes.** Same Canvas, same source material, same parser, same
+knowledge extraction, same objectives, same question wording, same evaluator, same
+learner-response capture, same evidence rows, same telemetry, same metered model door and
+therefore the same budget. A guard asserts it: two decisions naming the same objective and the
+same action produce a byte-identical prompt and a byte-identical evidence row apart from the one
+field that names the arm.
+
+## What §34 the baseline DOES still obey, and what it does not
+
+The baseline is **constrained, not unconstrained** — it is not the thing §34's warning forbids:
+
+* it may not word a question, invent a task format, or choose a presentation;
+* it may not decide what counts as evidence, or bypass the judge;
+* it may not name a misconception the evidence log does not already hold — that would be
+  teaching against a mistake nobody made;
+* it may only choose among the objectives it was given, and only from the shared action
+  vocabulary. Naming anything else is a **counted refusal**, never a fallback.
+
+What it does **not** get is invariants 1–5. That is the point of a control group: those
+invariants are the treatment. If the baseline asks the same question twice after a failure, or
+re-asks something already demonstrated, the metrics record it — that is the measurement, not a
+defect.
+
+## 🔴 The result must be able to come out against Nemesis
+
+A baseline that loses because it was under-instructed proves nothing. It is given a genuinely
+strong teaching objective, told explicitly to diagnose, adapt difficulty, use retrieval, correct
+misconceptions, scaffold, and aim at durable transferable understanding — and told that
+declining to act is a legitimate answer, because *"unnecessary questions on already-established
+material"* is one of the outcomes being compared and rigging it by construction would make the
+number meaningless.
+
+**There is no fallback from the baseline to the structured policy anywhere.** A fallback would
+make the two arms one arm, both cohorts would report identical outcomes, and the conclusion
+drawn would be *"structured cognition adds nothing"* when what happened is that the baseline
+never ran. **A degraded arm must read as degraded.**
+
+## Assignment
+
+Fixed for the session and **derived, never stored** — from `(learner, canvas)`, so a reload, a
+remount or a second tab all resolve the same arm and a session cannot finish under a controller
+that did not start it. Recorded on every evidence row it produces. **Random assignment is built
+and switched OFF**; turning it on enrols learners into an experiment, which is the owner's call.
+
+There is **no learner-facing control** and there must not be — §27 rules that a learner must not
+keep deciding which engine to invoke, and an arm picker is exactly that.
