@@ -17,13 +17,14 @@
 // learner who half-reads it produces evidence about their eyesight rather than their memory. The
 // whole point of occlusion is that the answer is genuinely not on screen.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { figureAssetUrl } from "@/lib/learn/figure-asset-url";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { cn } from "@/lib/utils";
 
 export interface FigureOcclusionProps {
-  /** Where the picture is fetched from. */
+  /** A URL the browser can load. NOT a parser's figure key — see `StoredFigureOcclusion`. */
   src: string;
   /** Every part this diagram names. */
   labels: readonly FigureLabel[];
@@ -121,4 +122,44 @@ function coverStyle(label: FigureLabel): React.CSSProperties {
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+/**
+ * The same diagram, fetched from where ingestion stored it.
+ *
+ * 🔴 THE SIGNING HOP IS THE WHOLE REASON THIS WRAPPER EXISTS. The visual-assets bucket is
+ * private, so a stored path is not loadable until it is signed for the current session.
+ * Doing that inside `FigureOcclusion` would make a pure renderer asynchronous; doing it in
+ * the screen above would put an effect behind that screen's early returns, where hook order
+ * is not stable. One small component owns "turn a path into something an <img> can load".
+ *
+ * 🔴 NOTHING IS RENDERED UNTIL THERE IS A REAL URL, AND NOTHING IS RENDERED IF THERE IS
+ * NEVER ONE. No placeholder frame, no spinner, no alt-text box: the previous behaviour put
+ * the parser's own figure key into `src`, which asked this application for a path that has
+ * never existed, and the learner sat looking at a broken image while answering. An absent
+ * diagram is a worse question than a present one; a broken diagram is a worse screen than
+ * either.
+ */
+export function StoredFigureOcclusion({
+  path,
+  ...rest
+}: Omit<FigureOcclusionProps, "src"> & { path: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setUrl(null);
+    void figureAssetUrl(path).then((signed) => {
+      // The path can change while a signature is in flight — the policy moves to another
+      // figure. Applying a stale URL would show the previous question's diagram under the
+      // current question's prompt, which is the kind of wrong that still looks fine.
+      if (live) setUrl(signed);
+    });
+    return () => {
+      live = false;
+    };
+  }, [path]);
+
+  if (!url) return null;
+  return <FigureOcclusion {...rest} src={url} />;
 }

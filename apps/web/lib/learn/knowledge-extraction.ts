@@ -199,6 +199,7 @@ function figuresFromUnits(context: SourceContext): KnowledgeObject[] {
     const object = figureKnowledge({
       caption: content.description ?? content.caption ?? "",
       imageRef: ref,
+      ...(unit.figure?.asset ? { assetPath: unit.figure.asset.path } : {}),
       labels,
       // 🔴 "model", AND IT IS THE TRUTH RATHER THAN A DEFAULT. The picture is the document's; the
       // LABELS are a vision model's reading of it, and nothing in the document's text says where

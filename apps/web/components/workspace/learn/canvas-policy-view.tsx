@@ -21,7 +21,7 @@ import { normalizeForIdentity } from "@/lib/learn/knowledge-identity";
 import type { FigureKnowledge } from "@/lib/learn/knowledge-types";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
 
-import { FigureOcclusion } from "./figure-occlusion";
+import { StoredFigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
@@ -210,11 +210,14 @@ function PolicyScreen({
     return (
       <div className={`flex ${regionHeight(sharing)} flex-col items-center justify-center gap-6 px-6`}>
         {occluded && (
-          <FigureOcclusion
+          <StoredFigureOcclusion
             caption={occluded.figure.caption}
             hidden={occluded.hidden}
             labels={occluded.figure.labels}
-            src={occluded.figure.imageRef}
+            // 🔴 `assetPath`, NEVER `imageRef`. The latter names the figure inside its original
+            // container and is not a URL; `occlusionFor` refuses a figure without a stored asset
+            // precisely so this cannot fall back to it.
+            path={occluded.figure.assetPath!}
           />
         )}
         <h2
@@ -334,6 +337,12 @@ function occlusionFor(decision: PolicyRuntime["decision"]): { figure: FigureKnow
   if (!decision) return null;
   const figure = decision.knowledge.figure;
   if (!figure || decision.objective.capability !== "locate") return null;
+  // 🔴 NO PICTURE, NO OCCLUSION. `imageRef` names the figure inside its original container
+  // (`ppt/media/image3.png`) and is not a URL; handing it to an `<img src>` — which is what
+  // this did — makes the browser request a path from this application that has never existed,
+  // so the learner got a broken image in the middle of a question. Only a stored asset can be
+  // shown, and a figure without one simply does not host a visual interaction.
+  if (!figure.assetPath) return null;
   const wanted = decision.objective.parameters.labelKey;
   const hidden = figure.labels.find((label) => normalizeForIdentity(label.text) === wanted);
   // 🔴 NO FALLBACK TO "THE FIRST LABEL". If the objective names a part this figure does not have,

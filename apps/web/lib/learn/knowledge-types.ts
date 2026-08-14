@@ -369,8 +369,29 @@ export type UnanchoredProvenance =
  * decision inside a renderer.
  */
 export interface FigureKnowledge {
-  /** How the surface fetches the picture — the document model's own figure key. */
+  /**
+   * WHICH picture this is, in the document's own vocabulary — a zip entry, an XObject name.
+   *
+   * 🔴 IT IS NOT AN ADDRESS, AND TREATING IT AS ONE WAS A LIVE DEFECT. This field's own
+   * documentation used to say "how the surface fetches the picture", and the spatial lane
+   * believed it: `ppt/media/image3.png` went straight into an `<img src>`, so the browser
+   * asked this application for a path that has never existed and the learner was shown a
+   * broken image in the middle of a question. It identifies the figure; it does not locate it.
+   */
   readonly imageRef: string;
+  /**
+   * WHERE the picture is stored, when ingestion kept it (#619) — an object path in the
+   * visual-assets bucket, resolved to a signed URL at render time.
+   *
+   * 🔴 STILL A REFERENCE, NEVER BYTES, for the reason the interface already gives: a
+   * knowledge object is persisted, compared and shipped to the client, and a base64 diagram
+   * would put megabytes into every read of it.
+   *
+   * 🔴 OPTIONAL, AND THE ABSENCE IS MEANINGFUL. Figures parsed before assets existed have
+   * none. A spatial interaction without one has no picture to occlude and must not be
+   * offered — see `figure-knowledge.ts`.
+   */
+  readonly assetPath?: string;
   /** What the figure was described as, for a prompt that must not name the covered part. */
   readonly caption?: string;
   /** Each named part and where it sits, normalised 0–1. See lib/learn/figure-labels.ts. */
