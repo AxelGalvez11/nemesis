@@ -62,7 +62,7 @@ import { MAX_SOURCE_BYTES } from "@/lib/notebooks/ingest-ref";
  * `library-sources` bucket's own — and this now equals it exactly. Slimming is
  * once again what it was meant to be: the last resort for a file that genuinely
  * cannot be stored, not a routine tax on any deck with figures in it. Decks
- * under 50 MB now keep their pictures, which is the point of everything
+ * under the ceiling keep their pictures, which is the point of everything
  * downstream.
  */
 export const OFFICE_SLIM_THRESHOLD_BYTES = MAX_SOURCE_BYTES;
