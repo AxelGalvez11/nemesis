@@ -54,6 +54,9 @@ import {
 import { parseCausalTerritory, type CausalTerritoryResult } from "./causal-grounded";
 import { parseTerritory, type TerritoryResult } from "./knowledge-territory";
 import type { CanvasSelection, SelectionAction } from "./canvas-selection";
+import { knownDefinition } from "./learner-friction";
+import { loadLookups, recordLookup } from "./learner-lookups-store";
+import { wordShares, worthDefining } from "./vocabulary-lookup";
 import type {
   CanvasBlock,
   CanvasQuestion,
@@ -568,6 +571,17 @@ export async function explainSelection(
     : undefined;
   const objective = selection.conceptIds?.[0] ? conceptLabel(canvas, selection.conceptIds[0]) : "";
 
+  // 🔴🔴 A DEFINITION THE LEARNER HAS ALREADY BEEN GIVEN COMES BACK WITHOUT A MODEL CALL. The
+  // owner's ask, in one sentence: *"I want users to be able to highlight a word to define or explain
+  // and have nemesis keep track of that to provide the definition in the future."* The second
+  // encounter with a term is the common one — the same word appears on four slides — and paying for
+  // it again is both slower for them and a cost with nothing behind it.
+  //
+  // 🔴 ONLY FOR `define`. "Explain this", "why", and "give me an example" are questions about a
+  // passage in its context, and the answer to them is not reusable the way a term's meaning is.
+  const remembered = action === "define" ? await rememberedDefinition(uid, selection) : null;
+  if (remembered) return { value: remembered, error: null };
+
   const { text, error } = await ask(
     uid,
     selectionMessages({
@@ -593,6 +607,17 @@ export async function explainSelection(
     ? canvas.sources.find((source) => source.title.toLowerCase() === answer.fromSource.toLowerCase())
     : undefined;
 
+  // 🔴 REMEMBERED AFTER THE ANSWER EXISTS, AND THE WRITE CANNOT DELAY IT. `recordLookup` never
+  // throws and returns a boolean; a glossary that failed to save must not cost the learner the
+  // definition they are looking at.
+  if (action === "define") {
+    void recordLookup(uid, {
+      canvasId: canvas.id,
+      definition: answer.text,
+      displayTerm: selection.selectedText,
+    });
+  }
+
   return {
     value: {
       term: selection.selectedText,
@@ -601,6 +626,46 @@ export async function explainSelection(
     },
     error: null,
   };
+}
+
+/**
+ * A definition this learner was already given for this selection — or nothing.
+ *
+ * 🔴 THE REFUSAL COMES FIRST, AND IT IS THE OWNER'S RULE: *"if user selects a non vocab term like an
+ * article, then it should disregard that likely."* Someone drags across a line and catches "the" on
+ * the end of it; storing a definition for "the" and offering it back for ever is three kinds of
+ * wrong at once. `worthDefining` decides that from how often the word appears in the learner's OWN
+ * material rather than from a stop-word list, so it works in every language — see
+ * `vocabulary-lookup.ts` for why a list would work in English and silently misbehave elsewhere.
+ *
+ * 🔴 A REFUSAL RETURNS NULL, WHICH FALLS THROUGH TO THE MODEL RATHER THAN BLOCKING. This function's
+ * job is to save a call, never to deny an answer: refusing to reuse is cheap, and refusing to ANSWER
+ * would let a normalisation quirk silently break the feature for a word somebody genuinely needs.
+ */
+async function rememberedDefinition(
+  uid: string,
+  selection: CanvasSelection,
+): Promise<SelectionExplanation | null> {
+  const material = selection.surroundingText ?? "";
+  const decision = worthDefining({
+    sentenceCount: material.split(/[.!?\n]+/u).filter((piece) => piece.trim()).length,
+    shares: wordShares(material),
+    term: selection.selectedText,
+  });
+  if (!decision.define) return null;
+
+  const known = knownDefinition(await loadLookups(uid), selection.selectedText);
+  if (!known) return null;
+
+  // 🔴 THE REUSE IS ITSELF A LOOKUP, AND RECORDING IT IS THE WHOLE FRICTION SIGNAL. Needing the same
+  // word a second time after being told is precisely what `learner-friction.ts` counts; skipping the
+  // write here because "we did not do any work" would make the signal measure our model spend
+  // instead of the learner's difficulty, and it would never reach the threshold.
+  void recordLookup(uid, {
+    definition: known.definition,
+    displayTerm: selection.selectedText,
+  });
+  return { term: selection.selectedText, text: known.definition };
 }
 
 /** "Simpler" — the one selection action that edits the page, and it edits ONE block.

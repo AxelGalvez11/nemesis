@@ -135,6 +135,12 @@ const INCONCLUSIVE_NUDGE = 100;
  * a ceiling below half the smallest gap, any number of future terms can be added and a modifier
  * still cannot lift an action out of its band. `modifierCeilingHoldsBands` proves it from the bands
  * themselves rather than from a number written here.
+ *
+ * 🔴 WHAT IT GOVERNS, STATED SO THE GUARANTEE CANNOT LEAK QUIETLY. Everything that flows through
+ * `delta` — failures, blocked dependents, terminology friction, `just-worked`. `INCONCLUSIVE_NUDGE`
+ * deliberately sits OUTSIDE it, because it is not a modifier: it separates two readings of the same
+ * band and is applied to `score` where the band is chosen. A future term that follows that pattern
+ * escapes this clamp, so a term belongs in `delta` unless it is picking a band.
  */
 const MODIFIER_CEILING = 900;
 
