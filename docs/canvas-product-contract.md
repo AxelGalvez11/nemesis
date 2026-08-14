@@ -1040,6 +1040,12 @@ the one control the product has.
 *(Owner directive, 2026-08-14. Engineering: this section SCOPES the experiment; it does not
 amend §34, which continues to govern the product.)*
 
+> 🔴 **WORDING AWAITING THE OWNER'S CONFIRMATION.** §34 is the owner's ruling and this document is
+> theirs. This section was drafted by engineering so the contract is not silent while code that
+> *looks* like it contradicts §34 sits in the tree. **What it describes is what shipped, and it is
+> accurate.** What is unsettled is whether the owner wants it worded this way, filed as its own
+> section, or folded into §34 as an amendment. Read it as a proposal about placement, not about facts.
+
 §34 rules that the Nemesis policy is **explicit, not an LLM improvising each turn**. §37 says the
 same thing from the other side: *do not over-engineer v1 with a learned policy; start
 interpretable*. Both are **bets** — that structured cognition beats a good model given a good
