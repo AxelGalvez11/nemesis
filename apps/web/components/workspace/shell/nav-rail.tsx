@@ -102,7 +102,7 @@ export function NavRail({ accountEmail, onExpand }: NavRailProps) {
         label={accountEmail ? `Account: ${accountEmail}` : "Sign in"}
         onClick={() => openSettings()}
       >
-        <span className="flex size-6 items-center justify-center rounded-full bg-(--theme-primary) text-[0.625rem] font-semibold uppercase leading-none text-white">
+        <span className="flex size-6 items-center justify-center rounded-full bg-(--theme-primary) text-[length:var(--canvas-text-meta)] font-semibold uppercase leading-none text-white">
           {initialOf(accountEmail)}
         </span>
       </RailButton>

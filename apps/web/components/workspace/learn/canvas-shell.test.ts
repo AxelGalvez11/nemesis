@@ -341,12 +341,19 @@ test("🔴 §46.3: the Canvas has ONE type scale, and it has five steps", () => 
   // future type tweak silently break focus on every iPhone. A blanket exception for "px in an
   // input" would have been invisible; a marker on the line names the cost each time it is paid.
   const EXEMPT = /§46\.3-exempt:\s*\S/;
-  const files = readdirSync(import.meta.dirname).filter(
-    (name) => name.endsWith(".tsx") && !name.endsWith(".test.tsx"),
+  // 🔴 BOTH SURFACES, BECAUSE §46.3 SAYS "TYPOGRAPHY", NOT "CANVAS TYPOGRAPHY". The first version
+  // of this guard covered only this directory, and the shell quietly kept ten more sizes of its
+  // own — including a 15px that showed up in a live measurement of the Canvas route. A rule scoped
+  // to the surface that happened to be under review is a rule the next surface never hears about.
+  const roots = [import.meta.dirname, join(import.meta.dirname, "../shell")];
+  const files = roots.flatMap((root) =>
+    readdirSync(root)
+      .filter((name) => name.endsWith(".tsx") && !name.endsWith(".test.tsx"))
+      .map((name) => join(root, name)),
   );
   const offenders: string[] = [];
   for (const file of files) {
-    const lines = read(file).split("\n");
+    const lines = readFileSync(file, "utf8").split("\n");
     for (const [index, line] of lines.entries()) {
       const stripped = line.replace(/\/\/.*$/, "");
       // `text-[…]` carrying a bare length. The scale tokens carry a `length:` hint and a token
@@ -357,7 +364,7 @@ test("🔴 §46.3: the Canvas has ONE type scale, and it has five steps", () => 
       if (bad) {
         // The marker may sit on this line or in the comment block immediately above it.
         const window = lines.slice(Math.max(0, index - 12), index + 1).join("\n");
-        if (!EXEMPT.test(window)) offenders.push(`${file}:${index + 1} ${bad[0]}`);
+        if (!EXEMPT.test(window)) offenders.push(`${file.split("/").slice(-2).join("/")}:${index + 1} ${bad[0]}`);
       }
 
       // 🔴 AND THE `length:` HINT IS NOT OPTIONAL — THIS SHIPPED BROKEN ONCE AND LOOKED FINE.
@@ -365,10 +372,17 @@ test("🔴 §46.3: the Canvas has ONE type scale, and it has five steps", () => 
       // `color: var(--canvas-text-body)` and not one font size changed. The failure is silent in
       // source review (the class names read correctly) and only showed up because the CSS build
       // choked on an unrelated line. `text-[length:var(--x)]` is what makes it a font size.
+      // Tailwind's own named steps are a second scale hiding in plain sight: `text-xs` is 13.5px
+      // here and `text-sm` 15.75px, neither of which is on ours.
+      const named = /\btext-(xs|sm|base|lg|xl|[2-9]xl)\b/.exec(stripped);
+      if (named) {
+        offenders.push(`${file.split("/").slice(-2).join("/")}:${index + 1} ${named[0]} is Tailwind's scale, not ours`);
+      }
+
       const unhinted = /text-\[var\(--canvas-text-/.exec(stripped);
       if (unhinted) {
         offenders.push(
-          `${file}:${index + 1} ${unhinted[0]}…] is missing the \`length:\` hint — Tailwind reads this as a COLOR, so the size silently does not apply`,
+          `${file.split("/").slice(-2).join("/")}:${index + 1} ${unhinted[0]}…] is missing the \`length:\` hint — Tailwind reads this as a COLOR, so the size silently does not apply`,
         );
       }
     }

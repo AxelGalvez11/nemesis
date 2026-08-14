@@ -20,6 +20,7 @@
 // field, it is the wrong abstraction.
 
 import type { CanonicalSourceAnchor } from "@/lib/sources/source-context";
+import type { FigureLabel } from "./figure-labels";
 
 import type { SourceRef } from "./canvas-model";
 
@@ -358,6 +359,24 @@ export type UnanchoredProvenance =
  *  Sits BETWEEN the canvas's coarse objectives (`CanvasConcept`) and the prompts that test them:
  *  a concept is "ACE inhibitors", and the knowledge objects under it are the association, the
  *  rule and the causal chain, each of which is learned and mastered separately. */
+/**
+ * A labelled diagram as knowledge (§46.6): the picture, and what it names where.
+ *
+ * 🔴 THIS IS WHAT MAKES A DIAGRAM A COGNITIVE OBJECT RATHER THAN AN ILLUSTRATION. The owner's rule
+ * is explicit: "Diagrams are first-class cognitive objects, not decorative assets. They belong to
+ * the knowledge system, not the UI layer." So the labels live here, on the knowledge, and the
+ * occlusion component is handed them — not the other way round, which would put the teaching
+ * decision inside a renderer.
+ */
+export interface FigureKnowledge {
+  /** How the surface fetches the picture — the document model's own figure key. */
+  readonly imageRef: string;
+  /** What the figure was described as, for a prompt that must not name the covered part. */
+  readonly caption?: string;
+  /** Each named part and where it sits, normalised 0–1. See lib/learn/figure-labels.ts. */
+  readonly labels: readonly FigureLabel[];
+}
+
 export interface KnowledgeObject {
   id: string;
   type: KnowledgeType;
@@ -379,6 +398,15 @@ export interface KnowledgeObject {
   pair?: AssociationPair;
   /** Set only when `type` is "causal". One directed edge — see `CausalRelation`. */
   relation?: CausalRelation;
+  /**
+   * Set only when `type` is "spatial". A labelled diagram and where its parts sit (§46.6).
+   *
+   * 🔴 THE IMAGE IS A REFERENCE, NOT BYTES. A knowledge object is persisted, compared and shipped
+   * to the client; carrying a base64 diagram would put megabytes into every read of it. `imageRef`
+   * is the same key the document model already uses for a figure block, so the surface fetches the
+   * picture exactly the way the reader does.
+   */
+  figure?: FigureKnowledge;
   /** Where this sits in the CANVAS — `{sourceId, excerptId}`, resolving against one canvas's own
    *  excerpt list. Canvas-local, and meaningless in any other canvas. */
   sourceRefs?: SourceRef[];

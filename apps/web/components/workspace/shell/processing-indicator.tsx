@@ -60,7 +60,7 @@ export function ProcessingIndicator() {
             name={processing.length > 0 ? "sync" : "warning"}
             size="0.8rem"
           />
-          <span className="truncate text-[0.75rem] text-foreground">{label}</span>
+          <span className="truncate text-[length:var(--canvas-text-meta)] text-foreground">{label}</span>
           <Codicon className="ml-auto shrink-0 text-(--ui-text-quaternary)" name={expanded ? "chevron-down" : "chevron-up"} size="0.7rem" />
         </button>
         {expanded && (
@@ -82,8 +82,8 @@ function JobRow({ job }: { job: RecordingJob }) {
   const detail = jobDetail(job);
   const body = (
     <>
-      <span className="block truncate text-[0.75rem] text-foreground">{job.title ?? "Recording"}</span>
-      <span className="block truncate text-[0.6875rem] text-(--ui-text-tertiary)">
+      <span className="block truncate text-[length:var(--canvas-text-meta)] text-foreground">{job.title ?? "Recording"}</span>
+      <span className="block truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
         {job.status === "failed"
           ? job.error ?? "Something went wrong."
           : [stageLabel(job.stage), detail].filter(Boolean).join(" · ")}

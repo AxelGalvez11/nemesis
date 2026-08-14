@@ -251,12 +251,12 @@ export function SecuritySettings() {
 
   return (
     <div className="grid gap-4">
-      {notice && <p className="rounded-lg bg-(--ui-bg-tertiary) px-3 py-2 text-xs text-foreground" role="status">{notice}</p>}
-      {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
+      {notice && <p className="rounded-lg bg-(--ui-bg-tertiary) px-3 py-2 text-[length:var(--canvas-text-meta)] text-foreground" role="status">{notice}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[length:var(--canvas-text-meta)] text-destructive" role="alert">{error}</p>}
 
       <section className="rounded-2xl border border-(--ui-stroke-secondary) bg-background p-4 shadow-sm">
-        <h3 className="mb-1 text-xs font-semibold">Account</h3>
-        <p className="text-xs text-(--ui-text-tertiary)">Signed in as <span className="text-foreground">{session?.user.email ?? "Preview account"}</span></p>
+        <h3 className="mb-1 text-[length:var(--canvas-text-meta)] font-semibold">Account</h3>
+        <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">Signed in as <span className="text-foreground">{session?.user.email ?? "Preview account"}</span></p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={() => router.push("/account")} size="sm" variant="secondary">Manage account</Button>
           <Button onClick={() => void signOut().then(() => router.replace("/sign-in"))} size="sm" variant="ghost">Log out</Button>
@@ -264,8 +264,8 @@ export function SecuritySettings() {
       </section>
 
       <section className="rounded-2xl border border-(--ui-stroke-secondary) bg-background p-4 shadow-sm">
-        <h3 className="mb-1 text-xs font-semibold">Password</h3>
-        <p className="mb-3 text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">Set a new password for signing in. If you joined with Google, this adds a password you can use too.</p>
+        <h3 className="mb-1 text-[length:var(--canvas-text-meta)] font-semibold">Password</h3>
+        <p className="mb-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">Set a new password for signing in. If you joined with Google, this adds a password you can use too.</p>
         <form className="grid max-w-sm gap-2" onSubmit={changePassword}>
           <Input autoComplete="new-password" disabled={!canManage} onChange={(event) => setPassword(event.target.value)} placeholder="New password" type="password" value={password} />
           <Input autoComplete="new-password" disabled={!canManage} onChange={(event) => setPasswordConfirm(event.target.value)} placeholder="Repeat new password" type="password" value={passwordConfirm} />
@@ -274,14 +274,14 @@ export function SecuritySettings() {
       </section>
 
       <section className="rounded-2xl border border-(--ui-stroke-secondary) bg-background p-4 shadow-sm">
-        <h3 className="mb-1 text-xs font-semibold">Two-step verification</h3>
-        <p className="mb-3 text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">Add a second check at sign-in so a stolen password alone can't open your account.</p>
+        <h3 className="mb-1 text-[length:var(--canvas-text-meta)] font-semibold">Two-step verification</h3>
+        <p className="mb-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">Add a second check at sign-in so a stolen password alone can't open your account.</p>
 
         {verifiedFactors.length > 0 && (
           <ul className="mb-3 grid gap-2">
             {verifiedFactors.map((factor) => (
               <li className="flex items-center justify-between gap-3 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2" key={factor.id}>
-                <span className="flex items-center gap-2 text-xs">
+                <span className="flex items-center gap-2 text-[length:var(--canvas-text-meta)]">
                   <Codicon className="text-(--theme-primary)" name="shield" size="0.85rem" />
                   {factorLabel(factor)}
                 </span>
@@ -294,27 +294,27 @@ export function SecuritySettings() {
         <div className="grid gap-2">
           <div className="flex items-center justify-between gap-3 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2.5">
             <div>
-              <p className="text-xs font-medium">Authenticator app</p>
-              <p className="text-[0.68rem] text-(--ui-text-quaternary)">Google Authenticator, 1Password, Apple Passwords — scan a code once, then enter 6-digit codes.</p>
+              <p className="text-[length:var(--canvas-text-meta)] font-medium">Authenticator app</p>
+              <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Google Authenticator, 1Password, Apple Passwords — scan a code once, then enter 6-digit codes.</p>
             </div>
             <Button disabled={!canManage || workingFactor === "totp"} onClick={() => void startTotp()} size="sm" variant="secondary">{workingFactor === "totp" ? "Preparing…" : "Add"}</Button>
           </div>
           <div className="flex items-center justify-between gap-3 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2.5">
             <div>
-              <p className="text-xs font-medium">Security key or passkey</p>
-              <p className="text-[0.68rem] text-(--ui-text-quaternary)">Touch ID, Face ID, or a hardware key.</p>
+              <p className="text-[length:var(--canvas-text-meta)] font-medium">Security key or passkey</p>
+              <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Touch ID, Face ID, or a hardware key.</p>
             </div>
             <Button disabled={!canManage || workingFactor === "webauthn"} onClick={() => void addPasskey()} size="sm" variant="secondary">{workingFactor === "webauthn" ? "Waiting…" : "Add"}</Button>
           </div>
           <div className="flex items-center justify-between gap-3 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2.5">
             <div>
-              <p className="text-xs font-medium">Text message</p>
-              <p className="text-[0.68rem] text-(--ui-text-quaternary)">Get a code by SMS at sign-in.</p>
+              <p className="text-[length:var(--canvas-text-meta)] font-medium">Text message</p>
+              <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Get a code by SMS at sign-in.</p>
             </div>
             <Button disabled={!canManage || workingFactor === "phone"} onClick={() => { setPhoneNumber(""); setPhoneEnrollment(null); setPhoneDialogOpen(true); }} size="sm" variant="secondary">Add</Button>
           </div>
         </div>
-        {!canManage && <p className="mt-3 text-[0.68rem] text-(--ui-text-quaternary)">Sign in on the real app to manage security settings.</p>}
+        {!canManage && <p className="mt-3 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Sign in on the real app to manage security settings.</p>}
       </section>
 
       <Dialog onOpenChange={(open) => { if (!open) void cancelTotp(); }} open={totp !== null}>
@@ -328,7 +328,7 @@ export function SecuritySettings() {
               <div className="grid justify-items-center gap-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img alt="QR code for your authenticator app" className="size-40 rounded-lg border border-(--ui-stroke-tertiary) bg-white p-2" src={qrImageSource(totp.qr)} />
-                <p className="max-w-full break-all text-center text-[0.65rem] text-(--ui-text-quaternary)">Can't scan? Enter this key manually: <span className="font-mono text-foreground">{totp.secret}</span></p>
+                <p className="max-w-full break-all text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Can't scan? Enter this key manually: <span className="font-mono text-foreground">{totp.secret}</span></p>
               </div>
             )}
             <Input autoFocus inputMode="numeric" maxLength={6} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))} placeholder="123456" value={totpCode} />

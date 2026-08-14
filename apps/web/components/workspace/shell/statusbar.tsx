@@ -7,7 +7,7 @@
 import type * as React from "react";
 
 export const STATUSBAR_ACTION_CLASS =
-  "inline-flex h-full items-center gap-1 rounded-none px-1.5 text-[0.6875rem] text-(--ui-text-tertiary) transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground disabled:cursor-default disabled:opacity-45";
+  "inline-flex h-full items-center gap-1 rounded-none px-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary) transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground disabled:cursor-default disabled:opacity-45";
 
 interface StatusbarControlsProps {
   leftItems?: React.ReactNode;

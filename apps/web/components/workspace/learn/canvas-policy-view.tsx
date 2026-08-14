@@ -17,6 +17,11 @@ import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
 
+import { normalizeForIdentity } from "@/lib/learn/knowledge-identity";
+import type { FigureKnowledge } from "@/lib/learn/knowledge-types";
+import type { FigureLabel } from "@/lib/learn/figure-labels";
+
+import { FigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
@@ -193,8 +198,25 @@ function PolicyScreen({
     //
     // This is for FAST RETRIEVAL specifically. A conceptual or diagnostic interaction may need
     // scaffolding, and it should render its own thing rather than loosening this one.
+    // 🔴 §46.6 — A SPATIAL OBJECTIVE RENDERS ITS DIAGRAM, AND THE ENGINE CHOSE THAT, NOT A MODE.
+    // The rule: image occlusion "should not become a separate 'image occlusion mode' the learner
+    // manually manages. The cognition engine decides when a visual retrieval interaction is
+    // useful." So this is the SAME `retrieve` action, on the same screen, with the same one
+    // composer underneath — it simply has a picture to show because the knowledge is a diagram.
+    // §48: the Canvas changes representation because the cognitive task changed, never because
+    // the learner picked a mode.
+    const occluded = occlusionFor(decision);
+
     return (
-      <div className={`flex ${regionHeight(sharing)} items-center justify-center px-6`}>
+      <div className={`flex ${regionHeight(sharing)} flex-col items-center justify-center gap-6 px-6`}>
+        {occluded && (
+          <FigureOcclusion
+            caption={occluded.figure.caption}
+            hidden={occluded.hidden}
+            labels={occluded.figure.labels}
+            src={occluded.figure.imageRef}
+          />
+        )}
         <h2
           // Optically centred rather than mathematically: the composer occupies the bottom of the
           // screen, so true centre reads as low. `pb-40` above lifts the block into where the eye
@@ -299,6 +321,28 @@ function PolicyScreen({
  *  also refuses outright while recording, so a bug in this gate costs a missed advance, never a
  *  fabricated one. The ref (not the callback) is in the deps: `acknowledge` is keyed on `decision`,
  *  which legitimately changes while this screen is up. */
+/**
+ * The diagram this decision is asking about, and which part of it is covered — or null (§46.6).
+ *
+ * 🔴 IT READS THE OBJECTIVE'S OWN `labelKey`, NOT A COUNTER. Which label is hidden is part of WHAT
+ * WAS ASKED: the objective identity carries it, so the figure shown is the figure that objective is
+ * about, and a replay of the evidence can reconstruct exactly what the learner saw. Choosing here
+ * — by round, by random, by anything local — would mean the screen and the evidence disagreed
+ * about which part was covered, and the learner would be marked on a question nobody recorded.
+ */
+function occlusionFor(decision: PolicyRuntime["decision"]): { figure: FigureKnowledge; hidden: FigureLabel } | null {
+  if (!decision) return null;
+  const figure = decision.knowledge.figure;
+  if (!figure || decision.objective.capability !== "locate") return null;
+  const wanted = decision.objective.parameters.labelKey;
+  const hidden = figure.labels.find((label) => normalizeForIdentity(label.text) === wanted);
+  // 🔴 NO FALLBACK TO "THE FIRST LABEL". If the objective names a part this figure does not have,
+  // the two have drifted — a reparse, a better vision pass — and covering an arbitrary label would
+  // ask a question the evidence will attribute to a different one. Showing the picture uncovered is
+  // wrong too, so this renders no diagram at all and the prompt stands on its own.
+  return hidden ? { figure, hidden } : null;
+}
+
 function FeedbackScreen({
   correctionQueued,
   exposition,

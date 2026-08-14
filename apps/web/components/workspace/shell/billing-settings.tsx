@@ -154,13 +154,13 @@ export function BillingSettings() {
 
   return (
     <div className="grid gap-4">
-      {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[length:var(--canvas-text-meta)] text-destructive" role="alert">{error}</p>}
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-base)_4%,var(--background))] p-5">
         <div>
-          <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">Current plan</p>
-          <p className="mt-1 text-xl font-semibold">{snapshot ? planLabel(snapshot.plan) : "Checking…"}</p>
-          <p className="mt-1 max-w-md text-xs leading-relaxed text-(--ui-text-tertiary)">
+          <p className="text-[length:var(--canvas-text-meta)] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">Current plan</p>
+          <p className="mt-1 text-[length:var(--canvas-text-lead)] font-semibold">{snapshot ? planLabel(snapshot.plan) : "Checking…"}</p>
+          <p className="mt-1 max-w-md text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
             {!snapshot
               ? "Checking subscription status…"
               : currentRank > 0
@@ -191,18 +191,18 @@ export function BillingSettings() {
               key={card.tier}
             >
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">{card.name}</h3>
+                <h3 className="text-[length:var(--canvas-text-small)] font-semibold">{card.name}</h3>
                 {isCurrent ? (
-                  <span className="rounded-full bg-(--theme-primary) px-2 py-0.5 text-[0.65rem] font-semibold text-white">Current</span>
+                  <span className="rounded-full bg-(--theme-primary) px-2 py-0.5 text-[length:var(--canvas-text-meta)] font-semibold text-white">Current</span>
                 ) : card.recommended && currentRank === 0 ? (
-                  <span className="rounded-full border border-(--theme-primary) px-2 py-0.5 text-[0.65rem] font-semibold text-(--theme-primary)">Recommended</span>
+                  <span className="rounded-full border border-(--theme-primary) px-2 py-0.5 text-[length:var(--canvas-text-meta)] font-semibold text-(--theme-primary)">Recommended</span>
                 ) : null}
               </div>
               <p className="mt-3">
-                <span className="text-2xl font-semibold tracking-tight">{price.amount}</span>
-                <span className="text-xs text-(--ui-text-tertiary)">{price.interval}</span>
+                <span className="text-[length:var(--canvas-text-title)] font-semibold tracking-tight">{price.amount}</span>
+                <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{price.interval}</span>
               </p>
-              <ul className="mt-4 grid gap-2 text-xs leading-relaxed text-(--ui-text-secondary)">
+              <ul className="mt-4 grid gap-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-secondary)">
                 <li className="font-medium text-foreground">{card.tagline}</li>
                 {card.features.map((feature) => (
                   <li className="flex gap-2" key={feature}>
@@ -227,7 +227,7 @@ export function BillingSettings() {
                 )}
               </div>
               {currentRank === 0 && (
-                <p className="mt-3 text-[0.65rem] leading-relaxed text-(--ui-text-quaternary)">
+                <p className="mt-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">
                   Card required. Your subscription starts when you confirm in Stripe. Cancel anytime.
                 </p>
               )}
