@@ -52,6 +52,7 @@ import { readCsv } from "./csv-structure";
 import { readTextDocument } from "./text-structure";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
+import { normalizedFigures, type NormalizedFigure } from "./figure-assets";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
@@ -164,7 +165,23 @@ export interface ParsedDocument {
 }
 
 export type ParseOutcome =
-  | { ok: true; document: ParsedDocument }
+  | {
+      ok: true;
+      document: ParsedDocument;
+      /**
+       * Pictures this parse normalized, still as pixels.
+       *
+       * 🔴 A SIBLING OF `document`, NOT A FIELD ON IT, AND THAT PLACEMENT IS THE
+       * SAFETY. `document` is the thing that gets recorded; a 20 MB array of
+       * figure bytes hanging off it would be base64'd into a database column by
+       * the first caller that stored the object whole — recreating the exact
+       * working-set problem these assets exist to end. Out here it has to be
+       * picked up deliberately, by a caller that has somewhere to put it.
+       *
+       * Absent means the format has no figures or none survived the media plan.
+       */
+      figures?: NormalizedFigure[];
+    }
   /** Nothing readable came out, and no structure either. A verdict about the file. */
   | { ok: false; reason: "empty"; kind: DocumentKind }
   /**
@@ -188,7 +205,14 @@ export type ParseOutcome =
    * a later vision pass can enrich a document whose shape is already known
    * rather than having to decide again what the file even is.
    */
-  | { ok: false; reason: "no-text"; kind: DocumentKind; document: ParsedDocument }
+  | {
+      ok: false;
+      reason: "no-text";
+      kind: DocumentKind;
+      document: ParsedDocument;
+      /** Same sibling placement, same reason, as on the success variant above. */
+      figures?: NormalizedFigure[];
+    }
   | { ok: false; reason: "unsupported" }
   | { ok: false; reason: "too-large-image" }
   | { ok: false; reason: "vision-unavailable" };
@@ -414,6 +438,8 @@ export async function parseDocument(
   let skippedFigures = 0;
   let coverage: ExtractionCoverage;
   let model: DocumentModel | undefined;
+  /** Pixels, held only until a caller with storage takes them. See `ParseOutcome`. */
+  let normalized: NormalizedFigure[] | undefined;
 
   if (kind === "image") {
     const seen = await readWithVision(bytes, visionMime(fileName, mimeType) ?? "image/jpeg", {
@@ -492,6 +518,12 @@ export async function parseDocument(
     coverage = singleUnitCoverage({ method: "native", read: text.trim().length > 0 });
   } else {
     const deck = readPptxSlides(bytes);
+    // The pictures are in memory RIGHT HERE and nowhere else. `deck.imageBytes` holds
+    // every figure already unwrapped and downscaled — 34 TIFFs became PNG on the way
+    // in — and until now they were sent to vision and then dropped, so the only route
+    // back to a diagram was re-downloading and re-parsing the whole file. Taking a
+    // reference now costs nothing: the same arrays, kept rather than collected.
+    normalized = normalizedFigures(deck.imageBytes, deck.media.images);
     // 🔴 `readFiguresWithVision`, NOT `describeFiguresWithVision` — SAME CALL, TWO ANSWERS (§46.6).
     // The labelled-diagram labels come back off the request that was already being made, so a deck
     // full of anatomy slides costs exactly what it did before. Nothing extra is sent and nothing
@@ -565,11 +597,14 @@ export async function parseDocument(
   // Returning the same `empty` for both is what discarded a model the
   // structural reader had already built, on every scan production has seen.
   if (!text) {
+    // 🔴 AND THE PICTURES RIDE ALONG. A deck exported as images is the case where
+    // stored figures matter MOST — there is nothing else in it — so dropping them on
+    // the refusal path would starve exactly the document that needs them.
     return hasStructure(model)
-      ? { document, kind, ok: false, reason: "no-text" }
+      ? { document, figures: normalized, kind, ok: false, reason: "no-text" }
       : { kind, ok: false, reason: "empty" };
   }
-  return { document, ok: true };
+  return { document, figures: normalized, ok: true };
 }
 
 /**

@@ -45,7 +45,7 @@ export function parseThreadPath(cwd: string = process.cwd()): string | null {
 }
 
 export type ParseRunOutcome =
-  | { status: "parsed"; parsed: unknown; ms: number; peakRssMb: number }
+  | { status: "parsed"; parsed: unknown; figures?: unknown; ms: number; peakRssMb: number }
   /**
    * The parser read the file and refused it. Not an error — an answer.
    *
@@ -55,7 +55,7 @@ export type ParseRunOutcome =
    * it across, because dropping it here would lose the same model the parser
    * deliberately kept.
    */
-  | { status: "refused"; reason: string; parsed?: unknown; ms: number; peakRssMb: number }
+  | { status: "refused"; reason: string; parsed?: unknown; figures?: unknown; ms: number; peakRssMb: number }
   | { status: "threw"; error: string; ms: number; peakRssMb: number }
   /** Aborted by us, before the platform could abort us. */
   | { status: "deadline"; ms: number; peakRssMb: number }
@@ -198,11 +198,11 @@ export async function runParseOnThread(
       else if (rss >= memoryAbortMb) finish({ status: "memory", ms: elapsed(), peakRssMb: rss });
     }, 250);
 
-    worker.on("message", (message: { ok?: boolean; parsed?: unknown; reason?: string; threw?: string; peakRssMb?: number }) => {
+    worker.on("message", (message: { ok?: boolean; parsed?: unknown; figures?: unknown; reason?: string; threw?: string; peakRssMb?: number }) => {
       // The thread's own peak is the one that matters — it holds the document.
       const peak = Math.max(peakRssMb, message.peakRssMb ?? 0);
       if (message.threw !== undefined) finish({ status: "threw", error: message.threw, ms: elapsed(), peakRssMb: peak });
-      else if (message.ok) finish({ status: "parsed", parsed: message.parsed, ms: elapsed(), peakRssMb: peak });
+      else if (message.ok) finish({ status: "parsed", parsed: message.parsed, figures: message.figures, ms: elapsed(), peakRssMb: peak });
       else {
         finish({
           status: "refused",
@@ -210,6 +210,7 @@ export async function runParseOnThread(
           ms: elapsed(),
           peakRssMb: peak,
           ...(message.parsed !== undefined ? { parsed: message.parsed } : {}),
+          ...(message.figures !== undefined ? { figures: message.figures } : {}),
         });
       }
     });

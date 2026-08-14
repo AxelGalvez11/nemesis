@@ -40,7 +40,7 @@ export interface ParseThreadInput {
  * terminal. Only a genuine throw becomes `{ threw }`.
  */
 export type ParseThreadOutput =
-  | { ok: true; parsed: unknown; peakRssMb: number }
+  | { ok: true; parsed: unknown; figures?: unknown; peakRssMb: number }
   /**
    * A refusal, and — for `no-text` — what was found anyway.
    *
@@ -53,7 +53,7 @@ export type ParseThreadOutput =
    * It survives `postMessage` for the same reason the success path's does: the
    * model is plain data, so structured cloning carries it intact.
    */
-  | { ok: false; reason: string; parsed?: unknown; peakRssMb: number }
+  | { ok: false; reason: string; parsed?: unknown; figures?: unknown; peakRssMb: number }
   | { threw: string; peakRssMb: number };
 
 /** Peak resident memory seen by this thread, sampled as the parse runs. */
@@ -92,14 +92,23 @@ export async function runParseThread(
       // The DOCUMENT, not the outcome wrapper. A thread boundary is exactly the
       // place a wrapper gets forwarded by accident and every reader downstream
       // starts writing `result.parsed.document.text`.
+      //
+      // 🔴 AND THE FIGURES CROSS AS A SIBLING OF `parsed`, WHICH IS THE ONLY WAY THEY
+      // CAN BE STORED AT ALL. This thread holds the one copy of the deck's pictures
+      // that exists — already unwrapped from TIFF, already downscaled — and it has no
+      // credentials to upload them with. The parent has. A structured clone of ~20 MB
+      // is the price; the alternative is the parent re-downloading and re-parsing a
+      // 124 MB original to recover pixels that were in memory here.
       outcome.ok
-        ? { ok: true, parsed: outcome.document, peakRssMb: peakRss }
+        ? { figures: outcome.figures, ok: true, parsed: outcome.document, peakRssMb: peakRss }
         : {
             ok: false,
             reason: outcome.reason,
             peakRssMb: peakRss,
             // Only `no-text` carries one. Every other refusal has nothing to send.
-            ...(outcome.reason === "no-text" ? { parsed: outcome.document } : {}),
+            ...(outcome.reason === "no-text"
+              ? { figures: outcome.figures, parsed: outcome.document }
+              : {}),
           },
     );
   } catch (caught) {
