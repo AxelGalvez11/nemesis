@@ -21,7 +21,7 @@
 // real document, and the two have separate homes now: `knowledge-production.ts` and
 // `knowledge-coverage.ts`. Neither can see the other's input.
 
-import { constructTerritory } from "./canvas-api";
+import { constructCausalKnowledge, constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
 import { frozenTopic, materialSubject, territoryReuse } from "./canvas-territory";
@@ -652,20 +652,32 @@ async function groundedTerritory(input: {
   // written last, so neither caller can see the other through storage.
   return onlyOnceAtATime(`grounded:${userId}:${canvas.id}:${subject}`, async () => {
   onPhase?.("mapping_knowledge");
-  const { value } = await constructTerritory(userId, canvas.title, TERRITORY_TARGET, {
-    signal,
-    sources: canvas.sources,
-  });
-  if (!value || value.objects.length === 0) return null;
+  // 🔴 TWO READINGS OF THE SAME MATERIAL, AT THE SAME TIME, AND NEITHER GATES THE OTHER. A pair lane
+  // and a causal lane look for different things in one text — `losartan — Cozaar` is not a mechanism
+  // and "a stop codon terminates translation early" is not a pair — so a document that is all
+  // mechanism used to come back as an empty territory, and one that is all glossary would come back
+  // with no mechanisms. Run in sequence they would also double the wait before the canvas paints.
+  const [pairs, causal] = await Promise.all([
+    constructTerritory(userId, canvas.title, TERRITORY_TARGET, { signal, sources: canvas.sources }),
+    // 🔴 ITS FAILURE IS NOT THE CANVAS'S FAILURE. This returns null rather than an error, so a
+    // canvas whose pairs built fine is never held back by a causal read that did not.
+    constructCausalKnowledge(userId, canvas.title, canvas.sources, signal),
+  ]);
 
-  const resolved = await storeTerritory(userId, value.objects);
+  // 🔴 THE UNION, AND THE EMPTINESS TEST IS OVER BOTH. Keying the early return on the pair lane
+  // alone would throw away a perfectly good set of mechanisms because the document happened to
+  // contain no glossary — which is the exact shape of the lecture this whole layer exists for.
+  const objects = [...(pairs.value?.objects ?? []), ...(causal?.objects ?? [])];
+  if (objects.length === 0) return null;
+
+  const resolved = await storeTerritory(userId, objects);
   if (resolved.length === 0) return null;
 
   // Written last and only on a complete build, so a tab closed mid-construction marks nothing and
   // the next open rebuilds rather than locking the learner at half a map.
   await saveCanvasTerritory(userId, canvas, {
     identityVersion: KNOWLEDGE_IDENTITY_VERSION,
-    objects: value.objects,
+    objects,
     topic: subject,
   });
   return answer(resolved);

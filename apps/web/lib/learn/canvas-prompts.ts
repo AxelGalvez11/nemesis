@@ -12,6 +12,7 @@ import { EXAM_ITEM_RULES } from "@/lib/workspace/item-writing";
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { groundingBlock } from "./canvas-grounding";
+import { CAUSAL_EXTRACTION_PROMPT } from "./causal-extraction-contract";
 import type { CognitiveAction } from "./canvas-policy";
 import {
   ERROR_TYPES,
@@ -286,6 +287,48 @@ export function territoryMessages(input: {
           : "Do not restate the topic itself as a fact. ") +
         "Keep each side to a term or a short phrase, never a sentence." +
         (grounded ? `\n\n${materialSection(input.sources ?? [], input.topic)}` : ""),
+      role: "user",
+    },
+  ];
+}
+
+// -------------------------------------------------------------------- causal
+
+/**
+ * Ask a model to read the MECHANISMS out of the learner's material.
+ *
+ * 🔴 THE INSTRUCTION IS THE CONTRACT'S, NOT A SECOND ONE WRITTEN HERE. `CAUSAL_EXTRACTION_PROMPT`
+ * already states every rule — the seven relations, negation and modality as independent fields, the
+ * verbatim quote, and the long list of things to abstain on — and it is the text the validator was
+ * built against and tested with. Paraphrasing it into a prompt builder would create a second,
+ * drifting statement of the same rules, and the validator would go on enforcing the first one.
+ *
+ * 🔴 WHAT THIS ADDS IS GROUNDING, WHICH IS THE ONE THING THE CONTRACT CANNOT KNOW. The contract
+ * describes reading ONE passage. Here there are many, so every edge has to say which excerpt it came
+ * from — the same requirement, in the same words, that `territoryMessages` puts on a pair. Without
+ * it `parseCausalTerritory` cannot check the quote against the right passage, and the fabrication
+ * guard degrades into "this sentence appears SOMEWHERE in the document".
+ */
+export function causalMessages(input: { sources: readonly CanvasSource[]; topic: string }): WireMsg[] {
+  return [
+    { content: CANVAS_SYSTEM, role: "system" },
+    {
+      content:
+        `${CAUSAL_EXTRACTION_PROMPT}\n\n` +
+        "The material below is split into excerpts, each with a bracketed id. Read every excerpt.\n\n" +
+        '"excerptId" MUST be the id of the excerpt the relationship was read from, exactly as it is ' +
+        "bracketed below, and \"quote\" must be copied from THAT excerpt character for character. Use only " +
+        "ids that appear below. If you cannot point at the excerpt a relationship came from, leave it out.\n\n" +
+        // 🔴 THE SAME KEY THE CONTRACT'S OWN LAST LINE ASKS FOR. It ends with `{"relations": [...]}`,
+        // and a second, different envelope named here would be a prompt contradicting itself in one
+        // message — the model picks one, and whichever it picks the parser reads the other.
+        'Every relation additionally carries "excerptId". Respond with JSON only:\n' +
+        '{"relations":[{"cause":"…","effect":"…","relation":"…","negated":false,"qualifier":null,' +
+        '"qualifierKind":null,"verb":"…","quote":"…","excerptId":"…"}]}\n\n' +
+        "Return an empty list rather than a weak one. Everything kept becomes a question a real learner is " +
+        "asked and graded on, so a relationship the material does not assert is recorded as that person's " +
+        "own gap.\n\n" +
+        materialSection(input.sources, input.topic),
       role: "user",
     },
   ];
