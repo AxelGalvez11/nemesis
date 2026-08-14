@@ -153,7 +153,15 @@ export interface CanonicalSourceUnit {
    *  🔴 THE CAPTION IS WHAT THE DOCUMENT SAYS; THE DESCRIPTION IS WHAT A MODEL SAID ABOUT IT.
    *  Merging them makes an inference indistinguishable from the source. A description that is
    *  absent means NOT EXAMINED — it never means the figure was empty. */
-  figure?: { caption?: string; description?: string };
+  figure?: {
+    caption?: string;
+    description?: string;
+    /** Named parts of a labelled diagram and where they sit (§46.6). Absent for the majority of
+     *  figures — photographs and charts without named parts — which is not a gap. */
+    labels?: readonly { readonly text: string; readonly x: number; readonly y: number }[];
+    /** The picture itself, so a spatial question can render it. The format's own name for it. */
+    ref?: string;
+  };
   anchor: CanonicalSourceAnchor;
 }
 
@@ -421,6 +429,11 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
           figure: {
             ...(block.text.trim() ? { caption: block.text.trim() } : {}),
             ...(block.figure?.description?.trim() ? { description: block.figure.description.trim() } : {}),
+            // 🔴 STRUCTURED LABELS SURVIVE THIS BOUNDARY, and that is the point of the field. Six
+            // structural fields have died crossing exactly here by being optional and quietly
+            // dropped; `document-boundary.test.ts` exists because of them.
+            ...(block.figure?.labels?.length ? { labels: block.figure.labels } : {}),
+            ...(block.figure?.ref ? { ref: block.figure.ref } : {}),
           },
         }
       : {}),

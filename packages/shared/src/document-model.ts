@@ -354,6 +354,19 @@ export interface DocFigure {
   ref?: string;
   /** What vision saw. ABSENT means nobody looked, not "nothing there". */
   description?: string;
+  /**
+   * Named parts of a labelled diagram and where they sit, 0–1 of width and height (§46.6).
+   *
+   * 🔴 STRUCTURED, NOT PROSE, AND THAT IS THE WHOLE REASON IT EXISTS. `description` is a sentence;
+   * you cannot occlude a sentence. Image occlusion — hide a label, ask the learner to name it —
+   * needs to know WHAT is named and WHERE, so this is the field that carries it from the vision
+   * pass to the knowledge system.
+   *
+   * 🔴 ABSENT MEANS "NOT A LABELLED DIAGRAM", which is the common case: photographs, logos and
+   * charts without named parts. It does NOT mean the figure was empty, and it must not be read as
+   * a gap — `skipped` is where a gap is recorded.
+   */
+  labels?: readonly { readonly text: string; readonly x: number; readonly y: number }[];
   /** Why it was not examined, when that was a decision rather than an omission. */
   skipped?:
     | "decorative"

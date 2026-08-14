@@ -35,6 +35,7 @@ import {
 } from "@/lib/sources/source-context";
 
 import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } from "./knowledge-identity";
+import { figureKnowledge } from "./figure-knowledge";
 import type { KnowledgeObject } from "./knowledge-types";
 import { subjectColumnOf } from "./table-subject-column";
 
@@ -141,11 +142,21 @@ export function extractKnowledgeObjects(context: SourceContext): KnowledgeExtrac
   // whose structure was flattened was read INCOMPLETELY, and its grids may well have existed.
   const structured = context.capabilities.semanticUnits;
   const tables = readableUnits(context).filter((unit) => unitContent(unit).kind === "table");
+
+  // 🔴 §46.6 — DIAGRAMS ARE A SECOND LANE, AND IT MUST RUN BEFORE THE NO-TABLES RETURN. A deck of
+  // anatomy slides has no grid at all, so leaving this below the early return meant the one
+  // document type image occlusion exists for produced nothing — the lane would have been dead on
+  // arrival for its own use case. Found by re-reading the exit above rather than by a test, which
+  // is why the figure-only case is now asserted explicitly.
+  const figures = figuresFromUnits(context);
+  objects.push(...figures);
+
   if (tables.length === 0) {
     return {
       objects,
-      outcome: structured ? "complete" : "degraded",
-      refusals: [{
+      // A document whose diagrams taught something was not a dead end, whatever its grids did.
+      outcome: structured || figures.length > 0 ? "complete" : "degraded",
+      refusals: figures.length > 0 ? [] : [{
         detail: structured
           ? "This document's stored structure contains no table, so this lane found nothing to read pairs from."
           : "Only flat text survived this document's parse, so any table it had was flattened before extraction could see it.",
@@ -163,6 +174,41 @@ export function extractKnowledgeObjects(context: SourceContext): KnowledgeExtrac
   // Every grid the document has was examined. A refusal here is a statement about a particular
   // table's shape, not evidence that anything was missed.
   return { objects, outcome: structured ? "complete" : "degraded", refusals };
+}
+
+/**
+ * Spatial knowledge from the document's labelled diagrams (§46.6).
+ *
+ * 🔴 THIS IS THE CALLER THAT MAKES THE FEATURE REAL. `figureKnowledge` and the occlusion screen
+ * were both built and tested before anything invoked them, which is this repo's most-repeated
+ * failure shape — a tested reader over an empty table. Without this loop no learner ever sees a
+ * covered diagram, however green the unit tests are.
+ *
+ * 🔴 IT PRODUCES NOTHING FOR MOST DOCUMENTS AND THAT IS CORRECT. A figure needs two or more named
+ * parts read out of the picture itself; photographs, logos and charts without labels yield none.
+ * That is not a refusal — nothing was missed — so it does not push one.
+ */
+function figuresFromUnits(context: SourceContext): KnowledgeObject[] {
+  const objects: KnowledgeObject[] = [];
+  for (const unit of readableUnits(context)) {
+    const content = unitContent(unit);
+    if (content.kind !== "figure") continue;
+    const labels = unit.figure?.labels ?? [];
+    const ref = unit.figure?.ref;
+    if (!ref || labels.length === 0) continue;
+    const object = figureKnowledge({
+      caption: content.description ?? content.caption ?? "",
+      imageRef: ref,
+      labels,
+      // 🔴 "model", AND IT IS THE TRUTH RATHER THAN A DEFAULT. The picture is the document's; the
+      // LABELS are a vision model's reading of it, and nothing in the document's text says where
+      // any part sits. Claiming an excerpt would make a label render as a citation to something
+      // that does not exist.
+      provenance: ["model"],
+    });
+    if (object) objects.push(object);
+  }
+  return objects;
 }
 
 function pairsFromTable(

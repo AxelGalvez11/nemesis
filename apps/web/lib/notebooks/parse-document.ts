@@ -58,7 +58,8 @@ import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract
 import { readPdfStructure } from "@/lib/pdf/structure";
 import { lookAtFigures } from "@/lib/pdf/figure-look";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
-import { describeFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
+import type { FigureLabel } from "@/lib/learn/figure-labels";
+import { describeFiguresWithVision, readFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
 
 /**
@@ -491,14 +492,19 @@ export async function parseDocument(
     coverage = singleUnitCoverage({ method: "native", read: text.trim().length > 0 });
   } else {
     const deck = readPptxSlides(bytes);
-    const figures = deck.media.images.length
-      ? await describeFiguresWithVision(
+    // 🔴 `readFiguresWithVision`, NOT `describeFiguresWithVision` — SAME CALL, TWO ANSWERS (§46.6).
+    // The labelled-diagram labels come back off the request that was already being made, so a deck
+    // full of anatomy slides costs exactly what it did before. Nothing extra is sent and nothing
+    // extra is billed; the reply is simply read for more than its prose.
+    const seen = deck.media.images.length
+      ? await readFiguresWithVision(
           deck.media.images.flatMap((image) => {
             const data = deck.imageBytes.get(image.name);
             return data ? [{ bytes: data, mime: image.mime, name: image.name }] : [];
           }),
         )
-      : new Map<string, string>();
+      : { descriptions: new Map<string, string>(), labels: new Map<string, FigureLabel[]>() };
+    const figures = seen.descriptions;
     const out = pptxTextWithFigures(deck, figures);
     text = out.text;
     title = out.title;
@@ -520,6 +526,7 @@ export async function parseDocument(
         structure: deck.structure,
       },
       figures,
+      seen.labels,
     );
     if (figures.size > 0) readBy = "figures";
     if (deck.media.droppedToCap > 0) skippedFigures = deck.media.droppedToCap;
