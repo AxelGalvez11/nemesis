@@ -38,6 +38,47 @@ export const THINKING_COPY: Record<ThinkingPhase, string> = {
 };
 
 /**
+ * What the learner's own file is made of, when that is known.
+ *
+ * 🔴 KNOWN FROM THE FILE ITSELF, NOT GUESSED FROM PROGRESS. A deck really does have slides and a
+ * PDF really does have pages, and the browser knows which it is holding before a single byte is
+ * uploaded. That is what separates this from theatre: the caption is more specific because more
+ * is genuinely known, not because time passed.
+ */
+export type ReadingSubject = "slides" | "pages" | "sheets" | "document";
+
+/**
+ * What to say while a step runs.
+ *
+ * 🔴 THE ONE PLACE THAT DECIDES, so a second caller cannot invent its own vocabulary. The busy
+ * label on the ingestion lane used to be a bare word set at the call site — `"Reading"` — while
+ * the policy lane went through `THINKING_COPY`. Two vocabularies for the same surface is how one
+ * of them drifts into sounding like software talking about itself.
+ *
+ * `subject` refines exactly one phase, because it is the only one where the material's own shape
+ * is known and worth saying. PURE.
+ */
+export function thinkingCopy(phase: ThinkingPhase, subject?: ReadingSubject): string {
+  if (phase !== "reading_source" || !subject || subject === "document") return THINKING_COPY[phase];
+  return `Reading ${subject}`;
+}
+
+/**
+ * What a file is made of, from its name.
+ *
+ * 🔴 RETURNS `document` RATHER THAN A GUESS WHEN IT DOES NOT KNOW. An unrecognised extension
+ * genuinely tells us nothing about the shape of what is inside, and "Reading pages" over a file
+ * that turns out to be a transcript is a small lie the learner has no way to check. PURE.
+ */
+export function readingSubjectFor(fileName: string): ReadingSubject {
+  const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (extension === "pptx" || extension === "ppt" || extension === "key") return "slides";
+  if (extension === "pdf") return "pages";
+  if (extension === "xlsx" || extension === "xls" || extension === "csv") return "sheets";
+  return "document";
+}
+
+/**
  * How long a step must run before it is worth SAYING anything.
  *
  * 🔴 A FLASHED LOADING STATE IS WORSE THAN NONE. Most of these finish in well under a second, and a

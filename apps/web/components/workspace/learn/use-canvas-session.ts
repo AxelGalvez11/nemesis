@@ -51,6 +51,7 @@ import { finishReading } from "@/lib/learn/canvas-reading";
 import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
 import { canStart, canTransition } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
+import { readingSubjectFor, thinkingCopy } from "@/lib/learn/thinking-phases";
 import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
@@ -294,7 +295,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       const id = requireUid();
       if (!id) return;
       setError(null);
-      setBusy({ kind: "source", label: "Reading" });
+      // 🔴 THE SAME VOCABULARY THE POLICY LANE USES, AND SET FROM THE FILE ITSELF. This was a
+      // bare `"Reading"` — one unchanging word for the whole of an ingestion that, on a 124 MB
+      // lecture deck, is the longest wait in the product. `readingSubjectFor` reads the shape out
+      // of the file the learner just handed over, so a deck says it is reading slides because it
+      // IS reading slides, not because a timer advanced a list.
+      const firstName = Array.from(files)[0]?.name ?? "";
+      setBusy({ kind: "source", label: thinkingCopy("reading_source", readingSubjectFor(firstName)) });
       try {
         for (const file of Array.from(files)) {
           // The existing extraction chokepoint — same door chat attachments, Library import
