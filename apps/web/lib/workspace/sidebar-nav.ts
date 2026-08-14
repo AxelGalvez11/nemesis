@@ -45,3 +45,21 @@ export function navItemActive(pathname: string, destination: string | null): boo
   if (!destination) return false;
   return pathname === destination || pathname.startsWith(`${destination}/`);
 }
+
+/**
+ * How big a navigation icon is drawn, in BOTH sidebar states.
+ *
+ * 🔴 ONE NUMBER BECAUSE THE TWO STATES HAD DRIFTED APART AND THE LEARNER COULD SEE IT (owner,
+ * 2026-08-14: "there is a difference in size for icons when sidebar is collapsed and not
+ * collapsed"). The rail drew its glyphs at 20px. The expanded sidebar drew the SAME glyphs at
+ * `1em` inside a `size-4` box — and a codicon is a FONT, so `1em` resolved against the row's own
+ * `--canvas-text-small`, which is 14px. Collapsing the sidebar made every icon jump by six
+ * pixels, and nothing in either file said the two were meant to agree.
+ *
+ * 🔴 AND `em` IS BANNED FOR AN ICON, NOT JUST WRONG HERE. Tying a glyph to the label beside it
+ * means any future change to the type scale silently resizes every icon in the product — a
+ * typographic decision quietly becoming an iconographic one. Measured against the reference at
+ * the owner's request: its sidebar icons are 20x20 in both states, sitting next to 14px labels,
+ * and the icon does not shrink with the text.
+ */
+export const NAV_ICON_PX = 20;

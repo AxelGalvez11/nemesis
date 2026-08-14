@@ -23,6 +23,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { PanelLeft } from "lucide-react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { NAV_ICON_PX } from "@/lib/workspace/sidebar-nav";
 import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { navigationRootFor, navItemActive, SIDEBAR_NAV } from "@/lib/workspace/sidebar-nav";
 import { cn } from "@/lib/utils";
@@ -74,7 +75,7 @@ export function NavRail({ accountEmail, onExpand }: NavRailProps) {
           between the rest: it acts on the rail itself, the others leave it, and spacing is what
           says so — §46.3 rules out making it bigger to mean the same thing. */}
       <RailButton label="Expand sidebar" onClick={onExpand}>
-        <PanelLeft size={20} strokeWidth={2} />
+        <PanelLeft size={NAV_ICON_PX} strokeWidth={2} />
       </RailButton>
 
       <div className="mt-4 flex min-h-0 flex-1 flex-col items-center">
@@ -91,7 +92,7 @@ export function NavRail({ accountEmail, onExpand }: NavRailProps) {
               label={item.label}
               onClick={() => destination && router.push(destination)}
             >
-              <Codicon name={item.codicon} size="20px" />
+              <Codicon name={item.codicon} size={`${NAV_ICON_PX}px`} />
             </RailButton>
           );
         })}

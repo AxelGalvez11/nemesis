@@ -50,7 +50,7 @@ import {
   SidebarSectionHeader,
 } from "./sidebar-primitives";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
-import { navigationRootFor, navItemActive, SIDEBAR_NAV } from "@/lib/workspace/sidebar-nav";
+import { navigationRootFor, navItemActive, SIDEBAR_NAV, NAV_ICON_PX } from "@/lib/workspace/sidebar-nav";
 
 
 // 🔴 THE SIDEBAR REPRESENTS DESTINATIONS, NOT CONTENT (owner 2026-08-13, §L). It is almost
@@ -191,7 +191,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
           {/* Same panel-left glyph as the reopen toggle (UX brief §27.1): one icon means "the
               sidebar", and the direction is carried by where the control is, not by the drawing. */}
           <Button aria-label="Collapse sidebar" onClick={onCollapse} size="icon-xs" variant="ghost">
-            <PanelLeft size={16} strokeWidth={2} />
+            <PanelLeft size={NAV_ICON_PX} strokeWidth={2} />
           </Button>
         </div>
         {searchOpen && showSessionSections && (
@@ -223,9 +223,9 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
                       }}
                     >
                       <Codicon
-                        className="leading-none size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]"
+                        className="leading-none shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]"
                         name={item.codicon}
-                        size="1em"
+                        size={`${NAV_ICON_PX}px`}
                       />
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                     </SidebarMenuButton>
