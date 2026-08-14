@@ -53,6 +53,8 @@ export type SelectionReason =
   | "recognised-not-produced"
   /** Demonstrated, and long enough ago that asking again measures memory. */
   | "due-again"
+  /** Other material the learner is stuck on starts where this one ends — I11's edge, walked. */
+  | "unlocks-other-work"
   /** Worked very recently. Asking now would measure the last few minutes, not learning. */
   | "just-worked"
   /** Other material has intervened since this was last touched, which is what makes it askable. */
@@ -71,8 +73,14 @@ export interface ActionValue {
  *
  * 🔴 BANDS RATHER THAN A CONTINUUM, BECAUSE THE ORDERING BETWEEN THEM IS A RULE AND THE ORDERING
  * WITHIN THEM IS A JUDGEMENT. A modifier must never lift an action out of its band: no amount of
- * "this failed three times" should outrank an answer the learner is standing there waiting for. The
- * gaps are wide enough that the modifiers below cannot cross them, and that is checked by a test.
+ * "this failed three times" should outrank an answer the learner is standing there waiting for.
+ *
+ * 🔴 THIS PARAGRAPH USED TO END "the gaps are wide enough that the modifiers below cannot cross
+ * them, and that is checked by a test", AND BOTH HALVES WERE FALSE. No such test existed, and the
+ * gaps were not wide enough: +1,000 from failures against −1,500 from `just-worked` is a 2,500
+ * swing across a smallest gap of 2,000, so a `due` objective could outrank a `provisional` one. The
+ * guarantee is now structural — see `MODIFIER_CEILING` — and `modifierCeilingHoldsBands` derives the
+ * check from these numbers instead of restating them.
  */
 const BAND = {
   /** §39: the exposure is the second half of an interaction the learner is already inside. */
@@ -109,10 +117,42 @@ const BAND = {
  */
 const INCONCLUSIVE_NUDGE = 100;
 
-/** Each further unresolved attempt adds this much. Bounded so it cannot cross a band. */
-const PER_FAILED_ATTEMPT = 200;
+/**
+ * The most any combination of modifiers may move a score, in either direction.
+ *
+ * 🔴🔴 A CLAMP, NOT A BUDGET, AND THE BUDGET WAS ALREADY OVERSPENT. The comment above says "the gaps
+ * are wide enough that the modifiers below cannot cross them, and that is checked by a test". There
+ * was no such test, and the claim was false when written: five unresolved attempts added 1,000 while
+ * `just-worked` subtracted 1,500, against a smallest band gap of 2,000. An objective the learner had
+ * eventually got right after five misses scored 3,000, and a provisional ✓ that had just been worked
+ * scored 2,500 — so `due` outranked `provisional`, which is the one ordering §31.2 exists to hold.
+ *
+ * 🔴 CLAMPED IN AGGREGATE, SO THE INVARIANT SURVIVES THE MODIFIERS THAT DO NOT EXIST YET. Sizing
+ * each constant to fit inside the gap makes the guarantee a piece of arithmetic that has to be
+ * redone every time a term is added — and it is exactly the arithmetic that was already wrong. With
+ * a ceiling below half the smallest gap, any number of future terms can be added and a modifier
+ * still cannot lift an action out of its band. `modifierCeilingHoldsBands` proves it from the bands
+ * themselves rather than from a number written here.
+ */
+const MODIFIER_CEILING = 900;
+
+/** Each further unresolved attempt adds this much. Bounded, and then clamped with everything else. */
+const PER_FAILED_ATTEMPT = 120;
 /** …and bounded here, so five failures and fifty are not a hundredfold difference. */
 const MAX_FAILED_ATTEMPTS = 5;
+
+/**
+ * Each piece of work stuck behind this one adds this much.
+ *
+ * 🔴 THE PREREQUISITE IS UPRANKED AND THE DEPENDENT IS *NOT* DOWNRANKED, which is one decision
+ * rather than a symmetric-looking pair. Doing both moves a single edge's two candidates twice the
+ * intended distance apart, so the strength of the effect stops being readable from either constant.
+ * Upranking alone produces the behaviour I11 asks for — the learner who misses the second step is
+ * offered the first — and leaves everything else where it was.
+ */
+const PER_BLOCKED_DEPENDENT = 100;
+/** Bounded for the same reason as failures: a hub term is more valuable, not unboundedly so. */
+const MAX_BLOCKED_DEPENDENTS = 3;
 
 /**
  * Working memory, as a penalty rather than a filter.
@@ -122,7 +162,7 @@ const MAX_FAILED_ATTEMPTS = 5;
  * offer at all. Ranking down instead means the least-recently-touched thing still wins, and a
  * learner never meets a blank surface.
  */
-const JUST_WORKED_PENALTY = 1_500;
+const JUST_WORKED_PENALTY = 700;
 
 /** How many other objectives must intervene before something counts as displaced. */
 const DISPLACEMENT = 1;
@@ -135,6 +175,21 @@ export interface ValueInput {
   evidence: readonly LearnerEvidence[];
   /** How many OTHER objectives have been worked since this one was last acted on. */
   interveningActs: number;
+  /**
+   * How many objectives that DEPEND on this one the learner is currently stuck on.
+   *
+   * 🔴 STUCK, NOT MERELY DEPENDENT, AND THE DIFFERENCE IS THE WHOLE BEHAVIOUR. Every upstream term
+   * in a document has dependents; counting those would put the foundations of every chain
+   * permanently above everything built on them, which is a curriculum — the exact thing
+   * `policy-runtime.ts` says must not grow back. What earns the uprank is that the learner has
+   * ALREADY TRIED the dependent and it did not go well, so the thing underneath it is now the
+   * useful move. See `objective-prerequisites.ts` for how the edge is built, and how carefully it
+   * refuses to build one.
+   *
+   * Absent means zero — no dependents are stuck — which is the honest default for a caller that
+   * does not compute the graph, and the conservative one: it can only fail to promote.
+   */
+  blockedDependents?: number;
 }
 
 /** Attempts that came back wrong, partial, or with nothing shown — the learner's own signal. */
@@ -154,7 +209,7 @@ function unresolvedAttempts(evidence: readonly LearnerEvidence[]): number {
  * score, so "why did Nemesis ask me this?" is answerable by replaying it rather than by guessing.
  */
 export function value(input: ValueInput): ActionValue {
-  const { action, evidence, interveningActs, state } = input;
+  const { action, blockedDependents = 0, evidence, interveningActs, state } = input;
   const reasons: SelectionReason[] = [];
   let score: number;
 
@@ -190,13 +245,33 @@ export function value(input: ValueInput): ActionValue {
   }
 
   // ── modifiers: they discriminate WITHIN a band and can never cross one ────
+  //
+  // 🔴 ACCUMULATED, THEN CLAMPED ONCE — see `MODIFIER_CEILING`. Applying each directly to `score`
+  // was how the band guarantee came to be false while a comment promised it: every new term was one
+  // more thing to fit inside a gap by hand, and the arithmetic was never redone.
+  let delta = 0;
+
   const failures = Math.min(unresolvedAttempts(evidence), MAX_FAILED_ATTEMPTS);
   if (failures > 1) {
     // 🔴 REPEATEDLY UNRESOLVED IS THE STRONGEST GAP SIGNAL THE LEARNER GIVES US, and the old
     // selector could not see it at all: within a tier it fell back to identity-key order, so
     // something failed three times waited behind something failed once for no reason anybody chose.
-    score += failures * PER_FAILED_ATTEMPT;
+    delta += failures * PER_FAILED_ATTEMPT;
     reasons.push("repeatedly-unresolved");
+  }
+
+  const blocked = Math.min(blockedDependents, MAX_BLOCKED_DEPENDENTS);
+  if (blocked > 0 && state.status !== "correct") {
+    // 🔴🔴 I11, WALKED. The learner missed something that starts where this one ends, so this is the
+    // step underneath it — "move down, teach the prerequisite, return", which had no edge to walk
+    // until `objective-prerequisites.ts`.
+    //
+    // 🔴 ONLY WHILE THIS ONE IS ITSELF UNRESOLVED. A prerequisite the learner has already
+    // demonstrated is not what is blocking them, and promoting it would send someone who missed the
+    // second step back to a first step they have proved twice — which reads as the system losing
+    // the thread just as badly as asking the same question again.
+    delta += blocked * PER_BLOCKED_DEPENDENT;
+    reasons.push("unlocks-other-work");
   }
 
   if (interveningActs >= DISPLACEMENT) {
@@ -204,11 +279,34 @@ export function value(input: ValueInput): ActionValue {
   } else if (state.lastEvidenceAt) {
     // Touched, and nothing has come between. Asking again now measures whether they can still hear
     // their own voice. Ranked down rather than removed — see `JUST_WORKED_PENALTY`.
-    score -= JUST_WORKED_PENALTY;
+    delta -= JUST_WORKED_PENALTY;
     reasons.push("just-worked");
   }
 
-  return { reasons, score };
+  return { reasons, score: score + clampToBand(delta) };
+}
+
+/** A modifier sum, held inside the ceiling that keeps it from crossing a band. */
+function clampToBand(delta: number): number {
+  return Math.max(-MODIFIER_CEILING, Math.min(MODIFIER_CEILING, delta));
+}
+
+/**
+ * The property `MODIFIER_CEILING` exists to hold, computed from the bands rather than asserted.
+ *
+ * 🔴 EXPORTED SO A TEST CAN ASK THE MODULE, NOT A CONSTANT. The invariant is "no combination of
+ * modifiers lifts an action out of its band", and the honest way to check it is to derive the
+ * smallest gap between adjacent bands from the bands themselves — so adding a band, or moving one,
+ * re-runs the check instead of quietly invalidating a number somebody wrote down once.
+ */
+export function modifierCeilingHoldsBands(): { smallestGap: number; worstSwing: number } {
+  const values = [...new Set(Object.values(BAND))].sort((a, b) => a - b);
+  let smallestGap = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < values.length; i += 1) {
+    smallestGap = Math.min(smallestGap, values[i]! - values[i - 1]!);
+  }
+  // A lower band pushed all the way up, against a higher band pulled all the way down.
+  return { smallestGap, worstSwing: MODIFIER_CEILING * 2 };
 }
 
 /**

@@ -17,10 +17,26 @@ import { projectLearnerState, type LearnerEvidence, type LearnerObjectiveState }
 import type { KnowledgeObject } from "./knowledge-types";
 import type { StoredObjective } from "./learner-store";
 import { mostValuable, value, type ActionValue } from "./next-action-value";
+import { dependentsOf, prerequisiteMap } from "./objective-prerequisites";
 import { runtimeCanStage } from "./runtime-support";
 import { chooseNextTeachingAction, expositionOf, type TeachingAction } from "./teaching-policy";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import { interveningActs } from "./working-memory";
+
+/**
+ * The learner met this and it did not go well — what makes work underneath it worth offering.
+ *
+ * 🔴 `not_demonstrated` IS IN AND `unknown` IS OUT, WHICH IS THE LINE THIS WHOLE FEATURE TURNS ON.
+ * "They were asked and produced nothing" is the learner telling us they are stuck; "we have never
+ * asked" is Nemesis lacking evidence, and treating the second as stuckness would promote every
+ * upstream term in a document before anybody had answered anything.
+ */
+const STUCK_STATUSES: readonly LearnerObjectiveState["status"][] = [
+  "not_demonstrated",
+  "incorrect",
+  "misconception",
+  "partial",
+];
 
 export interface PolicyDecision {
   objective: StoredObjective;
@@ -172,10 +188,37 @@ export function decideNext(input: {
   // encode the precedence the previous three-`find` selector encoded; the modifiers discriminate
   // inside a band, which is exactly where the old rule had nothing to say and fell back to hash
   // order. See that file's header for why each band sits where it does.
+  // 🔴🔴 I11'S EDGE, BUILT ONCE PER DECISION AND NEVER STORED. `objective-prerequisites.ts` reads
+  // the role fields the extractor emitted with provenance and joins them on the key the extractor
+  // itself uses — it never scans prose, and it emits no edge whenever it is not certain, because a
+  // false edge silently reorders what a learner is taught while a missing one costs nothing.
+  //
+  // 🔴 DERIVED, NOT PERSISTED, FOR THE SAME REASON THE SCORE IS. A dependency graph in a table
+  // becomes a curriculum somebody has to migrate; recomputed from the knowledge on hand, it can be
+  // rewritten completely the day a better rule exists.
+  const prerequisites = prerequisiteMap(
+    decisions.map((decision) => ({
+      identityKey: decision.objective.identityKey,
+      knowledge: decision.knowledge,
+    })),
+  );
+  const dependents = dependentsOf(prerequisites);
+  const stuck = new Set(
+    decisions
+      // 🔴 ATTEMPTED AND IT DID NOT GO WELL — never "not yet demonstrated". Counting `unknown` would
+      // make every upstream term in the document promote every other one on the first render, which
+      // is a curriculum ordering wearing a learner model's clothes.
+      .filter((decision) => STUCK_STATUSES.includes(decision.state.status))
+      .map((decision) => decision.objective.identityKey),
+  );
+  const blockedBehind = (identityKey: string): number =>
+    (dependents.get(identityKey) ?? []).filter((dependent) => stuck.has(dependent)).length;
+
   const scored = owed.map((decision) => ({
     decision,
     value: value({
       action: decision.action,
+      blockedDependents: blockedBehind(decision.objective.identityKey),
       evidence: decision.evidence,
       interveningActs: interveningActs(decision.objective.identityKey, actedInOrder),
       knowledge: decision.knowledge,

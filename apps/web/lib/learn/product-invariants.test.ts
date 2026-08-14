@@ -20,9 +20,32 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { causalNodeKey } from "./knowledge-identity";
+import type { KnowledgeObject } from "./knowledge-types";
 import { projectLearnerState, type LearnerEvidence } from "./learner-evidence";
+import { objectivesForKnowledge } from "./learning-objective";
+import { decideNext } from "./policy-runtime";
 
 const KEY = "obj:aldosterone";
+
+/** One causal edge, in the shape the grounded extractor emits. */
+function causalKnowledge(id: string, cause: string, effect: string): KnowledgeObject {
+  return {
+    id,
+    identityKey: id,
+    relation: {
+      // The source's own sentence — a causal edge with nothing behind it is an assertion by us.
+      assertion: `${cause} causes ${effect}.`,
+      cause: { key: causalNodeKey(cause), text: cause },
+      effect: { key: causalNodeKey(effect), text: effect },
+      negated: false,
+      relation: "causes",
+    },
+    statement: `${cause} — causes — ${effect}`,
+    type: "causal",
+    unanchoredProvenance: [],
+  };
+}
 
 /** One observation. Only the fields every row must carry. */
 function evidenceOf(over: Partial<LearnerEvidence> & { id: string }): LearnerEvidence {
@@ -160,11 +183,61 @@ test("I10 · asking for an explanation must not reduce mastery — NOT ENFORCEAB
   assert.equal(untouched.status, "correct");
 });
 
-test("I11 · a prerequisite failure must change what is presented next — NOT ENFORCEABLE", () => {
-  // 🔴 MISSING: there are no prerequisites. Nothing in the knowledge model expresses that one
-  // objective depends on another, so "move down, teach the prerequisite, return" has no edge to
-  // walk. This needs the knowledge substrate before the policy can act on it.
-  assert.ok(true, "stated so it is not lost; unenforceable until the substrate carries dependencies");
+test("🔴🔴 I11 · a prerequisite failure changes what is presented next — ENFORCED", () => {
+  // 🔴 THIS READ "NOT ENFORCEABLE" FROM THE DAY THE LIST WAS WRITTEN: *"there are no prerequisites.
+  // Nothing in the knowledge model expresses that one objective depends on another, so 'move down,
+  // teach the prerequisite, return' has no edge to walk."* The edge exists now —
+  // `objective-prerequisites.ts` joins a causal chain on the extractor's own node keys — and this is
+  // the behaviour it buys, proved through the real `decideNext` rather than the scorer alone.
+  //
+  // The learner has met the SECOND step of a mechanism and missed it, and has already been shown the
+  // answer. Two untouched objectives remain: the step the missed one starts from, and an unrelated
+  // one. Nemesis must offer the step underneath.
+  const upstream = causalKnowledge("k-up", "Increasing resistance", "decreased current");
+  const downstream = causalKnowledge("k-down", "decreased current", "reduced heating");
+  const unrelated = causalKnowledge("k-other", "adding a catalyst", "a faster reaction");
+
+  const resolve = (knowledge: KnowledgeObject, row: string) => ({
+    knowledge,
+    objective: { ...objectivesForKnowledge(knowledge)[0]!, rowId: row },
+  });
+  // 🔴 THE UNRELATED ONE IS FIRST ON PURPOSE — THE CALIBRATION IS BUILT INTO THE FIXTURE. Ties break
+  // on the caller's order, so without the prerequisite term this array hands back `unrelated` and
+  // the test fails. Ordering it the other way would let a tie pass as a pass.
+  const objectives = [
+    resolve(unrelated, "row-other"),
+    resolve(upstream, "row-up"),
+    resolve(downstream, "row-down"),
+  ];
+  const downstreamKey = objectives[2]!.objective.identityKey;
+
+  const decision = decideNext({
+    // They answered the downstream step wrongly, and the answer has already been put in front of
+    // them — so the correction is no longer owed and the question is what to do next.
+    correctionsShown: new Set([downstreamKey]),
+    evidence: [
+      {
+        demonstrationObtained: true,
+        id: "e1",
+        objectiveEvidence: "contradicted",
+        objectiveIdentityKey: downstreamKey,
+        occurredAt: "2026-08-14T12:00:00.000Z",
+        verdict: "incorrect",
+      },
+    ],
+    now: new Date("2026-08-14T12:01:00.000Z"),
+    objectives,
+  });
+
+  assert.equal(
+    decision?.objective.identityKey,
+    objectives[1]!.objective.identityKey,
+    "the step the missed one starts from, not the unrelated one that sorts first",
+  );
+  assert.ok(
+    decision?.selection.reasons.includes("unlocks-other-work"),
+    "and it says why, in the product's own vocabulary",
+  );
 });
 
 test("I12 · difficulty must respond to learner evidence — NOT ENFORCEABLE", () => {
