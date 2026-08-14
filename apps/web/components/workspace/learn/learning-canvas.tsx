@@ -90,6 +90,10 @@ export function LearningCanvas({
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
   const [recording, setRecording] = useState(false);
+  /** Has the learner asked for something to read in this session? 🔴 Never durable — see
+   *  `composeSurface`. A generated overview and a summary they requested are the same rows, so the
+   *  only honest discriminator is whether they asked. */
+  const [askedForContent, setAskedForContent] = useState(false);
 
   const selected = useMemo(
     () => canvas.blocks.filter((block) => selectedIds.includes(block.id)),
@@ -325,6 +329,9 @@ export function LearningCanvas({
 
       // `ordinary` and `defer-to-policy` both take the normal path: the second is a scaffolding
       // request (§33), which is the policy's to answer, not a rewrite.
+      // 🔴 THE LEARNER ASKED, SO WHAT COMES BACK MAY PAINT BESIDE A TASK. Session state, set here
+      // because this is the only place a learner request writes blocks; see `composeSurface`.
+      setAskedForContent(true);
       await session.command(text, selected);
       clearSelection();
     },
@@ -412,6 +419,7 @@ export function LearningCanvas({
   const { presence, regions } = canvasPresentation({
     blocks: canvas.blocks.length,
     canvasState: canvas.state,
+    learnerAskedForContent: askedForContent,
     policyPresenting,
     working,
   });

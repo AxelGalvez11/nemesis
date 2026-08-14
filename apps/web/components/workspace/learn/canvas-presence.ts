@@ -161,8 +161,10 @@ export function canvasPresentation(input: {
    * the only thing that distinguishes `preparing` from `quiet`.
    */
   working: boolean;
+  /** The learner has asked for something to read in this session — see `composeSurface`. */
+  learnerAskedForContent?: boolean;
 }): CanvasPresentation {
-  const { blocks, canvasState, policyPresenting, working } = input;
+  const { blocks, canvasState, learnerAskedForContent = false, policyPresenting, working } = input;
 
   // 🔴 `hasReadingMaterial` IS PASSED, WHICH THE ONE PRODUCTION CALL SITE DID NOT DO. §24 made a
   // reading state with zero blocks ordinary, so "is this a reading state" and "is there something
@@ -170,6 +172,7 @@ export function canvasPresentation(input: {
   const regions = composeSurface({
     canvasState,
     hasReadingMaterial: blocks > 0,
+    learnerAskedForContent,
     policyPresenting,
   });
 

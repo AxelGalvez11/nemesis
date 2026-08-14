@@ -30,12 +30,34 @@ const hosted = (id = "policy-1"): HostedTask => ({
 
 // ── the composition 7b exists to allow ──────────────────────────────────────
 
-test("🔴 prose and a hosted task coexist — this IS step 7b", () => {
-  // The whole point. Before this, a canvas holding a document could not also present a question:
-  // one runtime took the page and the document was hidden behind it.
+test("🔴🔴 THE TASK OWNS ATTENTION: a document does not paint beneath a live question", () => {
+  // 🔴 THIS TEST ASSERTED THE OPPOSITE, AND THE REVERSAL IS THE OWNER'S. Step 7b made prose and a
+  // task coexist, to answer "the policy owned 0 of 6 canvases" — sound for that problem. Then he met
+  // the result: his canvas asked "What follows from increasing resistance, and why?" and printed
+  // "What Acceptance B1 Covers" underneath, several paragraphs telling him what the document he had
+  // just uploaded contained.
+  //
+  //     "Never explain the material merely because it exists. Explain what the learner needs because
+  //      of what they just demonstrated."
+  //     "Could the learner meaningfully perform the current cognitive action without this text?
+  //      If yes, do not render the text."
   const regions = composeSurface({ canvasState: "learn", policyPresenting: true });
-  assert.equal(regions.document, true, "the document must stay on screen beside a task");
-  assert.equal(regions.policy, true, "the task must be presentable beside a document");
+  assert.equal(regions.policy, true, "the task still presents");
+  assert.equal(regions.document, false, "and nothing competes with it for attention");
+});
+
+test("🔴 but content the learner ASKED for still paints beside the task", () => {
+  // 🔴 THE CALIBRATION, AND THE DEFECT THIS FIX COULD OTHERWISE BECOME. "Summarize this" writes into
+  // the same blocks as a generated overview — the rows are indistinguishable — so an unconditional
+  // suppression would answer an explicit request with a blank page. The only honest discriminator is
+  // whether they asked, which is why it is session state passed in rather than derived.
+  const asked = composeSurface({
+    canvasState: "learn",
+    learnerAskedForContent: true,
+    policyPresenting: true,
+  });
+  assert.equal(asked.document, true);
+  assert.equal(asked.policy, true);
 });
 
 test("unsupported material stays readable when the policy has nothing to ask", () => {
@@ -206,9 +228,14 @@ test("🔴 acceptance 5: a task targeting several objectives still shares the su
   // removed; this is what stops it growing back through a side door.
   const regions = composeSurface({ canvasState: "learn", policyPresenting: true });
 
-  assert.equal(regions.document, true, "the source material stays on screen");
+  // 🔴 THE GUARD SURVIVES THE OWNER'S REVERSAL, AND IT IS THE HALF THAT MATTERS. What this test
+  // exists to stop is composition growing a reason to care about the TARGET COUNT — a
+  // multi-objective task getting "its own" presentation and taking the page back. That is still
+  // asserted. What changed is that the document no longer paints beneath ANY live task, so the
+  // reading assertion moved rather than the rule: one task, one presentation, whatever it targets.
   assert.equal(regions.policy, true);
-  assert.equal(regions.sharing, true, "and the task knows it is sharing with a real document");
+  assert.equal(regions.document, false, "no task paints over reading material — the owner's rule");
+  assert.equal(regions.sharing, true, "and the task still knows a real document is behind it");
 });
 
 test("🔴 a multi-objective task is still exactly ONE answer surface", () => {
@@ -238,7 +265,12 @@ test("🔴 an EMPTY reading state is not shared with — the same defect, throug
     policyPresenting: true,
   });
   assert.equal(emptyLearn.policy, true, "the question is still presented");
-  assert.equal(emptyLearn.document, true, "the region still paints, so material attached later appears");
+  // 🔴 `document` IS NOW FALSE HERE FOR A SECOND, INDEPENDENT REASON, AND THE ORIGINAL ONE IS WHAT
+  // THIS TEST IS ABOUT. It was written against `sharing`: a task told it is sharing with material
+  // that is not there shrinks and floats at the top of an empty surface. That assertion is below and
+  // is untouched. The region itself no longer paints beneath a live task at all — the owner's rule —
+  // so this line records the new value rather than the old promise about material attached later.
+  assert.equal(emptyLearn.document, false, "nothing paints beneath a live task");
   assert.equal(emptyLearn.sharing, false, "🔴 but there is nothing to make room for");
 
   const withBlocks = composeSurface({
