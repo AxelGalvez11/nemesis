@@ -1,0 +1,473 @@
+{
+ "instructions": {
+  "pages": [
+   {
+    "index": 0,
+    "markdown": "# Community IPPE Exam Prep\n\nFor the Top200/300 Drugs:\n\n- Study/know well the Top 35 medications for community practice that are posted on CORE (in the Document Library).\n\nFor the Calculations:\n\n- Focus on calculations that you would use when dispensing medications in community pharmacy practice. For example the following:\n\no Convert lbs to kg\no Calculate a dose from a dosing regimen\n\n\u25aa How much of a product to dispense from a given dose/concentration\n\u25aa How much of a given product to use when compounding a liquid medication\n\n- Examples of the types of questions that you could see on the exam from the APPE Ready example questions/solutions to questions documents (posted in the Document Library in CORE) are #28-30, 38, 39, 50, and 51.\n\nFor Errors and Omissions:\n\n- Be able to review:\n\no A prescription\no Drug labeling/package insert\no Prescription label\no Product(s) used to dispense medication\n\n- Determine whether there are any errors in prescription verification, compounding, dispensing, or labeling\n- You may find these resources helpful as you prepare for the exam:\n\no https://www.powerpak.com/course/print/120287\no https://www.computertalk.com/prescription-monitoring-programs-the-errors-and-omissions-problem/\no https://www.pharmacytimes.com/view/p2pdispensingerrors-0110",
+    "images": [],
+    "tables": [],
+    "hyperlinks": [
+     "https://www.powerpak.com/course/print/120287",
+     "https://www.computertalk.com/prescription-monitoring-programs-the-errors-and-omissions-problem/",
+     "https://www.computertalk.com/prescription-monitoring-programs-the-errors-and-omissions-problem/",
+     "https://www.pharmacytimes.com/view/p2pdispensingerrors-0110"
+    ],
+    "header": null,
+    "footer": null,
+    "dimensions": {
+     "dpi": 93,
+     "height": 1023,
+     "width": 791
+    },
+    "confidence_scores": {
+     "word_confidence_scores": [],
+     "average_page_confidence_score": 0.972887481171405,
+     "minimum_page_confidence_score": 0.20116509283543446
+    },
+    "blocks": [
+     {
+      "top_left_x": 89,
+      "top_left_y": 96,
+      "bottom_right_x": 302,
+      "bottom_right_y": 115,
+      "content": "# Community IPPE Exam Prep",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.8860662859941986,
+       "minimum_content_confidence_score": 0.6759071580485859,
+       "block_type_confidence_score": 0.9992768037955121
+      },
+      "type": "title"
+     },
+     {
+      "top_left_x": 89,
+      "top_left_y": 133,
+      "bottom_right_x": 251,
+      "bottom_right_y": 150,
+      "content": "For the Top200/300 Drugs:",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9997835649721936,
+       "minimum_content_confidence_score": 0.9992108903490192,
+       "block_type_confidence_score": 0.8346624526597005
+      },
+      "type": "text"
+     },
+     {
+      "top_left_x": 111,
+      "top_left_y": 152,
+      "bottom_right_x": 696,
+      "bottom_right_y": 185,
+      "content": "- Study/know well the Top 35 medications for community practice that are posted on CORE (in the Document Library).",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9921817687093372,
+       "minimum_content_confidence_score": 0.8517723949709874,
+       "block_type_confidence_score": 0.9398861544961806
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 89,
+      "top_left_y": 203,
+      "bottom_right_x": 215,
+      "bottom_right_y": 218,
+      "content": "For the Calculations:",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9999958816289721,
+       "minimum_content_confidence_score": 0.9999932476960057,
+       "block_type_confidence_score": 0.9995691249326423
+      },
+      "type": "text"
+     },
+     {
+      "top_left_x": 111,
+      "top_left_y": 220,
+      "bottom_right_x": 692,
+      "bottom_right_y": 254,
+      "content": "- Focus on calculations that you would use when dispensing medications in community pharmacy practice. For example the following:",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9995458674940557,
+       "minimum_content_confidence_score": 0.9914131035544723,
+       "block_type_confidence_score": 0.957876253881204
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 158,
+      "top_left_y": 256,
+      "bottom_right_x": 413,
+      "bottom_right_y": 289,
+      "content": "o Convert lbs to kg\no Calculate a dose from a dosing regimen",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9656450220964408,
+       "minimum_content_confidence_score": 0.5233518489133693,
+       "block_type_confidence_score": 0.9997951212202002
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 206,
+      "top_left_y": 292,
+      "bottom_right_x": 671,
+      "bottom_right_y": 325,
+      "content": "\u25aa How much of a product to dispense from a given dose/concentration\n\u25aa How much of a given product to use when compounding a liquid medication",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9920283426475157,
+       "minimum_content_confidence_score": 0.7861607548750266,
+       "block_type_confidence_score": 0.999889862750156
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 111,
+      "top_left_y": 343,
+      "bottom_right_x": 690,
+      "bottom_right_y": 395,
+      "content": "- Examples of the types of questions that you could see on the exam from the APPE Ready example questions/solutions to questions documents (posted in the Document Library in CORE) are #28-30, 38, 39, 50, and 51.",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9994437239654117,
+       "minimum_content_confidence_score": 0.9796497988428831,
+       "block_type_confidence_score": 0.9770120653150585
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 89,
+      "top_left_y": 413,
+      "bottom_right_x": 245,
+      "bottom_right_y": 427,
+      "content": "For Errors and Omissions:",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9999949255207589,
+       "minimum_content_confidence_score": 0.9999917421473485,
+       "block_type_confidence_score": 0.9999593512842658
+      },
+      "type": "text"
+     },
+     {
+      "top_left_x": 112,
+      "top_left_y": 430,
+      "bottom_right_x": 245,
+      "bottom_right_y": 445,
+      "content": "- Be able to review:",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.984820891450175,
+       "minimum_content_confidence_score": 0.9241173764629093,
+       "block_type_confidence_score": 0.9740359512954183
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 158,
+      "top_left_y": 447,
+      "bottom_right_x": 414,
+      "bottom_right_y": 517,
+      "content": "o A prescription\no Drug labeling/package insert\no Prescription label\no Product(s) used to dispense medication",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.999629625806865,
+       "minimum_content_confidence_score": 0.9938316531720788,
+       "block_type_confidence_score": 1.0
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 111,
+      "top_left_y": 537,
+      "bottom_right_x": 684,
+      "bottom_right_y": 605,
+      "content": "- Determine whether there are any errors in prescription verification, compounding, dispensing, or labeling\n- You may find these resources helpful as you prepare for the exam:",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9797351721329189,
+       "minimum_content_confidence_score": 0.499806947079949,
+       "block_type_confidence_score": 0.9975240887463106
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 158,
+      "top_left_y": 607,
+      "bottom_right_x": 667,
+      "bottom_right_y": 712,
+      "content": "o https://www.powerpak.com/course/print/120287\no https://www.computertalk.com/prescription-monitoring-programs-the-errors-and-omissions-problem/\no https://www.pharmacytimes.com/view/p2pdispensingerrors-0110",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9503487383902387,
+       "minimum_content_confidence_score": 0.6211754609103188,
+       "block_type_confidence_score": 0.9999531529452337
+      },
+      "type": "list"
+     }
+    ]
+   }
+  ],
+  "model": "mistral-ocr-latest",
+  "document_annotation": null,
+  "usage_info": {
+   "pages_processed": 1,
+   "doc_size_bytes": 32547
+  }
+ },
+ "drug_charts": {
+  "pages": [
+   {
+    "index": 0,
+    "markdown": "Students are expected to know the following on each drug\n\n- Brand/generic\n- Drug class\n- Indications\n- Drug interactions\n- Common adverse reactions\n- Rare (but serious) adverse reactions\n- Efficacy & toxicity monitoring parameters\n- Clinical pearls and patient counseling points\n\n[tbl-0.html](tbl-0.html)",
+    "images": [],
+    "tables": [
+     {
+      "id": "tbl-0.html",
+      "content": "<table><tr><td>Top 35 by prescription sales</td></tr><tr><td>1. Albuterol (ProAir HFA, Proventil HFA, Ventolin HFA, ProAir Respiclick DPI)</td></tr><tr><td>2. Alprazolam (Xanax)</td></tr><tr><td>3. Amlodipine (Norvasc)</td></tr><tr><td>4. Amoxicillin (Amoxil, Moxatag)</td></tr><tr><td>5. Apixaban (Eliquis)</td></tr><tr><td>6. Atorvastatin (Lipitor)</td></tr><tr><td>7. Azithromycin (Zithromax, Z-Pak)</td></tr><tr><td>8. Bupropion (Aplenzin, Fortivo XL, Wellbutrin SR, Wellbutrin XL, Zyban)</td></tr><tr><td>9. Carvedilol (Coreg, Coreg CR)</td></tr><tr><td>10. Cephalexin (Keflex)</td></tr><tr><td>11. Cyclobenzaprine (Flexeril, Amrix, Fexmid)</td></tr><tr><td>12. Escitalopram oxalate (Lexapro)</td></tr><tr><td>13. Estradiol (Estrace, Climara, Dotti, Menostar, Minivelle, Vivelle-DOT, Estring, Femring, Imvexxy, Vagifem)</td></tr><tr><td>14. Fluoxetine hydrochloride (Prozac, Sarafem)</td></tr><tr><td>15. Fluticasone (Flovent Diskus, Arnuity Ellipta)</td></tr><tr><td>16. Furosemide (Lasix)</td></tr><tr><td>17. Gabapentin (Gralise, Neurontin)</td></tr><tr><td>18. Hydrochlorothiazide (HCTZ, Hydrodiuril, Microzide)</td></tr><tr><td>19. Hydrocodone (+acetaminophen)</td></tr><tr><td>20. Insulin (lispro \u2013 Humalog, Lyumjev, Admelog; glargine \u2013 Lantus, Basaglar, Semglee)</td></tr><tr><td>21. Levothyroxine (Synthroid, Levoxyl, Unithyroid, Euthyrox)</td></tr><tr><td>22. Lisinopril (Prinivil, Zestril)</td></tr><tr><td>23. Losartan potassium (Cozaar)</td></tr><tr><td>24. Meloxicam (Mobic)</td></tr><tr><td>25. Metformin hydrochloride (Glucophage, Glucophage XR)</td></tr><tr><td>26. Methylphenidate (Ritalin, Concerta)</td></tr><tr><td>27. Metoprolol (tartate \u2013 Lopressor; succinate \u2013 Toprol XL)</td></tr><tr><td>28. Omeprazole (Prilosec)</td></tr><tr><td>29. Pantoprazole sodium (Protonix)</td></tr><tr><td>30. Prednisone (Deltasone)</td></tr><tr><td>31. Rosuvastatin (Crestor)</td></tr><tr><td>32. Semaglutide (Ozempic, Wegovy, Rybelsus)</td></tr><tr><td>33. Sildenafil citrate (Viagra, Revatio, Liqrev)</td></tr><tr><td>34. Trazadone hydrochloride (Desyrel)</td></tr><tr><td>35. Zolpidem (Ambien, Intermezzo, Zolpimist)</td></tr></table>",
+      "format": "html",
+      "word_confidence_scores": null
+     }
+    ],
+    "hyperlinks": [],
+    "header": "PHCY 4000: IPPE II: Community Pharmacy Practice IPPE",
+    "footer": "V5.3.2025",
+    "dimensions": {
+     "dpi": 93,
+     "height": 1023,
+     "width": 791
+    },
+    "confidence_scores": {
+     "word_confidence_scores": [],
+     "average_page_confidence_score": 0.9908030022930953,
+     "minimum_page_confidence_score": 0.31564545999388277
+    },
+    "blocks": [
+     {
+      "top_left_x": 90,
+      "top_left_y": 47,
+      "bottom_right_x": 440,
+      "bottom_right_y": 65,
+      "content": "PHCY 4000: IPPE II: Community Pharmacy Practice IPPE",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9997032892289609,
+       "minimum_content_confidence_score": 0.9981566914810394,
+       "block_type_confidence_score": 0.955546815796521
+      },
+      "type": "header"
+     },
+     {
+      "top_left_x": 89,
+      "top_left_y": 93,
+      "bottom_right_x": 400,
+      "bottom_right_y": 108,
+      "content": "Students are expected to know the following on each drug",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9999961257650203,
+       "minimum_content_confidence_score": 0.9999747282700929,
+       "block_type_confidence_score": 0.9938880553218121
+      },
+      "type": "text"
+     },
+     {
+      "top_left_x": 113,
+      "top_left_y": 111,
+      "bottom_right_x": 370,
+      "bottom_right_y": 240,
+      "content": "- Brand/generic\n- Drug class\n- Indications\n- Drug interactions\n- Common adverse reactions\n- Rare (but serious) adverse reactions\n- Efficacy & toxicity monitoring parameters\n- Clinical pearls and patient counseling points",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9838457691617484,
+       "minimum_content_confidence_score": 0.8227588319636284,
+       "block_type_confidence_score": 0.9998988015563536
+      },
+      "type": "list"
+     },
+     {
+      "top_left_x": 113,
+      "top_left_y": 257,
+      "bottom_right_x": 681,
+      "bottom_right_y": 897,
+      "content": "<table><tr><td>Top 35 by prescription sales</td></tr><tr><td>1. Albuterol (ProAir HFA, Proventil HFA, Ventolin HFA, ProAir Respiclick DPI)</td></tr><tr><td>2. Alprazolam (Xanax)</td></tr><tr><td>3. Amlodipine (Norvasc)</td></tr><tr><td>4. Amoxicillin (Amoxil, Moxatag)</td></tr><tr><td>5. Apixaban (Eliquis)</td></tr><tr><td>6. Atorvastatin (Lipitor)</td></tr><tr><td>7. Azithromycin (Zithromax, Z-Pak)</td></tr><tr><td>8. Bupropion (Aplenzin, Fortivo XL, Wellbutrin SR, Wellbutrin XL, Zyban)</td></tr><tr><td>9. Carvedilol (Coreg, Coreg CR)</td></tr><tr><td>10. Cephalexin (Keflex)</td></tr><tr><td>11. Cyclobenzaprine (Flexeril, Amrix, Fexmid)</td></tr><tr><td>12. Escitalopram oxalate (Lexapro)</td></tr><tr><td>13. Estradiol (Estrace, Climara, Dotti, Menostar, Minivelle, Vivelle-DOT, Estring, Femring, Imvexxy, Vagifem)</td></tr><tr><td>14. Fluoxetine hydrochloride (Prozac, Sarafem)</td></tr><tr><td>15. Fluticasone (Flovent Diskus, Arnuity Ellipta)</td></tr><tr><td>16. Furosemide (Lasix)</td></tr><tr><td>17. Gabapentin (Gralise, Neurontin)</td></tr><tr><td>18. Hydrochlorothiazide (HCTZ, Hydrodiuril, Microzide)</td></tr><tr><td>19. Hydrocodone (+acetaminophen)</td></tr><tr><td>20. Insulin (lispro \u2013 Humalog, Lyumjev, Admelog; glargine \u2013 Lantus, Basaglar, Semglee)</td></tr><tr><td>21. Levothyroxine (Synthroid, Levoxyl, Unithyroid, Euthyrox)</td></tr><tr><td>22. Lisinopril (Prinivil, Zestril)</td></tr><tr><td>23. Losartan potassium (Cozaar)</td></tr><tr><td>24. Meloxicam (Mobic)</td></tr><tr><td>25. Metformin hydrochloride (Glucophage, Glucophage XR)</td></tr><tr><td>26. Methylphenidate (Ritalin, Concerta)</td></tr><tr><td>27. Metoprolol (tartate \u2013 Lopressor; succinate \u2013 Toprol XL)</td></tr><tr><td>28. Omeprazole (Prilosec)</td></tr><tr><td>29. Pantoprazole sodium (Protonix)</td></tr><tr><td>30. Prednisone (Deltasone)</td></tr><tr><td>31. Rosuvastatin (Crestor)</td></tr><tr><td>32. Semaglutide (Ozempic, Wegovy, Rybelsus)</td></tr><tr><td>33. Sildenafil citrate (Viagra, Revatio, Liqrev)</td></tr><tr><td>34. Trazadone hydrochloride (Desyrel)</td></tr><tr><td>35. Zolpidem (Ambien, Intermezzo, Zolpimist)</td></tr></table>",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9981069574077825,
+       "minimum_content_confidence_score": 0.920323509369281,
+       "block_type_confidence_score": 0.9999332472523584
+      },
+      "type": "table",
+      "table_id": "tbl-0.html"
+     },
+     {
+      "top_left_x": 90,
+      "top_left_y": 964,
+      "bottom_right_x": 136,
+      "bottom_right_y": 975,
+      "content": "V5.3.2025",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9883090041834243,
+       "minimum_content_confidence_score": 0.9883090041834243,
+       "block_type_confidence_score": 0.9999564824381052
+      },
+      "type": "footer"
+     }
+    ]
+   },
+   {
+    "index": 2,
+    "markdown": "[tbl-2.html](tbl-2.html)",
+    "images": [],
+    "tables": [
+     {
+      "id": "tbl-2.html",
+      "content": "<table><tr><th>Class / Mechanism of Action</th><th>Generic (Brand)<br/>~ ends in -<br/>dipine</th><th>Indications</th><th>Dosing/ Adjustments</th><th>Common/ Important Adverse Drug Reactions</th><th>Monitoring / Contraindications</th><th>Drug-Drug Interactions</th><th>Clinical Pearls and Counseling</th></tr><tr><td><b>Dihydropyridine CCBs (calcium channel blockers)</b><br/><br/>Inhibit Ca from entering \"slow channels\" or select voltage-sensitive areas of vascular smooth muscle &amp; myocardium during depolarization, resulting in relaxation of coronary vascular smooth muscle &amp; coronary vasodilation. Directly acts on vascular smooth muscle to produce peripheral arterial vasodilation &amp; \u2193 peripheral arterial vasodilation \u2193ing peripheral vascular resistance &amp; BP.<br/><br/><b>MORE effect on vasodilation, NO effect on myocardial contractility</b></td><td><b>Amlodipine</b><br/>(Norvasc)<br/><br/><b>Felodipine</b><br/>(Plendil)<br/><br/><b>Isradipine</b><br/>(DynaCirc)<br/><br/><b>Nicardipine</b><br/>(Cardene)<br/>Oral and IV (drip)<br/><br/><b>Nifedipine</b><br/>(Adalat CC, Procardia XL)</td><td><u>HTN:</u><br/>Amlodipine 5-10mg/day<br/>Felodipine 2.5-10mg/d<br/>Nifedipine 30mg/d (up to 120mg/d with Procardia XL)<br/><br/><u>Stable angina:</u><br/>Amlodipine<br/>Nicardipine<br/>Nifedipine<br/><br/><u>Variant angina:</u><br/>Amlodipine<br/>Nifedipine</td><td>Reduce dose in hepatic impairment<br/><br/>(Caution in cirrhosis patients)</td><td><u>Common:</u><br/>-peripheral edema<br/>-flushing<br/>-dizziness<br/>-headache<br/>-pulmonary edema<br/><br/><u>Rare, but serious:</u><br/>-hepatoxicity<br/>-thrombocytopenia</td><td><u>Efficacy:</u><br/>-BP<br/>-\u2193 chest pain/ \u2193 number of angina attacks<br/>-\u2193 prophylactic NTG use to relieve chest pain<br/><br/><u>Safety:</u><br/>-s/s of peripheral edema<br/>-Vitals<sup>^</sup>: BP, HR<br/>-Labs<sup>^</sup>: LFTs<br/><br/><u>Contraindications:</u><br/>-Nifedipine- Cardiogenic shock, STEMI, concomitant use of CYP3A4/5 inducers<br/><br/><u>Pregnancy/Lactation:</u><br/>-Pregnancy: limited data available<br/><br/>**<b>exception:</b> nifedipine okay to use<br/>-Lactation: d/c<br/><br/><sup>^</sup>Baseline and f/u</td><td>- CYP3A/5 inducers: <b>INC</b> CCB metabolism, DEC effectiveness = monitor/ (dose increase)<br/><br/>- CYP3A/5 inhibitors: <b>DEC</b> CCB metabolism, INC risk of toxicity = monitor/ (dose decrease)<br/><br/>-NSAIDs: <b>DEC</b> anti-hypertensive effect= avoid / monitor<br/><br/>-Tacrolimus: <b>INC</b> risk of tacrolimus toxicity= monitor<br/><br/><b>Amlodipine:</b><br/>-<b>INC</b> simva conc = NTE simva 20mg/d if used together</td><td><u>Clinical Pearls:</u><br/>-first line agent for HTN (amlo &amp; felo)<br/>-use lower starting doses in elderly, small, or frail patients, or when adding to other antihypertensives<br/><br/><u>Counseling:</u><br/>-report s/s of peripheral edema, fatigue, or hypotension<br/>-avoid alcohol<br/>-avoid NSAID use, if possible<br/>-may cause dizziness; be cautious with driving</td></tr></table>",
+      "format": "html",
+      "word_confidence_scores": null
+     }
+    ],
+    "hyperlinks": [],
+    "header": "Community IPPE Drug Charts 2025",
+    "footer": "2\nMay 2025",
+    "dimensions": {
+     "dpi": 93,
+     "height": 791,
+     "width": 1023
+    },
+    "confidence_scores": {
+     "word_confidence_scores": [],
+     "average_page_confidence_score": 0.98648599543445,
+     "minimum_page_confidence_score": 0.31898037785787065
+    },
+    "blocks": [
+     {
+      "top_left_x": 90,
+      "top_left_y": 34,
+      "bottom_right_x": 258,
+      "bottom_right_y": 48,
+      "content": "Community IPPE Drug Charts 2025",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9999032118772929,
+       "minimum_content_confidence_score": 0.9995639329828112,
+       "block_type_confidence_score": 0.9978963078300641
+      },
+      "type": "header"
+     },
+     {
+      "top_left_x": 44,
+      "top_left_y": 62,
+      "bottom_right_x": 967,
+      "bottom_right_y": 474,
+      "content": "<table><tr><th>Class / Mechanism of Action</th><th>Generic (Brand)<br/>~ ends in -<br/>dipine</th><th>Indications</th><th>Dosing/ Adjustments</th><th>Common/ Important Adverse Drug Reactions</th><th>Monitoring / Contraindications</th><th>Drug-Drug Interactions</th><th>Clinical Pearls and Counseling</th></tr><tr><td><b>Dihydropyridine CCBs (calcium channel blockers)</b><br/><br/>Inhibit Ca from entering \"slow channels\" or select voltage-sensitive areas of vascular smooth muscle &amp; myocardium during depolarization, resulting in relaxation of coronary vascular smooth muscle &amp; coronary vasodilation. Directly acts on vascular smooth muscle to produce peripheral arterial vasodilation &amp; \u2193 peripheral arterial vasodilation \u2193ing peripheral vascular resistance &amp; BP.<br/><br/><b>MORE effect on vasodilation, NO effect on myocardial contractility</b></td><td><b>Amlodipine</b><br/>(Norvasc)<br/><br/><b>Felodipine</b><br/>(Plendil)<br/><br/><b>Isradipine</b><br/>(DynaCirc)<br/><br/><b>Nicardipine</b><br/>(Cardene)<br/>Oral and IV (drip)<br/><br/><b>Nifedipine</b><br/>(Adalat CC, Procardia XL)</td><td><u>HTN:</u><br/>Amlodipine 5-10mg/day<br/>Felodipine 2.5-10mg/d<br/>Nifedipine 30mg/d (up to 120mg/d with Procardia XL)<br/><br/><u>Stable angina:</u><br/>Amlodipine<br/>Nicardipine<br/>Nifedipine<br/><br/><u>Variant angina:</u><br/>Amlodipine<br/>Nifedipine</td><td>Reduce dose in hepatic impairment<br/><br/>(Caution in cirrhosis patients)</td><td><u>Common:</u><br/>-peripheral edema<br/>-flushing<br/>-dizziness<br/>-headache<br/>-pulmonary edema<br/><br/><u>Rare, but serious:</u><br/>-hepatoxicity<br/>-thrombocytopenia</td><td><u>Efficacy:</u><br/>-BP<br/>-\u2193 chest pain/ \u2193 number of angina attacks<br/>-\u2193 prophylactic NTG use to relieve chest pain<br/><br/><u>Safety:</u><br/>-s/s of peripheral edema<br/>-Vitals<sup>^</sup>: BP, HR<br/>-Labs<sup>^</sup>: LFTs<br/><br/><u>Contraindications:</u><br/>-Nifedipine- Cardiogenic shock, STEMI, concomitant use of CYP3A4/5 inducers<br/><br/><u>Pregnancy/Lactation:</u><br/>-Pregnancy: limited data available<br/><br/>**<b>exception:</b> nifedipine okay to use<br/>-Lactation: d/c<br/><br/><sup>^</sup>Baseline and f/u</td><td>- CYP3A/5 inducers: <b>INC</b> CCB metabolism, DEC effectiveness = monitor/ (dose increase)<br/><br/>- CYP3A/5 inhibitors: <b>DEC</b> CCB metabolism, INC risk of toxicity = monitor/ (dose decrease)<br/><br/>-NSAIDs: <b>DEC</b> anti-hypertensive effect= avoid / monitor<br/><br/>-Tacrolimus: <b>INC</b> risk of tacrolimus toxicity= monitor<br/><br/><b>Amlodipine:</b><br/>-<b>INC</b> simva conc = NTE simva 20mg/d if used together</td><td><u>Clinical Pearls:</u><br/>-first line agent for HTN (amlo &amp; felo)<br/>-use lower starting doses in elderly, small, or frail patients, or when adding to other antihypertensives<br/><br/><u>Counseling:</u><br/>-report s/s of peripheral edema, fatigue, or hypotension<br/>-avoid alcohol<br/>-avoid NSAID use, if possible<br/>-may cause dizziness; be cautious with driving</td></tr></table>",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9951118502855729,
+       "minimum_content_confidence_score": 0.8380609976072029,
+       "block_type_confidence_score": 1.0
+      },
+      "type": "table",
+      "table_id": "tbl-2.html"
+     },
+     {
+      "top_left_x": 91,
+      "top_left_y": 744,
+      "bottom_right_x": 99,
+      "bottom_right_y": 754,
+      "content": "2",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9999998807907247,
+       "minimum_content_confidence_score": 0.9999998807907247,
+       "block_type_confidence_score": 1.0
+      },
+      "type": "footer"
+     },
+     {
+      "top_left_x": 883,
+      "top_left_y": 743,
+      "bottom_right_x": 931,
+      "bottom_right_y": 755,
+      "content": "May 2025",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9999983787576683,
+       "minimum_content_confidence_score": 0.9999980926550052,
+       "block_type_confidence_score": 1.0
+      },
+      "type": "footer"
+     }
+    ]
+   }
+  ],
+  "model": "mistral-ocr-latest",
+  "document_annotation": null,
+  "usage_info": {
+   "pages_processed": 24,
+   "doc_size_bytes": 1630190
+  }
+ },
+ "_recorded": "2026-08-13, POST /v1/ocr with the exact body buildMistralRequest emits",
+ "diagram": {
+  "model": "mistral-ocr-latest",
+  "usage_info": {
+   "pages_processed": 36,
+   "doc_size_bytes": 1123668
+  },
+  "pages": [
+   {
+    "index": 2,
+    "markdown": "# The Nephron\n\n![img-0.jpeg](img-0.jpeg)",
+    "images": [
+     {
+      "id": "img-0.jpeg",
+      "top_left_x": 79,
+      "top_left_y": 125,
+      "bottom_right_x": 940,
+      "bottom_right_y": 686,
+      "image_base64": null,
+      "image_annotation": null
+     }
+    ],
+    "tables": [],
+    "hyperlinks": [],
+    "header": null,
+    "footer": "Copyright \u00a9 2004 Pearson Education, Inc., publishing as Benjamin Cummings.",
+    "dimensions": {
+     "dpi": 100,
+     "height": 727,
+     "width": 1018
+    },
+    "confidence_scores": {
+     "word_confidence_scores": [],
+     "average_page_confidence_score": 0.9573876069283943,
+     "minimum_page_confidence_score": 0.405588673491909
+    },
+    "blocks": [
+     {
+      "top_left_x": 61,
+      "top_left_y": 34,
+      "bottom_right_x": 328,
+      "bottom_right_y": 82,
+      "content": "# The Nephron",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.999817117002857,
+       "minimum_content_confidence_score": 0.9996199860349345,
+       "block_type_confidence_score": 0.9982913175912028
+      },
+      "type": "title"
+     },
+     {
+      "top_left_x": 79,
+      "top_left_y": 125,
+      "bottom_right_x": 940,
+      "bottom_right_y": 686,
+      "content": "![img-0.jpeg](img-0.jpeg)",
+      "confidence_scores": {
+       "average_content_confidence_score": null,
+       "minimum_content_confidence_score": null,
+       "block_type_confidence_score": 0.9999678145263777
+      },
+      "type": "image",
+      "image_id": "img-0.jpeg"
+     },
+     {
+      "top_left_x": 82,
+      "top_left_y": 689,
+      "bottom_right_x": 427,
+      "bottom_right_y": 704,
+      "content": "Copyright \u00a9 2004 Pearson Education, Inc., publishing as Benjamin Cummings.",
+      "confidence_scores": {
+       "average_content_confidence_score": 0.9999566631719887,
+       "minimum_content_confidence_score": 0.9997185069241106,
+       "block_type_confidence_score": 0.9959693772505468
+      },
+      "type": "footer"
+     }
+    ]
+   }
+  ]
+ }
+}
