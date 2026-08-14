@@ -11,6 +11,7 @@ import {
 } from "./causal-extraction-contract";
 import { causalNodeKey, knowledgeIdentityKey } from "./knowledge-identity";
 import { objectivesForKnowledge } from "./learning-objective";
+import { runtimeCanStage } from "./runtime-support";
 
 // The validator is the last line before a model's opinion becomes stored knowledge, so every check
 // in it is tested by handing it exactly the failure it exists to stop.
@@ -197,10 +198,17 @@ test("a validated edge becomes a knowledge object carrying its whole provenance"
   assert.equal(object.sourceAnchors?.length, 1);
 });
 
-test("🔴 a causal object from the model lane still mints no objectives", () => {
+test("🔴 a causal object from the model lane mints a prediction the runtime can stage", () => {
+  // 🔴 THE END OF THE LANE THAT USED TO STOP HERE. This asserted `[]` — the model could construct a
+  // grounded causal edge and the learner would never meet it, because the objective layer refused
+  // every type but `association`. Extraction reaching further than the runtime is the silent kind of
+  // shortfall: nothing errors, the object is stored, and the Canvas simply has less to do.
   const relation = validate([GOOD]).relations[0]!;
   const object = causalKnowledgeFrom({ anchors: [], index: 0, model: "m", relation, unitId: "b1" });
-  assert.deepEqual(objectivesForKnowledge(object), []);
+  const [objective] = objectivesForKnowledge(object);
+  assert.equal(objective?.capability, "predict");
+  assert.equal(objective?.cue, relation.cause.text, "the question opens from the cause the model read");
+  assert.ok(runtimeCanStage(object.type, objective!.capability), "minted but unstageable is the same dead end");
 });
 
 test("a denied edge says so in its statement, so a human reading a log is not misled", () => {

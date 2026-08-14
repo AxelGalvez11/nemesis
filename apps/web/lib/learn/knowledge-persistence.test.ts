@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { causalNodeKey, identityBasis, knowledgeIdentityKey } from "./knowledge-identity";
-import type { CausalRelation, KnowledgeObject } from "./knowledge-types";
+import { openingOperation, type CausalRelation, type KnowledgeObject } from "./knowledge-types";
 import { CAUSAL_BENCHMARK, eligibleForExtraction, stageOf } from "./__fixtures__/causal-benchmark";
 import { knowledgeFromRow, knowledgePayload } from "./learner-store";
 import { objectivesForKnowledge } from "./learning-objective";
@@ -263,14 +263,32 @@ test("the identity basis is readable, so a disputed merge can be answered by loo
   );
 });
 
-// ── causal knowledge is persisted and NOT teachable ─────────────────────────
+// ── causal knowledge is persisted AND teachable, as a prediction ────────────
 
-test("🔴 causal knowledge mints NO objectives, so no policy can reach it", () => {
-  // Persisting knowledge is not knowing how to teach it. `openingOperation("causal")` says
-  // `predict`, and nothing in the objective layer can execute a prediction — so minting a runnable
-  // objective would hand a mechanism to the recall runtime and drill it as a flashcard.
-  assert.deepEqual(objectivesForKnowledge(CAUSAL), []);
-  assert.deepEqual(objectivesForKnowledge({ ...CAUSAL, relation: { ...RELATION, negated: true } }), []);
+test("🔴 causal knowledge mints ONE prediction objective, and never a recall", () => {
+  // 🔴 THIS TEST USED TO ASSERT THE OPPOSITE, AND THE REASON IT GAVE IS THE REASON THIS SHAPE IS
+  // SAFE. It said: *"`openingOperation("causal")` says `predict`, and nothing in the objective layer
+  // can execute a prediction — so minting a runnable objective would hand a mechanism to the recall
+  // runtime and drill it as a flashcard."* That danger was real and it is what these two assertions
+  // now hold shut. The capability minted is the one the spec names, so nothing routes a mechanism
+  // through the term-production path; and exactly one objective is minted, so the backward question
+  // ("why is this the case?") is not quietly claimed by a forward one.
+  const [objective, ...rest] = objectivesForKnowledge(CAUSAL);
+  assert.equal(rest.length, 0, "one edge, one question — the reverse direction is a separate capability");
+  assert.equal(objective?.capability, "predict");
+  assert.equal(objective?.capability, openingOperation("causal"), "the runtime and §12 must name it the same");
+
+  // A denied edge is still a claim about what follows, and is asked the same way. It differs in
+  // IDENTITY, not in teachability — which is exactly what `negated` being part of the key buys.
+  const [denied] = objectivesForKnowledge({ ...CAUSAL, relation: { ...RELATION, negated: true } });
+  assert.equal(denied?.capability, "predict");
+  assert.notEqual(denied?.identityKey, objective?.identityKey, "a denial is not the same objective as its claim");
+});
+
+test("🔴 a causal object with no relation payload mints nothing, rather than an empty question", () => {
+  // The payload is what the question is built from. A causal row that lost it in transit must not
+  // become an objective whose cue is `undefined` — the sixth boundary death, staged as a prompt.
+  assert.deepEqual(objectivesForKnowledge({ ...CAUSAL, relation: undefined }), []);
 });
 
 test("association still mints its two directions", () => {

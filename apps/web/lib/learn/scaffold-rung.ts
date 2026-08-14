@@ -107,6 +107,16 @@ export function readRung(value: unknown): ScaffoldRung | null {
  * `not_addressed` means they answered ably and this particular objective simply was not part of
  * what they said. One is a failed attempt; the other is not an attempt at all. Collapsing them
  * teaches the wrong thing: the first calls for scaffolding, the second calls for asking.
+ *
+ * 🔴🔴 AND THAT SENTENCE HAD NO VALUE BEHIND IT, WHICH MADE IT A LIVE PRODUCT DEFECT. The type named
+ * four outcomes and the only one available for "asked, produced nothing" was `not_addressed` — so
+ * `unobtainedEvidence`, the row a typed *"I don't know"*, a revealed answer and an echoed cue all
+ * write, filed a genuine failed attempt as *"the answer never mentioned this"*. `projectLearnerState`
+ * then drops those rows from `attempts` by design, so the status stayed `unknown`, so the policy took
+ * its `unknown` branch and ASKED THE SAME QUESTION AGAIN. **A learner who told Nemesis they did not
+ * know was never shown the answer.** The `not_demonstrated` branch of the teaching policy — the one
+ * that states the answer plainly — was unreachable from the live surface: every test that proved it
+ * worked built rows with no `objectiveEvidence` at all, which is the legacy shape.
  */
 export type ObjectiveEvidence =
   /** The response established this objective. */
@@ -115,5 +125,13 @@ export type ObjectiveEvidence =
   | "partial"
   /** The response asserted something this objective contradicts. */
   | "contradicted"
+  /**
+   * The opportunity was taken up and nothing usable came of it — revealed, gave up, unreadable.
+   *
+   * 🔴 AN ATTEMPT, WHICH IS WHY IT IS NOT `not_addressed`. The learner met this question and did not
+   * produce; that is the strongest signal there is that the answer is owed to them. It projects to
+   * `not_demonstrated`, which is what makes the policy state the answer rather than ask again.
+   */
+  | "nothing_produced"
   /** The response said nothing either way about this objective. */
   | "not_addressed";

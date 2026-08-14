@@ -40,6 +40,11 @@ const [FORWARD, REVERSE] = objectivesForKnowledge(KNOWLEDGE);
 const GENERIC_TO_BRAND = stored(FORWARD, "row-forward");
 const BRAND_TO_GENERIC = stored(REVERSE, "row-reverse");
 
+/** The prompt builder, given the knowledge these objectives came from — which it needs, because an
+ *  explanation is judged against the knowledge and not against the objective's one-line answer. */
+const askedAbout = (objective: StoredObjective, id: string) =>
+  retrievalPromptFor({ knowledge: KNOWLEDGE, objective }, id);
+
 /** One judged answer about one objective, built the way the live retrieval path builds it. */
 function judged(input: {
   prompt: ReturnType<typeof retrievalPromptFor>;
@@ -99,8 +104,8 @@ test("🔴 the two directions of one pair ask OPPOSITE questions", () => {
   // opposite identity keys. Every downstream report then reads correctly — one direction
   // demonstrated, the reverse still unknown — and the reverse is unknown only because the learner
   // was never actually asked it.
-  const forward = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
-  const reverse = retrievalPromptFor(BRAND_TO_GENERIC, "p2");
+  const forward = askedAbout(GENERIC_TO_BRAND, "p1");
+  const reverse = askedAbout(BRAND_TO_GENERIC, "p2");
 
   assert.notEqual(forward.prompt, reverse.prompt);
   assert.match(forward.prompt, /losartan/);
@@ -133,7 +138,7 @@ test("a headerless pair still asks something, without inventing a role", () => {
 });
 
 test("the task carries the answer as reference evidence and NO canvas concept", () => {
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const prompt = askedAbout(GENERIC_TO_BRAND, "p1");
   const task = objectiveAsTask(GENERIC_TO_BRAND, prompt, { text: "Cozaar", via: "typed" });
   assert.equal(task.expectedEvidence.referenceAnswer, "Cozaar");
   // 🔴 A per-canvas concept id on a durable objective would be identity leaking back in from the
@@ -148,13 +153,13 @@ test("🔴 the verdict comes from the evaluator even when the text matches exact
   // A `said === expected` shortcut is the tempting version of this and it is wrong twice: it marks
   // a correct answer wrong over capitalisation or a synonym, and — the part that changes teaching
   // — it cannot tell a wrong answer from a specific competing belief.
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const prompt = askedAbout(GENERIC_TO_BRAND, "p1");
   const [evidence] = judged({ evaluation: { ...EVALUATION, verdict: "incorrect" }, prompt });
   assert.equal(evidence!.verdict, "incorrect");
 });
 
 test("a judged answer always obtained a demonstration — including a wrong one", () => {
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const prompt = askedAbout(GENERIC_TO_BRAND, "p1");
   const [evidence] = judged({
     evaluation: { ...EVALUATION, verdict: "incorrect" },
     prompt,
@@ -164,7 +169,7 @@ test("a judged answer always obtained a demonstration — including a wrong one"
 });
 
 test("🔴 an opportunity that produced nothing carries NO verdict", () => {
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "p1");
+  const prompt = askedAbout(GENERIC_TO_BRAND, "p1");
   const [evidence] = unobtainedEvidence({
     canvasId: "c1",
     occurredAt: "2026-08-11T12:00:00.000Z",
@@ -181,7 +186,7 @@ test("🔴 the evidence is keyed by the TASK, so one prompt can only ever be one
   // A fresh id minted at submit time would give a double click two ids and two rows for one
   // performance — and `demonstrationCount` is what the policy reads to decide whether a capability
   // has been shown repeatedly, so the learner would be credited with practice they never did.
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "task-abc");
+  const prompt = askedAbout(GENERIC_TO_BRAND, "task-abc");
   const [first] = judged({ occurredAt: "2026-08-11T12:00:00.000Z", prompt });
   const [second] = judged({ occurredAt: "2026-08-11T12:00:03.000Z", prompt });
 
@@ -192,16 +197,16 @@ test("🔴 the evidence is keyed by the TASK, so one prompt can only ever be one
 });
 
 test("a different prompt is a different demonstration", () => {
-  const [one] = judged({ prompt: retrievalPromptFor(GENERIC_TO_BRAND, "task-1") });
+  const [one] = judged({ prompt: askedAbout(GENERIC_TO_BRAND, "task-1") });
   const [two] = judged({
     occurredAt: "2026-08-11T13:00:00.000Z",
-    prompt: retrievalPromptFor(GENERIC_TO_BRAND, "task-2"),
+    prompt: askedAbout(GENERIC_TO_BRAND, "task-2"),
   });
   assert.notEqual(one!.responseId, two!.responseId);
 });
 
 test("what the learner said is kept, and the evaluator is named", () => {
-  const [evidence] = judged({ prompt: retrievalPromptFor(GENERIC_TO_BRAND, "task-1") });
+  const [evidence] = judged({ prompt: askedAbout(GENERIC_TO_BRAND, "task-1") });
   assert.equal(evidence!.responseText, "Cozaar");
   assert.ok(evidence!.evaluatorVersion);
 });
@@ -269,8 +274,8 @@ test("🔴 nothing objective-specific leaks into the response identity", () => {
   // The board's stated defect, asserted directly against: hand the SAME id to two opposite
   // objectives and it must survive unchanged. If the id were ever derived from the objective, these
   // would diverge — which is the exact failure that would make one answer read as several.
-  const forward = retrievalPromptFor(GENERIC_TO_BRAND, "shared-id");
-  const reverse = retrievalPromptFor(BRAND_TO_GENERIC, "shared-id");
+  const forward = askedAbout(GENERIC_TO_BRAND, "shared-id");
+  const reverse = askedAbout(BRAND_TO_GENERIC, "shared-id");
   assert.equal(forward.id, "shared-id");
   assert.equal(reverse.id, "shared-id");
   assert.notEqual(forward.targets[0]!.identityKey, reverse.targets[0]!.identityKey);
@@ -278,15 +283,15 @@ test("🔴 nothing objective-specific leaks into the response identity", () => {
 
 test("separate answers carry separate response identities", () => {
   // Acceptance test 3. The other half: sharing must not become collapsing.
-  const first = retrievalPromptFor(GENERIC_TO_BRAND, "answer-1");
-  const second = retrievalPromptFor(GENERIC_TO_BRAND, "answer-2");
+  const first = askedAbout(GENERIC_TO_BRAND, "answer-1");
+  const second = askedAbout(GENERIC_TO_BRAND, "answer-2");
   assert.notEqual(first.id, second.id);
 });
 
 test("an unobtained demonstration carries the same answer identity", () => {
   // "I don't know" is an opportunity that produced nothing — but it is still ONE answer, and it must
   // group with anything else that submission produced rather than looking like a separate event.
-  const prompt = retrievalPromptFor(GENERIC_TO_BRAND, "answer-1");
+  const prompt = askedAbout(GENERIC_TO_BRAND, "answer-1");
   const [nothing] = unobtainedEvidence({
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
@@ -406,7 +411,7 @@ test("🔴 a judged outcome for an objective the task did not target writes NO r
       outcomeFor(GENERIC_TO_BRAND, EVALUATION),
       { objectiveIdentityKey: "association:v2:never-asked", verdict: "incorrect" },
     ]),
-    prompt: retrievalPromptFor(GENERIC_TO_BRAND, "answer-1"),
+    prompt: askedAbout(GENERIC_TO_BRAND, "answer-1"),
     responseText: "Cozaar, and also something nobody asked about",
   });
 

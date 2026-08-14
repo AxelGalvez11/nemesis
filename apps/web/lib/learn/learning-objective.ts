@@ -28,18 +28,31 @@ import {
   knowledgeIdentityKey,
   normalizeForIdentity,
 } from "./knowledge-identity";
-import type { KnowledgeObject } from "./knowledge-types";
+import type { CausalRelation, KnowledgeObject } from "./knowledge-types";
 
 /**
  * What the learner is being asked to DO.
  *
- * 🔴 DELIBERATELY THREE, NOT TWELVE. A full capability ontology written before a second knowledge
+ * 🔴 DELIBERATELY FOUR, NOT TWELVE. A full capability ontology written before a second knowledge
  * type has tested it would be eleven guesses and one fact — the same mistake as a ten-way payload
- * union. Only `recall` is minted today; `discriminate` and `explain` are named because identity
+ * union. `recall` and `predict` are minted; `discriminate` and `explain` are named because identity
  * has to keep them APART (see the non-convergence tests), and naming them costs nothing while
  * inventing their parameters would cost a rewrite. Add a capability when something mints it.
+ *
+ * 🔴 `predict` ARRIVED WITH A KNOWLEDGE TYPE, NOT ON ITS OWN, and that is the order this rule wants.
+ * It is minted for a causal edge and for nothing else, because a causal edge is the first thing in
+ * the corpus a learner can be asked to REASON FORWARD THROUGH rather than to look up.
+ *
+ * 🔴 AND IT IS `predict` BECAUSE THAT IS THE WORD THE SPEC ALREADY USES — `openingOperation("causal")`
+ * returns `predict`, and `TASK_INTENT.predict` is *"say what follows, and why"*, which is exactly the
+ * question minted below. Calling it `explain` would have been this codebase's named failure of
+ * mapping a wider operation vocabulary DOWN onto a narrower one: the durable evidence row carries
+ * `operation`, so every causal attempt would have been filed for ever under a name the spec gives to
+ * a DIFFERENT question — the backward one, *"why is this the case?"*, over the same edge. That
+ * question is real, is genuinely a separate capability, and is deliberately not minted yet; keeping
+ * `explain` unminted is what leaves room for it.
  */
-export type ObjectiveCapability = "recall" | "discriminate" | "explain";
+export type ObjectiveCapability = "recall" | "discriminate" | "explain" | "predict";
 
 /**
  * A positional fallback, used ONLY when the source named no columns.
@@ -150,6 +163,54 @@ export function objectiveIdentityKey(input: {
   return `${input.capability}:v${OBJECTIVE_IDENTITY_VERSION}:${fnv1a64(objectiveIdentityBasis(input))}`;
 }
 
+/** The two structural ends of a causal edge, used as role names.
+ *
+ *  🔴 STRUCTURAL, NOT SUBJECT-MATTER, WHICH IS WHY THEY ARE SAFE TO HARD-CODE. A causal claim in
+ *  pharmacology, in contract law and in thermodynamics all have a thing that acts and a thing that
+ *  follows; these name the POSITIONS in the relation, exactly as `inputRole`/`outputRole` name the
+ *  columns a glossary happened to print. Nothing here knows what any cause is made of. */
+const CAUSE_ROLE = "cause";
+const EFFECT_ROLE = "effect";
+
+/**
+ * What a learner can be asked to do with one causal edge.
+ *
+ * 🔴 ONE OBJECTIVE, FORWARD, AND THE SECOND DIRECTION IS DELIBERATELY NOT MINTED. An association
+ * mints both ways because producing a brand from a generic and a generic from a brand are two
+ * capabilities a learner routinely splits on, and BOTH are askable with the same one-line question.
+ * A causal edge's reverse — *"why is this the case?"*, the spec's `explain` — is a genuinely
+ * different and genuinely valuable capability, and it is also a different question needing different
+ * expected evidence and a different judgement. Minting it here before anything asks it would create
+ * a row that reports "no evidence" for ever and pulls the learner's picture down for something
+ * nobody was ever asked. `objectiveIdentityKey` already keeps the two apart via `capability`, so
+ * adding the reverse later cannot collide with what is written today.
+ *
+ * 🔴 THE ANSWER IS THE EDGE STATED, NOT A MODEL ANSWER GENERATED. `statement` is what the extractor
+ * recorded the SOURCE as claiming, so the reference answer a judge is given traces back to the
+ * document rather than to a second generation nobody grounded.
+ */
+function causalObjectives(object: KnowledgeObject, relation: CausalRelation): LearningObjective[] {
+  const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
+  const parameters: ObjectiveParameters = { inputRole: CAUSE_ROLE, outputRole: EFFECT_ROLE };
+  const cue = relation.cause.text;
+  return [
+    {
+      answer: object.statement,
+      capability: "predict",
+      cue,
+      identityKey: objectiveIdentityKey({ capability: "predict", knowledgeIdentityKey: knowledge, parameters }),
+      identityVersion: OBJECTIVE_IDENTITY_VERSION,
+      knowledgeIdentityKey: knowledge,
+      // 🔴 RELATION-NEUTRAL WORDING. The label must read correctly whether the source said the cause
+      // produces, raises, blocks or prevents the effect — naming one of those verbs here would print
+      // "leads to" over an edge the document said INHIBITS. The specific verb is on the relation and
+      // is the judge's business, not the label's.
+      label: `Say what follows from ${cue}, and why`,
+      parameters,
+    },
+  ];
+}
+
 /**
  * The objectives a knowledge object supports today.
  *
@@ -161,8 +222,17 @@ export function objectiveIdentityKey(input: {
  * 🔴 AND ONLY WHAT IS NEEDED. No `discriminate` objective is minted: nothing consumes one yet, and
  * an objective with no task behind it is a row that reports "no evidence" for ever and drags the
  * learner's picture down for a capability nobody was asked to show.
+ *
+ * 🔴 EVERY TYPE THAT IS NOT HANDLED RETURNS EMPTY, AND THAT LINE WAS THE WHOLE CEILING OF THE
+ * PRODUCT. Until a causal edge was given a capability, `object.type !== "association"` meant that a
+ * lecture full of mechanisms, processes and conditional rules could construct knowledge all day and
+ * none of it would ever reach a learner: no objective, so no task, so no evidence, so no state, so
+ * nothing for the policy to decide about. "Eleven knowledge kinds in the spec, one lane in the code"
+ * was measured HERE. Adding a type to the extractor without adding it to this function widens the
+ * spec and changes nothing a learner experiences.
  */
 export function objectivesForKnowledge(object: KnowledgeObject): LearningObjective[] {
+  if (object.type === "causal" && object.relation) return causalObjectives(object, object.relation);
   if (object.type !== "association" || !object.pair) return [];
 
   const knowledge = object.identityKey ?? knowledgeIdentityKey(object);

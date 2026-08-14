@@ -40,22 +40,28 @@ import {
 import type { ExtractionOutcome } from "./knowledge-extraction";
 import type { KnowledgeObject } from "./knowledge-types";
 import { objectivesForKnowledge } from "./learning-objective";
+import { runtimeCanStage } from "./runtime-support";
 
 /**
  * The knowledge this runtime can actually teach.
  *
- * 🔴 THE SUPPORTED SLICE IS AN ASSOCIATION WITH A RECALL OBJECTIVE, AND WIDENING IT IS WHAT
- * SHIPPING THE NEXT KNOWLEDGE TYPE MEANS — not a flag flip. A causal or procedural object has
- * nothing here, and the canvas holding it must keep the runtime it already had.
+ * 🔴 WIDENING IT IS WHAT SHIPPING THE NEXT KNOWLEDGE TYPE MEANS — not a flag flip. A procedural or
+ * spatial object still has nothing here, and the canvas holding it must keep the runtime it had.
  *
  * Asked at the KNOWLEDGE level rather than of stored objectives, because ownership has to be
  * decided before anything is written: a canvas the policy will not own should not leave rows
  * behind in the learner's knowledge tables.
+ *
+ * 🔴 IT ASKS THE LEDGER, AND IT ASKS IT OF AN OBJECTIVE THAT WAS ACTUALLY MINTED. Both halves
+ * matter. The ledger is shared with `supportedObjectives`, so ownership and selection cannot drift
+ * into disagreeing. And the question is put to a minted objective rather than to the type alone,
+ * so a knowledge object whose payload is too thin to mint anything — a causal row that arrived
+ * without its relation — is correctly reported as unsupported instead of being owned and then
+ * silently teaching nothing.
  */
 export function supportedKnowledge(objects: readonly KnowledgeObject[]): KnowledgeObject[] {
-  return objects.filter(
-    (object) =>
-      object.type === "association" && objectivesForKnowledge(object).some((o) => o.capability === "recall"),
+  return objects.filter((object) =>
+    objectivesForKnowledge(object).some((o) => runtimeCanStage(object.type, o.capability)),
   );
 }
 
