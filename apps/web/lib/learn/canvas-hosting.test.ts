@@ -3,9 +3,12 @@ import { test } from "node:test";
 
 import { CANVAS_STATES, type CanvasState } from "./canvas-model";
 import {
+  actionKey,
   answerSink,
   composeSurface,
   isEvidenceStage,
+  materialOwnsAttention,
+  NO_ACTION,
   tempoFor,
   type HostedTask,
   type HostedTaskShape,
@@ -46,18 +49,89 @@ test("🔴🔴 THE TASK OWNS ATTENTION: a document does not paint beneath a live
   assert.equal(regions.document, false, "and nothing competes with it for attention");
 });
 
-test("🔴 but content the learner ASKED for still paints beside the task", () => {
+test("🔴 but content that IS the action still paints beside the task", () => {
   // 🔴 THE CALIBRATION, AND THE DEFECT THIS FIX COULD OTHERWISE BECOME. "Summarize this" writes into
   // the same blocks as a generated overview — the rows are indistinguishable — so an unconditional
-  // suppression would answer an explicit request with a blank page. The only honest discriminator is
-  // whether they asked, which is why it is session state passed in rather than derived.
+  // suppression would answer an explicit request with a blank page.
   const asked = composeSurface({
     canvasState: "learn",
-    learnerAskedForContent: true,
+    materialIsTheAction: true,
     policyPresenting: true,
   });
   assert.equal(asked.document, true);
   assert.equal(asked.policy, true);
+});
+
+// ── attention returns to the task, which the first version never did ────────
+
+test("🔴🔴 material the learner asked for owns attention only until the action moves on", () => {
+  // 🔴 THE DEFECT THIS REPLACES, WHICH SHIPPED AND WHICH THE OWNER WOULD HAVE MET AGAIN. The first
+  // version of this rule was a session boolean, `learnerAskedForContent`, set by the command path
+  // and NEVER CLEARED — `setAskedForContent(true)` was its only call. So one "explain this" put
+  // general material back underneath every subsequent question for the rest of the session, and the
+  // overview the owner had just had removed returned one interaction later.
+  //
+  // Owner, correcting the encoding: "The invariant is that the current cognitive action owns
+  // attention… What I don't want is stale/general document material competing with the active task."
+  const askedDuring = actionKey({ objectiveId: "o1", type: "retrieve" });
+
+  // While that retrieval is still what the learner is doing, the material they asked for IS the act.
+  assert.equal(
+    materialOwnsAttention({ actionInFlight: askedDuring, requestedDuring: askedDuring }),
+    true,
+  );
+
+  // They answer; the policy now owes them the correction. Different action — the same blocks are
+  // background now, and nothing had to clear a flag for that to be true.
+  assert.equal(
+    materialOwnsAttention({
+      actionInFlight: actionKey({ objectiveId: "o1", type: "show_correction" }),
+      requestedDuring: askedDuring,
+    }),
+    false,
+  );
+
+  // And it does not leak sideways to a different objective's retrieval either.
+  assert.equal(
+    materialOwnsAttention({
+      actionInFlight: actionKey({ objectiveId: "o2", type: "retrieve" }),
+      requestedDuring: askedDuring,
+    }),
+    false,
+  );
+});
+
+test("🔴 a learner who never asked never owns attention with material", () => {
+  assert.equal(
+    materialOwnsAttention({ actionInFlight: NO_ACTION, requestedDuring: null }),
+    false,
+    "null is 'never asked', and must not match the no-action key",
+  );
+});
+
+test("material asked for with nothing in flight keeps the surface it was asked on", () => {
+  // Asking to read while the policy has nothing to say is the ordinary reading case. It must not be
+  // suppressed the moment a task appears, but it also must not be suppressed BEFORE one does.
+  assert.equal(
+    materialOwnsAttention({ actionInFlight: NO_ACTION, requestedDuring: NO_ACTION }),
+    true,
+  );
+  const regions = composeSurface({
+    canvasState: "learn",
+    materialIsTheAction: true,
+    policyPresenting: false,
+  });
+  assert.equal(regions.document, true);
+});
+
+test("🔴 a contrast names several objectives and still keys stably", () => {
+  // `contrast` carries `objectiveIds`, not `objectiveId`. Keying off the missing field would make
+  // every contrast look like the same action, so material requested during one would paint under
+  // the next.
+  const first = actionKey({ objectiveIds: ["a", "b"], type: "contrast" });
+  assert.equal(first, actionKey({ objectiveIds: ["a", "b"], type: "contrast" }), "stable");
+  assert.notEqual(first, actionKey({ objectiveIds: ["a", "c"], type: "contrast" }));
+  assert.notEqual(first, actionKey({ objectiveId: "a", type: "retrieve" }));
 });
 
 test("unsupported material stays readable when the policy has nothing to ask", () => {

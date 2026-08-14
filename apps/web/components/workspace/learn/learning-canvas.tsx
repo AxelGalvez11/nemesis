@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
-import { answerSink } from "@/lib/learn/canvas-hosting";
+import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
@@ -90,10 +90,18 @@ export function LearningCanvas({
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
   const [recording, setRecording] = useState(false);
-  /** Has the learner asked for something to read in this session? 🔴 Never durable — see
-   *  `composeSurface`. A generated overview and a summary they requested are the same rows, so the
-   *  only honest discriminator is whether they asked. */
-  const [askedForContent, setAskedForContent] = useState(false);
+  /**
+   * WHICH cognitive action was in flight when the learner last asked for something to read.
+   *
+   * 🔴 THE ACTION, NOT A BOOLEAN, AND THE BOOLEAN WAS A LIVE DEFECT. This was `askedForContent`,
+   * set true by the command path and never cleared — so one *"explain this"* put general material
+   * back underneath every question for the rest of the session, and the owner's overview returned
+   * one interaction later. Recording the action instead makes attention return by itself the moment
+   * the policy moves on: nothing to clear, so nothing to forget to clear. See
+   * `materialOwnsAttention`. 🔴 Never durable — a generated overview and a summary they requested
+   * are the same rows, so the only honest discriminator is what the learner was doing.
+   */
+  const [materialRequestedDuring, setMaterialRequestedDuring] = useState<string | null>(null);
 
   const selected = useMemo(
     () => canvas.blocks.filter((block) => selectedIds.includes(block.id)),
@@ -329,9 +337,11 @@ export function LearningCanvas({
 
       // `ordinary` and `defer-to-policy` both take the normal path: the second is a scaffolding
       // request (§33), which is the policy's to answer, not a rewrite.
-      // 🔴 THE LEARNER ASKED, SO WHAT COMES BACK MAY PAINT BESIDE A TASK. Session state, set here
-      // because this is the only place a learner request writes blocks; see `composeSurface`.
-      setAskedForContent(true);
+      // 🔴 THE LEARNER ASKED, SO WHAT COMES BACK IS THE ACTION — until the policy moves on. The
+      // action in flight is stamped here rather than a bare `true`, which is what makes attention
+      // return by itself; see `materialOwnsAttention`. This is the only place a learner request
+      // writes blocks.
+      setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
       await session.command(text, selected);
       clearSelection();
     },
@@ -419,7 +429,13 @@ export function LearningCanvas({
   const { presence, regions } = canvasPresentation({
     blocks: canvas.blocks.length,
     canvasState: canvas.state,
-    learnerAskedForContent: askedForContent,
+    // 🔴 THE MATERIAL IS THE ACTION ONLY WHILE THAT ACTION IS STILL IN FLIGHT. Answering the
+    // question lands evidence, the policy picks a different action, this flips to false and the
+    // task has attention back — with no handler anywhere having to remember to clear anything.
+    materialIsTheAction: materialOwnsAttention({
+      actionInFlight: actionKey(policy.decision?.action ?? null),
+      requestedDuring: materialRequestedDuring,
+    }),
     policyPresenting,
     working,
   });
