@@ -204,33 +204,38 @@ export function mistralMime(fileName: string, mimeType: string): string {
 /**
  * Whether this file goes to Mistral at all.
  *
- * 🔴🔴 PDF ONLY, AND THAT IS A MEASURED RESULT RATHER THAN A CAUTIOUS ONE. Every other format this
- * repository handles STATES its own structure — a .docx, a .pptx, a .xlsx and a .csv are markup, so
- * reading the markup is exact and reading a picture of it is a guess. Measured on the owner's own
- * course files, 2026-08-13, same file through both lanes:
+ * 🔴🔴 PDF, PPTX AND DOCX — A PRODUCT DECISION BY THE OWNER (2026-08-13), MADE OVER A BENCHMARK AND
+ * DELIBERATELY SO. Measured per-file, the local readers win on Office: a Word activity gave them 6
+ * tables against Mistral's 0, and a deck gave 209 blocks / 152 rectangles / 20 figures against
+ * 100 / 0 / 0. That is a real difference and it is not the question being answered here.
  *
- *     .docx  local 6 tables (4 columns each, from Word's XML)   vs  Mistral 0
- *            — Mistral renders the document and emits a pipe table that breaks apart wherever a
- *              cell contains a line break, so the grid is unrecoverable from its output
- *     .pptx  local 209 blocks, 152 with rectangles, 20 figures  vs  Mistral 100 blocks, 0, 0
- *            — and 8,677 characters against 6,348
+ * The question is who OWNS document parsing. Keeping the Office readers as primary means keeping
+ * three parsers, three sets of edge cases, and a standing obligation to patch SmartArt, merged
+ * cells and Office equations for ever — which is the position this work exists to leave. Mistral
+ * supports all three formats and improves without a deploy. 94% that someone else maintains beats
+ * 97% that we do, at this stage, by a wide margin.
  *
- * 🔴 ON PDF THE RESULT IS THE OPPOSITE, AND DECISIVELY SO. A PDF is not markup; it is instructions
- * for painting glyphs, and a font whose "ti" is one ligature paints something pdf.js cannot map
- * back. On the 24-page drug chart: local recovered 9,098 words of which 60 were corrupted across 39
- * distinct spellings — `ac1on`, `indica1ons`, `contraindica1ons`, `palpita2ons` — while Mistral
- * recovered 16,823 words with none. The word "contraindication" appears 34 times in the local read
- * and 64 in Mistral's. A learner asked what the contraindications are would have been taught from
- * text that says "contraindica1ons".
+ * 🔴 ON PDF THE MEASUREMENT AGREES WITH THE DECISION ANYWAY, DECISIVELY. A PDF is not markup; it is
+ * instructions for painting glyphs, and a font whose "ti" is one ligature paints something pdf.js
+ * cannot map back. On a 24-page drug chart the local reader recovered 9,098 words of which 60 were
+ * corrupted across 39 spellings — `ac1on`, `indica1ons`, `contraindica1ons`, `palpita2ons` — while
+ * Mistral recovered 16,823 with none. "contraindication" appears 34 times locally and 64 in
+ * Mistral's read.
  *
- * 🔴 AND `image` IS NOT ON IT EITHER, WHICH IS A THIRD REASON. A standalone picture goes to Gemini
+ * 🔴 WHAT PROTECTS THE OFFICE CASE IS `mistral-quality.ts`, NOT THIS LIST. Accepting a lower score
+ * is not the same as accepting an arbitrary one, and one measured case is not 94-vs-97: a lecture's
+ * speaker notes are invisible to an optical model, so a 57-slide deck came back with a third of its
+ * concepts. That is caught downstream by comparing the read against what the FILE ITSELF declares,
+ * and only then does a legacy reader run. The legacy readers are fallbacks now — kept, not improved.
+ *
+ * 🔴 `image` IS STILL NOT ON THE LIST, FOR A DIFFERENT REASON. A standalone picture goes to Gemini
  * with a prompt that asks it to DESCRIBE what it shows; OCR would transcribe the words in a
- * photograph of a whiteboard and say nothing about the diagram drawn beside them. Those are
- * different questions, and the existing lane already asks the better one. A scanned PDF is still
- * covered — it arrives as `pdf`. PURE.
+ * photograph of a whiteboard and say nothing about the diagram beside them. Different questions,
+ * and the existing lane asks the better one. `xlsx`/`csv` stay local too: a spreadsheet's exact
+ * cell references and formulas are not something an optical read can improve on. PURE.
  */
 export function mistralHandles(kind: string): boolean {
-  return kind === "pdf";
+  return kind === "pdf" || kind === "pptx" || kind === "docx";
 }
 
 /** The request body for one document. PURE, and separated so a test can assert the exact
@@ -239,6 +244,8 @@ export function buildMistralRequest(input: {
   base64: string;
   mime: string;
   model: string;
+  /** Office formats reject the flag PDFs need — see `include_image_base64` below. */
+  office?: boolean;
 }): string {
   return JSON.stringify({
     model: input.model,
@@ -268,15 +275,18 @@ export function buildMistralRequest(input: {
     // everything on a page it never looked at. A false claim of completeness is worse than a
     // truthful `partial`, and it is invisible: every count still reconciles.
     //
-    // 🔴 `image_limit: 0` IS WHAT MISTRAL ITSELF RECOMMENDS FOR OFFICE FILES — it rejects this flag
-    // for .docx and .pptx with "extracted images can only be returned in base64 ... try setting
-    // image_limit=0 instead". That is real, and it is why this line was briefly the other way
-    // round. It stopped mattering when the vendor's scope narrowed to PDF, where this flag works;
-    // if Office ever comes back, they need different parameters, not a shared compromise.
+    // 🔴 AND THE TWO FAMILIES NEED DIFFERENT PARAMETERS, WHICH IS WHY THIS IS CONDITIONAL RATHER
+    // THAN A SHARED COMPROMISE. Mistral rejects this flag outright for .docx and .pptx —
+    // "extracted images can only be returned in base64 ... try setting image_limit=0 instead" — so
+    // sending it to an Office file is a 400 and a silent fall-back to the legacy reader. Office
+    // files are therefore sent no image parameter at all (measured: the default is accepted and
+    // returns the same result as `image_limit: 0`), and PDFs get the flag that keeps their figures.
+    // A single value that satisfied both would have to be `image_limit: 0`, which costs every PDF
+    // its diagrams — the expensive half of the trade, paid to avoid one conditional.
     //
     // The rectangles are what a locator needs. The pixels would multiply the response size for
     // something the reader renders from the original file anyway.
-    include_image_base64: false,
+    ...(input.office ? {} : { include_image_base64: false }),
   });
 }
 
@@ -336,7 +346,7 @@ export async function readWithMistral(
   bytes: Uint8Array,
   fileName: string,
   mimeType: string,
-  options: { env?: MistralEnv; signal?: AbortSignal } = {},
+  options: { env?: MistralEnv; office?: boolean; signal?: AbortSignal } = {},
 ): Promise<MistralOutcome> {
   const env = options.env ?? process.env;
   const key = (env.MISTRAL_API_KEY ?? "").trim();
@@ -353,6 +363,7 @@ export async function readWithMistral(
     base64: Buffer.from(bytes).toString("base64"),
     mime: mistralMime(fileName, mimeType),
     model,
+    ...(options.office ? { office: true } : {}),
   });
 
   let lastStatus = 0;

@@ -224,15 +224,16 @@ test("a reply that is not the OCR shape is refused rather than half-read", () =>
   assert.equal(ok?.pages.length, 1);
 });
 
-test("only PDFs go to the vendor — every format that states its own structure stays local", () => {
-  // 🔴 MEASURED, NOT CAUTIOUS. A .docx/.pptx/.xlsx/.csv is markup, so reading the markup is exact
-  // and reading a render of it is a guess: the local lane got 6 tables out of a Word activity where
-  // Mistral got 0, and 209 blocks out of a deck where Mistral got 100. A PDF is not markup, and
-  // there the result reverses — see `mistralHandles`.
-  for (const kind of ["xlsx", "csv", "text", "image", "docx", "pptx"]) {
-    assert.equal(mistralHandles(kind), false, kind);
-  }
-  assert.equal(mistralHandles("pdf"), true);
+test("documents go to the vendor; grids and photographs stay local", () => {
+  // 🔴 A PRODUCT DECISION, NOT A BENCHMARK RESULT (owner, 2026-08-13). Per-file the local readers
+  // win on Office — 6 tables against 0 on a Word activity, 209 blocks against 100 on a deck — and
+  // that is not the question. Owning three parsers for ever costs more than the difference. What
+  // protects the Office case is `mistral-quality.ts`, which refuses a read missing content the file
+  // itself declares; the legacy readers are fallbacks now, kept but not improved.
+  for (const kind of ["pdf", "docx", "pptx"]) assert.equal(mistralHandles(kind), true, kind);
+  // A spreadsheet's exact cell references and formulas cannot be improved on by an optical read,
+  // and a standalone photograph wants describing rather than transcribing.
+  for (const kind of ["xlsx", "csv", "text", "image"]) assert.equal(mistralHandles(kind), false, kind);
   assert.equal(mistralMime("lecture.pptx", ""),
     "application/vnd.openxmlformats-officedocument.presentationml.presentation");
   assert.equal(mistralMime("scan", "application/octet-stream"), "application/pdf");

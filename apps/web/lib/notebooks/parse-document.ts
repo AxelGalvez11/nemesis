@@ -43,6 +43,7 @@ import {
 } from "./extract-coverage";
 import { mistralCoverage } from "./extract-coverage";
 import { mistralHandles, readWithMistral } from "./mistral-ocr";
+import { claimOf, judgeMistralRead } from "./mistral-quality";
 import { modelFromMistral, titleFromMistral, unitKindFor } from "./mistral-model";
 import { csvToModel } from "./csv-model";
 import { readCsv } from "./csv-structure";
@@ -234,7 +235,10 @@ async function parseWithMistral(
   mimeType: string,
   kind: DocumentKind,
 ): Promise<ParseOutcome | null> {
-  const outcome = await readWithMistral(bytes, fileName, mimeType);
+  const outcome = await readWithMistral(bytes, fileName, mimeType, {
+    // Office formats reject the image flag PDFs need; sending it is a 400 and a silent fall-back.
+    ...(kind === "pdf" ? {} : { office: true }),
+  });
   if (!outcome.ok) {
     // `not-configured` is the ordinary state of a local checkout and of any preview deploy without
     // the key, so it is not worth a line in the log; everything else is a provider fact worth
@@ -255,6 +259,20 @@ async function parseWithMistral(
   const model = modelFromMistral(outcome.response, kind, titleFromMistral(outcome.response));
   if (!model) {
     console.warn(JSON.stringify({ event: "mistral_unmappable", kind, pages: outcome.response.pages.length }));
+    return null;
+  }
+
+  // 🔴 THE QUALITY GATE THE OWNER SPECIFIED, AND IT IS THE ONLY THING KEEPING THE LEGACY READERS
+  // LOAD-BEARING. Everything above accepts that a vendor read may be worse in detail than a
+  // format-native one; this refuses only the case where the FILE ITSELF declares content that did
+  // not arrive — a deck whose speaker notes are missing, a Word document whose tables are gone.
+  // It never compares against the legacy parser's output, because running both would cost exactly
+  // what this change exists to stop paying.
+  const verdict = judgeMistralRead(claimOf(kind, bytes), model);
+  if (!verdict.ok) {
+    console.warn(
+      JSON.stringify({ detail: verdict.detail, event: "mistral_quality_rejected", kind, missing: verdict.missing }),
+    );
     return null;
   }
 
