@@ -10,7 +10,12 @@ import { test } from "node:test";
 
 import type { KnowledgeObject } from "./knowledge-types";
 import type { LearnerEvidence, LearnerObjectiveState } from "./learner-evidence";
-import { mostValuable, value, type SelectionReason } from "./next-action-value";
+import {
+  modifierCeilingHoldsBands,
+  mostValuable,
+  value,
+  type SelectionReason,
+} from "./next-action-value";
 import type { TeachingAction } from "./teaching-policy";
 
 const KNOWLEDGE: KnowledgeObject = {
@@ -157,6 +162,101 @@ test("🔴 an objective nobody has ever touched is never penalised as 'just work
   // It has no last-evidence time, so there is nothing recent about it. Penalising it would suppress
   // exactly the cheapest information available at the start of a session.
   assert.equal(reasons(at({ interveningActs: 0 })).includes("just-worked"), false);
+});
+
+// ── the band guarantee, which was false before it was checked ───────────────
+
+test("🔴🔴 no combination of modifiers can lift an action out of its band", () => {
+  // 🔴 THIS WAS ALREADY BROKEN, UNDER A COMMENT PROMISING IT WAS CHECKED. The header read "the gaps
+  // are wide enough that the modifiers below cannot cross them, and that is checked by a test".
+  // There was no test, and the arithmetic did not hold: failures added up to 1,000 and `just-worked`
+  // subtracted 1,500, a 2,500 swing across a smallest band gap of 2,000.
+  //
+  // Derived from the bands rather than restated, so moving a band re-runs the check.
+  const { smallestGap, worstSwing } = modifierCeilingHoldsBands();
+  assert.ok(
+    worstSwing < smallestGap,
+    `modifiers can swing ${worstSwing} across a smallest band gap of ${smallestGap}`,
+  );
+});
+
+test("🔴 the concrete inversion that used to exist: a due ✓ never outranks a provisional one", () => {
+  // The case the arithmetic above produced. Failing five times and finally getting it right leaves
+  // an objective `correct` WITH five unresolved attempts in its history — the maximum uprank — while
+  // a recognition-only ✓ that was just worked takes the maximum downrank. Scored directly, `due`
+  // beat `provisional`, inverting the one ordering §31.2 exists to hold.
+  const dueAfterAStruggle = at({
+    evidence: ["a", "b", "c", "d", "e"].map(miss),
+    interveningActs: 4,
+    state: state({
+      demonstratedAt: "independent",
+      evidenceCount: 6,
+      lastEvidenceAt: "2026-08-14T12:00:00.000Z",
+      status: "correct",
+    }),
+  });
+  const provisionalJustWorked = at({
+    interveningActs: 0,
+    state: state({
+      demonstratedAt: "recognition",
+      evidenceCount: 1,
+      lastEvidenceAt: "2026-08-14T12:00:00.000Z",
+      status: "correct",
+    }),
+  });
+  assert.ok(score(provisionalJustWorked) > score(dueAfterAStruggle));
+});
+
+// ── prerequisites: I11's edge, walked ───────────────────────────────────────
+
+test("🔴🔴 the step underneath outranks an equally-untouched step that unlocks nothing", () => {
+  // Owner's definition of done: Nemesis "identifies missing prerequisites". The learner missed the
+  // downstream edge, so the thing it starts from is now the useful move — not the same question
+  // again, and not an unrelated question that happens to sort first.
+  const underneath = at({ blockedDependents: 1 });
+  const unrelated = at();
+  assert.ok(score(underneath) > score(unrelated));
+  assert.ok(reasons(underneath).includes("unlocks-other-work"));
+  assert.equal(reasons(unrelated).includes("unlocks-other-work"), false);
+});
+
+test("🔴 more work stuck behind it is worth more, up to a bound", () => {
+  const one = score(at({ blockedDependents: 1 }));
+  const three = score(at({ blockedDependents: 3 }));
+  const ten = score(at({ blockedDependents: 10 }));
+  assert.ok(three > one, "a hub term is the more useful move");
+  assert.equal(ten, three, "…but not unboundedly — ten stuck dependents is not ten times a hub");
+});
+
+test("🔴🔴 a prerequisite the learner has ALREADY DEMONSTRATED is not promoted", () => {
+  // 🔴 THE CALIBRATION THAT KEEPS THIS FROM BECOMING A CURRICULUM. Every upstream term in a document
+  // has dependents; promoting on that alone would pin the foundations of every chain permanently
+  // above everything built on them. What earns the promotion is that the learner is STUCK on
+  // something downstream AND has not settled this. Sending someone who missed step two back to a
+  // step one they have proved twice reads as losing the thread, exactly like re-asking does.
+  const proven = state({
+    demonstratedAt: "independent",
+    evidenceCount: 2,
+    lastEvidenceAt: "2026-08-14T12:00:00.000Z",
+    status: "correct",
+  });
+  const promoted = at({ blockedDependents: 3, state: proven });
+  const plain = at({ state: proven });
+  assert.equal(score(promoted), score(plain));
+  assert.equal(reasons(promoted).includes("unlocks-other-work"), false);
+});
+
+test("🔴 a prerequisite still never outranks an answer the learner is owed", () => {
+  // The band rule, against the newest modifier. Someone standing in front of a correction must not
+  // have it pulled away because three other things are stuck behind a different objective.
+  const owedAnswer = at({ action: CORRECTION, state: state({ status: "incorrect" }) });
+  const hub = at({
+    blockedDependents: 3,
+    evidence: ["a", "b", "c", "d", "e"].map(miss),
+    interveningActs: 3,
+    state: state({ evidenceCount: 5, lastEvidenceAt: "2026-08-14T12:00:00.000Z", status: "incorrect" }),
+  });
+  assert.ok(score(owedAnswer) > score(hub));
 });
 
 // ── the trace ───────────────────────────────────────────────────────────────
