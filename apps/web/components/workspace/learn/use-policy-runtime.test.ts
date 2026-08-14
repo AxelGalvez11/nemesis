@@ -144,8 +144,16 @@ test("🔴 the wait is BOUNDED, and the bound aborts the work rather than abando
   // The whole thread, end to end: nothing in the chain may drop it.
   assert.match(knowledge, /signal\?: AbortSignal/, "the knowledge layer must accept it");
   assert.match(knowledge, /constructTerritory\(userId, topic, TERRITORY_TARGET, \{ signal \}\)/, "topic lane");
-  assert.match(knowledge, /signal,\n {4}sources: canvas\.sources,/, "grounded lane");
-  assert.match(api, /ask\(uid, territoryMessages\(\{ count, sources, topic \}\), signal\)/, "and the model call");
+  assert.match(knowledge, /constructTerritory\(userId, canvas\.title, TERRITORY_TARGET, \{ signal, sources: canvas\.sources \}\)/, "grounded lane");
+
+  // 🔴 EVERY MODEL CALL IN THE GROUNDED LANE, NOT JUST THE FIRST ONE. The lane now makes two
+  // concurrent requests — pairs and mechanisms — and an unaborted second call is exactly the defect
+  // this test names: still running, still billable, and still able to come back and write knowledge
+  // for a canvas the learner walked away from. A guard naming only the call that existed when it was
+  // written goes quiet the moment a second one is added beside it.
+  assert.match(knowledge, /constructCausalKnowledge\(userId, canvas\.title, canvas\.sources, signal\)/, "causal lane");
+  assert.match(api, /ask\(uid, territoryMessages\(\{ count, sources, topic \}\), signal\)/, "and the pair model call");
+  assert.match(api, /ask\(uid, causalMessages\(\{ sources, topic \}\), signal\)/, "and the causal model call");
 });
 
 test("🔴 the deadline is comfortably above a real build and comfortably inside the owner's ninety", () => {

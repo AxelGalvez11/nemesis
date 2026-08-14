@@ -326,11 +326,17 @@ test("🔴 a scaffolded prompt records ITS rung, not the default", () => {
   assert.equal(written?.scaffoldRung, "recognition");
 });
 
-test("🔴 an answer that produced nothing is `not_addressed` on targets, never a contradiction", () => {
+test("🔴 an answer that produced nothing is `nothing_produced` on targets, never a contradiction", () => {
   // `unobtainedEvidence` fans out with no outcomes at all — a reveal, an admission, an unreadable
   // response. Every target must record that nothing came back, and none of them may record that
   // the learner asserted something wrong. Absence of evidence stored as negative evidence is how a
   // learner gets taught against a mistake they never made.
+  //
+  // 🔴 THIS ASSERTED `not_addressed` AND THAT WAS THE LIVE DEFECT. The two are different facts —
+  // "they met this question and produced nothing" versus "they answered ably and never mentioned
+  // this" — and `projectLearnerState` drops the second from the learner's status ON PURPOSE. With
+  // the admission path writing the second, an "I don't know" left the learner at `unknown`, the
+  // policy took its `unknown` branch, and the same question came back instead of the answer.
   const rows = unobtainedEvidence({
     canvasId: null,
     occurredAt: AT,
@@ -339,9 +345,32 @@ test("🔴 an answer that produced nothing is `not_addressed` on targets, never 
   });
   assert.equal(rows.length, 3);
   for (const r of rows) {
-    assert.equal(r.objectiveEvidence, "not_addressed", r.objectiveRowId);
+    assert.equal(r.objectiveEvidence, "nothing_produced", r.objectiveRowId);
     assert.equal(r.verdict, null, r.objectiveRowId);
     assert.equal(r.demonstrationObtained, false, r.objectiveRowId);
+  }
+});
+
+test("🔴 silence about ONE target among several is still `not_addressed`", () => {
+  // 🔴 THE CALIBRATION FOR THE TEST ABOVE, AND THE OWNER'S OWN CASE. The fix must not turn every
+  // unspoken-about objective into a failed attempt: asked to explain phase 0, an answer that
+  // establishes two of three edges says NOTHING about the third, and recording that as "they tried
+  // and produced nothing" would show them a correction for something they were never asked. The
+  // discriminator is whether the account named anything AT ALL, not whether it named this target.
+  const rows = evidenceForSubmission({
+    canvasId: null,
+    judgement: judgementOf([outcomeFor({ identityKey: "A-inward-ion" }, GOOD)]),
+    occurredAt: AT,
+    prompt: PHASE_0,
+    responseText: "Sodium enters the cell, causing rapid depolarization.",
+  });
+  const spoken = rows.find((r) => r.objectiveRowId === "row-A");
+  const silent = rows.filter((r) => r.objectiveRowId !== "row-A");
+  assert.equal(spoken?.objectiveEvidence, "demonstrated");
+  assert.equal(silent.length, 2);
+  for (const r of silent) {
+    assert.equal(r.objectiveEvidence, "not_addressed", r.objectiveRowId);
+    assert.notEqual(r.objectiveEvidence, "nothing_produced", r.objectiveRowId);
   }
 });
 

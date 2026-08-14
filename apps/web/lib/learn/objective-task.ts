@@ -11,8 +11,9 @@
 // Both are exercised by tests that reintroduce the specific defect, because a test that merely
 // checks "a task was produced" or "a row was written" passes through every one of these deaths.
 
-import type { LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
+import type { ExpectedEvidence, LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
 import type { EvaluationInput } from "./canvas-prompts";
+import type { KnowledgeObject } from "./knowledge-types";
 import type { EvidenceVerdict } from "./learner-evidence";
 import type { LearningObjective, ObjectiveCapability } from "./learning-objective";
 import type { EvidenceToRecord, StoredObjective } from "./learner-store";
@@ -158,6 +159,23 @@ export interface RetrievalPrompt {
   prompt: string;
   /** What a complete answer would be. 🔴 Never shown before the learner has committed. */
   expectedAnswer: string;
+  /**
+   * What the judge is told a complete answer must contain.
+   *
+   * 🔴 IT IS NOT `{ referenceAnswer }` FOR EVERY TASK, AND THAT WAS THE DEFECT. `objectiveAsTask`
+   * used to build the expected evidence itself, from the one field it had, so every task — a
+   * one-word term and a multi-step account alike — was judged against a single model sentence. For
+   * an association that is right: there is one correct term and the reference answer IS it. For an
+   * account of a mechanism it is close to meaningless, because a learner can be entirely correct in
+   * words that share almost nothing with the sentence the document used, and a judge given only
+   * that sentence has been quietly turned into a similarity check.
+   *
+   * 🔴 BUILT AT THE ONE PROMPT CONSTRUCTION SITE, AND REQUIRED. Derived at the judging boundary it
+   * would be one edit away from disagreeing with what the prompt actually asked; made optional it
+   * would default to absent, and absent means "nothing was expected", which is never true of a
+   * question this code built.
+   */
+  expectedEvidence: ExpectedEvidence;
   task: RetrievalTask;
   /**
    * The cognitive operation this prompt demands.
@@ -226,6 +244,25 @@ export function objectivePromptText(objective: LearningObjective): string {
     : `Given ${objective.cue}, what goes with it?`;
 }
 
+/**
+ * Word the question for a capability that asks the learner to reason FORWARD from something.
+ *
+ * 🔴 IT ASKS FOR THE CONSEQUENCE AND THE REASON IN ONE BREATH, WHICH IS THE POINT, and it is word
+ * for word what `TASK_INTENT.predict` already tells the judge the task is: *"say what follows, and
+ * why"*. "What follows from X?" alone is answerable with a single term and would be a recall
+ * question wearing a prediction's name — the learner names the effect, the judge sees the effect,
+ * and nothing about whether they hold the mechanism has been observed. The ", and why" is what makes
+ * the answer capable of being wrong in an INTERESTING way: a learner who knows the endpoint and not
+ * the route produces exactly the response this question is built to catch.
+ *
+ * 🔴 AND IT NAMES NO RELATION VERB, for the same reason the label does not. The source may have said
+ * the cause produces, raises, blocks or prevents its effect; asking "what does X cause?" over an
+ * edge the document said X PREVENTS puts a false premise in the question itself.
+ */
+export function predictionPromptText(objective: LearningObjective): string {
+  return `What follows from ${objective.cue}, and why?`;
+}
+
 /** The pair of identifiers a prompt needs to ask about one stored objective. */
 export function targetFor(objective: StoredObjective): ObjectiveTarget {
   return { identityKey: objective.identityKey, rowId: objective.rowId };
@@ -249,6 +286,14 @@ export function promptTargeting(input: {
   targets: readonly ObjectiveTarget[];
   prompt: string;
   expectedAnswer: string;
+  /**
+   * 🔴 DEFAULTS TO THE REFERENCE ANSWER ALONE, WHICH IS THE HONEST FLOOR AND NOT A GUESS. Every
+   * prompt knows what a complete answer would be — that is `expectedAnswer` and it is required. What
+   * a caller may know IN ADDITION is which ideas a complete answer has to contain, and only a caller
+   * holding the knowledge object can say. Absent means "nothing beyond the model answer is
+   * required", which is exactly true of the association retrievals this defaulted for.
+   */
+  expectedEvidence?: ExpectedEvidence;
   operation: ObjectiveCapability;
   task: RetrievalTask;
   scaffoldingLevel?: number;
@@ -266,6 +311,7 @@ export function promptTargeting(input: {
 }): RetrievalPrompt {
   return {
     expectedAnswer: input.expectedAnswer,
+    expectedEvidence: input.expectedEvidence ?? { referenceAnswer: input.expectedAnswer },
     id: input.id,
     operation: input.operation,
     prompt: input.prompt,
@@ -282,19 +328,41 @@ export function promptTargeting(input: {
  * 🔴 IT DELEGATES RATHER THAN BUILDING ITS OWN SHAPE. A second construction site is how the two
  * drift, and the field that drifts here is the response identity.
  */
-export function retrievalPromptFor(objective: StoredObjective, id: string): RetrievalPrompt {
+export function retrievalPromptFor(
+  resolved: { objective: StoredObjective; knowledge: KnowledgeObject },
+  id: string,
+): RetrievalPrompt {
+  const { knowledge, objective } = resolved;
+  // 🔴 BRANCHED ON THE CAPABILITY, WHICH IS THE OBJECTIVE'S OWN ACCOUNT OF WHAT IS BEING ASKED —
+  // never on the knowledge type. The two agree today because `objectivesForKnowledge` is the only
+  // minter, and keying on the type here would put a second, independently-editable copy of that
+  // mapping in a file that has no business holding one.
+  const predicting = objective.capability === "predict";
   return promptTargeting({
     expectedAnswer: objective.answer,
+    // 🔴 THE EDGE'S OWN TWO ENDS, IN THE SOURCE'S WORDS. A complete account has to reach the effect
+    // FROM the cause, so both are required and the judge is told so — which is what lets a correct
+    // account phrased in the learner's own vocabulary pass, and a fluent paragraph that never
+    // arrives at the effect fail. `referenceAnswer` stays alongside as what the document said.
+    ...(predicting && knowledge.relation
+      ? {
+          expectedEvidence: {
+            referenceAnswer: objective.answer,
+            requiredConcepts: [knowledge.relation.cause.text, knowledge.relation.effect.text],
+          },
+        }
+      : {}),
     id,
     // 🔴 READ OFF THE OBJECTIVE, NOT HARD-CODED TO "recall". This surface only stages retrieval
     // today, so the two are the same value — and writing the literal here is precisely how they
-    // would stay the same after `explain` ships, with every explanation recorded as a recall.
+    // would stay the same after a second capability ships, with every prediction filed as a recall.
     operation: objective.capability,
-    prompt: objectivePromptText(objective),
+    prompt: predicting ? predictionPromptText(objective) : objectivePromptText(objective),
     targets: [targetFor(objective)],
-    // An association asks for a term, not an explanation. The judge is told this so it checks the
-    // production rather than marking a one-word answer down for being short.
-    task: "name",
+    // An association asks for a term, not an account. The judge is told this so it checks the
+    // production rather than marking a one-word answer down for being short — and a prediction is
+    // told the opposite, so a two-word answer to "and why?" is read as the incomplete account it is.
+    task: predicting ? "predict" : "name",
   });
 }
 
@@ -312,7 +380,10 @@ export function objectiveAsTask(
   response: LearnerResponse,
 ): Omit<EvaluationInput, "concepts"> {
   return {
-    expectedEvidence: { referenceAnswer: prompt.expectedAnswer },
+    // 🔴 READ OFF THE PROMPT, NEVER REBUILT HERE. What a complete answer must contain was decided
+    // when the question was worded; deriving it again at the judging boundary is how a task ends up
+    // asking for a mechanism and being marked against a single sentence.
+    expectedEvidence: prompt.expectedEvidence,
     objective: { conceptId: null, label: objective.label },
     prompt: prompt.prompt,
     response,
@@ -374,8 +445,14 @@ export function evidenceForSubmission(input: {
   // silent about would leave NO row — indistinguishable from never having been asked. Every
   // objective this task put to the learner gets a row saying what happened to it, including
   // "nothing was shown about this", which is a different and much more useful fact than absence.
+  // 🔴 A PROPERTY OF THE ACCOUNT, NOT OF ANY ONE TARGET, which is why it is computed once out here.
+  // An account naming nothing says the opportunity was spent and nothing came of it — for every
+  // target. Computed per row it would be the same value each time, and one edit away from being
+  // derived from the row instead, which is the mistake it exists to prevent.
+  const accountNamedNothing = judgement.outcomes.length === 0;
   return prompt.targets.map((target) =>
     rowForTarget({
+      accountNamedNothing,
       canvasId: input.canvasId,
       occurredAt: input.occurredAt,
       outcome: byKey.get(target.identityKey) ?? null,
@@ -401,9 +478,26 @@ export function evidenceForSubmission(input: {
  * of the objective; `partial` is partly one; `incorrect` and `misconception` both contradict it,
  * differing in whether a competing model was identified — a distinction `verdict` already carries
  * and that this deliberately does not duplicate.
+ *
+ * 🔴🔴 AND `null` IS TWO DIFFERENT FACTS, WHICH IS WHERE THE LIVE DEFECT WAS. It used to return
+ * `not_addressed` for both, and the difference is exactly the one `ObjectiveEvidence`'s own doc
+ * comment insists on:
+ *
+ *     the account names NOTHING at all   →  the learner met the question and produced nothing
+ *     the account names OTHER objectives →  they answered ably; this simply was not in what they said
+ *
+ * `accountNamedNothing` is that distinction, and it is derived rather than passed: an account with
+ * no outcomes covers the whole prompt and reports that the opportunity was spent — which is what
+ * `unobtainedEvidence` builds for a reveal, a giving-up or a typed "I don't know", and equally what
+ * a judge returns when it read a real answer and found nothing in it. Silence about ONE target among
+ * several is the other case, and stays `not_addressed`.
+ *
+ * Getting this wrong is not a mislabelled column. `projectLearnerState` drops `not_addressed` rows
+ * from `attempts` on purpose, so the whole admission path projected to `unknown`, so the policy asked
+ * the same question again for ever and the answer was never stated.
  */
-function objectiveEvidenceFor(outcome: SubmissionOutcome | null): ObjectiveEvidence {
-  if (!outcome?.verdict) return "not_addressed";
+function objectiveEvidenceFor(outcome: SubmissionOutcome | null, accountNamedNothing: boolean): ObjectiveEvidence {
+  if (!outcome?.verdict) return accountNamedNothing ? "nothing_produced" : "not_addressed";
   switch (outcome.verdict) {
     case "strong":
     case "understood":
@@ -429,6 +523,8 @@ function rowForTarget(input: {
   target: ObjectiveTarget;
   prompt: RetrievalPrompt;
   outcome: SubmissionOutcome | null;
+  /** Whether the account covering this submission named no objective at all — see `objectiveEvidenceFor`. */
+  accountNamedNothing: boolean;
   responseText: string | null;
   canvasId: string | null;
   occurredAt: string;
@@ -466,7 +562,7 @@ function rowForTarget(input: {
     // answer never mentioned it — and that is a different fact from `demonstration_obtained: false`
     // meaning "they tried and produced nothing usable". Both write `false` there, so without this
     // column the two are indistinguishable, and the projection reads the first as a failed attempt.
-    objectiveEvidence: objectiveEvidenceFor(outcome),
+    objectiveEvidence: objectiveEvidenceFor(outcome, input.accountNamedNothing),
     operation: prompt.operation,
     // The rung the TASK set, identical on every row this submission writes: the learner answered
     // one question at one demand, whatever it turned out to establish.

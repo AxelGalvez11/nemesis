@@ -558,7 +558,11 @@ export function usePolicyRuntime(canvas: LearningCanvas, override: PolicyOverrid
     }
     if (mintedFor.current === decisionKey) return;
     mintedFor.current = decisionKey;
-    setPrompt(retrievalPromptFor(decision.objective, crypto.randomUUID()));
+    // 🔴 THE DECISION CARRIES BOTH, AND BOTH ARE HANDED OVER. A prompt for an `explain` objective is
+    // worded from the objective and judged against the KNOWLEDGE — the two ends of the causal edge —
+    // so passing the objective alone would word the question correctly and then mark the answer
+    // against a single model sentence. `PolicyDecision` already holds the pair; nothing is loaded.
+    setPrompt(retrievalPromptFor(decision, crypto.randomUUID()));
   }, [decision, decisionKey]);
 
   const refresh = useCallback(

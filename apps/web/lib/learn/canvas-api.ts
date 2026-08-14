@@ -45,11 +45,13 @@ import {
   selectionMessages,
   simplifyMessages,
   teachingMessages,
+  causalMessages,
   territoryMessages,
   testMessages,
   type EvaluationInput,
   type RelearnMiss,
 } from "./canvas-prompts";
+import { parseCausalTerritory, type CausalTerritoryResult } from "./causal-grounded";
 import { parseTerritory, type TerritoryResult } from "./knowledge-territory";
 import type { CanvasSelection, SelectionAction } from "./canvas-selection";
 import type {
@@ -264,6 +266,40 @@ export async function constructTerritory(
           ? "Nemesis couldn't find anything specific enough to ask you about in that material."
           : "Nemesis couldn't turn that topic into anything specific enough to ask about. Try naming it more narrowly.",
       };
+}
+
+/**
+ * The mechanisms a document asserts, as grounded causal knowledge.
+ *
+ * 🔴 A SECOND READING OF THE SAME MATERIAL, NOT A REPLACEMENT FOR THE FIRST. A pair lane and a
+ * causal lane are looking for different things in the same text: `losartan — Cozaar` is not a
+ * mechanism and "a stop codon terminates translation early" is not a pair. Asking one model call to
+ * return both would make the two compete for the same output budget and collapse toward whichever
+ * shape the document has more of — which is exactly how a lecture full of mechanisms ends up
+ * represented as a glossary.
+ *
+ * 🔴 IT RETURNS NULL RATHER THAN AN ERROR THE LEARNER SEES. This runs beside a lane that may well
+ * have succeeded, so a failure here means "no mechanisms this time", never "the canvas failed". The
+ * association lane owns the visible error, because it is the one that can leave the page empty.
+ *
+ * 🔴 AND IT IS ONE CALL PER TERRITORY BUILD, NOT PER OPEN. `groundedTerritory` writes a build-once
+ * marker and holds a per-canvas lock, so the recurring cost of this is one request the first time a
+ * canvas meets its material — the same order as the pair lane already standing next to it.
+ */
+export async function constructCausalKnowledge(
+  uid: string,
+  topic: string,
+  sources: readonly CanvasSource[],
+  signal?: AbortSignal,
+): Promise<CausalTerritoryResult | null> {
+  if (sources.length === 0) return null;
+  const { text, error } = await ask(uid, causalMessages({ sources, topic }), signal);
+  if (error || !text) return null;
+  // 🔴 THE MODEL THIS CLIENT ASKED FOR, WHICH IS THE ONLY MODEL FACT AVAILABLE HERE AND IS SAID AS
+  // SUCH. The serving valve is configured outside this repository and has diverged from it before,
+  // so a hardcoded name would be a claim we cannot check. Recording the requested route's model is
+  // true, is what provenance is for, and moves with the route rather than with a literal.
+  return parseCausalTerritory({ model: WRITE.model, sources, text });
 }
 
 // ---------------------------------------------------------------------- test

@@ -18,6 +18,13 @@ export type CanvasEvent =
   // Durable knowledge minted from an attached source. Counts only — never the extracted content,
   // which is the learner's own material.
   | "knowledge_extracted"
+  // 🔴 WHAT THE CAUSAL LANE REFUSED, AND WHY, BECAUSE OTHERWISE TWO OPPOSITE FACTS LOOK IDENTICAL.
+  // Zero mechanisms from a document is a perfectly good answer — most material asserts none. Zero
+  // mechanisms because every edge the model returned failed to name its excerpt is a BROKEN LANE.
+  // Both arrive at the caller as an empty array, and without the reason tally there is no way to
+  // tell a quiet document from a prompt the model is not following. Counts and reason names only —
+  // never the refused text, which is the learner's own material.
+  | "canvas_causal_refused"
   | "canvas_lesson_generated"
   | "canvas_text_selected"
   | "canvas_section_rewritten"

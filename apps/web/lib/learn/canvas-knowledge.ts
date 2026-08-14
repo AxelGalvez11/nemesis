@@ -21,15 +21,18 @@
 // real document, and the two have separate homes now: `knowledge-production.ts` and
 // `knowledge-coverage.ts`. Neither can see the other's input.
 
-import { constructTerritory } from "./canvas-api";
+import { canvasCapture } from "./canvas-analytics";
+import { constructCausalKnowledge, constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
-import { frozenTopic, materialSubject, territoryReuse } from "./canvas-territory";
+import { buildRules, frozenTopic, materialSubject, territoryReuse } from "./canvas-territory";
+import { CAUSAL_EXTRACTION_VERSION } from "./causal-extraction-contract";
+import { TERRITORY_VERSION } from "./knowledge-territory";
 import type { LearningCanvas } from "./canvas-model";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 import type { SourceContext } from "@/lib/sources/source-context";
 
-import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
+import { extractKnowledgeObjects, EXTRACTION_VERSION, type ExtractionOutcome } from "./knowledge-extraction";
 import { groundClaims } from "./knowledge-grounding";
 import {
   coverageOfSource,
@@ -405,6 +408,16 @@ export async function ensureKnowledgeForCanvas(
 const TERRITORY_TARGET = 24;
 
 /**
+ * The rules a grounded build runs under, as one string — see `buildRules`.
+ *
+ * 🔴 EVERY LANE THAT CAN CHANGE THE ANSWER IS IN HERE, AND ADDING A LANE MEANS ADDING IT HERE. A
+ * document that yielded nothing is only allowed to stay silent while these are unchanged; the moment
+ * one moves, it gets another look. A lane left out of this list is a lane whose improvements can
+ * never reach the documents that most needed them.
+ */
+const GROUNDED_BUILD_RULES = buildRules([TERRITORY_VERSION, CAUSAL_EXTRACTION_VERSION, EXTRACTION_VERSION]);
+
+/**
  * A topic-first canvas, turned into knowledge the policy can act on.
  *
  * 🔴 DEFINED BELOW `ensureKnowledgeForCanvas` ON PURPOSE, AND MOVING IT UP BREAKS A REAL GUARD.
@@ -466,7 +479,11 @@ async function topicTerritory(
   if (!topic) return answer("no-durable-source");
 
   const reuse = territoryReuse({ identityVersion: KNOWLEDGE_IDENTITY_VERSION, stored });
-  if (reuse.reuse) {
+  // 🔴 `=== true`, NEVER TRUTHY. `"known-empty"` is also truthy, and reading it as a hit would replay
+  // an empty list and report a taught canvas with nothing on it. This lane passes no `rules`, so an
+  // empty marker written by the grounded lane resolves to a MISS here and rebuilds — the
+  // conservative direction, and the right one: a topic can always be asked again.
+  if (reuse.reuse === true) {
     const replayed = await storeTerritory(userId, reuse.objects);
     if (replayed.length > 0) return answer("complete", replayed);
     // 🔴 A CACHE MUST NEVER BE ABLE TO TRAP A LEARNER. A replay that resolves nothing means the
@@ -651,21 +668,81 @@ async function groundedTerritory(input: {
   // file fires this from two places at once — see `onlyOnceAtATime` — and the build-once marker is
   // written last, so neither caller can see the other through storage.
   return onlyOnceAtATime(`grounded:${userId}:${canvas.id}:${subject}`, async () => {
-  onPhase?.("mapping_knowledge");
-  const { value } = await constructTerritory(userId, canvas.title, TERRITORY_TARGET, {
-    signal,
-    sources: canvas.sources,
+  // 🔴🔴 HAVE WE ALREADY LOOKED AT THIS MATERIAL AND FOUND NOTHING? Without this the answer was paid
+  // for again on every single open. The marker is written last and only on a build that resolved
+  // something, so a document neither lane can read left no trace at all — and a learner who kept
+  // reopening it kept spending model calls to arrive at the same empty page.
+  //
+  // 🔴 AND IT IS NOT A "WE TRIED" FLAG. The stored answer names the RULES it was reached under, so
+  // shipping a better extractor gives every such document exactly one more attempt. A boolean would
+  // have bought the same saving and then locked those documents out permanently — cheaper, and
+  // exactly the kind of silent ceiling this codebase keeps having to dig back out of.
+  const previous = await loadCanvasTerritory(userId, canvas.id);
+  const reuse = territoryReuse({
+    identityVersion: KNOWLEDGE_IDENTITY_VERSION,
+    rules: GROUNDED_BUILD_RULES,
+    stored: previous,
   });
-  if (!value || value.objects.length === 0) return null;
+  if (reuse.reuse === "known-empty") return null;
 
-  const resolved = await storeTerritory(userId, value.objects);
-  if (resolved.length === 0) return null;
+  onPhase?.("mapping_knowledge");
+  // 🔴 TWO READINGS OF THE SAME MATERIAL, AT THE SAME TIME, AND NEITHER GATES THE OTHER. A pair lane
+  // and a causal lane look for different things in one text — `losartan — Cozaar` is not a mechanism
+  // and "a stop codon terminates translation early" is not a pair — so a document that is all
+  // mechanism used to come back as an empty territory, and one that is all glossary would come back
+  // with no mechanisms. Run in sequence they would also double the wait before the canvas paints.
+  const [pairs, causal] = await Promise.all([
+    constructTerritory(userId, canvas.title, TERRITORY_TARGET, { signal, sources: canvas.sources }),
+    // 🔴 ITS FAILURE IS NOT THE CANVAS'S FAILURE. This returns null rather than an error, so a
+    // canvas whose pairs built fine is never held back by a causal read that did not.
+    constructCausalKnowledge(userId, canvas.title, canvas.sources, signal),
+  ]);
+
+  // 🔴 THE REFUSALS ARE REPORTED, BECAUSE OTHERWISE TWO OPPOSITE FACTS ARE THE SAME EMPTY ARRAY.
+  // "This document asserts no mechanisms" is the ordinary answer for most material. "Every edge the
+  // model returned failed to name its excerpt" means the lane is broken — the prompt is not being
+  // followed, or the excerpts are chunked so the quote check can never pass. Both reach the caller
+  // as `objects: []`, and only the reason tally separates them. This is the same rule
+  // `knowledge-extraction.ts` states for its own refusals: they are the output too.
+  if (causal && causal.refusals.length > 0) {
+    const byReason: Record<string, number> = {};
+    for (const refusal of causal.refusals) byReason[refusal.reason] = (byReason[refusal.reason] ?? 0) + 1;
+    canvasCapture("canvas_causal_refused", canvas, {
+      kept: causal.objects.length,
+      reasons: byReason,
+      refused: causal.refusals.length,
+    });
+  }
+
+  // 🔴 THE UNION, AND THE EMPTINESS TEST IS OVER BOTH. Keying the early return on the pair lane
+  // alone would throw away a perfectly good set of mechanisms because the document happened to
+  // contain no glossary — which is the exact shape of the lecture this whole layer exists for.
+  const objects = [...(pairs.value?.objects ?? []), ...(causal?.objects ?? [])];
+
+  // 🔴 A COMPLETED BUILD THAT FOUND NOTHING IS AN ANSWER, AND IT IS RECORDED AS ONE. Returning null
+  // here without writing anything is what made every reopen pay again. Both emptiness tests write
+  // the same marker because they are the same fact from the learner's side: this material produced
+  // nothing to ask.
+  //
+  // 🔴 ONLY ON A COMPLETE RUN, WHICH IS WHY THIS IS NOT IN A `finally`. An aborted build — the
+  // deadline fired, the tab closed — knows nothing about the material, and stamping "nothing here"
+  // from our own timeout would lock a perfectly good document out until the rules next change.
+  const resolved = objects.length === 0 ? [] : await storeTerritory(userId, objects);
+  if (resolved.length === 0) {
+    await saveCanvasTerritory(userId, canvas, {
+      emptyUnder: GROUNDED_BUILD_RULES,
+      identityVersion: KNOWLEDGE_IDENTITY_VERSION,
+      objects: [],
+      topic: subject,
+    });
+    return null;
+  }
 
   // Written last and only on a complete build, so a tab closed mid-construction marks nothing and
   // the next open rebuilds rather than locking the learner at half a map.
   await saveCanvasTerritory(userId, canvas, {
     identityVersion: KNOWLEDGE_IDENTITY_VERSION,
-    objects: value.objects,
+    objects,
     topic: subject,
   });
   return answer(resolved);

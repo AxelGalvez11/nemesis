@@ -16,6 +16,7 @@ import { type Exposition } from "./cognitive-mode";
 import { projectLearnerState, type LearnerEvidence, type LearnerObjectiveState } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
 import type { StoredObjective } from "./learner-store";
+import { runtimeCanStage } from "./runtime-support";
 import { chooseNextTeachingAction, expositionOf, type TeachingAction } from "./teaching-policy";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import { interveningActs } from "./working-memory";
@@ -211,7 +212,10 @@ export function decideNext(input: {
  *  rather than from what happened to be extractable out of it. Do not reintroduce a permissive
  *  predicate here; make the loose question unrepresentable instead. */
 export function supportedObjectives(objectives: readonly ResolvedObjective[]): ResolvedObjective[] {
-  return objectives.filter(
-    ({ knowledge, objective }) => knowledge.type === "association" && objective.capability === "recall",
-  );
+  // 🔴 THE LEDGER, NEVER A LITERAL. This used to read `knowledge.type === "association" &&
+  // objective.capability === "recall"` — the identical rule `supportedKnowledge` states one layer
+  // up, in a different file, where ownership is decided. Two copies of one rule can disagree, and
+  // the failure is silent in the worst direction: a canvas OWNED by the runtime whose every
+  // objective is then filtered out of it, which the learner meets as an empty Canvas.
+  return objectives.filter(({ knowledge, objective }) => runtimeCanStage(knowledge.type, objective.capability));
 }

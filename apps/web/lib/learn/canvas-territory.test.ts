@@ -124,10 +124,61 @@ test("🔴 an identity-version bump rebuilds rather than replaying under keys th
 // ── what comes out of a jsonb column is never trusted ───────────────────────
 
 test("🔴 AN EMPTY TERRITORY IS A MISS — a cache must never be able to trap a learner", () => {
-  // If an empty one were ever readable, the replay would resolve no objectives and the marker would
+  // If a BARE empty one were readable, the replay would resolve no objectives and the marker would
   // keep insisting the canvas had been built. Blank on every open, for ever: the exact shape of the
-  // front-door bug this sits next to.
+  // front-door bug this sits next to. An empty list with no explanation is that shape.
   assert.equal(readTerritory({ identityVersion: 2, objects: [], topic: "x" }), null);
+});
+
+// ── a build that found nothing is an answer, and it expires ─────────────────
+
+test("🔴🔴 'we looked and there was nothing' is recordable, so it is not paid for on every open", () => {
+  // 🔴 THE COST THIS FIXES, PRECISELY. The marker is written last and only on a build that resolved
+  // something, so a document neither lane could read left NO trace — and every reopen ran the model
+  // again to reach the same empty page. Two calls per open, once the causal lane joined the pair one.
+  const stored = readTerritory({ emptyUnder: "causal/1+territory/1", identityVersion: 2, objects: [], topic: "sources:lib-1" });
+  assert.ok(stored, "an empty territory that says WHY it is empty is a real answer, not a broken row");
+  assert.equal(stored!.emptyUnder, "causal/1+territory/1");
+
+  const decision = territoryReuse({ identityVersion: 2, rules: "causal/1+territory/1", stored });
+  assert.equal(decision.reuse, "known-empty");
+  assert.equal("objects" in decision, false, "there is nothing to replay, and it must not look like there is");
+});
+
+test("🔴 and it EXPIRES when the rules change, so a better extractor still reaches the document", () => {
+  // 🔴 THE HALF A BOOLEAN WOULD HAVE GOT WRONG. "We tried" would have bought the same saving and
+  // then locked those documents out permanently — every future improvement unable to reach exactly
+  // the material that most needed it. The stored answer names the rules it was reached under, and
+  // stops applying when they move.
+  const stored = readTerritory({ emptyUnder: "causal/1+territory/1", identityVersion: 2, objects: [], topic: "sources:lib-1" });
+  const decision = territoryReuse({ identityVersion: 2, rules: "causal/2+territory/1", stored });
+  assert.equal(decision.reuse, false);
+  assert.equal(decision.reuse === false ? decision.miss : null, "empty-under-older-rules");
+});
+
+test("🔴 a caller that tracks no rules never suppresses a rebuild", () => {
+  // Absent `rules` can only cause a build, never skip one. The topic lane passes none, and a topic
+  // can always be asked again — so the conservative direction is the correct one there too.
+  const stored = readTerritory({ emptyUnder: "causal/1", identityVersion: 2, objects: [], topic: "t" });
+  assert.equal(territoryReuse({ identityVersion: 2, stored }).reuse, false);
+});
+
+test("🔴 a row claiming to be both a territory and the absence of one is refused", () => {
+  // Every consumer would have to pick which half to believe, and they would not all pick the same.
+  assert.equal(
+    readTerritory({ emptyUnder: "causal/1", identityVersion: 2, objects: [{ id: "k1" }], topic: "t" }),
+    null,
+  );
+  // And a blank stamp is not a stamp.
+  assert.equal(readTerritory({ emptyUnder: "   ", identityVersion: 2, objects: [], topic: "t" }), null);
+});
+
+test("🔴 an identity-version change still outranks a stored empty answer", () => {
+  // Keys that no longer converge matter more than rules that moved: a version rebuild must not be
+  // pre-empted by a stale empty marker, or those objects never come back under the new keys.
+  const stored = readTerritory({ emptyUnder: "causal/1", identityVersion: 2, objects: [], topic: "t" });
+  const decision = territoryReuse({ identityVersion: 3, rules: "causal/1", stored });
+  assert.equal(decision.reuse === false ? decision.miss : null, "identity-version-changed");
 });
 
 test("anything unrecognised in the column reads as 'build one', never as 'nothing to teach'", () => {

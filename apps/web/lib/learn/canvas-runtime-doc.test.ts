@@ -95,7 +95,8 @@ test("🔴 the declared evidence fields are the ones a demonstration actually wr
   // 🔴 BY BUILDING ONE, NOT BY READING THE SOURCE. Whatever a demonstration actually carries is
   // what the matrix must declare, so a field added or removed anywhere on this path shows up here
   // rather than being noticed months later.
-  const [resolved] = objectivesForKnowledge(extractKnowledgeObjects(glossaryContext()).objects[0]!);
+  const knowledge = extractKnowledgeObjects(glossaryContext()).objects[0]!;
+  const [resolved] = objectivesForKnowledge(knowledge);
   const objective = { ...resolved!, rowId: "row-1" };
   const built = evidenceForSubmission({
     canvasId: null,
@@ -110,7 +111,7 @@ test("🔴 the declared evidence fields are the ones a demonstration actually wr
         verdict: "strong",
       }),
     ]),
-    prompt: retrievalPromptFor(objective, "prompt-1"),
+    prompt: retrievalPromptFor({ knowledge, objective }, "prompt-1"),
     responseText: "Cozaar",
     tookMs: 14_200,
   })[0]!;

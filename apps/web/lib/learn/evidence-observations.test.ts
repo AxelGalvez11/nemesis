@@ -35,7 +35,10 @@ const KNOWLEDGE: KnowledgeObject = {
 const [RESOLVED] = objectivesForKnowledge(KNOWLEDGE);
 /** As it exists once stored — the only state an objective can be asked about. */
 const OBJECTIVE = { ...RESOLVED!, rowId: "row-1" };
-const PROMPT = retrievalPromptFor(OBJECTIVE, "prompt-1");
+/** The prompt builder, given the knowledge this objective came from. */
+const askedAbout = (objective: typeof OBJECTIVE, id: string) =>
+  retrievalPromptFor({ knowledge: KNOWLEDGE, objective }, id);
+const PROMPT = askedAbout(OBJECTIVE, "prompt-1");
 
 const EVALUATION = {
   confidence: 0.9,
@@ -138,7 +141,7 @@ test("🔴 operation comes from the objective, so it cannot silently stay 'recal
   assert.equal(PROMPT.operation, "recall");
   assert.equal(judged({ text: "Cozaar", tookMs: 900, via: "typed" }).operation, "recall");
 
-  const explain = retrievalPromptFor({ ...OBJECTIVE, capability: "explain" }, "prompt-2");
+  const explain = askedAbout({ ...OBJECTIVE, capability: "explain" }, "prompt-2");
   assert.equal(explain.operation, "explain", "the prompt must read the objective, not a literal");
 });
 
