@@ -248,7 +248,37 @@ function refused(refusal: StrategyRefusal): StrategyOutcome {
   return { decision: null, refusal, strategy: "llm_teacher" };
 }
 
-export const llmTeacherStrategy: TeachingStrategy = {
+/**
+ * How this arm reaches the model.
+ *
+ * 🔴 INJECTABLE FOR ONE REASON ONLY: SO A TEST CAN PROVE THIS ARM ACTUALLY REACHES A MODEL AND THE
+ * OTHER ONE DOES NOT. That is the guard the whole experiment rests on — if the two arms turned out
+ * to be running the same controller, every outcome number would be a coincidence — and it cannot be
+ * asserted from outside without either module mocking (which would mean changing the repo's test
+ * command) or a seam here.
+ *
+ * 🔴 IT IS NOT A CONFIGURATION POINT AND MUST NOT BECOME ONE. The shipped strategy binds
+ * `postChatCompletion` and nothing in the application may pass anything else: routing this arm
+ * through a different door would take it off the metered path — the same device key, cost
+ * attribution and budget enforcement every other Canvas call uses — which is precisely the hole the
+ * unit-economics audit found and closed.
+ */
+export type TeacherTransport = (
+  uid: string,
+  messages: Parameters<typeof postChatCompletion>[1],
+  options: { signal?: AbortSignal },
+) => Promise<{ text: string | null; errorText: string | null }>;
+
+const meteredTransport: TeacherTransport = async (uid, messages, options) => {
+  const reply = await postChatCompletion(uid, messages, {
+    decision: TEACHER_MODEL,
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+  return { errorText: reply.errorText ?? null, text: reply.text };
+};
+
+export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrategy {
+  return {
   id: "llm_teacher",
   async decide(context: TeachingContext): Promise<StrategyOutcome> {
     if (context.objectives.length === 0) return refused("no-candidates");
@@ -257,8 +287,7 @@ export const llmTeacherStrategy: TeachingStrategy = {
     // to the model that the budget does not see.
     if (!context.uid) return refused("model-unreachable");
 
-    const reply = await postChatCompletion(context.uid, teacherMessages(context, sessionNoteFor(context)), {
-      decision: TEACHER_MODEL,
+    const reply = await ask(context.uid, teacherMessages(context, sessionNoteFor(context)), {
       ...(context.signal ? { signal: context.signal } : {}),
     });
     if (reply.errorText || !reply.text) return refused("model-unreachable");
@@ -307,4 +336,8 @@ export const llmTeacherStrategy: TeachingStrategy = {
     };
     return { decision, refusal: null, strategy: "llm_teacher" };
   },
-};
+  };
+}
+
+/** The shipped baseline arm, on the same metered door every other Canvas model call uses. */
+export const llmTeacherStrategy: TeachingStrategy = createLlmTeacherStrategy(meteredTransport);
