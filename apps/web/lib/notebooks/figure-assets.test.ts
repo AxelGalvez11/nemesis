@@ -226,7 +226,11 @@ test("the real 124 MB deck: every stored figure joins to a figure block", { skip
   const figures = normalizedFigures(deck.imageBytes, deck.media.images);
   assert.ok(figures.length > 20, `expected the deck's figures, got ${figures.length}`);
 
-  const outcome = await parseDocument(bytes, "03. Innate host defenses.pptx", undefined);
+  const outcome = await parseDocument(
+    bytes,
+    "03. Innate host defenses.pptx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  );
   assert.ok(outcome.ok, "the deck parses");
   assert.ok(outcome.document.model, "and produces a model");
 
