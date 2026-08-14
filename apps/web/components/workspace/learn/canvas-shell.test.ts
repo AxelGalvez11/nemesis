@@ -296,32 +296,47 @@ test("🔴 §46.5: the landing surface never tells the learner which way to scro
   }
 });
 
-test("🔴 §46.5: the first screen is short by exactly the offset the composer also reads", () => {
-  // The replacement for that sentence is STRUCTURE: the first screen stops short of the fold, so
-  // the "Your canvases" heading beneath it is already visible and needs no caption. Measured in
-  // the browser at 720px of pane — first screen 664, gap 56; with the variable forced to 0 the gap
-  // is 0 and the heading is off-screen, which is the behaviour the banned sentence existed to
-  // apologise for.
+test("🔴 §46.5: the canvases are ON the first screen — there is no fold to discover", () => {
+  // 🔴 THIS GUARD REPLACES ONE I WROTE THREE HOURS EARLIER, AND THE REPLACEMENT IS STRICTER.
+  // The old version asserted a 56px `--first-screen-lift` that left the canvases peeking above the
+  // fold, on the reasoning that §46.5 bans instructional scroll hints so the LAYOUT had to hint
+  // instead. The owner's answer to that: "remove the scrolldown to see canvases list". A sliver of
+  // a hidden list is still a hint about scrolling, just drawn instead of written — and the honest
+  // fix is not to hide the learner's own work in the first place.
   //
-  // 🔴 BOTH CONSUMERS MUST READ THE SAME VARIABLE. The centred h1/spacer group moves up by half the
-  // lift; the floating composer is positioned independently against the pane and does NOT. If one
-  // is a literal and the other a variable they drift on the next edit, and the pill lands on top of
-  // the line under it. This asserts they are one number, not two that happen to agree today.
+  // So the property is now the strong form: the front door does not build a full-viewport screen
+  // with content underneath it at all.
   const source = read("canvas-home.tsx");
-  assert.match(
-    source,
-    /--first-screen-lift/,
-    "the first screen no longer declares a lift; without it the landing page is exactly one viewport tall and nothing below the fold is discoverable",
+  const copy = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  assert.equal(
+    /--first-screen-lift/.test(copy),
+    false,
+    "the lift is back — that variable exists only to hide the canvases below a fold and peek at them",
   );
-  assert.match(
-    source,
-    /height:\s*"calc\(100% - var\(--first-screen-lift\)\)"/,
-    "the first screen is back to a full viewport, so the canvases below it are invisible until someone scrolls for no stated reason",
+  assert.equal(
+    /\bh-full\b[^"]*\bmin-h-\[26rem\]/.test(copy),
+    false,
+    "the first screen is a full viewport again, which puts the learner's canvases back below it",
   );
-  assert.match(
-    source,
-    /translateY\(calc\([^)]*var\(--first-screen-lift\)\s*\/\s*2\)\)/,
-    "the composer's resting offset stopped deriving from --first-screen-lift; it will drift from the spacer reserved for it and print over the line beneath",
+
+  // 🔴 AND THE DOCKING MACHINERY MUST NOT COME BACK WITH IT. The composer morphed between a centred
+  // and a docked position as the page scrolled; with nothing below the fold there is no scroll to
+  // track and no second position. A moving part kept for a problem the page no longer has is how
+  // the fold gets quietly reintroduced to justify it.
+  for (const dead of ["DOCK_AFTER_PX", "setDocked", "docked ?"]) {
+    assert.equal(
+      copy.includes(dead),
+      false,
+      `${dead} is back — the composer only needs two positions if something is hidden below the fold`,
+    );
+  }
+
+  // The composer is in normal flow, under the greeting, with the rows under it.
+  assert.equal(
+    /pointer-events-none absolute inset-x-0 z-30/.test(copy),
+    false,
+    "the composer is floating over the page again instead of sitting in the column with the rows",
   );
 });
 

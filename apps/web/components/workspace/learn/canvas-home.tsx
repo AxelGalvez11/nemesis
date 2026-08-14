@@ -41,16 +41,10 @@ import { putPending } from "./pending-attachment";
 import { RecordingRecoveryNotice } from "./recording-recovery-notice";
 import { useCanvasDictation } from "./use-canvas-dictation";
 
-/** How far down the page the composer finishes docking. Short, so the transition reads as one
- *  movement rather than something that tracks the scrollbar. */
-const DOCK_AFTER_PX = 120;
-
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const router = useRouter();
   const [sessions, setSessions] = useState<CanvasSummary[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [docked, setDocked] = useState(false);
-  const [query, setQuery] = useState("");
   const [text, setText] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   /** The whole page is a drop target, not just the composer — the copy has always said "drop a
@@ -100,15 +94,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     setText([typedBefore.current, dictation.transcript].filter(Boolean).join(" ").trimStart());
   }, [dictation.listening, dictation.transcript]);
 
-  // One element, two positions. The scroll position decides which, and CSS moves it.
-  useEffect(() => {
-    const node = scroller.current;
-    if (!node) return;
-    const onScroll = () => setDocked(node.scrollTop > DOCK_AFTER_PX);
-    node.addEventListener("scroll", onScroll, { passive: true });
-    return () => node.removeEventListener("scroll", onScroll);
-  }, []);
-
   const start = () => {
     const topic = text.trim();
     // A canvas is addressed by query string, and a brand-new one has no id yet — the canvas
@@ -152,11 +137,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    *  learner never said. */
   const acceptDictation = () => dictation.stop();
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return sessions;
-    return sessions.filter((session) => (session.title || "New canvas").toLowerCase().includes(needle));
-  }, [query, sessions]);
+  // 🔴 THE TITLE FILTER WENT WITH THE SEARCH BOX. Nothing could set a query once the field was
+  // removed, so it was a `useMemo` that always returned `sessions` — dead code kept "for later",
+  // which is how a surface accumulates machinery nobody can reach. When finding a canvas becomes a
+  // real problem it comes back as one control, with the filter next to it.
+  const filtered = sessions;
 
   const pinned = filtered.filter((session) => session.pinnedAt);
   const unpinned = filtered.filter((session) => !session.pinnedAt);
@@ -193,177 +178,30 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         setDraggingOver(false);
         startWithFiles(event.dataTransfer.files);
       }}
-      style={{ ["--canvas-column" as string]: "680px", ["--first-screen-lift" as string]: "56px" }}
+      style={{ ["--canvas-column" as string]: "680px" }}
     >
       {/* A ring on the surface, not a modal over it: the page stays readable underneath, and
           nothing has to be dismissed if the learner changes their mind mid-drag. */}
       {draggingOver && (
         <div className="pointer-events-none absolute inset-3 z-50 rounded-2xl ring-2 ring-(--ui-action)" />
       )}
-      <div className="h-full overflow-y-auto" ref={scroller}>
-        {/* First screen: nothing but the question and the place to answer it.
-            🔴 SHORT OF A FULL SCREEN BY `--first-screen-lift`, AND THAT GAP IS THE ONLY THING
-            THAT TELLS A LEARNER THERE ARE MORE CANVASES BELOW (§46.5). The rule bans instructional
-            scroll hints, so the edge of the next section has to do that job: "Your canvases" sits
-            just above the fold, which is a structure a reader already knows how to read. A
-            full-height first screen looks like the whole page and needs a sentence to correct it,
-            which is exactly the sentence §46.5 forbids.
-            🔴 THE COMPOSER'S RESTING OFFSET IS DERIVED FROM THE SAME VARIABLE, further down. The
-            spacer below sits where the composer floats; if only one of the two moved, the pill
-            would land on top of the line under it. One number, two consumers, no drift. */}
-        <section
-          className="flex min-h-[26rem] flex-col items-center justify-center px-6"
-          style={{ height: "calc(100% - var(--first-screen-lift))" }}
-        >
+      {/* 🔴 ONE SCREEN, AND THE CANVASES ARE ON IT (owner 2026-08-14: "remove the scrolldown to see
+          canvases list"). This was a full-viewport first screen with the learner's own canvases
+          underneath, so their work was invisible until they scrolled — and the previous pass tried
+          to fix that by leaving a 56px sliver peeking, which is a hint about scrolling drawn in
+          layout rather than written in words. The honest fix was to stop hiding them.
+          🔴 THE COMPOSER IS IN NORMAL FLOW NOW, AND THE DOCKING MACHINERY IS GONE WITH IT. It was
+          absolutely positioned and morphed between two positions as the page scrolled; with
+          nothing below the fold there is no scroll to track, no second position to morph to, and
+          no `--first-screen-lift` for the two of them to share. A moving part that exists to
+          manage a problem the page no longer has is just a moving part.
+          Measured on the reference at 1440×783: greeting, 36px, composer, then its rows. */}
+      <div className="flex h-full flex-col items-center overflow-y-auto px-6 pb-12 pt-[18vh]" ref={scroller}>
+        <section className="flex w-full flex-col items-center">
           <h1 className="text-[length:var(--canvas-text-title)] font-medium tracking-[-0.01em] text-(--ui-text-primary)">
             What are you working on?
           </h1>
-          {/* Space the morphing composer occupies while it is centred. */}
-          <div className="h-[54px] w-full max-w-[770px]" />
-          <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-            {/* 🔴 THIS NO LONGER PROMISES RECORDING, BECAUSE THIS SURFACE CANNOT DO IT. The line
-                used to read "Type it, drop a file in, or record a lecture." Recording is started by
-                `RecordWorkspace`, which is hosted only on /sessions and /notebooks — the Canvas has
-                no path to it. `recording-recovery-notice.tsx` sits on this very page and says so in
-                its own header: it can only offer back a capture that already happened.
-
-                Two of those three were also untrue until this pass: the `+` did nothing and there
-                was no dictation. Those are now real, so the copy describes four things this
-                composer genuinely does. Wording is my call; the constraint is that it not name a
-                capability the front door does not have. */}
-            Type a topic, ask a question, dictate it, or drop your material in.
-          </p>
-        </section>
-
-        <section className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">Your canvases</h2>
-            {sessions.length > 6 && (
-              <input
-                className="w-[12rem] rounded-lg bg-(--ui-bg-tertiary) px-2.5 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search"
-                value={query}
-              />
-            )}
-          </div>
-
-          {/* 🔴 NO LONGER "Whatever you start above will appear here." (§46.5). That sentence
-              pointed at an element the learner is already looking at and explained where its
-              output would land — onboarding narration for a page with one composer on it. What
-              remains states the condition and nothing else; the heading above it already says
-              what is empty. */}
-          {sessions.length === 0 && (
-            <p className="mt-6 text-[length:var(--canvas-text-body)] text-(--ui-text-tertiary)">Nothing yet.</p>
-          )}
-
-          {pinned.length > 0 && (
-            <Group label="Pinned">
-              {pinned.map((session) => (
-                <SessionRow
-                  folders={folders}
-                  key={session.id}
-                  onDelete={() => void act(deleteCanvas(userId, session.id))}
-                  onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
-                  onOpen={() => router.push(`/learn?c=${session.id}`)}
-                  onPin={() => void act(setCanvasPinned(userId, session.id, false))}
-                  pinned
-                  session={session}
-                />
-              ))}
-            </Group>
-          )}
-
-          {folders
-            .filter((folder) => (byFolder.get(folder.id) ?? []).length > 0)
-            .map((folder) => (
-              <Group key={folder.id} label={folder.name}>
-                {(byFolder.get(folder.id) ?? []).map((session) => (
-                  <SessionRow
-                    folders={folders}
-                    key={session.id}
-                    onDelete={() => void act(deleteCanvas(userId, session.id))}
-                    onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
-                    onOpen={() => router.push(`/learn?c=${session.id}`)}
-                    onPin={() => void act(setCanvasPinned(userId, session.id, true))}
-                    session={session}
-                  />
-                ))}
-              </Group>
-            ))}
-
-          {loose.length > 0 && (
-            <Group label={folders.length > 0 ? "Unfiled" : null}>
-              {loose.map((session) => (
-                <SessionRow
-                  folders={folders}
-                  key={session.id}
-                  onDelete={() => void act(deleteCanvas(userId, session.id))}
-                  onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
-                  onOpen={() => router.push(`/learn?c=${session.id}`)}
-                  onPin={() => void act(setCanvasPinned(userId, session.id, true))}
-                  session={session}
-                />
-              ))}
-            </Group>
-          )}
-
-          {sessions.length > 0 && (
-            <button
-              className="mt-8 flex items-center gap-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
-              onClick={() => {
-                const name = window.prompt("Folder name");
-                if (name?.trim()) void act(createFolder(userId, name.trim()));
-              }}
-              type="button"
-            >
-              <Codicon name="new-folder" size="0.75rem" />
-              New folder
-            </button>
-          )}
-        </section>
-      </div>
-
-      {/* An interrupted recording is offered back here, above the composer — the one place the
-          learner is guaranteed to look, so recovery is never something they have to find. It
-          renders nothing at all when there is no crashed session, which is almost always. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-4 pt-4">
-        <div className="pointer-events-auto">
-          {/* 🔴 A RECOVERED LECTURE NOW LANDS ON A CANVAS, NOT IN A SESSIONS CHAT. This notice only
-              ever renders here, and it used to file what it recovered as a new Sessions
-              conversation — a surface the sidebar does not list. Starting a canvas from the
-              transcript is the same thing dropping a file on this page does. */}
-          <RecordingRecoveryNotice
-            accessToken={accessToken}
-            onRecovered={(file) => startWithFiles([file])}
-            uid={userId}
-          />
-        </div>
-      </div>
-
-      {/* 🔴 ONE composer, two positions. Centred on the first screen, docked once the sessions
-          are in view — the same element moving, not one hiding while another appears. */}
-      {/* 🔴 `absolute`, NOT `fixed`. Fixed positions against the VIEWPORT, which does not know
-          about the workspace sidebar — the composer ran underneath the nav rail and the first
-          150px of it were unreachable. Absolute inside this `relative` main is the content
-          pane, which is the box it actually belongs to. */}
-      <div
-        className={cn(
-          // 🔴 `flex-col items-center`, NOT `justify-center`. The dictation message below is a
-          // SIBLING of the pill; in the row this used to be, it was laid out BESIDE the composer
-          // and pushed it off centre instead of sitting under it.
-          "pointer-events-none absolute inset-x-0 z-30 flex flex-col items-center px-4 transition-all duration-300 ease-out",
-          docked ? "bottom-6 top-auto" : "bottom-auto top-1/2",
-        )}
-        // 🔴 THE UNDOCKED OFFSET IS DERIVED FROM `--first-screen-lift`, NOT HARD-CODED. The first
-        // screen is short by that amount so the canvases below peek into view (§46.5), which moves
-        // the centred h1/spacer group up by half of it — the composer has to travel the same half
-        // or it stops covering the spacer reserved for it and prints over the line underneath.
-        // Written as an inline transform rather than a Tailwind arbitrary value because the calc
-        // reads a custom property, and the escaping needed to express that in a class name is the
-        // kind of thing that breaks silently.
-        style={docked ? undefined : { transform: "translateY(calc(-50% + 1.25rem - var(--first-screen-lift) / 2))" }}
-      >
+          <div className="mt-9 flex w-full flex-col items-center">
         {/* 🔴 THE RECORDER REPLACES THE COMPOSER, IT DOES NOT SIT BESIDE IT. While a lecture is
             being captured there is exactly one thing to do; leaving the text box live underneath
             offers a second. Same position, same width. */}
@@ -518,7 +356,121 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         {dictation.error && !listening && (
           <p className="mt-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}
+          </div>
+          <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+            {/* 🔴 THIS NO LONGER PROMISES RECORDING, BECAUSE THIS SURFACE CANNOT DO IT. The line
+                used to read "Type it, drop a file in, or record a lecture." Recording is started by
+                `RecordWorkspace`, which is hosted only on /sessions and /notebooks — the Canvas has
+                no path to it. `recording-recovery-notice.tsx` sits on this very page and says so in
+                its own header: it can only offer back a capture that already happened.
+
+                Two of those three were also untrue until this pass: the `+` did nothing and there
+                was no dictation. Those are now real, so the copy describes four things this
+                composer genuinely does. Wording is my call; the constraint is that it not name a
+                capability the front door does not have. */}
+            Type a topic, ask a question, dictate it, or drop your material in.
+          </p>
+        </section>
+
+        {/* 🔴 NO SECTION HEADING AND NO SEARCH FIELD (owner 2026-08-14, pointing at both). The rows
+            ARE the section: "YOUR CANVASES" over a list of the learner's canvases names what is
+            already obvious, and a search box beside it is chrome for a problem nobody has at six
+            items. The reference's landing has neither — composer, then rows. */}
+        <section className="mt-8 w-full max-w-[768px]">
+
+          {/* 🔴 NO LONGER "Whatever you start above will appear here." (§46.5). That sentence
+              pointed at an element the learner is already looking at and explained where its
+              output would land — onboarding narration for a page with one composer on it. What
+              remains states the condition and nothing else; the heading above it already says
+              what is empty. */}
+          {sessions.length === 0 && (
+            <p className="mt-6 text-[length:var(--canvas-text-body)] text-(--ui-text-tertiary)">Nothing yet.</p>
+          )}
+
+          {pinned.length > 0 && (
+            <Group label="Pinned">
+              {pinned.map((session) => (
+                <SessionRow
+                  folders={folders}
+                  key={session.id}
+                  onDelete={() => void act(deleteCanvas(userId, session.id))}
+                  onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
+                  onOpen={() => router.push(`/learn?c=${session.id}`)}
+                  onPin={() => void act(setCanvasPinned(userId, session.id, false))}
+                  pinned
+                  session={session}
+                />
+              ))}
+            </Group>
+          )}
+
+          {folders
+            .filter((folder) => (byFolder.get(folder.id) ?? []).length > 0)
+            .map((folder) => (
+              <Group key={folder.id} label={folder.name}>
+                {(byFolder.get(folder.id) ?? []).map((session) => (
+                  <SessionRow
+                    folders={folders}
+                    key={session.id}
+                    onDelete={() => void act(deleteCanvas(userId, session.id))}
+                    onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
+                    onOpen={() => router.push(`/learn?c=${session.id}`)}
+                    onPin={() => void act(setCanvasPinned(userId, session.id, true))}
+                    session={session}
+                  />
+                ))}
+              </Group>
+            ))}
+
+          {loose.length > 0 && (
+            <Group label={folders.length > 0 ? "Unfiled" : null}>
+              {loose.map((session) => (
+                <SessionRow
+                  folders={folders}
+                  key={session.id}
+                  onDelete={() => void act(deleteCanvas(userId, session.id))}
+                  onMove={(folderId) => void act(setCanvasFolder(userId, session.id, folderId))}
+                  onOpen={() => router.push(`/learn?c=${session.id}`)}
+                  onPin={() => void act(setCanvasPinned(userId, session.id, true))}
+                  session={session}
+                />
+              ))}
+            </Group>
+          )}
+
+          {sessions.length > 0 && (
+            <button
+              className="mt-8 flex items-center gap-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+              onClick={() => {
+                const name = window.prompt("Folder name");
+                if (name?.trim()) void act(createFolder(userId, name.trim()));
+              }}
+              type="button"
+            >
+              <Codicon name="new-folder" size="0.75rem" />
+              New folder
+            </button>
+          )}
+        </section>
       </div>
+
+      {/* An interrupted recording is offered back here, above the composer — the one place the
+          learner is guaranteed to look, so recovery is never something they have to find. It
+          renders nothing at all when there is no crashed session, which is almost always. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-4 pt-4">
+        <div className="pointer-events-auto">
+          {/* 🔴 A RECOVERED LECTURE NOW LANDS ON A CANVAS, NOT IN A SESSIONS CHAT. This notice only
+              ever renders here, and it used to file what it recovered as a new Sessions
+              conversation — a surface the sidebar does not list. Starting a canvas from the
+              transcript is the same thing dropping a file on this page does. */}
+          <RecordingRecoveryNotice
+            accessToken={accessToken}
+            onRecovered={(file) => startWithFiles([file])}
+            uid={userId}
+          />
+        </div>
+      </div>
+
     </main>
   );
 }
