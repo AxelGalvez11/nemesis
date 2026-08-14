@@ -9,12 +9,13 @@
  * data — each page is processed as an image server-side — so no page rasteriser
  * or OCR binary is needed here. Bytes in, transcript out.
  *
- * INERT BY DEFAULT. `GEMINI_API_KEY` lives in the Supabase vault, not in this
- * app's environment, so `visionConfigured()` is false in production today and
- * every caller falls straight back to the existing text-only behaviour. Adding
- * the key to the web app's environment is the single owner-side step that turns
- * this on; nothing else changes. That is deliberate — a half-wired vision path
- * that throws at request time would be worse than one that is simply off.
+ * 🔴 THIS HEADER USED TO SAY THE KEY WAS NOT HERE, AND THAT IS NO LONGER TRUE.
+ * `GEMINI_API_KEY` has been set on nemesis-web for Preview and Production since
+ * 2026-07-23 (verified 2026-08-14 with `vercel env ls`, names only). So
+ * `visionConfigured()` is TRUE in production and this path is live. Anything
+ * reasoning about vision as "off by default" is reasoning about a state that
+ * ended; what is still off by default is `ParseOptions.lookAtFigures`, which is
+ * a latency-and-cost decision on the synchronous upload lane, not a missing key.
  *
  * Scope, stated plainly. Two doors, and they answer different questions:
  *   readPdfWithVision  — the WHOLE file has no text layer. One call, one document.
@@ -33,6 +34,7 @@
  * Everything except the fetches is pure and unit-tested.
  */
 
+import { descriptionWithoutLabels, parseFigureLabels, type FigureLabel } from "@/lib/learn/figure-labels";
 import { PAGE_BATCH_SIZE, PAGE_CONCURRENCY, parsePageTranscripts } from "@/lib/pdf/pages";
 
 /** Google retires fixed model ids for new keys (learned 2026-07-14 with
@@ -72,7 +74,20 @@ export const FIGURE_PROMPT =
   "say what it shows and state the relationships or values it conveys — labels, axes, directions, groupings, " +
   "and any text printed in it. Describe only what is visible; never infer facts the image does not show. " +
   "If an image is a logo, a decorative photo, or otherwise carries no teaching content, answer exactly 'none'. " +
-  "Answer as a numbered list with one entry per image and nothing else.";
+  "Answer as a numbered list with one entry per image and nothing else. " +
+  // 🔴 THE LABELS RIDE ON THE CALL THAT WAS ALREADY BEING MADE (§46.6). A diagram becomes a
+  // cognitive object rather than an illustration only if Nemesis knows WHAT is labelled and WHERE
+  // — "hiding labels or regions ... asking the learner to identify them" is impossible from prose.
+  // Asking for both in one response costs nothing extra: same batch, same image bytes, same
+  // request. A second pass per figure would have doubled the spend on the one primitive with no
+  // entitlement and no counter (unit-economics audit 2026-08-06), which is a cost decision this
+  // deliberately does not need to make.
+  "After each entry, if and only if the image is a LABELLED DIAGRAM — parts, regions or structures " +
+  "named in the picture itself — add a line beginning 'LABELS:' followed by each label as " +
+  "name@x,y where x and y are the centre of that label as decimals from 0 to 1 of the image width " +
+  "and height, separated by semicolons. Only include labels whose text is actually printed in the " +
+  "image. Omit the LABELS line entirely for photographs, charts without named parts, and anything " +
+  "you are not certain about.";
 
 /**
  * Reading PAGES whose content is a picture — a slide exported as an image, a
@@ -219,10 +234,29 @@ export async function describeFiguresWithVision(
   images: readonly VisionImage[],
   options: { env?: VisionEnv; signal?: AbortSignal } = {},
 ): Promise<Map<string, string>> {
+  return (await readFiguresWithVision(images, options)).descriptions;
+}
+
+/**
+ * The same call, with what it saw NAMED AND PLACED as well as described (§46.6).
+ *
+ * 🔴 ONE REQUEST, TWO ANSWERS. `FIGURE_PROMPT` asks for the labels on the batch that was already
+ * being sent, so a labelled diagram costs exactly what an unlabelled one did. Vision is the one
+ * primitive here with no entitlement and no counter, and a second pass per figure would have
+ * doubled that bill — see the unit-economics audit.
+ *
+ * `descriptions` is what every existing caller wanted and is unchanged. `labels` is empty for the
+ * majority of figures, which is correct: a photograph has nothing to occlude.
+ */
+export async function readFiguresWithVision(
+  images: readonly VisionImage[],
+  options: { env?: VisionEnv; signal?: AbortSignal } = {},
+): Promise<{ descriptions: Map<string, string>; labels: Map<string, FigureLabel[]> }> {
   const out = new Map<string, string>();
+  const found = new Map<string, FigureLabel[]>();
   const env = options.env ?? process.env;
   const key = (env.GEMINI_API_KEY ?? "").trim();
-  if (!key || images.length === 0) return out;
+  if (!key || images.length === 0) return { descriptions: out, labels: found };
 
   const usable = images.filter((image) => withinVisionLimit(image.bytes.byteLength));
   const batches: VisionImage[][] = [];
@@ -243,9 +277,16 @@ export async function describeFiguresWithVision(
     if (!reply) return;
     const parsed = parseFigureDescriptions(reply, batch.length);
     if (!parsed) return;
-    parsed.forEach((description, index) => {
+    parsed.forEach((entry, index) => {
       const image = batch[index];
-      if (image && description) out.set(image.name, description);
+      if (!image || !entry) return;
+      // 🔴 THE LABELS COME OFF THE SAME REPLY, AND THE PROSE IS HANDED ON WITHOUT THEM. Callers
+      // that only want a caption must not suddenly receive a machine-readable line inside it —
+      // that string is shown to learners and written into the document model.
+      const labels = parseFigureLabels(entry);
+      const description = descriptionWithoutLabels(entry);
+      if (description) out.set(image.name, description);
+      if (labels.length > 0) found.set(image.name, labels);
     });
   };
 
@@ -257,7 +298,7 @@ export async function describeFiguresWithVision(
     }
   });
   await Promise.all(workers);
-  return out;
+  return { descriptions: out, labels: found };
 }
 
 /** One generateContent call, walking the model ladder. Returns null on any failure. */
