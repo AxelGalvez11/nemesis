@@ -16,6 +16,7 @@ import { type Exposition } from "./cognitive-mode";
 import { projectLearnerState, type LearnerEvidence, type LearnerObjectiveState } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
 import type { StoredObjective } from "./learner-store";
+import { mostValuable, value, type ActionValue } from "./next-action-value";
 import { runtimeCanStage } from "./runtime-support";
 import { chooseNextTeachingAction, expositionOf, type TeachingAction } from "./teaching-policy";
 import type { ResolvedObjective } from "./canvas-knowledge";
@@ -46,6 +47,14 @@ export interface PolicyDecision {
    * changes nothing on the consumer side. Two fields, one assignment, one source.
    */
   cognitiveMode: DeclaredMode;
+  /**
+   * What made this the most valuable thing to do, and what it scored against the alternatives.
+   *
+   * 🔴 THE POLICY TRACE, AND IT IS SYSTEM STATE RATHER THAN MODEL REASONING. `action.because` is a
+   * sentence for a person; this is the named terms the selector weighed, which is what a test can
+   * assert on and what answers "why this and not that" without anyone reading a float.
+   */
+  selection: ActionValue;
 }
 
 /**
@@ -139,78 +148,56 @@ export function decideNext(input: {
     };
   });
 
+  // 🔴🔴 THE SELECTOR IS A VALUE FUNCTION NOW, NOT A LIST OF TIERS — see `next-action-value.ts`.
+  // What follows used to be three `find`s in a fixed order, and it had a real ceiling: WITHIN a tier
+  // it fell back to whichever identity key sorted first, so an objective the learner had failed
+  // three times waited behind one they had failed once, for no reason anybody chose. The learner
+  // model had outgrown the thing choosing from it.
+  //
+  // 🔴 IT SCORES ACTIONS, NEVER THE LEARNER. Nothing is stored, nothing accumulates, and no number
+  // here is a measure of a person — the score is recomputed from durable evidence on every call and
+  // ranks what is worth DOING. That is what keeps it rewritable without a migration, and what stops
+  // it quietly becoming the mastery score the product philosophy forbids.
+  //
+  // 🔴 AND IT REPRODUCES THE ORDERING THAT WAS ALREADY REASONED ABOUT AND TESTED. An exposition the
+  // learner is owed still outranks anything Nemesis wants to ask; never-established still outranks
+  // due-for-review. Those are bands now rather than `find` order, and the modifiers are bounded so
+  // they cannot cross one. Every test written against the old ordering still passes — which is the
+  // evidence this extends the old rule rather than replacing it with something unproven.
   const owed = decisions.filter(
     (decision) => decision.action.type !== "advance" && decision.action.type !== "defer",
   );
 
-  // NEVER-ESTABLISHED OUTRANKS DUE-FOR-REVIEW.
-  //
-  // 🔴 THIS IS A STATED DEFAULT, NOT AN INVARIANT, AND IT IS WRITTEN DOWN AS ONE ON PURPOSE.
-  // **Interleaving new and review material is a legitimate alternative**, and choosing between them
-  // is a product decision about how a session should feel — not a correctness property anything
-  // downstream may assume. Whoever finds this rule later should read a choice that can be revisited,
-  // with its reasoning attached, rather than a law they are afraid to touch.
-  //
-  // What is NOT optional is that *some* rule is stated here. Before objectives could become eligible
-  // again, ordering between them was free: `correct` produced `advance`, `advance` was unselectable,
-  // and nothing demonstrated could compete with anything unasked. Making demonstrated objectives
-  // askable again removed that accident — and the alternative to this tier was never "prefer
-  // review", it was ARBITRARY: whichever identity key happened to sort first.
-  //
-  // The reverse-direction acceptance case is what caught its absence. Demonstrate "losartan →
-  // Cozaar" and the next question must be "Cozaar → ?", not the same direction again because its
-  // interval elapsed — a learner re-asked what they just showed, while a fact they have never seen
-  // waits behind it. Three existing tests failed without this, so it is required to hold behaviour
-  // that was already accepted, which is what makes it mechanism rather than a new preference.
-  //
-  // 🔴 AND IT IS A PRECEDENCE RULE, NOT A SECOND INTERVAL. There is no number here and nothing to
-  // tune — exactly one value governs tempo (`RETRIEVAL_ELIGIBLE_AFTER_MS`) and this does not touch
-  // it. Within each tier the existing positional order still decides, so nothing else changes.
-  // 🔴🔴 SOMETHING NEMESIS HAS ALREADY DECIDED TO TELL THE LEARNER OUTRANKS ANYTHING IT WANTS TO
-  // ASK THEM. §39: `retrieve → fail → EXPOSE ANSWER → move on → later retrieve again`. The exposure
-  // is the second half of the interaction the learner is in the middle of; a fresh question starts a
-  // different one.
-  //
-  // 🔴 THIS IS THE SECOND OF TWO BREAKS THAT TOGETHER DELETED CORRECTIONS FROM THE PRODUCT, AND
-  // FIXING THE OTHER ONE ALONE DID NOT RESTORE THEM. Measured: with the `acknowledge` gate repaired
-  // so the correction is no longer wrongly marked shown, the correction STILL never painted —
-  // because `actedOn` had moved the just-failed objective to the back of `ordered`, and any
-  // objective that had never been asked won the `status !== "correct"` tier ahead of it. By the time
-  // the failed one came round again, other material had intervened, so the working-memory window had
-  // cleared and it was owed a `retrieve` rather than the exposition it never got.
-  //
-  //     answer X wrongly -> [gate fixed] -> asked Y -> asked X again -> still never told the answer
-  //
-  // 🔴 IT IS A PRECEDENCE RULE, NOT A CURRICULUM AND NOT AN INTERVAL. Same shape as the tier below
-  // it: no number, no per-objective adjustment, nothing to tune. Nor can it starve retrieval —
-  // `correctionsShown` means each objective owes at most one exposition per session, so the supply
-  // is bounded by the failures the learner actually produced.
-  //
-  // 🔴 AND `actedOn` KEEPS ITS MEANING. It still reorders and still never filters (§34 invariant 4).
-  // What changed is that a reordering intended to stop the same QUESTION being asked twice in a row
-  // no longer also postpones an ANSWER the learner is owed.
-  const exposition = owed.find(
-    (decision) => decision.action.type === "show_correction" || decision.action.type === "contrast",
-  );
+  // 🔴 EVERY OWED CANDIDATE IS SCORED, AND THE BEST ONE WINS. The bands in `next-action-value.ts`
+  // encode the precedence the previous three-`find` selector encoded; the modifiers discriminate
+  // inside a band, which is exactly where the old rule had nothing to say and fell back to hash
+  // order. See that file's header for why each band sits where it does.
+  const scored = owed.map((decision) => ({
+    decision,
+    value: value({
+      action: decision.action,
+      evidence: decision.evidence,
+      interveningActs: interveningActs(decision.objective.identityKey, actedInOrder),
+      knowledge: decision.knowledge,
+      state: decision.state,
+    }),
+  }));
+  const winner = mostValuable(scored, (candidate) => candidate.value);
 
-  return (
-    exposition ??
-    owed.find((decision) => decision.state.status !== "correct") ??
-    owed[0] ??
-    decisions.find((decision) => decision.action.type === "defer") ??
-    null
-  );
+  // 🔴 A HELD OBJECTIVE IS STILL BETTER THAN A BLANK PAGE. When everything advances or defers there
+  // is nothing owed, and the honest answer is the held one rather than an empty surface — being
+  // shown something twice is a much smaller failure than a canvas with nothing on it.
+  if (winner) return { ...winner.decision, selection: winner.value };
+  const held = decisions.find((decision) => decision.action.type === "defer");
+  return held ? { ...held, selection: value({
+    action: held.action,
+    evidence: held.evidence,
+    interveningActs: interveningActs(held.objective.identityKey, actedInOrder),
+    knowledge: held.knowledge,
+    state: held.state,
+  }) } : null;
 }
 
-/** The objectives this runtime can act on, of the ones a canvas resolved.
- *
- *  🔴 THIS IS A FILTER, NOT AN OWNERSHIP TEST, AND THERE IS DELIBERATELY NO `canUsePolicyRuntime`
- *  BESIDE IT ANY MORE. There used to be: `objectives.some(supported)` — one association was enough
- *  to hand the runtime a whole canvas, so a forty-page lecture containing a single glossary table
- *  satisfied it exactly as well as a glossary did, and every paragraph in it would have become
- *  unreachable. Ownership is decided in `knowledge-coverage.ts`, from what the SOURCE contains
- *  rather than from what happened to be extractable out of it. Do not reintroduce a permissive
- *  predicate here; make the loose question unrepresentable instead. */
 export function supportedObjectives(objectives: readonly ResolvedObjective[]): ResolvedObjective[] {
   // 🔴 THE LEDGER, NEVER A LITERAL. This used to read `knowledge.type === "association" &&
   // objective.capability === "recall"` — the identical rule `supportedKnowledge` states one layer
