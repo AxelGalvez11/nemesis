@@ -22,20 +22,113 @@ What this document is authoritative on is everything the contract does not settl
 Read it before proposing a feature, before arguing that something is worth building, and before
 deciding that something already built is finished.
 
-## 🔴 One reconciliation this creates — multiple choice is not banned
+## 🔴 Four rulings that govern how the rest of this document is read
+
+**Owner, 2026-08-13, on greenlighting the knowledge-construction layer.** These are refinements of
+the prose below, issued after it. Where they differ from a sentence further down, **these win** —
+each one exists because the looser wording would license the wrong build.
+
+### R1 — Evidence has TYPES. Not every action updates mastery.
+
+The section *"Actions on the Canvas are evidence"* ends with **"Everything useful should become
+evidence."** Read alone that says: make a highlight update what Nemesis believes the learner knows.
+**It must not.**
+
+> Asking Nemesis to explain a highlighted term is evidence about **interest, confusion, or need for
+> support**. It is not necessarily evidence that the learner knows or does not know the concept.
+> **Different user actions should create different evidence types.**
+
+So the correct reading of that section is: every useful action becomes evidence **of its own kind**.
+A request for help is a real observation about friction and belongs in the learner model as such —
+it is not a demonstration, and it may never be scored as one. Collapsing the two would be the same
+defect the evidence log already refuses: *absence of evidence recorded as negative evidence*.
+
+### R2 — Multiple choice is graded, not binary.
 
 `canvas-cognitive-runtime.md` §11 says **"PRODUCTION IS THE DEFAULT EVIDENCE"** and lists
 recognition-shaped interactions among the things that are *not* demonstrations. Read alone, that
-forbids ever building a recognition probe.
+forbids ever building a recognition probe. The ruling narrows it rather than reversing it, in three
+tiers:
 
-**The owner's ruling below narrows it rather than reversing it.** Recognition probes are
-legitimate **for diagnosis** — ten well-chosen questions that cheaply locate which parts of a large
-lecture a learner already knows. They remain illegitimate **as evidence of mastery**. §11 still
-holds for everything it was written about; what changes is that "diagnosis" and "mastery" are
-allowed to use different interactions.
+| Interaction | Standing |
+|---|---|
+| **Diagnostic MCQ** | allowed, as a cheap probe to locate what is already known |
+| **A correct MCQ answer** | **weak evidence — never mastery** |
+| **Production / retrieval** | substantially stronger evidence |
 
-> Use inexpensive recognition probes when Nemesis needs quick diagnostic information, but prefer
-> production when trying to establish genuine mastery.
+> That keeps diagnosis fast without turning Nemesis into a multiple-choice study app.
+
+### R3 — Extract the smallest faithful structure. Never invent structure to fill the graph.
+
+The governing rule for the knowledge layer:
+
+> **Extract the smallest faithful knowledge structure supported by the source. Never invent
+> structure merely to make the graph fuller.**
+
+This is the same discipline `knowledge-extraction.ts` already holds — *produce less when uncertain
+rather than fabricate* — carried forward rather than relaxed. Widening what can be represented must
+not widen what may be guessed. A wrong knowledge object is one a learner then gets drilled on.
+
+### R4 — The phase order is fixed. Do not add cognitive scores before the substrate is richer.
+
+The appendix below reports that `recall` is the only capability ever minted. **That is not to be
+fixed by adding ten arbitrary cognitive scores.** The substrate comes first: once Nemesis actually
+knows that a thing *is* a procedure, a causal model, an association, an equation, then the cognition
+layer can decide what kind of evidence matters for each.
+
+```
+Phase 1 — KNOWLEDGE SUBSTRATE   Can Nemesis faithfully represent what is learnable?
+Phase 2 — EVIDENCE / COGNITION  What does the learner know about each KIND of knowledge,
+                                 and what interaction would reveal it?
+Phase 3 — CANVAS                 How should that decision appear moment-to-moment,
+                                 without becoming chat?
+```
+
+Cognition policy and Canvas behaviour stay **largely untouched** until the knowledge layer can
+represent heterogeneous material.
+
+---
+
+## 🔴 The knowledge layer's target shape — owner, 2026-08-13
+
+The general transition Nemesis needs is:
+
+> **structured educational material → structured learnable knowledge**
+
+🔴 **The two-column-table rule is the FIRST SYMPTOM, not the bug.** Do not fix "the drug table"
+narrowly. A four-column drug chart should become relationships:
+
+```
+lisinopril
+├─ is_a             → ACE inhibitor
+├─ indicated_for    → hypertension
+├─ adverse_effect   → cough
+├─ contraindicated_in → pregnancy
+└─ monitor          → potassium
+```
+
+while retaining, for every one of them:
+
+```
+source · page/slide · table · row · column · confidence
+```
+
+And the same system should eventually handle:
+
+| Source shape | Knowledge shape |
+|---|---|
+| definition | concept / property |
+| comparison table | distinguishing relationships |
+| pathway | ordered / causal relationships |
+| equation | variables + relation + procedure |
+| diagram | entities + spatial / causal relations |
+| procedure | ordered steps |
+| hierarchy | parent / child relationships |
+| association | entity ↔ property |
+
+The 561-fact drug chart is **one of the primary acceptance tests**, not the specification.
+
+---
 
 Nothing else below reverses a standing ruling. The anti-gamification list **confirms** the ban on
 counters, XP, celebration and Continue-after-answer already in the UX brief.
