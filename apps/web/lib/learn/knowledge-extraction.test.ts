@@ -149,16 +149,78 @@ test("a legacy text-only parse reports a degraded parse, not an empty document",
 test("a three-column schedule is refused rather than sliced into pairs", () => {
   // 🔴 Column 1 beside column 2 here would be "8-17 ↔ Exam 1" — a calendar entry wearing an
   // association's clothes, which a student would then be drilled on as though it were knowledge.
+  //
+  // 🔴 THREE DATA ROWS, DELIBERATELY. This test used to carry ONE, and one row is refused by a
+  // weaker rule that has nothing to do with schedules — `subjectColumnOf` declines any grid whose
+  // single row makes every column trivially distinct. It therefore went green while proving
+  // nothing about calendars. Three rows put it on the rule it names.
+  //
+  // 🔴 AND THE REASON CHANGED FROM `table-not-pairs` TO `table-no-subject` WITHOUT THE BEHAVIOUR
+  // CHANGING. The old reason meant "this lane only reads two columns" — a fact about the
+  // extractor, which is no longer true now that wider grids are read. The new one means "this grid
+  // is keyed by a date, so nothing says what a row is about" — a fact about the document.
   const schedule = contextOf(modelOf([{
     id: "t1",
     kind: "table",
-    table: { headerRows: 1, rows: [["Date", "Topic", "Room"], ["8-17", "Exam 1", "Memphis 102"]] },
+    table: {
+      headerRows: 1,
+      rows: [
+        ["Date", "Topic", "Room"],
+        ["8-17", "Exam 1", "Memphis 102"],
+        ["8-24", "Lecture 4", "Memphis 102"],
+        ["8-31", "Lab 2", "Memphis 118"],
+      ],
+    },
     text: "",
   }]));
   const { objects, refusals } = extractKnowledgeObjects(schedule);
   assert.deepEqual(objects, []);
-  assert.equal(refusals[0]?.reason, "table-not-pairs");
+  assert.equal(refusals[0]?.reason, "table-no-subject");
   assert.equal(refusals[0]?.unitId, "t1");
+});
+
+test("🔴 a wide grid of things and their properties becomes one relation per column", () => {
+  // The shape that produced 0 knowledge objects from 561 candidate facts.
+  const chart = contextOf(modelOf([{
+    id: "t9",
+    kind: "table",
+    table: {
+      headerRows: 1,
+      rows: [
+        ["Drug", "Class", "Indication", "Adverse effect"],
+        ["lisinopril", "ACE inhibitor", "hypertension", "cough"],
+        ["losartan", "ARB", "hypertension", "dizziness"],
+        ["metoprolol", "beta blocker", "angina", "fatigue"],
+      ],
+    },
+    text: "",
+  }]));
+  const { objects, refusals } = extractKnowledgeObjects(chart);
+
+  // Three rows × three non-subject columns.
+  assert.equal(objects.length, 9);
+  assert.deepEqual(refusals, []);
+
+  const lisinopril = objects.filter((o) => o.pair?.left === "lisinopril");
+  assert.equal(lisinopril.length, 3);
+  assert.deepEqual(
+    lisinopril.map((o) => o.pair?.right).sort(),
+    ["ACE inhibitor", "cough", "hypertension"],
+  );
+
+  // 🔴 THE SOURCE'S OWN WORD NAMES THE RELATION — `class`, never `is_a` (owner, 2026-08-14).
+  const klass = lisinopril.find((o) => o.pair?.right === "ACE inhibitor");
+  assert.equal(klass?.pair?.leftRole, "drug");
+  assert.equal(klass?.pair?.rightRole, "class");
+  assert.equal(klass?.relationKind, "class|drug");
+  assert.match(klass?.statement ?? "", /^lisinopril — Class: ACE inhibitor$/);
+
+  // 🔴 Each relation is its OWN object with its own identity, so a learner can hold the class
+  // without the adverse effect. Nine relations, nine distinct identity keys.
+  assert.equal(new Set(objects.map((o) => o.identityKey)).size, 9);
+  assert.equal(new Set(objects.map((o) => o.id)).size, 9);
+  // Every one of them anchored back to the document.
+  assert.ok(objects.every((o) => (o.sourceAnchors?.length ?? 0) > 0));
 });
 
 test("a two-column grid of empty or essay-length cells is refused with its own reason", () => {
