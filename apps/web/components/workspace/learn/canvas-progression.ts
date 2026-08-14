@@ -97,11 +97,31 @@ export function composerControl(input: {
    * yields `"none"` if nothing is typed, because the caller cannot be in both at once.
    */
   readonly hasAttachment?: boolean;
+  /**
+   * A passage of the page is staged, with nothing typed.
+   *
+   * 🔴 STAGED MATERIAL IS SUBMITTABLE, AND OMITTING THIS MADE THE COMPOSER LIE. Selecting text
+   * puts a chip above the input and changes the placeholder to *"What should Nemesis do with
+   * this?"* — a question with no visible way to answer it, because send only appeared once
+   * something had been typed. The owner met exactly that: a bubble whose purpose was unclear,
+   * over a composer with no send button. The two complaints are one defect.
+   *
+   * 🔴 IT IS THE SAME ARGUMENT AS `hasAttachment`, WHICH IS WHY IT SITS BESIDE IT RATHER THAN
+   * BEING A SPECIAL CASE. Sending a file with nothing typed means "learn this with me"; sending a
+   * selection with nothing typed means "explain this". In both, the learner has already said what
+   * they mean by choosing the thing.
+   *
+   * 🔴 AND IT DOES NOT WEAKEN N3, FOR THE SAME STRUCTURAL REASON. A retrieval prompt owns the
+   * screen and has no page to select from — the two states cannot both be live, so the send
+   * control still cannot be pressed past an unanswered question.
+   */
+  readonly hasSelection?: boolean;
 }): ComposerControl {
   // A response outranks everything: the moment one begins, the same control becomes send. That
   // holds in BOTH exposition and production, which is why it is tested first and only once.
   if (input.hasResponse) return "send";
   if (input.hasAttachment) return "send";
+  if (input.hasSelection) return "send";
   // 🔴 `"none"` IS STILL A REAL ANSWER AND N3 STILL DEPENDS ON IT. In a production state with an
   // empty composer the control is ABSENT — not present-and-disabled — so retrieval cannot be
   // pressed past. Removing the `✓` narrowed this union; it did not soften that.

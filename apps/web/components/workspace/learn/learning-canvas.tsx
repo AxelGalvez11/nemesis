@@ -51,6 +51,14 @@ import { usePolicyRuntime } from "./use-policy-runtime";
  */
 const CANVAS_EXIT_ROUTE = "/learn";
 
+/** What "send" means when a passage is staged and nothing was typed.
+ *
+ *  🔴 A CONSTANT, NOT A LITERAL AT THE CALL SITE, because it is a sentence a MODEL reads and the
+ *  wording is therefore behaviour rather than decoration. It is also deliberately plain: no subject
+ *  matter, no assumption about what kind of passage this is, so it reads correctly over a statute,
+ *  a mechanism and a worked calculation alike. */
+const EXPLAIN_THIS = "Explain this.";
+
 export function LearningCanvas({
   canvasId,
   openingAsk = null,
@@ -252,6 +260,15 @@ export function LearningCanvas({
       // "Where did this come from?" is answered about the highlighted passage rather than by
       // rewriting it — asking about a claim should never silently change the claim.
       const only = selected.length === 1 ? selected[0] : null;
+      // 🔴 SEND WITH A PASSAGE STAGED AND NOTHING TYPED MEANS "EXPLAIN THIS". The composer now
+      // offers send whenever a selection is staged, because the placeholder asks "What should
+      // Nemesis do with this?" and a question with no answerable control is worse than no question.
+      // What the learner meant is not a guess: it is the same thing the selection toolbar offers
+      // first, routed through the same call, so there is one explanation path rather than two.
+      if (!text.trim() && only) {
+        await session.askAbout(only, EXPLAIN_THIS);
+        return;
+      }
       if (only && /^(where|which source|what source)\b/i.test(text)) {
         canvasCapture("canvas_source_asked", canvas, {});
         await session.askAbout(only, text);
