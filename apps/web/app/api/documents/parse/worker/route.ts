@@ -253,15 +253,20 @@ async function runOne(
     const stored = await storeFigureAssets(
       {
         put: async (path, bytes, mime) => {
+          // 🔴 `upsert: true` IS THE CORRECTNESS CHOICE HERE, NOT A SHORTCUT. The path
+          // is a hash OF THESE BYTES, so an object already at it holds exactly what is
+          // about to be written and overwriting is a no-op by construction.
+          //
+          // The alternative — `upsert: false` and treat "already exists" as success —
+          // requires recognising a storage error by its shape. That guess is only
+          // testable against the real service, and getting it wrong fails in the
+          // quietest possible way: every re-parse of a deck reports all of its figures
+          // as failed uploads, attaches no assets, and still records a successful
+          // parse. Nothing here can distinguish that from a deck with no figures.
           const { error } = await admin.storage
             .from(FIGURE_ASSET_BUCKET)
-            .upload(path, bytes, { contentType: mime, upsert: false });
-          if (!error) return true;
-          // The path IS the content hash, so an object already there is the same
-          // picture — from an earlier attempt at this deck, or from another deck
-          // that used it. That is the dedupe working, not a failure.
-          const status = (error as { statusCode?: string | number }).statusCode;
-          return String(status) === "409" || /exists|duplicate/i.test(error.message ?? "");
+            .upload(path, bytes, { contentType: mime, upsert: true });
+          return !error;
         },
       },
       job.user_id,
