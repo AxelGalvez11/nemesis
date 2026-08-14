@@ -43,6 +43,8 @@ import {
 } from "./extract-coverage";
 import { mistralCoverage } from "./extract-coverage";
 import { mistralHandles, readWithMistral } from "./mistral-ocr";
+import { llamaHandles, llamaTier, readWithLlama } from "./llamaparse-ocr";
+import { modelFromLlama, type LlamaResult } from "./llamaparse-model";
 import { claimOf, judgeMistralRead } from "./mistral-quality";
 import { modelFromMistral, titleFromMistral, unitKindFor } from "./mistral-model";
 import { csvToModel } from "./csv-model";
@@ -213,6 +215,9 @@ function hasStructure(model: DocumentModel | undefined): model is DocumentModel 
  */
 export const MISTRAL_PARSER_PREFIX = "mistral/";
 
+/** The same, for the Office lane. `readBy` therefore names the vendor AND the tier that ran. */
+export const LLAMA_PARSER_PREFIX = "llamaparse/";
+
 /** What the coverage record calls a Mistral-read unit, per format. */
 function coverageKindFor(kind: DocumentKind): "page" | "slide" | "document" {
   if (kind === "pptx") return "slide";
@@ -229,36 +234,69 @@ function coverageKindFor(kind: DocumentKind): "page" | "slide" | "document" {
  * vendor inside the definite-assignment chain that every existing format depends on, so a mistake
  * here could change what a CSV does. This way the local lanes are byte-for-byte what they were.
  */
-async function parseWithMistral(
+/**
+ * Which vendor reads which format, and why it is two rather than one.
+ *
+ * 🔴🔴 THEY FAIL IN OPPOSITE DIRECTIONS, MEASURED ON THE OWNER'S OWN COURSEWORK. A PDF is painted
+ * glyphs: a font whose "ti" is a single ligature defeats any text-layer reader, and on a 24-page
+ * drug chart both our own parser and LlamaParse produced 60 corrupted words across 39 spellings
+ * (`ac1on`, `contraindica1ons`) while Mistral, which reads the pixels, produced 16,823 words with
+ * none. An Office file is the reverse: a deck's speaker notes live in `ppt/notesSlides/` and are
+ * never painted on a slide, so an optical model cannot see them at all — Mistral returned a third
+ * of one lecture's vocabulary, while LlamaParse has a `slideSpeakerNotes` field and recovered a
+ * deck's declared 13,134 characters exactly.
+ *
+ * One vendor for both would therefore be wrong on half the corpus. PURE.
+ */
+function vendorFor(kind: DocumentKind): "mistral" | "llamaparse" | null {
+  if (mistralHandles(kind)) return "mistral";
+  if (llamaHandles(kind)) return "llamaparse";
+  return null;
+}
+
+async function parseWithVendor(
   bytes: Uint8Array,
   fileName: string,
   mimeType: string,
   kind: DocumentKind,
 ): Promise<ParseOutcome | null> {
-  const outcome = await readWithMistral(bytes, fileName, mimeType, {
-    // Office formats reject the image flag PDFs need; sending it is a 400 and a silent fall-back.
-    ...(kind === "pdf" ? {} : { office: true }),
-  });
-  if (!outcome.ok) {
-    // `not-configured` is the ordinary state of a local checkout and of any preview deploy without
-    // the key, so it is not worth a line in the log; everything else is a provider fact worth
-    // seeing next to the document it happened to.
-    if (outcome.reason !== "not-configured") {
-      console.warn(
-        JSON.stringify({
-          event: "mistral_fell_back",
-          kind,
-          ms: outcome.durationMs,
-          reason: outcome.reason,
-        }),
-      );
+  const vendor = vendorFor(kind);
+  if (!vendor) return null;
+
+  let model: DocumentModel | null = null;
+  let readBy = "";
+  let unitsBilled = 0;
+
+  if (vendor === "mistral") {
+    const outcome = await readWithMistral(bytes, fileName, mimeType);
+    if (!outcome.ok) {
+      // `not-configured` is the ordinary state of a local checkout and of any preview deploy
+      // without the key, so it is not worth a line in the log; everything else is a provider fact
+      // worth seeing next to the document it happened to.
+      if (outcome.reason !== "not-configured") {
+        console.warn(JSON.stringify({ event: "mistral_fell_back", kind, ms: outcome.durationMs, reason: outcome.reason }));
+      }
+      return null;
     }
-    return null;
+    model = modelFromMistral(outcome.response, kind, titleFromMistral(outcome.response));
+    readBy = `${MISTRAL_PARSER_PREFIX}${outcome.response.model || "unknown"}`;
+    unitsBilled = outcome.response.pages.length;
+  } else {
+    const outcome = await readWithLlama(bytes, fileName);
+    if (!outcome.ok) {
+      if (outcome.reason !== "not-configured") {
+        console.warn(JSON.stringify({ code: outcome.code, event: "llama_fell_back", kind, ms: outcome.durationMs, reason: outcome.reason }));
+      }
+      return null;
+    }
+    const { tier, version } = llamaTier();
+    model = modelFromLlama(outcome.result as LlamaResult, kind, null);
+    readBy = `${LLAMA_PARSER_PREFIX}${tier}@${version}`;
+    unitsBilled = outcome.pages;
   }
 
-  const model = modelFromMistral(outcome.response, kind, titleFromMistral(outcome.response));
   if (!model) {
-    console.warn(JSON.stringify({ event: "mistral_unmappable", kind, pages: outcome.response.pages.length }));
+    console.warn(JSON.stringify({ event: "vendor_unmappable", kind, pages: unitsBilled, vendor }));
     return null;
   }
 
@@ -271,7 +309,7 @@ async function parseWithMistral(
   const verdict = judgeMistralRead(claimOf(kind, bytes), model);
   if (!verdict.ok) {
     console.warn(
-      JSON.stringify({ detail: verdict.detail, event: "mistral_quality_rejected", kind, missing: verdict.missing }),
+      JSON.stringify({ detail: verdict.detail, event: "vendor_quality_rejected", kind, missing: verdict.missing, vendor }),
     );
     return null;
   }
@@ -289,7 +327,7 @@ async function parseWithMistral(
   });
   // The vendor's own answer, so a silent model change on their side is visible on ours. Recorded
   // even when it differs from what we asked for — especially then.
-  coverage = { ...coverage, parserVersion: `${MISTRAL_PARSER_PREFIX}${outcome.response.model || "unknown"}` };
+  coverage = { ...coverage, parserVersion: readBy };
 
   const full = documentToText(model);
   const capped = capText(full, TEXT_CAP);
@@ -300,7 +338,7 @@ async function parseWithMistral(
     coverage,
     kind,
     model,
-    readBy: `${MISTRAL_PARSER_PREFIX}${outcome.response.model || "unknown"}`,
+    readBy,
     skippedFigures: 0,
     text,
     title: model.title,
@@ -359,8 +397,8 @@ export async function parseDocument(
   // provider that does not need them must not be gated by them. `mistralHandles` excludes images
   // anyway, so today this is ordering that documents an intent rather than ordering that changes
   // an outcome — which is precisely when it is cheap to get right.
-  if (mistralHandles(kind)) {
-    const read = await parseWithMistral(bytes, fileName, mimeType, kind);
+  if (vendorFor(kind)) {
+    const read = await parseWithVendor(bytes, fileName, mimeType, kind);
     if (read) return read;
   }
 

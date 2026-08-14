@@ -28,6 +28,7 @@ import {
 import { modelFromMistral, rectFrom, plainText, titleFromMistral } from "./mistral-model";
 import { tableFromHtml } from "./mistral-tables";
 import { buildMistralRequest, parseMistralResponse, mistralHandles, mistralMime } from "./mistral-ocr";
+import { llamaHandles, llamaTier, LLAMA_DEFAULT_TIER, LLAMA_DEFAULT_VERSION } from "./llamaparse-ocr";
 import type { MistralOcrResponse } from "./mistral-ocr";
 
 /** A response shaped the way Mistral documents its own output. */
@@ -224,16 +225,27 @@ test("a reply that is not the OCR shape is refused rather than half-read", () =>
   assert.equal(ok?.pages.length, 1);
 });
 
-test("documents go to the vendor; grids and photographs stay local", () => {
-  // 🔴 A PRODUCT DECISION, NOT A BENCHMARK RESULT (owner, 2026-08-13). Per-file the local readers
-  // win on Office — 6 tables against 0 on a Word activity, 209 blocks against 100 on a deck — and
-  // that is not the question. Owning three parsers for ever costs more than the difference. What
-  // protects the Office case is `mistral-quality.ts`, which refuses a read missing content the file
-  // itself declares; the legacy readers are fallbacks now, kept but not improved.
-  for (const kind of ["pdf", "docx", "pptx"]) assert.equal(mistralHandles(kind), true, kind);
+test("🔴 PDFs go to Mistral, Office goes to LlamaParse, and nothing goes to both", () => {
+  // 🔴 THE TWO VENDORS FAIL IN OPPOSITE DIRECTIONS, WHICH IS WHY THIS IS A SPLIT AND NOT A
+  // PREFERENCE. A PDF is painted glyphs, so a ligature defeats every text-layer reader: measured on
+  // one 24-page drug chart, our parser and LlamaParse each produced 60 corrupted words across 39
+  // spellings while Mistral produced none. An Office file is the reverse — a deck's speaker notes
+  // are never painted on a slide, so Mistral returned a third of one lecture's vocabulary while
+  // LlamaParse recovered a declared 13,134 characters of notes exactly.
+  assert.equal(mistralHandles("pdf"), true);
+  assert.equal(llamaHandles("pdf"), false, "LlamaParse reproduces our own parser's PDF corruption");
+
+  for (const kind of ["pptx", "docx"]) {
+    assert.equal(llamaHandles(kind), true, kind);
+    assert.equal(mistralHandles(kind), false, `${kind} would lose its speaker notes to an optical read`);
+  }
+
   // A spreadsheet's exact cell references and formulas cannot be improved on by an optical read,
   // and a standalone photograph wants describing rather than transcribing.
-  for (const kind of ["xlsx", "csv", "text", "image"]) assert.equal(mistralHandles(kind), false, kind);
+  for (const kind of ["xlsx", "csv", "text", "image"]) {
+    assert.equal(mistralHandles(kind), false, kind);
+    assert.equal(llamaHandles(kind), false, kind);
+  }
   assert.equal(mistralMime("lecture.pptx", ""),
     "application/vnd.openxmlformats-officedocument.presentationml.presentation");
   assert.equal(mistralMime("scan", "application/octet-stream"), "application/pdf");
@@ -297,4 +309,19 @@ test("🔴 vendor response → model → stored JSON → read back → A CITATIO
 test("a title is taken from the document's own first heading, never invented", () => {
   assert.equal(titleFromMistral(response([{ index: 0, markdown: "# Real Title\n\nBody." }])), "Real Title");
   assert.equal(titleFromMistral(response([{ index: 0, markdown: "Just prose." }])), null);
+});
+
+test("🔴 the Office tier is always requested WITH a version", () => {
+  // 🔴 A TIER WITHOUT A VERSION UPLOADS THE WHOLE FILE AND THEN FAILS. The API accepts the request,
+  // runs, and returns `MISSING_VERSION_FOR_TIER` — so the cost is paid in latency and the failure
+  // reads as a parse error rather than a bad parameter. It cost three real files to find.
+  const { tier, version } = llamaTier({});
+  assert.equal(tier, LLAMA_DEFAULT_TIER);
+  assert.ok(version, "a tier without a version is a job that fails after the upload");
+  assert.equal(version, LLAMA_DEFAULT_VERSION);
+
+  // 🔴 AND THE DEFAULT IS THE CHEAP TIER, MEASURED SUFFICIENT. Cost-effective matched the local
+  // reader's text to within 0.05% on the owner's coursework and returned every table with both an
+  // HTML string and a rows array. Nothing defaults to an expensive mode.
+  assert.equal(LLAMA_DEFAULT_TIER, "cost_effective");
 });

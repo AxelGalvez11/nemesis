@@ -222,11 +222,9 @@ export function mistralMime(fileName: string, mimeType: string): string {
  * Mistral recovered 16,823 with none. "contraindication" appears 34 times locally and 64 in
  * Mistral's read.
  *
- * 🔴 WHAT PROTECTS THE OFFICE CASE IS `mistral-quality.ts`, NOT THIS LIST. Accepting a lower score
- * is not the same as accepting an arbitrary one, and one measured case is not 94-vs-97: a lecture's
- * speaker notes are invisible to an optical model, so a 57-slide deck came back with a third of its
- * concepts. That is caught downstream by comparing the read against what the FILE ITSELF declares,
- * and only then does a legacy reader run. The legacy readers are fallbacks now — kept, not improved.
+ * 🔴 OFFICE MOVED TO LLAMAPARSE, WHICH IS WHY THIS LIST SHRANK BACK. The owner's decision to stop
+ * owning Office parsing stands; the vendor that serves it changed once one was measured that can
+ * see a deck's speaker notes. See `llamaparse-ocr.ts`. `mistral-quality.ts` still gates BOTH lanes.
  *
  * 🔴 `image` IS STILL NOT ON THE LIST, FOR A DIFFERENT REASON. A standalone picture goes to Gemini
  * with a prompt that asks it to DESCRIBE what it shows; OCR would transcribe the words in a
@@ -235,7 +233,7 @@ export function mistralMime(fileName: string, mimeType: string): string {
  * cell references and formulas are not something an optical read can improve on. PURE.
  */
 export function mistralHandles(kind: string): boolean {
-  return kind === "pdf" || kind === "pptx" || kind === "docx";
+  return kind === "pdf";
 }
 
 /** The request body for one document. PURE, and separated so a test can assert the exact

@@ -138,6 +138,9 @@ export async function runParseOnThread(
       GOOGLE_GENERATIVE_AI_API_KEY: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
       MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
       MISTRAL_OCR_MODEL: process.env.MISTRAL_OCR_MODEL,
+      LLAMAPARSE_API_KEY: process.env.LLAMAPARSE_API_KEY,
+      LLAMAPARSE_TIER: process.env.LLAMAPARSE_TIER,
+      LLAMAPARSE_VERSION: process.env.LLAMAPARSE_VERSION,
     },
     resourceLimits: {
       // Node's own ceiling, below ours, so V8 throws a catchable OOM inside the

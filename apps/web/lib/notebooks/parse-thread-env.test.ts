@@ -33,6 +33,7 @@ const WEB_ROOT = join(import.meta.dirname, "..", "..");
  */
 const PROVIDER_MODULES = [
   "lib/notebooks/mistral-ocr.ts",
+  "lib/notebooks/llamaparse-ocr.ts",
   "lib/vision/gemini.ts",
   "lib/pdf/vision.ts",
 ];
@@ -82,6 +83,7 @@ test("the vendor's key is one of them, named explicitly", () => {
   // Named on purpose as well as derived: this is the variable whose absence caused the whole guard
   // to be written, and a derivation that stopped working would otherwise pass by finding nothing.
   const allowed = allowlistedKeys();
-  assert.ok(allowed.has("MISTRAL_API_KEY"), "the extraction vendor's key must reach the worker");
+  assert.ok(allowed.has("MISTRAL_API_KEY"), "the PDF vendor's key must reach the worker");
+  assert.ok(allowed.has("LLAMAPARSE_API_KEY"), "and the Office vendor's key must too");
   assert.ok(allowed.has("GEMINI_API_KEY"), "so must the vision key the PDF lane has always used");
 });
