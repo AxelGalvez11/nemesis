@@ -123,3 +123,25 @@ test("🔴 N3 SURVIVES BOTH §3 AND THE ✓ REMOVAL: a production state with not
     "omitting hasAttachment must mean false — a defaulted-true flag would remove N3 everywhere at once",
   );
 });
+
+// ── a staged passage is something you can send ──────────────────────────────
+
+test("🔴🔴 a staged selection offers SEND, because the composer already asked a question about it", () => {
+  // 🔴 THE OWNER'S TWO REPORTS WERE ONE DEFECT. They saw "a bubble I don't understand the function
+  // of" above a composer "missing the send button". Selecting text stages a chip AND changes the
+  // placeholder to "What should Nemesis do with this?" — then offered no way to answer it, because
+  // send appeared only once something had been typed. A question with no answerable control is what
+  // made the chip unreadable: with nothing to press, it looks like debris rather than an object.
+  assert.equal(composerControl({ hasResponse: false, hasSelection: true }), "send");
+  // Typing alongside it changes nothing — one control, one meaning.
+  assert.equal(composerControl({ hasResponse: true, hasSelection: true }), "send");
+});
+
+test("🔴 and N3 is untouched: no selection, nothing typed, no control", () => {
+  // The dangerous direction is widening "sendable" until a required demonstration becomes
+  // skippable. A retrieval prompt owns the screen and has no page to select from, so the two states
+  // cannot both be live — but the default still has to be false, or one omitted flag removes N3
+  // everywhere at once.
+  assert.equal(composerControl({ hasResponse: false, hasSelection: false }), "none");
+  assert.equal(composerControl({ hasResponse: false }), "none");
+});

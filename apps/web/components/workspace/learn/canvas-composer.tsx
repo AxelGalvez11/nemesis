@@ -266,7 +266,12 @@ export function CanvasComposer({
     // press did nothing they could see. An empty box is a real submission when material is
     // attached and the canvas has not started; everywhere else it is still nothing to send.
     if (busy) return;
-    if (!value && !canStartFromAttachment) return;
+    // 🔴 A STAGED SELECTION IS A SUBMISSION, EXACTLY AS A STAGED FILE IS. Without this clause the
+    // send button rendered (see `hasSelection`) and pressing it did nothing at all — worse than the
+    // missing button it replaced, because a control that visibly does nothing reads as broken
+    // rather than absent. The composer asks *"What should Nemesis do with this?"*; sending without
+    // typing is the learner answering "the obvious thing", and the caller resolves what that is.
+    if (!value && !canStartFromAttachment && selected.length === 0) return;
     setText("");
     // 🔴 The routing that replaces a second composer. Same box, same key, different meaning —
     // decided by whether the canvas is currently asking for something.
@@ -323,6 +328,8 @@ export function CanvasComposer({
   const control = composerControl({
     hasResponse: Boolean(text.trim()),
     hasAttachment: canStartFromAttachment,
+    // A staged passage is something to send, exactly as a staged file is — see `hasSelection`.
+    hasSelection: selected.length > 0 && !listening,
   });
   const showSend = control === "send";
 
@@ -365,10 +372,20 @@ export function CanvasComposer({
             over the paragraph behind it and neither could be read. */}
         {selected.length > 0 && !listening && (
           <div className="mb-1.5 ml-1 flex w-fit max-w-full items-center gap-2 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-2 shadow-sm ring-1 ring-(--ui-stroke-tertiary)">
+            {/* 🔴 THE CHIP HAS TO SAY WHAT IT IS. It used to print the quoted words and nothing
+                else, so it read as a stray fragment of the page floating over the composer — the
+                owner's words were *"a bubble which I don't understand the function of"*. A quoted
+                string is not self-describing: it looks identical whether it is something you are
+                about to act on, something Nemesis just said, or a leftover. One word of label and
+                a mark that means "quotation" turn it into an object with a purpose. */}
+            <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="quote" size="0.6875rem" />
+            <span className="shrink-0 text-[0.6875rem] uppercase tracking-wide text-(--ui-text-quaternary)">
+              {selected.length === 1 ? "Selected" : `${selected.length} selected`}
+            </span>
             <span className="truncate text-[0.75rem] text-(--ui-text-tertiary)">
               {selected.length === 1
                 ? `“${selected[0]?.content.slice(0, 60) ?? ""}${(selected[0]?.content.length ?? 0) > 60 ? "…" : ""}”`
-                : `${selected.length} sections selected`}
+                : ""}
             </span>
             <button
               aria-label="Clear selection"
