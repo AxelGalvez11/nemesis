@@ -190,6 +190,9 @@ export function decideNext(input: {
     decisions.map((decision) => ({
       identityKey: decision.objective.identityKey,
       knowledge: decision.knowledge,
+      // 🔴 REQUIRED FOR A PROCEDURE CANDIDATE TO JOIN TO ITS NEIGHBOURING STEP — see `termsOf`.
+      // Harmless to pass for every other type, which does not read it.
+      parameters: decision.objective.parameters,
     })),
   );
   const dependents = dependentsOf(prerequisites);
@@ -207,6 +210,12 @@ export function decideNext(input: {
   // 🔴 THE OBJECTIVE'S OWN VOCABULARY, TAKEN FROM THE SAME ROLE FIELDS THE PREREQUISITE GRAPH USES.
   // Asking "which words is this built from?" a second way — by scanning the prompt text, say — would
   // give a second answer, and the two would disagree silently.
+  //
+  // 🔴 CALLED WITHOUT `parameters` ON PURPOSE. A procedure step's `termsOf` reads as a scoped
+  // POSITION (`kp1#step#2`), never a word — nobody looks that up — so passing it through here would
+  // add candidates to `terms` that no real lookup can ever match. Leaving it off costs nothing
+  // (procedure already contributed no vocabulary before this) and keeps this call asking exactly the
+  // question its name says: which WORDS is this built from.
   const lookups = input.lookups ?? [];
   const wordsInTheWay = (knowledge: KnowledgeObject): boolean => {
     if (lookups.length === 0) return false;

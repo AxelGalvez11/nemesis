@@ -46,6 +46,28 @@ function pair(id: string, left: string, right: string): KnowledgeObject {
 const candidate = (knowledge: KnowledgeObject) => ({ identityKey: knowledge.id, knowledge });
 const mapOf = (...objects: KnowledgeObject[]) => prerequisiteMap(objects.map(candidate));
 
+/** A procedure knowledge object with `count` steps, real text rather than placeholders. */
+function procedureOf(id: string, ...stepTexts: string[]): KnowledgeObject {
+  return {
+    id,
+    identityKey: id,
+    statement: stepTexts[0] ?? "",
+    steps: stepTexts.map((text, index) => ({ marker: `${index + 1}.`, text, unitId: "u1" })),
+    type: "procedure",
+    unanchoredProvenance: [],
+  };
+}
+
+/** One step's objective, as `objectivesForKnowledge` mints it — `identityKey` distinct per step,
+ *  `stepKey` carrying its 1-based position, which is the only thing `termsOf` reads for a step. */
+function stepCandidate(knowledge: KnowledgeObject, stepKey: number) {
+  return {
+    identityKey: `${knowledge.id}:step${stepKey}`,
+    knowledge,
+    parameters: { stepKey },
+  };
+}
+
 // ── the edges that SHOULD exist ─────────────────────────────────────────────
 
 test("🔴🔴 a causal chain joins: the step before is a prerequisite of the step after", () => {
@@ -98,6 +120,69 @@ test("dependents are the same edges, read the other way", () => {
   assert.deepEqual([...(dependents.get("e1") ?? [])].sort(), ["e2", "e3"]);
 });
 
+// ── I11 for a procedure: the step before is a prerequisite of the step after ────
+
+test("🔴🔴 a procedure chain joins: step 2 depends on step 1, the source's own stated order", () => {
+  // The same edge the causal chain test above proves, one knowledge kind over. A learner who
+  // cannot say what comes after step 1 should be offered step 1, not step 2 asked louder.
+  const procedure = procedureOf("p1", "Draft the motion.", "File it with the clerk.", "Serve the opposing party.");
+  const map = prerequisiteMap([
+    stepCandidate(procedure, 1),
+    stepCandidate(procedure, 2),
+    stepCandidate(procedure, 3),
+  ]);
+  assert.deepEqual(map.get("p1:step2"), ["p1:step1"]);
+  assert.deepEqual(map.get("p1:step3"), ["p1:step2"]);
+  assert.equal(map.has("p1:step1"), false, "the first step is cued by the procedure's own name, not a prior step");
+});
+
+test("🔴 two different procedures' steps do not cross-wire", () => {
+  // An unscoped "step#2" would make "administer the second dose" a prerequisite of "file the second
+  // exhibit" the moment both procedures existed in the same canvas. The scope is the knowledge
+  // object's own identity, so two step-2s from different procedures never collide.
+  const filing = procedureOf("p1", "Draft the motion.", "File it with the clerk.");
+  const dosing = procedureOf("p2", "Check the chart.", "Administer the second dose.");
+  const map = prerequisiteMap([
+    stepCandidate(filing, 1),
+    stepCandidate(filing, 2),
+    stepCandidate(dosing, 1),
+    stepCandidate(dosing, 2),
+  ]);
+  assert.deepEqual(map.get("p1:step2"), ["p1:step1"]);
+  assert.deepEqual(map.get("p2:step2"), ["p2:step1"]);
+});
+
+test("a procedure candidate with no stepKey contributes nothing — refusing, not guessing a position", () => {
+  const procedure = procedureOf("p1", "Draft the motion.", "File it with the clerk.");
+  const map = prerequisiteMap([
+    { identityKey: "p1:mystery", knowledge: procedure },
+    stepCandidate(procedure, 1),
+  ]);
+  assert.equal(map.has("p1:mystery"), false);
+});
+
+test("🔴 classification produces no edges, ever — members are SIBLINGS on one axis, not a chain", () => {
+  // Stated rather than left as silence: unlike procedure, this is not a missing feature waiting for
+  // someone to read the roles. "*3/*3 requires *3/*6" would invent an order the source never had —
+  // both classes sit on the same axis, told apart from each other, not derived from each other.
+  const classification: KnowledgeObject = {
+    contrast: {
+      column: 3,
+      featureColumns: [1, 2],
+      label: "Poor (PM)",
+      members: ["*3/*3", "*3/*6"],
+      siblings: [{ label: "Normal (NM)", members: ["*1/*1"] }],
+    },
+    id: "c1",
+    identityKey: "c1",
+    statement: "Predicted Metabolizer status: Poor (PM)",
+    type: "classification",
+    unanchoredProvenance: [],
+  };
+  assert.deepEqual(termsOf(classification, { memberKey: "*3/*3" }), { establishes: [], requires: [] });
+  assert.equal(mapOf(classification).size, 0);
+});
+
 // ── the edges that must NOT exist ───────────────────────────────────────────
 
 test("🔴🔴 a term that merely CONTAINS another is not a dependency", () => {
@@ -135,10 +220,11 @@ test("🔴 empty role text links nothing to anything", () => {
   assert.equal(map.size, 0);
 });
 
-test("🔴 a knowledge type with no stated roles produces no edges, rather than guessed ones", () => {
-  // 🔴 THE REFUSING DEFAULT FOR EVERYTHING NOT YET READ. When `procedure` or `conditional_rule`
-  // start minting objectives they get no prerequisites until someone states what their roles ARE.
-  // That is a missing feature; inventing edges for a shape nobody has read is a wrong answer.
+test("🔴 a procedure object with no steps payload contributes nothing", () => {
+  // Type says procedure, payload is missing — the shape a partially-read row has. Mirrors "a causal
+  // object with no relation payload contributes nothing" below: it must not fall through to a
+  // guessed position, and it must not fall through even when SOME OTHER candidate in the same call
+  // supplies a `parameters.stepKey` for a different knowledge object entirely.
   const procedure: KnowledgeObject = {
     id: "p1",
     identityKey: "p1",
@@ -147,7 +233,21 @@ test("🔴 a knowledge type with no stated roles produces no edges, rather than 
     unanchoredProvenance: [],
   };
   assert.deepEqual(termsOf(procedure), { establishes: [], requires: [] });
+  assert.deepEqual(termsOf(procedure, { stepKey: 1 }), { establishes: [], requires: [] });
   assert.equal(mapOf(procedure, edge("e1", "titration", "a stable level")).size, 0);
+});
+
+test("🔴 a conditional_rule — genuinely unread — still produces no edges", () => {
+  // Unlike procedure and classification, nobody has read this type's roles at all yet. The refusing
+  // default this file opens with, still true of whatever the NEXT unread type turns out to be.
+  const rule: KnowledgeObject = {
+    id: "r1",
+    identityKey: "r1",
+    statement: "Applies only when the buyer is a merchant",
+    type: "conditional_rule",
+    unanchoredProvenance: [],
+  };
+  assert.deepEqual(termsOf(rule), { establishes: [], requires: [] });
 });
 
 test("🔴 a causal object with no relation payload contributes nothing", () => {

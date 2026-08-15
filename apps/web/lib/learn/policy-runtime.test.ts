@@ -346,3 +346,46 @@ test("🔴 no permissive ownership predicate has grown back beside the filter", 
   assert.equal(/\.some\s*\(/.test(code), false, "policy-runtime must not decide ownership with .some()");
   assert.equal(code.includes("canUsePolicyRuntime"), false);
 });
+
+// ── I11 for a procedure, end to end: stuck on step 2 routes to step 1 ───────────
+
+test("🔴🔴 a learner stuck on step 2 of a procedure is offered step 1, not an equally-untouched step elsewhere", () => {
+  // The exact behaviour I11 asks for, walked through the REAL pipeline this time: mint, build the
+  // prerequisite graph from the objects `decideNext` actually holds, score, and pick a winner —
+  // rather than asserting on `blockedDependents` as a number handed to `value()` directly.
+  const PROCEDURE: KnowledgeObject = {
+    id: "kp1",
+    identityKey: "kp1",
+    statement: "Filing a motion to dismiss",
+    steps: [
+      { marker: "1.", text: "Draft the motion stating the grounds for dismissal.", unitId: "u1" },
+      { marker: "2.", text: "File the motion with the clerk of court.", unitId: "u1" },
+    ],
+    type: "procedure",
+    unanchoredProvenance: [],
+  };
+  const [STEP_ONE, STEP_TWO] = objectivesForKnowledge(PROCEDURE);
+  const objectives: ResolvedObjective[] = [
+    { knowledge: PROCEDURE, objective: { ...STEP_ONE!, rowId: "r1" } },
+    { knowledge: PROCEDURE, objective: { ...STEP_TWO!, rowId: "r2" } },
+    // An unrelated, equally never-touched objective from a DIFFERENT knowledge object — nothing
+    // depends on it, so it stays in the plain `owed` band with no promotion.
+    { knowledge: KNOWLEDGE, objective: { ...FORWARD!, rowId: "r3" } },
+  ];
+  // The learner attempted step 2 and got it wrong. Step 1 has no evidence at all — by identity-key
+  // order alone it would lose to the unrelated FORWARD objective, which the old three-`find`
+  // selector could not tell apart from a never-touched objective that unlocks nothing.
+  const evidence: LearnerEvidence[] = [
+    { demonstrationObtained: true, id: "e1", objectiveIdentityKey: STEP_TWO!.identityKey, occurredAt: ago(2 * 3600_000), verdict: "incorrect" },
+  ];
+
+  const decision = decideNext({ evidence, now: NOW, objectives });
+
+  assert.equal(decision?.objective.identityKey, STEP_ONE!.identityKey);
+  assert.equal(decision?.rationale.by, "nemesis_policy");
+  assert.ok(
+    decision?.rationale.by === "nemesis_policy" &&
+      decision.rationale.selection.reasons.includes("unlocks-other-work"),
+    "the trace must name WHY step 1 won, not just that it did",
+  );
+});
