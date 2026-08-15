@@ -53,6 +53,7 @@ import { cn } from "@/lib/utils";
 import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
+import { HandwritingPad } from "./handwriting-pad";
 import type { ActiveTask } from "./use-canvas-session";
 
 interface CanvasComposerProps {
@@ -170,6 +171,9 @@ export function CanvasComposer({
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  /** A third way to fill the composer, beside typing and dictation — see handwriting-pad.tsx's
+   *  file header. Takes the WHOLE pill's place while true, the same as `listening` does. */
+  const [drawing, setDrawing] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   /** The file input is triggered from a menu item now, so it needs a handle rather than a wrapping
    *  label. It stays `sr-only` rather than `hidden` — a hidden input is out of the accessibility
@@ -213,6 +217,9 @@ export function CanvasComposer({
     spoke.current = false;
     typedBefore.current = "";
     startedAt.current = Date.now();
+    // A pad left open from the PREVIOUS prompt is answering a question that no longer exists —
+    // close it rather than let a drawing meant for one task land as an answer to the next one.
+    setDrawing(false);
   }, [taskId]);
 
   useEffect(() => {
@@ -344,6 +351,22 @@ export function CanvasComposer({
       )}
     >
       <div className="pointer-events-auto w-full max-w-[768px]">
+        {/* 🔴 A THIRD WAY TO FILL THE COMPOSER TAKES ITS WHOLE PLACE, THE SAME AS DICTATION'S
+            `listening` BRANCH DOES FURTHER DOWN — see handwriting-pad.tsx's file header. Nothing
+            below this branches on `drawing`; the pad is a full substitute for the chips-and-pill
+            content, not a layer over it. */}
+        {drawing ? (
+          <HandwritingPad
+            onAccept={(value) => {
+              setText(value);
+              typedBefore.current = value;
+              setDrawing(false);
+              input.current?.focus();
+            }}
+            onCancel={() => setDrawing(false)}
+          />
+        ) : (
+        <>
         {/* 🔴 THE ATTACHMENT PREVIEW (§2, §26) — IMMEDIATELY ABOVE THE INPUT, WHICH IS WHERE THE
             BRIEF DRAWS IT. This is the whole replacement for a dedicated "1 source attached →
             Help me learn this" page: the material is visible, it is obviously not gone, and the
@@ -588,6 +611,22 @@ export function CanvasComposer({
                 </button>
               )}
 
+              {/* 🔴 ANSWERING ONLY, UNLIKE DICTATION. Speaking a free-form question to Nemesis is
+                  ordinary; drawing one is not a case this product has — see handwriting-pad.tsx's
+                  file header for the rest of the reasoning. */}
+              {answering && (
+                <button
+                  aria-label="Write or draw your answer"
+                  className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  disabled={busy}
+                  onClick={() => setDrawing(true)}
+                  title="Write or draw your answer"
+                  type="button"
+                >
+                  <Codicon name="edit" size="20px" />
+                </button>
+              )}
+
               {/* 🔴 FILLED AND COLOURED, NOT A GREY GLYPH -- MEASURED, not chosen. A grey arrow
                   reads as disabled even when it isn't; ChatGPT's own idle-composer action button
                   is never grey, it's a solid coloured circle (theirs is Start Voice, since ours
@@ -618,6 +657,8 @@ export function CanvasComposer({
 
         {dictation.error && !listening && (
           <p className="mt-2 pl-4 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
+        )}
+        </>
         )}
       </div>
     </div>
