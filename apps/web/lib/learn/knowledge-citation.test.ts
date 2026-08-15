@@ -179,6 +179,18 @@ test("🔴 an anchor this canvas cannot honestly point at produces NO citation",
   // And a claim carrying no anchors at all — model knowledge, which must never acquire a source.
   assert.deepEqual(citationsForKnowledge(readBack.sources, { sourceAnchors: [] }), []);
   assert.deepEqual(citationsForKnowledge(readBack.sources, {}), []);
+
+  // 🔴 A CANVAS WITH NO SOURCES AT ALL, WHICH IS THE ORDINARY CASE RATHER THAN AN EDGE ONE. A canvas
+  // started by typing a topic holds no files, and knowledge identity is content-derived, so a claim
+  // minted on one canvas legitimately arrives at another that never held the document behind it.
+  // Both must stay silent. Pinned because this is the path a future "well, show the source name at
+  // least" fallback would be added to first, and it is the path where such a fallback would be a
+  // claim about a document the learner never attached here.
+  assert.deepEqual(
+    citationsForKnowledge([], real),
+    [],
+    "a canvas holding no sources can cite nothing, however well-anchored the claim is",
+  );
 });
 
 // ── The production call site ────────────────────────────────────────────────
@@ -236,8 +248,16 @@ test("🔴 the surface renders it, and renders NOTHING when there is nothing hon
   assert.match(VIEW, /const \{ citations,/, "the view must actually read it off the runtime");
   assert.match(
     VIEW,
-    /\{citations\.length > 0 && \(/,
-    "the citation block must be conditional on having resolved something",
+    /function SourceTrail\(\{ citations \}[\s\S]{0,200}?if \(citations\.length === 0\) return null;/,
+    "an empty list must render nothing at all, by returning null before any markup",
+  );
+  // 🔴 BOTH SCREENS THAT SHOW A CLAIM, NOT JUST THE CORRECTION. `show_correction` and `contrast`
+  // both print a claim off the same `decision`; disclosing the origin on one and not the other
+  // makes the same fact look sourced in one place and unsourced in the other.
+  assert.equal(
+    (VIEW.match(/<SourceTrail citations=\{citations\} \/>/g) ?? []).length,
+    2,
+    "every screen that shows a claim must disclose where it came from",
   );
   // 🔴 NO FALLBACK, AND THIS IS THE HALF THAT PROTECTS THE CONTRACT. `groundCanonicalAnchor`
   // returning null is the function saying it cannot honestly point at anything; a placeholder would

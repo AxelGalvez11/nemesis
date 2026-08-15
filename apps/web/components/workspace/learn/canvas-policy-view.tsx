@@ -253,20 +253,7 @@ function PolicyScreen({
         <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
           {decision.knowledge.statement}
         </p>
-        {/* 🔴 WHERE THIS CAME FROM, AND NOTHING AT ALL WHEN WE CANNOT SAY. `citations` is already
-            resolved through `groundCanonicalAnchor`, which returns null for an anchor this canvas
-            cannot honestly point at; an empty list is that refusal arriving here. So there is no
-            `else` branch, no "source unknown", no greyed-out placeholder. A citation the learner
-            could click and find nothing behind is worse than silence, and this is the only place
-            that mistake could be made. */}
-        {citations.length > 0 && (
-          <p className="mt-4 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-            From{" "}
-            {citations
-              .map((citation) => (citation.label ? `${citation.sourceTitle}, ${citation.label}` : citation.sourceTitle))
-              .join(" · ")}
-          </p>
-        )}
+        <SourceTrail citations={citations} />
         {/* 🔴 THE "Got it" BUTTON IS GONE — §I. Moving on is the composer's `✓` now, so the Canvas
             introduces no separate Next, Continue or Done reading. The behaviour it used to carry is
             not lost: this screen wrote no evidence, and something still has to say the learner has
@@ -295,6 +282,11 @@ function PolicyScreen({
             </li>
           ))}
         </ul>
+        {/* 🔴 THE SAME CLAIM MUST NOT LOSE ITS ORIGIN BY CHANGING SCREENS. This branch shows a claim
+            out of `decision` exactly as `show_correction` does, so a citation there and silence here
+            would read as "we lost the source" — the disclosure failure canvas-provenance.ts exists
+            to argue against. One component, both screens, one rule. */}
+        <SourceTrail citations={citations} />
         {/* Its "Got it" is gone for the same reason as `show_correction`'s — see there. */}
       </Frame>
     );
@@ -347,6 +339,33 @@ function PolicyScreen({
  * — by round, by random, by anything local — would mean the screen and the evidence disagreed
  * about which part was covered, and the learner would be marked on a question nobody recorded.
  */
+/**
+ * Where the claim on screen came from, or nothing at all.
+ *
+ * 🔴 SILENCE IS A RENDERED STATE HERE, NOT AN OVERSIGHT. `citations` has already been resolved
+ * through `groundCanonicalAnchor`, which returns null for an anchor this canvas cannot honestly
+ * point at: a document it does not hold, a source that was never filed, a quote a reparse
+ * dissolved. An empty list IS that refusal arriving at the surface. So there is no else branch, no
+ * "source unknown", no greyed-out placeholder — a citation the learner could follow and find
+ * nothing behind is worse than no citation, and this component is the only place that mistake
+ * could be made.
+ *
+ * 🔴 ONE COMPONENT BECAUSE THE RULE IS ONE RULE. Two screens show a claim; both must disclose its
+ * origin the same way, or the same fact appears sourced on one and unsourced on the other.
+ */
+function SourceTrail({ citations }: { citations: PolicyRuntime["citations"] }) {
+  if (citations.length === 0) return null;
+
+  return (
+    <p className="mt-4 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+      From{" "}
+      {citations
+        .map((citation) => (citation.label ? `${citation.sourceTitle}, ${citation.label}` : citation.sourceTitle))
+        .join(" · ")}
+    </p>
+  );
+}
+
 function occlusionFor(decision: PolicyRuntime["decision"]): { figure: FigureKnowledge; hidden: FigureLabel } | null {
   if (!decision) return null;
   const figure = decision.knowledge.figure;
