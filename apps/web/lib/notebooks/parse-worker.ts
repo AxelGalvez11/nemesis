@@ -161,12 +161,47 @@ export function secretMatches(provided: string | null, expected: string | null):
  * treats as secret.
  */
 export function sanitizeError(cause: unknown): string {
-  const raw = cause instanceof Error ? cause.message : String(cause ?? "unknown error");
+  const raw = messageOf(cause);
   return raw
     .replace(/https?:\/\/\S+/g, "<url>")
     .replace(/\b(eyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,})\b/g, "<token>")
     .replace(/\b[Bb]earer\s+\S+/g, "<token>")
     .slice(0, 300);
+}
+
+/**
+ * The readable part of anything that got thrown, rejected, or returned as an error.
+ *
+ * 🔴 `String(cause)` ON A PLAIN OBJECT IS `"[object Object]"`, AND THAT IS EXACTLY WHAT
+ * PRODUCTION WROTE. The first document the worker ever got past its loading bug failed
+ * with `parse_error = "[object Object]"` — a row that records that a parse failed, refuses
+ * to say why, and is indistinguishable from every other cause. Supabase returns
+ * `PostgrestError` as a PLAIN OBJECT, not an `Error`, so every database failure on this
+ * path — the one class of failure most likely to need diagnosing — landed in that branch.
+ *
+ * Order matters: `message` first, because a `PostgrestError` has one and it is the useful
+ * line; then the structured fields, which carry the constraint name or the missing
+ * function; then JSON as a last resort. Sanitisation still runs over whatever comes out,
+ * so widening this cannot leak a signed URL or a bearer token.
+ */
+function messageOf(cause: unknown): string {
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === "string") return cause;
+  if (cause && typeof cause === "object") {
+    const record = cause as Record<string, unknown>;
+    const parts = ["message", "code", "details", "hint"]
+      .map((key) => (typeof record[key] === "string" && record[key] ? `${key}=${record[key] as string}` : ""))
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join(" ");
+    try {
+      return JSON.stringify(cause);
+    } catch {
+      // Circular, or holding something unserialisable. The constructor name is still
+      // more than "[object Object]" ever was.
+      return `unserialisable ${cause.constructor?.name ?? "object"}`;
+    }
+  }
+  return String(cause ?? "unknown error");
 }
 
 // ── Vision settlement ──────────────────────────────────────────────────────

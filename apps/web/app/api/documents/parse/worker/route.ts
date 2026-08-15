@@ -380,7 +380,18 @@ async function runClaimed(
       p_coverage: parsed.coverage as unknown as Record<string, unknown>,
       p_doc_kind: parsed.kind,
       p_parse_ms: Math.round(ms),
-      p_parse_peak_rss_mb: peakRssMb,
+      // 🔴 `p_peak_rss_mb`, NOT `p_parse_peak_rss_mb`. The COLUMN is `parse_peak_rss_mb`
+      // and the ARGUMENT is not, and this call had the column's name for the argument
+      // since the day it was written. PostgREST resolves an RPC by its argument NAMES, so
+      // one wrong name is not a wrong value — it is "function not found", returned as a
+      // PostgrestError. Every parse this worker ever completed would have been discarded
+      // at the last step, after the document had been fetched, parsed and paid for.
+      //
+      // It survived every test because nothing exercised the real function signature, and
+      // it survived nine days in production because the worker had never once run.
+      // `parse-rpc-arguments.test.ts` now reads the migration and refuses any argument the
+      // deployed function does not declare.
+      p_peak_rss_mb: peakRssMb,
       p_parser_version: parsed.readBy ?? PARSER_VERSION,
       p_source_id: job.id,
       p_structure: structureEnvelope({
