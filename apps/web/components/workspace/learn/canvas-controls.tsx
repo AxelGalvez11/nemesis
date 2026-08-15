@@ -69,15 +69,27 @@ export function SourcesControl({
   canvas,
   modelKnowledge = false,
   onFiles,
+  onUrl,
 }: {
   canvas: LearningCanvas;
   /** Whether this canvas holds knowledge that provably came from the model rather than from
    *  attached material. See `canvas-provenance.ts` for why it is not simply "no sources". */
   modelKnowledge?: boolean;
   onFiles: (files: FileList | File[]) => void;
+  /**
+   * A pasted web link, read and filed as a source the same way an uploaded file is.
+   *
+   * 🔴 A LINK IS NAMED EXPLICITLY IN THE MANDATE'S OWN LIST ("Sources include uploaded files,
+   * recordings, URLs, and explicitly imported web results"), and until this existed there was no
+   * way to add one at all: `ACCEPTED_MATERIAL` is a file-extension allowlist with no URL case, and
+   * the file picker below cannot open a link. Optional so a caller mid-migration is not forced to
+   * wire it before this control can render at all.
+   */
+  onUrl?: (url: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"sources" | "outputs">("sources");
+  const [urlDraft, setUrlDraft] = useState("");
   const holder = useDismiss(open, () => setOpen(false));
 
   const outputs = canvas.outputs ?? [];
@@ -181,6 +193,33 @@ export function SourcesControl({
                   type="file"
                 />
               </label>
+
+              {/* A link is the other half of "add source" a file picker cannot do (see the
+                  `onUrl` prop). Kept as a plain inline field rather than a second dialog: this
+                  panel already is one, so a nested one would be the second dialog for something
+                  the mandate treats as a peer of "upload a file", not a bigger action than it. */}
+              {onUrl && (
+                <form
+                  className="mt-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 has-[:focus-visible]:bg-(--ui-bg-tertiary)"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const trimmed = urlDraft.trim();
+                    if (!trimmed) return;
+                    onUrl(trimmed);
+                    setUrlDraft("");
+                    setOpen(false);
+                  }}
+                >
+                  <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="link" size="0.75rem" />
+                  <input
+                    className="min-w-0 flex-1 bg-transparent text-[length:var(--canvas-text-small)] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                    onChange={(event) => setUrlDraft(event.target.value)}
+                    placeholder="Paste a link"
+                    type="url"
+                    value={urlDraft}
+                  />
+                </form>
+              )}
             </>
           ) : outputs.length === 0 ? (
             // Says what this is for rather than pretending to be broken. Nothing generates

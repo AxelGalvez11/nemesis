@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { hostnameOf } from "@/lib/favicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
@@ -20,6 +21,7 @@ import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
+import { isOrdinaryChatQuestion } from "./canvas-chat-routing";
 import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
@@ -261,6 +263,36 @@ export function LearningCanvas({
     [dismissSelection, pointed, session],
   );
 
+  /**
+   * Start a canvas from a blank slate, OR just answer what was typed.
+   *
+   * 🔴 THE FIRST THING A NEW LEARNER TYPES IS OFTEN A QUESTION, NOT A TOPIC, AND UNTIL THIS EXISTED
+   * IT WAS SWALLOWED EITHER WAY. `begin()` treats whatever text arrives as the canvas's TITLE and a
+   * goal signal for what to teach ("Teach me organic chemistry from scratch" already says where to
+   * start) — right for a topic, wrong for a question. "What's the difference between a covalent and
+   * an ionic bond" typed on the front door became a canvas titled exactly that, which then either
+   * asked the learner a diagnostic question about it or sat generating nothing, and the question
+   * itself was never actually answered.
+   *
+   * 🔴 ONLY WHEN NOTHING IS ATTACHED. Once a source exists, typed text at this point is an
+   * INSTRUCTION about what to do with it (§3: attach + type + send means "learn this material this
+   * way") — an established, tested behaviour this must not disturb. So the question-shaped
+   * interception is scoped to the one case it was built for: a canvas that holds no material at
+   * all, where there is nothing else the text could reasonably mean.
+   */
+  const beginOrAnswer = useCallback(
+    (asked: string) => {
+      applyExplanationEvent({ kind: "new_turn" });
+      const trimmed = asked.trim();
+      if (trimmed && canvas.sources.length === 0 && isOrdinaryChatQuestion(trimmed)) {
+        void session.askGeneral(trimmed);
+        return;
+      }
+      session.begin(asked || undefined);
+    },
+    [applyExplanationEvent, canvas.sources.length, session],
+  );
+
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
   // 🔴 Guarded by a ref rather than by state: `begin` updates the canvas, which re-runs this
   // effect, and without the latch the same topic would start a second lesson over the first.
@@ -269,8 +301,8 @@ export function LearningCanvas({
     if (!openingAsk || askedOnce.current || !session.ready) return;
     if (canvas.state !== "empty") return;
     askedOnce.current = true;
-    session.begin(openingAsk);
-  }, [canvas.state, openingAsk, session]);
+    beginOrAnswer(openingAsk);
+  }, [beginOrAnswer, canvas.state, openingAsk, session.ready]);
 
   // Material chosen on the landing page, before this canvas existed. Same shape as the opening
   // instruction above and latched the same way.
@@ -383,6 +415,24 @@ export function LearningCanvas({
       // an internal state.
       if (routing.kind === "refused") {
         session.showNotice(routing.message);
+        return;
+      }
+
+      // 🔴 PRODUCT MANDATE RULE 1 (owner, 2026-08-15) — "the learner must be able to ask ordinary
+      // questions about their sources WITHOUT being forced into tutoring behaviour." Everything
+      // below this point writes into the document (`session.command`), through a system prompt
+      // that says outright "you are not chatting". "What does osmolarity mean" typed with nothing
+      // selected used to take that same path and come back as a paragraph permanently inserted
+      // into the study document. See canvas-chat-routing.ts for the decision and canvas-chat.ts
+      // for what answers it.
+      //
+      // 🔴 `selected.length === 0` ONLY. A single block selected already has its own, more specific
+      // routes above (empty send = "explain this", "where/which source" = ask about it) — anything
+      // else with a selection is a scoped edit instruction about that exact passage, which is a
+      // different thing from an open-ended question and must keep mutating the document as it
+      // does today.
+      if (routing.kind === "ordinary" && selected.length === 0 && isOrdinaryChatQuestion(text)) {
+        await session.askGeneral(text);
         return;
       }
 
@@ -621,6 +671,7 @@ export function LearningCanvas({
         // continuous across question and feedback, never quiet over a document.
         minimal={regions.policy && !regions.sharing}
         onFiles={(files) => void session.attachFiles(files)}
+        onUrl={(url) => void session.attachUrl(url)}
         onRename={session.rename}
       />
       }
@@ -655,6 +706,63 @@ export function LearningCanvas({
             runtime={policy}
             sharing={regions.sharing}
           />
+        )}
+
+        {/* An ordinary question, answered without touching the document (canvas-chat.ts,
+            canvas-chat-routing.ts). Reuses the `.canvas-swap` treatment `canvas-document.tsx`
+            already uses for a block-scoped "Explain this", the same quote-strip and Dismiss, so an
+            ad hoc answer reads as one motion system rather than two effects that happen to agree.
+            🔴 RENDERED HERE, NOT INSIDE `CanvasDocument`. `CanvasDocument` only mounts once the
+            canvas has begun (`regions.document`), and the front door's question happens BEFORE
+            that: `session.aside` with `blockId: null` is the general case
+            `canvas-document.tsx`'s per-block rendering can never match, so it needs a render site
+            that exists on every presence, including `invitation`. It clears on `new_turn` through
+            the same `applyExplanationEvent` every other route through `submit()` already calls, so
+            nothing here has to remember to dismiss it. */}
+        {session.aside && session.aside.blockId === null && (
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
+            <div className="canvas-swap border-l-2 border-(--ui-stroke-secondary) py-0.5 pl-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
+              {session.aside.text}
+              {/* Which live pages the answer actually used, each individually promotable. This is
+                  the "distinct" half of temporary-versus-durable: seeing it here is USING it for
+                  one answer; pressing the small `+` is the separate, explicit act of keeping it. */}
+              {session.aside.sources && session.aside.sources.length > 0 && (
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {session.aside.sources.map((source) => (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-(--ui-bg-elevated) py-0.5 pl-2.5 pr-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary) ring-1 ring-(--ui-stroke-tertiary)"
+                      key={source.url}
+                    >
+                      <a
+                        className="hover:text-(--ui-text-primary)"
+                        href={source.url}
+                        rel="noopener noreferrer"
+                        target="_blank"
+                      >
+                        {(hostnameOf(source.url) ?? source.url).replace(/^www\./, "")}
+                      </a>
+                      <button
+                        aria-label={`Add ${source.url} to sources`}
+                        className="flex h-[16px] w-[16px] items-center justify-center rounded-full text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                        onClick={() => void session.attachUrl(source.url)}
+                        title="Add to sources"
+                        type="button"
+                      >
+                        <Codicon name="add" size="0.625rem" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <button
+                className="mt-2 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+                onClick={() => applyExplanationEvent({ kind: "dismiss_aside" })}
+                type="button"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
         )}
 
         {/* 🔴 THE TWO PRE-CONTENT SCREENS ARE DELETED, NOT HIDDEN (UX brief §1). `CanvasEmpty`
@@ -868,7 +976,11 @@ export function LearningCanvas({
           //
           // The empty string is a real argument here: `begin()` with no topic on a canvas that
           // has sources is §3's "learn this material with me", inferred rather than asked for.
-          onStart={preContent ? (asked: string) => session.begin(asked || undefined) : null}
+          //
+          // 🔴 `beginOrAnswer`, NOT `session.begin` DIRECTLY. A blank canvas with a question-shaped
+          // ask and nothing attached is answered rather than swallowed as a lesson title, see that
+          // function's own comment for why the check is scoped to exactly this state.
+          onStart={preContent ? beginOrAnswer : null}
           pendingSources={preContent ? canvas.sources.map((source) => ({ id: source.id, title: source.title })) : []}
           selected={selected}
           task={sink.kind === "none" ? null : sink.task}
