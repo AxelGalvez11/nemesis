@@ -276,13 +276,15 @@ export function ObjectivesControl({
               >
                 {objective.label}
                 {/* The state in words, for the one row where it matters most.
-                    The em dash here is DELIBERATE and exempt from "no em dashes on the Canvas"
-                    (Brain 2026-08-13): `sr-only` is never rendered, so it is not on the Canvas —
-                    the rule governs what the learner SEES. It is a separator a screen reader
-                    reads as a pause. 🔴 If this line ever changes for another reason, make it a
-                    period: a period gets the same pause more reliably across screen readers than
-                    an em dash does. */}
-                <span className="sr-only"> — {MEANING[objective.state]}</span>
+                    🔴 A PERIOD, WAS AN EM DASH (Brain 2026-08-13 ruled it exempt — `sr-only` is
+                    never rendered, so it read as "not on the Canvas" under the old "no em dashes
+                    on the Canvas" framing — but that same ruling named the fix in advance: "make it
+                    a period: a period gets the same pause more reliably across screen readers than
+                    an em dash does." Contract rule 2's copy guard (2026-08-15) scans learner-facing
+                    strings regardless of `sr-only`, since a screen reader still speaks this text to
+                    a learner even though their eyes never do — so the pre-authorised fix is taken
+                    now rather than carved out as a standing exception. */}
+                <span className="sr-only">. {MEANING[objective.state]}</span>
               </span>
             </div>
           ))}

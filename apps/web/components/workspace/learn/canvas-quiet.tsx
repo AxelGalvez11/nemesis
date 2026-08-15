@@ -43,7 +43,7 @@ export function CanvasQuiet({ onRetry }: { onRetry: () => void }) {
           said out loud because a learner looking at an empty canvas has no reason to believe the
           box at the bottom will do anything. */}
       <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-        Tell it what you want to work on, or try again — your canvas is safe either way.
+        Tell it what you want to work on, or try again. Your canvas is safe either way.
       </p>
       <button
         className="mt-5 rounded-full px-4 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
