@@ -510,6 +510,15 @@ export interface KnowledgeObject {
 export type KnowledgeDerivation =
   /** One row of a real grid, read as cells. Deterministic. */
   | "table-row"
+  /** A run of list items the document itself numbered, read as steps. Deterministic in the same
+   *  sense `table-row` is — the order comes from the document's own marker, never inferred from
+   *  the words. See procedure-sequence.ts, `orderedRunsIn`.
+   *
+   *  🔴 NOT `table-row`, EVEN THOUGH BOTH ARE GRID-ADJACENT. Calling a list "a table" would be
+   *  the same kind of small dishonesty this field exists to prevent everywhere else — a caller
+   *  reading `derivation` to judge how much to trust an object deserves to know it came from a
+   *  numbered list, not a ruled grid. */
+  | "ordered-list"
   /** A model reading structured prose under a strict abstain-first contract.
    *
    *  🔴 THE FIRST LANE WHERE A MODEL DECIDES WHAT KNOWLEDGE EXISTS, which is why it is named
