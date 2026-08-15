@@ -210,6 +210,30 @@ test("annotate_block leaves the text alone and attaches a note beside it", () =>
   assert.equal(after.blocks[1]?.note, "In other words: charge moves.");
 });
 
+// 🔴 A NEWLY-ANNOTATED BLOCK MUST RE-ENTER THE UNREAD CHUNK, OR IT ARRIVES PRE-FADED. A plain typed
+// question with nothing selected can land an `annotate_block` note on a block the learner already
+// finished reading — `canvas-reading.ts` gives unread content the normal attention lifecycle, so a
+// block still stamped `readAt` when its note lands would render at 60% opacity the instant the
+// learner's own just-asked-for answer appears, which is the "current action owns attention" rule
+// inverted rather than satisfied. `invalidateReadWhereContentChanged` is supposed to catch this by
+// comparing `note` before and after regardless of which operation changed it — this proves that on
+// the one operation most likely to be missed, because the block's `content` never moves.
+test("annotating an already-read block clears its readAt, so the new note is not pre-faded", () => {
+  // Both blocks start already read, so the test can tell "cleared because it changed" apart from
+  // "cleared because nothing here ever gets stamped in this fixture".
+  const already = canvas(THREE, {
+    blocks: THREE.map((block) =>
+      block.id === "b1" || block.id === "b2" ? { ...block, readAt: "2026-08-14T00:00:00.000Z" } : block,
+    ),
+  });
+  const after = applyOps(already, [
+    { operation: "annotate_block", blockId: "b2", note: "In other words: charge moves." },
+  ]);
+  assert.equal(after.blocks[1]?.readAt, undefined, "an annotated block must return to the unread chunk");
+  // Scoped to the block that actually changed — an unrelated already-read block keeps its stamp.
+  assert.equal(after.blocks[0]?.readAt, "2026-08-14T00:00:00.000Z", "an untouched read block must not be disturbed");
+});
+
 test("collapse_block folds a block away without deleting it", () => {
   const after = applyOps(canvas(THREE), [{ operation: "collapse_block", blockId: "b3", collapsed: true }]);
   assert.equal(after.blocks[2]?.collapsed, true);
