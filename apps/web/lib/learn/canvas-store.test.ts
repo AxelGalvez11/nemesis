@@ -80,6 +80,13 @@ test("🔴 every populated field reaches the row — the by-hand list is the tra
     ],
     outputs: [{ id: "o1", title: "Summary.docx", kind: "document", createdAt: NOW }],
     events: [{ id: "e1", type: "definition_opened", at: NOW, selectedText: "gradient", activeElapsedMs: 90_000 }],
+    // A pasted-link source — the newest field on CanvasSource, and the same trap `events` already
+    // fell into once: `sources` rides through as a whole array today, but nothing stops a future
+    // edit from rebuilding each entry field-by-field the way `canvasToRow`'s document already does
+    // at the top level.
+    sources: [
+      { id: "s1", title: "FDA label", kind: "text", excerpts: [], sourceUrl: "https://example.com/label.html" },
+    ],
   };
 
   const row = { ...(canvasToRow(before, "u1") as Record<string, unknown>), updated_at: NOW };
@@ -90,6 +97,7 @@ test("🔴 every populated field reaches the row — the by-hand list is the tra
   // Blocks are serialised whole, so `terms` rides along — asserted so that a future hand-rebuilt
   // block object (which is how `{content, title}` dropped new fields once already) fails here.
   assert.deepEqual(after.blocks[0]?.terms, before.blocks[0]?.terms, "block terms must survive the write");
+  assert.equal(after.sources[0]?.sourceUrl, before.sources[0]?.sourceUrl, "a pasted link's URL must survive the write");
   assert.deepEqual(after, before);
 });
 
