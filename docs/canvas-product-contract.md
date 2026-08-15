@@ -1112,3 +1112,141 @@ and switched OFF**; turning it on enrols learners into an experiment, which is t
 
 There is **no learner-facing control** and there must not be — §27 rules that a learner must not
 keep deciding which engine to invoke, and an arm picker is exactly that.
+
+---
+
+# 41. 🔴 THE VISUALIZATION LAYER — a router, not a graphics library (owner, 2026-08-14)
+
+## 🛑 STATUS: PLANNED — one renderer exists, the ROUTER does not. NOT SCHEDULED ABOVE THE CORE.
+
+🔴 **KaTeX IS ALREADY INSTALLED AND RENDERING** — in `chat-markdown.tsx` and the Library note
+editor, via `rehype-katex`. It arrived for markdown maths, not as a teaching primitive, and
+nothing routes to it. That is the honest state: one renderer present by accident of another
+feature, and none of the decision-making described below. A guard
+(`visualization-roadmap.test.ts`) fails the moment any *other* renderer in the stack is installed
+while this line still claims it is planned — it caught KaTeX on its first run, which is why this
+paragraph exists.
+
+Read this whole section as a description of where Canvas is **going**, not of what it does. It is
+recorded now for one reason the owner stated plainly: *"preserve this as an architectural
+direction so we don't later lock Canvas into Mermaid-only diagrams or treat Three.js as the
+universal visualization system."* A decision made casually in a sprint — one library reached for
+twice and then everywhere — is far harder to undo than it is to pre-empt here.
+
+🔴 **THIS DOCUMENT HAS ALREADY BEEN MISREAD ONCE IN EXACTLY THIS WAY.** It described eleven
+knowledge kinds while the code had one lane, and that gap was read as a description of built
+behaviour rather than of intent. So this section carries a status line, and anything implementing
+it must move the status line in the same change.
+
+## The goal
+
+Not one graphics library for everything. **A visualization router that chooses the renderer
+according to what would best help the learner understand this concept.**
+
+Text is a renderer too, and often the right one. The question is never "which library" — it is
+"what representation makes this idea land", with "prose" as a legitimate answer.
+
+## The planned renderer stack
+
+| Renderer | For |
+|---|---|
+| **KaTeX** | equations and mathematical notation |
+| **JSXGraph** | interactive 2D math — geometry, coordinate planes, functions, calculus, vectors, sliders, transformations, tangent/secant lines |
+| **Mermaid** | conceptual diagrams — pathways, mechanisms, causal chains, flowcharts, hierarchies, timelines, state and sequence relationships |
+| **Vega-Lite** | quantitative data — bar, line, scatter, histogram, distribution, box plot, heatmap, area, pie/donut, dose–response, time series |
+| **React Three Fiber / Three.js** | genuine 3D — molecules, stereochemistry, anatomy, geometric solids, spatial physics, 3D vectors |
+| **D3 / custom SVG / React** | escape hatch for bespoke interactive teaching objects the above cannot express cleanly |
+
+## 🔴 THE CONSTRAINED INTERFACE — the load-bearing rule of this section
+
+**The teaching model must not generate arbitrary Three.js, D3 or React visualization code.**
+
+Instead the learning engine gets a constrained *semantic* interface — it says what it wants the
+learner to understand, not how to draw it:
+
+```ts
+visualize({
+  kind,          // the semantic class, not a library name
+  concept,       // what this is a picture OF
+  data,          // the values, when there are values
+  learningGoal,  // what the learner should be able to do after seeing it
+  interaction,   // what they may manipulate, and what that reveals
+  annotations,   // what is labelled, hidden, or highlighted
+})
+```
+
+Canvas routes that request to a trusted renderer:
+
+```text
+equation / notation        → KaTeX
+2D math / geometry         → JSXGraph
+conceptual relationship    → Mermaid
+quantitative data          → Vega-Lite
+true spatial relationship  → React Three Fiber
+unusual bespoke object     → D3 / custom
+```
+
+Why the constraint is not negotiable: generated visualization code is unreviewable, unbounded in
+cost, and fails at render time in front of the learner. A semantic request is checkable before
+anything is drawn, cacheable, replayable, and can be *refused* — and a refusal to draw is a
+legitimate answer that arbitrary code generation cannot give.
+
+## 🔴 THESE ARE LEARNING OBJECTS, NOT DECORATION
+
+A visual participates in the teaching loop or it does not belong on the Canvas:
+
+- show a parabola and let the learner move the tangent point;
+- let them change a parameter with a slider and watch a function transform;
+- hide one node in a pathway and ask what belongs there;
+- show a bar chart, ask them to infer the comparison, then reveal the values;
+- show two distributions and let them manipulate variance;
+- rotate a molecule and ask them to identify the chiral center;
+- hide the labels on an anatomical figure and use it for retrieval;
+- animate a pharmacokinetic curve and ask where one half-life falls.
+
+**The learning algorithm chooses the visualization because it improves the next teaching action —
+never because visual content looks impressive.** A picture that cannot be answered against is
+decoration, and decoration competes with the material for the attention §19 reserves for it.
+
+🔴 **THE FIRST INSTANCE OF THIS ALREADY SHIPPED, AND THE ROUTER MUST SUBSUME IT RATHER THAN SIT
+BESIDE IT.** Source figures are stored as durable assets (`DocFigure.asset`, #619) and occluded
+for spatial retrieval (#620) — that is precisely "hide the labels on a figure and use it for
+retrieval", already in the teaching loop. In this taxonomy the source image is a renderer. When
+the router is built it must absorb that path; a second, parallel visual system is how one product
+ends up with two of everything.
+
+## 🔴 THE 3D RULE — rare, and earned
+
+Use 3D **only when depth, orientation, rotation or spatial relationship is part of what must
+actually be understood.** Do not turn an ordinary diagram into a Three.js scene because 3D looks
+sophisticated. A pathway is not more comprehensible for floating in space; a stereocenter is.
+
+## Canvas composition
+
+A teaching moment composes primitives rather than filling a dashboard:
+
+```text
+short explanation → equation → interactive visual → learner response
+  → evaluation → the visual changes or highlights → next question
+```
+
+This must obey the Canvas philosophy already in force: **resolved material goes quiet, the current
+learning object owns attention (§19), and transitions are fluid rather than a page of widgets.**
+Several live visuals on screen at once is a dashboard, and a dashboard is the thing this product
+is not.
+
+## 🔴 PRIORITY — this is FOURTH THROUGH SIXTH, and that ordering is the owner's
+
+*"Do not prioritize this over getting the core learning algorithm and Canvas session quality
+right."*
+
+1. Excellent adaptive learning / session algorithm
+2. Excellent Canvas flow, transitions, evaluation, dictation and interaction
+3. Reliable source / document understanding
+4. Visual diagrams / charts / image-based teaching
+5. Interactive math
+6. Selective 3D and advanced simulations
+
+A beautiful renderer attached to a policy that asks the wrong question next is worth less than
+plain text attached to the right one. Anyone tempted to start at 5 or 6 because it is the more
+enjoyable engineering should read this line as the answer.
