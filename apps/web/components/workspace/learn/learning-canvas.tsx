@@ -155,14 +155,24 @@ export function LearningCanvas({
   const pointed = text.selection ?? term;
 
   // 🔴 CONTRACT RULE 2, WIRED — see canvas-explanation-turn.ts for the decision itself. Both ad hoc
-  // explanation surfaces (`aside`, the Define/Example/Why popover behind `pointed`) read their
-  // CURRENT presence here and hand it to the pure function, so every call site below dispatches an
-  // EVENT rather than deciding for itself whether to clear — which is what kept the aside alive
-  // past the answer-a-task path before this: `askAbout`'s "disappears" was true only of the ask
-  // path, because nothing on the answer path had ever been told to clear it.
+  // explanation surfaces (`aside`, the Define/Example/Why popover) read their CURRENT presence here
+  // and hand it to the pure function, so every call site below dispatches an EVENT rather than
+  // deciding for itself whether to clear — which is what kept the aside alive past the answer-a-
+  // task path before this: `askAbout`'s "disappears" was true only of the ask path, because nothing
+  // on the answer path had ever been told to clear it.
+  //
+  // 🔴 `hasPopover` READS `answer`/`term` DIRECTLY, NOT `Boolean(pointed)` — and the first version
+  // of this line did, which was a real defect rather than a simplification. `pointed = text.selection
+  // ?? term`, and `new_turn` deliberately never touches `text.selection` (a live highlight must
+  // survive an unrelated question — see `dismissSelection`'s own comment on why `text.clear()` stays
+  // out of this function). So `Boolean(pointed)` can still be true immediately after this reports
+  // `hasPopover: false`: the reducer's verdict and the state it is supposedly describing would
+  // disagree. Reading the two fields this function can actually clear keeps the claim honest — a
+  // live selection with nothing looked up yet still shows its quick-action toolbar afterwards, which
+  // is correct: an un-opened toolbar is not the stale ANSWER rule 2 is about.
   const applyExplanationEvent = useCallback(
     (event: ExplanationEvent) => {
-      const current = { hasAside: session.aside !== null, hasPopover: Boolean(pointed) };
+      const current = { hasAside: session.aside !== null, hasPopover: answer !== null || term !== null };
       const next = nextExplanationState(current, event);
       if (current.hasAside && !next.hasAside) session.dismissAside();
       if (current.hasPopover && !next.hasPopover) {
@@ -171,7 +181,7 @@ export function LearningCanvas({
         session.clearSelectionAnswer();
       }
     },
-    [pointed, session],
+    [answer, session, term],
   );
 
   // The weakest signal in the log, and recorded anyway: a selection nobody asked a question
