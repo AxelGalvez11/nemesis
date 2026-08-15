@@ -12,7 +12,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { coverageNoticeForModel, readCoverage } from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
+import { deviceKey } from "@/lib/workspace/chat-api";
 import { extractFile } from "@/lib/workspace/chat-attachments";
+import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
   explainBlock,
@@ -55,6 +57,8 @@ import { readingSubjectFor, thinkingCopy } from "@/lib/learn/thinking-phases";
 import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
+import { askCanvasChat } from "./canvas-chat";
+
 const RECALL_CARDS = 8;
 const TEST_QUESTIONS = 6;
 const RETEST_QUESTIONS = 4;
@@ -95,12 +99,27 @@ export interface BusyState {
   label?: string;
 }
 
+/** A transient answer, shared between `askAbout` (block-scoped, via a citation marker) and
+ *  `askGeneral` (canvas-wide, `blockId: null`) so both write the same shape and contract rule 2's
+ *  "clears on the next turn" rule only has one store to apply to. Named so the `useState` call and
+ *  the `CanvasSession` field below cannot quietly drift into two different shapes. */
+type CanvasAside = { text: string; blockId: string | null; sources?: readonly ChatWebResult[] } | null;
+
 export interface CanvasSession {
   canvas: LearningCanvas;
   busy: BusyState;
   error: string | null;
-  /** A transient answer to a question that did not change the page (§4). */
-  aside: { text: string; blockId: string | null } | null;
+  /**
+   * A transient answer to a question that did not change the page (§4).
+   *
+   * 🔴 `blockId: null` IS A GENUINE, RENDERED CASE, NOT AN UNUSED CORNER OF THE TYPE. It was
+   * already representable (this field predates this comment) but nothing ever constructed one and
+   * nothing ever rendered one: `canvas-document.tsx`'s per-block rendering only ever matches
+   * `aside.blockId === block.id`, which a null `blockId` can never satisfy. `askGeneral` below is
+   * the first thing that mints one, for a question that is not about any particular passage, and
+   * `learning-canvas.tsx` renders that case at the top of the canvas rather than under a block.
+   */
+  aside: CanvasAside;
   /** The id of the prompt whose answer is being read, or null. */
   judging: string | null;
   ready: boolean;
@@ -114,11 +133,32 @@ export interface CanvasSession {
   finishReadingChunk: () => void;
   dismissAside: () => void;
   attachFiles: (files: FileList | File[]) => Promise<void>;
+  /**
+   * Read a web page and add it as a source, the same way an uploaded file becomes one.
+   *
+   * 🔴 REUSES `attachFiles` RATHER THAN A SECOND SOURCE-BUILDING PATH. A page's extracted text is
+   * wrapped as a synthetic file and handed to the exact function a real upload already goes
+   * through, so filing, knowledge extraction, and every other consequence of "this canvas gained a
+   * source" happen in exactly one place. A parallel implementation here would be a second copy of
+   * that logic, free to drift the moment one of them changes.
+   */
+  attachUrl: (url: string) => Promise<void>;
   /** Starts the arc. Takes the topic for a topic-first canvas (§6B); omit it when
    *  material is already attached. */
   begin: (topic?: string) => void;
   command: (text: string, selected: readonly CanvasBlock[]) => Promise<void>;
   askAbout: (block: CanvasBlock, question: string) => Promise<void>;
+  /**
+   * Answer an ordinary question in plain text, without touching the document. See canvas-chat.ts
+   * for why this exists and canvas-chat-routing.ts for what routes a typed message here rather
+   * than to `command`.
+   *
+   * 🔴 NOT SCOPED TO A BLOCK, UNLIKE `askAbout`. "What does osmolarity mean" typed with nothing
+   * selected is not about any one passage, so this asks the whole canvas's material (when it has
+   * any) and general knowledge together, and lands in the SAME `aside` state `askAbout` already
+   * uses, with `blockId: null`.
+   */
+  askGeneral: (question: string) => Promise<void>;
   markKnown: (blockId: string, known: boolean) => void;
   toggleCollapsed: (blockId: string, collapsed: boolean) => void;
   gradeRecall: (
@@ -173,7 +213,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const [canvas, setCanvas] = useState<LearningCanvas>(() => newCanvas());
   const [busy, setBusy] = useState<BusyState>({ kind: null });
   const [error, setError] = useState<string | null>(null);
-  const [aside, setAside] = useState<{ text: string; blockId: string | null } | null>(null);
+  const [aside, setAside] = useState<CanvasAside>(null);
   /** The prompt whose answer is being read right now. Per-question rather than a page-wide busy
    *  flag, so judging one answer does not freeze the rest of the page. */
   const [judging, setJudging] = useState<string | null>(null);
@@ -425,6 +465,58 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [requireUid, update],
   );
 
+  /**
+   * Read a web page and file it as a source.
+   *
+   * 🔴 THE SCRAPE ROUTE IS SHARED, NOT NOTEBOOK-SPECIFIC. `/api/notebooks/extract/url` fetches a
+   * URL and returns plain text; nothing about its implementation reads or writes a notebook, and
+   * `components/workspace/notebooks/notebook-source-actions.ts` already calls it as exactly that,
+   * a generic "read this page" utility. A second route with the identical body would be the same
+   * Firecrawl call behind a different path for no reason.
+   *
+   * 🔴 THE URL RIDES INSIDE THE FILE'S OWN TEXT, NOT AS A STRUCTURED FIELD, AND THAT IS A NAMED
+   * GAP. `CanvasSource` (lib/learn/canvas-model.ts) carries no field for a source's origin URL
+   * today: `id`, `title`, `kind`, `excerpts`, `coverageNote`, `durability`, `librarySourceId`,
+   * `parseQuality`, and nothing else. Writing the URL into `title` would corrupt the one field the
+   * Sources panel shows as the source's NAME, so it goes into the extracted text instead, honestly,
+   * as the first line a learner would see if they opened the file themselves. A future
+   * `CanvasSource.sourceUrl` field would let the Sources panel show a real "open this page" link
+   * instead; reported as a handoff rather than added here, since it is a `lib/learn` type change.
+   */
+  const attachUrl = useCallback(
+    async (rawUrl: string) => {
+      const id = requireUid();
+      if (!id) return;
+      const url = rawUrl.trim();
+      if (!url) return;
+      setError(null);
+      setBusy({ kind: "source", label: "Reading that page" });
+      try {
+        const key = await deviceKey(id);
+        if (!key) throw new Error("Sign in to add a web link.");
+        const response = await fetch("/api/notebooks/extract/url", {
+          body: JSON.stringify({ url }),
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          method: "POST",
+        });
+        const body = (await response.json().catch(() => null)) as
+          | { title?: string; text?: string; sourceUrl?: string; error?: string }
+          | null;
+        if (!response.ok || !body?.text) throw new Error(body?.error ?? "Nemesis couldn't read that page.");
+        const withOrigin = `Source: ${body.sourceUrl ?? url}\n\n${body.text}`;
+        const name = `${(body.title ?? url).slice(0, 120)}.md`;
+        // The identical door every other material lane already shares (see the file-level
+        // comment on `attachFiles` above): filing, knowledge extraction and every later reader
+        // treat this exactly as they would a learner's own uploaded text file.
+        await attachFiles([new File([withOrigin], name, { type: "text/markdown" })]);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Nemesis couldn't read that page.");
+        setBusy({ kind: null });
+      }
+    },
+    [attachFiles, requireUid],
+  );
+
   /** Start learning. The topic is passed in rather than set first and read back:
    *
    *  🔴 `setTopic(t); begin();` looked fine and was a race. `latest.current` is only written
@@ -575,6 +667,33 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setBusy({ kind: null });
       if (!result.value) setError(result.error);
       else setAside({ text: result.value, blockId: block.id });
+    },
+    [requireUid],
+  );
+
+  /**
+   * Answer a question that is not about any one passage. See canvas-chat.ts for the call this
+   * makes and canvas-chat-routing.ts for what decides a typed message belongs here rather than in
+   * `command`.
+   *
+   * 🔴 SAME `aside` STATE `askAbout` USES, `blockId: null`. Two answer stores would have meant two
+   * places contract rule 2's "clears on the next turn" rule had to be implemented, and the second
+   * one would have been the one nobody remembered to wire up. `learning-canvas.tsx`'s
+   * `applyExplanationEvent` already clears any non-null `aside` on `new_turn`; it does not
+   * distinguish which of the two callers set it, and it does not need to.
+   */
+  const askGeneral = useCallback(
+    async (question: string) => {
+      const id = requireUid();
+      if (!id) return;
+      const said = question.trim();
+      if (!said) return;
+      setError(null);
+      setBusy({ kind: "command", blockIds: [], label: "Thinking" });
+      const result = await askCanvasChat(id, latest.current, said);
+      setBusy({ kind: null });
+      if (!result.text) setError(result.error ?? "Nemesis had nothing to add.");
+      else setAside({ blockId: null, sources: result.sources, text: result.text });
     },
     [requireUid],
   );
@@ -1159,9 +1278,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     finishReadingChunk,
     dismissAside: () => setAside(null),
     attachFiles,
+    attachUrl,
     begin,
     command,
     askAbout,
+    askGeneral,
     markKnown,
     toggleCollapsed,
     gradeRecall,

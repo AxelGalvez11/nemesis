@@ -28,7 +28,7 @@ const KNOWLEDGE: KnowledgeObject = {
   unanchoredProvenance: [],
 };
 
-const RETRIEVE: TeachingAction = { because: "…", objectiveId: "o1", type: "retrieve" };
+const RETRIEVE: TeachingAction = { because: "…", objectiveId: "o1", rung: "independent", type: "retrieve" };
 const CORRECTION: TeachingAction = {
   because: "…",
   exposition: { mode: "deliberate" },
@@ -136,6 +136,64 @@ test("🔴 review is the least urgent thing, and a recognised ✓ outranks a pro
   assert.ok(score(recognisedOnly) > score(produced), "a false ✓ is invisible and compounds — probe it first");
   assert.ok(reasons(recognisedOnly).includes("recognised-not-produced"));
   assert.ok(reasons(produced).includes("due-again"));
+});
+
+// ── due/overdue: a spacing signal, discriminating WITHIN the due band ────────
+
+const DUE_STATE = state({ demonstratedAt: "independent", lastEvidenceAt: "2026-08-14T12:00:00.000Z", status: "correct" });
+
+test("🔴 a more-decayed due objective outranks a barely-decayed one — 'due' was flat before this", () => {
+  const barelyDecayed = at({ retrievability: 0.85, state: DUE_STATE });
+  const heavilyOverdue = at({ retrievability: 0.2, state: DUE_STATE });
+  assert.ok(score(heavilyOverdue) > score(barelyDecayed));
+  assert.ok(reasons(heavilyOverdue).includes("increasingly-overdue"));
+  assert.ok(reasons(barelyDecayed).includes("increasingly-overdue"), "the reason fires on any real signal, not only a strong one");
+});
+
+test("no retrievability signal (the caller has none) leaves `due` exactly where it always was", () => {
+  // Omitting the field and passing `null` must be indistinguishable — both mean "nothing to read".
+  const omitted = at({ state: DUE_STATE });
+  const passedNull = at({ retrievability: null, state: DUE_STATE });
+  assert.equal(score(omitted), score(passedNull));
+  assert.ok(!reasons(omitted).includes("increasingly-overdue"));
+});
+
+test("🔴 retrievability does not touch a PROVISIONAL ✓ — that probe must ask at full demand regardless", () => {
+  const provisionalState = state({ demonstratedAt: "recognition", lastEvidenceAt: "2026-08-01T12:00:00.000Z", status: "correct" });
+  const withoutSignal = at({ state: provisionalState });
+  const maximallyOverdue = at({ retrievability: 0, state: provisionalState }); // by construction, must still not move it
+  assert.equal(score(withoutSignal), score(maximallyOverdue));
+  assert.ok(!reasons(maximallyOverdue).includes("increasingly-overdue"));
+});
+
+test("retrievability does not touch `owed` or `unknown` — it is defined only for a demonstrated objective", () => {
+  const withoutSignal = at();
+  const withASignalAnyway = at({ retrievability: 0.1 });
+  assert.equal(score(withoutSignal), score(withASignalAnyway));
+  assert.ok(!reasons(withASignalAnyway).includes("increasingly-overdue"));
+});
+
+test("🔴 even fully decayed, combined with every other modifier, a due objective cannot cross into `provisional`", () => {
+  // The ceiling's actual job: OVERDUE_SCALE (800) and PER_FAILED_ATTEMPT's maximum (600) summed
+  // would be 1,400 applied directly — comfortably past the 900 clamp on its own, which is the whole
+  // point of clamping the SUM once rather than budgeting each term to fit by hand.
+  const maximallyOverdue = at({
+    evidence: ["a", "b", "c", "d", "e"].map(miss),
+    retrievability: 0,
+    state: state({
+      demonstratedAt: "independent",
+      evidenceCount: 6,
+      lastEvidenceAt: "2026-08-14T12:00:00.000Z",
+      status: "correct",
+    }),
+  });
+  const barelyProvisional = at({
+    state: state({ demonstratedAt: "recognition", lastEvidenceAt: "2026-08-14T12:00:00.000Z", status: "correct" }),
+  });
+  assert.ok(
+    score(maximallyOverdue) < score(barelyProvisional),
+    `a maximally overdue due objective (${score(maximallyOverdue)}) must still stay below even the weakest provisional ✓ (${score(barelyProvisional)})`,
+  );
 });
 
 // ── working memory ──────────────────────────────────────────────────────────
@@ -311,6 +369,23 @@ test("🔴 every decision carries the terms that produced it", () => {
     state: state({ evidenceCount: 2, lastEvidenceAt: "2026-08-14T12:00:00.000Z", status: "incorrect" }),
   }));
   assert.deepEqual(decided.reasons, ["fell-short", "repeatedly-unresolved", "displaced-since"]);
+});
+
+test("🔴 a scaffolded retrieval carries its own reason in the trace, and an unscaffolded one does not", () => {
+  const NARROWED: TeachingAction = { because: "…", objectiveId: "o1", rung: "narrowed", type: "retrieve" };
+  const input = { action: NARROWED, evidence: [], interveningActs: 1, knowledge: KNOWLEDGE, state: state() };
+  assert.ok(reasons(input).includes("scaffold-narrowed"));
+  assert.ok(!reasons(at()).includes("scaffold-narrowed"), "the default independent RETRIEVE fixture must not carry it");
+});
+
+test("🔴 scaffolding changes the trace, never the score — HOW to ask is not a reason to rank higher or lower", () => {
+  // Same objective, same evidence, same everything except the rung the action asks at. If narrowing
+  // moved the score, two retrievals of the identical objective could disagree about how worth doing
+  // it is, which would mean the rung is quietly acting as a second, undocumented modifier.
+  const base = { evidence: [], interveningActs: 1, knowledge: KNOWLEDGE, state: state() };
+  const independent: TeachingAction = { because: "…", objectiveId: "o1", rung: "independent", type: "retrieve" };
+  const narrowed: TeachingAction = { because: "…", objectiveId: "o1", rung: "narrowed", type: "retrieve" };
+  assert.equal(score({ ...base, action: independent }), score({ ...base, action: narrowed }));
 });
 
 test("mostValuable keeps the caller's order on a tie, so the same state asks the same question", () => {

@@ -32,6 +32,32 @@ const SUPPORTED: ReadonlySet<string> = new Set<string>([
   // `deliberate` exposition to, which is the first time the Canvas holds still and lets a learner
   // read something instead of flashing an answer past them.
   "causal|predict",
+  // 🔴🔴 THIS IS THE CEILING THIS FILE'S OWN HEADER WARNS ABOUT, FOUND LIVE. `objectivesForKnowledge`
+  // has minted `classification|discriminate` and `procedure|sequence` objectives since the wide-grid
+  // and procedure lanes shipped (`knowledge-lane-completeness.test.ts` pins both types as minted) —
+  // and until this line, both pairs were absent here, so `supportedObjectives`/`runtimeCanStage`
+  // silently discarded every one of them before `decideNext` ever saw them. Minted, never chosen —
+  // the exact invisible ceiling `objectivesForKnowledge`'s own type-gate already hit once, one layer
+  // downstream of where that one was fixed.
+  //
+  // 🔴 BOTH VERIFIED END TO END, NOT JUST MINTED. The chain this file's header requires — mint, word,
+  // judge, read — was checked link by link before adding either line:
+  //   mint:  `learning-objective.ts`'s `classificationObjectives`/`procedureObjectives`.
+  //   word:  `objective-task.ts`'s `discriminationPromptText`/`sequencePromptText`, wired into
+  //          `retrievalPromptFor`'s `discriminating`/`sequencing` branches.
+  //   judge: `canvas-tasks.ts`'s `RESPONSE_PLACEHOLDER` and `canvas-prompts.ts`'s `TASK_INTENT` both
+  //          already carry `compare` and `reconstruct` — the exact task names those branches emit.
+  //   read:  `projectLearnerState` is generic over capability; nothing there needed to change.
+  "classification|discriminate",
+  "procedure|sequence",
+  // 🔴 `spatial|locate` IS DELIBERATELY NOT HERE YET. `learning-objective.ts` mints it, but the
+  // "word" link is missing: `objective-task.ts` has no `locatePromptText`, `RetrievalTask` has no
+  // `locate` member, and `retrievalPromptFor` falls through to `objectivePromptText`/`task: "name"`
+  // for it today — the generic "Given X, what goes with it?" pair-recall question, over an objective
+  // whose whole point is reading a position in a figure. Adding this line now would make a spatial
+  // objective selectable and hand every learner who reaches one a question that does not match what
+  // was asked. This is `objective-task.ts`'s own file, not a knowledge-type problem, and stays a
+  // refusal — same discipline `objective-prerequisites.ts` uses — until that lane exists.
 ]);
 
 /**

@@ -313,9 +313,14 @@ function BlockView({
 
       {/* An answer about this block is ordinary explanation, so it is not boxed. A quiet rule
           and the indent say "this is about the paragraph above" — a card would say "this is a
-          component", which is the thing the surface is trying not to look like. */}
+          component", which is the thing the surface is trying not to look like.
+          🔴 `canvas-swap` (contract rule 3, 2026-08-15): a plain 140ms opacity fade on arrival —
+          the same class canvas-policy-view.tsx uses to swap one question for the next. Reused
+          rather than reinvented, so an ad hoc explanation appearing and the policy's own screens
+          replacing each other read as one motion system, not two effects that happen to agree
+          today. No transform, no bounce — see globals.css's own note on why. */}
       {aside && (
-        <div className="mt-3 border-l-2 border-(--ui-stroke-secondary) py-0.5 pl-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
+        <div className="canvas-swap mt-3 border-l-2 border-(--ui-stroke-secondary) py-0.5 pl-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
           {aside}
           <button
             className="mt-2 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
@@ -593,7 +598,7 @@ function CanvasSourcePreview({
 
         {found.length === 0 ? (
           <p className="mt-2 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-tertiary)">
-            This part wasn&rsquo;t taken from your material — Nemesis wrote it from general knowledge.
+            This part wasn&rsquo;t taken from your material. Nemesis wrote it from general knowledge.
           </p>
         ) : (
           found.map(({ excerpt, source }) => (

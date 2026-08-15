@@ -713,7 +713,16 @@ export function usePolicyRuntime(
     // worded from the objective and judged against the KNOWLEDGE — the two ends of the causal edge —
     // so passing the objective alone would word the question correctly and then mark the answer
     // against a single model sentence. `PolicyDecision` already holds the pair; nothing is loaded.
-    setPrompt(retrievalPromptFor(decision, crypto.randomUUID()));
+    //
+    // 🔴 AND THE RUNG IS THE THIRD THING IT CARRIES — SEE `scaffold-decision.ts`. The guard above
+    // narrows `decision.action` to the `retrieve` variant, which is REQUIRED to state a `rung`
+    // (teaching-policy.ts's own `TeachingAction` doc: "Every branch that returns `retrieve` states
+    // it explicitly"). `retrievalPromptFor`'s third parameter is optional and silently defaults to
+    // `"independent"` when omitted — so leaving this argument off does not fail loudly, it just
+    // means every retrieval this runtime ever stages is unaided, however many times a learner has
+    // already missed it and however far `chooseNextTeachingAction` actually narrowed the ask. A
+    // fully built, fully tested scaffolding decision with nothing downstream ever reading it.
+    setPrompt(retrievalPromptFor(decision, crypto.randomUUID(), decision.action.rung));
   }, [decision, decisionKey]);
 
   const refresh = useCallback(

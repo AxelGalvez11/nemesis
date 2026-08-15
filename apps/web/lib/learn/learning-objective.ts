@@ -29,6 +29,8 @@ import {
   normalizeForIdentity,
 } from "./knowledge-identity";
 import type { CausalRelation, FigureKnowledge, KnowledgeObject } from "./knowledge-types";
+import type { ProcedureStep } from "./procedure-sequence";
+import type { ClassContrast } from "./wide-grid-classification";
 
 /**
  * What the learner is being asked to DO.
@@ -52,7 +54,7 @@ import type { CausalRelation, FigureKnowledge, KnowledgeObject } from "./knowled
  * question is real, is genuinely a separate capability, and is deliberately not minted yet; keeping
  * `explain` unminted is what leaves room for it.
  */
-export type ObjectiveCapability = "recall" | "discriminate" | "explain" | "predict" | "locate";
+export type ObjectiveCapability = "recall" | "discriminate" | "explain" | "predict" | "locate" | "sequence";
 
 /**
  * A positional fallback, used ONLY when the source named no columns.
@@ -96,6 +98,26 @@ export interface ObjectiveParameters {
    * the same part of the same picture.
    */
   labelKey?: string;
+  /**
+   * WHICH MEMBER of a class this objective is about (contract R4, discriminative).
+   *
+   * 🔴 ONE OBJECTIVE PER MEMBER, FOR THE SAME REASON `labelKey` EXISTS ONE DIMENSION OVER. A class
+   * holding `*3/*3` and `*3/*6` is not one thing a learner either can or cannot do: they may place
+   * one confidently and hesitate on the other, and keying both to a single objective would credit
+   * the second the moment the first was answered.
+   *
+   * Normalised, because it is identity: one document's `Lisinopril` and another's `lisinopril` are
+   * the same member of the same class.
+   */
+  memberKey?: string;
+  /**
+   * WHICH POSITION in a procedure this objective is about — `2` is the second step.
+   *
+   * 🔴 THE POSITION, NOT THE STEP'S TEXT. A document that rewords "Serve the opposing party" must
+   * not orphan everything the learner has demonstrated about step one; the thing being learned is
+   * what comes second, and that survives an edit to how it is phrased.
+   */
+  stepKey?: number;
 }
 
 export interface LearningObjective {
@@ -153,7 +175,7 @@ export function objectiveIdentityBasis(input: {
 }): string {
   // Serialised in a fixed order rather than by iterating the object, so a key can never depend on
   // the order the fields happened to be written in at the call site.
-  const { direction, inputRole, outputRole, labelKey } = input.parameters;
+  const { direction, inputRole, outputRole, labelKey, memberKey, stepKey } = input.parameters;
   const role = inputRole && outputRole ? `in=${inputRole},out=${outputRole}` : "in=-,out=-";
   // 🔴 `labelKey` IS PART OF IDENTITY, AND THE CHAIN TEST IS WHY IT IS HERE. A diagram mints one
   // objective per named part; without this the three parts of a cylinder hashed to ONE key, so
@@ -168,8 +190,20 @@ export function objectiveIdentityBasis(input: {
   // is filed under. Every row in `learner_evidence` would have pointed at an objective that no
   // longer exists: not a crash, just every learner silently starting again. An identity function is
   // the one place where "harmless extra field" is never harmless.
+  // 🔴 `memberKey` IS HERE FOR THE REASON `labelKey` IS, AND IT WAS CAUGHT THE SAME WAY. A class
+  // mints one objective per member; without this the two genotypes under `Poor (PM)` hashed to ONE
+  // key, so telling the first apart would have credited the learner with the second. Counting the
+  // distinct keys is the only thing that shows it — the objectives themselves look correct.
+  //
+  // 🔴 AND IT IS APPENDED ONLY WHEN SET, which is what keeps it from re-keying the corpus. An
+  // unconditional `|member=-` would change the basis string of every association, causal and
+  // spatial objective ever minted, and every row in `learner_evidence` would point at an objective
+  // that no longer exists — every learner silently starting again.
   const base = `objective|${input.knowledgeIdentityKey}|${input.capability}|${role}|dir=${direction ?? "-"}`;
-  return labelKey ? `${base}|label=${labelKey}` : base;
+  const withLabel = labelKey ? `${base}|label=${labelKey}` : base;
+  const withMember = memberKey ? `${withLabel}|member=${memberKey}` : withLabel;
+  // Same conditional, same reason: appended only when set, so no existing objective is re-keyed.
+  return stepKey === undefined ? withMember : `${withMember}|step=${stepKey}`;
 }
 
 /** A 64-bit FNV-1a, as 16 hex characters. Synchronous and dependency-free for the same reason the
@@ -307,9 +341,85 @@ function spatialObjectives(object: KnowledgeObject, figure: FigureKnowledge): Le
   });
 }
 
+/**
+ * A class, as one objective per member it holds — contract R4's `discriminative` kind.
+ *
+ * 🔴 THE SIBLINGS ARE IN THE QUESTION, WHICH IS WHAT STOPS THIS BEING A RECALL OBJECTIVE WEARING A
+ * NEW NAME. "Which group is X in?" is answerable by looking one fact up, and would file every
+ * attempt under `discriminate` while observing nothing a `recall` objective does not already
+ * observe. Naming the neighbour it must be told APART FROM is what makes the answer capable of
+ * being wrong in the interesting way — the learner who has memorised the label but cannot say what
+ * separates it from the class next door.
+ *
+ * 🔴 AND THE ANSWER IS THE CLASS, NOT THE DISTINGUISHING FEATURE, because the grid did not state
+ * one. The feature lives spread across `featureColumns` and naming it would be inference. So the
+ * checkable part is the label the source printed, and the "what tells you" is what the judge reads
+ * for depth — the same division `predict` makes between the effect and the "and why".
+ */
+function classificationObjectives(object: KnowledgeObject, contrast: ClassContrast): LearningObjective[] {
+  const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
+  const axis = contrast.axis?.trim();
+  return contrast.members.map((member) => {
+    const parameters: ObjectiveParameters = { memberKey: normalizeForIdentity(member) };
+    return {
+      answer: contrast.label,
+      capability: "discriminate" as const,
+      // The member is the cue; the prompt layer adds the neighbours it must be separated from.
+      cue: member,
+      identityKey: objectiveIdentityKey({ capability: "discriminate", knowledgeIdentityKey: knowledge, parameters }),
+      identityVersion: OBJECTIVE_IDENTITY_VERSION,
+      knowledgeIdentityKey: knowledge,
+      label: axis
+        ? `Tell ${member} apart by ${axis}`
+        : `Tell ${member} apart from ${contrast.siblings[0]?.label ?? "its neighbours"}`,
+      parameters,
+    };
+  });
+}
+
+/**
+ * A procedure, as one objective per step — contract R4's `procedural` kind.
+ *
+ * 🔴 EACH STEP IS CUED BY THE ONE BEFORE IT, AND THAT IS WHAT MAKES THIS ABOUT ORDER. Asking "what
+ * are the steps?" is answerable by producing them in any order, and a learner who files proof of
+ * service before serving the opposing party would pass it. Asking what FOLLOWS a given step cannot
+ * be answered without holding the sequence.
+ *
+ * 🔴 AND THE FIRST STEP IS CUED BY THE PROCEDURE'S NAME, not skipped. "Where does this start" is
+ * the one position no prior step can cue, and it is also the position a learner most often has
+ * wrong — they know the middle of a process and not where it begins.
+ *
+ * 🔴 THE STEPS ARE NEVER SHOWN AS A SET. Nothing here emits the full list; a prompt that printed
+ * the steps and asked for their order would be recognition wearing a sequence's name.
+ */
+function procedureObjectives(object: KnowledgeObject, steps: readonly ProcedureStep[]): LearningObjective[] {
+  const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
+  const name = object.statement;
+  return steps.map((step, index) => {
+    const parameters: ObjectiveParameters = { stepKey: index + 1 };
+    const previous = index === 0 ? undefined : steps[index - 1];
+    return {
+      answer: step.text,
+      capability: "sequence" as const,
+      cue: previous ? previous.text : name,
+      identityKey: objectiveIdentityKey({ capability: "sequence", knowledgeIdentityKey: knowledge, parameters }),
+      identityVersion: OBJECTIVE_IDENTITY_VERSION,
+      knowledgeIdentityKey: knowledge,
+      label: previous ? `Step ${index + 1} of ${name}` : `Where ${name} starts`,
+      parameters,
+    };
+  });
+}
+
 export function objectivesForKnowledge(object: KnowledgeObject): LearningObjective[] {
+  if (object.type === "procedure" && object.steps?.length) {
+    return procedureObjectives(object, object.steps);
+  }
   if (object.type === "causal" && object.relation) return causalObjectives(object, object.relation);
   if (object.type === "spatial" && object.figure) return spatialObjectives(object, object.figure);
+  if (object.type === "classification" && object.contrast) {
+    return classificationObjectives(object, object.contrast);
+  }
   if (object.type !== "association" || !object.pair) return [];
 
   const knowledge = object.identityKey ?? knowledgeIdentityKey(object);

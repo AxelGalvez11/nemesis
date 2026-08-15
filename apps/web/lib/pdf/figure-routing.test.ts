@@ -125,6 +125,49 @@ test("a description never becomes the figure's caption", () => {
   assert.equal(after.blocks[index]!.figure?.description, "A bar chart.");
 });
 
+// ── labels (§46.6) ──────────────────────────────────────────────────────────
+// 🔴 THIS BOUNDARY DROPPED LABELS UNTIL NOW. `applyFigureDescriptions`'s results map had no
+// `labels` slot, so a PDF diagram vision named parts in reached the model as prose only — the
+// exact "invoked, then discarded at a boundary" shape this repo has hit six times before.
+
+test("🔴 a labelled PDF figure keeps its labels — the boundary that used to drop them", () => {
+  const model = doc([page(0, 1_200, 0.25)]);
+  const index = model.blocks.findIndex((block) => block.kind === "figure");
+  const after = applyFigureDescriptions(
+    model,
+    new Map([
+      [
+        index,
+        {
+          description: "A nephron with its labelled segments.",
+          labels: [{ text: "Glomerulus", x: 0.3, y: 0.2 }, { text: "Loop of Henle", x: 0.5, y: 0.6 }],
+        },
+      ],
+    ]),
+  );
+  assert.deepEqual(after.blocks[index]!.figure?.labels, [
+    { text: "Glomerulus", x: 0.3, y: 0.2 },
+    { text: "Loop of Henle", x: 0.5, y: 0.6 },
+  ]);
+});
+
+test("a figure with no LABELS line gets no labels field — refusal stays cheap", () => {
+  // The negative case is the one that matters most: a fabricated label on a decorative figure
+  // becomes a question the learner is marked wrong on. `description` with no `labels` must leave
+  // `figure.labels` absent, never an invented `[]`.
+  const model = doc([page(0, 1_200, 0.25)]);
+  const index = model.blocks.findIndex((block) => block.kind === "figure");
+  const after = applyFigureDescriptions(model, new Map([[index, { description: "A stock photo of a lab." }]]));
+  assert.equal(after.blocks[index]!.figure?.labels, undefined);
+});
+
+test("an empty labels array is treated the same as none", () => {
+  const model = doc([page(0, 1_200, 0.25)]);
+  const index = model.blocks.findIndex((block) => block.kind === "figure");
+  const after = applyFigureDescriptions(model, new Map([[index, { description: "A chart.", labels: [] }]]));
+  assert.equal(after.blocks[index]!.figure?.labels, undefined);
+});
+
 // ── pixels ──────────────────────────────────────────────────────────────────
 
 test("RGB pixels become a PNG", () => {

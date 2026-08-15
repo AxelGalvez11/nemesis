@@ -24,7 +24,8 @@ import type { LearnerEvidence, LearnerObjectiveState } from "./learner-evidence"
 import type { LearningObjective } from "./learning-objective";
 import type { KnowledgeObject } from "./knowledge-types";
 import { eligibleForRetrieval } from "./retrieval-eligibility";
-import { entails } from "./scaffold-rung";
+import { scaffoldRungFor } from "./scaffold-decision";
+import { entails, type ScaffoldRung } from "./scaffold-rung";
 import { answerStillHeld } from "./working-memory";
 
 /**
@@ -36,8 +37,17 @@ import { answerStillHeld } from "./working-memory";
  * The names stay small on purpose.
  */
 export type TeachingAction =
-  /** Ask them to produce it. The only action that generates new evidence. */
-  | { type: "retrieve"; objectiveId: string; because: string }
+  /**
+   * Ask them to produce it. The only action that generates new evidence.
+   *
+   * 🔴 `rung` IS REQUIRED, NOT OPTIONAL — the same discipline `RetrievalPrompt.rung` already holds in
+   * `objective-task.ts`, for the same reason: an optional field defaults to absent, and absent would
+   * read as "we do not know what demand this asks at" about a decision this function just made and
+   * therefore always knows the answer to. Every branch that returns `retrieve` states it explicitly;
+   * see `scaffold-decision.ts` for the one branch where it is actually computed rather than fixed at
+   * `"independent"`.
+   */
+  | { type: "retrieve"; objectiveId: string; because: string; rung: ScaffoldRung }
   /** State the answer plainly. For a wrong attempt, or an opportunity that produced nothing. */
   | { type: "show_correction"; objectiveId: string; exposition: Exposition; because: string }
   /** Put the confusable items side by side, then ask for both. Only for a named competing model. */
@@ -225,6 +235,11 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
           ? `"${objective.label}" has been attempted, but nothing conclusive came back — asking again is the only way to settle it`
           : `no evidence exists for "${objective.label}" — asking settles it, and telling would assert something unobserved`,
         objectiveId: id,
+        // 🔴 ALWAYS `independent`, NEVER SCAFFOLDED. `unknown` means EVIDENCE IS MISSING OR
+        // UNREADABLE — a judge that could not reach a confident verdict, or nobody has asked at all.
+        // Neither is the "repeated unaided miss" signal `scaffold-decision.ts` looks for, and
+        // narrowing the question here would treat a readability problem as a difficulty problem.
+        rung: "independent",
         type: "retrieve",
       };
 
@@ -303,11 +318,23 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
       // next item, which is sooner than a passed one's ten minutes, which is the order every
       // spaced-repetition system uses and the order §39 requires.
       if (!stillHeld) {
+        // 🔴 §33, EXECUTED — THE ONE BRANCH WHERE SCAFFOLDING IS AN ACTUAL DECISION. This is
+        // specifically the retrieval offered AFTER an attempt fell short, which is exactly the
+        // evidence `scaffoldRungFor` reads: a trailing run of unresolved attempts at THIS objective,
+        // stopping at the last one that resolved. One miss stays `independent` — see that file for
+        // why the bar is two, not one. `unknown`'s retrieve above and `correct`'s below are both
+        // deliberately excluded: the first is a readability gap, not a difficulty one, and the second
+        // is a targeted probe that must ask at full demand or it proves nothing.
+        const scaffold = scaffoldRungFor(input.recentEvidence);
+        const base = state.latestVerdict
+          ? `this fell short and the answer has already been stated, and other material has come between — asking is what is owed now, not stating it again`
+          : `an opportunity passed with nothing demonstrated and other material has come between, so the next thing owed here is a real attempt`;
         return {
-          because: state.latestVerdict
-            ? `this fell short and the answer has already been stated, and other material has come between — asking is what is owed now, not stating it again`
-            : `an opportunity passed with nothing demonstrated and other material has come between, so the next thing owed here is a real attempt`,
+          because: scaffold.rung === "independent"
+            ? base
+            : `${base} — the last ${scaffold.streak} unaided attempts at this fell short, so this one narrows the scope instead of repeating the same question`,
           objectiveId: id,
+          rung: scaffold.rung,
           type: "retrieve",
         };
       }
@@ -402,6 +429,11 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
         return {
           because: `this was recognised rather than produced, so what it establishes is that the learner can pick it out — asking them to produce it is what would settle whether they know it`,
           objectiveId: id,
+          // 🔴 ALWAYS `independent`, NEVER SCAFFOLDED — THE ONE PLACE THIS WOULD BE SELF-DEFEATING.
+          // This probe exists to settle whether a recognition-level pass generalises to production
+          // (§31.2). Narrowing it would ask the learner to recognise again and call the result a
+          // production probe, which proves nothing beyond what is already on record.
+          rung: "independent",
           type: "retrieve",
         };
       }
@@ -433,6 +465,11 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
         return {
           because: `demonstrated before, and long enough ago that asking again measures memory rather than the last few minutes`,
           objectiveId: id,
+          // 🔴 ALWAYS `independent`. This is a demonstrated, non-provisional objective coming back
+          // for a due retrieval — a memory check, not a struggling learner. `scaffoldRungFor` reads
+          // for a trailing run of FAILURES; there is none to read here by construction, so asking
+          // would only relabel a fact this branch already knows.
+          rung: "independent",
           type: "retrieve",
         };
       }

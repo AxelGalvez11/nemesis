@@ -169,7 +169,7 @@ export function RecordingRecoveryNotice({ accessToken, uid = null, onRecovered }
         {offer.caveat && <p className="mt-0.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{offer.caveat}</p>}
         {phase === "failed" && (
           <p className="mt-0.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-            That did not rebuild. Your audio is still saved — try again in a moment.
+            That did not rebuild. Your audio is still saved. Try again in a moment.
           </p>
         )}
         {phase === "quota" && (

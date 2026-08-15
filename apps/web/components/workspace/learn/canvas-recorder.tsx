@@ -103,7 +103,7 @@ export function CanvasRecorder({ attach, onClose }: Props) {
     //
     // So the sentence promises nothing and names the cost plainly. A promise the product cannot
     // keep is worse than an absent feature.
-    "Keep this tab open until it finishes — if you close it now, this recording is lost."
+    "Keep this tab open until it finishes. If you close it now, this recording is lost."
   ), []);
 
   return (
@@ -125,7 +125,7 @@ export function CanvasRecorder({ attach, onClose }: Props) {
             {/* The sentence itself is inside the panel, printed by RecordWorkspace's error branch —
                 repeating it here would say the same thing twice in two type sizes. */}
             <p className="min-w-0 flex-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-              Your recording is still here — you can try again.
+              Your recording is still here. You can try again.
             </p>
             <button
               className="shrink-0 rounded-full bg-(--ui-bg-tertiary) px-3.5 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-quaternary)"

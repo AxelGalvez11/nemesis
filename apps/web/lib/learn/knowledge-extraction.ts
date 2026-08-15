@@ -27,6 +27,7 @@
 // legible. Refusing to guess is a feature of the lane; do not weaken it to raise a count.
 
 import {
+  anchorInUnit,
   readableUnits,
   unitContent,
   type CanonicalSourceAnchor,
@@ -37,7 +38,9 @@ import {
 import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } from "./knowledge-identity";
 import { figureKnowledge } from "./figure-knowledge";
 import type { KnowledgeObject } from "./knowledge-types";
+import { orderedRunsIn, type ListUnit } from "./procedure-sequence";
 import { subjectColumnOf } from "./table-subject-column";
+import { classAxesOf, contrastsOf } from "./wide-grid-classification";
 
 /** Stamped onto every object, so a corpus extracted under older rules can be found and redone
  *  rather than silently mixed in with a newer one. Bump it whenever the rules below change what
@@ -151,12 +154,20 @@ export function extractKnowledgeObjects(context: SourceContext): KnowledgeExtrac
   const figures = figuresFromUnits(context);
   objects.push(...figures);
 
+  // 🔴 CONTRACT R4's `procedural` KIND — A THIRD LANE, FOR THE SAME REASON FIGURES ARE THE SECOND.
+  // A lab protocol or a filing checklist is a document made almost entirely of numbered lists and
+  // may hold no grid anywhere in it; leaving this call under the no-tables return below would mean
+  // the one document shape a procedure lane exists for produces nothing.
+  const procedures = proceduresFromUnits(context);
+  objects.push(...procedures);
+
   if (tables.length === 0) {
     return {
       objects,
-      // A document whose diagrams taught something was not a dead end, whatever its grids did.
-      outcome: structured || figures.length > 0 ? "complete" : "degraded",
-      refusals: figures.length > 0 ? [] : [{
+      // A document whose diagrams or procedures taught something was not a dead end, whatever its
+      // grids did.
+      outcome: structured || figures.length > 0 || procedures.length > 0 ? "complete" : "degraded",
+      refusals: figures.length > 0 || procedures.length > 0 ? [] : [{
         detail: structured
           ? "This document's stored structure contains no table, so this lane found nothing to read pairs from."
           : "Only flat text survived this document's parse, so any table it had was flattened before extraction could see it.",
@@ -212,6 +223,112 @@ function figuresFromUnits(context: SourceContext): KnowledgeObject[] {
   return objects;
 }
 
+/**
+ * `orderedRunsIn` reads a list item by `type: "listItem"` — the same name `DocBlock.kind` uses
+ * upstream, in every parser. `unitsFromModel` folds that onto the coarser `CanonicalSourceUnitType`
+ * "list", the one bucket every list-nesting scheme in every format shares, because an extractor
+ * branching on unit TYPE should not need to know a document format's own list vocabulary. The
+ * finer distinction procedure detection needs is exactly what the marker already carries, so it is
+ * restored here, for the one caller that needs it back, rather than by widening
+ * `CanonicalSourceUnitType` for everyone.
+ *
+ * 🔴 FIELD BY FIELD, NEVER SPREAD — the same discipline `unitsFromModel` itself uses one boundary
+ * over, and for the same reason: a `CanonicalSourceUnit` also carries `table`, `figure` and
+ * `unitLabel`, and `orderedRunsIn` must never be able to start reading them just because a spread
+ * happened to carry them along.
+ */
+function listUnitsOf(units: readonly CanonicalSourceUnit[]): ListUnit[] {
+  return units.map((unit) => ({
+    anchor: unit.anchor,
+    depth: unit.depth,
+    id: unit.id,
+    marker: unit.marker,
+    text: unit.text,
+    type: unit.type === "list" ? "listItem" : unit.type,
+  }));
+}
+
+/**
+ * Where one step sits, in a form that survives the document being reparsed.
+ *
+ * 🔴 THE SAME IDEA `anchorForRow` USES FOR A TABLE CELL, ONE UNIT OVER — but simpler, because a
+ * step has no second value to disambiguate against. The whole unit IS the step, so its own text is
+ * the whole quote rather than a fragment.
+ */
+function anchorForStep(unit: CanonicalSourceUnit): CanonicalSourceAnchor {
+  return anchorInUnit(unit, (unit.text ?? "").trim());
+}
+
+/**
+ * Procedural knowledge from the document's own numbered lists — contract R4's `procedural` kind.
+ *
+ * 🔴 A RUN, NOT A UNIT, AND THAT IS WHY THIS IS ITS OWN PASS RATHER THAN A CASE INSIDE THE
+ * PER-UNIT LOOP BELOW. Every other object in this file is read off ONE unit at a time — a table, a
+ * figure. Nothing about a single list item in isolation says whether it belongs to a sequence;
+ * only `orderedRunsIn`, looking at the whole document's unit order, can say that. So this runs
+ * once, over every unit `context` has, before anything asks one unit what it contains on its own.
+ *
+ * 🔴 ONE OBJECT PER RUN, NEVER ONE PER STEP. A learner can hold step two of a procedure without
+ * holding step three, which is exactly why `steps` is a payload on ONE object rather than three
+ * objects with no relationship — see `KnowledgeObject.steps` and `procedureObjectives`, which mints
+ * the per-step objectives this single object supports.
+ */
+function proceduresFromUnits(context: SourceContext): KnowledgeObject[] {
+  const unitById = new Map(context.units.map((unit) => [unit.id, unit] as const));
+  const runs = orderedRunsIn(listUnitsOf(context.units));
+
+  // 🔴 A HEADING NAMES A RUN ONLY WHEN IT NAMES EXACTLY ONE. `headingOf` (in procedure-sequence.ts)
+  // reads the closest ANCESTOR heading, which is a SECTION's title, not a per-run label — and a
+  // section legitimately holds two procedures under one heading ("Primary:" a numbered list,
+  // "In the alternative:" a second one). Both runs would then report the identical heading, and
+  // since `statement` is what `knowledgeIdentityKey` hashes, using it for both gives two DIFFERENT
+  // procedures the SAME identity — verified empirically: without this count, "Serve the opposing
+  // party" and "Move to strike" collapsed into one object, and their step-1 objectives collapsed
+  // into one identity key with two different correct answers. Counted once, over every run in the
+  // document, before any run is named — so the ambiguity is caught before it can be used, not
+  // after two objects have already been minted from it.
+  const headingCounts = new Map<string, number>();
+  for (const run of runs) {
+    if (run.heading) headingCounts.set(run.heading, (headingCounts.get(run.heading) ?? 0) + 1);
+  }
+
+  const objects: KnowledgeObject[] = [];
+  for (const run of runs) {
+    const steps = run.steps;
+    const namesOnlyThisRun = run.heading !== undefined && headingCounts.get(run.heading) === 1;
+    // 🔴 THE SOURCE'S OWN HEADING, NEVER AN INTERPRETATION OF IT — the same owner rule the
+    // relation lane states above (2026-08-14) — but only when it is actually THIS run's name and
+    // not a section shared with a sibling run. Either way, the run is named from its own FIRST STEP
+    // alone rather than from the whole run: the rest of the steps must not enter the statement,
+    // because the statement is what identity is computed from below, and a procedure that later
+    // gained a reworded fourth step must stay the same procedure it always was.
+    const statement = namesOnlyThisRun ? run.heading! : steps[0]!.text;
+    // 🔴 ANCHORED TO THE FIRST STEP'S OWN UNIT, NOT BUILT FROM ITS TEXT. A run is the only object
+    // in this file keyed by more than one unit, and the first step's id is already unique per run
+    // — reusing it keeps the id deterministic without folding step text into it, which is what the
+    // identity key below must never do either.
+    const id = `${steps[0]!.unitId}:proc`;
+    const object: KnowledgeObject = {
+      derivation: "ordered-list",
+      extractionVersion: EXTRACTION_VERSION,
+      id,
+      // Every step resolves back to the document on its own, not only the run as a whole — a
+      // learner asking "where did step 2 come from" must land on step 2, not the first line of it.
+      sourceAnchors: steps.map((step) => anchorForStep(unitById.get(step.unitId)!)),
+      statement,
+      steps,
+      type: "procedure",
+      // 🔴 EMPTY BY CONSTRUCTION, NOT BY OMISSION — the same reasoning `pairsFromTable` gives: this
+      // function's only input is a `SourceContext` already anchored to a durable library source, so
+      // every way of knowing it can produce lives in `sourceAnchors` above.
+      unanchoredProvenance: [],
+    };
+    objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+  }
+
+  return objects;
+}
+
 function pairsFromTable(
   unit: CanonicalSourceUnit,
 ): { objects: KnowledgeObject[]; refusal?: ExtractionRefusal } {
@@ -232,7 +349,18 @@ function pairsFromTable(
   // 🔴 THE TWO-COLUMN PATH BELOW IS UNCHANGED ON PURPOSE. It does not require a distinct first
   // column and never has; routing it through the subject rule would start refusing glossaries that
   // repeat a term across rows, which is a regression dressed as a generalisation.
-  if (width > 2) return relationsFromWideTable(unit, content, table);
+  // 🔴 ONE GRID, TWO READINGS, AND THEY ARE DIFFERENT KINDS OF KNOWLEDGE — not the same fact twice.
+  // The relation lane turns each row into n−1 pairs: `*3/*3 — status: Poor` is retrievable on its
+  // own. What a pair cannot carry is that `*3/*6` is ALSO Poor while `*1/*10` is Intermediate, and
+  // without those neighbours there is no way to ask which feature separates them. Contract R4 names
+  // that second reading `discriminative` and records that it currently produces nothing.
+  if (width > 2) {
+    const relations = relationsFromWideTable(unit, content, table);
+    const classes = classificationsFromWideTable(unit, content, table);
+    // The refusal, when there is one, belongs to the relation lane — it is the one that speaks for
+    // whether this grid could be read at all. Minting no classes is normal and is not a refusal.
+    return { ...relations, objects: [...relations.objects, ...classes] };
+  }
   if (width !== 2) {
     return {
       objects: [],
@@ -424,6 +552,63 @@ function relationsFromWideTable(
   }
 
   return { objects };
+}
+
+/**
+ * The classes a wide grid sorted its subjects into — contract R4's `discriminative` kind.
+ *
+ * 🔴 THE TYPE IS DECIDED BY REPETITION, NEVER BY THE HEADER WORD, and that is what keeps this
+ * inside the rule above rather than in breach of it. That rule refuses to read `Class` and conclude
+ * class-membership, because reading a header's MEANING needs a vocabulary per field and cannot
+ * survive `Case | Holding | Jurisdiction`. Nothing here reads the header to decide anything: a
+ * column earns an axis by having FEWER distinct values than rows, which is a fact about the grid's
+ * shape. The header is used only to NAME the axis, exactly as the relation lane names a relation.
+ *
+ * 🔴 AND THE SAME CELLS BEING READ TWICE IS CORRECT HERE. `*3/*3 — status: Poor` (a relation) and
+ * "Poor, as against Intermediate and Ultra-rapid" (a class) are different knowledge: the first is
+ * retrieval, the second is telling neighbours apart. Identity is type+statement, so they key
+ * separately and neither overwrites the other.
+ */
+function classificationsFromWideTable(
+  unit: CanonicalSourceUnit,
+  content: { columns?: readonly string[] },
+  table: { headerRows: number; rows: readonly (readonly string[])[] },
+): KnowledgeObject[] {
+  const dataRows = table.rows.slice(Math.max(0, table.headerRows));
+  const width = Math.max(0, ...table.rows.map((row) => row.length));
+  const subject = subjectColumnOf(dataRows, width);
+  if (!subject) return [];
+
+  const columnNames = content.columns?.length
+    ? content.columns
+    : table.headerRows > 0
+      ? table.rows[0]
+      : undefined;
+
+  const objects: KnowledgeObject[] = [];
+  for (const axis of classAxesOf(dataRows, width, subject, columnNames)) {
+    for (const [classIndex, contrast] of contrastsOf(axis).entries()) {
+      // 🔴 THE AXIS AND THE CLASS ARE IN THE ID, never the members. A grid gaining a row must not
+      // re-key the class it was added to — that would orphan every demonstration the learner has
+      // already given about it. `Poor` is the same category whether two genotypes sit under it or
+      // three, and its extension is content, not identity.
+      const id = `${unit.id}:c${axis.column + 1}k${classIndex + 1}`;
+      const object: KnowledgeObject = {
+        contrast,
+        derivation: "table-row",
+        extractionVersion: EXTRACTION_VERSION,
+        id,
+        sourceAnchors: [anchorForRow(unit, contrast.members[0] ?? contrast.label, contrast.label)],
+        // Named by the source's own header when the grid printed one, so two documents teaching the
+        // same axis converge; bare otherwise, because there is nothing honest to add.
+        statement: contrast.axis ? `${contrast.axis.trim()}: ${contrast.label}` : contrast.label,
+        type: "classification",
+        unanchoredProvenance: [],
+      };
+      objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+    }
+  }
+  return objects;
 }
 
 function headingOf(unit: CanonicalSourceUnit): string | null {

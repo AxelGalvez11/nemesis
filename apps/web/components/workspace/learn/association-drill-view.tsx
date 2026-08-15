@@ -60,7 +60,7 @@ export function AssociationDrillView({
               "Correct."
             ) : (
               <>
-                <span className="text-(--ui-text-quaternary)">You said {lastResult.said || "nothing"} — it&apos;s </span>
+                <span className="text-(--ui-text-quaternary)">You said {lastResult.said || "nothing"}. It&apos;s </span>
                 <span className="font-medium text-(--ui-text-primary)">{lastResult.expected}</span>
               </>
             )}

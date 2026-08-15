@@ -194,6 +194,58 @@ test("🔴 a knowledge type this file has never heard of still round-trips", () 
   assert.deepEqual(back.steps, [{ order: 1, text: "first" }, { order: 2, text: "second" }]);
 });
 
+// ── procedure persistence, on the real shape rather than an invented one ───
+
+test("🔴 a procedure's steps survive extract → save → load, in the shape extraction actually mints", () => {
+  // The test above proves the boundary is generic using a shape nobody wrote support for. This
+  // proves the shape `proceduresFromUnits` mints today — marker, text and unitId on every step —
+  // actually crosses it, now that something other than a hand-written fixture produces `procedure`.
+  const procedure: KnowledgeObject = {
+    derivation: "ordered-list",
+    extractionVersion: "association/2",
+    id: "b1:proc",
+    sourceAnchors: [
+      { quote: { exact: "1. Serve the opposing party." }, sourceId: "lib-1", unitId: "b1" },
+      { quote: { exact: "2. File proof of service." }, sourceId: "lib-1", unitId: "b2" },
+    ],
+    statement: "Filing a motion",
+    steps: [
+      { marker: "1.", text: "1. Serve the opposing party.", unitId: "b1" },
+      { marker: "2.", text: "2. File proof of service.", unitId: "b2" },
+    ],
+    type: "procedure",
+    unanchoredProvenance: [],
+  };
+  const back = roundTrip(procedure);
+  assert.equal(back.type, "procedure");
+  assert.deepEqual(back.steps, procedure.steps, "marker, text and unitId must all come back on every step");
+  assert.equal(back.derivation, "ordered-list");
+  assert.deepEqual(back.sourceAnchors, procedure.sourceAnchors);
+});
+
+test("a loaded procedure still mints one distinct objective identity per step", () => {
+  // objectivesForKnowledge runs on whatever a caller actually loaded, not on the object extraction
+  // just produced — so the labelKey/memberKey/stepKey class of bug getting a fourth occurrence,
+  // specifically at this boundary, has to be checked on `back`, not on `procedure`.
+  const procedure: KnowledgeObject = {
+    derivation: "ordered-list",
+    extractionVersion: "association/2",
+    id: "b1:proc",
+    sourceAnchors: [],
+    statement: "Filing a motion",
+    steps: [
+      { marker: "1.", text: "1. Serve the opposing party.", unitId: "b1" },
+      { marker: "2.", text: "2. File proof of service.", unitId: "b2" },
+      { marker: "3.", text: "3. Notice the hearing date.", unitId: "b3" },
+    ],
+    type: "procedure",
+    unanchoredProvenance: [],
+  };
+  const objectives = objectivesForKnowledge(roundTrip(procedure));
+  assert.equal(objectives.length, 3);
+  assert.equal(new Set(objectives.map((o) => o.identityKey)).size, 3);
+});
+
 test("🔴 persistence does not enumerate payload fields by hand", () => {
   // The defect itself, asserted directly: `payload:` must be handed a derived value, never an
   // object literal listing the fields somebody remembered on the day.

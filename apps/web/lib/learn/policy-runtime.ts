@@ -16,6 +16,7 @@ import type { KnowledgeObject } from "./knowledge-types";
 import { mostValuable, value } from "./next-action-value";
 import { terminologyFriction, type TermLookup } from "./learner-friction";
 import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
+import { retrievabilityFor } from "./retention-model";
 import { runtimeCanStage } from "./runtime-support";
 import { chooseNextTeachingAction, expositionOf } from "./teaching-policy";
 import type { TeachingDecision } from "./teaching-strategy";
@@ -190,6 +191,9 @@ export function decideNext(input: {
     decisions.map((decision) => ({
       identityKey: decision.objective.identityKey,
       knowledge: decision.knowledge,
+      // 🔴 REQUIRED FOR A PROCEDURE CANDIDATE TO JOIN TO ITS NEIGHBOURING STEP — see `termsOf`.
+      // Harmless to pass for every other type, which does not read it.
+      parameters: decision.objective.parameters,
     })),
   );
   const dependents = dependentsOf(prerequisites);
@@ -207,12 +211,26 @@ export function decideNext(input: {
   // 🔴 THE OBJECTIVE'S OWN VOCABULARY, TAKEN FROM THE SAME ROLE FIELDS THE PREREQUISITE GRAPH USES.
   // Asking "which words is this built from?" a second way — by scanning the prompt text, say — would
   // give a second answer, and the two would disagree silently.
+  //
+  // 🔴 CALLED WITHOUT `parameters` ON PURPOSE. A procedure step's `termsOf` reads as a scoped
+  // POSITION (`kp1#step#2`), never a word — nobody looks that up — so passing it through here would
+  // add candidates to `terms` that no real lookup can ever match. Leaving it off costs nothing
+  // (procedure already contributed no vocabulary before this) and keeps this call asking exactly the
+  // question its name says: which WORDS is this built from.
   const lookups = input.lookups ?? [];
   const wordsInTheWay = (knowledge: KnowledgeObject): boolean => {
     if (lookups.length === 0) return false;
     const { establishes, requires } = termsOf(knowledge);
     return terminologyFriction({ lookups, terms: [...requires, ...establishes] }).present;
   };
+
+  // 🔴 RESOLVED ONCE, HERE, WHERE `now` ALREADY LIVES — NEVER INSIDE `value()`. `value()`'s own header
+  // promises "no clock, no network"; retrievability needs a clock to measure elapsed time against,
+  // so the measuring happens in the one place that already holds `input.now`, and only the resulting
+  // NUMBER crosses into the pure function. Same pattern as `blockedDependents` and
+  // `terminologyFriction` — both computed out here, both handed in as plain values.
+  const retrievabilityOf = (decision: (typeof decisions)[number]): number | null =>
+    retrievabilityFor(decision.evidence, input.now);
 
   const scored = owed.map((decision) => ({
     decision,
@@ -223,6 +241,7 @@ export function decideNext(input: {
       evidence: decision.evidence,
       interveningActs: interveningActs(decision.objective.identityKey, actedInOrder),
       knowledge: decision.knowledge,
+      retrievability: retrievabilityOf(decision),
       state: decision.state,
     }),
   }));
@@ -244,11 +263,18 @@ export function decideNext(input: {
         ...held,
         rationale: {
           by: "nemesis_policy",
+          // 🔴 PASSED HERE TOO, DELIBERATELY, THOUGH IT CANNOT CHANGE THIS PATH'S OUTPUT TODAY. A
+          // `defer` is never produced from a plain (non-provisional) `correct` state — that state
+          // only ever returns `retrieve` or `advance` — so the modifier's own guard makes this inert
+          // on every REACHABLE `held` decision right now. Passed anyway so the fallback path does not
+          // silently drift from the scored one if that reachability fact ever stops being true, and
+          // so this omission is a choice on record rather than an accident to rediscover later.
           selection: value({
             action: held.action,
             evidence: held.evidence,
             interveningActs: interveningActs(held.objective.identityKey, actedInOrder),
             knowledge: held.knowledge,
+            retrievability: retrievabilityFor(held.evidence, input.now),
             state: held.state,
           }),
         },

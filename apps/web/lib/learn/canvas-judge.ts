@@ -238,9 +238,9 @@ export function verdictIsPass(verdict: Verdict): boolean {
 /** How the verdict is framed for the learner. Never a score, never "incorrect" on its own (§20) —
  *  the feedback carries the substance and this is only the sentence around it. */
 export const VERDICT_HEADLINE: Record<Verdict, string> = {
-  strong: "That's it — all of it.",
+  strong: "That's it. All of it.",
   understood: "That's it.",
   partial: "You have part of this.",
-  incorrect: "Not quite — here's the gap.",
+  incorrect: "Not quite. Here's the gap.",
   misconception: "There's a specific thing to untangle here.",
 };

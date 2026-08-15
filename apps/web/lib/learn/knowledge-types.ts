@@ -21,6 +21,8 @@
 
 import type { CanonicalSourceAnchor } from "@/lib/sources/source-context";
 import type { FigureLabel } from "./figure-labels";
+import type { ProcedureStep } from "./procedure-sequence";
+import type { ClassContrast } from "./wide-grid-classification";
 
 import type { SourceRef } from "./canvas-model";
 
@@ -428,6 +430,26 @@ export interface KnowledgeObject {
    * picture exactly the way the reader does.
    */
   figure?: FigureKnowledge;
+  /**
+   * Set only when `type` is "classification". One categorical axis — the classes a grid sorted its
+   * subjects into, and the columns where the feature that separates them lives.
+   *
+   * 🔴 THE SIBLINGS ARE THE POINT, AND THEY ARE WHY THIS IS NOT AN ASSOCIATION. `*3/*3 → Poor` is a
+   * pair and the pair lane already mints it. What a pair cannot carry is that `*3/*6` is ALSO Poor
+   * while `*1/*10` is Intermediate — and without the neighbours there is no way to ask which
+   * feature separates them, which is the whole of discriminative knowledge (contract R4).
+   */
+  contrast?: ClassContrast;
+  /**
+   * Set only when `type` is "procedure". The steps a document numbered, in the order it numbered
+   * them.
+   *
+   * 🔴 THE ORDER IS THE KNOWLEDGE, WHICH IS WHY THIS IS NOT A LIST OF ASSOCIATIONS. Each step is
+   * also a sentence a learner could be asked to recall, but recalling all three in any order is not
+   * knowing the procedure — a learner who files proof of service before serving the opposing party
+   * has every step and no procedure.
+   */
+  steps?: readonly ProcedureStep[];
   /** Where this sits in the CANVAS — `{sourceId, excerptId}`, resolving against one canvas's own
    *  excerpt list. Canvas-local, and meaningless in any other canvas. */
   sourceRefs?: SourceRef[];
@@ -488,6 +510,15 @@ export interface KnowledgeObject {
 export type KnowledgeDerivation =
   /** One row of a real grid, read as cells. Deterministic. */
   | "table-row"
+  /** A run of list items the document itself numbered, read as steps. Deterministic in the same
+   *  sense `table-row` is — the order comes from the document's own marker, never inferred from
+   *  the words. See procedure-sequence.ts, `orderedRunsIn`.
+   *
+   *  🔴 NOT `table-row`, EVEN THOUGH BOTH ARE GRID-ADJACENT. Calling a list "a table" would be
+   *  the same kind of small dishonesty this field exists to prevent everywhere else — a caller
+   *  reading `derivation` to judge how much to trust an object deserves to know it came from a
+   *  numbered list, not a ruled grid. */
+  | "ordered-list"
   /** A model reading structured prose under a strict abstain-first contract.
    *
    *  🔴 THE FIRST LANE WHERE A MODEL DECIDES WHAT KNOWLEDGE EXISTS, which is why it is named

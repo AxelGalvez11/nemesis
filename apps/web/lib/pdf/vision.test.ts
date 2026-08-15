@@ -8,6 +8,7 @@ import {
   describeFiguresWithVision,
   parseFigureDescriptions,
   parseVisionText,
+  readFiguresWithVision,
   readPdfWithVision,
   visionConfigured,
   visionModels,
@@ -217,6 +218,67 @@ void (async () => {
       );
       assert.equal(out.get("ppt/media/image1.png"), "A nephron diagram.");
       assert.equal(out.has("ppt/media/image2.png"), false, "a 'none' figure adds nothing");
+    } finally {
+      globalThis.fetch = before;
+    }
+  }
+
+  // --- readFiguresWithVision: labels, the half describeFiguresWithVision throws away (§46.6) -----
+  // 🔴 NOTHING EXERCISED `.labels` BEFORE THIS. Every existing test above calls
+  // `describeFiguresWithVision`, which keeps only `.descriptions` — so a regression in the labels
+  // half of this exact reply could ship with every one of them still green.
+
+  {
+    // A labelled diagram: prose AND named parts come back off the SAME reply.
+    const before = globalThis.fetch;
+    const reply = {
+      candidates: [{
+        content: {
+          parts: [{
+            text:
+              "1. A nephron with its major segments labelled.\n" +
+              "LABELS: Glomerulus@0.3,0.2;Loop of Henle@0.5,0.6;Collecting duct@0.7,0.85\n" +
+              "2. A stock photo of a clinic waiting room.",
+          }],
+        },
+      }],
+    };
+    globalThis.fetch = (async () => new Response(JSON.stringify(reply), { status: 200 })) as unknown as typeof fetch;
+    try {
+      const out = await readFiguresWithVision(
+        [
+          { bytes: new Uint8Array([1]), mime: "image/png", name: "nephron.png" },
+          { bytes: new Uint8Array([2]), mime: "image/png", name: "waiting-room.png" },
+        ],
+        { env: KEYED },
+      );
+      assert.equal(out.descriptions.get("nephron.png"), "A nephron with its major segments labelled.");
+      assert.deepEqual(out.labels.get("nephron.png"), [
+        { text: "Glomerulus", x: 0.3, y: 0.2 },
+        { text: "Loop of Henle", x: 0.5, y: 0.6 },
+        { text: "Collecting duct", x: 0.7, y: 0.85 },
+      ]);
+      // 🔴 THE NEGATIVE CASE MATTERS AS MUCH AS THE POSITIVE ONE. A figure with prose and no LABELS
+      // line must produce NO entry in `.labels` at all — never an invented empty array a caller
+      // could mistake for "examined, zero labels" instead of "not a labelled diagram".
+      assert.equal(out.descriptions.get("waiting-room.png"), "A stock photo of a clinic waiting room.");
+      assert.equal(out.labels.has("waiting-room.png"), false);
+    } finally {
+      globalThis.fetch = before;
+    }
+  }
+
+  {
+    // describeFiguresWithVision is the thin wrapper `figure-look.ts` used to call for PDFs — it
+    // must still return prose only, so every existing caller of it is unaffected by the labels work.
+    const before = globalThis.fetch;
+    const reply = {
+      candidates: [{ content: { parts: [{ text: "1. A nephron.\nLABELS: Glomerulus@0.3,0.2;Loop of Henle@0.5,0.6" }] } }],
+    };
+    globalThis.fetch = (async () => new Response(JSON.stringify(reply), { status: 200 })) as unknown as typeof fetch;
+    try {
+      const out = await describeFiguresWithVision([{ bytes: new Uint8Array([1]), mime: "image/png", name: "a.png" }], { env: KEYED });
+      assert.equal(out.get("a.png"), "A nephron.");
     } finally {
       globalThis.fetch = before;
     }

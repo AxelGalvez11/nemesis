@@ -117,6 +117,26 @@ test("🔴 …and once they are no longer recent, the SAME log owes a retrieval 
   assert.equal(decision?.state.status, "correct", "eligible again WITHOUT its status being rewritten");
 });
 
+test("🔴 between two eligible, demonstrated objectives, the more-decayed one is offered first", () => {
+  // 🔴 `due` USED TO BE FLAT — EVERY ELIGIBLE OBJECTIVE SCORED THE SAME. Both directions here are
+  // past the churn window and both are `correct`, so before retention-model.ts existed this decision
+  // fell back to whichever identity key sorted first — the exact ceiling this whole selector exists
+  // to lift, now showing up one layer further in because the earlier layers got fixed first.
+  const evidence = [
+    // REVERSE: just past the ten-minute gate. Barely decayed.
+    ev("e1", REVERSE!.identityKey, ago(RETRIEVAL_ELIGIBLE_AFTER_MS + 60_000), "understood"),
+    // FORWARD: demonstrated a month ago. Heavily decayed by comparison.
+    ev("e2", FORWARD!.identityKey, ago(30 * 24 * 3600_000), "understood"),
+  ];
+  const decision = decideNext({ evidence, now: NOW, objectives: RESOLVED });
+  assert.equal(decision?.objective.identityKey, FORWARD!.identityKey);
+  assert.equal(decision?.rationale.by, "nemesis_policy");
+  assert.ok(
+    decision?.rationale.by === "nemesis_policy" && decision.rationale.selection.reasons.includes("increasingly-overdue"),
+    "the trace must name the spacing signal as why, not just declare a winner",
+  );
+});
+
 test("a demonstrated objective is never re-tested to fill a stage", () => {
   // Recent, for the same reason as above: this is about `advance` not being an ACTION, not about
   // whether a review ever comes due. Ages derived from the tempo so a future ruling cannot silently
@@ -345,4 +365,47 @@ test("🔴 no permissive ownership predicate has grown back beside the filter", 
   const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   assert.equal(/\.some\s*\(/.test(code), false, "policy-runtime must not decide ownership with .some()");
   assert.equal(code.includes("canUsePolicyRuntime"), false);
+});
+
+// ── I11 for a procedure, end to end: stuck on step 2 routes to step 1 ───────────
+
+test("🔴🔴 a learner stuck on step 2 of a procedure is offered step 1, not an equally-untouched step elsewhere", () => {
+  // The exact behaviour I11 asks for, walked through the REAL pipeline this time: mint, build the
+  // prerequisite graph from the objects `decideNext` actually holds, score, and pick a winner —
+  // rather than asserting on `blockedDependents` as a number handed to `value()` directly.
+  const PROCEDURE: KnowledgeObject = {
+    id: "kp1",
+    identityKey: "kp1",
+    statement: "Filing a motion to dismiss",
+    steps: [
+      { marker: "1.", text: "Draft the motion stating the grounds for dismissal.", unitId: "u1" },
+      { marker: "2.", text: "File the motion with the clerk of court.", unitId: "u1" },
+    ],
+    type: "procedure",
+    unanchoredProvenance: [],
+  };
+  const [STEP_ONE, STEP_TWO] = objectivesForKnowledge(PROCEDURE);
+  const objectives: ResolvedObjective[] = [
+    { knowledge: PROCEDURE, objective: { ...STEP_ONE!, rowId: "r1" } },
+    { knowledge: PROCEDURE, objective: { ...STEP_TWO!, rowId: "r2" } },
+    // An unrelated, equally never-touched objective from a DIFFERENT knowledge object — nothing
+    // depends on it, so it stays in the plain `owed` band with no promotion.
+    { knowledge: KNOWLEDGE, objective: { ...FORWARD!, rowId: "r3" } },
+  ];
+  // The learner attempted step 2 and got it wrong. Step 1 has no evidence at all — by identity-key
+  // order alone it would lose to the unrelated FORWARD objective, which the old three-`find`
+  // selector could not tell apart from a never-touched objective that unlocks nothing.
+  const evidence: LearnerEvidence[] = [
+    { demonstrationObtained: true, id: "e1", objectiveIdentityKey: STEP_TWO!.identityKey, occurredAt: ago(2 * 3600_000), verdict: "incorrect" },
+  ];
+
+  const decision = decideNext({ evidence, now: NOW, objectives });
+
+  assert.equal(decision?.objective.identityKey, STEP_ONE!.identityKey);
+  assert.equal(decision?.rationale.by, "nemesis_policy");
+  assert.ok(
+    decision?.rationale.by === "nemesis_policy" &&
+      decision.rationale.selection.reasons.includes("unlocks-other-work"),
+    "the trace must name WHY step 1 won, not just that it did",
+  );
 });

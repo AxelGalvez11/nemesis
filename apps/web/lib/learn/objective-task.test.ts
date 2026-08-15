@@ -98,6 +98,24 @@ function asStored(row: EvidenceToRecord, index: number): LearnerEvidence {
   };
 }
 
+// ── scaffolding stages a real rung, and it survives the round trip to evidence ──
+
+test("retrievalPromptFor defaults to independent, the same safe default promptTargeting already has", () => {
+  const prompt = retrievalPromptFor({ knowledge: KNOWLEDGE, objective: GENERIC_TO_BRAND }, "p1");
+  assert.equal(prompt.rung, "independent");
+});
+
+test("🔴 a rung passed to retrievalPromptFor survives the round trip into the evidence row", () => {
+  // §41's rule, applied here: a structural field that dies between the decision and the database
+  // dies silently, because every unit test up to that point still passes. `chooseNextTeachingAction`
+  // decides the rung; this is the next hop it has to survive — through the prompt, through
+  // `evidenceForSubmission`, into the row `learner_store.ts` actually writes.
+  const prompt = retrievalPromptFor({ knowledge: KNOWLEDGE, objective: GENERIC_TO_BRAND }, "p1", "narrowed");
+  assert.equal(prompt.rung, "narrowed");
+  const [row] = judged({ prompt });
+  assert.equal(row?.scaffoldRung, "narrowed", "the rung the task was staged at must reach the durable row");
+});
+
 // ── the crossing where six things have already died ─────────────────────────
 
 test("🔴 the two directions of one pair ask OPPOSITE questions", () => {

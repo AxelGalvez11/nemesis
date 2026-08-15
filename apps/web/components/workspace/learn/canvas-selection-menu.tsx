@@ -108,7 +108,12 @@ export function CanvasSelectionMenu({
       style={{ top: `${top}px`, left: `${left}px`, ...(width ? { width: `${width}px` } : {}) }}
     >
       {open ? (
-        <div className="rounded-2xl bg-(--ui-bg-elevated) p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
+        // 🔴 `canvas-swap` (contract rule 3, 2026-08-15) — the toolbar → open-panel transition is a
+        // real mount (the ternary below swaps elements, not just content), so this plays once on
+        // genuine appearance and does not re-fire while busy/error/answer succeed one another
+        // inside the same open state. Same 140ms opacity fade the rest of the Canvas uses; see
+        // canvas-document.tsx's aside for the sibling case.
+        <div className="canvas-swap rounded-2xl bg-(--ui-bg-elevated) p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
           <div className="flex items-start justify-between gap-2">
             <p className="text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-primary)">
               {answer?.term ?? selection.selectedText}

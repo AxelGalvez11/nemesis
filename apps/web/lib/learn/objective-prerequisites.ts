@@ -34,8 +34,9 @@
 // normaliser here (`glossaryKey`, say, which folds punctuation differently) would produce edges that
 // agree with nothing else in the system, and the disagreement would be invisible: a chain that fails
 // to join looks identical to a document that has no chain in it.
-import { causalNodeKey } from "./knowledge-identity";
+import { causalNodeKey, knowledgeIdentityKey } from "./knowledge-identity";
 import type { KnowledgeObject } from "./knowledge-types";
+import type { ObjectiveParameters } from "./learning-objective";
 
 /**
  * What an objective assumes the learner already holds, and what answering it establishes.
@@ -62,11 +63,21 @@ const NO_TERMS: ObjectiveTerms = { establishes: [], requires: [] };
  * a label reads "Say what follows from …". Matching on those would make the edge depend on
  * presentation, so a copy change would silently rewire what is taught before what.
  *
- * 🔴 A TYPE WITH NO CASE HERE RETURNS NOTHING, WHICH IS THE REFUSING DIRECTION. When a new knowledge
- * type starts minting objectives it gets no prerequisites until someone states what its roles are —
- * that is a missing feature, and the alternative is inventing edges for a shape nobody has read.
+ * 🔴 `parameters` IS OPTIONAL AND ONLY PROCEDURE READS IT, BECAUSE ONLY PROCEDURE NEEDS IT. A
+ * causal edge or a pair is ONE dependency wholly described by the knowledge object itself; a
+ * procedure mints ONE OBJECTIVE PER STEP from a SINGLE knowledge object, so "which dependency" also
+ * needs "which step" — information that lives on the objective, not the knowledge. The one existing
+ * caller that has no objective in hand (`policy-runtime.ts`'s terminology-friction check, which asks
+ * "what vocabulary is this built from" rather than "what depends on what") calls this with no second
+ * argument and gets exactly what it got before this parameter existed.
+ *
+ * 🔴 A TYPE WITH NO CASE HERE RETURNS NOTHING, WHICH IS THE REFUSING DIRECTION. `classification` is
+ * deliberately absent, stated rather than left as an accidental gap: a class's members are SIBLINGS
+ * on one axis, not a chain, so "*3/*3 requires *3/*6" would be inventing an order the source never
+ * had. When a genuinely new type starts minting objectives it gets no prerequisites until someone
+ * reads what its roles are — the alternative is inventing edges for a shape nobody has read.
  */
-export function termsOf(knowledge: KnowledgeObject): ObjectiveTerms {
+export function termsOf(knowledge: KnowledgeObject, parameters?: ObjectiveParameters): ObjectiveTerms {
   if (knowledge.type === "causal" && knowledge.relation) {
     // Predicting what follows from a cause starts at the cause and lands on the effect. 🔴 The
     // node's OWN `key`, which the extractor already computed and stored — recomputing it from
@@ -89,6 +100,33 @@ export function termsOf(knowledge: KnowledgeObject): ObjectiveTerms {
       requires: [causalNodeKey(knowledge.pair.left)],
     };
   }
+  if (knowledge.type === "procedure" && knowledge.steps?.length && parameters?.stepKey) {
+    // 🔴🔴 I11 FOR A PROCEDURE — THE SAME EDGE CAUSAL KNOWLEDGE ALREADY WALKS, ONE STEP OVER. A
+    // learner who cannot say what comes after step 2 should be offered step 2, not step 3 asked
+    // louder. The dependency is the source's OWN stated order, recovered the same way the causal
+    // edge recovers cause→effect from the document's own sentence — nothing here guesses an order,
+    // it reads the one `procedureObjectives` already minted the step at.
+    //
+    // 🔴 POSITIONAL, NOT VOCABULARY — AND THAT IS WHY THE KEY IS A SCOPED POSITION, NOT A NORMALISED
+    // WORD. A step does not establish a TERM the way a causal edge or a pair does; it establishes
+    // "this position in THIS procedure was reached". `wordsInTheWay`'s friction check reads this
+    // same function for a vocabulary list — a synthetic scope key is not a word a learner could ever
+    // look up, so it is inert there rather than wrong: no real lookup will ever match it.
+    //
+    // 🔴 SCOPED TO THE KNOWLEDGE OBJECT'S OWN IDENTITY, NEVER A BARE "step#2". Two unrelated
+    // procedures both have a step 2, and an unscoped key would wire "file the motion" to "administer
+    // the second dose" the moment both existed in the same canvas. Falls back to computing the
+    // identity the same way every other minter does when the object arrived without one already set.
+    const scope = knowledge.identityKey ?? knowledgeIdentityKey(knowledge);
+    const stepKey = parameters.stepKey;
+    return {
+      establishes: [`${scope}#step#${stepKey}`],
+      // The first step is cued by the PROCEDURE'S OWN NAME, not by a step before it — see
+      // `procedureObjectives` — so it has nothing to require. Requiring one would invent a
+      // dependency the source never stated.
+      requires: stepKey > 1 ? [`${scope}#step#${stepKey - 1}`] : [],
+    };
+  }
   return NO_TERMS;
 }
 
@@ -96,6 +134,9 @@ export function termsOf(knowledge: KnowledgeObject): ObjectiveTerms {
 export interface PrerequisiteCandidate {
   identityKey: string;
   knowledge: KnowledgeObject;
+  /** This objective's own parameters — absent is fine for causal and association, which do not read
+   *  it, but a procedure candidate without its `stepKey` here can never join to its neighbours. */
+  parameters?: ObjectiveParameters;
 }
 
 /**
@@ -115,7 +156,7 @@ export function prerequisiteMap(
 ): Map<string, readonly string[]> {
   const establishedBy = new Map<string, string[]>();
   for (const candidate of candidates) {
-    for (const term of termsOf(candidate.knowledge).establishes) {
+    for (const term of termsOf(candidate.knowledge, candidate.parameters).establishes) {
       if (!term) continue;
       const holders = establishedBy.get(term);
       if (holders) holders.push(candidate.identityKey);
@@ -126,7 +167,7 @@ export function prerequisiteMap(
   const map = new Map<string, readonly string[]>();
   for (const candidate of candidates) {
     const needed = new Set<string>();
-    for (const term of termsOf(candidate.knowledge).requires) {
+    for (const term of termsOf(candidate.knowledge, candidate.parameters).requires) {
       if (!term) continue;
       for (const holder of establishedBy.get(term) ?? []) {
         if (holder !== candidate.identityKey) needed.add(holder);

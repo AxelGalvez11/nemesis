@@ -148,6 +148,22 @@ export interface CanonicalSourceUnit {
    *  matters because a deck's structure often lives entirely in title placeholders rather than in
    *  heading blocks, so without it every excerpt from a slide deck loses the only label it had. */
   unitLabel?: string;
+  /**
+   * A list item's own marker, exactly as the document resolved it — `3.`, `c)`, `iv.`, `•`.
+   *
+   * 🔴 THE MARKER IS THE AUTHOR ASSERTING ORDER, AND IT IS THE ONLY HONEST SIGNAL FOR ONE. A
+   * numbered list says these steps happen in this sequence; a bulleted list says nothing of the
+   * kind, and teaching a bullet list as a procedure invents an order the document never claimed.
+   * Deciding it from the CONTENT — "does this look like instructions?" — needs a vocabulary per
+   * field and cannot read a legal filing sequence and an engine assembly with the same rule.
+   *
+   * 🔴 IT IS CARRIED BECAUSE IT WAS DYING HERE. `DocBlock.marker` has existed all along; this
+   * boundary copies field by field, and a field nobody listed is a field that silently does not
+   * exist downstream. That has now happened seven times in this codebase — see the round-trip rule.
+   */
+  marker?: string;
+  /** A list item's nesting depth. Two runs of steps at different depths are two lists, not one. */
+  depth?: number;
   /** A figure's two facts, kept apart.
    *
    *  🔴 THE CAPTION IS WHAT THE DOCUMENT SAYS; THE DESCRIPTION IS WHAT A MODEL SAID ABOUT IT.
@@ -417,6 +433,10 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
     id: block.id,
     text: unitText(block),
     type: BLOCK_TO_UNIT[block.kind] ?? "other",
+    // A list item's own marker and nesting, which is the only thing downstream can read to know
+    // whether the document ORDERED these items or merely listed them.
+    ...(block.marker ? { marker: block.marker } : {}),
+    ...(block.depth === undefined ? {} : { depth: block.depth }),
     // Copied field by field rather than spread, so geometry or cell spans added to `DocTable` as
     // the table lane lands cannot silently cross this boundary and start being branched on.
     ...(block.table

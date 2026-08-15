@@ -261,6 +261,21 @@ export interface CanvasSource {
    *  it produced. `full` when the stored parse kept structure, `degraded` when only text did.
    *  Carried so a lesson or an extraction built on a degraded parse can say which it was. */
   parseQuality?: "full" | "degraded" | "failed";
+  /**
+   * The page this source was pasted from, when it was a link rather than a file.
+   *
+   * 🔴 A REAL FIELD, NOT A REASON TO FOLD THE ADDRESS INTO THE EXTRACTED TEXT. Before this existed,
+   * a "paste a link" attachment had nowhere to put its own URL, so the only place left was the body
+   * of the text a learner reads — a source's provenance sitting inside its own content, which is
+   * exactly the kind of fact this file elsewhere insists on carrying as its own field rather than
+   * inferring from another one (see `durability`'s comment for the same principle).
+   *
+   * Absent for every source that is not a pasted link — a file upload has no page it came from, and
+   * absent here must be read as "not a link", never as "the URL was lost". `librarySourceId` is the
+   * closest existing field and is not a substitute: it names a row in OUR storage, not a page
+   * anywhere else, and a source can have one, the other, both, or neither.
+   */
+  sourceUrl?: string;
 }
 
 export interface SourceExcerpt {
