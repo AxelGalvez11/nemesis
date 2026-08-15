@@ -122,7 +122,7 @@ function PolicyScreen({
   runtime: PolicyRuntime;
   sharing: boolean;
 }) {
-  const { decision, feedback, prompt } = runtime;
+  const { citations, decision, feedback, prompt } = runtime;
 
   // Feedback outranks the next prompt: someone who has just answered should read what it showed
   // before being asked the next thing, even though the policy has already moved on underneath.
@@ -253,6 +253,20 @@ function PolicyScreen({
         <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
           {decision.knowledge.statement}
         </p>
+        {/* 🔴 WHERE THIS CAME FROM, AND NOTHING AT ALL WHEN WE CANNOT SAY. `citations` is already
+            resolved through `groundCanonicalAnchor`, which returns null for an anchor this canvas
+            cannot honestly point at; an empty list is that refusal arriving here. So there is no
+            `else` branch, no "source unknown", no greyed-out placeholder. A citation the learner
+            could click and find nothing behind is worse than silence, and this is the only place
+            that mistake could be made. */}
+        {citations.length > 0 && (
+          <p className="mt-4 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+            From{" "}
+            {citations
+              .map((citation) => (citation.label ? `${citation.sourceTitle}, ${citation.label}` : citation.sourceTitle))
+              .join(" · ")}
+          </p>
+        )}
         {/* 🔴 THE "Got it" BUTTON IS GONE — §I. Moving on is the composer's `✓` now, so the Canvas
             introduces no separate Next, Continue or Done reading. The behaviour it used to carry is
             not lost: this screen wrote no evidence, and something still has to say the learner has
