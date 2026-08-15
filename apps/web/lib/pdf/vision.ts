@@ -36,6 +36,7 @@
 
 import { descriptionWithoutLabels, parseFigureLabels, type FigureLabel } from "@/lib/learn/figure-labels";
 import { PAGE_BATCH_SIZE, PAGE_CONCURRENCY, parsePageTranscripts } from "@/lib/pdf/pages";
+import { currentVisionLedger } from "@/lib/pdf/vision-budget";
 
 /** Google retires fixed model ids for new keys (learned 2026-07-14 with
  *  gemini-2.5-flash → 404 on a fresh key), so walk a ladder newest-first on a
@@ -258,7 +259,17 @@ export async function readFiguresWithVision(
   const key = (env.GEMINI_API_KEY ?? "").trim();
   if (!key || images.length === 0) return { descriptions: out, labels: found };
 
-  const usable = images.filter((image) => withinVisionLimit(image.bytes.byteLength));
+  const withinLimit = images.filter((image) => withinVisionLimit(image.bytes.byteLength));
+  // 🔴 THE BUDGET IS TAKEN BEFORE THE FIRST BATCH IS BUILT, NOT CHECKED INSIDE THE LOOP.
+  // Checking per batch would let three concurrent workers each pass a check against the
+  // same remaining allowance and then all spend it — the classic read-then-write race,
+  // and `FIGURE_CONCURRENCY` is 3 precisely so batches do run at once. Taking the whole
+  // grant up front is a single synchronous debit, so the arithmetic cannot be raced.
+  //
+  // Figures beyond the grant keep the `not-examined` reason they already have, which
+  // coverage counts as a gap. A truncated document reports a shortfall rather than
+  // reporting completion — the same rule `MAX_FIGURES_PER_DOC` follows.
+  const usable = withinLimit.slice(0, currentVisionLedger().take(withinLimit.length));
   const batches: VisionImage[][] = [];
   for (let start = 0; start < usable.length; start += FIGURE_BATCH_SIZE) {
     batches.push(usable.slice(start, start + FIGURE_BATCH_SIZE));
@@ -303,8 +314,16 @@ export async function readFiguresWithVision(
 
 /** One generateContent call, walking the model ladder. Returns null on any failure. */
 async function callGemini(body: string, key: string, env: VisionEnv, signal?: AbortSignal): Promise<string | null> {
+  const ledger = currentVisionLedger();
   for (const model of visionModels(env)) {
     let response: Response;
+    // 🔴 COUNTED PER REQUEST ISSUED, INSIDE THE LADDER, NOT ONCE PER CALL. A retired model
+    // 404s and the ladder walks to the next one, so one logical "call" can be three HTTP
+    // requests. Counting at the entry point would report 1 for 3 and quietly understate
+    // how hard this document was to read — the diagnostic that explains a slow parse.
+    // `units` remains the number a price is multiplied by; this is the number that
+    // explains latency.
+    ledger.noteCall();
     try {
       response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
         body,
@@ -417,9 +436,14 @@ export async function readPdfPagesWithVision(
     });
   };
 
+  // 🔴 THE PAGE LANE IS THE EXPENSIVE ONE AND IT HAD NO CEILING AT ALL. `MAX_FIGURES_PER_DOC`
+  // guards figures; a scanned book is not a figure, and its 2,116 pages are 2,116 billable
+  // units. Whatever the grant does not cover is left out of `out`, and the caller already
+  // reports an absent page as unread rather than as read-and-empty.
+  const affordable = indices.slice(0, currentVisionLedger().take(indices.length));
   const batches: number[][] = [];
-  for (let start = 0; start < indices.length; start += PAGE_BATCH_SIZE) {
-    batches.push([...indices.slice(start, start + PAGE_BATCH_SIZE)]);
+  for (let start = 0; start < affordable.length; start += PAGE_BATCH_SIZE) {
+    batches.push([...affordable.slice(start, start + PAGE_BATCH_SIZE)]);
   }
   let next = 0;
   await Promise.all(
@@ -447,6 +471,11 @@ export async function readPdfWithVision(
   const key = (env.GEMINI_API_KEY ?? "").trim();
   if (!key) return null;
   if (!withinVisionLimit(bytes.byteLength)) return null;
+  // A whole-file read is one unit however many pages are inside it — that is how it is
+  // billed, one inline request. Refusing when the budget is gone returns the same null
+  // every other unavailable-vision path returns, so the caller keeps its existing "no
+  // selectable text" answer instead of learning a new failure mode.
+  if (currentVisionLedger().take(1) === 0) return null;
 
   const body = buildVisionRequest(Buffer.from(bytes).toString("base64"));
   for (const model of visionModels(env)) {

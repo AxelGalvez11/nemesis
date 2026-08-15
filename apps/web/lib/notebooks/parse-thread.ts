@@ -24,12 +24,32 @@
 import { parentPort, workerData } from "node:worker_threads";
 
 import { parseDocument } from "./parse-document";
+import {
+  NO_SPEND,
+  VisionLedger,
+  documentUnitCap,
+  withVisionBudget,
+  type VisionSpend,
+} from "@/lib/pdf/vision-budget";
 
 /** What the parent sends. Bytes are transferred, not copied. */
 export interface ParseThreadInput {
   bytes: ArrayBuffer;
   fileName: string;
   mimeType: string;
+  /**
+   * Images and pages this parse may pay to look at.
+   *
+   * 🔴 A NUMBER, BECAUSE A LEDGER CANNOT CROSS A THREAD BOUNDARY. The parent holds the
+   * database and does the reserving; a class instance would not survive structured
+   * cloning, and an `AsyncLocalStorage` context does not span threads at all. So the
+   * parent sends an allowance and the thread builds its own ledger from it — which is
+   * also why the spend has to be sent back rather than read from a shared object.
+   *
+   * Absent means "no reservation was made", which is the synchronous upload lane and
+   * every test. Those fall back to the per-document default rather than to unlimited.
+   */
+  visionUnitBudget?: number;
 }
 
 /**
@@ -40,7 +60,7 @@ export interface ParseThreadInput {
  * terminal. Only a genuine throw becomes `{ threw }`.
  */
 export type ParseThreadOutput =
-  | { ok: true; parsed: unknown; figures?: unknown; peakRssMb: number }
+  | { ok: true; parsed: unknown; figures?: unknown; peakRssMb: number; visionSpend?: VisionSpend }
   /**
    * A refusal, and — for `no-text` — what was found anyway.
    *
@@ -53,8 +73,15 @@ export type ParseThreadOutput =
    * It survives `postMessage` for the same reason the success path's does: the
    * model is plain data, so structured cloning carries it intact.
    */
-  | { ok: false; reason: string; parsed?: unknown; figures?: unknown; peakRssMb: number }
-  | { threw: string; peakRssMb: number };
+  | { ok: false; reason: string; parsed?: unknown; figures?: unknown; peakRssMb: number; visionSpend?: VisionSpend }
+  /**
+   * 🔴 A THROW REPORTS ITS SPEND TOO, AND THAT IS THE WHOLE POINT OF SETTLING.
+   * A parse that described thirty figures and then died on the thirty-first still cost
+   * thirty figures. Reporting spend only on success would refund money that was
+   * genuinely spent, and the per-user ceiling would drift upward every time a document
+   * failed late — the ceiling leaking exactly where the expensive documents are.
+   */
+  | { threw: string; peakRssMb: number; visionSpend?: VisionSpend };
 
 /** Peak resident memory seen by this thread, sampled as the parse runs. */
 let peakRss = 0;
@@ -75,17 +102,23 @@ export async function runParseThread(
   const sampler = setInterval(sampleRss, 250);
   // The parse must not be kept alive by its own instrumentation.
   if (typeof sampler.unref === "function") sampler.unref();
+  // Built once and read on every exit path, including the throw. `spend()` is a snapshot,
+  // so asking after the parse died still reports what the parse had already spent.
+  const ledger = new VisionLedger(input.visionUnitBudget ?? documentUnitCap());
+  const spent = (): VisionSpend => (ledger ? ledger.spend() : NO_SPEND);
   try {
-    const outcome = await parseDocument(
-      new Uint8Array(input.bytes),
-      input.fileName,
-      input.mimeType,
-      // 🔴 THE BACKGROUND LANE IS WHERE A DOCUMENT MAY COST MINUTES AND MONEY.
-      // The synchronous upload route calls the same parser and deliberately does
-      // NOT set this: up to 40 vision calls on a request path is latency the
-      // student waits through, on the one primitive with no entitlement, no
-      // counter and no cache. Here the student is not waiting.
-      { lookAtFigures: true },
+    const outcome = await withVisionBudget(ledger, () =>
+      parseDocument(
+        new Uint8Array(input.bytes),
+        input.fileName,
+        input.mimeType,
+        // 🔴 THE BACKGROUND LANE IS WHERE A DOCUMENT MAY COST MINUTES AND MONEY.
+        // The synchronous upload route calls the same parser and deliberately does
+        // NOT set this: up to 40 vision calls on a request path is latency the
+        // student waits through, on the one primitive with no entitlement, no
+        // counter and no cache. Here the student is not waiting.
+        { lookAtFigures: true },
+      ),
     );
     sampleRss();
     post(
@@ -100,11 +133,12 @@ export async function runParseThread(
       // is the price; the alternative is the parent re-downloading and re-parsing a
       // 124 MB original to recover pixels that were in memory here.
       outcome.ok
-        ? { figures: outcome.figures, ok: true, parsed: outcome.document, peakRssMb: peakRss }
+        ? { figures: outcome.figures, ok: true, parsed: outcome.document, peakRssMb: peakRss, visionSpend: spent() }
         : {
             ok: false,
             reason: outcome.reason,
             peakRssMb: peakRss,
+            visionSpend: spent(),
             // Only `no-text` carries one. Every other refusal has nothing to send.
             ...(outcome.reason === "no-text"
               ? { figures: outcome.figures, parsed: outcome.document }
@@ -116,7 +150,11 @@ export async function runParseThread(
     // The message crosses a thread boundary, so it has to be a string — an
     // Error's prototype does not survive structured cloning intact, and the
     // parent classifies on the message anyway.
-    post({ threw: caught instanceof Error ? caught.message : String(caught), peakRssMb: peakRss });
+    post({
+      threw: caught instanceof Error ? caught.message : String(caught),
+      peakRssMb: peakRss,
+      visionSpend: spent(),
+    });
   } finally {
     clearInterval(sampler);
   }

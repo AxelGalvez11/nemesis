@@ -168,3 +168,45 @@ export function sanitizeError(cause: unknown): string {
     .replace(/\b[Bb]earer\s+\S+/g, "<token>")
     .slice(0, 300);
 }
+
+// ── Vision settlement ──────────────────────────────────────────────────────
+
+/** What a parse reported spending, when it lived long enough to report. */
+export interface ReportedVisionSpend {
+  readonly calls: number;
+  readonly units: number;
+}
+
+/**
+ * What to settle a vision reservation at.
+ *
+ * 🔴 SILENCE IS NOT ZERO. This is the whole decision, and it is one line, and getting it
+ * backwards is the difference between a ceiling and a suggestion.
+ *
+ * A parse killed by the deadline guard, the memory guard, or the platform is TERMINATED —
+ * `worker.terminate()` reclaims it in 9 ms and it never posts a message. So the run
+ * reports no spend at all, while the images it had already sent to Gemini were already
+ * billed. Reading that absence as "spent nothing" would refund the entire reservation
+ * exactly in the case where the document was most expensive, and a poisoned file could
+ * then be retried five times at full cost while the daily ledger stayed at zero.
+ *
+ * Unreported therefore settles at the FULL GRANT. That over-charges a parse that died
+ * early having spent nothing — which is the acceptable direction, because it costs a
+ * student some of one day's allowance rather than costing the owner an unbounded bill.
+ *
+ * Kept out of the route so it can be tested without a server, exactly as the header of
+ * this file says.
+ */
+export function visionSettlement(
+  granted: number,
+  reported: ReportedVisionSpend | null | undefined,
+): { used: number; calls: number } {
+  if (!reported) return { calls: 0, used: Math.max(0, granted) };
+  return {
+    calls: Math.max(0, reported.calls),
+    // Clamped to the grant: a report above what was reserved would otherwise settle as a
+    // negative refund, which `settle_vision_units` also clamps — two clamps because this
+    // one keeps the log line honest and that one keeps the ledger honest.
+    used: Math.min(Math.max(0, granted), Math.max(0, reported.units)),
+  };
+}
