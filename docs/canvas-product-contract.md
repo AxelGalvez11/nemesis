@@ -85,12 +85,12 @@ highlighting · asking Define
 Both are legitimate. **They must not merge into one store.** One is a claim about
 capability; the other is a claim about friction.
 
-## R4 — Six kinds of knowledge, of which the system mints four
+## R4 — Six kinds of knowledge, of which the system mints five
 
 §6 names **conceptual · associative/factual · procedural · relational/causal ·
 discriminative · spatial/structural**.
 
-**Measured 2026-08-14**, by reading `objectivesForKnowledge` rather than this document:
+**Measured 2026-08-15**, by reading `objectivesForKnowledge` rather than this document:
 
 | Category | Knowledge type | Capability | Task |
 |---|---|---|---|
@@ -98,12 +98,14 @@ discriminative · spatial/structural**.
 | relational/causal | `causal` | `predict` | predict |
 | spatial/structural | `spatial` | `locate` | name |
 | discriminative | `classification` | `discriminate` | compare |
+| procedural | `procedure` | `sequence` | reconstruct |
 | conceptual | — | — | **produces nothing** |
-| procedural | — | — | **produces nothing** |
 
 The original measurement read *"mints `association` only… five of the six produce nothing."*
 Two of those five closed with `causal` and `spatial`; `discriminative` closed when wide grids
-began minting classes. **Two categories remain, and that is now the size of the gap.**
+began minting classes; `procedural` closed when a document's own numbered lists started being
+read as the ordered runs they are, rather than dropped with everything else a bullet list is.
+**One category remains, and that is now the size of the gap.**
 
 🔴 **A KIND IS NOT SHIPPED WHEN THE EXTRACTOR MINTS IT.** Each row above needs all four columns
 before it counts, because §13 of the runtime spec is explicit that a knowledge type without an
@@ -111,10 +113,12 @@ interaction that suits it falls back to whatever exists — a mechanism drilled 
 taught wrongly and then tested on. `discriminate` sat named-but-unminted in the capability union
 for exactly this reason until a task existed to consume it.
 
-🔴 **AND THE REMAINING TWO ARE NOT ONE MORE EXTRACTOR EACH.** `conceptual` and `procedural` have
-no defensible structural signal in a grid the way a repeating column gives one for a class —
-finding what in a document says "this is a procedure" without a per-field keyword list is the
-open problem, not the plumbing.
+🔴 **AND THE LAST ONE IS NOT ONE MORE EXTRACTOR.** `procedural` turned out to have a real
+structural signal after all — a document's own numbering marker, and only when it runs
+consecutively rather than being templated (`1. 1. 1.`) or referential (`3. 7. 12.`) — the same
+kind of fact a repeating column is for `discriminative`. `conceptual` has no equivalent: nothing
+in a document's structure says "this explains why" the way a marker says "this is ordered" —
+finding that signal without a per-field keyword list is the open problem, not the plumbing.
 
 ## R5 — Minimap vocabulary supersedes
 
