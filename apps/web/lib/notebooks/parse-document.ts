@@ -279,21 +279,43 @@ function vendorFor(kind: DocumentKind): "mistral" | "llamaparse" | null {
   return null;
 }
 
-async function parseWithVendor(
+/**
+ * The vendor clients `parseWithVendor` calls, injectable so a test can prove a call was AVOIDED
+ * rather than merely that it failed. Defaults to the real network clients; production never
+ * passes this argument.
+ */
+interface VendorClients {
+  readWithMistral: typeof readWithMistral;
+  readWithLlama: typeof readWithLlama;
+}
+const REAL_VENDOR_CLIENTS: VendorClients = { readWithLlama, readWithMistral };
+
+/**
+ * Exported so a test can call it directly with a counting stub in place of the network client —
+ * see `parse-document.test.ts`. Not part of `ParseOptions`; this is a test seam, not a product
+ * knob, and it must not become one.
+ */
+export async function parseWithVendor(
   bytes: Uint8Array,
   fileName: string,
   mimeType: string,
   kind: DocumentKind,
+  vendors: VendorClients = REAL_VENDOR_CLIENTS,
 ): Promise<ParseOutcome | null> {
   const vendor = vendorFor(kind);
   if (!vendor) return null;
+
+  // Computed once and reused below for the quality gate too — a pure, local read of the file's
+  // own zip parts (see `mistral-quality.ts`), safe to call unconditionally: it returns a claim of
+  // nothing for any kind that is not pptx or docx.
+  const claim = claimOf(kind, bytes);
 
   let model: DocumentModel | null = null;
   let readBy = "";
   let unitsBilled = 0;
 
   if (vendor === "mistral") {
-    const outcome = await readWithMistral(bytes, fileName, mimeType);
+    const outcome = await vendors.readWithMistral(bytes, fileName, mimeType);
     if (!outcome.ok) {
       // `not-configured` is the ordinary state of a local checkout and of any preview deploy
       // without the key, so it is not worth a line in the log; everything else is a provider fact
@@ -307,7 +329,34 @@ async function parseWithVendor(
     readBy = `${MISTRAL_PARSER_PREFIX}${outcome.response.model || "unknown"}`;
     unitsBilled = outcome.response.pages.length;
   } else {
-    const outcome = await readWithLlama(bytes, fileName);
+    // 🔴 THE DETERMINISTIC HALF OF THE FIGURE-LOSS GATE (§46.6 follow-up, 2026-08-15).
+    // `modelFromLlama` has exactly two item branches, `heading` and `table` — no picture branch
+    // exists, so a PPTX carrying real pictures is GUARANTEED to come back with zero figure blocks
+    // regardless of what LlamaParse itself returns. `judgeMistralRead` already rejects that read
+    // every time (`found < claim.images` can never be false when `found` is structurally always
+    // zero), so calling the vendor first only pays for a call whose outcome is not in doubt.
+    //
+    // This is NOT the same claim as the notes/tables cases below it, which stay genuinely
+    // uncertain until the vendor answers — LlamaParse's own read of a deck's speaker notes, or a
+    // Word document's tables, really can go either way, and skipping those ahead of time would
+    // give up real wins the gate exists to allow through. Only the figures case is skipped, and
+    // only for PPTX: `claimOf` never sets `images` for DOCX (see `mistral-quality.ts`), so this
+    // reads as `false` there by construction rather than by a second condition to keep in sync.
+    //
+    // The result of skipping is BYTE-IDENTICAL to today's outcome for every such document: before
+    // this change, the vendor was called, `judgeMistralRead` rejected it, and `parseWithVendor`
+    // returned null so `parseDocument` fell through to the local PPTX lane. After this change,
+    // the same `null` is returned one step earlier, into the exact same fallthrough. See
+    // `parse-document.test.ts` for the assertion that the two paths produce the same
+    // `ParseOutcome`.
+    if (kind === "pptx" && claim.images > 0) {
+      console.warn(
+        JSON.stringify({ event: "vendor_skipped_would_lose_figures", images: claim.images, kind, vendor }),
+      );
+      return null;
+    }
+
+    const outcome = await vendors.readWithLlama(bytes, fileName);
     if (!outcome.ok) {
       if (outcome.reason !== "not-configured") {
         console.warn(JSON.stringify({ code: outcome.code, event: "llama_fell_back", kind, ms: outcome.durationMs, reason: outcome.reason }));
@@ -331,7 +380,7 @@ async function parseWithVendor(
   // not arrive — a deck whose speaker notes are missing, a Word document whose tables are gone.
   // It never compares against the legacy parser's output, because running both would cost exactly
   // what this change exists to stop paying.
-  const verdict = judgeMistralRead(claimOf(kind, bytes), model);
+  const verdict = judgeMistralRead(claim, model);
   if (!verdict.ok) {
     console.warn(
       JSON.stringify({ detail: verdict.detail, event: "vendor_quality_rejected", kind, missing: verdict.missing, vendor }),
