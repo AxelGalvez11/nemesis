@@ -177,3 +177,39 @@ test("🔴 the timer is cleared on EVERY exit, including unmount", async () => {
   );
   assert.match(body, /live = false;\n {6}\/\/[\s\S]*?clearTimeout\(expiry\);/, "the cleanup must clear it");
 });
+
+// ── the scaffold rung the policy chose must reach the prompt it builds ───────────────────────────
+//
+// 🔴 lib/learn/scaffold-decision.ts computes a REAL rung — narrowed, cued, or recognition — from a
+// trailing run of unresolved attempts, and teaching-policy.ts's `retrieve` branch already carries
+// it on `TeachingAction.rung` (required, not optional, on that variant — "every branch that
+// returns retrieve states it explicitly"). But `retrievalPromptFor`'s own `rung` parameter
+// (lib/learn/objective-task.ts) is OPTIONAL and silently defaults to `"independent"` when a caller
+// omits it. Before this fix, the one call site that turns a decision into an on-screen prompt
+// never read `decision.action.rung` at all — so a learner could miss the same objective five times
+// in a row and every retrieval offered would still be full, unaided `independent` demand. The
+// scaffolding ladder existed, was unit-tested, and nothing on the path a real learner walks ever
+// reached it — the exact failure shape this codebase keeps re-finding under a different name.
+//
+// These are source assertions, like every other guard in this file: a React effect has no return
+// value a test can call and inspect, so what can be pinned is the STATEMENT that mints the prompt.
+
+test("🔴 the scaffold rung reaches retrievalPromptFor, not just its default", async () => {
+  // 🔴 CALIBRATION: change the call below back to
+  // `retrievalPromptFor(decision, crypto.randomUUID())` (drop the third argument) and this test
+  // reddens — confirmed by reverting the fix, running this file alone, and restoring it.
+  const code = strip(await read("./use-policy-runtime.ts"));
+
+  const guardStart = code.indexOf('if (!decision || decision.action.type !== "retrieve"');
+  assert.notEqual(guardStart, -1, "the retrieve-only guard must still exist — it is what makes `.rung` well-typed below");
+
+  const call = code.indexOf("setPrompt(retrievalPromptFor(", guardStart);
+  assert.notEqual(call, -1, "the one place a RetrievalPrompt is minted must still exist, after the guard");
+  const statement = code.slice(call, code.indexOf(";", call));
+
+  assert.match(
+    statement,
+    /retrievalPromptFor\(decision, crypto\.randomUUID\(\), decision\.action\.rung\)/,
+    "the rung teaching-policy.ts chose for this retrieval must be passed through — omitting it is not a compile error, it is every retrieval silently staying independent",
+  );
+});
