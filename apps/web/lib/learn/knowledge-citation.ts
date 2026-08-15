@@ -1,0 +1,92 @@
+// "Where did this come from?", answered for a claim the Canvas is about to show the learner.
+//
+// 🔴 THE CONSUMING HALF OF A CONVERSION THAT ONLY EVER HAD A PRODUCING HALF. Two locator systems
+// meet in this product, and until now traffic ran in one direction only:
+//
+//     canvas-local  ->  durable      knowledge-territory.ts:275, causal-grounded.ts:178
+//                                    (both start from an excerpt id a model cited, so they can
+//                                    mint `sourceRefs` and `sourceAnchors` together)
+//     durable       ->  canvas-local `groundCanonicalAnchor` — WRITTEN, TESTED, NEVER CALLED
+//
+// Everything minted by EXTRACTION arrives on the second road. `extractKnowledgeObjects` reads a
+// `SourceContext`, not a canvas, so it records only the durable anchor — deliberately, and
+// `knowledge-extraction.test.ts:76` pins it: *"a canvas-local ref would be meaningless here"*. That
+// is right at the point of minting and fatal at the point of showing, because the surface renders
+// citations from `sourceRefs`. The consequence was silent and total: every claim read out of a
+// learner's own table, diagram, procedure or class contrast reached the screen with a real,
+// durable, quote-checked record of where it came from, and no way to say so.
+//
+// 🔴 THIS FILE IS THE CALL SITE, NOT A SECOND CONVERTER. The matching rules — durable source id
+// never the canvas ordinal, unit join, quote decides which piece of a split unit — all live in
+// `groundCanonicalAnchor` and stay there. A second implementation would be one edit away from
+// disagreeing with the first, and the disagreement would surface as a citation pointing at real
+// text from the wrong place, which this codebase already names as worse than no citation at all.
+
+import { groundCanonicalAnchor, quotedExcerpt } from "./canvas-grounding";
+import type { CanvasSource, SourceRef } from "./canvas-model";
+import type { KnowledgeObject } from "./knowledge-types";
+
+/**
+ * One place a claim can honestly be pointed at, resolved far enough that a surface can print it.
+ *
+ * 🔴 IT CARRIES THE TITLE AND THE LABEL RATHER THAN LEAVING THE RENDERER TO LOOK THEM UP. Resolving
+ * a ref means finding the source and the excerpt; a renderer handed only `{sourceId, excerptId}`
+ * would have to do that lookup again, and a lookup that can fail in the presentation layer is a
+ * lookup that will one day render an empty string instead of refusing.
+ */
+export interface KnowledgeCitation {
+  /** The canvas-local citation itself, so a caller that wants the text can `quotedExcerpt` it. */
+  ref: SourceRef;
+  /** What the learner calls this document. */
+  sourceTitle: string;
+  /** The heading or slide the excerpt sat under. `null` when the document named none — never
+   *  invented, and never replaced with a placeholder. */
+  label: string | null;
+}
+
+/**
+ * Every place this canvas can honestly show for this claim.
+ *
+ * 🔴 A REFUSAL IS DROPPED, NEVER DOWNGRADED. `groundCanonicalAnchor` returns `null` for an anchor
+ * from a document this canvas does not hold, a source that was never filed, and a quote that no
+ * longer exists after a reparse. All three mean "we cannot point at this", and the only correct
+ * response is to say nothing about that anchor. There is deliberately no fallback here — no
+ * first-excerpt guess, no source-level "somewhere in this file", no "unknown source" label. A
+ * plausible citation that resolves to the wrong text is the exact defect the whole two-locator
+ * design exists to make impossible, and it would be introduced right here or nowhere.
+ *
+ * 🔴 AN EMPTY RESULT IS THEREFORE MEANINGFUL AND MUST REACH THE SURFACE AS SILENCE. It says the
+ * claim has no showable origin in THIS canvas, which is different from the claim having no origin.
+ * Callers render no citation; they must not render an apology for one.
+ *
+ * 🔴 DEDUPLICATED BY THE PLACE, NOT BY THE ANCHOR. One claim can carry several anchors that land in
+ * the same excerpt — a term stated twice in one table, or a claim grounded by both extraction and
+ * `groundClaims`. Those are one place to show the learner, and listing it twice would present a
+ * single mention as corroboration.
+ */
+export function citationsForKnowledge(
+  sources: readonly CanvasSource[],
+  knowledge: Pick<KnowledgeObject, "sourceAnchors">,
+): KnowledgeCitation[] {
+  const citations: KnowledgeCitation[] = [];
+  const seen = new Set<string>();
+
+  for (const anchor of knowledge.sourceAnchors ?? []) {
+    const ref = groundCanonicalAnchor(sources, anchor);
+    if (!ref) continue;
+
+    const key = `${ref.sourceId} ${ref.excerptId}`;
+    if (seen.has(key)) continue;
+
+    // The ref was built from an excerpt of one of these sources, so this resolves by construction.
+    // It is still checked rather than asserted: the alternative to checking is rendering a citation
+    // whose text nobody confirmed exists, and the honest branch costs one line.
+    const resolved = quotedExcerpt(sources, ref);
+    if (!resolved) continue;
+
+    seen.add(key);
+    citations.push({ label: resolved.excerpt.label, ref, sourceTitle: resolved.source.title });
+  }
+
+  return citations;
+}

@@ -31,6 +31,7 @@ import {
 } from "@/lib/learn/canvas-focus";
 import { tempoFor, type HostedTask } from "@/lib/learn/canvas-hosting";
 import { expositionFor, NO_EXPOSITION, type Exposition } from "@/lib/learn/cognitive-mode";
+import { citationsForKnowledge, type KnowledgeCitation } from "@/lib/learn/knowledge-citation";
 import { emptyCoverage } from "@/lib/learn/knowledge-coverage";
 import type { KnowledgeObject } from "@/lib/learn/knowledge-types";
 import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/policy-override";
@@ -122,6 +123,25 @@ export interface PolicyRuntime {
    */
   claims: readonly KnowledgeObject[];
   decision: TeachingDecision | null;
+  /**
+   * Where the claim in `decision` can honestly be shown to have come from — empty when nowhere.
+   *
+   * 🔴 RESOLVED HERE BECAUSE THIS IS WHERE BOTH HALVES EXIST AT ONCE, AND NOWHERE ELSE DOES. The
+   * conversion needs the durable anchors (on the knowledge, which arrives from the store) AND this
+   * canvas's own excerpt list (on `canvas.sources`, which the knowledge has never seen). The policy
+   * that chose the decision has no canvas; the knowledge object outlives every canvas. This hook
+   * holds both, so it is the seam.
+   *
+   * 🔴 IT IS DERIVED FROM `decision`, NOT FROM THE OBJECTIVE OR THE PROMPT, AND THAT PAIRING IS THE
+   * CORRECTNESS PROPERTY. The correction screen prints `decision.knowledge.statement`; these
+   * citations come from `decision.knowledge.sourceAnchors`. One object, so the citation cannot
+   * describe a claim other than the one on screen — the failure `declaredCognitiveMode` exists to
+   * prevent, in its provenance form.
+   *
+   * 🔴 EMPTY MEANS RENDER NOTHING. It is not "unknown" and not "no source" — see
+   * `citationsForKnowledge`, which refuses rather than guesses.
+   */
+  citations: readonly KnowledgeCitation[];
   /**
    * Which teaching controller is running this session.
    *
@@ -626,6 +646,24 @@ export function usePolicyRuntime(
   );
 
   /**
+   * Where the claim on screen came from, in this canvas's own excerpt ids.
+   *
+   * 🔴 THE PRODUCTION CALL SITE OF `groundCanonicalAnchor`, VIA `citationsForKnowledge`. Extraction
+   * records a durable anchor into the SOURCE; the surface can only render a citation into THIS
+   * canvas's excerpt list. Nothing converted between them, so five kinds of extracted knowledge
+   * reached the learner carrying a perfectly good record of their origin and no way to show it.
+   *
+   * 🔴 RECOMPUTED FROM `canvas.sources` RATHER THAN STORED ON THE KNOWLEDGE. A canvas-local id is
+   * only true of the canvas that minted it and only until its sources change; caching one on an
+   * object that outlives both is how a citation starts pointing at the wrong excerpt after a
+   * reattach. Resolving on read costs a scan of one list and cannot go stale.
+   */
+  const citations = useMemo<readonly KnowledgeCitation[]>(
+    () => (decision ? citationsForKnowledge(canvas.sources, decision.knowledge) : []),
+    [canvas.sources, decision],
+  );
+
+  /**
    * WHAT THE LEARNER IS ACTUALLY LOOKING AT — one value, one precedence, read by everything.
    *
    * 🔴🔴 THIS EXISTS BECAUSE ASKING `decision.action.type` "WHAT IS ON SCREEN?" GETS THE WRONG
@@ -1093,6 +1131,7 @@ export function usePolicyRuntime(
   return {
     acknowledge,
     admitUnknown,
+    citations,
     claims,
     coverage: knowledge.coverage,
     decision,
