@@ -1,50 +1,57 @@
 import { SiteChrome } from "@/components/SiteChrome";
 import { Hero } from "@/components/home/Hero";
-import { Canvas } from "@/components/home/Canvas";
-import { Intake } from "@/components/home/Intake";
-import { LearnerModel } from "@/components/home/LearnerModel";
-import { Tenets } from "@/components/home/Tenets";
-import { Everything } from "@/components/home/Everything";
+import { CanvasShowcase } from "@/components/showcase/CanvasShowcase";
+import { Sources } from "@/components/home/Sources";
 import { Closer } from "@/components/home/Closer";
 
 /**
  * The homepage.
  *
- * ── WHAT CHANGED, AND WHY IT IS SHORTER ───────────────────────────────────────
+ * ── WHY IT IS FOUR SECTIONS ───────────────────────────────────────────────────
  *
- * The previous version was twelve sections and ~1,800 words. It explained Nemesis
- * accurately and at length, which made it read as documentation: the same idea was
- * restated in the problem, the loop, the map, the diagnosis and the tenets, each
- * with its own paragraph. Words were doing about 70% of the communication.
+ * The previous version was seven sections and explained, in order: the preparation
+ * tax, the learning loop, resolution, diagnosis, progress, the learner model,
+ * sources, recording, ingestion, retrieval, calendar, memory, six tenets, control,
+ * uncertainty and exportability. All of it true, and all of it standing between a
+ * first-time visitor and the product.
  *
- * This is seven sections and roughly a third of the copy, with real captures of the
- * running Canvas carrying the argument the prose used to make. The order:
+ * Nemesis is one adaptive Canvas. A site for it should be about as complicated as
+ * that sentence:
  *
- *   hero → canvas → what goes in → what it learns → three tenets → the rest → close
+ *   hero          the claim, and the organism making it
+ *   showcase      one Canvas changing what it renders, four times, while pinned
+ *   sources       what you bring, and that you can trace it back
+ *   close         the claim again, now that it means something
  *
- * Sections that were folded rather than dropped: the preparation tax and sources
- * became one diagram (Intake); the map, the diagnosis and progress became the loop
- * line under the Canvas captures and the three tenets; capabilities and trust became
- * one strip. Nothing true was removed — the restatements were.
+ * ── WHY THERE IS ONE SHOWCASE AND NOT TWO SECTIONS ────────────────────────────
+ *
+ * There used to be a Canvas mock that cycled on a timer, and beneath it three
+ * separate demonstrations of three representations. Both were arguing the same
+ * point, which meant the page made it twice and proved it neither time — three
+ * demonstrations side by side show three surfaces, and the entire claim is that
+ * there is only ever one. They are now a single pinned Canvas that changes what
+ * it renders as you scroll.
+ *
+ * ── WHERE THE REST WENT ───────────────────────────────────────────────────────
+ *
+ * Not deleted — moved to /principles, intact. The thinking in those sections is
+ * good and some visitors will want it; it just is not what a stranger needs in the
+ * first thirty seconds. The nav's "Tenets" link now points there.
  *
  * ── THE TWO CHARACTERS ────────────────────────────────────────────────────────
  *
- * The three beads are the MARK: identity in the nav and footer. The chrome organism
- * is atmosphere and transition, and it appears five times on purpose rather than
- * beside every block — a character that turns up next to every paragraph is
- * wallpaper. Where it does appear it is saying something: it opens around material
- * in Intake, converges in the learner model, and is tight, asymmetric or smooth in
- * the three tenets according to which tenet it sits with.
+ * The three beads are the MARK: identity, in the nav and the footer, static. The
+ * organism is its living form and appears exactly twice — at rest in the hero, and
+ * drawing inward in the sources section. It deliberately does not travel down the
+ * page through the showcase: the thing that persists there is the Canvas, and two
+ * persistent objects competing for the same scroll would be one too many.
  */
 export default function Home() {
   return (
     <SiteChrome>
       <Hero />
-      <Canvas />
-      <Intake />
-      <LearnerModel />
-      <Tenets />
-      <Everything />
+      <CanvasShowcase />
+      <Sources />
       <Closer />
     </SiteChrome>
   );
