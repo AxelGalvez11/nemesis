@@ -189,8 +189,14 @@ test("🔴 the composer has exactly ONE answer route, and it comes from the sink
   // hand an answer typed at a recall card to the policy's prompt id.
   const source = await SOURCE;
   assert.match(source, /task=\{sink\.kind === "none" \? null : sink\.task\}/, "the task is not the sink's");
-  assert.match(source, /sink\.kind === "policy"\s*\n?\s*\? \(text, via, tookMs\) => void policy\.submit/);
-  assert.match(source, /policy\.submit\(text, via, tookMs\)/);
+  // 🔴 RESHAPED FROM A TERNARY TO AN `if`/`else` INSIDE ONE `onAnswer` FUNCTION (contract rule 2,
+  // 2026-08-15) — `applyExplanationEvent` has to run before EITHER receiver on every answer, and a
+  // ternary choosing between two arrow functions has nowhere to put a step that both branches share.
+  // The property this test exists for is unchanged: `sink.kind` still picks exactly one receiver,
+  // never both, so the check follows the reshape rather than the literal `? … :` it used to require.
+  const onAnswer = source.slice(source.indexOf("onAnswer={"), source.indexOf("inSession={"));
+  assert.match(onAnswer, /if \(sink\.kind === "policy"\) void policy\.submit\(text, via, tookMs\);/);
+  assert.match(onAnswer, /else void session\.answerActiveTask\(text, via, tookMs\);/);
 
   // 🔴 THE COMPOSER IS RENDERED ONCE. Two <CanvasComposer> sites — one per runtime — would give the
   // page two answer boxes again while every assertion above still passed.

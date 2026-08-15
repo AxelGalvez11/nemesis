@@ -21,6 +21,7 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
 import { CanvasComposer } from "./canvas-composer";
+import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
@@ -153,6 +154,26 @@ export function LearningCanvas({
   const [term, setTerm] = useState<{ selection: CanvasSelection; rect: DOMRect } | null>(null);
   const pointed = text.selection ?? term;
 
+  // 🔴 CONTRACT RULE 2, WIRED — see canvas-explanation-turn.ts for the decision itself. Both ad hoc
+  // explanation surfaces (`aside`, the Define/Example/Why popover behind `pointed`) read their
+  // CURRENT presence here and hand it to the pure function, so every call site below dispatches an
+  // EVENT rather than deciding for itself whether to clear — which is what kept the aside alive
+  // past the answer-a-task path before this: `askAbout`'s "disappears" was true only of the ask
+  // path, because nothing on the answer path had ever been told to clear it.
+  const applyExplanationEvent = useCallback(
+    (event: ExplanationEvent) => {
+      const current = { hasAside: session.aside !== null, hasPopover: Boolean(pointed) };
+      const next = nextExplanationState(current, event);
+      if (current.hasAside && !next.hasAside) session.dismissAside();
+      if (current.hasPopover && !next.hasPopover) {
+        setAnswer(null);
+        setTerm(null);
+        session.clearSelectionAnswer();
+      }
+    },
+    [pointed, session],
+  );
+
   // The weakest signal in the log, and recorded anyway: a selection nobody asked a question
   // about still says where attention snagged. One row per settled selection, not per
   // `selectionchange` — the hook already debounces, or a single drag would write dozens.
@@ -176,11 +197,15 @@ export function LearningCanvas({
   }, [session, text.selection]);
 
   const dismissSelection = useCallback(() => {
-    setAnswer(null);
-    setTerm(null);
-    session.clearSelectionAnswer();
+    // 🔴 `text.clear()` STAYS OUTSIDE `applyExplanationEvent` DELIBERATELY. It calls
+    // `removeAllRanges()`, which is correct for an explicit dismiss — the learner pressed the
+    // popover's own × — but would be wrong on a `new_turn`: it would wipe a highlight the learner
+    // is still pointing at while they type an unrelated composer message. Keeping it here, rather
+    // than folding it into the shared event handler, is what keeps that side effect scoped to the
+    // one event that actually asked for it.
+    applyExplanationEvent({ kind: "dismiss_popover" });
     text.clear();
-  }, [session, text]);
+  }, [applyExplanationEvent, text]);
 
   // Clicking a marked term is exactly "select this word, press Define" — so it builds the same
   // selection a drag would have produced and takes the same route, which is what keeps the event
@@ -278,6 +303,13 @@ export function LearningCanvas({
 
   const submit = useCallback(
     async (text: string) => {
+      // 🔴 CONTRACT RULE 2 — "normal chat responses may remain only until the next turn." Fired
+      // ONCE, before any branch below, so every route out of this function (explain-this, where-
+      // from, rewrite, refused, ordinary) gets it for free rather than five branches each needing
+      // to remember. Safe ahead of `only` below: it touches `aside`/the selection popover only,
+      // never `selected` — see canvas-explanation-turn.ts.
+      applyExplanationEvent({ kind: "new_turn" });
+
       // "Where did this come from?" is answered about the highlighted passage rather than by
       // rewriting it — asking about a claim should never silently change the claim.
       const only = selected.length === 1 ? selected[0] : null;
@@ -354,7 +386,7 @@ export function LearningCanvas({
       await session.command(text, selected);
       clearSelection();
     },
-    [canvas, clearSelection, policy.decision, policy.feedback, policy.prompt, selected, session],
+    [applyExplanationEvent, canvas, clearSelection, policy.decision, policy.feedback, policy.prompt, selected, session],
   );
 
   // 🔴 EVERY state prints its own primary action in the page, and the top controls carry none.
@@ -593,7 +625,27 @@ export function LearningCanvas({
             wanted to look something up would have to dismiss the question to do it. It sits above
             the reading and the reading continues beneath it — one continuous surface, which is why
             neither is in a panel, a modal or a column of its own. */}
-        {regions.policy && <CanvasPolicyView onContinue={continueBelongsTo(continueRegion, "policy") ? policy.acknowledge : null} runtime={policy} sharing={regions.sharing} />}
+        {regions.policy && (
+          <CanvasPolicyView
+            // 🔴 DISPATCHES `policy_continue` BEFORE ACKNOWLEDGING, NOT BECAUSE THIS CALL CHANGES
+            // ANYTHING — `nextExplanationState` returns the state unchanged for this event — but
+            // because the call site is what keeps that row real rather than theoretical. Contract
+            // rule 2's two categories are only "explicit in the code, not incidental" if pressing
+            // Continue on a correction provably does NOT also clear an unrelated aside three
+            // questions old; this is where that gets exercised, and it is what a future edit
+            // routing `onContinue` into `new_turn` by mistake would have to walk past.
+            onContinue={
+              continueBelongsTo(continueRegion, "policy")
+                ? () => {
+                    applyExplanationEvent({ kind: "policy_continue" });
+                    policy.acknowledge();
+                  }
+                : null
+            }
+            runtime={policy}
+            sharing={regions.sharing}
+          />
+        )}
 
         {/* 🔴 THE TWO PRE-CONTENT SCREENS ARE DELETED, NOT HIDDEN (UX brief §1). `CanvasEmpty`
             painted "What do you want to learn?" over a large dashed upload box with its own topic
@@ -656,7 +708,11 @@ export function LearningCanvas({
             busy={busy.kind !== null}
             busyBlockIds={busy.blockIds ?? []}
             canvas={canvas}
-            onDismissAside={session.dismissAside}
+            // 🔴 ROUTED THROUGH THE SHARED DECISION RATHER THAN `session.dismissAside` DIRECTLY —
+            // see canvas-explanation-turn.ts. Behaviourally identical for an explicit dismiss (the
+            // learner's own × always clears it); what this buys is one rule with four call sites
+            // instead of a handler that happens to agree with the others today.
+            onDismissAside={() => applyExplanationEvent({ kind: "dismiss_aside" })}
             showContinue={continueBelongsTo(continueRegion, "document")}
             // §11 — free and local: the previous wording is already on the block, so this is a
             // state change rather than a request, and it cannot fail.
@@ -771,11 +827,16 @@ export function LearningCanvas({
           // safe ternary only because ownership was all-or-nothing. `sink` is a union that cannot
           // name two receivers, so there is no combination of states in which both branches are
           // live — see canvas-hosting.ts.
-          onAnswer={
-            sink.kind === "policy"
-              ? (text, via, tookMs) => void policy.submit(text, via, tookMs)
-              : (text, via, tookMs) => void session.answerActiveTask(text, via, tookMs)
-          }
+          onAnswer={(text, via, tookMs) => {
+            // 🔴 CONTRACT RULE 2 — answering what the canvas is asking is a "next turn" exactly as
+            // much as typing a fresh question is (`submit()`'s own dispatch, above). Before this,
+            // an aside opened by "Explain this" survived every retrieval answer given afterwards,
+            // because nothing on THIS path — as opposed to `session.command`'s — had ever been
+            // told to clear it: `askAbout`'s "disappears" was only ever true of the ask route.
+            applyExplanationEvent({ kind: "new_turn" });
+            if (sink.kind === "policy") void policy.submit(text, via, tookMs);
+            else void session.answerActiveTask(text, via, tookMs);
+          }}
           inSession={sink.kind === "policy"}
           // 🔴 THE COMPOSER NO LONGER CARRIES PROGRESSION (§38/§39). `✓` was the one control that
           // moved the learner past material; it is a `Continue` below that material now, because
