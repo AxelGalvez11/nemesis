@@ -22,6 +22,25 @@ test("no response at all reads as a message, never as text", () => {
   assert.equal(outcome.kind, "message");
 });
 
+test("a specific server error is shown over the generic fallback", () => {
+  const outcome = captureOutcome(null, "That image is too large to read. Try a smaller one.");
+  assert.deepEqual(outcome, { kind: "message", message: "That image is too large to read. Try a smaller one." });
+});
+
+test("a blank or absent server error still falls back to the generic message", () => {
+  assert.notEqual(captureOutcome(null, "").kind, undefined);
+  assert.equal((captureOutcome(null, "") as { message: string }).message.length > 0, true);
+  assert.deepEqual(captureOutcome(null, "   "), captureOutcome(null));
+  assert.deepEqual(captureOutcome(null, undefined), captureOutcome(null));
+});
+
+test("a server error is ignored once a real observation comes back", () => {
+  // A caller only has a server error to offer on the null-observation path — this pins that a
+  // leftover error string from a PREVIOUS failed attempt could never leak onto a later success.
+  const outcome = captureOutcome(observation({ transcription: "hello" }), "stale error from before");
+  assert.deepEqual(outcome, { kind: "text", text: "hello" });
+});
+
 test("🔴 an abstained observation NEVER produces text, even one carrying a transcription", () => {
   // 🔴 CALIBRATION: delete the `if (observation.abstained)` branch in handwriting-pad-outcome.ts —
   // this reddens, because the function would then fall through to the transcription below and

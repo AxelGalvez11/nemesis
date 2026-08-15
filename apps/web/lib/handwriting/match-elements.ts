@@ -3,6 +3,17 @@
 // re-prompting the model. See types.ts's file header for why the model is never told what to
 // look for.
 //
+// 🔴 NOTHING IN THE RUNNING PRODUCT CALLS THIS YET, AND THAT IS STATED HERE ON PURPOSE. The vision
+// call, the API route, and the hook all carry an `expectedElements` parameter end to end — the
+// route matches and returns `matches`, the hook reads and exposes them — but no caller in
+// components/workspace/learn/ currently HAS an expected-elements list to pass in: that list would
+// come from a task's `expectedEvidence` (lib/learn/objective-task.ts's `RetrievalPrompt`), and
+// reaching it from the capture pad would mean crossing into lib/learn, which this change does not
+// do. So this function is fully built, fully tested (match-elements.test.ts), reachable through
+// the whole plumbing above it, and exercised by nothing but its own test today. Documented rather
+// than silently shipped as though it were live — see the task report's handoff notes for what
+// would need to supply the list.
+//
 // 🔴 "unclear" IS THE DEFAULT. "absent" IS THE HARDEST VALUE TO EARN, AND THAT IS DELIBERATE —
 // the same asymmetry `lib/learn/learner-evidence.ts`'s `satisfies()` already states for the
 // scaffold ladder: "the error is deliberately in the under-claiming direction... against silently

@@ -40,9 +40,15 @@ function toSentence(raw: string): string {
  * a response came back and the model tried and could not read the image — but both land on the
  * same message shape here, because from the learner's side of the composer they call for the
  * identical next step: try again, or type it instead.
+ *
+ * @param serverError The API route's own error string, when the failure was a real HTTP response
+ *   rather than a network-level one — "That image is too large to read" is a different, more
+ *   useful thing to tell a learner than the generic fallback below, and the route already writes
+ *   it in the same plain, no-em-dash voice this file uses. Ignored when `observation` is present:
+ *   a successful read has nothing to do with whatever error string might be left over.
  */
-export function captureOutcome(observation: HandwritingObservation | null): CaptureOutcome {
-  if (!observation) return { kind: "message", message: READ_FAILURE_MESSAGE };
+export function captureOutcome(observation: HandwritingObservation | null, serverError?: string | null): CaptureOutcome {
+  if (!observation) return { kind: "message", message: serverError?.trim() || READ_FAILURE_MESSAGE };
 
   if (observation.abstained) {
     const reason = toSentence(observation.abstentionReason ?? "");

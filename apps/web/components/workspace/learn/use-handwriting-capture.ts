@@ -10,7 +10,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
-import type { HandwritingObservation } from "@/lib/handwriting/types";
+import type { ElementMatch, HandwritingObservation } from "@/lib/handwriting/types";
 
 import { captureOutcome, type CaptureOutcome } from "./handwriting-pad-outcome";
 
@@ -20,6 +20,16 @@ export interface HandwritingCapture {
    *  to render current status; `analyze`'s own return value is the one to act on, since it is not
    *  subject to React's render timing the way this field is. */
   outcome: CaptureOutcome | null;
+  /**
+   * The route's per-element matches, when `analyze` was called with `expectedElements`.
+   *
+   * 🔴 NOTHING IN THIS CHANGE CALLS `analyze` WITH A SECOND ARGUMENT, SO THIS IS ALWAYS `[]` TODAY.
+   * The field exists so the data path is honest end to end — route computes `matches`, hook reads
+   * and exposes them — rather than a response field that arrives and is silently thrown away,
+   * which reads as wired when it is not. See match-elements.ts's file header for what caller this
+   * is waiting on.
+   */
+  matches: readonly ElementMatch[];
   /** Send one image to be read. Resolves with the outcome directly — never rejects, mirroring
    *  analyzeHandwriting's own "never throw" contract one layer up. */
   analyze: (blob: Blob, expectedElements?: readonly string[]) => Promise<CaptureOutcome>;
@@ -30,6 +40,7 @@ export function useHandwritingCapture(): HandwritingCapture {
   const { session } = useAuth();
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<CaptureOutcome | null>(null);
+  const [matches, setMatches] = useState<readonly ElementMatch[]>([]);
   // Invalidates a request that finishes after a newer one started, or after the pad was reset —
   // the same "still live" guard StoredFigureOcclusion uses for a signed URL in flight.
   const requestId = useRef(0);
@@ -39,9 +50,11 @@ export function useHandwritingCapture(): HandwritingCapture {
       const id = (requestId.current += 1);
       setBusy(true);
       setOutcome(null);
-      const settle = (result: CaptureOutcome) => {
+      setMatches([]);
+      const settle = (result: CaptureOutcome, resultMatches: readonly ElementMatch[] = []) => {
         if (id === requestId.current) {
           setOutcome(result);
+          setMatches(resultMatches);
           setBusy(false);
         }
         return result;
@@ -61,9 +74,16 @@ export function useHandwritingCapture(): HandwritingCapture {
           headers: { Authorization: `Bearer ${token}` },
           method: "POST",
         });
-        const body = (await response.json().catch(() => null)) as { observation?: unknown } | null;
+        const body = (await response.json().catch(() => null)) as
+          | { error?: string; matches?: unknown; observation?: unknown }
+          | null;
         const observation = response.ok ? ((body?.observation as HandwritingObservation | undefined) ?? null) : null;
-        return settle(captureOutcome(observation));
+        const rowsFromBody = response.ok && Array.isArray(body?.matches) ? (body.matches as ElementMatch[]) : [];
+        // 🔴 A SPECIFIC ROUTE ERROR ("too large", "not an image") IS SHOWN OVER THE GENERIC ONE —
+        // only offered on the null-observation path, and captureOutcome ignores it entirely once a
+        // real observation comes back, so a stale error from a previous attempt can never leak
+        // onto a later success.
+        return settle(captureOutcome(observation, response.ok ? null : (body?.error ?? null)), rowsFromBody);
       } catch {
         return settle(captureOutcome(null));
       }
@@ -75,7 +95,8 @@ export function useHandwritingCapture(): HandwritingCapture {
     requestId.current += 1;
     setBusy(false);
     setOutcome(null);
+    setMatches([]);
   }, []);
 
-  return { analyze, busy, outcome, reset };
+  return { analyze, busy, matches, outcome, reset };
 }
