@@ -276,3 +276,70 @@ describe("the budget actually reaches the network, on every vision lane", () => 
     assert.equal(ledger.spend().units, 1, "and the figure was still paid for");
   });
 });
+
+describe("a dead model ladder is a provider failure, not an empty answer", () => {
+  test("reached is false when every model 404s", async () => {
+    // 🔴 THE EXACT PRODUCTION STATE ON 2026-08-15. All three models on the old ladder
+    // returned 404 on generateContent — `gemini-2.5-flash` with the message "no longer
+    // available to new users". The first figure-bearing lecture the worker ever parsed
+    // sent 9 figures, made 3 requests, and recorded 0 descriptions, which coverage then
+    // reported as `examined-empty`: something looked and had nothing to say. Nothing
+    // looked at anything.
+    const before = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: { code: 404, message: "no longer available" } }), {
+        status: 404,
+      })) as unknown as typeof fetch;
+    try {
+      const read = await readFiguresWithVision(
+        [{ bytes: new Uint8Array([1]), mime: "image/png", name: "a" }],
+        { env: { GEMINI_API_KEY: "k" } },
+      );
+      assert.equal(read.reached, false, "no request succeeded, so the provider was never reached");
+      assert.equal(read.descriptions.size, 0);
+    } finally {
+      globalThis.fetch = before;
+    }
+  });
+
+  test("reached is true when a reply comes back, even one that describes nothing", async () => {
+    // The discriminating twin. A model that answers "none" for a decorative logo HAS been
+    // reached, and that figure is honestly `examined-empty`. If this and the test above
+    // both passed with a hardcoded value, neither would mean anything.
+    const before = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "1. none" }] } }] }), {
+        status: 200,
+      })) as unknown as typeof fetch;
+    try {
+      const read = await readFiguresWithVision(
+        [{ bytes: new Uint8Array([1]), mime: "image/png", name: "a" }],
+        { env: { GEMINI_API_KEY: "k" } },
+      );
+      assert.equal(read.reached, true, "a reply arrived, so the provider WAS reached");
+    } finally {
+      globalThis.fetch = before;
+    }
+  });
+
+  test("an unconfigured key never claims to have reached anything", async () => {
+    const read = await readFiguresWithVision([{ bytes: new Uint8Array([1]), mime: "image/png", name: "a" }], {
+      env: {},
+    });
+    assert.equal(read.reached, false);
+  });
+
+  test("the shipped ladder holds no model this codebase has measured as retired", () => {
+    // 🔴 A LADDER OF LITERALS ROTS SILENTLY, AND THIS ONE ROTTED COMPLETELY. Measured
+    // against the live API on 2026-08-15: every one of these returns 404. Naming them
+    // here means re-adding a dead model fails a test instead of failing production.
+    const RETIRED = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite-preview"];
+    for (const dead of RETIRED) {
+      assert.ok(
+        !VISION_MODEL_LADDER.includes(dead as (typeof VISION_MODEL_LADDER)[number]),
+        `${dead} was measured as 404 on generateContent and must not be on the ladder`,
+      );
+    }
+    assert.ok(VISION_MODEL_LADDER.length >= 2, "a ladder needs somewhere to fall back to");
+  });
+});

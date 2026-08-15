@@ -88,6 +88,10 @@ export async function lookAtFigures(
 
   let described = new Map<string, string>();
   let labelled = new Map<string, FigureLabel[]>();
+  // 🔴 FALSE UNTIL A REQUEST ACTUALLY COMES BACK. A throw below leaves it false, and so
+  // does a model ladder that 404s all the way down — which is exactly what production was
+  // doing while reporting every figure as `examined-empty`.
+  let reached = false;
   try {
     // 🔴 `readFiguresWithVision`, NOT `describeFiguresWithVision` — SAME CALL, TWO ANSWERS (§46.6),
     // exactly the PPTX lane's rule. `describeFiguresWithVision` is a thin wrapper around this exact
@@ -98,6 +102,7 @@ export async function lookAtFigures(
     const seen = await readFiguresWithVision(send, { env, signal: options.signal });
     described = seen.descriptions;
     labelled = seen.labels;
+    reached = seen.reached;
   } catch {
     // A provider failure is a disclosed gap, not a parse failure.
   }
@@ -106,7 +111,14 @@ export async function lookAtFigures(
     const text = described.get(image.name);
     const named = labelled.get(image.name);
     results.set(Number(image.name), {
-      ...(text ? { description: text } : { skipped: "examined-empty" }),
+      // 🔴 TWO DIFFERENT ABSENCES, AND THE VOCABULARY ALREADY HAD BOTH WORDS.
+      // `examined-empty` means something looked and had nothing to say — a disclosed
+      // decision about this picture. `vision-unavailable` means no request ever
+      // succeeded, so nothing looked at anything. Calling the second one the first is
+      // what let a completely dead model ladder report nine diagrams as examined, and it
+      // is the same shape as every other silent degradation in this codebase: the
+      // flattering reading of a missing value.
+      ...(text ? { description: text } : { skipped: reached ? "examined-empty" : "vision-unavailable" }),
       ...(named && named.length > 0 ? { labels: named } : {}),
     });
   }

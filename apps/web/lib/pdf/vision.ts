@@ -38,13 +38,33 @@ import { descriptionWithoutLabels, parseFigureLabels, type FigureLabel } from "@
 import { PAGE_BATCH_SIZE, PAGE_CONCURRENCY, parsePageTranscripts } from "@/lib/pdf/pages";
 import { currentVisionLedger } from "@/lib/pdf/vision-budget";
 
-/** Google retires fixed model ids for new keys (learned 2026-07-14 with
- *  gemini-2.5-flash → 404 on a fresh key), so walk a ladder newest-first on a
- *  404 exactly like supabase/functions/nemesis-media does. */
+/**
+ * Google retires fixed model ids for new keys, so walk a ladder newest-first on a 404
+ * exactly like supabase/functions/nemesis-media does.
+ *
+ * 🔴🔴 EVERY MODEL ON THE PREVIOUS LADDER WAS DEAD, AND PRODUCTION HAD BEEN PAYING FOR IT.
+ * Measured against the live API on 2026-08-15 with a working key: `gemini-3.5-flash`,
+ * `gemini-3.1-flash-lite` AND `gemini-2.5-flash` all return 404 on `generateContent`.
+ * The message on the last one is explicit — "no longer available to new users". The first
+ * figure-bearing lecture the document worker ever parsed in production sent 9 figures,
+ * made 3 requests, walked the whole ladder into 404s and recorded ZERO descriptions.
+ *
+ * That is also the explanation for a much older observation: `DocFigure.labels` is
+ * populated in 0 of 74 real figures, and the §46.6 occlusion feature has never once had
+ * data to work with. It was never a labelling problem. Nothing was ever reaching a model.
+ *
+ * 🔴 A LADDER OF LITERALS ROTS SILENTLY, so the ladder is no longer the only defence —
+ * `readFiguresWithVision` now reports whether the provider was reached at all, and a
+ * figure nobody could send is recorded as `vision-unavailable` rather than as a figure
+ * something looked at and had nothing to say about. When this ladder next dies, coverage
+ * says so instead of quietly reporting examined figures.
+ *
+ * Verified reachable on the same key and endpoint that 404s the old ones.
+ */
 export const VISION_MODEL_LADDER = [
-  "gemini-3.5-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
   "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
 ] as const;
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -239,6 +259,21 @@ export async function describeFiguresWithVision(
 }
 
 /**
+ * What one figure request round produced, and whether it produced it at all.
+ *
+ * 🔴 `reached` IS NOT A DIAGNOSTIC NICETY. Without it, "the provider answered and had
+ * nothing to say about this picture" and "no request ever succeeded" are the same value —
+ * an absent description — and the second one silently wears the first one's name in
+ * coverage. That is how a completely dead model ladder reported nine figures as examined.
+ */
+export interface VisionFigureRead {
+  readonly descriptions: Map<string, string>;
+  readonly labels: Map<string, FigureLabel[]>;
+  /** True once any request returned a usable reply. False means nothing was ever read. */
+  readonly reached: boolean;
+}
+
+/**
  * The same call, with what it saw NAMED AND PLACED as well as described (§46.6).
  *
  * 🔴 ONE REQUEST, TWO ANSWERS. `FIGURE_PROMPT` asks for the labels on the batch that was already
@@ -252,12 +287,17 @@ export async function describeFiguresWithVision(
 export async function readFiguresWithVision(
   images: readonly VisionImage[],
   options: { env?: VisionEnv; signal?: AbortSignal } = {},
-): Promise<{ descriptions: Map<string, string>; labels: Map<string, FigureLabel[]> }> {
+): Promise<VisionFigureRead> {
   const out = new Map<string, string>();
   const found = new Map<string, FigureLabel[]>();
   const env = options.env ?? process.env;
   const key = (env.GEMINI_API_KEY ?? "").trim();
-  if (!key || images.length === 0) return { descriptions: out, labels: found };
+  // An unconfigured key is NOT "reached and said nothing" — nothing was sent at all.
+  if (!key || images.length === 0) return { descriptions: out, labels: found, reached: false };
+  // Flipped by the first request that comes back with a usable reply. Stays false when the
+  // whole model ladder 404s, which is precisely the state that used to be indistinguishable
+  // from a model looking at nine diagrams and having no comment on any of them.
+  let reached = false;
 
   const withinLimit = images.filter((image) => withinVisionLimit(image.bytes.byteLength));
   // 🔴 THE BUDGET IS TAKEN BEFORE THE FIRST BATCH IS BUILT, NOT CHECKED INSIDE THE LOOP.
@@ -286,6 +326,7 @@ export async function readFiguresWithVision(
     const reply = await callGemini(body, key, env, options.signal);
     // One failed batch loses its own descriptions and nothing else.
     if (!reply) return;
+    reached = true;
     const parsed = parseFigureDescriptions(reply, batch.length);
     if (!parsed) return;
     parsed.forEach((entry, index) => {
@@ -309,7 +350,7 @@ export async function readFiguresWithVision(
     }
   });
   await Promise.all(workers);
-  return { descriptions: out, labels: found };
+  return { descriptions: out, labels: found, reached };
 }
 
 /** One generateContent call, walking the model ladder. Returns null on any failure. */
