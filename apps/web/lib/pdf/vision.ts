@@ -356,6 +356,12 @@ export async function readFiguresWithVision(
 /** One generateContent call, walking the model ladder. Returns null on any failure. */
 async function callGemini(body: string, key: string, env: VisionEnv, signal?: AbortSignal): Promise<string | null> {
   const ledger = currentVisionLedger();
+  // 🔴 WHY THE LADDER DIED, NOT JUST THAT IT DID. Production spent two whole parses
+  // failing every request with no way to tell a retired model (404) from a rejected key
+  // (401/403) from an exhausted quota (429), because the only trace was an absence. One
+  // log line at the end of an exhausted ladder is the difference between "somebody needs
+  // to look at the API key" and "somebody needs to read the model list".
+  const attempts: string[] = [];
   for (const model of visionModels(env)) {
     let response: Response;
     // 🔴 COUNTED PER REQUEST ISSUED, INSIDE THE LADDER, NOT ONCE PER CALL. A retired model
@@ -372,18 +378,29 @@ async function callGemini(body: string, key: string, env: VisionEnv, signal?: Ab
         method: "POST",
         signal,
       });
-    } catch {
+    } catch (caught) {
+      attempts.push(`${model}=threw`);
       continue;
     }
     if (!response.ok) {
+      attempts.push(`${model}=${response.status}`);
       await response.body?.cancel();
-      if (response.status === 401 || response.status === 403) return null;
+      // A rejected key will reject every model, so walking the rest is pointless — but it
+      // must still SAY so, or the caller cannot distinguish it from a silent success.
+      if (response.status === 401 || response.status === 403) {
+        console.warn(JSON.stringify({ event: "vision_key_rejected", attempts }));
+        return null;
+      }
       continue;
     }
     const payload = (await response.json().catch(() => null)) as unknown;
     const text = parseVisionText(payload);
     if (text) return text;
+    attempts.push(`${model}=empty`);
   }
+  // Every model refused. Named individually, because "the ladder is dead" and "this one
+  // model was retired" need different fixes and look identical from a description count.
+  console.warn(JSON.stringify({ event: "vision_ladder_exhausted", attempts }));
   return null;
 }
 
@@ -512,6 +529,8 @@ export async function readPdfWithVision(
   const key = (env.GEMINI_API_KEY ?? "").trim();
   if (!key) return null;
   if (!withinVisionLimit(bytes.byteLength)) return null;
+  // Same diagnostics as the batched lane: an exhausted ladder must name what refused it.
+  const attempts: string[] = [];
   // A whole-file read is one unit however many pages are inside it — that is how it is
   // billed, one inline request. Refusing when the budget is gone returns the same null
   // every other unavailable-vision path returns, so the caller keeps its existing "no
@@ -528,12 +547,19 @@ export async function readPdfWithVision(
         method: "POST",
         signal: options.signal,
       });
-    } catch {
+    } catch (caught) {
+      attempts.push(`${model}=threw`);
       continue;
     }
     if (!response.ok) {
+      attempts.push(`${model}=${response.status}`);
       await response.body?.cancel();
-      if (response.status === 401 || response.status === 403) return null;
+      // A rejected key will reject every model, so walking the rest is pointless — but it
+      // must still SAY so, or the caller cannot distinguish it from a silent success.
+      if (response.status === 401 || response.status === 403) {
+        console.warn(JSON.stringify({ event: "vision_key_rejected", attempts }));
+        return null;
+      }
       continue;
     }
     const payload = (await response.json().catch(() => null)) as unknown;
