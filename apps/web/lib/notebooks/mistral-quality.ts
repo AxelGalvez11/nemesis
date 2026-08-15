@@ -29,11 +29,23 @@
  *
  * PDFs are not checked at all: a PDF makes no such claims about itself, and Mistral measurably beats
  * the local reader there — 16,823 words against 9,098, with 60 of the local ones corrupted.
+ *
+ * 🔴🔴 THE THIRD CASE, ADDED AFTER `LLAMAPARSE_API_KEY` WENT LIVE IN PRODUCTION (2026-08-14) AND
+ * `llamaparse-model.ts` GOT WIRED INTO `parseDocument` (`vendorFor("pptx") === "llamaparse"`).
+ * `modelFromLlama` handles `heading` and `table` items only — it has no branch for a picture at
+ * all, so a deck routed through the vendor lane arrives with ZERO figure blocks, unconditionally.
+ * `judgeMistralRead` previously checked only speaker notes and tables for PPTX, so a deck full of
+ * diagrams and light on notes would sail through the gate having lost every figure — the entire
+ * visual-teaching feature (descriptions AND §46.6 labels), not merely degraded. `ppt/media/` either
+ * holds real pictures or it does not, exactly as checkable as `ppt/notesSlides/`.
  */
 
 import type { DocumentModel } from "@nemesis/shared";
 
+import { imageSize } from "./image-dimensions";
 import { unzipBounded } from "./office";
+import { imageMime, MIN_IMAGE_EDGE, MIN_IMAGE_PIXELS, MIN_UNKNOWN_BYTES } from "./slide-media";
+import { isTiff } from "./tiff-image";
 
 /** What an Office file states about its own contents, read from its XML parts. */
 export interface ContentClaim {
@@ -43,9 +55,19 @@ export interface ContentClaim {
   notesChars: number;
   /** Tables the document markup declares. DOCX only. */
   tables: number;
+  /**
+   * Real pictures under `ppt/media/`. PPTX only.
+   *
+   * 🔴 SAME FILTER AS `slide-media.ts`, REUSED RATHER THAN REBUILT. A raw entry count would flag a
+   * deck whose only "picture" is a 3×3 bullet glyph, which is not a claim any real teaching content
+   * went missing. `MIN_IMAGE_EDGE` / `MIN_IMAGE_PIXELS` are the exact bar `planSlideMedia` already
+   * uses to tell a diagram from furniture, so this claim and the local lane's own triage cannot
+   * disagree about what counts as a real image.
+   */
+  images: number;
 }
 
-const NO_CLAIM: ContentClaim = { notesChars: 0, notesSlides: 0, tables: 0 };
+const NO_CLAIM: ContentClaim = { images: 0, notesChars: 0, notesSlides: 0, tables: 0 };
 
 /**
  * Notes worth failing a parse over.
@@ -89,27 +111,54 @@ export function claimOf(kind: string, bytes: Uint8Array): ContentClaim {
   if (kind === "pptx") {
     let notesSlides = 0;
     let notesChars = 0;
+    let images = 0;
     for (const [name, data] of Object.entries(parts)) {
-      if (!/^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name)) continue;
-      const text = runText(decoder.decode(data));
-      // A notes part whose only text is the slide number is PowerPoint's placeholder, not a note.
-      if (text.replace(/\d+/g, "").trim().length < 8) continue;
-      notesSlides += 1;
-      notesChars += text.length;
+      if (/^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name)) {
+        const text = runText(decoder.decode(data));
+        // A notes part whose only text is the slide number is PowerPoint's placeholder, not a note.
+        if (text.replace(/\d+/g, "").trim().length < 8) continue;
+        notesSlides += 1;
+        notesChars += text.length;
+        continue;
+      }
+      if (!name.startsWith("ppt/media/")) continue;
+      // Same test slide-media.ts applies to the SAME zip parts: a readable raster format, above
+      // the glyph floor. A vector metafile or an icon is not a claim of lost teaching content.
+      if (imageMime(name)) {
+        const size = imageSize(data);
+        if (!size) continue;
+        if (size.width < MIN_IMAGE_EDGE || size.height < MIN_IMAGE_EDGE) continue;
+        if (size.width * size.height < MIN_IMAGE_PIXELS) continue;
+        images += 1;
+        continue;
+      }
+      // 🔴 TIFF, COUNTED BY SIGNATURE AND SIZE, NOT DECODED. `tiff-image.ts` fully decodes into a
+      // PNG — real work, meant for the moment a figure is actually being sent somewhere. Spending
+      // that here, on every media part of every vendor-routed deck, would tax the fast lane to
+      // answer a yes/no question. Uncompressed TIFF is never small: `MIN_UNKNOWN_BYTES` is the same
+      // floor `slide-media.ts` uses when a format's header is not cheaply readable for pixel size —
+      // and a real Mac-authored deck's figures are routinely megabytes each, so this does not need
+      // to be precise to be right. Measured on the owner's own 124.5 MB immunology deck: 34 TIFF
+      // figures, all comfortably over this floor, none of them 3×3 glyphs.
+      if (isTiff(data) && data.byteLength >= MIN_UNKNOWN_BYTES) images += 1;
     }
-    return { notesChars, notesSlides, tables: 0 };
+    return { images, notesChars, notesSlides, tables: 0 };
   }
 
   const document = parts["word/document.xml"];
   if (!document) return NO_CLAIM;
   const tables = (decoder.decode(document).match(/<w:tbl(?:\s|>)/g) ?? []).length;
-  return { notesChars: 0, notesSlides: 0, tables };
+  // Images are a PPTX-only claim: `modelFromLlama` has no image branch for either format, but a
+  // Word document's pictures are decorative far more often than a lecture slide's, and Mistral's
+  // own DOCX table loss was already the measured, real failure worth a gate — this does not widen
+  // that without a measurement of its own.
+  return { images: 0, notesChars: 0, notesSlides: 0, tables };
 }
 
 /** Why a vendor read was rejected, in words that name the missing thing. */
 export type QualityVerdict =
   | { ok: true }
-  | { ok: false; detail: string; missing: "speaker-notes" | "tables" };
+  | { ok: false; detail: string; missing: "speaker-notes" | "tables" | "figures" };
 
 /**
  * Whether the vendor's document is good enough to use.
@@ -145,6 +194,23 @@ export function judgeMistralRead(claim: ContentClaim, model: DocumentModel): Qua
       return {
         detail: `document declares ${claim.tables} table(s); the read returned ${found}`,
         missing: "tables",
+        ok: false,
+      };
+    }
+  }
+
+  // 🔴 THE PPTX-FIGURE CASE, ADDED WITH LLAMAPARSE LIVE IN PRODUCTION. `modelFromLlama` has no item
+  // type for a picture, so a vendor-routed deck arrives with EXACTLY ZERO figure blocks regardless
+  // of how many `ppt/media/` holds — not a shortfall, a categorical gap. Checked as a shortfall
+  // anyway (`found < claim.images`, not `=== 0`), the same shape as the table case, so a future
+  // vendor lane that recovers SOME figures is judged on what it actually lost rather than being
+  // held to a today-only absolute.
+  if (claim.images > 0) {
+    const found = model.blocks.filter((block) => block.kind === "figure").length;
+    if (found < claim.images) {
+      return {
+        detail: `deck holds ${claim.images} real picture(s) in ppt/media/; the read returned ${found} figure block(s)`,
+        missing: "figures",
         ok: false,
       };
     }
