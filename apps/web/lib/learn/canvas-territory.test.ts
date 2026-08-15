@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { frozenTopic, materialSubject, readTerritory, territoryReuse, type CanvasTerritory } from "./canvas-territory";
+import {
+  frozenTopic,
+  markerStands,
+  materialSubject,
+  readTerritory,
+  territoryReuse,
+  type CanvasTerritory,
+} from "./canvas-territory";
 import type { KnowledgeObject } from "./knowledge-types";
 
 // The territory was rebuilt on every open, and it never converged.
@@ -153,7 +160,8 @@ test("🔴 and it EXPIRES when the rules change, so a better extractor still rea
   const stored = readTerritory({ emptyUnder: "causal/1+territory/1", identityVersion: 2, objects: [], topic: "sources:lib-1" });
   const decision = territoryReuse({ identityVersion: 2, rules: "causal/2+territory/1", stored });
   assert.equal(decision.reuse, false);
-  assert.equal(decision.reuse === false ? decision.miss : null, "empty-under-older-rules");
+  assert.equal(decision.reuse === false ? decision.miss : null, "empty-answer-superseded");
+  assert.equal(decision.reuse === false ? decision.reason : null, "ruleset-version-changed");
 });
 
 test("🔴 a caller that tracks no rules never suppresses a rebuild", () => {
@@ -247,4 +255,122 @@ test("🔴 build-once for a document canvas is enforced by the CALLER, not by a 
   assert.doesNotMatch(territory, /groundedReuse/, "no unreachable second reuse rule may come back");
   assert.doesNotMatch(territory, /material-changed/, "nor a miss reason nothing can report");
   assert.match(knowledge, /carried\.length === 0/, "the real gate is the caller's carried territory");
+});
+
+// ── the material half: "against which source content" ──────────────────────
+
+test("🔴🔴 a re-parsed document gets another look, which the rules fingerprint alone could not give it", () => {
+  // 🔴 THE GAP `buildRules` STATED IN ITS OWN HEADER AND DID NOT CLOSE: "IT DOES NOT CARRY THE
+  // DOCUMENT'S PARSE VERSION… a re-parse of the same file can genuinely change what is extractable,
+  // and this fingerprint will not notice." So a document re-read by a better parser stayed behind a
+  // stale "we found nothing" marker until an extraction bump happened along. Same bytes, same rules,
+  // NEW READER — and it must now expire.
+  const stored = readTerritory({
+    emptyOver: { contentHash: "s1:sha-abc", parserVersion: "s1:extract-2026-08-06" },
+    emptyUnder: "causal/1+territory/1",
+    identityVersion: 2,
+    objects: [],
+    topic: "sources:s1",
+  });
+  const decision = territoryReuse({
+    identityVersion: 2,
+    material: { contentHash: "s1:sha-abc", parserVersion: "s1:extract-2026-08-13" },
+    rules: "causal/1+territory/1",
+    stored,
+  });
+  assert.equal(decision.reuse, false);
+  assert.equal(decision.reuse === false ? decision.reason : null, "parser-version-changed");
+});
+
+test("🔴 replacing the FILE behind a source expires the empty answer — the bytes, not the row", () => {
+  // The canvas keeps the same source id and the same topic, so `materialSubject` cannot see this.
+  // Only the content hash can, which is why the owner's sentence says "against which source
+  // content" and not "for which sources".
+  const stored = readTerritory({
+    emptyOver: { contentHash: "s1:sha-OLD", parserVersion: "s1:extract-2026-08-13" },
+    emptyUnder: "causal/1+territory/1",
+    identityVersion: 2,
+    objects: [],
+    topic: "sources:s1",
+  });
+  const decision = territoryReuse({
+    identityVersion: 2,
+    material: { contentHash: "s1:sha-NEW", parserVersion: "s1:extract-2026-08-13" },
+    rules: "causal/1+territory/1",
+    stored,
+  });
+  assert.equal(decision.reuse === false ? decision.reason : null, "content-changed");
+});
+
+test("same rules, same bytes, same reader — still known-empty, still not paid for", () => {
+  const over = { contentHash: "s1:sha-abc", parserVersion: "s1:extract-2026-08-13" };
+  const stored = readTerritory({ emptyOver: over, emptyUnder: "causal/1", identityVersion: 2, objects: [], topic: "t" });
+  assert.equal(territoryReuse({ identityVersion: 2, material: over, rules: "causal/1", stored }).reuse, "known-empty");
+});
+
+test("🔴 a marker that never recorded its material gets ONE more look, not a permanent pass", () => {
+  // Unknown is not unchanged. Every marker written before material stamping carries rules and no
+  // content, and honouring it would be vouching for bytes nobody can prove it saw. Production held
+  // zero such markers when this shipped, so the honest reading cost nothing.
+  const stored = readTerritory({ emptyUnder: "causal/1", identityVersion: 2, objects: [], topic: "t" });
+  const decision = territoryReuse({
+    identityVersion: 2,
+    material: { contentHash: "s1:sha-abc", parserVersion: "s1:extract-2026-08-13" },
+    rules: "causal/1",
+    stored,
+  });
+  assert.equal(decision.reuse, false);
+  assert.equal(decision.reuse === false ? decision.reason : null, "content-changed");
+});
+
+test("🔴 a source that failed to LOAD does not expire the marker — an outage is not a new document", () => {
+  // The caller passes no material because it could not compute one. Treating that as "changed"
+  // would bill a model call for every transient read failure.
+  const stored = readTerritory({
+    emptyOver: { contentHash: "s1:sha-abc", parserVersion: "s1:extract-2026-08-13" },
+    emptyUnder: "causal/1",
+    identityVersion: 2,
+    objects: [],
+    topic: "t",
+  });
+  assert.equal(territoryReuse({ identityVersion: 2, rules: "causal/1", stored }).reuse, "known-empty");
+});
+
+test("🔴 a half-written material stamp reads as ABSENT, never as half-true", () => {
+  // A stamp missing one dimension would silently answer "unchanged" for the dimension it lost.
+  const stored = readTerritory({
+    emptyOver: { contentHash: "s1:sha-abc" },
+    emptyUnder: "causal/1",
+    identityVersion: 2,
+    objects: [],
+    topic: "t",
+  });
+  assert.ok(stored);
+  assert.equal(stored!.emptyOver, undefined, "a stamp with one half is not a stamp");
+});
+
+// ── markerStands: the one adapter both canvas markers use ───────────────────
+
+test("🔴 an absent marker is never-processed — no marker means the work was never done", () => {
+  // `mechanismsFor` asks this of a canvas that has never had its mechanisms read, and of one whose
+  // read was interrupted before it could be recorded. Both are unknown, and both must run.
+  const verdict = markerStands({ over: undefined, rules: "causal/1", under: undefined });
+  assert.deepEqual(verdict, { reason: "never-processed", reprocess: true });
+});
+
+test("🔴 the mechanism marker and the empty marker expire on exactly the same rule", () => {
+  // They are two markers over the same material with the same shelf life, and this is what stops
+  // them drifting into two policies. Same inputs, same verdict, one function.
+  const over = { contentHash: "s1:sha-abc", parserVersion: "s1:extract-2026-08-06" };
+  const now = { contentHash: "s1:sha-abc", parserVersion: "s1:extract-2026-08-13" };
+  const asMechanisms = markerStands({ material: now, over, rules: "causal/1", under: "causal/1" });
+  const asEmpty = territoryReuse({
+    identityVersion: 2,
+    material: now,
+    rules: "causal/1",
+    stored: readTerritory({ emptyOver: over, emptyUnder: "causal/1", identityVersion: 2, objects: [], topic: "t" }),
+  });
+  assert.equal(asMechanisms.reprocess, true);
+  assert.equal(asMechanisms.reason, "parser-version-changed");
+  assert.equal(asEmpty.reuse === false ? asEmpty.reason : null, asMechanisms.reason);
 });

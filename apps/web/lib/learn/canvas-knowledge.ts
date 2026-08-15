@@ -25,14 +25,21 @@ import { canvasCapture } from "./canvas-analytics";
 import { constructCausalKnowledge, constructTerritory } from "./canvas-api";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
-import { buildRules, frozenTopic, materialSubject, territoryReuse, type CanvasTerritory } from "./canvas-territory";
-import { CAUSAL_EXTRACTION_VERSION } from "./causal-extraction-contract";
-import { TERRITORY_VERSION } from "./knowledge-territory";
+import {
+  frozenTopic,
+  markerStands,
+  materialStamp,
+  materialSubject,
+  territoryReuse,
+  type CanvasTerritory,
+  type MaterialStamp,
+} from "./canvas-territory";
 import type { LearningCanvas } from "./canvas-model";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 import type { SourceContext } from "@/lib/sources/source-context";
 
-import { extractKnowledgeObjects, EXTRACTION_VERSION, type ExtractionOutcome } from "./knowledge-extraction";
+import { extractKnowledgeObjects, type ExtractionOutcome } from "./knowledge-extraction";
+import { RULESET_VERSION } from "./ruleset-version";
 import { groundClaims } from "./knowledge-grounding";
 import {
   coverageOfSource,
@@ -232,6 +239,23 @@ export async function ensureKnowledgeForCanvas(
   const loaded = await Promise.all(sourceIds.map((sourceId) => loadCanonicalSource(sourceId)));
   onPhase?.("mapping_knowledge");
 
+  // 🔴 WHICH BYTES, AND WHICH PARSE, THIS CANVAS'S ANSWERS ARE ABOUT — the material half of every
+  // "have we already done this?" decision below.
+  //
+  // 🔴 A SOURCE THAT FAILED TO LOAD CONTRIBUTES A NULL ENTRY RATHER THAN BEING LEFT OUT, and that
+  // is the whole reason this is built here and not from the successes. Omitting it would hand
+  // `materialStamp` a shorter, perfectly valid-looking list, and the canvas would compare a
+  // fingerprint of two documents against a stored fingerprint of three and call the material
+  // CHANGED — spending a model call because a read timed out. A null entry makes the stamp null,
+  // which suppresses the rebuild instead. Unknown material must never look like different material.
+  const material = materialStamp(
+    loaded.map((canonical, index) =>
+      canonical.ok
+        ? canonical.provenance
+        : { contentHash: null, parserVersion: null, sourceId: sourceIds[index] ?? String(index) },
+    ),
+  );
+
   for (const canonical of loaded) {
     if (!canonical.ok) {
       // Not counted as accounted for: what this source holds is now unknown, and unknown is not
@@ -374,6 +398,7 @@ export async function ensureKnowledgeForCanvas(
     const grounded = await groundedTerritory({
       canvas,
       coverage,
+      material,
       onPhase,
       outcome,
       ownership,
@@ -395,7 +420,7 @@ export async function ensureKnowledgeForCanvas(
   // lane could not read, and it owns the canvas's topic. Reading mechanisms is neither of those
   // things. A grid of terms and a paragraph asserting a cause are different content, and finding one
   // says nothing about the other.
-  const mechanisms = await mechanismsFor({ canvas, contexts, signal, sourceIds, stored: storedTerritory, userId });
+  const mechanisms = await mechanismsFor({ canvas, contexts, material, signal, sourceIds, stored: storedTerritory, userId });
 
   const fromDocument: ResolvedObjective[] = [];
   for (const knowledge of [...extracted, ...mechanisms]) {
@@ -439,15 +464,32 @@ export async function ensureKnowledgeForCanvas(
 async function mechanismsFor(input: {
   canvas: LearningCanvas;
   contexts: readonly SourceContext[];
+  material: MaterialStamp | null;
   signal?: AbortSignal;
   sourceIds: readonly string[];
   stored: CanvasTerritory | null;
   userId: string;
 }): Promise<KnowledgeObject[]> {
-  const { canvas, signal, sourceIds, stored, userId } = input;
+  const { canvas, material, signal, sourceIds, stored, userId } = input;
   if (canvas.sources.length === 0) return [];
-  // Already read under exactly these rules. Nothing to pay for, and nothing new to learn.
-  if (stored?.mechanismsUnder === GROUNDED_BUILD_RULES) return [];
+  // 🔴 THE SAME PREDICATE THE EMPTY-BUILD LANE AND THE PARSE LANE CALL, AND THIS LINE IS THE REASON
+  // THE PREDICATE EXISTS. It used to read `stored?.mechanismsUnder === GROUNDED_BUILD_RULES` — a
+  // bare string equality, guarding a paid model call, deciding independently of every other retry
+  // decision in the product when a completed-and-empty read expires. It is also the ONLY marker of
+  // this kind that exists in production. Leaving it as a `===` while routing the empty-build marker
+  // through `needsReprocess` would have shipped the second retry system inside the change whose
+  // whole purpose is that there is only one.
+  //
+  // What it gains by going through the predicate: a document re-parsed by a better reader now gets
+  // its mechanisms read again, where before only an extraction-rules bump could reach it.
+  const stands = markerStands({
+    material: material ?? undefined,
+    over: stored?.mechanismsOver,
+    rules: RULESET_VERSION,
+    under: stored?.mechanismsUnder,
+  });
+  // Already read under exactly these rules, over exactly this material. Nothing new to learn.
+  if (!stands.reprocess) return [];
 
   const subject = materialSubject(sourceIds);
   return onlyOnceAtATime(`mechanisms:${userId}:${canvas.id}:${subject}`, async () => {
@@ -476,7 +518,12 @@ async function mechanismsFor(input: {
     await saveCanvasTerritory(userId, canvas, {
       ...(stored ?? { objects: [], topic: subject }),
       identityVersion: KNOWLEDGE_IDENTITY_VERSION,
-      mechanismsUnder: GROUNDED_BUILD_RULES,
+      // 🔴 THE MATERIAL IS RECORDED BESIDE THE RULES, OR THE MARKER CANNOT ANSWER THE OWNER'S
+      // QUESTION. "Remembered with the version that produced them" is half of it; "against which
+      // source content" is the other half, and a marker carrying only the rules says a re-parsed
+      // or replaced document was already read.
+      ...(material ? { mechanismsOver: material } : {}),
+      mechanismsUnder: RULESET_VERSION,
     });
     return causal.objects;
   });
@@ -493,15 +540,12 @@ async function mechanismsFor(input: {
  */
 const TERRITORY_TARGET = 24;
 
-/**
- * The rules a grounded build runs under, as one string — see `buildRules`.
- *
- * 🔴 EVERY LANE THAT CAN CHANGE THE ANSWER IS IN HERE, AND ADDING A LANE MEANS ADDING IT HERE. A
- * document that yielded nothing is only allowed to stay silent while these are unchanged; the moment
- * one moves, it gets another look. A lane left out of this list is a lane whose improvements can
- * never reach the documents that most needed them.
- */
-const GROUNDED_BUILD_RULES = buildRules([TERRITORY_VERSION, CAUSAL_EXTRACTION_VERSION, EXTRACTION_VERSION]);
+// 🔴 `GROUNDED_BUILD_RULES` WAS HERE AND IS NOW `RULESET_VERSION` IN `ruleset-version.ts`. Same
+// three lanes, same `buildRules` sort, byte-for-byte the same string — which is load-bearing, not
+// cosmetic: production holds a live `mechanismsUnder` marker written under it, and a different
+// composition would silently expire that marker and buy a paid re-read for no reason. It moved
+// because the parse lane needs to compare against it too, and a constant private to this file
+// could not be the ONE version predicate's input. `ruleset-version.test.ts` asserts the equality.
 
 /**
  * A topic-first canvas, turned into knowledge the policy can act on.
@@ -731,6 +775,7 @@ async function carriedTerritory(
 async function groundedTerritory(input: {
   canvas: LearningCanvas;
   coverage: CanvasCoverage;
+  material: MaterialStamp | null;
   onPhase?: (phase: ThinkingPhase) => void;
   outcome: ExtractionOutcome;
   ownership: OwnershipDecision;
@@ -738,7 +783,7 @@ async function groundedTerritory(input: {
   sourceIds: readonly string[];
   userId: string;
 }): Promise<CanvasKnowledge | null> {
-  const { canvas, coverage, onPhase, outcome, ownership, signal, sourceIds, userId } = input;
+  const { canvas, coverage, material, onPhase, outcome, ownership, signal, sourceIds, userId } = input;
   const answer = (objectives: ResolvedObjective[]): CanvasKnowledge => ({ coverage, objectives, outcome, ownership });
 
   // 🔴 A LABEL ON THE MARKER, NOT A KEY ANYTHING COMPARES. `CanvasTerritory.topic` must be a
@@ -765,7 +810,8 @@ async function groundedTerritory(input: {
   const previous = await loadCanvasTerritory(userId, canvas.id);
   const reuse = territoryReuse({
     identityVersion: KNOWLEDGE_IDENTITY_VERSION,
-    rules: GROUNDED_BUILD_RULES,
+    ...(material ? { material } : {}),
+    rules: RULESET_VERSION,
     stored: previous,
   });
   if (reuse.reuse === "known-empty") return null;
@@ -815,7 +861,12 @@ async function groundedTerritory(input: {
   const resolved = objects.length === 0 ? [] : await storeTerritory(userId, objects);
   if (resolved.length === 0) {
     await saveCanvasTerritory(userId, canvas, {
-      emptyUnder: GROUNDED_BUILD_RULES,
+      // 🔴 THE RULES **AND** THE MATERIAL. "Empty results should be remembered with the extraction
+      // ruleset version that produced them" — and, in the owner's same sentence, against which
+      // source content. A marker with only the rules keeps insisting a replaced or re-parsed
+      // document was already looked at.
+      emptyUnder: RULESET_VERSION,
+      ...(material ? { emptyOver: material } : {}),
       identityVersion: KNOWLEDGE_IDENTITY_VERSION,
       objects: [],
       topic: subject,
