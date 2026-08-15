@@ -1,67 +1,60 @@
 "use client";
 
-import { ChromeBlob } from "@/components/ChromeBlob";
+import { NemesisOrganism } from "@/components/organism/NemesisOrganism";
 import { APP_SIGN_UP } from "@/components/SiteChrome";
 import { captureCtaClick } from "@/lib/posthog";
 
 /**
  * The hero.
  *
- * Five elements and a lot of nothing: the mark, the category, the statement, one
- * sentence, one action. The old hero put a laptop and a phone directly under the
- * headline — a product shot has to be earned by a proposition, and showing the
- * machine before saying what it is for makes the visitor grade the screenshot
- * instead of the idea.
+ * Four things: the statement, the organism, one sentence, one action. Gallery
+ * rather than landing page — the object is the content, and everything else gets
+ * out of its way.
  *
- * THE CATEGORY LINE IS DOING THE MOST WORK HERE. "cognitive accelerator" is not a
- * tagline; it is the answer to "what kind of thing is this", which is the question
- * a first-time visitor is actually holding, and no amount of benefit copy answers
- * it. It goes above the headline because that is the order the question arrives in.
+ * ── WHAT WAS REMOVED, AND WHY ─────────────────────────────────────────────────
  *
- * The mark is in `idle` — present, not working. Every other state is a claim that
- * something is happening, and nothing is happening yet.
+ * The "cognitive accelerator" kicker is gone. It existed to answer "what kind of
+ * thing is this" before the headline, which was the right instinct when the
+ * headline was "learn what matters." — a benefit line that names no category.
+ * "accelerate cognition." IS the category answer, so the kicker had become the
+ * same sentence twice, and two restatements stacked on top of each other read as
+ * hedging rather than as confidence.
+ *
+ * ── THE ORGANISM IS THE HERO, NOT DECORATION ──────────────────────────────────
+ *
+ * It sits between the headline and the supporting line, at full size, because the
+ * product's whole claim is that one adaptive surface reorganises around what you
+ * need. A visitor who watches the form continuously reorganise has already
+ * understood the proposition before reading a word of it. Pushed to the side as
+ * an accent it would be arguing for nothing.
+ *
+ * The three-bead mark is deliberately NOT repeated here — it sits in the nav
+ * sixty pixels above, and two identity objects in one viewport is two things to
+ * look at where the direction asks for one.
  */
 export function Hero() {
   return (
     <header className="nhero">
       <div className="wrap">
-        {/* THE ORGANISM IS THE HERO VISUAL, at full material and full size.
-            It was a 16%-opacity wash behind the bead mark first, and that read as a
-            grey smudge rather than as black chrome — the reference forms are
-            arresting precisely because they are dense and high-contrast.
-            The bead mark is deliberately NOT repeated here: it sits in the nav
-            sixty pixels above, and two identity objects in one viewport is two
-            things to look at where the direction asks for one. */}
-        <div className="nhero-mark reveal" aria-hidden="true">
-          <ChromeBlob state="idle" size={300} />
+        <h1 className="reveal">accelerate cognition.</h1>
+
+        <div className="nhero-organism reveal r2" aria-hidden="true">
+          <NemesisOrganism state="rest" size={520} />
         </div>
 
-        <p className="hkicker reveal r2">cognitive accelerator</p>
-
-        <h1 className="reveal r2">learn what matters.</h1>
-
-        <p className="nhero-lede reveal r3">
-          Nemesis turns your material into an adaptive learning system.
-        </p>
+        <p className="nhero-lede reveal r3">one canvas that learns how you learn.</p>
 
         <div className="nhero-cta reveal r3">
           <a
             className="btn btn-primary"
             href={APP_SIGN_UP}
-            onClick={() => captureCtaClick("hero", "Enter Nemesis")}
+            onClick={() => captureCtaClick("hero", "Start learning")}
           >
-            Enter Nemesis
-          </a>
-          <a className="hlink" href="#canvas">
-            see how it works
+            Start learning
           </a>
         </div>
 
-        <p className="nhero-coda reveal r4">
-          the machine prepares.
-          <br />
-          you learn.
-        </p>
+        <p className="nhero-coda reveal r4">drop anything. learn from it.</p>
       </div>
     </header>
   );

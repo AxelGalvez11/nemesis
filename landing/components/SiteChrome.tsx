@@ -83,7 +83,10 @@ export function SiteChrome({ children }: { children: ReactNode }) {
               in, not the order the pages were built in. */}
           <div className="nav-links">
             <Link className="ghost" href="/#canvas">How it works</Link>
-            <Link className="ghost" href="/#tenets">Tenets</Link>
+            {/* The tenets moved off the homepage to /principles when it was cut to
+                four sections. Kept in the nav under the same label because that is
+                what the page is still about. */}
+            <Link className="ghost" href="/principles">Principles</Link>
             <Link className="ghost" href="/pricing">Pricing</Link>
             <a className="ghost" href={APP_SIGN_IN}>Sign in</a>
             <a
@@ -118,7 +121,7 @@ export function SiteChrome({ children }: { children: ReactNode }) {
         <div id="nav-menu" className={open ? "nav-menu is-open" : "nav-menu"} hidden={!open}>
           <div className="wrap nav-menu-in">
             <Link href="/#canvas" onClick={close}>How it works</Link>
-            <Link href="/#tenets" onClick={close}>Tenets</Link>
+            <Link href="/principles" onClick={close}>Principles</Link>
             <Link href="/pricing" onClick={close}>Pricing</Link>
             <Link href="/about" onClick={close}>About</Link>
             <a href={APP_SIGN_IN} onClick={close}>Sign in</a>
@@ -154,7 +157,7 @@ export function SiteChrome({ children }: { children: ReactNode }) {
             <nav className="foot-col" aria-label="Product">
               <span className="foot-k">Product</span>
               <Link href="/#canvas">How it works</Link>
-              <Link href="/#tenets">Tenets</Link>
+              <Link href="/principles">Principles</Link>
               <Link href="/pricing">Pricing</Link>
               <a href={APP_SIGN_UP} onClick={() => captureCtaClick("footer", "Start learning")}>
                 Start learning
