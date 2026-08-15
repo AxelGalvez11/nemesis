@@ -5,56 +5,64 @@ import { APP_SIGN_UP } from "@/components/SiteChrome";
 import { captureCtaClick } from "@/lib/posthog";
 
 /**
- * The hero.
+ * The hero: statement left, organism right.
  *
- * Four things: the statement, the organism, one sentence, one action. Gallery
- * rather than landing page — the object is the content, and everything else gets
- * out of its way.
+ * ── WHY IT IS NOT CENTRED, AND NOT A HALF-AND-HALF SPLIT ──────────────────────
  *
- * ── WHAT WAS REMOVED, AND WHY ─────────────────────────────────────────────────
+ * Centred, the headline sat on top of the organism and the two competed for the
+ * same axis — the eye had nowhere to go but straight down, and the object ended
+ * up reading as an illustration of the sentence above it.
  *
- * The "cognitive accelerator" kicker is gone. It existed to answer "what kind of
- * thing is this" before the headline, which was the right instinct when the
- * headline was "learn what matters." — a benefit line that names no category.
- * "accelerate cognition." IS the category answer, so the kicker had become the
- * same sentence twice, and two restatements stacked on top of each other read as
- * hedging rather than as confidence.
+ * Off-centre, they do different jobs. The text holds a narrow measure on the
+ * left and the object occupies open space on the right, so the page has a
+ * reading order rather than a stack. The columns are deliberately uneven, and
+ * the organism is allowed to overflow its column: an even split with each side
+ * neatly inside its box is the layout every SaaS homepage already uses, and the
+ * overflow is what makes the object feel placed in the page rather than
+ * slotted into a grid cell.
  *
- * ── THE ORGANISM IS THE HERO, NOT DECORATION ──────────────────────────────────
+ * No card, no border, no panel behind it. A frame would turn the identity into
+ * a product screenshot.
  *
- * It sits between the headline and the supporting line, at full size, because the
- * product's whole claim is that one adaptive surface reorganises around what you
- * need. A visitor who watches the form continuously reorganise has already
- * understood the proposition before reading a word of it. Pushed to the side as
- * an accent it would be arguing for nothing.
+ * ── WHAT WAS REMOVED ──────────────────────────────────────────────────────────
  *
- * The three-bead mark is deliberately NOT repeated here — it sits in the nav
+ * The "cognitive accelerator" kicker went when the headline became "accelerate
+ * cognition." — the same claim, stated twice, reads as hedging.
+ *
+ * "drop anything. learn from it." went too. It was a good line, but it was the
+ * second supporting sentence under a headline that needs at most one, and the
+ * idea it carried is the whole of the sources section further down. The hero
+ * is now four things: the statement, the object, one line, one action.
+ *
+ * The three-bead mark is deliberately not repeated here — it is in the nav
  * sixty pixels above, and two identity objects in one viewport is two things to
  * look at where the direction asks for one.
  */
 export function Hero() {
   return (
     <header className="nhero">
-      <div className="wrap">
-        <h1 className="reveal">accelerate cognition.</h1>
+      <div className="wrap nhero-grid">
+        <div className="nhero-copy">
+          <h1 className="reveal">accelerate cognition.</h1>
 
+          <p className="nhero-lede reveal r2">one canvas that learns how you learn.</p>
+
+          <div className="nhero-cta reveal r3">
+            <a
+              className="btn btn-primary"
+              href={APP_SIGN_UP}
+              onClick={() => captureCtaClick("hero", "Start learning")}
+            >
+              Start learning
+            </a>
+          </div>
+        </div>
+
+        {/* aria-hidden: it carries the identity, not information. A screen
+            reader announcing it would be announcing decoration. */}
         <div className="nhero-organism reveal r2" aria-hidden="true">
-          <NemesisOrganism state="rest" size={520} />
+          <NemesisOrganism state="rest" size={620} />
         </div>
-
-        <p className="nhero-lede reveal r3">one canvas that learns how you learn.</p>
-
-        <div className="nhero-cta reveal r3">
-          <a
-            className="btn btn-primary"
-            href={APP_SIGN_UP}
-            onClick={() => captureCtaClick("hero", "Start learning")}
-          >
-            Start learning
-          </a>
-        </div>
-
-        <p className="nhero-coda reveal r4">drop anything. learn from it.</p>
       </div>
     </header>
   );
