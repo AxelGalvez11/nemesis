@@ -567,16 +567,26 @@
     --theme-warm: #6e6e6e;
     --theme-background-seed: #000000;
     --theme-sidebar-seed: #000000;
-    --theme-card-seed: #141414;
-    --theme-elevated-seed: #181818;
-    --theme-bubble-seed: #1b1b1b;
+    /* 🔴 DARK'S SURFACES ARE MEASURED, NOT INVENTED (owner, 2026-08-14: "copy the darkmode
+       colors from background to chat composer"). The reference was measured live: its page is
+       #000000 and its composer is #212121 — THIRTY-THREE levels apart. Ours were #151517 and
+       #171718: TWO levels apart, which is why our composer read as a faint outline rather than a
+       surface sitting above the page. The ring was doing all the work the fill should have done.
+
+       🔴 THE MIX IS 100% ON PURPOSE FOR THESE TWO. Every other surface here blends a seed into a
+       neutral so a theme can tint it. These two are the ground and the thing the learner types
+       into, and their RELATIONSHIP is the whole point — a tint that moved one without the other
+       would quietly collapse the contrast again, which is exactly the state this replaces. */
+    --theme-card-seed: #000000;
+    --theme-elevated-seed: #212121;
+    --theme-bubble-seed: #2f2f2f;
     --theme-mix-chrome: 74%;
-    --theme-mix-card: 38%;
-    --theme-mix-elevated: 46%;
-    --theme-mix-bubble: 46%;
+    --theme-mix-card: 100%;
+    --theme-mix-elevated: 100%;
+    --theme-mix-bubble: 100%;
     --theme-neutral-chrome: #000000;
     --theme-neutral-sidebar: #000000;
-    --theme-neutral-card: #161618;
+    --theme-neutral-card: #000000;
 
     /* Dark-only accent palette overrides. */
     --ui-red: #e75e78;
