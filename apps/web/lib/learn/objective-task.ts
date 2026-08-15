@@ -289,8 +289,8 @@ export function discriminationPromptText(objective: LearningObjective, contrast:
   const axis = contrast.axis?.trim();
   if (!against) return objectivePromptText(objective);
   return axis
-    ? `By ${axis}, what is ${objective.cue} — and what tells you it is that rather than ${against}?`
-    : `Which group does ${objective.cue} belong to — and what tells you it is that rather than ${against}?`;
+    ? `By ${axis}, what is ${objective.cue}, and what tells you it is that rather than ${against}?`
+    : `Which group does ${objective.cue} belong to, and what tells you it is that rather than ${against}?`;
 }
 
 /**

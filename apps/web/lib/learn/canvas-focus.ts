@@ -82,6 +82,21 @@ export function isFocused(scope: FocusScope): boolean {
 }
 
 /**
+ * A territory label, safe to paint on the Minimap.
+ *
+ * 🔴 THE LABEL IS SANITISED; THE STATEMENT UNDERNEATH IT IS NOT, AND THAT DIFFERENCE IS DELIBERATE.
+ * A knowledge object built without a source header joins its two sides with an em dash —
+ * `knowledge-extraction.ts` and `knowledge-territory.ts` both write `${left} — ${right}` when
+ * nothing named the columns — and `entry.knowledge.statement` is also what
+ * `knowledgeIdentityKey` (knowledge-identity.ts) hashes. Editing the dash out of the statement
+ * itself would change that hash for every knowledge object of this shape ever extracted, which is
+ * an identity migration, not a copy fix. So only the string actually painted here is touched.
+ */
+function displaySafe(label: string): string {
+  return label.replace(/\s*[—–]\s*/g, ", ");
+}
+
+/**
  * The territories a learner can choose between, built from what this canvas actually holds.
  *
  * 🔴 DERIVED FROM THE KNOWLEDGE, NOT FROM A TAXONOMY. There is no territory entity to read, so the
@@ -95,11 +110,12 @@ export function availableTerritories(
   const byLabel = new Map<string, string[]>();
   for (const entry of objectives) {
     // The knowledge object's own statement is what the learner recognises — it is the thing the
-    // document said, not a name minted here.
+    // document said, not a name minted here. Grouped on the raw form; only the OUTPUT is sanitised,
+    // so two statements differing only in dash style still do not collide into one chip by accident.
     const label = entry.knowledge.statement;
     const keys = byLabel.get(label);
     if (keys) keys.push(entry.objective.identityKey);
     else byLabel.set(label, [entry.objective.identityKey]);
   }
-  return [...byLabel].map(([label, identityKeys]) => ({ identityKeys, label }));
+  return [...byLabel].map(([label, identityKeys]) => ({ identityKeys, label: displaySafe(label) }));
 }
