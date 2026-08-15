@@ -275,16 +275,34 @@ function anchorForStep(unit: CanonicalSourceUnit): CanonicalSourceAnchor {
  */
 function proceduresFromUnits(context: SourceContext): KnowledgeObject[] {
   const unitById = new Map(context.units.map((unit) => [unit.id, unit] as const));
-  const objects: KnowledgeObject[] = [];
+  const runs = orderedRunsIn(listUnitsOf(context.units));
 
-  for (const run of orderedRunsIn(listUnitsOf(context.units))) {
+  // 🔴 A HEADING NAMES A RUN ONLY WHEN IT NAMES EXACTLY ONE. `headingOf` (in procedure-sequence.ts)
+  // reads the closest ANCESTOR heading, which is a SECTION's title, not a per-run label — and a
+  // section legitimately holds two procedures under one heading ("Primary:" a numbered list,
+  // "In the alternative:" a second one). Both runs would then report the identical heading, and
+  // since `statement` is what `knowledgeIdentityKey` hashes, using it for both gives two DIFFERENT
+  // procedures the SAME identity — verified empirically: without this count, "Serve the opposing
+  // party" and "Move to strike" collapsed into one object, and their step-1 objectives collapsed
+  // into one identity key with two different correct answers. Counted once, over every run in the
+  // document, before any run is named — so the ambiguity is caught before it can be used, not
+  // after two objects have already been minted from it.
+  const headingCounts = new Map<string, number>();
+  for (const run of runs) {
+    if (run.heading) headingCounts.set(run.heading, (headingCounts.get(run.heading) ?? 0) + 1);
+  }
+
+  const objects: KnowledgeObject[] = [];
+  for (const run of runs) {
     const steps = run.steps;
+    const namesOnlyThisRun = run.heading !== undefined && headingCounts.get(run.heading) === 1;
     // 🔴 THE SOURCE'S OWN HEADING, NEVER AN INTERPRETATION OF IT — the same owner rule the
-    // relation lane states above (2026-08-14). With no heading, the run is named from its own
-    // FIRST STEP alone, never from the whole run: the rest of the steps must not enter the
-    // statement, because the statement is what identity is computed from below, and a procedure
-    // that later gained a reworded fourth step must stay the same procedure it always was.
-    const statement = run.heading ?? steps[0]!.text;
+    // relation lane states above (2026-08-14) — but only when it is actually THIS run's name and
+    // not a section shared with a sibling run. Either way, the run is named from its own FIRST STEP
+    // alone rather than from the whole run: the rest of the steps must not enter the statement,
+    // because the statement is what identity is computed from below, and a procedure that later
+    // gained a reworded fourth step must stay the same procedure it always was.
+    const statement = namesOnlyThisRun ? run.heading! : steps[0]!.text;
     // 🔴 ANCHORED TO THE FIRST STEP'S OWN UNIT, NOT BUILT FROM ITS TEXT. A run is the only object
     // in this file keyed by more than one unit, and the first step's id is already unique per run
     // — reusing it keeps the id deterministic without folding step text into it, which is what the

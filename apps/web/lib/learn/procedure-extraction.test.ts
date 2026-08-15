@@ -116,6 +116,43 @@ test("a paragraph between two numbered lists mints two procedures", () => {
   // Each run is anchored to ITS OWN first unit, so the two objects have distinct ids however their
   // shared heading names them.
   assert.equal(new Set(procedures.map((p) => p.id)).size, 2);
+  // 🔴 AND DISTINCT IDENTITY KEYS — NOT JUST DISTINCT `id`s. Both runs sit under the SAME heading
+  // ("Filing a motion" names the section, not either run individually), and `knowledgeIdentityKey`
+  // hashes type + statement. Without the fallback below, both objects would report the section
+  // heading as their statement and collide into ONE identity, and the two objects' step-1
+  // objectives would then ALSO collide into one key with two different correct answers — a learner
+  // who answers "Move to strike" would be credited with "Serve the opposing party".
+  assert.notEqual(procedures[0]?.identityKey, procedures[1]?.identityKey);
+});
+
+test("a heading shared by two runs names neither — both fall back to their own first step", () => {
+  // The same fixture as above, isolated to the one rule it exercises: a SECTION heading covering
+  // two procedures must not become either procedure's name, because that is what collided them.
+  const context = contextOf(modelOf([
+    { headingPath: [], id: "h1", kind: "heading", text: "Filing a motion" },
+    { depth: 0, headingPath: ["Filing a motion"], id: "b1", kind: "listItem", marker: "1.", text: "Serve." },
+    { depth: 0, headingPath: ["Filing a motion"], id: "b2", kind: "listItem", marker: "2.", text: "File." },
+    { headingPath: ["Filing a motion"], id: "p1", kind: "paragraph", text: "In the alternative:" },
+    { depth: 0, headingPath: ["Filing a motion"], id: "b4", kind: "listItem", marker: "1.", text: "Move to strike." },
+    { depth: 0, headingPath: ["Filing a motion"], id: "b5", kind: "listItem", marker: "2.", text: "Request a stay." },
+  ]));
+  const procedures = extractKnowledgeObjects(context).objects.filter((o) => o.type === "procedure");
+  assert.deepEqual(procedures.map((p) => p.statement), ["1. Serve.", "1. Move to strike."]);
+});
+
+test("a heading naming only ONE run is still used as that run's statement", () => {
+  // The ordinary case, guarded against a fix for the above overcorrecting into refusing every
+  // heading the moment a document has more than one procedure anywhere in it.
+  const context = contextOf(modelOf([
+    { headingPath: [], id: "h1", kind: "heading", text: "Filing a motion" },
+    { depth: 0, headingPath: ["Filing a motion"], id: "b1", kind: "listItem", marker: "1.", text: "Serve." },
+    { depth: 0, headingPath: ["Filing a motion"], id: "b2", kind: "listItem", marker: "2.", text: "File." },
+    { headingPath: [], id: "h2", kind: "heading", text: "Preparing a witness" },
+    { depth: 0, headingPath: ["Preparing a witness"], id: "b4", kind: "listItem", marker: "1.", text: "Review the exhibits." },
+    { depth: 0, headingPath: ["Preparing a witness"], id: "b5", kind: "listItem", marker: "2.", text: "Rehearse direct examination." },
+  ]));
+  const procedures = extractKnowledgeObjects(context).objects.filter((o) => o.type === "procedure");
+  assert.deepEqual(procedures.map((p) => p.statement), ["Filing a motion", "Preparing a witness"]);
 });
 
 // ── provenance ───────────────────────────────────────────────────────────
