@@ -35,7 +35,7 @@
 // `bin/napi-v6/${platform}/${arch}/`, and inlining it would freeze one
 // platform's binary into a bundle that runs on another.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import * as esbuild from "esbuild";
@@ -45,10 +45,41 @@ const outFile = fileURLToPath(new URL("workers/parse-thread.mjs", webRoot));
 
 await mkdir(new URL("workers/", webRoot), { recursive: true });
 
+/**
+ * Packages the bundle is allowed to still import at runtime.
+ *
+ * 🔴 EVERY NAME HERE IS A PROMISE THAT VERCEL WILL UPLOAD IT, AND ONE OF THEM WAS A LIE
+ * FOR THE WHOLE LIFE OF THIS FILE. `fflate` sat in `external` beside pdfjs-dist and the
+ * native addons, but it belongs to neither category that justifies them — it is pure
+ * JavaScript with no sibling worker file and no `.node` binary. Nothing in the traced
+ * Next graph imports it either, because the only importers are inside THIS bundle, and
+ * Vercel's tracer does not read the emitted `.mjs` for its imports. So the deployed
+ * function shipped a bundle whose very first `unzipSync` threw:
+ *
+ *     Cannot find package 'fflate' imported from /var/task/apps/web/workers/parse-thread.mjs
+ *
+ * It was invisible for nine days because the worker had never once been triggered in
+ * production — the Vault secrets that let pg_cron call it were never set. The first real
+ * document ever handed to this worker failed on it in five seconds.
+ *
+ * The lesson is not "add fflate to tracing". It is that `external` and `outputFile
+ * TracingIncludes` are two lists that must agree and had no mechanism forcing them to.
+ * The assertion below is that mechanism.
+ */
+const TRACED_EXTERNALS = new Set([
+  // Ships its own worker file, resolved by dynamic import that no bundler can follow.
+  "pdfjs-dist",
+  // Wraps pdfjs-dist and inherits the same constraint.
+  "unpdf",
+  // `.node` binaries: platform-specific, chosen at runtime, and esbuild has no loader.
+  "onnxruntime-node",
+  "@napi-rs/canvas",
+]);
+
 const result = await esbuild.build({
   bundle: true,
   entryPoints: [fileURLToPath(new URL("lib/notebooks/parse-thread.ts", webRoot))],
-  external: ["pdfjs-dist", "unpdf", "fflate", "node:*", "onnxruntime-node", "@napi-rs/canvas"],
+  external: [...TRACED_EXTERNALS, "node:*"],
   format: "esm",
   // The Vercel Node runtime. Matches `engines` and the runtime the route
   // declares; a lower target would down-level `await` at the top level.
@@ -76,6 +107,44 @@ if (bytes < MIN_PLAUSIBLE_BYTES) {
   throw new Error(
     `parse-thread bundle is ${bytes} bytes, below the ${MIN_PLAUSIBLE_BYTES} floor. ` +
       "That means the parser did not make it in — check for a newly-external import.",
+  );
+}
+
+/**
+ * 🔴 EVERY RUNTIME IMPORT LEFT IN THE BUNDLE MUST BE ONE WE PROMISED TO UPLOAD.
+ *
+ * This is the guard that would have caught `fflate` before it ever deployed. It reads the
+ * EMITTED FILE rather than the esbuild config, because the config states an intention and
+ * the file states the fact — an import can survive for reasons the `external` list does
+ * not mention, and it is the file that gets deployed.
+ *
+ * Node builtins are always available and are not uploaded by anyone. They are recognised
+ * by `builtinModules`, NOT by a `node:` prefix check — esbuild emits `from "module"` for
+ * `createRequire`, with no prefix, and a prefix check reports that as a missing package.
+ */
+const emitted = await readFile(outFile, "utf8");
+const { builtinModules } = await import("node:module");
+const builtins = new Set(builtinModules);
+const imported = new Set(
+  [...emitted.matchAll(/(?:^|\n)\s*import\s[^;]*?from\s*["']([^"']+)["']/g)]
+    .map((match) => match[1])
+    .filter(
+      (specifier) =>
+        !specifier.startsWith("node:") &&
+        !builtins.has(specifier) &&
+        !specifier.startsWith(".") &&
+        !specifier.startsWith("/"),
+    )
+    // "pdfjs-dist/legacy/build/pdf.mjs" is the pdfjs-dist promise being kept.
+    .map((specifier) => (specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0])),
+);
+const unpromised = [...imported].filter((name) => !TRACED_EXTERNALS.has(name));
+if (unpromised.length > 0) {
+  throw new Error(
+    `parse-thread bundle imports ${unpromised.join(", ")} at runtime, which nothing promises to upload.\n` +
+      "Either bundle it (drop it from the esbuild `external` list) or add it to TRACED_EXTERNALS here " +
+      "AND to outputFileTracingIncludes in next.config.ts. Two lists that must agree is exactly how " +
+      "fflate shipped broken for nine days.",
   );
 }
 

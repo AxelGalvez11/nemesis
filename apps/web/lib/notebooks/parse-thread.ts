@@ -60,6 +60,20 @@ export interface ParseThreadInput {
  * terminal. Only a genuine throw becomes `{ threw }`.
  */
 export type ParseThreadOutput =
+  /**
+   * 🔴 SENT BEFORE ANY WORK, AND ITS ONLY JOB IS TO MAKE SILENCE MEAN SOMETHING.
+   *
+   * A thread that fails to LOAD - a package missing from the deployed function, which is
+   * exactly what `fflate` did on the first document this worker was ever given - never
+   * runs a line of this file and therefore never spends a penny on vision. A thread
+   * killed MID-PARSE by the deadline or memory guard also sends no result, and its spend
+   * is entirely real. Both look identical from the parent: no message.
+   *
+   * This message separates them. Without it the parent must assume the worst and charge
+   * the full reservation, which burned this document's whole 120-unit lifetime budget on
+   * a deployment defect and would have starved all four remaining attempts.
+   */
+  | { ready: true }
   | { ok: true; parsed: unknown; figures?: unknown; peakRssMb: number; visionSpend?: VisionSpend }
   /**
    * A refusal, and — for `no-text` — what was found anyway.
@@ -99,6 +113,9 @@ export async function runParseThread(
   // Sampling on a timer, not once at the end: `rss` after a parse has already
   // been reduced by whatever the collector reclaimed, so an end-of-run reading
   // reports a number the platform never had to accommodate.
+  // Announced first, before the sampler and before any parsing, so "the thread never
+  // started" and "the thread died holding money" are distinguishable by the parent.
+  post({ ready: true });
   const sampler = setInterval(sampleRss, 250);
   // The parse must not be kept alive by its own instrumentation.
   if (typeof sampler.unref === "function") sampler.unref();

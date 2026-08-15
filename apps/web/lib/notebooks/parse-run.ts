@@ -73,7 +73,7 @@ export type ParseRunOutcome =
   | { status: "memory"; peakRssMb: number; ms: number }
   /** The lease was taken by someone else while we were parsing. */
   | { status: "lease-lost"; ms: number; peakRssMb: number }
-  | { status: "no-worker-bundle"; ms: number; peakRssMb: number };
+  | { status: "no-worker-bundle"; ms: number; peakRssMb: number; visionSpend?: ParseRunSpend };
 
 export interface ParseRunOptions {
   /**
@@ -120,7 +120,10 @@ export async function runParseOnThread(
   const elapsed = () => now() - started;
 
   const path = options.workerPath === undefined ? parseThreadPath() : options.workerPath;
-  if (!path) return { status: "no-worker-bundle", ms: elapsed(), peakRssMb: rssMb() };
+  // No bundle means no thread, which means no vision call could have happened. Stated
+  // rather than left absent, because absent means "spent it all" downstream.
+  if (!path)
+    return { status: "no-worker-bundle", ms: elapsed(), peakRssMb: rssMb(), visionSpend: { calls: 0, units: 0 } };
 
   // 🔴 A COPY, DETACHED ON PURPOSE. Transferring the buffer to the thread frees
   // this thread of a second copy of a document that may be 100 MB — the whole
@@ -133,6 +136,10 @@ export async function runParseOnThread(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
   ) as ArrayBuffer;
+
+  // Whether the thread ever announced itself. Until it does, nothing it could spend has
+  // been spent.
+  let threadReady = false;
 
   const worker = new Worker(path, {
     workerData: {
@@ -224,6 +231,7 @@ export async function runParseOnThread(
     worker.on(
     "message",
     (message: {
+      ready?: boolean;
       ok?: boolean;
       parsed?: unknown;
       figures?: unknown;
@@ -232,6 +240,11 @@ export async function runParseOnThread(
       peakRssMb?: number;
       visionSpend?: ParseRunSpend;
     }) => {
+      // The handshake, not a result. Everything after it may have cost money.
+      if (message.ready) {
+        threadReady = true;
+        return;
+      }
       // The thread's own peak is the one that matters — it holds the document.
       const peak = Math.max(peakRssMb, message.peakRssMb ?? 0);
       if (message.threw !== undefined) finish({ status: "threw", error: message.threw, ms: elapsed(), peakRssMb: peak });
@@ -259,7 +272,17 @@ export async function runParseOnThread(
   );
 
     worker.on("error", (error: Error) => {
-      finish({ status: "threw", error: error.message, ms: elapsed(), peakRssMb: observe() });
+      finish({
+        status: "threw",
+        error: error.message,
+        ms: elapsed(),
+        peakRssMb: observe(),
+        // 🔴 A LOAD FAILURE IS NOT A MID-PARSE DEATH. `runParseThread` wraps its whole
+        // body in a try/catch and reports its own spend, so an error reaching HERE before
+        // the ready handshake means the module graph never resolved — a missing package in
+        // the deployed function. That thread called nothing and owes nothing.
+        ...(threadReady ? {} : { visionSpend: { calls: 0, units: 0 } }),
+      });
     });
 
     // 🔴 EXIT WITHOUT A MESSAGE MUST STILL SETTLE. `resourceLimits` can kill the
@@ -271,7 +294,13 @@ export async function runParseOnThread(
     // put a number in `parse_error` that nobody measured; the exit code is what
     // is actually known.
     worker.on("exit", (code: number) => {
-      finish({ status: "threw", error: `parse thread exited (code ${code})`, ms: elapsed(), peakRssMb: observe() });
+      finish({
+        status: "threw",
+        error: `parse thread exited (code ${code})`,
+        ms: elapsed(),
+        peakRssMb: observe(),
+        ...(threadReady ? {} : { visionSpend: { calls: 0, units: 0 } }),
+      });
     });
   });
 }

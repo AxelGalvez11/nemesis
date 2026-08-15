@@ -189,3 +189,56 @@ test("the bundle resolves from the app root the deployed function runs in", () =
   assert.equal(parseThreadPath(join(webRoot, "..", "..")), bundle);
   assert.equal(parseThreadPath(tmpdir()), null);
 });
+
+test("a thread that cannot LOAD reports spending nothing, not spending everything", async () => {
+  // 🔴 THE REAL INCIDENT, IN MINIATURE. The first document this worker was ever given in
+  // production failed with `Cannot find package 'fflate' imported from
+  // .../parse-thread.mjs` — a package missing from the deployed function. That thread ran
+  // no code and called nothing, yet the settlement rule ("silence means it spent the
+  // whole grant") charged it the document's entire 120-unit lifetime vision budget, which
+  // would have left all four remaining attempts unable to look at a single figure.
+  //
+  // The `ready` handshake is what separates "never started" from "died holding money".
+  const dir = join(tmpdir(), "nemesis-parse-run-test");
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const path = join(dir, "missing-package.mjs");
+  writeFileSync(path, 'import "a-package-that-is-not-installed";\n');
+
+  const outcome = await runParseOnThread(new Uint8Array([1]), "x.pdf", "application/pdf", {
+    heartbeat: async () => true,
+    workerPath: path,
+  });
+
+  assert.equal(outcome.status, "threw");
+  assert.deepEqual(
+    "visionSpend" in outcome ? outcome.visionSpend : undefined,
+    { calls: 0, units: 0 },
+    "a load failure owes nothing",
+  );
+});
+
+test("a thread that STARTED and then died silently reports no spend, so the caller charges the grant", async () => {
+  // The discriminating twin of the test above. This worker announces itself and then
+  // exits without a result — exactly what a deadline kill or an OOM looks like. Here
+  // silence IS ambiguous, so `visionSpend` must be ABSENT rather than zero, and
+  // `visionSettlement` turns that absence into the full grant.
+  const dir = join(tmpdir(), "nemesis-parse-run-test");
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const path = join(dir, "started-then-died.mjs");
+  writeFileSync(
+    path,
+    'import { parentPort } from "node:worker_threads";\nparentPort.postMessage({ ready: true });\nsetTimeout(() => process.exit(9), 30);\n',
+  );
+
+  const outcome = await runParseOnThread(new Uint8Array([1]), "x.pdf", "application/pdf", {
+    heartbeat: async () => true,
+    workerPath: path,
+  });
+
+  assert.equal(outcome.status, "threw");
+  assert.equal(
+    "visionSpend" in outcome ? outcome.visionSpend : undefined,
+    undefined,
+    "a started thread's silence must stay ambiguous, so settlement charges the grant",
+  );
+});
