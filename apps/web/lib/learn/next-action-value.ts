@@ -64,7 +64,10 @@ export type SelectionReason =
   /** Repeated unaided misses moved this retrieval to a narrower rung of §33's ladder — see
    *  `scaffold-decision.ts`. Carried on the trace so "why did Nemesis ask it this way" is answerable
    *  from the same record as "why did Nemesis ask it at all". */
-  | "scaffold-narrowed";
+  | "scaffold-narrowed"
+  /** Demonstrated, eligible, and `retention-model.ts` predicts real decay since the last pass — worth
+   *  more than an equally-eligible objective whose memory is barely touched. */
+  | "increasingly-overdue";
 
 export interface ActionValue {
   /** Higher is more worth doing NOW. 🔴 A property of the ACTION at this moment — never of the
@@ -182,6 +185,19 @@ const MAX_BLOCKED_DEPENDENTS = 3;
 const TERMINOLOGY_FRICTION = 90;
 
 /**
+ * How much a fully-decayed prediction can move a `due` objective's score, at the far end from a
+ * freshly-eligible one.
+ *
+ * 🔴 SCALED SO EVEN THE MAXIMUM NEVER APPROACHES THE CEILING ALONE, BECAUSE IT IS NOT ALONE. A `due`
+ * objective with a long, wrong history could ALSO be carrying `PER_FAILED_ATTEMPT`'s modifier at the
+ * same time — nothing here gates the two apart, and `clampToBand` is what has to hold regardless of
+ * how many terms are summed before it runs. 800 leaves headroom under `MODIFIER_CEILING` (900) on
+ * its own; the two combined still cannot cross a band, because nothing can — that is the ceiling's
+ * whole job, proven once in `modifierCeilingHoldsBands` rather than re-budgeted per term.
+ */
+const OVERDUE_SCALE = 800;
+
+/**
  * Working memory, as a penalty rather than a filter.
  *
  * 🔴 A PENALTY, NOT AN EXCLUSION, AND THAT IS DELIBERATE. The old selector filtered `defer` out of
@@ -228,6 +244,21 @@ export interface ValueInput {
    * Absent means none observed, which is the honest default for a caller that does not read lookups.
    */
   terminologyFriction?: boolean;
+  /**
+   * Predicted probability of successful retrieval right now, 0-1 — `retention-model.ts`'s reading of
+   * this objective's evidence. Due/overdue as a RANKING signal among objectives already eligible to
+   * be asked, never a second opinion on WHETHER one is eligible — see that file's header for why
+   * `retrieval-eligibility.ts`'s flat tempo is left untouched.
+   *
+   * 🔴 A PLAIN SCALAR, COMPUTED BY THE CALLER — THE SAME PATTERN `blockedDependents` AND
+   * `terminologyFriction` ALREADY USE, AND FOR THE SAME REASON. `value()` promises "no clock, no
+   * network" in its own header; retrievability needs `now`, so `now` is resolved once in
+   * `decideNext` (which already holds it) and handed in as a number, never read from a clock in here.
+   *
+   * Absent or `null` means nothing to estimate from — never demonstrated, or demonstrated only by a
+   * reveal or a give-up — which must not be read as "certain to fail". See `retrievabilityFor`.
+   */
+  retrievability?: number | null;
 }
 
 /**
@@ -263,11 +294,17 @@ export function value(input: ValueInput): ActionValue {
     blockedDependents = 0,
     evidence,
     interveningActs,
+    retrievability = null,
     state,
     terminologyFriction = false,
   } = input;
   const reasons: SelectionReason[] = [];
   let score: number;
+  // 🔴 HOISTED OUT OF THE `correct` BRANCH BELOW SO THE MODIFIERS SECTION CAN READ IT WITHOUT
+  // RECOMPUTING IT A SECOND WAY. Two expressions for "is this provisional" that could drift is
+  // exactly how the retrievability modifier could end up applying to a recognition-level ✓ the score
+  // assignment just decided was provisional — the one case this modifier must never touch.
+  let provisional = false;
 
   if (action.type === "show_correction") {
     score = BAND.exposition;
@@ -290,7 +327,7 @@ export function value(input: ValueInput): ActionValue {
     // 🔴 THE ASYMMETRY §31.2 IS BUILT ON. A ✓ that was only recognised is provisional and owes a
     // production probe; a false ✓ costs skipping something unknown, which is invisible and
     // compounds, while a false ✕ costs re-teaching something known and self-corrects.
-    const provisional = state.demonstratedAt !== null && !entails(state.demonstratedAt, "independent");
+    provisional = state.demonstratedAt !== null && !entails(state.demonstratedAt, "independent");
     score = provisional ? BAND.provisional : BAND.due;
     reasons.push(provisional ? "recognised-not-produced" : "due-again");
   } else {
@@ -328,6 +365,21 @@ export function value(input: ValueInput): ActionValue {
     // the thread just as badly as asking the same question again.
     delta += blocked * PER_BLOCKED_DEPENDENT;
     reasons.push("unlocks-other-work");
+  }
+
+  if (retrievability !== null && state.status === "correct" && !provisional) {
+    // 🔴 ONLY THE PLAIN `due` CASE — NOT `unknown`, NOT `owed`, AND NOT A PROVISIONAL ✓. Retrievability
+    // is a prediction about how much a KNOWN thing has decayed; it is not defined the same way for
+    // something never demonstrated, and a recognition-level pass has its OWN eligibility mechanism
+    // (`stillHeld`, working memory) that this must not compete with or duplicate. The band gap keeps
+    // this modifier from ever crossing into `provisional` even if the guard above were loosened, but
+    // the guard is here anyway so the reason in the trace only ever describes what it actually is.
+    //
+    // 🔴 MORE DECAYED, WORTH MORE — the direction due/overdue has to move a score for "overdue"
+    // to mean anything. Two objectives both merely ELIGIBLE (`eligibleForRetrieval`, untouched by
+    // this) can still be very differently overdue, and today they scored identically: `due` is flat.
+    delta += Math.round((1 - retrievability) * OVERDUE_SCALE);
+    reasons.push("increasingly-overdue");
   }
 
   if (terminologyFriction && state.status !== "correct") {

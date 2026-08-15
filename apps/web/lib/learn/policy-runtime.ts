@@ -16,6 +16,7 @@ import type { KnowledgeObject } from "./knowledge-types";
 import { mostValuable, value } from "./next-action-value";
 import { terminologyFriction, type TermLookup } from "./learner-friction";
 import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
+import { retrievabilityFor } from "./retention-model";
 import { runtimeCanStage } from "./runtime-support";
 import { chooseNextTeachingAction, expositionOf } from "./teaching-policy";
 import type { TeachingDecision } from "./teaching-strategy";
@@ -223,6 +224,14 @@ export function decideNext(input: {
     return terminologyFriction({ lookups, terms: [...requires, ...establishes] }).present;
   };
 
+  // 🔴 RESOLVED ONCE, HERE, WHERE `now` ALREADY LIVES — NEVER INSIDE `value()`. `value()`'s own header
+  // promises "no clock, no network"; retrievability needs a clock to measure elapsed time against,
+  // so the measuring happens in the one place that already holds `input.now`, and only the resulting
+  // NUMBER crosses into the pure function. Same pattern as `blockedDependents` and
+  // `terminologyFriction` — both computed out here, both handed in as plain values.
+  const retrievabilityOf = (decision: (typeof decisions)[number]): number | null =>
+    retrievabilityFor(decision.evidence, input.now);
+
   const scored = owed.map((decision) => ({
     decision,
     value: value({
@@ -232,6 +241,7 @@ export function decideNext(input: {
       evidence: decision.evidence,
       interveningActs: interveningActs(decision.objective.identityKey, actedInOrder),
       knowledge: decision.knowledge,
+      retrievability: retrievabilityOf(decision),
       state: decision.state,
     }),
   }));
@@ -253,11 +263,18 @@ export function decideNext(input: {
         ...held,
         rationale: {
           by: "nemesis_policy",
+          // 🔴 PASSED HERE TOO, DELIBERATELY, THOUGH IT CANNOT CHANGE THIS PATH'S OUTPUT TODAY. A
+          // `defer` is never produced from a plain (non-provisional) `correct` state — that state
+          // only ever returns `retrieve` or `advance` — so the modifier's own guard makes this inert
+          // on every REACHABLE `held` decision right now. Passed anyway so the fallback path does not
+          // silently drift from the scored one if that reachability fact ever stops being true, and
+          // so this omission is a choice on record rather than an accident to rediscover later.
           selection: value({
             action: held.action,
             evidence: held.evidence,
             interveningActs: interveningActs(held.objective.identityKey, actedInOrder),
             knowledge: held.knowledge,
+            retrievability: retrievabilityFor(held.evidence, input.now),
             state: held.state,
           }),
         },

@@ -138,6 +138,64 @@ test("🔴 review is the least urgent thing, and a recognised ✓ outranks a pro
   assert.ok(reasons(produced).includes("due-again"));
 });
 
+// ── due/overdue: a spacing signal, discriminating WITHIN the due band ────────
+
+const DUE_STATE = state({ demonstratedAt: "independent", lastEvidenceAt: "2026-08-14T12:00:00.000Z", status: "correct" });
+
+test("🔴 a more-decayed due objective outranks a barely-decayed one — 'due' was flat before this", () => {
+  const barelyDecayed = at({ retrievability: 0.85, state: DUE_STATE });
+  const heavilyOverdue = at({ retrievability: 0.2, state: DUE_STATE });
+  assert.ok(score(heavilyOverdue) > score(barelyDecayed));
+  assert.ok(reasons(heavilyOverdue).includes("increasingly-overdue"));
+  assert.ok(reasons(barelyDecayed).includes("increasingly-overdue"), "the reason fires on any real signal, not only a strong one");
+});
+
+test("no retrievability signal (the caller has none) leaves `due` exactly where it always was", () => {
+  // Omitting the field and passing `null` must be indistinguishable — both mean "nothing to read".
+  const omitted = at({ state: DUE_STATE });
+  const passedNull = at({ retrievability: null, state: DUE_STATE });
+  assert.equal(score(omitted), score(passedNull));
+  assert.ok(!reasons(omitted).includes("increasingly-overdue"));
+});
+
+test("🔴 retrievability does not touch a PROVISIONAL ✓ — that probe must ask at full demand regardless", () => {
+  const provisionalState = state({ demonstratedAt: "recognition", lastEvidenceAt: "2026-08-01T12:00:00.000Z", status: "correct" });
+  const withoutSignal = at({ state: provisionalState });
+  const maximallyOverdue = at({ retrievability: 0, state: provisionalState }); // by construction, must still not move it
+  assert.equal(score(withoutSignal), score(maximallyOverdue));
+  assert.ok(!reasons(maximallyOverdue).includes("increasingly-overdue"));
+});
+
+test("retrievability does not touch `owed` or `unknown` — it is defined only for a demonstrated objective", () => {
+  const withoutSignal = at();
+  const withASignalAnyway = at({ retrievability: 0.1 });
+  assert.equal(score(withoutSignal), score(withASignalAnyway));
+  assert.ok(!reasons(withASignalAnyway).includes("increasingly-overdue"));
+});
+
+test("🔴 even fully decayed, combined with every other modifier, a due objective cannot cross into `provisional`", () => {
+  // The ceiling's actual job: OVERDUE_SCALE (800) and PER_FAILED_ATTEMPT's maximum (600) summed
+  // would be 1,400 applied directly — comfortably past the 900 clamp on its own, which is the whole
+  // point of clamping the SUM once rather than budgeting each term to fit by hand.
+  const maximallyOverdue = at({
+    evidence: ["a", "b", "c", "d", "e"].map(miss),
+    retrievability: 0,
+    state: state({
+      demonstratedAt: "independent",
+      evidenceCount: 6,
+      lastEvidenceAt: "2026-08-14T12:00:00.000Z",
+      status: "correct",
+    }),
+  });
+  const barelyProvisional = at({
+    state: state({ demonstratedAt: "recognition", lastEvidenceAt: "2026-08-14T12:00:00.000Z", status: "correct" }),
+  });
+  assert.ok(
+    score(maximallyOverdue) < score(barelyProvisional),
+    `a maximally overdue due objective (${score(maximallyOverdue)}) must still stay below even the weakest provisional ✓ (${score(barelyProvisional)})`,
+  );
+});
+
 // ── working memory ──────────────────────────────────────────────────────────
 
 test("🔴 something just worked is ranked DOWN, never removed", () => {

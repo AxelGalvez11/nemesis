@@ -117,6 +117,26 @@ test("🔴 …and once they are no longer recent, the SAME log owes a retrieval 
   assert.equal(decision?.state.status, "correct", "eligible again WITHOUT its status being rewritten");
 });
 
+test("🔴 between two eligible, demonstrated objectives, the more-decayed one is offered first", () => {
+  // 🔴 `due` USED TO BE FLAT — EVERY ELIGIBLE OBJECTIVE SCORED THE SAME. Both directions here are
+  // past the churn window and both are `correct`, so before retention-model.ts existed this decision
+  // fell back to whichever identity key sorted first — the exact ceiling this whole selector exists
+  // to lift, now showing up one layer further in because the earlier layers got fixed first.
+  const evidence = [
+    // REVERSE: just past the ten-minute gate. Barely decayed.
+    ev("e1", REVERSE!.identityKey, ago(RETRIEVAL_ELIGIBLE_AFTER_MS + 60_000), "understood"),
+    // FORWARD: demonstrated a month ago. Heavily decayed by comparison.
+    ev("e2", FORWARD!.identityKey, ago(30 * 24 * 3600_000), "understood"),
+  ];
+  const decision = decideNext({ evidence, now: NOW, objectives: RESOLVED });
+  assert.equal(decision?.objective.identityKey, FORWARD!.identityKey);
+  assert.equal(decision?.rationale.by, "nemesis_policy");
+  assert.ok(
+    decision?.rationale.by === "nemesis_policy" && decision.rationale.selection.reasons.includes("increasingly-overdue"),
+    "the trace must name the spacing signal as why, not just declare a winner",
+  );
+});
+
 test("a demonstrated objective is never re-tested to fill a stage", () => {
   // Recent, for the same reason as above: this is about `advance` not being an ACTION, not about
   // whether a review ever comes due. Ages derived from the tempo so a future ruling cannot silently

@@ -296,8 +296,14 @@ export interface LearnerObjectiveState {
  * any row written before the judge reported one. Treating absence as failure would silently convert
  * every one of them — and every evaluation that merely omitted the field, which the parser turns
  * into 0.5 for exactly this reason — into a learner who demonstrated nothing.
+ *
+ * 🔴 EXPORTED SO `retention-model.ts` FOLDS THE SAME EVIDENCE THIS PROJECTION DOES. A retrievability
+ * estimate built by folding EVERY row, including ones this projection would not stand behind, would
+ * be a second, disagreeing reading of the same log: an untrusted `strong` could grant stability here
+ * that `projectLearnerState` refused to grant a `correct` status for. Reusing this gate rather than
+ * re-deriving it is what keeps the two readings unable to drift apart.
  */
-function establishesBelief(evidence: LearnerEvidence): boolean {
+export function establishesBelief(evidence: LearnerEvidence): boolean {
   return evidence.confidence === undefined || evidence.confidence >= TRUSTED_ENOUGH_TO_UPDATE_STATE;
 }
 
