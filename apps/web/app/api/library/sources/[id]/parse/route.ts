@@ -19,7 +19,7 @@ import { NextRequest } from "next/server";
 
 import { appUrl, serviceRoleKey } from "@/lib/env";
 import { json, userClient, verifyBearer } from "@/lib/server";
-import { enqueueParse } from "@/lib/notebooks/parse-enqueue";
+import { enqueueParse, writesRow } from "@/lib/notebooks/parse-enqueue";
 import {
   describeDocument,
   documentStatusLine,
@@ -78,7 +78,23 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   const { id } = await context.params;
   if (!id) return json({ error: "a source id is required" }, 400);
 
-  const queued = await enqueueParse(id, auth.id);
+  // 🔴 THE MANUAL TRIGGER, AND IT IS OPT-IN PER REQUEST BY DESIGN. `{"reprocess": true}` in the
+  // body is the whole interface: one named source, one deliberate act, authenticated as its owner.
+  // There is no "reprocess all", no query parameter a link could carry by accident, and no cron
+  // that sets this — *"Do not mass-backfill production until there is a measured reason."*
+  //
+  // 🔴 A BODY THAT IS NOT JSON IS NOT A REPROCESS. Every existing caller POSTs with no body at all,
+  // and `req.json()` throws on those — so this must not be allowed to turn an ordinary parse kick
+  // into a 500, and equally must never default to the expensive reading.
+  let reprocess = false;
+  try {
+    const body: unknown = await req.json();
+    reprocess = typeof body === "object" && body !== null && (body as { reprocess?: unknown }).reprocess === true;
+  } catch {
+    reprocess = false;
+  }
+
+  const queued = await enqueueParse(id, auth.id, reprocess ? { intent: "reprocess" } : { intent: "parse" });
   if (!queued.ok) {
     // "missing" and "not yours" are deliberately the same answer — see
     // `enqueueParse`. A 404 that distinguished them would be a membership oracle.
@@ -89,12 +105,20 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   // Only worth waking the worker when the row actually changed. An
   // `already-queued` decision means a job is already due and protected by its
   // own backoff; nudging on every page load is how a backoff dies.
-  const nudged =
-    queued.decision.action === "enqueue" || queued.decision.action === "requeue"
-      ? await nudgeWorker()
-      : false;
+  const nudged = writesRow(queued.decision) ? await nudgeWorker() : false;
 
-  return json({ decision: queued.decision.action, nudged }, 202);
+  // 🔴 THE REASON IS RETURNED, BECAUSE "nothing happened" AND "nothing needed TO happen" LOOK
+  // IDENTICAL FROM OUTSIDE. A reprocess that comes back `already-reprocessing` is working exactly
+  // as intended and a reprocess that comes back `already-parsed` means the predicate found nothing
+  // stale — opposite facts, and without the reason the only visible difference is a word.
+  return json(
+    {
+      decision: queued.decision.action,
+      nudged,
+      ...(queued.decision.action === "reprocess" ? { reason: queued.decision.reason } : {}),
+    },
+    202,
+  );
 }
 
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {

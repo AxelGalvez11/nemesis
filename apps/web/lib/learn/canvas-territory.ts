@@ -23,7 +23,33 @@
 // the topic-first front door opened, and why a general cache would be solving a problem the other
 // path does not have.
 
+import { needsReprocess, type ReprocessReason, type ReprocessVerdict } from "./reprocess";
 import type { KnowledgeObject } from "./knowledge-types";
+
+/**
+ * WHICH MATERIAL a stored marker was reached over — the bytes and the parse, never the row.
+ *
+ * 🔴 THIS IS THE HALF `buildRules` SAYS IT IS MISSING. Its own header states the gap: *"IT DOES NOT
+ * CARRY THE DOCUMENT'S PARSE VERSION, AND THAT GAP IS STATED RATHER THAN HIDDEN. A re-parse of the
+ * same file can genuinely change what is extractable, and this fingerprint will not notice."* So a
+ * document re-read by a better parser stayed locked behind a stale "we found nothing" marker until
+ * an extraction-rules bump happened to come along. This closes it by carrying the other two
+ * dimensions beside the rules instead of concatenating them into them — see `needsReprocess`.
+ *
+ * 🔴 THE BYTES, NEVER THE ROW ID. `materialSubject` below already names WHICH sources a build was
+ * over, and that is a different question: a learner who replaces a file keeps the same source id
+ * and the same canvas, and only the content hash notices. "The source itself changed" has to mean
+ * the content changed, or a rename would cost a model call.
+ *
+ * Absent on every marker written before this existed, which reads as UNKNOWN — and unknown is
+ * handled by `needsReprocess`'s null rules, never silently as "unchanged".
+ */
+export interface MaterialStamp {
+  /** Fingerprint over the sources' content hashes. */
+  contentHash: string;
+  /** Fingerprint over the sources' parser versions. */
+  parserVersion: string;
+}
 
 /**
  * The territory a topic-first canvas has ALREADY been given.
@@ -63,6 +89,8 @@ export interface CanvasTerritory {
    * lock it out permanently. Absent means never read.
    */
   mechanismsUnder?: string;
+  /** The MATERIAL `mechanismsUnder` was read over — see `MaterialStamp`. Absent means unknown. */
+  mechanismsOver?: MaterialStamp;
   /**
    * Set ONLY when a completed build produced nothing — the rules it produced nothing UNDER.
    *
@@ -82,6 +110,15 @@ export interface CanvasTerritory {
    * Absent on every ordinary territory, which is what keeps a non-empty one unambiguous.
    */
   emptyUnder?: string;
+  /**
+   * The MATERIAL nothing was found in — see `MaterialStamp`.
+   *
+   * 🔴 THIS IS THE OWNER'S *"remembered … against which source content"*. Without it "we looked and
+   * found nothing" was a claim about a canvas's SOURCE IDS, and a learner who replaced the file
+   * behind one of those ids kept the old verdict for ever. Absent on markers written before this
+   * field existed, which reads as unknown rather than as unchanged.
+   */
+  emptyOver?: MaterialStamp;
 }
 
 /**
@@ -95,12 +132,21 @@ export type TerritoryMiss =
   | "never-built"
   /** Built under older identity rules, so replaying it would write keys that no longer converge. */
   | "identity-version-changed"
-  /** A previous build found nothing, but the rules have changed since — worth one more attempt. */
-  | "empty-under-older-rules";
+  /**
+   * A previous build found nothing, and something has moved since — worth one more attempt.
+   *
+   * 🔴 RENAMED FROM `empty-under-older-rules`, BECAUSE THE OLD NAME WAS ABOUT TO START LYING. Rules
+   * were once the only thing that could supersede an empty answer; a re-parse and a replaced file
+   * can now too, and a miss called "older-rules" would report a content change as a rules change.
+   * `reason` on the result names which it actually was — the wider vocabulary is carried, never
+   * mapped down onto this one word.
+   */
+  | "empty-answer-superseded";
 
 export type TerritoryReuse =
   | { reuse: true; objects: readonly KnowledgeObject[] }
-  | { reuse: false; miss: TerritoryMiss }
+  /** `reason` is present exactly when the miss came from `needsReprocess` — it names WHAT moved. */
+  | { reuse: false; miss: TerritoryMiss; reason?: ReprocessReason }
   /**
    * Built under these exact rules, and there was nothing to find.
    *
@@ -127,6 +173,74 @@ export type TerritoryReuse =
  */
 export function buildRules(versions: readonly string[]): string {
   return [...versions].sort().join("+");
+}
+
+/**
+ * Does a stored "we already did this, and here is what we found" marker still stand?
+ *
+ * 🔴 THE ONE PLACE A CANVAS MARKER MEETS `needsReprocess`, AND THAT IS THE POINT. Both markers on
+ * this type — `emptyUnder` and `mechanismsUnder` — record a completed piece of paid work and are
+ * consulted to decide whether to pay again. Until now each was compared with its own bare `===` at
+ * its own call site, which is two independent retry decisions in the same file: the shape the
+ * owner's *"DO NOT CREATE A SECOND INDEPENDENT RETRY SYSTEM"* forbids. Everything about WHEN a
+ * stored answer expires now lives in one predicate, and this is the only adapter onto it.
+ *
+ * Returns the verdict rather than a boolean, so the caller can say WHY it is paying again.
+ *
+ * 🔴 AN ABSENT `under` IS `never-processed`, NOT "still stands". No marker means the work was never
+ * done — or was interrupted before it could be recorded — and either way the answer is unknown.
+ */
+export function markerStands(input: {
+  /** The rules recorded on the marker. Absent means no marker: never done. */
+  under: string | undefined;
+  /** The material recorded on the marker. Absent means an older marker that did not record it. */
+  over: MaterialStamp | undefined;
+  /**
+   * The rules in force now. Absent means "do not revisit on a rules change" — the conservative
+   * reading for a caller that does not track rules, which can only ever suppress a rebuild.
+   */
+  rules?: string;
+  /** The material as it stands now. Absent likewise suppresses, never causes, a rebuild. */
+  material?: MaterialStamp;
+}): ReprocessVerdict {
+  const { material, over, rules, under } = input;
+  return needsReprocess({
+    current: {
+      contentHash: material?.contentHash ?? null,
+      parserVersion: material?.parserVersion ?? null,
+      rulesetVersion: rules ?? null,
+    },
+    stored: under
+      ? {
+          contentHash: over?.contentHash ?? null,
+          parserVersion: over?.parserVersion ?? null,
+          rulesetVersion: under,
+        }
+      : null,
+  });
+}
+
+/**
+ * One comparable fingerprint over several sources' parses.
+ *
+ * 🔴 ALL OR NOTHING, AND THE NOTHING IS DELIBERATE. A canvas's answer was reached over ALL of its
+ * material, so a fingerprint missing one source's hash cannot say whether the material changed.
+ * Returning null then — rather than a fingerprint over the sources that happened to load — is what
+ * makes the unknown case suppress a rebuild instead of causing one: a transient read failure must
+ * not look like a replaced file and buy a model call.
+ *
+ * Sorted, so the order the learner attached two files in is not a different material.
+ */
+export function materialStamp(
+  sources: readonly { contentHash: string | null; parserVersion: string | null; sourceId: string }[],
+): MaterialStamp | null {
+  if (sources.length === 0) return null;
+  if (sources.some((source) => !source.contentHash || !source.parserVersion)) return null;
+  const ordered = [...sources].sort((a, b) => a.sourceId.localeCompare(b.sourceId));
+  return {
+    contentHash: ordered.map((source) => `${source.sourceId}:${source.contentHash}`).join(","),
+    parserVersion: ordered.map((source) => `${source.sourceId}:${source.parserVersion}`).join(","),
+  };
 }
 
 /**
@@ -171,21 +285,55 @@ export function territoryReuse(input: {
   /**
    * The rules in force now — see `buildRules`. Only consulted for a territory that found nothing.
    *
-   * Absent means "do not revisit empty builds", which is the conservative reading for a caller that
-   * does not track rules: it can only suppress a rebuild, never cause one.
+   * 🔴 ABSENT MEANS "I CANNOT EVALUATE A RULES-STAMPED MARKER", WHICH RESOLVES TO A MISS — it can
+   * only CAUSE a rebuild, never suppress one. (The header comment here used to say the opposite; the
+   * code and `canvas-territory.test.ts` have always said this, and the topic lane depends on it. A
+   * docstring that disagreed with its own function is exactly how a null rule gets inverted by
+   * somebody reading only the prose.)
    */
   rules?: string;
+  /**
+   * The material as it stands now — see `MaterialStamp`. Only consulted for a territory that found
+   * nothing, and absent means "do not revisit on a material change", the same conservative reading
+   * `rules` gets.
+   */
+  material?: MaterialStamp;
 }): TerritoryReuse {
-  const { identityVersion, rules, stored } = input;
+  const { identityVersion, material, rules, stored } = input;
   if (!stored) return { miss: "never-built", reuse: false };
   if (stored.identityVersion !== identityVersion) return { miss: "identity-version-changed", reuse: false };
   // 🔴 CHECKED BEFORE THE HIT, BECAUSE AN EMPTY TERRITORY WOULD OTHERWISE READ AS A SUCCESSFUL ONE.
   // The identity check comes first on purpose: rules that moved matter less than keys that no longer
   // converge, and a version rebuild should not be pre-empted by a stale empty marker.
+  //
+  // 🔴 THE COMPARISON IS `needsReprocess`, NOT A `===` — and it is the same call the mechanism lane
+  // and the parse lane make. What used to be "are the rules the string they were?" is now "is the
+  // stored answer the answer the current rules would give over the current bytes?", which is a
+  // strictly wider question and the one the owner asked for.
   if (stored.emptyUnder) {
-    return stored.emptyUnder === rules
-      ? { reuse: "known-empty" }
-      : { miss: "empty-under-older-rules", reuse: false };
+    // 🔴🔴 A CALLER THAT TRACKS NO RULES CANNOT HONOUR A RULES-STAMPED MARKER, AND THIS LINE IS
+    // PRE-EXISTING BEHAVIOUR PRESERVED ON PURPOSE. `topicTerritory` passes no `rules` at all, and it
+    // has always relied on an empty grounded marker resolving to a MISS here so the topic gets asked
+    // again. Letting `needsReprocess` see `rulesetVersion: null` would read it as "this consumer does
+    // not track rules, so nothing is known to have moved" — perfectly correct as a SPEND rule, and
+    // catastrophic here: the marker would stand, and a topic canvas that once hit an empty grounded
+    // build would open blank on every open, for ever. That is the front-door bug this file already
+    // recovered from once.
+    //
+    // The two directions are not in conflict, they answer different questions. Unknown MATERIAL is a
+    // spend question and errs toward not paying. An unevaluatable MARKER is a learner question and
+    // errs toward rebuilding. This is the second, so it is decided here rather than inside a
+    // predicate that cannot tell "I do not track this" from "I could not compute it".
+    //
+    // No `reason`: nothing moved, we simply cannot check. `reason` is present exactly when the miss
+    // came from `needsReprocess`, and inventing `ruleset-version-changed` here would report a change
+    // that did not happen.
+    if (!rules) return { miss: "empty-answer-superseded", reuse: false };
+
+    const verdict = markerStands({ material, over: stored.emptyOver, rules, under: stored.emptyUnder });
+    return verdict.reprocess
+      ? { miss: "empty-answer-superseded", reason: verdict.reason, reuse: false }
+      : { reuse: "known-empty" };
   }
   return { objects: stored.objects, reuse: true };
 }
@@ -216,6 +364,16 @@ export function materialSubject(librarySourceIds: readonly string[]): string {
  * separates "we recorded an answer" from "this row is broken", and it is why the empty case could
  * not simply be allowed through.
  */
+/** A material stamp out of jsonb, or null. BOTH halves or neither — a stamp missing one dimension
+ *  would silently answer "unchanged" for the dimension it lost. */
+function readMaterialStamp(value: unknown): MaterialStamp | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as { contentHash?: unknown; parserVersion?: unknown };
+  if (typeof raw.contentHash !== "string" || !raw.contentHash) return null;
+  if (typeof raw.parserVersion !== "string" || !raw.parserVersion) return null;
+  return { contentHash: raw.contentHash, parserVersion: raw.parserVersion };
+}
+
 export function readTerritory(value: unknown): CanvasTerritory | null {
   if (typeof value !== "object" || value === null) return null;
   const row = value as {
@@ -223,7 +381,9 @@ export function readTerritory(value: unknown): CanvasTerritory | null {
     identityVersion?: unknown;
     objects?: unknown;
     emptyUnder?: unknown;
+    emptyOver?: unknown;
     mechanismsUnder?: unknown;
+    mechanismsOver?: unknown;
   };
   if (typeof row.topic !== "string" || !row.topic.trim()) return null;
   if (typeof row.identityVersion !== "number" || !Number.isFinite(row.identityVersion)) return null;
@@ -235,9 +395,17 @@ export function readTerritory(value: unknown): CanvasTerritory | null {
   if (row.objects.length > 0 && emptyUnder) return null;
   const mechanismsUnder =
     typeof row.mechanismsUnder === "string" && row.mechanismsUnder.trim() ? row.mechanismsUnder : null;
+  // 🔴 A MALFORMED MATERIAL STAMP READS AS ABSENT, WHICH IS THE SAFE DIRECTION AND THE OPPOSITE OF
+  // WHAT IT LOOKS LIKE. Absent means unknown, and `needsReprocess` lets an unknown stored dimension
+  // trigger a rebuild when the current one is known — so a stamp that did not survive storage costs
+  // one more read, never a wrongly-honoured "we already looked".
+  const emptyOver = readMaterialStamp(row.emptyOver);
+  const mechanismsOver = readMaterialStamp(row.mechanismsOver);
   return {
     ...(emptyUnder ? { emptyUnder } : {}),
+    ...(emptyOver ? { emptyOver } : {}),
     ...(mechanismsUnder ? { mechanismsUnder } : {}),
+    ...(mechanismsOver ? { mechanismsOver } : {}),
     identityVersion: row.identityVersion,
     objects: row.objects as KnowledgeObject[],
     topic: row.topic,
