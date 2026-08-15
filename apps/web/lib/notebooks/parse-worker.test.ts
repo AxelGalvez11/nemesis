@@ -201,3 +201,46 @@ describe("visionSettlement: a parse that died is not a parse that was free", () 
     assert.deepEqual(visionSettlement(10, { calls: -1, units: -3 }), { calls: 0, used: 0 });
   });
 });
+
+describe("sanitizeError: a failure that will not say why is barely a failure record", () => {
+  test("a Supabase-shaped plain object yields its message, not [object Object]", () => {
+    // 🔴 THE REAL ROW. The first document the worker ever got past its loading bug wrote
+    // `parse_error = "[object Object]"` — proof that a parse failed, and no way to learn
+    // why. PostgrestError is a plain object, so EVERY database failure on this path hit
+    // the `String(cause)` branch, which is the class of failure most in need of a message.
+    const written = sanitizeError({
+      message: "function public.finish_document_parse(...) does not exist",
+      code: "42883",
+      details: null,
+      hint: null,
+    });
+    assert.match(written, /finish_document_parse/);
+    assert.match(written, /42883/);
+    assert.doesNotMatch(written, /\[object Object\]/);
+  });
+
+  test("an object with no recognised fields still says more than [object Object]", () => {
+    const written = sanitizeError({ status: 500, body: "upstream refused" });
+    assert.doesNotMatch(written, /\[object Object\]/);
+    assert.match(written, /upstream refused/);
+  });
+
+  test("an unserialisable object names itself rather than throwing", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const written = sanitizeError(circular);
+    assert.doesNotMatch(written, /\[object Object\]/);
+    assert.match(written, /unserialisable/);
+  });
+
+  test("widening the reader did not widen what may leak", () => {
+    // The sanitiser must still run over the newly-readable fields. A PostgrestError's
+    // `details` is exactly where a signed storage URL would appear.
+    const written = sanitizeError({
+      message: "download failed",
+      details: "GET https://xyz.supabase.co/storage/v1/object/sign/x?token=abc.def.ghi",
+    });
+    assert.doesNotMatch(written, /supabase\.co/);
+    assert.match(written, /<url>/);
+  });
+});
