@@ -69,10 +69,15 @@ test("classes keep the order the document introduced them, never sorted", () => 
 });
 
 test("a two-column grid is a pair and stays with the pair lane", () => {
-  const axes = classAxesOf([["*1", "Normal"], ["*3", "No function"]], 2, SUBJECT);
+  // 🔴 THE SECOND COLUMN MUST REPEAT, OR THIS TEST PROVES NOTHING. With two distinct values the
+  // grouping rule refuses the grid on its own and the width rule is never reached — the test then
+  // passes with the width rule deleted, which is how a guard comes to be trusted for work it does
+  // not do. Here `Normal` appears twice across three rows, so grouping WOULD accept it and only
+  // the width rule can refuse it.
+  const rows = [["*1", "Normal"], ["*2", "Normal"], ["*3", "No function"]];
 
   // Minting here would teach the same cells twice under two knowledge types.
-  assert.deepEqual(axes, []);
+  assert.deepEqual(classAxesOf(rows, 2, { index: 0, populated: 3 }), []);
 });
 
 test("a column as distinct as the subject states a fact per row, and is not a class", () => {
@@ -102,15 +107,19 @@ test("a column written as an index is refused the way a timetable is", () => {
 });
 
 test("a constant column groups nothing and is refused", () => {
+  // 🔴 THE CONSTANT MUST BE A WORD, NOT A YEAR. `2019` is index-shaped, so the typographic rule
+  // refuses that column first and this test passes with the one-class rule deleted — the guard
+  // would then be credited with a refusal it never made. `upheld` is an ordinary label, so only
+  // "one value groups nothing" can refuse it.
   const rows = [
-    ["Case A", "2019", "upheld"],
-    ["Case B", "2019", "upheld"],
-    ["Case C", "2019", "reversed"],
+    ["Case A", "upheld", "narrow"],
+    ["Case B", "upheld", "broad"],
+    ["Case C", "upheld", "narrow"],
   ];
 
-  const axes = classAxesOf(rows, 3, { index: 0, populated: 3 }, ["Case", "Year", "Holding"]);
+  const axes = classAxesOf(rows, 3, { index: 0, populated: 3 }, ["Case", "Holding", "Reading"]);
 
-  // Every row says 2019 — that tells no two cases apart.
+  // Every case was upheld — that tells no two of them apart. The reading does.
   assert.deepEqual(axes.map((axis) => axis.column), [2]);
 });
 
