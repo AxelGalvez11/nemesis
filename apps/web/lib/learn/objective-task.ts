@@ -17,6 +17,7 @@ import type { KnowledgeObject } from "./knowledge-types";
 import type { EvidenceVerdict } from "./learner-evidence";
 import type { LearningObjective, ObjectiveCapability } from "./learning-objective";
 import type { EvidenceToRecord, StoredObjective } from "./learner-store";
+import type { ClassContrast } from "./wide-grid-classification";
 import type { ObjectiveEvidence, ScaffoldRung } from "./scaffold-rung";
 import type { TeachingStrategyId } from "./teaching-strategy";
 
@@ -264,6 +265,34 @@ export function predictionPromptText(objective: LearningObjective): string {
   return `What follows from ${objective.cue}, and why?`;
 }
 
+/**
+ * Word the question for a capability that asks the learner to tell one thing from its NEIGHBOURS.
+ *
+ * 🔴 THE NEIGHBOUR IS NAMED IN THE QUESTION, AND WITHOUT IT THIS IS A RECALL PROMPT. "Which group
+ * is X in?" is answered by looking one fact up; the learner who has memorised the label and has no
+ * idea what separates it from the class next door answers it perfectly. Naming what it must be told
+ * apart FROM is what makes that learner's gap visible, and it is the same move `predict` makes by
+ * refusing to stop at "what follows".
+ *
+ * 🔴 AND IT ASKS "WHAT TELLS YOU", NOT "WHAT IS THE DIFFERENCE". The grid never stated the
+ * distinguishing feature — it is spread across the columns that are neither subject nor class — so
+ * a question presupposing one named difference would be asserting something the source did not say.
+ * "What tells you" is answerable from whatever the learner actually holds.
+ *
+ * 🔴 AT MOST TWO NEIGHBOURS ARE NAMED. An axis with nine classes would otherwise print a sentence
+ * that is a list rather than a question, and a learner reading it would be doing recognition over
+ * the options instead of retrieval.
+ */
+export function discriminationPromptText(objective: LearningObjective, contrast: ClassContrast): string {
+  const neighbours = contrast.siblings.slice(0, 2).map((sibling) => sibling.label);
+  const against = neighbours.length > 1 ? `${neighbours[0]} or ${neighbours[1]}` : neighbours[0];
+  const axis = contrast.axis?.trim();
+  if (!against) return objectivePromptText(objective);
+  return axis
+    ? `By ${axis}, what is ${objective.cue} — and what tells you it is that rather than ${against}?`
+    : `Which group does ${objective.cue} belong to — and what tells you it is that rather than ${against}?`;
+}
+
 /** The pair of identifiers a prompt needs to ask about one stored objective. */
 export function targetFor(objective: StoredObjective): ObjectiveTarget {
   return { identityKey: objective.identityKey, rowId: objective.rowId };
@@ -339,8 +368,16 @@ export function retrievalPromptFor(
   // minter, and keying on the type here would put a second, independently-editable copy of that
   // mapping in a file that has no business holding one.
   const predicting = objective.capability === "predict";
+  const discriminating = objective.capability === "discriminate" && Boolean(knowledge.contrast);
   return promptTargeting({
     expectedAnswer: objective.answer,
+    // 🔴 THE CLASS LABEL IS REQUIRED; THE REASONING IS NOT. The source printed the label, so a
+    // complete answer has to reach it — but it never stated the distinguishing feature, and
+    // requiring a concept the document does not contain would fail correct answers. The judge is
+    // told what must be there, and reads the rest for depth.
+    ...(discriminating && knowledge.contrast
+      ? { expectedEvidence: { referenceAnswer: objective.answer, requiredConcepts: [knowledge.contrast.label] } }
+      : {}),
     // 🔴 THE EDGE'S OWN TWO ENDS, IN THE SOURCE'S WORDS. A complete account has to reach the effect
     // FROM the cause, so both are required and the judge is told so — which is what lets a correct
     // account phrased in the learner's own vocabulary pass, and a fluent paragraph that never
@@ -358,12 +395,20 @@ export function retrievalPromptFor(
     // today, so the two are the same value — and writing the literal here is precisely how they
     // would stay the same after a second capability ships, with every prediction filed as a recall.
     operation: objective.capability,
-    prompt: predicting ? predictionPromptText(objective) : objectivePromptText(objective),
+    prompt: predicting
+      ? predictionPromptText(objective)
+      : discriminating && knowledge.contrast
+        ? discriminationPromptText(objective, knowledge.contrast)
+        : objectivePromptText(objective),
     targets: [targetFor(objective)],
     // An association asks for a term, not an account. The judge is told this so it checks the
     // production rather than marking a one-word answer down for being short — and a prediction is
     // told the opposite, so a two-word answer to "and why?" is read as the incomplete account it is.
-    task: predicting ? "predict" : "name",
+    // 🔴 `compare` IS THE SPEC'S OWN WORD FOR THIS — "set two things against each other, covering
+    // both" — so the durable evidence row files a discrimination under the task it actually is.
+    // Leaving it as `name` would be this codebase's named failure of mapping a wider vocabulary
+    // DOWN: every attempt at telling two classes apart recorded for ever as producing a term.
+    task: predicting ? "predict" : discriminating ? "compare" : "name",
   });
 }
 

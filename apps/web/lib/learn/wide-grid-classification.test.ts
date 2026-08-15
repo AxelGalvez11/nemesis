@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { classAxesOf } from "./wide-grid-classification";
+import { objectivesForKnowledge } from "./learning-objective";
+import type { KnowledgeObject } from "./knowledge-types";
+import { discriminationPromptText } from "./objective-task";
+import { classAxesOf, contrastsOf, type ClassContrast } from "./wide-grid-classification";
 
 /**
  * A grid that is actually stored in production, copied verbatim from
@@ -127,4 +130,59 @@ test("one row cannot demonstrate that anything repeats", () => {
   const axes = classAxesOf([["*1/*1", "Normal", "NM"]], 3, { index: 0, populated: 1 });
 
   assert.deepEqual(axes, []);
+});
+
+/** The `Poor (PM)` class of the real production grid, as extraction produces it. */
+function poorContrast(): ClassContrast {
+  const axis = classAxesOf(CYP2D6_ROWS, 4, SUBJECT, CYP2D6_HEADER).find((a) => a.column === 3)!;
+  return contrastsOf(axis).find((c) => c.label === "Poor (PM)")!;
+}
+
+function classificationObject(contrast: ClassContrast): KnowledgeObject {
+  return {
+    contrast,
+    id: "k1",
+    identityKey: "k1",
+    statement: `${contrast.axis}: ${contrast.label}`,
+    type: "classification",
+    unanchoredProvenance: [],
+  };
+}
+
+test("a class becomes one objective per member, each asking to discriminate", () => {
+  const objectives = objectivesForKnowledge(classificationObject(poorContrast()));
+
+  // Two genotypes are Poor metabolisers, and a learner may place one and hesitate on the other.
+  assert.deepEqual(objectives.map((o) => o.cue), ["*3/*3", "*3/*6"]);
+  assert.deepEqual([...new Set(objectives.map((o) => o.capability))], ["discriminate"]);
+  // The answer is the label the source printed, never an inferred distinguishing feature.
+  assert.deepEqual([...new Set(objectives.map((o) => o.answer))], ["Poor (PM)"]);
+  // 🔴 Two members, two identities — otherwise answering one would credit the other.
+  assert.equal(new Set(objectives.map((o) => o.identityKey)).size, 2);
+});
+
+test("the prompt names the neighbour, which is what stops it being a recall question", () => {
+  const contrast = poorContrast();
+  const [objective] = objectivesForKnowledge(classificationObject(contrast));
+
+  const prompt = discriminationPromptText(objective!, contrast);
+
+  // The member asked about, and the class it must be told apart FROM, are both in the sentence.
+  assert.match(prompt, /\*3\/\*3/);
+  assert.match(prompt, /rather than Normal \(NM\) or Intermediate \(IM\)/);
+  // 🔴 "what tells you", never "what is the difference" — the grid never stated one.
+  assert.match(prompt, /what tells you/);
+  // The axis is the source's own header word.
+  assert.match(prompt, /^By \*\*Predicted Metabolizer status\*\*/);
+});
+
+test("at most two neighbours are named, so the prompt stays a question and not a list", () => {
+  const contrast = poorContrast();
+  const [objective] = objectivesForKnowledge(classificationObject(contrast));
+
+  const prompt = discriminationPromptText(objective!, contrast);
+
+  // Three siblings exist on this axis; naming all of them would turn retrieval into recognition.
+  assert.equal(contrast.siblings.length, 3);
+  assert.doesNotMatch(prompt, /Ultra-rapid/);
 });
