@@ -17,8 +17,10 @@
 
 import type { DocumentModel } from "@nemesis/shared";
 
+import type { FigureLabel } from "@/lib/learn/figure-labels";
+
 import { applyFigureDescriptions, planFigureVision, type RoutingPlan } from "./figure-routing";
-import { describeFiguresWithVision, visionConfigured, type VisionEnv } from "./vision";
+import { readFiguresWithVision, visionConfigured, type VisionEnv } from "./vision";
 import type { CapturedFigure } from "./structure";
 
 export interface FigureLookReport {
@@ -85,15 +87,28 @@ export async function lookAtFigures(
   }
 
   let described = new Map<string, string>();
+  let labelled = new Map<string, FigureLabel[]>();
   try {
-    described = await describeFiguresWithVision(send, { env, signal: options.signal });
+    // 🔴 `readFiguresWithVision`, NOT `describeFiguresWithVision` — SAME CALL, TWO ANSWERS (§46.6),
+    // exactly the PPTX lane's rule. `describeFiguresWithVision` is a thin wrapper around this exact
+    // request that keeps only `.descriptions` and throws `.labels` away — so a PDF diagram whose
+    // parts vision named still arrived here with nothing to occlude, even after FIGURE_PROMPT
+    // started asking for labels. No new call and no new cost: this is the request `lookAtFigures`
+    // was already making.
+    const seen = await readFiguresWithVision(send, { env, signal: options.signal });
+    described = seen.descriptions;
+    labelled = seen.labels;
   } catch {
     // A provider failure is a disclosed gap, not a parse failure.
   }
 
   for (const image of send) {
     const text = described.get(image.name);
-    results.set(Number(image.name), text ? { description: text } : { skipped: "examined-empty" });
+    const named = labelled.get(image.name);
+    results.set(Number(image.name), {
+      ...(text ? { description: text } : { skipped: "examined-empty" }),
+      ...(named && named.length > 0 ? { labels: named } : {}),
+    });
   }
 
   return {

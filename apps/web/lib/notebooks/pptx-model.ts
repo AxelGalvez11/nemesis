@@ -64,7 +64,7 @@ export function pptxToModel(
   // 🔴 KEYED BY THE PICTURE'S OWN NAME, NOT THREADED THROUGH THE MERGED TEXT (§46.6). The
   // description reaches a block by being appended as a LINE and re-parsed out of it here, which is
   // fine for a sentence and hopeless for structured data — one stray newline and the labels are
-  // prose again. `describeFiguresWithVision` already returns everything keyed by image name, and
+  // prose again. `readFiguresWithVision` already returns everything keyed by image name, and
   // that same name is the block's `ref`, so the labels ride the key instead of the text.
   labels: ReadonlyMap<string, readonly { text: string; x: number; y: number }[]> = new Map(),
 ): DocumentModel {
@@ -196,11 +196,22 @@ export function pptxToModel(
     for (const image of input.images) {
       if (descriptions.has(image.name)) continue;
       if (!image.slides.includes(index + 1)) continue;
+      // 🔴 A FIGURE CAN CARRY LABELS WITH NO PROSE AT ALL, AND THIS LOOP USED TO LOSE THEM (§46.6).
+      // `readFiguresWithVision` sets `descriptions` and `labels` independently — an entry that is
+      // ONLY a `LABELS:` line, or whose sentence is empty after `descriptionWithoutLabels`, never
+      // enters `descriptions` and so was never described by the FIGURE_LINE branch above. It fell
+      // straight into this catch-up loop, which only ever asked `descriptions` and had nowhere to
+      // put a label — so a diagram vision named parts in still came out with `labels: undefined`.
+      // A labelled diagram is content, never furniture, so `named` is checked BEFORE `recurring`
+      // decides the skip reason.
+      const named = labels.get(image.name);
+      const hasLabels = named !== undefined && named.length > 0;
       slideBlocks.push({
         figure: {
           ref: image.name,
+          ...(hasLabels ? { labels: named } : {}),
           // Template furniture is a disclosed decision; anything else is a gap.
-          ...(image.recurring ? { skipped: "decorative" as const } : {}),
+          ...(!hasLabels && image.recurring ? { skipped: "decorative" as const } : {}),
         },
         headingPath,
         kind: "figure",

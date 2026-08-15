@@ -25,6 +25,8 @@
 
 import type { DocBlock, DocumentModel } from "@nemesis/shared";
 
+import type { FigureLabel } from "@/lib/learn/figure-labels";
+
 /**
  * A figure must cover at least this share of its page to be worth a call.
  *
@@ -133,16 +135,24 @@ export function planFigureVision(
  * second keeps no reason at all, which is what makes it countable as lost. This
  * function is the only place that distinction is written, so it is the only
  * place it can be lost.
+ *
+ * 🔴 LABELS RIDE THE SAME RESULT, AND UNTIL NOW THERE WAS NOWHERE TO PUT THEM (§46.6). The caller
+ * (`figure-look.ts`) already receives `{ description, labels }` off one `readFiguresWithVision`
+ * reply — the PPTX lane's exact rule, "same call, two answers" — but this map's value type had no
+ * `labels` slot, so a PDF diagram vision named parts in was silently reduced to its prose on the
+ * way into the model. A photograph or a chart with no named parts still gets no `labels` field,
+ * which is correct: absence here means "not a labelled diagram", never "not looked at".
  */
 export function applyFigureDescriptions(
   model: DocumentModel,
-  results: ReadonlyMap<number, { description?: string; skipped?: string }>,
+  results: ReadonlyMap<number, { description?: string; skipped?: string; labels?: readonly FigureLabel[] }>,
 ): DocumentModel {
   if (results.size === 0) return model;
   const blocks: DocBlock[] = model.blocks.map((block, index) => {
     const result = results.get(index);
     if (!result || block.kind !== "figure" || !block.figure) return block;
     const described = result.description?.trim();
+    const named = result.labels && result.labels.length > 0 ? result.labels : undefined;
     return {
       ...block,
       figure: {
@@ -150,6 +160,7 @@ export function applyFigureDescriptions(
         ...(described
           ? { description: described }
           : { skipped: (result.skipped ?? "examined-empty") as NonNullable<DocBlock["figure"]>["skipped"] }),
+        ...(named ? { labels: named } : {}),
       },
       // The caption stays whatever the document said. A description is what a
       // model saw; a caption is what the author wrote, and merging them would

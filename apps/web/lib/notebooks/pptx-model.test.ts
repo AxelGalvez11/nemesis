@@ -139,3 +139,52 @@ test("a described picture is never also emitted as unexamined", () => {
   assert.equal(same.length, 1);
   assert.equal(same[0]!.figure?.description, "A cantilever.");
 });
+
+test("a labelled diagram keeps its labels when vision described it", () => {
+  const model = pptxToModel(
+    deck,
+    new Map([["ppt/media/image1.png", "A cantilever with two supports."]]),
+    new Map([["ppt/media/image1.png", [{ text: "Support A", x: 0.2, y: 0.8 }]]]),
+  );
+  const figure = model.blocks.find((b) => b.figure?.ref === "ppt/media/image1.png");
+  assert.deepEqual(figure!.figure?.labels, [{ text: "Support A", x: 0.2, y: 0.8 }]);
+});
+
+test("🔴 a figure with labels but NO prose still keeps its labels — the catch-up loop's blind spot", () => {
+  // `readFiguresWithVision` sets `descriptions` and `labels` independently: an entry that is only
+  // a LABELS line (or whose sentence was empty) never enters `descriptions`, so it never matches
+  // the FIGURE_LINE branch above and falls into the catch-up loop for "pictures nobody described".
+  // That loop used to ask only `descriptions` and had no slot for `labels` at all.
+  const model = pptxToModel(
+    deck,
+    new Map(), // no descriptions — image1 gets no [Figure: ...] line at all
+    new Map([["ppt/media/image1.png", [{ text: "Support A", x: 0.2, y: 0.8 }, { text: "Support B", x: 0.8, y: 0.8 }]]]),
+  );
+  const figure = model.blocks.find((b) => b.figure?.ref === "ppt/media/image1.png");
+  assert.ok(figure, "the picture must still be a block");
+  assert.equal(figure!.figure?.description, undefined, "no prose came back, and none is invented");
+  assert.deepEqual(figure!.figure?.labels, [
+    { text: "Support A", x: 0.2, y: 0.8 },
+    { text: "Support B", x: 0.8, y: 0.8 },
+  ]);
+});
+
+test("a labelled diagram is never marked decorative, even if it is recurring furniture", () => {
+  // A labelled diagram is content by definition — vision only emits LABELS for a diagram with named
+  // parts — so `recurring` must not be allowed to overrule that with `skipped: "decorative"`.
+  const model = pptxToModel(
+    deck,
+    new Map(),
+    new Map([["ppt/media/crest.png", [{ text: "Motto", x: 0.5, y: 0.5 }, { text: "Shield", x: 0.5, y: 0.2 }]]]),
+  );
+  const crest = model.blocks.find((b) => b.figure?.ref === "ppt/media/crest.png");
+  assert.ok(crest);
+  assert.equal(crest!.figure?.skipped, undefined);
+  assert.equal(crest!.figure?.labels?.length, 2);
+});
+
+test("no LABELS line means no labels field — a decorative picture must never get an invented one", () => {
+  const model = pptxToModel(deck, new Map([["ppt/media/image1.png", "A cantilever with two supports."]]));
+  const figure = model.blocks.find((b) => b.figure?.ref === "ppt/media/image1.png");
+  assert.equal(figure!.figure?.labels, undefined);
+});
