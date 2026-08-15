@@ -53,7 +53,13 @@ const revealScript =
 // The title stays sentence-case rather than lowercase: a browser tab and a search
 // result are chrome someone scans, not the page's own voice, and lowercase there
 // costs recognition for nothing.
-const TITLE = "Nemesis: a cognitive accelerator";
+//
+// "a cognitive accelerator" until 2026-08-15. The homepage rebuild replaced that
+// noun with the verb, on the grounds that "accelerate cognition" says the same
+// thing better — and a tab reading the rejected phrase while the page reads the
+// new one is the same idea stated twice, badly. The verb still names the category,
+// which is the whole reason this string is not the product name alone.
+const TITLE = "Nemesis: accelerate cognition";
 const DESCRIPTION =
   "Nemesis turns lectures, textbooks and course material into an adaptive path through knowledge. It asks you to retrieve, reads what your answer shows, and changes what comes next. The machine prepares. You learn.";
 
