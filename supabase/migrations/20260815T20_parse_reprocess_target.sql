@@ -58,6 +58,78 @@ as $function$
   returning s.*;
 $function$;
 
+-- 🔴 THE CRON'S DUE-COUNT CARRIES THE SAME PREDICATE, AND WIDENING ONLY THE CLAIM WOULD HAVE LEFT
+-- THE FALLBACK PATH BROKEN WHILE THE HAPPY PATH LOOKED FINE. `run_document_parse_jobs` counts due
+-- work and returns 0 — silently, by design — when there is none, so a reprocess would have been
+-- invisible to it and pg_cron would never have woken the worker for one.
+--
+-- The manual trigger nudges the worker directly, so a reprocess still ran; it ran only while that
+-- nudge succeeded. The parse route's own header states the promise this restores: "THE NUDGE IS AN
+-- ACCELERANT, NOT A REQUIREMENT. pg_cron picks the job up within a minute regardless." That
+-- sentence was false for a reprocess until this line, and the failure mode is a document that
+-- silently never gets re-read whenever a serverless invocation is dropped.
+create or replace function public.run_document_parse_jobs()
+returns integer
+language plpgsql
+security definer
+set search_path to 'public', 'extensions'
+as $function$
+declare
+  v_url text;
+  v_key text;
+  v_due int;
+begin
+  select count(*) into v_due
+    from public.library_sources
+   where (parsed_document_id is null or parse_reprocess_target is not null)
+     and parse_failed_at is null
+     and storage_path is not null
+     and parse_next_attempt_at <= clock_timestamp()
+     and parse_leased_until < clock_timestamp()
+     and parse_attempts < public.document_parse_max_attempts()
+     -- 🔴 THE SAME "SOMETHING HAS TO ASK" PREDICATE claim_document_parses HAS
+     -- ALWAYS HAD. Without it this count includes every source nobody has ever
+     -- requested a parse for, which is not due work by this system's own
+     -- definition and would make the exception below fire for documents no
+     -- student is waiting on.
+     and parse_enqueued_at is not null;
+
+  -- Still the ONLY silent path: nothing was ever asked for, so nothing was
+  -- dropped.
+  if v_due = 0 then
+    return 0;
+  end if;
+
+  select decrypted_secret into v_url from vault.decrypted_secrets
+   where name = 'document_worker_url';
+  select decrypted_secret into v_key from vault.decrypted_secrets
+   where name = 'document_worker_service_role_key';
+
+  if v_url is null or v_key is null then
+    -- 🔴 EXCEPTION, NOT WARNING. A warning is invisible to anything that only
+    -- checks whether the job succeeded — which, measured, is everything that
+    -- has ever watched this job. Raising fails the pg_cron run and writes
+    -- `status = 'failed'` to `cron.job_run_details`, so real requested work
+    -- sitting behind an unconfigured deployment is a fact something can alert
+    -- on, rather than a fact indistinguishable from a healthy empty queue.
+    raise exception
+      'run_document_parse_jobs: % requested source(s) due for parsing but document_worker_url/document_worker_service_role_key are unset in Vault',
+      v_due;
+  end if;
+
+  perform net.http_post(
+    url     := v_url,
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || v_key
+    ),
+    body    := jsonb_build_object('trigger', 'cron'),
+    timeout_milliseconds := 10000
+  );
+  return v_due;
+end;
+$function$;
+
 -- 🔴 THE REQUEST IS CLEARED BY THE PARSE THAT ANSWERS IT, AND THAT IS WHAT BOUNDS THE SPEND.
 -- Left set, the row stays claimable for ever and the cron re-reads it on every pass — "repeatedly
 -- pay to discover the same result", built by the mechanism meant to stop it.
@@ -123,8 +195,19 @@ $function$;
 -- `parsed_document_id` has TWO writers: the worker's `finish_document_parse` above, and the upload
 -- lane's `persistParse`, which links the row straight from a request. A file re-uploaded while a
 -- reprocess was pending would take the second path, get a fresh parse, and leave the target set —
--- claimable for ever. This trigger makes "a parse was linked" clear the request whichever door it
--- came through, so no future writer has to remember.
+-- claimable for ever. This trigger makes a CHANGE of `parsed_document_id` clear the request without
+-- any future writer having to remember.
+--
+-- 🔴 IT KEYS ON THE ID CHANGING, SO ONE CASE IS NOT COVERED, AND THE GAP IS STATED RATHER THAN
+-- IMPLIED. `record_parsed_document` upserts on `(user_id, content_hash, parser_version)`, so a
+-- re-upload of identical bytes during a pending reprocess relinks the SAME id — no change, no
+-- trigger, target still set. It is bounded: the row stays claimable, the worker parses it once
+-- more, and `finish_document_parse` clears it explicitly. One extra parse, not an unbounded loop.
+--
+-- Keying on "the id is not null" instead would fire on EVERY update of a linked row — a rename, a
+-- soft delete, the lease columns `claim_document_parses` writes — and would therefore cancel a
+-- pending reprocess whenever a learner tidied their Library. A bounded extra parse is the cheaper
+-- of the two wrong answers, and it errs toward doing the work rather than silently dropping it.
 create or replace function public.clear_parse_reprocess_target()
 returns trigger
 language plpgsql

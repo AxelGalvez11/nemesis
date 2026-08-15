@@ -175,3 +175,44 @@ test("🔴 an unparsed source takes the ordinary enqueue path even when a reproc
   // through the reprocess branch would set a target column for a parse that does not exist.
   assert.equal(decideEnqueue(src(), NOW).action, "enqueue");
 });
+
+test("🔴🔴 a reprocess that GAVE UP can be asked for again — the same retry button, on the new path", () => {
+  // 🔴 THE DEAD END THIS PINS IS PERMANENT AND SILENT, and it is the ordinary path's retry bug
+  // wearing the reprocess path's clothes. The worker gives up, `fail_document_parse` stamps
+  // `parse_failed_at`, the claim predicate excludes the row — and the pending target then makes
+  // every later ask a no-op. Un-claimable AND un-requeueable, with a button that reports success.
+  //
+  // Stated as a SEQUENCE, because no single call can show it: the first ask must write, the
+  // failure must not be recoverable by the queue, and the ask AFTER the failure must write again.
+  let row = parsed({ parsedParserVersion: "extract-2026-08-06" });
+
+  const first = decideEnqueue(row, NOW);
+  assert.equal(first.action, "reprocess");
+
+  // What the worker leaves behind after the attempt ladder runs out. `fail_document_parse` sets
+  // `parse_failed_at` when the error is non-retryable OR the attempts are spent, so both routes
+  // into this dead end arrive with this column set — which is what makes checking it sufficient.
+  row = {
+    ...row,
+    parseEnqueuedAt: "2026-08-15T20:00:00Z",
+    parseFailedAt: "2026-08-15T20:30:00Z",
+    reprocessTarget: "extract-2026-08-13",
+  };
+
+  const again = decideEnqueue(row, NOW);
+  assert.equal(again.action, "reprocess", "a failed reprocess must be askable again");
+  assert.equal(writesRow(again), true, "and the ask must WRITE — the write is what clears the failure");
+});
+
+test("🔴 and a reprocess still IN FLIGHT is still idempotent — the failure check did not widen the hole", () => {
+  // The fix only expires the pending state once there is no backoff left to protect. A reprocess
+  // that is merely slow must still absorb repeated asks, or the fix for one dead end would have
+  // reopened the spend hole the pending state exists to close.
+  const inFlight = parsed({
+    parseEnqueuedAt: "2026-08-15T20:00:00Z",
+    parsedParserVersion: "extract-2026-08-06",
+    reprocessTarget: "extract-2026-08-13",
+  });
+  assert.equal(decideEnqueue(inFlight, NOW).action, "already-reprocessing");
+  assert.equal(writesRow(decideEnqueue(inFlight, NOW)), false);
+});

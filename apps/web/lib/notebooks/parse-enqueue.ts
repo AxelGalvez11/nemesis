@@ -150,7 +150,23 @@ export function decideEnqueue(
     // for every ask until the worker finishes, and every one of those asks would
     // reset the clock. This line is the difference between "idempotent" and
     // "idempotent as long as nobody clicks twice".
-    if (source.reprocessTarget === parserVersion) return { action: "already-reprocessing" };
+    //
+    // 🔴🔴 `&& !parseFailedAt` — AND WITHOUT IT A FAILED REPROCESS COULD NEVER BE
+    // ASKED FOR AGAIN. This is the retry-button bug from the ordinary path,
+    // reintroduced on the reprocess path, and it is a permanent dead end: the
+    // worker gives up, `fail_document_parse` stamps `parse_failed_at` (on a
+    // non-retryable error OR on the last attempt — both routes arrive here with
+    // it set), the claim predicate excludes the row, and every later ask matches
+    // the still-set target and returns a no-op. Un-claimable AND un-requeueable,
+    // for ever, behind a button that reports success.
+    //
+    // The existing `requeue` comment's own argument applies verbatim: a source
+    // that has already given up has NO BACKOFF LEFT TO PROTECT, so the only
+    // reason this line is a no-op has expired. The pending state guards a clock;
+    // there is no clock once the ladder has run out.
+    if (source.reprocessTarget === parserVersion && !source.parseFailedAt) {
+      return { action: "already-reprocessing" };
+    }
 
     // 🔴 THE SAME PREDICATE THE TWO KNOWLEDGE MARKERS CALL. Not a second
     // implementation that happens to agree with it today — the owner's
