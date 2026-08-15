@@ -28,7 +28,7 @@ const KNOWLEDGE: KnowledgeObject = {
   unanchoredProvenance: [],
 };
 
-const RETRIEVE: TeachingAction = { because: "…", objectiveId: "o1", type: "retrieve" };
+const RETRIEVE: TeachingAction = { because: "…", objectiveId: "o1", rung: "independent", type: "retrieve" };
 const CORRECTION: TeachingAction = {
   because: "…",
   exposition: { mode: "deliberate" },
@@ -311,6 +311,23 @@ test("🔴 every decision carries the terms that produced it", () => {
     state: state({ evidenceCount: 2, lastEvidenceAt: "2026-08-14T12:00:00.000Z", status: "incorrect" }),
   }));
   assert.deepEqual(decided.reasons, ["fell-short", "repeatedly-unresolved", "displaced-since"]);
+});
+
+test("🔴 a scaffolded retrieval carries its own reason in the trace, and an unscaffolded one does not", () => {
+  const NARROWED: TeachingAction = { because: "…", objectiveId: "o1", rung: "narrowed", type: "retrieve" };
+  const input = { action: NARROWED, evidence: [], interveningActs: 1, knowledge: KNOWLEDGE, state: state() };
+  assert.ok(reasons(input).includes("scaffold-narrowed"));
+  assert.ok(!reasons(at()).includes("scaffold-narrowed"), "the default independent RETRIEVE fixture must not carry it");
+});
+
+test("🔴 scaffolding changes the trace, never the score — HOW to ask is not a reason to rank higher or lower", () => {
+  // Same objective, same evidence, same everything except the rung the action asks at. If narrowing
+  // moved the score, two retrievals of the identical objective could disagree about how worth doing
+  // it is, which would mean the rung is quietly acting as a second, undocumented modifier.
+  const base = { evidence: [], interveningActs: 1, knowledge: KNOWLEDGE, state: state() };
+  const independent: TeachingAction = { because: "…", objectiveId: "o1", rung: "independent", type: "retrieve" };
+  const narrowed: TeachingAction = { because: "…", objectiveId: "o1", rung: "narrowed", type: "retrieve" };
+  assert.equal(score({ ...base, action: independent }), score({ ...base, action: narrowed }));
 });
 
 test("mostValuable keeps the caller's order on a tie, so the same state asks the same question", () => {

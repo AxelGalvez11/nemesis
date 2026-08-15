@@ -219,7 +219,12 @@ function actionFor(input: {
     });
   switch (input.chosen) {
     case "retrieve":
-      return { because: input.because, objectiveId: id, type: "retrieve" };
+      // 🔴 ALWAYS `independent` — THE BASELINE ARM DOES NOT SCAFFOLD. `scaffold-decision.ts` is a
+      // feature of the STRUCTURED policy; this arm exists specifically to measure what the model
+      // does WITHOUT that structure (see the comment above on `exposition`, which draws the same
+      // line for cognitive mode). Wiring scaffolding in here would blur exactly the comparison
+      // `strategy-outcomes.ts` is built to read.
+      return { because: input.because, objectiveId: id, rung: "independent", type: "retrieve" };
     case "show_correction":
       return { because: input.because, exposition: exposition("correction"), objectiveId: id, type: "show_correction" };
     case "contrast":

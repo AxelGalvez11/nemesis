@@ -60,7 +60,11 @@ export type SelectionReason =
   /** Worked very recently. Asking now would measure the last few minutes, not learning. */
   | "just-worked"
   /** Other material has intervened since this was last touched, which is what makes it askable. */
-  | "displaced-since";
+  | "displaced-since"
+  /** Repeated unaided misses moved this retrieval to a narrower rung of §33's ladder — see
+   *  `scaffold-decision.ts`. Carried on the trace so "why did Nemesis ask it this way" is answerable
+   *  from the same record as "why did Nemesis ask it at all". */
+  | "scaffold-narrowed";
 
 export interface ActionValue {
   /** Higher is more worth doing NOW. 🔴 A property of the ACTION at this moment — never of the
@@ -226,14 +230,25 @@ export interface ValueInput {
   terminologyFriction?: boolean;
 }
 
+/**
+ * Did this one row come back wrong, partial, or with nothing shown — the learner's own signal.
+ *
+ * 🔴 EXPORTED SO `scaffold-decision.ts` READS THE SAME DEFINITION RATHER THAN A SECOND ONE. That
+ * file needs the TRAILING RUN of unresolved attempts where this file needs the total count — two
+ * different folds, and both have to agree on what "unresolved" means or a score and the scaffolding
+ * rung it is paired with could tell two different stories about identical evidence.
+ */
+export function isUnresolvedAttempt(row: LearnerEvidence): boolean {
+  return (
+    row.objectiveEvidence !== "not_addressed" &&
+    (row.verdict === "incorrect" || row.verdict === "misconception" || row.verdict === "partial" ||
+      (!row.demonstrationObtained && row.objectiveEvidence === "nothing_produced"))
+  );
+}
+
 /** Attempts that came back wrong, partial, or with nothing shown — the learner's own signal. */
 function unresolvedAttempts(evidence: readonly LearnerEvidence[]): number {
-  return evidence.filter(
-    (row) =>
-      row.objectiveEvidence !== "not_addressed" &&
-      (row.verdict === "incorrect" || row.verdict === "misconception" || row.verdict === "partial" ||
-        (!row.demonstrationObtained && row.objectiveEvidence === "nothing_produced")),
-  ).length;
+  return evidence.filter(isUnresolvedAttempt).length;
 }
 
 /**
@@ -334,6 +349,16 @@ export function value(input: ValueInput): ActionValue {
     // their own voice. Ranked down rather than removed — see `JUST_WORKED_PENALTY`.
     delta -= JUST_WORKED_PENALTY;
     reasons.push("just-worked");
+  }
+
+  // 🔴 A TRACE ENTRY, NEVER A MODIFIER — SCAFFOLDING DOES NOT TOUCH `delta`. Whether this objective
+  // is worth doing is already answered by the band and the modifiers above; asking it at a narrower
+  // rung is a decision about HOW, made by `scaffold-decision.ts` from the same evidence, and it must
+  // not be double-counted here as a second reason to rank the objective itself higher or lower. What
+  // it must do is be VISIBLE: "why did Nemesis ask it this way" needs the same kind of inspectable
+  // answer as "why did Nemesis ask it at all", and this is that answer's home in the trace.
+  if (action.type === "retrieve" && action.rung !== "independent") {
+    reasons.push("scaffold-narrowed");
   }
 
   return { reasons, score: score + clampToBand(delta) };

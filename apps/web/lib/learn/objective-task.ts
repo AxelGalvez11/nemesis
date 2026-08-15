@@ -378,6 +378,19 @@ export function promptTargeting(input: {
 export function retrievalPromptFor(
   resolved: { objective: StoredObjective; knowledge: KnowledgeObject },
   id: string,
+  /**
+   * Which rung of §33's ladder to stage this retrieval at.
+   *
+   * 🔴 OPTIONAL HERE, DEFAULTING TO `promptTargeting`'s OWN `independent` DEFAULT — NOT A SECOND
+   * DECISION. `chooseNextTeachingAction` (`teaching-policy.ts`) is where the rung is actually chosen,
+   * from `scaffold-decision.ts`'s reading of the evidence; the caller that already holds that
+   * decision — `TeachingAction.rung`, once a `TeachingDecision` names one — passes it straight
+   * through. Absent means the caller has no such decision to pass (an association-recall retrieval
+   * has never staged anything below `independent`), which is the honest, safe default for exactly
+   * the reason `promptTargeting`'s own comment gives: claiming a HIGHER rung than was offered would
+   * credit production that never happened, and `independent` is the top of the ladder.
+   */
+  rung?: ScaffoldRung,
 ): RetrievalPrompt {
   const { knowledge, objective } = resolved;
   // 🔴 BRANCHED ON THE CAPABILITY, WHICH IS THE OBJECTIVE'S OWN ACCOUNT OF WHAT IS BEING ASKED —
@@ -432,6 +445,7 @@ export function retrievalPromptFor(
     // procedure's structure IS its order. Filing it as `name` would record every attempt at a
     // sequence as producing a term.
     task: predicting ? "predict" : sequencing ? "reconstruct" : discriminating ? "compare" : "name",
+    ...(rung !== undefined ? { rung } : {}),
   });
 }
 

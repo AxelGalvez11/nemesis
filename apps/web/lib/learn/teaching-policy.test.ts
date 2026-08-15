@@ -166,6 +166,55 @@ test("🔴 after the correction has had its moment, the objective is ASKED again
   assert.match(action.because, /asking is what is owed/i);
 });
 
+// ── §33, executed: scaffolding is a decision made from THIS evidence, not a fallback ────────────
+
+test("a single wrong answer asks again unaided — one miss is not a pattern", () => {
+  const evidence = [ev("e1", ago(ACT_AGAIN_AFTER_MS + 60_000), "incorrect")];
+  const action = decide(evidence);
+  assert.equal(action.type, "retrieve");
+  assert.equal((action as { rung?: string }).rung, "independent");
+  assert.doesNotMatch(action.because, /narrows the scope/i);
+});
+
+test("🔴 two straight misses narrows the next ask, and says so in `because`", () => {
+  // The exact evidence shape the test above this one already builds — reused rather than
+  // reinvented, and now read for what it means about SCAFFOLDING rather than only about timing.
+  const evidence = [
+    ev("e1", ago(5 * 3600_000), "incorrect"),
+    ev("e2", ago(ACT_AGAIN_AFTER_MS + 60_000), "incorrect"),
+  ];
+  const action = decide(evidence);
+  assert.equal(action.type, "retrieve");
+  assert.equal((action as { rung?: string }).rung, "narrowed");
+  assert.match(action.because, /2 unaided attempts.*narrows the scope/i);
+});
+
+test("🔴 a demonstrated recall in between clears the streak — scaffolding reads THIS run, not the whole history", () => {
+  const evidence = [
+    ev("e1", ago(10 * 3600_000), "incorrect"),
+    ev("e2", ago(8 * 3600_000), "incorrect"),
+    ev("e3", ago(6 * 3600_000), "understood"),
+    ev("e4", ago(ACT_AGAIN_AFTER_MS + 60_000), "incorrect"),
+  ];
+  const action = decide(evidence);
+  assert.equal(action.type, "retrieve");
+  assert.equal((action as { rung?: string }).rung, "independent", "the understood row between the misses must reset the run");
+});
+
+test("the provisional-recognition probe always asks unaided, even after repeated misses elsewhere", () => {
+  // §31.2's production probe exists specifically to test whether recognition-level success
+  // generalises. Scaffolding it down would make the probe ask the same kind of question it is
+  // meant to look past, and the result would prove nothing about production.
+  const priorMisses = [
+    ev("e1", ago(20 * 3600_000), "incorrect"),
+    ev("e2", ago(15 * 3600_000), "incorrect"),
+    ev("e3", ago(10 * 3600_000), "understood", { scaffoldRung: "recognition" }),
+  ];
+  const action = decide(priorMisses);
+  assert.equal(action.type, "retrieve");
+  assert.equal((action as { rung?: string }).rung, "independent");
+});
+
 test("🔴 the way back is open however long it has been, and from all three states", () => {
   // Integration measured the closed loop across every elapsed time and all three routes in. This is
   // that table, inverted: the same grid must now reach a retrieval everywhere.
