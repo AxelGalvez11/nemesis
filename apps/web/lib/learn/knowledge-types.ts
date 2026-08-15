@@ -21,6 +21,7 @@
 
 import type { CanonicalSourceAnchor } from "@/lib/sources/source-context";
 import type { FigureLabel } from "./figure-labels";
+import type { ClassContrast } from "./wide-grid-classification";
 
 import type { SourceRef } from "./canvas-model";
 
@@ -428,6 +429,16 @@ export interface KnowledgeObject {
    * picture exactly the way the reader does.
    */
   figure?: FigureKnowledge;
+  /**
+   * Set only when `type` is "classification". One categorical axis — the classes a grid sorted its
+   * subjects into, and the columns where the feature that separates them lives.
+   *
+   * 🔴 THE SIBLINGS ARE THE POINT, AND THEY ARE WHY THIS IS NOT AN ASSOCIATION. `*3/*3 → Poor` is a
+   * pair and the pair lane already mints it. What a pair cannot carry is that `*3/*6` is ALSO Poor
+   * while `*1/*10` is Intermediate — and without the neighbours there is no way to ask which
+   * feature separates them, which is the whole of discriminative knowledge (contract R4).
+   */
+  contrast?: ClassContrast;
   /** Where this sits in the CANVAS — `{sourceId, excerptId}`, resolving against one canvas's own
    *  excerpt list. Canvas-local, and meaningless in any other canvas. */
   sourceRefs?: SourceRef[];

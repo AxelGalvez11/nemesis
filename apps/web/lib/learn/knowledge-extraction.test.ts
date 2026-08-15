@@ -198,8 +198,24 @@ test("🔴 a wide grid of things and their properties becomes one relation per c
   const { objects, refusals } = extractKnowledgeObjects(chart);
 
   // Three rows × three non-subject columns.
-  assert.equal(objects.length, 9);
+  //
+  // 🔴 COUNTED BY TYPE, NOT IN TOTAL. This grid is now read by two lanes, and a bare `objects.length`
+  // would make this test fail every time an unrelated kind of knowledge starts being extracted —
+  // reporting a regression in the relation lane that did not happen.
+  const relations = objects.filter((o) => o.type === "association");
+  assert.equal(relations.length, 9);
   assert.deepEqual(refusals, []);
+
+  // 🔴 THE COLUMN HEADED `Class` PRODUCES NO CLASSIFICATION, AND THAT IS THE POINT. Its three values
+  // are as distinct as the drugs, so nothing groups and no class is minted — while `Indication`,
+  // whose header says nothing about categories, does group because `hypertension` repeats. The type
+  // is decided by the shape of the data; reading the header word would have inverted both answers.
+  const classes = objects.filter((o) => o.type === "classification");
+  assert.deepEqual(classes.map((o) => o.statement).sort(), ["Indication: angina", "Indication: hypertension"]);
+  // The class carries its neighbours, which is what a pair cannot do.
+  const hypertension = classes.find((o) => o.contrast?.label === "hypertension");
+  assert.deepEqual(hypertension?.contrast?.members, ["lisinopril", "losartan"]);
+  assert.deepEqual(hypertension?.contrast?.siblings.map((s) => s.label), ["angina"]);
 
   const lisinopril = objects.filter((o) => o.pair?.left === "lisinopril");
   assert.equal(lisinopril.length, 3);
@@ -217,8 +233,12 @@ test("🔴 a wide grid of things and their properties becomes one relation per c
 
   // 🔴 Each relation is its OWN object with its own identity, so a learner can hold the class
   // without the adverse effect. Nine relations, nine distinct identity keys.
-  assert.equal(new Set(objects.map((o) => o.identityKey)).size, 9);
-  assert.equal(new Set(objects.map((o) => o.id)).size, 9);
+  assert.equal(new Set(relations.map((o) => o.identityKey)).size, 9);
+  assert.equal(new Set(relations.map((o) => o.id)).size, 9);
+  // 🔴 AND THE TWO LANES DO NOT COLLIDE. Identity is type+statement, so reading one grid twice
+  // produces eleven distinct keys rather than two objects overwriting each other.
+  assert.equal(new Set(objects.map((o) => o.identityKey)).size, 11);
+  assert.equal(new Set(objects.map((o) => o.id)).size, 11);
   // Every one of them anchored back to the document.
   assert.ok(objects.every((o) => (o.sourceAnchors?.length ?? 0) > 0));
 });

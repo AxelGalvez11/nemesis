@@ -48,6 +48,41 @@ export interface ClassAxis {
   featureColumns: readonly number[];
 }
 
+/**
+ * One class, carried with the neighbours it must be told apart from.
+ *
+ * 🔴 ONE OBJECT PER CLASS, NEVER ONE PER AXIS — the same rule the relation lane states for rows. A
+ * learner can know what makes a metaboliser Poor without knowing what makes one Ultra-rapid, and an
+ * axis stored whole would make those one indivisible piece of knowledge, so nothing could discover
+ * that someone holds one and not the other.
+ */
+export interface ClassContrast {
+  /** Zero-based index of the column the classes were read from. */
+  column: number;
+  /** The source's own header word for that column, when the grid named it. */
+  axis?: string;
+  /** This class, verbatim from the source. */
+  label: string;
+  /** The subjects the grid placed in this class. */
+  members: readonly string[];
+  /** The other classes on the same axis — what this one must be told apart from. Never empty. */
+  siblings: readonly KnowledgeClass[];
+  /** Columns holding neither the subject nor the class label — where a discriminating feature is. */
+  featureColumns: readonly number[];
+}
+
+/** Split an axis into one contrast per class, each carrying its neighbours. */
+export function contrastsOf(axis: ClassAxis): ClassContrast[] {
+  return axis.classes.map((entry) => ({
+    column: axis.column,
+    featureColumns: axis.featureColumns,
+    label: entry.label,
+    members: entry.members,
+    siblings: axis.classes.filter((other) => other.label !== entry.label),
+    ...(axis.name ? { axis: axis.name } : {}),
+  }));
+}
+
 /** A cell that can carry a category label. */
 function isUsableCell(value: string | undefined): value is string {
   if (!value) return false;

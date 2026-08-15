@@ -38,6 +38,7 @@ import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } fr
 import { figureKnowledge } from "./figure-knowledge";
 import type { KnowledgeObject } from "./knowledge-types";
 import { subjectColumnOf } from "./table-subject-column";
+import { classAxesOf, contrastsOf } from "./wide-grid-classification";
 
 /** Stamped onto every object, so a corpus extracted under older rules can be found and redone
  *  rather than silently mixed in with a newer one. Bump it whenever the rules below change what
@@ -232,7 +233,18 @@ function pairsFromTable(
   // 🔴 THE TWO-COLUMN PATH BELOW IS UNCHANGED ON PURPOSE. It does not require a distinct first
   // column and never has; routing it through the subject rule would start refusing glossaries that
   // repeat a term across rows, which is a regression dressed as a generalisation.
-  if (width > 2) return relationsFromWideTable(unit, content, table);
+  // 🔴 ONE GRID, TWO READINGS, AND THEY ARE DIFFERENT KINDS OF KNOWLEDGE — not the same fact twice.
+  // The relation lane turns each row into n−1 pairs: `*3/*3 — status: Poor` is retrievable on its
+  // own. What a pair cannot carry is that `*3/*6` is ALSO Poor while `*1/*10` is Intermediate, and
+  // without those neighbours there is no way to ask which feature separates them. Contract R4 names
+  // that second reading `discriminative` and records that it currently produces nothing.
+  if (width > 2) {
+    const relations = relationsFromWideTable(unit, content, table);
+    const classes = classificationsFromWideTable(unit, content, table);
+    // The refusal, when there is one, belongs to the relation lane — it is the one that speaks for
+    // whether this grid could be read at all. Minting no classes is normal and is not a refusal.
+    return { ...relations, objects: [...relations.objects, ...classes] };
+  }
   if (width !== 2) {
     return {
       objects: [],
@@ -424,6 +436,63 @@ function relationsFromWideTable(
   }
 
   return { objects };
+}
+
+/**
+ * The classes a wide grid sorted its subjects into — contract R4's `discriminative` kind.
+ *
+ * 🔴 THE TYPE IS DECIDED BY REPETITION, NEVER BY THE HEADER WORD, and that is what keeps this
+ * inside the rule above rather than in breach of it. That rule refuses to read `Class` and conclude
+ * class-membership, because reading a header's MEANING needs a vocabulary per field and cannot
+ * survive `Case | Holding | Jurisdiction`. Nothing here reads the header to decide anything: a
+ * column earns an axis by having FEWER distinct values than rows, which is a fact about the grid's
+ * shape. The header is used only to NAME the axis, exactly as the relation lane names a relation.
+ *
+ * 🔴 AND THE SAME CELLS BEING READ TWICE IS CORRECT HERE. `*3/*3 — status: Poor` (a relation) and
+ * "Poor, as against Intermediate and Ultra-rapid" (a class) are different knowledge: the first is
+ * retrieval, the second is telling neighbours apart. Identity is type+statement, so they key
+ * separately and neither overwrites the other.
+ */
+function classificationsFromWideTable(
+  unit: CanonicalSourceUnit,
+  content: { columns?: readonly string[] },
+  table: { headerRows: number; rows: readonly (readonly string[])[] },
+): KnowledgeObject[] {
+  const dataRows = table.rows.slice(Math.max(0, table.headerRows));
+  const width = Math.max(0, ...table.rows.map((row) => row.length));
+  const subject = subjectColumnOf(dataRows, width);
+  if (!subject) return [];
+
+  const columnNames = content.columns?.length
+    ? content.columns
+    : table.headerRows > 0
+      ? table.rows[0]
+      : undefined;
+
+  const objects: KnowledgeObject[] = [];
+  for (const axis of classAxesOf(dataRows, width, subject, columnNames)) {
+    for (const [classIndex, contrast] of contrastsOf(axis).entries()) {
+      // 🔴 THE AXIS AND THE CLASS ARE IN THE ID, never the members. A grid gaining a row must not
+      // re-key the class it was added to — that would orphan every demonstration the learner has
+      // already given about it. `Poor` is the same category whether two genotypes sit under it or
+      // three, and its extension is content, not identity.
+      const id = `${unit.id}:c${axis.column + 1}k${classIndex + 1}`;
+      const object: KnowledgeObject = {
+        contrast,
+        derivation: "table-row",
+        extractionVersion: EXTRACTION_VERSION,
+        id,
+        sourceAnchors: [anchorForRow(unit, contrast.members[0] ?? contrast.label, contrast.label)],
+        // Named by the source's own header when the grid printed one, so two documents teaching the
+        // same axis converge; bare otherwise, because there is nothing honest to add.
+        statement: contrast.axis ? `${contrast.axis.trim()}: ${contrast.label}` : contrast.label,
+        type: "classification",
+        unanchoredProvenance: [],
+      };
+      objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+    }
+  }
+  return objects;
 }
 
 function headingOf(unit: CanonicalSourceUnit): string | null {
