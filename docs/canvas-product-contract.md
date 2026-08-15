@@ -85,12 +85,36 @@ highlighting · asking Define
 Both are legitimate. **They must not merge into one store.** One is a claim about
 capability; the other is a claim about friction.
 
-## R4 — Six kinds of knowledge, of which the system mints one
+## R4 — Six kinds of knowledge, of which the system mints four
 
 §6 names **conceptual · associative/factual · procedural · relational/causal ·
-discriminative · spatial/structural**. Measured on the live system: `objectivesForKnowledge`
-mints objectives for `association` only, with `capability` hardcoded to `recall`. **Five of
-the six categories currently produce nothing at all.** That is the true size of the gap.
+discriminative · spatial/structural**.
+
+**Measured 2026-08-14**, by reading `objectivesForKnowledge` rather than this document:
+
+| Category | Knowledge type | Capability | Task |
+|---|---|---|---|
+| associative/factual | `association` | `recall` | name |
+| relational/causal | `causal` | `predict` | predict |
+| spatial/structural | `spatial` | `locate` | name |
+| discriminative | `classification` | `discriminate` | compare |
+| conceptual | — | — | **produces nothing** |
+| procedural | — | — | **produces nothing** |
+
+The original measurement read *"mints `association` only… five of the six produce nothing."*
+Two of those five closed with `causal` and `spatial`; `discriminative` closed when wide grids
+began minting classes. **Two categories remain, and that is now the size of the gap.**
+
+🔴 **A KIND IS NOT SHIPPED WHEN THE EXTRACTOR MINTS IT.** Each row above needs all four columns
+before it counts, because §13 of the runtime spec is explicit that a knowledge type without an
+interaction that suits it falls back to whatever exists — a mechanism drilled as a flashcard,
+taught wrongly and then tested on. `discriminate` sat named-but-unminted in the capability union
+for exactly this reason until a task existed to consume it.
+
+🔴 **AND THE REMAINING TWO ARE NOT ONE MORE EXTRACTOR EACH.** `conceptual` and `procedural` have
+no defensible structural signal in a grid the way a repeating column gives one for a class —
+finding what in a document says "this is a procedure" without a per-field keyword list is the
+open problem, not the plumbing.
 
 ## R5 — Minimap vocabulary supersedes
 
