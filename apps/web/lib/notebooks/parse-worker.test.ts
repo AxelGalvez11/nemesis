@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 
 import { MAX_ATTEMPTS } from "./document-status";
 import {
@@ -10,6 +10,7 @@ import {
   HEARTBEAT_MS,
   isRetryable,
   JOBS_PER_RUN,
+  visionSettlement,
   LEASE_SECONDS,
   MAX_UNITS_PER_PARSE,
   MEASURED_PEAK_MB,
@@ -168,4 +169,35 @@ test("🔴 sanitised errors never carry a signed URL or a token", () => {
   assert.match(sanitizeError(new Error("socket hang up")), /socket hang up/);
   // And bounded, so one enormous provider error cannot flood a column.
   assert.ok(sanitizeError(new Error("x".repeat(5000))).length <= 300);
+});
+
+describe("visionSettlement: a parse that died is not a parse that was free", () => {
+  test("a reported spend settles at what was reported", () => {
+    assert.deepEqual(visionSettlement(100, { calls: 4, units: 37 }), { calls: 4, used: 37 });
+  });
+
+  test("NO report settles at the FULL GRANT, not at zero", () => {
+    // 🔴 THE ONE THAT MATTERS. A thread killed by the deadline or memory guard is
+    // terminated and posts nothing, so `spend` is null while the money is real. If this
+    // returned 0 the whole reservation would be refunded, and a poisoned document could
+    // be retried five times at full price with the daily ledger never moving.
+    assert.deepEqual(visionSettlement(100, null), { calls: 0, used: 100 });
+    assert.deepEqual(visionSettlement(100, undefined), { calls: 0, used: 100 });
+  });
+
+  test("a report above the grant cannot become a credit", () => {
+    // `VisionLedger.take` cannot overspend, so this is a corrupted report rather than a
+    // real overspend — and the safe reading of a corrupted report is "all of it".
+    assert.deepEqual(visionSettlement(50, { calls: 1, units: 900 }), { calls: 1, used: 50 });
+  });
+
+  test("a zero grant settles at zero however it is reported", () => {
+    assert.deepEqual(visionSettlement(0, { calls: 0, units: 0 }), { calls: 0, used: 0 });
+    assert.deepEqual(visionSettlement(0, null), { calls: 0, used: 0 });
+  });
+
+  test("negative numbers are not trusted from either side", () => {
+    assert.deepEqual(visionSettlement(-5, null), { calls: 0, used: 0 });
+    assert.deepEqual(visionSettlement(10, { calls: -1, units: -3 }), { calls: 0, used: 0 });
+  });
 });

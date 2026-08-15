@@ -44,8 +44,19 @@ export function parseThreadPath(cwd: string = process.cwd()): string | null {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
+/**
+ * What a run spent looking at pictures, when the thread lived long enough to say.
+ *
+ * 🔴 ABSENT IS NOT ZERO, AND THE CALLER MUST NOT READ IT AS ZERO. A run killed by the
+ * deadline or memory guard is terminated mid-parse and never posts a message, so no
+ * spend crosses back — while the money it had already spent is entirely real. The
+ * settlement path treats "no report" as "spent the whole reservation", which is the only
+ * direction that cannot leak budget.
+ */
+export type ParseRunSpend = { readonly calls: number; readonly units: number };
+
 export type ParseRunOutcome =
-  | { status: "parsed"; parsed: unknown; figures?: unknown; ms: number; peakRssMb: number }
+  | { status: "parsed"; parsed: unknown; figures?: unknown; ms: number; peakRssMb: number; visionSpend?: ParseRunSpend }
   /**
    * The parser read the file and refused it. Not an error — an answer.
    *
@@ -55,8 +66,8 @@ export type ParseRunOutcome =
    * it across, because dropping it here would lose the same model the parser
    * deliberately kept.
    */
-  | { status: "refused"; reason: string; parsed?: unknown; figures?: unknown; ms: number; peakRssMb: number }
-  | { status: "threw"; error: string; ms: number; peakRssMb: number }
+  | { status: "refused"; reason: string; parsed?: unknown; figures?: unknown; ms: number; peakRssMb: number; visionSpend?: ParseRunSpend }
+  | { status: "threw"; error: string; ms: number; peakRssMb: number; visionSpend?: ParseRunSpend }
   /** Aborted by us, before the platform could abort us. */
   | { status: "deadline"; ms: number; peakRssMb: number }
   | { status: "memory"; peakRssMb: number; ms: number }
@@ -78,6 +89,13 @@ export interface ParseRunOptions {
   now?: () => number;
   rssMb?: () => number;
   workerPath?: string | null;
+  /**
+   * Images and pages this parse may pay to look at, already reserved by the caller.
+   *
+   * Omitted means no reservation was made and the thread falls back to the per-document
+   * default — never to unlimited.
+   */
+  visionUnitBudget?: number;
 }
 
 /**
@@ -117,7 +135,12 @@ export async function runParseOnThread(
   ) as ArrayBuffer;
 
   const worker = new Worker(path, {
-    workerData: { bytes: transfer, fileName, mimeType },
+    workerData: {
+      bytes: transfer,
+      fileName,
+      mimeType,
+      ...(options.visionUnitBudget === undefined ? {} : { visionUnitBudget: options.visionUnitBudget }),
+    },
     transferList: [transfer],
     // A parse must not be able to read the environment it did not need. The
     // EXTRACTION keys are the exception: the PDF lane calls Gemini for figures,
@@ -198,11 +221,29 @@ export async function runParseOnThread(
       else if (rss >= memoryAbortMb) finish({ status: "memory", ms: elapsed(), peakRssMb: rss });
     }, 250);
 
-    worker.on("message", (message: { ok?: boolean; parsed?: unknown; figures?: unknown; reason?: string; threw?: string; peakRssMb?: number }) => {
+    worker.on(
+    "message",
+    (message: {
+      ok?: boolean;
+      parsed?: unknown;
+      figures?: unknown;
+      reason?: string;
+      threw?: string;
+      peakRssMb?: number;
+      visionSpend?: ParseRunSpend;
+    }) => {
       // The thread's own peak is the one that matters — it holds the document.
       const peak = Math.max(peakRssMb, message.peakRssMb ?? 0);
       if (message.threw !== undefined) finish({ status: "threw", error: message.threw, ms: elapsed(), peakRssMb: peak });
-      else if (message.ok) finish({ status: "parsed", parsed: message.parsed, figures: message.figures, ms: elapsed(), peakRssMb: peak });
+      else if (message.ok)
+        finish({
+          status: "parsed",
+          parsed: message.parsed,
+          figures: message.figures,
+          ms: elapsed(),
+          peakRssMb: peak,
+          ...(message.visionSpend ? { visionSpend: message.visionSpend } : {}),
+        });
       else {
         finish({
           status: "refused",
@@ -211,9 +252,11 @@ export async function runParseOnThread(
           peakRssMb: peak,
           ...(message.parsed !== undefined ? { parsed: message.parsed } : {}),
           ...(message.figures !== undefined ? { figures: message.figures } : {}),
+          ...(message.visionSpend ? { visionSpend: message.visionSpend } : {}),
         });
       }
-    });
+    },
+  );
 
     worker.on("error", (error: Error) => {
       finish({ status: "threw", error: error.message, ms: elapsed(), peakRssMb: observe() });

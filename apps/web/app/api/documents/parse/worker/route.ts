@@ -34,7 +34,13 @@ import {
   readNormalizedFigures,
   storeFigureAssets,
 } from "@/lib/notebooks/figure-assets";
-import { runParseOnThread } from "@/lib/notebooks/parse-run";
+import { runParseOnThread, type ParseRunSpend } from "@/lib/notebooks/parse-run";
+import {
+  VisionLedger,
+  documentUnitCap,
+  userDailyUnitCap,
+  withVisionBudget,
+} from "@/lib/pdf/vision-budget";
 import { contentHashOf, rowCounts, structureEnvelope } from "@/lib/notebooks/parse-record";
 import {
   DEADLINE_ABORT_MS,
@@ -43,6 +49,7 @@ import {
   LEASE_SECONDS,
   sanitizeError,
   secretMatches,
+  visionSettlement,
   workerName,
 } from "@/lib/notebooks/parse-worker";
 import { kindFor, sniffKind, type ParsedDocument } from "@/lib/notebooks/parse-document";
@@ -153,9 +160,69 @@ export async function POST(req: NextRequest) {
   return json({ claimed: jobs.length, results });
 }
 
+/**
+ * One claimed document, wrapped in its vision reservation.
+ *
+ * 🔴 THE RESERVATION IS SETTLED IN A `finally`, AND THAT IS NOT DEFENSIVE STYLE — IT IS
+ * THE ONLY CORRECT PLACE. `runClaimed` returns from eleven different points (fetch
+ * refused, lease lost, parser refused, deadline, memory, no bundle, docling pending, ...).
+ * Settling at each of them is eleven chances to forget one, and forgetting one leaves a
+ * student permanently charged for pictures nobody looked at. A `finally` cannot be
+ * forgotten.
+ *
+ * A reservation of zero is not settled at all: there is nothing to refund, and calling
+ * the RPC would be a round trip to write two zeroes.
+ */
 async function runOne(
   admin: ReturnType<typeof adminClient>,
   job: ClaimedSource,
+): Promise<{ sourceId: string; outcome: string }> {
+  const reservation: VisionReservation = { granted: 0, spend: null };
+  try {
+    return await runClaimed(admin, job, reservation);
+  } finally {
+    if (reservation.granted > 0) {
+      // 🔴 `null` SPEND MEANS "THE THREAD DIED BEFORE IT COULD SAY", NOT "IT SPENT
+      // NOTHING". A parse killed by the deadline or memory guard is terminated
+      // mid-flight and posts no message, while the images it already sent were already
+      // billed. Treating silence as zero would refund the whole reservation exactly in
+      // the case where the money was most certainly spent.
+      const { calls, used } = visionSettlement(reservation.granted, reservation.spend);
+      const { error } = await admin.rpc("settle_vision_units", {
+        p_calls: calls,
+        p_granted: reservation.granted,
+        p_source_id: job.id,
+        p_used: used,
+        p_user_id: job.user_id,
+      });
+      // A failed settlement leaves the reservation standing, which over-charges rather
+      // than under-charges. Logged, never thrown: a good parse must not be reported as
+      // failed because its accounting round trip did not land.
+      if (error) console.warn(JSON.stringify({ event: "vision_settle_failed", detail: error.message.slice(0, 120) }));
+      else
+        console.info(
+          JSON.stringify({
+            calls,
+            event: "vision_spend",
+            granted: reservation.granted,
+            sourceId: job.id,
+            units: used,
+          }),
+        );
+    }
+  }
+}
+
+/** What this attempt was allowed to spend, and what it reported spending. */
+interface VisionReservation {
+  granted: number;
+  spend: ParseRunSpend | null;
+}
+
+async function runClaimed(
+  admin: ReturnType<typeof adminClient>,
+  job: ClaimedSource,
+  reservation: VisionReservation,
 ): Promise<{ sourceId: string; outcome: string }> {
   const token = job.parse_lease_token;
   // When this invocation began. The routed lane needs it: its share of the
@@ -209,6 +276,28 @@ async function runOne(
   // source identity or a course placement. That is what makes routing a format
   // to a different parser a reversible decision rather than a data migration.
   const contentHash = contentHashOf(bytes);
+
+  // 🔴 RESERVED BEFORE A SINGLE IMAGE IS SENT. Counting afterwards records nothing when
+  // the platform kills the process, which is exactly the expensive case. The grant is the
+  // smaller of what this document has left of its lifetime cap and what this user has
+  // left of today — computed in SQL under a row lock, because two workers holding two
+  // documents of the same user would otherwise both read the same remainder and both
+  // spend it.
+  const { data: granted, error: reserveError } = await admin.rpc("reserve_vision_units", {
+    p_document_cap: documentUnitCap(),
+    p_source_id: job.id,
+    p_user_daily_cap: userDailyUnitCap(),
+    p_user_id: job.user_id,
+  });
+  if (reserveError) {
+    // The migration may not be applied on this deployment. A parse that cannot reserve
+    // must not silently proceed uncapped — that is the state this whole ledger exists to
+    // end — so it proceeds with a grant of zero: text, tables and structure are read
+    // exactly as before, and figures keep the honest `not-examined` reason coverage
+    // already counts as a gap.
+    console.warn(JSON.stringify({ event: "vision_reserve_unavailable", detail: reserveError.message.slice(0, 120) }));
+  }
+  reservation.granted = typeof granted === "number" ? granted : 0;
 
   const heartbeat = async (): Promise<boolean> => {
     const { data } = await admin.rpc("renew_document_parse_lease", {
@@ -344,16 +433,25 @@ async function runOne(
     ? !(await isFinalClaim(admin, job))
     : false;
   if (mayWait && service && kind && kind !== "image") {
-    const lane = await runDoclingLane({
+    // 🔴 THE SIDECAR LANE SPENDS VISION IN *THIS* PROCESS, NOT ON THE THREAD.
+    // `buildDoclingParse` reaches pdf.js and the figure describer directly, so without an
+    // ambient ledger installed here this lane would fall back to the per-call default and
+    // the reservation would buy nothing. Same budget object, so a document that spends on
+    // this lane and then falls through to the built-in parser cannot spend twice.
+    const doclingLedger = new VisionLedger(reservation.granted);
+    const lane = await withVisionBudget(doclingLedger, () =>
+      runDoclingLane({
       admin,
       budgetMs: Math.max(0, DEADLINE_ABORT_MS - (Date.now() - startedAt) - DOCLING_FALLBACK_RESERVE_MS),
       bytes,
       config: service,
       fileName,
       heartbeat,
-      job,
-      kind,
-    });
+        job,
+        kind,
+      }),
+    );
+    reservation.spend = doclingLedger.spend();
     if (lane.status === "parsed") {
       return await finish(lane.parsed, lane.ms, 0);
     }
@@ -377,7 +475,13 @@ async function runOne(
     console.warn(JSON.stringify({ event: "docling_fallback", sourceId: job.id, reason: lane.reason }));
   }
 
-  const run = await runParseOnThread(bytes, fileName, mimeType, { heartbeat });
+  const run = await runParseOnThread(bytes, fileName, mimeType, {
+    heartbeat,
+    visionUnitBudget: reservation.granted,
+  });
+  // Recorded before the switch, so every outcome below — including the refusals and the
+  // throw — settles against what the parse actually spent.
+  reservation.spend = ("visionSpend" in run ? run.visionSpend : undefined) ?? null;
 
   switch (run.status) {
     case "parsed":
