@@ -443,3 +443,41 @@ test("🔴 §46.1: the Canvas swap is opacity only, and it is keyed so it cannot
   assert.match(css, /prefers-reduced-motion: reduce\)[\s\S]{0,400}\.canvas-swap/,
     "the swap is no longer disabled under prefers-reduced-motion");
 });
+
+test("🔴 §46.4: a nav icon is the same size collapsed and expanded", () => {
+  // 🔴 THE LEARNER SPOTTED THIS BEFORE ANY TEST DID (owner, 2026-08-14: "there is a difference in
+  // size for icons when sidebar is collapsed and not collapsed"). The rail drew its glyphs at
+  // 20px; the expanded sidebar drew the SAME glyphs at `1em` inside a `size-4` box. A codicon is
+  // a FONT, so `1em` resolved against the row's `--canvas-text-small` — 14px. Collapsing the
+  // sidebar moved every icon by six pixels.
+  //
+  // 🔴 THE PROPERTY IS "ONE SOURCE", NOT "THE NUMBER 20 APPEARS TWICE". Two files each hard-coding
+  // 20 would satisfy a spelling check and drift again the first time one of them was tuned, which
+  // is exactly how they drifted in the first place. So both must READ the shared constant.
+  const rail = read("../shell/nav-rail.tsx");
+  const sidebar = read("../shell/chat-sidebar.tsx");
+
+  for (const [name, source] of [["nav-rail", rail], ["chat-sidebar", sidebar]] as const) {
+    assert.ok(
+      /NAV_ICON_PX/.test(source),
+      `${name} does not use the shared nav icon size — the two sidebar states can drift again`,
+    );
+  }
+
+  // 🔴 AND `em` MUST NOT COME BACK ON A NAV ICON. Tying a glyph to the label beside it turns any
+  // future change to the type scale into a silent change to every icon in the product.
+  const navIcon = /<Codicon[^>]*name=\{item\.codicon\}[^>]*\/>/s;
+  for (const [name, source] of [["nav-rail", rail], ["chat-sidebar", sidebar]] as const) {
+    const match = navIcon.exec(source);
+    assert.ok(match, `${name}: could not find the nav icon to check`);
+    assert.equal(
+      /size=["{]`?1?em/.test(match[0]),
+      false,
+      `${name}: the nav icon is sized in em again, so it tracks the label's font rather than the icon scale`,
+    );
+  }
+
+  // The constant itself is declared once, with a number, in the file both import from.
+  const shared = read("../../../lib/workspace/sidebar-nav.ts");
+  assert.match(shared, /export const NAV_ICON_PX = \d+;/, "the shared nav icon size is gone");
+});
