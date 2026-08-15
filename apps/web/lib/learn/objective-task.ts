@@ -293,6 +293,23 @@ export function discriminationPromptText(objective: LearningObjective, contrast:
     : `Which group does ${objective.cue} belong to — and what tells you it is that rather than ${against}?`;
 }
 
+/**
+ * Word the question for a capability that asks the learner for the ORDER of something.
+ *
+ * 🔴 IT ASKS WHAT COMES NEXT, NEVER FOR THE LIST. "What are the steps?" is answered by producing
+ * them in any order, and a learner who has every step in the wrong sequence passes it — which is
+ * precisely the learner a procedure question exists to find. "What comes immediately after this?"
+ * cannot be answered without holding the order.
+ *
+ * 🔴 AND IT NEVER PRINTS THE OTHER STEPS. A prompt listing them and asking for their arrangement is
+ * recognition: the retrieval has already been done for the learner, and all that remains is sorting.
+ */
+export function sequencePromptText(objective: LearningObjective): string {
+  return objective.parameters.stepKey === 1
+    ? `What is the first step in ${objective.cue}?`
+    : `What comes immediately after: ${objective.cue}?`;
+}
+
 /** The pair of identifiers a prompt needs to ask about one stored objective. */
 export function targetFor(objective: StoredObjective): ObjectiveTarget {
   return { identityKey: objective.identityKey, rowId: objective.rowId };
@@ -369,6 +386,7 @@ export function retrievalPromptFor(
   // mapping in a file that has no business holding one.
   const predicting = objective.capability === "predict";
   const discriminating = objective.capability === "discriminate" && Boolean(knowledge.contrast);
+  const sequencing = objective.capability === "sequence";
   return promptTargeting({
     expectedAnswer: objective.answer,
     // 🔴 THE CLASS LABEL IS REQUIRED; THE REASONING IS NOT. The source printed the label, so a
@@ -397,9 +415,11 @@ export function retrievalPromptFor(
     operation: objective.capability,
     prompt: predicting
       ? predictionPromptText(objective)
-      : discriminating && knowledge.contrast
-        ? discriminationPromptText(objective, knowledge.contrast)
-        : objectivePromptText(objective),
+      : sequencing
+        ? sequencePromptText(objective)
+        : discriminating && knowledge.contrast
+          ? discriminationPromptText(objective, knowledge.contrast)
+          : objectivePromptText(objective),
     targets: [targetFor(objective)],
     // An association asks for a term, not an account. The judge is told this so it checks the
     // production rather than marking a one-word answer down for being short — and a prediction is
@@ -408,7 +428,10 @@ export function retrievalPromptFor(
     // both" — so the durable evidence row files a discrimination under the task it actually is.
     // Leaving it as `name` would be this codebase's named failure of mapping a wider vocabulary
     // DOWN: every attempt at telling two classes apart recorded for ever as producing a term.
-    task: predicting ? "predict" : discriminating ? "compare" : "name",
+    // 🔴 `reconstruct` IS THE SPEC'S OWN WORD - "rebuild the structure from memory" - and a
+    // procedure's structure IS its order. Filing it as `name` would record every attempt at a
+    // sequence as producing a term.
+    task: predicting ? "predict" : sequencing ? "reconstruct" : discriminating ? "compare" : "name",
   });
 }
 

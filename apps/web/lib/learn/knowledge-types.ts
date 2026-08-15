@@ -21,6 +21,7 @@
 
 import type { CanonicalSourceAnchor } from "@/lib/sources/source-context";
 import type { FigureLabel } from "./figure-labels";
+import type { ProcedureStep } from "./procedure-sequence";
 import type { ClassContrast } from "./wide-grid-classification";
 
 import type { SourceRef } from "./canvas-model";
@@ -439,6 +440,16 @@ export interface KnowledgeObject {
    * feature separates them, which is the whole of discriminative knowledge (contract R4).
    */
   contrast?: ClassContrast;
+  /**
+   * Set only when `type` is "procedure". The steps a document numbered, in the order it numbered
+   * them.
+   *
+   * 🔴 THE ORDER IS THE KNOWLEDGE, WHICH IS WHY THIS IS NOT A LIST OF ASSOCIATIONS. Each step is
+   * also a sentence a learner could be asked to recall, but recalling all three in any order is not
+   * knowing the procedure — a learner who files proof of service before serving the opposing party
+   * has every step and no procedure.
+   */
+  steps?: readonly ProcedureStep[];
   /** Where this sits in the CANVAS — `{sourceId, excerptId}`, resolving against one canvas's own
    *  excerpt list. Canvas-local, and meaningless in any other canvas. */
   sourceRefs?: SourceRef[];

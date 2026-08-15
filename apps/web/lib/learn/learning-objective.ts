@@ -29,6 +29,7 @@ import {
   normalizeForIdentity,
 } from "./knowledge-identity";
 import type { CausalRelation, FigureKnowledge, KnowledgeObject } from "./knowledge-types";
+import type { ProcedureStep } from "./procedure-sequence";
 import type { ClassContrast } from "./wide-grid-classification";
 
 /**
@@ -53,7 +54,7 @@ import type { ClassContrast } from "./wide-grid-classification";
  * question is real, is genuinely a separate capability, and is deliberately not minted yet; keeping
  * `explain` unminted is what leaves room for it.
  */
-export type ObjectiveCapability = "recall" | "discriminate" | "explain" | "predict" | "locate";
+export type ObjectiveCapability = "recall" | "discriminate" | "explain" | "predict" | "locate" | "sequence";
 
 /**
  * A positional fallback, used ONLY when the source named no columns.
@@ -109,6 +110,14 @@ export interface ObjectiveParameters {
    * the same member of the same class.
    */
   memberKey?: string;
+  /**
+   * WHICH POSITION in a procedure this objective is about — `2` is the second step.
+   *
+   * 🔴 THE POSITION, NOT THE STEP'S TEXT. A document that rewords "Serve the opposing party" must
+   * not orphan everything the learner has demonstrated about step one; the thing being learned is
+   * what comes second, and that survives an edit to how it is phrased.
+   */
+  stepKey?: number;
 }
 
 export interface LearningObjective {
@@ -166,7 +175,7 @@ export function objectiveIdentityBasis(input: {
 }): string {
   // Serialised in a fixed order rather than by iterating the object, so a key can never depend on
   // the order the fields happened to be written in at the call site.
-  const { direction, inputRole, outputRole, labelKey, memberKey } = input.parameters;
+  const { direction, inputRole, outputRole, labelKey, memberKey, stepKey } = input.parameters;
   const role = inputRole && outputRole ? `in=${inputRole},out=${outputRole}` : "in=-,out=-";
   // 🔴 `labelKey` IS PART OF IDENTITY, AND THE CHAIN TEST IS WHY IT IS HERE. A diagram mints one
   // objective per named part; without this the three parts of a cylinder hashed to ONE key, so
@@ -192,7 +201,9 @@ export function objectiveIdentityBasis(input: {
   // that no longer exists — every learner silently starting again.
   const base = `objective|${input.knowledgeIdentityKey}|${input.capability}|${role}|dir=${direction ?? "-"}`;
   const withLabel = labelKey ? `${base}|label=${labelKey}` : base;
-  return memberKey ? `${withLabel}|member=${memberKey}` : withLabel;
+  const withMember = memberKey ? `${withLabel}|member=${memberKey}` : withLabel;
+  // Same conditional, same reason: appended only when set, so no existing objective is re-keyed.
+  return stepKey === undefined ? withMember : `${withMember}|step=${stepKey}`;
 }
 
 /** A 64-bit FNV-1a, as 16 hex characters. Synchronous and dependency-free for the same reason the
@@ -366,7 +377,44 @@ function classificationObjectives(object: KnowledgeObject, contrast: ClassContra
   });
 }
 
+/**
+ * A procedure, as one objective per step — contract R4's `procedural` kind.
+ *
+ * 🔴 EACH STEP IS CUED BY THE ONE BEFORE IT, AND THAT IS WHAT MAKES THIS ABOUT ORDER. Asking "what
+ * are the steps?" is answerable by producing them in any order, and a learner who files proof of
+ * service before serving the opposing party would pass it. Asking what FOLLOWS a given step cannot
+ * be answered without holding the sequence.
+ *
+ * 🔴 AND THE FIRST STEP IS CUED BY THE PROCEDURE'S NAME, not skipped. "Where does this start" is
+ * the one position no prior step can cue, and it is also the position a learner most often has
+ * wrong — they know the middle of a process and not where it begins.
+ *
+ * 🔴 THE STEPS ARE NEVER SHOWN AS A SET. Nothing here emits the full list; a prompt that printed
+ * the steps and asked for their order would be recognition wearing a sequence's name.
+ */
+function procedureObjectives(object: KnowledgeObject, steps: readonly ProcedureStep[]): LearningObjective[] {
+  const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
+  const name = object.statement;
+  return steps.map((step, index) => {
+    const parameters: ObjectiveParameters = { stepKey: index + 1 };
+    const previous = index === 0 ? undefined : steps[index - 1];
+    return {
+      answer: step.text,
+      capability: "sequence" as const,
+      cue: previous ? previous.text : name,
+      identityKey: objectiveIdentityKey({ capability: "sequence", knowledgeIdentityKey: knowledge, parameters }),
+      identityVersion: OBJECTIVE_IDENTITY_VERSION,
+      knowledgeIdentityKey: knowledge,
+      label: previous ? `Step ${index + 1} of ${name}` : `Where ${name} starts`,
+      parameters,
+    };
+  });
+}
+
 export function objectivesForKnowledge(object: KnowledgeObject): LearningObjective[] {
+  if (object.type === "procedure" && object.steps?.length) {
+    return procedureObjectives(object, object.steps);
+  }
   if (object.type === "causal" && object.relation) return causalObjectives(object, object.relation);
   if (object.type === "spatial" && object.figure) return spatialObjectives(object, object.figure);
   if (object.type === "classification" && object.contrast) {
