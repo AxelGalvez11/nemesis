@@ -14,12 +14,11 @@
  * Usage, from apps/web:
  *
  *     NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... SUPABASE_SERVICE_KEY=... \
- *       ../../node_modules/.bin/tsx scripts/controller-acceptance.ts
+ *       pnpm exec tsx scripts/controller-acceptance.ts
  */
 import { supabase } from "@/lib/supabase";
-import { readDocumentModel } from "@nemesis/shared";
 import { extractKnowledgeObjects } from "@/lib/learn/knowledge-extraction";
-import { sourceContextFromModel } from "@/lib/learn/canvas-sources";
+import { sourceContextFromModel } from "@/lib/sources/source-context";
 import { objectivesForKnowledge } from "@/lib/learn/learning-objective";
 import { supportedObjectives } from "@/lib/learn/policy-runtime";
 import { controllerFor } from "@/lib/learn/strategy-registry";
@@ -79,19 +78,19 @@ async function main(): Promise<void> {
   const parsed = (await fetch(
     `${SB}/rest/v1/parsed_documents?id=eq.${row.parsed_document_id}&select=structure,doc_kind,parser_version`,
     { headers: svc },
-  ).then((r) => r.json())) as { structure: unknown; doc_kind: string; parser_version: string }[];
+  ).then((r) => r.json())) as { structure?: { model?: unknown }; doc_kind?: string; parser_version?: string }[];
   const doc = parsed[0];
   if (!doc) throw new Error("parse row missing");
   console.log(`material     ${row.file_name}`);
   console.log(`parser       ${doc.parser_version}`);
 
-  const model = readDocumentModel(doc.structure);
-  if (!model) throw new Error("the parse did not survive readDocumentModel");
+  const model = doc.structure?.model;
+  if (!model) throw new Error("that parse carries no document model");
   const context = sourceContextFromModel({
     model,
     sourceId: SOURCE,
-    sourceKind: (doc.doc_kind ?? "pdf") as never,
-  });
+    sourceKind: doc.doc_kind ?? "pdf",
+  } as never);
   const knowledge = extractKnowledgeObjects(context).objects;
   const resolved: ResolvedObjective[] = knowledge.flatMap((k) =>
     objectivesForKnowledge(k).map((o) => ({
