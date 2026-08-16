@@ -704,6 +704,111 @@ One learner explanation may affect several objectives while remaining **one** re
 `judged:true` with no outcome for a target → that target records *no demonstration*. An empty
 `outcomes` array that means both is an outage silently writing "we asked and they showed nothing."
 
+## 🔴 INTEGRATION EVIDENCE — §D, §E, §F and §M3, run against production 2026-08-16
+
+**Run by Integration. Nothing below was certified by reading a diff.** Every result is either a
+value read back out of the production database or the return value of a production function call,
+and each line says which. Criteria are quoted from the tables above and **not re-worded** — where a
+criterion could not be met as written, this says so instead of narrowing it.
+
+```
+production URL       https://app.enternemesis.com
+serving deployment   dpl_FmJ8JyWWkRWLpnQsXgeNF8AkgaDX      (vercel inspect https://app.enternemesis.com)
+serving commit       4271456e  fix(vision): a transient upstream blip no longer nukes the ladder
+harness commit       1e3964dc  (an ancestor: git merge-base --is-ancestor 1e3964dc 4271456e)
+Supabase project     qyjmivntajbigjswhahb
+harness              apps/web/scripts/canvas-cognition-acceptance.ts
+result               24/24 checks, 0 failed
+```
+
+🔴 **Why an ancestor commit is a sound basis here, stated rather than assumed.** The harness ran at
+`1e3964dc` while `4271456e` holds the alias. `git diff --name-only 1e3964dc 4271456e` is exactly
+three files, all `apps/web/lib/pdf/vision*`. Every path this run exercised — `lib/learn/**`,
+`lib/sources/**`, `lib/workspace/chat-api.ts`, `lib/supabase.ts`, `lib/env.ts` — is **byte-identical
+between the two commits**, checked by path-scoped diff and not by adjacency.
+
+**What makes these production results rather than unit results.** A throwaway `@nemesis.test`
+learner is seeded, signed in, and the **application's own Supabase client** is put into that
+session, so `saveKnowledge`, `recordEvidence` and `loadEvidence` are the functions the browser runs
+and row-level security is the gate. The judge is the **live** judge: `evaluateLearningResponse`
+mints a device key from the deployed `nemesis-llm` edge function and calls the real model. No
+`?policy=force`. The knowledge is extracted from the owner's **real parsed documents**; what is
+hand-chosen is which real objectives to put in front of the judge and the wording of the learner's
+answers — synthetic content over a real pipeline.
+
+| # | Result | Raw evidence from the run |
+|---|---|---|
+| D1 | **typed proven · dictated NOT agent-verifiable** | Every submission in this run took the `via: "typed"` path. The spoken path is unreachable from a harness and from a browser pane; this restates the risk already recorded above rather than resolving it. 🔴 Also found: `via` reaches the judge and the analytics event but **is not a column on `learner_evidence`** — the durable record cannot say whether an answer was typed or spoken. |
+| D2 | ✅ **PROVEN, with a calibration** | Real objective from `PHCY_1202_…pharmacokinetics…pdf`: *"What is the zero-order for When it occurs?"*, reference answer `Enzymes saturated`. A paraphrase sharing no lexical overlap with the reference — *"it happens once the enzymes doing the metabolising are all occupied…"* — was judged **`strong`**. The same prompt answered `enzymes not saturated` — **lexically nearer** to the reference and semantically opposite — was judged **`incorrect`**, with feedback naming the reversal. A judge that accepted the first would also have accepted the second if it were matching strings. |
+| D3 | ⛔ **not measurable by this instrument** | Tempo is a property of the surface. Nothing here times the render loop, and a harness claiming "fast" would be measuring Node. |
+| D4 | ✅ **PROVEN** | `isAdmissionOfNotKnowing("I don't know")` → true; `unobtainedEvidence` → one row; written by `recordEvidence`, **read back from production** by `loadEvidence` as `demonstrationObtained=false · verdict=null · objectiveEvidence="nothing_produced" · operation="recall" · responseLatencyMs=3100`. `projectLearnerState` reads it as status **`not_demonstrated`**, `demonstrationCount=0` — never `incorrect`. |
+| D5 | ✅ **PROVEN at every durable write path · one branch read, not executed** | A real wrong answer (`"Diovan"` to *"What is the generic for Cozaar?"*) was judged `incorrect`, confidence 0.9, by the live judge. The correction was then shown and acknowledged through `decideNext`'s `correctionsShown` and `actedOn` inputs. Across that sequence the production record moved by **0 rows (2 → 2)** and rows carrying a mastery verdict (`strong`/`understood`) stayed at **0 → 0**. 🔴 Scope: `acknowledge()` itself lives in `use-policy-runtime.ts` and cannot be executed from Node. What was executed is every durable path it can reach, plus the production row count across the sequence. |
+| D6 | ✅ **PROVEN** | A real session walk over the four-objective acceptance canvas (`acceptance-source-B1.docx` — losartan/Cozaar, valsartan/Diovan), every turn judged by the live judge and written to production: `61fe6de6 strong → 1d62f012 strong → 1031be43 strong → 6e557ca6 asked again`. The corrected objective returns at turn 4, after **three intervening independent retrievals**. That is M3's REQUIRED pattern, not its FORBIDDEN one. |
+| E1 | ✅ **MECHANISM PROVEN — over a procedure, NOT over a causal chain** | Real five-step procedure `SCREENING AND DIAGNOSIS` from `2. Physiology and Pathophysiology of Diabetes Mellitus - 2 2026(1).pdf`, persisted as five `procedure|sequence` objectives. One prompt targeting three of them, one judgement naming two: read back from production as `link1 verdict=strong/demonstrated · link2 verdict=incorrect/contradicted · link3 verdict=null/not_addressed`. Three different outcomes from one answer — not one overall verdict. **The substitution is named on purpose; see the finding below.** |
+| E2 | ✅ **PROVEN** | The link the answer never mentioned stores `objectiveEvidence="not_addressed" · verdict=null · demonstrationObtained=false`, read back from production — never `incorrect`. `projectLearnerState` reads that link as **`unknown`**: an unasked question, not a failed one. 🔴 Vocabulary note for Brain, not a test change: the criterion says `not_demonstrated`; the stored column value is `not_addressed`, and `not_demonstrated` is the *projected status* a `nothing_produced` row produces. Two different layers, two different words, both correct — worth reconciling in prose so a later reader does not go looking for a column that says `not_demonstrated`. |
+| F1 | ✅ **PROVEN at the boundary · 🔴 UNREACHABLE through the deployed surface** | One `promptTargeting` prompt, three targets, one `responseId` → **3 objective-level rows** read back from production sharing that id. **And**: the only shipped prompt construction site is `use-policy-runtime.ts:763 → retrievalPromptFor`, which hardcodes `targets: [targetFor(objective)]`. Consistent with the record — across every `learner_evidence` row in production, **zero `response_id` has ever carried more than one row**. |
+| F2 | ✅ **PROVEN** | `performancesIn(log).size === 1` for that submission, asserted on the rows read back from production. |
+| F3 | ✅ **PROVEN** | `responseLatencyMs` on all three rows: `[41200]` — one value, the whole measured duration, never divided. |
+| F4 | ✅ **PROVEN, two independent failure modes** | (a) The judge request to the live edge function was made to fail at the network; `evaluateLearningResponse` returned `{value:null}` with *"You're offline…"*; `noJudgement()` → **0 rows built, 0 rows in production** for that response id. (b) The client was signed out so no device key could be minted; *"Sign in to chat."* → **0 rows built, 0 rows in production**. 🔴 Found while building this: an **aborted** request is NOT a judge failure — `postChatCompletion` rethrows `AbortError` on purpose (`chat-api.ts:602`), because a cancelled request is the learner changing their mind. An abort escapes the function entirely rather than producing the null this criterion is about. |
+| F5 | ✅ **PROVEN by execution, both branches** | `judgementOf([])` → **1 row** per target, `objectiveEvidence="nothing_produced"`, `verdict=null`. `noJudgement()` → **0 rows**. The two emptinesses produce two different values, executed rather than read off the type. |
+| M3 | ✅ **PROVEN, including the small-set case** | After the correction was acknowledged, `decideNext` chose a **different** objective (`61fe6de6`, not the corrected `6e557ca6`). 🔴 And the case the envelope singles out: with **one** objective in the set there is no back of the queue, and `decideNext` returns `action="defer"` rather than re-asking — so within-session eligibility is doing the work here, not reordering. `working-memory.ts`'s `interveningActs`/`answerStillHeld` is that constraint, and it is live. |
+| — | ✅ **negative control held** | Two `decideNext` calls, identical inputs, no submission between them → the same objective twice. Without this the D5/D6/M3 comparisons above would be void. |
+
+### 🔴 Finding 1 — no parsed document in production yields causal knowledge, so §E's own framing cannot be met as written
+
+`extractKnowledgeObjects` was run over **all 19 parsed sources in production**. The knowledge types
+produced are `association`, `classification` and `procedure`. **`causal` count: zero, on every
+source.**
+
+The one causal knowledge object that exists in production —
+`causal:v2:db8956a66ce54c7c`, *"Increasing resistance — decreases — current"* — carries
+`provenance.lane = "model-prose"`, `extractor: "causal/1"`. It came from a **topic canvas's prose
+lane**, not from a parsed document. Its `predict` evidence row is genuine and did come through the
+real surface (`canvas_id` set, `evaluator_version: canvas-judge/1`, a 99.7-second latency, a named
+misconception) — but it is **one edge**, and a single-edge objective cannot demonstrate E1's
+*"per-link outcomes, not one overall verdict"* however it is driven.
+
+**So the shape of the gap is not "E is unbuilt".** The causal lane is built, merged, deployed and
+has fired. It is reachable **only** from the model-prose lane, which means **a learner who uploads a
+lecture never meets a causal objective.** That is a product hole in the extractor, not a hole in the
+runtime, and it is the reason E1 above is proven over a procedure instead.
+
+Production totals at the time of this run, for whoever checks: 169 `knowledge_objects`
+(167 association, 1 causal, 1 classification), 327 `learning_objectives` (325 recall, 1 predict,
+1 discriminate), 5 `learner_evidence` rows.
+
+### 🔴 Finding 2 — a multi-objective response is not something a learner can currently produce
+
+F1–F3 are real properties of `evidenceForSubmission`, proven above over objectives persisted from a
+real parse. They are also, today, **unreachable**: `promptTargeting` accepts a set of targets and
+exactly one caller in the shipped tree builds a prompt, passing exactly one. Until a caller targets
+more than one objective, §F is a guarantee about a path no learner walks — worth keeping, worth not
+mistaking for a shipped capability.
+
+### 🔴 Finding 3 — the material a real lecture yields is thinner than the object count suggests
+
+Not a §D/§E/§F criterion, and recorded here because the numbers in the earlier run invite the wrong
+reading. The immunology deck's **229 knowledge objects → 474 objectives** are dominated by syllabus
+tables: grading bands and quiz dates. Sampled prompts include *"Given Letter Grade, what goes with
+it?"* and — a genuine mis-pairing, not merely thin — *"Given C+, what goes with it? → 93 – 100"*.
+Object counts measure extraction volume, never teachable content. Parser's lane; named here so the
+headline number is not read as 229 things worth learning.
+
+### Reproducing this, and the provenance for cleaning up after it
+
+```bash
+cd apps/web
+NEXT_PUBLIC_SUPABASE_URL=… NEXT_PUBLIC_SUPABASE_ANON_KEY=… SUPABASE_SERVICE_KEY=… \
+SERVING_DEPLOYMENT=$(…) SERVING_COMMIT=$(…) \
+  ../../node_modules/.bin/tsx scripts/canvas-cognition-acceptance.ts
+```
+
+Each run seeds one learner as `cognition-<8 hex>@nemesis.test` and prints its `user_id` and the run
+window. 🔴 **The rows are deliberately NOT deleted** — they are the evidence for every claim above,
+and a run that erases its own proof produces a report nobody can check. Anything cleaning them up
+later must key on that `user_id` **plus** a row `created_at` inside the printed window: positive
+provenance, never a time range alone, and never `updated_at`.
+
 ## G. Adaptation — REQUIRED
 
 **Evidence must actually change what happens next.** This is C3 restated as a product criterion
@@ -824,6 +929,13 @@ not have to be re-derived.** Nothing here authorises starting any of it early.
 | **G** adaptation | same evidence as C3 — the counterfactual | Integration |
 | **H** Minimap v1 | 🔴 **Still NOT BUILT as a surface — corrected 2026-08-15, but not the way it sounds.** The blocking premise is gone: Brain's knowledge-state semantics (E) are merged and deployed. What replaces it: a flat, non-hierarchical territory-selection layer exists and is wired into `use-policy-runtime.ts` (`focus`/`setFocus`/`territories`), but is rendered by zero `.tsx` files — confirmed by search, not inferred. The remaining blocker is now narrower and mostly UI's: build a surface against what the hook already exposes. The hierarchical/prerequisite part of H is still genuinely missing (`canvas-focus.ts:40-57` names the absent contract explicitly) and is still Brain's. Full detail: `docs/canvas-agent-board.md`, `UI-002`. | Brain → UI |
 | **I** UI | under audit by Canvas UI | Canvas UI |
+
+🔴 **This table predates the 2026-08-16 Integration run and its §D/§E/§F rows are now under-informed.**
+It is left as written because it is a record of what was assessed on 2026-08-12 and corrected on
+08-15. What that run actually established by execution — including that **no parsed document in
+production yields causal knowledge at all**, and that a multi-objective response is not something a
+learner can currently produce — is in *INTEGRATION EVIDENCE — §D, §E, §F and §M3* above. Read that
+section before planning against this table.
 
 **Corrected 2026-08-15, replacing the sentence that followed this table:** it used to read *"So
 after `INTEGRATION-001` passes, three rocks remain: `RUNTIME-006` (F5), `BRAIN-003` (E), and the
