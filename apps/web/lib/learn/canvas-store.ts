@@ -491,6 +491,29 @@ export async function renameFolder(userId: string | null, id: string, name: stri
 }
 
 /**
+ * Re-parent a folder. `null` puts it back at the top level.
+ *
+ * 🔴 THE CALLER MUST REJECT A CYCLE; THE DATABASE WILL NOT. `folders.parent_id` has no check
+ * constraint against ancestry, so moving a folder into its own descendant is accepted and the whole
+ * subtree detaches — it stops appearing under any root, and `on delete cascade` means deleting one
+ * of the pair takes the rest with it. Nothing surfaces the loss. `wouldCycle()` in the Library is
+ * the guard, and it runs before this is ever called.
+ *
+ * Kept deliberately dumb for the same reason `setCanvasFolder` is: the write is one column, and the
+ * rules about which writes are legal belong where the folder tree is actually known.
+ */
+export async function setFolderParent(userId: string | null, id: string, parentId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  if (id === parentId) return false;
+  const { error } = await supabase.from("folders").update({ parent_id: parentId }).eq("id", id);
+  if (error) {
+    console.warn("[learn] folder move failed", error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
  * Delete a folder. **Never the canvases inside it.**
  *
  * 🔴 THE CANVASES RETURN TO `Unfiled` BY SCHEMA, NOT BY THIS FUNCTION REMEMBERING TO MOVE THEM:

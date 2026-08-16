@@ -186,7 +186,14 @@
    unaffected in precedence; names are disjoint from the portal token set. */
 @layer base {
   :root {
-    --theme-foreground: #000000;
+    /* 🔴 #0d0d0d, NOT PURE BLACK (owner 2026-08-15: light mode should match the reference's
+       colours). This is the base of the whole light text ramp — `--ui-base` reads it and
+       `--ui-text-primary/secondary/tertiary` are alpha steps off that — so body text landed on
+       #000000, which no production UI uses on paper: at full contrast against a near-white page it
+       reads harder than the reference and makes long text feel heavier than it is. Measured on the
+       reference in light mode: #0d0d0d. The dark-mode base is already #ededed rather than #ffffff
+       for the same reason, so this makes the two themes consistent with each other as well. */
+    --theme-foreground: #0d0d0d;
     /* DEFAULT ACCENT = NEUTRAL GRAPHITE (owner 2026-07-28: retire the red).
        These six were #cc1f33 and its pink tints, which is why every fill,
        stroke and row hover derived from --ui-accent carried a faint pink.
