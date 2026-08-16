@@ -81,24 +81,31 @@ async function main(): Promise<void> {
     headers: { apikey: ANON, "Content-Type": "application/json" },
     method: "POST",
   }).then((r) => r.json())) as { access_token?: string; refresh_token?: string };
+  if (!token.access_token || !token.refresh_token) {
+    throw new Error("could not authenticate the audit learner");
+  }
   await supabase.auth.setSession({
-    access_token: token.access_token!,
-    refresh_token: token.refresh_token!,
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
   });
 
   const src = (await fetch(
     `${SB}/rest/v1/library_sources?id=eq.${SOURCE}&select=parsed_document_id,file_name`,
     { headers: svc },
   ).then((r) => r.json())) as { parsed_document_id: string; file_name: string }[];
+  const source = src[0];
+  if (!source) throw new Error(`source ${SOURCE} was not found`);
   const parsed = (await fetch(
-    `${SB}/rest/v1/parsed_documents?id=eq.${src[0].parsed_document_id}&select=structure,doc_kind`,
+    `${SB}/rest/v1/parsed_documents?id=eq.${source.parsed_document_id}&select=structure,doc_kind`,
     { headers: svc },
   ).then((r) => r.json())) as { structure: { model: unknown }; doc_kind: string }[];
+  const document = parsed[0];
+  if (!document) throw new Error(`parsed document ${source.parsed_document_id} was not found`);
 
   const context = sourceContextFromModel({
-    model: parsed[0].structure.model,
+    model: document.structure.model,
     sourceId: SOURCE,
-    sourceKind: parsed[0].doc_kind,
+    sourceKind: document.doc_kind,
   } as never);
   const knowledge = extractKnowledgeObjects(context).objects;
   const resolved: ResolvedObjective[] = knowledge.flatMap((k) =>
@@ -111,7 +118,7 @@ async function main(): Promise<void> {
   const standingOf = (key: string): string =>
     staged.find((entry) => entry.objective.identityKey === key)?.knowledge.importance?.standing ?? "none";
 
-  console.log(`material  ${src[0].file_name}`);
+  console.log(`material  ${source.file_name}`);
   console.log(`objectives ${staged.length}  (central ${staged.filter((e) => standingOf(e.objective.identityKey) === "central").length})`);
   console.log(`strategy  ${DEFAULT_STRATEGY}\n`);
 
@@ -190,7 +197,9 @@ async function main(): Promise<void> {
   }
 
   // The objective the struggling learner keeps missing — the first one, whatever it is.
-  const stuckKey = staged[0].objective.identityKey;
+  const firstObjective = staged[0];
+  if (!firstObjective) throw new Error("the audit source produced no stageable objectives");
+  const stuckKey = firstObjective.objective.identityKey;
 
   const scenarios: Record<string, Turn[]> = {};
 

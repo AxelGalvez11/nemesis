@@ -131,7 +131,7 @@ async function auditOne(sourceId: string, shape: string): Promise<Row | null> {
   for (const type of KNOWLEDGE_TYPES) byType[type] = 0;
   for (const object of objects) {
     const type = (object as { type?: string }).type;
-    if (type && type in byType) byType[type] += 1;
+    if (type && type in byType) byType[type] = (byType[type] ?? 0) + 1;
   }
 
   // Causal edges actually carried, not just objects typed causal.
