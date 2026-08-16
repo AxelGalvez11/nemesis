@@ -33,6 +33,13 @@ assert.deepEqual(classifyChatRequest("What is the latest Next.js release?"), {
   model: "deepseek-reasoner",
   searchWeb: true,
 });
+assert.deepEqual(classifyChatRequest("What changed in the hypertension guidelines?"), {
+  route: "current",
+  model: "deepseek-reasoner",
+  searchWeb: true,
+});
+assert.doesNotMatch(routeInstruction("current"), /teach|quiz|lesson/i);
+assert.equal(classifyChatRequest("What causes hypertension?").route, "conversation");
 assert.deepEqual(classifyChatRequest("Write a literature review with peer-reviewed sources about urban heat islands"), {
   route: "research",
   model: "deepseek-reasoner",

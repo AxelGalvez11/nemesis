@@ -31,8 +31,9 @@ import {
 import { buildFreshSearchQuery, formatWebSearchContext, MAX_WEB_RESULTS, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
-import { ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { ATTACHMENT_BLOCK_MARKER, ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
+import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import { safeStreamPrefix, sanitizeAssistantText } from "@/lib/workspace/chat-tool-markup";
 import { serializeToolResult } from "@/lib/workspace/chat-tool-result";
@@ -234,6 +235,9 @@ export function buildWireMessages(
   /** The compact workspace snapshot (JSON), attached on workspace-intent turns
    *  so the model starts oriented. Orientation only — the message says so. */
   workspaceSnapshot = "",
+  /** Live search evidence, kept separate from what the learner typed and from retrieved workspace
+   *  context. Search snippets are provisional evidence, never durable learner knowledge. */
+  webContext = "",
 ): WireMsg[] {
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -265,6 +269,10 @@ export function buildWireMessages(
   // Skills go last among the system messages so their procedure is the most
   // recent instruction the model reads before the conversation itself.
   const skills = buildSkillMessage(selectChatSkills(skillText));
+  const sourceRule = sourceDisagreementInstruction({
+    hasAttachedMaterial: userText.includes(ATTACHMENT_BLOCK_MARKER),
+    hasExternalEvidence: webContext.trim().length > 0,
+  });
   return [
     {
       content: [
@@ -274,6 +282,7 @@ export function buildWireMessages(
         // Only when the tools are really riding — see SAVE_INSTRUCTION.
         ...(decision.savesToWorkspace && toolsEnabled ? [SAVE_INSTRUCTION] : []),
         ...(decision.workspaceIntent && toolsEnabled ? [WORKSPACE_INSTRUCTION] : []),
+        ...(sourceRule ? [sourceRule] : []),
         liveClock,
       ].join("\n\n"),
       role: "system",
@@ -314,6 +323,15 @@ export function buildWireMessages(
           + "not what they are pointing at. Use it only where it is relevant to what they actually asked; if it "
           + "is about a different subject, ignore it.\n\n"
           + groundingContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
+    ...(webContext.trim()
+      ? [{
+        content:
+          "External evidence retrieved live for this turn. It was NOT said by the learner, is not part of "
+          + "their uploaded course material, and must not be stored or treated as something they know.\n\n"
+          + webContext.trim(),
         role: "system" as const,
       }]
       : []),
@@ -847,7 +865,7 @@ export async function sendChatTurn(
     : classified;
   // The student's dial wins over the route's own guess at how hard to think.
   const decision = applyChatEffort(routed, effort);
-  let groundedText = userText;
+  let webContext = "";
   let sources: ChatWebResult[] = [];
   // Start the second-brain lookup beside live web search. It combines semantic
   // Library passages with typed graph neighbors, Calendar deadlines, and Study
@@ -866,9 +884,8 @@ export async function sendChatTurn(
     const result = await searchWebContext(uid, buildFreshSearchQuery(askText), signal);
     strip.resume();
     sources = result.sources;
-    groundedText = result.context
-      ? `${userText}\n\n${result.context}`
-      : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
+    webContext = result.context
+      || "Live search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.";
   }
   // The question decides which parts of the packet survive — Calendar and Study
   // rows have to be asked for or share vocabulary with it now, rather than
@@ -891,7 +908,7 @@ export async function sendChatTurn(
   // "not sorted yet", which the topic matcher must not overrule with a guess.
   const attachedIds = toolsEnabled ? attachedSourceIds(userText) : [];
   const sourceFolder = attachedIds.length ? await loadAttachedSourceFolder(attachedIds) : "";
-  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision, toolsEnabled, brainContext, workspaceSnapshot);
+  let messages: WireMsg[] = buildWireMessages(history, userText, decision, toolsEnabled, brainContext, workspaceSnapshot, webContext);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: SessionOutput[] = [];
   let pendingDelete: PendingDelete | undefined;
