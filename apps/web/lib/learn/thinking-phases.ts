@@ -47,9 +47,9 @@ export type ThinkingPhase =
  * code, and neither is "Loading…", which tells someone only that software exists.
  */
 export const THINKING_COPY: Record<ThinkingPhase, string> = {
-  finding_gap: "Looking for the weak point…",
+  finding_gap: "Looking for the weak point",
   mapping_knowledge: "Mapping what you know",
-  reading_answer: "Checking your reasoning…",
+  reading_answer: "Checking your reasoning",
   reading_source: "Reading your material",
 };
 

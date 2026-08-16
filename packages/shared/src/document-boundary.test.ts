@@ -170,13 +170,13 @@ test("🔴 a consumer reading the round-tripped table gets the merge, not a blan
   assert.equal(covered.rowSpan, 2, "session B still knows who teaches it");
 });
 
-test("a format missing from FORMATS makes the whole model vanish — silently", () => {
-  // 🔴 THE TRAP THE XLSX/CSV WORK WILL WALK INTO. `readDocumentModel` returns
+test("an unknown format makes the whole model vanish — silently", () => {
+  // 🔴 THE TRAP A NEW FORMAT WILL WALK INTO. `readDocumentModel` returns
   // null for an unknown format, and null is indistinguishable from "this parse
   // predates the canonical model" — so the failure reports as old data rather
   // than as a fault. Pinned here so the next format author meets it in a test
   // instead of in production.
   const stored = JSON.parse(JSON.stringify(structureEnvelope({ model: MODEL, text: "…", title: "T" })));
-  stored.model.format = "xlsx";
+  stored.model.format = "definitely-unsupported";
   assert.equal(readStructureEnvelope(stored), null, "add the format to FORMATS in document-envelope.ts");
 });

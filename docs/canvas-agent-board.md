@@ -2,9 +2,9 @@
 
 ---
 
-# 🟡 2026-08-16 — CODEX OPEN-SEMANTIC SLICE, NOT LIVE UNTIL MERGED
+# 2026-08-16 — CODEX OPEN-SEMANTIC SLICE
 
-The current `codex/open-semantic-substrate` branch widens the grounded substrate without replacing
+This shipped slice widens the grounded substrate without replacing
 model judgement with a hand-weighted teaching policy:
 
 - the document reader now preserves source emphasis as evidence, then separately extracts
