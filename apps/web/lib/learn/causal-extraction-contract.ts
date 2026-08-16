@@ -39,6 +39,24 @@ export const CAUSAL_SCHEMA_VERSION = "causal-edges/1";
  * 🔴 THE PRODUCTION LANE MUST SEND THIS TOO. Reading a document is not a creative task, and an
  * extractor that answers differently on a re-run would mint knowledge objects that appear and
  * disappear between imports of the same file.
+ *
+ * 🔴🔴 AND IT DOES NOT — THIS CONSTANT HAS ZERO CALLERS, AND THE TRANSPORT CANNOT CARRY IT.
+ * Measured 2026-08-16. `canvas-api.ts`'s `ask()` sends only `decision`, and `postChatCompletion`
+ * builds its payload from `messages`, `model`, `reasoning_effort`, `stream` and `tools` — there is
+ * no temperature field anywhere on the door, so the production causal lane has always run at the
+ * valve's default sampling.
+ *
+ * The cost is not theoretical. The identical prompt over the identical production lecture returned
+ * 6, 7, 10, 16, 26 and 37 edges across runs, and once returned `{"relations":[]}` three times in a
+ * row.
+ *
+ * 🔴 SENDING IT IS NOT THE FIX, WHICH IS WHY NOTHING HERE WAS WIRED UP. Passing `temperature`
+ * straight to the valve was measured too: at temperature 0 the same prompt still returned 33, 0 and
+ * 42 edges on three consecutive runs. The valve either strips the field or the provider ignores it,
+ * and the valve is deployed outside this repository and has diverged from this source before. So
+ * threading `temperature` through `ChatCompletionOptions` would LOOK like a fix and change nothing —
+ * the same dead constant one layer down. This needs the valve's owner, and it is escalated rather
+ * than papered over. `scripts/causal-temperature.ts` is the reproduction.
  */
 export const CAUSAL_EXTRACTION_TEMPERATURE = 0;
 
@@ -204,8 +222,29 @@ const PRONOUNS = new Set([
  *
  *  🔴 USED ONLY TO CATCH A DROPPED NEGATION, NEVER TO ADD ONE. Matching this does not make an edge
  *  negative; failing to match it does not make an edge positive. It answers exactly one question:
- *  did the model return a positive edge from a quote that plainly denies it? */
-const DENIAL = /\b(do(es)?\s+not|did\s+not|will\s+not|would\s+not|cannot|can\s?not|is\s+not|are\s+not|no\s+(further|additional|significant)?\s*\w*(increase|decrease|change|effect)|never|fails?\s+to)\b|\bn't\b/i;
+ *  did the model return a positive edge from a quote that plainly denies it?
+ *
+ *  🔴🔴 TWO HOLES IN THIS PATTERN PUT REVERSED CLAIMS IN THE KEPT SET, FOUND BY HAND-CHECKING REAL
+ *  OUTPUT (2026-08-16, the owner's pharmacogenomics lecture, 2 of 15 kept edges):
+ *
+ *    1. `\bn't\b` COULD NEVER MATCH A CONTRACTION. `\b` requires a word boundary before `n`, and in
+ *       "doesn't" the `n` is preceded by `s` — both word characters, so no boundary exists. It never
+ *       fired on doesn't / don't / isn't / won't / can't in the entire life of this lane. The
+ *       lecture's "it doesn’t affect protein structure" was stored as protein structure being
+ *       AFFECTED. The apostrophe is also typographic (’) in real documents, not the ASCII one.
+ *    2. MODAL NEGATION WAS ABSENT. Only do/did/will/would/is/are were listed, so "may not",
+ *       "might not", "could not" and "should not" all read as assertions. The lecture's "a change in
+ *       the last (third) nucleotide ... may not lead to a different insertion of amino acid" — the
+ *       wobble rule — was stored as the exact opposite of what it teaches. The contract's own prompt
+ *       discusses "may not lead to" as the worked example of a hedged denial, so the instruction
+ *       anticipated this and only the safety net was missing.
+ *
+ *  Both were stored as positive causal claims a learner would then be drilled on and graded against.
+ *  Widened here, never in the other direction: this can only ever cause MORE edges to be refused,
+ *  which is the safe side of a guard whose whole job is refusing.
+ */
+const DENIAL =
+  /\b(?:do(?:es)?|did|is|are|was|were|has|have|had|will|would|can|could|may|might|must|shall|should|need)\s+not\b|\bcan\s?not\b|\bnever\b|\bfails?\s+to\b|\bno\s+(?:further|additional|significant)?\s*\w*(?:increase|decrease|change|effect)\b|n['’]t\b/i;
 
 function contains(haystack: string, needle: string): boolean {
   return normalizeForIdentity(haystack).includes(normalizeForIdentity(needle));

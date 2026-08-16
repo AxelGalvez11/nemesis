@@ -23,6 +23,7 @@
 
 import { canvasCapture } from "./canvas-analytics";
 import { constructCausalKnowledge, constructTerritory } from "./canvas-api";
+import { causalMaterial } from "./causal-material";
 import { loadCanonicalSource } from "./canvas-sources";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
 import {
@@ -397,6 +398,7 @@ export async function ensureKnowledgeForCanvas(
   if (extracted.length === 0 && carried.length === 0) {
     const grounded = await groundedTerritory({
       canvas,
+      contexts,
       coverage,
       material,
       onPhase,
@@ -470,8 +472,20 @@ async function mechanismsFor(input: {
   stored: CanvasTerritory | null;
   userId: string;
 }): Promise<KnowledgeObject[]> {
-  const { canvas, material, signal, sourceIds, stored, userId } = input;
+  const { canvas, contexts, material, signal, sourceIds, stored, userId } = input;
   if (canvas.sources.length === 0) return [];
+
+  // 🔴🔴 READ FROM THE CANONICAL PARSE, NOT FROM THE CANVAS'S STORED EXCERPTS — AND `contexts` WAS
+  // ALREADY BEING HANDED IN AND THROWN AWAY. This function declared `contexts` from the day it was
+  // written and never read it; it passed `canvas.sources` to the causal lane instead. Those carry
+  // excerpts built whenever the file was first attached, and measured on production 2026-08-16, 555
+  // of 790 stored canvas excerpts carry no `unitId`. An excerpt with no unit is refused one layer
+  // down as "unanchorable", so on 4 of the 11 canvases holding material EVERY edge was refused
+  // before the model's reading was consulted — and those four are the real lectures, while the seven
+  // that were fine are mostly small acceptance fixtures. Every other knowledge lane in this file
+  // already reads `contexts`; the causal lane was the only one reading canvas-local state.
+  const readable = causalMaterial(canvas.sources, contexts);
+  if (readable.length === 0) return [];
   // 🔴 THE SAME PREDICATE THE EMPTY-BUILD LANE AND THE PARSE LANE CALL, AND THIS LINE IS THE REASON
   // THE PREDICATE EXISTS. It used to read `stored?.mechanismsUnder === GROUNDED_BUILD_RULES` — a
   // bare string equality, guarding a paid model call, deciding independently of every other retry
@@ -493,7 +507,7 @@ async function mechanismsFor(input: {
 
   const subject = materialSubject(sourceIds);
   return onlyOnceAtATime(`mechanisms:${userId}:${canvas.id}:${subject}`, async () => {
-    const causal = await constructCausalKnowledge(userId, canvas.title, canvas.sources, signal);
+    const causal = await constructCausalKnowledge(userId, canvas.title, readable, signal);
     // 🔴 A FAILED READ MARKS NOTHING. We do not know what this material asserts, and recording "read"
     // from our own outage would silence the document until the rules next moved.
     if (!causal) return [];
@@ -774,6 +788,7 @@ async function carriedTerritory(
  */
 async function groundedTerritory(input: {
   canvas: LearningCanvas;
+  contexts: readonly SourceContext[];
   coverage: CanvasCoverage;
   material: MaterialStamp | null;
   onPhase?: (phase: ThinkingPhase) => void;
@@ -783,7 +798,7 @@ async function groundedTerritory(input: {
   sourceIds: readonly string[];
   userId: string;
 }): Promise<CanvasKnowledge | null> {
-  const { canvas, coverage, material, onPhase, outcome, ownership, signal, sourceIds, userId } = input;
+  const { canvas, contexts, coverage, material, onPhase, outcome, ownership, signal, sourceIds, userId } = input;
   const answer = (objectives: ResolvedObjective[]): CanvasKnowledge => ({ coverage, objectives, outcome, ownership });
 
   // 🔴 A LABEL ON THE MARKER, NOT A KEY ANYTHING COMPARES. `CanvasTerritory.topic` must be a
@@ -826,7 +841,14 @@ async function groundedTerritory(input: {
     constructTerritory(userId, canvas.title, TERRITORY_TARGET, { signal, sources: canvas.sources }),
     // 🔴 ITS FAILURE IS NOT THE CANVAS'S FAILURE. This returns null rather than an error, so a
     // canvas whose pairs built fine is never held back by a causal read that did not.
-    constructCausalKnowledge(userId, canvas.title, canvas.sources, signal),
+    //
+    // 🔴 AND IT READS THE CANONICAL PARSE, NOT `canvas.sources` — THE SAME FIX AS `mechanismsFor`,
+    // AND IT HAS TO BE MADE IN BOTH PLACES. The pair lane beside it legitimately reads the canvas's
+    // own excerpts, because a pair is cited canvas-locally. A causal edge is ANCHORED, and an
+    // excerpt with no `unitId` cannot be — 555 of 790 stored production excerpts have none. Fixing
+    // one call site and not the other would leave the defect alive on whichever path a given canvas
+    // happens to take, which is the failure shape this file keeps paying for.
+    constructCausalKnowledge(userId, canvas.title, causalMaterial(canvas.sources, contexts), signal),
   ]);
 
   // 🔴 THE REFUSALS ARE REPORTED, BECAUSE OTHERWISE TWO OPPOSITE FACTS ARE THE SAME EMPTY ARRAY.
