@@ -2,6 +2,31 @@
 
 ---
 
+# 🟡 2026-08-16 — CODEX OPEN-SEMANTIC SLICE, NOT LIVE UNTIL MERGED
+
+The current `codex/open-semantic-substrate` branch widens the grounded substrate without replacing
+model judgement with a hand-weighted teaching policy:
+
+- the document reader now preserves source emphasis as evidence, then separately extracts
+  overlapping open-world semantic relations with verbatim, durable source anchors;
+- numbered syntax alone no longer creates a procedure; executable ordered steps must be supported
+  by grounded semantic evidence;
+- figures are bound to opaque identifiers beside their pixels, so a batched vision response cannot
+  swap descriptions by response order, and spatial objectives with stored assets can now stage a
+  real locate task;
+- the runtime can stage association, causal, classification, conceptual/open-semantic, procedure,
+  and spatial knowledge through matching cognitive operations;
+- ordinary Brave-backed questions stay conversational. A cited page becomes learning material only
+  when the learner explicitly adds it, after which it follows the same parser and knowledge path as
+  an upload and retains its origin URL.
+
+🔴 `semantic-prose/1` is forward-only for now. Adding it to the global reprocess marker would
+invalidate existing extraction markers and authorize paid model reads across the back catalogue.
+Fresh and naturally reprocessed material uses it; a corpus-wide backfill remains an explicit owner
+cost decision.
+
+---
+
 # 🟢🟢 2026-08-16 — WHAT CHANGED TONIGHT. READ THIS BEFORE ANY ROW BELOW.
 
 Nine PRs merged in one session and several rows below are now stale. Where this section and a row

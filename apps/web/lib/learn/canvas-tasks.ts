@@ -19,6 +19,7 @@ export const RESPONSE_PLACEHOLDER: Record<RetrievalTask, string> = {
   mechanism: "Walk through it, step by step…",
   reconstruct: "Rebuild it from memory…",
   compare: "Compare them…",
+  locate: "Name the covered part…",
   predict: "What happens next, and why?",
   apply: "Use it on this case…",
   solve: "Work it through, showing your steps…",

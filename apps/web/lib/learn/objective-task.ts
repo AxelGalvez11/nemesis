@@ -311,6 +311,16 @@ export function sequencePromptText(objective: LearningObjective): string {
     : `What comes immediately after: ${objective.cue}?`;
 }
 
+/** A source assertion re-expressed as connected understanding, rather than repeated verbatim. */
+export function explanationPromptText(objective: LearningObjective): string {
+  return `Explain this relationship in your own words: ${objective.cue}`;
+}
+
+/** The figure carries the spatial cue; the words must not reveal the covered label. */
+export function locatePromptText(objective: LearningObjective): string {
+  return objective.cue;
+}
+
 /** The pair of identifiers a prompt needs to ask about one stored objective. */
 export function targetFor(objective: StoredObjective): ObjectiveTarget {
   return { identityKey: objective.identityKey, rowId: objective.rowId };
@@ -399,10 +409,16 @@ export function retrievalPromptFor(
   // minter, and keying on the type here would put a second, independently-editable copy of that
   // mapping in a file that has no business holding one.
   const predicting = objective.capability === "predict";
+  const explaining = objective.capability === "explain";
+  const locating = objective.capability === "locate" && Boolean(knowledge.figure?.assetPath);
   const discriminating = objective.capability === "discriminate" && Boolean(knowledge.contrast);
   const sequencing = objective.capability === "sequence";
   const base = predicting
     ? predictionPromptText(objective)
+    : explaining
+      ? explanationPromptText(objective)
+    : locating
+      ? locatePromptText(objective)
     : sequencing
       ? sequencePromptText(objective)
       : discriminating && knowledge.contrast
@@ -440,6 +456,16 @@ export function retrievalPromptFor(
           },
         }
       : {}),
+    ...(explaining && knowledge.semanticRelations?.length
+      ? {
+          expectedEvidence: {
+            referenceAnswer: objective.answer,
+            requiredConcepts: [...new Set(
+              knowledge.semanticRelations.flatMap((relation) => relation.roles.map((role) => role.value.text)),
+            )],
+          },
+        }
+      : {}),
     id,
     // 🔴 READ OFF THE OBJECTIVE, NOT HARD-CODED TO "recall". This surface only stages retrieval
     // today, so the two are the same value — and writing the literal here is precisely how they
@@ -457,7 +483,17 @@ export function retrievalPromptFor(
     // 🔴 `reconstruct` IS THE SPEC'S OWN WORD - "rebuild the structure from memory" - and a
     // procedure's structure IS its order. Filing it as `name` would record every attempt at a
     // sequence as producing a term.
-    task: predicting ? "predict" : sequencing ? "reconstruct" : discriminating ? "compare" : "name",
+    task: predicting
+      ? "predict"
+      : explaining
+        ? "explain"
+        : locating
+          ? "locate"
+        : sequencing
+          ? "reconstruct"
+          : discriminating
+            ? "compare"
+            : "name",
     // 🔴 THE STAGED RUNG, NOT THE REQUESTED ONE. Writing what was asked for rather than what was
     // delivered is the whole defect being closed here: a row must record the demand the learner
     // actually met, or `meanScaffoldingLevel` and every claim built on it describe a session that

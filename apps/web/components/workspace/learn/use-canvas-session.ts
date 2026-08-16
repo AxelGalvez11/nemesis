@@ -59,6 +59,7 @@ import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas 
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
 import { askCanvasChat } from "./canvas-chat";
+import { prepareWebSourcePromotion } from "./web-source-promotion";
 
 const RECALL_CARDS = 8;
 const TEST_QUESTIONS = 6;
@@ -332,7 +333,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   // ------------------------------------------------------------------ sources
 
   const attachFiles = useCallback(
-    async (files: FileList | File[]) => {
+    async (files: FileList | File[], sourceUrl?: string) => {
       const id = requireUid();
       if (!id) return;
       setError(null);
@@ -408,6 +409,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             durability: extracted.librarySourceId ? "durable" : "ephemeral",
             ...(extracted.librarySourceId ? { librarySourceId: extracted.librarySourceId } : {}),
             ...(canonical.ok ? { parseQuality: canonical.context.quality } : {}),
+            // A promoted web result remains traceable to the page it came from. This metadata is
+            // supplied only by `attachUrl`; ordinary uploads correctly leave it absent.
+            ...(sourceUrl ? { sourceUrl } : {}),
           };
           update((current) => mergeSourceIntoCanvas(current, source));
 
@@ -475,14 +479,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * a generic "read this page" utility. A second route with the identical body would be the same
    * Firecrawl call behind a different path for no reason.
    *
-   * 🔴 THE URL RIDES INSIDE THE FILE'S OWN TEXT, NOT AS A STRUCTURED FIELD, AND THAT IS A NAMED
-   * GAP. `CanvasSource` (lib/learn/canvas-model.ts) carries no field for a source's origin URL
-   * today: `id`, `title`, `kind`, `excerpts`, `coverageNote`, `durability`, `librarySourceId`,
-   * `parseQuality`, and nothing else. Writing the URL into `title` would corrupt the one field the
-   * Sources panel shows as the source's NAME, so it goes into the extracted text instead, honestly,
-   * as the first line a learner would see if they opened the file themselves. A future
-   * `CanvasSource.sourceUrl` field would let the Sources panel show a real "open this page" link
-   * instead; reported as a handoff rather than added here, since it is a `lib/learn` type change.
+   * 🔴 THE URL IS PROVENANCE, NOT SOURCE CONTENT. `CanvasSource.sourceUrl` carries it separately,
+   * so the learner can reopen the page without teaching the extractor the synthetic claim
+   * `Source: https://...`. The scraped body remains exactly the body the page reader returned.
    */
   const attachUrl = useCallback(
     async (rawUrl: string) => {
@@ -504,12 +503,19 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           | { title?: string; text?: string; sourceUrl?: string; error?: string }
           | null;
         if (!response.ok || !body?.text) throw new Error(body?.error ?? "Nemesis couldn't read that page.");
-        const withOrigin = `Source: ${body.sourceUrl ?? url}\n\n${body.text}`;
-        const name = `${(body.title ?? url).slice(0, 120)}.md`;
+        const promotion = prepareWebSourcePromotion({
+          requestedUrl: url,
+          ...(body.sourceUrl ? { returnedUrl: body.sourceUrl } : {}),
+          text: body.text,
+          ...(body.title ? { title: body.title } : {}),
+        });
         // The identical door every other material lane already shares (see the file-level
         // comment on `attachFiles` above): filing, knowledge extraction and every later reader
         // treat this exactly as they would a learner's own uploaded text file.
-        await attachFiles([new File([withOrigin], name, { type: "text/markdown" })]);
+        await attachFiles(
+          [new File([promotion.content], promotion.fileName, { type: "text/markdown" })],
+          promotion.sourceUrl,
+        );
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Nemesis couldn't read that page.");
         setBusy({ kind: null });

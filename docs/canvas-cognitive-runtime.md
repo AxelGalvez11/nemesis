@@ -509,8 +509,8 @@ sentences — it exists to stop the code and the matrix drifting apart, not to f
 <!-- capability-matrix -->
 ```yaml
 # What the code actually does today. Every value is derived from behaviour, not from intent.
-knowledge_types: association
-cognitive_operations: recall
+knowledge_types: association, causal, classification, conceptual_system, procedure, spatial
+cognitive_operations: discriminate, explain, locate, predict, recall, sequence
 # The fields one judged demonstration writes. 🔴 `absent` always means NOT OBSERVED.
 evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseModality, responseText, scaffoldRung, scaffoldingLevel, taskId, teachingStrategy, verdict
 ```
@@ -519,7 +519,9 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 
 | Capability | Where |
 |---|---|
-| Knowledge extraction — **associations only**, from two-column grids | `lib/learn/knowledge-extraction.ts` (`association/2`) |
+| Deterministic extraction — associations and classifications from grids; labelled diagrams from figures | `lib/learn/knowledge-extraction.ts` |
+| Grounded prose extraction — causal edges plus overlapping, open-world semantic relations with verbatim evidence | `lib/learn/causal-grounded.ts`, `lib/learn/semantic-grounded.ts` |
+| Stageable interactions — recall, predict, discriminate, explain, sequence and spatial locate | `lib/learn/runtime-support.ts`, `lib/learn/objective-task.ts` |
 | Content-derived versioned identity, converging across canvases without a join | `lib/learn/knowledge-identity.ts` |
 | Objectives as capabilities over knowledge, with semantic roles | `lib/learn/learning-objective.ts` |
 | Append-only evidence log as truth; state as a projection | `lib/learn/learner-evidence.ts`, `learner_evidence` table |

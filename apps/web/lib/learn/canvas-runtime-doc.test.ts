@@ -9,6 +9,7 @@ import { buildSourceContext } from "@/lib/sources/source-context";
 import { extractKnowledgeObjects } from "./knowledge-extraction";
 import { objectivesForKnowledge } from "./learning-objective";
 import { evidenceForSubmission, judgementOf, outcomeFor, retrievalPromptFor } from "./objective-task";
+import { supportedPairs } from "./runtime-support";
 
 // 🔴 A DESIGN DOCUMENT NOBODY CHECKS BECOMES FICTION, AND FICTION ABOUT WHAT IS BUILT IS WORSE
 // THAN NO DOCUMENT. `docs/canvas-cognitive-runtime.md` describes a target architecture, and its §12
@@ -67,8 +68,8 @@ function glossaryContext() {
   });
 }
 
-test("🔴 the declared knowledge types are the ones the extractor mints", () => {
-  const minted = [...new Set(extractKnowledgeObjects(glossaryContext()).objects.map((o) => o.type))].sort();
+test("🔴 the declared knowledge types are the ones the runtime stages", () => {
+  const minted = [...new Set(supportedPairs().map((pair) => pair.knowledgeType))].sort();
   assert.deepEqual(
     minted,
     declared("knowledge_types"),
@@ -76,14 +77,8 @@ test("🔴 the declared knowledge types are the ones the extractor mints", () =>
   );
 });
 
-test("🔴 the declared cognitive operations are the ones objectives carry", () => {
-  const carried = [
-    ...new Set(
-      extractKnowledgeObjects(glossaryContext()).objects.flatMap((object) =>
-        objectivesForKnowledge(object).map((objective) => objective.capability),
-      ),
-    ),
-  ].sort();
+test("🔴 the declared cognitive operations are the ones the runtime stages", () => {
+  const carried = [...new Set(supportedPairs().map((pair) => pair.capability))].sort();
   assert.deepEqual(
     carried,
     declared("cognitive_operations"),

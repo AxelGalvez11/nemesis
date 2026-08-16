@@ -33,8 +33,8 @@ const SUPPORTED: ReadonlySet<string> = new Set<string>([
   // read something instead of flashing an answer past them.
   "causal|predict",
   // 🔴🔴 THIS IS THE CEILING THIS FILE'S OWN HEADER WARNS ABOUT, FOUND LIVE. `objectivesForKnowledge`
-  // has minted `classification|discriminate` and `procedure|sequence` objectives since the wide-grid
-  // and procedure lanes shipped (`knowledge-lane-completeness.test.ts` pins both types as minted) —
+  // mints `classification|discriminate` from grounded grids and `procedure|sequence` from grounded
+  // semantic steps (`knowledge-lane-completeness.test.ts` pins both types as minted) —
   // and until this line, both pairs were absent here, so `supportedObjectives`/`runtimeCanStage`
   // silently discarded every one of them before `decideNext` ever saw them. Minted, never chosen —
   // the exact invisible ceiling `objectivesForKnowledge`'s own type-gate already hit once, one layer
@@ -50,14 +50,14 @@ const SUPPORTED: ReadonlySet<string> = new Set<string>([
   //   read:  `projectLearnerState` is generic over capability; nothing there needed to change.
   "classification|discriminate",
   "procedure|sequence",
-  // 🔴 `spatial|locate` IS DELIBERATELY NOT HERE YET. `learning-objective.ts` mints it, but the
-  // "word" link is missing: `objective-task.ts` has no `locatePromptText`, `RetrievalTask` has no
-  // `locate` member, and `retrievalPromptFor` falls through to `objectivePromptText`/`task: "name"`
-  // for it today — the generic "Given X, what goes with it?" pair-recall question, over an objective
-  // whose whole point is reading a position in a figure. Adding this line now would make a spatial
-  // objective selectable and hand every learner who reaches one a question that does not match what
-  // was asked. This is `objective-task.ts`'s own file, not a knowledge-type problem, and stays a
-  // refusal — same discipline `objective-prerequisites.ts` uses — until that lane exists.
+  // Open prose relations reach the general teacher as explanations. The semantic extractor and
+  // strict evidence boundary own what the relation says; this ledger merely states that the
+  // runtime can word, judge, and preserve an explanation attempt over it.
+  "conceptual_system|explain",
+  // A stored figure asset, a covered label, spatial wording, and a locate-aware judge now form one
+  // end-to-end path. Objects without a stored asset are still filtered by the task adapter and
+  // occlusion view rather than painted as broken images.
+  "spatial|locate",
 ]);
 
 /**

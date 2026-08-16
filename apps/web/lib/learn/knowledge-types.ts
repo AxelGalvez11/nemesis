@@ -544,7 +544,8 @@ export type KnowledgeDerivation =
   | "table-row"
   /** A run of list items the document itself numbered, read as steps. Deterministic in the same
    *  sense `table-row` is — the order comes from the document's own marker, never inferred from
-   *  the words. See procedure-sequence.ts, `orderedRunsIn`.
+   *  the words. Grounded semantic extraction must establish procedural meaning; numbering alone
+   *  is only document syntax and never mints this payload.
    *
    *  🔴 NOT `table-row`, EVEN THOUGH BOTH ARE GRID-ADJACENT. Calling a list "a table" would be
    *  the same kind of small dishonesty this field exists to prevent everywhere else — a caller

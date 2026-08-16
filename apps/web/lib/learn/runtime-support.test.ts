@@ -26,17 +26,15 @@ import { classAxesOf, contrastsOf } from "./wide-grid-classification";
 const NOW = new Date("2026-08-15T12:00:00Z");
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
 
-test("the ledger names both new pairs, and still refuses the one whose wording is not built", () => {
+test("the ledger names every pair whose wording and surface are built", () => {
   assert.equal(runtimeCanStage("classification", "discriminate"), true);
   assert.equal(runtimeCanStage("procedure", "sequence"), true);
-  // 🔴 spatial|locate STAYS FALSE — objective-task.ts has no locatePromptText yet. Asserted here so
-  // the day someone adds that lane and forgets this ledger, the sweep test below (not this one) is
-  // what tells them a mint exists with nowhere to go — not silence.
-  assert.equal(runtimeCanStage("spatial", "locate"), false);
+  assert.equal(runtimeCanStage("conceptual_system", "explain"), true);
+  assert.equal(runtimeCanStage("spatial", "locate"), true);
 });
 
-test("supportedPairs reports exactly four entries — a change in count here is a deliberate edit", () => {
-  assert.equal(supportedPairs().length, 4);
+test("supportedPairs reports exactly six entries — a change in count here is a deliberate edit", () => {
+  assert.equal(supportedPairs().length, 6);
 });
 
 // ── classification|discriminate, end to end ──────────────────────────────────
@@ -128,6 +126,25 @@ test("a sequence objective survives supportedObjectives — it did not before th
   const [first] = objectivesForKnowledge(PROCEDURE);
   const resolved: ResolvedObjective[] = [{ knowledge: PROCEDURE, objective: { ...first!, rowId: "r1" } }];
   assert.equal(supportedObjectives(resolved).length, 1);
+});
+
+test("a spatial objective is staged only when its figure has loadable pixels", () => {
+  const spatial: KnowledgeObject = {
+    figure: {
+      assetPath: "user/figures/nephron.png",
+      imageRef: "nephron.png",
+      labels: [{ text: "Glomerulus", x: 0.3, y: 0.2 }, { text: "Loop of Henle", x: 0.5, y: 0.6 }],
+    },
+    id: "ks1",
+    identityKey: "ks1",
+    statement: "A labelled nephron",
+    type: "spatial",
+    unanchoredProvenance: ["model"],
+  };
+  const [locate] = objectivesForKnowledge(spatial);
+  assert.equal(supportedObjectives([{ knowledge: spatial, objective: { ...locate!, rowId: "r1" } }]).length, 1);
+  const withoutPixels = { ...spatial, figure: { ...spatial.figure!, assetPath: undefined } };
+  assert.equal(supportedObjectives([{ knowledge: withoutPixels, objective: { ...locate!, rowId: "r1" } }]).length, 0);
 });
 
 test("🔴 decideNext chooses a never-asked sequence step over an already-demonstrated association", () => {

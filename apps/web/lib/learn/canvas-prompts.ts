@@ -13,6 +13,7 @@ import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { groundingBlock } from "./canvas-grounding";
 import { CAUSAL_EXTRACTION_PROMPT } from "./causal-extraction-contract";
+import { SEMANTIC_EXTRACTION_PROMPT } from "./semantic-grounded";
 import type { CognitiveAction } from "./canvas-policy";
 import {
   ERROR_TYPES,
@@ -322,7 +323,7 @@ export function causalMessages(input: { sources: readonly CanvasSource[]; topic:
     { content: CANVAS_SYSTEM, role: "system" },
     {
       content:
-        `${CAUSAL_EXTRACTION_PROMPT}\n\n` +
+        `${CAUSAL_EXTRACTION_PROMPT}\n\n${SEMANTIC_EXTRACTION_PROMPT}\n\n` +
         "The material below is split into excerpts, each with a bracketed id. Read every excerpt.\n\n" +
         '"excerptId" MUST be the id of the excerpt the relationship was read from, exactly as it is ' +
         "bracketed below, and \"quote\" must be copied from THAT excerpt character for character. Use only " +
@@ -330,9 +331,11 @@ export function causalMessages(input: { sources: readonly CanvasSource[]; topic:
         // 🔴 THE SAME KEY THE CONTRACT'S OWN LAST LINE ASKS FOR. It ends with `{"relations": [...]}`,
         // and a second, different envelope named here would be a prompt contradicting itself in one
         // message — the model picks one, and whichever it picks the parser reads the other.
-        'Every relation additionally carries "excerptId". Respond with JSON only:\n' +
+        'Every causal relation additionally carries "excerptId". Respond with JSON only using this combined envelope:\n' +
         '{"relations":[{"cause":"…","effect":"…","relation":"…","negated":false,"qualifier":null,' +
-        '"qualifierKind":null,"verb":"…","quote":"…","excerptId":"…"}]}\n\n' +
+        '"qualifierKind":null,"verb":"…","quote":"…","excerptId":"…"}],' +
+        '"structures":[{"relationshipType":"…","family":"…","roles":[{"role":"…","text":"…","order":1}],' +
+        '"qualifiers":[{"kind":"…","value":"…"}],"evidence":[{"excerptId":"…","assertion":"…"}]}]}\n\n' +
         "Return an empty list rather than a weak one. Everything kept becomes a question a real learner is " +
         "asked and graded on, so a relationship the material does not assert is recorded as that person's " +
         "own gap.\n\n" +
@@ -449,6 +452,7 @@ const TASK_INTENT: Record<RetrievalTask, string> = {
   mechanism: "walk through how something happens, in order",
   reconstruct: "rebuild the structure from memory",
   compare: "set two things against each other, covering both",
+  locate: "identify the named part hidden at a specific place in the supplied figure",
   predict: "say what follows, and why",
   apply: "use the idea on a concrete situation",
   solve: "work it through and show the reasoning",

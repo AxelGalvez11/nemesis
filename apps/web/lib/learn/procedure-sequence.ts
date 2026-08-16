@@ -1,10 +1,9 @@
-// Which runs of list items a document ORDERED, and which it merely listed.
+// Which runs of list items a document NUMBERED consecutively, and which it merely bulleted.
 //
-// 🔴 THE MARKER DECIDES, NEVER THE WORDS. A numbered list is the author stating that these things
-// happen in this sequence; a bulleted list states no such thing, and reading one as a procedure
-// invents an order the document never claimed — then drills the learner on it. Deciding from the
-// content instead ("do these sentences look like instructions?") needs a vocabulary per field and
-// could not read `Serve the opposing party` and `Torque the head bolts` by one rule.
+// 🔴 THIS IS SYNTAX, NOT SEMANTICS. Numbering establishes display order, but it does not establish
+// that the entries are executable steps: questions, diagnoses, examples, and references are often
+// numbered too. No production knowledge extractor calls this helper. The grounded semantic model
+// decides whether an ordered run is procedural; this file only preserves how the source printed it.
 //
 // 🔴 AND THE NUMBERS MUST ACTUALLY RUN. A marker that parses as an ordinal is not enough: a list
 // marked `1. 1. 1.` is a template someone never renumbered, and `3. 7. 12.` is a set of references
@@ -26,7 +25,7 @@ export interface ProcedureStep {
   unitId: string;
 }
 
-/** A run of list items the document numbered in order. */
+/** A run of list items the document numbered consecutively. It is not necessarily a procedure. */
 export interface OrderedRun {
   /** The heading the run sits under — the source's own name for the procedure, when it gave one. */
   heading?: string;
@@ -58,7 +57,7 @@ function runsConsecutively(scheme: "numeric" | "alpha" | "roman", markers: reado
 }
 
 /**
- * Is this run ordered — i.e. did the document number it, consecutively, under some scheme?
+ * Did the document number this run consecutively under some scheme?
  *
  * 🔴 A BULLET CAN NEVER SATISFY THIS, which is the whole point. `•` parses as no ordinal under any
  * scheme, so a bulleted run is refused before any question of consecutiveness arises.
@@ -112,7 +111,7 @@ function headingOf(unit: ListUnit): string | undefined {
 }
 
 /**
- * Every run of list items the document numbered in order.
+ * Every run of list items the document numbered consecutively.
  *
  * 🔴 `[]` IS THE COMMON AND CORRECT ANSWER. Most lists in most documents are bulleted, and a
  * bulleted list is a set rather than a sequence. Returning nothing for them is the honest result.

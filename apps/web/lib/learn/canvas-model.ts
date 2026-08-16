@@ -341,6 +341,7 @@ export type RetrievalTask =
   | "mechanism"
   | "reconstruct"
   | "compare"
+  | "locate"
   | "predict"
   | "apply"
   | "solve";
@@ -352,6 +353,7 @@ export const RETRIEVAL_TASKS: readonly RetrievalTask[] = [
   "mechanism",
   "reconstruct",
   "compare",
+  "locate",
   "predict",
   "apply",
   "solve",

@@ -82,8 +82,7 @@ test("the guard can see the types that exist, so an empty scan cannot pass it si
   // sets would be empty, the subtraction would be empty, and the test above would pass while
   // checking nothing at all. These assertions are what make its silence impossible.
   assert.ok(declaredTypes().length >= 10, "the KnowledgeType union should have been found");
-  assert.ok(mintedTypes().length >= 5, "extractors that mint knowledge should have been found");
-  assert.ok(handledTypes().length >= 5, "objectivesForKnowledge lanes should have been found");
-  // The five categories contract R4 records as closed.
-  assert.deepEqual(mintedTypes(), ["association", "causal", "classification", "procedure", "spatial"]);
+  assert.ok(mintedTypes().length >= 6, "extractors that mint knowledge should have been found");
+  assert.ok(handledTypes().length >= 6, "objectivesForKnowledge lanes should have been found");
+  assert.deepEqual(mintedTypes(), ["association", "causal", "classification", "conceptual_system", "procedure", "spatial"]);
 });

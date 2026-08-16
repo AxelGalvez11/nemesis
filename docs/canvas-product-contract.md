@@ -85,7 +85,7 @@ highlighting · asking Define
 Both are legitimate. **They must not merge into one store.** One is a claim about
 capability; the other is a claim about friction.
 
-## R4 — Six kinds of knowledge, of which the system mints five
+## R4 — Knowledge features overlap; six interaction adapters are currently stageable
 
 §6 names **conceptual · associative/factual · procedural · relational/causal ·
 discriminative · spatial/structural**.
@@ -96,16 +96,15 @@ discriminative · spatial/structural**.
 |---|---|---|---|
 | associative/factual | `association` | `recall` | name |
 | relational/causal | `causal` | `predict` | predict |
-| spatial/structural | `spatial` | `locate` | name |
+| spatial/structural | `spatial` | `locate` | locate |
 | discriminative | `classification` | `discriminate` | compare |
 | procedural | `procedure` | `sequence` | reconstruct |
-| conceptual | — | — | **produces nothing** |
+| conceptual/open semantic | `conceptual_system` | `explain` | explain |
 
-The original measurement read *"mints `association` only… five of the six produce nothing."*
-Two of those five closed with `causal` and `spatial`; `discriminative` closed when wide grids
-began minting classes; `procedural` closed when a document's own numbered lists started being
-read as the ordered runs they are, rather than dropped with everything else a bullet list is.
-**One category remains, and that is now the size of the gap.**
+These are interaction adapters, not a closed ontology. Explicit semantic relations may overlap on
+one idea, use the common relation families, or carry a previously unseen relationship type. The
+grounded prose reader supplies those relations to the general controller without forcing them into
+one mutually exclusive bucket.
 
 🔴 **A KIND IS NOT SHIPPED WHEN THE EXTRACTOR MINTS IT.** Each row above needs all four columns
 before it counts, because §13 of the runtime spec is explicit that a knowledge type without an
@@ -113,18 +112,32 @@ interaction that suits it falls back to whatever exists — a mechanism drilled 
 taught wrongly and then tested on. `discriminate` sat named-but-unminted in the capability union
 for exactly this reason until a task existed to consume it.
 
-🔴 **AND THE LAST ONE IS NOT ONE MORE EXTRACTOR.** `procedural` turned out to have a real
-structural signal after all — a document's own numbering marker, and only when it runs
-consecutively rather than being templated (`1. 1. 1.`) or referential (`3. 7. 12.`) — the same
-kind of fact a repeating column is for `discriminative`. `conceptual` has no equivalent: nothing
-in a document's structure says "this explains why" the way a marker says "this is ordered" —
-finding that signal without a per-field keyword list is the open problem, not the plumbing.
+🔴 **NUMBERING IS NOT PROCEDURAL MEANING.** Questions, examples, diagnoses and references are often
+numbered. Consecutive markers remain recoverable source syntax, but only a grounded semantic read
+that identifies executable or temporal steps may mint a procedure and sequence objectives.
 
 ## R5 — Minimap vocabulary supersedes
 
 Use **unestablished · developing · established · needs revisit**. `needs revisit` is new and
 carries §18's return triggers. It replaces the earlier demonstrated/uncertain/current/
 unexplored wording.
+
+## R6 — Adaptation changes Nemesis's action, never the learner's capabilities
+
+- Ordinary information questions default to ordinary conversational answers. Teaching activates
+  from clear learning intent or an active learning context, not from every question merely because
+  it appears inside Nemesis.
+- Course material and outside evidence remain distinct when they disagree. For course or exam
+  learning, preserve what the course expects and disclose the current external view; for a request
+  about current evidence, lead with the external view without erasing the course claim.
+- Trusted semantic renderers are the default for visuals. The model requests a bounded semantic
+  visual; it does not emit arbitrary rendering code. Image generation is reserved for inherently
+  illustrative cases deterministic rendering cannot express cleanly.
+- Vocabulary lookup remains reopenable after mastery. Demonstration updates the learner model and
+  reduces proactive intervention; it never removes the dotted underline or definition affordance.
+
+The same rule governs web search, sources, diagrams, vocabulary, and ordinary chat: adapt what
+Nemesis chooses to do, not what the learner is allowed to do.
 
 ---
 

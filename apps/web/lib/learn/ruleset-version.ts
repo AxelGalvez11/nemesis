@@ -11,7 +11,8 @@
  *
  * 🔴 THE RULE FOR WHEN THIS MOVES, STATED SO IT CAN BE CHECKED:
  *
- *     RULESET_VERSION changes IF AND ONLY IF one of the lane versions in `RULESET_LANES` changes.
+ *     RULESET_VERSION changes IF AND ONLY IF one of the backfill-enabled lane versions in
+ *     `RULESET_LANES` changes.
  *
  * It is a COMPOSITION, never a hand-maintained string, and that is what makes both halves of the
  * rule structural rather than a promise. It cannot move for an unrelated edit, because nothing but
@@ -20,11 +21,12 @@
  * version is an input and every lane already bumps its own on a rules change.
  *
  * 🔴 WHAT COUNTS AS A LANE: anything that can change WHICH knowledge objects come out of the same
- * document. `knowledge-extraction.ts` (the grid, figure and procedure lanes),
- * `causal-extraction-contract.ts` (mechanisms), `knowledge-territory.ts` (the model's reading of
- * material). A lane left out of this list is a lane whose improvements can never reach the
- * documents that most needed them, which is why `ruleset-version.test.ts` carries a tripwire that
- * goes red when a version constant appears in this directory and is not composed in here.
+ * document. `knowledge-extraction.ts` (deterministic tables and figures),
+ * `causal-extraction-contract.ts` (mechanisms), `semantic-grounded.ts` (open prose relations), and
+ * `knowledge-territory.ts` (the model's reading of material). A lane must be either composed into
+ * `RULESET_LANES` or explicitly named in `DEFERRED_REPROCESS_LANES`. Deferral makes the lane live
+ * for fresh and otherwise-reprocessed material without silently authorizing a corpus-wide paid
+ * backfill. `ruleset-version.test.ts` scans for omissions and keeps the two sets disjoint.
  *
  * 🔴 WHAT IS DELIBERATELY NOT A LANE. `KNOWLEDGE_IDENTITY_VERSION` changes which KEY a fact is
  * stored under, not which facts are found, and `territoryReuse` already treats it as its own
@@ -44,6 +46,7 @@ import { buildRules } from "./canvas-territory";
 import { CAUSAL_EXTRACTION_VERSION } from "./causal-extraction-contract";
 import { EXTRACTION_VERSION } from "./knowledge-extraction";
 import { TERRITORY_VERSION } from "./knowledge-territory";
+import { SEMANTIC_EXTRACTION_VERSION } from "./semantic-grounded";
 
 /**
  * Every lane whose rules can change the answer.
@@ -56,6 +59,14 @@ export const RULESET_LANES: readonly string[] = [
   CAUSAL_EXTRACTION_VERSION,
   EXTRACTION_VERSION,
 ];
+
+/**
+ * Extraction rules active for fresh/reprocessed material but deliberately not used to invalidate
+ * the back catalogue. Adding the semantic lane to `RULESET_LANES` would expire every existing
+ * mechanism marker and authorize a paid model re-read on reopen. That is a cost decision, so the
+ * rollout stays forward-only until the owner explicitly authorizes the backfill.
+ */
+export const DEFERRED_REPROCESS_LANES: readonly string[] = [SEMANTIC_EXTRACTION_VERSION];
 
 /** The rules in force now. Sorted and joined by `buildRules`, so lane ORDER cannot change it. */
 export const RULESET_VERSION = buildRules(RULESET_LANES);
