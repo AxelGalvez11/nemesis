@@ -105,6 +105,37 @@ export interface ParseRunOptions {
  * worker loop that has to distinguish "threw" from "rejected" ends up with two
  * failure paths and writes the failure row on only one of them.
  */
+/**
+ * Drop the keys that have no value, because Node turns them into the STRING "undefined".
+ *
+ * 🔴🔴 THIS IS NOT DEFENSIVE TIDYING. IT IS THE BUG THAT MADE VISION NEVER WORK.
+ *
+ * `new Worker(path, { env })` stringifies every value. A key whose value is `undefined` does not
+ * arrive absent — it arrives as the four-character string `"undefined"`, and `"undefined" in
+ * process.env` is TRUE inside the thread. Measured directly, not assumed.
+ *
+ * `GEMINI_VISION_MODEL` is not set in production, so the thread read it as `"undefined"`, and
+ * `visionModels` treats any non-empty value as a deliberate override:
+ *
+ *     const override = (env.GEMINI_VISION_MODEL ?? "").trim();   // "undefined" — truthy
+ *     return override ? [override] : [...VISION_MODEL_LADDER];   // ["undefined"]
+ *
+ * So every figure request in the background worker went to
+ * `/v1beta/models/undefined:generateContent` and 404'd, for every document, since the day this
+ * file was written. Outside the thread the variable is genuinely absent and everything works —
+ * which is exactly why it survived every test, every local run, and a hand-built request that
+ * returned 2,637 characters of correct descriptions from the same key minutes earlier.
+ *
+ * The `?? ""` idiom is everywhere in this codebase and is correct against a REAL environment. It
+ * cannot defend against a string that says "undefined", so the defence belongs here, at the one
+ * boundary that fabricates them.
+ */
+function definedOnly(env: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) if (value !== undefined) out[key] = value;
+  return out;
+}
+
 export async function runParseOnThread(
   bytes: Uint8Array,
   fileName: string,
@@ -162,7 +193,7 @@ export async function runParseOnThread(
     // prevent ("one function, one answer"), reintroduced one level down where no test that
     // calls `parseDocument` directly can see it. ADD THE VARIABLE HERE WHENEVER A PROVIDER IS
     // ADDED THERE; `parse-run.test.ts` asserts this list against what the parser reads.
-    env: {
+    env: definedOnly({
       GEMINI_API_KEY: process.env.GEMINI_API_KEY,
       GEMINI_VISION_MODEL: process.env.GEMINI_VISION_MODEL,
       GOOGLE_GENERATIVE_AI_API_KEY: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
@@ -171,7 +202,7 @@ export async function runParseOnThread(
       LLAMAPARSE_API_KEY: process.env.LLAMAPARSE_API_KEY,
       LLAMAPARSE_TIER: process.env.LLAMAPARSE_TIER,
       LLAMAPARSE_VERSION: process.env.LLAMAPARSE_VERSION,
-    },
+    }),
     resourceLimits: {
       // Node's own ceiling, below ours, so V8 throws a catchable OOM inside the
       // thread before the platform kills the whole process.
