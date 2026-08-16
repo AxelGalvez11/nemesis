@@ -170,3 +170,28 @@ test("🔴 the model is given the same objectives it must choose from, and no ot
     CANDIDATES.map((entry) => entry.objective.identityKey),
   );
 });
+
+test("🔴🔴 the per-turn prompt is BOUNDED, and the controller is told its window is not the canvas", async () => {
+  // 🔴 MEASURED BEFORE THIS EXISTED, at the brief's real field width: 24 objectives is ~2,950
+  // tokens, 83 is ~10,200, 229 is ~28,400, and the owner's real 474-objective immunology lecture is
+  // **~58,900 tokens PER TURN**. Every decision. A learner working through one lecture would have
+  // sent millions of tokens through the metered door before finishing it, and the unit-economics
+  // audit closed a far smaller hole than that.
+  const many: ResolvedObjective[] = Array.from({ length: 300 }, (_, i) => resolved(`term-${i}`, `Answer ${i}`));
+  let sent = "";
+  const transport: TeacherTransport = async (_uid, messages) => {
+    sent = messages.map((m) => String(m.content)).join("\n");
+    return { errorText: null, text: JSON.stringify({ because: "x", move: "ask", objective: many[0]!.objective.identityKey }) };
+  };
+  const outcome = await createLlmTeacherStrategy(transport).decide(context({ objectives: many }));
+  assert.ok(outcome.decision, "a bounded brief must still produce a decision");
+
+  const briefed = (sent.match(/^- id: /gm) ?? []).length;
+  assert.ok(briefed <= 40, `at most 40 objectives may be briefed, saw ${briefed}`);
+  assert.ok(briefed > 1, "and it must not be so tight there is nothing to choose between");
+
+  // 🔴 THE WINDOW IS DISCLOSED. A controller shown 40 of 300 and not told so would report the
+  // material nearly covered when it had seen an eighth of it — a false coverage claim, about the
+  // exact objective it is being asked to optimise.
+  assert.match(sent, /You are being shown 40 of them this turn, not all 300/);
+});

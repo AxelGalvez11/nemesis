@@ -201,7 +201,11 @@ function brief(snapshot: ObjectiveSnapshot): string {
  * is what these two lines say. There is no branch anywhere in this file asking whether we are
  * cramming, and there must never be one.
  */
-function sittingNote(context: TeachingContext, scope: { total: number; touched: number; demonstrated: number; importantTotal: number | null; importantDemonstrated: number | null }): string {
+function sittingNote(
+  context: TeachingContext,
+  scope: { total: number; touched: number; demonstrated: number; importantTotal: number | null; importantDemonstrated: number | null },
+  shown: number,
+): string {
   const lines: string[] = [];
   const attention = context.attention;
   if (attention) {
@@ -218,6 +222,15 @@ function sittingNote(context: TeachingContext, scope: { total: number; touched: 
     `Material on this canvas: ${scope.total} objectives, ${scope.touched} touched at all, ` +
       `${scope.demonstrated} produced at least once.`,
   );
+  // 🔴 THE WINDOW IS DISCLOSED, ALWAYS. A controller shown forty of four hundred and not told so
+  // would conclude the material was nearly covered when it had seen a tenth of it, and coverage is
+  // the exact objective it is being asked to optimise. See `BRIEF_LIMIT`.
+  if (shown < scope.total) {
+    lines.push(
+      `You are being shown ${shown} of them this turn, not all ${scope.total}. The rest are still there; ` +
+        "you will see them on later turns. Do not treat what is in front of you as the whole canvas.",
+    );
+  }
   if (scope.importantTotal !== null) {
     lines.push(
       `Of the ones the source treats as central: ${scope.importantTotal} exist, ` +
@@ -226,9 +239,58 @@ function sittingNote(context: TeachingContext, scope: { total: number; touched: 
   }
   const acted = context.actedOn ?? [];
   if (acted.length > 0) lines.push(`Already worked this sitting, oldest first: ${acted.join(", ")}.`);
-  const shown = [...(context.correctionsShown ?? new Set<string>())];
-  if (shown.length > 0) lines.push(`Answers already stated plainly this sitting: ${shown.join(", ")}.`);
+  const corrected = [...(context.correctionsShown ?? new Set<string>())];
+  if (corrected.length > 0) {
+    lines.push(`Answers already stated plainly this sitting: ${corrected.join(", ")}.`);
+  }
   return lines.join("\n");
+}
+
+/**
+ * How many objectives may be briefed on one turn.
+ *
+ * 🔴🔴 A COST BOUND, AND IT IS NOT OPTIONAL. Measured on the real corpus before this existed, with
+ * the brief below at its real field width:
+ *
+ *     24 objectives  ->   11,816 chars  ~2,950 tokens
+ *     83 objectives  ->   40,962 chars  ~10,200 tokens
+ *    229 objectives  ->  113,602 chars  ~28,400 tokens
+ *    474 objectives  ->  235,612 chars  ~58,900 tokens   <- the owner's real immunology lecture
+ *
+ * **Per turn.** Every decision. A learner working through one lecture would have sent several
+ * million tokens through the metered door before finishing it, and the unit-economics audit closed a
+ * much smaller hole than that. Forty objectives is about 5,000 tokens, which is a decision worth
+ * paying for.
+ *
+ * 🔴 IT IS PAGINATION, NOT A TEACHING HEURISTIC, AND THE DISTINCTION IS WHAT MAKES IT ALLOWED HERE.
+ * The owner ruled against accumulating tuned pedagogical constants; this one decides nothing about
+ * teaching. The window is filled in the order the runtime ALREADY holds — un-acted-on objectives
+ * ahead of ones this sitting has touched, which is exactly the reorder `decideNext` performs with
+ * `actedOn` and for the same reason. Nothing here scores, ranks or prefers anything on pedagogical
+ * grounds; it truncates an existing list.
+ *
+ * 🔴 AND THE MODEL IS TOLD THE CANVAS IS BIGGER THAN ITS WINDOW. A controller that could see forty
+ * of four hundred and was not told so would report the material covered when it had seen a tenth of
+ * it — a coverage claim that is false, about the exact objective the owner set.
+ */
+const BRIEF_LIMIT = 40;
+
+/**
+ * The window, filled in the order the runtime already holds.
+ *
+ * 🔴 STABLE WITHIN EACH GROUP, so the same state produces the same window on every render and a
+ * reload does not hand the learner a different question. Same property, same construction, as
+ * `decideNext`'s reordering.
+ */
+function windowOf(
+  snapshots: readonly ObjectiveSnapshot[],
+  actedOn: readonly string[],
+): readonly ObjectiveSnapshot[] {
+  if (snapshots.length <= BRIEF_LIMIT) return snapshots;
+  const acted = new Set(actedOn);
+  const fresh = snapshots.filter((entry) => !acted.has(entry.identityKey));
+  const seen = snapshots.filter((entry) => acted.has(entry.identityKey));
+  return [...fresh, ...seen].slice(0, BRIEF_LIMIT);
 }
 
 function teacherMessages(
@@ -383,6 +445,8 @@ export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrateg
       if (!context.uid) return refused("model-unreachable");
 
       const snapshot = teachingSnapshot(context);
+      // 🔴 BOUNDED BEFORE ANY OF IT IS SENT. See `BRIEF_LIMIT` for the measured reason.
+      const briefed = windowOf(snapshot.objectives, context.actedOn ?? []);
 
       let reply: Awaited<ReturnType<TeacherTransport>>;
       try {
@@ -393,7 +457,7 @@ export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrateg
         // broken one would go quiet in exactly the conditions that break it.
         reply = await ask(
           context.uid,
-          teacherMessages(snapshot.objectives, sittingNote(context, snapshot.scope)),
+          teacherMessages(briefed, sittingNote(context, snapshot.scope, briefed.length)),
           { ...(context.signal ? { signal: context.signal } : {}) },
         );
       } catch {
@@ -435,7 +499,10 @@ export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrateg
       // membership, or a counted refusal.
       const entry = context.objectives.find((candidate) => candidate.objective.identityKey === named);
       if (!entry) return refused("unknown-objective");
-      const objectiveSnapshot = snapshot.objectives.find((s) => s.identityKey === entry.objective.identityKey);
+      // 🔴 FROM THE BRIEFED WINDOW, NOT THE WHOLE SNAPSHOT. A model naming an objective it was not
+      // shown has hallucinated an id that happens to exist, and treating that as a valid choice
+      // would let a lucky guess act on material the controller never reasoned about.
+      const objectiveSnapshot = briefed.find((s) => s.identityKey === entry.objective.identityKey);
       if (!objectiveSnapshot) return refused("unknown-objective");
 
       const action = actionFor({ because, entry, evidence: context.evidence, snapshot: objectiveSnapshot, verb });
