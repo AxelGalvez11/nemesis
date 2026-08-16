@@ -131,11 +131,24 @@ void (async () => {
 
   {
     // A retired model id (404) walks DOWN the ladder rather than giving up.
+    //
+    // 🔴 THE FIXTURE USED TO BE AN EMPTY-BODIED 404, AND THAT WAS THE WRONG SHAPE FOR
+    // "retired". Measured against the live API 2026-08-15/16: a genuinely retired model
+    // answers 404 WITH a body naming itself (Google's real shape, reproduced below); a
+    // completely EMPTY-bodied 404 was observed as a ~1-minute TRANSIENT upstream blip
+    // that recovered on its own. This test is about the retired-model case, so its
+    // fixture must carry a body — see vision-budget.test.ts for the empty-body/transient
+    // twin, which is the discriminating pair this distinction depends on.
     const tried: string[] = [];
     const before = globalThis.fetch;
     globalThis.fetch = (async (url: string) => {
       tried.push(String(url));
-      if (tried.length === 1) return new Response("", { status: 404 });
+      if (tried.length === 1) {
+        return new Response(
+          JSON.stringify({ error: { code: 404, message: "This model is no longer available to new users.", status: "NOT_FOUND" } }),
+          { status: 404 },
+        );
+      }
       return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "scanned words" }] } }] }), { status: 200 });
     }) as unknown as typeof fetch;
     try {
@@ -151,6 +164,10 @@ void (async () => {
 
   {
     // A real provider error (not a retired id) falls back instead of throwing.
+    // 🔴 500 is TRANSIENT (see classifyVisionFailure), so this fixture now exercises a
+    // real retry-with-backoff on every rung before giving up — this test takes on the
+    // order of a couple of real seconds rather than being instant. The end state (null)
+    // is what it always asserted; vision-budget.test.ts calibrates the timing itself.
     const before = globalThis.fetch;
     globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
     try {
@@ -162,6 +179,8 @@ void (async () => {
 
   {
     // A network failure on every rung ends as null, not an unhandled rejection.
+    // 🔴 A THROW IS ALSO TRANSIENT NOW (it used to walk the ladder with no retry at
+    // all) — same real-backoff cost as the 500 case above, same unchanged end state.
     const before = globalThis.fetch;
     globalThis.fetch = (async () => {
       throw new Error("offline");
@@ -193,6 +212,7 @@ void (async () => {
 
   {
     // One failed batch loses its own descriptions and nothing else.
+    // 🔴 Also now a real retry-with-backoff (500 is transient) before it gives up.
     const before = globalThis.fetch;
     globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
     try {

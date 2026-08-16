@@ -133,6 +133,41 @@ export const FIGURE_BATCH_SIZE = 8;
  *  carries megabytes of image data, and the provider rate-limits per key. */
 export const FIGURE_CONCURRENCY = 3;
 
+/**
+ * Retrying the SAME model before walking the ladder, and how hard.
+ *
+ * 🔴 MEASURED AGAINST THE LIVE API, 2026-08-15/16. `gemini-3.7-flash` answered 200
+ * normally on 12/12 sequential calls and 6/6 fired concurrently, then hit a contiguous
+ * ~1-minute window where EVERY call returned 404 with a COMPLETELY EMPTY body — same
+ * key, same URL, same payload that had just succeeded a minute before — and recovered
+ * on its own with no code change. Walking the ladder on that (as this code used to)
+ * turns one transient minute into every figure in the document going undescribed,
+ * because three models answer the same blip in milliseconds and the whole ladder is
+ * exhausted before the outage has any chance to clear.
+ *
+ * The budget these numbers are cut from is `parse-worker.ts`'s: `maxDuration` is 300s
+ * and `DEADLINE_ABORT_MS` self-aborts at 240s, leaving 60s to record the failure.
+ * Worst case here — every attempt on every rung comes back transient — is
+ * `VISION_RETRY_ATTEMPTS - 1` backoff sleeps per model, each capped and jittered up
+ * to 1.25x:
+ *
+ *   per model:  400ms + 800ms deterministic, at most 500 + 1000 = 1500ms jittered
+ *   full ladder (3 rungs): at most ~4.5s — under 2% of DEADLINE_ABORT_MS
+ *
+ * `FIGURE_CONCURRENCY` batches run this independently in parallel, so a document with
+ * that many batches or fewer adds at most ~4.5s of wall clock to the whole vision
+ * phase even under a total outage; a larger deck queues through the worker pool in
+ * waves and adds a small multiple of that. Deliberately NOT sized to survive the full
+ * measured ~60s window — that would risk a meaningful fraction of the shared parse
+ * budget on one figure batch, and this is one of several batches that budget has to
+ * cover. This turns "a blip kills the whole document" into "a blip usually clears";
+ * an outage that genuinely outlasts the retry budget still exhausts the ladder and is
+ * reported honestly, exactly as before.
+ */
+export const VISION_RETRY_ATTEMPTS = 3;
+export const VISION_RETRY_BASE_MS = 400;
+export const VISION_RETRY_CAP_MS = 3000;
+
 export interface VisionResult {
   text: string;
   model: string;
@@ -327,7 +362,7 @@ export async function readFiguresWithVision(
     // One failed batch loses its own descriptions and nothing else.
     if (!reply) return;
     reached = true;
-    const parsed = parseFigureDescriptions(reply, batch.length);
+    const parsed = parseFigureDescriptions(reply.text, batch.length);
     if (!parsed) return;
     parsed.forEach((entry, index) => {
       const image = batch[index];
@@ -353,50 +388,156 @@ export async function readFiguresWithVision(
   return { descriptions: out, labels: found, reached };
 }
 
-/** One generateContent call, walking the model ladder. Returns null on any failure. */
-async function callGemini(body: string, key: string, env: VisionEnv, signal?: AbortSignal): Promise<string | null> {
+/**
+ * Transient vs terminal, for one completed (non-ok) response. PURE.
+ *
+ * Terminal — retrying wastes a slot in the budget for nothing:
+ *   · 401 / 403 — the key itself is rejected; every model will refuse identically.
+ *     The caller short-circuits the whole ladder on this, not just the current rung —
+ *     this classification exists so it can, and so the other two callers agree with it.
+ *   · 400 — the payload itself is unacceptable. Retrying the same request cannot
+ *     change that; only a different model might.
+ *   · 404 WITH A BODY — Google's own shape for "this model is retired", e.g.
+ *     `{"error":{"code":404,"message":"...no longer available to new users..."}}`.
+ *
+ * Transient — worth a backoff and another try on the SAME model:
+ *   · 404 with a COMPLETELY EMPTY body — the measured signature of a real upstream
+ *     blip (see `VISION_RETRY_ATTEMPTS`). Not a shape Google documents as meaningful;
+ *     a 404 with nothing behind it, on a model answering normally a minute later, is
+ *     far more consistent with an edge or proxy hiccup than an actual "not found".
+ *   · 429, 5xx, and anything else this codebase has not seen a reason to name.
+ *     Defaulting to transient mirrors `parse-worker.ts`'s own `isRetryable`: guessing
+ *     "permanent" wrongly strands a call that would have worked; guessing "transient"
+ *     wrongly costs one bounded retry.
+ */
+export type VisionFailureKind = "transient" | "terminal-key" | "terminal-model";
+
+export function classifyVisionFailure(status: number, bodyText: string): VisionFailureKind {
+  if (status === 401 || status === 403) return "terminal-key";
+  if (status === 400) return "terminal-model";
+  if (status === 404) return bodyText.trim().length > 0 ? "terminal-model" : "transient";
+  return "transient";
+}
+
+/** Exponential backoff before the next attempt on the SAME model, no jitter — the
+ *  same shape as `parse-worker.ts`'s `backoffSeconds`, scaled down because this waits
+ *  inside one HTTP call rather than between whole job attempts. PURE. */
+export function visionBackoffMs(attemptJustFailed: number): number {
+  return Math.min(VISION_RETRY_CAP_MS, VISION_RETRY_BASE_MS * 2 ** Math.max(attemptJustFailed - 1, 0));
+}
+
+/** ±25% around the deterministic delay. `FIGURE_CONCURRENCY` runs three batches at
+ *  once; without jitter, three requests that failed in the same instant would also
+ *  retry in the same instant. Narrow enough that the floor stays well clear of zero,
+ *  so a calibration test can tell "backed off" from "did not" without flaking. PURE
+ *  given `random`; defaults to `Math.random`. */
+export function withVisionJitter(ms: number, random: () => number = Math.random): number {
+  return Math.round(ms * (0.75 + random() * 0.5));
+}
+
+/**
+ * The real timer a retry waits on. Exported so a calibration test can prove it
+ * genuinely elapses — never faked — and that an abort cancels it promptly instead of
+ * being slept through.
+ */
+export function sleepUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * One generateContent call, walking the model ladder. Returns null on any failure
+ * that survives every retry and every rung.
+ *
+ * A TERMINAL failure (`classifyVisionFailure`) advances to the next rung immediately,
+ * exactly as before this fix. A TRANSIENT one retries the SAME model, with backoff,
+ * up to `VISION_RETRY_ATTEMPTS` times, before advancing — so a blip that clears inside
+ * the retry budget still describes the figure, instead of silently costing whichever
+ * model it happened to land on.
+ */
+async function callGemini(
+  body: string,
+  key: string,
+  env: VisionEnv,
+  signal?: AbortSignal,
+): Promise<{ model: string; text: string } | null> {
   const ledger = currentVisionLedger();
   // 🔴 WHY THE LADDER DIED, NOT JUST THAT IT DID. Production spent two whole parses
   // failing every request with no way to tell a retired model (404) from a rejected key
   // (401/403) from an exhausted quota (429), because the only trace was an absence. One
   // log line at the end of an exhausted ladder is the difference between "somebody needs
   // to look at the API key" and "somebody needs to read the model list".
+  //
+  // 🔴 ONE ENTRY PER HTTP REQUEST ACTUALLY ISSUED, retries included — not one per
+  // model. A model retried twice before giving up now shows THREE entries here; a
+  // model that was simply retired shows one. That is the whole extension this fix
+  // needed to let a reader tell "retried 3x then gave up" from "model said it was
+  // retired": the count already says it, without a richer format to maintain.
   const attempts: string[] = [];
   for (const model of visionModels(env)) {
-    let response: Response;
-    // 🔴 COUNTED PER REQUEST ISSUED, INSIDE THE LADDER, NOT ONCE PER CALL. A retired model
-    // 404s and the ladder walks to the next one, so one logical "call" can be three HTTP
-    // requests. Counting at the entry point would report 1 for 3 and quietly understate
-    // how hard this document was to read — the diagnostic that explains a slow parse.
-    // `units` remains the number a price is multiplied by; this is the number that
-    // explains latency.
-    ledger.noteCall();
-    try {
-      response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
-        body,
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        method: "POST",
-        signal,
-      });
-    } catch (caught) {
-      attempts.push(`${model}=threw`);
-      continue;
-    }
-    if (!response.ok) {
-      attempts.push(`${model}=${response.status}`);
-      await response.body?.cancel();
-      // A rejected key will reject every model, so walking the rest is pointless — but it
-      // must still SAY so, or the caller cannot distinguish it from a silent success.
-      if (response.status === 401 || response.status === 403) {
-        console.warn(JSON.stringify({ event: "vision_key_rejected", attempts }));
-        return null;
+    for (let attempt = 1; attempt <= VISION_RETRY_ATTEMPTS; attempt += 1) {
+      if (signal?.aborted) return null;
+      // 🔴 COUNTED PER REQUEST ISSUED, INSIDE THE RETRY LOOP, NOT ONCE PER MODEL. A
+      // retried model is two or three HTTP requests, not one. Counting at the top of
+      // the model loop would report 1 for 3 and quietly understate how hard this
+      // document was to read — the diagnostic that explains a slow parse. `units`
+      // remains the number a price is multiplied by; this is the number that
+      // explains latency.
+      ledger.noteCall();
+      let response: Response;
+      try {
+        response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+          body,
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          method: "POST",
+          signal,
+        });
+      } catch {
+        // A thrown fetch (offline, DNS, a connection reset) is the same shape as an
+        // empty 404: no diagnosis arrived, so it is treated as transient rather than
+        // as a verdict about the model.
+        attempts.push(`${model}=threw`);
+        if (attempt < VISION_RETRY_ATTEMPTS) {
+          await sleepUnlessAborted(withVisionJitter(visionBackoffMs(attempt)), signal);
+          continue;
+        }
+        break;
       }
-      continue;
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => "");
+        attempts.push(`${model}=${response.status}`);
+        const kind = classifyVisionFailure(response.status, bodyText);
+        // A rejected key will reject every model, so walking the rest is pointless —
+        // but it must still SAY so, or the caller cannot distinguish it from a silent
+        // success.
+        if (kind === "terminal-key") {
+          console.warn(JSON.stringify({ event: "vision_key_rejected", attempts }));
+          return null;
+        }
+        if (kind === "terminal-model") break; // walk the ladder now; retrying wastes nothing back
+        if (attempt < VISION_RETRY_ATTEMPTS) {
+          await sleepUnlessAborted(withVisionJitter(visionBackoffMs(attempt)), signal);
+          continue;
+        }
+        break; // transient, but this model's retry budget is spent — walk the ladder
+      }
+      const payload = (await response.json().catch(() => null)) as unknown;
+      const text = parseVisionText(payload);
+      if (text) return { model, text };
+      attempts.push(`${model}=empty`);
+      break; // a 200 with nothing usable is not a failure to retry, just a rung to leave
     }
-    const payload = (await response.json().catch(() => null)) as unknown;
-    const text = parseVisionText(payload);
-    if (text) return text;
-    attempts.push(`${model}=empty`);
+    if (signal?.aborted) return null;
   }
   // Every model refused. Named individually, because "the ladder is dead" and "this one
   // model was retired" need different fixes and look identical from a description count.
@@ -486,7 +627,7 @@ export async function readPdfPagesWithVision(
     });
     const reply = await callGemini(body, key, env, options.signal);
     if (!reply) return;
-    const parsed = parsePageTranscripts(reply, batch.length);
+    const parsed = parsePageTranscripts(reply.text, batch.length);
     if (!parsed) return;
     parsed.forEach((text, position) => {
       const page = batch[position];
@@ -529,8 +670,6 @@ export async function readPdfWithVision(
   const key = (env.GEMINI_API_KEY ?? "").trim();
   if (!key) return null;
   if (!withinVisionLimit(bytes.byteLength)) return null;
-  // Same diagnostics as the batched lane: an exhausted ladder must name what refused it.
-  const attempts: string[] = [];
   // A whole-file read is one unit however many pages are inside it — that is how it is
   // billed, one inline request. Refusing when the budget is gone returns the same null
   // every other unavailable-vision path returns, so the caller keeps its existing "no
@@ -538,33 +677,10 @@ export async function readPdfWithVision(
   if (currentVisionLedger().take(1) === 0) return null;
 
   const body = buildVisionRequest(Buffer.from(bytes).toString("base64"));
-  for (const model of visionModels(env)) {
-    let response: Response;
-    try {
-      response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
-        body,
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        method: "POST",
-        signal: options.signal,
-      });
-    } catch (caught) {
-      attempts.push(`${model}=threw`);
-      continue;
-    }
-    if (!response.ok) {
-      attempts.push(`${model}=${response.status}`);
-      await response.body?.cancel();
-      // A rejected key will reject every model, so walking the rest is pointless — but it
-      // must still SAY so, or the caller cannot distinguish it from a silent success.
-      if (response.status === 401 || response.status === 403) {
-        console.warn(JSON.stringify({ event: "vision_key_rejected", attempts }));
-        return null;
-      }
-      continue;
-    }
-    const payload = (await response.json().catch(() => null)) as unknown;
-    const text = parseVisionText(payload);
-    if (text) return { model, text };
-  }
-  return null;
+  // 🔴 SAME LADDER, SAME RETRY, SAME DIAGNOSTICS AS THE BATCHED FIGURE LANE — via the
+  // SAME FUNCTION. This used to be its own copy of the ladder-walking loop; a
+  // transient-vs-terminal fix would otherwise have needed making twice, and the two
+  // copies could drift out of sync with each other the moment either one changed again.
+  const reply = await callGemini(body, key, env, options.signal);
+  return reply ? { model: reply.model, text: reply.text } : null;
 }
