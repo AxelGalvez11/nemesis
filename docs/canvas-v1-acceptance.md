@@ -819,15 +819,20 @@ not have to be re-derived.** Nothing here authorises starting any of it early.
 | **B** knowledge → task | **`RUNTIME-005` delivers all three** | Runtime |
 | **C** the evidence loop | **`INTEGRATION-001` proves it** once B is deployed | Integration |
 | **D** rapid associative cognition | mostly already built — see the D1 risk below | — |
-| **E** richer cognitive structure | 🔴 **NOT BUILT.** `objectivesForKnowledge(causal)` returns `[]`. This is `BRAIN-003`. | Brain |
-| **F** multi-objective responses | F1–F4 land with `RUNTIME-003` (#508); **F5 is `RUNTIME-006`** | Runtime |
+| **E** richer cognitive structure | ✅ **BUILT, merged, deployed — corrected 2026-08-15.** `objectivesForKnowledge` (`apps/web/lib/learn/learning-objective.ts:414`) now branches on five knowledge kinds including causal (#605, #608, #628, all ancestors of the serving commit). E1/E2 exist as per-objective evidence rows once a submission is judged. **Not confirmed integration-proven**: no production `learner_evidence` row has been found carrying a causal/classification/procedure objective identity. | Brain |
+| **F** multi-objective responses | ✅ **F1–F4 shipped with `RUNTIME-003` (#508). F5 also shipped — corrected 2026-08-15**, not remaining: `RUNTIME-006` landed as PR #519, confirmed live at `objective-task.ts:113-115` (`type Judgement = {judged:true;outcomes} \| {judged:false}`). | Runtime |
 | **G** adaptation | same evidence as C3 — the counterfactual | Integration |
-| **H** Minimap v1 | 🔴 **NOT BUILT**, and blocked on Brain knowledge-state semantics | Brain → UI |
+| **H** Minimap v1 | 🔴 **Still NOT BUILT as a surface — corrected 2026-08-15, but not the way it sounds.** The blocking premise is gone: Brain's knowledge-state semantics (E) are merged and deployed. What replaces it: a flat, non-hierarchical territory-selection layer exists and is wired into `use-policy-runtime.ts` (`focus`/`setFocus`/`territories`), but is rendered by zero `.tsx` files — confirmed by search, not inferred. The remaining blocker is now narrower and mostly UI's: build a surface against what the hook already exposes. The hierarchical/prerequisite part of H is still genuinely missing (`canvas-focus.ts:40-57` names the absent contract explicitly) and is still Brain's. Full detail: `docs/canvas-agent-board.md`, `UI-002`. | Brain → UI |
 | **I** UI | under audit by Canvas UI | Canvas UI |
 
-**So after `INTEGRATION-001` passes, three rocks remain: `RUNTIME-006` (F5), `BRAIN-003` (E), and
-the Minimap (H).** In that order — F5 is a precondition of E, and H needs the knowledge-state
-semantics that E produces.
+**Corrected 2026-08-15, replacing the sentence that followed this table:** it used to read *"So
+after `INTEGRATION-001` passes, three rocks remain: `RUNTIME-006` (F5), `BRAIN-003` (E), and the
+Minimap (H). In that order — F5 is a precondition of E, and H needs the knowledge-state semantics
+that E produces."* `INTEGRATION-001` passed 2026-08-13. `RUNTIME-006` and `BRAIN-003` are both
+merged and deployed, verified against `main` and the current production alias in this pass (see
+`docs/canvas-agent-board.md` for file:line evidence and PR numbers). **One rock remains: the Minimap
+surface (H)** — and, separately and not blocking H's UI half, the hierarchical territory contract
+E's own knowledge-state work did not produce and was never claimed to.
 
 ### 🔴 A verification risk worth knowing about now, not at the end
 

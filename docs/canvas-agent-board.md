@@ -23,7 +23,13 @@ Never let an architectural decision live only in a chat session. If it outlives 
 here or in the architecture doc it belongs to, in the same session it was decided.
 
 **Last recomputed from repository reality: 2026-08-12, after #500 merged — production alias
-resolved to `60b1365e`, database read directly.**
+resolved to `60b1365e`, database read directly.** 🔴 **That resolution is stale.** Reconciled against
+`main` and the live alias again on **2026-08-15** (docs pass, not a lane session) — the alias now
+resolves to `37f33760` (PR #629), `main` itself has moved to `82aef041` (#638) whose own build was
+**Canceled** and never served (a fresh instance of the green-check-≠-served landmine below), and
+every task this file marked "merged, not deployed" as of 08-12 (`RUNTIME-001/002`, `BRAIN-001/002`,
+`PARSER-001/002/003`) is confirmed by `git merge-base --is-ancestor` to be an ancestor of the
+**current serving commit**, not just of `main`. See "Status at a glance" for the corrected table.
 
 ```
 Parser perceives · Brain understands · Runtime executes · UI expresses · Canvas is what the learner sees
@@ -49,6 +55,60 @@ rather than observed behaviour.
 runs as a native Claude Code Agent Team; live coordination is the shared task list, this file is the
 durable roadmap, issue #505 is the durable recovery log, and `docs/canvas-v1-acceptance.md` is the
 stop condition.
+
+### 🟢🔴 RECONCILED 2026-08-15 — this file had drifted materially from `main`
+
+A documentation pass (not a lane session) re-verified every task row against the actual repository
+and the actual production alias, because this file was actively wrong in ways that would mislead
+whoever read it next. Method: read the call site on `main`, not the comment describing it; resolve
+the alias with `vercel inspect` and match its deployment id against `target_url` on each commit's
+GitHub status (never merge-vs-timing); run the tests that exist rather than trust their last
+reported result. Full detail is in each task's own section; the headline corrections:
+
+- **`BRAIN-003` (causal cognition) is not parked.** `objectivesForKnowledge` in
+  `apps/web/lib/learn/learning-objective.ts:414` branches on five knowledge kinds — association,
+  causal, spatial, classification, procedure — each with a dedicated builder. Landed across #605,
+  #608, #628. Merged, **and deployed**: all three are ancestors of the commit the production alias
+  currently serves. **Not** confirmed integration-proven — see the `BRAIN-003` section for the exact
+  production evidence that would close that gap.
+- **`UI-002` (Minimap) is still not reachable by a learner, but not for the reason this file gave.**
+  The stated blocker — no `BRAIN-003`, "2 knowledge objects" — no longer holds (`BRAIN-003` is
+  merged; production `knowledge_objects` was measured at 164 rows on 2026-08-15, per Integration's
+  comment on #505, not requeried here). A real data/logic substrate for territory selection now
+  exists and is wired into the policy runtime hook. **But nothing renders it**: no `.tsx` file in
+  the repository references it. See the `UI-002` section — the actual remaining gap is narrower and
+  differently shaped than "blocked on Brain."
+- **Deployment truth had drifted.** Every task this file listed as "merged, not deployed" against
+  the 08-12 alias (`RUNTIME-001`, `RUNTIME-002`, `BRAIN-001`, `BRAIN-002`, `PARSER-001/002/003`,
+  `UI-001`, `RUNTIME-003`, `RUNTIME-006`) is confirmed an ancestor of the **current** serving commit.
+  `merged ≠ deployed` remains true as a rule; it no longer describes these specific rows.
+- **Issue #505 comments are point-in-time, and two were read as final when they were not.** Two
+  `[HANDOFF]`/`[DECISION]` comments posted 2026-08-15 between 14:49 and 15:11 CDT said PR #632 and
+  PR #635 were "not merged." Both merged within the following 20 minutes (#632 at 15:00:26Z, #635 at
+  15:12:33Z). Comments describe the moment they were written; this file must not propagate a
+  snapshot as an update.
+- **Some rows were not re-verified in this pass** (`UI-J`, `UI-MASTERED`, `UI-KEBAB`, §M, §J, §K/§L)
+  — marked `not re-verified 2026-08-15` in place rather than left showing an 08-12 status or guessed
+  at. Where a title match suggests a relevant PR merged since, it is named as a lead, explicitly
+  unconfirmed.
+- 🔴 **The alias moved again while this reconciliation was being written — proof of its own claim.**
+  First resolution (used for most citations below): `37f33760` (#629), deployment
+  `dpl_2b6ur3FomP282MdHLoijjijEEjwn`. Re-resolved immediately before committing: **PR #639 merged**
+  ("test(acceptance): the Canvas loop, proven against production on a real lecture"), the alias now
+  serves `adf0d75c`, deployment `dpl_CjGEaGdnqydupgyk4C2hmQExogDz` — confirmed by the same
+  exact-id-match method, not timing. `37f33760` (and everything else this pass verified) is
+  confirmed still an ancestor of `adf0d75c`, so no claim below is invalidated — but treat every sha
+  in this file as **true at the stated resolution time**, not as a fact that holds until someone
+  reads it. **#639 is itself relevant to `BRAIN-003`'s open question below**: it re-proves the C1–C3
+  loop on a fresh production source (229 knowledge objects, 48 classification; 474 objectives,
+  capabilities `recall` and `discriminate`) — but the one `learner_evidence` row it wrote and the
+  adaptive decision it proved (`recall:v1:7624eaa1` → `recall:v1:996b576c`) are both for a `recall`
+  objective, i.e. **association**, the same capability `INTEGRATION-001` already proved on 08-13.
+  It persisted classification knowledge and objectives under RLS, which is new and real, but it did
+  not write or prove an evidence row for `discriminate`, `predict`, or `sequence`. The gap named
+  under `BRAIN-003` — no production evidence row yet carries a causal, classification, or procedure
+  objective identity — still stands after #639, confirmed by reading the script
+  (`apps/web/scripts/canvas-loop-acceptance.ts`), not assumed from its PR title.
 
 ### 🟢🟢 THE LOOP CLOSED — 2026-08-13
 
@@ -86,28 +146,49 @@ stay"* rule would have left it. **The proof is the observation, never the row.**
   compositional runtime on any canvas it captures.** `796a6045` is parked at `recall` 2-of-8 as the
   production specimen. Filed, unfixed.
 
-### The critical path now
+### The critical path now, reconciled 2026-08-15
 
-| Task | Owner | Status |
+**This replaces three overlapping, partly-contradictory status tables that had accumulated below
+this point** (one per recomputation pass, each left in place under the next rather than replaced —
+two had lost their header rows and were rendering as broken markdown). The reasoning each carried is
+not lost: the "four contract defects" list survives intact just below, and the per-task narrative
+sections later in this file (`RUNTIME-001`, `INTEGRATION-001`, etc.) were already the fuller account.
+This is now the one table to trust for status; task order matches the sections below.
+
+| Task | Owner | Status, reconciled 2026-08-15 |
 |---|---|---|
-| **§M verification** — is `correct` terminal, or only immediately suppressed? | Runtime | 🔴 **IN PROGRESS** — *"not representable"* is a complete result |
-| **§J** — self-report never substitutes for demonstration | Integration | **IN PROGRESS** |
-| **§K / §L / compact UI** — three owner specs | Canvas UI | **IN PROGRESS**, sequenced |
-| `recording` signal so auto-advance cannot fire mid-write | Runtime | queued behind §M |
-| **`BRAIN-003`** causal cognition · **`UI-002`** Minimap | Brain, UI | 🅿️ still parked |
+| `RUNTIME-001` compositional task hosting | Runtime | ✅ MERGED #494, **deployed** (ancestor of the serving commit). First attempt moved the gate rather than opening it — `INTEGRATION-001` caught this by execution, not by reading the diff. Fixed by `RUNTIME-005`; integration-proven 2026-08-13 on `a02d6063`, still an ancestor of what serves today. |
+| `RUNTIME-002` one response identity per answer | Runtime | ✅ ACCEPTED, deployed. Brain's original defect report retracted — it read a memo-guard expression and mistook it for `responseId` itself. |
+| `RUNTIME-003` a task targets a SET of objectives | Runtime | ✅ MERGED #508, deployed. Unit-tested only — no production caller existed at merge time (the board said so itself: "tests executed by Brain: none"). Not confirmed integration-proven in this pass. |
+| `RUNTIME-004` sources attached without a durable id | Runtime | Investigated read-only 2026-08-13, nothing built — full finding in its own section below. Not re-examined in this pass; nothing found suggests it has changed. |
+| `RUNTIME-005` gate objective production on trust, not coverage | Runtime | ✅ MERGED, deployed. This is the fix that made `INTEGRATION-001` pass. |
+| `RUNTIME-006` judged / not-judged are different values (F5) | Runtime | ✅ MERGED **#519** ("An outage and an empty answer stop being the same value"), deployed. Confirmed live: `objective-task.ts:113-115` declares `type Judgement = {judged:true; outcomes} \| {judged:false}` exactly as specified. |
+| `PARSER-001` derived verdict crosses the boundary | Parser | ✅ MERGED #504, deployed. |
+| `PARSER-002` persist the unsupported *kinds* | Parser | ✅ MERGED #500, deployed (the Vercel cap that blocked this in production on 08-12 has long since reset). |
+| `PARSER-003` unit locality at the producers | Parser | ✅ MERGED #510, deployed. |
+| `UI-001` the three uncertainties stay distinct | Canvas UI | ✅ MERGED #509, deployed. |
+| `UI-002` the Minimap surface | Brain, UI | **Not "parked" — its own section below replaces this row.** Substrate merged and deployed; the stated blocker (no `BRAIN-003`) no longer holds; a rendered surface still does not exist. |
+| `BRAIN-001` performance identity readable | Brain | ✅ MERGED #498, deployed. |
+| `BRAIN-002` response identity required by type | Brain | ✅ MERGED #498, deployed. |
+| `BRAIN-003` causal objectives + task contract | Brain | **Not "parked by decision" — its own section below replaces this row.** Merged (#605, #608, #628) and deployed; not confirmed integration-proven. |
+| `INTEGRATION-001` first real end-to-end trace | Integration | ✅ PASSED 2026-08-13 on `a02d6063`, confirmed still an ancestor of the commit serving today (2026-08-15). |
+| **§M verification** — is `correct` terminal, or only immediately suppressed? | Runtime | `not re-verified 2026-08-15`. Last known 08-12: IN PROGRESS. Titles suggesting overlap merged since — unconfirmed, named as leads only: #592, #593, #594, #595. |
+| **§J** — self-report never substitutes for demonstration | Integration | `not re-verified 2026-08-15`. Last known 08-12: IN PROGRESS. Possible lead, unconfirmed: #583. |
+| **§K / §L / compact UI** — three owner specs | Canvas UI | `not re-verified 2026-08-15`. Last known 08-12: IN PROGRESS, sequenced. |
+| `recording` signal so auto-advance cannot fire mid-write | Runtime | `not re-verified 2026-08-15`. Was queued behind §M, whose own status is unverified. |
+| `UI-J` remove check + fold, redesign provenance | Canvas UI | `not re-verified 2026-08-15`. Last known 08-12: ASSIGNED. Possible lead, unconfirmed: #635 (wired knowledge provenance to a render site — see `BRAIN-003`/Integration notes below; related, not confirmed identical to this item). |
+| `UI-MASTERED` "Mastered." claimed without evidence | Canvas UI | `not re-verified 2026-08-15`. Last known 08-12: 🔴 LIVE AND UNWALKED. |
+| `UI-KEBAB` remove the three-dots control | Canvas UI | `not re-verified 2026-08-15`. Last known 08-12: ASSIGNED. |
 
-### Everything else
+**What "not re-verified" means here, stated so it is not mistaken for either extreme:** it is not
+"still true as of 08-12" (five days and dozens of merges is too long for that to be a safe default)
+and it is not "done" (no evidence was found either way). It means exactly what it says — read the
+call site before trusting either the old status or a lead named above.
 
-| Task | Owner | Status |
-|---|---|---|
-| `RUNTIME-006` judged / not-judged split | Runtime | **IN PROGRESS** — required before `BRAIN-003` |
-| `UI-J` remove check + fold, redesign provenance | Canvas UI | **ASSIGNED** — owner correction, §J |
-| `UI-MASTERED` "Mastered." claimed without evidence | Canvas UI | 🔴 **LIVE AND UNWALKED** — reachable, ungated, no canvas has walked there yet |
-| `UI-KEBAB` remove the three-dots control | Canvas UI | **ASSIGNED** — rename re-homing is a named follow-up cost |
-| `RUNTIME-003` · `UI-001` · `PARSER-001/002/003` | — | ✅ **MERGED**, none deployed |
-| `BRAIN-003` causal cognition · `UI-002` Minimap | Brain, UI | 🅿️ **PARKED** behind a proven loop |
-
-🔴 **Seven merges tonight, zero deployments.** `merged ≠ deployed ≠ served`.
+🔴 **Corrected, not deleted: this table used to say "seven merges tonight, zero deployments."** True
+on 2026-08-12. Every one of those merges is now confirmed an ancestor of the commit the production
+alias serves today. `merged ≠ deployed ≠ served` remains the right rule; it stopped describing these
+specific rows days ago.
 
 ### What the lanes corrected in Brain, recorded because the pattern is the lesson
 
@@ -120,42 +201,12 @@ Four contract defects, all caught by the lane that had to implement against them
 
 **A contract that does not survive contact with the implementation is a Brain defect.** Four of them did not, and the board is better for each.
 
----|---|---|---|
-| `RUNTIME-003` a task targeting a SET of objectives | Runtime | ✅ **ACCEPTED** (#508) — reconciling merge state only | — |
-| `RUNTIME-006` judged / not-judged must be different values | Runtime | **READY** — required before `BRAIN-003` | BRAIN-003 |
-| `RUNTIME-004` canvas sources attached without a durable id | Runtime | P2 — after 005 and 003 | — |
-| `UI-001` the three uncertainties stay distinct | UI | ✅ **FIX ACCEPTED** (#509) — reconciling merge state only | — |
-| `UI-002` Minimap surface | UI | **BLOCKED** — and parked by decision | — |
-| `PARSER-001` derived verdict crosses the boundary | Parser | ✅ **MERGED** (#504) — *not deployed* | — |
-| `PARSER-002` persist the unsupported *kinds* | Parser | ✅ **MERGED** (#500) — *not deployed* | — |
-| `PARSER-003` preserve unit locality at the producers | Parser | ✅ **MERGED** (#510) — *not deployed* | — |
-| `BRAIN-001` performance identity readable | Brain | ✅ **MERGED** (#498) | — |
-| `BRAIN-002` response identity required by type | Brain | ✅ **MERGED** (#498) | — |
-| `BRAIN-003` causal objectives + task contract | Brain | 🅿️ **PARKED BY DECISION** — behind 005, a proven loop, and 006 | — |
-| `RUNTIME-001` compositional task hosting | Runtime | ✅ merged (#494) — 🔴 **but it MOVED the gate, it did not open it** | — |
-| `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** | — |
-
-🔴 **`RUNTIME-001`'s row said "the gate is open" for a full cycle and that was false.** Integration
-proved it by executing deployed code. Read the `INTEGRATION-001` section before trusting any "merged"
-in this table to mean the capability works.
-
-🔴 **Three PARSER tasks are merged and none is serving.** `merged ≠ deployed ≠ served`. The alias is
-`dpl_B1Lm6ttT…` = `60b1365e`, and `main` has moved four times since it last changed.
-
----|---|---|---|
-| `BRAIN-001` performance identity readable | Brain | ✅ **MERGED** (#498) | — |
-| `BRAIN-002` response identity required by type | Brain | ✅ **MERGED** (#498) | — |
-| `BRAIN-003` causal objectives + task contract | Brain | **READY** — dependencies merged | UI-002 |
-| `RUNTIME-001` compositional task hosting | Runtime | ✅ **MERGED** (#494) — the gate is open | — |
-| `RUNTIME-003` a task targeting a SET of objectives | Runtime | **READY** — assigned | every causal operation |
-| `RUNTIME-002` one answer, one response identity | Runtime | ✅ **ACCEPTED** — Brain's defect report retracted | — |
-| `PARSER-001` derived verdict crosses the boundary | Parser | **IN REVIEW** — PR #504, red only from infrastructure | BRAIN capability gate |
-| `PARSER-002` persist the unsupported *kinds* | Parser | ✅ **MERGED** (#500) — merged, *not* deployed | — |
-| `UI-001` three uncertainties stay distinct | UI | **READY** | — |
-| `UI-002` Minimap surface | UI | **BLOCKED** | — |
-| `INTEGRATION-001` first real end-to-end trace | Integration | 🔴 **RAN AND FAILED** — the gate was moved, not opened | — |
-| `RUNTIME-005` gate objective *production* on trust, not coverage | Runtime | 🔴 **P0 — the new critical path** | the whole vision |
-| `RUNTIME-004` canvas sources attached without a durable id | Runtime | P2 — after RUNTIME-003 and RUNTIME-005 | — |
+🔴 **Corrected, not deleted: this section used to carry three more copies of the status table above**
+(one still citing `RUNTIME-001`'s original false "the gate is open," one citing the alias as
+`dpl_B1Lm6ttT…` = `60b1365e`, two with no header row so they rendered as broken markdown). Their
+content is superseded by the single reconciled table above; the sha and alias they named are both
+long gone — `main` alone has moved dozens of commits since. `RUNTIME-001`'s own section below still
+carries the full story of the false "gate is open" claim; it was not shortened.
 
 ---
 
@@ -163,7 +214,10 @@ in this table to mean the capability works.
 
 ## RUNTIME-001 — compositional task hosting
 
-**STATUS** ✅ **MERGED AND LIVE** — #494, in production on main `60b1365e`
+**STATUS** ✅ **MERGED AND LIVE** — #494. `60b1365e` (cited below as "in production") is a stale
+serving sha from 2026-08-12; re-verified 2026-08-15 that #494 (`3ec1cb71`) is still an ancestor of
+the commit the production alias currently serves. The gate-move/gate-open history in this entry is
+otherwise unchanged and accurate — see `INTEGRATION-001` for the fuller account.
 **PRIORITY** closed
 **DEPENDENCIES** none
 **BLOCKS** every capability downstream of learner evidence
@@ -200,7 +254,8 @@ such mapping should exist.** One follow-up is `RUNTIME-002` below; it is not a r
 
 ## RUNTIME-003 — a task that targets a SET of objectives
 
-**STATUS** ✅ **ACCEPTED** — PR #508, 2026-08-12. `prompt.targets.map` is total over the TARGETS
+**STATUS** ✅ **ACCEPTED, and confirmed DEPLOYED 2026-08-15** (ancestor of the commit the production
+alias currently serves) — PR #508, 2026-08-12. `prompt.targets.map` is total over the TARGETS
 rather than over the outcomes, so an objective the judge stayed silent about records
 *"nothing was shown about this"* instead of vanishing; `demonstrationObtained` follows the outcome,
 not the submission; `ObjectiveTarget` holds `rowId` and `identityKey` together so a row cannot be
@@ -326,8 +381,10 @@ boundary changes rather than making them.
 
 ## RUNTIME-005 — gate objective PRODUCTION on trust, not on coverage
 
-**STATUS** 🔴 **P0 — the critical path.** Specified by Brain 2026-08-12 in answer to Integration's
-`[INTEGRATION FAIL]`. Runtime implements; the condition is Brain's.
+**STATUS** ✅ **RECONCILED 2026-08-15: MERGED AND DEPLOYED — this is the fix that made
+`INTEGRATION-001` pass 2026-08-13.** No longer the critical path; superseded below. *(Original entry,
+kept: "🔴 **P0 — the critical path.** Specified by Brain 2026-08-12 in answer to Integration's
+`[INTEGRATION FAIL]`. Runtime implements; the condition is Brain's.")*
 **BLOCKS** `INTEGRATION-001`, and through it every claim about adaptive behaviour.
 
 **CAPABILITY BLOCKED** — No objective can be produced for any real document, so no task, no answer,
@@ -417,7 +474,9 @@ lives, and how ownership continues to be reported. All Runtime's.
 ## RUNTIME-004 — canvas sources attached without a durable id
 
 **STATUS** 🔴 **THE ENTRY BELOW WAS WRONG, AND IT WAS BRAIN'S.** Investigated read-only by Runtime
-2026-08-13; nothing built, no production data touched.
+2026-08-13; nothing built, no production data touched. `not re-verified 2026-08-15` — this
+reconciliation pass did not re-check whether the diagnosis below still holds; nothing found while
+verifying other rows contradicted it, but that is incidental, not confirmation.
 
 ### The board blamed code that did not write those rows
 
@@ -559,8 +618,11 @@ if you need a change there, ask and Brain will make the boundary change.
 
 ## PARSER-001 — carry the derived parse verdict across the extraction boundary
 
-**STATUS** **IN REVIEW** — PR #504. Mergeable. Every red check on it is infrastructure
-(GitHub Actions billing lockout, Vercel rate limit), not a code defect.
+**STATUS** ✅ **RECONCILED 2026-08-15: MERGED AND DEPLOYED.** Superseded below: PR #504 merged
+(commit `12f45419`) and is confirmed an ancestor of the commit the production alias currently serves.
+Not confirmed integration-proven in this pass. *(Original entry, kept: "**IN REVIEW** — PR #504.
+Mergeable. Every red check on it is infrastructure (GitHub Actions billing lockout, Vercel rate
+limit), not a code defect.")*
 **PRIORITY** P1
 **DEPENDENCIES** PARSER-002 for the *reason*; the verdict itself can ship first
 **BLOCKS** Brain's capability gate becoming a real mechanism instead of a fixture label
@@ -598,9 +660,13 @@ whether it is stored or derived on read. Brain does not prescribe any of it.
 
 ## PARSER-002 — persist the *kinds* of unsupported content
 
-**STATUS** ✅ **MERGED** — #500, commit `bee67e41`. 🔴 **Merged, not deployed:** the Vercel daily
-build cap refused it, so the stored kinds are not yet readable in production. Verification of this
-task in production waits for the cap to reset.
+**STATUS** ✅ **RECONCILED 2026-08-15: MERGED AND DEPLOYED.** The Vercel cap named below reset days
+ago; commit `bee67e41` is confirmed an ancestor of the commit the production alias currently serves,
+so the stored kinds are readable in production now. Not independently re-queried in this pass — this
+is deployment ancestry, not a read of the live column. *(Original entry, kept: "✅ **MERGED** — #500,
+commit `bee67e41`. 🔴 **Merged, not deployed:** the Vercel daily build cap refused it, so the stored
+kinds are not yet readable in production. Verification of this task in production waits for the cap
+to reset.")*
 **PRIORITY** P2
 **DEPENDENCIES** none
 **BLOCKS** PARSER-001 explaining *why* something is incomplete
@@ -746,7 +812,9 @@ decide this; Brain does not.
 
 ## UI-001 — the three uncertainties must never look the same
 
-**STATUS** READY — no dependency, can start now
+**STATUS** ✅ **RECONCILED 2026-08-15: MERGED AND DEPLOYED** — #509, confirmed an ancestor of the
+commit the production alias currently serves. *(Original entry, kept: "READY — no dependency, can
+start now")*
 **PRIORITY** P1
 **DEPENDENCIES** none. The semantic states already exist.
 **BLOCKS** nothing, but it is the invariant most likely to be violated by accident
@@ -784,18 +852,73 @@ review CSS.
 
 ## UI-002 — the Minimap surface
 
-**STATUS** BLOCKED
+**STATUS** 🔴 **RECONCILED 2026-08-15 — not "BLOCKED," and not done either.** The dependency this
+row named is satisfied. A real substrate is merged and deployed. **No learner can reach a Minimap
+today** — there is no rendered surface at all, confirmed by searching the whole `.tsx` tree, not by
+reading what the data layer intends.
 **PRIORITY** P2
-**DEPENDENCIES** BRAIN-003 (knowledge/state contract), and clusters/prerequisites do not exist yet
+**DEPENDENCIES** ✅ `BRAIN-003` merged and deployed (see its section). ❌ The hierarchical
+territory/prerequisite contract still does not exist — see below, it is a *narrower*, still-real gap
+than "blocked on Brain."
 **BLOCKS** the learner choosing territory
 
-**WHY BLOCKED, HONESTLY** — The Minimap must reconcile source organisation, knowledge organisation
-and learner state. Today there are 2 knowledge objects and no prerequisite edges, so a Minimap built
-now would be a table of contents wearing a map's clothes. `docs/minimap-knowledge-territory.md` is
-the target; it is explicitly not a specification of anything that exists.
+### What is actually built — a data/logic layer, wired one hook deep, rendered nowhere
+
+**First, a naming trap this task's own brief walked into, worth naming so the next reader does not
+repeat it:** three files share the word "territory" and only one of them is Minimap infrastructure.
+
+| File | What it actually is | Minimap-relevant? |
+|---|---|---|
+| `apps/web/lib/learn/knowledge-territory.ts` | Topic-first canvas construction — turns a typed topic ("teach me the top 35 drugs") into knowledge objects. The product's *front door* for topic canvases, unrelated to navigation. | No |
+| `apps/web/lib/learn/canvas-territory.ts` + `supabase/migrations/20260813T01_canvas_territory.sql` | A **build-once cache** for the above — stops a topic canvas from re-generating (and re-paying for) a new, different set of knowledge objects every time it is opened. A performance/cost fix, not a navigation surface. | No |
+| `apps/web/lib/learn/canvas-focus.ts` | `FocusScope`, `applyFocus`, `availableTerritories` — a flat, per-canvas list of selectable knowledge groupings, explicitly commented "safe to paint on the Minimap." | **Yes — this is the one.** |
+
+Only `canvas-focus.ts` is Minimap substrate. It is wired one layer into the product:
+`use-policy-runtime.ts` imports it and exposes `focus`, `setFocus` and `territories` on the
+`PolicyRuntime` object every canvas hook returns (`focus: FocusScope`, `setFocus: (scope) => void`,
+`territories: readonly {label, identityKeys}[]` — `use-policy-runtime.ts:100-103`, computed at
+`:417`, `:532`, `:1099`).
+
+**Nothing renders it.** Searched every `.tsx` file in `apps/web` for `.territories`, `.setFocus`,
+`.focus` read off the policy object, `FocusScope`, `availableTerritories`, `applyFocus`, `Territory`,
+`Minimap` — zero matches outside the hook itself and its test. The sole call site,
+`learning-canvas.tsx:100`, keeps the hook's return value in one `policy` object and passes the whole
+thing to `<CanvasPolicyView runtime={policy} .../>` (`learning-canvas.tsx:690`);
+`canvas-policy-view.tsx`, the component that receives it, never reads `territories`, `focus` or
+`setFocus` anywhere in its body. This is the same class of defect Integration found and named
+elsewhere on this board on 2026-08-15: "a named-but-never-called lane is a FAIL, not a PASS."
+
+**The hierarchical part is honestly, explicitly absent — by the file's own comment, not by omission.**
+`canvas-focus.ts:40-57` documents `MISSING_TERRITORY_CONTRACT`: there is no parent/child relation
+between knowledge objects anywhere in the system, so `availableTerritories` can only offer a flat
+list — one entry per distinct knowledge statement, nothing grouped, nothing clustered, no
+prerequisite edges. The file explicitly rejects the tempting shortcut of deriving hierarchy from
+document headings ("a heading records where text SAT, not what depends on what... once a tree
+rendered from headings is on screen, its wrongness is invisible"). This is a sourced negative claim,
+not a guess: the gap `docs/minimap-knowledge-territory.md` describes is still a gap, just a smaller
+one than "no substrate at all."
+
+**Even the mechanism-only proof is not clean.** `apps/web/scripts/territory-build-once-acceptance.mts`
+is the executable acceptance test for the *cache* (not the Minimap) — its own header states, as of
+2026-08-13, that it cannot reach its first leg from a Node harness (`constructTerritory` requires an
+authenticated chat session; "Sign in to chat" refuses before any network call), and that even if it
+ran, it "does NOT prove the SURFACE wires that correctly... a mechanism proof described as a product
+proof is the overclaim to avoid here" — the script's own words. No later comment on #505 records a
+successful run since.
+
+**WHY THE OLD "BLOCKED" REASON NO LONGER HOLDS** — it named two things: no `BRAIN-003`, and "2
+knowledge objects." `BRAIN-003` is merged and deployed (see its section). The object count is
+dramatically stale — Integration measured `knowledge_objects` at 164 rows and `learning_objectives`
+at 322 rows in production on 2026-08-15 (comment on #505, not re-queried in this pass, cited rather
+than re-derived). Neither original blocker is still true. The real remaining gap is narrower: build
+a rendered surface against the flat `territories`/`focus`/`setFocus` the hook already exposes, and
+separately, get Brain to define the parent/child territory relation before anything hierarchical can
+be honest.
 
 **WHAT UI CAN DO MEANWHILE** — UI-001, and the collapsible panel *shell* against the versioned
-proposed interface in the Minimap doc, provided nothing invents state to fill it.
+proposed interface in the Minimap doc, provided nothing invents state to fill it. That guidance still
+holds; `canvas-focus.ts` now gives that shell something real and flat it could actually bind to,
+which was not true when this row was last written.
 
 ---
 
@@ -803,7 +926,8 @@ proposed interface in the Minimap doc, provided nothing invents state to fill it
 
 ## BRAIN-001 — performance identity is readable
 
-**STATUS** IN REVIEW — PR #498
+**STATUS** ✅ **RECONCILED 2026-08-15: MERGED AND DEPLOYED** — #498, confirmed an ancestor of the
+commit the production alias currently serves. *(Original entry, kept: "IN REVIEW — PR #498")*
 **PRIORITY** P0 — must land before or with RUNTIME-001
 
 `response_id`, `response_text` and `task_id` were written on every evidence row and never selected
@@ -812,7 +936,9 @@ defect. Ships `performanceKey` and `performancesIn`, which RUNTIME-002's accepta
 
 ## BRAIN-002 — response identity is per-answer, enforced by the type
 
-**STATUS** IN REVIEW — landed in #498. **The contract RUNTIME-002 implements against is now live.**
+**STATUS** ✅ **RECONCILED 2026-08-15: MERGED AND DEPLOYED** — landed in #498, confirmed an ancestor
+of the commit the production alias currently serves. **The contract RUNTIME-002 implements against
+is now live.**
 **DEPENDENCIES** BRAIN-001
 **BLOCKS** nothing — RUNTIME-002 can proceed against it immediately
 
@@ -832,11 +958,58 @@ it a type rather than a convention.
 
 ## BRAIN-003 — causal objectives and the cognitive task contract
 
-**STATUS** **READY** — #496, #497 and #494 are all merged and all ancestors of the serving commit.
-**DEPENDENCIES** ✅ satisfied. Sequenced behind `INTEGRATION-001`: designing causal cognition on top
-of a loop nobody has watched close once would be building the second storey first.
+**STATUS** ✅ **RECONCILED 2026-08-15 — BUILT, MERGED, DEPLOYED.** Not "parked," not "READY
+pending" — done past what this entry describes, and gone further than causal alone.
 
-`objectivesForKnowledge(causal)` returns `[]` and four tests pin it. That stays true until a task
+`apps/web/lib/learn/learning-objective.ts:414`, `objectivesForKnowledge`, now branches on **five**
+knowledge kinds, each with a dedicated builder in the same file: `causalObjectives` (`:253`),
+`spatialObjectives` (`:325`), `classificationObjectives` (`:359`), `procedureObjectives` (`:395`),
+plus the original `association` handling inline. Landed across three PRs, all confirmed ancestors of
+`main` **and of the commit the production alias currently serves** (`37f33760`, checked by
+`git merge-base --is-ancestor`, not by date):
+
+- **#605** "The Canvas can teach a mechanism, not just a word pair" — `causalObjectives`
+- **#608** "A causal answer is what follows, not the whole claim repeated" — the answer-shape fix
+- **#628** "Five of six knowledge kinds now teach..." — `classificationObjectives`,
+  `procedureObjectives`, and `spatialObjectives`
+
+**Executed, not just read:** `knowledge-lane-completeness.test.ts` (2/2 pass) asserts by construction
+— it scans `knowledge-types.ts` and every producer file rather than trusting a hand-maintained list —
+that `mintedTypes()` equals exactly `["association", "causal", "classification", "procedure",
+"spatial"]` and that every one of them has a lane in `objectivesForKnowledge`. `causal-cognition-loop.test.ts`
+(13/13 pass) walks one causal edge through the *whole* chain — knowledge → objective → runtime admits
+it → prompt → judged → evidence → state → next action — built through the real extractor and
+validator, never hand-constructed.
+
+**RUNTIME-006 (F5, the `judged`/`not-judged` split this entry's design constraint depended on) is
+also done**, not "in progress" as other parts of this file said: PR **#519**, "An outage and an empty
+answer stop being the same value." `objective-task.ts:113-115` declares
+`type Judgement = {judged: true; outcomes} | {judged: false}` exactly as specified, and `{judged:
+false}` writes nothing for any target, confirmed at `:137`.
+
+**🔴 What this does NOT establish — do not upgrade this past "deployed."** Merged and deployed means
+the code is in the build the production alias currently serves. It does not mean a real learner has
+been asked a causal, classification, or procedure question. The most recent Integration read of
+production (comment on #505, 2026-08-15T14:36:43Z) found `learner_evidence` at **1 row total**,
+`teaching_strategy: null` — a figure attributed to that comment, not re-queried in this pass. Nothing
+in that row's shape ties it to any of the three new capabilities. **The concrete check that would
+close this gap:** a production `learner_evidence` row whose objective identity carries
+`capability: "predict"` (causal), `"discriminate"` (classification), or `"sequence"` (procedure) —
+`objectiveIdentityKey`'s `capability` field, minted at `learning-objective.ts:274/369/405`. Until
+that row exists, the honest status is **merged + deployed, not integration-proven.**
+
+**Closest thing to it so far, and it still falls short:** PR #639 merged during this very
+reconciliation pass and re-proves the C1–C3 loop end-to-end against a fresh production source,
+persisting 48 classification knowledge objects and objectives with capability `discriminate` under
+RLS. But the specific `learner_evidence` row it wrote and the adaptive decision it proved were both
+for a `recall` (association) objective — read from the script directly
+(`apps/web/scripts/canvas-loop-acceptance.ts`), not assumed from the PR title. Classification
+knowledge now demonstrably persists in production; a classification (or causal, or procedure)
+**evidence row** still does not. See the top-of-file "RECONCILED 2026-08-15" note for the full
+citation.
+
+**Superseded, kept for the record:** the passage below is what this entry said as of #494/#496/#497,
+before #605/#608/#628 landed. `objectivesForKnowledge(causal)` returns `[]` and four tests pin it. That stays true until a task
 can target a **set** of objectives and one answer can write evidence for several.
 
 **🔴 DESIGN CONSTRAINT INHERITED FROM RUNTIME-002 — one submission mints ONE prompt.**
@@ -859,7 +1032,13 @@ satisfied *by construction* when that path is designed, not discovered afterward
 
 ## INTEGRATION-001 — the first real end-to-end learner trace
 
-**STATUS** 🔴 **RAN 2026-08-12 AND FAILED.** It did its job: it turned an architectural claim into
+**STATUS** ✅ **RE-RUN PASSED 2026-08-13** — see "THE LOOP CLOSED" near the top of this file. Serving
+commit at the pass was `a02d6063`, re-confirmed 2026-08-15 still an ancestor of the commit the
+production alias currently serves. Everything below this line is the **first** run, 2026-08-12, kept
+in full because it is the diagnosis that produced the `RUNTIME-005` fix which made the second run
+pass — read the original status it carried as history, not current state:
+
+🔴 **RAN 2026-08-12 AND FAILED.** It did its job: it turned an architectural claim into
 an observed one, and the observation was that the claim was false. The fix is `RUNTIME-005` below.
 
 ### 🔴 THE FINDING — RUNTIME-001 MOVED THE GATE, IT DID NOT OPEN IT
@@ -995,6 +1174,18 @@ vercel inspect https://app.enternemesis.com
 
 Brain published the wrong serving commit to every lane from a green check before doing this. The
 error is recorded because the reasoning is the reusable part, not the conclusion.
+
+**🔴 THIRD INSTANCE, 2026-08-15 — the same landmine, found during this reconciliation pass.**
+`82aef041` (PR #638, currently the tip of `main`) carries `state: success` on its
+`Vercel – nemesis-web` GitHub status, target url resolving to deployment
+`dpl_4E4TAjATTdDyWeNvmsCyp2HWNjCG`. `vercel inspect` on that deployment id directly shows
+`status: ● Canceled` — superseded, never aliased, never served, exactly like the first two. The
+production alias `https://app.enternemesis.com` resolves instead to `dpl_2b6ur3FomP282MdHLoijjijEEjwn`,
+which matches commit `37f33760` (PR #629) by exact deployment-id equality against `target_url`, not by
+timing. `main` HEAD and the serving commit are one merge apart — `git log --oneline 37f33760..origin/main`
+shows only `82aef041` between them — so the gap is small this time, but the mechanism recurring a
+third time is the point: **a green GitHub check will keep meaning nothing about what serves, and this
+codebase will keep needing to check anyway.**
 
 ---
 
