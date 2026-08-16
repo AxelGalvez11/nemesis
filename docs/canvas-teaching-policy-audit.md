@@ -377,9 +377,22 @@ import with `The "path" argument must be of type string`. Same tree, same files,
 pnpm exec tsx --test lib/notebooks/parse-thread-env.test.ts                 -> 16 pass / 0 fail
 ```
 
-The root `package.json` now declares `tsx@^4.22.4` so both resolve the same version and the skew
-cannot come back. Until an install picks that up, use `pnpm test`, or `pnpm exec tsx --test <file>` for
-a single file — never the root binary by path.
+🔴 **DO NOT "FIX" THIS BY ADDING `tsx` TO THE ROOT `package.json`. I tried, and it took production
+builds down.** The root lockfile is generated with `--frozen-lockfile` in CI, so a new root dependency
+without a regenerated `pnpm-lock.yaml` fails every build at install:
+
+```
+ERR_PNPM_OUTDATED_LOCKFILE  specifiers in the lockfile don't match specs in package.json
+```
+
+Four merged commits sat undeployed behind that before it was caught — and it was caught by someone
+reading the build log, not by me, because I had been treating every red check on this repo as the
+GitHub Actions billing lockout. **The lockout makes Actions red; it does not touch the Vercel build
+status, and that is the one that matters.** Regenerating the lockfile turned out to be a 2,500-line
+diff, which is not a change to ship during an outage, so the pin was reverted.
+
+The working instruction is therefore behavioural, not structural: use `pnpm test`, or
+`pnpm exec tsx --test <file>` for a single file. **Never the root binary by path.**
 
 Two separate agents drew conclusions from that artifact on 2026-08-16: one reported "85 failing tests
 on main" and one reported "at least 10 test files have never run, including the test for #643". Both
