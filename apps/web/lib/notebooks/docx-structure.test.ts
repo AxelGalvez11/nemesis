@@ -5,6 +5,7 @@ import { docxXmlToText } from "./office-text";
 import {
   headingLevel,
   markerFor,
+  paragraphEmphasis,
   paragraphText,
   pictureRefs,
   readDocumentRels,
@@ -18,6 +19,18 @@ const p = (inner: string, props = "") => `<w:p>${props ? `<w:pPr>${props}</w:pPr
 const body = (inner: string) => `<w:document><w:body>${inner}</w:body></w:document>`;
 const mathRun = (t: string) => `<m:r><m:t>${t}</m:t></m:r>`;
 const fraction = (num: string, den: string) => `<m:f><m:num>${num}</m:num><m:den>${den}</m:den></m:f>`;
+
+test("Word run properties survive as explicit emphasis evidence", () => {
+  const xml = `<w:p>
+    <w:r><w:rPr><w:b/><w:highlight w:val="yellow"/></w:rPr><w:t>Mass is conserved</w:t></w:r>
+    <w:r><w:t> in the system.</w:t></w:r>
+  </w:p>`;
+  assert.deepEqual(paragraphEmphasis(xml), [
+    { kind: "bold", text: "Mass is conserved" },
+    { kind: "highlight", text: "Mass is conserved" },
+  ]);
+  assert.deepEqual(readDocxStructure(body(xml)).blocks[0]?.emphasis, paragraphEmphasis(xml));
+});
 
 // ── Headings: the hierarchy the tag strip deleted ──────────────────────────
 

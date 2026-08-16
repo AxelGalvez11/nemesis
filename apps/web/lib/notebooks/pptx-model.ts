@@ -20,7 +20,7 @@
  * and `describeLocator` will print "slide 12" because that is true.
  */
 
-import { buildDocument, type DocBlock, type DocRect, type DocumentModel } from "@nemesis/shared";
+import { buildDocument, emphasisFromMarkup, tableToMarkdown, type DocBlock, type DocRect, type DocumentModel } from "@nemesis/shared";
 
 import type { DeckStructure, SlideBodyLine } from "./office-text";
 import { figureNotesBySlide, mergeImageDescriptions, type SlideImage } from "./slide-media";
@@ -73,6 +73,10 @@ export function pptxToModel(
   // appended line is known rather than guessed at from the line's own text.
   const figureNotes = figureNotesBySlide(descriptions, input.images);
   const blocks: Omit<DocBlock, "id">[] = [];
+  const emphasisOf = (markup: string) => {
+    const emphasis = emphasisFromMarkup(markup);
+    return emphasis.length ? { emphasis } : {};
+  };
 
   merged.forEach((slideText, index) => {
     const title = input.slideTitles[index]?.trim() || null;
@@ -117,6 +121,7 @@ export function pptxToModel(
         const table = tables[fact.table];
         if (table) {
           slideBlocks.push({
+            ...emphasisOf(tableToMarkdown(table)),
             headingPath,
             kind: "table",
             // A table's text is its grid, and the grid is derived from `table`.
@@ -170,6 +175,7 @@ export function pptxToModel(
       }
 
       slideBlocks.push({
+        ...emphasisOf(line),
         headingPath,
         kind: "paragraph",
         text: line,

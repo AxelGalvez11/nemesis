@@ -31,6 +31,7 @@ import type { DocxDocument } from "./docx-structure";
 export function docxToModel(doc: DocxDocument, title: string | null): DocumentModel {
   const blocks: Omit<DocBlock, "id">[] = doc.blocks.map((block) => {
     const base = {
+      ...(block.emphasis?.length ? { emphasis: block.emphasis } : {}),
       headingPath: block.headingPath,
       text: block.text,
       unit: 0,

@@ -16,7 +16,7 @@
 // was just fixed — and this codebase has discarded a computed document model at a boundary three
 // times already.
 
-import { blockToText, readCoverage, readStructureEnvelope, type DocBlock, type DocumentModel } from "@nemesis/shared";
+import { blockToText, readCoverage, readStructureEnvelope, type DocBlock, type DocEmphasis, type DocumentModel } from "@nemesis/shared";
 
 import {
   capabilitiesOfStored,
@@ -133,6 +133,8 @@ export interface CanonicalSourceUnit {
   id: string;
   type: CanonicalSourceUnitType;
   text?: string;
+  /** Explicit typographic evidence recovered by the parser, independent of text rendering. */
+  emphasis?: readonly DocEmphasis[];
   /** The cells, when this unit is a table.
    *
    *  🔴 CELLS, NOT A RENDERING OF CELLS. `text` carries a markdown grid so a model reading the
@@ -432,6 +434,7 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
     },
     id: block.id,
     text: unitText(block),
+    ...(block.emphasis?.length ? { emphasis: block.emphasis } : {}),
     type: BLOCK_TO_UNIT[block.kind] ?? "other",
     // A list item's own marker and nesting, which is the only thing downstream can read to know
     // whether the document ORDERED these items or merely listed them.

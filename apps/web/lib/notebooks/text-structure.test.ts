@@ -68,6 +68,19 @@ test("markdown headings become headings, and nest into a heading path", () => {
   assert.deepEqual(nominal?.headingPath, ["Contract Formation", "Consideration"]);
 });
 
+test("Markdown emphasis is stored as evidence rather than inferred from plain text later", () => {
+  const bytes = new TextEncoder().encode("# Constraints\n\n**Mass is conserved** while *volume may change*.");
+  const { model } = readTextDocument(bytes, { markdown: true });
+  const paragraph = model.blocks.find((block) => block.kind === "paragraph");
+  assert.deepEqual(paragraph?.emphasis, [
+    { kind: "bold", text: "Mass is conserved" },
+    { kind: "italic", text: "volume may change" },
+  ]);
+
+  const plain = readTextDocument(bytes, { markdown: false });
+  assert.ok(plain.model.blocks.every((block) => block.emphasis === undefined), "plain text never treats punctuation as formatting");
+});
+
 test("🔴 a fenced code block is opaque — its comments do not become headings", () => {
   // The fixture's Python contains `# This is a comment` and `# - not a list item either`.
   // Parsed naively both become structure, and the heading would then be inherited by every

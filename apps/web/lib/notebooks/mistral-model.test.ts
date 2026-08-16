@@ -140,6 +140,27 @@ test("a heading path is built from the heading stack and crosses page boundaries
   assert.equal(heading?.level, 2);
 });
 
+test("typographic emphasis survives after vendor Markdown is rendered as plain text", () => {
+  const model = modelFromMistral(
+    response([{ index: 0, markdown: "The **governing constraint** applies under *cyclic load*." }]),
+    "pdf",
+    null,
+  );
+  const paragraph = model?.blocks.find((block) => block.kind === "paragraph");
+  assert.equal(paragraph?.text, "The governing constraint applies under cyclic load.");
+  assert.deepEqual(paragraph?.emphasis, [
+    { kind: "bold", text: "governing constraint" },
+    { kind: "italic", text: "cyclic load" },
+  ]);
+
+  const stored = storedDocumentModel(JSON.parse(JSON.stringify(structureEnvelope({
+    model: model!,
+    text: documentToText(model!),
+    title: null,
+  }))));
+  assert.deepEqual(stored?.blocks.find((block) => block.kind === "paragraph")?.emphasis, paragraph?.emphasis);
+});
+
 test("equations, lists and tables keep their own kinds", () => {
   const model = modelFromMistral(
     response([

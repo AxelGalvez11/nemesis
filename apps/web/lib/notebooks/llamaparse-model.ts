@@ -14,7 +14,15 @@
  * table, and a box on everything, so the mapping is mostly renaming.
  */
 
-import { buildDocument, type DocBlock, type DocFormat, type DocRect, type DocUnit, type DocumentModel } from "@nemesis/shared";
+import {
+  buildDocument,
+  emphasisFromMarkup,
+  type DocBlock,
+  type DocFormat,
+  type DocRect,
+  type DocUnit,
+  type DocumentModel,
+} from "@nemesis/shared";
 
 import { tableFromHtml } from "./mistral-tables";
 
@@ -87,6 +95,10 @@ export function modelFromLlama(result: LlamaResult, format: DocFormat, title: st
   const stack: Array<{ level: number; text: string }> = [];
   const blocks: PendingBlock[] = [];
   const units: DocUnit[] = [];
+  const emphasisOf = (markup: string) => {
+    const emphasis = emphasisFromMarkup(markup);
+    return emphasis.length ? { emphasis } : {};
+  };
 
   const pages = [...result.pages].sort((a, b) => a.page - b.page);
   for (const [position, page] of pages.entries()) {
@@ -103,7 +115,7 @@ export function modelFromLlama(result: LlamaResult, format: DocFormat, title: st
     const rectOf = (item: LlamaItem) => rectFromBox(item.bBox, page);
 
     const header = (page.pageHeaderMarkdown ?? "").trim();
-    if (header) blocks.push({ headingPath: path(), kind: "pageHeader", text: header, unit });
+    if (header) blocks.push({ headingPath: path(), kind: "pageHeader", text: header, unit, ...emphasisOf(header) });
 
     for (const item of page.items ?? []) {
       const rect = rectOf(item);
@@ -112,10 +124,11 @@ export function modelFromLlama(result: LlamaResult, format: DocFormat, title: st
 
       if (item.type === "heading") {
         const level = Math.min(9, Math.max(1, item.lvl ?? 1));
+        const markup = (item.md ?? item.value ?? "").replace(/^#+\s*/, "").trim();
         const text = (item.value ?? item.md ?? "").replace(/^#+\s*/, "").trim();
         if (!text) continue;
         while (stack.length > 0 && (stack[stack.length - 1]?.level ?? 0) >= level) stack.pop();
-        blocks.push(withRect({ kind: "heading", level, text }));
+        blocks.push(withRect({ kind: "heading", level, text, ...emphasisOf(markup) }));
         stack.push({ level, text });
         continue;
       }
@@ -125,21 +138,25 @@ export function modelFromLlama(result: LlamaResult, format: DocFormat, title: st
         // used when no HTML came back.
         const table = (item.html ? tableFromHtml(item.html) : null)
           ?? (item.rows?.length ? { headerRows: 0, rows: item.rows } : null);
-        if (table) blocks.push(withRect({ kind: "table", table, text: "" }));
+        if (table) {
+          const markup = item.html ?? item.md ?? item.csv ?? "";
+          blocks.push(withRect({ kind: "table", table, text: "", ...emphasisOf(markup) }));
+        }
         continue;
       }
       const text = (item.value ?? item.md ?? "").trim();
-      if (text) blocks.push(withRect({ kind: "paragraph", text }));
+      const markup = (item.md ?? item.value ?? "").trim();
+      if (text) blocks.push(withRect({ kind: "paragraph", text, ...emphasisOf(markup) }));
     }
 
     // 🔴 THE SPEAKER NOTES, AS CONTENT RATHER THAN METADATA. They are the lecturer explaining the
     // slide, which for a learning system is worth more than the bullets on it. Filed against the
     // slide they belong to, so a citation still resolves to the right place.
     const notes = (page.slideSpeakerNotes ?? "").trim();
-    if (notes) blocks.push({ headingPath: path(), kind: "note", text: notes, unit });
+    if (notes) blocks.push({ headingPath: path(), kind: "note", text: notes, unit, ...emphasisOf(notes) });
 
     const footer = (page.pageFooterMarkdown ?? "").trim();
-    if (footer) blocks.push({ headingPath: path(), kind: "pageFooter", text: footer, unit });
+    if (footer) blocks.push({ headingPath: path(), kind: "pageFooter", text: footer, unit, ...emphasisOf(footer) });
   }
 
   if (units.length === 0 || blocks.length === 0) return null;

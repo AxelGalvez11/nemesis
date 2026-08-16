@@ -224,6 +224,7 @@ export * from "./extraction-coverage.ts";
 // different flattenings of it. Its rule travels with it: a locator is only ever
 // as specific as the format can honestly support.
 export * from "./document-model.ts";
+export * from "./document-emphasis.ts";
 // A third-party reader, normalised into the model above and nowhere else. Shared
 // because the adapter is the ONLY place Docling exists as far as Nemesis is
 // concerned: everything downstream — chunking, citations, facts, artifacts —
