@@ -79,3 +79,28 @@ bought nothing.
 the key is working, the same documents will spend the same units and actually return
 descriptions. Nothing about the ceilings changes; what changes is that the money buys
 something. Re-measure this table on the first successful figure-bearing parse.
+
+
+## 🔴 The one figure defect still open, and why it was NOT fixed tonight
+
+Measured on the owner's diabetes lecture after the vendor figure lane was repaired (#652): three
+figures are routed, sent, and paid for — **3 units, 1 call, confirmed in production** — and come back
+`vision-unavailable`. The reply could not be attributed.
+
+The cause is known and is not the credential, the model, or the payload size. `parseFigureDescriptions`
+refuses a reply whose entry count does not match the batch, because order is the only link between a
+batched reply and its inputs and a caption on the wrong diagram is worse than no caption. The model
+answers three images in **two** entries when two of them are halves of one slide, so the whole batch is
+discarded. It is non-deterministic: roughly 2 to 3 of 10 identical runs at temperature 0 land all
+three, which is why a document's figures come and go between reprocesses.
+
+**The obvious fix — split the batch and ask again — was written, tested, and reverted.** It works, and
+it spends units the ledger never granted: `vision-budget.ts` reserves before anything is sent, and a
+retry re-sends images already paid for. A test that pins "the wire carried the grant, not the 400 the
+document held" caught it. Shipping it would have reopened exactly the unmetered-spend hole this file
+exists to keep closed.
+
+So the real fix has two halves and needs both: **split the batch AND reserve the split's units on the
+same ledger**, refusing the split when the grant will not cover it. Until then the behaviour is honest
+rather than silent — those figures report `vision-unavailable`, which is true: they were sent and no
+usable answer came back.
