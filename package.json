@@ -20,6 +20,7 @@
     "guardrail:cleanup": "deno run --allow-net --allow-env --allow-read --allow-write scripts/guardrail-suite.ts --cleanup"
   },
   "devDependencies": {
+    "tsx": "^4.22.4",
     "turbo": "^2.5.0",
     "typescript": "^5.6.0"
   },
