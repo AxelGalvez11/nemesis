@@ -174,24 +174,44 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
       )}
       inert={!sidebarOpen}
     >
-      <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
-        <div className="flex h-9 shrink-0 items-center gap-1 px-2 pt-1">
-          <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] font-semibold tracking-[0.13em] text-foreground">NEMESIS</span>
+      <SidebarContent className="gap-0 overflow-hidden bg-transparent px-[var(--nav-row-inset)]">
+        {/* 🔴 THE BRAND BAND IS 52px AND ITS CONTROLS ARE 36px. It was `h-9` — which reads as 36 and
+            is 40.5 at this root font — carrying two `size="icon-xs"` buttons that measured 27×27
+            with 13.5px glyphs, against the reference's 36×36 with 20px glyphs. The glyph was the
+            worst of it: the code already asked for 20 (`size={NAV_ICON_PX}`) and the `icon-xs`
+            variant silently overrode it with `[&_svg:not([class*='size-'])]:size-3`. The explicit
+            number never applied, so making it larger would have changed nothing.
+            🔴 EVERY ICON HERE CARRIES ITS OWN `size-` CLASS, and that is load-bearing rather than
+            stylistic: the Button base ends in `[&_svg:not([class*='size-'])]:size-4`, so an icon
+            without one is silently resized to 18px. Naming the size is what opts out of that. */}
+        <div className="flex h-[var(--shell-header-height)] shrink-0 items-center gap-0 px-[calc(var(--shell-header-inset)-var(--nav-row-inset))]">
+          {/* Sits 10px in from the band, matching a nav row's text, so the wordmark and the labels
+              below it share one left edge instead of nearly sharing one. */}
+          <span className="min-w-0 flex-1 truncate px-[var(--nav-row-pad-x)] text-[length:var(--brand-wordmark-size)] font-semibold tracking-[0.13em] text-foreground">NEMESIS</span>
           <Button
             aria-label={searchOpen ? "Close chat search" : "Search chats"}
+            className="size-[var(--shell-icon-button)] rounded-[var(--shell-icon-button-radius)]"
             onClick={() => {
               setSearchOpen((value) => !value);
               if (searchOpen) setQuery("");
             }}
-            size="icon-xs"
+            size="icon"
             variant="ghost"
           >
-            {searchOpen ? <IconX /> : <IconSearch />}
+            {searchOpen
+              ? <IconX className="size-[var(--nav-icon-size)]" />
+              : <IconSearch className="size-[var(--nav-icon-size)]" />}
           </Button>
           {/* Same panel-left glyph as the reopen toggle (UX brief §27.1): one icon means "the
               sidebar", and the direction is carried by where the control is, not by the drawing. */}
-          <Button aria-label="Collapse sidebar" onClick={onCollapse} size="icon-xs" variant="ghost">
-            <PanelLeft size={NAV_ICON_PX} strokeWidth={2} />
+          <Button
+            aria-label="Collapse sidebar"
+            className="size-[var(--shell-icon-button)] rounded-[var(--shell-icon-button-radius)]"
+            onClick={onCollapse}
+            size="icon"
+            variant="ghost"
+          >
+            <PanelLeft className="size-[var(--nav-icon-size)]" strokeWidth={2} />
           </Button>
         </div>
         {searchOpen && showSessionSections && (
@@ -203,17 +223,26 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
         {/* Nav list — starts below the brand band. */}
         <SidebarGroup className="shrink-0 p-0 pb-2 pt-1">
           <SidebarGroupContent>
-            <SidebarMenu className="gap-px">
+            {/* Rows stack flush. `gap-px` made the pitch 37px against a 36px row, so a column of
+                five drifted a clean 5px away from the reference's rhythm. */}
+            <SidebarMenu className="gap-0">
               {SIDEBAR_NAV.map((item) => {
                 const destination = item.route ? `${navigationRoot}${item.route}` : null;
                 const active = navItemActive(pathname, destination);
                 const isNewSession = item.action === "new-session";
 
                 return (
-                  <SidebarMenuItem className="flex items-center gap-0.5" key={item.id}>
+                  <SidebarMenuItem className="flex items-center gap-0" key={item.id}>
                     <SidebarMenuButton
                       className={cn(
-                        "flex h-8 min-w-0 flex-1 justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[length:var(--canvas-text-small)] font-medium text-foreground transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none",
+                        // 🔴 THESE FOUR NUMBERS PUT THE LABEL AT x=42. Row inset 6 + padding 10
+                        // lands the 20px icon at 16, and a 6px gap lands the text at 42 — the
+                        // reference's exact text column. It was 11.25 + 9 + 20 + 9 = 50.3, which is
+                        // why every label sat visibly further from the edge than it should.
+                        // The `-1px` pays for the transparent border on the next line, which is
+                        // real layout: it reserves the ring the active state paints, so without
+                        // the subtraction every icon and label sat one pixel right of target.
+                        "flex h-[var(--nav-row-height)] min-w-0 flex-1 justify-start gap-[var(--nav-icon-gap)] rounded-[var(--nav-row-radius)] border border-transparent px-[calc(var(--nav-row-pad-x)-1px)] text-left text-[length:var(--canvas-text-small)] font-medium text-foreground transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none",
                         active &&
                           "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!",
                       )}
@@ -343,11 +372,13 @@ function StudentSidebarFooter({
   const router = useRouter();
 
   return (
-    <SidebarFooter className="sticky bottom-0 shrink-0 gap-1 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-2.5 py-2">
+    <SidebarFooter className="sticky bottom-0 shrink-0 gap-1 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-[var(--nav-row-inset)] py-2">
       <div className="flex min-w-0 items-center gap-1">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button aria-label="Account menu" className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left text-foreground transition-colors duration-100 ease hover:bg-(--ui-control-hover-background) active:scale-[0.99] motion-reduce:active:scale-100" size="sm" variant="ghost">
+            {/* Same inset and corner as a nav row, so the account reads as the bottom of the same
+                column rather than a differently-shaped control that happens to sit under it. */}
+            <Button aria-label="Account menu" className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-[var(--nav-row-radius)] px-1.5 py-1 text-left text-foreground transition-colors duration-100 ease hover:bg-(--ui-control-hover-background) active:scale-[0.99] motion-reduce:active:scale-100" size="sm" variant="ghost">
               <span className="grid size-6 shrink-0 place-items-center rounded-full bg-(--ui-bg-quaternary) text-[length:var(--canvas-text-meta)] font-semibold uppercase text-(--ui-text-secondary) shadow-[inset_0_0_0_1px_var(--ui-stroke-tertiary)]">{accountInitial}</span>
               <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-meta)] font-medium">{accountEmail || "Sign in"}</span>
               <span className="max-w-20 shrink truncate rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[length:var(--canvas-text-meta)] font-semibold text-(--theme-primary)">Student</span>

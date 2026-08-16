@@ -200,7 +200,7 @@ export function RecordingRecoveryNotice({ accessToken, uid = null, onRecovered }
 
 function Row({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto mb-4 flex w-full max-w-[770px] items-center gap-2.5 rounded-xl bg-(--ui-bg-elevated) px-3.5 py-2.5 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary) ring-1 ring-(--ui-stroke-tertiary)">
+    <div className="mx-auto mb-4 flex w-full max-w-[var(--composer-max-width)] items-center gap-2.5 rounded-xl bg-(--ui-bg-elevated) px-3.5 py-2.5 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary) ring-1 ring-(--ui-stroke-tertiary)">
       {children}
     </div>
   );

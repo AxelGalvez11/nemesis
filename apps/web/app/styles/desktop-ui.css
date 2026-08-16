@@ -525,7 +525,10 @@
     --image-preview-max-width: 34rem;
     --image-preview-height: clamp(16.25rem, calc(var(--vsq) * 100), 26.25rem);
 
-    --sidebar-width: 14.8125rem;
+    /* 🔴 WAS A SECOND, DEAD SOURCE OF TRUTH: 14.8125rem is 266.6px at this root font, but the
+       workspace shell overrides `--sidebar-width` per-instance, so nothing ever rendered at that
+       number and anyone reading this file would have believed it. Points at the token now. */
+    --sidebar-width: var(--nav-sidebar-width);
     --chat-min-width: 28rem;
     --titlebar-control-size: 1.25rem;
     --titlebar-control-height: 1.375rem;

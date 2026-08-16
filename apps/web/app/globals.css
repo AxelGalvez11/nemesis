@@ -154,8 +154,75 @@
   /* Desktop's warmed user bubble, translated to paper. */
   --user-bubble: #fbeef0; --user-bubble-border: #ecd2d6;
 
+  /* ── THE SPATIAL SYSTEM ────────────────────────────────────────────────────
+     viewport → sidebar → content frame → content column → objects.
+
+     Every number here was MEASURED in Chrome against the reference app at
+     1440×756, via getBoundingClientRect() on the live elements — not read off a
+     screenshot and not copied from a design file. The reference publishes these
+     as its own custom properties and, importantly, redefines NONE of them inside
+     a width media query: they are constants at every desktop width, with one
+     breakpoint (768px) where the sidebar becomes an overlay. So adopting them
+     costs nothing in responsiveness.
+
+     🔴 WRITE THESE IN PX, NEVER REM. `html { font-size: 112.5% }` in this app, so
+     one rem is 18px and every rem-based length silently arrives 1.125× larger
+     than its number reads. That is exactly how the sidebar drifted: `size-6`
+     meant 27px, not 24. px is the only unit here that means what it says.
+
+     Deriving a surface from these instead of hand-picking a value is the point —
+     Canvas, Library, Calendar and Stats all read the same frame. */
+  --nav-sidebar-width: 260px;      /* expanded sidebar column */
+  --nav-rail-width: 52px;          /* collapsed icon rail */
+  --nav-row-height: 36px;          /* one navigation row */
+  --nav-row-inset: 6px;            /* row's side margin inside the sidebar */
+  --nav-row-radius: 10px;
+  --nav-row-pad-x: 10px;           /* so a 20px icon starts 16px from the edge */
+  /* 🔴 `--nav-icon-size` IS DELIBERATELY NOT DECLARED HERE. It is published by the workspace shell
+     from `NAV_ICON_PX` in lib/workspace/sidebar-nav.ts, because the collapsed rail sizes its glyphs
+     from that TypeScript constant and a copy of the number here would be a second source — the
+     exact drift `canvas-shell.test.ts` already guards ("the property is ONE SOURCE, not the number
+     20 appearing twice"). The rail and the open sidebar drifted six pixels apart that way once. */
+  --nav-icon-gap: 6px;             /* icon → label, puts text at x=42 */
+  /* 🔴 THE WORDMARK IS SIZED ON CAP HEIGHT, NOT ON FONT-SIZE MATCHING. The reference sets its
+     brand at 18px mixed-case; NEMESIS is set in spaced capitals, and at the 14px it was using, its
+     caps stood ~10px against the reference's ~13px — visibly the smaller mark even though both
+     are "the logo". 18px puts the two cap heights on the same line. The uppercase and the 0.13em
+     tracking stay: that IS the Nemesis wordmark, and the brief is to match the reference's SCALE,
+     not to redraw our identity in its image. */
+  --brand-wordmark-size: 18px;
+  --shell-header-height: 52px;     /* brand band, and the content top bar */
+  --shell-header-inset: 8px;       /* header's own left/right padding */
+  --shell-icon-button: 36px;       /* a header/rail icon hit target */
+  --shell-icon-button-radius: 8px;
+  --content-max-width: 768px;      /* the content frame every surface centres in */
+  --page-gutter: 16px;             /* frame → text, leaving 736px readable */
+  --composer-max-width: 768px;     /* same frame, so they align exactly */
+  --composer-radius: 28px;
+  --composer-min-height: 52px;
+  /* The composer's controls are the SAME hit target and glyph as the sidebar header's, because
+     they are the same kind of object — a bare icon button on a surface. They were 28px boxes
+     holding 0.875rem (15.75px) glyphs against the reference's 36 and 20: the identical
+     undersizing the sidebar header had, in a second place. 8px inset puts the first control 8px
+     from the pill's edge and the last 8px from the other, which is what the reference measures. */
+  --composer-pad-x: 8px;
+  --composer-control: 36px;
+  --composer-icon: 20px;
+  /* A surface's own title. The reference sets its page titles at 28px; ours were 20px, which put
+     the Library heading closer to a section label than to the name of the page — part of why the
+     page read as flat. Weight stays ours (500 against their 400): the SCALE is what is being
+     borrowed, not the typeface's voice. */
+  --page-title-size: 28px;
+  --list-row-height: 60px;         /* Library / Calendar / Stats list row */
+  --section-gap: 20px;
+
   /* layout + type — desktop radius scale (card 8 / input 10 at radiusScalar 1) */
-  --radius: 10px; --radius-sm: 8px; --rail: 260px; --rail-collapsed: 64px; --evidence: 344px;
+  --radius: 10px; --radius-sm: 8px; --evidence: 344px;
+  /* 🔴 ALIASES, NOT A SECOND SOURCE OF TRUTH. `shell.css`'s older `.app`/`.rail`
+     grid still reads these; pointing them at the tokens above means the two
+     shells cannot drift apart again. `--rail-collapsed` was 64px here while the
+     shell that actually renders used 52px — the drift had already happened. */
+  --rail: var(--nav-sidebar-width); --rail-collapsed: var(--nav-rail-width);
   --radius-pill: 28px; --radius-menu: 12px; --radius-menu-item: 8px;
   --font: -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
   /* Desktop has no serif display face — the serif slot now resolves to the sans

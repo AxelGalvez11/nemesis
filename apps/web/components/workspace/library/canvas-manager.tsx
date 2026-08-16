@@ -224,10 +224,13 @@ export function CanvasManager({
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[880px] flex-col px-6 py-10">
+    // 🔴 THE SAME FRAME THE COMPOSER USES, so Library and Canvas share one content column instead
+    // of each choosing a width. It was `max-w-[880px]` against the reference's 768 — 112px wider,
+    // which is most of why this page read as spread out: the same rows, stretched.
+    <div className="mx-auto flex h-full w-full max-w-[var(--content-max-width)] flex-col px-[var(--page-gutter)] py-10">
       {/* ---------------------------------------------------------------- header */}
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="mr-auto text-[20px] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Library</h1>
+        <h1 className="mr-auto text-[length:var(--page-title-size)] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Library</h1>
 
         <div className="relative">
           <Search

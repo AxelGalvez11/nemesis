@@ -151,9 +151,19 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           nothing below the fold there is no scroll to track, no second position to morph to, and
           no `--first-screen-lift` for the two of them to share. A moving part that exists to
           manage a problem the page no longer has is just a moving part.
-          Measured on the reference at 1440×783: greeting, 36px, composer, then its rows. */}
-      <div className="flex h-full flex-col items-center overflow-y-auto px-6 pb-12 pt-[18vh]" ref={scroller}>
-        <section className="flex w-full flex-col items-center">
+          🔴 THE BLOCK IS CENTRED, NOT PUSHED DOWN FROM THE TOP (owner 2026-08-15: "composer is not
+          centered"). It was `pt-[18vh]`, which is not a centring rule — it is a fixed fraction of
+          the viewport, so the greeting and composer sat wherever 18% happened to land and the space
+          left underneath was whatever remained. Measured against the reference at the same width:
+          it balances its block almost exactly, 264.9px above and 264.1px below — 1 : 1.00. Ours was
+          130.9 above and 417.6 below, 1 : 3.19, so the whole composition hung in the upper third
+          with a void beneath it. `18vh` also could not be right at two viewport heights at once.
+          🔴 `my-auto`, NOT `justify-center`. Auto margins centre while there is free space and
+          collapse to zero when there is not, so a short viewport scrolls from the true top of the
+          greeting. `justify-center` on a scroll container centres past the top edge instead, and
+          the overflowing part becomes unreachable — the greeting would be the part it ate. */}
+      <div className="flex h-full flex-col items-center overflow-y-auto px-6 py-12" ref={scroller}>
+        <section className="my-auto flex w-full flex-col items-center">
           <h1 className="text-[length:var(--canvas-text-title)] font-medium tracking-[-0.01em] text-(--ui-text-primary)">
             What are you working on?
           </h1>
@@ -162,7 +172,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             being captured there is exactly one thing to do; leaving the text box live underneath
             offers a second. Same position, same width. */}
         {recording ? (
-          <div className="pointer-events-auto w-full max-w-[770px]">
+          <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
             <CanvasRecorder
               // No canvas exists yet on the front door, so a finished recording STARTS one — the
               // identical thing dropping a file here does, through the identical door.
@@ -171,7 +181,9 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             />
           </div>
         ) : (
-        <div className="pointer-events-auto flex w-full max-w-[770px] min-h-[54px] items-center gap-0 rounded-[27px] bg-(--ui-bg-elevated) px-[14px] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)">
+        // Was 770 × 54 at radius 27, hand-tuned within 2px of the reference's 768 × 52 at 28.
+        // Reading the tokens instead is what keeps it aligned with the Library frame below it.
+        <div className="pointer-events-auto flex w-full max-w-[var(--composer-max-width)] min-h-[var(--composer-min-height)] items-center gap-0 rounded-[var(--composer-radius)] bg-(--ui-bg-elevated) px-[var(--composer-pad-x)] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)">
           {/* 🔴 A REAL FILE INPUT, NOT A BUTTON THAT ROUTES. `sr-only`, never `hidden`: a hidden
               input leaves the tab order and the accessibility tree, which makes the label wrapping
               it unreachable by keyboard — the same rule the session composer's attach control
@@ -198,12 +210,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               aria-expanded={addOpen}
               aria-haspopup="menu"
               aria-label="Add material"
-              className="flex h-[28px] w-[28px] items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)"
+              className="flex size-[var(--composer-control)] items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)"
               onClick={() => setAddOpen((open) => !open)}
               title="Add material"
               type="button"
             >
-              <Codicon name="add" size="0.875rem" />
+              <Codicon name="add" size="var(--composer-icon)" />
             </button>
             {addOpen && (
               <div
@@ -238,21 +250,21 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               </div>
               <button
                 aria-label="Cancel dictation"
-                className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                className="flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
                 onClick={cancelDictation}
                 title="Cancel dictation"
                 type="button"
               >
-                <Codicon name="close" size="0.875rem" />
+                <Codicon name="close" size="var(--composer-icon)" />
               </button>
               <button
                 aria-label="Finish dictation"
-                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
+                className="ml-[10px] flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
                 onClick={acceptDictation}
                 title="Finish dictation"
                 type="button"
               >
-                <Codicon name="check" size="0.875rem" />
+                <Codicon name="check" size="var(--composer-icon)" />
               </button>
             </>
           ) : (
@@ -266,7 +278,9 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 // reads as intentional. Binding this to the scale would make a future type tweak
                 // silently break input focus on every iPhone. The session composer carries the same
                 // literal for the same reason.
-                className="ml-[12px] min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                // 8px after the control, matching the reference's gap — it was 12, which pushed the
+                // caret 4px further from the `+` than the `+` sits from the pill's own edge.
+                className="ml-[var(--composer-pad-x)] min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
                 onChange={(event) => {
                   setText(event.target.value);
                   typedBefore.current = event.target.value;
@@ -283,22 +297,22 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               {dictation.supported && (
                 <button
                   aria-label="Dictate"
-                  className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  className="flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
                   onClick={startDictation}
                   title="Dictate"
                   type="button"
                 >
-                  <Codicon name="mic" size="0.875rem" />
+                  <Codicon name="mic" size="var(--composer-icon)" />
                 </button>
               )}
               <button
                 aria-label="Start"
-                className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
+                className="ml-[8px] flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
                 disabled={!text.trim()}
                 onClick={start}
                 type="button"
               >
-                <Codicon name="arrow-up" size="0.875rem" />
+                <Codicon name="arrow-up" size="var(--composer-icon)" />
               </button>
             </>
           )}
