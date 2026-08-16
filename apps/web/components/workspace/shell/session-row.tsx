@@ -7,6 +7,8 @@
 import type * as React from "react";
 import { useState } from "react";
 
+import { usePrompt } from "@/components/desktop-ui/prompt-dialog";
+
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import {
@@ -55,12 +57,14 @@ export function SidebarSessionRow({
 }: SidebarSessionRowProps) {
   const title = session.title || "New chat";
   const age = formatAge(session.updatedAt);
+  const ask = usePrompt();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const handleRename = () => {
-    // Simple prompt-based rename for v1 (desktop uses an inline dialog).
-    const next = window.prompt("Rename chat", title);
-    if (next && next.trim().length > 0) onRename(next.trim());
+  const handleRename = async () => {
+    // Was a `window.prompt`, described in its own comment as "for v1". The product's dialog does
+    // the same job, prefilled and selected, and cannot be switched off by the browser.
+    const next = await ask({ confirmLabel: "Rename", initial: title, title: "Rename chat" });
+    if (next) onRename(next);
   };
 
   return (
@@ -89,7 +93,7 @@ export function SidebarSessionRow({
                 <Codicon name={isPinned ? "pinned" : "pin"} size="0.875rem" />
                 {isPinned ? "Unpin" : "Pin"}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={handleRename}>
+              <DropdownMenuItem onSelect={() => void handleRename()}>
                 <Codicon name="edit" size="0.875rem" />
                 Rename
               </DropdownMenuItem>

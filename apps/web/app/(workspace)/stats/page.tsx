@@ -16,8 +16,11 @@
 
 export default function StatsPage() {
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[42rem] flex-col justify-center px-6 py-16">
-      <h1 className="text-[1.5rem] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Stats</h1>
+    // 🔴 `42rem` WAS 756px, NOT 672. At this app's 112.5% root a rem is 18px, so a width written in
+    // rem lands 12.5% wider than it reads and moves again if the type scale is ever retuned. Same
+    // frame as Library and the composer now, in px, so the three surfaces share one column.
+    <div className="mx-auto flex min-h-full w-full max-w-[var(--content-max-width)] flex-col justify-center px-[var(--page-gutter)] py-16">
+      <h1 className="text-[length:var(--page-title-size)] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Stats</h1>
       <p className="mt-3 text-[0.9375rem] leading-relaxed text-(--ui-text-secondary)">
         This is where what Nemesis has learned about your thinking will live: which ideas are
         holding, which are fading, and when they are due to come back.

@@ -40,10 +40,15 @@ import { cn } from "@/lib/utils";
  * good spacing, strong hierarchy, minimal chrome, clear active states." So the geometry is taken
  * and the colours are ours: rows use the workspace's own control tokens, not sampled greys.
  */
-export const NAV_RAIL_WIDTH_PX = 52;
-
-/** Row size and rhythm, from the same calibration. A row is its own hit target: 36px square. */
-const ROW_PX = 36;
+/**
+ * 🔴 THE RAIL'S GEOMETRY LIVES IN `globals.css` NOW, not in this file. Its width and its row size
+ * were right, but they were right in TypeScript while the open sidebar's equivalents were declared
+ * in CSS — two places to change, and the pair had already drifted (`--rail-collapsed` said 64px
+ * while this said 52). Both states now read `--nav-rail-width` and `--nav-row-height`, so the rail
+ * and the sidebar cannot disagree about how wide the column is or how tall a row stands.
+ */
+const RAIL_WIDTH = "var(--nav-rail-width)";
+const ROW_SIZE = "var(--nav-row-height)";
 
 interface NavRailProps {
   accountEmail: string;
@@ -65,7 +70,7 @@ export function NavRail({ accountEmail, onExpand }: NavRailProps) {
       // as part of the page; the OPEN sidebar is the state that earns a surface of its own.
       className="flex h-full flex-col items-center py-2"
       data-nav-rail=""
-      style={{ width: `${NAV_RAIL_WIDTH_PX}px` }}
+      style={{ width: RAIL_WIDTH }}
     >
       {/* Expand sits where the brand does in the open sidebar, so the two states share a corner and
           the control does not appear to move when it opens. Same panel-left glyph as the sidebar's
@@ -147,7 +152,7 @@ function RailButton({
         active && "bg-(--ui-control-active-background) text-(--ui-text-primary)",
       )}
       onClick={onClick}
-      style={{ height: `${ROW_PX}px`, width: `${ROW_PX}px` }}
+      style={{ height: ROW_SIZE, width: ROW_SIZE }}
       type="button"
     >
       {children}

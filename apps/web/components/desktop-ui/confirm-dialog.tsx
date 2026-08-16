@@ -40,6 +40,14 @@ export interface ConfirmRequest {
    *  "OK". A button that says what it does is the last chance to notice. */
   confirmLabel?: string;
   cancelLabel?: string;
+  /**
+   * 🔴 A STATEMENT, NOT A QUESTION — this is what replaces `window.alert`. There is nothing to
+   * decline, so the cancel button is dropped and the remaining one is neutral rather than
+   * destructive: a lone red "Delete" on a message that says "Added 3 sources" reads as a threat.
+   * Escape and a click outside still dismiss, because an acknowledgement the student cannot
+   * dismiss with the key they already use everywhere else is a trap.
+   */
+  acknowledge?: boolean;
 }
 
 type Ask = (request: ConfirmRequest) => Promise<boolean>;
@@ -102,11 +110,18 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               {/* Cancel is autofocused, so the safe answer is the one Enter and
                   Escape both give. Destructive actions should take a deliberate
                   click, never a reflex keypress. */}
-              <button autoFocus className="confirm-cancel" onClick={() => settle(false)} type="button">
-                {request.cancelLabel ?? "Cancel"}
-              </button>
-              <button className="confirm-del" onClick={() => settle(true)} type="button">
-                {request.confirmLabel ?? "Delete"}
+              {request.acknowledge ? null : (
+                <button autoFocus className="confirm-cancel" onClick={() => settle(false)} type="button">
+                  {request.cancelLabel ?? "Cancel"}
+                </button>
+              )}
+              <button
+                autoFocus={request.acknowledge}
+                className={request.acknowledge ? "confirm-cancel" : "confirm-del"}
+                onClick={() => settle(true)}
+                type="button"
+              >
+                {request.confirmLabel ?? (request.acknowledge ? "OK" : "Delete")}
               </button>
             </div>
           </div>

@@ -46,7 +46,12 @@ const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*
 const rowMenu = source.slice(source.indexOf("function RowMenu"));
 
 test("🔴 the row action control is drawn at rest, not only on hover", () => {
-  const button = /<button\s+aria-label=\{`Actions for[\s\S]{0,600}?<\/button>/.exec(rowMenu);
+  // The window is generous because the control's own markup grew — it is a 36px box with a named
+  // radius now, and the class list alone is longer than the 600 characters this used to allow.
+  // A guard that stops matching when the thing it guards is edited is a guard that has quietly
+  // stopped guarding: this failed with "expected the per-row action button", which reads as the
+  // button being GONE rather than as the regex being too tight.
+  const button = /<button\s+aria-label=\{`Actions for[\s\S]{0,1400}?<\/button>/.exec(rowMenu);
   assert.ok(button, "expected the per-row action button");
   const markup = button[0];
   assert.ok(
@@ -60,7 +65,11 @@ test("🔴 the row action control is drawn at rest, not only on hover", () => {
   assert.ok(!/\bhidden\b|\binvisible\b/.test(markup), "and it must not be hidden by any other spelling");
   // It is still QUIET, which is the other half of §19 — the faintest text colour, no fill, no
   // border at rest. A guard that only checked visibility would be satisfied by a loud button.
-  assert.match(markup, /text-\(--ui-text-quaternary\)/, "visible does not mean prominent (§19)");
+  // Still QUIET, but the exact step is allowed to move: the control went from quaternary to
+  // tertiary to match the reference's own row-action colour, which is one notch stronger and
+  // still the faintest thing in the row. What must not happen is a fill, a border, or the text
+  // colour — that is what the next two assertions hold.
+  assert.match(markup, /text-\(--ui-text-(?:tertiary|quaternary)\)/, "visible does not mean prominent (§19)");
   assert.ok(!/\bborder\b|\bring-1\b|bg-\(--ui-bg-elevated\)/.test(markup), "no border or fill at rest");
 });
 
@@ -83,25 +92,42 @@ test("every action in the row menu is drawn as well as named", () => {
   assert.ok(!/icon\?: LucideIcon/.test(source), "an optional icon is an action that can go undecorated");
 });
 
-test("the filter tabs, the sort and the folder control all carry an affordance", () => {
-  // Filter tabs: a control with a selected state, not two words in the breadcrumb's grey.
-  assert.match(source, /<ScopeTab active=\{scope === undefined\} icon=\{Layers\}/);
-  assert.match(source, /<ScopeTab active=\{false\} icon=\{Inbox\}/);
+test("the filter tab, the sort and the folder control all carry an affordance", () => {
+  // Filter tab: a control with a selected state, not two words in the breadcrumb's grey.
+  assert.match(source, /<ScopeTab\b[\s\S]{0,400}?active=\{scope === undefined\}/);
   assert.match(source, /aria-pressed=\{active\}/, "the selected view must be announced, not only tinted");
 
-  // Sort: a glyph on the left, and 🔴 DELIBERATELY NO SECOND CHEVRON — it is a native <select>, so
-  // the browser already draws one on the right.
-  const sort = source.slice(source.indexOf('aria-label="Sort canvases"') - 700, source.indexOf('aria-label="Sort canvases"') + 400);
-  assert.match(sort, /<ArrowUpDown/);
-  assert.ok(!/Chevron/.test(sort), "a native select draws its own arrow; a second one says menu twice");
+  // 🔴 THE "UNFILED" TAB IS GONE AND THE SCOPE IS NOT (owner 2026-08-15: "remove the 'unfiled'
+  // button"). This used to assert a second `<ScopeTab … icon={Inbox}` and it is not coming back —
+  // but the CAPABILITY must, or removing a control would have removed a feature. Both remaining
+  // routes out of a folder are held here: the menu item, and the drop target that took the tab's
+  // place on "All canvases".
+  assert.match(source, /label: "Move to Unfiled"/, "unfiled is still reachable without the tab");
+  assert.match(source, /onDropInto=\{dragging \? \(\) => void dropInto\(null\) : undefined\}/,
+    "and a canvas can still be dragged back OUT of a folder");
+
+  // 🔴 SORT LIVES ON THE COLUMN HEADERS NOW, not in a menu — so this used to read the markup
+  // around `aria-label="Sort canvases"`, which no longer exists. One header per column, each
+  // naming the ordering it applies, and the active one drawing a direction.
+  assert.match(source, /<SortHeader column="name"/);
+  assert.match(source, /<SortHeader column="recent"/);
+  assert.match(source, /<SortHeader column="created"/);
+  const sortHeader = source.slice(source.indexOf("function SortHeader"));
+  assert.match(sortHeader, /aria-pressed=\{active\}/, "which column is sorting must be announced");
+  assert.match(sortHeader, /\{active && <Arrow\b/, "and drawn, not only announced");
 
   assert.match(source, /<FolderPlus/, "New folder keeps a glyph");
   assert.match(source, /<Search/, "the search field keeps its glyph");
 });
 
 test("a canvas row is distinguishable from a folder row at a glance, and says nothing it cannot know", () => {
-  assert.match(source, /<FolderIcon className="shrink-0/, "folders are marked");
-  assert.match(source, /<PanelsTopLeft className="shrink-0/, "and so are canvases — a row used to carry no glyph at all");
+  // 🔴 THE GLYPH MOVED INSIDE A TILE, so the spelling moved with it. Both rows render through one
+  // `RowIcon`, which is what makes a folder and a canvas read as two KINDS of object rather than
+  // two weights of text — the tile is the part that does that work, and it is asserted below.
+  assert.match(source, /<RowIcon icon=\{FolderIcon\} \/>/, "folders are marked");
+  assert.match(source, /<RowIcon icon=\{PanelsTopLeft\} \/>/, "and so are canvases — a row used to carry no glyph at all");
+  const rowIcon = source.slice(source.indexOf("function RowIcon"));
+  assert.match(rowIcon, /size-\[var\(--list-icon-tile\)\]/, "the glyph sits in a sized tile, not loose against the name");
   // The learner's own pin survives; it is the one honest per-canvas distinction there is.
   assert.match(source, /canvas\.pinnedAt && <Pin\b/);
 

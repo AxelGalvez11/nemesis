@@ -12,10 +12,13 @@ import { WorkspacePreviewProvider } from "@/components/workspace/preview-context
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import type { CanvasTable } from "@/lib/library/canvas-index";
 
+// `createdAt` is present here for the same reason the canvas rows carry one: without it the
+// preview renders an em dash where production renders a date, and a preview that is missing a
+// column is exactly the kind of screenshot that gets read as "the column is broken".
 const FOLDERS = [
-  { id: "f-fall", name: "Fall 2026", parentId: null },
-  { id: "f-phcy", name: "PHCY 2105", parentId: "f-fall" },
-  { id: "f-pharm", name: "Pharmacology", parentId: null },
+  { createdAt: "2026-07-28T09:00:00.000Z", id: "f-fall", name: "Fall 2026", parentId: null },
+  { createdAt: "2026-08-02T09:00:00.000Z", id: "f-phcy", name: "PHCY 2105", parentId: "f-fall" },
+  { createdAt: "2025-11-14T09:00:00.000Z", id: "f-pharm", name: "Pharmacology", parentId: null },
 ];
 
 const TITLES = [
@@ -34,6 +37,7 @@ interface Row {
   title: string;
   state: string;
   updated_at: string;
+  created_at: string;
   pinned_at: string | null;
   folder_id: string | null;
   deleted: boolean;
@@ -41,6 +45,8 @@ interface Row {
 
 /** 84 canvases, so the surface shows its own truncation rather than a tidy short list. */
 const ROWS: Row[] = Array.from({ length: 84 }, (_, index) => ({
+  // Spread over a year so the Created column shows real variety rather than 84 copies of today.
+  created_at: new Date(Date.now() - index * 4 * 86_400_000).toISOString(),
   deleted: false,
   folder_id: index < 2 ? "f-phcy" : index < 4 ? "f-pharm" : null,
   id: `preview-${index}`,
@@ -93,7 +99,13 @@ function previewTable(): CanvasTable {
         }
         return 0;
       });
-      return Promise.resolve({ count: sorted.length, data: sorted.slice(from, to + 1), error: null });
+      // 🔴 THE PREVIEW ANSWERS SLOWLY ON PURPOSE. An in-memory array resolves in the same tick,
+      // so the placeholder rows would be mounted and unmounted before a single frame was painted
+      // — and the one state this harness exists to let anyone LOOK at would be the one state it
+      // could never show. 450ms is roughly what the real query costs over a cold connection.
+      return new Promise((resolve) =>
+        setTimeout(() => resolve({ count: sorted.length, data: sorted.slice(from, to + 1), error: null }), 450),
+      );
     },
     select: () => make(current, orders),
   });

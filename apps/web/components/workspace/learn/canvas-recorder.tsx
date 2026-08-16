@@ -107,7 +107,7 @@ export function CanvasRecorder({ attach, onClose }: Props) {
   ), []);
 
   return (
-    <div className="mx-auto w-full max-w-[770px]" data-slot="canvas-recorder">
+    <div className="mx-auto w-full max-w-[var(--composer-max-width)]" data-slot="canvas-recorder">
       <RecordWorkspace
         accessToken={accessToken}
         active={active}

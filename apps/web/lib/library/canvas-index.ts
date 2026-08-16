@@ -26,9 +26,16 @@ const TABLE = "learning_canvases";
 /** How many rows one page of the library holds. */
 export const PAGE_SIZE = 60;
 
-/** 🔴 TWO OPTIONS, NOT A SORT MATRIX. §L asks for "sort where useful" and bans a full desktop
- *  file explorer; a clickable header per column is that explorer's first component. */
-export type CanvasSort = "recent" | "name";
+/** One sort per column the table shows, and nothing beyond that.
+ *
+ *  🔴 THIS USED TO SAY "TWO OPTIONS, NOT A SORT MATRIX", on the grounds that a clickable column
+ *  header is a desktop file explorer's first component. The ban still holds and this does not
+ *  breach it: a matrix is every column crossed with a direction crossed with a grouping, and
+ *  what is here is three columns each with the one ordering that is obviously meant. The reason
+ *  it changed is that the sort moved ONTO the headers — a control that names the thing it orders
+ *  beats a separate menu naming it a second time, and the menu it replaces was the surface's
+ *  widest control for its least-used function. */
+export type CanvasSort = "recent" | "name" | "created";
 
 export interface CanvasQuery {
   /** Free text matched against the title, in the database. Empty means "everything". */
@@ -69,6 +76,7 @@ interface CanvasRowShape {
   title: string;
   state: string;
   updated_at: string;
+  created_at: string;
   pinned_at: string | null;
   folder_id: string | null;
 }
@@ -89,7 +97,7 @@ export async function searchCanvases(
 
   const search = (query.search ?? "").trim();
 
-  let builder = table().select("id,title,state,updated_at,pinned_at,folder_id", { count: "exact" });
+  let builder = table().select("id,title,state,updated_at,created_at,pinned_at,folder_id", { count: "exact" });
   builder = builder.eq("deleted", false);
 
   // 🔴 SCOPING IS THREE-VALUED AND `null` IS NOT "NO FILTER". `undefined` means every folder;
@@ -102,8 +110,14 @@ export async function searchCanvases(
   // 🔴 IN THE QUERY. This is the line the whole module exists for.
   if (search) builder = builder.ilike("title", `%${escapeLike(search)}%`);
 
-  if ((query.sort ?? "recent") === "name") {
+  const sort = query.sort ?? "recent";
+  if (sort === "name") {
     builder = builder.order("title", { ascending: true });
+  } else if (sort === "created") {
+    // Newest first, like every other date order here. 🔴 NO `pinned_at` LEAD. Pinning means
+    // "keep this within reach", which is a claim about now; putting pinned rows first inside a
+    // list explicitly ordered by when things were MADE would state a false chronology.
+    builder = builder.order("created_at", { ascending: false });
   } else {
     builder = builder
       .order("pinned_at", { ascending: false, nullsFirst: false })
@@ -122,6 +136,7 @@ export async function searchCanvases(
 
   const rows = (data as CanvasRowShape[]).map(
     (row): CanvasSummary => ({
+      createdAt: row.created_at,
       folderId: row.folder_id,
       id: row.id,
       pinnedAt: row.pinned_at,

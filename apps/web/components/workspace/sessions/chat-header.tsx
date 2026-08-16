@@ -3,10 +3,12 @@
 // ChatHeader — session title pill in the titlebar band (shell spec §B1).
 // Chevron opens a rename/pin/delete menu (store API: rename/togglePin/remove;
 // no "archive" — the store has no archive verb, so it is omitted here, see
-// the C1 builder report). Rename reuses the same window.prompt v1 pattern as
-// the sidebar session row (components/workspace/shell/session-row.tsx).
+// the C1 builder report). Rename uses the product's own prompt dialog, the same
+// one the sidebar session row uses (components/desktop-ui/prompt-dialog.tsx).
 
 import { useState } from "react";
+
+import { usePrompt } from "@/components/desktop-ui/prompt-dialog";
 import { IconLayoutSidebarRightExpand } from "@tabler/icons-react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -30,12 +32,13 @@ const TITLEBAR_HEADER_TITLE_CLASS = "min-w-0 flex-1 overflow-hidden";
 
 export function ChatHeader({ session, onOpenRail, railOpen, hideRail = false }: { session: WorkspaceSession | null; onOpenRail: () => void; railOpen: boolean; hideRail?: boolean }) {
   const confirm = useConfirm();
+  const ask = usePrompt();
   const [menuOpen, setMenuOpen] = useState(false);
   const title = session?.title || "New chat";
 
-  const handleRename = () => {
-    const next = window.prompt("Rename chat", title);
-    if (session && next && next.trim().length > 0) sessionsStore.rename(session.id, next.trim());
+  const handleRename = async () => {
+    const next = await ask({ confirmLabel: "Rename", initial: title, title: "Rename chat" });
+    if (session && next) sessionsStore.rename(session.id, next);
   };
 
   return (
@@ -62,7 +65,7 @@ export function ChatHeader({ session, onOpenRail, railOpen, hideRail = false }: 
               <Codicon name={session.pinned ? "pinned" : "pin"} size="0.875rem" />
               {session.pinned ? "Unpin" : "Pin"}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={handleRename}>
+            <DropdownMenuItem onSelect={() => void handleRename()}>
               <Codicon name="edit" size="0.875rem" />
               Rename
             </DropdownMenuItem>

@@ -186,7 +186,14 @@
    unaffected in precedence; names are disjoint from the portal token set. */
 @layer base {
   :root {
-    --theme-foreground: #000000;
+    /* 🔴 #0d0d0d, NOT PURE BLACK (owner 2026-08-15: light mode should match the reference's
+       colours). This is the base of the whole light text ramp — `--ui-base` reads it and
+       `--ui-text-primary/secondary/tertiary` are alpha steps off that — so body text landed on
+       #000000, which no production UI uses on paper: at full contrast against a near-white page it
+       reads harder than the reference and makes long text feel heavier than it is. Measured on the
+       reference in light mode: #0d0d0d. The dark-mode base is already #ededed rather than #ffffff
+       for the same reason, so this makes the two themes consistent with each other as well. */
+    --theme-foreground: #0d0d0d;
     /* DEFAULT ACCENT = NEUTRAL GRAPHITE (owner 2026-07-28: retire the red).
        These six were #cc1f33 and its pink tints, which is why every fill,
        stroke and row hover derived from --ui-accent carried a faint pink.
@@ -199,8 +206,12 @@
     --theme-accent-soft: #ededed;
     --theme-midground: #404040;
     --theme-warm: #404040;
-    --theme-background-seed: #ffffff;
-    --theme-sidebar-seed: #fafafa;
+    /* 🔴 PAGE AND SIDEBAR ARE THE SAME GREY IN LIGHT MODE. The reference paints both #fcfcfc —
+       there is no darker rail on paper, which is why its sidebar reads as part of the page rather
+       than as a panel bolted to it. Ours seeded the page at pure #ffffff and the sidebar a step
+       below at #fafafa, so the split was visible as a vertical seam the reference does not have. */
+    --theme-background-seed: #fcfcfc;
+    --theme-sidebar-seed: #fcfcfc;
     --theme-card-seed: #ffffff;
     --theme-elevated-seed: #ffffff;
     --theme-bubble-seed: #f4f4f4;
@@ -381,10 +392,23 @@
     --canvas-text-lead: 18px;
     --canvas-text-title: 24px;
 
+    /* 🔴 THE LIGHT RAMP IS CALIBRATED, THE DARK ONE IS PINNED BELOW. These four steps used to be
+       shared by both themes, which cannot be right: the same alpha over a near-white page and over
+       a near-black one lands at two different places on the contrast curve, and only one of them
+       was ever checked. Measured on the reference in light mode, its text ladder is
+       #0d0d0d / #5d5d5d / #8f8f8f — 13 / 93 / 143. Over this theme's page that solves to 100% /
+       66% / 45%, which is what these now are; at the old 74/54 they rendered 75 and 122, so
+       secondary was too dark and tertiary too light — the two were nearly the same colour and the
+       ladder had no middle.
+       🔴 CHANGING THESE ALONE WOULD HAVE DIMMED DARK MODE. On a dark ground a LOWER percentage is
+       less contrast, so 74→66 and 54→45 would have quietly faded every secondary label in the
+       theme that was not being examined. Both dark blocks restate the old values for that reason —
+       and there are two of them (default and charcoal tone), which the note above this section
+       already warns must list the same variables. */
     --ui-text-primary: color-mix(in srgb, var(--ui-base) 100%, transparent);
-    --ui-text-secondary: color-mix(in srgb, var(--ui-base) 74%, transparent);
-    --ui-text-tertiary: color-mix(in srgb, var(--ui-base) 54%, transparent);
-    --ui-text-quaternary: color-mix(in srgb, var(--ui-base) 36%, transparent);
+    --ui-text-secondary: color-mix(in srgb, var(--ui-base) 66%, transparent);
+    --ui-text-tertiary: color-mix(in srgb, var(--ui-base) 45%, transparent);
+    --ui-text-quaternary: color-mix(in srgb, var(--ui-base) 30%, transparent);
     --ui-stroke-primary: color-mix(in srgb, var(--ui-base) 18%, transparent);
     --ui-stroke-secondary: color-mix(in srgb, var(--ui-base) 12%, transparent);
     --ui-stroke-tertiary: color-mix(in srgb, var(--ui-base) 8%, transparent);
@@ -525,7 +549,10 @@
     --image-preview-max-width: 34rem;
     --image-preview-height: clamp(16.25rem, calc(var(--vsq) * 100), 26.25rem);
 
-    --sidebar-width: 14.8125rem;
+    /* 🔴 WAS A SECOND, DEAD SOURCE OF TRUTH: 14.8125rem is 266.6px at this root font, but the
+       workspace shell overrides `--sidebar-width` per-instance, so nothing ever rendered at that
+       number and anyone reading this file would have believed it. Points at the token now. */
+    --sidebar-width: var(--nav-sidebar-width);
     --chat-min-width: 28rem;
     --titlebar-control-size: 1.25rem;
     --titlebar-control-height: 1.375rem;
@@ -557,6 +584,12 @@
      list the SAME variables or a tone switch leaves stale values behind. */
   :root[data-theme='dark'] {
     --theme-foreground: #ffffff;
+    /* Dark's text ramp, pinned at the values both themes shared before the light one was
+       calibrated — see the note at the light declaration. Unchanged behaviour, stated explicitly
+       so it cannot drift when light is tuned again. */
+    --ui-text-secondary: color-mix(in srgb, var(--ui-base) 74%, transparent);
+    --ui-text-tertiary: color-mix(in srgb, var(--ui-base) 54%, transparent);
+    --ui-text-quaternary: color-mix(in srgb, var(--ui-base) 36%, transparent);
     /* Dark takes a LIGHTER graphite than light theme's: #404040 on a near-black
        background is almost invisible, and this still carries white button text
        at ~4.3:1. Same reasoning as the light block above. */

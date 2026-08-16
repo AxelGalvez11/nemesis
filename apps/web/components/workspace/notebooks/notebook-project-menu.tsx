@@ -23,11 +23,13 @@ import { searchWebContext } from "@/lib/workspace/chat-api";
 import { extractAndAddUrl } from "./notebook-source-actions";
 import { useNotebooks } from "./notebooks-store";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import { usePrompt } from "@/components/desktop-ui/prompt-dialog";
 
 const MAX_FOUND_SOURCES = 3;
 
 export function NotebookProjectMenu() {
   const confirm = useConfirm();
+  const ask = usePrompt();
   const notebooks = useNotebooks();
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
@@ -36,8 +38,8 @@ export function NotebookProjectMenu() {
 
   if (!selected) return null;
 
-  function rename() {
-    const next = window.prompt("Rename project", selected?.name)?.trim();
+  async function rename() {
+    const next = await ask({ confirmLabel: "Rename", initial: selected?.name, title: "Rename project" });
     if (selected && next && next !== selected.name) void notebooks.rename(selected.id, next);
   }
 
@@ -52,7 +54,12 @@ export function NotebookProjectMenu() {
 
   async function findSources() {
     if (!selected || finding) return;
-    const topic = window.prompt("What should Nemesis find sources about?", selected.name)?.trim();
+    const topic = await ask({
+      confirmLabel: "Find sources",
+      initial: selected.name,
+      placeholder: "A topic",
+      title: "What should Nemesis find sources about?",
+    });
     if (!topic) return;
     setFinding(true);
     try {
@@ -69,11 +76,21 @@ export function NotebookProjectMenu() {
           // Unreadable page — skip it and keep going.
         }
       }
-      window.alert(added > 0
-        ? `Added ${added} source${added === 1 ? "" : "s"} about “${topic}”. They're in the Sources card now.`
-        : "Found pages, but none could be read. Try a different topic.");
+      await confirm({
+        acknowledge: true,
+        body: added > 0
+          ? `They're in the Sources card now.`
+          : "Found pages, but none could be read. Try a different topic.",
+        title: added > 0
+          ? `Added ${added} source${added === 1 ? "" : "s"} about “${topic}”`
+          : "Nothing could be added",
+      });
     } catch (cause) {
-      window.alert(cause instanceof Error ? cause.message : "Couldn't find sources. Try again.");
+      await confirm({
+        acknowledge: true,
+        body: cause instanceof Error ? cause.message : "Couldn't find sources. Try again.",
+        title: "That didn't work",
+      });
     } finally {
       setFinding(false);
     }
@@ -85,7 +102,7 @@ export function NotebookProjectMenu() {
         <Button aria-label="Project actions" className="size-8 rounded-lg" size="icon" variant="ghost"><Codicon name="ellipsis" size="1.05rem" /></Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={rename}><Codicon name="edit" size="0.875rem" /> Rename project</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void rename()}><Codicon name="edit" size="0.875rem" /> Rename project</DropdownMenuItem>
         <DropdownMenuItem disabled={finding} onSelect={() => void findSources()}>
           <Codicon name="search" size="0.875rem" /> {finding ? "Finding sources…" : "Find sources"}
         </DropdownMenuItem>

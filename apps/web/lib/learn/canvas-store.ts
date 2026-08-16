@@ -246,12 +246,20 @@ export interface CanvasSummary {
   /** Set when the learner pinned it. Pinned sessions sort first. */
   pinnedAt?: string | null;
   folderId?: string | null;
+  /** When the canvas was first made. Optional because only Library asks for it — the front
+   *  door's `listCanvases` does not select it, and a second row type for one extra column is
+   *  how two readers of one table drift apart. `learning_canvases.created_at` is
+   *  `not null default now()`, so whenever it IS selected it is always a real date. */
+  createdAt?: string;
 }
 
 export interface Folder {
   id: string;
   name: string;
   parentId: string | null;
+  /** When the folder was made. Optional only because callers that seed folders by hand (the dev
+   *  preview) have no reason to invent one; `folders.created_at` is `not null default now()`. */
+  createdAt?: string;
 }
 
 /** The learner's sessions, pinned first and then most recently worked.
@@ -316,9 +324,10 @@ export async function setCanvasFolder(userId: string | null, id: string, folderI
 
 export async function listFolders(userId: string | null): Promise<Folder[]> {
   if (!userId) return [];
-  const { data, error } = await supabase.from("folders").select("id,name,parent_id").order("name");
+  const { data, error } = await supabase.from("folders").select("id,name,parent_id,created_at").order("name");
   if (error || !data) return [];
-  return (data as { id: string; name: string; parent_id: string | null }[]).map((row) => ({
+  return (data as { id: string; name: string; parent_id: string | null; created_at: string }[]).map((row) => ({
+    createdAt: row.created_at,
     id: row.id,
     name: row.name,
     parentId: row.parent_id,
@@ -488,6 +497,29 @@ export async function renameFolder(userId: string | null, id: string, name: stri
     return null;
   }
   return next;
+}
+
+/**
+ * Re-parent a folder. `null` puts it back at the top level.
+ *
+ * 🔴 THE CALLER MUST REJECT A CYCLE; THE DATABASE WILL NOT. `folders.parent_id` has no check
+ * constraint against ancestry, so moving a folder into its own descendant is accepted and the whole
+ * subtree detaches — it stops appearing under any root, and `on delete cascade` means deleting one
+ * of the pair takes the rest with it. Nothing surfaces the loss. `wouldCycle()` in the Library is
+ * the guard, and it runs before this is ever called.
+ *
+ * Kept deliberately dumb for the same reason `setCanvasFolder` is: the write is one column, and the
+ * rules about which writes are legal belong where the folder tree is actually known.
+ */
+export async function setFolderParent(userId: string | null, id: string, parentId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  if (id === parentId) return false;
+  const { error } = await supabase.from("folders").update({ parent_id: parentId }).eq("id", id);
+  if (error) {
+    console.warn("[learn] folder move failed", error.message);
+    return false;
+  }
+  return true;
 }
 
 /**

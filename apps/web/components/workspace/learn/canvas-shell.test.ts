@@ -83,7 +83,17 @@ test("the shell reserves clearance with padding rather than a header element", (
   // The sheet and its measure moved to canvas-surface.tsx with the <main> the exit had to sit on.
   assert.match(read("canvas-surface.tsx"), /"--canvas-column" as string\]: CANVAS_COLUMN_PX/);
   assert.match(read("canvas-surface.tsx"), /CANVAS_COLUMN_PX = "680px"/);
-  assert.match(read("canvas-composer.tsx"), /max-w-\[768px\]/);
+  // 🔴 THE NUMBER MOVED INTO A TOKEN, SO THE GUARD FOLLOWS IT AND STILL CHECKS THE VALUE. The
+  // composer now reads `--composer-max-width` so Library, Canvas and the composer share one
+  // content frame instead of each spelling 768 separately. Asserting only that the class reads
+  // `var(--composer-max-width)` would pass at any width at all, which is how a spec written from
+  // a measurement quietly stops holding the measurement — so the token's own value is asserted
+  // too, in the file that declares it.
+  assert.match(read("canvas-composer.tsx"), /max-w-\[var\(--composer-max-width\)\]/);
+  assert.match(
+    readFileSync(join(import.meta.dirname, "../../../app/globals.css"), "utf8"),
+    /--composer-max-width:\s*768px/,
+  );
   // 52/26, MEASURED off ChatGPT's live composer for the compact-UI pass (was 54/27, close
   // already) -- see the sizing note at the top of canvas-composer.tsx.
   assert.match(read("canvas-composer.tsx"), /min-h-\[52px\][^"]*rounded-\[26px\]/);

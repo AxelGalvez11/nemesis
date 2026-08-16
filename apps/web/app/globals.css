@@ -115,9 +115,17 @@
      on for their sense of depth — steps by exactly the amounts it did before. This is a hue
      change, deliberately not a contrast change; anything that reads differently afterwards was
      relying on the tint rather than on the step. */
-  --bg: #fafafa; --bg-2: #f0f0f0; --surface: #f3f3f3; --surface-2: #ebebeb; --raised: #ffffff;
+  /* --bg matches the reference's #fcfcfc; it paints <body>, so it is what shows in the overscroll
+     gutter and anywhere the workspace surface does not reach. */
+  --bg: #fcfcfc; --bg-2: #f0f0f0; --surface: #f3f3f3; --surface-2: #ebebeb; --raised: #ffffff;
   --line: rgba(22, 24, 29, 0.10); --line-2: rgba(22, 24, 29, 0.18);
-  --text: #000000; --text-2: #5a5e68; --text-3: #8b8f99;
+  /* 🔴 NOT PURE BLACK, AND NOT BLUE-GREY (owner 2026-08-15: "make sure light mode matches chatgpt
+     colors too"). Measured on the reference in light mode: #0d0d0d / #5d5d5d / #8f8f8f. Ours were
+     #000000 / #5a5e68 / #8b8f99 — pure black for body text, which is harsher on paper than any
+     production UI uses, and two greys still carrying blue (B above R by 14 and 14) even though the
+     block above this claims the ladder was neutralised. That pass reached the SURFACES and stopped;
+     the text tokens kept their tint, which is why light mode read cooler than the reference. */
+  --text: #0d0d0d; --text-2: #5d5d5d; --text-3: #8f8f8f;
   /* 🔴 NEUTRALISED — AND THIS RESTORES THE VALUE `shell.css` ALREADY DOCUMENTS. Its comment at
      `.rail` reads "light #f0f0f0, dark #1f1f1f"; the light token had drifted to the blue `#eef0f6`
      and no longer matched its own description.
@@ -154,8 +162,138 @@
   /* Desktop's warmed user bubble, translated to paper. */
   --user-bubble: #fbeef0; --user-bubble-border: #ecd2d6;
 
+  /* ── THE SPATIAL SYSTEM ────────────────────────────────────────────────────
+     viewport → sidebar → content frame → content column → objects.
+
+     Every number here was MEASURED in Chrome against the reference app at
+     1440×756, via getBoundingClientRect() on the live elements — not read off a
+     screenshot and not copied from a design file. The reference publishes these
+     as its own custom properties and, importantly, redefines NONE of them inside
+     a width media query: they are constants at every desktop width, with one
+     breakpoint (768px) where the sidebar becomes an overlay. So adopting them
+     costs nothing in responsiveness.
+
+     🔴 WRITE THESE IN PX, NEVER REM. `html { font-size: 112.5% }` in this app, so
+     one rem is 18px and every rem-based length silently arrives 1.125× larger
+     than its number reads. That is exactly how the sidebar drifted: `size-6`
+     meant 27px, not 24. px is the only unit here that means what it says.
+
+     Deriving a surface from these instead of hand-picking a value is the point —
+     Canvas, Library, Calendar and Stats all read the same frame. */
+  --nav-sidebar-width: 260px;      /* expanded sidebar column */
+  --nav-rail-width: 52px;          /* collapsed icon rail */
+  --nav-row-height: 36px;          /* one navigation row */
+  --nav-row-inset: 6px;            /* row's side margin inside the sidebar */
+  --nav-row-radius: 10px;
+  --nav-row-pad-x: 10px;           /* so a 20px icon starts 16px from the edge */
+  /* 🔴 `--nav-icon-size` IS DELIBERATELY NOT DECLARED HERE. It is published by the workspace shell
+     from `NAV_ICON_PX` in lib/workspace/sidebar-nav.ts, because the collapsed rail sizes its glyphs
+     from that TypeScript constant and a copy of the number here would be a second source — the
+     exact drift `canvas-shell.test.ts` already guards ("the property is ONE SOURCE, not the number
+     20 appearing twice"). The rail and the open sidebar drifted six pixels apart that way once. */
+  --nav-icon-gap: 6px;             /* icon → label, puts text at x=42 */
+  /* 🔴 THE WORDMARK IS SIZED ON CAP HEIGHT, NOT ON FONT-SIZE MATCHING. The reference sets its
+     brand at 18px mixed-case; NEMESIS is set in spaced capitals, and at the 14px it was using, its
+     caps stood ~10px against the reference's ~13px — visibly the smaller mark even though both
+     are "the logo". 18px puts the two cap heights on the same line. The uppercase and the 0.13em
+     tracking stay: that IS the Nemesis wordmark, and the brief is to match the reference's SCALE,
+     not to redraw our identity in its image. */
+  --brand-wordmark-size: 18px;
+  --shell-header-height: 52px;     /* brand band, and the content top bar */
+  --shell-header-inset: 8px;       /* header's own left/right padding */
+  --shell-icon-button: 36px;       /* a header/rail icon hit target */
+  --shell-icon-button-radius: 8px;
+  --content-max-width: 768px;      /* the content frame every surface centres in */
+  --page-gutter: 16px;             /* frame → text, leaving 736px readable */
+  --composer-max-width: 768px;     /* same frame, so they align exactly */
+  --composer-radius: 28px;
+  --composer-min-height: 52px;
+  /* The composer's controls are the SAME hit target and glyph as the sidebar header's, because
+     they are the same kind of object — a bare icon button on a surface. They were 28px boxes
+     holding 0.875rem (15.75px) glyphs against the reference's 36 and 20: the identical
+     undersizing the sidebar header had, in a second place. 8px inset puts the first control 8px
+     from the pill's edge and the last 8px from the other, which is what the reference measures. */
+  --composer-pad-x: 8px;
+  --composer-control: 36px;
+  --composer-icon: 20px;
+  /* A surface's own title. The reference sets its page titles at 28px; ours were 20px, which put
+     the Library heading closer to a section label than to the name of the page — part of why the
+     page read as flat. Weight stays ours (500 against their 400): the SCALE is what is being
+     borrowed, not the typeface's voice. */
+  --page-title-size: 28px;
+  /* ── LIST SURFACE ──────────────────────────────────────────────────────────
+     The reference's Library is a table, and these are its measurements: a 42px
+     column header over 60px rows, columns laid on a grid with a 16px gutter, one
+     hairline divider between rows and no fill. Ours was a flex row with a gap-3
+     and an 11px uppercase header, which is a different object that happened to
+     hold the same information.
+     Controls above it — the chips, the search field, the buttons — are all one
+     height, so the toolbar reads as a row rather than as several sizes. */
+  --list-row-height: 60px;
+  --list-header-height: 42px;
+  --list-col-meta: 160px;          /* "Last opened", the reference's "Modified" */
+  --list-col-created: 88px;        /* "Created", where the reference puts "Size" */
+  --list-col-actions: 64px;
+  --list-gap: 16px;
+  /* 🔴 THE ROW IS FLUSH LEFT AND INSET ONLY ON THE RIGHT — measured `ps-0 pe-2` on the
+     reference. Ours carried `px-2`, which at this root font is 9px on BOTH sides, so every row
+     icon sat 9px inboard of the frame the toolbar above it is aligned to. The right inset exists
+     because the actions column ends there and a menu button wants a little air. */
+  --list-row-pad-r: 8px;
+  /* The hover fill is a PILL THAT BLEEDS PAST THE TABLE, not a fill of the row's own box: the
+     reference draws it at inset -1px/-16px with a 16px radius, so the highlight reads as picking
+     the row up off the page rather than as shading a table cell. That bleed is also the reason
+     the frame reserves more room on the left than the table needs. */
+  --list-hover-bleed: 16px;
+  --list-hover-radius: 16px;
+  /* 🔴 THE HOVER FILL IS THREE LEVELS, NOT TWENTY. Measured: the reference paints #f9f9f9 on a
+     #fcfcfc page — a step so small it barely registers as a fill at all, which is the point on a
+     surface where the pointer is already telling you which row you are on. Ours reused the
+     app-wide `--ui-control-hover-background`, which lands near #e8e8e8 here: correct for a button,
+     far too heavy for a 736px band, and it made scanning the list feel like dragging a grey
+     highlighter down the page.
+     🔴 STATED PER THEME RATHER THAN AS ONE PERCENTAGE. 1.5% of near-black over a near-white page
+     is a visible step; 1.5% of near-white over a near-black one is nothing at all. This repo has
+     already shipped that mistake once, in the text ramp. */
+  --list-hover-fill: color-mix(in srgb, var(--ui-base) 1.5%, transparent);
+  /* 🔴 A ROW NAME IS 14px, NOT 16px. This was the single largest remaining difference: the same
+     60px row carrying 16/24 text instead of 14/20 reads as a bigger, looser list even when every
+     box around it measures identically. */
+  --list-name-size: 14px;
+  --list-name-leading: 20px;
+  /* 🔴 THE PAGE STARTS 116px DOWN, WHICH IS NOT A ROUNDING OF WHAT WE HAD. The reference builds
+     it out of three pieces — 40px of frame padding, a 36px margin, then a 76px title band the
+     title is bottom-aligned inside — and the sum is what matters: the first thing on the page is
+     116px below the top of the pane. Ours started at 45px, so the title sat almost against the
+     ceiling and the whole surface read as beginning abruptly. The bottom is a plain 40. */
+  --list-page-top: 116px;
+  --list-page-bottom: 40px;
+  /* The two vertical gaps in the toolbar stack, both measured box-bottom to box-top: title row →
+     filter row, then filter row → column header. Ours were 18 then 36; the reference is 52 then
+     21 — it gives the page title real room and then pulls the filters down ONTO the table they
+     filter, instead of floating them halfway between the two. */
+  --list-title-gap: 52px;
+  --list-filter-gap: 21px;
+  /* Search field → create button, and any other pair of controls on the title row. `gap-3` is
+     13.5px at this root font; the reference's is 12. */
+  --list-control-gap: 12px;
+  --control-height: 36px;
+  /* A row's leading glyph is a FILLED TILE, not a bare line icon: 32px square at 8px radius
+     holding a 20px glyph, 12px before the label. That tile is most of why the reference's list
+     reads as rows of objects rather than as lines of text — ours drew a 13px outline directly
+     against the name, which at 60px row height left the left edge looking empty. */
+  --list-icon-tile: 32px;
+  --list-icon-glyph: 20px;
+  --list-icon-gap: 12px;
+  --list-search-width: 240px;
+
   /* layout + type — desktop radius scale (card 8 / input 10 at radiusScalar 1) */
-  --radius: 10px; --radius-sm: 8px; --rail: 260px; --rail-collapsed: 64px; --evidence: 344px;
+  --radius: 10px; --radius-sm: 8px; --evidence: 344px;
+  /* 🔴 ALIASES, NOT A SECOND SOURCE OF TRUTH. `shell.css`'s older `.app`/`.rail`
+     grid still reads these; pointing them at the tokens above means the two
+     shells cannot drift apart again. `--rail-collapsed` was 64px here while the
+     shell that actually renders used 52px — the drift had already happened. */
+  --rail: var(--nav-sidebar-width); --rail-collapsed: var(--nav-rail-width);
   --radius-pill: 28px; --radius-menu: 12px; --radius-menu-item: 8px;
   --font: -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
   /* Desktop has no serif display face — the serif slot now resolves to the sans
@@ -196,6 +334,10 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+
+  /* The list hover fill, restated for a dark ground — see the note at the light declaration.
+     Same perceived step, four times the percentage, because the base has flipped. */
+  --list-hover-fill: color-mix(in srgb, var(--ui-base) 6%, transparent);
 
   /* DARK, default tone = BLACK — the original desktop "nemesis" skin
      (design-tokens/tokens.json), restored as the default 2026-08-05 (owner:
@@ -302,6 +444,61 @@ a { color: inherit; text-decoration: none; }
 @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .fade { animation: fade 0.4s both; }
 @media (prefers-reduced-motion: reduce) { .fade { animation: none; } }
+
+/* A list row's highlight: a pill that overhangs the table on both sides.
+ *
+ * 🔴 WRITTEN HERE RATHER THAN AS `hover:after:bg-(--list-hover-fill)` UTILITIES, and that is not
+ * a style preference. Tailwind generates a class only when its scanner finds the literal string;
+ * the utility above produced NO rule at all — measured, the hovered row's `::after` computed to
+ * `oklab(0 0 0 / 0)` while the token itself resolved perfectly when applied by hand. A row
+ * highlight that silently stops existing when a variable is renamed is not worth the brevity.
+ *
+ * The geometry is the reference's, measured: `inset: -1px -16px`, 16px radius, so the fill starts
+ * 16px outside the first column and ends 16px past the last. `z-index: -10` puts it under the
+ * row's own content; the row carries `isolate` so that -10 cannot escape into the page. */
+.list-row::after {
+  content: "";
+  position: absolute;
+  inset: -1px calc(var(--list-hover-bleed) * -1);
+  border-radius: var(--list-hover-radius);
+  z-index: -10;
+  pointer-events: none;
+  transition: background-color 0.12s ease;
+}
+.list-row:hover::after { background-color: var(--list-hover-fill); }
+/* Something is being dragged onto this row — the SAME pill, filled harder and ringed, so "you are
+   hovering this" and "you are about to drop into this" are two states of one shape. */
+.list-row[data-drop-target="true"]::after {
+  background-color: var(--ui-control-active-background);
+  box-shadow: inset 0 0 0 1px var(--ui-action);
+}
+
+/* A placeholder bar for a list that has not arrived yet.
+ *
+ * 🔴 IT IS NOT `.skeleton` FROM legacy.css. That one shimmers between `--surface` and
+ * `--surface-2`, two flat hex values left over from the retired theme that no `data-theme` block
+ * redefines — so in dark mode it would light up a pale grey band on a near-black page. These two
+ * tokens are the theme-aware ones, which means one rule is correct in both.
+ *
+ * 🔴 AND IT MOVES A GRADIENT, NOT AN OPACITY. A pulse makes a whole block breathe, which reads as
+ * something being wrong; a band travelling left to right reads as work arriving, which is what is
+ * actually happening. The reference animates a background POSITION for the same reason. */
+@keyframes list-skeleton-sweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.list-skeleton-bar {
+  border-radius: 6px;
+  background-image: linear-gradient(
+    90deg,
+    var(--ui-bg-tertiary) 25%,
+    var(--ui-bg-elevated) 50%,
+    var(--ui-bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: list-skeleton-sweep 1.6s linear infinite;
+}
+/* Still a placeholder, just a still one — the shape has to survive, only the motion goes. */
+@media (prefers-reduced-motion: reduce) {
+  .list-skeleton-bar { animation: none; background-image: none; background-color: var(--ui-bg-tertiary); }
+}
 
 /* Word-by-word answer reveal (lib/reveal-text.tsx): each word/citation-chip is an inline-block span
    with a staggered animation-delay, so a freshly-arrived answer types itself in left-to-right. */

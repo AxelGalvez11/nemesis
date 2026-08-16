@@ -350,7 +350,7 @@ export function CanvasComposer({
         "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
       )}
     >
-      <div className="pointer-events-auto w-full max-w-[768px]">
+      <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
         {/* 🔴 A THIRD WAY TO FILL THE COMPOSER TAKES ITS WHOLE PLACE, THE SAME AS DICTATION'S
             `listening` BRANCH DOES FURTHER DOWN — see handwriting-pad.tsx's file header. Nothing
             below this branches on `drawing`; the pad is a full substitute for the chips-and-pill

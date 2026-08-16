@@ -19,12 +19,13 @@ import { cn } from "@/lib/utils";
 
 import { ChatSidebar } from "./chat-sidebar";
 import { ImmersiveSurfaceProvider, useImmersiveClaimed } from "./immersive-surface";
-import { NAV_RAIL_WIDTH_PX, NavRail } from "./nav-rail";
+import { NavRail } from "./nav-rail";
 import { ProcessingIndicator } from "./processing-indicator";
 import { SettingsModalProvider } from "./settings-modal";
 import { TitlebarControls } from "./titlebar-controls";
 import { useMediaQuery } from "./use-media-query";
 import { shellNavigation } from "@/lib/workspace/shell-navigation";
+import { NAV_ICON_PX } from "@/lib/workspace/sidebar-nav";
 
 import { useResponsiveSidebar } from "./use-responsive-sidebar";
 
@@ -56,6 +57,11 @@ const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
 const NAV_TOGGLE_INSET_PX = 30;
 const SHELL_VARS: React.CSSProperties = {
   ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",
+  // 🔴 THE ICON SIZE CROSSES FROM TS INTO CSS HERE, and only here. `NAV_ICON_PX` sizes the glyphs
+  // the rail renders through props; the open sidebar needs the same number as a CSS length, to opt
+  // its icons out of the Button base's `[&_svg:not([class*='size-'])]:size-4` override. Publishing
+  // it rather than restating it in `globals.css` is what keeps the two states from drifting again.
+  ["--nav-icon-size" as string]: `${NAV_ICON_PX}px`,
   ["--titlebar-height" as string]: "0px",
   ["--titlebar-content-inset" as string]: "0.75rem",
   // TITLEBAR_EDGE_INSET = 14px / TITLEBAR_CONTROLS_TOP = 6px — the browser tab
@@ -163,14 +169,18 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
       data-workspace=""
       style={{
         ...SHELL_VARS,
-        // 🔴 COLLAPSED IS `NAV_RAIL_WIDTH_PX`, NOT `0px`. The column keeps real width and draws an
+        // 🔴 COLLAPSED IS THE RAIL'S WIDTH, NOT `0px`. The column keeps real width and draws an
         // icon rail; only a canvas (focus mode) and a phone still go to zero. See nav-rail.tsx.
+        // 🔴 THE WIDTH IS A TOKEN NOW, NOT A LITERAL. `256px` here was the value that actually
+        // rendered, while `desktop-ui.css` separately declared `--sidebar-width: 14.8125rem`
+        // (266.6px at this root font) — a second, dead source of truth that anyone reading the
+        // stylesheet would have believed. One token, read from `--nav-sidebar-width`.
         ["--pane-chat-sidebar-width" as string]: sidebarVisible
           ? narrowViewport
             ? "min(84vw, 18rem)"
-            : "256px"
+            : "var(--nav-sidebar-width)"
           : railVisible
-            ? `${NAV_RAIL_WIDTH_PX}px`
+            ? "var(--nav-rail-width)"
             : "0px",
         // 🔴 SPACE THE FLOATING TOGGLE CLAIMS, PUBLISHED SO SURFACES CAN AVOID IT. `TitlebarControls`
         // is `fixed` at the viewport's top-left; the Canvas header is `absolute` at its own top-left.
