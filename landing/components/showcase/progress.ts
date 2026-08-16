@@ -68,27 +68,71 @@ export type Band = {
 };
 
 /**
+ * How much of a band is spent handing over to the next one, as a fraction of
+ * total progress.
+ *
+ * At four scenes over roughly 2000px of travel this is about 70px of scroll on
+ * each side of a boundary. Scrolling normally that reads as a few hundred
+ * milliseconds — long enough to register as a deliberate pause, short enough
+ * that nobody scrolling quickly is held up by it.
+ */
+const EDGE = 0.035;
+
+/**
  * Split overall progress into `count` bands and report each one's local
  * progress and presence.
  *
- * Bands overlap by `blend` so one scene fades out while the next fades in, and
- * the outer Canvas never shows an empty frame between representations. The
- * point of the section is that a single surface changes what it renders — a gap
- * would read as two different surfaces.
+ * ── THE SCENES NO LONGER OVERLAP ──────────────────────────────────────────────
+ *
+ * They used to cross-fade through each other: at a boundary both were at half
+ * opacity and the frame showed a diagram superimposed on a heart. It was never
+ * empty, which was the property being protected, but two representations
+ * dissolving through one another is a slideshow transition — it says these are
+ * two pictures, when the whole claim is that it is one surface changing.
+ *
+ * Now a scene fades fully out before the next begins to arrive, and the gap is
+ * carried by the Nemesis mark in its processing state. The frame is still never
+ * empty; it just holds something that means "deciding what to show you next"
+ * rather than a blend of two answers. See handoff() for the other half.
  */
-export function bands(progress: number, count: number, blend = 0.06): readonly Band[] {
+export function bands(progress: number, count: number, edge = EDGE): readonly Band[] {
   const span = 1 / count;
   const out: Band[] = [];
   for (let i = 0; i < count; i++) {
     const start = i * span;
     const end = start + span;
     const local = window01(progress, start, end);
-    // Fade in over the overlap before `start`, out over the overlap after `end`.
-    // First and last bands hold their outer edge so the scene is fully present
-    // when the section is entered and when it is left.
-    const rising = i === 0 ? 1 : ease(window01(progress, start - blend, start + blend));
-    const falling = i === count - 1 ? 1 : 1 - ease(window01(progress, end - blend, end + blend));
+    // Fade in over the first `edge` of this band, out over its last `edge`, so
+    // both neighbours are at zero exactly on the boundary. First and last bands
+    // hold their outer edge: the section should be fully present the moment it
+    // is entered, and still present as it is left.
+    const rising = i === 0 ? 1 : ease(window01(progress, start, start + edge));
+    const falling = i === count - 1 ? 1 : 1 - ease(window01(progress, end - edge, end));
     out.push({ index: i, local, presence: clamp01(Math.min(rising, falling)) });
   }
   return out;
+}
+
+/**
+ * Opacity of the three-oval processing mark, 0..1.
+ *
+ * Peaks exactly on each internal boundary — where bands() has both neighbouring
+ * scenes at zero — and is nothing anywhere else. This is the other half of the
+ * handover: between two representations the Canvas shows the mark thinking, and
+ * that is what connects the flat identity in the header to the product's
+ * behaviour without putting a logo on top of the content.
+ *
+ * A triangular ramp rather than a smooth window, because the mark should be
+ * fully present for an instant rather than lingering at half strength on both
+ * sides of the boundary — half a logo over half a diagram is the superimposition
+ * this change exists to remove.
+ */
+export function handoff(progress: number, count: number, edge = EDGE): number {
+  const span = 1 / count;
+  let peak = 0;
+  for (let i = 1; i < count; i++) {
+    const boundary = i * span;
+    peak = Math.max(peak, 1 - Math.min(1, Math.abs(progress - boundary) / edge));
+  }
+  return ease(peak);
 }

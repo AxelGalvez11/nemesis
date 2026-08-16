@@ -78,11 +78,12 @@ export function SiteChrome({ children }: { children: ReactNode }) {
           </Link>
           <span className="spacer" />
 
-          {/* Wide screens: the links sit in the bar. Ordered product first, then
-              philosophy, then commerce — which is the order someone forms an opinion
-              in, not the order the pages were built in. */}
+          {/* Wide screens: the links sit in the bar. Philosophy, then commerce.
+              "How it works" used to lead this list, pointing at the Canvas
+              section. It came out when that section started playing by itself:
+              a link whose job is to send you to a demonstration is redundant
+              once the demonstration runs on its own a screen further down. */}
           <div className="nav-links">
-            <Link className="ghost" href="/#canvas">How it works</Link>
             {/* The tenets moved off the homepage to /principles when it was cut to
                 four sections. Kept in the nav under the same label because that is
                 what the page is still about. */}
@@ -120,7 +121,6 @@ export function SiteChrome({ children }: { children: ReactNode }) {
             stable; visibility is the `is-open` class, not a mount. */}
         <div id="nav-menu" className={open ? "nav-menu is-open" : "nav-menu"} hidden={!open}>
           <div className="wrap nav-menu-in">
-            <Link href="/#canvas" onClick={close}>How it works</Link>
             <Link href="/principles" onClick={close}>Principles</Link>
             <Link href="/pricing" onClick={close}>Pricing</Link>
             <Link href="/about" onClick={close}>About</Link>
@@ -156,7 +156,6 @@ export function SiteChrome({ children }: { children: ReactNode }) {
             </div>
             <nav className="foot-col" aria-label="Product">
               <span className="foot-k">Product</span>
-              <Link href="/#canvas">How it works</Link>
               <Link href="/principles">Principles</Link>
               <Link href="/pricing">Pricing</Link>
               <a href={APP_SIGN_UP} onClick={() => captureCtaClick("footer", "Start learning")}>

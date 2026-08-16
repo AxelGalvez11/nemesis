@@ -1091,18 +1091,11 @@
    opposite of "there is only ever one surface".
    ───────────────────────────────────────────────────────────────────────────── */
 
-/* The section is tall; the Canvas inside it is pinned. Height is set inline by
-   the component so the scroll length and the number of scenes cannot drift
-   apart in two files. */
-.shw { position: relative; }
-
-.shw-stick {
-  position: sticky;
-  top: 0;
-  height: 100svh;
-  display: flex;
-  align-items: center;
-}
+/* An ordinary section. It used to be roughly four viewports tall with the Canvas
+   pinned inside it, because scroll position chose the representation; the
+   sequence is on a clock now, so the section is the size of its contents and the
+   page scrolls past it normally. */
+.shw { padding: clamp(80px, 11vw, 150px) 0; }
 .shw-inner { width: 100%; }
 
 .shw-head {
@@ -1149,12 +1142,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Short linear fade only. The cross-fade is driven by scroll position, so any
-     real duration here would fight the scrub and lag behind the reader. */
-  transition: opacity 0.1s linear;
+  /* No CSS transition. Opacity and transform are written every frame from the
+     clock, so a duration here would be a second easing curve fighting the first
+     and would lag the value it is chasing. */
+  transform-origin: center;
+  will-change: opacity, transform;
 }
 
 .shw-svg { width: 100%; height: 100%; display: block; }
+
+/* The three-oval processing state, shown in the gap between representations.
+   pointer-events:none so an invisible layer sitting over the frame can never
+   swallow a drag on the scene underneath it. */
+.shw-thinking {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  pointer-events: none;
+}
 
 .shw-line {
   margin: clamp(16px, 2vw, 24px) 0 0;
@@ -1415,4 +1423,68 @@
 @media (max-width: 860px) {
   .srcs-flow { grid-template-columns: 1fr; gap: 26px; justify-items: center; }
   .srcs-in, .srcs-out { flex-direction: row; flex-wrap: wrap; justify-content: center; text-align: center; }
+}
+
+
+/* ── PRINCIPLES ────────────────────────────────────────────────────────────
+   A numbered list, set as statements rather than as cards. Six boxes in a grid
+   would say "six features"; a list says "six commitments", which is what these
+   are. */
+.prin { padding: 0 0 clamp(90px, 13vw, 160px); }
+.prin-list {
+  list-style: none;
+  margin: 0;
+  /* The numerals hang in this padding. Without it they were positioned at
+     left:-66px against the wrap's own edge, which put them off the side of the
+     viewport entirely. */
+  padding: 0 0 0 66px;
+  max-width: 66ch;
+  counter-reset: prin;
+}
+.prin-list li {
+  counter-increment: prin;
+  padding: clamp(30px, 4vw, 46px) 0;
+  border-top: 1px solid var(--line);
+  position: relative;
+}
+/* The numeral sits in the margin on wide screens and is simply dropped on
+   narrow ones, where there is no margin to sit in. */
+.prin-list li::before {
+  content: counter(prin, decimal-leading-zero);
+  position: absolute;
+  left: -66px;
+  top: calc(clamp(30px, 4vw, 46px) + 4px);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+.prin-list h2 {
+  font-family: var(--sans);
+  font-size: clamp(22px, 2.6vw, 32px);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+.prin-list p {
+  margin: 0;
+  font-size: clamp(15px, 1.5vw, 17.5px);
+  line-height: 1.62;
+  color: var(--text-2);
+}
+.prin-close {
+  margin: clamp(56px, 7vw, 90px) 0 0;
+  font-family: var(--sans);
+  font-size: clamp(26px, 3.6vw, 44px);
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+.prin-close a { color: var(--text); text-decoration: none; }
+.prin-cta { margin-top: clamp(26px, 3vw, 36px); }
+
+@media (max-width: 900px) {
+  .prin-list { padding-left: 0; }
+  .prin-list li::before { position: static; display: block; margin-bottom: 10px; }
 }

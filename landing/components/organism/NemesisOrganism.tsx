@@ -7,6 +7,7 @@ import { ChromeBlob } from "@/components/ChromeBlob";
 
 import { CURL_3D, FBM_3D, SIMPLEX_3D } from "./noise";
 import { ease, mixStates, STATES, type OrganismState, type StateName } from "./states";
+import { SURFACE, latticeFor } from "./surface";
 
 /**
  * The Nemesis organism — the living form of the mark.
@@ -43,14 +44,15 @@ type Props = {
   readonly className?: string;
 };
 
-/** Latitude rings. The rows are in the buffer; the flow field is what curves them. */
-const BANDS = 58;
-const ALONG = 300;
+/* Lattice resolution now comes from surface.ts and DEPENDS ON THE RENDERED SIZE.
+   It used to be two constants here, which is exactly why the 260px instance was
+   almost six times denser than the 620px one. */
 
 /** How far from the object's centre the cursor starts to be felt, in CSS pixels. */
 const ATTEND_RADIUS = 380;
 
-function buildLattice(): { position: Float32Array; jitter: Float32Array; count: number } {
+function buildLattice(size: number): { position: Float32Array; jitter: Float32Array; count: number } {
+  const { bands: BANDS, along: ALONG } = latticeFor(size);
   const positions: number[] = [];
   const jitter: number[] = [];
 
@@ -205,11 +207,26 @@ export function NemesisOrganism({
 
     host.appendChild(canvas);
 
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, SURFACE.maxPixelRatio);
     renderer.setPixelRatio(pixelRatio);
     renderer.setClearAlpha(0);
 
-    const lattice = buildLattice();
+    /**
+     * Built for the size this instance is ACTUALLY drawn at, so points-per-pixel
+     * matches every other instance on the page.
+     *
+     * Measured, not taken from the `size` prop, because the page overrides both
+     * instances in CSS: the hero is declared at 620 and lands at 512, the
+     * sources one is declared at 260 and lands at 187. Sizing the lattice from
+     * the prop therefore left the small one 31% denser — most of the original
+     * 5.7x bug fixed, and a visible remainder that would have been very easy to
+     * call "close enough" without measuring.
+     *
+     * Falls back to the prop if the element has no layout yet, which happens in
+     * a backgrounded tab where every box reports zero.
+     */
+    const measured = Math.round(host.getBoundingClientRect().width) || size;
+    const lattice = buildLattice(measured);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(lattice.position, 3));
     geometry.setAttribute("aJitter", new THREE.BufferAttribute(lattice.jitter, 1));
@@ -219,20 +236,20 @@ export function NemesisOrganism({
 
     const uniforms: Record<string, THREE.IUniform> = {
       uTime: { value: 0 },
-      uSize: { value: STATES.rest.size },
+      uSize: { value: SURFACE.dot },
       uPixelRatio: { value: pixelRatio },
       uFlow: { value: STATES.rest.flow },
       uFreq: { value: STATES.rest.freq },
       uShell: { value: STATES.rest.shell },
       uRelief: { value: STATES.rest.relief },
-      uCamDist: { value: 5 },
+      uCamDist: { value: SURFACE.camDist },
       // Fully present from the first frame. An earlier version eased this up from
       // zero over ~0.7s, which looked good and was a genuine liability: the fade
       // is driven by elapsed FRAMES, so anywhere rAF is throttled — a background
       // tab, a reduced-power mode, an embedded webview — the hero simply never
       // became visible. The page's own `.reveal` class already carries the
       // entrance, as a transform, and one entrance is enough.
-      uOpacity: { value: 1 },
+      uOpacity: { value: SURFACE.opacity },
       uInk: { value: readInk() },
     };
 
@@ -350,7 +367,6 @@ export function NemesisOrganism({
         shell: ease(current.shell, target.shell, dt, tau),
         relief: ease(current.relief, target.relief, dt, tau),
         speed: ease(current.speed, target.speed, dt, tau),
-        size: ease(current.size, target.size, dt, tau),
       };
 
       // Time ACCUMULATES scaled by speed rather than being multiplied by it.
@@ -363,7 +379,6 @@ export function NemesisOrganism({
       uniforms.uFreq!.value = current.freq;
       uniforms.uShell!.value = current.shell;
       uniforms.uRelief!.value = current.relief;
-      uniforms.uSize!.value = current.size;
 
       points.rotation.y = clock * 0.045;
       points.rotation.x = 0.19 + Math.sin(clock * 0.13) * 0.06;
@@ -399,7 +414,11 @@ export function NemesisOrganism({
       renderer.dispose();
       canvas.remove();
     };
-  }, [interactive]);
+    // `size` is a dependency because the lattice is now built from it. In
+    // practice both instances are fixed, so this never re-runs — but if it did
+    // and size were missing here, the object would keep a buffer built for the
+    // old size and quietly go back to being the wrong density.
+  }, [interactive, size]);
 
   if (fallback) {
     return (
