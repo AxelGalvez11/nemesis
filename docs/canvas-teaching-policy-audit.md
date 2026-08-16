@@ -360,16 +360,26 @@ mixed in here.
 
 🔴🔴 **Run the web tests as `pnpm test` from `apps/web`, and never any other way.**
 
-The repo's `test` script passes **unquoted** globs, so the shell expands them and node's runner spawns
-each file as a child process where `import.meta` resolves. Pass a single file to `tsx --test`, or quote
-the globs so node does its own expansion, and `import.meta.dirname` is `undefined` — roughly 85
-source-structure test files then crash at import with `The "path" argument must be of type string`.
+🔴 **THE CAUSE IS TWO DIFFERENT `tsx` BINARIES, AND MY FIRST EXPLANATION OF IT WAS WRONG.** I wrote
+that it was about quoted versus unquoted globs and how node expands them. It is not. This repo
+resolves two `tsx` versions with different module semantics:
 
 ```
-tsx --test lib/notebooks/parse-thread-env.test.ts   ->  fail (import.meta.dirname undefined)
-pnpm test                                            ->  ok 1755 - every provider key the parser
-                                                          reads is forwarded to the worker thread
+apps/web/node_modules/.bin/tsx   tsx v4.22.4   <- what `pnpm test` resolves. Keeps ESM.
+node_modules/.bin/tsx            tsx v4.21.0   <- the hoisted root binary. Transforms to CommonJS.
 ```
+
+Under v4.21.0 `import.meta.dirname` is `undefined`, so roughly 85 source-structure test files crash at
+import with `The "path" argument must be of type string`. Same tree, same files, one file at a time:
+
+```
+../../node_modules/.bin/tsx --test lib/notebooks/parse-thread-env.test.ts   ->  0 pass / 1 fail
+pnpm exec tsx --test lib/notebooks/parse-thread-env.test.ts                 -> 16 pass / 0 fail
+```
+
+The root `package.json` now declares `tsx@^4.22.4` so both resolve the same version and the skew
+cannot come back. Until an install picks that up, use `pnpm test`, or `pnpm exec tsx --test <file>` for
+a single file — never the root binary by path.
 
 Two separate agents drew conclusions from that artifact on 2026-08-16: one reported "85 failing tests
 on main" and one reported "at least 10 test files have never run, including the test for #643". Both
