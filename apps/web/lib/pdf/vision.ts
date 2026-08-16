@@ -94,11 +94,12 @@ export const VISION_PROMPT =
  * because a single batched call is far cheaper than one call per picture.
  */
 export const FIGURE_PROMPT =
-  "These are figures taken from a lecture slide deck, in order. For EACH image, in one to three sentences, " +
+  "These are figures taken from a lecture slide deck. Each image is immediately preceded by an opaque " +
+  "identifier such as [[figure 1]]. For EACH image, in one to three sentences, " +
   "say what it shows and state the relationships or values it conveys — labels, axes, directions, groupings, " +
   "and any text printed in it. Describe only what is visible; never infer facts the image does not show. " +
   "If an image is a logo, a decorative photo, or otherwise carries no teaching content, answer exactly 'none'. " +
-  "Answer as a numbered list with one entry per image and nothing else. " +
+  "Begin each answer with that image's exact identifier. Return every identifier exactly once and nothing else. " +
   // 🔴 THE LABELS RIDE ON THE CALL THAT WAS ALREADY BEING MADE (§46.6). A diagram becomes a
   // cognitive object rather than an illustration only if Nemesis knows WHAT is labelled and WHERE
   // — "hiding labels or regions ... asking the learner to identify them" is impossible from prose.
@@ -247,8 +248,11 @@ export function buildFigureRequest(images: readonly { mime: string; base64: stri
     contents: [
       {
         parts: [
-          ...images.map((image) => ({ inline_data: { data: image.base64, mime_type: image.mime } })),
           { text: FIGURE_PROMPT },
+          ...images.flatMap((image, index) => [
+            { text: `[[figure ${index + 1}]]` },
+            { inline_data: { data: image.base64, mime_type: image.mime } },
+          ]),
         ],
       },
     ],
@@ -257,14 +261,15 @@ export function buildFigureRequest(images: readonly { mime: string; base64: stri
 }
 
 /**
- * Split a numbered reply back into one description per image.
+ * Split a legacy numbered reply back into one description per image.
  *
- * Order is the only link between a batched reply and its inputs, so a reply with
+ * Order is the only link in this legacy format, so a reply with
  * the wrong NUMBER of entries is discarded entirely rather than matched up
  * optimistically — a description attached to the wrong figure is worse than none,
  * because it becomes a confident caption on an unrelated diagram. "none" answers
  * are dropped, which is how a logo that slipped through the size filter stops here.
- * PURE.
+ * PURE. Production uses `parseAttributedFigureDescriptions`; this remains for recorded imports
+ * and format-level label parsing tests.
  */
 export function parseFigureDescriptions(reply: string, expected: number): string[] | null {
   if (expected <= 0) return [];
@@ -282,6 +287,35 @@ export function parseFigureDescriptions(reply: string, expected: number): string
   if (current.length > 0) entries.push(current.join(" ").trim());
   if (entries.length !== expected) return null;
   return entries.map((entry) => (/^none\b/i.test(entry.trim()) ? "" : entry.trim()));
+}
+
+/**
+ * Split the production response by the opaque identifier printed beside each image.
+ *
+ * Count-only positional matching cannot catch a correct-length reply in the wrong order. An
+ * identifier must be present exactly once, and unknown, duplicate, or missing ids refuse the whole
+ * batch. The returned array follows request order regardless of response order.
+ */
+export function parseAttributedFigureDescriptions(reply: string, expected: number): string[] | null {
+  if (expected <= 0) return [];
+  const entries = new Map<number, string[]>();
+  let current: number | null = null;
+  for (const line of reply.split(/\r?\n/)) {
+    const started = /^\s*\[\[figure\s+(\d{1,3})\]\]\s*(.*)$/i.exec(line);
+    if (started) {
+      const id = Number(started[1]);
+      if (!Number.isInteger(id) || id < 1 || id > expected || entries.has(id)) return null;
+      current = id;
+      entries.set(id, started[2]?.trim() ? [started[2]!.trim()] : []);
+      continue;
+    }
+    if (current !== null && line.trim()) entries.get(current)!.push(line.trim());
+  }
+  if (entries.size !== expected) return null;
+  return Array.from({ length: expected }, (_, index) => {
+    const entry = entries.get(index + 1)!.join(" ").trim();
+    return /^none\b/i.test(entry) ? "" : entry;
+  });
 }
 
 /**
@@ -326,7 +360,7 @@ export interface VisionFigureRead {
    * Names that WERE sent and came back with no usable answer of their own.
    *
    * 🔴🔴 A DISCARDED BATCH IS NOT A VERDICT ABOUT A PICTURE, AND IT WAS BEING RECORDED AS ONE.
-   * `parseFigureDescriptions` refuses a reply whose entry count does not match the batch — it
+   * the attributed parser refuses a reply whose identifiers do not match the batch — it
    * has to, because zipping a mismatched list attaches a confident caption to the wrong diagram.
    * But the whole batch then vanishes, and the caller, seeing a request that HAD been reached,
    * wrote `examined-empty` on every figure in it: "something looked at this and had nothing to
@@ -427,7 +461,7 @@ export async function readFiguresWithVision(
     // One failed batch loses its own descriptions and nothing else.
     if (!reply) return "unreachable";
     reached = true;
-    const parsed = parseFigureDescriptions(reply.text, group.length);
+    const parsed = parseAttributedFigureDescriptions(reply.text, group.length);
     if (!parsed) {
       // 🔴 A FALLBACK THAT HIDES ITS OWN REASON IS A LEAK, AND THIS ONE HID THE COMMONEST ONE.
       // Coverage can now say these figures have no usable read, but not WHY — and "the reply
@@ -438,7 +472,7 @@ export async function readFiguresWithVision(
       console.warn(JSON.stringify({
         event: "figure_batch_unattributed",
         images: group.length,
-        entries: (reply.text.match(/^\s*\d+[.)]\s/gm) ?? []).length,
+        entries: (reply.text.match(/^\s*\[\[figure\s+\d+\]\]/gim) ?? []).length,
         model: reply.model,
       }));
       return "unattributable";
@@ -465,9 +499,9 @@ export async function readFiguresWithVision(
    * One batch, and — when its reply could not be lined up — the same pictures asked about ONE
    * AT A TIME.
    *
-   * 🔴 THE BATCH IS THE BUG, NOT THE COUNT CHECK. `parseFigureDescriptions` refuses a reply
-   * whose entry count does not match, and it is right to: position is the only link between a
-   * batched answer and its inputs. But the whole batch then goes undescribed. Measured on the
+   * 🔴 THE BATCH IS THE BUG, NOT THE ATTRIBUTION CHECK. The parser refuses a reply whose identifiers
+   * do not match, and it is right to: accepting a missing or duplicated id would attach a caption
+   * to an unrelated picture. But the whole batch then goes undescribed. Measured on the
    * owner's diabetes lecture: the model answered three images in TWO entries — a complete,
    * correct answer — because two of the images are halves of one slide, and three real
    * descriptions including a labelled diagram were thrown away. Asking about one picture at a

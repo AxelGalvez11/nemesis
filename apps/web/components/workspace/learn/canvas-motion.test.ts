@@ -74,6 +74,22 @@ test("🔴 the swap between items is opacity ONLY, and short", async () => {
   assert.ok(Number(duration) >= 120 && Number(duration) <= 180, `${duration}ms is outside 120–180ms`);
 });
 
+test("passages fade in without moving the selectable text", async () => {
+  const css = await read("../../../app/globals.css");
+  const document = await read("./canvas-document.tsx");
+  assert.match(document, /canvas-passage-enter/);
+  const motion = css.slice(
+    css.indexOf("@keyframes canvas-passage-enter"),
+    css.indexOf(".canvas-passage-enter {") + 120,
+  );
+  assert.match(motion, /opacity/);
+  for (const forbidden of ["transform", "translate", "scale", "rotate"]) {
+    assert.equal(motion.includes(forbidden), false, `passage entry grew a ${forbidden}`);
+  }
+  const guards = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
+  assert.ok(guards.includes(".canvas-passage-enter"));
+});
+
 test("🔴 the retrieval screen has no scrim, skeleton or pulse", async () => {
   const view = await read("./canvas-policy-view.tsx");
   const from = view.indexOf('decision.action.type === "retrieve"');

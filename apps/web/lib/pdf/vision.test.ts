@@ -6,6 +6,7 @@ import {
   buildFigureRequest,
   buildVisionRequest,
   describeFiguresWithVision,
+  parseAttributedFigureDescriptions,
   parseFigureDescriptions,
   parseVisionText,
   readFiguresWithVision,
@@ -71,9 +72,8 @@ const KEYED = { GEMINI_API_KEY: "k" };
 
 
 // --- reading slide figures ---------------------------------------------------
-// A batched reply is matched to its images BY ORDER, so the parse either lines up
-// exactly or is thrown away. A description pinned to the wrong diagram would be a
-// confident, wrong caption on an unrelated figure — worse than having none.
+// Legacy numbered replies still parse for recorded artifacts. Production uses opaque ids below,
+// because a correct entry count cannot prove the entries stayed in request order.
 
 assert.deepEqual(parseFigureDescriptions("1. A flow chart of the RAAS pathway.\n2. A dose-response curve.", 2), [
   "A flow chart of the RAAS pathway.",
@@ -99,15 +99,26 @@ assert.deepEqual(parseFigureDescriptions("", 0), []);
 // Both numbering styles models actually emit.
 assert.equal(parseFigureDescriptions("1) First figure here.\n2) Second figure here.", 2)?.length, 2);
 
+// Production attribution is by echoed id, never by array position. Response order may change; the
+// identity attached to each description may not.
+assert.deepEqual(
+  parseAttributedFigureDescriptions("[[figure 2]] second\n[[figure 1]] first", 2),
+  ["first", "second"],
+);
+assert.equal(parseAttributedFigureDescriptions("[[figure 1]] first\n[[figure 1]] duplicate", 2), null);
+assert.equal(parseAttributedFigureDescriptions("[[figure 1]] first\n[[figure 3]] invented", 2), null);
+assert.equal(parseAttributedFigureDescriptions("[[figure 1]] first\n[[figure 2]] second", 3), null);
+
 {
   const body = JSON.parse(buildFigureRequest([
     { base64: "AAA", mime: "image/png" },
     { base64: "BBB", mime: "image/jpeg" },
   ])) as { contents: Array<{ parts: Array<Record<string, unknown>> }>; generationConfig: { temperature: number } };
   const parts = body.contents[0]!.parts;
-  assert.equal(parts.length, 3, "two images and one instruction");
-  assert.equal((parts[1]!.inline_data as { mime_type: string }).mime_type, "image/jpeg");
-  assert.match(String(parts[2]!.text), /numbered list/i);
+  assert.equal(parts.length, 5, "one instruction plus an identifier beside each of two images");
+  assert.match(String(parts[1]!.text), /\[\[figure 1\]\]/);
+  assert.equal((parts[4]!.inline_data as { mime_type: string }).mime_type, "image/jpeg");
+  assert.match(String(parts[0]!.text), /exact identifier/i);
   // Descriptions must not drift between imports of the same deck.
   assert.equal(body.generationConfig.temperature, 0);
 }
@@ -226,7 +237,7 @@ void (async () => {
   {
     // A good reply is keyed by the caller's own image names, not by position.
     const before = globalThis.fetch;
-    const reply = { candidates: [{ content: { parts: [{ text: "1. A nephron diagram.\n2. none" }] } }] };
+    const reply = { candidates: [{ content: { parts: [{ text: "[[figure 1]] A nephron diagram.\n[[figure 2]] none" }] } }] };
     globalThis.fetch = (async () => new Response(JSON.stringify(reply), { status: 200 })) as unknown as typeof fetch;
     try {
       const out = await describeFiguresWithVision(
@@ -256,9 +267,9 @@ void (async () => {
         content: {
           parts: [{
             text:
-              "1. A nephron with its major segments labelled.\n" +
+              "[[figure 1]] A nephron with its major segments labelled.\n" +
               "LABELS: Glomerulus@0.3,0.2;Loop of Henle@0.5,0.6;Collecting duct@0.7,0.85\n" +
-              "2. A stock photo of a clinic waiting room.",
+              "[[figure 2]] A stock photo of a clinic waiting room.",
           }],
         },
       }],
@@ -293,7 +304,7 @@ void (async () => {
     // must still return prose only, so every existing caller of it is unaffected by the labels work.
     const before = globalThis.fetch;
     const reply = {
-      candidates: [{ content: { parts: [{ text: "1. A nephron.\nLABELS: Glomerulus@0.3,0.2;Loop of Henle@0.5,0.6" }] } }],
+      candidates: [{ content: { parts: [{ text: "[[figure 1]] A nephron.\nLABELS: Glomerulus@0.3,0.2;Loop of Henle@0.5,0.6" }] } }],
     };
     globalThis.fetch = (async () => new Response(JSON.stringify(reply), { status: 200 })) as unknown as typeof fetch;
     try {

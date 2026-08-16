@@ -7,7 +7,7 @@ function item(id: string, marker: string, text: string, heading = "Filing a moti
   return { anchor: { headingPath: [heading] }, depth, id, marker, text, type: "listItem" };
 }
 
-test("a consecutively numbered run is a procedure", () => {
+test("a consecutively numbered run is syntactically ordered, without claiming it is a procedure", () => {
   assert.equal(isOrderedRun(["1.", "2.", "3."]), true);
   assert.equal(isOrderedRun(["a)", "b)", "c)"]), true);
   assert.equal(isOrderedRun(["i.", "ii.", "iii."]), true);
@@ -40,7 +40,7 @@ test("roman numerals are read as roman, not as the letters they are spelled with
   assert.equal(isOrderedRun(["b)", "c)", "d)"]), true);
 });
 
-test("a numbered run under a heading becomes one procedure named by that heading", () => {
+test("a numbered run under a heading keeps that structural heading", () => {
   const runs = orderedRunsIn([
     item("b1", "1.", "1. Serve the opposing party."),
     item("b2", "2.", "2. File proof of service."),
@@ -54,7 +54,7 @@ test("a numbered run under a heading becomes one procedure named by that heading
   assert.deepEqual(runs[0]?.steps.map((step) => step.unitId), ["b1", "b2", "b3"]);
 });
 
-test("a bullet sitting under the same heading does not join the procedure", () => {
+test("a bullet sitting under the same heading does not join the numbered run", () => {
   const runs = orderedRunsIn([
     item("b1", "1.", "1. Serve the opposing party."),
     item("b2", "2.", "2. File proof of service."),

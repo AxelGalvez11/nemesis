@@ -7,8 +7,11 @@ export interface ChatWebResult {
 }
 
 const EXPLICIT_WEB_PATTERN = /\b(search(?: the)? web|web search|look(?:\s+(?:it|this|that))?\s+up|browse|online|internet|source(?:s)?|cite|link(?:s)?)\b/i;
-const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live)\b/i;
-const CHANGING_FACT_PATTERN = /\bwho\s+(?:is|are|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
+const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live|what (?:has )?changed)\b/i;
+// A question about Nemesis itself is not a changing-world fact. Keep the useful "who is/are X"
+// search gate while excluding only the self-referential forms that previously bought a search and
+// returned an answer about an unrelated person.
+const CHANGING_FACT_PATTERN = /\bwho\s+(?:(?:is|are)\s+(?!you\b|u\b|ya\b|this\b|nemesis\b)|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
 const LIVE_SPORTS_PATTERN = /\b(world cup|super bowl|olympics?|playoffs?|finals?|tournament|match|game|who won|score|standings)\b/i;
 const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 const EMERGING_ENTITY_PATTERN = /\b(?:what|who)\s+(?:is|are)\s+(?:the\s+)?[\p{L}\p{N}._-]+(?:\s+[\p{L}\p{N}._-]+){0,4}\s+(?:agent|ai|app|company|framework|library|model|platform|plugin|product|project|service|software|tool)\b/iu;
@@ -54,7 +57,7 @@ export function formatWebSearchContext(results: ChatWebResult[]): string {
   // description a search engine echoes back. Same fence as an attachment: this
   // is the more exposed of the two, because nobody chose to open it.
   return [
-    "Live web search results. Use these for current facts. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. Only cite a number for a fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
+    "PROVISIONAL EXTERNAL EVIDENCE from live web search. Search snippets are evidence leads, not automatically settled facts and not learner knowledge. Use them for current claims only to the degree they support those claims. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. Only cite a number for a fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
     UNTRUSTED_CONTENT_RULE,
     ...usable.map((result, index) =>
       wrapUntrusted(

@@ -96,6 +96,19 @@ test("🔴🔴 A SCHEDULE HAS NO SUBJECT COLUMN, and this is the test the whole 
   assert.equal(subjectColumnOf(weeks, 3), null);
 });
 
+test("🔴🔴 a prose first column refuses instead of moving the row onto its members", () => {
+  const mechanism = `Dihydropyridine CCBs (calcium channel blockers) ${"Inhibit Ca from entering slow channels. ".repeat(12)}`;
+  const chart = rowsOf([mechanism, "Amlodipine (Norvasc) Felodipine (Plendil)", "peripheral edema"]);
+  assert.equal(subjectColumnOf(chart, 3, { headerStated: true }), null);
+});
+
+test("🔴 a single row is readable only when the author printed a header", () => {
+  const oneRow = rowsOf(["lisinopril", "ACE inhibitor", "hypertension"]);
+  assert.deepEqual(subjectColumnOf(oneRow, 3, { headerStated: true }), { index: 0, populated: 1 });
+  assert.equal(subjectColumnOf(oneRow, 3), null);
+  assert.equal(subjectColumnOf(rowsOf(["8-17", "Exam 1", "Room 214"]), 3, { headerStated: true }), null);
+});
+
 test("a matrix of numbers has no subject column", () => {
   const matrix = rowsOf(["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]);
   assert.equal(subjectColumnOf(matrix, 3), null);

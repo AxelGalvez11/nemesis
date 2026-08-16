@@ -109,6 +109,26 @@ test("empty content is rejected — a block that says nothing is not an edit", (
   assert.equal(result.ops.length, 0);
 });
 
+test("semantic visuals are validated before a model edit can reach the page", () => {
+  const visual = {
+    kind: "equation" as const,
+    latex: "P(A\\mid B)=\\frac{P(B\\mid A)P(A)}{P(B)}",
+    learningGoal: "See how prior and likelihood combine",
+  };
+  const accepted = validateOps(canvas(THREE), [
+    { operation: "insert_after", blockId: "b1", block: { type: "concept", content: "Bayes rule", visual } },
+  ]);
+  assert.equal(accepted.ops.length, 1);
+  const applied = applyOps(canvas(THREE), accepted.ops);
+  assert.deepEqual(applied.blocks[1]?.visual, visual);
+
+  const rejected = validateOps(canvas(THREE), [
+    { operation: "replace_block", blockId: "b2", content: "x", visual: { kind: "html", code: "<iframe>" } },
+  ]);
+  assert.equal(rejected.ops.length, 0);
+  assert.match(rejected.rejected[0]?.reason ?? "", /semantic visual/i);
+});
+
 test("a batch far larger than the document is refused wholesale", () => {
   const many: CanvasOp[] = Array.from({ length: 200 }, (_, i) => ({
     operation: "insert_after" as const,

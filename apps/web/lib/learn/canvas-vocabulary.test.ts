@@ -24,8 +24,8 @@ function block(over: Partial<CanvasBlock> = {}): CanvasBlock {
   };
 }
 
-function canvas(over: Partial<VocabularyCanvas> = {}): VocabularyCanvas {
-  return { level: "fundamentals", responses: [], recallResults: [], events: [], ...over };
+function canvas(over: Partial<LearningCanvas> = {}): VocabularyCanvas {
+  return { level: "fundamentals", responses: [], recallResults: [], events: [], ...over } as LearningCanvas;
 }
 
 /** Only `events` matters to `appendEvent` here, but it wants a whole canvas. */
@@ -101,9 +101,7 @@ test("a learner past the basics is offered less, not more", () => {
   assert.equal(markedTerms(block(), canvas({ level: "exam" })).length, 1);
 });
 
-test("🔴 a term the learner has already used correctly is not marked", () => {
-  // The strongest learner-relative signal available, and the one with real evidence under it:
-  // a judge looked at what they wrote and recorded what it showed.
+test("🔴 a term the learner has already used correctly remains available for lookup", () => {
   const demonstrated = canvas({
     responses: [
       {
@@ -123,23 +121,19 @@ test("🔴 a term the learner has already used correctly is not marked", () => {
   });
   assert.deepEqual(
     markedTerms(block(), demonstrated).map((mark) => mark.term),
-    ["upstroke"],
-    "the demonstrated term drops out; the other one stays",
+    ["electrochemical gradient", "upstroke"],
+    "mastery retires proactive intervention, never the learner's lookup capability",
   );
 });
 
-test("a term looked up once is retired, and one looked up three times comes back", () => {
+test("a vocabulary affordance remains after one or repeated lookups", () => {
   const once = withLookups("electrochemical gradient", 1);
-  assert.deepEqual(
-    markedTerms(block(), once).map((mark) => mark.term),
-    ["upstroke"],
-    "they asked and were answered — re-offering it immediately is what makes the layer feel stupid",
-  );
+  assert.ok(markedTerms(block(), once).some((mark) => mark.term === "electrochemical gradient"));
 
   const persistent = withLookups("electrochemical gradient", 3);
   assert.ok(
     markedTerms(block(), persistent).some((mark) => mark.term === "electrochemical gradient"),
-    "asked three times is friction, not curiosity — mark it again",
+    "friction changes what Nemesis teaches proactively, not what the learner may reopen",
   );
 });
 
@@ -150,8 +144,8 @@ test("🔴 marking is presentation and never touches the canvas", () => {
   assert.equal(JSON.stringify(original), snapshot, "the block must come back untouched");
 });
 
-test("a block the learner has folded away or claimed is left alone", () => {
-  assert.deepEqual(markedTerms(block({ known: true }), canvas()), []);
+test("folding hides marks, while marking a passage known keeps lookup available", () => {
+  assert.ok(markedTerms(block({ known: true }), canvas()).length > 0);
   assert.deepEqual(markedTerms(block({ collapsed: true }), canvas()), []);
 });
 

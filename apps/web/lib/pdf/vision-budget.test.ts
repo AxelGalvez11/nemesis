@@ -298,9 +298,9 @@ describe("the budget actually reaches the network, on every vision lane", () => 
 // fix was reverted. Both halves are pinned below.
 // =============================================================================
 
-/** A Gemini reply carrying exactly `entries` numbered lines — the shape `parseFigureDescriptions` reads. */
+/** A Gemini reply carrying exactly `entries` identifier lines. */
 function numberedReply(entries: number): string {
-  const lines = Array.from({ length: entries }, (_, index) => `${index + 1}. described figure ${index + 1}`);
+  const lines = Array.from({ length: entries }, (_, index) => `[[figure ${index + 1}]] described figure ${index + 1}`);
   return JSON.stringify({ candidates: [{ content: { parts: [{ text: lines.join("\n") }] } }] });
 }
 
@@ -508,7 +508,7 @@ describe("a dead model ladder is a provider failure, not an empty answer", () =>
     // both passed with a hardcoded value, neither would mean anything.
     const before = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "1. none" }] } }] }), {
+      new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "[[figure 1]] none" }] } }] }), {
         status: 200,
       })) as unknown as typeof fetch;
     try {
@@ -670,7 +670,7 @@ describe("callGemini: transient failures retry the SAME model; terminal ones wal
     globalThis.fetch = (async (url: string) => {
       calls.push(String(url));
       if (calls.length === 1) return new Response("", { status: 404 }); // transient: empty body
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "1. A nephron diagram." }] } }] }), { status: 200 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "[[figure 1]] A nephron diagram." }] } }] }), { status: 200 });
     }) as unknown as typeof fetch;
     try {
       const start = Date.now();
@@ -700,7 +700,7 @@ describe("callGemini: transient failures retry the SAME model; terminal ones wal
     globalThis.fetch = (async (url: string) => {
       calls.push(String(url));
       if (calls.length === 1) return new Response(retiredBody, { status: 404 });
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "1. A nephron diagram." }] } }] }), { status: 200 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "[[figure 1]] A nephron diagram." }] } }] }), { status: 200 });
     }) as unknown as typeof fetch;
     try {
       const start = Date.now();
@@ -752,7 +752,7 @@ describe("callGemini: transient failures retry the SAME model; terminal ones wal
     globalThis.fetch = (async (url: string) => {
       calls.push(String(url));
       if (calls.length === 1) throw new Error("network reset");
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "1. A nephron diagram." }] } }] }), { status: 200 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "[[figure 1]] A nephron diagram." }] } }] }), { status: 200 });
     }) as unknown as typeof fetch;
     try {
       const out = await describeFiguresWithVision([{ bytes: new Uint8Array([1]), mime: "image/png", name: "a.png" }], {
@@ -772,7 +772,7 @@ describe("callGemini: transient failures retry the SAME model; terminal ones wal
     globalThis.fetch = (async (url: string) => {
       calls.push(String(url));
       if (calls.length === 1) return new Response(JSON.stringify({ error: { code: 400, message: "invalid argument" } }), { status: 400 });
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "1. A nephron diagram." }] } }] }), { status: 200 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "[[figure 1]] A nephron diagram." }] } }] }), { status: 200 });
     }) as unknown as typeof fetch;
     try {
       const start = Date.now();
@@ -796,7 +796,7 @@ describe("callGemini: transient failures retry the SAME model; terminal ones wal
       const model = VISION_MODEL_LADDER.find((candidate) => String(url).includes(candidate))!;
       perModel[model] = (perModel[model] ?? 0) + 1;
       if (model === VISION_MODEL_LADDER[0]) return new Response("", { status: 404 }); // always transient
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "1. A nephron diagram." }] } }] }), { status: 200 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "[[figure 1]] A nephron diagram." }] } }] }), { status: 200 });
     }) as unknown as typeof fetch;
     try {
       const out = await describeFiguresWithVision([{ bytes: new Uint8Array([1]), mime: "image/png", name: "a.png" }], {

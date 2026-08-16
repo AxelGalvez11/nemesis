@@ -47,7 +47,7 @@ function stubProvider(entries: readonly string[]): () => void {
   globalThis.fetch = (async () =>
     new Response(
       JSON.stringify({
-        candidates: [{ content: { parts: [{ text: entries.map((entry, index) => `${index + 1}. ${entry}`).join("\n") }] }, finishReason: "STOP" }],
+        candidates: [{ content: { parts: [{ text: entries.map((entry, index) => `[[figure ${index + 1}]] ${entry}`).join("\n") }] }, finishReason: "STOP" }],
       }),
       { headers: { "content-type": "application/json" }, status: 200 },
     )) as typeof globalThis.fetch;

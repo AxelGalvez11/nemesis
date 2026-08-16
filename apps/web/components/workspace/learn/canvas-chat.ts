@@ -24,6 +24,7 @@
 import { postChatCompletion, searchWebContext, type WireMsg } from "@/lib/workspace/chat-api";
 import { buildFreshSearchQuery, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
@@ -66,20 +67,35 @@ export function chatMessages(input: {
   /** Formatted live web results, when a search ran. Empty string when it did not. */
   webContext: string;
 }): WireMsg[] {
-  const context = [
-    input.materialContext ? `ATTACHED MATERIAL (for reference, not a limit on what you may answer):\n\n${input.materialContext}` : "",
-    input.webContext,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const sourceRule = sourceDisagreementInstruction({
+    hasAttachedMaterial: input.materialContext.trim().length > 0,
+    hasExternalEvidence: input.webContext.trim().length > 0,
+  });
 
   return [
-    { content: CHAT_SYSTEM, role: "system" },
+    { content: [CHAT_SYSTEM, sourceRule].filter(Boolean).join("\n\n"), role: "system" },
+    ...(input.materialContext.trim()
+      ? [{
+        content:
+          "ATTACHED COURSE OR ASSESSMENT MATERIAL. This is source context, not something the learner "
+          + "said in their question.\n\n"
+          + input.materialContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
+    ...(input.webContext.trim()
+      ? [{
+        content:
+          "PROVISIONAL EXTERNAL EVIDENCE retrieved live for this answer. This is source context, not "
+          + "something the learner said or has demonstrated knowing.\n\n"
+          + input.webContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
     {
       content:
         (input.canvasTitle ? `The learner is on a canvas titled "${input.canvasTitle}" and asked:\n\n` : "The learner asked:\n\n") +
-        `"${input.question}"` +
-        (context ? `\n\n${context}` : ""),
+        `"${input.question}"`,
       role: "user",
     },
   ];

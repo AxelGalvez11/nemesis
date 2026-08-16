@@ -27,7 +27,7 @@
  * PURE. No zip, no I/O — callers hand it the XML parts they already unzipped.
  */
 
-import { projectCells, type DocCell } from "@nemesis/shared";
+import { projectCells, type DocCell, type DocEmphasis, type DocEmphasisKind } from "@nemesis/shared";
 
 import { decodeXmlEntities } from "./office-text";
 import { ommlSpans } from "./docx-omml";
@@ -39,6 +39,8 @@ export interface DocxBlock {
   /** 0-based position in the document. The only locator Word truly supports. */
   index: number;
   text: string;
+  /** Typographic runs Word marked inside this block. */
+  emphasis?: readonly DocEmphasis[];
   /** heading only: 1-9. */
   level?: number;
   /** listItem only: the resolved marker, e.g. "3." or "•". */
@@ -233,6 +235,34 @@ export function paragraphText(paragraphXml: string): string {
 }
 
 /**
+ * The run properties Word explicitly attached to visible text in one paragraph.
+ *
+ * Kept separate from `paragraphText`: joining runs is correct for reading, but joining them must
+ * not erase why the author split the runs in the first place. A run can carry several properties
+ * at once, so it can contribute more than one entry.
+ */
+export function paragraphEmphasis(paragraphXml: string): DocEmphasis[] {
+  const out: DocEmphasis[] = [];
+  for (const run of paragraphXml.matchAll(/<w:r\b[^>]*>([\s\S]*?)<\/w:r>/g)) {
+    const inner = run[1] ?? "";
+    const text = [...inner.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)]
+      .map((part) => decodeXmlEntities(part[1] ?? ""))
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) continue;
+    const properties = inner.match(/<w:rPr\b[^>]*>([\s\S]*?)<\/w:rPr>/)?.[1] ?? "";
+    const kinds: DocEmphasisKind[] = [];
+    if (/<w:b\b(?![^>]*w:val="(?:0|false|off)")[^>]*\/?\s*>/i.test(properties)) kinds.push("bold");
+    if (/<w:i\b(?![^>]*w:val="(?:0|false|off)")[^>]*\/?\s*>/i.test(properties)) kinds.push("italic");
+    if (/<w:u\b(?![^>]*w:val="none")[^>]*\/?\s*>/i.test(properties)) kinds.push("underline");
+    if (/<w:highlight\b(?![^>]*w:val="none")[^>]*\/?\s*>/i.test(properties)) kinds.push("highlight");
+    for (const kind of kinds) out.push({ kind, text });
+  }
+  return out;
+}
+
+/**
  * The relationship id → target map from `word/_rels/document.xml.rels`.
  *
  * Kept here so the reader stays PURE: `office.ts` unzips the part, this turns it
@@ -353,7 +383,7 @@ export function readDocxStructure(
   for (const node of topLevelNodes(documentXml)) {
     const index = blocks.length;
     if (node.tag === "tbl") {
-      const { cells: tableCells, headerRows, rows } = readTable(node.xml);
+      const { cells: tableCells, emphasis, headerRows, rows } = readTable(node.xml);
       const cellCount = rows.reduce((t, r) => t + r.length, 0);
       if (cellCount) {
         counts.tables += 1;
@@ -365,6 +395,7 @@ export function readDocxStructure(
           index,
           kind: "table",
           rows,
+          ...(emphasis.length ? { emphasis } : {}),
           // A readable rendering that keeps row and column identity, so a model
           // reading the text still sees a grid rather than a list of words.
           text: renderTable(rows),
@@ -381,6 +412,7 @@ export function readDocxStructure(
     }
 
     const text = paragraphText(node.xml);
+    const emphasis = paragraphEmphasis(node.xml);
     const equations = equationCount(node.xml);
     const level = headingLevel(node.xml);
     if (level !== null) {
@@ -408,7 +440,14 @@ export function readDocxStructure(
       // path gets shorter and every entry in it is a heading that exists.
       while (openHeadings.length > 0 && openHeadings[openHeadings.length - 1]!.level >= level) openHeadings.pop();
       counts.headings += 1;
-      blocks.push({ headingPath: openHeadings.map((h) => h.text), index, kind: "heading", level, text });
+      blocks.push({
+        headingPath: openHeadings.map((h) => h.text),
+        index,
+        kind: "heading",
+        level,
+        text,
+        ...(emphasis.length ? { emphasis } : {}),
+      });
       openHeadings.push({ level, text });
       headingPath.length = 0;
       headingPath.push(...openHeadings.map((h) => h.text));
@@ -439,6 +478,7 @@ export function readDocxStructure(
       // all. 2,497 markers in this corpus depend on it.
       blocks.push({
         depth,
+        ...(emphasis.length ? { emphasis } : {}),
         headingPath: [...headingPath],
         index,
         kind: "listItem",
@@ -455,13 +495,25 @@ export function readDocxStructure(
     // review, or refuse to paraphrase it.
     if (equations > 0) {
       counts.equations += 1;
-      blocks.push({ headingPath: [...headingPath], index, kind: "equation", text });
+      blocks.push({
+        headingPath: [...headingPath],
+        index,
+        kind: "equation",
+        text,
+        ...(emphasis.length ? { emphasis } : {}),
+      });
       pushFigures(node.xml);
       continue;
     }
 
     counts.paragraphs += 1;
-    blocks.push({ headingPath: [...headingPath], index, kind: "paragraph", text });
+    blocks.push({
+      headingPath: [...headingPath],
+      index,
+      kind: "paragraph",
+      text,
+      ...(emphasis.length ? { emphasis } : {}),
+    });
     pushFigures(node.xml);
   }
 
@@ -573,8 +625,14 @@ function cellProps(tcXml: string): string {
  * Cells are the source of truth and `rows` is their projection, exactly as in the
  * PDF lane, so both formats mean the same thing by a table.
  */
-function readTable(tableXml: string): { cells: DocCell[]; headerRows: number; rows: string[][] } {
+function readTable(tableXml: string): {
+  cells: DocCell[];
+  emphasis: DocEmphasis[];
+  headerRows: number;
+  rows: string[][];
+} {
   const cells: DocCell[] = [];
+  const emphasis: DocEmphasis[] = [];
   let headerRows = 0;
   let rowIndex = 0;
   // Only this table's OWN rows and cells. A nested table's `<w:tr>` sits inside a
@@ -608,7 +666,9 @@ function readTable(tableXml: string): { cells: DocCell[]; headerRows: number; ro
 
       // Every paragraph in the cell, including any inside a nested table: its
       // text belongs to this cell, even though its grid is not ours to flatten.
-      const paragraphs = [...tc.xml.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].map((p) => paragraphText(p[0]));
+      const paragraphXml = [...tc.xml.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].map((p) => p[0]);
+      const paragraphs = paragraphXml.map(paragraphText);
+      emphasis.push(...paragraphXml.flatMap(paragraphEmphasis));
       cells.push({
         column,
         row: rowIndex,
@@ -625,7 +685,7 @@ function readTable(tableXml: string): { cells: DocCell[]; headerRows: number; ro
     if (isHeaderRow(rowInner) && headerRows === rowIndex) headerRows += 1;
     rowIndex += 1;
   }
-  return { cells, headerRows, rows: projectCells(cells) };
+  return { cells, emphasis, headerRows, rows: projectCells(cells) };
 }
 
 /**

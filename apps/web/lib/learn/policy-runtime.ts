@@ -309,5 +309,14 @@ export function supportedObjectives(objectives: readonly ResolvedObjective[]): R
   // up, in a different file, where ownership is decided. Two copies of one rule can disagree, and
   // the failure is silent in the worst direction: a canvas OWNED by the runtime whose every
   // objective is then filtered out of it, which the learner meets as an empty Canvas.
-  return objectives.filter(({ knowledge, objective }) => runtimeCanStage(knowledge.type, objective.capability));
+  return objectives.filter(({ knowledge, objective }) => {
+    if (!runtimeCanStage(knowledge.type, objective.capability)) return false;
+    // A spatial question without loadable pixels is not a weaker locate task; it is a broken cue.
+    // Asset presence is an invariant the renderer cannot repair, so refuse it before arbitration
+    // rather than let it win and fall back to a generic text question about an invisible position.
+    if (knowledge.type === "spatial" && objective.capability === "locate") {
+      return Boolean(knowledge.figure?.assetPath);
+    }
+    return true;
+  });
 }

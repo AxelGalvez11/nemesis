@@ -17,16 +17,8 @@
 // PURE. No React, no I/O.
 
 import type { ResolvedObjective } from "./canvas-knowledge";
+import { semanticRelationsOf } from "./semantic-relations";
 
-/**
- * A territory.
- *
- * 🔴 TWO MEMBERS, AND THE MISSING THIRD IS A BRAIN CONTRACT, NOT AN OVERSIGHT. §11 asks for
- * "focus a parent topic" and "focus a child topic". Knowledge objects converge by `identityKey`
- * (knowledge-identity.ts) and carry NO parent/child relation; there is no territory entity
- * anywhere in the system. See `MISSING_TERRITORY_CONTRACT` below for exactly what is needed and
- * why deriving one from document headings would be worse than the gap.
- */
 export type FocusScope =
   /** The whole canvas. Also what "clear focus" and "return to the recommended path" produce —
    *  they are the same state, because the adaptive path IS the unfiltered one. */
@@ -36,25 +28,12 @@ export type FocusScope =
 
 export const WHOLE_CANVAS: FocusScope = { kind: "canvas" };
 
-/**
- * 🔴 WHAT IS MISSING FROM THE BRAIN, STATED SO IT CANNOT BE QUIETLY INVENTED HERE.
- *
- * A hierarchical Minimap needs a relation between knowledge objects and named territories:
- * either a `territory` grouping on `KnowledgeObject` carrying a parent link, or a separate
- * territory entity with membership. It must also say whether one knowledge object may belong to
- * several territories, and whether the relation is derived per-canvas or converges across canvases
- * the way `identityKey` does.
- *
- * The tempting substitute is the document's heading path. It must not be used: a heading records
- * where text SAT, not what depends on what. "RAAS" as a slide title and "RAAS" as a causal
- * territory are different claims, and once a tree rendered from headings is on screen, its
- * wrongness is invisible — it looks exactly like a correct one.
- *
- * Until the contract exists, `selection` over objectives this canvas genuinely has is the honest
- * ceiling: it names real knowledge, and it invents no structure between the names.
- */
-export const MISSING_TERRITORY_CONTRACT =
-  "territory ↔ knowledge relation (parent/child, membership cardinality, per-canvas vs converged)";
+/** A recursive Minimap row. Children exist only when explicit semantic structure supports them. */
+export interface AvailableTerritory {
+  label: string;
+  identityKeys: readonly string[];
+  children?: readonly AvailableTerritory[];
+}
 
 /**
  * Narrow the candidates the policy will arbitrate over.
@@ -99,23 +78,62 @@ function displaySafe(label: string): string {
 /**
  * The territories a learner can choose between, built from what this canvas actually holds.
  *
- * 🔴 DERIVED FROM THE KNOWLEDGE, NOT FROM A TAXONOMY. There is no territory entity to read, so the
- * Minimap offers exactly what exists: the whole canvas, plus each distinct knowledge object the
- * policy could act on. That is flat, and it is honestly flat — it does not imply a hierarchy the
- * system cannot back up.
+ * 🔴 DERIVED FROM KNOWLEDGE RELATIONS, NEVER DOCUMENT LAYOUT. Distinct knowledge objects are
+ * leaves. A parent is introduced only when two or more leaves explicitly name the same parent,
+ * category, or whole in the semantic substrate. Unsupported material therefore remains honestly
+ * flat rather than acquiring a plausible-looking tree from headings.
  */
-export function availableTerritories(
-  objectives: readonly ResolvedObjective[],
-): readonly { label: string; identityKeys: readonly string[] }[] {
-  const byLabel = new Map<string, string[]>();
+export function availableTerritories(objectives: readonly ResolvedObjective[]): readonly AvailableTerritory[] {
+  const byLabel = new Map<string, { identityKeys: string[]; entries: ResolvedObjective[] }>();
   for (const entry of objectives) {
     // The knowledge object's own statement is what the learner recognises — it is the thing the
     // document said, not a name minted here. Grouped on the raw form; only the OUTPUT is sanitised,
     // so two statements differing only in dash style still do not collide into one chip by accident.
     const label = entry.knowledge.statement;
-    const keys = byLabel.get(label);
-    if (keys) keys.push(entry.objective.identityKey);
-    else byLabel.set(label, [entry.objective.identityKey]);
+    const grouped = byLabel.get(label);
+    if (grouped) {
+      grouped.identityKeys.push(entry.objective.identityKey);
+      grouped.entries.push(entry);
+    } else byLabel.set(label, { entries: [entry], identityKeys: [entry.objective.identityKey] });
   }
-  return [...byLabel].map(([label, identityKeys]) => ({ identityKeys, label: displaySafe(label) }));
+  const leaves = [...byLabel].map(([rawLabel, grouped]) => ({
+    entries: grouped.entries,
+    territory: { identityKeys: grouped.identityKeys, label: displaySafe(rawLabel) } satisfies AvailableTerritory,
+  }));
+
+  // Only explicit semantic parent roles may create a tree. Document headings are location, not
+  // knowledge structure, and never enter this adapter. Overlap is valid: one idea may belong to
+  // several classifications, so a leaf can honestly appear below more than one parent.
+  const childrenForParent = new Map<string, AvailableTerritory[]>();
+  for (const leaf of leaves) {
+    const parents = new Set<string>();
+    for (const entry of leaf.entries) {
+      for (const relation of semanticRelationsOf(entry.knowledge)) {
+        if (relation.family !== "hierarchy" && relation.family !== "classification" && relation.family !== "part_whole") continue;
+        for (const role of relation.roles) {
+          const parentRole =
+            (relation.family === "hierarchy" && (role.role === "parent" || role.role === "superordinate")) ||
+            (relation.family === "classification" && role.role === "category") ||
+            (relation.family === "part_whole" && role.role === "whole");
+          if (parentRole && role.value.text.trim()) parents.add(displaySafe(role.value.text.trim()));
+        }
+      }
+    }
+    for (const parent of parents) {
+      if (parent === leaf.territory.label) continue;
+      const children = childrenForParent.get(parent);
+      if (children) children.push(leaf.territory);
+      else childrenForParent.set(parent, [leaf.territory]);
+    }
+  }
+
+  const realGroups = [...childrenForParent].filter(([, children]) => children.length >= 2);
+  const groupedLabels = new Set(realGroups.flatMap(([, children]) => children.map((child) => child.label)));
+  const roots: AvailableTerritory[] = realGroups.map(([label, children]) => ({
+    children,
+    identityKeys: [...new Set(children.flatMap((child) => child.identityKeys))],
+    label,
+  }));
+  roots.push(...leaves.filter((leaf) => !groupedLabels.has(leaf.territory.label)).map((leaf) => leaf.territory));
+  return roots;
 }

@@ -11,7 +11,7 @@
 // Both are exercised by tests that reintroduce the specific defect, because a test that merely
 // checks "a task was produced" or "a row was written" passes through every one of these deaths.
 
-import type { ExpectedEvidence, LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
+import type { ExpectedEvidence, LearnerInputModality, LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
 import type { EvaluationInput } from "./canvas-prompts";
 import type { KnowledgeObject } from "./knowledge-types";
 import type { EvidenceVerdict } from "./learner-evidence";
@@ -311,6 +311,16 @@ export function sequencePromptText(objective: LearningObjective): string {
     : `What comes immediately after: ${objective.cue}?`;
 }
 
+/** A source assertion re-expressed as connected understanding, rather than repeated verbatim. */
+export function explanationPromptText(objective: LearningObjective): string {
+  return `Explain this relationship in your own words: ${objective.cue}`;
+}
+
+/** The figure carries the spatial cue; the words must not reveal the covered label. */
+export function locatePromptText(objective: LearningObjective): string {
+  return objective.cue;
+}
+
 /** The pair of identifiers a prompt needs to ask about one stored objective. */
 export function targetFor(objective: StoredObjective): ObjectiveTarget {
   return { identityKey: objective.identityKey, rowId: objective.rowId };
@@ -399,10 +409,16 @@ export function retrievalPromptFor(
   // minter, and keying on the type here would put a second, independently-editable copy of that
   // mapping in a file that has no business holding one.
   const predicting = objective.capability === "predict";
+  const explaining = objective.capability === "explain";
+  const locating = objective.capability === "locate" && Boolean(knowledge.figure?.assetPath);
   const discriminating = objective.capability === "discriminate" && Boolean(knowledge.contrast);
   const sequencing = objective.capability === "sequence";
   const base = predicting
     ? predictionPromptText(objective)
+    : explaining
+      ? explanationPromptText(objective)
+    : locating
+      ? locatePromptText(objective)
     : sequencing
       ? sequencePromptText(objective)
       : discriminating && knowledge.contrast
@@ -440,6 +456,16 @@ export function retrievalPromptFor(
           },
         }
       : {}),
+    ...(explaining && knowledge.semanticRelations?.length
+      ? {
+          expectedEvidence: {
+            referenceAnswer: objective.answer,
+            requiredConcepts: [...new Set(
+              knowledge.semanticRelations.flatMap((relation) => relation.roles.map((role) => role.value.text)),
+            )],
+          },
+        }
+      : {}),
     id,
     // 🔴 READ OFF THE OBJECTIVE, NOT HARD-CODED TO "recall". This surface only stages retrieval
     // today, so the two are the same value — and writing the literal here is precisely how they
@@ -457,7 +483,17 @@ export function retrievalPromptFor(
     // 🔴 `reconstruct` IS THE SPEC'S OWN WORD - "rebuild the structure from memory" - and a
     // procedure's structure IS its order. Filing it as `name` would record every attempt at a
     // sequence as producing a term.
-    task: predicting ? "predict" : sequencing ? "reconstruct" : discriminating ? "compare" : "name",
+    task: predicting
+      ? "predict"
+      : explaining
+        ? "explain"
+        : locating
+          ? "locate"
+        : sequencing
+          ? "reconstruct"
+          : discriminating
+            ? "compare"
+            : "name",
     // 🔴 THE STAGED RUNG, NOT THE REQUESTED ONE. Writing what was asked for rather than what was
     // delivered is the whole defect being closed here: a row must record the demand the learner
     // actually met, or `meanScaffoldingLevel` and every claim built on it describe a session that
@@ -507,6 +543,8 @@ export function evidenceForSubmission(input: {
   prompt: RetrievalPrompt;
   /** What the learner submitted. Null when a control produced the outcome and nothing was typed. */
   responseText: string | null;
+  /** Raw input provenance. It follows the performance unchanged to every objective row. */
+  responseModality?: LearnerInputModality;
   /**
    * How long the attempt took, when anything measured it.
    *
@@ -569,6 +607,7 @@ export function evidenceForSubmission(input: {
       outcome: byKey.get(target.identityKey) ?? null,
       prompt,
       responseText: input.responseText,
+      responseModality: input.responseModality,
       target,
       teachingStrategy: input.teachingStrategy,
       ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
@@ -638,6 +677,7 @@ function rowForTarget(input: {
   /** Whether the account covering this submission named no objective at all — see `objectiveEvidenceFor`. */
   accountNamedNothing: boolean;
   responseText: string | null;
+  responseModality?: LearnerInputModality;
   canvasId: string | null;
   occurredAt: string;
   tookMs?: number;
@@ -684,6 +724,7 @@ function rowForTarget(input: {
     // long producing this answer; they did not spend a quarter of it on each link. Splitting it
     // would be an interpretation, and a wrong one — the observation is the performance's.
     responseLatencyMs: input.tookMs,
+    responseModality: input.responseModality,
     responseText: input.responseText,
     scaffoldingLevel: prompt.scaffoldingLevel,
     taskId: prompt.id,
@@ -738,6 +779,7 @@ export function outcomeFor(
 export function unobtainedEvidence(input: {
   prompt: RetrievalPrompt;
   responseText: string | null;
+  responseModality?: LearnerInputModality;
   canvasId: string | null;
   occurredAt: string;
   /** Which controller chose the opportunity that produced nothing. 🔴 A non-attempt is an outcome
@@ -773,6 +815,7 @@ export function unobtainedEvidence(input: {
     occurredAt: input.occurredAt,
     prompt: input.prompt,
     responseText: input.responseText,
+    responseModality: input.responseModality,
     teachingStrategy: input.teachingStrategy,
     ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
   });

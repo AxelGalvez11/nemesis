@@ -20,7 +20,7 @@
 //     Association extraction
 //     ├── structured-table lane    ← THIS FILE, built now, highest precision
 //     ├── structured glossary lane ← later
-//     └── semantic prose lane      ← later, conservative
+//     └── semantic prose lane      ← `semantic-grounded.ts`, model-read and evidence checked
 //
 // So "no table" means THIS LANE found nothing, and must never be recorded as "this document
 // teaches no associations". The refusal reasons below are written to keep that distinction
@@ -36,17 +36,19 @@ import {
 } from "@/lib/sources/source-context";
 
 import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } from "./knowledge-identity";
+import { segmentCell } from "./cell-segmentation";
 import { figureKnowledge } from "./figure-knowledge";
 import type { KnowledgeObject } from "./knowledge-types";
-import { orderedRunsIn, type ListUnit } from "./procedure-sequence";
 import { importanceIndex, sourceImportance, type ImportanceRefusal } from "./source-importance";
-import { subjectColumnOf } from "./table-subject-column";
+import { firstColumnIsProse, subjectColumnOf } from "./table-subject-column";
 import { classAxesOf, contrastsOf } from "./wide-grid-classification";
 
 /** Stamped onto every object, so a corpus extracted under older rules can be found and redone
  *  rather than silently mixed in with a newer one. Bump it whenever the rules below change what
  *  comes out of the same document. */
 export const EXTRACTION_VERSION = "association/2";
+/** Forward-only version for atomic relations recovered from wide table cells. */
+export const WIDE_TABLE_EXTRACTION_VERSION = "wide-table/1";
 
 /** A pair whose cell is this long is a paragraph, not one half of an association.
  *
@@ -202,20 +204,12 @@ function readKnowledgeObjects(context: SourceContext): Omit<KnowledgeExtraction,
   const figures = figuresFromUnits(context);
   objects.push(...figures);
 
-  // 🔴 CONTRACT R4's `procedural` KIND — A THIRD LANE, FOR THE SAME REASON FIGURES ARE THE SECOND.
-  // A lab protocol or a filing checklist is a document made almost entirely of numbered lists and
-  // may hold no grid anywhere in it; leaving this call under the no-tables return below would mean
-  // the one document shape a procedure lane exists for produces nothing.
-  const procedures = proceduresFromUnits(context);
-  objects.push(...procedures);
-
   if (tables.length === 0) {
     return {
       objects,
-      // A document whose diagrams or procedures taught something was not a dead end, whatever its
-      // grids did.
-      outcome: structured || figures.length > 0 || procedures.length > 0 ? "complete" : "degraded",
-      refusals: figures.length > 0 || procedures.length > 0 ? [] : [{
+      // A document whose diagrams taught something was not a dead end, whatever its grids did.
+      outcome: structured || figures.length > 0 ? "complete" : "degraded",
+      refusals: figures.length > 0 ? [] : [{
         detail: structured
           ? "This document's stored structure contains no table, so this lane found nothing to read pairs from."
           : "Only flat text survived this document's parse, so any table it had was flattened before extraction could see it.",
@@ -268,112 +262,6 @@ function figuresFromUnits(context: SourceContext): KnowledgeObject[] {
     });
     if (object) objects.push(object);
   }
-  return objects;
-}
-
-/**
- * `orderedRunsIn` reads a list item by `type: "listItem"` — the same name `DocBlock.kind` uses
- * upstream, in every parser. `unitsFromModel` folds that onto the coarser `CanonicalSourceUnitType`
- * "list", the one bucket every list-nesting scheme in every format shares, because an extractor
- * branching on unit TYPE should not need to know a document format's own list vocabulary. The
- * finer distinction procedure detection needs is exactly what the marker already carries, so it is
- * restored here, for the one caller that needs it back, rather than by widening
- * `CanonicalSourceUnitType` for everyone.
- *
- * 🔴 FIELD BY FIELD, NEVER SPREAD — the same discipline `unitsFromModel` itself uses one boundary
- * over, and for the same reason: a `CanonicalSourceUnit` also carries `table`, `figure` and
- * `unitLabel`, and `orderedRunsIn` must never be able to start reading them just because a spread
- * happened to carry them along.
- */
-function listUnitsOf(units: readonly CanonicalSourceUnit[]): ListUnit[] {
-  return units.map((unit) => ({
-    anchor: unit.anchor,
-    depth: unit.depth,
-    id: unit.id,
-    marker: unit.marker,
-    text: unit.text,
-    type: unit.type === "list" ? "listItem" : unit.type,
-  }));
-}
-
-/**
- * Where one step sits, in a form that survives the document being reparsed.
- *
- * 🔴 THE SAME IDEA `anchorForRow` USES FOR A TABLE CELL, ONE UNIT OVER — but simpler, because a
- * step has no second value to disambiguate against. The whole unit IS the step, so its own text is
- * the whole quote rather than a fragment.
- */
-function anchorForStep(unit: CanonicalSourceUnit): CanonicalSourceAnchor {
-  return anchorInUnit(unit, (unit.text ?? "").trim());
-}
-
-/**
- * Procedural knowledge from the document's own numbered lists — contract R4's `procedural` kind.
- *
- * 🔴 A RUN, NOT A UNIT, AND THAT IS WHY THIS IS ITS OWN PASS RATHER THAN A CASE INSIDE THE
- * PER-UNIT LOOP BELOW. Every other object in this file is read off ONE unit at a time — a table, a
- * figure. Nothing about a single list item in isolation says whether it belongs to a sequence;
- * only `orderedRunsIn`, looking at the whole document's unit order, can say that. So this runs
- * once, over every unit `context` has, before anything asks one unit what it contains on its own.
- *
- * 🔴 ONE OBJECT PER RUN, NEVER ONE PER STEP. A learner can hold step two of a procedure without
- * holding step three, which is exactly why `steps` is a payload on ONE object rather than three
- * objects with no relationship — see `KnowledgeObject.steps` and `procedureObjectives`, which mints
- * the per-step objectives this single object supports.
- */
-function proceduresFromUnits(context: SourceContext): KnowledgeObject[] {
-  const unitById = new Map(context.units.map((unit) => [unit.id, unit] as const));
-  const runs = orderedRunsIn(listUnitsOf(context.units));
-
-  // 🔴 A HEADING NAMES A RUN ONLY WHEN IT NAMES EXACTLY ONE. `headingOf` (in procedure-sequence.ts)
-  // reads the closest ANCESTOR heading, which is a SECTION's title, not a per-run label — and a
-  // section legitimately holds two procedures under one heading ("Primary:" a numbered list,
-  // "In the alternative:" a second one). Both runs would then report the identical heading, and
-  // since `statement` is what `knowledgeIdentityKey` hashes, using it for both gives two DIFFERENT
-  // procedures the SAME identity — verified empirically: without this count, "Serve the opposing
-  // party" and "Move to strike" collapsed into one object, and their step-1 objectives collapsed
-  // into one identity key with two different correct answers. Counted once, over every run in the
-  // document, before any run is named — so the ambiguity is caught before it can be used, not
-  // after two objects have already been minted from it.
-  const headingCounts = new Map<string, number>();
-  for (const run of runs) {
-    if (run.heading) headingCounts.set(run.heading, (headingCounts.get(run.heading) ?? 0) + 1);
-  }
-
-  const objects: KnowledgeObject[] = [];
-  for (const run of runs) {
-    const steps = run.steps;
-    const namesOnlyThisRun = run.heading !== undefined && headingCounts.get(run.heading) === 1;
-    // 🔴 THE SOURCE'S OWN HEADING, NEVER AN INTERPRETATION OF IT — the same owner rule the
-    // relation lane states above (2026-08-14) — but only when it is actually THIS run's name and
-    // not a section shared with a sibling run. Either way, the run is named from its own FIRST STEP
-    // alone rather than from the whole run: the rest of the steps must not enter the statement,
-    // because the statement is what identity is computed from below, and a procedure that later
-    // gained a reworded fourth step must stay the same procedure it always was.
-    const statement = namesOnlyThisRun ? run.heading! : steps[0]!.text;
-    // 🔴 ANCHORED TO THE FIRST STEP'S OWN UNIT, NOT BUILT FROM ITS TEXT. A run is the only object
-    // in this file keyed by more than one unit, and the first step's id is already unique per run
-    // — reusing it keeps the id deterministic without folding step text into it, which is what the
-    // identity key below must never do either.
-    const id = `${steps[0]!.unitId}:proc`;
-    const object: KnowledgeObject = {
-      derivation: "ordered-list",
-      extractionVersion: EXTRACTION_VERSION,
-      id,
-      // Every step resolves back to the document on its own, not only the run as a whole — a
-      // learner asking "where did step 2 come from" must land on step 2, not the first line of it.
-      sourceAnchors: steps.map((step) => anchorForStep(unitById.get(step.unitId)!)),
-      statement,
-      steps,
-      type: "procedure",
-      // 🔴 EMPTY BY CONSTRUCTION, NOT BY OMISSION — the same reasoning `pairsFromTable` gives: this
-      // function's only input is a `SourceContext` already anchored to a durable library source, so
-      // every way of knowing it can produce lives in `sourceAnchors` above.
-      unanchoredProvenance: [],
-    };
-    objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
-  }
-
   return objects;
 }
 
@@ -521,13 +409,17 @@ function relationsFromWideTable(
 ): { objects: KnowledgeObject[]; refusal?: ExtractionRefusal } {
   const dataRows = table.rows.slice(Math.max(0, table.headerRows));
   const width = Math.max(0, ...table.rows.map((row) => row.length));
-  const subject = subjectColumnOf(dataRows, width);
+  const subject = subjectColumnOf(dataRows, width, {
+    headerStated: Boolean(content.columns?.length || table.headerRows > 0),
+  });
 
   if (!subject) {
     return {
       objects: [],
       refusal: {
-        detail: `This ${width}-column grid is keyed by a date or a counter, or no column holds a distinct value on every row, so nothing states what each row is about.`,
+        detail: firstColumnIsProse(dataRows)
+          ? `This ${width}-column grid's first column holds a paragraph rather than a name, so what each row is about could not be read without guessing at it.`
+          : `This ${width}-column grid is keyed by a date or a counter, or no column holds a distinct value on every row, so nothing states what each row is about.`,
         reason: "table-no-subject",
         unitId: unit.id,
       },
@@ -551,40 +443,47 @@ function relationsFromWideTable(
 
     for (let column = 0; column < width; column += 1) {
       if (column === subject.index) continue;
-      const right = (row[column] ?? "").trim();
-      if (!right || right.length > MAX_CELL_CHARS) continue;
-      // A cell repeating the subject states nothing; usually a spanned heading filled across.
-      if (left === right) continue;
-
+      const cell = (row[column] ?? "").trim();
+      if (!cell || left === cell) continue;
       const objectHeader = columnNames?.[column];
       const objectRole = objectHeader ? normalizeForIdentity(objectHeader) : null;
-      const relationKind = relationKindFromHeader(
-        subjectHeader && objectHeader ? [subjectHeader, objectHeader] : undefined,
-      );
-      // 🔴 THE COLUMN IS IN THE ID, so two relations from one row are two objects rather than one
-      // overwriting the other — and so "where did this come from" resolves to a cell.
-      const id = `${unit.id}:r${rowIndex + 1}c${column + 1}`;
-      const object: KnowledgeObject = {
-        derivation: "table-row",
-        extractionVersion: EXTRACTION_VERSION,
-        id,
-        pair: {
+      const otherCells = row.filter((_, index) => index !== column).map((value) => String(value ?? ""));
+
+      for (const [part, segment] of segmentCell(cell, otherCells).entries()) {
+        const right = segment.value.trim();
+        if (!right || right.length > MAX_CELL_CHARS || right === left) continue;
+
+        // The row remains about its declared subject unless the source itself narrows scope by
+        // repeating a named row value as a sub-heading.
+        const entity = segment.scopedTo ?? left;
+        const scoped = Boolean(segment.scopedTo);
+        const baseRelation = scoped
+          ? objectRole
+          : relationKindFromHeader(subjectHeader && objectHeader ? [subjectHeader, objectHeader] : undefined);
+        const relationKind = segment.qualifier
+          ? `${baseRelation ?? UNQUALIFIED_RELATION}#${normalizeForIdentity(segment.qualifier)}`
+          : baseRelation;
+        const id = `${unit.id}:r${rowIndex + 1}c${column + 1}p${part + 1}`;
+        const object: KnowledgeObject = {
+          derivation: "table-row",
+          extractionVersion: WIDE_TABLE_EXTRACTION_VERSION,
           id,
-          left,
-          right,
-          ...(subjectRole && objectRole ? { leftRole: subjectRole, rightRole: objectRole } : {}),
-          ...(headingOf(unit) ? { groupLabel: headingOf(unit)! } : {}),
-        },
-        sourceAnchors: [anchorForRow(unit, left, right)],
-        // 🔴 THE COLUMN NAME IS IN THE STATEMENT WHEN THE GRID PRINTED ONE, because a wide table
-        // gives one subject SEVERAL relations and `lisinopril — cough` alone cannot say which of
-        // the five it is. Without the header there is nothing honest to add, so nothing is added.
-        statement: objectHeader ? `${left} — ${objectHeader.trim()}: ${right}` : `${left} — ${right}`,
-        type: "association",
-        unanchoredProvenance: [],
-        ...(relationKind ? { relationKind } : {}),
-      };
-      objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+          pair: {
+            id,
+            left: entity,
+            right,
+            ...(!scoped && subjectRole && objectRole ? { leftRole: subjectRole, rightRole: objectRole } : {}),
+            ...(scoped && objectRole ? { rightRole: objectRole } : {}),
+            ...(headingOf(unit) ? { groupLabel: headingOf(unit)! } : {}),
+          },
+          sourceAnchors: [{ ...unit.anchor, quote: { exact: right } }],
+          statement: statementForWideRelation(entity, objectHeader, segment.qualifier, right),
+          type: "association",
+          unanchoredProvenance: [],
+          ...(relationKind ? { relationKind } : {}),
+        };
+        objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+      }
     }
   }
 
@@ -600,6 +499,18 @@ function relationsFromWideTable(
   }
 
   return { objects };
+}
+
+const UNQUALIFIED_RELATION = "unstated";
+
+function statementForWideRelation(
+  entity: string,
+  header: string | undefined,
+  qualifier: string | undefined,
+  value: string,
+): string {
+  const dimension = [header?.trim(), qualifier?.trim()].filter(Boolean).join(" › ");
+  return dimension ? `${entity} — ${dimension}: ${value}` : `${entity} — ${value}`;
 }
 
 /**
@@ -624,7 +535,9 @@ function classificationsFromWideTable(
 ): KnowledgeObject[] {
   const dataRows = table.rows.slice(Math.max(0, table.headerRows));
   const width = Math.max(0, ...table.rows.map((row) => row.length));
-  const subject = subjectColumnOf(dataRows, width);
+  const subject = subjectColumnOf(dataRows, width, {
+    headerStated: Boolean(content.columns?.length || table.headerRows > 0),
+  });
   if (!subject) return [];
 
   const columnNames = content.columns?.length
@@ -644,7 +557,7 @@ function classificationsFromWideTable(
       const object: KnowledgeObject = {
         contrast,
         derivation: "table-row",
-        extractionVersion: EXTRACTION_VERSION,
+        extractionVersion: WIDE_TABLE_EXTRACTION_VERSION,
         id,
         sourceAnchors: [anchorForRow(unit, contrast.members[0] ?? contrast.label, contrast.label)],
         // Named by the source's own header when the grid printed one, so two documents teaching the

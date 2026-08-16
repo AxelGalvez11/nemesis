@@ -7,7 +7,7 @@ import { codeOnly } from "./code-scan";
 import { CAUSAL_EXTRACTION_VERSION } from "./causal-extraction-contract";
 import { EXTRACTION_VERSION } from "./knowledge-extraction";
 import { TERRITORY_VERSION } from "./knowledge-territory";
-import { RULESET_LANES, RULESET_VERSION } from "./ruleset-version";
+import { DEFERRED_REPROCESS_LANES, RULESET_LANES, RULESET_VERSION } from "./ruleset-version";
 
 const LEARN_DIR = new URL("../../lib/learn/", import.meta.url);
 
@@ -29,6 +29,11 @@ test("🔴 the lane ORDER cannot change it — otherwise a reorder would bill th
   // string, every stored marker would stop matching, and every canvas would pay for one more model
   // read to reach exactly the answer it already had. A pure refactor must be free.
   assert.equal(buildRules([...RULESET_LANES].reverse()), RULESET_VERSION);
+});
+
+test("🔴 a lane cannot be both deferred and backfill-enabled", () => {
+  const overlap = DEFERRED_REPROCESS_LANES.filter((lane) => RULESET_LANES.includes(lane));
+  assert.deepEqual(overlap, []);
 });
 
 test("🔴 bumping ANY ONE lane moves it — an improvement must be able to reach the documents", () => {
@@ -66,7 +71,7 @@ test("🔴 the identity and evaluator versions are deliberately NOT lanes", () =
   }
 });
 
-test("🔴🔴 TRIPWIRE — an extraction lane added to this directory must be composed in", () => {
+test("🔴🔴 TRIPWIRE — an extraction lane must be composed in or explicitly deferred from backfill", () => {
   // 🔴 A SEPARATE, SEPARATELY-NAMED TEST, because a scanning guard is a different kind of claim
   // from the ones above and this repo has one that "passed while reading ONE line of a ten-line
   // union". The tests above check a relationship between values that are already wired together;
@@ -92,9 +97,8 @@ test("🔴🔴 TRIPWIRE — an extraction lane added to this directory must be c
   for (const constant of found) {
     assert.ok(
       declared.includes(constant),
-      `${constant} looks like an extraction lane and is not composed into RULESET_VERSION — ` +
-        "either add it to RULESET_LANES, or, if it genuinely cannot change what a document teaches, " +
-        "say so beside the identity and evaluator versions and widen this test's exclusions.",
+      `${constant} looks like an extraction lane and is neither composed nor explicitly deferred.`,
     );
   }
+  assert.deepEqual(DEFERRED_REPROCESS_LANES, ["semantic-prose/1", "wide-table/1"]);
 });

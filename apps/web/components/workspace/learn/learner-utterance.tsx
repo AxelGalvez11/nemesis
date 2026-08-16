@@ -24,6 +24,7 @@
 // is a separate annotation." The verdict renders BELOW this, in Nemesis's own voice.
 
 import { cn } from "@/lib/utils";
+import type { LearnerInputModality } from "@/lib/learn/canvas-model";
 
 export interface LearnerUtteranceProps {
   /** Exactly what the learner produced. Never trimmed of meaning, never re-worded. */
@@ -37,7 +38,7 @@ export interface LearnerUtteranceProps {
    * deliberately does not make. It rides on the element as a data attribute so a later question
    * ("do spoken answers score worse?") can be asked of the DOM without a second visual language.
    */
-  via?: "typed" | "spoken";
+  via?: LearnerInputModality;
 }
 
 export function LearnerUtterance({ children, className, via = "typed" }: LearnerUtteranceProps) {

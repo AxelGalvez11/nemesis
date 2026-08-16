@@ -51,8 +51,10 @@ import {
   type EvaluationInput,
   type RelearnMiss,
 } from "./canvas-prompts";
-import { parseCausalTerritory, type CausalTerritoryResult } from "./causal-grounded";
+import { parseCausalTerritory } from "./causal-grounded";
+import { parseSemanticTerritory } from "./semantic-grounded";
 import { parseTerritory, type TerritoryResult } from "./knowledge-territory";
+import type { KnowledgeObject } from "./knowledge-types";
 import type { CanvasSelection, SelectionAction } from "./canvas-selection";
 import { knownDefinition } from "./learner-friction";
 import { loadLookups, recordLookup } from "./learner-lookups-store";
@@ -294,7 +296,10 @@ export async function constructCausalKnowledge(
   topic: string,
   sources: readonly CanvasSource[],
   signal?: AbortSignal,
-): Promise<CausalTerritoryResult | null> {
+): Promise<{
+  objects: KnowledgeObject[];
+  refusals: { reason: string; detail: string }[];
+} | null> {
   if (sources.length === 0) return null;
   const { text, error } = await ask(uid, causalMessages({ sources, topic }), signal);
   if (error || !text) return null;
@@ -302,7 +307,12 @@ export async function constructCausalKnowledge(
   // SUCH. The serving valve is configured outside this repository and has diverged from it before,
   // so a hardcoded name would be a claim we cannot check. Recording the requested route's model is
   // true, is what provenance is for, and moves with the route rather than with a literal.
-  return parseCausalTerritory({ model: WRITE.model, sources, text });
+  const causal = parseCausalTerritory({ model: WRITE.model, sources, text });
+  const semantic = parseSemanticTerritory({ model: WRITE.model, sources, text });
+  return {
+    objects: [...causal.objects, ...semantic.objects],
+    refusals: [...causal.refusals, ...semantic.refusals],
+  };
 }
 
 // ---------------------------------------------------------------------- test

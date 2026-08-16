@@ -76,3 +76,53 @@ test("a statement with no dash at all is left exactly as written", () => {
 
   assert.equal(territories[0]!.label, "Filing after the limitation deadline results in dismissal");
 });
+
+test("🔴 explicit semantic parents create collapsible objective and subobjective territory", () => {
+  const member = (id: string, statement: string): KnowledgeObject => ({
+    id,
+    identityKey: id,
+    semanticRelations: [{
+      family: "classification",
+      id: `${id}:classification`,
+      relationshipType: "member_of",
+      roles: [
+        { role: "member", value: { text: statement } },
+        { role: "category", value: { text: "Adaptive immunity" } },
+      ],
+    }],
+    statement,
+    type: "conceptual_system",
+    unanchoredProvenance: [],
+  });
+  const territories = availableTerritories([
+    objectiveOver(member("k3", "Humoral immunity"), "o4"),
+    objectiveOver(member("k4", "Cellular immunity"), "o5"),
+  ]);
+
+  assert.equal(territories.length, 1);
+  assert.equal(territories[0]!.label, "Adaptive immunity");
+  assert.deepEqual(territories[0]!.identityKeys, ["o4", "o5"]);
+  assert.deepEqual(territories[0]!.children?.map((child) => child.label), ["Humoral immunity", "Cellular immunity"]);
+});
+
+test("a lone structural relation stays flat instead of inventing a one-child hierarchy", () => {
+  const knowledge: KnowledgeObject = {
+    id: "k5",
+    identityKey: "k5",
+    semanticRelations: [{
+      family: "hierarchy",
+      id: "k5:hierarchy",
+      relationshipType: "subtype_of",
+      roles: [
+        { role: "child", value: { text: "ACE inhibitor" } },
+        { role: "parent", value: { text: "Antihypertensive" } },
+      ],
+    }],
+    statement: "ACE inhibitor",
+    type: "conceptual_system",
+    unanchoredProvenance: [],
+  };
+  const territories = availableTerritories([objectiveOver(knowledge, "o6")]);
+  assert.equal(territories[0]!.label, "ACE inhibitor");
+  assert.equal(territories[0]!.children, undefined);
+});

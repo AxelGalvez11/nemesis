@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { evaluateLearningResponse } from "@/lib/learn/canvas-api";
-import type { LearningCanvas, ResponseEvaluation } from "@/lib/learn/canvas-model";
+import type { LearnerInputModality, LearningCanvas, ResponseEvaluation } from "@/lib/learn/canvas-model";
 import { ensureKnowledgeForCanvas, type CanvasKnowledge } from "@/lib/learn/canvas-knowledge";
 import {
   applyFocus,
@@ -185,7 +185,7 @@ export interface PolicyRuntime {
     evaluation: ResponseEvaluation;
     answer: string;
     exposition: Exposition;
-    via: "typed" | "spoken";
+    via: LearnerInputModality;
   } | null;
   /**
    * What the policy has put on screen for the learner to take in, and how — contract §39.
@@ -237,7 +237,7 @@ export interface PolicyRuntime {
   /** What the canvas is made of and what supported knowledge accounts for — the ownership numbers,
    *  so a forced session can show WHY it would otherwise have been refused. */
   coverage: CanvasKnowledge["coverage"];
-  submit: (text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
+  submit: (text: string, via: LearnerInputModality, tookMs?: number) => Promise<void>;
   admitUnknown: () => Promise<void>;
   /** Read the correction, then let the policy decide again from the same state. */
   acknowledge: () => void;
@@ -919,6 +919,7 @@ export function usePolicyRuntime(
     async (
       said: string | null,
       tookMs?: number,
+      responseModality?: LearnerInputModality,
       /**
        * Which kind of non-attempt this was, for analytics only.
        *
@@ -940,6 +941,7 @@ export function usePolicyRuntime(
           occurredAt: new Date().toISOString(),
           prompt: active,
           responseText: said,
+          responseModality,
           // 🔴 THE ARM THAT CHOSE THIS OPPORTUNITY, ON THE NON-ATTEMPT PATH TOO. Someone giving up
           // on a question is an outcome the experiment cares about at least as much as a judged
           // answer, and a row without an arm is a row the comparison cannot see.
@@ -952,7 +954,7 @@ export function usePolicyRuntime(
   );
 
   const submit = useCallback(
-    async (text: string, via: "typed" | "spoken", tookMs?: number) => {
+    async (text: string, via: LearnerInputModality, tookMs?: number) => {
       const said = text.trim();
       const active = prompt;
       if (!said || !active || !decision || !uid || judging) return;
@@ -965,7 +967,7 @@ export function usePolicyRuntime(
       // learner would be recorded as having got it wrong when they told us they had nothing. Same
       // path as the old button: an opportunity given, no demonstration obtained, no verdict.
       if (isAdmissionOfNotKnowing(said)) {
-        await admitNothing(said, tookMs);
+        await admitNothing(said, tookMs, via);
         return;
       }
 
@@ -987,7 +989,7 @@ export function usePolicyRuntime(
           response: said,
         })
       ) {
-        await admitNothing(said, tookMs, "canvas_cue_echoed");
+        await admitNothing(said, tookMs, via, "canvas_cue_echoed");
         return;
       }
 
@@ -1068,6 +1070,7 @@ export function usePolicyRuntime(
           judgement: judgementOf([outcomeFor(decision.objective, evaluation)]),
           prompt: active,
           responseText: said,
+          responseModality: via,
           // 🔴 WHICH CONTROLLER CHOSE THIS QUESTION. The experiment's grouping key, written at the
           // one point where the arm is unambiguous. Everything downstream of here — the judge, the
           // verdict, the row shape — is identical between arms by construction, which is what makes

@@ -286,6 +286,12 @@ function searchableText(unit: CanonicalSourceUnit): string {
 
 /** The emphasised runs the parse recovered from one unit's text, normalised. */
 function emphasisRuns(unit: CanonicalSourceUnit): string[] {
+  if (unit.emphasis?.length) {
+    return unit.emphasis.map((run) => normalise(run.text)).filter(Boolean);
+  }
+  // Compatibility for parses stored before emphasis became a first-class block field. Some
+  // producers left Markdown delimiters in `text`; keep reading those rows until reprocessing has
+  // replaced them rather than making a schema improvement erase the only evidence they retained.
   const raw = unit.text ?? "";
   const runs: string[] = [];
   for (const match of raw.matchAll(/\*\*([^*\n]+)\*\*/g)) {

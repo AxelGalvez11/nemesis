@@ -18,11 +18,21 @@ import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
 import { projectLearnerState, type LearnerEvidence } from "@/lib/learn/learner-evidence";
 
-export type Territory = { label: string; identityKeys: readonly string[] };
+export type Territory = {
+  label: string;
+  identityKeys: readonly string[];
+  children?: readonly Territory[];
+};
 
 /** The only two states the Minimap ever marks a territory with. `null` is the third, unmarked
  *  value — never rendered as a state, because it is not one Brain has reported. */
 export type TerritoryMark = "developing" | "established";
+export interface MarkedTerritory {
+  label: string;
+  identityKeys: readonly string[];
+  mark: TerritoryMark | null;
+  children?: readonly MarkedTerritory[];
+}
 
 /**
  * One territory's mark, folded from every objective it names.
@@ -95,22 +105,19 @@ export function sourceDisclosure(
 }
 
 /**
- * Display order for the territory list — §H1 without inventing a hierarchy.
- *
- * 🔴 ORDER, NEVER GROUP. No parent/child relation exists between knowledge objects
- * (`MISSING_TERRITORY_CONTRACT`, canvas-focus.ts), and clustering rows here — even implicitly —
- * would be exactly the shortcut that file already refused. This only decides which row a learner
- * sees first: the recommended one, then whatever they have already engaged with (marked, either
- * state), then everything else — each group otherwise in the order `availableTerritories`
- * returned it (`Array.prototype.sort` is stable, so ties keep their input order).
+ * Display order for the territory tree. Structure is already evidence-backed by canvas-focus;
+ * this function only adds learner-state marks and orders siblings.
  */
 export function orderedTerritories(
   territories: readonly Territory[],
   evidence: readonly LearnerEvidence[],
   recommendedLabel: string | null,
-): readonly (Territory & { mark: TerritoryMark | null })[] {
-  const marked = territories.map((territory) => ({
+): readonly MarkedTerritory[] {
+  const marked: MarkedTerritory[] = territories.map(({ children, ...territory }) => ({
     ...territory,
+    ...(children
+      ? { children: orderedTerritories(children, evidence, recommendedLabel) }
+      : {}),
     mark: territoryMark(territory.identityKeys, evidence),
   }));
   const rank = (entry: (typeof marked)[number]): number => {

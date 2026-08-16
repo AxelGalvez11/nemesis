@@ -426,6 +426,14 @@ export interface DocBlock {
   unit: number;
   /** The block's text. A figure's text is its caption, not its description. */
   text: string;
+  /**
+   * Typographic runs the source marked as distinct from the surrounding text.
+   *
+   * Kept separately from `text`: a plain-text renderer may remove Markdown delimiters without
+   * removing the fact that the author used emphasis. Absence means this parse recovered no run in
+   * this block; it never means the source definitely used none.
+   */
+  emphasis?: readonly import("./document-emphasis.ts").DocEmphasis[];
   /** Enclosing headings, outermost first. Empty at the top level. */
   headingPath: string[];
   /** heading only: 1–9. */

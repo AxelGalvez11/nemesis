@@ -13,6 +13,7 @@ import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { groundingBlock } from "./canvas-grounding";
 import { CAUSAL_EXTRACTION_PROMPT } from "./causal-extraction-contract";
+import { SEMANTIC_EXTRACTION_PROMPT } from "./semantic-grounded";
 import type { CognitiveAction } from "./canvas-policy";
 import {
   ERROR_TYPES,
@@ -80,9 +81,17 @@ const TERMS_RULE =
   "the sentence containing it. Do not name ordinary words, words the document has already introduced, or words that " +
   "are merely long.";
 
+const VISUAL_RULE =
+  '"visual" is optional and is a SEMANTIC REQUEST, never rendering code. Use it only when a visual makes a relationship materially easier to understand than the prose. ' +
+  'Allowed shapes are: {"kind":"equation","latex":"…","learningGoal":"…","caption":"…"}; ' +
+  '{"kind":"relationship","nodes":[{"id":"n1","label":"…"}],"edges":[{"from":"n1","to":"n2","label":"…"}],"learningGoal":"…","caption":"…"}; ' +
+  'or {"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}],"learningGoal":"…","caption":"…"}. ' +
+  "Leave it absent when text is clearer. Never emit HTML, SVG, Mermaid, JavaScript, React, renderer names, styling, or arbitrary code. " +
+  "The prose must still explain the idea; the visual is a representation of it, not a replacement for teaching.";
+
 const BLOCK_SHAPE =
-  'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…]}. ' +
-  `Do not include an id — ids are assigned by the application.\n\n${TERMS_RULE}`;
+  'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…],"visual":{…}}. ' +
+  `Do not include an id — ids are assigned by the application.\n\n${TERMS_RULE}\n\n${VISUAL_RULE}`;
 
 function materialSection(sources: readonly CanvasSource[], topic: string): string {
   const grounding = groundingBlock(sources);
@@ -314,7 +323,7 @@ export function causalMessages(input: { sources: readonly CanvasSource[]; topic:
     { content: CANVAS_SYSTEM, role: "system" },
     {
       content:
-        `${CAUSAL_EXTRACTION_PROMPT}\n\n` +
+        `${CAUSAL_EXTRACTION_PROMPT}\n\n${SEMANTIC_EXTRACTION_PROMPT}\n\n` +
         "The material below is split into excerpts, each with a bracketed id. Read every excerpt.\n\n" +
         '"excerptId" MUST be the id of the excerpt the relationship was read from, exactly as it is ' +
         "bracketed below, and \"quote\" must be copied from THAT excerpt character for character. Use only " +
@@ -322,9 +331,11 @@ export function causalMessages(input: { sources: readonly CanvasSource[]; topic:
         // 🔴 THE SAME KEY THE CONTRACT'S OWN LAST LINE ASKS FOR. It ends with `{"relations": [...]}`,
         // and a second, different envelope named here would be a prompt contradicting itself in one
         // message — the model picks one, and whichever it picks the parser reads the other.
-        'Every relation additionally carries "excerptId". Respond with JSON only:\n' +
+        'Every causal relation additionally carries "excerptId". Respond with JSON only using this combined envelope:\n' +
         '{"relations":[{"cause":"…","effect":"…","relation":"…","negated":false,"qualifier":null,' +
-        '"qualifierKind":null,"verb":"…","quote":"…","excerptId":"…"}]}\n\n' +
+        '"qualifierKind":null,"verb":"…","quote":"…","excerptId":"…"}],' +
+        '"structures":[{"relationshipType":"…","family":"…","roles":[{"role":"…","text":"…","order":1}],' +
+        '"qualifiers":[{"kind":"…","value":"…"}],"evidence":[{"excerptId":"…","assertion":"…"}]}]}\n\n' +
         "Return an empty list rather than a weak one. Everything kept becomes a question a real learner is " +
         "asked and graded on, so a relationship the material does not assert is recorded as that person's " +
         "own gap.\n\n" +
@@ -441,6 +452,7 @@ const TASK_INTENT: Record<RetrievalTask, string> = {
   mechanism: "walk through how something happens, in order",
   reconstruct: "rebuild the structure from memory",
   compare: "set two things against each other, covering both",
+  locate: "identify the named part hidden at a specific place in the supplied figure",
   predict: "say what follows, and why",
   apply: "use the idea on a concrete situation",
   solve: "work it through and show the reasoning",
@@ -497,12 +509,14 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         `The task they were set (${TASK_INTENT[input.task]}):\n"${input.prompt}"\n\n` +
         (standard ? `${standard}\n\n` : "") +
         `It is about the concept "${input.objective.label}".\n\n` +
-        `They ${input.response.via === "spoken" ? "said out loud" : "wrote"}:\n"${input.response.text}"\n\n` +
+        `They ${input.response.via === "spoken" ? "said out loud" : input.response.via === "written" ? "wrote by hand" : "typed"}:\n"${input.response.text}"\n\n` +
         (input.response.via === "spoken"
           ? "This was dictated, so it arrives as speech: filler words, false starts, self-corrections and missing " +
             "punctuation are normal and mean nothing about their understanding. Judge what they were getting at. " +
             "Where they corrected themselves, judge the correction, not the first attempt.\n\n"
-          : "") +
+          : input.response.via === "written"
+            ? "This was transcribed from handwriting or a drawing and may contain OCR errors. Judge the learner's intended reasoning, not transcription artifacts.\n\n"
+            : "") +
         ((input.context?.hintsUsed ?? 0) > 0
           ? `They used ${input.context?.hintsUsed} hint(s) before answering, so this is assisted rather than unaided recall.\n\n`
           : "") +

@@ -118,6 +118,19 @@ test("🔴 a legacy flat row still produces a usable context, and never invents 
   assert.equal(anchorInUnit(context.units[0]!, "Exam 1").page, undefined);
 });
 
+test("emphasis crosses storage and the canonical extraction boundary independently of text markup", () => {
+  const rich = model([
+    block({
+      emphasis: [{ kind: "highlight", text: "probabilities sum to 1" }],
+      id: "p1",
+      text: "Probabilities sum to 1.",
+    }),
+  ]);
+  const context = buildSourceContext({ sourceId: "s1", sourceKind: "pdf", structure: stored(rich) });
+  assert.equal(context.units[0]?.text, "Probabilities sum to 1.");
+  assert.deepEqual(context.units[0]?.emphasis, [{ kind: "highlight", text: "probabilities sum to 1" }]);
+});
+
 test("🔴 capabilities describe what SURVIVED persistence, not what a parser produced", () => {
   // A parser that builds headings in memory and a serializer that drops them must report
   // hierarchy:false — downstream cannot use what is no longer stored.

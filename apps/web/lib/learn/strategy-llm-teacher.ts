@@ -71,16 +71,19 @@ const TEACHER_SYSTEM = [
   "You are an expert tutor working with one learner, in whatever discipline their material happens to be.",
   "",
   "YOUR OBJECTIVE: maximize durable understanding of IMPORTANT material per unit of the learner's active attention.",
-  "You are not trying to achieve perfect mastery of every concept before moving forward. Attention is the scarce",
-  "resource and you are spending it. Coverage matters. Importance matters. Prerequisites matter. The cost of",
-  "continuing to drill something matters. A learner can understand something well enough for now.",
+  "Find the fastest cognitive path from this learner's current state to mastery of the important structure.",
+  "Prefer an organizing principle that makes many downstream facts understandable or derivable over drilling those",
+  "facts separately. Consider prerequisites, causal leverage, downstream dependency, compression, transfer, supported",
+  "assessment relevance and this learner's observed gaps. Source emphasis is evidence, not high yield by itself.",
+  "You are not trying to perfect every concept before moving forward. A learner can understand something well enough",
+  "for now, and lower yield knowledge can become valuable after the structure supporting it is established.",
   "",
   "Every turn is one question: what should this learner spend the next minute thinking about?",
   "You will be asked again after they respond, so do not plan a lesson. Decide the next move only.",
   "",
   "MOVING ON IS A REAL MOVE, NOT A FAILURE. If someone does not know something perfectly but another minute here",
-  "has less expected value than going forward, go forward. Do the opposite when the thing is foundational, heavily",
-  "emphasized by the source, or blocking material they are already stuck on.",
+  "has less expected value than going forward, go forward. Do the opposite when the thing unlocks, explains or",
+  "compresses important downstream knowledge, or blocks material they are already stuck on.",
   "",
   "THINGS THAT ARE TRUE WHATEVER YOU DECIDE:",
   "- Being shown something is not evidence they know it. Only producing it is.",
@@ -153,6 +156,9 @@ function brief(snapshot: ObjectiveSnapshot): string {
     `- id: ${snapshot.identityKey}`,
     `  asks: ${snapshot.label}  [${snapshot.capability} over ${snapshot.knowledgeType}]`,
     `  the material says: ${snapshot.statement}`,
+    ...(snapshot.semanticRelations.length > 0
+      ? [`  semantic structure: ${snapshot.semanticRelations.join(" | ")}`]
+      : []),
     `  status: ${snapshot.state.status}`,
     `  met ${snapshot.state.evidenceCount} times, produced it ${snapshot.state.demonstrationCount} times, ` +
       `${snapshot.unresolvedAttempts} attempts fell short`,
@@ -196,10 +202,8 @@ function brief(snapshot: ObjectiveSnapshot): string {
 /**
  * The sitting itself.
  *
- * 🔴 TIME IS STATE, NOT A MODE — the owner's ruling in one sentence. A learner with twenty minutes
- * and a learner with six hours reach the identical controller and the identical prompt; what differs
- * is what these two lines say. There is no branch anywhere in this file asking whether we are
- * cramming, and there must never be one.
+ * Active attention already spent is observed interaction context, never an explicit study budget.
+ * The controller does not ask how long the learner has or build a policy around a time allowance.
  */
 function sittingNote(
   context: TeachingContext,
@@ -210,13 +214,6 @@ function sittingNote(
   const attention = context.attention;
   if (attention) {
     lines.push(`Attention spent this sitting so far: about ${Math.round(attention.activeMs / 60_000)} minutes.`);
-    lines.push(
-      attention.availableMs === null
-        // 🔴 SAID IN WORDS, BECAUSE A MISSING FIELD READS AS UNLIMITED. Nobody told us how long they
-        // have. That is not permission to assume there is plenty.
-        ? "How long they have left: nobody has told us. Do not assume it is a lot."
-        : `Time left in this sitting: about ${Math.round(attention.availableMs / 60_000)} minutes.`,
-    );
   }
   lines.push(
     `Material on this canvas: ${scope.total} objectives, ${scope.touched} touched at all, ` +
@@ -227,8 +224,8 @@ function sittingNote(
   // the exact objective it is being asked to optimise. See `BRIEF_LIMIT`.
   if (shown < scope.total) {
     lines.push(
-      `You are being shown ${shown} of them this turn, not all ${scope.total}. The rest are still there; ` +
-        "you will see them on later turns. Do not treat what is in front of you as the whole canvas.",
+      `Nemesis retrieved ${shown} of ${scope.total} objectives for this decision using current learner signals and ` +
+        "the material's shared knowledge structure. The rest still exist; do not treat this neighborhood as the whole canvas.",
     );
   }
   if (scope.importantTotal !== null) {
@@ -262,12 +259,8 @@ function sittingNote(
  * much smaller hole than that. Forty objectives is about 5,000 tokens, which is a decision worth
  * paying for.
  *
- * 🔴 IT IS PAGINATION, NOT A TEACHING HEURISTIC, AND THE DISTINCTION IS WHAT MAKES IT ALLOWED HERE.
- * The owner ruled against accumulating tuned pedagogical constants; this one decides nothing about
- * teaching. The window is filled in the order the runtime ALREADY holds — un-acted-on objectives
- * ahead of ones this sitting has touched, which is exactly the reorder `decideNext` performs with
- * `actedOn` and for the same reason. Nothing here scores, ranks or prefers anything on pedagogical
- * grounds; it truncates an existing list.
+ * The number is only a cost bound. `relevantWindowOf` fills it from the learner's active frontier
+ * and the material's exact structural joins instead of truncating an identity-sorted checklist.
  *
  * 🔴 AND THE MODEL IS TOLD THE CANVAS IS BIGGER THAN ITS WINDOW. A controller that could see forty
  * of four hundred and was not told so would report the material covered when it had seen a tenth of
@@ -276,21 +269,95 @@ function sittingNote(
 const BRIEF_LIMIT = 40;
 
 /**
- * The window, filled in the order the runtime already holds.
+ * The relevant structural neighborhood for one controller decision.
  *
- * 🔴 STABLE WITHIN EACH GROUP, so the same state produces the same window on every render and a
- * reload does not hand the learner a different question. Same property, same construction, as
- * `decideNext`'s reordering.
+ * This is retrieval, not teaching policy. It makes the current gap, its exact neighbors and large
+ * connected structures legible; the general model still decides what any of that makes worth doing.
+ * Every comparison is lexicographic and stable, with no hand-tuned pedagogical weights.
  */
-function windowOf(
+export function relevantWindowOf(
   snapshots: readonly ObjectiveSnapshot[],
   actedOn: readonly string[],
 ): readonly ObjectiveSnapshot[] {
   if (snapshots.length <= BRIEF_LIMIT) return snapshots;
   const acted = new Set(actedOn);
-  const fresh = snapshots.filter((entry) => !acted.has(entry.identityKey));
-  const seen = snapshots.filter((entry) => acted.has(entry.identityKey));
-  return [...fresh, ...seen].slice(0, BRIEF_LIMIT);
+
+  const indexById = new Map(snapshots.map((entry, index) => [entry.identityKey, index] as const));
+  const adjacency = snapshots.map(() => new Set<number>());
+  const connect = (left: number, right: number) => {
+    if (left === right) return;
+    adjacency[left]!.add(right);
+    adjacency[right]!.add(left);
+  };
+  for (const [index, snapshot] of snapshots.entries()) {
+    for (const id of snapshot.prerequisites) {
+      const other = indexById.get(id);
+      if (other !== undefined) connect(index, other);
+    }
+  }
+  const byTerm = new Map<string, number[]>();
+  for (const [index, snapshot] of snapshots.entries()) {
+    for (const key of snapshot.semanticKeys) {
+      const holders = byTerm.get(key);
+      if (holders) holders.push(index);
+      else byTerm.set(key, [index]);
+    }
+  }
+  for (const holders of byTerm.values()) {
+    for (let left = 0; left < holders.length; left += 1) {
+      for (let right = left + 1; right < holders.length; right += 1) {
+        connect(holders[left]!, holders[right]!);
+      }
+    }
+  }
+
+  const componentSize = new Array<number>(snapshots.length).fill(1);
+  const visited = new Set<number>();
+  for (let start = 0; start < snapshots.length; start += 1) {
+    if (visited.has(start)) continue;
+    const component: number[] = [];
+    const queue = [start];
+    visited.add(start);
+    while (queue.length) {
+      const current = queue.shift()!;
+      component.push(current);
+      for (const neighbor of adjacency[current]!) {
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+    for (const member of component) componentSize[member] = component.length;
+  }
+
+  const active = new Set<number>();
+  for (const [index, snapshot] of snapshots.entries()) {
+    if (
+      snapshot.terminologyInTheWay ||
+      snapshot.misconceptions.length > 0 ||
+      (snapshot.state.evidenceCount > 0 && snapshot.state.status !== "correct")
+    ) active.add(index);
+  }
+  const nextToActive = new Set<number>();
+  for (const index of active) for (const neighbor of adjacency[index]!) nextToActive.add(neighbor);
+
+  return snapshots
+    .map((snapshot, index) => ({ index, snapshot }))
+    .sort((left, right) => {
+      const l = left.index;
+      const r = right.index;
+      return (
+        Number(active.has(r)) - Number(active.has(l)) ||
+        Number(nextToActive.has(r)) - Number(nextToActive.has(l)) ||
+        componentSize[r]! - componentSize[l]! ||
+        adjacency[r]!.size - adjacency[l]!.size ||
+        Number(right.snapshot.importance === "central") - Number(left.snapshot.importance === "central") ||
+        Number(acted.has(left.snapshot.identityKey)) - Number(acted.has(right.snapshot.identityKey)) ||
+        l - r
+      );
+    })
+    .slice(0, BRIEF_LIMIT)
+    .map(({ snapshot }) => snapshot);
 }
 
 function teacherMessages(
@@ -446,7 +513,7 @@ export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrateg
 
       const snapshot = teachingSnapshot(context);
       // 🔴 BOUNDED BEFORE ANY OF IT IS SENT. See `BRIEF_LIMIT` for the measured reason.
-      const briefed = windowOf(snapshot.objectives, context.actedOn ?? []);
+      const briefed = relevantWindowOf(snapshot.objectives, context.actedOn ?? []);
 
       let reply: Awaited<ReturnType<TeacherTransport>>;
       try {

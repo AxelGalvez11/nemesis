@@ -24,10 +24,16 @@ import type { FigureLabel } from "./figure-labels";
 import type { ProcedureStep } from "./procedure-sequence";
 import type { SourceImportance } from "./source-importance";
 import type { ClassContrast } from "./wide-grid-classification";
+import type { SemanticRelation } from "./semantic-relations";
 
 import type { SourceRef } from "./canvas-model";
 
-/** The ten kinds of knowledge, each of which demands a different cognitive operation.
+/**
+ * The interaction shapes the current runtime knows how to stage.
+ *
+ * 🔴 NOT AN ONTOLOGY. Knowledge does not divide into ten mutually exclusive kinds. The overlapping,
+ * open-world structure lives in `KnowledgeObject.semanticRelations`; this field remains the primary
+ * interaction hint so existing renderers and stored rows continue to work while that substrate grows.
  *
  *  🔴 METACOGNITION IS DELIBERATELY ABSENT. The brief lists it eleventh, and it is explicitly
  *  "not subject matter itself" — it is what we track ABOUT the learner (latency, assistance,
@@ -414,6 +420,13 @@ export interface KnowledgeObject {
   /** One line naming what is to be known. Always present, whatever the type — it is what the
    *  objectives map and any diagnosis can show without understanding the payload. */
   statement: string;
+  /**
+   * Overlapping semantic structure, with open relationship names and n-ary roles.
+   *
+   * Absent on legacy rows; `semanticRelationsOf()` provides their lossless compatibility view. An
+   * explicit list is authoritative and may contain relationship types this version has never seen.
+   */
+  semanticRelations?: readonly SemanticRelation[];
   /** The coarse objectives this belongs to, so existing diagnosis keeps working unchanged. */
   conceptIds?: string[];
   /** Set only when `type` is "association". Other types add their own payloads as they are built;
@@ -531,7 +544,8 @@ export type KnowledgeDerivation =
   | "table-row"
   /** A run of list items the document itself numbered, read as steps. Deterministic in the same
    *  sense `table-row` is — the order comes from the document's own marker, never inferred from
-   *  the words. See procedure-sequence.ts, `orderedRunsIn`.
+   *  the words. Grounded semantic extraction must establish procedural meaning; numbering alone
+   *  is only document syntax and never mints this payload.
    *
    *  🔴 NOT `table-row`, EVEN THOUGH BOTH ARE GRID-ADJACENT. Calling a list "a table" would be
    *  the same kind of small dishonesty this field exists to prevent everywhere else — a caller

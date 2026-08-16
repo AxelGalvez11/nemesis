@@ -509,21 +509,23 @@ sentences — it exists to stop the code and the matrix drifting apart, not to f
 <!-- capability-matrix -->
 ```yaml
 # What the code actually does today. Every value is derived from behaviour, not from intent.
-knowledge_types: association
-cognitive_operations: recall
+knowledge_types: association, causal, classification, conceptual_system, procedure, spatial
+cognitive_operations: discriminate, explain, locate, predict, recall, sequence
 # The fields one judged demonstration writes. 🔴 `absent` always means NOT OBSERVED.
-evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseText, scaffoldRung, scaffoldingLevel, taskId, teachingStrategy, verdict
+evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseModality, responseText, scaffoldRung, scaffoldingLevel, taskId, teachingStrategy, verdict
 ```
 
 ### Implemented
 
 | Capability | Where |
 |---|---|
-| Knowledge extraction — **associations only**, from two-column grids | `lib/learn/knowledge-extraction.ts` (`association/2`) |
+| Deterministic extraction — atomic, scope-preserving associations and classifications from grids; labelled diagrams from figures | `lib/learn/knowledge-extraction.ts`, `lib/learn/cell-segmentation.ts` |
+| Grounded prose extraction — causal edges plus overlapping, open-world semantic relations with verbatim evidence | `lib/learn/causal-grounded.ts`, `lib/learn/semantic-grounded.ts` |
+| Stageable interactions — recall, predict, discriminate, explain, sequence and spatial locate | `lib/learn/runtime-support.ts`, `lib/learn/objective-task.ts` |
 | Content-derived versioned identity, converging across canvases without a join | `lib/learn/knowledge-identity.ts` |
 | Objectives as capabilities over knowledge, with semantic roles | `lib/learn/learning-objective.ts` |
 | Append-only evidence log as truth; state as a projection | `lib/learn/learner-evidence.ts`, `learner_evidence` table |
-| Raw observations preserved — `operation`, `response_latency_ms`, `scaffolding_level` | Track B1; written, read back, and interpreted by nothing |
+| Raw observations preserved — `operation`, `response_latency_ms`, `response_modality`, `scaffolding_level` | Track B1; written, read back, and interpreted by nothing |
 | Scaffolding rung on every demonstration — §33's ordered ladder, so recognition can never satisfy a production requirement | `lib/learn/scaffold-rung.ts`; read through `satisfies()`, which makes the ambiguous question unaskable |
 | Per-objective evidence including `not_addressed` — an answer that never mentioned an objective is no longer read as a failed attempt | `objectiveEvidenceFor` in `lib/learn/objective-task.ts`; consumed by `projectLearnerState` |
 | Stateless one-decision policy (no sequence, no memory between calls) | `lib/learn/teaching-policy.ts`, `policy-runtime.ts` |
@@ -571,11 +573,10 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 - **No mnemonic generation** (§6).
 - **No analogy scaffolding or its removal** (§6).
 - **No time-horizon policy** (§11) — goal and available time are not inputs to anything.
-- **No minimap surface** (§11) — the scope seam exists and is honoured by the policy; nothing lets a
-  learner select a territory. 🔴 **Parent/child focus is blocked on a Brain contract**: knowledge
-  objects converge by `identityKey` and carry no parent/child relation, and deriving one from
-  document heading paths would assert a dependency the system cannot back up. What is needed is
-  stated in `lib/learn/canvas-focus.ts` (`MISSING_TERRITORY_CONTRACT`).
+- **Minimap hierarchy is intentionally partial** (§11) — the surface and focus seam are live.
+  Explicit hierarchy, classification and part-whole relations produce collapsible parent and child
+  objectives; everything else stays flat. Heading paths are still refused because document
+  placement is not evidence of conceptual dependency.
 - **Spacing is not driven by the model** — FSRS-style scheduling sits downstream and is not yet
   informed by demonstration quality.
 

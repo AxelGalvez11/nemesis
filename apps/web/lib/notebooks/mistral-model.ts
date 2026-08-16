@@ -34,12 +34,25 @@
  * this choice for exactly this reason, and a vendor swap must not quietly reverse it.
  */
 
-import { buildDocument, type DocBlock, type DocFormat, type DocRect, type DocUnit, type DocumentModel } from "@nemesis/shared";
+import {
+  buildDocument,
+  emphasisFromMarkup,
+  type DocBlock,
+  type DocFormat,
+  type DocRect,
+  type DocUnit,
+  type DocumentModel,
+} from "@nemesis/shared";
 
 import { findHtmlTables, tableFromHtml, tableFromPipes } from "./mistral-tables";
 import type { MistralImage, MistralOcrResponse, MistralPage } from "./mistral-ocr";
 
 type PendingBlock = Omit<DocBlock, "id">;
+
+function emphasisFields(markup: string): Pick<DocBlock, "emphasis"> {
+  const emphasis = emphasisFromMarkup(markup);
+  return emphasis.length ? { emphasis } : {};
+}
 
 /** Which unit kind a format's pages are. PURE. */
 export function unitKindFor(format: DocFormat): DocUnit["kind"] {
@@ -153,21 +166,20 @@ export function blocksFromMarkdown(input: {
   const push = (block: Omit<PendingBlock, "headingPath" | "unit">) => {
     blocks.push({ ...block, headingPath: pathOf(stack), unit } as PendingBlock);
   };
-
   // Tables are lifted out first so their internal newlines never reach the line walker.
   const tables = findHtmlTables(input.markdown);
-  const segments: Array<{ table?: (typeof tables)[number]["table"]; text?: string }> = [];
+  const segments: Array<{ markup?: string; table?: (typeof tables)[number]["table"]; text?: string }> = [];
   let cursor = 0;
   for (const found of tables) {
     if (found.start > cursor) segments.push({ text: input.markdown.slice(cursor, found.start) });
-    segments.push({ table: found.table });
+    segments.push({ markup: input.markdown.slice(found.start, found.end), table: found.table });
     cursor = found.end;
   }
   if (cursor < input.markdown.length) segments.push({ text: input.markdown.slice(cursor) });
 
   for (const segment of segments) {
     if (segment.table) {
-      push({ kind: "table", table: segment.table, text: "" });
+      push({ kind: "table", table: segment.table, text: "", ...emphasisFields(segment.markup ?? "") });
       continue;
     }
     let paragraph: string[] = [];
@@ -193,7 +205,7 @@ export function blocksFromMarkdown(input: {
         });
         return;
       }
-      push({ kind: "paragraph", text: plainText(joined) });
+      push({ kind: "paragraph", text: plainText(joined), ...emphasisFields(joined) });
     };
 
     // A run of consecutive pipe lines is one table. Office files arrive this way — no labelled
@@ -207,7 +219,7 @@ export function blocksFromMarkdown(input: {
       if (table) push({ kind: "table", table, text: "" });
       // Not a grid after all (a single stray line, or one column) — keep the text rather than
       // dropping it, because losing the words is worse than losing the shape.
-      else for (const row of rows) push({ kind: "paragraph", text: plainText(row) });
+      else for (const row of rows) push({ kind: "paragraph", text: plainText(row), ...emphasisFields(row) });
     };
 
     for (const rawLine of (segment.text ?? "").split(/\r?\n/)) {
@@ -228,7 +240,7 @@ export function blocksFromMarkdown(input: {
         flush();
         while (stack.length > 0 && (stack[stack.length - 1]?.level ?? 0) >= heading.level) stack.pop();
         const text = plainText(heading.text);
-        push({ kind: "heading", level: heading.level, text });
+        push({ kind: "heading", level: heading.level, text, ...emphasisFields(heading.text) });
         // Pushed AFTER the block is emitted, so a heading's own path is its ancestors and not itself.
         stack.push({ level: heading.level, text });
         continue;
@@ -236,7 +248,13 @@ export function blocksFromMarkdown(input: {
       const item = listItemOf(line);
       if (item) {
         flush();
-        push({ depth: item.depth, kind: "listItem", marker: item.marker, text: plainText(item.text) });
+        push({
+          depth: item.depth,
+          kind: "listItem",
+          marker: item.marker,
+          text: plainText(item.text),
+          ...emphasisFields(item.text),
+        });
         continue;
       }
       if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) {
@@ -287,6 +305,7 @@ export function blocksFromLabelled(input: {
   rect: DocRect | undefined;
   stack: Array<{ level: number; text: string }>;
   tables: ReadonlyMap<string, NonNullable<ReturnType<typeof tableFromHtml>>>;
+  tableEmphasis?: ReadonlyMap<string, ReturnType<typeof emphasisFromMarkup>>;
   type: string;
   unit: number;
 }): PendingBlock[] {
@@ -299,20 +318,31 @@ export function blocksFromLabelled(input: {
     // The HTML is in this block's own content. A reference is resolved too, for the shape where
     // the block carries the id rather than the markup.
     const inline = findHtmlTables(content)[0]?.table;
-    const referenced = inline ?? input.tables.get(tableRefOf(content) ?? "");
-    if (referenced) return [withRect({ kind: "table", table: referenced, text: "" })];
+    const tableRef = tableRefOf(content) ?? "";
+    const referenced = inline ?? input.tables.get(tableRef);
+    const emphasis = inline ? emphasisFromMarkup(content) : (input.tableEmphasis?.get(tableRef) ?? []);
+    if (referenced) {
+      return [withRect({ kind: "table", table: referenced, text: "", ...(emphasis.length ? { emphasis } : {}) })];
+    }
     // A table we could not read is still a located region, and saying so beats dropping it.
-    return [withRect({ kind: "paragraph", text: plainText(content) })];
+    const fallbackEmphasis = emphasisFromMarkup(content);
+    return [withRect({
+      kind: "paragraph",
+      text: plainText(content),
+      ...(fallbackEmphasis.length ? { emphasis: fallbackEmphasis } : {}),
+    })];
   }
 
   if (kind === "header" || kind === "footer") {
     const text = plainText(content);
-    return text ? [withRect({ kind: kind === "header" ? "pageHeader" : "pageFooter", text })] : [];
+    const emphasis = emphasisFromMarkup(content);
+    return text ? [withRect({ kind: kind === "header" ? "pageHeader" : "pageFooter", text, ...(emphasis.length ? { emphasis } : {}) })] : [];
   }
 
   if (kind === "caption") {
     const text = plainText(content);
-    return text ? [withRect({ kind: "caption", text })] : [];
+    const emphasis = emphasisFromMarkup(content);
+    return text ? [withRect({ kind: "caption", text, ...(emphasis.length ? { emphasis } : {}) })] : [];
   }
 
   if (kind === "image" || kind === "figure") {
@@ -328,10 +358,22 @@ export function blocksFromLabelled(input: {
       const item = listItemOf(line) ?? looseListItem(line);
       out.push(
         item
-          ? withRect({ depth: item.depth, kind: "listItem", marker: item.marker, text: plainText(item.text) })
+          ? withRect({
+              depth: item.depth,
+              kind: "listItem",
+              marker: item.marker,
+              text: plainText(item.text),
+              ...emphasisFields(item.text),
+            })
           // The vendor called this region a list; a line whose marker we do not recognise is still
           // one of its items, and demoting it to prose would break the run.
-          : withRect({ depth: 0, kind: "listItem", marker: "-", text: plainText(line) }),
+          : withRect({
+              depth: 0,
+              kind: "listItem",
+              marker: "-",
+              text: plainText(line),
+              ...emphasisFields(line),
+            }),
       );
     }
     return out;
@@ -413,12 +455,17 @@ export function modelFromMistral(
     // The page's own table objects, by id, so a `[tbl-0.html](tbl-0.html)` reference resolves to a
     // grid instead of being read as a link to a file that does not exist.
     const tables = new Map<string, NonNullable<ReturnType<typeof tableFromHtml>>>();
+    const tableEmphasis = new Map<string, ReturnType<typeof emphasisFromMarkup>>();
     for (const table of page.tables ?? []) {
       const id = (table.id ?? "").trim();
       const html = table.content ?? table.html ?? table.markdown ?? "";
       if (!id || !html) continue;
       const built = tableFromHtml(html);
-      if (built) tables.set(id, built);
+      if (built) {
+        tables.set(id, built);
+        const emphasis = emphasisFromMarkup(html);
+        if (emphasis.length) tableEmphasis.set(id, emphasis);
+      }
     }
 
     const labelled = page.blocks ?? [];
@@ -430,6 +477,7 @@ export function modelFromMistral(
           rect: rectFrom(block, page.dimensions),
           stack,
           tables,
+          tableEmphasis,
           type: block.type ?? "",
           unit,
         }),

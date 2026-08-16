@@ -127,6 +127,24 @@ test("the user's message is still the last thing sent", () => {
   assert.equal(last?.content, "calculate the dose");
 });
 
+test("live results are evidence context, never appended to what the learner said", () => {
+  const web = "PROVISIONAL EXTERNAL EVIDENCE from live web search.\n\n1. Current guidance";
+  const wire = buildWireMessages([], "What changed in the guidance?", undefined, undefined, "", "", web);
+  const last = wire.at(-1);
+  assert.equal(last?.role, "user");
+  assert.equal(last?.content, "What changed in the guidance?");
+  assert.ok(wire.some((message) => message.role === "system" && message.content.includes(web)));
+});
+
+test("course plus web evidence carries the preserve-both conflict rule", () => {
+  const attached = "compare this\n\n### Attachment: lecture.pdf\nType: application/pdf\n\nCourse says X.";
+  const wire = buildWireMessages([], attached, undefined, undefined, "", "", "PROVISIONAL EXTERNAL EVIDENCE: Y");
+  const system = wire.filter((message) => message.role === "system").map((message) => message.content).join("\n");
+  assert.match(system, /Course expects:/);
+  assert.match(system, /External\/current evidence:/);
+  assert.match(system, /never silently overwrite/i);
+});
+
 // Voice rides on every turn, tools or not. The phone asserts the same thing
 // against its own prompt (apps/mobile/src/lib/chat-thread.test.ts) — one rule,
 // two surfaces, so neither can quietly lose it.

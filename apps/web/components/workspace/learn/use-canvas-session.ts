@@ -41,6 +41,7 @@ import {
   conceptLabel,
   type CanvasBlock,
   type CanvasLevel,
+  type LearnerInputModality,
   type CanvasSource,
   type CanvasState,
   type LearningCanvas,
@@ -58,6 +59,7 @@ import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas 
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
 import { askCanvasChat } from "./canvas-chat";
+import { prepareWebSourcePromotion } from "./web-source-promotion";
 
 const RECALL_CARDS = 8;
 const TEST_QUESTIONS = 6;
@@ -166,25 +168,25 @@ export interface CanvasSession {
     grade: "again" | "hard" | "good" | "easy",
     evidence?: {
       said?: string;
-      via?: "typed" | "spoken";
+      via?: LearnerInputModality;
       revealed?: boolean;
       evaluation?: ResponseEvaluation;
     },
   ) => Promise<void>;
   /** Retrieval by producing something rather than self-grading (§31). */
-  attemptRecall: (cardId: string, text: string, via: "typed" | "spoken") => Promise<void>;
+  attemptRecall: (cardId: string, text: string, via: LearnerInputModality) => Promise<void>;
   /** They asked to see the answer: recorded as a retrieval we did not obtain. */
   revealRecall: (cardId: string) => Promise<void>;
   answer: (questionId: string, picked: number) => void;
   /** Records the learner's own words and asks the judge what they show. */
-  respond: (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
+  respond: (questionId: string, text: string, via: LearnerInputModality, tookMs?: number) => Promise<void>;
   /** What the canvas is asking for right now — null while reading. */
   activeTask: ActiveTask | null;
   /** Move to the next prompt of the round, or off the end of it. */
   advanceTask: () => void;
   /** The ONE way a learner answers anything. Routes to the recall or the test path by what is
    *  currently being asked, so there is never a second answer field. */
-  answerActiveTask: (text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
+  answerActiveTask: (text: string, via: LearnerInputModality, tookMs?: number) => Promise<void>;
   /** "I don't know" — an explicit statement of state, which is real evidence, unlike a reveal
    *  shortcut that only tells us they looked. */
   admitUnknown: () => Promise<void>;
@@ -331,7 +333,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   // ------------------------------------------------------------------ sources
 
   const attachFiles = useCallback(
-    async (files: FileList | File[]) => {
+    async (files: FileList | File[], sourceUrl?: string) => {
       const id = requireUid();
       if (!id) return;
       setError(null);
@@ -407,6 +409,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             durability: extracted.librarySourceId ? "durable" : "ephemeral",
             ...(extracted.librarySourceId ? { librarySourceId: extracted.librarySourceId } : {}),
             ...(canonical.ok ? { parseQuality: canonical.context.quality } : {}),
+            // A promoted web result remains traceable to the page it came from. This metadata is
+            // supplied only by `attachUrl`; ordinary uploads correctly leave it absent.
+            ...(sourceUrl ? { sourceUrl } : {}),
           };
           update((current) => mergeSourceIntoCanvas(current, source));
 
@@ -474,14 +479,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * a generic "read this page" utility. A second route with the identical body would be the same
    * Firecrawl call behind a different path for no reason.
    *
-   * 🔴 THE URL RIDES INSIDE THE FILE'S OWN TEXT, NOT AS A STRUCTURED FIELD, AND THAT IS A NAMED
-   * GAP. `CanvasSource` (lib/learn/canvas-model.ts) carries no field for a source's origin URL
-   * today: `id`, `title`, `kind`, `excerpts`, `coverageNote`, `durability`, `librarySourceId`,
-   * `parseQuality`, and nothing else. Writing the URL into `title` would corrupt the one field the
-   * Sources panel shows as the source's NAME, so it goes into the extracted text instead, honestly,
-   * as the first line a learner would see if they opened the file themselves. A future
-   * `CanvasSource.sourceUrl` field would let the Sources panel show a real "open this page" link
-   * instead; reported as a handoff rather than added here, since it is a `lib/learn` type change.
+   * 🔴 THE URL IS PROVENANCE, NOT SOURCE CONTENT. `CanvasSource.sourceUrl` carries it separately,
+   * so the learner can reopen the page without teaching the extractor the synthetic claim
+   * `Source: https://...`. The scraped body remains exactly the body the page reader returned.
    */
   const attachUrl = useCallback(
     async (rawUrl: string) => {
@@ -503,12 +503,19 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           | { title?: string; text?: string; sourceUrl?: string; error?: string }
           | null;
         if (!response.ok || !body?.text) throw new Error(body?.error ?? "Nemesis couldn't read that page.");
-        const withOrigin = `Source: ${body.sourceUrl ?? url}\n\n${body.text}`;
-        const name = `${(body.title ?? url).slice(0, 120)}.md`;
+        const promotion = prepareWebSourcePromotion({
+          requestedUrl: url,
+          ...(body.sourceUrl ? { returnedUrl: body.sourceUrl } : {}),
+          text: body.text,
+          ...(body.title ? { title: body.title } : {}),
+        });
         // The identical door every other material lane already shares (see the file-level
         // comment on `attachFiles` above): filing, knowledge extraction and every later reader
         // treat this exactly as they would a learner's own uploaded text file.
-        await attachFiles([new File([withOrigin], name, { type: "text/markdown" })]);
+        await attachFiles(
+          [new File([promotion.content], promotion.fileName, { type: "text/markdown" })],
+          promotion.sourceUrl,
+        );
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Nemesis couldn't read that page.");
         setBusy({ kind: null });
@@ -737,7 +744,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       grade: "again" | "hard" | "good" | "easy",
       evidence?: {
       said?: string;
-      via?: "typed" | "spoken";
+      via?: LearnerInputModality;
       revealed?: boolean;
       evaluation?: ResponseEvaluation;
     },
@@ -777,7 +784,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  and keeping only that would leave a spaced-repetition app with a text box on it — the
    *  evaluation is the thing Nemesis is actually for. */
   const attemptRecall = useCallback(
-    async (cardId: string, text: string, via: "typed" | "spoken") => {
+    async (cardId: string, text: string, via: LearnerInputModality) => {
       const said = text.trim();
       if (!said) return;
       const card = latest.current.recall.find((candidate) => candidate.id === cardId);
@@ -929,7 +936,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  Someone who just explained something at length must not lose their words because a judge
    *  timed out — an unjudged response simply carries no evidence (see diagnose). */
   const respond = useCallback(
-    async (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => {
+    async (questionId: string, text: string, via: LearnerInputModality, tookMs?: number) => {
       const said = text.trim();
       if (!said) return;
 
@@ -1134,7 +1141,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const advanceTask = useCallback(() => setCursor((current) => current + 1), []);
 
   const answerActiveTask = useCallback(
-    async (text: string, via: "typed" | "spoken", tookMs?: number) => {
+    async (text: string, via: LearnerInputModality, tookMs?: number) => {
       const task = activeTaskRef.current;
       if (!task || task.answered) return;
       if (task.kind === "recall") await attemptRecall(task.id, text, via);

@@ -73,6 +73,13 @@ function isEnumeratedColumn(values: readonly string[]): boolean {
   return values.length > 0 && values.every((value) => WORD_THEN_NUMBER.test(value.trim()));
 }
 
+/** Whether the leftmost column holds paragraphs rather than names. */
+export function firstColumnIsProse(dataRows: readonly (readonly string[])[]): boolean {
+  const values = dataRows.map((row) => (row[0] ?? "").trim()).filter(Boolean);
+  if (values.length === 0) return false;
+  return values.filter((value) => value.length > MAX_SUBJECT_CHARS).length > values.length / 2;
+}
+
 export interface SubjectColumn {
   /** Zero-based index into each row. */
   index: number;
@@ -102,13 +109,14 @@ export interface SubjectColumn {
 export function subjectColumnOf(
   dataRows: readonly (readonly string[])[],
   width: number,
+  options: { headerStated?: boolean } = {},
 ): SubjectColumn | null {
   if (width < 2 || dataRows.length === 0) return null;
 
-  // A single data row cannot demonstrate that anything is distinct — with one row EVERY column is
-  // trivially unique, so the strongest signal is unavailable and the leftmost column would win by
-  // default. Refusing is the honest answer; one row is not a pattern.
-  if (dataRows.length < 2) return null;
+  // A single row cannot demonstrate distinctness, but a multi-page table often arrives as one
+  // header-bearing row per page. A stated header supplies the missing typographic evidence; a
+  // headerless single row remains ambiguous and is refused.
+  if (dataRows.length < 2 && !options.headerStated) return null;
 
   // 🔴🔴 AN INDEX-KEYED TABLE HAS NO SUBJECT AT ALL, AND THIS IS A RULE ABOUT THE TABLE RATHER THAN
   // ABOUT ANY ONE COLUMN. Skipping the index column and reading on is not enough: in
@@ -126,6 +134,11 @@ export function subjectColumnOf(
   if (leading.length > 0 && (leading.every((value) => isIndexShaped(value)) || isEnumeratedColumn(leading))) {
     return null;
   }
+
+  // Do not silently move the subject to the next column when the first one is a compound prose
+  // cell. That changes what every later relation is about. The model-grounded prose lane can read
+  // the compound claim; this deterministic table lane refuses it.
+  if (firstColumnIsProse(dataRows)) return null;
 
   for (let column = 0; column < width; column += 1) {
     const values = dataRows.map((row) => (row[column] ?? "").trim());

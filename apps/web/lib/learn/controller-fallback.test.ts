@@ -6,7 +6,7 @@ import type { KnowledgeObject } from "./knowledge-types";
 import type { StoredObjective } from "./learner-store";
 import { objectivesForKnowledge } from "./learning-objective";
 import { controllerFor } from "./strategy-registry";
-import { createLlmTeacherStrategy, type TeacherTransport } from "./strategy-llm-teacher";
+import { createLlmTeacherStrategy, relevantWindowOf, type TeacherTransport } from "./strategy-llm-teacher";
 import { teachingSnapshot } from "./teaching-snapshot";
 import {
   ASSIGNABLE_STRATEGIES,
@@ -171,6 +171,38 @@ test("🔴 the model is given the same objectives it must choose from, and no ot
   );
 });
 
+test("🔴 open-world semantic structure reaches the general teaching model", async () => {
+  const [first] = CANDIDATES;
+  assert.ok(first);
+  const relationshipType = "countercurrent_multiplier_disruption";
+  const structured: ResolvedObjective = {
+    knowledge: {
+      ...first.knowledge,
+      semanticRelations: [{
+        id: "novel-relation",
+        relationshipType,
+        roles: [
+          { role: "disruptor", value: { text: "NKCC2 inhibition" } },
+          { role: "system", value: { text: "medullary concentration gradient" } },
+        ],
+      }],
+    },
+    objective: first.objective,
+  };
+  let sent = "";
+  const transport: TeacherTransport = async (_uid, messages) => {
+    sent = messages.map((message) => String(message.content)).join("\n");
+    return {
+      errorText: null,
+      text: JSON.stringify({ because: "it unlocks the mechanism", move: "ask", objective: first.objective.identityKey }),
+    };
+  };
+  const outcome = await createLlmTeacherStrategy(transport).decide(context({ objectives: [structured] }));
+  assert.ok(outcome.decision);
+  assert.match(sent, new RegExp(relationshipType));
+  assert.match(sent, /disruptor=NKCC2 inhibition/);
+});
+
 test("🔴🔴 the per-turn prompt is BOUNDED, and the controller is told its window is not the canvas", async () => {
   // 🔴 MEASURED BEFORE THIS EXISTED, at the brief's real field width: 24 objectives is ~2,950
   // tokens, 83 is ~10,200, 229 is ~28,400, and the owner's real 474-objective immunology lecture is
@@ -193,5 +225,51 @@ test("🔴🔴 the per-turn prompt is BOUNDED, and the controller is told its wi
   // 🔴 THE WINDOW IS DISCLOSED. A controller shown 40 of 300 and not told so would report the
   // material nearly covered when it had seen an eighth of it — a false coverage claim, about the
   // exact objective it is being asked to optimise.
-  assert.match(sent, /You are being shown 40 of them this turn, not all 300/);
+  assert.match(sent, /Nemesis retrieved 40 of 300 objectives/);
+});
+
+test("🔴 the 40-objective bound retrieves a connected knowledge neighborhood, not the first flat checklist entries", () => {
+  const unrelated: ResolvedObjective[] = Array.from({ length: 60 }, (_, index) => resolved(`unrelated-${index}`, `U${index}`));
+  const hubBase = resolved("organizing principle", "shared mechanism");
+  const leafTerms = Array.from({ length: 15 }, (_, index) => `downstream-${index}`);
+  const hub: ResolvedObjective = {
+    ...hubBase,
+    knowledge: {
+      ...hubBase.knowledge,
+      semanticRelations: [{
+        id: "hub-relations",
+        relationshipType: "organizes",
+        roles: [
+          { role: "principle", value: { text: "organizing principle" } },
+          ...leafTerms.map((term) => ({ role: "downstream", value: { text: term } })),
+        ],
+      }],
+    },
+  };
+  const leaves = leafTerms.map((term, index) => {
+    const base = resolved(term, `detail-${index}`);
+    return {
+      ...base,
+      knowledge: {
+        ...base.knowledge,
+        semanticRelations: [{
+          id: `leaf-${index}`,
+          relationshipType: "depends_on",
+          roles: [
+            { role: "dependent", value: { text: term } },
+            { role: "detail", value: { text: `detail-${index}` } },
+          ],
+        }],
+      },
+    } satisfies ResolvedObjective;
+  });
+  const all = [...unrelated, hub, ...leaves];
+  const snapshot = teachingSnapshot(context({ objectives: all }));
+  const retrieved = relevantWindowOf(snapshot.objectives, []);
+  assert.equal(retrieved.length, 40);
+  assert.equal(retrieved[0]?.identityKey, hub.objective.identityKey, "the organizing node has the largest exact fan-out");
+  assert.ok(
+    leaves.every((leaf) => retrieved.some((entry) => entry.identityKey === leaf.objective.identityKey)),
+    "its downstream neighborhood must arrive with it even though all of it appears after 60 unrelated objectives",
+  );
 });

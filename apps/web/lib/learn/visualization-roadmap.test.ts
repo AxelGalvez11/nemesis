@@ -1,4 +1,4 @@
-// §41 says the visualization layer is PLANNED. This makes that claim expire on its own.
+// §41 distinguishes the first trusted routes from the advanced routes that remain planned.
 //
 // 🔴 THE FAILURE THIS EXISTS TO PREVENT HAS ALREADY HAPPENED ONCE IN THIS REPO. The contract
 // described eleven knowledge kinds while the code had a single lane, and the gap was read as a
@@ -20,6 +20,11 @@ const CONTRACT = readFileSync(
   "utf8",
 );
 const WEB_PACKAGE = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
+const VISUAL_CONTRACT = readFileSync(new URL("./canvas-visual.ts", import.meta.url), "utf8");
+const VISUAL_RENDERER = readFileSync(
+  new URL("../../components/workspace/learn/semantic-visual.tsx", import.meta.url),
+  "utf8",
+);
 
 /** The stack §41 names, by the package that would appear if one were adopted. */
 //
@@ -39,19 +44,24 @@ const PLANNED_RENDERERS: readonly string[] = [
 
 const SECTION = CONTRACT.slice(CONTRACT.indexOf("# 41."));
 
-test("§41 exists and is unambiguous about what does not exist yet", () => {
+test("§41 distinguishes shipped trusted routes from advanced routes", () => {
   assert.ok(SECTION.length > 0, "§41 has gone missing from the contract");
   // 🔴 THE CLAIM IS ABOUT THE ROUTER, NOT ABOUT EVERY RENDERER. KaTeX is already installed, so a
   // flat "NOT BUILT" would be false — and a status line that is visibly false is worse than none,
   // because it teaches the next reader to discount the whole section.
   assert.match(
     SECTION,
-    /STATUS: PLANNED[^\n]*ROUTER does not/,
-    "§41 must say plainly that the routing layer does not exist, in terms nobody can read as shipped behaviour",
+    /STATUS: FIRST TRUSTED ROUTES SHIPPED[^\n]*ADVANCED ROUTES REMAIN PLANNED/,
+    "§41 must say plainly what is shipped and what remains planned",
   );
+  for (const kind of ["equation", "relationship", "quantitative"]) {
+    assert.ok(VISUAL_CONTRACT.includes(`kind: "${kind}"`), `${kind} is documented as shipped but absent from the contract`);
+  }
+  assert.match(VISUAL_RENDERER, /katex\.renderToString/);
+  assert.match(VISUAL_RENDERER, /<svg/);
 });
 
-test("🔴 no planned renderer is installed while §41 still says NOT BUILT", () => {
+test("🔴 no advanced renderer is installed while §41 still calls those routes planned", () => {
   const declared = JSON.parse(WEB_PACKAGE) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
@@ -65,9 +75,8 @@ test("🔴 no planned renderer is installed while §41 still says NOT BUILT", ()
   assert.deepEqual(
     found,
     [],
-    `${found.join(", ")} is installed, so the visualization layer is no longer merely planned. ` +
-      "Move §41's status line in the same change that adds the renderer — a roadmap that still " +
-      "says NOT BUILT after the thing is built is how this document misled a reader before.",
+    `${found.join(", ")} is installed, so an advanced route may no longer be merely planned. ` +
+      "Move §41's status line in the same change that adds the renderer.",
   );
 });
 

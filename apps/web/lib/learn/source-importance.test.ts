@@ -287,6 +287,38 @@ test("a document whose parse DID recover emphasis asks the emphasis question ins
   assert.equal(reading?.observations.find((observation) => observation.signal === "carries-emphasis")?.foregrounded, true);
 });
 
+test("first-class emphasis works when the stored text contains no Markdown delimiters", () => {
+  const context = acrossTheBoundary(
+    buildDocument({
+      blocks: [
+        {
+          emphasis: [{ kind: "highlight", text: "probabilities sum to 1" }],
+          headingPath: [],
+          kind: "paragraph",
+          text: "Probabilities sum to 1 for a complete distribution.",
+          unit: 0,
+        },
+      ],
+      format: "pdf",
+      title: "Probability constraints",
+      units: [{ index: 0, kind: "page" }],
+    }),
+  );
+  const index = importanceIndex(context);
+  assert.ok(
+    !index.blindSpots.some((spot) => spot.reason === "emphasis-not-recovered"),
+    "structured emphasis means this document is not blind to emphasis",
+  );
+  const reading = sourceImportance(index, {
+    id: "constraint",
+    sourceAnchors: [{ sourceId: "s1", unitId: context.units[0]!.id }],
+    statement: "Probabilities sum to 1",
+    type: "conceptual_system",
+    unanchoredProvenance: [],
+  }).importance;
+  assert.equal(reading?.observations.find((observation) => observation.signal === "carries-emphasis")?.foregrounded, true);
+});
+
 // ── THE TWO MATCHING RULES THAT WERE MEASURABLY WRONG FIRST TIME ─────────────────────────────────
 
 test("a longer term is not a recurrence of the shorter one it contains", () => {

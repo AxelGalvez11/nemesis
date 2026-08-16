@@ -46,7 +46,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import type { CanvasBlock } from "@/lib/learn/canvas-model";
+import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model";
 import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { cn } from "@/lib/utils";
 
@@ -62,7 +62,7 @@ interface CanvasComposerProps {
   /** A question or instruction for Nemesis about the canvas. */
   onAsk: (text: string) => void;
   /** A performance: the learner's answer to whatever is currently being asked. */
-  onAnswer: (text: string, via: "typed" | "spoken", tookMs?: number) => void;
+  onAnswer: (text: string, via: LearnerInputModality, tookMs?: number) => void;
   /** Adding material belongs here as well as in the sources panel: it is the one control the
    *  learner reaches for mid-lesson, and hunting for it inside a drawer is friction. */
   onFiles: (files: FileList | File[]) => void;
@@ -183,7 +183,7 @@ export function CanvasComposer({
   const dictation = useCanvasDictation();
   /** Set the moment the microphone is used, because §23 reads elapsed time differently for
    *  speech and typing and a mislabelled answer is read against the wrong baseline. */
-  const spoke = useRef(false);
+  const inputModality = useRef<LearnerInputModality>("typed");
   /** When the current prompt appeared, for response latency. Reset per prompt, not per render. */
   const startedAt = useRef(Date.now());
 
@@ -214,7 +214,7 @@ export function CanvasComposer({
 
   useEffect(() => {
     setText("");
-    spoke.current = false;
+    inputModality.current = "typed";
     typedBefore.current = "";
     startedAt.current = Date.now();
     // A pad left open from the PREVIOUS prompt is answering a question that no longer exists —
@@ -224,7 +224,7 @@ export function CanvasComposer({
 
   useEffect(() => {
     if (!dictation.listening && !dictation.transcript) return;
-    spoke.current = true;
+    inputModality.current = "spoken";
     setText([typedBefore.current, dictation.transcript].filter(Boolean).join(" ").trimStart());
   }, [dictation.listening, dictation.transcript]);
 
@@ -288,9 +288,9 @@ export function CanvasComposer({
     // caller only passes `onStart` in exactly that state, so this branch cannot capture a genuine
     // answer or a mid-lesson question.
     if (onStart) onStart(value);
-    else if (answering) onAnswer(value, spoke.current ? "spoken" : "typed", Date.now() - startedAt.current);
+    else if (answering) onAnswer(value, inputModality.current, Date.now() - startedAt.current);
     else onAsk(value);
-    spoke.current = false;
+    inputModality.current = "typed";
     typedBefore.current = "";
   };
 
@@ -360,6 +360,7 @@ export function CanvasComposer({
             onAccept={(value) => {
               setText(value);
               typedBefore.current = value;
+              inputModality.current = "written";
               setDrawing(false);
               input.current?.focus();
             }}
@@ -569,6 +570,7 @@ export function CanvasComposer({
                 onChange={(event) => {
                   setText(event.target.value);
                   typedBefore.current = event.target.value;
+                  if (!event.target.value) inputModality.current = "typed";
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {

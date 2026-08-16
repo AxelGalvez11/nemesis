@@ -94,7 +94,7 @@ function fnv1a64(text: string): string {
  * did or did not merge can be answered by looking, rather than by guessing at a hash.
  */
 export function identityBasis(
-  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind">,
+  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind" | "semanticRelations">,
 ): string {
   if (object.type === "association" && object.pair) {
     const left = normalizeForIdentity(object.pair.left);
@@ -143,6 +143,31 @@ export function identityBasis(
       effect.key,
     ].join("|");
   }
+  // Explicit open semantic structure is identity for the generic prose lane. Evidence and relation
+  // ids are deliberately absent: meeting the same relationship in a second source must enrich one
+  // object, while a sentence asserting two different relationships must not collapse them merely
+  // because both cite the same sentence.
+  //
+  // This conditional does not re-key legacy conceptual-system rows: only newly extracted objects
+  // carrying explicit relations take this branch, so the existing v2 identity space remains valid.
+  if (object.type === "conceptual_system" && object.semanticRelations?.length) {
+    const relations = object.semanticRelations.map((relation) => ({
+      family: relation.family ?? null,
+      negated: relation.negated ?? false,
+      qualifiers: (relation.qualifiers ?? []).map((qualifier) => ({
+        kind: normalizeForIdentity(qualifier.kind),
+        unit: qualifier.unit ? normalizeForIdentity(qualifier.unit) : null,
+        value: typeof qualifier.value === "string" ? normalizeForIdentity(qualifier.value) : qualifier.value,
+      })),
+      relationshipType: normalizeForIdentity(relation.relationshipType),
+      roles: relation.roles.map((role) => ({
+        order: role.order ?? null,
+        role: normalizeForIdentity(role.role),
+        value: role.value.key ?? normalizeForIdentity(role.value.text),
+      })),
+    }));
+    return `semantic|${JSON.stringify(relations)}`;
+  }
   // Every other type keys on its statement until it has a payload of its own. Deliberately not a
   // ten-way guess written before the interactions that use those payloads exist.
   return `${object.type}|${normalizeForIdentity(object.statement)}`;
@@ -184,15 +209,15 @@ export function causalNodeKey(text: string): string {
 export const KNOWLEDGE_IDENTITY_VERSION = 2;
 
 export function knowledgeIdentityKey(
-  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind">,
+  object: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind" | "semanticRelations">,
 ): string {
   return `${object.type}:v${KNOWLEDGE_IDENTITY_VERSION}:${fnv1a64(identityBasis(object))}`;
 }
 
 /** Whether two objects are the same knowledge met twice. */
 export function isSameKnowledge(
-  a: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind">,
-  b: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind">,
+  a: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind" | "semanticRelations">,
+  b: Pick<KnowledgeObject, "type" | "statement" | "pair" | "relation" | "relationKind" | "semanticRelations">,
 ): boolean {
   return knowledgeIdentityKey(a) === knowledgeIdentityKey(b);
 }

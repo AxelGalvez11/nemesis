@@ -20,7 +20,7 @@
  * thermodynamics revision sheet. No keyword list appears here and none can.
  */
 
-import { buildDocument, type DocBlock, type DocumentModel } from "@nemesis/shared";
+import { buildDocument, emphasisFromMarkup, type DocBlock, type DocumentModel } from "@nemesis/shared";
 
 /** ATX headings only — `# Heading` through `###### Heading`. */
 const ATX = /^(#{1,6})\s+(.*)$/;
@@ -108,6 +108,11 @@ export function readTextDocument(bytes: Uint8Array, options: { markdown: boolean
   const push = (block: Omit<DocBlock, "headingPath" | "unit" | "id">) => {
     blocks.push({ ...block, headingPath: path.map((entry) => entry.text), unit: 0 });
   };
+  const emphasisOf = (markup: string) => {
+    if (!options.markdown) return {};
+    const emphasis = emphasisFromMarkup(markup);
+    return emphasis.length ? { emphasis } : {};
+  };
 
   for (const chunk of segment(text)) {
     const joined = chunk.lines.join("\n").trim();
@@ -131,7 +136,7 @@ export function readTextDocument(bytes: Uint8Array, options: { markdown: boolean
         const label = heading[2]!.trim();
         // The path holds only ancestors: drop anything at this level or deeper before adding.
         while (path.length > 0 && path[path.length - 1]!.level >= level) path.pop();
-        push({ kind: "heading", level, text: label });
+        push({ kind: "heading", level, text: label, ...emphasisOf(label) });
         path.push({ level, text: label });
         // The FIRST top-level heading names the document. Later ones do not: a notes file with
         // several `#` sections has no single title, and picking one would be a guess.
@@ -141,11 +146,11 @@ export function readTextDocument(bytes: Uint8Array, options: { markdown: boolean
 
       const item = options.markdown ? LIST.exec(line) : null;
       if (item) {
-        push({ kind: "listItem", marker: item[1]!, text: item[2]!.trim() });
+        push({ kind: "listItem", marker: item[1]!, text: item[2]!.trim(), ...emphasisOf(item[2]!) });
         continue;
       }
 
-      push({ kind: "paragraph", text: trimmed });
+      push({ kind: "paragraph", text: trimmed, ...emphasisOf(trimmed) });
     }
   }
 

@@ -194,6 +194,28 @@ test("🔴 a knowledge type this file has never heard of still round-trips", () 
   assert.deepEqual(back.steps, [{ order: 1, text: "first" }, { order: 2, text: "second" }]);
 });
 
+test("🔴 overlapping and unknown semantic relationships survive persistence unchanged", () => {
+  const semanticRelations = [
+    {
+      id: "semantic-1",
+      family: "classification" as const,
+      relationshipType: "member_of",
+      roles: [
+        { role: "member", value: { text: "loop diuretics" } },
+        { role: "category", value: { text: "diuretics" } },
+      ],
+    },
+    {
+      id: "semantic-2",
+      relationshipType: "whatever_this_new_structure_is",
+      roles: [{ role: "subject", value: { text: "loop diuretics" } }],
+      qualifiers: [{ kind: "new_qualifier", value: "kept verbatim" }],
+    },
+  ];
+  const back = roundTrip({ ...ASSOCIATION, semanticRelations });
+  assert.deepEqual(back.semanticRelations, semanticRelations);
+});
+
 // ── procedure persistence, on the real shape rather than an invented one ───
 
 test("🔴 a procedure's steps survive extract → save → load, in the shape extraction actually mints", () => {

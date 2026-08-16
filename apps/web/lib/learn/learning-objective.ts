@@ -411,6 +411,29 @@ function procedureObjectives(object: KnowledgeObject, steps: readonly ProcedureS
   });
 }
 
+/**
+ * One source-grounded open semantic relation, as an explanation capability.
+ *
+ * The extractor says what the relationship is; this adapter does not classify it again or choose
+ * a bespoke pedagogy. It gives the general controller a durable, stageable capability over the
+ * source assertion, and the task/judge receive the relation's participants as expected evidence.
+ */
+function semanticExplanationObjective(object: KnowledgeObject): LearningObjective[] {
+  if (!object.semanticRelations?.length) return [];
+  const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
+  const parameters: ObjectiveParameters = {};
+  return [{
+    answer: object.statement,
+    capability: "explain",
+    cue: object.statement,
+    identityKey: objectiveIdentityKey({ capability: "explain", knowledgeIdentityKey: knowledge, parameters }),
+    identityVersion: OBJECTIVE_IDENTITY_VERSION,
+    knowledgeIdentityKey: knowledge,
+    label: `Explain the structure in: ${object.statement}`,
+    parameters,
+  }];
+}
+
 export function objectivesForKnowledge(object: KnowledgeObject): LearningObjective[] {
   if (object.type === "procedure" && object.steps?.length) {
     return procedureObjectives(object, object.steps);
@@ -419,6 +442,9 @@ export function objectivesForKnowledge(object: KnowledgeObject): LearningObjecti
   if (object.type === "spatial" && object.figure) return spatialObjectives(object, object.figure);
   if (object.type === "classification" && object.contrast) {
     return classificationObjectives(object, object.contrast);
+  }
+  if (object.type === "conceptual_system" && object.semanticRelations?.length) {
+    return semanticExplanationObjective(object);
   }
   if (object.type !== "association" || !object.pair) return [];
 

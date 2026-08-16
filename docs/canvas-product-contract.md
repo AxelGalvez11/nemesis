@@ -85,7 +85,7 @@ highlighting · asking Define
 Both are legitimate. **They must not merge into one store.** One is a claim about
 capability; the other is a claim about friction.
 
-## R4 — Six kinds of knowledge, of which the system mints five
+## R4 — Knowledge features overlap; six interaction adapters are currently stageable
 
 §6 names **conceptual · associative/factual · procedural · relational/causal ·
 discriminative · spatial/structural**.
@@ -96,16 +96,15 @@ discriminative · spatial/structural**.
 |---|---|---|---|
 | associative/factual | `association` | `recall` | name |
 | relational/causal | `causal` | `predict` | predict |
-| spatial/structural | `spatial` | `locate` | name |
+| spatial/structural | `spatial` | `locate` | locate |
 | discriminative | `classification` | `discriminate` | compare |
 | procedural | `procedure` | `sequence` | reconstruct |
-| conceptual | — | — | **produces nothing** |
+| conceptual/open semantic | `conceptual_system` | `explain` | explain |
 
-The original measurement read *"mints `association` only… five of the six produce nothing."*
-Two of those five closed with `causal` and `spatial`; `discriminative` closed when wide grids
-began minting classes; `procedural` closed when a document's own numbered lists started being
-read as the ordered runs they are, rather than dropped with everything else a bullet list is.
-**One category remains, and that is now the size of the gap.**
+These are interaction adapters, not a closed ontology. Explicit semantic relations may overlap on
+one idea, use the common relation families, or carry a previously unseen relationship type. The
+grounded prose reader supplies those relations to the general controller without forcing them into
+one mutually exclusive bucket.
 
 🔴 **A KIND IS NOT SHIPPED WHEN THE EXTRACTOR MINTS IT.** Each row above needs all four columns
 before it counts, because §13 of the runtime spec is explicit that a knowledge type without an
@@ -113,18 +112,32 @@ interaction that suits it falls back to whatever exists — a mechanism drilled 
 taught wrongly and then tested on. `discriminate` sat named-but-unminted in the capability union
 for exactly this reason until a task existed to consume it.
 
-🔴 **AND THE LAST ONE IS NOT ONE MORE EXTRACTOR.** `procedural` turned out to have a real
-structural signal after all — a document's own numbering marker, and only when it runs
-consecutively rather than being templated (`1. 1. 1.`) or referential (`3. 7. 12.`) — the same
-kind of fact a repeating column is for `discriminative`. `conceptual` has no equivalent: nothing
-in a document's structure says "this explains why" the way a marker says "this is ordered" —
-finding that signal without a per-field keyword list is the open problem, not the plumbing.
+🔴 **NUMBERING IS NOT PROCEDURAL MEANING.** Questions, examples, diagnoses and references are often
+numbered. Consecutive markers remain recoverable source syntax, but only a grounded semantic read
+that identifies executable or temporal steps may mint a procedure and sequence objectives.
 
 ## R5 — Minimap vocabulary supersedes
 
 Use **unestablished · developing · established · needs revisit**. `needs revisit` is new and
 carries §18's return triggers. It replaces the earlier demonstrated/uncertain/current/
 unexplored wording.
+
+## R6 — Adaptation changes Nemesis's action, never the learner's capabilities
+
+- Ordinary information questions default to ordinary conversational answers. Teaching activates
+  from clear learning intent or an active learning context, not from every question merely because
+  it appears inside Nemesis.
+- Course material and outside evidence remain distinct when they disagree. For course or exam
+  learning, preserve what the course expects and disclose the current external view; for a request
+  about current evidence, lead with the external view without erasing the course claim.
+- Trusted semantic renderers are the default for visuals. The model requests a bounded semantic
+  visual; it does not emit arbitrary rendering code. Image generation is reserved for inherently
+  illustrative cases deterministic rendering cannot express cleanly.
+- Vocabulary lookup remains reopenable after mastery. Demonstration updates the learner model and
+  reduces proactive intervention; it never removes the dotted underline or definition affordance.
+
+The same rule governs web search, sources, diagrams, vocabulary, and ordinary chat: adapt what
+Nemesis chooses to do, not what the learner is allowed to do.
 
 ---
 
@@ -151,6 +164,12 @@ Preserve and understand: document hierarchy · headings and subheadings · parag
 tables · equations · diagrams · images · captions · labels · slide relationships ·
 definitions · examples · exceptions · procedures · facts · causal relationships · conceptual
 relationships · learning objectives where present.
+
+🔴 **Table scope is part of the claim.** Atomic claims may be separated where the author printed
+real list markers, but a class-level row must not be fanned out onto every listed member. Preserve
+sub-labels such as frequency or severity, accept an entity-specific scope change only when the
+source explicitly names it, and refuse a compound prose subject rather than silently choosing the
+next column as what the row is about.
 
 🔴 **Do not reduce documents to a loose bag of extracted text.** Construct a structured
 representation of the knowledge in the sources.
@@ -1145,17 +1164,15 @@ keep deciding which engine to invoke, and an arm picker is exactly that.
 
 # 41. 🔴 THE VISUALIZATION LAYER — a router, not a graphics library (owner, 2026-08-14)
 
-## 🛑 STATUS: PLANNED — one renderer exists, the ROUTER does not. NOT SCHEDULED ABOVE THE CORE.
+## STATUS: FIRST TRUSTED ROUTES SHIPPED — equation, relationship and quantitative. ADVANCED ROUTES REMAIN PLANNED.
 
-🔴 **KaTeX IS ALREADY INSTALLED AND RENDERING** — in `chat-markdown.tsx` and the Library note
-editor, via `rehype-katex`. It arrived for markdown maths, not as a teaching primitive, and
-nothing routes to it. That is the honest state: one renderer present by accident of another
-feature, and none of the decision-making described below. A guard
-(`visualization-roadmap.test.ts`) fails the moment any *other* renderer in the stack is installed
-while this line still claims it is planned — it caught KaTeX on its first run, which is why this
-paragraph exists.
+🔴 **Canvas now accepts a bounded semantic `visual` request on a teaching block.** Trusted
+code routes equations to KaTeX and renders simple conceptual relationships and quantitative
+series with deterministic SVG. The model cannot supply HTML, SVG, JavaScript, React, Mermaid, or
+renderer configuration. Geometry, advanced charting, and true 3D remain planned; extracted source
+figures continue through the separate evidence-backed figure path.
 
-Read this whole section as a description of where Canvas is **going**, not of what it does. It is
+Read the advanced routes in this section as a description of where Canvas is **going**, not of what it does. It is
 recorded now for one reason the owner stated plainly: *"preserve this as an architectural
 direction so we don't later lock Canvas into Mermaid-only diagrams or treat Three.js as the
 universal visualization system."* A decision made casually in a sprint — one library reached for

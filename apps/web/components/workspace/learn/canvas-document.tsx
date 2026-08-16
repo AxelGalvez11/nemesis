@@ -21,6 +21,7 @@ import { markedTerms, splitByTerms, type MarkedTerm } from "@/lib/learn/canvas-v
 
 import { BOTTOM_KEEPOUT, TOP_KEEPOUT } from "./canvas-selection-menu";
 import { selectableRegion } from "./use-canvas-selection";
+import { SemanticVisual } from "./semantic-visual";
 
 /** The shape every floating popover on this page positions itself with. A plain object rather
  *  than `DOMRect` so a captured `getBoundingClientRect()` snapshot can be stored in state without
@@ -222,7 +223,7 @@ function BlockView({
   return (
     <section
       className={cn(
-        "group relative -mx-4 rounded-lg px-4 py-1.5 transition-colors",
+        "canvas-passage-enter group relative -mx-4 rounded-lg px-4 py-1.5 transition-colors",
         // 🔴 No block-wide tint any more. It existed when the block WAS the selection, but the
         // browser's own highlight now shows the exact words — and painting the whole paragraph
         // grey underneath a toolbar that says "these two words" tells the learner two different
@@ -256,6 +257,7 @@ function BlockView({
       ) : (
         <>
         <BlockBody block={block} canvas={canvas} onTerm={onTerm} onToggleSource={onToggleSource} sourceOpen={sourceOpen} />
+        {block.visual && <SemanticVisual visual={block.visual} />}
         {/* §11 — *"Keep the old version internally so it can be restored."* The rewrite happened in
             place and there is exactly ONE explanation on screen; this is the way back to the other
             one, and it is deliberately not a second copy of the text sitting underneath.

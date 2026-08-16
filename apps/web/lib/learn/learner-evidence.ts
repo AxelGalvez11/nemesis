@@ -12,6 +12,7 @@
 // every later decision is made against a claim about a person that nobody ever observed.
 
 import { TRUSTED_ENOUGH_TO_UPDATE_STATE } from "./canvas-judge";
+import type { LearnerInputModality } from "./canvas-model";
 import type { ObjectiveCapability } from "./learning-objective";
 import { entails, higherRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
 import type { TeachingStrategyId } from "./teaching-strategy";
@@ -141,6 +142,8 @@ export interface LearnerEvidence {
    * signal no five-value verdict can carry. Kept raw so a better evaluator can re-read it.
    */
   responseText?: string | null;
+  /** How the response was produced. Raw provenance; never interpreted as ability by this layer. */
+  responseModality?: LearnerInputModality;
   /** Which task produced this. Provenance only — 🔴 never a filter for reading state back. */
   taskId?: string | null;
   /**

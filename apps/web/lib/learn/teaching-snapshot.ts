@@ -37,6 +37,7 @@ import { isUnresolvedAttempt } from "./next-action-value";
 import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
 import { retrievabilityFor } from "./retention-model";
 import { readRung, type ScaffoldRung } from "./scaffold-rung";
+import { semanticKeysOf, semanticRelationSummary, semanticRelationsOf } from "./semantic-relations";
 import type { MaterialScope, TeachingContext } from "./teaching-strategy";
 
 /**
@@ -56,6 +57,10 @@ export interface ObjectiveSnapshot {
   knowledgeType: KnowledgeType;
   /** What the source actually said. The only claim about the world in this whole structure. */
   statement: string;
+  /** Overlapping semantic structure, including open-world relationship names. */
+  semanticRelations: readonly string[];
+  /** Conservative role-value joins used only to retrieve a relevant structural neighborhood. */
+  semanticKeys: readonly string[];
 
   // ── what the learner has shown ────────────────────────────────────────────
   state: LearnerObjectiveState;
@@ -236,6 +241,8 @@ export function teachingSnapshot(context: TeachingContext): TeachingSnapshot {
       msThisSession: msOnObjective({ acts, maxIdleMs: MAX_IDLE_MS, nowMs, objectiveIdentityKey: key }),
       prerequisites: prerequisites.get(key) ?? [],
       retrievability: retrievabilityFor(mine, context.now),
+      semanticKeys: semanticKeysOf(entry.knowledge),
+      semanticRelations: semanticRelationsOf(entry.knowledge).map(semanticRelationSummary),
       state,
       statement: entry.knowledge.statement,
       terminologyInTheWay:
