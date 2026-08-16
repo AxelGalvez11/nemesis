@@ -32,6 +32,10 @@ export interface ChatRouteDecision {
    *  re-promotion and its paid web search: "what's my schedule tomorrow" is a
    *  database read, not a news question (see workspace-intent.ts). */
   workspaceIntent?: boolean;
+  /** Deliberate small talk or a question about Nemesis itself. Conversation is also the fallback
+   * route for unmatched text, so this flag is what prevents a known casual turn from being
+   * re-promoted by the independent web heuristics or the paid web-need preflight. */
+  casual?: boolean;
 }
 const RESEARCH_PATTERN = /\b(deep research|research report|literature review|systematic review|compare (?:the )?(?:evidence|sources|studies)|primary sources?|scholarly sources?|peer[- ]reviewed|with citations?|cite (?:your|the) sources?|evidence for and against|state of the art|write (?:a )?report)\b/i;
 const CURRENT_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live|what (?:has )?changed|who (?:is|won|leads|runs|owns))\b/i;
@@ -210,7 +214,7 @@ export function classifyChatRequest(text: string, priorAssistantText = ""): Chat
     return { route: "current", model: "deepseek-reasoner", searchWeb: true };
   }
   if (CASUAL_PATTERN.test(compact)) {
-    return { route: "conversation", model: "deepseek-chat", searchWeb: false };
+    return { casual: true, route: "conversation", model: "deepseek-chat", searchWeb: false };
   }
   if (LEARNING_PATTERN.test(compact) || compact.length >= 120) {
     return { route: "learning", model: "deepseek-reasoner", searchWeb: false };

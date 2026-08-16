@@ -10,6 +10,12 @@ assert.equal(shouldSearchWeb("Look this up on the web"), true);
 assert.equal(shouldSearchWeb("what is glimmerlane agent"), true);
 assert.equal(shouldSearchWeb("What is the Glimmerlane Agent project?"), true);
 assert.equal(shouldSearchWeb("What is a beta blocker?"), false);
+assert.equal(shouldSearchWeb("who are you"), false);
+assert.equal(shouldSearchWeb("who are u"), false);
+assert.equal(shouldSearchWeb("who is this"), false);
+assert.equal(shouldSearchWeb("who is nemesis"), false);
+assert.equal(shouldSearchWeb("who is the president"), true);
+assert.equal(shouldSearchWeb("who are the founders of OpenAI"), true);
 assert.match(
   formatWebSearchContext([{ title: "Example", url: "https://example.com", description: "A result." }]),
   /URL: https:\/\/example\.com/,

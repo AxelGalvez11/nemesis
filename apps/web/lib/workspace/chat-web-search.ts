@@ -8,7 +8,10 @@ export interface ChatWebResult {
 
 const EXPLICIT_WEB_PATTERN = /\b(search(?: the)? web|web search|look(?:\s+(?:it|this|that))?\s+up|browse|online|internet|source(?:s)?|cite|link(?:s)?)\b/i;
 const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live|what (?:has )?changed)\b/i;
-const CHANGING_FACT_PATTERN = /\bwho\s+(?:is|are|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
+// A question about Nemesis itself is not a changing-world fact. Keep the useful "who is/are X"
+// search gate while excluding only the self-referential forms that previously bought a search and
+// returned an answer about an unrelated person.
+const CHANGING_FACT_PATTERN = /\bwho\s+(?:(?:is|are)\s+(?!you\b|u\b|ya\b|this\b|nemesis\b)|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
 const LIVE_SPORTS_PATTERN = /\b(world cup|super bowl|olympics?|playoffs?|finals?|tournament|match|game|who won|score|standings)\b/i;
 const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 const EMERGING_ENTITY_PATTERN = /\b(?:what|who)\s+(?:is|are)\s+(?:the\s+)?[\p{L}\p{N}._-]+(?:\s+[\p{L}\p{N}._-]+){0,4}\s+(?:agent|ai|app|company|framework|library|model|platform|plugin|product|project|service|software|tool)\b/iu;

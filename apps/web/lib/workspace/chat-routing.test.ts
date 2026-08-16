@@ -7,10 +7,24 @@ import { shouldSearchWeb } from "./chat-web-search";
 
 // Ordinary conversation stays on the least expensive lane.
 assert.deepEqual(classifyChatRequest("hello"), {
+  casual: true,
   route: "conversation",
   model: "deepseek-chat",
   searchWeb: false,
 });
+
+for (const casualText of ["who are you", "Who are you?", "hi", "hello", "what can you do", "thanks"]) {
+  const decision = classifyChatRequest(casualText);
+  assert.equal(decision.route, "conversation", casualText);
+  assert.equal(decision.searchWeb, false, casualText);
+  assert.equal(decision.casual, true, casualText);
+}
+
+assert.notEqual(
+  classifyChatRequest("the mitochondria thing from lecture").casual,
+  true,
+  "an unmatched conversation remains eligible for later routing evidence",
+);
 
 // Learning is discipline-neutral and gets Flash thinking, not a premium model request.
 for (const prompt of [

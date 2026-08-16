@@ -851,10 +851,15 @@ export async function sendChatTurn(
   // then): "what's my schedule tomorrow" is a database read, and it used to
   // buy a paid search off the word "tomorrow" AND get promoted onto the
   // tool-less reasoner below — the two halves of the calendar incident.
-  const regexSaidYes = classified.workspaceIntent
-    ? classified.searchWeb
-    : classified.searchWeb || shouldSearchWeb(askText);
-  const needsWeb = regexSaidYes || (!classified.workspaceIntent && await modelWantsWeb(uid, {
+  const regexSaidYes = classified.casual
+    ? false
+    : classified.workspaceIntent
+      ? classified.searchWeb
+      : classified.searchWeb || shouldSearchWeb(askText);
+  // A deliberate casual turn is already classified. Sending "who are you" through a second model
+  // to decide whether it needs the web would let that second decision undo the first and spend a
+  // search on a question only Nemesis itself can answer.
+  const needsWeb = regexSaidYes || (!classified.casual && !classified.workspaceIntent && await modelWantsWeb(uid, {
     ask: askText,
     hasAttachments: userText.trim() !== askText.trim(),
     regexSaidYes,
