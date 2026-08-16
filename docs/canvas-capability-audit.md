@@ -22,9 +22,12 @@ NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... SUPABASE_SERVICE_
 ## The one-sentence answer
 
 Nemesis reliably turns **grids, numbered lists and labelled diagrams** into things to learn, and the
-teaching controller decides between them competently — but it **cannot read prose**, so seven of its
-ten kinds of knowledge and eleven of its fourteen ways of asking a question are never reached on real
-material, and its measure of what matters has almost no range to it.
+teaching controller decides between them competently — but almost nothing it learns comes from
+**prose**, so seven of its ten kinds of knowledge and eleven of its fourteen ways of asking a question
+are never reached on real material, and its measure of what matters has almost no range to it.
+
+The most useful thing found: the part that *does* read prose is **built, working, and two defects
+from reaching a learner** — it is not missing.
 
 ---
 
@@ -42,7 +45,7 @@ Six real production documents, chosen for spread of **shape** (see the corpus ca
 | Immunology lecture | lecture PDF | 198 | 4 / 0 | 83 | 168 |
 | **Total** | | | | **242** | **472** |
 
-### 1.1 🔴 The headline: there is no prose lane
+### 1.1 🔴 The headline: the deterministic extractor cannot read prose
 
 `readKnowledgeObjects` has exactly **three** lanes:
 
@@ -50,12 +53,22 @@ Six real production documents, chosen for spread of **shape** (see the corpus ca
 2. **figures** — labelled diagrams become spatial knowledge
 3. **numbered lists** — become procedures
 
-Running sentences produce nothing. The measurement that proves it: the SOAP heart-failure deck parsed
-**completely** — 188 units, 9 figures found and all 9 described — and the extractor returned
+Running sentences produce nothing *here*. The measurement that proves it: the SOAP heart-failure deck
+parsed **completely** — 188 units, 9 figures found and all 9 described — and the extractor returned
 `refusals: no-tables=1` and **zero** knowledge objects. A learner who uploads that lecture gets a
 canvas with nothing on it.
 
-This one fact explains most of what follows.
+> **Correction, made during this audit.** An earlier draft of this document said "nothing anywhere
+> reads sentences." That is **false**, and the Causal workstream falsified it with end-to-end
+> measurements while this was being written. A model-driven prose lane does exist — deliberately
+> outside `readKnowledgeObjects`, which is kept model-free so downstream failures stay unambiguous —
+> at `mechanismsFor` → `constructCausalKnowledge` → `parseCausalTerritory` → `validateCausalEdges`.
+> It runs on every canvas open, and driven end to end today it returned grounded causal knowledge
+> with verbatim quotes anchored to real units. See §1.3 for why it nevertheless produces nothing in
+> production. The correction matters because it changes the recommended work from *"build a prose
+> extractor"* to *"repair the one that exists"*.
+
+The deterministic gap is still real, and it still explains the six other empty types below.
 
 ### 1.2 🔴 Seven of ten knowledge types are never produced
 
@@ -74,11 +87,28 @@ Across all 242 objects from all six documents:
 The types that are missing are precisely the ones that live in prose: causes, systems, sequences in
 time, "when this rule applies and when it doesn't."
 
-### 1.3 🔴 Zero causal edges corpus-wide — and now with a mechanism
+### 1.3 🔴 Zero causal edges corpus-wide — a reachability failure, not a missing extractor
 
-Not one cause-and-effect relation from any of the six documents. This was measured before; what is
-new is **why**. It is not a tuning problem in the causal extractor. Causes are stated in sentences,
-and sentences are not read at all.
+Not one cause-and-effect relation from any of the six documents (the Causal workstream confirmed the
+same over fourteen parses: association 295, classification 82, procedure 3, causal **0**).
+
+The extractor is **not** missing, and it is **not** a precision problem. Driven end to end today
+against the owner's real diabetes lecture it produced validated, grounded causal knowledge — quotes
+anchored to real units, e.g. *"an alteration in the synthesis, release, or function of endogenous
+insulin — causes — impairment in the ability to maintain normal glucose homeostasis"*. Two measured
+defects stop that ever reaching a learner:
+
+1. **The seam.** `mechanismsFor` is handed the canonical parses as `contexts`, declares them, and
+   **never reads them** — it passes `canvas.sources` instead. Those stored excerpts are stale: **555
+   of 790** production canvas excerpts carry no `unitId`, and an excerpt with no unit is refused as
+   unanchorable. On **4 of the 11** canvases holding material every causal edge is refused before the
+   model's reading is even consulted — and those four are the real lectures.
+2. **Non-determinism.** `CAUSAL_EXTRACTION_TEMPERATURE = 0` is documented as mandatory for this lane
+   and has **zero callers**; the chat transport has no temperature field at all. Measured on an
+   identical prompt and document: 6, 7, 10, 16, 26 and 37 edges across runs.
+
+The lane has completed exactly **once** in all of production, and the single causal row in the
+database is a synthetic test sentence.
 
 ### 1.4 Three of fourteen ways to ask a question are reachable
 
@@ -203,10 +233,18 @@ the model. Reusing a *source* figure is built (`figure-knowledge.ts` → `locate
 
 With no sources attached, extraction has nothing to run on: zero knowledge, zero objectives.
 
-**There is no web-research lane, no synthesis into a knowledge substrate, and no path from a typed
-topic into the Canvas policy.** The architecture the owner sketched — *information → knowledge
-substrate → adaptive Canvas*, with the ingestion source varying and the engine fixed — is exactly
-right and exactly what the code is shaped for; the second ingestion source simply does not exist yet.
+**Web search already exists.** `askCanvasChat` calls `shouldSearchWeb` and, when it fires,
+`searchWebContext` — real retrieval, with sources returned alongside the answer. What it produces is
+**prose set aside for reading**: no knowledge objects, no objectives, no path into the Canvas policy.
+
+So the missing piece is not search. It is **search → knowledge substrate**. The architecture the
+owner sketched — *information → knowledge substrate → adaptive Canvas*, ingestion source varying and
+engine fixed — is exactly what the code is shaped for, and the first half of the second ingestion
+source is already built and paid for.
+
+(Related, found by the PR triage running alongside this audit: `shouldSearchWeb` currently matches
+*"who are you"*, so small talk triggers a paid search. Two open PRs fix it differently — #351 is a
+targeted change, #452 a rewrite — and they conflict. That one needs an owner decision.)
 
 ---
 
@@ -225,8 +263,11 @@ A learner who answers the same objective **wrong every single time**:
 | **The model (default)** | `retrieve`×7, `teach`×1, spread across **seven different objectives**. It came back to the failed one once — to *teach* it, not to ask it again. |
 | The old structured policy | `show_correction`×8, **all eight on the same objective**, with a byte-identical sentence each time. |
 
-The second row is not a hypothetical: it is what the fallback produced on a run where the model call
-failed. So the before-and-after is measured on the same input, not argued.
+The second row is not a hypothetical: it is what the structured policy produced, given that same
+input, on a run where the model call had failed and the fallback ran. **The reason the fallback ran
+is irrelevant to what it then did** — §5b.6 shows that trigger was an artifact of my rig, but the
+eight identical corrections are the structured policy's genuine behaviour on this input, and it is
+the behaviour a learner would meet any time the model arm refuses.
 
 ### 5b.2 🔴 The time budget changes nothing
 
@@ -246,14 +287,20 @@ depth. **The crammer behaviour the owner specified is not observable**, and this
 generous than production — the runtime passes `availableMs: null` always, so a real learner cannot
 even express "I have 30 minutes."
 
-### 5b.3 🔴 `advance`, `defer` and `revisit` were never emitted once
+### 5b.3 ⚪ `advance`, `defer` and `revisit` were never exercised — and the scenarios are why
 
-Across ~70 decisions the controller emitted only `retrieve`, `teach` and `show_correction`.
-`passed over 0` on every scenario. The three move-on verbs the owner required as first-class are
-wired end to end and **were not observed being used**.
+Across ~70 decisions the controller emitted only `retrieve`, `teach` and `show_correction`, with
+`passed over 0` everywhere.
 
-This is not proof they cannot fire — with 95 mostly-untouched objectives there is little reason to
-defer anything. But it does mean their behaviour in production is currently unevidenced.
+**This is not evidence the verbs are broken, and should not be read as such.** Every scenario left at
+least 87 untouched objectives inside a 40-item window, so the controller always had fresh material in
+front of it and no reason to set anything aside. Declining to defer when there is nothing worth
+deferring is correct behaviour, not a dead verb.
+
+What is true is narrower: **their behaviour has not yet been exercised.** The scenario that would do
+it is one where the briefed window contains only objectives the learner has already met or is
+currently failing — `actedOn` covering nearly all 95. That is a gap in this audit's coverage, not a
+finding about the code.
 
 ### 5b.4 🟢 Importance IS used where it exists
 
@@ -320,24 +367,32 @@ decides in about three seconds. Nothing below is a criticism of it — every ite
 
 | # | Finding | Consequence |
 |---|---|---|
-| 1 | No prose lane — extraction reads grids, lists and labelled figures only | A prose lecture yields nothing; 7 of 10 knowledge types and 11 of 14 question forms are unreachable |
-| 2 | Emphasis recovered from zero documents | Importance has no dynamic range: 1 central in 242 |
-| 3 | Brief window ignores importance and truncates by up to 128 | Even a good yield signal would not change teaching |
-| 4 | Time budget changes nothing, and cannot be supplied anyway | The crammer behaviour is unobservable; `availableMs` is always `null` |
-| 5 | Described figures still produce no knowledge without a label line | 9/9 described → 0 teachable |
-| 6 | Diagram generation absent from the action space | The visual-format decision cannot be made |
-| 7 | No research lane for a typed topic | "Teach me X" opens an empty titled canvas or becomes chat |
-| 8 | `advance` / `defer` / `revisit` never observed firing | The move-on verbs are unevidenced in practice |
+| 1 | The causal prose lane is built and works, but is fed stale excerpts — 555 of 790 unanchorable — and is untemperatured | Zero causal knowledge in production; the lane has completed **once**, ever |
+| 2 | The deterministic extractor reads grids, lists and labelled figures only | 6 further knowledge types and 11 of 14 question forms are unreachable; a grid-free deck yields nothing |
+| 3 | Emphasis recovered from zero documents | Importance has no dynamic range: 1 central in 242 |
+| 4 | Brief window ignores importance and truncates by up to 128 | Even a good yield signal would not change teaching |
+| 5 | Time budget changes nothing, and cannot be supplied anyway | The crammer behaviour is unobservable; `availableMs` is always `null` |
+| 6 | Described figures still produce no knowledge without a label line | 9/9 described → 0 teachable |
+| 7 | Diagram generation absent from the action space | The visual-format decision cannot be made |
+| 8 | Web search exists; nothing turns its result into knowledge | "Teach me X" gives a prose answer, never a lesson |
 | 9 | Procedure lane mints objectives from headings and prose answers | Learners can be asked incoherent questions |
+
+Not in the table, because the evidence does not support it: `advance` / `defer` / `revisit` went
+unused across ~70 decisions, but no scenario created a reason to use them. See §5b.3.
 
 ### The dependency between them
 
-Findings 1 and 2 are the root. A prose lane would give causal, conceptual and conditional knowledge
-*and* would give importance something to read (emphasis, repetition and summary statements live in
-prose too). Finding 3 is a one-file change but is worthless until 2 is fixed, since ordering by a
-constant reorders nothing. Finding 4 is partly downstream of 3: a controller that cannot see the
-important material cannot triage toward it under time pressure.
+**1 is the cheapest large win** — the capability exists and is two defects away from working, and it
+is already being fixed as this is written.
 
-Suggested order, on that reasoning alone: **prose lane → emphasis recovery → order the window by
-importance → let a learner say how long they have**. Findings 5–9 are independent and can go in
-parallel.
+**3 is the root of the yield problem.** 4 is a one-file change but worthless until 3 is fixed, since
+ordering by a near-constant reorders nothing; and 5 is partly downstream of 4, because a controller
+that cannot see the important material cannot triage toward it under pressure.
+
+**2 is the biggest piece of work and should be scoped after 1 lands**, because 1 will show how well a
+model-driven lane reading real sentences actually performs — which is the same question 2 has to
+answer, over more knowledge types.
+
+Suggested order: **repair the causal lane → recover emphasis → order the window by importance → let a
+learner say how long they have → then scope the wider prose lane.** Findings 6–9 are independent and
+can run in parallel.
