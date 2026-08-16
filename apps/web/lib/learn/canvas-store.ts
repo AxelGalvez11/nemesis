@@ -246,12 +246,20 @@ export interface CanvasSummary {
   /** Set when the learner pinned it. Pinned sessions sort first. */
   pinnedAt?: string | null;
   folderId?: string | null;
+  /** When the canvas was first made. Optional because only Library asks for it — the front
+   *  door's `listCanvases` does not select it, and a second row type for one extra column is
+   *  how two readers of one table drift apart. `learning_canvases.created_at` is
+   *  `not null default now()`, so whenever it IS selected it is always a real date. */
+  createdAt?: string;
 }
 
 export interface Folder {
   id: string;
   name: string;
   parentId: string | null;
+  /** When the folder was made. Optional only because callers that seed folders by hand (the dev
+   *  preview) have no reason to invent one; `folders.created_at` is `not null default now()`. */
+  createdAt?: string;
 }
 
 /** The learner's sessions, pinned first and then most recently worked.
@@ -316,9 +324,10 @@ export async function setCanvasFolder(userId: string | null, id: string, folderI
 
 export async function listFolders(userId: string | null): Promise<Folder[]> {
   if (!userId) return [];
-  const { data, error } = await supabase.from("folders").select("id,name,parent_id").order("name");
+  const { data, error } = await supabase.from("folders").select("id,name,parent_id,created_at").order("name");
   if (error || !data) return [];
-  return (data as { id: string; name: string; parent_id: string | null }[]).map((row) => ({
+  return (data as { id: string; name: string; parent_id: string | null; created_at: string }[]).map((row) => ({
+    createdAt: row.created_at,
     id: row.id,
     name: row.name,
     parentId: row.parent_id,

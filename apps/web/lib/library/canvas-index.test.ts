@@ -24,6 +24,7 @@ interface Row {
   title: string;
   state: string;
   updated_at: string;
+  created_at: string;
   pinned_at: string | null;
   folder_id: string | null;
   deleted: boolean;
@@ -35,6 +36,10 @@ const NEEDLE = "Hypertension pharmacotherapy";
 
 function library(): Row[] {
   return Array.from({ length: 250 }, (_, index) => ({
+    // 🔴 DELIBERATELY THE OPPOSITE ORDER FROM `updated_at`: index 0 is the most recently WORKED
+    // and the most recently MADE would then be index 249. A fixture where both dates agree lets
+    // a "created" sort that silently orders by `updated_at` pass every assertion.
+    created_at: new Date(Date.UTC(2025, 0, 1) + index * 86_400_000).toISOString(),
     deleted: false,
     folder_id: index % 5 === 0 ? "folder-a" : null,
     id: `canvas-${String(index).padStart(3, "0")}`,
@@ -206,6 +211,23 @@ test("pinned first, then most recent — order keys accumulate, they do not repl
   assert.equal(result.rows[0]?.id, "canvas-100", "a pinned canvas sorts above everything else");
   assert.equal(result.rows[1]?.id, "canvas-000", "then the most recently updated");
   assert.equal(result.rows[2]?.id, "canvas-001", "and the list continues by recency, not by id");
+});
+
+test("sorting by Created orders on created_at, and does not let a pin rewrite history", async () => {
+  // The fixture's two dates run in OPPOSITE directions, so a "created" sort that quietly fell
+  // through to the recency branch would return canvas-000 here and fail.
+  const rows = library().map((row) =>
+    row.id === "canvas-100" ? { ...row, pinned_at: "2026-08-01T00:00:00.000Z" } : row,
+  );
+
+  const result = await searchCanvases("user-1", { sort: "created" }, fakeTable(rows).table);
+
+  assert.equal(result.rows[0]?.id, "canvas-249", "the most recently created canvas comes first");
+  assert.equal(result.rows[1]?.id, "canvas-248", "and the list continues by creation date");
+  // 🔴 A PINNED ROW MUST NOT JUMP THE QUEUE HERE. Pinning says "keep this within reach", which is
+  // a claim about now; leading a list ordered by when things were MADE with it would state a
+  // chronology that is simply false.
+  assert.notEqual(result.rows[0]?.id, "canvas-100", "pinning does not change when a canvas was made");
 });
 
 test("Unfiled means folder_id IS NULL, not folder_id = null", async () => {
