@@ -650,6 +650,19 @@ export function LearningCanvas({
         // the canvas's actual knowledge, and each object now carries whether a source really states
         // it. The predicate lives in `canvas-provenance.ts` with the reasoning.
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
+        // 🔴 THE NARROW SLICE, NOT `policy` ITSELF — see the prop's own comment in
+        // canvas-header.tsx. `decidedObjectiveKey` is derived here rather than handing the whole
+        // `decision` down, so nothing below this line can reach into it for anything but the one
+        // fact the Minimap's "recommended" row needs (§H3).
+        minimap={{
+          coverage: policy.coverage,
+          decidedObjectiveKey: policy.decision?.objective.identityKey ?? null,
+          evidence: policy.evidence,
+          focus: policy.focus,
+          outcome: policy.outcome,
+          setFocus: policy.setFocus,
+          territories: policy.territories,
+        }}
         onDelete={() => {
           void session.remove().then(() => router.push(CANVAS_EXIT_ROUTE));
         }}
