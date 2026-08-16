@@ -115,7 +115,9 @@
      on for their sense of depth — steps by exactly the amounts it did before. This is a hue
      change, deliberately not a contrast change; anything that reads differently afterwards was
      relying on the tint rather than on the step. */
-  --bg: #fafafa; --bg-2: #f0f0f0; --surface: #f3f3f3; --surface-2: #ebebeb; --raised: #ffffff;
+  /* --bg matches the reference's #fcfcfc; it paints <body>, so it is what shows in the overscroll
+     gutter and anywhere the workspace surface does not reach. */
+  --bg: #fcfcfc; --bg-2: #f0f0f0; --surface: #f3f3f3; --surface-2: #ebebeb; --raised: #ffffff;
   --line: rgba(22, 24, 29, 0.10); --line-2: rgba(22, 24, 29, 0.18);
   /* 🔴 NOT PURE BLACK, AND NOT BLUE-GREY (owner 2026-08-15: "make sure light mode matches chatgpt
      colors too"). Measured on the reference in light mode: #0d0d0d / #5d5d5d / #8f8f8f. Ours were
