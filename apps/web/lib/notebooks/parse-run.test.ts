@@ -242,3 +242,51 @@ test("a thread that STARTED and then died silently reports no spend, so the call
     "a started thread's silence must stay ambiguous, so settlement charges the grant",
   );
 });
+
+test("an unset variable does NOT reach the thread as the string \"undefined\"", async () => {
+  // 🔴🔴 THE BUG THAT MADE VISION NEVER WORK, PINNED AT THE BOUNDARY THAT CAUSED IT.
+  //
+  // `new Worker(path, { env })` stringifies values. A key whose value is `undefined` arrives as
+  // the four-character string "undefined", and `"KEY" in process.env` is TRUE inside the thread.
+  // `GEMINI_VISION_MODEL` is unset in production, so `visionModels` read "undefined" as a
+  // deliberate model override and every figure request went to
+  // /v1beta/models/undefined:generateContent and 404'd — for every document, since this file was
+  // written. It survived everything because OUTSIDE a thread the variable is genuinely absent.
+  //
+  // This spawns a REAL Worker rather than asserting on the object we pass, because the fabrication
+  // happens inside Node, not in our code. A test that inspected the argument would pass while the
+  // defect stood.
+  const dir = join(tmpdir(), "nemesis-parse-run-test");
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const path = join(dir, "env-echo.mjs");
+  writeFileSync(
+    path,
+    'import { parentPort } from "node:worker_threads";\n' +
+      'parentPort.postMessage({ ready: true });\n' +
+      'parentPort.postMessage({ threw: JSON.stringify({ set: process.env.GEMINI_API_KEY ?? null, unset: process.env.GEMINI_VISION_MODEL ?? null, present: "GEMINI_VISION_MODEL" in process.env }), peakRssMb: 0 });\n',
+  );
+
+  const before = { set: process.env.GEMINI_API_KEY, unset: process.env.GEMINI_VISION_MODEL };
+  process.env.GEMINI_API_KEY = "real-value";
+  delete process.env.GEMINI_VISION_MODEL;
+  try {
+    const outcome = await runParseOnThread(new Uint8Array([1]), "x.pdf", "application/pdf", {
+      heartbeat: async () => true,
+      workerPath: path,
+    });
+    assert.equal(outcome.status, "threw");
+    const seen = JSON.parse((outcome as { error: string }).error) as {
+      set: string | null;
+      unset: string | null;
+      present: boolean;
+    };
+    assert.equal(seen.set, "real-value", "a variable that IS set must cross intact");
+    assert.notEqual(seen.unset, "undefined", 'an unset variable must NOT arrive as the string "undefined"');
+    assert.equal(seen.unset, null, "an unset variable must be absent in the thread");
+    assert.equal(seen.present, false, "and must not even appear as a key");
+  } finally {
+    if (before.set === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = before.set;
+    if (before.unset !== undefined) process.env.GEMINI_VISION_MODEL = before.unset;
+  }
+});

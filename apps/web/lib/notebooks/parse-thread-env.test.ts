@@ -48,10 +48,21 @@ function envKeysRead(relativePath: string): Set<string> {
   return keys;
 }
 
-/** The names inside the `env: { … }` object `runParseOnThread` passes to the Worker. */
+/**
+ * The names inside the `env:` object `runParseOnThread` passes to the Worker.
+ *
+ * 🔴 THE OBJECT IS NOW WRAPPED IN `definedOnly(...)`, AND THE GUARD STILL POINTS AT THE SAME
+ * PROPERTY. That wrapper exists because `new Worker(path, { env })` stringifies values, so a key
+ * whose value is `undefined` arrives in the thread as the STRING "undefined" — which
+ * `visionModels` read as a deliberate model override, sending every figure request to
+ * `/models/undefined:generateContent`. Matching an optional wrapper keeps this guard asking its
+ * real question ("is every provider key forwarded?") rather than the incidental one ("is the
+ * literal `env: {` still there?"). Loosening it to accept any shape would have been the wrong
+ * repair: the allowlist is what this test defends.
+ */
 function allowlistedKeys(): Set<string> {
   const source = readFileSync(join(WEB_ROOT, "lib/notebooks/parse-run.ts"), "utf8");
-  const block = /env:\s*\{([\s\S]*?)\n\s{4}\}/.exec(source);
+  const block = /env:\s*(?:[A-Za-z_$][\w$]*\()?\{([\s\S]*?)\n\s{4}\}/.exec(source);
   assert.ok(block, "parse-run.ts must still pass an explicit env allowlist to the Worker");
   const keys = new Set<string>();
   for (const match of (block[1] ?? "").matchAll(/^\s*([A-Z][A-Z0-9_]{2,})\s*:/gm)) {
