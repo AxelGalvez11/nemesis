@@ -29,8 +29,14 @@ export interface FigureLookReport {
   described: number;
   /** Routed, but no pixels were captured for them. */
   withoutPixels: number;
-  /** Qualified and did not fit the budget — they keep `not-examined`. */
+  /** Qualified and did not fit the ROUTER's per-document cap — they keep `not-examined`. */
   overBudget: number;
+  /**
+   * Sent nowhere because the vision LEDGER would not grant them, or they exceed the request
+   * ceiling. A different limit from `overBudget`, and previously invisible: see `notSent` in
+   * `vision.ts` for the measurement that found these reported as `examined-empty`.
+   */
+  notSent: number;
 }
 
 export interface FigureLookResult {
@@ -55,6 +61,7 @@ export async function lookAtFigures(
   const plan: RoutingPlan = planFigureVision(model, { maxFigures: options.maxFigures });
   const empty: FigureLookReport = {
     described: 0,
+    notSent: 0,
     overBudget: plan.overBudget,
     routed: plan.candidates.length,
     withoutPixels: 0,
@@ -88,6 +95,11 @@ export async function lookAtFigures(
 
   let described = new Map<string, string>();
   let labelled = new Map<string, FigureLabel[]>();
+  // Names a limit held back. Empty until a read reports some, so a provider failure below
+  // leaves every figure judged on `reached` exactly as before.
+  let notSent: ReadonlySet<string> = new Set<string>();
+  // Sent, and no usable answer came back for it — see `unattributed` in `vision.ts`.
+  let unattributed: ReadonlySet<string> = new Set<string>();
   // 🔴 FALSE UNTIL A REQUEST ACTUALLY COMES BACK. A throw below leaves it false, and so
   // does a model ladder that 404s all the way down — which is exactly what production was
   // doing while reporting every figure as `examined-empty`.
@@ -102,6 +114,8 @@ export async function lookAtFigures(
     const seen = await readFiguresWithVision(send, { env, signal: options.signal });
     described = seen.descriptions;
     labelled = seen.labels;
+    notSent = seen.notSent;
+    unattributed = seen.unattributed;
     reached = seen.reached;
   } catch {
     // A provider failure is a disclosed gap, not a parse failure.
@@ -118,7 +132,24 @@ export async function lookAtFigures(
       // what let a completely dead model ladder report nine diagrams as examined, and it
       // is the same shape as every other silent degradation in this codebase: the
       // flattering reading of a missing value.
-      ...(text ? { description: text } : { skipped: reached ? "examined-empty" : "vision-unavailable" }),
+      // 🔴 THREE ABSENCES NOW, NOT TWO. `over-cap` is a figure a LIMIT refused to pay for —
+      // measured by capping a real lecture's ledger at one unit, where two routed figures came
+      // back as `examined-empty` having never left the process. Judging those on `reached`
+      // borrowed the verdict of the batch that did run and reported a truncated document as a
+      // fully examined one.
+      // 🔴 `examined-empty` IS A CLAIM AND IS NOW ONLY MADE WHEN IT IS TRUE: the reply was
+      // attributed to this image and said, of this picture, nothing. A figure whose batch was
+      // discarded reads `vision-unavailable` — no usable read exists — because asserting a
+      // verdict nobody reached is the collapse this whole coverage vocabulary exists to prevent.
+      ...(text
+        ? { description: text }
+        : {
+            skipped: notSent.has(image.name)
+              ? "over-cap"
+              : reached && !unattributed.has(image.name)
+                ? "examined-empty"
+                : "vision-unavailable",
+          }),
       ...(named && named.length > 0 ? { labels: named } : {}),
     });
   }
@@ -127,6 +158,7 @@ export async function lookAtFigures(
     model: applyFigureDescriptions(model, results),
     report: {
       described: [...results.values()].filter((r) => r.description).length,
+      notSent: [...results.values()].filter((r) => r.skipped === "over-cap").length,
       overBudget: plan.overBudget,
       routed: plan.candidates.length,
       withoutPixels: [...results.values()].filter((r) => r.skipped === "unsupported").length,
