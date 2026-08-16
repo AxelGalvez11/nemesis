@@ -39,6 +39,7 @@ import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } fr
 import { figureKnowledge } from "./figure-knowledge";
 import type { KnowledgeObject } from "./knowledge-types";
 import { orderedRunsIn, type ListUnit } from "./procedure-sequence";
+import { importanceIndex, sourceImportance, type ImportanceRefusal } from "./source-importance";
 import { subjectColumnOf } from "./table-subject-column";
 import { classAxesOf, contrastsOf } from "./wide-grid-classification";
 
@@ -115,6 +116,17 @@ export interface KnowledgeExtraction {
   outcome: ExtractionOutcome;
   objects: KnowledgeObject[];
   refusals: ExtractionRefusal[];
+  /**
+   * Why an object came out with no reading of how prominent its source treats it.
+   *
+   * 🔴 COUNTED HERE RATHER THAN INFERRED FROM THE OBJECTS, AND KEPT APART FROM `refusals` ABOVE.
+   * Those say the extractor produced FEWER objects than the document holds. These say an object was
+   * produced and could not be placed in its document — a different question with a different owner,
+   * and mostly a statement about the cue rather than about the parse. Measured on production: the
+   * majority of objects from both PDFs land here, and knowing that the majority is unread is the
+   * whole reason it is a list rather than an absence.
+   */
+  importanceRefusals: ImportanceRefusal[];
 }
 
 /**
@@ -126,6 +138,42 @@ export interface KnowledgeExtraction {
  * ambiguous between "the architecture is wrong" and "the model had a bad day".
  */
 export function extractKnowledgeObjects(context: SourceContext): KnowledgeExtraction {
+  return withSourceImportance(context, readKnowledgeObjects(context));
+}
+
+/**
+ * Place every extracted object in its own document — how prominently the source treats it.
+ *
+ * 🔴 ONE PASS AFTER ALL THE LANES, NOT A LINE INSIDE EACH OF THEM. Grids, figures and numbered lists
+ * mint objects in three different places, and a reading attached at each site would be three
+ * opportunities for one lane to be forgotten — which is exactly how the figure lane came to sit below
+ * an early return and produce nothing for the one document type it exists for. The index is built
+ * once here for the same reason: it is a property of the document, and rebuilding it per object would
+ * make a 229-object extraction re-read the source 229 times.
+ *
+ * 🔴 THE REFUSALS ARE CARRIED OUT, NOT SWALLOWED. An object with no reading is the common case, and
+ * a caller that cannot tell "this document does not foreground it" from "we could not trace its cue"
+ * would be free to treat both as low priority.
+ */
+function withSourceImportance(
+  context: SourceContext,
+  extraction: Omit<KnowledgeExtraction, "importanceRefusals">,
+): KnowledgeExtraction {
+  const index = importanceIndex(context);
+  const importanceRefusals: ImportanceRefusal[] = [];
+  const objects = extraction.objects.map((object) => {
+    const reading = sourceImportance(index, object);
+    if (reading.refusal) importanceRefusals.push(reading.refusal);
+    // 🔴 SPREAD ONLY WHEN THERE IS A READING. Writing `importance: undefined` would put the key on
+    // the object, and `knowledgePayload` stores by key — an explicit undefined is how "we did not
+    // look" starts travelling as a field that exists and holds nothing.
+    return reading.importance ? { ...object, importance: reading.importance } : object;
+  });
+  return { ...extraction, importanceRefusals, objects };
+}
+
+/** Every lane, before anything has been placed in the document. `withSourceImportance` finishes it. */
+function readKnowledgeObjects(context: SourceContext): Omit<KnowledgeExtraction, "importanceRefusals"> {
   const objects: KnowledgeObject[] = [];
   const refusals: ExtractionRefusal[] = [];
 
