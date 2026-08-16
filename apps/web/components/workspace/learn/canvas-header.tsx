@@ -9,9 +9,10 @@
 // component have. One of them did not, and that state (resolving the canvas's knowledge) painted a
 // page with nothing on it to leave by. See the note at the top of canvas-surface.tsx.
 //
-// What is left is genuinely optional chrome: the canvas's name and the two panels. All of it
-// legitimately disappears during a retrieval (`minimal`), which is exactly why the exit must not
-// be able to travel with it.
+// What is left is genuinely optional chrome: the canvas's name and the floating panels
+// (`canvas-controls.tsx` — Sources, Objectives, Territory). All of it legitimately disappears
+// during a retrieval (`minimal`), which is exactly why the exit must not be able to travel
+// with it.
 //
 // 🔴 STILL NOT A HEADER BAR. No container, no background, no border, no shadow, no backdrop —
 // those assertions moved to canvas-surface.tsx along with the element that carries them.
@@ -19,7 +20,8 @@
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
-import { ObjectivesControl, SourcesControl } from "./canvas-controls";
+import { MinimapControl, ObjectivesControl, SourcesControl } from "./canvas-controls";
+import type { PolicyRuntime } from "./use-policy-runtime";
 
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
@@ -31,6 +33,13 @@ interface CanvasHeaderProps {
   /** The card or question being answered right now, so the objectives panel can say which one
    *  the canvas is actually working on rather than guessing from state alone. */
   activeTaskId?: string | null;
+  /** The narrow slice `MinimapControl` needs — territory, focus, the current decision's
+   *  objective, and the source-side disclosure facts (§H). Not the whole `PolicyRuntime`: this
+   *  header has no other use for it, and a wider prop would invite a second, unrelated control to
+   *  reach into runtime internals it does not need. */
+  minimap: Pick<PolicyRuntime, "coverage" | "evidence" | "focus" | "outcome" | "setFocus" | "territories"> & {
+    decidedObjectiveKey: string | null;
+  };
   /**
    * A retrieval is on screen and the learner is meant to answer it, not manage the canvas.
    *
@@ -55,6 +64,7 @@ export function CanvasHeader({
   activeTaskId,
   minimal = false,
   modelKnowledge = false,
+  minimap,
 }: CanvasHeaderProps) {
   return (
     <>
@@ -69,7 +79,7 @@ export function CanvasHeader({
         </span>
       )}
 
-      {/* §1: two compact controls, floating. Not a toolbar — see the note at the top of
+      {/* §1: compact controls, floating. Not a toolbar — see the note at the top of
           canvas-controls.tsx for what that costs when it slips.
           🔴 ABSENT DURING A RETRIEVAL, and the `×` is deliberately the only thing left. The
           controls are not removed from the product — they are the session's, and the session is
@@ -85,6 +95,15 @@ export function CanvasHeader({
         <>
           <SourcesControl canvas={canvas} modelKnowledge={modelKnowledge} onFiles={onFiles} onUrl={onUrl} />
           <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
+          <MinimapControl
+            coverage={minimap.coverage}
+            decidedObjectiveKey={minimap.decidedObjectiveKey}
+            evidence={minimap.evidence}
+            focus={minimap.focus}
+            outcome={minimap.outcome}
+            setFocus={minimap.setFocus}
+            territories={minimap.territories}
+          />
         </>
       )}
     </>

@@ -1,6 +1,6 @@
 "use client";
 
-// The three controls that float at the top right of the canvas.
+// The controls that float at the top right of the canvas.
 //
 // 🔴 THEY FLOAT. There is no toolbar, no bar background, no full-width border and no container
 // of any kind — they sit directly on the same uninterrupted sheet the title and the back button
@@ -15,15 +15,38 @@
 //
 //   ▣  Sources & Outputs   what went IN, and what Nemesis made
 //   ⊞  Objectives          what Nemesis is trying to do with this learner
+//   ⛶  Territory (Minimap) which part of the material the learner has chosen to work on (§H)
 //   ⋯  Session             renaming, filing, deleting — never learning actions (§48)
+//
+// 🔴 OBJECTIVES AND TERRITORY LOOK LIKE THEY OVERLAP. THEY DO NOT SHARE A SUBSTRATE.
+// `ObjectivesControl` reads `canvas.concepts` / `weakConceptIds` / `correctedConceptIds` — the
+// legacy six-stage machine's own fields, populated by a generated lesson. `MinimapControl` reads
+// `PolicyRuntime.territories`, built from `canvas-focus.ts` over durable knowledge objects — the
+// compositional Canvas's substrate. A canvas running the compositional runtime has empty
+// `concepts` (so `ObjectivesControl` disables itself) and a real `territories` list; a canvas
+// still on the six-stage machine has the reverse. They are not two views of one truth; they are
+// two different truths that happen to sit in the same corner. Do not "unify" them here — ask
+// Brain, this is a substrate question, not a presentation one.
 
 import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
+import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
+import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
+import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import { cn } from "@/lib/utils";
+
+import {
+  orderedTerritories,
+  recommendedTerritoryLabel,
+  sourceDisclosure,
+  type Territory,
+  type TerritoryMark,
+} from "./canvas-minimap";
 
 /** Close on outside click and Escape. Shared so the three panels cannot drift apart in how they
  *  dismiss — an overlay that only closes one of the two ways feels broken in a way people
@@ -333,6 +356,178 @@ export function ObjectivesControl({
             <p className="mt-1.5 border-t border-(--ui-stroke-tertiary) px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
               Nemesis is currently working on <span className="text-(--ui-text-secondary)">{focus}</span>.
             </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- territory (minimap)
+
+/** Dots for the two marks a territory can carry. `null` (no evidence yet) renders no dot at all —
+ *  see canvas-minimap.ts. Reusing `ObjectivesControl`'s exact palette for the same underlying
+ *  facts (amber for "worth another look", the same fill for "shown"), so the app is not speaking
+ *  two colour vocabularies about one thing on two panels a click apart. */
+const TERRITORY_DOT: Record<TerritoryMark, string> = {
+  developing: "bg-amber-500/80",
+  established: "bg-(--ui-text-secondary)",
+};
+
+/** Said in words on hover — the same restraint `ObjectivesControl` uses, and its exact vetted
+ *  copy for the states that mean the same thing. 🔴 NEITHER WORD IMPLIES FINISHED (§18/M1): a
+ *  correct retrieval makes knowledge better established, not permanently done, so this stays an
+ *  observation ("you've shown this") rather than a completion claim ("done" / a checkmark). */
+const TERRITORY_MEANING: Record<TerritoryMark, string> = {
+  developing: "Worth checking again",
+  established: "You've shown this",
+};
+
+/** §H: a way to say "work on this part of the material", nothing more. Selecting a row calls
+ *  `setFocus` with a `FocusScope` and NOTHING else — no operation, no difficulty, no mode ever
+ *  crosses this boundary (H6). See `canvas-minimap.ts` for every derivation used here; this
+ *  component only lays them out. */
+export function MinimapControl({
+  territories,
+  focus,
+  setFocus,
+  decidedObjectiveKey,
+  outcome,
+  coverage,
+  evidence,
+}: {
+  territories: readonly Territory[];
+  focus: FocusScope;
+  setFocus: (scope: FocusScope) => void;
+  /** The objective the CURRENT decision names, if any — used only to find which territory
+   *  Nemesis would work on next when nothing is manually focused (§H3). Never a ranking; see
+   *  `recommendedTerritoryLabel`. */
+  decidedObjectiveKey: string | null;
+  outcome: ExtractionOutcome | "no-durable-source";
+  coverage: CanvasCoverage;
+  evidence: readonly LearnerEvidence[];
+}) {
+  const [open, setOpen] = useState(false);
+  const holder = useDismiss(open, () => setOpen(false));
+
+  const recommended = recommendedTerritoryLabel(territories, decidedObjectiveKey, focus);
+  const rows = orderedTerritories(territories, evidence, recommended);
+  const disclosure = sourceDisclosure(outcome, coverage);
+  const onWholeCanvas = focus.kind === "canvas";
+
+  return (
+    <div className="pointer-events-auto relative shrink-0" ref={holder}>
+      <button
+        aria-expanded={open}
+        aria-label="Territory"
+        className={CONTROL}
+        onClick={() => setOpen((current) => !current)}
+        title="Territory"
+        type="button"
+      >
+        <Codicon name="map" size="0.8125rem" />
+        {/* §46 convention: a dot, not a count. It marks that a focus is narrowing the
+            candidates — the one fact worth knowing without opening the panel. */}
+        {isFocused(focus) && (
+          <span className="absolute right-[5px] top-[5px] h-[5px] w-[5px] rounded-full bg-(--ui-accent)" />
+        )}
+      </button>
+
+      {open && (
+        <div className={cn(PANEL, "w-[20rem]")}>
+          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
+            Territory
+          </p>
+
+          {/* H5: source-side facts. Kept out of the per-territory dots below and out of each
+              other — two different claims (RUNTIME-005), never merged into one. Both are
+              canvas-wide; there is no per-territory coverage signal yet. */}
+          {disclosure.readingGap && (
+            <p className="px-2 pb-1.5 text-[length:var(--canvas-text-meta)] leading-relaxed text-amber-500">
+              Nemesis could not read all of this material clearly. That is a gap in our reading,
+              not in what you know.
+            </p>
+          )}
+          {disclosure.unrepresented && (
+            <p className="px-2 pb-1.5 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">
+              Some of this material has not been turned into practice yet.
+            </p>
+          )}
+
+          {/* Clearing focus and choosing "the whole canvas" are the same action (canvas-focus.ts:
+              WHOLE_CANVAS is what both produce), so there is one row for it, not a separate
+              "Clear" control living apart from the list it clears. */}
+          <button
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
+              onWholeCanvas && "bg-(--ui-bg-tertiary)",
+            )}
+            onClick={() => {
+              setFocus(WHOLE_CANVAS);
+              setOpen(false);
+            }}
+            type="button"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-[7px] w-[7px] shrink-0 rounded-full",
+                onWholeCanvas
+                  ? "bg-(--ui-text-primary) ring-2 ring-(--ui-text-primary)/25"
+                  : "border border-(--ui-stroke-primary)",
+              )}
+            />
+            <span className="text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
+              Whole canvas
+              <span className="sr-only">{onWholeCanvas ? ". Currently focused here." : ""}</span>
+            </span>
+          </button>
+
+          {rows.length === 0 ? (
+            <p className="px-2 py-3 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+              Nothing to focus on within this canvas yet.
+            </p>
+          ) : (
+            rows.map((territory) => {
+              const current = focus.kind === "selection" && focus.label === territory.label;
+              const isRecommended = territory.label === recommended;
+              return (
+                <button
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
+                    current && "bg-(--ui-bg-tertiary)",
+                  )}
+                  key={territory.label}
+                  onClick={() => {
+                    setFocus({ identityKeys: territory.identityKeys, kind: "selection", label: territory.label });
+                    setOpen(false);
+                  }}
+                  title={territory.mark ? TERRITORY_MEANING[territory.mark] : undefined}
+                  type="button"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "h-[7px] w-[7px] shrink-0 rounded-full",
+                      current && "ring-2 ring-(--ui-text-primary)/25",
+                      territory.mark ? TERRITORY_DOT[territory.mark] : "bg-transparent",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
+                    {territory.label}
+                    <span className="sr-only">
+                      {territory.mark ? `. ${TERRITORY_MEANING[territory.mark]}` : ""}
+                      {current ? ". Currently focused here." : ""}
+                    </span>
+                  </span>
+                  {isRecommended && (
+                    <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                      Suggested next
+                    </span>
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
       )}
