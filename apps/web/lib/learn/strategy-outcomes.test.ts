@@ -312,7 +312,12 @@ test("🔴 the headline counts an OBJECTIVE once, however often it is durably re
   const summary = summariseStrategy("nemesis_policy", [
     row({ objectiveEvidence: "contradicted", occurredAt: at(0), responseLatencyMs: 1_200_000, teachingStrategy: "nemesis_policy", verdict: "incorrect" }),
     row({ objectiveEvidence: "demonstrated", occurredAt: at(RETENTION_DELAY_MS + 1), responseLatencyMs: 1_200_000, teachingStrategy: "nemesis_policy" }),
-    row({ objectiveEvidence: "demonstrated", occurredAt: at(2 * RETENTION_DELAY_MS + 2), responseLatencyMs: 1_200_000, teachingStrategy: "nemesis_policy" }),
+    // 🔴 A WHOLE DELAY CLEAR OF THE PREVIOUS ROW, NOT ONE MILLISECOND PAST IT. This test is about
+    // the distinct-objective COUNT, so its rows must land in the durable bucket for a reason a
+    // reader can see rather than by arithmetic nobody stated — otherwise a later change to
+    // `RETENTION_DELAY_MS` makes it pass for the wrong reason or fail opaquely. The boundary itself
+    // is probed deliberately elsewhere.
+    row({ objectiveEvidence: "demonstrated", occurredAt: at(3 * RETENTION_DELAY_MS), responseLatencyMs: 1_200_000, teachingStrategy: "nemesis_policy" }),
   ]);
   assert.equal(summary.durableDemonstrations, 2, "two durable demonstrations happened");
   assert.equal(summary.objectivesDurablyDemonstrated, 1, "🔴 of ONE objective");

@@ -600,6 +600,21 @@ export interface StrategyOutcomeSummary {
    * 🔴 A 0 HERE WOULD BE A REAL FINDING AND MUST NOT BE MANUFACTURED. It means gaps existed, answers
    * were given across them, and nothing survived. That is exactly the result this instrument is for,
    * and it is the reason "not instrumented" may never be allowed to look like it.
+   *
+   * 🔴🔴 THE DENOMINATOR IS *ALL* OF THIS ARM'S ANSWERING TIME, NOT THE SUBSET THAT HAD A GAP
+   * AVAILABLE, AND THAT ASYMMETRY IS DELIBERATE BUT MUST BE READ. Numerator and denominator are drawn
+   * over different populations: every performance contributes attention, while only objectives
+   * revisited after twelve hours can contribute a durable demonstration. On a real corpus, where most
+   * objectives are answered once and never returned to, the denominator will be dominated by
+   * attention that had no opportunity to reach the numerator at all — so the absolute number reads
+   * LOW by that ratio, systematically. `performancesWithLatency` cannot show this: it discloses
+   * attention that went unmeasured, not attention that was measured and could never have counted.
+   *
+   * It is kept this way because "attention spent per thing durably held" is the question the owner
+   * asked, and restricting the denominator to revisited objectives would answer a narrower one —
+   * "attention spent on the things we happened to come back to" — which flatters an arm that revisits
+   * little. The bias falls identically on both arms, so the COMPARISON is sound; the absolute figure
+   * is a floor, and must never be quoted as "this is how fast a learner learns".
    */
   durableDemonstrationsPerActiveHour: number | null;
   /**
