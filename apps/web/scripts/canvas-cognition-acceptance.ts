@@ -250,18 +250,23 @@ async function main(): Promise<void> {
       );
       const accepted = same.value?.verdict;
       const rejected = other.value?.verdict;
-      const overlap = (a: string, b: string): boolean =>
-        a.trim().toLowerCase() === b.trim().toLowerCase() ||
-        a.toLowerCase().includes(b.trim().toLowerCase());
+      // 🔴 WHAT THIS ACTUALLY ASSERTS, NAMED HONESTLY: the accepted answer does not CONTAIN the
+      // reference answer. It is not a claim of zero word overlap — the paraphrase does say
+      // "enzymes" — and the criterion does not need one. The calibration below is what carries D2:
+      // a lexically NEARER answer was rejected, which no string comparison would have done.
+      const containsReference = (answer: string, reference: string): boolean =>
+        answer.trim().toLowerCase() === reference.trim().toLowerCase() ||
+        answer.toLowerCase().includes(reference.trim().toLowerCase());
       check(
         "D2",
         (accepted === "strong" || accepted === "understood") &&
           rejected !== undefined &&
           rejected !== "strong" &&
           rejected !== "understood" &&
-          !overlap(paraphrase, String(objective.answer)),
-        `prompt="${prompt.prompt}" reference="${objective.answer}" · paraphrase(no lexical overlap)→${accepted} · ` +
-          `lexically-nearer wrong answer "${nearMiss}"→${rejected}`,
+          !containsReference(paraphrase, String(objective.answer)),
+        `prompt="${prompt.prompt}" reference="${objective.answer}" · ` +
+          `paraphrase (does NOT contain the reference answer) → ${accepted} · ` +
+          `lexically NEARER wrong answer "${nearMiss}" → ${rejected}`,
       );
       note(
         "D2-detail",
@@ -447,7 +452,16 @@ async function main(): Promise<void> {
       targets: targeted.map(targetFor),
       task: "reconstruct",
     });
-    // The judge names TWO of the three links: one demonstrated, one contradicted, one never mentioned.
+    // 🔴🔴 THESE OUTCOMES ARE CONSTRUCTED BY THIS HARNESS, AND THAT IS NOT A SHORTCUT — IT IS THE
+    // ONLY WAY THEY CAN EXIST TODAY. `outcomeFor` takes exactly ONE objective, and its own header
+    // says so: *"There is deliberately no helper that can spread one verdict across a set… When a
+    // genuine multi-objective judge exists it returns several of these."* No such judge exists.
+    //
+    // So what the check below establishes is precise and narrower than it looks: the FAN-OUT and the
+    // STORE keep per-link outcomes apart when handed them, and mark the target nobody spoke about
+    // `not_addressed` rather than wrong. It does NOT establish that anything in the system produces
+    // per-link outcomes. Both halves of the multi-objective path are unbuilt — nothing constructs a
+    // multi-target prompt (see F1-reachability) and nothing computes multi-target outcomes.
     const outcomes: SubmissionOutcome[] = [
       { objectiveIdentityKey: targeted[0]!.identityKey, verdict: "strong" },
       { objectiveIdentityKey: targeted[1]!.identityKey, verdict: "incorrect" },
@@ -480,6 +494,14 @@ async function main(): Promise<void> {
         `link1 verdict=${String(a?.verdict)}/${String(a?.objectiveEvidence)} · ` +
         `link2 verdict=${String(b?.verdict)}/${String(b?.objectiveEvidence)} · ` +
         `link3 verdict=${String(c?.verdict)}/${String(c?.objectiveEvidence)} — not one overall verdict`,
+    );
+    note(
+      "E1-scope",
+      "THE OUTCOMES WERE CONSTRUCTED BY THIS HARNESS, NOT COMPUTED BY A JUDGE. `outcomeFor` takes one " +
+        "objective and there is deliberately no helper that spreads a verdict across a set, so a " +
+        "multi-outcome judgement cannot currently be produced by anything in the tree. What is proven: " +
+        "the fan-out and the store keep per-link outcomes apart and mark the silent target `not_addressed`. " +
+        "What is NOT proven: that any component computes per-link outcomes.",
     );
     check(
       "E2",
