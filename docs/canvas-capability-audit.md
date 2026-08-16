@@ -287,20 +287,41 @@ depth. **The crammer behaviour the owner specified is not observable**, and this
 generous than production — the runtime passes `availableMs: null` always, so a real learner cannot
 even express "I have 30 minutes."
 
-### 5b.3 ⚪ `advance`, `defer` and `revisit` were never exercised — and the scenarios are why
+### 5b.3 🟢 `revisit` fires, under the condition it exists for — scenario E
 
-Across ~70 decisions the controller emitted only `retrieve`, `teach` and `show_correction`, with
-`passed over 0` everywhere.
+Across scenarios A–D the controller emitted only `retrieve`, `teach` and `show_correction`, with
+`passed over 0` everywhere. That looked like the move-on verbs were dead. **It was an artifact of the
+scenarios**: every one of them left 87+ untouched objectives inside a 40-item window, so the
+controller always had fresh material in front of it and no reason to set anything aside.
 
-**This is not evidence the verbs are broken, and should not be read as such.** Every scenario left at
-least 87 untouched objectives inside a 40-item window, so the controller always had fresh material in
-front of it and no reason to set anything aside. Declining to defer when there is nothing worth
-deferring is correct behaviour, not a dead verb.
+Scenario **E** builds the condition those verbs exist for — every objective in view already met
+**and** failing, and one minute left. Result:
 
-What is true is narrower: **their behaviour has not yet been exercised.** The scenario that would do
-it is one where the briefed window contains only objectives the learner has already met or is
-currently failing — `actedOn` covering nearly all 95. That is a gap in this audit's coverage, not a
-finding about the code.
+```
+2. retrieve  central   Given <7.0% (53 mmol/mol), produce A1C
+   ↷ REVISIT "Central, but only 1 minute remains and repeated failures show it needs a fresh
+              spaced attempt"
+```
+
+**`revisit` fires, and its stated reason is coherent** — put this down until next time, because more
+attempts in the last minute of a session will not help. That is the first-class move-on decision the
+brief asked for, doing exactly what it was specified to do.
+
+Two honest qualifications:
+
+- **`advance` and `defer` are still unobserved.** `advance` is arguably right to be rare — it means
+  "nothing here is owed", and something was always owed. `defer` remains untested.
+- Under maximum time pressure the controller **concentrated on the single `central` objective**
+  rather than spreading out — four of six turns on the same A1C target, alternating `retrieve` and
+  `teach` after failures. That is defensible cramming (spend the last minute on the one thing that
+  matters most, and show the answer when asking twice has not worked), not the drill trap: it is
+  choosing the important item deliberately rather than being unable to leave it.
+
+### 5b.3b Observed refusal rate
+
+One `unparseable` refusal across roughly 80 real decisions in this audit — the model returned
+something that was not readable JSON, the fallback answered, and the turn was recorded as a fallback
+carrying its cause. That is the machinery working as designed, at a rate near 1%.
 
 ### 5b.4 🟢 Importance IS used where it exists
 
@@ -377,8 +398,8 @@ decides in about three seconds. Nothing below is a criticism of it — every ite
 | 8 | Web search exists; nothing turns its result into knowledge | "Teach me X" gives a prose answer, never a lesson |
 | 9 | Procedure lane mints objectives from headings and prose answers | Learners can be asked incoherent questions |
 
-Not in the table, because the evidence does not support it: `advance` / `defer` / `revisit` went
-unused across ~70 decisions, but no scenario created a reason to use them. See §5b.3.
+Not in the table, because the audit closed it: `revisit` **does** fire, with a coherent reason, once
+a scenario creates the condition it exists for (§5b.3). `defer` remains unobserved.
 
 ### The dependency between them
 

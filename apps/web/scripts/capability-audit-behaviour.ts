@@ -119,11 +119,12 @@ async function main(): Promise<void> {
     name: string,
     availableMs: number | null,
     evidenceFor: (turn: number, actedOn: readonly string[]) => LearnerEvidence[],
+    seedActedOn: readonly string[] = [],
   ): Promise<Turn[]> {
     if (process.env.AUDIT_ONLY && !name.startsWith(process.env.AUDIT_ONLY)) return [];
     console.log(`\n──── ${name} ────`);
     const turns: Turn[] = [];
-    const actedOn: string[] = [];
+    const actedOn: string[] = [...seedActedOn];
     const recentActs: TeachingAct[] = [];
     let activeMs = Number(process.env.AUDIT_START_ACTIVE_MS ?? 0);
     for (let turn = 0; turn < TURNS; turn += 1) {
@@ -142,7 +143,10 @@ async function main(): Promise<void> {
         uid: created.id!,
       });
       const ms = Date.now() - started;
-      for (const moved of outcome.movedOn ?? []) actedOn.push(moved.objectiveIdentityKey);
+      for (const moved of outcome.movedOn ?? []) {
+        actedOn.push(moved.objectiveIdentityKey);
+        console.log(`      ↷ ${moved.action.toUpperCase()} "${moved.because.slice(0, 88)}"`);
+      }
       const decision = outcome.decision;
       if (!decision) {
         console.log(`  ${turn + 1}. (no decision) refusal=${outcome.refusal} strategy=${outcome.strategy} ${ms}ms`);
@@ -215,6 +219,22 @@ async function main(): Promise<void> {
     "D · everything already demonstrated",
     60 * 60_000,
     () => staged.map((entry, index) => evidenceRow(entry.objective.identityKey, "strong", index + 2, true)),
+  );
+
+  // 🔴 THE SCENARIO THAT ACTUALLY CALLS FOR MOVING ON. Every other scenario left 87+ untouched
+  // objectives inside a 40-item window, so the controller always had fresh material and no reason to
+  // set anything aside — which makes "advance/defer/revisit never fired" a statement about the
+  // scenarios, not about the verbs. This is the condition they exist for: everything in view already
+  // met AND failing, and almost no time left.
+  scenarios["E · NOTHING FRESH LEFT — all met, all failing, 1 minute left"] = await run(
+    "E · NOTHING FRESH LEFT — all met, all failing, 1 minute left",
+    60_000,
+    () =>
+      staged.flatMap((entry, index) => [
+        evidenceRow(entry.objective.identityKey, "incorrect", index + 2, true),
+        { ...evidenceRow(entry.objective.identityKey, "incorrect", index + 12, true), id: `second-${index}` },
+      ]),
+    staged.map((entry) => entry.objective.identityKey),
   );
 
   console.log("\n\n════ WHAT DIFFERED ════\n");
