@@ -141,6 +141,41 @@ async function main(): Promise<void> {
   const bytes = await pdf.save();
   await writeFile(new URL("../public/reader-sample.pdf", import.meta.url), bytes);
   console.log(`reader-sample.pdf — ${PAGES.length} pages, ${bytes.length} bytes`);
+
+  await makeScanFixture();
+}
+
+/** public/reader-sample-scan.pdf — the HYBRID shape, in miniature.
+ *
+ *  One page of real text, then one page that is nothing but a full-page image.
+ *  That is the exact shape of a real recitation PDF (7 text pages, 5 scanned),
+ *  and it is what `lib/reader/pdf-page-scan.ts` has to tell apart: the first
+ *  page must never be offered to OCR, the second must be recognised as a
+ *  picture of a page rather than a blank one. */
+async function makeScanFixture(): Promise<void> {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+
+  const textPage = pdf.addPage([612, 792]);
+  textPage.drawText("This page carries its own text layer.", { font, size: 14, x: 64, y: 700, color: rgb(0.1, 0.1, 0.12) });
+  textPage.drawText("Selection, search and citations all work here, so OCR must never touch it.", {
+    font, size: 11, x: 64, y: 672, color: rgb(0.2, 0.2, 0.24),
+  });
+
+  // A tiny PNG, drawn to fill the whole page. The bytes do not matter — what is
+  // being tested is the GEOMETRY: no text, one image covering the page.
+  const pixel = await pdf.embedPng(
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    ),
+  );
+  const scanPage = pdf.addPage([612, 792]);
+  scanPage.drawImage(pixel, { x: 0, y: 0, width: 612, height: 792 });
+
+  const bytes = await pdf.save();
+  await writeFile(new URL("../public/reader-sample-scan.pdf", import.meta.url), bytes);
+  console.log(`reader-sample-scan.pdf — 2 pages (1 text, 1 image-only), ${bytes.length} bytes`);
 }
 
 void main();

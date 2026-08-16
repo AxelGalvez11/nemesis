@@ -13,16 +13,25 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 
 import { blocksFromPages, type PdfTextItem, type ReaderBlock } from "@/lib/reader/pdf-blocks";
 import { flattenOutline, outlineFromHeadings, type OutlineEntry, type RawOutlineNode } from "@/lib/reader/pdf-outline";
-import { openPdf, type PdfDocument } from "@/lib/reader/pdfjs";
+import { imageOpcodes, openPdf, type PdfDocument } from "@/lib/reader/pdfjs";
 import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
 import type { SearchMatch } from "@/lib/reader/reader-search";
 
 import { PdfPageView, type PageHighlight } from "./pdf-page-view";
+import {
+  classifyPage,
+  maxImageCoverage,
+  scanDocument,
+  type DocumentScan,
+  type PageScan,
+} from "@/lib/reader/pdf-page-scan";
 
 export interface PdfReadyPayload {
   unitCount: number;
   /** Plain text per page, in page order — what search runs over. */
   unitTexts: { unit: number; text: string }[];
+  /** Which pages carry their own text and which are pictures of pages. */
+  scan: DocumentScan;
   outline: OutlineEntry[];
   blocks: ReaderBlock[];
   /** Natural size of the first page, for fit-width arithmetic. */
@@ -54,6 +63,7 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageElements = useRef(new Map<number, HTMLDivElement>());
+  const [scan, setScan] = useState<DocumentScan | null>(null);
   const [pdf, setPdf] = useState<PdfDocument | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
@@ -102,6 +112,9 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
         const readable = Math.min(document.numPages, 400);
         const unitTexts: { unit: number; text: string }[] = [];
         const pageItems: { unit: number; items: PdfTextItem[] }[] = [];
+        const IMAGE_OPCODES = await imageOpcodes();
+        if (cancelled) return;
+        const scans: PageScan[] = [];
         for (let number = 1; number <= readable; number += 1) {
           const page = await document.getPage(number);
           const content = await page.getTextContent();
@@ -110,9 +123,20 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
           // only the ones carrying a string are text.
           const items = content.items.flatMap((item) => ("str" in item ? [item as unknown as PdfTextItem] : []));
           pageItems.push({ unit: number, items });
-          unitTexts.push({ unit: number, text: items.map((item) => item.str + (item.hasEOL ? "\n" : "")).join("") });
+          const text = items.map((item) => item.str + (item.hasEOL ? "\n" : "")).join("");
+          unitTexts.push({ unit: number, text });
+
+          // Is this page a PICTURE of a page? A scan carries no text layer, so
+          // it silently contributes nothing to search or to an AI answer, and
+          // the student has no way to tell. Measured here so the page can say
+          // so. Cheap: the operator list is already parsed to render the page.
+          const size = page.getViewport({ scale: 1 });
+          const coverage = maxImageCoverage(await page.getOperatorList(), { width: size.width, height: size.height }, IMAGE_OPCODES);
+          if (cancelled) return;
+          scans.push(classifyPage(number, text, coverage));
         }
 
+        const documentScan = scanDocument(scans);
         const blocks = blocksFromPages(pageItems);
         const rawOutline = (await document.getOutline()) as RawOutlineNode[] | null;
         if (cancelled) return;
@@ -139,11 +163,13 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
         );
         if (cancelled) return;
 
+        setScan(documentScan);
         onReady({
           unitCount: document.numPages,
           unitTexts,
           outline: resolved.some((entry) => entry.unit !== undefined) ? resolved : outlineFromHeadings(blocks),
           blocks,
+          scan: documentScan,
           naturalWidth: firstViewport.width,
           naturalHeight: firstViewport.height,
         });
@@ -221,6 +247,7 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
   );
 
   const EMPTY: PageHighlight[] = useMemo(() => [], []);
+  const imageOnlyPages = useMemo(() => new Set(scan?.imageOnly ?? []), [scan]);
 
   return (
     <div className="h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-pdf-scroll" ref={scrollRef}>
@@ -232,6 +259,7 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
               highlights={highlightsByPage.get(pageNumber) ?? EMPTY}
               key={pageNumber}
               onVisible={onUnitChange}
+              isImageOnly={imageOnlyPages.has(pageNumber)}
               pageNumber={pageNumber}
               registerElement={registerElement}
               scale={scale}
