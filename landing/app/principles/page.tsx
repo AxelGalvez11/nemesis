@@ -6,56 +6,73 @@ import { SiteChrome, APP_SIGN_UP } from "@/components/SiteChrome";
 /**
  * Principles.
  *
+ * ── THE COPY IS THE OWNER'S, VERBATIM ─────────────────────────────────────────
+ *
+ * Written by the owner and set here as given. Do not tighten it, reorder it, or
+ * merge two statements because they look adjacent. The line breaks are part of
+ * it: "Learn it. Think about it. Use it." on one line and "Then move on." on the
+ * next is a beat, and running them together loses the beat.
+ *
  * ── WHAT THIS REPLACED ────────────────────────────────────────────────────────
  *
  * Five sections lifted verbatim off the old homepage: the loop, ingestion, the
- * learner model, three tenets and a feature inventory. They were moved here
- * intact when the homepage was cut to four sections, which was right at the time
- * because deleting work in the same change that relocates it makes both
- * decisions hard to review.
+ * learner model, three tenets and a feature inventory. They were accurate about
+ * a product organised around a study loop with features attached, which is not
+ * what Nemesis is. Deleted, along with the illustrations they carried in a
+ * visual language the rest of the site no longer uses.
  *
- * They have since stopped being true in the way that matters. They described a
- * product organised around a study loop with a set of features attached. Nemesis
- * is one adaptive Canvas that decides how to teach something, and the old page
- * never said that once. It also carried its own illustrations in a visual
- * language the rest of the site no longer uses.
+ * ── NO NUMERALS ───────────────────────────────────────────────────────────────
  *
- * ── WHY IT IS SHORT ───────────────────────────────────────────────────────────
- *
- * A principle that needs a paragraph to defend it is a feature description
- * wearing a principle's clothes. Each of these is a commitment that could be
- * broken, and you could tell if it were. That is the test for adding a sixth.
+ * An earlier pass numbered these 01 to 06. Numbering implies a sequence or a
+ * ranking, and these are neither; they are six positions held at once. The rules
+ * between them do the separating.
  */
 export const metadata: Metadata = {
   title: "Principles · Nemesis",
   description:
-    "What Nemesis holds to: one adaptive surface, any subject, retrieval before repetition, time spent where you are weak, and sources that stay attached.",
+    "Information is abundant, attention is scarce. Less information and more learning, one thing at a time, at the edge of what you can do.",
 };
 
-const PRINCIPLES: readonly { say: string; then: string }[] = [
+const PRINCIPLES: readonly { say: string; lines: readonly string[] }[] = [
   {
-    say: "one surface.",
-    then: "A passage, a question, a diagram, a model you can turn, a worked solution. The Canvas changes what it renders rather than sending you somewhere else to find it.",
+    say: "information is abundant. attention is scarce.",
+    lines: ["Nemesis turns everything around you into the next thing worth understanding."],
   },
   {
-    say: "any subject.",
-    then: "A law student and a mechanical engineering student should both find it native. Nothing here is tuned to one field, and a feature that only makes sense for one is a feature built wrong.",
+    say: "less information. more learning.",
+    lines: [
+      "300 slides should not become 600 flashcards.",
+      "Nemesis distills what matters and shows you only what you need now.",
+    ],
   },
   {
-    say: "retrieval before repetition.",
-    then: "Rereading feels like progress and mostly is not. You get asked before you get told again.",
+    say: "one thing at a time.",
+    lines: [
+      "Learn it. Think about it. Use it.",
+      "Then move on.",
+      "The canvas stays calm so your attention can stay focused.",
+    ],
   },
   {
-    say: "time goes where you are weak.",
-    then: "What you have already shown you know is not worth your evening. The point of watching how you answer is to stop spending time there.",
+    say: "start simple. go deeper when you're ready.",
+    lines: [
+      "Nemesis explains things at the level that makes sense to you.",
+      "Simple language. Better analogies. More depth when you need it.",
+    ],
   },
   {
-    say: "your sources stay attached.",
-    then: "Anything Nemesis teaches can be traced back to the page it came from, so you can check the work rather than trust it.",
+    say: "stay at the edge of what you can do.",
+    lines: [
+      "Too easy is boring. Too hard is noise.",
+      "Nemesis learns what you understand, where you struggle, and continuously adjusts what comes next.",
+    ],
   },
   {
-    say: "it says when it does not know.",
-    then: "A confident wrong answer costs more than an admitted gap, because you cannot correct what you were not told was uncertain.",
+    say: "think, don't collect.",
+    lines: [
+      "Learning is not making notes, rereading slides, or accumulating flashcards.",
+      "It is retrieving, connecting, explaining, solving, and correcting.",
+    ],
   },
 ];
 
@@ -65,28 +82,35 @@ export default function Principles() {
       <header className="phead">
         <div className="wrap">
           <h1>principles</h1>
-          <p>What Nemesis holds to, and what it will not do.</p>
         </div>
       </header>
 
       <section className="prin">
         <div className="wrap">
-          <ol className="prin-list">
+          <div className="prin-list">
             {PRINCIPLES.map((p) => (
-              <li key={p.say} data-reveal="soft">
+              <article key={p.say} data-reveal="soft">
                 <h2>{p.say}</h2>
-                <p>{p.then}</p>
-              </li>
+                {p.lines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </article>
             ))}
-          </ol>
+          </div>
 
-          <p className="prin-close">
-            <Link href="/">accelerate cognition.</Link>
-          </p>
+          <div className="prin-close" data-reveal="soft">
+            <p>The goal is not more time in Nemesis.</p>
+            <p>It is more learning from the attention you give it.</p>
+            <p className="prin-tag">learn. diagnose. iterate.</p>
+          </div>
+
           <div className="prin-cta">
             <a className="btn btn-primary" href={APP_SIGN_UP}>
               Start learning
             </a>
+            <Link className="hlink" href="/">
+              accelerate cognition.
+            </Link>
           </div>
         </div>
       </section>
