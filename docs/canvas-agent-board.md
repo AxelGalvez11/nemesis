@@ -1,5 +1,74 @@
 # Canvas agent board
 
+---
+
+# 🟢🟢 2026-08-16 — WHAT CHANGED TONIGHT. READ THIS BEFORE ANY ROW BELOW.
+
+Nine PRs merged in one session and several rows below are now stale. Where this section and a row
+disagree, **this section is newer**.
+
+## The teaching controller changed hands (#648, #651) — LIVE IN PRODUCTION
+
+`DEFAULT_STRATEGY` moved from `nemesis_policy` to **`llm_teacher`**. The model now chooses what the
+learner meets next; the hand-written policy is kept as a selectable arm and as the fallback. Read
+`docs/canvas-teaching-policy-audit.md` before touching anything in `lib/learn/teaching-*` or
+`strategy-*`.
+
+- **Eleven verbs, not three**: ask · probe · teach · simplify · correct · contrast · harder · easier ·
+  **advance · defer · revisit**. Moving on is a real decision; a pass sets the objective aside and the
+  controller is asked again over what is left (bounded at 3 passes/turn), so it ends an objective's
+  turn without ending the sitting.
+- **`teaching-snapshot.ts` is the one derivation both arms read** — prerequisites, blocked
+  dependents, retrievability, latency, scaffold rung, friction, importance, attention spent here.
+  Every unobserved value is `null`, never `0`.
+- **`attention-budget.ts` makes time state, not a mode.** No branch anywhere asks whether we are
+  cramming.
+- 🔴 **`BRIEF_LIMIT = 40` is a measured cost bound, not a heuristic.** Briefing every objective cost
+  **~58,900 tokens per turn** on the real 474-objective lecture. The window is pagination over the
+  ordering the runtime already holds, and it is disclosed to the model in words.
+- 🔴 **A refusal falls back and is stamped `nemesis_policy_fallback`**, never `nemesis_policy`.
+  Migration `20260816T01` widened the check constraint; applied to production and verified.
+- **Integration-proven** (`scripts/controller-acceptance.ts`): real learner JWT, real production
+  parse, real metered model — 46 knowledge objects → 95 stageable objectives, a real move in 5,955 ms,
+  turn 2 chose a different objective.
+
+## `UI-002` — the Minimap is BUILT AND REACHABLE (#650)
+
+`MinimapControl` is a third floating control beside Sources and Objectives, backed by
+`canvas-focus.ts`. All six §H criteria carry live-execution or calibrated-guard evidence. **Every row
+below calling it unreachable is stale.**
+
+🔴 Two findings from that work, unfixed: `ObjectivesControl` and `MinimapControl` read *unrelated*
+substrates (the legacy six-stage `canvas.concepts` vs the compositional runtime's territories), and
+**`/dev-preview/learn` cannot exercise the knowledge pipeline for any seed** — `uid` is always null
+there, so no knowledge-backed surface has ever been visually verifiable through that harness.
+
+## `BRAIN-003` — causal cognition is built and STILL not reachable from a document
+
+Measured over **all 19 parsed sources in production**: types produced are `association`,
+`classification`, `procedure`. **Causal: zero, on every one.** The single causal object in production
+carries `provenance.lane = "model-prose"`. So a learner who uploads a lecture never meets a causal
+objective. This is an extractor hole, not a cognition hole — the cognition is merged, deployed, and
+has fired from the prose lane.
+
+## The parse route flipped to the vendor lane (#643 → #652, #654)
+
+Fixing an unset env var un-broke Mistral OCR, and **all three production documents now route to the
+vendor lane**. The vendor lane never consulted `lookAtFigures`, so no vendor figure was ever examined;
+fixed in #652. 🔴 The quality gate asks about **regions, not counts** — 5 of the diabetes lecture's
+"lost" figures were screenshots of tables that Mistral *read*, so a count gate would have rejected a
+strictly better parse.
+
+## Two measurement traps that produced wrong conclusions in one day
+
+1. 🔴🔴 **Run the web suite as `pnpm test` from `apps/web`.** The repo resolves two `tsx` versions —
+   root `v4.21.0` (CJS, `import.meta.dirname` undefined) and `apps/web`'s `v4.22.4` (ESM). Under the
+   root binary ~85 files crash at import. Two agents read that as real failures. #655 pins the root
+   version; until an install picks it up, use `pnpm test` or `pnpm exec tsx --test <file>`.
+2. `library_sources.vision_units_spent` is a **lifetime total per source**, not a per-run cost.
+
+---
+
 **The authoritative task board for every Canvas lane.** Chat memory is not shared and does not
 survive; this file is. If you are Parser, Runtime, UI or Integration Claude, everything you need to
 start is here — what you own, why it matters, what must stay true, and what you must not touch.
