@@ -257,8 +257,29 @@ export function CanvasManager({
           at 13px on ~28px boxes — four different jobs at one weight, and on a narrow window they
           wrapped into a ragged block. The reference splits it: the page names itself and offers
           its one creating action, then filters and search sit on their own row above the table. */}
-      <div className="flex items-center gap-[var(--list-gap)]">
+      {/* 🔴 SEARCH BELONGS ON THE TITLE LINE, NOT WITH THE FILTERS. Measured on the reference: the
+          title, a 240px search field and the create button all sit on one 36px row, right-aligned
+          to the frame's edge; the row below holds only the filters. Putting search among the
+          filters read as "another filter", which it is not — it ignores the current folder on
+          purpose (see `effectiveScope`) and searches the whole library. */}
+      <div className="flex items-center gap-3">
         <h1 className="mr-auto text-[length:var(--page-title-size)] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Library</h1>
+
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-[12px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
+            size={16}
+            strokeWidth={2}
+          />
+          <input
+            aria-label="Search canvases"
+            className="h-[var(--control-height)] w-[var(--list-search-width)] rounded-full bg-(--ui-bg-tertiary) pl-[36px] pr-[14px] text-[14px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search canvases…"
+            value={search}
+          />
+        </div>
+
         <button
           className="flex h-[var(--control-height)] shrink-0 items-center gap-1.5 rounded-full bg-(--ui-bg-tertiary) px-[14px] text-[14px] font-medium text-(--ui-text-primary) transition-colors hover:bg-(--ui-control-hover-background)"
           onClick={() => setNaming({ parentId: current?.id ?? null, value: "" })}
@@ -269,33 +290,18 @@ export function CanvasManager({
         </button>
       </div>
 
-      {/* Filters and search, one row, all at --control-height so the row reads as one bar. */}
+      {/* Filters left, sort right — the reference's second row, which carries only view controls. */}
       <div className="mt-4 flex items-center gap-2">
         {/* 🔴 `null` IS UNFILED, `undefined` IS EVERYTHING. Two different absences with two
             different meanings — reading either as "no folder" puts the learner in the wrong view. */}
         <ScopeTab active={scope === undefined} icon={Layers} label="All canvases" onClick={() => open(undefined)} />
         <ScopeTab active={scope === null} icon={Inbox} label="Unfiled" onClick={() => open(null)} />
 
-        <div className="relative ml-auto">
-          <Search
-            className="pointer-events-none absolute left-[12px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
-            size={16}
-            strokeWidth={2}
-          />
-          <input
-            aria-label="Search canvases"
-            className="h-[var(--control-height)] w-[220px] rounded-full bg-(--ui-bg-tertiary) pl-[36px] pr-[14px] text-[14px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search canvases…"
-            value={search}
-          />
-        </div>
-
         {/* 🔴 A GLYPH ON THE LEFT, AND DELIBERATELY NO CHEVRON. This is a native <select>, so the
             browser already draws its own arrow on the right — a second one would say "menu" twice
             and say nothing about what the menu is for. The sort icon is the missing half: at rest
             the control read as the words "Last opened" with no indication they were a choice. */}
-        <div className="relative">
+        <div className="relative ml-auto">
           <ArrowUpDown
             className="pointer-events-none absolute left-[12px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
             size={16}
@@ -411,8 +417,8 @@ export function CanvasManager({
                 value={editing.value}
               />
             ) : (
-              <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => open(folder)} type="button">
-                <FolderIcon className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={2} />
+              <button className="flex min-w-0 items-center gap-[var(--list-icon-gap)] text-left" onClick={() => open(folder)} type="button">
+                <RowIcon icon={FolderIcon} />
                 <span className="truncate text-[16px] text-(--ui-text-primary)">{folder.name}</span>
               </button>
             )}
@@ -447,7 +453,7 @@ export function CanvasManager({
               />
             ) : (
               <button
-                className="flex min-w-0 items-center gap-2 text-left"
+                className="flex min-w-0 items-center gap-[var(--list-icon-gap)] text-left"
                 onClick={() => router.push(`/learn?c=${canvas.id}`)}
                 type="button"
               >
@@ -459,7 +465,7 @@ export function CanvasManager({
                     Nothing here is derived from the canvas's CONTENTS, because `canvas_sources` is
                     empty in production and a count over it would render 0 on a canvas that has
                     material attached (see the header note). */}
-                <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={13} strokeWidth={2} />
+                <RowIcon icon={PanelsTopLeft} />
                 <span className="truncate text-[16px] text-(--ui-text-primary)">{canvas.title || "Untitled canvas"}</span>
                 {/* The learner's own mark, kept — the one honest per-canvas distinction there is. */}
                 {canvas.pinnedAt && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={2} />}
@@ -722,6 +728,27 @@ function ModalButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * A row's leading glyph, as a filled tile.
+ *
+ * 🔴 THE TILE IS THE POINT, NOT THE GLYPH. A 13px outline sitting directly against a 16px name
+ * left the row's left edge reading as empty at 60px tall, and made folders and canvases look like
+ * two weights of the same thing rather than two kinds. The reference gives every row a 32px filled
+ * square at 8px radius with a 20px glyph inside; the fill is what makes a row read as an object.
+ */
+function RowIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span
+      aria-hidden="true"
+      // 🔴 THE RADIUS IS NAMED, NOT `rounded-lg`. That utility resolves to 13.5px at this root font
+      // — it measured as a squircle where the reference draws 8px — which is the rem trap again.
+      className="grid size-[var(--list-icon-tile)] shrink-0 place-items-center rounded-[var(--shell-icon-button-radius)] bg-(--ui-bg-tertiary) text-(--ui-text-secondary)"
+    >
+      <Icon size={20} strokeWidth={2} />
+    </span>
   );
 }
 

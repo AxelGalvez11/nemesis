@@ -227,6 +227,14 @@
   --list-col-actions: 64px;
   --list-gap: 16px;
   --control-height: 36px;
+  /* A row's leading glyph is a FILLED TILE, not a bare line icon: 32px square at 8px radius
+     holding a 20px glyph, 12px before the label. That tile is most of why the reference's list
+     reads as rows of objects rather than as lines of text — ours drew a 13px outline directly
+     against the name, which at 60px row height left the left edge looking empty. */
+  --list-icon-tile: 32px;
+  --list-icon-glyph: 20px;
+  --list-icon-gap: 12px;
+  --list-search-width: 240px;
 
   /* layout + type — desktop radius scale (card 8 / input 10 at radiusScalar 1) */
   --radius: 10px; --radius-sm: 8px; --evidence: 344px;
