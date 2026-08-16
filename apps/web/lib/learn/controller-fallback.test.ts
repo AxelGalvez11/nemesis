@@ -138,6 +138,29 @@ test("🔴 coverage counts are absent until something has actually read importan
   assert.equal(snapshot.scope.touched, 0);
 });
 
+test("🔴🔴 a real importance reading REACHES the controller, and one knowledge object's reading covers every objective it minted", () => {
+  // 🔴 THE SEAM WHERE TWO LANES MEET, AND IT WAS BROKEN THE FIRST TIME. The snapshot read
+  // `importance.rank` through a structural cast while the shipped field is `standing`: it compiled,
+  // every test passed, and it returned `null` for every objective in the corpus for ever. Reading a
+  // real value here is what makes that impossible to reintroduce silently.
+  const [first] = CANDIDATES;
+  assert.ok(first);
+  const withReading: ResolvedObjective = {
+    knowledge: {
+      ...first.knowledge,
+      importance: { blindSpots: [], observations: [], standing: "central" },
+    },
+    objective: first.objective,
+  };
+  const snapshot = teachingSnapshot(context({ objectives: [withReading, CANDIDATES[1]!] }));
+  assert.equal(snapshot.objectives[0]?.importance, "central", "🔴 a real reading must not read as absent");
+  assert.equal(snapshot.objectives[1]?.importance, null, "an unread one stays unread");
+  // Counted, and counted only because SOMETHING was read — a document nothing has looked at reports
+  // `null`, which is a different fact from a document with nothing central in it.
+  assert.equal(snapshot.scope.importantTotal, 1);
+  assert.equal(snapshot.scope.importantDemonstrated, 0);
+});
+
 test("🔴 the model is given the same objectives it must choose from, and no others", () => {
   // A snapshot describing objectives the controller cannot act on would invite it to name one and
   // be refused for it — a self-inflicted refusal rate that looks like a broken controller.

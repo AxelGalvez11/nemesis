@@ -142,17 +142,30 @@ function median(values: readonly number[]): number | null {
 }
 
 /**
- * How central the source made this, if anything has read it.
+ * How prominently the source treats this, if anything has read it.
  *
- * 🔴 READ OFF AN OPTIONAL FIELD RATHER THAN COMPUTED HERE, so the day the structural reading lands
- * (`source-importance.ts`) this file needs no edit — and until then it reports `null` rather than a
- * default. A default would be the worst possible answer: every objective equally important is
- * indistinguishable from importance working and finding nothing distinctive.
+ * 🔴🔴 THE FIELD IS `standing`, AND MY FIRST VERSION READ `rank` THROUGH A STRUCTURAL CAST — so it
+ * compiled, every test passed, and it returned `null` for every objective in the corpus for ever.
+ * That is this repo's signature defect (a lane implemented, merged and dead) caught at the one seam
+ * where two lanes met. The cast is gone: this reads the real type, so renaming the field on the
+ * other side is now a compile error rather than a silent `null`.
+ *
+ * 🔴 IT IS PROMINENCE IN THE SOURCE, NEVER WORTH LEARNING. `source-importance.ts` is explicit about
+ * that distinction and it must survive the trip: what reaches the controller is "the document
+ * foregrounds this", and turning that into teaching priority is the controller's judgement to make.
+ *
+ * 🔴 REPLICATED ACROSS EVERY OBJECTIVE MINTED FROM ONE KNOWLEDGE OBJECT, NEVER DIVIDED AMONG THEM.
+ * The join is one-to-many — a procedure mints one objective per step — and dividing would make an
+ * eight-step procedure the source dwells on read as one-eighth as prominent per step as a passing
+ * one-line fact. That inverts the truth. Importance is a property of the material, and every
+ * objective asking about that material inherits it whole.
+ *
+ * 🔴 AND `null` MEANS UNREAD, NEVER UNIMPORTANT. Measured on production, importance refuses more
+ * often than it reads (35 of 83 objects on one document); a default of "peripheral" would make a
+ * controller skip most of a document because nothing had looked at it yet.
  */
 function importanceOf(knowledge: KnowledgeObject): string | null {
-  const reading = (knowledge as { importance?: { rank?: unknown } }).importance;
-  const rank = reading?.rank;
-  return typeof rank === "string" && rank ? rank : null;
+  return knowledge.importance?.standing ?? null;
 }
 
 /**
