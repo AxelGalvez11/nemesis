@@ -36,16 +36,19 @@ import {
 } from "@/lib/sources/source-context";
 
 import { knowledgeIdentityKey, normalizeForIdentity, relationKindFromHeader } from "./knowledge-identity";
+import { segmentCell } from "./cell-segmentation";
 import { figureKnowledge } from "./figure-knowledge";
 import type { KnowledgeObject } from "./knowledge-types";
 import { importanceIndex, sourceImportance, type ImportanceRefusal } from "./source-importance";
-import { subjectColumnOf } from "./table-subject-column";
+import { firstColumnIsProse, subjectColumnOf } from "./table-subject-column";
 import { classAxesOf, contrastsOf } from "./wide-grid-classification";
 
 /** Stamped onto every object, so a corpus extracted under older rules can be found and redone
  *  rather than silently mixed in with a newer one. Bump it whenever the rules below change what
  *  comes out of the same document. */
 export const EXTRACTION_VERSION = "association/2";
+/** Forward-only version for atomic relations recovered from wide table cells. */
+export const WIDE_TABLE_EXTRACTION_VERSION = "wide-table/1";
 
 /** A pair whose cell is this long is a paragraph, not one half of an association.
  *
@@ -406,13 +409,17 @@ function relationsFromWideTable(
 ): { objects: KnowledgeObject[]; refusal?: ExtractionRefusal } {
   const dataRows = table.rows.slice(Math.max(0, table.headerRows));
   const width = Math.max(0, ...table.rows.map((row) => row.length));
-  const subject = subjectColumnOf(dataRows, width);
+  const subject = subjectColumnOf(dataRows, width, {
+    headerStated: Boolean(content.columns?.length || table.headerRows > 0),
+  });
 
   if (!subject) {
     return {
       objects: [],
       refusal: {
-        detail: `This ${width}-column grid is keyed by a date or a counter, or no column holds a distinct value on every row, so nothing states what each row is about.`,
+        detail: firstColumnIsProse(dataRows)
+          ? `This ${width}-column grid's first column holds a paragraph rather than a name, so what each row is about could not be read without guessing at it.`
+          : `This ${width}-column grid is keyed by a date or a counter, or no column holds a distinct value on every row, so nothing states what each row is about.`,
         reason: "table-no-subject",
         unitId: unit.id,
       },
@@ -436,40 +443,47 @@ function relationsFromWideTable(
 
     for (let column = 0; column < width; column += 1) {
       if (column === subject.index) continue;
-      const right = (row[column] ?? "").trim();
-      if (!right || right.length > MAX_CELL_CHARS) continue;
-      // A cell repeating the subject states nothing; usually a spanned heading filled across.
-      if (left === right) continue;
-
+      const cell = (row[column] ?? "").trim();
+      if (!cell || left === cell) continue;
       const objectHeader = columnNames?.[column];
       const objectRole = objectHeader ? normalizeForIdentity(objectHeader) : null;
-      const relationKind = relationKindFromHeader(
-        subjectHeader && objectHeader ? [subjectHeader, objectHeader] : undefined,
-      );
-      // 🔴 THE COLUMN IS IN THE ID, so two relations from one row are two objects rather than one
-      // overwriting the other — and so "where did this come from" resolves to a cell.
-      const id = `${unit.id}:r${rowIndex + 1}c${column + 1}`;
-      const object: KnowledgeObject = {
-        derivation: "table-row",
-        extractionVersion: EXTRACTION_VERSION,
-        id,
-        pair: {
+      const otherCells = row.filter((_, index) => index !== column).map((value) => String(value ?? ""));
+
+      for (const [part, segment] of segmentCell(cell, otherCells).entries()) {
+        const right = segment.value.trim();
+        if (!right || right.length > MAX_CELL_CHARS || right === left) continue;
+
+        // The row remains about its declared subject unless the source itself narrows scope by
+        // repeating a named row value as a sub-heading.
+        const entity = segment.scopedTo ?? left;
+        const scoped = Boolean(segment.scopedTo);
+        const baseRelation = scoped
+          ? objectRole
+          : relationKindFromHeader(subjectHeader && objectHeader ? [subjectHeader, objectHeader] : undefined);
+        const relationKind = segment.qualifier
+          ? `${baseRelation ?? UNQUALIFIED_RELATION}#${normalizeForIdentity(segment.qualifier)}`
+          : baseRelation;
+        const id = `${unit.id}:r${rowIndex + 1}c${column + 1}p${part + 1}`;
+        const object: KnowledgeObject = {
+          derivation: "table-row",
+          extractionVersion: WIDE_TABLE_EXTRACTION_VERSION,
           id,
-          left,
-          right,
-          ...(subjectRole && objectRole ? { leftRole: subjectRole, rightRole: objectRole } : {}),
-          ...(headingOf(unit) ? { groupLabel: headingOf(unit)! } : {}),
-        },
-        sourceAnchors: [anchorForRow(unit, left, right)],
-        // 🔴 THE COLUMN NAME IS IN THE STATEMENT WHEN THE GRID PRINTED ONE, because a wide table
-        // gives one subject SEVERAL relations and `lisinopril — cough` alone cannot say which of
-        // the five it is. Without the header there is nothing honest to add, so nothing is added.
-        statement: objectHeader ? `${left} — ${objectHeader.trim()}: ${right}` : `${left} — ${right}`,
-        type: "association",
-        unanchoredProvenance: [],
-        ...(relationKind ? { relationKind } : {}),
-      };
-      objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+          pair: {
+            id,
+            left: entity,
+            right,
+            ...(!scoped && subjectRole && objectRole ? { leftRole: subjectRole, rightRole: objectRole } : {}),
+            ...(scoped && objectRole ? { rightRole: objectRole } : {}),
+            ...(headingOf(unit) ? { groupLabel: headingOf(unit)! } : {}),
+          },
+          sourceAnchors: [{ ...unit.anchor, quote: { exact: right } }],
+          statement: statementForWideRelation(entity, objectHeader, segment.qualifier, right),
+          type: "association",
+          unanchoredProvenance: [],
+          ...(relationKind ? { relationKind } : {}),
+        };
+        objects.push({ ...object, identityKey: knowledgeIdentityKey(object) });
+      }
     }
   }
 
@@ -485,6 +499,18 @@ function relationsFromWideTable(
   }
 
   return { objects };
+}
+
+const UNQUALIFIED_RELATION = "unstated";
+
+function statementForWideRelation(
+  entity: string,
+  header: string | undefined,
+  qualifier: string | undefined,
+  value: string,
+): string {
+  const dimension = [header?.trim(), qualifier?.trim()].filter(Boolean).join(" › ");
+  return dimension ? `${entity} — ${dimension}: ${value}` : `${entity} — ${value}`;
 }
 
 /**
@@ -509,7 +535,9 @@ function classificationsFromWideTable(
 ): KnowledgeObject[] {
   const dataRows = table.rows.slice(Math.max(0, table.headerRows));
   const width = Math.max(0, ...table.rows.map((row) => row.length));
-  const subject = subjectColumnOf(dataRows, width);
+  const subject = subjectColumnOf(dataRows, width, {
+    headerStated: Boolean(content.columns?.length || table.headerRows > 0),
+  });
   if (!subject) return [];
 
   const columnNames = content.columns?.length
@@ -529,7 +557,7 @@ function classificationsFromWideTable(
       const object: KnowledgeObject = {
         contrast,
         derivation: "table-row",
-        extractionVersion: EXTRACTION_VERSION,
+        extractionVersion: WIDE_TABLE_EXTRACTION_VERSION,
         id,
         sourceAnchors: [anchorForRow(unit, contrast.members[0] ?? contrast.label, contrast.label)],
         // Named by the source's own header when the grid printed one, so two documents teaching the

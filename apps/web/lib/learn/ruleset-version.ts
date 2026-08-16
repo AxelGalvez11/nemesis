@@ -44,7 +44,7 @@
 
 import { buildRules } from "./canvas-territory";
 import { CAUSAL_EXTRACTION_VERSION } from "./causal-extraction-contract";
-import { EXTRACTION_VERSION } from "./knowledge-extraction";
+import { EXTRACTION_VERSION, WIDE_TABLE_EXTRACTION_VERSION } from "./knowledge-extraction";
 import { TERRITORY_VERSION } from "./knowledge-territory";
 import { SEMANTIC_EXTRACTION_VERSION } from "./semantic-grounded";
 
@@ -62,11 +62,14 @@ export const RULESET_LANES: readonly string[] = [
 
 /**
  * Extraction rules active for fresh/reprocessed material but deliberately not used to invalidate
- * the back catalogue. Adding the semantic lane to `RULESET_LANES` would expire every existing
+ * the back catalogue. Adding either deferred lane to `RULESET_LANES` would expire every existing
  * mechanism marker and authorize a paid model re-read on reopen. That is a cost decision, so the
  * rollout stays forward-only until the owner explicitly authorizes the backfill.
  */
-export const DEFERRED_REPROCESS_LANES: readonly string[] = [SEMANTIC_EXTRACTION_VERSION];
+export const DEFERRED_REPROCESS_LANES: readonly string[] = [
+  SEMANTIC_EXTRACTION_VERSION,
+  WIDE_TABLE_EXTRACTION_VERSION,
+];
 
 /** The rules in force now. Sorted and joined by `buildRules`, so lane ORDER cannot change it. */
 export const RULESET_VERSION = buildRules(RULESET_LANES);

@@ -9,6 +9,8 @@ model judgement with a hand-weighted teaching policy:
 
 - the document reader now preserves source emphasis as evidence, then separately extracts
   overlapping open-world semantic relations with verbatim, durable source anchors;
+- dense wide-table cells split only on author-printed markers, preserve qualifiers and explicit
+  scope changes, and keep class-level claims on the class instead of fanning them onto members;
 - numbered syntax alone no longer creates a procedure; executable ordered steps must be supported
   by grounded semantic evidence;
 - figures are bound to opaque identifiers beside their pixels, so a batched vision response cannot
@@ -20,7 +22,8 @@ model judgement with a hand-weighted teaching policy:
   when the learner explicitly adds it, after which it follows the same parser and knowledge path as
   an upload and retains its origin URL.
 
-🔴 `semantic-prose/1` is forward-only for now. Adding it to the global reprocess marker would
+🔴 `semantic-prose/1` and `wide-table/1` are forward-only for now. Adding them to the global
+reprocess marker would
 invalidate existing extraction markers and authorize paid model reads across the back catalogue.
 Fresh and naturally reprocessed material uses it; a corpus-wide backfill remains an explicit owner
 cost decision.

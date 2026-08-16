@@ -100,5 +100,5 @@ test("🔴🔴 TRIPWIRE — an extraction lane must be composed in or explicitly
       `${constant} looks like an extraction lane and is neither composed nor explicitly deferred.`,
     );
   }
-  assert.deepEqual(DEFERRED_REPROCESS_LANES, ["semantic-prose/1"]);
+  assert.deepEqual(DEFERRED_REPROCESS_LANES, ["semantic-prose/1", "wide-table/1"]);
 });

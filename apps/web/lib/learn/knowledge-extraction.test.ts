@@ -243,6 +243,80 @@ test("🔴 a wide grid of things and their properties becomes one relation per c
   assert.ok(objects.every((o) => (o.sourceAnchors?.length ?? 0) > 0));
 });
 
+test("🔴 dense wide cells split only on printed markers and preserve source qualifiers", () => {
+  const chart = contextOf(modelOf([{
+    id: "t10",
+    kind: "table",
+    table: {
+      headerRows: 1,
+      rows: [
+        ["Class", "Members", "Adverse effects"],
+        [
+          "Dihydropyridine CCBs",
+          "Amlodipine (Norvasc) Felodipine (Plendil)",
+          "Common: -peripheral edema -flushing Rare, but serious: -hepatotoxicity -thrombocytopenia",
+        ],
+      ],
+    },
+    text: "",
+  }]));
+
+  const associations = extractKnowledgeObjects(chart).objects.filter((object) => object.type === "association");
+  const effects = associations.filter((object) => object.pair?.rightRole === "adverse effects");
+  assert.equal(effects.length, 4);
+  assert.ok(effects.every((object) => object.pair?.left === "Dihydropyridine CCBs"));
+  assert.match(effects.find((object) => object.pair?.right === "flushing")?.relationKind ?? "", /#common$/);
+  const rare = effects.find((object) => object.relationKind?.endsWith("#rare, but serious"));
+  assert.ok(rare, JSON.stringify(effects.map((object) => ({ pair: object.pair, relationKind: object.relationKind }))));
+  assert.match(rare.pair?.right ?? "", /^hepato/);
+  assert.match(rare.relationKind ?? "", /#rare, but serious$/);
+});
+
+test("🔴 an author-stated sub-heading can narrow one claim without fanning out the row", () => {
+  const chart = contextOf(modelOf([{
+    id: "t11",
+    kind: "table",
+    table: {
+      headerRows: 1,
+      rows: [["Class", "Members", "Interactions"], [
+        "Dihydropyridine CCBs",
+        "Amlodipine (Norvasc) Felodipine (Plendil)",
+        "-NSAIDs: reduced effect -Tacrolimus: monitor Amlodipine: -increased simvastatin concentration",
+      ]],
+    },
+    text: "",
+  }]));
+
+  const interactions = extractKnowledgeObjects(chart).objects.filter(
+    (object) => object.type === "association" && object.pair?.rightRole === "interactions",
+  );
+  assert.equal(interactions.length, 3);
+  assert.equal(interactions[0]?.pair?.left, "Dihydropyridine CCBs");
+  assert.equal(interactions[1]?.pair?.left, "Dihydropyridine CCBs");
+  assert.equal(interactions[2]?.pair?.left, "Amlodipine");
+});
+
+test("a header-bearing single-row fragment is readable while a one-row schedule stays refused", () => {
+  const fragment = contextOf(modelOf([{
+    id: "t12",
+    kind: "table",
+    table: { headerRows: 1, rows: [["Drug", "Class", "Use"], ["lisinopril", "ACE inhibitor", "hypertension"]] },
+    text: "",
+  }]));
+  assert.equal(
+    extractKnowledgeObjects(fragment).objects.filter((object) => object.type === "association").length,
+    2,
+  );
+
+  const schedule = contextOf(modelOf([{
+    id: "t13",
+    kind: "table",
+    table: { headerRows: 1, rows: [["Date", "Topic", "Room"], ["8-17", "Exam 1", "Memphis 102"]] },
+    text: "",
+  }]));
+  assert.deepEqual(extractKnowledgeObjects(schedule).objects, []);
+});
+
 test("a two-column grid of empty or essay-length cells is refused with its own reason", () => {
   const unusable = contextOf(modelOf([{
     id: "t1",

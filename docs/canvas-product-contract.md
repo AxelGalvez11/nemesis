@@ -165,6 +165,12 @@ tables · equations · diagrams · images · captions · labels · slide relatio
 definitions · examples · exceptions · procedures · facts · causal relationships · conceptual
 relationships · learning objectives where present.
 
+🔴 **Table scope is part of the claim.** Atomic claims may be separated where the author printed
+real list markers, but a class-level row must not be fanned out onto every listed member. Preserve
+sub-labels such as frequency or severity, accept an entity-specific scope change only when the
+source explicitly names it, and refuse a compound prose subject rather than silently choosing the
+next column as what the row is about.
+
 🔴 **Do not reduce documents to a loose bag of extracted text.** Construct a structured
 representation of the knowledge in the sources.
 

@@ -519,7 +519,7 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 
 | Capability | Where |
 |---|---|
-| Deterministic extraction — associations and classifications from grids; labelled diagrams from figures | `lib/learn/knowledge-extraction.ts` |
+| Deterministic extraction — atomic, scope-preserving associations and classifications from grids; labelled diagrams from figures | `lib/learn/knowledge-extraction.ts`, `lib/learn/cell-segmentation.ts` |
 | Grounded prose extraction — causal edges plus overlapping, open-world semantic relations with verbatim evidence | `lib/learn/causal-grounded.ts`, `lib/learn/semantic-grounded.ts` |
 | Stageable interactions — recall, predict, discriminate, explain, sequence and spatial locate | `lib/learn/runtime-support.ts`, `lib/learn/objective-task.ts` |
 | Content-derived versioned identity, converging across canvases without a join | `lib/learn/knowledge-identity.ts` |
