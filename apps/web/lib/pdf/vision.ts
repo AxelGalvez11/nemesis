@@ -10,9 +10,12 @@
  * or OCR binary is needed here. Bytes in, transcript out.
  *
  * 🔴 THIS HEADER USED TO SAY THE KEY WAS NOT HERE, AND THAT IS NO LONGER TRUE.
- * `GEMINI_API_KEY` has been set on nemesis-web for Preview and Production since
- * 2026-07-23 (verified 2026-08-14 with `vercel env ls`, names only). So
- * `visionConfigured()` is TRUE in production and this path is live. Anything
+ * `GEMINI_API_KEY` is set on nemesis-web for PRODUCTION ONLY — measured 2026-08-16
+ * with `vercel env ls production` and `vercel env ls preview` (names only), which
+ * corrects this comment's previous claim that Preview had it too. So
+ * `visionConfigured()` is TRUE in production and FALSE on every preview
+ * deployment: a preview reprocess reports `vision-unavailable` on every figure
+ * and can never be evidence about this lane. Anything
  * reasoning about vision as "off by default" is reasoning about a state that
  * ended; what is still off by default is `ParseOptions.lookAtFigures`, which is
  * a latency-and-cost decision on the synchronous upload lane, not a missing key.
