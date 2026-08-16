@@ -353,3 +353,29 @@ a turn the model failed to decide can never be counted as a turn the other arm w
 
 The figure/vision work from the earlier directive is a separate thread and is deliberately not
 mixed in here.
+
+---
+
+## A measurement footgun that has already produced two wrong conclusions
+
+🔴🔴 **Run the web tests as `pnpm test` from `apps/web`, and never any other way.**
+
+The repo's `test` script passes **unquoted** globs, so the shell expands them and node's runner spawns
+each file as a child process where `import.meta` resolves. Pass a single file to `tsx --test`, or quote
+the globs so node does its own expansion, and `import.meta.dirname` is `undefined` — roughly 85
+source-structure test files then crash at import with `The "path" argument must be of type string`.
+
+```
+tsx --test lib/notebooks/parse-thread-env.test.ts   ->  fail (import.meta.dirname undefined)
+pnpm test                                            ->  ok 1755 - every provider key the parser
+                                                          reads is forwarded to the worker thread
+```
+
+Two separate agents drew conclusions from that artifact on 2026-08-16: one reported "85 failing tests
+on main" and one reported "at least 10 test files have never run, including the test for #643". Both
+were the invocation, not the code. The real baseline that day was **0 failures**.
+
+A second, unrelated cause of the same symptom: this checkout's `node_modules` was found **partially
+installed** — `react`, `@supabase/supabase-js`, `unpdf` and `fflate` all missing, most likely from an
+interrupted install during a disk-space squeeze. `pnpm install` at the root repaired it. If a large
+number of tests fail on `Cannot find module`, check that before believing anything else.
