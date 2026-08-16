@@ -128,6 +128,59 @@ test("the same edge, correctly marked negated, is kept", () => {
   assert.equal(relations[0]?.negated, true);
 });
 
+// 🔴🔴 THE TWO REVERSED CLAIMS THAT ACTUALLY REACHED THE KEPT SET. Both sentences are verbatim from
+// the owner's pharmacogenomics lecture, and both were stored on 2026-08-16 as POSITIVE causal claims
+// — the exact opposite of what the lecture teaches — because `DENIAL` had two holes. Written as
+// fixtures rather than as a description so neither hole can be reopened by a tidy-up of the pattern.
+
+test("🔴🔴 a CONTRACTED denial is caught — `\\bn't\\b` could never match inside a word", () => {
+  // "doesn't" is d-o-e-s-n-'-t: the `n` is preceded by `s`, so there is no word boundary before it
+  // and the old alternative was dead for the whole life of the lane. Real documents also use the
+  // typographic apostrophe, which is what this lecture uses.
+  for (const passage of [
+    "you can have variants in the DNA sequence, but still perhaps have some wiggle room that it doesn’t affect protein structure",
+    "you can have variants in the DNA sequence, but still perhaps have some wiggle room that it doesn't affect protein structure",
+  ]) {
+    const { rejected, relations } = validate(
+      [{ cause: "variants in the DNA sequence", effect: "protein structure", negated: false, quote: passage, relation: "causes" }],
+      passage,
+    );
+    assert.equal(relations.length, 0, `a contracted denial must not be stored as an assertion: ${passage}`);
+    assert.equal(rejected[0]?.reason, "negation-dropped");
+  }
+});
+
+test("🔴🔴 a MODAL denial is caught — the wobble rule was stored inverted", () => {
+  // The lecture teaches that the third nucleotide is "wobbling" and a change there may NOT alter the
+  // amino acid. Stored positive, a learner would be drilled on the opposite of a textbook fact.
+  const passage =
+    "a change in the last (third) nucleotide in the codon is “wobbling” and may not lead to a different insertion of amino acid";
+  const { rejected, relations } = validate(
+    [{ cause: "a change in the last (third) nucleotide in the codon", effect: "different insertion of amino acid", negated: false, quote: passage, relation: "causes" }],
+    passage,
+  );
+  assert.equal(relations.length, 0);
+  assert.equal(rejected[0]?.reason, "negation-dropped");
+});
+
+test("🔴 widening the denial pattern did not start refusing genuine positive claims", () => {
+  // The other half of the calibration. A guard that refuses everything is not precision, it is a
+  // dead lane — these are hand-checked-correct edges from the same production run.
+  for (const passage of [
+    "The incorporation of a stop codon will lead to pre-mature termination of the amino acid change",
+    "a change in either the first or second nucleotide of a codon invariably changes the amino acid",
+    "With multiple gene copies (at least wild-type level), this increases their protein activity",
+    "Instead of affecting only a single codon, indels affect all codons after the variation",
+    "errors can occur and lead to a permanent change in the DNA",
+  ]) {
+    const { relations } = validate(
+      [{ cause: passage.slice(0, 18), effect: passage.slice(-18), negated: false, quote: passage, relation: "causes" }],
+      passage,
+    );
+    assert.equal(relations.length, 1, `a positive claim must survive: ${passage}`);
+  }
+});
+
 test("🔴 nothing infers a negation from a quote that merely lacks one", () => {
   // The check fires one way only. Absence of a denial must never be read as a denial — that would
   // invent the opposite claim from silence, which is the same defect in reverse.

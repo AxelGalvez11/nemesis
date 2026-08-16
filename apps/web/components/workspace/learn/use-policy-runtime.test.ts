@@ -151,7 +151,23 @@ test("🔴 the wait is BOUNDED, and the bound aborts the work rather than abando
   // this test names: still running, still billable, and still able to come back and write knowledge
   // for a canvas the learner walked away from. A guard naming only the call that existed when it was
   // written goes quiet the moment a second one is added beside it.
-  assert.match(knowledge, /constructCausalKnowledge\(userId, canvas\.title, canvas\.sources, signal\)/, "causal lane");
+  // 🔴 BOTH CAUSAL CALL SITES, AND NEITHER MAY READ `canvas.sources`. The material is rebuilt from
+  // the canonical parse by `causalMaterial` — see `causal-material.ts` for the production
+  // measurement: 555 of 790 stored canvas excerpts carry no `unitId`, and an excerpt with no unit is
+  // refused as unanchorable, so passing `canvas.sources` here is a guaranteed zero on the real
+  // lectures whatever the model reads. Naming the argument keeps the abort thread asserted AND stops
+  // the defect walking back in.
+  assert.match(knowledge, /constructCausalKnowledge\(userId, canvas\.title, readable, signal\)/, "causal lane, mechanisms");
+  assert.match(
+    knowledge,
+    /constructCausalKnowledge\(userId, canvas\.title, causalMaterial\(canvas\.sources, contexts\), signal\)/,
+    "causal lane, grounded build",
+  );
+  assert.doesNotMatch(
+    knowledge,
+    /constructCausalKnowledge\(userId, canvas\.title, canvas\.sources,/,
+    "🔴 the causal lane must never be handed the canvas's own stored excerpts",
+  );
   assert.match(api, /ask\(uid, territoryMessages\(\{ count, sources, topic \}\), signal\)/, "and the pair model call");
   assert.match(api, /ask\(uid, causalMessages\(\{ sources, topic \}\), signal\)/, "and the causal model call");
 });
