@@ -1227,6 +1227,24 @@
 .confirm-del { background: var(--danger); border-color: var(--danger); color: #fff; }
 .confirm-del:hover { filter: brightness(1.07); }
 .confirm-actions button:focus-visible { outline: 2px solid var(--acid-dim); outline-offset: 2px; }
+/* The prompt dialog's field. Same card, same actions, one input added — see
+   components/desktop-ui/prompt-dialog.tsx for why it reuses this shell rather than
+   introducing a second dialog look.
+   🔴 `--confirm-body`'s 18px bottom margin is what separates the title block from the
+   actions; with a field between them that gap belongs BELOW the field instead, or the
+   input sits tight against the buttons. */
+.confirm-body + .prompt-field { margin-top: -10px; }
+.prompt-field {
+  display: block; width: 100%; box-sizing: border-box; margin: 0 0 18px;
+  padding: 9px 11px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--line-2);
+  color: var(--text); font-size: 14px; font-family: var(--font);
+}
+.prompt-field::placeholder { color: var(--text-3); }
+.prompt-field:focus-visible { outline: 2px solid var(--acid-dim); outline-offset: 1px; border-color: var(--line-2); }
+/* A disabled primary must read as disabled; without this it is a full-strength danger
+   button that silently ignores clicks. */
+.confirm-actions button:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
 .app-modal {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 71;
   width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 760px); display: flex; flex-direction: column;

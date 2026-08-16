@@ -10,6 +10,7 @@ import "./styles/account.css";
 import "./styles/mobile.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ConfirmProvider } from "@/components/desktop-ui/confirm-dialog";
+import { PromptProvider } from "@/components/desktop-ui/prompt-dialog";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PostHogProvider } from "@/components/PostHogProvider";
 
@@ -39,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {/* Innermost, so every surface can ask — Study, Library, Calendar,
                 Notebooks and both shells all delete things. See
                 components/desktop-ui/confirm-dialog.tsx. */}
-            <AuthProvider><ConfirmProvider>{children}</ConfirmProvider></AuthProvider>
+            <AuthProvider><ConfirmProvider><PromptProvider>{children}</PromptProvider></ConfirmProvider></AuthProvider>
           </ThemeProvider>
         </PostHogProvider>
       </body>

@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { SidebarRowBody, SidebarRowLabel, SidebarRowLead, SidebarRowShell, SidebarRowStack } from "../shell/sidebar-primitives";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import { usePrompt } from "@/components/desktop-ui/prompt-dialog";
 
 const INDENT_REM_PER_DEPTH = 0.875;
 type DragItem = { kind: "note"; id: string; path: string; title: string } | { kind: "folder"; path: string; title: string };
@@ -81,6 +82,11 @@ interface LibraryTreeViewProps {
 
 export function LibraryTreeView(props: LibraryTreeViewProps) {
   const confirm = useConfirm();
+  // 🔴 THE FOUR REMAINING `window.prompt` CALLS ON THIS TREE, REPLACED (owner 2026-08-15: "make
+  // sure all button popups have ui"). Delete already used the product's confirm dialog; rename,
+  // both moves and new-folder still handed over an OS prompt — which a browser can disable
+  // outright, after which those controls do nothing at all and say nothing about it.
+  const ask = usePrompt();
   const { folder, onMoveNote, onMoveFolder, depth = 0 } = props;
   const rootRef = useRef<HTMLDivElement>(null);
   const [dragItem, setDragItem] = useState<DragItem | null>(null);
@@ -236,7 +242,16 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
       return;
     }
     if (action === "move") {
-      const target = window.prompt(`Move ${items.length} items to folder (leave blank for Library root):`, "");
+      const target = await ask({
+        // 🔴 BLANK IS A REAL ANSWER HERE, so the field allows it and the body says what it means.
+        // The native prompt carried that rule inside its message text, where it was easy to miss
+        // and impossible to style; an empty string still has to stay distinct from a cancel.
+        allowEmpty: true,
+        body: "Leave it blank to move them to the Library root.",
+        confirmLabel: "Move",
+        placeholder: "Folder",
+        title: `Move ${items.length} items to a folder`,
+      });
       if (target === null) return;
       for (const item of items) moveItem(item, target);
       setSelectedKeys(new Set());
@@ -262,14 +277,21 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
       return;
     }
     if (action === "move") {
-      const target = window.prompt("Move to folder (leave blank for Library root):", "");
+      const target = await ask({
+        allowEmpty: true,
+        body: "Leave it blank to move it to the Library root.",
+        confirmLabel: "Move",
+        placeholder: "Folder",
+        title: `Move this ${item.kind}`,
+      });
       if (target === null) return;
       if (item.kind === "note") props.onMoveNote?.(item.id, target);
       else props.onMoveFolder?.(item.path, target);
       return;
     }
     if (action === "rename") {
-      const title = window.prompt(`Rename ${item.kind}:`, item.title)?.trim();
+      // Prefilled and selected, so a rename is an edit rather than a retype.
+      const title = await ask({ confirmLabel: "Rename", initial: item.title, title: `Rename this ${item.kind}` });
       if (!title) return;
       if (item.kind === "note") props.onRenameNote?.(item.id, title);
       else props.onRenameFolder?.(item.path, title);
@@ -280,7 +302,7 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
       return;
     }
     const parent = item.kind === "folder" ? item.path : "";
-    const name = window.prompt("New folder name:")?.trim();
+    const name = await ask({ confirmLabel: "Create folder", placeholder: "Folder name", title: "New folder" });
     if (name) props.onCreateFolder?.(parent ? `${parent}/${name}` : name);
   }
 
