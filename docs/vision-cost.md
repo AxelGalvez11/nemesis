@@ -14,6 +14,14 @@ latency, units explain the bill.
 Both are recorded per document (`library_sources.vision_units_spent`,
 `vision_calls_made`) and per user per UTC day (`vision_usage`).
 
+🔴 **THE PER-DOCUMENT COLUMNS ARE LIFETIME TOTALS, NOT PER-RUN COSTS, AND THE TABLE BELOW READS AS
+THOUGH THEY WERE.** They accumulate across every attempt a source has ever had — a reprocess adds to
+them rather than replacing them. So a row showing 11 units and 18 calls is not "this parse cost 11
+units"; it is everything that source has ever spent. To price a single run, read the columns before
+and after and take the difference, which is what any future measurement here must do. The numbers in
+the table were taken on documents with one attempt each, so they happen to be per-run — that is luck,
+not the column's meaning, and it will not hold the next time anyone reparses.
+
 ## Measured, on real documents
 
 | Document | Size | Pages | Parse | Peak RSS | Figures found | Units | Calls |
