@@ -18,7 +18,7 @@ import { terminologyFriction, type TermLookup } from "./learner-friction";
 import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
 import { retrievabilityFor } from "./retention-model";
 import { runtimeCanStage } from "./runtime-support";
-import { chooseNextTeachingAction, expositionOf } from "./teaching-policy";
+import { chooseNextTeachingAction, expositionOf, type TeachingAction } from "./teaching-policy";
 import type { TeachingDecision } from "./teaching-strategy";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import { interveningActs } from "./working-memory";
@@ -36,6 +36,23 @@ const STUCK_STATUSES: readonly LearnerObjectiveState["status"][] = [
   "incorrect",
   "misconception",
   "partial",
+];
+
+/**
+ * Actions that are a thing to DO next, as opposed to a decision to spend the minute elsewhere.
+ *
+ * 🔴 `advance`, `defer` AND `revisit` ARE ALL ABSENT, AND THEY ARE ABSENT FOR THREE DIFFERENT
+ * REASONS. `advance` means nothing is owed here. `defer` means come back after other material —
+ * it is offered only as the last resort below, so a learner never meets a blank surface. `revisit`
+ * means not this sitting at all, which the structured policy never emits and which must never be
+ * selectable as "the next thing to do".
+ */
+const ACTIONABLE: readonly TeachingAction["type"][] = [
+  "retrieve",
+  "show_correction",
+  "contrast",
+  "teach",
+  "simplify",
 ];
 
 /**
@@ -171,9 +188,13 @@ export function decideNext(input: {
   // due-for-review. Those are bands now rather than `find` order, and the modifiers are bounded so
   // they cannot cross one. Every test written against the old ordering still passes — which is the
   // evidence this extends the old rule rather than replacing it with something unproven.
-  const owed = decisions.filter(
-    (decision) => decision.action.type !== "advance" && decision.action.type !== "defer",
-  );
+  // 🔴 AN ALLOW-LIST, NOT A DENY-LIST, AND THE FLIP IS THE POINT. This read `type !== "advance" &&
+  // type !== "defer"`, so every action added after it was written became "owed" by default — and
+  // `revisit` is precisely an action that must NOT be, since it means "not this sitting". A
+  // deny-list makes the safe case the one somebody has to remember; this makes it the one the
+  // compiler enforces, because a new action type that nobody lists here is simply not selectable
+  // until someone decides it should be.
+  const owed = decisions.filter((decision) => ACTIONABLE.includes(decision.action.type));
 
   // 🔴 EVERY OWED CANDIDATE IS SCORED, AND THE BEST ONE WINS. The bands in `next-action-value.ts`
   // encode the precedence the previous three-`find` selector encoded; the modifiers discriminate

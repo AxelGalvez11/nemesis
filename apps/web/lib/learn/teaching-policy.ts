@@ -50,6 +50,30 @@ export type TeachingAction =
   | { type: "retrieve"; objectiveId: string; because: string; rung: ScaffoldRung }
   /** State the answer plainly. For a wrong attempt, or an opportunity that produced nothing. */
   | { type: "show_correction"; objectiveId: string; exposition: Exposition; because: string }
+  /**
+   * Put the material in front of them before asking anything — §40's `teach`.
+   *
+   * 🔴 NOT `show_correction` WITH A DIFFERENT NAME, AND THE DIFFERENCE IS A CLAIM ABOUT THE LEARNER.
+   * A correction is owed to an attempt that fell short and says so; teaching is owed to material
+   * nobody has met and asserts nothing about whether the learner already knew it. Merging them would
+   * mean a learner opening a fresh canvas is told they got something wrong.
+   *
+   * 🔴 AND IT IS DELIBERATELY NOT THE DEFAULT OPENING. `unknown` still ASKS — "unknown means Nemesis
+   * lacks evidence, not that the learner lacks knowledge" is unchanged and is the invariant this
+   * action is most likely to erode. Teaching first is a decision a controller has to justify from
+   * what it knows, not the shape of every session.
+   */
+  | { type: "teach"; objectiveId: string; exposition: Exposition; because: string }
+  /**
+   * Say the same thing in plainer language — §40's `simplify`.
+   *
+   * 🔴 THE OWNER'S OWN RULE FOR TERMINOLOGY FRICTION, MADE AN ACTION. Their instruction was
+   * *"simplifies language under terminology friction"* — the response to a learner tripping over the
+   * material's words is to change HOW it is put, never to quietly stop asking. `next-action-value.ts`
+   * already ranks friction UP for that reason; this is the move that ranking was pointing at and
+   * which did not exist until now.
+   */
+  | { type: "simplify"; objectiveId: string; exposition: Exposition; because: string }
   /** Put the confusable items side by side, then ask for both. Only for a named competing model. */
   | {
       type: "contrast";
@@ -60,8 +84,37 @@ export type TeachingAction =
     }
   /** Hold this one for now — acting again this soon would teach nothing. Come back after other work. */
   | { type: "defer"; objectiveId: string; because: string }
-  /** Nothing is owed here. Move to whatever is next. */
-  | { type: "advance"; because: string };
+  /**
+   * Put this down for a LATER SITTING, not for later in this one — §40's `revisit later`.
+   *
+   * 🔴🔴 A DIFFERENT DECISION FROM `defer`, AND COLLAPSING THEM IS WHAT KEPT THE DRILL TRAP ALIVE.
+   * `defer` says "the answer is still in working memory, come back after other work" — it holds an
+   * objective for minutes and the loop returns to it inside the same sitting. `revisit` says "this
+   * is not what the next minute of this session is worth", which is a judgement about the SITTING'S
+   * BUDGET rather than about working memory. A controller that could only defer would meet the same
+   * objective again a few items later for ever, which is exactly what
+   * `docs/canvas-teaching-policy-audit.md` §3 measured: eight consecutive misses, every one answered
+   * with "ask again".
+   *
+   * 🔴 AND IT IS NOT AN ABANDONMENT. Nothing is written, no state changes, the objective keeps every
+   * piece of evidence it had, and the next sitting sees it exactly as before. It costs the learner
+   * nothing to be wrong about; drilling them for the rest of the hour costs the whole hour.
+   */
+  | { type: "revisit"; objectiveId: string; because: string }
+  /**
+   * Nothing here is worth the next minute. Move forward.
+   *
+   * 🔴🔴 `objectiveId` IS NEW AND IT IS THE POINT. This used to carry only a reason, because the only
+   * way to reach it was "this objective is demonstrated and not due" — an absence, not a decision.
+   * The owner's ruling is that *"advance and defer must be first-class decisions. They must not
+   * merely occur because every other action disappeared."* A first-class `advance` names what it is
+   * moving on FROM, so "we moved on from something they had not mastered" is a fact in the record
+   * rather than an inference from silence — and `strategy-outcomes.ts` can then ask the question that
+   * actually matters: did moving on later cost them anything downstream?
+   *
+   * Absent means the whole canvas has nothing owed, which is the original meaning and still occurs.
+   */
+  | { type: "advance"; because: string; objectiveId?: string };
 
 /**
  * What the learner is being asked to take in, for any action — §39.
@@ -80,14 +133,27 @@ export function expositionOf(action: TeachingAction): Exposition {
   switch (action.type) {
     case "show_correction":
     case "contrast":
+    // 🔴 THE TWO NEW EXPOSITIONS SHARE THIS BRANCH BECAUSE THEY ARE THE SAME KIND OF EVENT. Teaching
+    // and simplifying both put material in front of the learner to process, exactly as a correction
+    // and a contrast do; what differs is why it is owed, which is the action's own business and not
+    // the mode's. Giving either its own mode would let one of them auto-advance past material the
+    // other holds still for, which is §39's whole complaint about verdicts deciding advancement.
+    case "teach":
+    case "simplify":
       return action.exposition;
     // 🔴 NOT AN ABSENCE OF INFORMATION — A RETRIEVAL ASKS FOR PRODUCTION AND A HOLD SHOWS A STATUS.
     // Neither puts material in front of the learner to process, and saying so is different from
     // saying nothing. See `DeclaredMode`'s `"none"` in canvas-continue.ts: the consumer treats an
     // un-emitted mode as a defect, and a retrieval reporting one would be reporting a defect that
     // is not there.
+    //
+    // 🔴 `revisit` AND `advance` PRESENT NOTHING BY CONSTRUCTION. Both are decisions to spend the
+    // next minute elsewhere; the learner sees whatever comes next, never a screen announcing that
+    // something was skipped. A "we are moving on from X" card would be progress clutter, and would
+    // also be the one place the system told a learner they had failed at something.
     case "retrieve":
     case "defer":
+    case "revisit":
     case "advance":
       return NO_EXPOSITION;
   }

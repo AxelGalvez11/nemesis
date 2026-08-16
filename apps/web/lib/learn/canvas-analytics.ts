@@ -52,6 +52,11 @@ export type CanvasEvent =
   // outcome numbers are measuring an arm that only half ran, and nothing in the evidence log would
   // say so on its own. Names and counts only, never the material.
   | "canvas_strategy_refused"
+  /** The controller decided an objective was not worth the next minute and set it aside. 🔴 A
+   *  DECISION, NOT A FAULT — and the only place it is visible, since deciding not to spend attention
+   *  on something writes no evidence and must not. Without this event, "how often does it move on,
+   *  and from what" is unanswerable. */
+  | "canvas_objective_passed_over"
   // 🔴 THE ARM RUNNING THIS CANVAS DISAGREES WITH THE ARM ALREADY RECORDED ON ITS EVIDENCE. Should be
   // unreachable: assignment is derived from stable inputs rather than held in state. Emitted anyway,
   // because the failure it names is silent by construction — a session that switched controllers

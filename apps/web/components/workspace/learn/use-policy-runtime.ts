@@ -47,7 +47,8 @@ import {
   type RetrievalPrompt,
 } from "@/lib/learn/objective-task";
 import { supportedObjectives } from "@/lib/learn/policy-runtime";
-import { strategyFor } from "@/lib/learn/strategy-registry";
+import { controllerFor } from "@/lib/learn/strategy-registry";
+import type { TeachingAct } from "@/lib/learn/attention-budget";
 import {
   conflictingStrategy,
   resolveStrategy,
@@ -408,6 +409,20 @@ export function usePolicyRuntime(
    * it able to answer "have they been told?" rather than "have we been here?".
    */
   const [correctionsShown, setCorrectionsShown] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * The same acts as `actedOn`, with WHAT was done and WHEN.
+   *
+   * 🔴 A SECOND LIST RATHER THAN A RICHER `actedOn`, AND THE DUPLICATION IS DELIBERATE. `actedOn` is
+   * read by `decideNext` and by `interveningActs`, both of which want identity keys in order and
+   * nothing else; widening it would mean editing the structured policy so the model controller could
+   * see more, which that arm's own header forbids. The two are appended in the same statement, so
+   * they cannot drift.
+   *
+   * 🔴 SESSION-LOCAL, NEVER PERSISTED, for exactly the reason `actedOn` is: written to a row it
+   * would become a durable record of what a learner worked and in what order — learner state living
+   * outside the evidence log, asserting something no judge ever said.
+   */
+  const [recentActs, setRecentActs] = useState<readonly TeachingAct[]>(() => []);
   /** Frozen per evidence change rather than read per render: the policy takes `now`, and a clock
    *  that moved on every render would make the decision unstable for no reason. */
   const [decidedAt, setDecidedAt] = useState(() => new Date());
@@ -582,12 +597,25 @@ export function usePolicyRuntime(
     void (async () => {
       let outcome: StrategyOutcome;
       try {
-        outcome = await strategyFor(strategy).decide({
+        // 🔴 `controllerFor`, NOT `strategyFor`, AND THAT IS THE PRODUCT-VERSUS-EXPERIMENT LINE. The
+        // raw arm refuses rather than recovering, which is right for measuring an arm and wrong for
+        // a learner: a refusal is now a blank canvas rather than a wasted experimental turn. The
+        // rescue is loud — recorded as `nemesis_policy_fallback`, carrying the refusal that caused
+        // it — so a turn the model failed to decide can never be counted as a turn the structured
+        // arm was chosen for. See `strategy-registry.ts`.
+        outcome = await controllerFor(strategy, {
           actedOn,
+          // 🔴 ACTIVE TIME, NOT WALL CLOCK. `canvas.activeMs` already excludes idle, and the
+          // distinction is the difference between "they studied for 25 minutes" and "they left the
+          // tab open for 25 minutes". `availableMs` is null because nothing in this runtime knows
+          // how long the sitting has — which the controller is told in words, so an absent bound
+          // cannot read as an unlimited one.
+          attention: { activeMs: Math.max(0, Math.round(canvas.activeMs)), availableMs: null },
           correctionsShown,
           evidence,
           now: decidedAt,
           objectives: inFocus,
+          recentActs,
           signal: abort.signal,
           uid,
         });
@@ -604,6 +632,29 @@ export function usePolicyRuntime(
         return;
       }
       if (!live) return;
+      // 🔴🔴 OBJECTIVES THE CONTROLLER PASSED OVER ARE RECORDED AS WORKED, AND WITHOUT THIS THE
+      // WHOLE "MOVE ON" MECHANISM WOULD BE A NO-OP THE LEARNER COULD FEEL. `controllerFor` sets an
+      // objective aside for the length of ONE call; if nothing here remembers it, the next turn
+      // offers the identical objective, the controller declines it again, and the learner watches a
+      // canvas spend model calls skipping the same material for ever — the drill trap rebuilt out of
+      // the mechanism meant to end it.
+      //
+      // 🔴 INTO `actedOn`, WHICH IS ALREADY EXACTLY THIS: session-local, never persisted, a record of
+      // what the RUNTIME has staged rather than a claim about the learner. Deciding not to spend a
+      // minute on something says nothing about whether they know it, so no evidence is written.
+      const passedOver = outcome.movedOn ?? [];
+      if (passedOver.length > 0) {
+        const keys = passedOver.map((entry) => entry.objectiveIdentityKey);
+        setActedOn((current) => [...current, ...keys]);
+        for (const entry of passedOver) {
+          canvasCapture("canvas_objective_passed_over", canvas, {
+            action: entry.action,
+            because: entry.because,
+            objective: entry.objectiveIdentityKey,
+            strategy: outcome.strategy,
+          });
+        }
+      }
       if (outcome.refusal) {
         // 🔴 COUNTED, NEVER RECOVERED FROM. There is deliberately no "if the baseline refused, ask
         // the structured policy" here: that would make the two arms one arm and report them as
@@ -624,6 +675,21 @@ export function usePolicyRuntime(
   // that no longer exists, and how `mintedFor` below could mint a prompt for a superseded decision,
   // which is the idempotency key for the evidence it produces.
   const next = decided && decided.inputs === decisionInputs ? decided.outcome.decision : null;
+
+  /**
+   * Which controller actually produced the decision on screen.
+   *
+   * 🔴🔴 NOT `strategy`, WHICH IS THE ARM THIS SESSION WAS ASSIGNED TO, AND THE DIFFERENCE IS THE
+   * ONLY THING KEEPING THE FALLBACK HONEST. When the model controller refuses, the structured policy
+   * answers in its place and the outcome comes back stamped `nemesis_policy_fallback`. Writing the
+   * ASSIGNED arm onto the evidence row would file that turn under `llm_teacher` — a turn the model
+   * did not decide, counted as a turn it did — which is precisely the silent-equivalence failure
+   * `teaching-strategy.ts` warns about at length, arriving from the other direction.
+   *
+   * Falls back to the assigned arm only when no decision exists, where nothing is written anyway.
+   */
+  const decidedStrategy: TeachingStrategyId =
+    decided && decided.inputs === decisionInputs ? decided.outcome.strategy : strategy;
 
   /**
    * The decision, with the exposition corrected to describe WHAT IS ON SCREEN.
@@ -868,12 +934,12 @@ export function usePolicyRuntime(
           // 🔴 THE ARM THAT CHOSE THIS OPPORTUNITY, ON THE NON-ATTEMPT PATH TOO. Someone giving up
           // on a question is an outcome the experiment cares about at least as much as a judged
           // answer, and a row without an arm is a row the comparison cannot see.
-          teachingStrategy: strategy,
+          teachingStrategy: decidedStrategy,
           ...(tookMs !== undefined ? { tookMs } : {}),
         }),
       );
     },
-    [canvas, decision, prompt, record, strategy, uid],
+    [canvas, decision, decidedStrategy, prompt, record, uid],
   );
 
   const submit = useCallback(
@@ -997,12 +1063,12 @@ export function usePolicyRuntime(
           // one point where the arm is unambiguous. Everything downstream of here — the judge, the
           // verdict, the row shape — is identical between arms by construction, which is what makes
           // this single field the whole of the difference.
-          teachingStrategy: strategy,
+          teachingStrategy: decidedStrategy,
           ...(tookMs !== undefined ? { tookMs } : {}),
         }),
       );
     },
-    [admitNothing, canvas, decision, judging, prompt, record, strategy, uid],
+    [admitNothing, canvas, decision, decidedStrategy, judging, prompt, record, uid],
   );
 
   /** Kept as a capability with no control on the recall surface: the caller decides whether to
@@ -1033,6 +1099,17 @@ export function usePolicyRuntime(
     // "since the LAST time this was acted on" answerable. Deduplicating here would silently freeze
     // the working-memory window at whatever the first visit's position was.
     if (seen) setActedOn((current) => [...current, seen]);
+    // 🔴 THE SAME EVENT, RECORDED TWICE IN ONE STATEMENT SO THE TWO LISTS CANNOT DISAGREE. What this
+    // adds over `actedOn` is the action and the clock, which is what "time already spent on this
+    // objective" and "recent teaching actions" are computed from — see `attention-budget.ts`.
+    if (seen && decision) {
+      const act: TeachingAct = {
+        action: decision.action.type,
+        atMs: Date.now(),
+        objectiveIdentityKey: seen,
+      };
+      setRecentActs((current) => [...current, act]);
+    }
     // 🔴🔴 ONLY WHEN WHAT WAS ACKNOWLEDGED WAS THE CORRECTION ITSELF — AND THIS LINE USED TO GET
     // THAT WRONG IN THE ONE CASE IT WAS WRITTEN TO EXCLUDE.
     //

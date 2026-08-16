@@ -263,6 +263,36 @@ function PolicyScreen({
     );
   }
 
+  if (decision.action.type === "teach" || decision.action.type === "simplify") {
+    // 🔴🔴 A SEPARATE BRANCH FROM `show_correction`, AND THE DIFFERENCE IS A CLAIM ABOUT THE LEARNER.
+    // That screen opens with "Here's the one to fix" because an attempt fell short. These two are
+    // owed to material nobody has met, or to a learner tripping over the words, and neither of those
+    // is being wrong. Routing them through the correction renderer would tell someone they had
+    // failed at something they were never asked, which is the kind of false claim about a person
+    // this codebase refuses everywhere else.
+    //
+    // 🔴 AND THEY SHARE ONE BRANCH BECAUSE THEY ARE ONE SCREEN. Both put the material in front of
+    // the learner and wait; what differs is the language it arrives in, which is the controller's to
+    // choose and not the renderer's. Two near-identical components would drift.
+    const simplifying = decision.action.type === "simplify";
+    return (
+      <Frame onContinue={onContinue} sharing={sharing}>
+        <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+          {simplifying ? "Same idea, plainer words." : "Worth having in front of you first."}
+        </p>
+        <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
+          {decision.objective.cue} → {decision.objective.answer}
+        </h2>
+        <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
+          {decision.knowledge.statement}
+        </p>
+        {/* Same rule as the two screens below: a claim shown here keeps the origin it would have
+            anywhere else, or the Canvas reads as having lost the source. */}
+        <SourceTrail citations={citations} />
+      </Frame>
+    );
+  }
+
   if (decision.action.type === "contrast") {
     return (
       <Frame onContinue={onContinue} sharing={sharing}>

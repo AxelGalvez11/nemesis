@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { learnEntryFromSearch, learnSurface } from "./learn-entry";
 import type { LearnerEvidence } from "./learner-evidence";
 import {
+  ASSIGNABLE_STRATEGIES,
   conflictingStrategy,
   DEFAULT_STRATEGY,
   resolveStrategy,
@@ -34,19 +35,40 @@ test("🔴 the same learner and canvas resolve to the same arm, every time, for 
   assert.equal(first.assignedBy, "randomised");
 });
 
-test("🔴 randomisation is OFF, so shipping this changes nothing for anybody", () => {
-  // The whole feature is inert until someone decides to run the experiment. With `randomise: false`
-  // every learner who has not typed an arm into the URL meets the structured policy, which is
-  // exactly today's behaviour.
+test("🔴 with randomisation off, everyone meets the default controller and nobody is enrolled", () => {
+  // 🔴🔴 THE ASSERTED VALUE MOVED, AND THE PROPERTY DID NOT. This used to pin `nemesis_policy` as
+  // the literal, because the model controller was a default-off baseline. The owner has since ruled
+  // that teaching strategy moves to model reasoning, so the default is `llm_teacher` — see
+  // `DEFAULT_STRATEGY`'s own note for why it had to move rather than both arms being repaired.
+  //
+  // What this test protects is unchanged and is the reason it is not simply deleted: with
+  // randomisation off, assignment is not a coin toss. Every learner who has not typed an arm into
+  // the URL meets ONE named controller, and the row says `default` rather than `randomised`, so a
+  // later analysis can tell an enrolled session from an unenrolled one.
   const assignment = resolveStrategy({
     canvasId: "canvas-1",
     learnerId: "learner-1",
     override: null,
     randomise: false,
   });
-  assert.equal(assignment.strategy, "nemesis_policy");
+  assert.equal(assignment.strategy, "llm_teacher");
   assert.equal(assignment.strategy, DEFAULT_STRATEGY);
   assert.equal(assignment.assignedBy, "default");
+});
+
+test("🔴 the recorded fallback is a stored value and NEVER an arm anyone is assigned to", () => {
+  // 🔴 THE TWO LISTS STOPPED BEING THE SAME SET, AND THIS IS WHAT KEEPS THEM APART.
+  // `TEACHING_STRATEGIES` is every value the column may hold; `ASSIGNABLE_STRATEGIES` is every arm a
+  // session may be enrolled into. `nemesis_policy_fallback` describes what happened to ONE TURN when
+  // the assigned controller refused — randomising into it would be enrolling a third of learners
+  // into "the other arm broke", which is not a treatment.
+  assert.ok(TEACHING_STRATEGIES.includes("nemesis_policy_fallback"));
+  assert.ok(!(ASSIGNABLE_STRATEGIES as readonly string[]).includes("nemesis_policy_fallback"));
+  // And a URL cannot ask for it either: a session running "the fallback arm" would write rows
+  // claiming the model failed on turns where it was never asked.
+  assert.equal(strategyOverrideFrom("nemesis_policy_fallback"), null);
+  assert.equal(strategyOverrideFrom("llm_teacher"), "llm_teacher");
+  assert.equal(strategyOverrideFrom("nemesis_policy"), "nemesis_policy");
 });
 
 test("🔴 assignment varies WITHIN a learner as well as across them", () => {
@@ -64,7 +86,10 @@ test("🔴 assignment varies WITHIN a learner as well as across them", () => {
       }).strategy,
     ),
   );
-  assert.equal(arms.size, TEACHING_STRATEGIES.length, "one learner must be able to meet both arms");
+  // 🔴 `ASSIGNABLE_STRATEGIES`, NOT `TEACHING_STRATEGIES`. The two were the same list until a
+  // recorded fallback existed; comparing against the wrong one would demand that a learner be
+  // randomised into "the model controller broke", which nobody is ever enrolled into.
+  assert.equal(arms.size, ASSIGNABLE_STRATEGIES.length, "one learner must be able to meet both arms");
 });
 
 test("🔴 an anonymous session is never enrolled, because its outcomes could never be joined to anyone", () => {
