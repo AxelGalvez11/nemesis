@@ -47,7 +47,7 @@
 // material attached — a confident false claim about the learner's own work. A sparse row that is
 // always true beats a rich one that is wrong half the time.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUpDown,
@@ -82,6 +82,19 @@ import { cn } from "@/lib/utils";
 
 /** `undefined` = every canvas · `null` = Unfiled · a string = that folder. */
 type Scope = string | null | undefined;
+
+/**
+ * The table's column template, shared by the header and every row so a column is one column.
+ *
+ * 🔴 THREE COLUMNS, NOT THE REFERENCE'S FOUR. Its Library carries Name / Modified / Size, and the
+ * obvious way to "look exactly like" it would be to add a third data column here. There is nothing
+ * honest to put in one: `canvas_sources` is empty in production, so a source count would render 0
+ * on a canvas that plainly has material attached, and a size in bytes is not a fact a learner has
+ * any use for. An invented column is worse than an absent one, so Name takes the space Size would
+ * have used and the geometry — 60px rows, a 16px gutter, a fixed meta column, one hairline rule —
+ * is what carries the resemblance.
+ */
+const LIST_COLUMNS = "minmax(0,1fr) var(--list-col-meta) var(--list-col-actions)";
 
 /** Relative, and deliberately coarse. "3 days ago" is what the learner is actually asking, and a
  *  timestamp to the minute invites them to read precision into a shelf. */
@@ -121,6 +134,16 @@ export function CanvasManager({
   const [editing, setEditing] = useState<{ id: string; kind: "canvas" | "folder"; value: string } | null>(null);
   /** A folder awaiting confirmation, because deleting one takes its subfolders with it. */
   const [confirming, setConfirming] = useState<Folder | null>(null);
+  /**
+   * 🔴 THE LAST TWO BROWSER DIALOGS ON THIS SURFACE, REPLACED (owner 2026-08-15: "make sure all
+   * button popups have ui"). "New folder" called `window.prompt` and "Delete canvas" called
+   * `window.confirm` — controls that are drawn in the product and then hand the learner an OS
+   * dialog in a system font, unstyleable, unthemeable, and in the prompt's case silently disabled
+   * in some browsers, which turns a button into one that does nothing at all. The surface already
+   * had a real modal for deleting a FOLDER; these two now use the same one.
+   */
+  const [naming, setNaming] = useState<{ parentId: string | null; value: string } | null>(null);
+  const [deletingCanvas, setDeletingCanvas] = useState<CanvasSummary | null>(null);
   /** A filing write that did not land. Stated rather than swallowed — see `fileAndVerify`. */
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -228,19 +251,40 @@ export function CanvasManager({
     // of each choosing a width. It was `max-w-[880px]` against the reference's 768 — 112px wider,
     // which is most of why this page read as spread out: the same rows, stretched.
     <div className="mx-auto flex h-full w-full max-w-[var(--content-max-width)] flex-col px-[var(--page-gutter)] py-10">
-      {/* ---------------------------------------------------------------- header */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* ---------------------------------------------------------------- header
+          🔴 TITLE LEFT, ONE ACTION RIGHT, EVERYTHING ELSE ON THE NEXT ROW. The toolbar used to be
+          a single wrapping line holding the title, a search box, a sort select and a button, all
+          at 13px on ~28px boxes — four different jobs at one weight, and on a narrow window they
+          wrapped into a ragged block. The reference splits it: the page names itself and offers
+          its one creating action, then filters and search sit on their own row above the table. */}
+      <div className="flex items-center gap-[var(--list-gap)]">
         <h1 className="mr-auto text-[length:var(--page-title-size)] font-medium tracking-[-0.01em] text-(--ui-text-primary)">Library</h1>
+        <button
+          className="flex h-[var(--control-height)] shrink-0 items-center gap-1.5 rounded-full bg-(--ui-bg-tertiary) px-[14px] text-[14px] font-medium text-(--ui-text-primary) transition-colors hover:bg-(--ui-control-hover-background)"
+          onClick={() => setNaming({ parentId: current?.id ?? null, value: "" })}
+          type="button"
+        >
+          <FolderPlus size={16} strokeWidth={2} />
+          New folder
+        </button>
+      </div>
 
-        <div className="relative">
+      {/* Filters and search, one row, all at --control-height so the row reads as one bar. */}
+      <div className="mt-4 flex items-center gap-2">
+        {/* 🔴 `null` IS UNFILED, `undefined` IS EVERYTHING. Two different absences with two
+            different meanings — reading either as "no folder" puts the learner in the wrong view. */}
+        <ScopeTab active={scope === undefined} icon={Layers} label="All canvases" onClick={() => open(undefined)} />
+        <ScopeTab active={scope === null} icon={Inbox} label="Unfiled" onClick={() => open(null)} />
+
+        <div className="relative ml-auto">
           <Search
-            className="pointer-events-none absolute left-[9px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
-            size={13}
+            className="pointer-events-none absolute left-[12px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
+            size={16}
             strokeWidth={2}
           />
           <input
             aria-label="Search canvases"
-            className="w-[200px] rounded-lg bg-(--ui-bg-tertiary) py-[6px] pl-[28px] pr-[10px] text-[13px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+            className="h-[var(--control-height)] w-[220px] rounded-full bg-(--ui-bg-tertiary) pl-[36px] pr-[14px] text-[14px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search canvases…"
             value={search}
@@ -253,13 +297,13 @@ export function CanvasManager({
             the control read as the words "Last opened" with no indication they were a choice. */}
         <div className="relative">
           <ArrowUpDown
-            className="pointer-events-none absolute left-[9px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
-            size={13}
+            className="pointer-events-none absolute left-[12px] top-1/2 -translate-y-1/2 text-(--ui-text-quaternary)"
+            size={16}
             strokeWidth={2}
           />
           <select
             aria-label="Sort canvases"
-            className="cursor-pointer rounded-lg bg-(--ui-bg-tertiary) py-[6px] pl-[27px] pr-[6px] text-[13px] text-(--ui-text-secondary) outline-none hover:text-(--ui-text-primary)"
+            className="h-[var(--control-height)] cursor-pointer rounded-full bg-(--ui-bg-tertiary) pl-[34px] pr-[10px] text-[14px] text-(--ui-text-secondary) outline-none hover:text-(--ui-text-primary)"
             onChange={(event) => setSort(event.target.value as CanvasSort)}
             value={sort}
           >
@@ -267,18 +311,6 @@ export function CanvasManager({
             <option value="name">Name</option>
           </select>
         </div>
-
-        <button
-          className="flex items-center gap-1.5 rounded-lg px-[10px] py-[6px] text-[13px] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-          onClick={async () => {
-            const name = window.prompt(current ? `New folder inside ${current.name}` : "New folder");
-            if (name?.trim()) await act(createFolder(userId, name.trim(), current?.id ?? null));
-          }}
-          type="button"
-        >
-          <FolderPlus size={13} strokeWidth={2} />
-          New folder
-        </button>
       </div>
 
       {/* ---------------------------------------------------------------- where am I */}
@@ -287,12 +319,11 @@ export function CanvasManager({
           <span>Searching every canvas</span>
         ) : (
           <>
-            {/* 🔴 THE TWO FILTERS NOW LOOK LIKE CONTROLS (§38.3). They were bare words in the
-                breadcrumb's own grey, so "All canvases" and "Unfiled" read as a label rather than
-                as the two views they switch between — and which one you were in was carried by a
-                text colour alone. A glyph plus a quiet selected fill is a segmented control, which
-                is chrome; it is not a card or a badge (§19). */}
-            <ScopeTab active={scope === undefined} icon={Layers} label="All canvases" onClick={() => open(undefined)} />
+            {/* 🔴 THE SCOPE TABS MOVED UP TO THE TOOLBAR and are deliberately not repeated here.
+                They are filters, not location: rendering them inside the breadcrumb made "where am
+                I" and "what am I filtering by" the same line, and after the toolbar gained them
+                this row drew a second, live copy of both. The breadcrumb below is now only the
+                folder path — a statement about position. */}
             {/* 🔴 GOING BACK UP IS A LIBRARY FUNCTION TOO (§38.3), and it was the least visible one
                 on the surface: a bare word in the breadcrumb's own grey, changing colour only on
                 hover, which is nothing at all on a touch screen. It reads as a control now — a
@@ -335,9 +366,6 @@ export function CanvasManager({
                 </span>
               </>
             )}
-            {scope === undefined && (
-              <ScopeTab active={false} icon={Inbox} label="Unfiled" onClick={() => open(null)} />
-            )}
           </>
         )}
       </div>
@@ -350,21 +378,30 @@ export function CanvasManager({
 
       {/* ---------------------------------------------------------------- the list */}
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
-        <div className="flex items-center gap-3 border-b border-(--ui-stroke-tertiary) px-2 pb-1.5 text-[11px] uppercase tracking-wide text-(--ui-text-quaternary)">
-          <span className="flex-1">Name</span>
-          <span className="w-[110px] shrink-0 text-right">Last opened</span>
-          <span className="w-[24px] shrink-0" />
+        {/* 🔴 A GRID, NOT A FLEX ROW WITH A GAP. The header and every row below share one column
+            template, so "Last opened" is genuinely the same column on every line instead of the
+            result of each row's own flex maths. It was an 11px uppercase strip, which is a section
+            label; the reference sets its column names at the same 14px as the data and lets colour
+            carry the difference, so the header reads as part of the table rather than above it. */}
+        <div
+          className="grid h-[var(--list-header-height)] items-center gap-x-[var(--list-gap)] border-b border-(--ui-stroke-tertiary) px-2 text-[14px] text-(--ui-text-tertiary)"
+          style={{ gridTemplateColumns: LIST_COLUMNS }}
+        >
+          <span>Name</span>
+          <span>Last opened</span>
+          <span />
         </div>
 
         {visibleFolders.map((folder) => (
           <div
-            className="group flex min-h-[var(--list-row-height)] items-center gap-3 border-b border-(--ui-stroke-tertiary)/50 px-2 py-2.5"
+            className="group grid min-h-[var(--list-row-height)] items-center gap-x-[var(--list-gap)] border-b border-(--ui-stroke-tertiary)/50 px-2 transition-colors hover:bg-(--ui-control-hover-background)"
+            style={{ gridTemplateColumns: LIST_COLUMNS }}
             key={folder.id}
           >
             {editing?.id === folder.id ? (
               <input
                 autoFocus
-                className="flex-1 rounded bg-(--ui-bg-tertiary) px-1.5 py-1 text-[14px] text-(--ui-text-primary) outline-none"
+                className="min-w-0 rounded bg-(--ui-bg-tertiary) px-1.5 py-1 text-[16px] text-(--ui-text-primary) outline-none"
                 onBlur={commitRename}
                 onChange={(event) => setEditing({ ...editing, value: event.target.value })}
                 onKeyDown={(event) => {
@@ -374,12 +411,12 @@ export function CanvasManager({
                 value={editing.value}
               />
             ) : (
-              <button className="flex flex-1 items-center gap-2 text-left" onClick={() => open(folder)} type="button">
+              <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => open(folder)} type="button">
                 <FolderIcon className="shrink-0 text-(--ui-text-quaternary)" size={14} strokeWidth={2} />
-                <span className="truncate text-[14px] text-(--ui-text-primary)">{folder.name}</span>
+                <span className="truncate text-[16px] text-(--ui-text-primary)">{folder.name}</span>
               </button>
             )}
-            <span className="w-[110px] shrink-0" />
+            <span />
             <RowMenu
               actions={[
                 { icon: Pencil, label: "Rename", run: () => setEditing({ id: folder.id, kind: "folder", value: folder.name }) },
@@ -392,13 +429,14 @@ export function CanvasManager({
 
         {rows.map((canvas) => (
           <div
-            className="group flex min-h-[var(--list-row-height)] items-center gap-3 border-b border-(--ui-stroke-tertiary)/50 px-2 py-2.5"
+            className="group grid min-h-[var(--list-row-height)] items-center gap-x-[var(--list-gap)] border-b border-(--ui-stroke-tertiary)/50 px-2 transition-colors hover:bg-(--ui-control-hover-background)"
+            style={{ gridTemplateColumns: LIST_COLUMNS }}
             key={canvas.id}
           >
             {editing?.id === canvas.id ? (
               <input
                 autoFocus
-                className="flex-1 rounded bg-(--ui-bg-tertiary) px-1.5 py-1 text-[14px] text-(--ui-text-primary) outline-none"
+                className="min-w-0 rounded bg-(--ui-bg-tertiary) px-1.5 py-1 text-[16px] text-(--ui-text-primary) outline-none"
                 onBlur={commitRename}
                 onChange={(event) => setEditing({ ...editing, value: event.target.value })}
                 onKeyDown={(event) => {
@@ -409,7 +447,7 @@ export function CanvasManager({
               />
             ) : (
               <button
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                className="flex min-w-0 items-center gap-2 text-left"
                 onClick={() => router.push(`/learn?c=${canvas.id}`)}
                 type="button"
               >
@@ -422,12 +460,12 @@ export function CanvasManager({
                     empty in production and a count over it would render 0 on a canvas that has
                     material attached (see the header note). */}
                 <PanelsTopLeft className="shrink-0 text-(--ui-text-quaternary)" size={13} strokeWidth={2} />
-                <span className="truncate text-[14px] text-(--ui-text-primary)">{canvas.title || "Untitled canvas"}</span>
+                <span className="truncate text-[16px] text-(--ui-text-primary)">{canvas.title || "Untitled canvas"}</span>
                 {/* The learner's own mark, kept — the one honest per-canvas distinction there is. */}
                 {canvas.pinnedAt && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={2} />}
               </button>
             )}
-            <span className="w-[110px] shrink-0 text-right text-[13px] text-(--ui-text-quaternary)">
+            <span className="truncate text-[14px] text-(--ui-text-tertiary)">
               {lastOpened(canvas.updatedAt)}
             </span>
             <RowMenu
@@ -473,14 +511,10 @@ export function CanvasManager({
                   danger: true,
                   icon: Trash2,
                   label: "Delete canvas",
-                  run: () => {
-                    // Soft delete — the row is flagged, never removed, and the learner's
-                    // demonstrations survive regardless (`learner_evidence.canvas_id` is
-                    // `on delete set null`). Still confirmed, because it disappears from view.
-                    if (window.confirm(`Delete "${canvas.title || "Untitled canvas"}"?`)) {
-                      void act(deleteCanvas(userId, canvas.id));
-                    }
-                  },
+                  // Soft delete — the row is flagged, never removed, and the learner's
+                  // demonstrations survive regardless (`learner_evidence.canvas_id` is
+                  // `on delete set null`). Still confirmed, because it disappears from view.
+                  run: () => setDeletingCanvas(canvas),
                 },
               ]}
               name={canvas.title || "Untitled canvas"}
@@ -562,7 +596,132 @@ export function CanvasManager({
           </div>
         </div>
       )}
+
+      {/* ---------------------------------------------------------------- new folder */}
+      {naming && (
+        <Modal onDismiss={() => setNaming(null)} title={naming.parentId ? `New folder inside ${current?.name ?? "this folder"}` : "New folder"}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = naming.value.trim();
+              if (!name) return;
+              setNaming(null);
+              void act(createFolder(userId, name, naming.parentId));
+            }}
+          >
+            <input
+              // Autofocus is right here and not a nuisance: the modal exists only to collect this
+              // one value, and the learner opened it deliberately.
+              autoFocus
+              aria-label="Folder name"
+              className="mt-3 w-full rounded-lg bg-(--ui-bg-tertiary) px-3 py-2 text-[15px] text-(--ui-text-primary) outline-none ring-1 ring-(--ui-stroke-tertiary) focus:ring-(--ui-action)"
+              onChange={(event) => setNaming({ ...naming, value: event.target.value })}
+              placeholder="Folder name"
+              value={naming.value}
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <ModalButton onClick={() => setNaming(null)}>Cancel</ModalButton>
+              {/* Disabled until there is a name, rather than accepting a blank one and creating an
+                  untitled folder the learner then has to find and rename. */}
+              <ModalButton disabled={!naming.value.trim()} primary type="submit">Create folder</ModalButton>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ---------------------------------------------------------------- canvas delete */}
+      {deletingCanvas && (
+        <Modal onDismiss={() => setDeletingCanvas(null)} title={`Delete “${deletingCanvas.title || "Untitled canvas"}”?`}>
+          {/* What actually survives, said plainly — the learner's demonstrations are kept because
+              `learner_evidence.canvas_id` is `on delete set null`, which nothing else here says. */}
+          <p className="mt-2 text-[13px] leading-relaxed text-(--ui-text-tertiary)">
+            It leaves your library. What you have already worked through on it is kept.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <ModalButton onClick={() => setDeletingCanvas(null)}>Cancel</ModalButton>
+            <ModalButton
+              onClick={() => {
+                const canvas = deletingCanvas;
+                setDeletingCanvas(null);
+                void act(deleteCanvas(userId, canvas.id));
+              }}
+              primary
+            >
+              Delete canvas
+            </ModalButton>
+          </div>
+        </Modal>
+      )}
     </div>
+  );
+}
+
+/**
+ * The one modal shell this surface uses, so a prompt, a confirm and a folder delete are the same
+ * object rather than three that drifted. Dismisses on backdrop click and on Escape, which is the
+ * part hand-rolled overlays usually miss and the part a browser dialog got right for free.
+ */
+function Modal({
+  children,
+  onDismiss,
+  title,
+}: {
+  children: ReactNode;
+  onDismiss: () => void;
+  title: string;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onDismiss(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onDismiss]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-6"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onDismiss(); }}
+      role="presentation"
+    >
+      <div
+        aria-modal="true"
+        className="w-full max-w-[380px] rounded-2xl bg-(--ui-bg-elevated) p-5 shadow-[0_8px_32px_rgba(0,0,0,0.18)] ring-1 ring-(--ui-stroke-tertiary)"
+        role="dialog"
+      >
+        <p className="text-[15px] text-(--ui-text-primary)">{title}</p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Modal footer button, in the two weights the shell uses. */
+function ModalButton({
+  children,
+  disabled,
+  onClick,
+  primary,
+  type = "button",
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+  primary?: boolean;
+  type?: "button" | "submit";
+}) {
+  return (
+    <button
+      className={cn(
+        "rounded-lg px-[12px] py-[7px] text-[13px] transition-colors",
+        primary
+          ? "bg-(--ui-text-primary) text-(--ui-bg-editor) disabled:opacity-40"
+          : "text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary)",
+      )}
+      disabled={disabled}
+      onClick={onClick}
+      type={type}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -582,15 +741,17 @@ function ScopeTab({
     <button
       aria-pressed={active}
       className={cn(
-        "flex items-center gap-1.5 rounded-lg px-[8px] py-[4px] text-[13px] transition-colors",
+        // A filter chip at the toolbar's own height, matching the reference's All / Images /
+        // Documents pills. It was a 13px control on a ~21px box, which read as a link.
+        "flex h-[var(--control-height)] items-center gap-1.5 rounded-full px-[14px] text-[14px] font-medium transition-colors",
         active
           ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
-          : "text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)",
+          : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
       )}
       onClick={onClick}
       type="button"
     >
-      <Icon size={13} strokeWidth={2} />
+      <Icon size={16} strokeWidth={2} />
       {label}
     </button>
   );

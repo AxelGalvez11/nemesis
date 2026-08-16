@@ -213,7 +213,20 @@
      page read as flat. Weight stays ours (500 against their 400): the SCALE is what is being
      borrowed, not the typeface's voice. */
   --page-title-size: 28px;
-  --list-row-height: 60px;         /* Library / Calendar / Stats list row */
+  /* ── LIST SURFACE ──────────────────────────────────────────────────────────
+     The reference's Library is a table, and these are its measurements: a 42px
+     column header over 60px rows, columns laid on a grid with a 16px gutter, one
+     hairline divider between rows and no fill. Ours was a flex row with a gap-3
+     and an 11px uppercase header, which is a different object that happened to
+     hold the same information.
+     Controls above it — the chips, the search field, the buttons — are all one
+     height, so the toolbar reads as a row rather than as several sizes. */
+  --list-row-height: 60px;
+  --list-header-height: 42px;
+  --list-col-meta: 160px;          /* "Last opened", the reference's "Modified" */
+  --list-col-actions: 64px;
+  --list-gap: 16px;
+  --control-height: 36px;
 
   /* layout + type — desktop radius scale (card 8 / input 10 at radiusScalar 1) */
   --radius: 10px; --radius-sm: 8px; --evidence: 344px;
