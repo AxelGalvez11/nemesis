@@ -358,7 +358,7 @@ export function CanvasManager({
 
         {visibleFolders.map((folder) => (
           <div
-            className="group flex items-center gap-3 border-b border-(--ui-stroke-tertiary)/50 px-2 py-2.5"
+            className="group flex min-h-[var(--list-row-height)] items-center gap-3 border-b border-(--ui-stroke-tertiary)/50 px-2 py-2.5"
             key={folder.id}
           >
             {editing?.id === folder.id ? (
@@ -392,7 +392,7 @@ export function CanvasManager({
 
         {rows.map((canvas) => (
           <div
-            className="group flex items-center gap-3 border-b border-(--ui-stroke-tertiary)/50 px-2 py-2.5"
+            className="group flex min-h-[var(--list-row-height)] items-center gap-3 border-b border-(--ui-stroke-tertiary)/50 px-2 py-2.5"
             key={canvas.id}
           >
             {editing?.id === canvas.id ? (

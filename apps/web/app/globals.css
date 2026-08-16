@@ -214,7 +214,6 @@
      borrowed, not the typeface's voice. */
   --page-title-size: 28px;
   --list-row-height: 60px;         /* Library / Calendar / Stats list row */
-  --section-gap: 20px;
 
   /* layout + type — desktop radius scale (card 8 / input 10 at radiusScalar 1) */
   --radius: 10px; --radius-sm: 8px; --evidence: 344px;
