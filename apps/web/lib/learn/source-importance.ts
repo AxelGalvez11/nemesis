@@ -53,7 +53,17 @@ export type ImportanceSignal =
    * not by anyone remembering.
    */
   | "returned-to"
-  /** The author promoted this term to a heading of its own. */
+  /**
+   * The term appears in a heading.
+   *
+   * 🔴 APPEARS IN, WHICH IS DELIBERATELY WEAKER THAN "A HEADING NAMES IT", and the difference is
+   * visible in the production evidence: `A1C` scores two heading hits off `Glycosylated Hemoglobin
+   * (A1C)` and `A1C Goals in Diabetes`, where it is a parenthetical in one and a modifier in the
+   * other. Deciding a heading is ABOUT a term rather than merely containing it needs to know which
+   * word of a title carries the topic, and that is subject-matter reading — the thing this file
+   * refuses everywhere else. Containment is the honest weaker question, which is part of why two
+   * observations have to agree before anything is called central.
+   */
   | "named-as-a-heading"
   /** The recovered text marks this term emphasised where it sits. */
   | "carries-emphasis";
@@ -159,9 +169,17 @@ export type ImportanceRefusalReason =
    * THIS GUARD WAS DEAD CODE FOR EXACTLY THAT REASON. It asked the anchoring unit for its own column
    * names and got none — a fragment that prints no header knows none, which is the whole situation
    * this refusal is about. The header lives on the fragment that DID print it, one unit away.
-   * Measured on the production syllabus: the anchor-local test refused 0 of 229 objects and let
-   * `Instructor` through as the document's single most prominent term; the document-wide test refuses
-   * it, because `Instructor` is a column name three units further down the same schedule.
+   * Measured on the syllabus parse serving that morning: the anchor-local test refused 0 of 229
+   * objects and let `Instructor` through as the document's single most prominent term; the
+   * document-wide test refused 11 of them, `Instructor` included.
+   *
+   * 🔴 AND IT FIRES ON NOTHING IN PRODUCTION TODAY, WHICH IS SAID HERE RATHER THAN LEFT TO BE
+   * DISCOVERED. That syllabus was reparsed the same afternoon (229 objects → 83), and the new parse
+   * resolves its column names, so no header row is read as data any more. Across all three parses
+   * serving on 2026-08-15 this refusal fires 0 times — the same standing `figure-referenced-from-
+   * prose` is given below. It is kept rather than deleted because the shape is not rare: any grid
+   * whose continuation fragment prints no header reproduces it, and the guard is calibrated against
+   * that shape rather than against one document.
    */
   | "cue-is-a-column-name"
   /** Every signal was a blind spot in this document, so nothing was actually looked at. */
@@ -458,12 +476,14 @@ export function sourceImportance(index: ImportanceIndex, object: KnowledgeObject
  * taste. Re-adding one needs a new measurement, not a new argument.
  *
  * `heading-depth` — how deep in the heading tree the knowledge sits.
- *   REFUSED. On the PHCY-2114 syllabus all 229 objects sit at heading depth 1, so the signal is
- *   constant and separates nothing. On the diabetes deck it varies (28 at depth 1, 10 at 2, 8 at 3),
- *   but the levels are consecutive SLIDE TITLES that the PDF reader nested by font size — a
- *   depth-3 path there reads `SCREENING AND DIAGNOSIS → GLYCEMIC GOALS → Treatment Goals`, which is
- *   three slides in a row rather than a subsection of a subsection. Production heading paths also
- *   contain literal `null` entries, so the length is not even a depth.
+ *   REFUSED, and re-measured after the syllabus was reparsed mid-day: all 83 objects of the current
+ *   parse sit at heading depth 1, exactly as all 229 of the previous one did. The signal is constant
+ *   and separates nothing. On the diabetes deck it varies (28 at depth 1, 10 at 2, 8 at 3), but the
+ *   levels are consecutive SLIDE TITLES that the PDF reader nested by font size — a depth-3 path
+ *   there reads `SCREENING AND DIAGNOSIS → GLYCEMIC GOALS → Treatment Goals`, which is three slides
+ *   in a row rather than a subsection of a subsection. And a heading path is not reliably a depth at
+ *   all: the sibling lecture `1. Physiology and Pathophysiology of Diabetes Mellitus 1 2026.pdf`
+ *   carries literal `null` entries in its paths, so its length counts holes.
  *
  * `section-share` — how much of the document's text sits under the same heading.
  *   REFUSED, and this one points the WRONG WAY. The largest section of the syllabus is its Course
