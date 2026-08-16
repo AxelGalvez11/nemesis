@@ -347,6 +347,44 @@ test("association still mints its two directions", () => {
   assert.equal(objectivesForKnowledge(ASSOCIATION).length, 2);
 });
 
+// ── the source-prominence reading ───────────────────────────────────────────
+
+test("🔴 how prominently the source treats this survives extract → save → load, trace and all", () => {
+  // 🔴 THE OBSERVATIONS ARE THE PART THAT DIES QUIETLY. A grade that came back without them would
+  // still read as `central`, still order a learner's time, and be uncorrectable — nobody could say
+  // why. `knowledgePayload` is subtractive, so this passes today; the assertion is what stops the
+  // next person restoring a hand-written field list above it, which is how the payload was written
+  // in the first place.
+  const graded: KnowledgeObject = {
+    ...CAUSAL,
+    importance: {
+      blindSpots: [
+        {
+          detail: "This document's parse recovered no bold or italic anywhere.",
+          reason: "emphasis-not-recovered",
+          signal: "carries-emphasis",
+        },
+      ],
+      observations: [
+        { count: 4, foregrounded: true, signal: "returned-to" },
+        { count: 1, foregrounded: true, signal: "named-as-a-heading" },
+      ],
+      standing: "central",
+    },
+  };
+
+  assert.deepEqual(roundTrip(graded).importance, graded.importance);
+});
+
+test("🔴 no reading comes back as NO reading — never as a middle value", () => {
+  // The failure this forbids is the quietest one available in the whole system: an object we could
+  // not place in its document coming back as "we looked and it was middling", which a controller
+  // then acts on by teaching it less. The learner is never told the reason was us.
+  const back = roundTrip(CAUSAL);
+  assert.equal(back.importance, undefined);
+  assert.ok(!("importance" in back), "an unread object must not gain the key on the way back");
+});
+
 // ── the benchmark's three stages ────────────────────────────────────────────
 
 test("🔴 capability, dedup and semantic negatives stay three different things", () => {

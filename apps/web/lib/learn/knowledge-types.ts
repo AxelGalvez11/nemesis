@@ -22,6 +22,7 @@
 import type { CanonicalSourceAnchor } from "@/lib/sources/source-context";
 import type { FigureLabel } from "./figure-labels";
 import type { ProcedureStep } from "./procedure-sequence";
+import type { SourceImportance } from "./source-importance";
 import type { ClassContrast } from "./wide-grid-classification";
 
 import type { SourceRef } from "./canvas-model";
@@ -491,6 +492,24 @@ export interface KnowledgeObject {
   /** The full generation record — which system, which lane, which model, which schema.
    *  🔴 Never learner cognition. See `ExtractionProvenance`. */
   provenance?: ExtractionProvenance;
+  /**
+   * How prominently the SOURCE treats this — and, more often, that we could not say.
+   *
+   * 🔴 PROMINENCE IN THE DOCUMENT, NEVER WORTH LEARNING. `central` means the source foregrounds it:
+   * it returns to it, gave it a heading, or emphasised it. Whether that makes it worth a learner's
+   * next minute depends on the knowledge TYPE and on what the learner needs, and both of those live
+   * downstream of perception. Measured on the owner's own syllabus, the material that document
+   * foregrounds most is its course schedule — those readings are correct, and acting on them as
+   * teaching priority would be the error.
+   *
+   * 🔴 ABSENT MEANS NOT OBSERVED, AND NEVER A MIDDLE VALUE. Two of every three objects extracted
+   * from the two production PDFs get no reading at all, because their cue is a bare number or a
+   * header cell. Defaulting those to "supporting" would make a limit of our matching look like a
+   * fact about the material — and a knowledge object marked less prominent because the parser could
+   * not trace it would be taught less, with the learner never told that the reason was us. Read it
+   * with `sourceImportance`; see lib/learn/source-importance.ts.
+   */
+  importance?: SourceImportance;
 }
 
 /**
