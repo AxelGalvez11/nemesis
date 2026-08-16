@@ -11,6 +11,7 @@
 /** Where the canvas is in the learning arc. The UI demonstrates this progression; the model
  *  never picks it — only an explicit user action or a validated transition op moves it. */
 import type { LearningEvent } from "./canvas-events";
+import type { CanvasVisualRequest } from "./canvas-visual";
 
 export type CanvasState =
   | "empty"
@@ -210,6 +211,8 @@ export interface CanvasBlock {
    *  for the same reason `sourceRefs` is: the model knows what it just introduced, and asking
    *  it afterwards would only invite it to invent something plausible. */
   terms?: BlockTerm[];
+  /** Optional semantic visual request. Trusted renderers own every pixel; this is never code. */
+  visual?: CanvasVisualRequest;
 }
 
 /** A concept is the unit the diagnosis speaks in. Nemesis has no global concept entity (we
@@ -354,6 +357,9 @@ export const RETRIEVAL_TASKS: readonly RetrievalTask[] = [
   "solve",
 ];
 
+/** How the learner produced an answer. This is raw provenance, not a score or capability claim. */
+export type LearnerInputModality = "typed" | "spoken" | "written";
+
 /** What a good performance would contain.
  *
  *  Every field is optional because different tasks are checked against different things: a
@@ -372,7 +378,7 @@ export interface ExpectedEvidence {
 /** One performance by the learner, in whatever modality they used. */
 export interface LearnerResponse {
   text: string;
-  via: "typed" | "spoken";
+  via: LearnerInputModality;
   /** Milliseconds from the task appearing to it being submitted. A signal, never a score (§23). */
   tookMs?: number;
 }
@@ -501,7 +507,7 @@ export interface CanvasResponse {
    *  rather than backfilled with a plausible lie. */
   at?: string;
   text: string;
-  via: "typed" | "spoken";
+  via: LearnerInputModality;
   tookMs?: number;
   /** True when the learner asked to see the answer instead of attempting it. That is itself
    *  evidence — we did not obtain a retrieval — and it is recorded rather than inferred. */
@@ -532,7 +538,7 @@ export interface RecallResult {
   grade: "again" | "hard" | "good" | "easy";
   /** What they produced, and what it showed. This is the evidence. */
   said?: string;
-  via?: "typed" | "spoken";
+  via?: LearnerInputModality;
   /** The learner asked to see the answer rather than attempting it. */
   revealed?: boolean;
   evaluation?: ResponseEvaluation;

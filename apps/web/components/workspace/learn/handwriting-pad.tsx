@@ -14,16 +14,9 @@
 // and spoken answers already use. Nothing here is a second way to submit an answer; it is a
 // third way to fill the box the one submit button already sends.
 //
-// 🔴 WHY THIS NEVER TOUCHES `via`. `canvas-composer.tsx`'s `onAnswer` takes `via: "typed" |
-// "spoken"`, a union that lives in lib/learn/canvas-model.ts and is read downstream to interpret
-// response latency differently for speech and typing. There is no third value for "drawn", and
-// this component does not invent one by relabelling: text placed here is submitted as `"typed"`
-// when the learner presses Send, which is honest in the way that matters for that signal — a
-// learner who drew or wrote by hand and then reviewed the result before sending took roughly
-// keyboard-speed to produce it, not speech-speed, so `"typed"` is the closer of the two available
-// labels rather than a lie of convenience. Provenance (that the text came from a photo or a
-// drawing) lives on the HandwritingObservation this pad produced, not on `via` — see the task
-// report's handoff notes for what lib/learn would need to carry that provenance any further.
+// Accepting the OCR result marks the shared composer input as `written`. That raw provenance
+// follows the answer and its durable evidence; it never changes the verdict or becomes an ability
+// claim. The text remains editable and unsent until the learner presses the one Send control.
 import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";

@@ -183,3 +183,19 @@ test("every row carries its mark alongside it, so the caller never re-derives it
   const ordered = orderedTerritories(territories, [], null);
   assert.equal(ordered[0]!.mark, null);
 });
+
+test("marks and ordering recurse through explicit subobjectives", () => {
+  const territories: readonly Territory[] = [{
+    children: [
+      { identityKeys: ["a"], label: "Alpha" },
+      { identityKeys: ["b"], label: "Bravo" },
+    ],
+    identityKeys: ["a", "b"],
+    label: "Parent",
+  }];
+  const evidence = [row("b", { demonstrationObtained: true, verdict: "strong" })];
+  const ordered = orderedTerritories(territories, evidence, "Bravo");
+  assert.equal(ordered[0]!.mark, "developing", "an untested child prevents parent overclaiming");
+  assert.equal(ordered[0]!.children?.[0]?.label, "Bravo");
+  assert.equal(ordered[0]!.children?.[0]?.mark, "established");
+});

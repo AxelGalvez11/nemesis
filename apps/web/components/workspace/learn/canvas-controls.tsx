@@ -45,6 +45,7 @@ import {
   recommendedTerritoryLabel,
   sourceDisclosure,
   type Territory,
+  type MarkedTerritory,
   type TerritoryMark,
 } from "./canvas-minimap";
 
@@ -408,12 +409,81 @@ export function MinimapControl({
   evidence: readonly LearnerEvidence[];
 }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const holder = useDismiss(open, () => setOpen(false));
 
   const recommended = recommendedTerritoryLabel(territories, decidedObjectiveKey, focus);
   const rows = orderedTerritories(territories, evidence, recommended);
   const disclosure = sourceDisclosure(outcome, coverage);
   const onWholeCanvas = focus.kind === "canvas";
+
+  const renderTerritory = (territory: MarkedTerritory, depth = 0, path = territory.label): React.ReactNode => {
+    const current = focus.kind === "selection" && focus.label === territory.label;
+    const isRecommended = territory.label === recommended;
+    const hasChildren = Boolean(territory.children?.length);
+    const isExpanded = expanded.has(path);
+    return (
+      <div key={path}>
+        <div className="flex items-center">
+          {hasChildren ? (
+            <button
+              aria-expanded={isExpanded}
+              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${territory.label}`}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
+              onClick={() => setExpanded((currentSet) => {
+                const next = new Set(currentSet);
+                if (next.has(path)) next.delete(path);
+                else next.add(path);
+                return next;
+              })}
+              type="button"
+            >
+              <Codicon name={isExpanded ? "chevron-down" : "chevron-right"} size="0.6875rem" />
+            </button>
+          ) : (
+            <span aria-hidden className="h-7 w-7 shrink-0" />
+          )}
+          <button
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
+              current && "bg-(--ui-bg-tertiary)",
+            )}
+            onClick={() => {
+              setFocus({ identityKeys: territory.identityKeys, kind: "selection", label: territory.label });
+              setOpen(false);
+            }}
+            style={{ paddingLeft: `${8 + depth * 12}px` }}
+            title={territory.mark ? TERRITORY_MEANING[territory.mark] : undefined}
+            type="button"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-[7px] w-[7px] shrink-0 rounded-full",
+                current && "ring-2 ring-(--ui-text-primary)/25",
+                territory.mark ? TERRITORY_DOT[territory.mark] : "bg-transparent",
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
+              {territory.label}
+              <span className="sr-only">
+                {territory.mark ? `. ${TERRITORY_MEANING[territory.mark]}` : ""}
+                {current ? ". Currently focused here." : ""}
+              </span>
+            </span>
+            {isRecommended && (
+              <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                Suggested next
+              </span>
+            )}
+          </button>
+        </div>
+        {hasChildren && isExpanded && (
+          <div>{territory.children!.map((child) => renderTerritory(child, depth + 1, `${path}/${child.label}`))}</div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="pointer-events-auto relative shrink-0" ref={holder}>
@@ -488,46 +558,7 @@ export function MinimapControl({
               Nothing to focus on within this canvas yet.
             </p>
           ) : (
-            rows.map((territory) => {
-              const current = focus.kind === "selection" && focus.label === territory.label;
-              const isRecommended = territory.label === recommended;
-              return (
-                <button
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
-                    current && "bg-(--ui-bg-tertiary)",
-                  )}
-                  key={territory.label}
-                  onClick={() => {
-                    setFocus({ identityKeys: territory.identityKeys, kind: "selection", label: territory.label });
-                    setOpen(false);
-                  }}
-                  title={territory.mark ? TERRITORY_MEANING[territory.mark] : undefined}
-                  type="button"
-                >
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "h-[7px] w-[7px] shrink-0 rounded-full",
-                      current && "ring-2 ring-(--ui-text-primary)/25",
-                      territory.mark ? TERRITORY_DOT[territory.mark] : "bg-transparent",
-                    )}
-                  />
-                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
-                    {territory.label}
-                    <span className="sr-only">
-                      {territory.mark ? `. ${TERRITORY_MEANING[territory.mark]}` : ""}
-                      {current ? ". Currently focused here." : ""}
-                    </span>
-                  </span>
-                  {isRecommended && (
-                    <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-                      Suggested next
-                    </span>
-                  )}
-                </button>
-              );
-            })
+            rows.map((territory) => renderTerritory(territory))
           )}
         </div>
       )}

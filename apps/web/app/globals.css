@@ -880,6 +880,8 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
    experience of the surface and turns retrieval into an interface to wait on. */
 @keyframes canvas-swap-in { from { opacity: 0; } to { opacity: 1; } }
 .canvas-swap { animation: canvas-swap-in 140ms ease-out both; }
+@keyframes canvas-passage-enter { from { opacity: 0; } to { opacity: 1; } }
+.canvas-passage-enter { animation: canvas-passage-enter 180ms ease-out both; }
 
 /* The thinking state's caption, changing as the real step changes. Slower than
    the swap: this is ambient, and a fast flicker between phases reads as churn. */
@@ -948,6 +950,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
    cannot reach outside it. */
 @media (prefers-reduced-motion: reduce) {
   .canvas-swap,
+  .canvas-passage-enter,
   .canvas-phrase,
   .canvas-forming,
   .canvas-rewriting,

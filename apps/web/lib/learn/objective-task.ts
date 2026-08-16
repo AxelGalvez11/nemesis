@@ -11,7 +11,7 @@
 // Both are exercised by tests that reintroduce the specific defect, because a test that merely
 // checks "a task was produced" or "a row was written" passes through every one of these deaths.
 
-import type { ExpectedEvidence, LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
+import type { ExpectedEvidence, LearnerInputModality, LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
 import type { EvaluationInput } from "./canvas-prompts";
 import type { KnowledgeObject } from "./knowledge-types";
 import type { EvidenceVerdict } from "./learner-evidence";
@@ -507,6 +507,8 @@ export function evidenceForSubmission(input: {
   prompt: RetrievalPrompt;
   /** What the learner submitted. Null when a control produced the outcome and nothing was typed. */
   responseText: string | null;
+  /** Raw input provenance. It follows the performance unchanged to every objective row. */
+  responseModality?: LearnerInputModality;
   /**
    * How long the attempt took, when anything measured it.
    *
@@ -569,6 +571,7 @@ export function evidenceForSubmission(input: {
       outcome: byKey.get(target.identityKey) ?? null,
       prompt,
       responseText: input.responseText,
+      responseModality: input.responseModality,
       target,
       teachingStrategy: input.teachingStrategy,
       ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
@@ -638,6 +641,7 @@ function rowForTarget(input: {
   /** Whether the account covering this submission named no objective at all — see `objectiveEvidenceFor`. */
   accountNamedNothing: boolean;
   responseText: string | null;
+  responseModality?: LearnerInputModality;
   canvasId: string | null;
   occurredAt: string;
   tookMs?: number;
@@ -684,6 +688,7 @@ function rowForTarget(input: {
     // long producing this answer; they did not spend a quarter of it on each link. Splitting it
     // would be an interpretation, and a wrong one — the observation is the performance's.
     responseLatencyMs: input.tookMs,
+    responseModality: input.responseModality,
     responseText: input.responseText,
     scaffoldingLevel: prompt.scaffoldingLevel,
     taskId: prompt.id,
@@ -738,6 +743,7 @@ export function outcomeFor(
 export function unobtainedEvidence(input: {
   prompt: RetrievalPrompt;
   responseText: string | null;
+  responseModality?: LearnerInputModality;
   canvasId: string | null;
   occurredAt: string;
   /** Which controller chose the opportunity that produced nothing. 🔴 A non-attempt is an outcome
@@ -773,6 +779,7 @@ export function unobtainedEvidence(input: {
     occurredAt: input.occurredAt,
     prompt: input.prompt,
     responseText: input.responseText,
+    responseModality: input.responseModality,
     teachingStrategy: input.teachingStrategy,
     ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
   });

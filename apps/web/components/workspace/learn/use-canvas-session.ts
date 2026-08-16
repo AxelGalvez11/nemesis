@@ -41,6 +41,7 @@ import {
   conceptLabel,
   type CanvasBlock,
   type CanvasLevel,
+  type LearnerInputModality,
   type CanvasSource,
   type CanvasState,
   type LearningCanvas,
@@ -166,25 +167,25 @@ export interface CanvasSession {
     grade: "again" | "hard" | "good" | "easy",
     evidence?: {
       said?: string;
-      via?: "typed" | "spoken";
+      via?: LearnerInputModality;
       revealed?: boolean;
       evaluation?: ResponseEvaluation;
     },
   ) => Promise<void>;
   /** Retrieval by producing something rather than self-grading (§31). */
-  attemptRecall: (cardId: string, text: string, via: "typed" | "spoken") => Promise<void>;
+  attemptRecall: (cardId: string, text: string, via: LearnerInputModality) => Promise<void>;
   /** They asked to see the answer: recorded as a retrieval we did not obtain. */
   revealRecall: (cardId: string) => Promise<void>;
   answer: (questionId: string, picked: number) => void;
   /** Records the learner's own words and asks the judge what they show. */
-  respond: (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
+  respond: (questionId: string, text: string, via: LearnerInputModality, tookMs?: number) => Promise<void>;
   /** What the canvas is asking for right now — null while reading. */
   activeTask: ActiveTask | null;
   /** Move to the next prompt of the round, or off the end of it. */
   advanceTask: () => void;
   /** The ONE way a learner answers anything. Routes to the recall or the test path by what is
    *  currently being asked, so there is never a second answer field. */
-  answerActiveTask: (text: string, via: "typed" | "spoken", tookMs?: number) => Promise<void>;
+  answerActiveTask: (text: string, via: LearnerInputModality, tookMs?: number) => Promise<void>;
   /** "I don't know" — an explicit statement of state, which is real evidence, unlike a reveal
    *  shortcut that only tells us they looked. */
   admitUnknown: () => Promise<void>;
@@ -737,7 +738,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       grade: "again" | "hard" | "good" | "easy",
       evidence?: {
       said?: string;
-      via?: "typed" | "spoken";
+      via?: LearnerInputModality;
       revealed?: boolean;
       evaluation?: ResponseEvaluation;
     },
@@ -777,7 +778,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  and keeping only that would leave a spaced-repetition app with a text box on it — the
    *  evaluation is the thing Nemesis is actually for. */
   const attemptRecall = useCallback(
-    async (cardId: string, text: string, via: "typed" | "spoken") => {
+    async (cardId: string, text: string, via: LearnerInputModality) => {
       const said = text.trim();
       if (!said) return;
       const card = latest.current.recall.find((candidate) => candidate.id === cardId);
@@ -929,7 +930,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  Someone who just explained something at length must not lose their words because a judge
    *  timed out — an unjudged response simply carries no evidence (see diagnose). */
   const respond = useCallback(
-    async (questionId: string, text: string, via: "typed" | "spoken", tookMs?: number) => {
+    async (questionId: string, text: string, via: LearnerInputModality, tookMs?: number) => {
       const said = text.trim();
       if (!said) return;
 
@@ -1134,7 +1135,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const advanceTask = useCallback(() => setCursor((current) => current + 1), []);
 
   const answerActiveTask = useCallback(
-    async (text: string, via: "typed" | "spoken", tookMs?: number) => {
+    async (text: string, via: LearnerInputModality, tookMs?: number) => {
       const task = activeTaskRef.current;
       if (!task || task.answered) return;
       if (task.kind === "recall") await attemptRecall(task.id, text, via);

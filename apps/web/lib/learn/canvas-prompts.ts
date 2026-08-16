@@ -80,9 +80,17 @@ const TERMS_RULE =
   "the sentence containing it. Do not name ordinary words, words the document has already introduced, or words that " +
   "are merely long.";
 
+const VISUAL_RULE =
+  '"visual" is optional and is a SEMANTIC REQUEST, never rendering code. Use it only when a visual makes a relationship materially easier to understand than the prose. ' +
+  'Allowed shapes are: {"kind":"equation","latex":"…","learningGoal":"…","caption":"…"}; ' +
+  '{"kind":"relationship","nodes":[{"id":"n1","label":"…"}],"edges":[{"from":"n1","to":"n2","label":"…"}],"learningGoal":"…","caption":"…"}; ' +
+  'or {"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}],"learningGoal":"…","caption":"…"}. ' +
+  "Leave it absent when text is clearer. Never emit HTML, SVG, Mermaid, JavaScript, React, renderer names, styling, or arbitrary code. " +
+  "The prose must still explain the idea; the visual is a representation of it, not a replacement for teaching.";
+
 const BLOCK_SHAPE =
-  'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…]}. ' +
-  `Do not include an id — ids are assigned by the application.\n\n${TERMS_RULE}`;
+  'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…],"visual":{…}}. ' +
+  `Do not include an id — ids are assigned by the application.\n\n${TERMS_RULE}\n\n${VISUAL_RULE}`;
 
 function materialSection(sources: readonly CanvasSource[], topic: string): string {
   const grounding = groundingBlock(sources);
@@ -497,12 +505,14 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         `The task they were set (${TASK_INTENT[input.task]}):\n"${input.prompt}"\n\n` +
         (standard ? `${standard}\n\n` : "") +
         `It is about the concept "${input.objective.label}".\n\n` +
-        `They ${input.response.via === "spoken" ? "said out loud" : "wrote"}:\n"${input.response.text}"\n\n` +
+        `They ${input.response.via === "spoken" ? "said out loud" : input.response.via === "written" ? "wrote by hand" : "typed"}:\n"${input.response.text}"\n\n` +
         (input.response.via === "spoken"
           ? "This was dictated, so it arrives as speech: filler words, false starts, self-corrections and missing " +
             "punctuation are normal and mean nothing about their understanding. Judge what they were getting at. " +
             "Where they corrected themselves, judge the correction, not the first attempt.\n\n"
-          : "") +
+          : input.response.via === "written"
+            ? "This was transcribed from handwriting or a drawing and may contain OCR errors. Judge the learner's intended reasoning, not transcription artifacts.\n\n"
+            : "") +
         ((input.context?.hintsUsed ?? 0) > 0
           ? `They used ${input.context?.hintsUsed} hint(s) before answering, so this is assisted rather than unaided recall.\n\n`
           : "") +

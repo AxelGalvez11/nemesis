@@ -921,17 +921,13 @@ review CSS.
 
 ## UI-002 — the Minimap surface
 
-**STATUS** 🔴 **RECONCILED 2026-08-15 — not "BLOCKED," and not done either.** The dependency this
-row named is satisfied. A real substrate is merged and deployed. **No learner can reach a Minimap
-today** — there is no rendered surface at all, confirmed by searching the whole `.tsx` tree, not by
-reading what the data layer intends.
+**STATUS** ✅ **IMPLEMENTED 2026-08-16.** The Minimap is rendered, focus is live, and explicit
+semantic structure supports collapsible parents and children without guessing from headings.
 **PRIORITY** P2
-**DEPENDENCIES** ✅ `BRAIN-003` merged and deployed (see its section). ❌ The hierarchical
-territory/prerequisite contract still does not exist — see below, it is a *narrower*, still-real gap
-than "blocked on Brain."
-**BLOCKS** the learner choosing territory
+**DEPENDENCIES** ✅ `BRAIN-003` and the open semantic-relation substrate.
+**BLOCKS** nothing
 
-### What is actually built — a data/logic layer, wired one hook deep, rendered nowhere
+### What is actually built
 
 **First, a naming trap this task's own brief walked into, worth naming so the next reader does not
 repeat it:** three files share the word "territory" and only one of them is Minimap infrastructure.
@@ -940,7 +936,7 @@ repeat it:** three files share the word "territory" and only one of them is Mini
 |---|---|---|
 | `apps/web/lib/learn/knowledge-territory.ts` | Topic-first canvas construction — turns a typed topic ("teach me the top 35 drugs") into knowledge objects. The product's *front door* for topic canvases, unrelated to navigation. | No |
 | `apps/web/lib/learn/canvas-territory.ts` + `supabase/migrations/20260813T01_canvas_territory.sql` | A **build-once cache** for the above — stops a topic canvas from re-generating (and re-paying for) a new, different set of knowledge objects every time it is opened. A performance/cost fix, not a navigation surface. | No |
-| `apps/web/lib/learn/canvas-focus.ts` | `FocusScope`, `applyFocus`, `availableTerritories` — a flat, per-canvas list of selectable knowledge groupings, explicitly commented "safe to paint on the Minimap." | **Yes — this is the one.** |
+| `apps/web/lib/learn/canvas-focus.ts` | `FocusScope`, `applyFocus`, `availableTerritories` — per-canvas knowledge groupings, with hierarchy only where explicit semantic parent/category/whole relations support it. | **Yes — this is the one.** |
 
 Only `canvas-focus.ts` is Minimap substrate. It is wired one layer into the product:
 `use-policy-runtime.ts` imports it and exposes `focus`, `setFocus` and `territories` on the
@@ -948,24 +944,12 @@ Only `canvas-focus.ts` is Minimap substrate. It is wired one layer into the prod
 `territories: readonly {label, identityKeys}[]` — `use-policy-runtime.ts:100-103`, computed at
 `:417`, `:532`, `:1099`).
 
-**Nothing renders it.** Searched every `.tsx` file in `apps/web` for `.territories`, `.setFocus`,
-`.focus` read off the policy object, `FocusScope`, `availableTerritories`, `applyFocus`, `Territory`,
-`Minimap` — zero matches outside the hook itself and its test. The sole call site,
-`learning-canvas.tsx:100`, keeps the hook's return value in one `policy` object and passes the whole
-thing to `<CanvasPolicyView runtime={policy} .../>` (`learning-canvas.tsx:690`);
-`canvas-policy-view.tsx`, the component that receives it, never reads `territories`, `focus` or
-`setFocus` anywhere in its body. This is the same class of defect Integration found and named
-elsewhere on this board on 2026-08-15: "a named-but-never-called lane is a FAIL, not a PASS."
-
-**The hierarchical part is honestly, explicitly absent — by the file's own comment, not by omission.**
-`canvas-focus.ts:40-57` documents `MISSING_TERRITORY_CONTRACT`: there is no parent/child relation
-between knowledge objects anywhere in the system, so `availableTerritories` can only offer a flat
-list — one entry per distinct knowledge statement, nothing grouped, nothing clustered, no
-prerequisite edges. The file explicitly rejects the tempting shortcut of deriving hierarchy from
-document headings ("a heading records where text SAT, not what depends on what... once a tree
-rendered from headings is on screen, its wrongness is invisible"). This is a sourced negative claim,
-not a guess: the gap `docs/minimap-knowledge-territory.md` describes is still a gap, just a smaller
-one than "no substrate at all."
+**Resolved 2026-08-16.** `CanvasHeader` renders `MinimapControl`, which reads the policy runtime's
+territories, learner evidence and focus and writes back only a `FocusScope`. Parent rows are
+collapsible and both parents and children can be focused. `availableTerritories` introduces a
+parent only when two or more real objective leaves explicitly share a semantic hierarchy parent,
+classification category, or part-whole whole. Material without that evidence remains flat;
+document headings are still deliberately refused as a substitute for knowledge structure.
 
 **Even the mechanism-only proof is not clean.** `apps/web/scripts/territory-build-once-acceptance.mts`
 is the executable acceptance test for the *cache* (not the Minimap) — its own header states, as of

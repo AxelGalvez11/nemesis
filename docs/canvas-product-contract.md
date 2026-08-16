@@ -1145,17 +1145,15 @@ keep deciding which engine to invoke, and an arm picker is exactly that.
 
 # 41. 🔴 THE VISUALIZATION LAYER — a router, not a graphics library (owner, 2026-08-14)
 
-## 🛑 STATUS: PLANNED — one renderer exists, the ROUTER does not. NOT SCHEDULED ABOVE THE CORE.
+## STATUS: FIRST TRUSTED ROUTES SHIPPED — equation, relationship and quantitative. ADVANCED ROUTES REMAIN PLANNED.
 
-🔴 **KaTeX IS ALREADY INSTALLED AND RENDERING** — in `chat-markdown.tsx` and the Library note
-editor, via `rehype-katex`. It arrived for markdown maths, not as a teaching primitive, and
-nothing routes to it. That is the honest state: one renderer present by accident of another
-feature, and none of the decision-making described below. A guard
-(`visualization-roadmap.test.ts`) fails the moment any *other* renderer in the stack is installed
-while this line still claims it is planned — it caught KaTeX on its first run, which is why this
-paragraph exists.
+🔴 **Canvas now accepts a bounded semantic `visual` request on a teaching block.** Trusted
+code routes equations to KaTeX and renders simple conceptual relationships and quantitative
+series with deterministic SVG. The model cannot supply HTML, SVG, JavaScript, React, Mermaid, or
+renderer configuration. Geometry, advanced charting, and true 3D remain planned; extracted source
+figures continue through the separate evidence-backed figure path.
 
-Read this whole section as a description of where Canvas is **going**, not of what it does. It is
+Read the advanced routes in this section as a description of where Canvas is **going**, not of what it does. It is
 recorded now for one reason the owner stated plainly: *"preserve this as an architectural
 direction so we don't later lock Canvas into Mermaid-only diagrams or treat Three.js as the
 universal visualization system."* A decision made casually in a sprint — one library reached for

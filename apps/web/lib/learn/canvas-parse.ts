@@ -12,6 +12,7 @@
 import { balanceAnswerPositions } from "@/lib/workspace/test-answer-balance";
 
 import { mintBlockId } from "./canvas-ops";
+import { parseCanvasVisual } from "./canvas-visual";
 import {
   type BlockTerm,
   CANVAS_BLOCK_TYPES,
@@ -134,6 +135,7 @@ function toBlock(raw: unknown, known: ReadonlySet<string>, sources: readonly Can
   const refs = usableRefs(raw.sourceRefs, sources);
   const conceptIds = usableConcepts(raw.conceptIds, known);
   const terms = usableTerms(raw.terms, content, known);
+  const visual = parseCanvasVisual(raw.visual);
   return {
     id: mintBlockId(),
     type: blockType(raw.type),
@@ -141,6 +143,7 @@ function toBlock(raw: unknown, known: ReadonlySet<string>, sources: readonly Can
     ...(refs.length ? { sourceRefs: refs } : {}),
     ...(conceptIds.length ? { conceptIds } : {}),
     ...(terms.length ? { terms } : {}),
+    ...(visual ? { visual } : {}),
   };
 }
 

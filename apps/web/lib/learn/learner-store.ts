@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 
 import type { LearnerEvidence, EvidenceVerdict } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
+import type { LearnerInputModality } from "./canvas-model";
 import { objectivesForKnowledge, type LearningObjective, type ObjectiveCapability } from "./learning-objective";
 import { readRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
 import { isTeachingStrategy, type TeachingStrategyId } from "./teaching-strategy";
@@ -356,6 +357,8 @@ export interface EvidenceToRecord {
    */
   responseId: string;
   responseText?: string | null;
+  /** Raw input provenance. Absent means the legacy writer did not observe it. */
+  responseModality?: LearnerInputModality | null;
   taskId?: string | null;
   // ── Observations about the attempt ────────────────────────────────────────
   //
@@ -444,6 +447,7 @@ export function evidenceRow(userId: string, evidence: EvidenceToRecord): Record<
     // "not observed", it means the row cannot be counted or deduplicated at all.
     response_id: evidence.responseId,
     response_latency_ms: evidence.responseLatencyMs ?? null,
+    response_modality: evidence.responseModality ?? null,
     response_text: evidence.responseText ?? null,
     scaffold_rung: evidence.scaffoldRung ?? null,
     scaffolding_level: evidence.scaffoldingLevel ?? null,
@@ -512,7 +516,7 @@ export const EVIDENCE_COLUMNS: readonly string[] = [
  * from the write shape, and this literal cannot drift from the derived list.
  */
 export const EVIDENCE_SELECT =
-  "id,objective_id,canvas_id,confidence,demonstration_obtained,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_text,scaffold_rung,scaffolding_level,task_id,teaching_strategy,verdict";
+  "id,objective_id,canvas_id,confidence,demonstration_obtained,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_modality,response_text,scaffold_rung,scaffolding_level,task_id,teaching_strategy,verdict";
 
 export async function recordEvidence(userId: string | null, evidence: EvidenceToRecord): Promise<boolean> {
   if (!userId) return false;
@@ -603,6 +607,9 @@ export function evidenceFromRow(
       ? {}
       : { objectiveEvidence: row.objective_evidence as ObjectiveEvidence }),
     ...(row.response_latency_ms == null ? {} : { responseLatencyMs: row.response_latency_ms as number }),
+    ...(row.response_modality === "typed" || row.response_modality === "spoken" || row.response_modality === "written"
+      ? { responseModality: row.response_modality }
+      : {}),
     ...(row.scaffolding_level == null ? {} : { scaffoldingLevel: row.scaffolding_level as number }),
     ...(row.response_id == null ? {} : { responseId: row.response_id as string }),
     ...(row.response_text == null ? {} : { responseText: row.response_text as string }),

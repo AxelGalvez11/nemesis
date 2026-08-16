@@ -23,7 +23,6 @@
 // canvas, and nothing here may ever be read by `diagnose()` — see canvas-events.ts for the
 // same rule stated about interaction telemetry, and the calibrated test that enforces it.
 
-import { frictionCount } from "./canvas-events";
 import type { BlockTerm, CanvasBlock, LearningCanvas } from "./canvas-model";
 
 export type { BlockTerm };
@@ -40,12 +39,6 @@ const MAX_PER_BLOCK_ADVANCED = 1;
  *  candidates the model felt like naming. A heading gets nothing. A 40-word paragraph gets at
  *  most one. This is the numeric form of "subtle". */
 const WORDS_PER_MARK = 25;
-
-/** Asking about the same term this many times is no longer a lookup, it is friction — and a
- *  term that will not stick is worth re-marking. Below it, one answer is assumed to have
- *  landed and the mark is retired, because re-offering a definition someone just read is the
- *  fastest way to make the annotation layer feel stupid. */
-const FRICTION_THRESHOLD = 3;
 
 /** A term that survived the gate, located in the block's CURRENT text. */
 export interface MarkedTerm {
@@ -90,28 +83,9 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-/** Everything the learner has been judged to have shown, lowercased.
- *
- *  Drawn from evaluations rather than from the self-reported level, because this is the one
- *  learner-relative signal with actual evidence under it: a judge looked at what they wrote and
- *  recorded what it demonstrated. */
-function demonstratedText(canvas: VocabularyCanvas): string[] {
-  const out: string[] = [];
-  for (const response of canvas.responses) {
-    for (const shown of response.evaluation?.demonstrated ?? []) out.push(shown.toLowerCase());
-  }
-  for (const result of canvas.recallResults) {
-    for (const shown of result.evaluation?.demonstrated ?? []) out.push(shown.toLowerCase());
-  }
-  return out;
-}
-
 /** Only the parts of a canvas this gate is allowed to see. Narrow on purpose: a function that
  *  cannot reach `weakConceptIds` cannot accidentally start deciding what someone knows. */
-export type VocabularyCanvas = Pick<
-  LearningCanvas,
-  "level" | "responses" | "recallResults" | "events"
->;
+export type VocabularyCanvas = Pick<LearningCanvas, "level">;
 
 /** Which terms in this block to mark, in reading order.
  *
@@ -120,16 +94,15 @@ export function markedTerms(block: CanvasBlock, canvas: VocabularyCanvas): Marke
   const candidates = block.terms ?? [];
   if (candidates.length === 0) return [];
 
-  // The learner has said they know this, or folded it away. Annotating it anyway would be
-  // arguing with them about their own reading.
-  if (block.known || block.collapsed) return [];
+  // A folded passage has no visible words to annotate. `known` deliberately does NOT retire the
+  // affordance: demonstrated mastery changes proactive teaching, not what the learner may open.
+  if (block.collapsed) return [];
 
   const ceiling =
     canvas.level === "advanced" || canvas.level === "exam" ? MAX_PER_BLOCK_ADVANCED : MAX_PER_BLOCK;
   const budget = Math.min(ceiling, Math.floor(wordCount(block.content) / WORDS_PER_MARK));
   if (budget < 1) return [];
 
-  const shown = demonstratedText(canvas);
   const picked: MarkedTerm[] = [];
 
   for (const candidate of candidates) {
@@ -137,15 +110,6 @@ export function markedTerms(block: CanvasBlock, canvas: VocabularyCanvas): Marke
 
     const term = candidate?.term?.trim();
     if (!term) continue;
-
-    // They have already used this correctly. Marking it would be condescending, and worse, it
-    // would be the system ignoring its own evidence.
-    if (shown.some((text) => text.includes(term.toLowerCase()))) continue;
-
-    // Asked once or twice: they got an answer, retire the mark. Asked three times: the answer
-    // is not sticking, so bring it back. This changes what is DISPLAYED and nothing else.
-    const asked = frictionCount(canvas, term);
-    if (asked > 0 && asked < FRICTION_THRESHOLD) continue;
 
     // 🔴 Located against the block's text as it stands right now, never against the text the
     // term was named in. "Simpler" rewrites blocks in place, and a term the rewrite removed

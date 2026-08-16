@@ -121,3 +121,11 @@ test("the control opens and closes the same way its siblings do — useDismiss, 
   const body = await minimapBody();
   assert.match(body, /useDismiss\(open, \(\) => setOpen\(false\)\)/, "MinimapControl no longer shares the panel dismissal pattern");
 });
+
+test("explicit parent territories expose a separate collapse control", async () => {
+  const body = await minimapBody();
+  assert.match(body, /aria-expanded=\{isExpanded\}/);
+  assert.match(body, /chevron-down/);
+  assert.match(body, /chevron-right/);
+  assert.match(body, /territory\.children/);
+});

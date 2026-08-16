@@ -24,6 +24,7 @@ import {
   type LearningCanvas,
   type SourceRef,
 } from "./canvas-model";
+import { parseCanvasVisual, type CanvasVisualRequest } from "./canvas-visual";
 import { canTransition } from "./canvas-state";
 
 /** A block the model proposes. It never chooses ids — we mint those, so a model cannot
@@ -33,10 +34,11 @@ export interface ProposedBlock {
   content: string;
   sourceRefs?: SourceRef[];
   conceptIds?: string[];
+  visual?: CanvasVisualRequest;
 }
 
 export type CanvasOp =
-  | { operation: "replace_block"; blockId: string; content: string; sourceRefs?: SourceRef[]; conceptIds?: string[] }
+  | { operation: "replace_block"; blockId: string; content: string; sourceRefs?: SourceRef[]; conceptIds?: string[]; visual?: CanvasVisualRequest | null }
   | { operation: "insert_before"; blockId: string; block: ProposedBlock }
   | { operation: "insert_after"; blockId: string; block: ProposedBlock }
   | { operation: "delete_block"; blockId: string }
@@ -235,7 +237,7 @@ function checkOp(raw: unknown, ctx: CheckContext): string | null {
       const anchor = blockProblem(raw.blockId, ctx);
       if (anchor) return anchor;
       if (typeof raw.content !== "string" || raw.content.trim() === "") return "Empty content.";
-      return refProblem(raw.sourceRefs, ctx) ?? conceptProblem(raw.conceptIds, ctx);
+      return refProblem(raw.sourceRefs, ctx) ?? conceptProblem(raw.conceptIds, ctx) ?? visualProblem(raw.visual, true);
     }
 
     case "annotate_block": {
@@ -271,10 +273,15 @@ function firstBlockProblem(blocks: readonly unknown[], ctx: CheckContext): strin
       return `Unknown block type ${JSON.stringify(block.type)}.`;
     }
     if (typeof block.content !== "string" || block.content.trim() === "") return "Empty content.";
-    const problem = refProblem(block.sourceRefs, ctx) ?? conceptProblem(block.conceptIds, ctx);
+    const problem = refProblem(block.sourceRefs, ctx) ?? conceptProblem(block.conceptIds, ctx) ?? visualProblem(block.visual, false);
     if (problem) return problem;
   }
   return null;
+}
+
+function visualProblem(value: unknown, removable: boolean): string | null {
+  if (value === undefined || (removable && value === null)) return null;
+  return parseCanvasVisual(value) ? null : "Malformed or unsupported semantic visual.";
 }
 
 /** A citation that does not resolve is worse than no citation — it is a claim of provenance
@@ -321,6 +328,7 @@ function materialise(proposed: ProposedBlock): CanvasBlock {
     content: proposed.content,
     ...(proposed.sourceRefs?.length ? { sourceRefs: proposed.sourceRefs } : {}),
     ...(proposed.conceptIds?.length ? { conceptIds: proposed.conceptIds } : {}),
+    ...(proposed.visual ? { visual: proposed.visual } : {}),
   };
 }
 
@@ -354,7 +362,7 @@ function invalidateReadWhereContentChanged(
     if (!was || block.readAt === undefined) return block;
     // 🔴 `note` COUNTS. An annotation is material added to the block that the learner has not read,
     // even though the paragraph itself is untouched — so the region owes reading again.
-    if (was.content === block.content && was.note === block.note) return block;
+    if (was.content === block.content && was.note === block.note && JSON.stringify(was.visual) === JSON.stringify(block.visual)) return block;
     return { ...block, readAt: undefined };
   });
 }
@@ -376,6 +384,7 @@ export function applyOps(canvas: LearningCanvas, ops: readonly CanvasOp[]): Lear
                 // would break "where did this come from?" on exactly the blocks people edit.
                 ...(op.sourceRefs?.length ? { sourceRefs: op.sourceRefs } : {}),
                 ...(op.conceptIds?.length ? { conceptIds: op.conceptIds } : {}),
+                ...(op.visual !== undefined ? { visual: op.visual ?? undefined } : {}),
               }
             : block,
         );

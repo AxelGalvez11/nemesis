@@ -41,6 +41,7 @@ const RECORD: EvidenceToRecord = {
   operation: "explain",
   responseId: "resp-1",
   responseLatencyMs: 20_000,
+  responseModality: "written",
   responseText: "AT1 blockade lowers aldosterone, so less potassium is excreted.",
   scaffoldRung: "independent",
   scaffoldingLevel: 0,
@@ -114,6 +115,7 @@ const COLUMN_TO_FIELD: Record<string, keyof LearnerEvidence | null> = {
   operation: "operation",
   response_id: "responseId",
   response_latency_ms: "responseLatencyMs",
+  response_modality: "responseModality",
   response_text: "responseText",
   scaffold_rung: "scaffoldRung",
   scaffolding_level: "scaffoldingLevel",
@@ -192,6 +194,7 @@ test("write shape → stored row → read shape preserves every observation", ()
   const loaded = evidenceFromRow(storedRow(), "objective-key-1");
   assert.equal(loaded.operation, "explain");
   assert.equal(loaded.responseLatencyMs, 20_000);
+  assert.equal(loaded.responseModality, "written");
   assert.equal(loaded.scaffoldingLevel, 0);
   assert.equal(loaded.confidence, 0.8);
   assert.equal(loaded.evaluatorVersion, "eval/3");

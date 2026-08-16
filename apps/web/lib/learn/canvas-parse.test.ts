@@ -117,6 +117,35 @@ test("a missing title falls back to the first heading rather than being blank", 
   assert.equal(parseLesson(raw, SOURCES)?.title, "Thermodynamics");
 });
 
+test("a bounded semantic visual survives lesson parsing", () => {
+  const raw = JSON.stringify({
+    title: "RAAS",
+    concepts: [],
+    blocks: [{
+      type: "paragraph",
+      content: "ACE inhibition lowers angiotensin II.",
+      visual: {
+        kind: "relationship",
+        learningGoal: "Predict downstream effects of ACE inhibition",
+        nodes: [{ id: "ace", label: "ACE inhibition" }, { id: "a2", label: "Angiotensin II decreases" }],
+        edges: [{ from: "ace", to: "a2", label: "causes" }],
+      },
+    }],
+  });
+  assert.equal(parseLesson(raw, SOURCES)?.blocks[0]?.visual?.kind, "relationship");
+});
+
+test("arbitrary visual code is discarded while its teaching block survives", () => {
+  const raw = JSON.stringify({
+    title: "Unsafe",
+    concepts: [],
+    blocks: [{ type: "paragraph", content: "Still useful prose.", visual: { kind: "svg", code: "<script>" } }],
+  });
+  const block = parseLesson(raw, SOURCES)?.blocks[0];
+  assert.equal(block?.content, "Still useful prose.");
+  assert.equal(block?.visual, undefined);
+});
+
 // -------------------------------------------------------------------- recall
 
 test("recall cards parse with concept and get ids", () => {

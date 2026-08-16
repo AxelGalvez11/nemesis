@@ -71,7 +71,7 @@ const RECORD_FOR_COLUMNS = {
 };
 
 /** The one row a single-objective judged answer produces. */
-function judged(response: { text: string; via: "typed" | "spoken"; tookMs?: number }) {
+function judged(response: { text: string; via: "typed" | "spoken" | "written"; tookMs?: number }) {
   return evidenceForSubmission({
     // Pre-experiment boundary test: no controller chose this, and `null` says so.
     teachingStrategy: null,
@@ -80,6 +80,7 @@ function judged(response: { text: string; via: "typed" | "spoken"; tookMs?: numb
     judgement: judgementOf([outcomeFor(OBJECTIVE, EVALUATION)]),
     prompt: PROMPT,
     responseText: response.text,
+    responseModality: response.via,
     ...(response.tookMs !== undefined ? { tookMs: response.tookMs } : {}),
   })[0]!;
 }
@@ -99,6 +100,30 @@ test("a fast answer and a slow one differ only in the number", () => {
   // 🔴 THE POINT OF THE WHOLE TRACK. Everything else about these two demonstrations is identical,
   // because the log records what happened and says nothing about what it is worth.
   assert.deepEqual({ ...fast, responseLatencyMs: 0 }, { ...slow, responseLatencyMs: 0 });
+});
+
+test("🔴 written input provenance survives without changing the judgement", () => {
+  const built = judged({ text: "Cozaar", tookMs: 14_200, via: "written" });
+  assert.equal(built.responseModality, "written");
+
+  const stored = evidenceRow("user-1", built);
+  assert.equal(stored.response_modality, "written");
+  const loaded = evidenceFromRow(
+    {
+      ...stored,
+      id: "row-written",
+      misconceptions: [],
+      occurred_at: built.occurredAt,
+    },
+    OBJECTIVE.identityKey,
+  );
+  assert.equal(loaded.responseModality, "written");
+
+  const typed = projectLearnerState(OBJECTIVE.identityKey, [
+    { ...loaded, id: "typed", responseModality: "typed" },
+  ]);
+  const handwritten = projectLearnerState(OBJECTIVE.identityKey, [loaded]);
+  assert.deepEqual(handwritten, typed, "input modality became a learner-state judgement");
 });
 
 // ── 2. nothing interprets it ────────────────────────────────────────────────
