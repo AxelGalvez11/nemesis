@@ -18,6 +18,7 @@ import type { EvidenceVerdict } from "./learner-evidence";
 import type { LearningObjective, ObjectiveCapability } from "./learning-objective";
 import type { EvidenceToRecord, StoredObjective } from "./learner-store";
 import type { ClassContrast } from "./wide-grid-classification";
+import { stagedRung } from "./scaffold-prompt";
 import type { ObjectiveEvidence, ScaffoldRung } from "./scaffold-rung";
 import type { TeachingStrategyId } from "./teaching-strategy";
 
@@ -400,6 +401,24 @@ export function retrievalPromptFor(
   const predicting = objective.capability === "predict";
   const discriminating = objective.capability === "discriminate" && Boolean(knowledge.contrast);
   const sequencing = objective.capability === "sequence";
+  const base = predicting
+    ? predictionPromptText(objective)
+    : sequencing
+      ? sequencePromptText(objective)
+      : discriminating && knowledge.contrast
+        ? discriminationPromptText(objective, knowledge.contrast)
+        : objectivePromptText(objective);
+  // 🔴🔴 THE RUNG NOW REACHES THE QUESTION, AND UNTIL THIS LINE IT NEVER DID. `rung` arrived here,
+  // was passed to `promptTargeting`, and was written onto every evidence row — while `prompt` was
+  // worded from the capability alone. A `narrowed` retrieval and an `independent` one produced
+  // BYTE-IDENTICAL text: the learner met the same sentence and the log recorded that the second one
+  // had been made easier. That is this repo's recurring failure shape, and it matters now because
+  // the controller has `harder` and `easier` as real moves. See `scaffold-prompt.ts`.
+  //
+  // 🔴 `stagedRung` RESOLVES BOTH TOGETHER SO THEY CANNOT DISAGREE. Some rungs cannot be worded for
+  // some objectives — a one-word answer has no honest cue — and in that case it returns the full
+  // question AND `independent`, so what the row claims is always what the learner met.
+  const staged = stagedRung({ base, objective, wanted: rung ?? "independent" });
   return promptTargeting({
     expectedAnswer: objective.answer,
     // 🔴 THE CLASS LABEL IS REQUIRED; THE REASONING IS NOT. The source printed the label, so a
@@ -426,13 +445,7 @@ export function retrievalPromptFor(
     // today, so the two are the same value — and writing the literal here is precisely how they
     // would stay the same after a second capability ships, with every prediction filed as a recall.
     operation: objective.capability,
-    prompt: predicting
-      ? predictionPromptText(objective)
-      : sequencing
-        ? sequencePromptText(objective)
-        : discriminating && knowledge.contrast
-          ? discriminationPromptText(objective, knowledge.contrast)
-          : objectivePromptText(objective),
+    prompt: staged.prompt,
     targets: [targetFor(objective)],
     // An association asks for a term, not an account. The judge is told this so it checks the
     // production rather than marking a one-word answer down for being short — and a prediction is
@@ -445,7 +458,11 @@ export function retrievalPromptFor(
     // procedure's structure IS its order. Filing it as `name` would record every attempt at a
     // sequence as producing a term.
     task: predicting ? "predict" : sequencing ? "reconstruct" : discriminating ? "compare" : "name",
-    ...(rung !== undefined ? { rung } : {}),
+    // 🔴 THE STAGED RUNG, NOT THE REQUESTED ONE. Writing what was asked for rather than what was
+    // delivered is the whole defect being closed here: a row must record the demand the learner
+    // actually met, or `meanScaffoldingLevel` and every claim built on it describe a session that
+    // did not happen.
+    rung: staged.rung,
   });
 }
 

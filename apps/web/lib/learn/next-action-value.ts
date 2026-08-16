@@ -306,7 +306,12 @@ export function value(input: ValueInput): ActionValue {
   // assignment just decided was provisional — the one case this modifier must never touch.
   let provisional = false;
 
-  if (action.type === "show_correction") {
+  // 🔴 `teach` AND `simplify` SIT IN THE EXPOSITION BAND FOR THE SAME REASON `show_correction` DOES:
+  // all three are material the learner is being put in front of, and none of them is a question. The
+  // structured policy does not emit either today — only the model controller does — but a band that
+  // silently fell through to a learner-state branch would score an exposition as though it were a
+  // retrieval, and the fallback path can score any action the decision it rescued happens to carry.
+  if (action.type === "show_correction" || action.type === "teach" || action.type === "simplify") {
     score = BAND.exposition;
     reasons.push("owed-an-answer");
   } else if (action.type === "contrast") {

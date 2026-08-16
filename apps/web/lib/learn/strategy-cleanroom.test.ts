@@ -88,7 +88,7 @@ function scripted(reply: unknown): { transport: TeacherTransport; calls: () => n
 
 test("🔴 the baseline arm REACHES A MODEL, and the structured arm cannot", async () => {
   const { calls, transport } = scripted({
-    action: "retrieve",
+    move: "ask",
     because: "nothing is known about this one yet",
     objective: CANDIDATES[2]!.objective.identityKey,
   });
@@ -171,7 +171,7 @@ test("🔴 the two arms DISAGREE on the same canvas, same evidence, same clock",
 
   const structured = await nemesisPolicyStrategy.decide(context({ evidence: [missed] }));
   const { transport } = scripted({
-    action: "retrieve",
+    move: "ask",
     because: "I would rather open new ground than dwell on a miss",
     objective: CANDIDATES[2]!.objective.identityKey,
   });
@@ -220,7 +220,7 @@ test("🔴🔴 same objective, same action: the question and the evidence are ID
   // be the wording or the marking rather than the teaching, and the experiment measures a confound.
   const target = CANDIDATES[1]!;
   const { transport } = scripted({
-    action: "retrieve",
+    move: "ask",
     because: "this one is untouched",
     objective: target.objective.identityKey,
   });
@@ -305,7 +305,7 @@ test("🔴🔴 a model naming an objective that is not on the canvas REFUSES —
   // one that reads plausibly. Fuzzy-matching it, or falling through to `decideNext`, would turn a
   // failed baseline into a working one and report the two arms as equivalent.
   const { transport } = scripted({
-    action: "retrieve",
+    move: "ask",
     because: "this looks like the right sort of thing",
     objective: "association/losartan-ish",
   });
@@ -317,7 +317,7 @@ test("🔴🔴 a model naming an objective that is not on the canvas REFUSES —
 
 test("🔴 an action outside the shared vocabulary refuses rather than inventing a move", async () => {
   const { transport } = scripted({
-    action: "explain_at_length",
+    move: "explain_at_length",
     because: "I would rather lecture",
     objective: CANDIDATES[0]!.objective.identityKey,
   });
@@ -362,7 +362,7 @@ test("🔴 DECLINING is a decision, not a refusal — restraint must not read as
   // an arm that correctly declines to re-ask established material look broken, and "unnecessary
   // questions on already-established material" is one of the outcomes being compared.
   const { transport } = scripted({
-    action: null,
+    move: null,
     because: "they have just demonstrated everything here",
     objective: null,
   });
@@ -376,17 +376,53 @@ test("🔴 the baseline may not invent a misconception to teach against", async 
   // is a claim about a person, and only the evidence log records the ones a judge actually observed.
   // A model-supplied list would let the baseline teach against mistakes nobody made.
   const { transport } = scripted({
-    action: "contrast",
+    move: "contrast",
     because: "they keep mixing this up",
     competingWith: ["a belief nobody ever recorded"],
     objective: CANDIDATES[0]!.objective.identityKey,
   });
   const outcome = await createLlmTeacherStrategy(transport).decide(context());
+  // 🔴🔴 REFUSED, NOT EMITTED WITH AN EMPTY LIST — AND THAT IS A STRENGTHENING OF THIS TEST RATHER
+  // THAN A RELAXATION. It used to assert `competingWith: []`, which held the invariant that matters
+  // (a model-supplied belief never reaches the action) while shipping the learner a contrast screen
+  // with nothing on it to contrast: a degraded surface that looks exactly like a working one. There
+  // is nothing to separate, so the move is not available for this objective, the refusal is counted,
+  // and the fallback answers with something real.
+  assert.equal(outcome.decision, null, "a contrast with nothing to contrast must not be staged");
+  assert.equal(outcome.refusal, "unknown-action");
+  // The volunteered belief reached nothing at all, which is the original point.
+  assert.equal(JSON.stringify(outcome).includes("a belief nobody ever recorded"), false);
+});
+
+test("🔴 a contrast IS staged when the log really holds a competing belief, and it names the LOG's", async () => {
+  // The other half of the pair, and it is what stops the refusal above from being a rule that simply
+  // disables `contrast`. A guard that can only ever refuse is indistinguishable from a broken lane.
+  const observed = "the one a judge actually saw";
+  const { transport } = scripted({
+    because: "they keep mixing this up",
+    competingWith: ["a belief nobody ever recorded"],
+    move: "contrast",
+    objective: CANDIDATES[0]!.objective.identityKey,
+  });
+  const withMisconception = {
+    ...context(),
+    evidence: [
+      {
+        demonstrationObtained: false,
+        id: "row-mis",
+        misconceptions: [observed],
+        objectiveIdentityKey: CANDIDATES[0]!.objective.identityKey,
+        occurredAt: "2026-08-15T09:00:00.000Z",
+        verdict: "misconception" as const,
+      },
+    ],
+  };
+  const outcome = await createLlmTeacherStrategy(transport).decide(withMisconception);
   const action = outcome.decision?.action;
   assert.equal(action?.type, "contrast");
   assert.deepEqual(
     action?.type === "contrast" ? action.competingWith : null,
-    [],
-    "🔴 with no misconception in the log there is nothing to contrast, whatever the model volunteered",
+    [observed],
+    "🔴 the log's belief, never the model's",
   );
 });

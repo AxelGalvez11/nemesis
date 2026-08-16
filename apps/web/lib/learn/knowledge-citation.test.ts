@@ -251,14 +251,20 @@ test("🔴 the surface renders it, and renders NOTHING when there is nothing hon
     /function SourceTrail\(\{ citations \}[\s\S]{0,200}?if \(citations\.length === 0\) return null;/,
     "an empty list must render nothing at all, by returning null before any markup",
   );
-  // 🔴 BOTH SCREENS THAT SHOW A CLAIM, NOT JUST THE CORRECTION. `show_correction` and `contrast`
-  // both print a claim off the same `decision`; disclosing the origin on one and not the other
-  // makes the same fact look sourced in one place and unsourced in the other.
-  assert.equal(
-    (VIEW.match(/<SourceTrail citations=\{citations\} \/>/g) ?? []).length,
-    2,
-    "every screen that shows a claim must disclose where it came from",
-  );
+  // 🔴 EVERY SCREEN THAT SHOWS A CLAIM, NOT JUST THE CORRECTION. Disclosing the origin on one screen
+  // and not another makes the same fact look sourced in one place and unsourced in the other.
+  //
+  // 🔴🔴 DERIVED FROM THE SCREENS RATHER THAN A LITERAL, AND THE LITERAL IS WHY. This asserted `2`,
+  // which was correct while `show_correction` and `contrast` were the only two claim-bearing
+  // screens — and it is exactly the kind of number that goes stale silently. A third screen that
+  // shows a claim and FORGETS the trail would have made this go red for the right reason; a third
+  // that remembers it would have made it go red for the wrong one, and the tempting fix is to bump
+  // the number. Counting both sides means adding a screen can only fail this when the screen is
+  // actually missing its disclosure.
+  const claimScreens = (VIEW.match(/\{decision\.objective\.cue\} → \{decision\.objective\.answer\}/g) ?? []).length;
+  const trails = (VIEW.match(/<SourceTrail citations=\{citations\} \/>/g) ?? []).length;
+  assert.ok(claimScreens >= 2, `expected the claim-bearing screens to still exist, found ${claimScreens}`);
+  assert.equal(trails, claimScreens, "every screen that shows a claim must disclose where it came from");
   // 🔴 NO FALLBACK, AND THIS IS THE HALF THAT PROTECTS THE CONTRACT. `groundCanonicalAnchor`
   // returning null is the function saying it cannot honestly point at anything; a placeholder would
   // convert that refusal into a claim. These are the exact shapes such a placeholder takes.

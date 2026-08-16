@@ -23,6 +23,7 @@
 // controllers' decisions under one experiment label, which silently makes both arms' numbers
 // meaningless rather than loudly breaking anything.
 
+import type { AttentionBudget, TeachingAct } from "./attention-budget";
 import type { DeclaredMode } from "./canvas-continue";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import type { Exposition } from "./cognitive-mode";
@@ -41,12 +42,53 @@ import type { TeachingAction } from "./teaching-policy";
  * `strategy-outcomes.ts`. Renaming one orphans every row already written under the old name — the
  * rows do not become wrong, they become uncountable, which is worse because nothing errors.
  */
-export type TeachingStrategyId = "nemesis_policy" | "llm_teacher";
+export type TeachingStrategyId = "nemesis_policy" | "llm_teacher" | "nemesis_policy_fallback";
 
-export const TEACHING_STRATEGIES: readonly TeachingStrategyId[] = ["nemesis_policy", "llm_teacher"];
+export const TEACHING_STRATEGIES: readonly TeachingStrategyId[] = [
+  "nemesis_policy",
+  "llm_teacher",
+  "nemesis_policy_fallback",
+];
 
-/** The arm every session runs unless something says otherwise. */
-export const DEFAULT_STRATEGY: TeachingStrategyId = "nemesis_policy";
+/**
+ * The arms a session may be ASSIGNED to.
+ *
+ * 🔴 `nemesis_policy_fallback` IS NOT AMONG THEM, AND THAT IS THE WHOLE REASON IT IS A SEPARATE
+ * VALUE. Nobody is enrolled into it and no URL can select it. It is what gets STAMPED on a row when
+ * the model controller could not decide and the structured policy answered in its place — a fact
+ * about one turn, never a cohort. Randomising into it would be randomising into "the other arm
+ * broke", which is not a treatment.
+ */
+export const ASSIGNABLE_STRATEGIES: readonly TeachingStrategyId[] = ["nemesis_policy", "llm_teacher"];
+
+/**
+ * The arm every session runs unless something says otherwise.
+ *
+ * 🔴🔴 THIS MOVED, AND IT IS THE PRODUCT CHANGE THIS FILE EXISTS TO CARRY. It was `nemesis_policy`
+ * — a hand-written value function with four bands and eight tuned modifiers — and the owner has
+ * ruled: *"Move teaching strategy toward model reasoning rather than continuing to accumulate
+ * handcrafted pedagogical constants… Do not preserve an intentionally starved LLM simply to preserve
+ * the old experiment."*
+ *
+ * The structured policy is not deleted and is not weakened. It remains a real arm, selectable by
+ * override and by randomisation, and it is what a fallback falls back TO — which is exactly the
+ * baseline the comparison needs. What changed is which one a learner meets by default.
+ *
+ * 🔴 AND THE REASON IT HAD TO MOVE RATHER THAN BOTH BEING FIXED. The drill trap measured in
+ * `docs/canvas-teaching-policy-audit.md` §3 — eight consecutive misses, every one answered "ask
+ * again", an untouched objective losing every round — cannot be repaired in the structured arm
+ * without writing the attention economics a second time as heuristics. That is the duplicated system
+ * the owner's own ordering rule puts fourth, and the Bitter Lesson constraint puts last.
+ */
+export const DEFAULT_STRATEGY: TeachingStrategyId = "llm_teacher";
+
+/** Which arm answers when the assigned one cannot. 🔴 Named here rather than at the call site so
+ *  "what happens when the model is unreachable" has exactly one answer in the codebase. */
+export const FALLBACK_STRATEGY: TeachingStrategyId = "nemesis_policy";
+
+/** The id a fallback decision is RECORDED as. 🔴 Never `nemesis_policy`: a turn the model failed to
+ *  decide must not be counted as a turn the structured arm was chosen for. */
+export const FALLBACK_RECORDED_AS: TeachingStrategyId = "nemesis_policy_fallback";
 
 export function isTeachingStrategy(value: unknown): value is TeachingStrategyId {
   return typeof value === "string" && (TEACHING_STRATEGIES as readonly string[]).includes(value);
@@ -75,7 +117,19 @@ export type DecisionRationale =
    * offer when it chose — because a controller picking one of two is doing less work than one
    * picking one of forty, and the comparison has to be able to see that.
    */
-  | { by: "llm_teacher"; because: string; candidates: number };
+  | { by: "llm_teacher"; because: string; candidates: number }
+  /**
+   * The structured policy answered because the model controller could not.
+   *
+   * 🔴🔴 A THIRD VARIANT RATHER THAN REUSING `nemesis_policy`'s, BECAUSE THE ROW HAS TO BE
+   * EXCLUDABLE. The experiment's whole risk, spelled out at length under `StrategyRefusal`, is a
+   * silent fallback making the two arms one arm and reporting them as equivalent. Shipping the model
+   * controller as the default means the product now NEEDS a fallback — a learner must not meet a
+   * blank canvas because an upstream provider blinked — so the fallback exists and is loud instead
+   * of absent. It carries the refusal that caused it, so "how often did the model arm fail" is a
+   * count and not a guess.
+   */
+  | { by: "nemesis_policy_fallback"; after: StrategyRefusal; selection: ActionValue };
 
 /**
  * The next Canvas action — what a controller returns, and the only thing the Canvas consumes.
@@ -154,6 +208,33 @@ export interface StrategyOutcome {
   strategy: TeachingStrategyId;
   decision: TeachingDecision | null;
   refusal: StrategyRefusal | null;
+  /**
+   * Objectives the controller decided to spend this minute away from, before it settled on the
+   * decision above.
+   *
+   * 🔴🔴 THE HALF OF "FIRST-CLASS `advance`" THAT IS EASY TO FORGET AND WOULD STALL THE LOOP. A
+   * controller that answers "move on from this one" has made a real decision, and the Canvas still
+   * has to put SOMETHING in front of the learner — so the objective is set aside and the controller
+   * is asked again. Without this list the runtime would never learn which ones were passed over, ask
+   * about them again on the very next turn, and the learner would meet the same skipped material for
+   * ever: the drill trap rebuilt out of the mechanism meant to end it.
+   *
+   * 🔴 IT IS RUNTIME STATE AND NEVER EVIDENCE. Deciding not to spend a minute on something says
+   * nothing about whether the learner knows it, so not one row is written from this. It dies with
+   * the sitting, exactly like `actedOn`.
+   *
+   * Empty on every ordinary turn, which is the common case.
+   */
+  movedOn?: readonly MovedOn[];
+}
+
+/** One objective passed over, and why. 🔴 The reason is the controller's own sentence, carried so a
+ *  human reviewing a session can see what it was thinking. Nothing branches on it. */
+export interface MovedOn {
+  objectiveIdentityKey: string;
+  /** `advance` or `revisit` — they mean different things and both end this objective's turn. */
+  action: "advance" | "revisit";
+  because: string;
 }
 
 /**
@@ -185,11 +266,68 @@ export interface TeachingContext {
    * it up should know they are turning on a signal, not fixing a hole.
    */
   lookups?: readonly TermLookup[];
+  /**
+   * What this sitting has already staged, oldest first — every act, with its time.
+   *
+   * 🔴 A SUPERSET OF `actedOn`, AND BOTH ARE HERE ON PURPOSE. `actedOn` is a list of identity keys
+   * that `decideNext` reorders by; this carries the same events with WHAT was done and WHEN, which
+   * is what "time already spent on the current objective" and "recent teaching actions" are computed
+   * from. Replacing `actedOn` with this would have meant editing the structured arm to accommodate
+   * the model arm's needs, and that arm's own header forbids exactly that.
+   *
+   * Absent means nothing has been staged, or the caller does not track it — the same honest default
+   * every other optional field here uses.
+   */
+  recentActs?: readonly TeachingAct[];
+  /**
+   * How much attention this sitting has, and how much of it is gone.
+   *
+   * 🔴🔴 THE INPUT WHOSE ABSENCE WAS THE DRILL TRAP. With no cost term a controller cannot weigh
+   * "another minute here" against "a minute somewhere else", which is why `advance` was unreachable
+   * from any state except `correct`. See `attention-budget.ts`.
+   *
+   * 🔴 OPTIONAL, AND ITS ABSENCE MEANS UNKNOWN RATHER THAN UNLIMITED. A controller told nothing about
+   * time must not conclude it has plenty.
+   */
+  attention?: AttentionBudget;
+  //
+  // 🔴 THERE IS DELIBERATELY NO `scope` FIELD HERE, THOUGH COVERAGE IS AN OBJECTIVE OF THE PRODUCT.
+  // How much material has been reached is DERIVED from `objectives` and `evidence`, both of which
+  // are already on this context — see `teachingSnapshot`. Passing it in as well would be two sources
+  // for one fact, and the day they disagree the controller is told a coverage figure that does not
+  // describe the list it is choosing from. The narrowing that focus applies is exactly right here:
+  // material the learner has scoped themselves out of is not what this minute is competing against.
   /** Who is learning. 🔴 Required by an arm that reaches a model, so the call is metered against
    *  the same budget every other Canvas model call is. Never read by `nemesis_policy`. */
   uid: string | null;
   /** Threaded so "we stopped waiting" and "it stopped" are the same event. */
   signal?: AbortSignal;
+}
+
+/**
+ * How much of this canvas's material has been reached, and how much of the important part.
+ *
+ * 🔴 COUNTS, NEVER A PERCENTAGE, AND NEVER A SCORE. A fraction computed here would be one number
+ * whose definition is frozen at the moment it was written — the same mistake `strategy-outcomes.ts`
+ * refuses by staying a projection. Counts can be divided by whoever needs a rate, under whatever
+ * definition they can defend.
+ *
+ * 🔴 AND THE IMPORTANT COUNTS ARE `null` UNTIL THE IMPORTANCE SIGNAL EXISTS, NOT `0`. "We cannot
+ * yet tell what matters in this document" and "none of it matters" are opposite facts. Racing
+ * through trivia and calling it coverage is the specific failure the owner named; reporting
+ * unweighted coverage as though it were weighted would hide exactly that.
+ */
+export interface MaterialScope {
+  /** Objectives the runtime can stage on this canvas, after focus. The denominator. */
+  total: number;
+  /** Of those, how many have any evidence at all. */
+  touched: number;
+  /** Of those, how many reached a demonstration Nemesis stands behind. */
+  demonstrated: number;
+  /** How many the source's own structure marks as central. `null` when importance is unread. */
+  importantTotal: number | null;
+  /** Of the important ones, how many reached a demonstration. `null` when importance is unread. */
+  importantDemonstrated: number | null;
 }
 
 /**
@@ -222,7 +360,13 @@ export function strategyOverrideFrom(value: string | null): TeachingStrategyId |
   // 🔴 EXACT NAMES ONLY, AND THEY ARE THE STORED NAMES. A friendly alias — `llm`, `ai`, `baseline` —
   // would be a second vocabulary for the same thing, and the moment one appears in a bug report
   // nobody can tell which arm was actually running. What the URL says is what the row says.
-  return isTeachingStrategy(value) ? value : null;
+  //
+  // 🔴 AND ONLY THE ASSIGNABLE ONES. `nemesis_policy_fallback` is a stored value, so
+  // `isTeachingStrategy` accepts it — but it describes something that HAPPENED to a turn, and a URL
+  // asking to run "the fallback arm" would produce rows claiming the model failed on turns where it
+  // was never asked.
+  if (!isTeachingStrategy(value)) return null;
+  return (ASSIGNABLE_STRATEGIES as readonly string[]).includes(value) ? value : null;
 }
 
 /** How this session came to be running the arm it is running. Recorded, so a result can be filtered
@@ -289,7 +433,11 @@ export function resolveStrategy(input: {
   if (!input.randomise || !input.learnerId) {
     return { assignedBy: "default", strategy: DEFAULT_STRATEGY };
   }
-  const arm = TEACHING_STRATEGIES[hash32(`${input.learnerId}:${input.canvasId}`) % TEACHING_STRATEGIES.length];
+  // 🔴 `ASSIGNABLE_STRATEGIES`, NOT `TEACHING_STRATEGIES`. The list of arms and the list of values
+  // the column may hold stopped being the same set the moment a recorded fallback existed, and
+  // randomising over the full list would enrol a third of learners into "the model arm broke".
+  const arm =
+    ASSIGNABLE_STRATEGIES[hash32(`${input.learnerId}:${input.canvasId}`) % ASSIGNABLE_STRATEGIES.length];
   return { assignedBy: "randomised", strategy: arm ?? DEFAULT_STRATEGY };
 }
 
