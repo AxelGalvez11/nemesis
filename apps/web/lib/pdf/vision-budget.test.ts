@@ -285,6 +285,198 @@ describe("the budget actually reaches the network, on every vision lane", () => 
   });
 });
 
+// =============================================================================
+// A batch whose reply will not line up is asked again, ONE PICTURE AT A TIME —
+// and every re-sent picture is reserved on the same ledger first.
+//
+// Measured on the owner's diabetes lecture: three routed figures, one request,
+// and the model answered in TWO entries because two of the images are halves of
+// one slide. The strict count check discarded a complete and correct answer, and
+// the document reported `described: 0`. Splitting fixes that; splitting WITHOUT
+// reserving re-sends images the ledger never granted, which is the unmetered-spend
+// hole the unit-economics audit closed and the reason the first attempt at this
+// fix was reverted. Both halves are pinned below.
+// =============================================================================
+
+/** A Gemini reply carrying exactly `entries` numbered lines — the shape `parseFigureDescriptions` reads. */
+function numberedReply(entries: number): string {
+  const lines = Array.from({ length: entries }, (_, index) => `${index + 1}. described figure ${index + 1}`);
+  return JSON.stringify({ candidates: [{ content: { parts: [{ text: lines.join("\n") }] } }] });
+}
+
+/** Three figures, the shape the real lecture routes. */
+function threeFigures(): { bytes: Uint8Array; mime: string; name: string }[] {
+  return ["a", "b", "c"].map((name) => ({ bytes: new Uint8Array([1, 2, 3]), mime: "image/png", name }));
+}
+
+/**
+ * Stand in for Gemini, recording how many images each request carried.
+ *
+ * `entriesFor` decides how many numbered entries come back for a request of N images, which is
+ * the ONLY knob these tests need: the whole defect is a reply whose entry count does not match.
+ */
+function stubGemini(entriesFor: (images: number) => number): { sent: number[]; restore: () => void } {
+  const before = globalThis.fetch;
+  const sent: number[] = [];
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { contents?: { parts?: unknown[] }[] };
+    const images = (body.contents?.[0]?.parts ?? []).filter((part) =>
+      Boolean((part as { inline_data?: unknown }).inline_data),
+    ).length;
+    sent.push(images);
+    return new Response(numberedReply(entriesFor(images)), { status: 200 });
+  }) as unknown as typeof fetch;
+  return { sent, restore: () => { globalThis.fetch = before; } };
+}
+
+describe("an unattributable batch is split into single pictures, and the split is paid for", () => {
+  test("the production case: three images answered in two entries are re-asked one at a time and all three land", async () => {
+    // 🔴 THE EXACT MEASURED FAILURE. Without the split this is `described: 0` — which is what
+    // the owner's lecture reported in production on 2026-08-16.
+    const gemini = stubGemini((images) => (images === 3 ? 2 : images));
+    const ledger = new VisionLedger(10);
+    let read;
+    try {
+      read = await withVisionBudget(ledger, () =>
+        readFiguresWithVision(threeFigures(), { env: { GEMINI_API_KEY: "k" } }),
+      );
+    } finally {
+      gemini.restore();
+    }
+    assert.equal(read.descriptions.size, 3, "every figure was described after the split");
+    assert.deepEqual(gemini.sent, [3, 1, 1, 1], "one batch of three, then each picture on its own");
+    assert.equal(read.unattributed.size, 0);
+    // 🔴 THE HALF THAT GOT THE FIRST ATTEMPT REVERTED. Six units: three for the batch that was
+    // discarded, and one for each picture re-asked. A split that skipped the ledger would send
+    // exactly the same six images and report three.
+    assert.equal(ledger.spend().units, 6, "the batch AND every re-sent picture were reserved");
+    assert.equal(
+      gemini.sent.reduce((total, images) => total + images, 0),
+      ledger.spend().units,
+      "units reserved and images put on the wire are the same number",
+    );
+  });
+
+  test("when the grant is exactly spent, the split is REFUSED — the old refusal is kept, not taken on credit", async () => {
+    // 🔴 THE REGRESSION THIS FIX MUST NOT BE. A ledger of 3 covers the batch and nothing more.
+    // The correct behaviour is the behaviour before the fix: no descriptions, honestly reported.
+    const gemini = stubGemini((images) => (images === 3 ? 2 : images));
+    const ledger = new VisionLedger(3);
+    let read;
+    try {
+      read = await withVisionBudget(ledger, () =>
+        readFiguresWithVision(threeFigures(), { env: { GEMINI_API_KEY: "k" } }),
+      );
+    } finally {
+      gemini.restore();
+    }
+    assert.deepEqual(gemini.sent, [3], "nothing was re-sent, because nothing was granted");
+    assert.equal(ledger.spend().units, 3, "the ledger was not overdrawn");
+    assert.equal(read.descriptions.size, 0);
+    assert.deepEqual([...read.unattributed].sort(), ["a", "b", "c"], "all three have no usable read");
+    // 🔴 SENT-AND-UNANSWERED IS NOT NEVER-SENT. `notSent` means the picture never left the
+    // process; these left it, were answered, and were billed. Filing them under `notSent` would
+    // report a document as cheaper than it was and hide a real request behind a budget word.
+    assert.equal(read.notSent.size, 0);
+  });
+
+  test("a grant that covers only part of the split sends that part and stops", async () => {
+    // Five units: three for the batch, two for the split. The third picture is refused.
+    const gemini = stubGemini((images) => (images === 3 ? 2 : images));
+    const ledger = new VisionLedger(5);
+    let read;
+    try {
+      read = await withVisionBudget(ledger, () =>
+        readFiguresWithVision(threeFigures(), { env: { GEMINI_API_KEY: "k" } }),
+      );
+    } finally {
+      gemini.restore();
+    }
+    assert.deepEqual(gemini.sent, [3, 1, 1], "two of the three pictures were affordable");
+    assert.equal(ledger.spend().units, 5, "spent exactly the allowance, not one unit more");
+    assert.equal(read.descriptions.size, 2);
+    assert.deepEqual([...read.unattributed], ["c"], "the picture the budget would not cover keeps its refusal");
+  });
+
+  test("a provider that never answered is NOT split — a dead ladder must not be paid for twice", async () => {
+    // 🔴 THE DISCRIMINATING TWIN OF THE FIRST TEST. Same batch size, same ledger, and the only
+    // difference is that no reply arrives at all. Splitting on this would re-send three images
+    // to a provider that just refused three, at three more units and three more full ladder
+    // walks, and would describe nothing either way. Only a reply that ARRIVED and would not line
+    // up is worth a second request.
+    const before = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: { code: 404, message: "no longer available" } }), {
+        status: 404,
+      })) as unknown as typeof fetch;
+    const ledger = new VisionLedger(50);
+    let read;
+    try {
+      read = await withVisionBudget(ledger, () =>
+        readFiguresWithVision(threeFigures(), { env: { GEMINI_API_KEY: "k" } }),
+      );
+    } finally {
+      globalThis.fetch = before;
+    }
+    assert.equal(ledger.spend().units, 3, "the batch was paid for once and nothing was re-sent");
+    assert.equal(
+      ledger.spend().calls,
+      VISION_MODEL_LADDER.length,
+      "one request per rung — a split would have made this four times larger",
+    );
+    assert.equal(read.reached, false);
+  });
+
+  test("a picture whose solo reply STILL will not line up is refused by name, never guessed at", async () => {
+    // 🔴 THE RULE THE COUNT CHECK EXISTS FOR, HELD THROUGH THE SPLIT. A caption on the wrong
+    // diagram is worse than no caption, so an answer that cannot be attributed is dropped even
+    // when a perfectly good sentence is sitting in it. Here the middle picture answers a solo
+    // request in TWO entries; it must end with NO description rather than with either one.
+    const before = globalThis.fetch;
+    const seen: number[] = [];
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { contents?: { parts?: unknown[] }[] };
+      const images = (body.contents?.[0]?.parts ?? []).filter((part) =>
+        Boolean((part as { inline_data?: unknown }).inline_data),
+      ).length;
+      seen.push(images);
+      // Request 1 is the batch of three, answered in two. Requests 2..4 are the singles, and
+      // the SECOND single (request 3) rambles into two entries.
+      if (images === 3) return new Response(numberedReply(2), { status: 200 });
+      return new Response(numberedReply(seen.length === 3 ? 2 : 1), { status: 200 });
+    }) as unknown as typeof fetch;
+    const ledger = new VisionLedger(10);
+    let read;
+    try {
+      read = await withVisionBudget(ledger, () =>
+        readFiguresWithVision(threeFigures(), { env: { GEMINI_API_KEY: "k" } }),
+      );
+    } finally {
+      globalThis.fetch = before;
+    }
+    assert.equal(read.descriptions.size, 2, "the two attributable pictures were described");
+    assert.equal(read.descriptions.has("b"), false, "and the one that would not line up was not");
+    assert.deepEqual([...read.unattributed], ["b"], "refused specifically, not as a whole batch");
+    assert.equal(ledger.spend().units, 6, "it was still asked about, so it was still paid for");
+  });
+
+  test("a batch of one is never split — the same request twice describes nothing and bills twice", async () => {
+    const gemini = stubGemini(() => 2); // never lines up, whatever is sent
+    const ledger = new VisionLedger(50);
+    try {
+      await withVisionBudget(ledger, () =>
+        readFiguresWithVision([{ bytes: new Uint8Array([1]), mime: "image/png", name: "only" }], {
+          env: { GEMINI_API_KEY: "k" },
+        }),
+      );
+    } finally {
+      gemini.restore();
+    }
+    assert.deepEqual(gemini.sent, [1], "one picture, one request — there is nothing smaller to ask");
+    assert.equal(ledger.spend().units, 1);
+  });
+});
+
 describe("a dead model ladder is a provider failure, not an empty answer", () => {
   test("reached is false when every model 404s", async () => {
     // 🔴 THE EXACT PRODUCTION STATE ON 2026-08-15. All three models on the old ladder
