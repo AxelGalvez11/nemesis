@@ -17,6 +17,13 @@ NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... SUPABASE_SERVICE_
 > workstreams were touching adjacent files at the time of the run, and a repair made mid-audit would
 > have made the numbers unattributable.
 
+> **Owner direction added after the measurements were taken.** The explicit study-time experiment
+> below remains useful evidence, but collecting a time budget is not a current product priority.
+> Nemesis is optimizing for the fastest learner-specific cognitive path through the important
+> structure of the material. Source importance is evidence for that decision, not the decision
+> itself, and a flat importance sort is only a near-term windowing improvement—not the final
+> teaching architecture.
+
 ---
 
 ## The one-sentence answer
@@ -157,16 +164,17 @@ that could, exactly **one object in six documents** is rated central.
 ### 2.1 🔴 Why: emphasis is recovered from no document at all
 
 Every single document reports the blind spot `emphasis-not-recovered` — 22, 31, 25, 48 objects
-respectively. Bold, highlighting and typographic emphasis is the strongest and most direct statement a
-lecturer makes about what matters, and it survives ingestion on **none** of the six.
+respectively. Bold, highlighting and typographic emphasis are among the strongest direct source
+signals a lecturer provides about what matters, and they survive ingestion on **none** of the six.
 
 `central` requires two independent observations agreeing. With emphasis gone, the observations
 available are mostly heading position and repetition, and two rarely agree. The design is right —
 one count promoting "Campus" or "Instructor" above a diagnostic threshold is a real failure the
 corroboration rule prevents — but the input it needs is not arriving.
 
-The practical consequence: **the high-yield ranking cannot currently be built on this signal**,
-because on real material the signal is almost constant.
+The practical consequence: **importance inference cannot currently use this signal**, because on
+real material it is almost constant. Recovering it restores evidence; emphasis alone does not define
+high yield or determine what should be taught next.
 
 ---
 
@@ -187,8 +195,11 @@ The model is briefed on at most **40** objectives per turn (`BRIEF_LIMIT`, added
 On the diabetes lecture the two central objectives happen to fall inside the window. That is luck of
 array order, not design — nothing arranges for it.
 
-**So the window, not the model, is the real gate on high-yield behaviour.** Even a perfect importance
-signal would not change what gets taught until the window is ordered by it.
+**So the window, not the model, is the immediate gate on what the controller can consider.** Sorting
+by recovered importance is a reasonable bottleneck fix, but a flat sort cannot express prerequisite
+leverage, downstream dependency, causal structure, compression, transfer, or learner-specific gaps.
+The longer-term architecture should retrieve the relevant part of the knowledge structure for the
+model to reason over.
 
 ---
 
@@ -250,9 +261,9 @@ targeted change, #452 a rewrite — and they conflict. That one needs an owner d
 
 ## 5b. What the controller actually decides — simulated learners on real material
 
-Four scenarios over the diabetes lecture's 95 objectives. Same document, same objectives, same
-starting state; only the learner's evidence and the attention budget change, so any difference is
-attributable to the input that differs. ~70 real model decisions in total.
+Five controlled scenarios over the diabetes lecture's 95 objectives. Each comparison holds the
+document and objectives fixed while varying the learner evidence, attention context, or whether all
+objectives have already been acted on. Roughly 80 real model decisions in total.
 
 ### 5b.1 🟢 The drill trap is genuinely fixed — and the old policy proves it by contrast
 
@@ -269,7 +280,7 @@ is irrelevant to what it then did** — §5b.6 shows that trigger was an artifac
 eight identical corrections are the structured policy's genuine behaviour on this input, and it is
 the behaviour a learner would meet any time the model arm refuses.
 
-### 5b.2 🔴 The time budget changes nothing
+### 5b.2 The explicit time-budget experiment changes nothing (diagnostic only)
 
 Identical learner, identical evidence, only the remaining time differs:
 
@@ -283,9 +294,10 @@ Identical learner, identical evidence, only the remaining time differs:
 | 6 | retrieve · SCREENING step 3 | retrieve · A1C conversion pair |
 
 Two minutes and three hours produce the same lesson. There is no triage, no compression, no change of
-depth. **The crammer behaviour the owner specified is not observable**, and this test was more
-generous than production — the runtime passes `availableMs: null` always, so a real learner cannot
-even express "I have 30 minutes."
+depth. **The legacy crammer behaviour is not observable**, and this test was more generous than
+production — the runtime passes `availableMs: null` always. This remains a valid measurement, but it
+is not a current product gap to close. Time may remain optional context if it becomes naturally
+available; the learning policy must not depend on asking the learner for a budget.
 
 ### 5b.3 🟢 `revisit` fires, under the condition it exists for — scenario E
 
@@ -362,10 +374,10 @@ because it looks exactly like one.
 | partial correctness | yes | yes |
 | confidence | recorded | deliberately unread |
 
-The one genuine gap is **available study time**: the runtime passes `availableMs: null` because
-nothing knows how long the sitting has. The controller is told this in words so an absent bound
-cannot read as an unlimited one — which is correct — but it means the "I have 30 minutes" case the
-owner describes cannot currently be expressed by a learner at all.
+**Available study time is absent**: the runtime passes `availableMs: null` because nothing knows how
+long the sitting has. The controller is told this in words so an absent bound cannot read as an
+unlimited one, which is correct. This is recorded for completeness, not as a current priority or a
+required learner input.
 
 ---
 
@@ -379,41 +391,42 @@ that is a gap in the corpus, not a defect in the code.
 
 ---
 
-## 8. Findings in priority order
+## 8. Findings and corrected action order
 
 **What works.** The teaching controller itself is the strongest part of the system. It escapes the
 drill trap, uses importance when importance exists, declines honestly when nothing is owed, and
 decides in about three seconds. Nothing below is a criticism of it — every item is something
 *upstream* of it, starving it or fencing it in.
 
-| # | Finding | Consequence |
-|---|---|---|
-| 1 | The causal prose lane is built and works, but is fed stale excerpts — 555 of 790 unanchorable — and is untemperatured | Zero causal knowledge in production; the lane has completed **once**, ever |
-| 2 | The deterministic extractor reads grids, lists and labelled figures only | 6 further knowledge types and 11 of 14 question forms are unreachable; a grid-free deck yields nothing |
-| 3 | Emphasis recovered from zero documents | Importance has no dynamic range: 1 central in 242 |
-| 4 | Brief window ignores importance and truncates by up to 128 | Even a good yield signal would not change teaching |
-| 5 | Time budget changes nothing, and cannot be supplied anyway | The crammer behaviour is unobservable; `availableMs` is always `null` |
-| 6 | Described figures still produce no knowledge without a label line | 9/9 described → 0 teachable |
-| 7 | Diagram generation absent from the action space | The visual-format decision cannot be made |
-| 8 | Web search exists; nothing turns its result into knowledge | "Teach me X" gives a prose answer, never a lesson |
-| 9 | Procedure lane mints objectives from headings and prose answers | Learners can be asked incoherent questions |
+| Finding | Consequence |
+|---|---|
+| The causal prose lane is built and works, but was fed stale excerpts — 555 of 790 unanchorable — and is untemperatured | At the audited commit, causal knowledge did not reach production |
+| The deterministic extractor reads grids, lists and labelled figures only | 6 further knowledge types and 11 of 14 question forms are unreachable; a grid-free deck yields nothing |
+| Emphasis recovered from zero documents | Importance evidence has almost no dynamic range: 1 central in 242 |
+| Brief window ignores importance and truncates by up to 128 | Much of the material cannot be considered by the controller |
+| Described figures still produce no knowledge without a label line | 9/9 described → 0 teachable |
+| Diagram generation absent from the action space | The visual-format decision cannot be made |
+| Web search exists; nothing turns its result into knowledge | "Teach me X" gives a prose answer, never a lesson |
+| Procedure lane mints objectives from headings and prose answers | Learners can be asked incoherent questions |
 
 Not in the table, because the audit closed it: `revisit` **does** fire, with a coherent reason, once
 a scenario creates the condition it exists for (§5b.3). `defer` remains unobserved.
 
-### The dependency between them
+### Current sequence
 
-**1 is the cheapest large win** — the capability exists and is two defects away from working, and it
-is already being fixed as this is written.
+1. **Recover emphasis** so the substrate retains real source evidence. Do not weaken the two-signal
+   corroboration rule, and do not equate emphasis with high yield.
+2. **Improve the 40-objective window** once that evidence has range. An importance-aware sort is an
+   immediate bottleneck fix; evolve toward retrieval of the knowledge neighborhood most relevant to
+   choosing the learner's next step.
+3. **Scope broader prose knowledge after observing the repaired causal lane.** Expand knowledge types
+   and relationships where they help the model reason about prerequisites, dependencies, causes,
+   organizing concepts, procedures, discriminations, quantitative and spatial relationships,
+   examples, and details.
 
-**3 is the root of the yield problem.** 4 is a one-file change but worthless until 3 is fixed, since
-ordering by a near-constant reorders nothing; and 5 is partly downstream of 4, because a controller
-that cannot see the important material cannot triage toward it under pressure.
+Figure-to-teaching, diagram generation, search-to-substrate, and procedure-lane quality remain
+independent. Explicit study-time collection is removed from the action queue.
 
-**2 is the biggest piece of work and should be scoped after 1 lands**, because 1 will show how well a
-model-driven lane reading real sentences actually performs — which is the same question 2 has to
-answer, over more knowledge types.
-
-Suggested order: **repair the causal lane → recover emphasis → order the window by importance → let a
-learner say how long they have → then scope the wider prose lane.** Findings 6–9 are independent and
-can run in parallel.
+The policy principle is the Bitter Lesson: Nemesis owns the substrate, evidence, tools, invariants,
+and objective; the general model increasingly owns the teaching policy. Do not replace missing
+intelligence with a large manually weighted pedagogical rule system.
