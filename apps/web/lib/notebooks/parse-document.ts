@@ -45,7 +45,7 @@ import { mistralCoverage } from "./extract-coverage";
 import { mistralHandles, readWithMistral } from "./mistral-ocr";
 import { llamaHandles, llamaTier, readWithLlama } from "./llamaparse-ocr";
 import { modelFromLlama, type LlamaResult } from "./llamaparse-model";
-import { claimOf, judgeMistralRead } from "./mistral-quality";
+import { claimOf, judgeFigureAccounting, judgeMistralRead } from "./mistral-quality";
 import { modelFromMistral, titleFromMistral, unitKindFor } from "./mistral-model";
 import { csvToModel } from "./csv-model";
 import { readCsv } from "./csv-structure";
@@ -56,8 +56,10 @@ import { normalizedFigures, type NormalizedFigure } from "./figure-assets";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
-import { readPdfStructure } from "@/lib/pdf/structure";
-import { lookAtFigures } from "@/lib/pdf/figure-look";
+import { readPdfStructure, type CapturedFigure } from "@/lib/pdf/structure";
+import { accountForFigures, NO_ACCOUNTING } from "@/lib/pdf/figure-accounting";
+import { lookAtFigures, type FigureLookResult } from "@/lib/pdf/figure-look";
+import { matchFigureImages } from "@/lib/pdf/figure-match";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { describeFiguresWithVision, readFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
@@ -148,8 +150,16 @@ export interface ParsedDocument {
   coverage: ExtractionCoverage;
   /** How the text was obtained, when it was not the file's own text layer. */
   readBy?: string;
-  /** Figures a deck had beyond the per-deck ceiling. */
-  skippedFigures: number;
+  /**
+   * Figures this lane could not process, having looked: past a ceiling, or with no pixels.
+   *
+   * 🔴 ABSENT MEANS NOBODY COUNTED, AND `0` NOW MEANS SOMEBODY COUNTED AND FOUND NONE. It was
+   * a required number, so every lane that had no figure pass at all wrote the literal `0` —
+   * the vendor lane among them, while it was silently examining no figure ever. That is this
+   * codebase's most repeated defect in one field: a missing measurement reported as a
+   * flattering measurement. A lane that did not look must now say nothing.
+   */
+  skippedFigures?: number;
   /**
    * The structural read: units, blocks, geometry, figures, truthful locators.
    *
@@ -291,6 +301,40 @@ interface VendorClients {
 const REAL_VENDOR_CLIENTS: VendorClients = { readWithLlama, readWithMistral };
 
 /**
+ * The images a PDF paints, and where. `null` when the file cannot be read that way.
+ *
+ * 🔴 A FAILURE HERE IS UNKNOWN, NEVER "NO FIGURES". Returning an empty model on a throw would
+ * hand the accounting below a document that paints nothing, so every vendor read would pass the
+ * figure gate and every one would report `skippedFigures: 0` — a broken decoder reported as a
+ * clean document. `null` means nobody looked, and every consumer of it says so.
+ *
+ * 🔴 AND IT COPIES THE BYTES. pdf.js DETACHES the buffer it is handed, and on the rejection path
+ * `parseDocument` hands the SAME bytes to the local PDF lane straight afterwards. Without the
+ * copy that lane reads zeroes, which does not throw — it silently reports an empty document.
+ */
+async function readFigureSource(
+  bytes: Uint8Array,
+  options: ParseOptions,
+): Promise<{ model: DocumentModel; images: ReadonlyMap<string, CapturedFigure> } | null> {
+  try {
+    const structural = await readPdfStructure(new Uint8Array(bytes), {
+      // Pixels cost a PNG decode each, so they are only paid for on the lane that can spend
+      // them. The GEOMETRY is read either way, so the gate holds on both lanes — an upload that
+      // will not look at a figure still refuses a read that lost one.
+      captureFigures: options.lookAtFigures === true,
+      detectTables: false,
+    });
+    return { images: structural.figureImages, model: structural.model };
+  } catch (cause) {
+    console.warn(JSON.stringify({
+      event: "vendor_figure_source_unavailable",
+      detail: cause instanceof Error ? cause.message.slice(0, 300) : String(cause).slice(0, 300),
+    }));
+    return null;
+  }
+}
+
+/**
  * Exported so a test can call it directly with a counting stub in place of the network client —
  * see `parse-document.test.ts`. Not part of `ParseOptions`; this is a test seam, not a product
  * knob, and it must not become one.
@@ -300,6 +344,7 @@ export async function parseWithVendor(
   fileName: string,
   mimeType: string,
   kind: DocumentKind,
+  options: ParseOptions = {},
   vendors: VendorClients = REAL_VENDOR_CLIENTS,
 ): Promise<ParseOutcome | null> {
   const vendor = vendorFor(kind);
@@ -388,13 +433,77 @@ export async function parseWithVendor(
     return null;
   }
 
+  // 🔴 THE PIXELS AND THE ACCOUNTING, BOTH FROM ONE PASS OVER THE ORIGINAL FILE. Mistral
+  // returns a figure's COORDINATES and refuses its bytes — `mistral-ocr.ts` sends
+  // `include_image_base64: false` on purpose, noting "the reader renders from the original file
+  // anyway". This is that render. Without it a vendor-parsed PDF can never describe a diagram,
+  // because nothing else in the process has ever decoded one: measured on the owner's diabetes
+  // lecture, the vendor lane returned 8 figures and examined 0 of 8, where the native lane it
+  // replaced routed 9 to vision.
+  //
+  // 🔴 IT IS NOT A SECOND PARSE AND MUST NEVER BECOME ONE. `pdfFigures.model` is read for
+  // exactly two things — the rectangles of the images the file paints, and the pixels behind
+  // them. Its text, its reading order, its tables and its unit counts are never consulted, and
+  // nothing it produces reaches `text`, `unitsNative`, `unitsVision` or `parserVersion`. That is
+  // the same line `parse-docling.ts` draws for the same reason; crossing it would rebuild the
+  // double parse the vendor lane exists to remove. `detectTables` is off for that reason too:
+  // this pass has no use for a grid.
+  const pdfFigures = kind === "pdf" ? await readFigureSource(bytes, options) : null;
+
+  // 🔴 THE FIGURE HALF OF THE QUALITY GATE, AND IT ASKS ABOUT REGIONS RATHER THAN COUNTS.
+  // A count test on this lecture says "3 figures lost"; a figure-to-figure geometric test says
+  // 5. Both would have rejected a read that lost nothing at all — five of those regions are
+  // screenshots of ADA tables that Mistral OCR'd into real tables. See `figure-accounting.ts`
+  // for the measurement. Only a region that arrived in NO form is loss, and that is what this
+  // refuses. Calibrated against production geometry rather than a fixture: strip the figure
+  // blocks out of this document's stored vendor model — the `image_limit: 0` failure — and the
+  // count goes 0 to 3 (`scripts/bakeoff-vendor-figures.ts --strip-figures`).
+  const accounting = pdfFigures ? accountForFigures(model, pdfFigures.model) : NO_ACCOUNTING;
+  const figureVerdict = judgeFigureAccounting(accounting);
+  if (!figureVerdict.ok) {
+    console.warn(
+      JSON.stringify({ detail: figureVerdict.detail, event: "vendor_quality_rejected", kind, missing: figureVerdict.missing, vendor }),
+    );
+    return null;
+  }
+
+  // 🔴 SAID OUT LOUD, BECAUSE `asContent` IS INVISIBLE EVERYWHERE ELSE. A region that arrived as
+  // a table rather than as a figure is not loss and so has no place in the coverage record — but
+  // it is the whole reason this gate is not a count, and if the vendor's behaviour ever changes
+  // this line is the only place that would show it. `absent` is always 0 here: a non-zero one
+  // returned above.
+  if (accounting.regions.length > 0) {
+    console.info(JSON.stringify({
+      asContent: accounting.asContent,
+      asFigure: accounting.asFigure,
+      event: "vendor_figure_accounting",
+      regions: accounting.regions.length,
+      vendor,
+    }));
+  }
+
+  // The vision pass the native lane runs, applied to the vendor's model. `matchFigureImages`
+  // pairs the vendor's figure rectangles with the images we just decoded for the SAME file;
+  // `lookAtFigures` spends from the ambient `VisionLedger` through `readFiguresWithVision`, so
+  // this lane debits the same per-document budget as every other and cannot become a second,
+  // unmetered door. A figure with no match keeps its honest reason and never fails the parse.
+  let looked: FigureLookResult | null = null;
+  if (pdfFigures && options.lookAtFigures) {
+    const matched = matchFigureImages(model, pdfFigures.model, pdfFigures.images);
+    looked = await lookAtFigures(model, matched.images);
+    model = looked.model;
+  }
+
   const unitsRead = new Set(
     model.blocks.filter((block) => block.text.trim() || block.table).map((block) => block.unit),
   ).size;
-  const figures = model.blocks.filter((block) => block.kind === "figure").length;
 
   let coverage = mistralCoverage({
-    figures,
+    // 🔴 WHAT THE MODEL SAYS AFTER THE PASS, NOT A COUNT ASSUMED UNEXAMINED. `mistralCoverage`
+    // could only ever build `described: 0, not-examined: N` from a bare number, which was true
+    // while no vendor figure was examined and would have gone on reporting it after this change
+    // — a coverage record contradicting the model beside it.
+    ...(looked ? { figureCoverage: figureCoverageOf(model) } : { figures: model.blocks.filter((block) => block.kind === "figure").length }),
     unitKind: coverageKindFor(kind),
     units: model.units.length,
     unitsRead,
@@ -413,7 +522,15 @@ export async function parseWithVendor(
     kind,
     model,
     readBy,
-    skippedFigures: 0,
+    // 🔴 PRESENT ONLY WHEN SOMETHING LOOKED. `overBudget` is a figure the router's per-document
+    // ceiling refused, `notSent` one the vision ledger would not pay for, `withoutPixels` one we
+    // routed and could not decode. All three are figures this lane skipped, which is what the
+    // field has always meant on the deck lane.
+    // With no pass — an Office file, or a PDF whose structural read threw — the field is absent,
+    // because "we did not look" is not "there were none".
+    ...(looked
+      ? { skippedFigures: looked.report.overBudget + looked.report.withoutPixels + looked.report.notSent }
+      : {}),
     text,
     title: model.title,
   };
@@ -472,7 +589,7 @@ export async function parseDocument(
   // anyway, so today this is ordering that documents an intent rather than ordering that changes
   // an outcome — which is precisely when it is cheap to get right.
   if (vendorFor(kind)) {
-    const read = await parseWithVendor(bytes, fileName, mimeType, kind);
+    const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
     if (read) return read;
   }
 

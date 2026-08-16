@@ -306,6 +306,37 @@ export interface VisionFigureRead {
   readonly labels: Map<string, FigureLabel[]>;
   /** True once any request returned a usable reply. False means nothing was ever read. */
   readonly reached: boolean;
+  /**
+   * Names that were never sent: the budget would not grant them, or they exceed the request
+   * ceiling.
+   *
+   * 🔴 THE SAME DISTINCTION `reached` MAKES, ONE LEVEL DOWN, AND IT WAS MISSING. A figure the
+   * ledger refused arrived back with no description, so the caller — which knew only that
+   * SOMETHING had been reached — recorded it as `examined-empty`: "a model looked at this and
+   * had nothing to say". Nothing looked at it. Measured by capping a real lecture's ledger at
+   * one unit: 3 figures routed, 1 described, and 2 reported as examined-and-empty having never
+   * left the process. That is a budget refusal wearing a verdict's name, and coverage cannot
+   * tell a student's document was cut short.
+   */
+  readonly notSent: ReadonlySet<string>;
+  /**
+   * Names that WERE sent and came back with no usable answer of their own.
+   *
+   * 🔴🔴 A DISCARDED BATCH IS NOT A VERDICT ABOUT A PICTURE, AND IT WAS BEING RECORDED AS ONE.
+   * `parseFigureDescriptions` refuses a reply whose entry count does not match the batch — it
+   * has to, because zipping a mismatched list attaches a confident caption to the wrong diagram.
+   * But the whole batch then vanishes, and the caller, seeing a request that HAD been reached,
+   * wrote `examined-empty` on every figure in it: "something looked at this and had nothing to
+   * say". Measured on the owner's diabetes lecture, sending the 3 figures the router picks: the
+   * model returned `finishReason: STOP` with a complete, correct answer in TWO numbered entries,
+   * because two of the images are halves of one slide and it described them together. Three real
+   * descriptions — one carrying §46.6 labels — were thrown away and three figures were recorded
+   * as examined and empty. It is not deterministic either: the same three images answered in
+   * three entries on an earlier run and all three descriptions landed.
+   *
+   * Keeping the strict count check is right. Reporting its cost as a verdict is not.
+   */
+  readonly unattributed: ReadonlySet<string>;
 }
 
 /**
@@ -328,7 +359,12 @@ export async function readFiguresWithVision(
   const env = options.env ?? process.env;
   const key = (env.GEMINI_API_KEY ?? "").trim();
   // An unconfigured key is NOT "reached and said nothing" — nothing was sent at all.
-  if (!key || images.length === 0) return { descriptions: out, labels: found, reached: false };
+  // Nothing was sent, but not because anything refused it — an unconfigured provider is
+  // `vision-unavailable`, which the caller already says. `notSent` names only the images a
+  // LIMIT held back, so it stays empty here.
+  if (!key || images.length === 0) {
+    return { descriptions: out, labels: found, notSent: new Set<string>(), reached: false, unattributed: new Set<string>() };
+  }
   // Flipped by the first request that comes back with a usable reply. Stays false when the
   // whole model ladder 404s, which is precisely the state that used to be indistinguishable
   // from a model looking at nine diagrams and having no comment on any of them.
@@ -344,7 +380,15 @@ export async function readFiguresWithVision(
   // Figures beyond the grant keep the `not-examined` reason they already have, which
   // coverage counts as a gap. A truncated document reports a shortfall rather than
   // reporting completion — the same rule `MAX_FIGURES_PER_DOC` follows.
-  const usable = withinLimit.slice(0, currentVisionLedger().take(withinLimit.length));
+  const granted = currentVisionLedger().take(withinLimit.length);
+  const usable = withinLimit.slice(0, granted);
+  // 🔴 NAMED, NOT MERELY ABSENT. Everything the ceiling or the ledger held back is reported so
+  // the caller can record "nobody could afford to look" instead of letting it inherit the
+  // verdict of the batch that did run. Without this the two are the same value downstream.
+  const notSent = new Set<string>([
+    ...images.filter((image) => !withinVisionLimit(image.bytes.byteLength)).map((image) => image.name),
+    ...withinLimit.slice(granted).map((image) => image.name),
+  ]);
   const batches: VisionImage[][] = [];
   for (let start = 0; start < usable.length; start += FIGURE_BATCH_SIZE) {
     batches.push(usable.slice(start, start + FIGURE_BATCH_SIZE));
@@ -354,6 +398,10 @@ export async function readFiguresWithVision(
   // Run a few at once so importing a real deck is a wait, not a coffee break —
   // but only a few, because each request carries megabytes of image data and the
   // provider rate-limits per key.
+  // Names whose batch produced a reply we could attribute entry-by-entry. Anything sent and
+  // missing from this at the end got no usable answer, whatever the reason.
+  const attributed = new Set<string>();
+
   const describeBatch = async (batch: VisionImage[]) => {
     const body = buildFigureRequest(
       batch.map((image) => ({ base64: Buffer.from(image.bytes).toString("base64"), mime: image.mime })),
@@ -364,6 +412,10 @@ export async function readFiguresWithVision(
     reached = true;
     const parsed = parseFigureDescriptions(reply.text, batch.length);
     if (!parsed) return;
+    // Attributed the moment the reply's entries line up with the batch — BEFORE asking what any
+    // entry says. An entry reading "none" is an answer about that picture; only a batch that
+    // never lined up leaves its images without one.
+    for (const image of batch) attributed.add(image.name);
     parsed.forEach((entry, index) => {
       const image = batch[index];
       if (!image || !entry) return;
@@ -385,7 +437,13 @@ export async function readFiguresWithVision(
     }
   });
   await Promise.all(workers);
-  return { descriptions: out, labels: found, reached };
+  return {
+    descriptions: out,
+    labels: found,
+    notSent,
+    reached,
+    unattributed: new Set(usable.map((image) => image.name).filter((name) => !attributed.has(name))),
+  };
 }
 
 /**

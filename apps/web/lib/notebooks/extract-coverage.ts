@@ -430,16 +430,27 @@ export function mistralCoverage(input: {
   unitKind: CoverageUnitKind;
   units: number;
   unitsRead: number;
-  figures: number;
+  /**
+   * Figures found, when nothing has looked at them yet — every one is reported `not-examined`.
+   *
+   * 🔴 A COUNT CAN ONLY EVER SAY "UNEXAMINED", WHICH IS WHY IT IS NOT THE ONLY WAY IN. Pass
+   * `figureCoverage` instead once a vision pass has run, or this record will keep insisting
+   * nobody looked while the model beside it holds descriptions.
+   */
+  figures?: number;
+  /** The model's own figure state, from `figureCoverageOf`, after a vision pass. */
+  figureCoverage?: FigureCoverage;
   truncation?: readonly TruncationRecord[];
 }): ExtractionCoverage {
   const read = Math.max(0, Math.min(input.unitsRead, input.units));
+  const found = input.figures ?? 0;
   return orUnaccounted(
     buildCoverage({
       figures:
-        input.figures > 0
-          ? { described: 0, found: input.figures, reasons: { "not-examined": input.figures }, skipped: input.figures }
-          : undefined,
+        input.figureCoverage ??
+        (found > 0
+          ? { described: 0, found, reasons: { "not-examined": found }, skipped: found }
+          : undefined),
       truncation: input.truncation,
       unitKind: input.unitKind,
       units: input.units,

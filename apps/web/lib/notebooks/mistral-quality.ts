@@ -218,3 +218,44 @@ export function judgeMistralRead(claim: ContentClaim, model: DocumentModel): Qua
 
   return { ok: true };
 }
+
+/**
+ * Did a painted region of this PDF fail to arrive in any form at all?
+ *
+ * 🔴🔴 THE PDF CASE THE FILE ITSELF CANNOT DECLARE, AND THE ONE PLACE THIS GATE ALMOST GOT
+ * BUILT WRONG. Every check above reads a claim out of an Office file's own XML. A PDF states
+ * nothing about itself, which is exactly why `judgeMistralRead` has never checked one — so the
+ * evidence has to come from a reading of the file, and the obvious reading is the wrong one.
+ *
+ * Measured on the owner's real diabetes lecture the day the vendor lane started winning PDFs:
+ * our reader finds 11 painted images, Mistral returned 8 figure blocks. "3 lost" is the count
+ * answer and it is false; matching figure-to-figure by geometry says 5 and that is more false
+ * still. Five of those regions are SCREENSHOTS OF TABLES, and Mistral read them — ADA Table
+ * 2.5, 2.8, 6.1, 6.3 and 15.2 came back as captions, tables and paragraphs over the same
+ * rectangles. A gate built on either number would have rejected a read that lost nothing and
+ * thrown away the table contents to protect figures that were never missing.
+ *
+ * So the claim is not "an image must come back as an image". It is "a region the file paints
+ * must come back as SOMETHING", and only `absent` counts. What that buys is the failure mode
+ * `mistral-ocr.ts` describes as catastrophic — `image_limit: 0`, where a lecture built out of
+ * diagrams returns no figures at all and coverage computes `complete` because nothing was found
+ * to be missing. Calibrated against that exact mutation on production geometry rather than a
+ * fixture: strip the figure blocks from the stored vendor model of that lecture and the count
+ * goes 0 to 3 (`scripts/bakeoff-vendor-figures.ts --strip-figures`).
+ *
+ * 🔴 ITS LIMIT, STATED RATHER THAN HIDDEN: presence is not proportion. One OCR'd axis label
+ * inside a diagram is enough to account for the whole diagram. This catches a region that
+ * arrived in no form, not one that arrived partially — and the honest shares measured on real
+ * documents run from 0.43 to 1.00 with no gap between them, so any proportion threshold here
+ * would be a number chosen to fit two documents rather than a boundary the data shows.
+ *
+ * PURE — it takes the counts, not the geometry, so nothing here can read a rectangle wrongly.
+ */
+export function judgeFigureAccounting(accounting: { absent: number; regions: readonly unknown[] }): QualityVerdict {
+  if (accounting.absent <= 0) return { ok: true };
+  return {
+    detail: `the file paints ${accounting.regions.length} image region(s) worth reading; ${accounting.absent} of them arrived in no form at all — not as a figure, not as text`,
+    missing: "figures",
+    ok: false,
+  };
+}
