@@ -105,7 +105,14 @@ export interface BusyState {
  *  `askGeneral` (canvas-wide, `blockId: null`) so both write the same shape and contract rule 2's
  *  "clears on the next turn" rule only has one store to apply to. Named so the `useState` call and
  *  the `CanvasSession` field below cannot quietly drift into two different shapes. */
-type CanvasAside = { text: string; blockId: string | null; sources?: readonly ChatWebResult[] } | null;
+type CanvasAside = {
+  text: string;
+  blockId: string | null;
+  sources?: readonly ChatWebResult[];
+  /** The learner's own question, retained only for the transient general-answer aside. It is the
+   *  explicit topic if they press "Learn this"; the answer text is never mistaken for their goal. */
+  question?: string;
+} | null;
 
 export interface CanvasSession {
   canvas: LearningCanvas;
@@ -161,6 +168,9 @@ export interface CanvasSession {
    * uses, with `blockId: null`.
    */
   askGeneral: (question: string) => Promise<void>;
+  /** Turn the current conversational answer into an active learning session. Cited web pages are
+   *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
+  learnFromAside: () => Promise<void>;
   markKnown: (blockId: string, known: boolean) => void;
   toggleCollapsed: (blockId: string, collapsed: boolean) => void;
   gradeRecall: (
@@ -700,10 +710,29 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       const result = await askCanvasChat(id, latest.current, said);
       setBusy({ kind: null });
       if (!result.text) setError(result.error ?? "Nemesis had nothing to add.");
-      else setAside({ blockId: null, sources: result.sources, text: result.text });
+      else setAside({ blockId: null, question: said, sources: result.sources, text: result.text });
     },
     [requireUid],
   );
+
+  /**
+   * Cross the boundary from information to learning only after the learner asks to.
+   *
+   * Ordinary questions remain ordinary answers. This action is the strong contextual evidence
+   * that the same question should now become a learning goal. Any live pages the answer actually
+   * cited are ingested through `attachUrl`, so web-grounded learning and uploaded-course learning
+   * converge on the same durable source and knowledge substrate.
+   */
+  const learnFromAside = useCallback(async () => {
+    const current = aside;
+    if (!current || current.blockId !== null || !current.question?.trim()) return;
+    const topic = current.question.trim();
+    const sources = current.sources ?? [];
+    setAside(null);
+    for (const source of sources) await attachUrl(source.url);
+    canvasCapture("canvas_learning_started_from_answer", latest.current, { webSources: sources.length });
+    begin(topic);
+  }, [aside, attachUrl, begin]);
 
   const markKnown = useCallback(
     (blockId: string, known: boolean) => {
@@ -1290,6 +1319,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     command,
     askAbout,
     askGeneral,
+    learnFromAside,
     markKnown,
     toggleCollapsed,
     gradeRecall,

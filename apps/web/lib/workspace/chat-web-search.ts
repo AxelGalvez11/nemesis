@@ -49,6 +49,28 @@ export function usableWebResults(results: ChatWebResult[]): ChatWebResult[] {
   return results.filter((result) => result.url && (result.title || result.description)).slice(0, MAX_WEB_RESULTS);
 }
 
+/**
+ * The pages an answer actually relied on, in answer order.
+ *
+ * Search results are evidence leads, not automatically useful learning material. Promoting every
+ * result into a Canvas would turn one cited answer into ten durable sources and make Brave's rank
+ * order the curriculum. The answer already contains the model's claim-level selection as [n]
+ * citations, so preserve that selection rather than inventing a second ranking rule here.
+ */
+export function citedWebResults(answer: string, sources: readonly ChatWebResult[]): ChatWebResult[] {
+  const cited: ChatWebResult[] = [];
+  const seen = new Set<number>();
+  for (const match of answer.matchAll(/\[(\d{1,2})\]/g)) {
+    const index = Number(match[1]) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= sources.length || seen.has(index)) continue;
+    const source = sources[index];
+    if (!source) continue;
+    seen.add(index);
+    cited.push(source);
+  }
+  return cited;
+}
+
 export function formatWebSearchContext(results: ChatWebResult[]): string {
   const usable = usableWebResults(results);
   if (usable.length === 0) return "";

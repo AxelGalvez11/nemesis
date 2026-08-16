@@ -767,6 +767,15 @@ export function LearningCanvas({
                   ))}
                 </div>
               )}
+              {session.aside.question && (
+                <button
+                  className="mt-3 rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  onClick={() => void session.learnFromAside()}
+                  type="button"
+                >
+                  Learn this
+                </button>
+              )}
               <button
                 className="mt-2 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
                 onClick={() => applyExplanationEvent({ kind: "dismiss_aside" })}

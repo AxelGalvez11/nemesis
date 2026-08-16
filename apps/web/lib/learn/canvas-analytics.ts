@@ -14,6 +14,9 @@ import type { CanvasState, LearningCanvas } from "./canvas-model";
 
 export type CanvasEvent =
   | "canvas_created"
+  // A conversational answer became a learning session because the learner explicitly asked it to.
+  // Carries a count of promoted cited pages, never the question or answer text.
+  | "canvas_learning_started_from_answer"
   | "source_attached"
   // Durable knowledge minted from an attached source. Counts only — never the extracted content,
   // which is the learner's own material.
