@@ -61,6 +61,11 @@ const FRAG = `
   uniform vec3 uFocus;
   uniform float uFocusAmt;
   uniform float uRadius;
+  uniform vec3 uWarm;
+  uniform vec3 uCool;
+  uniform float uTint;
+  uniform float uSideSign;
+  uniform float uFlowT;
   varying vec3 vNormal;
   varying vec3 vModelPos;
   varying vec3 vViewDir;
@@ -90,8 +95,45 @@ const FRAG = `
     float intensity = clamp(0.16 + diff * 0.92 + rim * 0.26, 0.0, 1.0);
     vec3 shaded = mix(uShadow, uLit, intensity);
 
+    /* ── OXYGENATED AND DEOXYGENATED ────────────────────────────────────────
+       Red for the systemic side, blue for the pulmonary side, assigned by which
+       half of the model a fragment sits in — the right heart carries returning
+       deoxygenated blood, the left sends oxygenated blood out, and that is true
+       of any heart. uSideSign says which way round X runs on this particular
+       mesh; it was set by looking at the render, not assumed.
+
+       SPATIAL, BECAUSE THE MESH HAS NO PARTS. One fused primitive, no named
+       structures, so there is no aorta to select and paint. That is also why the
+       colour stays a tint over the grey rather than becoming the surface: the
+       model can support "this side handles oxygenated blood", which is anatomy,
+       but not "this tube is the aorta", which would be a claim about geometry
+       nobody has verified.
+
+       WEIGHTED TOWARD THE VESSELS. The distinction is most meaningful where the
+       great vessels leave the top of the heart, so the tint fades out down the
+       ventricular mass. Capped well below full saturation — a heart that is
+       half fire-engine red and half primary blue is a plastic teaching model,
+       and the brief asks for restraint. */
+    /* SPLIT ON Z, NOT X. The camera settles at yaw 270, which places it on the
+       -X axis looking along +X — so X is the DEPTH axis from the viewer and Z is
+       what runs left-to-right across the screen. Splitting on X put the whole
+       red/blue distinction front-to-back where none of it is visible, and the
+       heart came out a uniform pale violet that said nothing. */
+    float side = clamp(vModelPos.z * uSideSign * 3.4, -1.0, 1.0);
+    float superior = smoothstep(-0.12, 0.30, vModelPos.y);
+
+    /* Flow, as a soft band travelling along the vessels — up the systemic side
+       (leaving) and down the pulmonary side (returning). Cubed so it reads as a
+       pulse passing through rather than as stripes. */
+    float phase = vModelPos.y * 5.2 - uFlowT * 1.5 * sign(side == 0.0 ? 1.0 : side);
+    float pulse = pow(0.5 + 0.5 * sin(phase), 3.0);
+
+    vec3 blood = mix(uCool, uWarm, side * 0.5 + 0.5);
+    float amount = uTint * superior * 0.62;
+    vec3 painted = mix(shaded, blood * (0.72 + 0.5 * intensity + 0.35 * pulse), amount);
+
     // Distance from the focus, in model units. Everything beyond uRadius sinks
-    // toward the page; everything inside keeps full contrast. The floor is 0.42
+    // toward the page; everything inside keeps full contrast. The floor is 0.5
     // rather than 0.26 — at 0.26 the unfocused anatomy did not recede, it
     // disappeared, and an organ with its top half missing reads as a rendering
     // fault rather than as emphasis.
@@ -99,7 +141,7 @@ const FRAG = `
     float near = 1.0 - smoothstep(uRadius * 0.45, uRadius, d);
     float keep = mix(1.0, mix(0.5, 1.0, near), uFocusAmt);
 
-    gl_FragColor = vec4(mix(uBg, shaded, keep), 1.0);
+    gl_FragColor = vec4(mix(uBg, painted, keep), 1.0);
   }
 `;
 
@@ -126,8 +168,11 @@ type Keyframe = { readonly at: number; readonly yaw: number; readonly pitch: num
 const CAMERA: readonly Keyframe[] = [
   { at: 0.0, yaw: 218, pitch: 8, dist: 2.35 },
   { at: 0.42, yaw: 270, pitch: 2, dist: 2.05 },
-  { at: 0.72, yaw: 284, pitch: -6, dist: 1.75 },
-  { at: 1.0, yaw: 292, pitch: -10, dist: 1.5 },
+  { at: 0.72, yaw: 284, pitch: -6, dist: 1.95 },
+  // Stops at 1.8, not 1.5. The model is one unit tall and a 34-degree lens at
+  // 1.5 shows only 0.92 of a unit, so the push-in was cropping the apex — which
+  // is the structure the label is pointing at.
+  { at: 1.0, yaw: 292, pitch: -10, dist: 1.8 },
 ];
 
 function cameraAt(t: number): Keyframe {
@@ -220,6 +265,17 @@ export function AnatomyScene({
       uFocus: { value: APEX.clone() },
       uFocusAmt: { value: 0 },
       uRadius: { value: 0.42 },
+      // Muted on purpose. Full-saturation red and blue on a monochrome page
+      // would be the loudest thing on the site by a distance, and the brief is
+      // for these to communicate flow rather than to decorate.
+      uWarm: { value: new THREE.Color(dark ? "#c4564d" : "#a8443c") },
+      uCool: { value: new THREE.Color(dark ? "#5b81b4" : "#3f6091") },
+      uTint: { value: 0 },
+      // Which way round X runs on this mesh: +1 if the patient's left (the
+      // oxygenated side) is at +X. Verified against the render rather than
+      // assumed, because the model carries no orientation metadata.
+      uSideSign: { value: 1 },
+      uFlowT: { value: 0 },
     };
 
     const scene = new THREE.Scene();
@@ -271,8 +327,15 @@ export function AnatomyScene({
     ro.observe(host);
 
     const project = new THREE.Vector3();
-    const frame = () => {
+    // The blood-flow band is the one thing here that moves on its own clock
+    // rather than from the scene's progress, because flow is continuous — it
+    // should not stall the moment the sequence pauses on a held frame.
+    let lastFrame = performance.now();
+
+    const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
+      const dt = Math.min(0.05, (now - lastFrame) / 1000);
+      lastFrame = now;
       if (!activeRef.current) return;
 
       const p = tRef.current;
@@ -286,10 +349,17 @@ export function AnatomyScene({
       );
       camera.lookAt(0, 0, 0);
 
+      // The order is the lesson: the form arrives, it turns to face you, THEN
+      // the circulation is colour-coded, then one region is singled out. Landing
+      // the colour before the camera has settled would make it decoration; after
+      // the turn it reads as the next thing being explained.
+      uniforms.uTint.value = ease(window01(p, 0.3, 0.52));
+      uniforms.uFlowT.value += dt * 1.6;
+
       // Emphasis arrives after the camera has settled into the front view, so
       // the two moves read as one decision rather than as two effects.
-      uniforms.uFocusAmt.value = ease(window01(p, 0.46, 0.68));
-      uniforms.uRadius.value = lerp(0.5, 0.34, ease(window01(p, 0.6, 1)));
+      uniforms.uFocusAmt.value = ease(window01(p, 0.52, 0.72));
+      uniforms.uRadius.value = lerp(0.5, 0.34, ease(window01(p, 0.64, 1)));
 
       // Idle breathing, so a reader who stops scrolling is not looking at a
       // still. Suppressed under reduced-motion, where the scroll-driven camera
@@ -339,10 +409,17 @@ export function AnatomyScene({
     <div className="shw-3d" ref={hostRef}>
       {failed && <p className="shw-3d-fallback">the heart, in three dimensions</p>}
       {!failed && !ready && <p className="shw-3d-fallback shw-3d-loading">loading</p>}
-      {/* Rendered from the start with zero opacity and moved by the frame loop.
-          Mounting it on a threshold would put a React commit in the middle of
-          the camera move. */}
-      {!failed && <span className="shw-3d-label" ref={labelRef} style={{ opacity: 0 }} aria-hidden="true">left ventricle</span>}
+      {/* Rendered with zero opacity and moved by the frame loop — mounting it on
+          a threshold would put a React commit in the middle of the camera move.
+          Gated on `ready` all the same: the sequence runs on a clock and does
+          not wait for the model, so on a slow connection the scene can reach the
+          annotation step with nothing to annotate, and a label pointing at empty
+          space next to the word "loading" reads as a broken page. */}
+      {!failed && ready && (
+        <span className="shw-3d-label" ref={labelRef} style={{ opacity: 0 }} aria-hidden="true">
+          left ventricle
+        </span>
+      )}
     </div>
   );
 }

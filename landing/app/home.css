@@ -1091,18 +1091,11 @@
    opposite of "there is only ever one surface".
    ───────────────────────────────────────────────────────────────────────────── */
 
-/* The section is tall; the Canvas inside it is pinned. Height is set inline by
-   the component so the scroll length and the number of scenes cannot drift
-   apart in two files. */
-.shw { position: relative; }
-
-.shw-stick {
-  position: sticky;
-  top: 0;
-  height: 100svh;
-  display: flex;
-  align-items: center;
-}
+/* An ordinary section. It used to be roughly four viewports tall with the Canvas
+   pinned inside it, because scroll position chose the representation; the
+   sequence is on a clock now, so the section is the size of its contents and the
+   page scrolls past it normally. */
+.shw { padding: clamp(80px, 11vw, 150px) 0; }
 .shw-inner { width: 100%; }
 
 .shw-head {
@@ -1149,12 +1142,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Short linear fade only. The cross-fade is driven by scroll position, so any
-     real duration here would fight the scrub and lag behind the reader. */
-  transition: opacity 0.1s linear;
+  /* No CSS transition. Opacity and transform are written every frame from the
+     clock, so a duration here would be a second easing curve fighting the first
+     and would lag the value it is chasing. */
+  transform-origin: center;
+  will-change: opacity, transform;
 }
 
 .shw-svg { width: 100%; height: 100%; display: block; }
+
+/* The three-oval processing state, shown in the gap between representations.
+   pointer-events:none so an invisible layer sitting over the frame can never
+   swallow a drag on the scene underneath it. */
+.shw-thinking {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  pointer-events: none;
+}
 
 .shw-line {
   margin: clamp(16px, 2vw, 24px) 0 0;
@@ -1415,4 +1423,70 @@
 @media (max-width: 860px) {
   .srcs-flow { grid-template-columns: 1fr; gap: 26px; justify-items: center; }
   .srcs-in, .srcs-out { flex-direction: row; flex-wrap: wrap; justify-content: center; text-align: center; }
+}
+
+
+/* ── PRINCIPLES ────────────────────────────────────────────────────────────
+   Statements separated by hairlines, set at display size. No numerals: these
+   are six positions held at once, not a sequence, and numbering would imply an
+   order that is not there. No cards either, for the reason at the top of this
+   file. */
+.prin { padding: 0 0 clamp(90px, 13vw, 160px); }
+.prin-list { max-width: 60ch; }
+.prin-list article {
+  padding: clamp(38px, 5vw, 62px) 0;
+  border-top: 1px solid var(--line);
+}
+.prin-list h2 {
+  font-family: var(--sans);
+  font-size: clamp(24px, 3.2vw, 40px);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+  color: var(--text);
+  margin: 0 0 clamp(14px, 1.6vw, 20px);
+  text-wrap: balance;
+}
+/* Each line is its own paragraph and keeps its own line, because the breaks are
+   part of the writing. "Learn it. Think about it. Use it." followed by "Then
+   move on." is a beat; run together it is a list. */
+.prin-list p {
+  margin: 0;
+  font-size: clamp(15.5px, 1.55vw, 18px);
+  line-height: 1.62;
+  color: var(--text-2);
+}
+.prin-list p + p { margin-top: 9px; }
+
+.prin-close {
+  margin-top: clamp(56px, 7vw, 96px);
+  padding-top: clamp(44px, 5vw, 68px);
+  border-top: 1px solid var(--line);
+  max-width: 30ch;
+}
+.prin-close p {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: clamp(22px, 2.9vw, 34px);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 1.16;
+  color: var(--text);
+}
+.prin-close p + p { margin-top: 4px; }
+/* The footer's tagline, brought up as a close. Mono and small, because it is a
+   signature rather than another statement. */
+.prin-tag {
+  margin-top: clamp(28px, 3.4vw, 42px) !important;
+  font-family: var(--mono) !important;
+  font-size: 12px !important;
+  letter-spacing: 0.16em !important;
+  color: var(--text-3) !important;
+}
+.prin-cta {
+  margin-top: clamp(34px, 4vw, 52px);
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
 }

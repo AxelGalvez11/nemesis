@@ -60,6 +60,36 @@
   50% { transform: scaleX(0.7) rotate(-3deg); }
 }
 
+/* PROCESSING — the one short state, and the only one that appears while the user
+   is actually waiting for something.
+
+   Every other state here loops over 3.6 to 11 seconds because it is ambient: the
+   mark is present and the system is working, and a mark that fidgets is a mark
+   you scroll past. This one is different. It shows in the gap between one Canvas
+   representation and the next, it is on screen for well under a second, and at
+   an 9-second cycle it would appear to be perfectly still — which reads as a
+   frozen page rather than as a system preparing something.
+
+   The sequence is drift, compress, respace, settle. The three ovals move on the
+   same curve a tenth of a second apart, so the vertical drift is independent,
+   the scaleY reads as the shapes taking a breath, and the stagger changes the
+   spacing between them without any keyframe having to say so. It resolves to
+   rest at 0% and 100%, so whenever it is cut off it is cut off on its way to
+   stillness.
+
+   WHAT THIS IS NOT: three dots bouncing in sequence, a rotating spinner, or a
+   typing indicator. Those all say "a generic thing is loading". This says the
+   Nemesis mark is briefly alive, which is the only thing worth saying here. */
+.mark-processing .bead { animation: bead-process 1.1s ease-in-out infinite; }
+.mark-processing .bead-2 { animation-delay: 0.11s; }
+.mark-processing .bead-3 { animation-delay: 0.22s; }
+
+@keyframes bead-process {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  35% { transform: translateY(-7%) scaleY(0.92); }
+  70% { transform: translateY(3%) scaleY(1.04); }
+}
+
 /* READING — a traverse. One bead brightens and advances as the pass moves down
    the stack, then the pass restarts at the top. */
 .mark-reading .bead { animation: bead-scan 3.6s ease-in-out infinite; }

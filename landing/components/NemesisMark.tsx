@@ -1,33 +1,51 @@
 "use client";
 
-import { useId } from "react";
-
 /**
- * The Nemesis mark: three glossy beads, stacked.
+ * The Nemesis mark: three flat ovals, stacked on a diagonal.
  *
- * WHY THIS IS DRAWN AND NOT AN IMAGE FILE. The old mark was `logo.png`, a dark glyph
- * on transparency, which vanished on the black page — so the CSS inverted it with a
- * `filter`. That works exactly as long as the mark has no colour and no material, and
- * it stops working the moment either exists. These beads have a body, a terminator
- * and a specular that have to invert INDEPENDENTLY (the black bead becomes pearl; the
- * specular stays white), which no filter can do. Drawn in SVG off the same tokens as
- * the rest of the page, both modes are the same code and neither is a special case.
+ * ── IT IS FLAT, AND THAT IS THE SPECIFICATION ─────────────────────────────────
  *
- * THE MOTION IS STATE, NOT DECORATION. Each `state` below is a thing the system is
- * actually doing, and the movement is chosen to look like that thing: `reading`
- * traverses downward, `diagnosing` pulls one bead out of alignment and puts it back,
- * `retrieving` compresses the stack and releases it. Nothing bounces and nothing
- * squashes — the brief rules out playful physics, and a mark that springs reads as a
- * toy rather than an instrument.
+ * This used to be three glossy beads — a radial-gradient body, a specular streak,
+ * and a bounce-light pass along the underside. It was drawn well and it was the
+ * wrong object. A logo has to survive being 16 pixels wide in a browser tab, one
+ * colour on a sticker, and embroidered on something; a mark whose legibility
+ * depends on three overlapping gradients survives none of that. At favicon size
+ * the specular and the bounce merge into a grey smear and the silhouette — the
+ * only thing that actually identifies a mark — gets weaker, not stronger.
  *
- * `prefers-reduced-motion` stops all of it in globals.css. The mark still renders;
- * it simply holds still, which is the correct resting state of every animation here.
+ * So: solid fill, no gradient, no lighting, no shadow, no bevel, no outline.
+ * What identifies Nemesis is three elongated ovals on a diagonal, and that reads
+ * at any size in any medium.
+ *
+ * The 3D organism in the hero is a different object doing a different job. Three
+ * levels of one system: flat ovals are the identity, flat ovals in motion are the
+ * interface telling you it is working, and the organism is the expressive form.
+ * They are relatives, not the same asset at three sizes.
+ *
+ * ── COLOUR IS INHERITED, NOT DECLARED ─────────────────────────────────────────
+ *
+ * `currentColor`, so dark mode is not a second drawing. The old version needed
+ * body, specular and bounce to inverse-map INDEPENDENTLY, which is why it carried
+ * its own token set. With one solid fill the mark simply takes the ink colour of
+ * wherever it is placed — black on the light page, white on the dark one, correct
+ * inside a dark button without anybody special-casing it. The geometry is
+ * identical in every mode. Only the fill changes.
+ *
+ * ── THE MOTION IS STATE, NOT DECORATION ───────────────────────────────────────
+ *
+ * Each `state` is a thing the system is actually doing, and the movement is
+ * chosen to look like that thing. See app/mark.css. `prefers-reduced-motion`
+ * stops all of it; the mark still renders, it just holds still, which is the
+ * resting state of every animation there.
  */
+
 export type MarkState =
   /** Identity. No animation at all — nav, footer, favicon-adjacent uses. */
   | "static"
   | "idle"
   | "thinking"
+  /** Between representations: drift, compress, respace, settle. Short. */
+  | "processing"
   | "reading"
   | "diagnosing"
   | "retrieving"
@@ -36,46 +54,62 @@ export type MarkState =
   | "success";
 
 /**
- * Three beads, tilted and stacked.
+ * Three ovals, tilted and stacked. MEASURED OFF THE SUPPLIED MARK, not eyeballed.
  *
- * THE TILT IS THE MARK. The first version of this had them nearly horizontal, a few
- * degrees apart — that was the earlier brand sheet, and at any real size it reads as
- * three dashes. The 2026-08-10 sheet and the app-icon render both show the long axis
- * running lower-left to upper-right at roughly 25 degrees, stacked close enough to
- * almost touch. That diagonal is what makes the silhouette recognisable at 16px.
+ * From the 1242px reference: each oval occupies a 308 × 240 bounding box, which
+ * for a rotated ellipse solves to semi-axes of roughly 185 × 60 at 36 degrees —
+ * an elongation of about 3.1 to 1. Centres sit 197.5 apart on an even vertical
+ * pitch with no horizontal stagger (the three centres agree to within 6px of
+ * 1242, which is alignment, not offset). Because each oval's box is 240 tall and
+ * the pitch is 197.5, consecutive ovals overlap by about 42 — they just touch,
+ * and that near-contact is part of the silhouette.
  *
- * Still deliberately unequal. Identical ellipses on a shared axis read as a diagram
- * of three ellipses; a fraction of variation in size, offset and angle is what makes
- * them read as objects. Small enough that nobody notices it, large enough that the
- * mark stops looking generated.
+ * Scaled here by 0.335 into a 100-unit space: rx 62, ry 20, pitch 66.
+ *
+ * THE PREVIOUS GEOMETRY WAS WRONG IN BOTH RESPECTS. It carried 2.1:1 ovals at 25
+ * degrees — visibly fatter and shallower than the real mark. Bounds check for
+ * anyone changing these: half-width = √((rx·cosθ)² + (ry·sinθ)²) = 51.6,
+ * half-height = √((rx·sinθ)² + (ry·cosθ)²) = 39.8, giving a 103 × 80 box per
+ * oval and 1.30 aspect against the reference's 1.28.
+ *
+ * IDENTICAL TO EACH OTHER, deliberately. The old geometry varied each oval's
+ * radius and angle by a percent or two, reasoning that slight irregularity stops
+ * three ellipses reading as a diagram of three ellipses. That belonged to the
+ * glossy version, where the variation read as three solids catching light
+ * differently. Flat, there is no light to catch, and the same variation just
+ * reads as imprecision — the one thing a geometric mark cannot afford. The
+ * reference is uniform; so is this.
+ *
+ * Exported because the showcase's handoff draws these same three ovals. One
+ * definition, so the identity and the interface motion cannot drift apart.
  */
-const BEADS = [
-  { cx: 49.6, cy: 26, rx: 30, ry: 14.2, tilt: -25 },
-  { cx: 50.5, cy: 66, rx: 32, ry: 15, tilt: -23 },
-  { cx: 49.8, cy: 106, rx: 30.5, ry: 14.4, tilt: -26 },
+export const MARK_OVALS = [
+  { cx: 50, cy: 40, rx: 62, ry: 20, tilt: -36 },
+  { cx: 50, cy: 106, rx: 62, ry: 20, tilt: -36 },
+  { cx: 50, cy: 172, rx: 62, ry: 20, tilt: -36 },
 ] as const;
 
 /**
- * The viewBox HUGS THE INK, and it has to be recomputed whenever BEADS changes.
+ * The viewBox HUGS THE INK, and it is recomputed whenever MARK_OVALS changes.
  *
  * A rotated ellipse occupies far less width than its rx suggests — at 25 degrees
- * these span about 60 units of the 100 the coordinates are written in. Left at
- * "0 0 100 132" the element reserved 40 units of empty width, so `size` bought a
- * box rather than a mark and every instance rendered visibly smaller than asked.
+ * these span about 60 units of the 100 the coordinates are written in. Hard-coded
+ * as "0 0 100 132" the element reserved 40 units of empty width, so `size` bought
+ * a box rather than a mark and every instance rendered visibly smaller than asked.
  *
- * Bounds of a rotated ellipse: half-width = √((rx·cosθ)² + (ry·sinθ)²), half-height
- * = √((rx·sinθ)² + (ry·cosθ)²). Computed once at module load rather than typed in,
- * so a future tweak to a bead cannot silently reintroduce the padding.
+ * Bounds of a rotated ellipse: half-width = √((rx·cosθ)² + (ry·sinθ)²),
+ * half-height = √((rx·sinθ)² + (ry·cosθ)²). Computed at module load rather than
+ * typed in, so a future tweak cannot silently reintroduce the padding.
  */
-const VIEW = (() => {
+export const MARK_VIEW = (() => {
   const PAD = 1.5;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const b of BEADS) {
-    const t = (b.tilt * Math.PI) / 180;
-    const hw = Math.hypot(b.rx * Math.cos(t), b.ry * Math.sin(t));
-    const hh = Math.hypot(b.rx * Math.sin(t), b.ry * Math.cos(t));
-    x0 = Math.min(x0, b.cx - hw); x1 = Math.max(x1, b.cx + hw);
-    y0 = Math.min(y0, b.cy - hh); y1 = Math.max(y1, b.cy + hh);
+  for (const o of MARK_OVALS) {
+    const t = (o.tilt * Math.PI) / 180;
+    const hw = Math.hypot(o.rx * Math.cos(t), o.ry * Math.sin(t));
+    const hh = Math.hypot(o.rx * Math.sin(t), o.ry * Math.cos(t));
+    x0 = Math.min(x0, o.cx - hw); x1 = Math.max(x1, o.cx + hw);
+    y0 = Math.min(y0, o.cy - hh); y1 = Math.max(y1, o.cy + hh);
   }
   const w = x1 - x0 + PAD * 2;
   const h = y1 - y0 + PAD * 2;
@@ -98,79 +132,26 @@ export function NemesisMark({
   label,
   className,
 }: NemesisMarkProps) {
-  // Gradient ids have to be unique per instance: two marks on one page sharing an id
-  // means the second silently paints with the first one's gradient, and if the first
-  // ever unmounts, both go flat.
-  const uid = useId().replace(/:/g, "");
-
-  const body = `${uid}-body`;
-  const spec = `${uid}-spec`;
-  const bounce = `${uid}-bounce`;
-
   return (
     <svg
       className={[`mark mark-${state}`, className].filter(Boolean).join(" ")}
-      viewBox={VIEW.box}
+      viewBox={MARK_VIEW.box}
       height={size}
-      width={size * VIEW.ratio}
+      width={size * MARK_VIEW.ratio}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
       focusable="false"
     >
-      <defs>
-        {/* Every stop carries a fallback. An SVG `stop-color` set to an undefined
-            custom property is INVALID, and an invalid stop-color computes to black —
-            so a token that has not loaded yet, or gets renamed without this file
-            being updated, turns the whole mark into three black blobs on a black
-            page rather than failing loudly. The fallbacks are the light-mode
-            material, which is wrong-but-visible instead of invisible. */}
-        {/* The body. Light falls from the upper left, so the focal point of the
-            radial sits there and the far edge falls to the darkest stop. */}
-        <radialGradient id={body} cx="32%" cy="24%" r="86%">
-          <stop offset="0%" stopColor="var(--bead-lit, #6f6f6f)" />
-          <stop offset="46%" stopColor="var(--bead-far, #050505)" />
-          <stop offset="100%" stopColor="var(--bead-far, #050505)" />
-        </radialGradient>
-
-        {/* The specular. The reference is a bright, fairly hard streak running along
-            the top of the bead, so the white holds a plateau before it falls away —
-            a single soft dot reads as matte plastic instead of glass. */}
-        <radialGradient id={spec} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="var(--bead-highlight, #ffffff)" stopOpacity="1" />
-          <stop offset="45%" stopColor="var(--bead-highlight, #ffffff)" stopOpacity="0.9" />
-          <stop offset="100%" stopColor="var(--bead-highlight, #ffffff)" stopOpacity="0" />
-        </radialGradient>
-
-        {/* Reflected light along the lower edge. This is the single detail that stops
-            the beads reading as flat ovals: a real solid picks up bounce from whatever
-            it is sitting on, and without it the underside dies into the background. */}
-        <linearGradient id={bounce} x1="0%" y1="0%" x2="18%" y2="100%">
-          <stop offset="55%" stopColor="var(--bead-edge, #d1d1d1)" stopOpacity="0" />
-          <stop offset="100%" stopColor="var(--bead-edge, #d1d1d1)" stopOpacity="0.55" />
-        </linearGradient>
-      </defs>
-
-      {/* TWO NESTED GROUPS, and the nesting is load-bearing. A CSS `transform` on an
-          SVG element REPLACES its `transform` attribute rather than composing with it,
-          so animating the outer group would silently delete each bead's tilt the
-          instant an animation ran. The tilt lives on the inner group, which CSS never
-          touches; the outer group is the animator's, exclusively. */}
-      {BEADS.map((bead, i) => (
-        <g key={bead.cy} className={`bead bead-${i + 1}`}>
-          <g transform={`rotate(${bead.tilt} ${bead.cx} ${bead.cy})`}>
-            <ellipse cx={bead.cx} cy={bead.cy} rx={bead.rx} ry={bead.ry} fill={`url(#${body})`} />
-            <ellipse cx={bead.cx} cy={bead.cy} rx={bead.rx} ry={bead.ry} fill={`url(#${bounce})`} />
-            {/* No rotation of its own. The streak runs ALONG the bead's long axis,
-                and this sits inside the group that already carries the tilt — an
-                extra angle here would cross the highlight over the form. */}
-            <ellipse
-              cx={bead.cx - bead.rx * 0.35}
-              cy={bead.cy - bead.ry * 0.33}
-              rx={bead.rx * 0.46}
-              ry={bead.ry * 0.34}
-              fill={`url(#${spec})`}
-            />
+      {/* TWO NESTED GROUPS, and the nesting is load-bearing. A CSS `transform` on
+          an SVG element REPLACES its `transform` attribute rather than composing
+          with it, so animating the outer group would silently delete each oval's
+          tilt the instant an animation ran. The tilt lives on the inner group,
+          which CSS never touches; the outer group belongs to the animator. */}
+      {MARK_OVALS.map((oval, i) => (
+        <g key={oval.cy} className={`bead bead-${i + 1}`}>
+          <g transform={`rotate(${oval.tilt} ${oval.cx} ${oval.cy})`}>
+            <ellipse cx={oval.cx} cy={oval.cy} rx={oval.rx} ry={oval.ry} fill="currentColor" />
           </g>
         </g>
       ))}
@@ -181,8 +162,8 @@ export function NemesisMark({
 /**
  * Mark plus lowercase wordmark, horizontal. The nav and footer lockup.
  *
- * "nemesis" is lowercase and tracked wide, which is the identity — not a style choice
- * a future edit gets to sentence-case back.
+ * "nemesis" is lowercase and tracked wide, which is the identity — not a style
+ * choice a future edit gets to sentence-case back.
  */
 export function NemesisLockup({ size = 26 }: { size?: number }) {
   return (

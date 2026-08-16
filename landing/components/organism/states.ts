@@ -24,9 +24,13 @@ export type OrganismState = {
   readonly relief: number;
   /** Time multiplier. */
   readonly speed: number;
-  /** Dot size in CSS pixels at the object's centre plane. */
-  readonly size: number;
 };
+
+/* NOTE: there is deliberately no dot size, density or opacity here. Those are
+   SURFACE properties and live in surface.ts, shared by every instance. A state
+   may change the object's form and how it moves; it may not change what it is
+   made of. See the comment at the top of surface.ts for the bug that rule
+   exists to prevent. */
 
 /**
  * `rest` is the hero's state and the one people see longest, so it is tuned to be
@@ -35,7 +39,7 @@ export type OrganismState = {
  */
 export const STATES = {
   /** At rest. Slow, coherent, unhurried. */
-  rest: { flow: 0.42, freq: 0.7, shell: 0.92, relief: 0.12, speed: 1, size: 1.9 },
+  rest: { flow: 0.42, freq: 0.7, shell: 0.92, relief: 0.12, speed: 1 },
 
   /**
    * The cursor is near. The form reorganises — faster transport, finer field, and
@@ -43,19 +47,19 @@ export const STATES = {
    * speeding up. This is blended in by PROXIMITY, never toggled, because a state
    * that snaps on at a threshold reads as a hover effect instead of as attention.
    */
-  attend: { flow: 0.66, freq: 1.05, shell: 0.84, relief: 0.16, speed: 1.7, size: 2 },
+  attend: { flow: 0.66, freq: 1.05, shell: 0.84, relief: 0.16, speed: 1.7 },
 
   /** Structure. Calmer and tighter — the object holds still to be read. */
-  structure: { flow: 0.26, freq: 0.46, shell: 0.98, relief: 0.07, speed: 0.7, size: 1.8 },
+  structure: { flow: 0.26, freq: 0.46, shell: 0.98, relief: 0.07, speed: 0.7 },
 
   /** Dimension. The shell opens, filaments lift into the space around the body. */
-  dimension: { flow: 0.58, freq: 0.58, shell: 0.62, relief: 0.24, speed: 1.1, size: 2.1 },
+  dimension: { flow: 0.58, freq: 0.58, shell: 0.62, relief: 0.24, speed: 1.1 },
 
   /** Working it out. Fine, quick turbulence over a held shape. */
-  solve: { flow: 0.5, freq: 1.45, shell: 0.95, relief: 0.09, speed: 1.5, size: 1.7 },
+  solve: { flow: 0.5, freq: 1.45, shell: 0.95, relief: 0.09, speed: 1.5 },
 
   /** Material going in. The form opens wide and draws inward. */
-  intake: { flow: 0.74, freq: 0.52, shell: 0.5, relief: 0.2, speed: 1.3, size: 2.2 },
+  intake: { flow: 0.74, freq: 0.52, shell: 0.5, relief: 0.2, speed: 1.3 },
 } as const satisfies Record<string, OrganismState>;
 
 export type StateName = keyof typeof STATES;
@@ -82,6 +86,5 @@ export function mixStates(a: OrganismState, b: OrganismState, t: number): Organi
     shell: a.shell + (b.shell - a.shell) * k,
     relief: a.relief + (b.relief - a.relief) * k,
     speed: a.speed + (b.speed - a.speed) * k,
-    size: a.size + (b.size - a.size) * k,
   };
 }

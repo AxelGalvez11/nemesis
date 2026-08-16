@@ -1,80 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="12 0 76 100">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-66 -10 232 232">
   <!--
     The favicon.
 
-    GEOMETRY COMES FROM THE 2026-08-10 BRAND SHEET (v2) AND THE APP-ICON RENDER.
-    The beads are tilted roughly 25 degrees with their long axis running lower-left
-    to upper-right, stacked almost touching. The first pass at this had them nearly
-    horizontal, which is the earlier sheet and reads as three dashes rather than as
-    the mark.
+    FLAT. This carried a radial-gradient body, a specular streak and a bounce
+    pass along the underside. At 16 pixels those three layers merge into a grey
+    smear and the silhouette — the only thing that identifies a mark at that size
+    — gets weaker rather than stronger. Solid fill, nothing else.
 
-    NO PADDING. The supplied app icon sits in a rounded white plate with a wide
-    margin, which is right for a home screen and wrong for a 16px tab — at that
-    size the margin eats most of the glyph. The artwork here runs edge to edge and
-    the plate is gone; the browser supplies whatever surround it wants.
+    GEOMETRY IS MEASURED FROM THE SUPPLIED MARK and is IDENTICAL to
+    components/NemesisMark.tsx: rx 62, ry 20, tilt -36, centres 66 apart at
+    x = 50. Duplicated on purpose — that one is React and this has to be a
+    standalone file Next serves as an icon. If the geometry changes, change both.
 
-    REDRAWN FOR THE SIZE, NOT SCALED DOWN. Three stacked beads at their real
-    proportions make a composition about half as wide as it is tall, and a favicon
-    is square: rendered at 16px that is 16 tall by 8 wide, and it reads as a
-    squiggle with the other half of the square empty. The beads are staggered
-    slightly here so the cluster fills the square — same three beads, same tilt,
-    just drifted apart on the horizontal, which is a movement the mark already
-    makes. Verified by rendering at 16 / 24 / 32 / 48 / 96px, not by eye at
-    one size.
+    NO STAGGER, AND THAT IS A REVERSAL. The previous favicon drifted the three
+    beads apart horizontally so the cluster filled the square, on the reasoning
+    that a mark half as wide as it is tall wastes half of a square icon. That
+    optimises the wrong thing: it made the favicon a different silhouette from
+    the mark in the header, which is the one property a logo cannot trade away.
+    The supplied reference is itself a tall mark centred in a square with wide
+    margins. So this is the same three ovals, centred, filling about 91% of the
+    square vertically.
 
-    SVG rather than PNG because a favicon is drawn against the BROWSER's chrome,
-    not the page, so it has to invert on its own. The brand sheet's own usage
-    note — "in dark mode, invert surfaces and beads" — is what the media query
-    below does.
-
-    Duplicated on purpose from components/NemesisMark.tsx: that one is React and
-    this has to be a standalone file Next can serve as an icon. If the bead
-    geometry changes, change it in both.
+    The viewBox is centred on the ink rather than on the coordinate origin: the
+    ovals span x -1.6..101.6 and y 0.2..211.8, so the centre is (50, 106) and a
+    232-unit square about that point is "-66 -10 232 232".
   -->
-  <defs>
-    <!-- The body. Light from the upper left, falling to near-black at the far edge. -->
-    <radialGradient id="body" cx="30%" cy="22%" r="88%">
-      <stop offset="0%" stop-color="#7a7a7a" />
-      <stop offset="44%" stop-color="#0a0a0a" />
-      <stop offset="100%" stop-color="#000000" />
-    </radialGradient>
-    <!-- The specular. The reference has a bright, fairly hard streak along the top
-         of each bead, so the white holds a plateau before it falls away. -->
-    <radialGradient id="sheen" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
-      <stop offset="38%" stop-color="#ffffff" stop-opacity="0.88" />
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
-    </radialGradient>
-    <!-- Bounce off the surface below, along the lower-right edge. -->
-    <linearGradient id="bounce" x1="10%" y1="0%" x2="60%" y2="100%">
-      <stop offset="58%" stop-color="#b3b3b3" stop-opacity="0" />
-      <stop offset="100%" stop-color="#b3b3b3" stop-opacity="0.5" />
-    </linearGradient>
-  </defs>
-
   <style>
-    /* The brand sheet's rule: dark mode inverts the beads. One filter does the
-       whole mark, body and specular together, which is what "invert" means here. */
+    /* One fill, inverted. The brand rule is that dark mode changes the colour
+       and nothing else — same geometry, same silhouette, opposite ink.
+
+       A favicon is drawn against the BROWSER's chrome rather than the page, so
+       it cannot inherit anything and has to carry this itself. Support for
+       prefers-color-scheme inside an SVG favicon is now broad; where it is not
+       honoured the mark falls back to the black fill below, which is the
+       correct default for a light tab strip. */
+    .mark { fill: #000; }
     @media (prefers-color-scheme: dark) {
-      .mark { filter: invert(1); }
+      .mark { fill: #fff; }
     }
   </style>
 
   <g class="mark">
-    <g transform="rotate(-24 44 19.7)">
-      <ellipse cx="44" cy="19.7" rx="30" ry="14" fill="url(#body)" />
-      <ellipse cx="44" cy="19.7" rx="30" ry="14" fill="url(#bounce)" />
-      <ellipse cx="33.5" cy="15.6" rx="13.8" ry="4.8" fill="url(#sheen)" />
-    </g>
-    <g transform="rotate(-24 50 50)">
-      <ellipse cx="50" cy="50" rx="30" ry="14" fill="url(#body)" />
-      <ellipse cx="50" cy="50" rx="30" ry="14" fill="url(#bounce)" />
-      <ellipse cx="39.5" cy="45.9" rx="13.8" ry="4.8" fill="url(#sheen)" />
-    </g>
-    <g transform="rotate(-24 56 80.3)">
-      <ellipse cx="56" cy="80.3" rx="30" ry="14" fill="url(#body)" />
-      <ellipse cx="56" cy="80.3" rx="30" ry="14" fill="url(#bounce)" />
-      <ellipse cx="45.5" cy="76.2" rx="13.8" ry="4.8" fill="url(#sheen)" />
-    </g>
+    <ellipse cx="50" cy="40" rx="62" ry="20" transform="rotate(-36 50 40)" />
+    <ellipse cx="50" cy="106" rx="62" ry="20" transform="rotate(-36 50 106)" />
+    <ellipse cx="50" cy="172" rx="62" ry="20" transform="rotate(-36 50 172)" />
   </g>
 </svg>

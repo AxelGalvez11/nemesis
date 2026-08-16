@@ -80,27 +80,15 @@
   --line-2: rgba(var(--fg), 0.26);
   --wash: rgba(var(--fg), 0.03);
 
-  /* ── THE BEAD MATERIAL ────────────────────────────────────────────────────
-     The three-bead mark is the one thing on this page that is NOT flat ink, so it
-     is the one thing that cannot be an alpha of --fg: a glossy solid needs a body,
-     a terminator and a specular that move independently. Four stops, taken off the
-     brand sheet, and dark mode inverts the material rather than tinting it — the
-     black bead becomes a pearl one, and the specular stays white in both because
-     the brightest point of a lit solid is white whatever the solid is made of. */
-  /* THE TWO BODY STOPS ARE NAMED FOR THE LIGHT, NOT FOR THEIR BRIGHTNESS. `--bead-lit`
-     is the shoulder facing the light and `--bead-far` is the body turning away from
-     it, so "lit is brighter than far" stays true in both modes. Naming them
-     light/dark instead is the bug that was here first: inverting the two hex values
-     for dark mode lit the pearl bead from the wrong side and it went flat. */
-  --bead-lit: #6f6f6f;
-  --bead-far: #050505;
-  /* Reflected bounce along the underside. Bright under a black bead, dark under a
-     pearl one — in both cases it is the ground showing through, which is what stops
-     the shape reading as a flat oval. */
-  --bead-edge: #d1d1d1;
-  --bead-highlight: #ffffff;
-  /* The flat fill, for the places a bead becomes a plain lozenge (the resolution
-     rows, the evidence bullets). No modelling, so it is simply the ink. */
+  /* ── THE MARK ─────────────────────────────────────────────────────────────
+     The mark used to be the one thing on this page that was NOT flat ink, and it
+     carried four tokens for the purpose: a lit shoulder, a far body, a bounce
+     edge and a specular. All four are gone with the gloss.
+
+     The mark is now solid `currentColor`, so it needs no tokens at all — it takes
+     the ink of wherever it is placed and inverts with the page for free. What
+     survives is the flat fill, for the places the oval is used as a plain lozenge
+     (the resolution rows, the evidence bullets) rather than as the logo. */
   --bead-primary: #090909;
 
   /* ── THE CHROME ORGANISM ──────────────────────────────────────────────────
@@ -132,9 +120,6 @@
   --d-bg: #000000;
   --d-fg: 255, 255, 255;
   --d-line-a: 0.14;
-  --d-bead-lit: #ffffff;
-  --d-bead-far: #8f8f8f;
-  --d-bead-edge: #2b2b2b;
   --d-bead-primary: #f5f5f5;
   --d-chrome-hi: #ffffff;
   --d-chrome-mid: #767676;
@@ -153,9 +138,6 @@
     --bg: var(--d-bg);
     --fg: var(--d-fg);
     --line-a: var(--d-line-a);
-    --bead-lit: var(--d-bead-lit);
-    --bead-far: var(--d-bead-far);
-    --bead-edge: var(--d-bead-edge);
     --bead-primary: var(--d-bead-primary);
     --chrome-hi: var(--d-chrome-hi);
     --chrome-mid: var(--d-chrome-mid);
@@ -167,9 +149,6 @@
   --bg: var(--d-bg);
   --fg: var(--d-fg);
   --line-a: var(--d-line-a);
-  --bead-lit: var(--d-bead-lit);
-  --bead-far: var(--d-bead-far);
-  --bead-edge: var(--d-bead-edge);
   --bead-primary: var(--d-bead-primary);
   --chrome-hi: var(--d-chrome-hi);
   --chrome-mid: var(--d-chrome-mid);
