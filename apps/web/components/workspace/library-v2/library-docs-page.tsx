@@ -49,6 +49,7 @@ import { NO_ANCHOR, readerHrefFrom, type ReaderAnchor } from "@/lib/reader/reade
 import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
 import { extractNoteOutline } from "@/lib/workspace/note-outline";
 import { cn } from "@/lib/utils";
+import { libraryChrome } from "@/lib/workspace/library-sidebar-layout";
 
 import { IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
 
@@ -312,7 +313,19 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
   // Is the sidebar panel on screen right now? Locked always, or peeked on a
   // wide window. It PUSHES the page when it is, so the left inset that keeps the
   // article clear of the floating "Library" word must only apply when it is NOT.
-  const sidebarShown = sidebarLocked || ((peek || navHeld) && !narrowViewport);
+  //
+  // markerVisible is separate from markerMounted on purpose: the panel carries
+  // its own "Library" heading 2px from where the floating marker sits, so both
+  // painting at once smears the word (owner 2026-08-06). The marker still has to
+  // stay MOUNTED, because it is a hover target — unmounting it under the pointer
+  // fires mouseleave and snaps the panel shut. See library-sidebar-layout.ts.
+  const { markerMounted, markerVisible, panelVisible: sidebarShown } = libraryChrome({
+    autoHide,
+    narrowViewport,
+    navHeld,
+    peek,
+    sidebarLocked,
+  });
 
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden bg-(--ui-bg-chrome)">
@@ -365,10 +378,16 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
           the panel slides out on hover and slides away when the pointer
           leaves. With auto-hide off the sidebar is simply always docked, so
           neither exists. */}
-      {autoHide && !sidebarLocked && !narrowViewport && (
+      {markerMounted && (
         <>
           <div
-            className="absolute left-2 top-[calc(var(--titlebar-height)+0.5rem)] z-30 rounded-lg px-3 pb-1 pt-2.5 text-left"
+            className={cn(
+              "absolute left-2 top-[calc(var(--titlebar-height)+0.5rem)] z-30 rounded-lg px-3 pb-1 pt-2.5 text-left",
+              // opacity, NOT `invisible` or unmounting: visibility:hidden and
+              // removal both stop the element receiving the pointer, which ends
+              // the hover that is holding the panel open.
+              !markerVisible && "opacity-0",
+            )}
             data-testid="library-sidebar-trigger"
             onMouseEnter={() => handleLibraryHover(true)}
             onMouseLeave={() => handleLibraryHover(false)}
