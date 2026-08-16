@@ -122,6 +122,15 @@ export interface PolicyRuntime {
    * provenance statement must not quietly narrow with it.
    */
   claims: readonly KnowledgeObject[];
+  /**
+   * Every evidence row loaded for this canvas's supported objectives, newest last.
+   *
+   * 🔴 A RAW PASS-THROUGH OF STATE THIS HOOK ALREADY HOLDS (`loadEvidence`, above) — added for the
+   * Minimap (§H4/§23: "The Minimap owns no state. It reads the learner-state store."). No new
+   * computation happens here; `projectLearnerState` (`learner-evidence.ts`) is the only sanctioned
+   * reader, and callers must fold it themselves rather than re-deriving a status from raw rows.
+   */
+  evidence: readonly LearnerEvidence[];
   decision: TeachingDecision | null;
   /**
    * Where the claim in `decision` can honestly be shown to have come from — empty when nowhere.
@@ -1136,6 +1145,7 @@ export function usePolicyRuntime(
     coverage: knowledge.coverage,
     decision,
     error,
+    evidence,
     exposition,
     feedback,
     focus,
