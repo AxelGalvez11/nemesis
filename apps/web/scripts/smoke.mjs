@@ -60,6 +60,14 @@ function getStatusCheck(path, expectedStatus) {
   });
 }
 
+function redirectCheck(path, destination) {
+  addCheck(`GET ${path} redirects to ${destination}`, async () => {
+    const { res } = await read(path);
+    expect(res.status === 307, `expected 307, got ${res.status}`);
+    expect(res.headers.get("location") === destination, `expected Location ${destination}, got ${res.headers.get("location")}`);
+  });
+}
+
 // Markers refreshed 2026-08-01. All three asserted copy that no longer exists:
 // "Re-enter the perimeter" and "Bring Nemesis online" were the auth pages' eyebrow
 // and description, removed when those pages were reshaped, and "Restoring account
@@ -78,11 +86,14 @@ htmlCheck("/account", ["Loading"]);
 // Suspense boundary with a null fallback (it reads ?checkout=), so the server HTML
 // carries none of the plan names or prices.
 htmlCheck("/pricing", ["Nemesis — Pricing"]);
-htmlCheck("/app/ask", ["Nemesis", "Loading"]);
-htmlCheck("/app/explore", ["Nemesis", "Loading"]);
-htmlCheck("/app/monitor", ["Nemesis", "Loading"]);
-htmlCheck("/app/profile", ["Nemesis", "Loading"]);
-htmlCheck("/app/billing", ["Nemesis", "Loading"]);
+// The legacy /app shell was retired and next.config.ts intentionally sends every
+// old /app/* entry point to the workspace root. Pin the redirect itself so the
+// smoke suite catches either a broken legacy link or an accidental route revival.
+redirectCheck("/app/ask", "/");
+redirectCheck("/app/explore", "/");
+redirectCheck("/app/monitor", "/");
+redirectCheck("/app/profile", "/");
+redirectCheck("/app/billing", "/");
 htmlCheck("/legal/privacy", ["Privacy Policy", "Service providers"]);
 htmlCheck("/legal/terms", ["Terms of Use", "Subscriptions and billing"]);
 htmlCheck("/legal/disclaimer", ["Medical Disclaimer", "Not medical advice"]);
