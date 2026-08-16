@@ -125,6 +125,40 @@ function presentedSecret(req: NextRequest): string | null {
   return req.headers.get("x-worker-secret");
 }
 
+/**
+ * What this deployment's vision credential actually is — WITHOUT revealing it.
+ *
+ * 🔴 THE QUESTION THIS EXISTS TO END. Production described zero figures across three separate
+ * parses while the identical request, built from the same real document and sent by hand, returned
+ * HTTP 200 and correct descriptions. Everything about the request was eliminated by measurement:
+ * the real batch is 2.7 MB against a ~20 MB ceiling, nine figures, one call. So the only remaining
+ * variable is the KEY THIS RUNTIME HOLDS, and nothing could read it — `vercel env pull` returns
+ * empty on CLI 53 and "[SENSITIVE]" on 59, by design.
+ *
+ * A fingerprint settles it and leaks nothing: the same key produces the same twelve characters
+ * everywhere, a different key produces different ones, and twelve characters of a SHA-256 cannot be
+ * reversed into a credential. Gated behind the worker secret so it is not a public oracle.
+ *
+ * DELETE THIS once the credential question is closed. It is a diagnostic, not a feature.
+ */
+export async function GET(req: NextRequest) {
+  const expected = workerSecret();
+  if (!expected) return json({ error: "worker not configured" }, 503);
+  if (!secretMatches(presentedSecret(req), expected)) return json({ error: "unauthorized" }, 401);
+
+  const key = (process.env.GEMINI_API_KEY ?? "").trim();
+  const { createHash } = await import("node:crypto");
+  return json({
+    geminiKeyPresent: key.length > 0,
+    geminiKeyLength: key.length,
+    geminiKeyFingerprint: key ? createHash("sha256").update(key).digest("hex").slice(0, 12) : null,
+    // Whether the thread would even try. `visionConfigured` reads the same variable, and a false
+    // here means every figure is marked unavailable without a single request being made.
+    visionConfigured: key.length > 0,
+    models: (process.env.GEMINI_VISION_MODEL ?? "").trim() || "ladder-default",
+  });
+}
+
 export async function POST(req: NextRequest) {
   const expected = workerSecret();
   // No secret configured means no authenticated caller is possible. Closed, not
