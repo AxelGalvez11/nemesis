@@ -10,9 +10,12 @@
  * or OCR binary is needed here. Bytes in, transcript out.
  *
  * 🔴 THIS HEADER USED TO SAY THE KEY WAS NOT HERE, AND THAT IS NO LONGER TRUE.
- * `GEMINI_API_KEY` has been set on nemesis-web for Preview and Production since
- * 2026-07-23 (verified 2026-08-14 with `vercel env ls`, names only). So
- * `visionConfigured()` is TRUE in production and this path is live. Anything
+ * `GEMINI_API_KEY` is set on nemesis-web for PRODUCTION ONLY — measured 2026-08-16
+ * with `vercel env ls production` and `vercel env ls preview` (names only), which
+ * corrects this comment's previous claim that Preview had it too. So
+ * `visionConfigured()` is TRUE in production and FALSE on every preview
+ * deployment: a preview reprocess reports `vision-unavailable` on every figure
+ * and can never be evidence about this lane. Anything
  * reasoning about vision as "off by default" is reasoning about a state that
  * ended; what is still off by default is `ParseOptions.lookAtFigures`, which is
  * a latency-and-cost decision on the synchronous upload lane, not a missing key.
@@ -335,6 +338,12 @@ export interface VisionFigureRead {
    * three entries on an earlier run and all three descriptions landed.
    *
    * Keeping the strict count check is right. Reporting its cost as a verdict is not.
+   *
+   * 🔴 A NAME ONLY LANDS HERE AFTER THE SPLIT HAS ALSO FAILED OR BEEN REFUSED. `describeBatch`
+   * now re-asks about each picture on its own, which is attributable by construction, so this
+   * set holds only the genuinely hopeless: an image whose solo reply ALSO would not line up, and
+   * an image the ledger could not afford to ask about a second time. Both are honestly "no
+   * usable read exists", which is what the caller records.
    */
   readonly unattributed: ReadonlySet<string>;
 }
@@ -402,15 +411,23 @@ export async function readFiguresWithVision(
   // missing from this at the end got no usable answer, whatever the reason.
   const attributed = new Set<string>();
 
-  const describeBatch = async (batch: VisionImage[]) => {
+  /**
+   * Send ONE group of images and record whatever can be attributed to them.
+   *
+   * The three outcomes are kept apart because only one of them is worth spending more money
+   * on. `unreachable` means no reply arrived at all — re-sending the same images to the same
+   * dead ladder buys nothing and costs a unit per picture. `unattributable` means a reply DID
+   * arrive and could not be lined up, which is the one state a smaller request can fix.
+   */
+  const sendGroup = async (group: VisionImage[]): Promise<"attributed" | "unattributable" | "unreachable"> => {
     const body = buildFigureRequest(
-      batch.map((image) => ({ base64: Buffer.from(image.bytes).toString("base64"), mime: image.mime })),
+      group.map((image) => ({ base64: Buffer.from(image.bytes).toString("base64"), mime: image.mime })),
     );
     const reply = await callGemini(body, key, env, options.signal);
     // One failed batch loses its own descriptions and nothing else.
-    if (!reply) return;
+    if (!reply) return "unreachable";
     reached = true;
-    const parsed = parseFigureDescriptions(reply.text, batch.length);
+    const parsed = parseFigureDescriptions(reply.text, group.length);
     if (!parsed) {
       // 🔴 A FALLBACK THAT HIDES ITS OWN REASON IS A LEAK, AND THIS ONE HID THE COMMONEST ONE.
       // Coverage can now say these figures have no usable read, but not WHY — and "the reply
@@ -420,18 +437,18 @@ export async function readFiguresWithVision(
       // correct answer in 2 entries for a batch of 3, discarded in silence.
       console.warn(JSON.stringify({
         event: "figure_batch_unattributed",
-        images: batch.length,
+        images: group.length,
         entries: (reply.text.match(/^\s*\d+[.)]\s/gm) ?? []).length,
         model: reply.model,
       }));
-      return;
+      return "unattributable";
     }
     // Attributed the moment the reply's entries line up with the batch — BEFORE asking what any
     // entry says. An entry reading "none" is an answer about that picture; only a batch that
     // never lined up leaves its images without one.
-    for (const image of batch) attributed.add(image.name);
+    for (const image of group) attributed.add(image.name);
     parsed.forEach((entry, index) => {
-      const image = batch[index];
+      const image = group[index];
       if (!image || !entry) return;
       // 🔴 THE LABELS COME OFF THE SAME REPLY, AND THE PROSE IS HANDED ON WITHOUT THEM. Callers
       // that only want a caption must not suddenly receive a machine-readable line inside it —
@@ -441,6 +458,69 @@ export async function readFiguresWithVision(
       if (description) out.set(image.name, description);
       if (labels.length > 0) found.set(image.name, labels);
     });
+    return "attributed";
+  };
+
+  /**
+   * One batch, and — when its reply could not be lined up — the same pictures asked about ONE
+   * AT A TIME.
+   *
+   * 🔴 THE BATCH IS THE BUG, NOT THE COUNT CHECK. `parseFigureDescriptions` refuses a reply
+   * whose entry count does not match, and it is right to: position is the only link between a
+   * batched answer and its inputs. But the whole batch then goes undescribed. Measured on the
+   * owner's diabetes lecture: the model answered three images in TWO entries — a complete,
+   * correct answer — because two of the images are halves of one slide, and three real
+   * descriptions including a labelled diagram were thrown away. Asking about one picture at a
+   * time removes position from the problem entirely: with a single image there is no other
+   * image an answer could belong to.
+   *
+   * 🔴 STRAIGHT TO SINGLES, NOT HALVES, AND NOT RECURSIVELY. Halving costs the same units per
+   * round and can need several rounds, so a batch that keeps mismatching pays two or three
+   * times over; singles pay exactly once and are attributable by construction. There is no
+   * recursion here at all — a single that still cannot be lined up is refused, specifically,
+   * rather than split again into something that would have to be guessed at.
+   *
+   * 🔴 AND IT IS PAID FOR BEFORE IT IS SENT. Every re-sent image is a second billable unit;
+   * Gemini vision is the one primitive here with no entitlement and no counter, and the first
+   * version of this fix was reverted precisely because it re-sent images the ledger never
+   * granted. `take(1)` per picture is a synchronous debit that cannot be raced, and it is taken
+   * IMMEDIATELY BEFORE that picture goes out, so the units the ledger reserved and the images
+   * that reached the wire are the same number even if the parse is aborted half way through.
+   * When the grant runs out the split simply stops: those figures keep the refusal they already
+   * had rather than quietly spending an allowance nobody issued.
+   *
+   * A single image is also, incidentally, the only request shape this module can bound. Every
+   * image has already passed `withinVisionLimit`; nothing bounds a batch of eight of them.
+   */
+  const describeBatch = async (batch: VisionImage[]) => {
+    if ((await sendGroup(batch)) !== "unattributable") return;
+    // A batch of one has already been asked in the only shape there is. Splitting it would
+    // re-send an identical request and charge for it twice.
+    if (batch.length <= 1) return;
+
+    const ledger = currentVisionLedger();
+    let granted = 0;
+    for (const image of batch) {
+      // Checked before the debit, so an aborted parse cannot leave units reserved against
+      // requests that will never be made.
+      if (options.signal?.aborted) break;
+      // Once the ledger refuses, it refuses for the rest of this parse — `remaining` only ever
+      // falls — so there is nothing to be gained by asking again for the next picture.
+      if (ledger.take(1) === 0) break;
+      granted += 1;
+      await sendGroup([image]);
+    }
+    // 🔴 A BUDGET REFUSAL MUST BE READABLE, NOT INFERRED. `granted < images` is a document cut
+    // short by cost, and without this line the only trace would be figures that are absent for
+    // an unstated reason — the same silent-degradation shape this whole vocabulary exists to
+    // prevent. Those pictures stay `unattributed`, which the caller reports as no usable read;
+    // they are NOT `notSent`, because they were sent, answered, and paid for once already.
+    console.warn(JSON.stringify({
+      event: "figure_batch_split",
+      images: batch.length,
+      granted,
+      refused: batch.length - granted,
+    }));
   };
 
   let next = 0;
