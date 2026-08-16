@@ -160,7 +160,7 @@ This is now the one table to trust for status; task order matches the sections b
 | `RUNTIME-001` compositional task hosting | Runtime | ✅ MERGED #494, **deployed** (ancestor of the serving commit). First attempt moved the gate rather than opening it — `INTEGRATION-001` caught this by execution, not by reading the diff. Fixed by `RUNTIME-005`; integration-proven 2026-08-13 on `a02d6063`, still an ancestor of what serves today. |
 | `RUNTIME-002` one response identity per answer | Runtime | ✅ ACCEPTED, deployed. Brain's original defect report retracted — it read a memo-guard expression and mistook it for `responseId` itself. |
 | `RUNTIME-003` a task targets a SET of objectives | Runtime | ✅ MERGED #508, deployed. Unit-tested only — no production caller existed at merge time (the board said so itself: "tests executed by Brain: none"). Not confirmed integration-proven in this pass. |
-| `RUNTIME-004` sources attached without a durable id | Runtime | Investigated read-only 2026-08-13, nothing built — full finding in its own section below. Not re-examined in this pass; nothing found suggests it has changed. |
+| `RUNTIME-004` sources attached without a durable id | Runtime | `not re-verified 2026-08-15`. Investigated read-only 2026-08-13, nothing built — full finding in its own section below. Not re-examined in this pass — no check was run either way; absence of a contradiction found while verifying other rows is not confirmation. |
 | `RUNTIME-005` gate objective production on trust, not coverage | Runtime | ✅ MERGED, deployed. This is the fix that made `INTEGRATION-001` pass. |
 | `RUNTIME-006` judged / not-judged are different values (F5) | Runtime | ✅ MERGED **#519** ("An outage and an empty answer stop being the same value"), deployed. Confirmed live: `objective-task.ts:113-115` declares `type Judgement = {judged:true; outcomes} \| {judged:false}` exactly as specified. |
 | `PARSER-001` derived verdict crosses the boundary | Parser | ✅ MERGED #504, deployed. |
@@ -991,10 +991,14 @@ false}` writes nothing for any target, confirmed at `:137`.
 the code is in the build the production alias currently serves. It does not mean a real learner has
 been asked a causal, classification, or procedure question. The most recent Integration read of
 production (comment on #505, 2026-08-15T14:36:43Z) found `learner_evidence` at **1 row total**,
-`teaching_strategy: null` — a figure attributed to that comment, not re-queried in this pass. Nothing
-in that row's shape ties it to any of the three new capabilities. **The concrete check that would
-close this gap:** a production `learner_evidence` row whose objective identity carries
-`capability: "predict"` (causal), `"discriminate"` (classification), or `"sequence"` (procedure) —
+`teaching_strategy: null` — a figure attributed to that comment **as of that timestamp**, not
+re-queried in this pass. **It is no longer current even within this reconciliation pass**: PR #639
+(below) wrote at least one more row a few hours later, so the true count now is 2-or-more, not 1 —
+cited here as a live illustration of exactly the staleness this document exists to stop propagating.
+Nothing in either row's shape ties it to any of the three new capabilities — #639's row is
+confirmed `recall` (association), detailed below. **The concrete check that would close this gap:**
+a production `learner_evidence` row whose objective identity carries `capability: "predict"`
+(causal), `"discriminate"` (classification), or `"sequence"` (procedure) —
 `objectiveIdentityKey`'s `capability` field, minted at `learning-objective.ts:274/369/405`. Until
 that row exists, the honest status is **merged + deployed, not integration-proven.**
 
