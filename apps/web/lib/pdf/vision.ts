@@ -411,7 +411,21 @@ export async function readFiguresWithVision(
     if (!reply) return;
     reached = true;
     const parsed = parseFigureDescriptions(reply.text, batch.length);
-    if (!parsed) return;
+    if (!parsed) {
+      // 🔴 A FALLBACK THAT HIDES ITS OWN REASON IS A LEAK, AND THIS ONE HID THE COMMONEST ONE.
+      // Coverage can now say these figures have no usable read, but not WHY — and "the reply
+      // did not line up" and "the model ladder is dead" are the two states this vocabulary was
+      // built to separate. `callGemini` logs its attempts; this branch logged nothing at all,
+      // so the difference was invisible in production. Measured on a real lecture: a complete,
+      // correct answer in 2 entries for a batch of 3, discarded in silence.
+      console.warn(JSON.stringify({
+        event: "figure_batch_unattributed",
+        images: batch.length,
+        entries: (reply.text.match(/^\s*\d+[.)]\s/gm) ?? []).length,
+        model: reply.model,
+      }));
+      return;
+    }
     // Attributed the moment the reply's entries line up with the batch — BEFORE asking what any
     // entry says. An entry reading "none" is an answer about that picture; only a batch that
     // never lined up leaves its images without one.
