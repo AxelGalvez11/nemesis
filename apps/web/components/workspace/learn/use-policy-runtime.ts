@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { teachingExperimentStartedAt } from "@/lib/env";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { evaluateLearningResponse } from "@/lib/learn/canvas-api";
 import type { LearnerInputModality, LearningCanvas, ResponseEvaluation } from "@/lib/learn/canvas-model";
@@ -52,6 +53,7 @@ import type { TeachingAct } from "@/lib/learn/attention-budget";
 import {
   conflictingStrategy,
   resolveStrategy,
+  teachingExperimentEligible,
   type StrategyOutcome,
   type TeachingDecision,
   type TeachingStrategyId,
@@ -346,17 +348,30 @@ export function usePolicyRuntime(
    * the data could find them. `resolveStrategy` is a pure function of `(override, uid, canvasId)`,
    * so it answers the same thing in every tab, after every reload, for ever.
    *
-   * 🔴 `randomise: false` IS THE SHIPPED STATE AND TURNING IT ON IS THE OWNER'S CALL. With it off,
-   * every learner who has not typed an arm into the URL gets `nemesis_policy` — today's behaviour
-   * exactly — so landing this changes nothing for anybody until someone decides to run the
-   * experiment. The mechanism is complete; the enrolment is not switched on.
+   * 🔴 RANDOMISATION IS DATED, NOT A GLOBAL BOOLEAN. A configured activation instant admits only
+   * canvases created from that point forward, so switching the experiment on cannot change the
+   * controller of an older canvas whose evidence is already labelled. With no valid instant the
+   * function returns false and nobody is enrolled.
    */
-  const { strategy } = resolveStrategy({
+  const assignment = resolveStrategy({
     canvasId: canvas.id,
     learnerId: uid,
     override: strategyOverride,
-    randomise: false,
+    randomise: teachingExperimentEligible(canvas.createdAt, teachingExperimentStartedAt),
   });
+  const { assignedBy, strategy } = assignment;
+
+  const reportedAssignment = useRef<string | null>(null);
+  useEffect(() => {
+    if (!uid) return;
+    const key = `${canvas.id}:${assignedBy}:${strategy}`;
+    if (reportedAssignment.current === key) return;
+    reportedAssignment.current = key;
+    canvasCapture("canvas_strategy_assigned", { id: canvas.id, state: canvas.state }, {
+      assigned_by: assignedBy,
+      strategy,
+    });
+  }, [assignedBy, canvas.id, canvas.state, strategy, uid]);
 
   const [status, setStatus] = useState<PolicyRuntime["status"]>(enabled ? "loading" : "unavailable");
   const [knowledge, setKnowledge] = useState<CanvasKnowledge>({

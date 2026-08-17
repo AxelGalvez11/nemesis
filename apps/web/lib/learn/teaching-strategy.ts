@@ -379,6 +379,23 @@ export interface StrategyAssignment {
 }
 
 /**
+ * Whether a canvas belongs to the randomised rollout cohort.
+ *
+ * The activation instant is part of the experiment definition. Comparing it with the canvas's
+ * durable creation time lets a rollout begin without switching an older in-progress canvas from
+ * the controller that already produced its evidence. Invalid or absent dates fail closed.
+ */
+export function teachingExperimentEligible(
+  canvasCreatedAt: string,
+  experimentStartedAt: string | null,
+): boolean {
+  if (!experimentStartedAt) return false;
+  const canvasTime = Date.parse(canvasCreatedAt);
+  const experimentTime = Date.parse(experimentStartedAt);
+  return Number.isFinite(canvasTime) && Number.isFinite(experimentTime) && canvasTime >= experimentTime;
+}
+
+/**
  * A stable 32-bit hash. 🔴 FNV-1a rather than anything cryptographic: this picks an experiment arm,
  * so what it needs is determinism and an even spread, not unpredictability. A hash nobody can
  * reproduce would make it impossible to check afterwards which arm a learner should have been in.
@@ -408,15 +425,15 @@ function hash32(value: string): number {
  * no assignment table, no write on canvas creation. The hash IS the assignment.
  *
  * 🔴 RANDOMISATION IS OFF AND MUST BE TURNED ON DELIBERATELY. With `randomise: false` every learner
- * who has not asked for an arm gets `nemesis_policy`, which is exactly today's behaviour — so
- * shipping this changes nothing for anybody until someone decides to run the experiment.
+ * who has not asked for an arm gets `DEFAULT_STRATEGY`, so shipping the mechanism changes nothing
+ * until the dated rollout switch admits a newly created canvas.
  */
 export function resolveStrategy(input: {
   /** What the URL asked for. Outranks everything: a developer exercising an arm means that arm. */
   override: TeachingStrategyId | null;
   learnerId: string | null;
   canvasId: string;
-  /** 🔴 OFF. Flipping this enrols learners into an experiment, which is the owner's call. */
+  /** True only for a canvas created after the deliberately configured rollout instant. */
   randomise: boolean;
 }): StrategyAssignment {
   if (input.override) return { assignedBy: "override", strategy: input.override };
