@@ -35,18 +35,18 @@ export const metadata: Metadata = {
 
 const PRINCIPLES: readonly { say: string; lines: readonly string[] }[] = [
   {
-    say: "information is abundant. attention is scarce.",
+    say: "Information is abundant. Attention is scarce.",
     lines: ["Nemesis turns everything around you into the next thing worth understanding."],
   },
   {
-    say: "less information. more learning.",
+    say: "Less information. More learning.",
     lines: [
       "300 slides should not become 600 flashcards.",
       "Nemesis distills what matters and shows you only what you need now.",
     ],
   },
   {
-    say: "one thing at a time.",
+    say: "One thing at a time.",
     lines: [
       "Learn it. Think about it. Use it.",
       "Then move on.",
@@ -54,21 +54,21 @@ const PRINCIPLES: readonly { say: string; lines: readonly string[] }[] = [
     ],
   },
   {
-    say: "start simple. go deeper when you're ready.",
+    say: "Start simple. Go deeper when you're ready.",
     lines: [
       "Nemesis explains things at the level that makes sense to you.",
       "Simple language. Better analogies. More depth when you need it.",
     ],
   },
   {
-    say: "stay at the edge of what you can do.",
+    say: "Stay at the edge of what you can do.",
     lines: [
       "Too easy is boring. Too hard is noise.",
       "Nemesis learns what you understand, where you struggle, and continuously adjusts what comes next.",
     ],
   },
   {
-    say: "think, don't collect.",
+    say: "Think, don't collect.",
     lines: [
       "Learning is not making notes, rereading slides, or accumulating flashcards.",
       "It is retrieving, connecting, explaining, solving, and correcting.",
@@ -81,7 +81,7 @@ export default function Principles() {
     <SiteChrome>
       <header className="phead">
         <div className="wrap">
-          <h1>principles</h1>
+          <h1>Principles</h1>
         </div>
       </header>
 

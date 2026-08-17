@@ -43,9 +43,10 @@
 // silently swap it back to `1rem` for consistency with the rest of this file, which would
 // reintroduce the zoom by way of looking like a tidy-up.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
 import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model";
 import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { cn } from "@/lib/utils";
@@ -181,9 +182,19 @@ export function CanvasComposer({
   const filePicker = useRef<HTMLInputElement>(null);
   const addMenu = useRef<HTMLDivElement>(null);
   const dictation = useCanvasDictation();
-  /** Set the moment the microphone is used, because §23 reads elapsed time differently for
-   *  speech and typing and a mislabelled answer is read against the wrong baseline. */
-  const inputModality = useRef<LearnerInputModality>("typed");
+  /** How the answer in the box was produced, because §23 reads elapsed time differently for
+   *  speech and typing and a mislabelled answer is read against the wrong baseline. Every change
+   *  goes through `nextAnswerModality` — a capture that set this and was then thrown away has to
+   *  take it back, and doing that by hand is exactly what was missed. */
+  const inputModality = useRef<LearnerInputModality>(DEFAULT_ANSWER_MODALITY);
+  /** 🔴 `useCallback([])` SO THIS IS SAFE TO PUT IN AN EFFECT'S DEPS. It closes over nothing that
+   *  changes — a ref and a pure import — so a stale closure and a fresh one are the same function.
+   *  Without a stable identity, anyone "completing" the deps of the prompt-changed effect below
+   *  would make it re-run on EVERY render, and that effect calls `setText("")`: the learner's
+   *  answer would vanish as they typed it. Stable identity makes the obvious edit harmless. */
+  const modalityEvent = useCallback((event: Parameters<typeof nextAnswerModality>[1]) => {
+    inputModality.current = nextAnswerModality(inputModality.current, event);
+  }, []);
   /** When the current prompt appeared, for response latency. Reset per prompt, not per render. */
   const startedAt = useRef(Date.now());
 
@@ -214,7 +225,7 @@ export function CanvasComposer({
 
   useEffect(() => {
     setText("");
-    inputModality.current = "typed";
+    modalityEvent({ kind: "prompt_changed" });
     typedBefore.current = "";
     startedAt.current = Date.now();
     // A pad left open from the PREVIOUS prompt is answering a question that no longer exists —
@@ -224,7 +235,7 @@ export function CanvasComposer({
 
   useEffect(() => {
     if (!dictation.listening && !dictation.transcript) return;
-    inputModality.current = "spoken";
+    modalityEvent({ kind: "captured", via: "spoken" });
     setText([typedBefore.current, dictation.transcript].filter(Boolean).join(" ").trimStart());
   }, [dictation.listening, dictation.transcript]);
 
@@ -290,7 +301,7 @@ export function CanvasComposer({
     if (onStart) onStart(value);
     else if (answering) onAnswer(value, inputModality.current, Date.now() - startedAt.current);
     else onAsk(value);
-    inputModality.current = "typed";
+    modalityEvent({ kind: "submitted" });
     typedBefore.current = "";
   };
 
@@ -300,10 +311,14 @@ export function CanvasComposer({
     dictation.start();
   };
 
-  /** × — throw the capture away and put the composer back as it was. */
+  /** × — throw the capture away and put the composer back as it was. 🔴 INCLUDING THE MODALITY:
+   *  without the discard the flag stayed "spoken", so a learner who spoke, changed their mind and
+   *  then TYPED had a typed answer graded under the speech-leniency instruction and stored against
+   *  the wrong response-time baseline. See answer-modality.ts. */
   const cancelDictation = () => {
     dictation.stop();
     dictation.reset();
+    modalityEvent({ kind: "capture_discarded" });
     setText(typedBefore.current);
   };
 
@@ -360,7 +375,7 @@ export function CanvasComposer({
             onAccept={(value) => {
               setText(value);
               typedBefore.current = value;
-              inputModality.current = "written";
+              modalityEvent({ kind: "captured", via: "written" });
               setDrawing(false);
               input.current?.focus();
             }}
@@ -570,7 +585,10 @@ export function CanvasComposer({
                 onChange={(event) => {
                   setText(event.target.value);
                   typedBefore.current = event.target.value;
-                  if (!event.target.value) inputModality.current = "typed";
+                  // Emptying the box by hand throws the capture away as surely as ✕ does. 🔴 THIS
+                  // ALONE NEVER FIXED THE LEAK: `onChange` does not fire when `cancelDictation`
+                  // calls `setText`, so cancelling and then typing never passed through here.
+                  if (!event.target.value) modalityEvent({ kind: "capture_discarded" });
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {

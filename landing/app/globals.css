@@ -202,19 +202,23 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .nav .spacer { flex: 1; }
 .nav a.ghost {
   color: var(--text-2); text-decoration: none; font-family: var(--sans);
-  font-size: 12.5px; font-weight: 450; letter-spacing: 0.08em; text-transform: lowercase;
+  font-size: 12.5px; font-weight: 450; letter-spacing: 0.08em;
   transition: color 0.15s ease;
 }
 .nav a.ghost:hover { color: var(--text); }
 .nav .btn { flex-shrink: 0; white-space: nowrap; }
 
 /* buttons — the primary is simply the page inverted.
-   Lowercase, like everything else that is chrome rather than prose. The DOM text
-   stays sentence-case, so the accessible name and the analytics label are unchanged
-   by the transform; only what is drawn on screen is lowered. */
+   The lowercase transform came off here, on the nav links, the mobile menu, the
+   footer column headings and the legal back-link on 2026-08-17 at the owner's
+   direction: the site is not written in lowercase any more, and a transform would
+   have re-lowered every button on every page whatever the DOM said. The DOM text
+   was always sentence-case, so no accessible name and no analytics label changes
+   — only what is drawn. The wordmark keeps its lowercase, which is a logotype
+   rather than a sentence; see .brand b. */
 .btn {
   display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans);
-  font-size: 13px; font-weight: 500; letter-spacing: 0.08em; text-transform: lowercase;
+  font-size: 13px; font-weight: 500; letter-spacing: 0.08em;
   text-decoration: none; padding: 13px 24px; border-radius: 2px;
   border: 1px solid transparent;
   transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
@@ -279,7 +283,7 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .nav-menu-in { display: grid; gap: 2px; padding-top: 8px; padding-bottom: 16px; }
 .nav-menu-in a {
   text-decoration: none; color: var(--text-2); font-family: var(--sans);
-  font-size: 14px; font-weight: 450; letter-spacing: 0.08em; text-transform: lowercase;
+  font-size: 14px; font-weight: 450; letter-spacing: 0.08em;
   /* 44px of height is the tap target, not decoration */
   display: flex; align-items: center; min-height: 44px;
 }
@@ -359,8 +363,7 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 .foot-tag { margin: 0; color: var(--text-3); font-family: var(--sans); font-size: 12.5px; letter-spacing: 0.02em; }
 .foot-col { display: flex; flex-direction: column; gap: 10px; }
 .foot-k {
-  font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: 0.18em;
-  text-transform: lowercase; color: var(--text-3); margin-bottom: 4px;
+  font-family: var(--mono); font-size: 11px; font-weight: 400; letter-spacing: 0.18em; color: var(--text-3); margin-bottom: 4px;
 }
 .foot-base { display: flex; align-items: center; gap: 14px; margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--line); }
 
@@ -372,8 +375,7 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 }
 .legal-top .container { display: flex; align-items: center; justify-content: space-between; height: 58px; }
 .legal-back {
-  font-family: var(--sans); font-size: 12.5px; font-weight: 450; letter-spacing: 0.08em;
-  text-transform: lowercase; color: var(--text-2); text-decoration: none;
+  font-family: var(--sans); font-size: 12.5px; font-weight: 450; letter-spacing: 0.08em; color: var(--text-2); text-decoration: none;
 }
 .legal-back:hover { color: var(--text); }
 .legal-wrap { max-width: 720px; margin: 0 auto; padding: 88px 28px 80px; }
