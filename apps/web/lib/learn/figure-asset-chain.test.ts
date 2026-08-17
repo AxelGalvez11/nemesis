@@ -18,6 +18,7 @@ import { sourceContextFromModel } from "@/lib/sources/source-context";
 import { needsSigning } from "./figure-asset-url";
 import { figureKnowledge } from "./figure-knowledge";
 import { knowledgeIdentityKey } from "./knowledge-identity";
+import { routeVisual } from "./visual-route";
 
 const LABELS = [
   { text: "nucleus", x: 0.3, y: 0.4 },
@@ -180,6 +181,12 @@ test("the spatial screen never hands a parser figure key to an image element", (
     new URL("../../components/workspace/learn/canvas-policy-view.tsx", import.meta.url),
     "utf8",
   );
+  // 🔴 THE THIRD ASSERTION MOVED FILES BECAUSE THE RULE DID, AND IT IS NOT WEAKER FOR IT. The
+  // "no stored picture, no interaction" refusal used to be a line in the view; §41 required the
+  // router to absorb the source-figure path, so it now lives in `visual-route.ts` and the view
+  // asks. This guard caught that move on the first run, which is what it is for — so it follows
+  // the rule to where the rule went rather than being softened to accommodate the change.
+  const router = readFileSync(new URL("./visual-route.ts", import.meta.url), "utf8");
   assert.ok(
     !/src=\{[^}]*\bimageRef\b/.test(view),
     "🔴 `imageRef` is `ppt/media/image3.png` — relative to the page, so the browser requests a " +
@@ -190,7 +197,39 @@ test("the spatial screen never hands a parser figure key to an image element", (
     "the diagram must be located by its stored asset path",
   );
   assert.ok(
-    /if \(!figure\.assetPath\) return null;/.test(view),
+    /if \(!figure\.assetPath\)/.test(router),
     "and a figure with no stored picture must host no visual interaction at all",
   );
+  // The router must REFUSE such a figure, never fall through to rendering it anyway.
+  assert.match(router, /reason: "figure-has-no-asset"/);
+  assert.ok(
+    !/src=\{[^}]*\bimageRef\b/.test(router),
+    "the router must not have grown its own image element",
+  );
+});
+
+// 🔴 AND THE BEHAVIOUR ITSELF, NOT ONLY THE SOURCE TEXT. The three assertions above read files;
+// this one runs the decision. A source-text guard survives a refactor that renames the variable and
+// keeps the bug, so the rule is also exercised through the function that now owns it.
+test("🔴 a figure with no stored picture is refused by the router, not merely un-rendered", () => {
+  const labels = [{ text: "Alpha", x: 0.2, y: 0.3 }, { text: "Beta", x: 0.6, y: 0.7 }];
+  const base = {
+    id: "k1",
+    statement: "s",
+    type: "spatial" as const,
+    unanchoredProvenance: ["model" as const],
+  };
+  const withAsset = routeVisual({
+    knowledge: { ...base, figure: { assetPath: "u/1.png", imageRef: "ppt/media/image3.png", labels } },
+    labelKey: "Alpha",
+    operation: "locate",
+  });
+  const withoutAsset = routeVisual({
+    knowledge: { ...base, figure: { imageRef: "ppt/media/image3.png", labels } },
+    labelKey: "Alpha",
+    operation: "locate",
+  });
+  assert.equal(withAsset.decision, "render", "a stored figure still hosts the interaction");
+  assert.equal(withoutAsset.decision, "prose");
+  assert.equal(withoutAsset.decision === "prose" && withoutAsset.reason, "figure-has-no-asset");
 });
