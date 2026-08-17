@@ -1095,8 +1095,26 @@
    pinned inside it, because scroll position chose the representation; the
    sequence is on a clock now, so the section is the size of its contents and the
    page scrolls past it normally. */
-.shw { padding: clamp(80px, 11vw, 150px) 0; }
-.shw-inner { width: 100%; }
+/* Tighter than the other sections, deliberately. The owner asked for this Canvas
+   to be almost full screen, and "almost full screen" is a budget against the
+   VIEWPORT: at 150px of section padding plus a 58px sticky nav, a frame big
+   enough to fill the screen cannot be seen whole, which is the point of asking. */
+.shw { padding: clamp(32px, 4vw, 60px) 0; }
+
+/* THE WIDTH BUDGET LIVES HERE, not on the frame. The headline and the line
+   beneath belong to the Canvas and have to share its left edge: with the budget
+   on .shw-canvas alone the frame centred itself inside a 1364px wrap and the two
+   pieces of text stayed pinned to the wrap, leaving them ~113px adrift of the
+   thing they label. Sizing the inner column and letting the frame fill it means
+   there is one edge and it cannot drift. */
+.shw-inner {
+  /* The `+ 56px` is .wrap-wide's own horizontal padding. Without it the padding
+     comes out of the svh budget, so the frame lands 25px shorter than the height
+     it was asked for — the budget describes the FRAME, and this term is what
+     keeps the number in the expression and the number on screen the same thing. */
+  width: min(100%, 1440px, calc(62svh * 960 / 420 + 56px));
+  margin: 0 auto;
+}
 
 .shw-head {
   font-family: var(--sans);
@@ -1127,41 +1145,322 @@
      the letterboxing comes straight back. The third term is the height budget
      expressed as a width, so the box shrinks to fit a short window rather than
      being cropped by one. */
-  width: min(100%, 1040px, calc(54svh * 960 / 420));
+  /* Fills the inner column, which carries the budget (see .shw-inner). Height
+     still comes only from the ratio — setting a height or a max-height here is
+     what silently breaks 960/420 and brings the letterboxing back. */
+  width: 100%;
   aspect-ratio: 960 / 420;
   margin: 0 auto;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--surface);
+  /* A 3% step off the page rather than the page colour itself, so the composer
+     pill sitting on `--shw-elevated` reads as floating above the Canvas instead
+     of dissolving into it. OPAQUE, not `--wash`: the composer's scrim is a
+     gradient in this same colour, and a gradient from a translucent stop cannot
+     hide the text passing under it. The step is deliberately tiny — this is a
+     working surface, not a card. */
+  background: var(--shw-canvas-bg);
   overflow: hidden;
-}
-
-.shw-layer {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* No CSS transition. Opacity and transform are written every frame from the
-     clock, so a duration here would be a second easing curve fighting the first
-     and would lag the value it is chasing. */
-  transform-origin: center;
-  will-change: opacity, transform;
 }
 
 .shw-svg { width: 100%; height: 100%; display: block; }
 
-/* The three-oval processing state, shown in the gap between representations.
-   pointer-events:none so an invisible layer sitting over the frame can never
-   swallow a drag on the scene underneath it. */
-.shw-thinking {
+/* ══════════════════════════════════════════════════════════════════════════════
+   THE SESSION
+   ══════════════════════════════════════════════════════════════════════════════
+
+   A miniature of the real Nemesis Canvas. Every measurement in the composer is
+   the app's own — `apps/web/components/workspace/learn/canvas-composer.tsx`
+   carries the reasoning for each: a 52px pill on a 26px radius, 36×36 icon
+   buttons with 20px glyphs, a 16px input on 26px line-height. They are used
+   unscaled rather than shrunk to the frame, because the point of this section is
+   that a visitor recognises the control when they reach the product.
+
+   🔴 TWO COLOURS, AND THE REST OF THIS PAGE STAYS ACHROMATIC. These are the
+   app's real `--ui-action` and `--ui-learner`. The learner colour is not styling:
+   the product contract fixes its meaning as "this came from you", and telling
+   the learner's sentence apart from Nemesis's is the single thing a visitor must
+   read off this animation. */
+/* 🔴 AND THE COMPOSER SITS ON AN ELEVATED GROUND, WHICH HAS TO BE STATED PER
+   THEME. The product separates `--ui-bg-editor` from `--ui-bg-elevated` so the
+   pill floats above the canvas. Written as `var(--bg)` against a `var(--surface)`
+   frame the two resolved to the SAME colour, and in dark mode the result was a
+   composer that had vanished apart from a hairline ring — its shadow is black on
+   black and carries nothing. "Lighter" is not a direction that survives a theme
+   flip: on paper the frame steps down and the pill stays white, on black the
+   frame stays and the pill steps up. */
+:root {
+  --shw-action: #37614a;
+  --shw-learner: #2563eb;
+  --shw-elevated: var(--bg);
+  /* Resolves to #f7f7f7 on paper and #080808 on black — one expression, both
+     directions, because "3% toward the ink" is the same instruction either way. */
+  --shw-canvas-bg: color-mix(in srgb, var(--text) 3%, var(--bg));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --shw-action: #9fc4ae;
+    --shw-learner: #5b9bff;
+    --shw-elevated: color-mix(in srgb, #ffffff 7%, var(--bg));
+  }
+}
+:root[data-theme="dark"] {
+  --shw-action: #9fc4ae;
+  --shw-learner: #5b9bff;
+  --shw-elevated: color-mix(in srgb, #ffffff 7%, var(--bg));
+}
+
+.sess {
   position: absolute;
   inset: 0;
+  display: grid;
+  /* The figure gets the smaller share. It illustrates the sentence; it is not
+     the subject of the section. */
+  grid-template-columns: 42% 58%;
+  align-items: center;
+}
+
+/* The figure clears the composer. Without the bottom inset the heart ran under
+   the pill and was cut off by the scrim, which read as a rendering fault rather
+   than as a figure. */
+.sess-figure { position: relative; height: 100%; }
+
+/* 🔴 THE TYPE INSIDE THE DRAWING IS ENLARGED, NOT THE DRAWING.
+   Every scene was authored to fill a 960px-wide frame, so its labels are sized
+   against that; in a 465px column they render at about half, and the chemistry
+   scene's came out at 5px — present and unreadable, which looks like a rendering
+   fault rather than a small label.
+   Scaling the whole figure was tried first and was WRONG: these drawings use
+   nearly their full viewBox (axes span 130→850 of 960), so there is no dead
+   margin to crop, and at 1.45× "energy" and "reaction path" were sliced to
+   "ergy" and "reactio" at the column edges. Cropped words look broken in a way
+   small ones do not. Raising the font-size inside the SVG lands the same
+   legibility with the geometry untouched: the viewBox still fits, and 19px in a
+   box rendering at 0.48 scale arrives on screen at about 9px. */
+/* The 3D scene paints its own `--surface` ground, which was fine when it filled
+   the frame and is a visible lighter rectangle now that it occupies one column of
+   a Canvas with its own 3% ground. Only the background is dropped — `color` is
+   what the shader samples for its palette and must stay. */
+.sess .shw-3d { background: transparent; }
+
+.sess .shw-tick { font-size: 19px; }
+.sess .shw-fn { font-size: 24px; }
+.sess .shw-readout-k { font-size: 19px; }
+.sess .shw-readout-v { font-size: 44px; }
+.sess-figure-slot,
+.sess-figure-out {
+  position: absolute;
+  inset: 12px 0 92px 0;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+/* No CSS transition anywhere in here. Opacity is written every frame from the
+   clock, and a duration would be a second easing curve fighting the first. */
+.sess-figure-slot > * { width: 100%; height: 100%; }
+
+.sess-surface {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* Bottom padding clears the composer and its scrim, so a long refinement can
+     never slide under the pill. */
+  padding: 0 clamp(20px, 3vw, 40px) 104px clamp(8px, 1.5vw, 20px);
+  height: 100%;
+  min-width: 0;
+}
+.sess-surface-out { position: absolute; inset: 0 0 0 42%; pointer-events: none; }
+
+.sess-subject {
+  margin: 0 0 14px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* One column for everything Nemesis and the learner put on the surface, so a
+   passage leaving and a question arriving occupy the same space rather than
+   pushing each other around. */
+.sess-stack { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+
+.sess-teach {
+  margin: 0;
+  max-width: 46ch;
+  font-size: clamp(14px, 1.15vw, 16px);
+  line-height: 1.6;
   color: var(--text-2);
+}
+
+.sess-question {
+  margin: 0;
+  max-width: 40ch;
+  font-size: clamp(16px, 1.4vw, 20px);
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+/* The learner's words. A tinted bubble in the learner colour that hugs its text
+   — `learner-utterance.tsx` argues it must never be full width, or it reads as a
+   paragraph, and must never take a verdict tone. */
+.sess-utterance {
+  display: inline-block;
+  margin: 0;
+  max-width: 40ch;
+  border-radius: 16px;
+  padding: 9px 14px;
+  font-size: clamp(13px, 1.05vw, 15px);
+  line-height: 1.5;
+  color: var(--shw-learner);
+  background: color-mix(in srgb, var(--shw-learner) 10%, transparent);
+}
+
+.sess-verdict {
+  margin: 0;
+  font-size: clamp(15px, 1.25vw, 18px);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.sess-refine {
+  margin: 0;
+  max-width: 46ch;
+  font-size: clamp(13px, 1.05vw, 15px);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* `Continue` — the product's real control, from canvas-policy-view.tsx: a ring-1
+   pill BELOW the material, same word, same meaning. */
+.sess-continue-row { margin-top: 8px; }
+.sess-continue {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  cursor: default;
+}
+
+/* Nemesis working: a 6px pulsing dot and a caption above the composer. Never a
+   scrim — canvas-thinking.tsx exists to make that point. */
+.sess-thinking {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   pointer-events: none;
+}
+.sess-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-3);
+  animation: sess-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sess-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.sess-thinking-label { font-size: 13px; color: var(--text-3); }
+
+/* ── The composer ──────────────────────────────────────────────────────────
+   Pinned, and outside every fade in this section. It does not belong to an act:
+   a session whose input moves between concepts is a slideshow with a text box
+   drawn on it. */
+.sess-composer {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px 16px;
+  /* The product's scrim: page colour fading to nothing, so text scrolling under
+     the pill never collides with it and no edge of its own is drawn. */
+  background: linear-gradient(to top, var(--shw-canvas-bg) 58%, transparent);
+  padding-top: 40px;
+  pointer-events: none;
+}
+/* 🔴 IT GROWS UPWARD FROM A FIXED BOTTOM EDGE, WHICH IS WHAT THE REAL ONE DOES.
+   The answers are two lines at this width, and the first build clipped them —
+   "…to push blood around the w" with the rest behind the send button, which is
+   the one thing a demonstration of a learner answering must not do. The pill is
+   anchored at the bottom and the surface above reserves room for it, so wrapping
+   moves nothing else on the Canvas. */
+.sess-pill {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 600px;
+  min-height: 52px;
+  border-radius: 26px;
+  padding: 8px 12px;
+  background: var(--shw-elevated);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 8px 24px rgba(0, 0, 0, 0.05),
+    inset 0 0 0 1px var(--line);
+}
+.sess-input {
+  flex: 1;
+  min-width: 0;
+  margin-left: 4px;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--text);
+}
+/* The placeholder is always one line; only a real answer wraps. */
+.sess-placeholder { color: var(--text-3); white-space: nowrap; }
+.sess-typed { color: var(--text); }
+.sess-caret {
+  display: inline-block;
+  width: 2px;
+  height: 16px;
+  vertical-align: -2px;
+  background: var(--text);
+  animation: sess-blink 1.1s steps(1) infinite;
+}
+@keyframes sess-blink { 50% { opacity: 0; } }
+
+.sess-icon,
+.sess-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 999px;
+}
+.sess-icon { color: var(--text-3); }
+/* Filled and coloured, never a grey glyph — the app's composer argues a grey
+   arrow reads as disabled even when it is not. */
+.sess-send {
+  margin-left: 8px;
+  background: var(--shw-action);
+  color: var(--bg);
+}
+
+/* The synthetic pointer. Positioned entirely from measured element boxes in a
+   layout effect; nothing here may assume a coordinate. */
+.sess-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  margin: -2px 0 0 -2px;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sess-thinking-dot,
+  .sess-caret { animation: none; }
 }
 
 .shw-line {
@@ -1256,6 +1555,9 @@
 .shw-axis line { stroke: var(--line-2); stroke-width: 1; }
 .shw-tick { font-family: var(--mono); font-size: 10px; fill: var(--text-3); }
 .shw-curve { fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
+/* The thing being compared AGAINST, in the chemistry scene: same shape language,
+   less ink, so the eye reads the catalysed path as the subject. */
+.shw-curve-soft { stroke: var(--text-3); stroke-width: 1.5; }
 .shw-secant { stroke: var(--text-2); stroke-width: 1.5; stroke-dasharray: 6 5; }
 .shw-guide { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 2 3; }
 .shw-point { fill: var(--text); }
@@ -1330,12 +1632,54 @@
      would be 146px tall, which is too short to read an equation in. A taller
      box that letterboxes the wider scenes is the better trade — legibility
      beats filling the frame. */
+  /* 🔴 TALLER THAN IT WAS, BECAUSE THERE IS MORE IN IT NOW. 230–360px held one
+     letterboxed figure. A session has to fit a figure, a passage, the control
+     under it and a 52px composer with its scrim, and 360px cannot: the composer
+     alone is a seventh of it. The section is meant to own the screen on a phone
+     as it does on a laptop, so the frame takes the height it needs. */
   .shw-canvas {
     width: 100%;
     aspect-ratio: auto;
-    height: clamp(230px, 42svh, 360px);
+    height: clamp(400px, 62svh, 540px);
     border-radius: 11px;
   }
+
+  /* Stacked, not side by side. At 335px wide a 42% column is 140px, which is too
+     narrow for either the figure or the sentence it supports. */
+  .sess {
+    grid-template-columns: 1fr;
+    grid-template-rows: 34% 66%;
+    align-items: stretch;
+    /* Phone only. The row height is the one thing in this component that
+       transitions in CSS rather than being written per frame: it changes once per
+       act, at a known beat, and animating it is what keeps the figure from
+       snapping away under the feedback. */
+    transition: grid-template-rows 320ms ease;
+  }
+  /* Four blocks of text need the whole frame here. Measured at 360×780 the
+     refinement overlapped the composer by 16px with the figure still holding a
+     third of the height. */
+  .sess[data-dense="true"] { grid-template-rows: 0% 100%; }
+  .sess[data-dense="true"] .sess-figure { opacity: 0; transition: opacity 240ms ease; }
+  .sess-surface {
+    justify-content: flex-start;
+    padding: 4px 16px 84px;
+  }
+  .sess-surface-out { inset: 34% 0 0 0; }
+  .sess-subject { margin-bottom: 8px; }
+  .sess-stack { gap: 8px; }
+  /* Measured, not guessed: at 360×780 the four feedback blocks still ran 15px
+     into the composer after the figure had yielded the whole frame. A phone this
+     narrow wraps the question to four lines, and the type had to come down with
+     it. */
+  .sess-question { font-size: 15px; }
+  .sess-verdict { font-size: 14px; }
+  .sess-utterance { font-size: 12.5px; padding: 7px 11px; }
+  .sess-refine { font-size: 12.5px; line-height: 1.45; }
+  .sess-pill { max-width: 100%; }
+  /* The pointer is a desktop idiom. A phone has no cursor, and drawing one
+     travelling to a button nobody can see hovering is a lie about the interface. */
+  .sess-cursor { display: none; }
   .shw-head { font-size: clamp(20px, 5.2vw, 28px); max-width: 100%; }
   .shw-line { font-size: 11px; }
 }

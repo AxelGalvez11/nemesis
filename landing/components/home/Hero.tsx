@@ -43,9 +43,9 @@ export function Hero() {
     <header className="nhero">
       <div className="wrap nhero-grid">
         <div className="nhero-copy">
-          <h1 className="reveal">accelerate cognition.</h1>
+          <h1 className="reveal">Accelerate cognition.</h1>
 
-          <p className="nhero-lede reveal r2">one canvas that learns how you learn.</p>
+          <p className="nhero-lede reveal r2">One Canvas that learns how you learn.</p>
 
           <div className="nhero-cta reveal r3">
             <a
