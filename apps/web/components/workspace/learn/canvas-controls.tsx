@@ -38,6 +38,12 @@ import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
+import { entrySummary, groupByDay, type TranscriptEntry } from "@/lib/learn/session-transcript";
+import {
+  shouldAskAboutAutoDictation,
+  type AutoDictation,
+  type VoiceMode,
+} from "@/lib/learn/voice-preferences";
 import { cn } from "@/lib/utils";
 
 import {
@@ -673,5 +679,163 @@ function MenuItem({
       <Codicon name={icon} size="0.75rem" />
       {label}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------- voice mode
+
+/**
+ * Voice mode on or off, and the one-time question about the microphone.
+ *
+ * 🔴 A MODE THE LEARNER TURNS ON, NEVER A THING THAT STARTS TALKING. Somebody who opened a canvas
+ * to read must not be spoken at, so `DEFAULT_VOICE_MODE` is off and this is the only way in.
+ *
+ * 🔴 IT DISAPPEARS DURING A RETRIEVAL WITH THE OTHER CONTROLS, AND THAT IS DELIBERATE. The rule at
+ * the top of this file — every glyph on screen during a fast recall is read before the answer is
+ * produced — applies to this button exactly as it does to Sources. Voice is session management,
+ * not answering. What replaces it mid-question is not chrome: the learner starting to answer stops
+ * the speech, which is what "do not talk over someone who is thinking" means in code.
+ *
+ * The ask about auto-dictation lives here rather than in a dialog because it is a preference about
+ * this control, and because a modal over a canvas is the second card the composer's own header
+ * spends a paragraph refusing.
+ */
+export function VoiceControl({
+  autoDictation,
+  dictationSupported,
+  onSetAutoDictation,
+  onToggle,
+  speaking,
+  voiceMode,
+}: {
+  voiceMode: VoiceMode;
+  autoDictation: AutoDictation;
+  /** False where the Web Speech API is absent — Firefox, most notably. Offering to open a
+   *  microphone that cannot listen is a promise the product cannot keep. */
+  dictationSupported: boolean;
+  /** Audio is playing right now, so the icon can say so rather than looking idle. */
+  speaking: boolean;
+  onToggle: (next: VoiceMode) => void;
+  onSetAutoDictation: (next: AutoDictation) => void;
+}) {
+  const on = voiceMode === "on";
+  const asking = shouldAskAboutAutoDictation({ autoDictation, dictationSupported, voiceMode });
+
+  return (
+    <div className="pointer-events-auto relative shrink-0">
+      <button
+        aria-label={on ? "Turn voice off" : "Read questions out loud"}
+        aria-pressed={on}
+        className={cn(CONTROL, on && "text-(--ui-action) hover:text-(--ui-action)")}
+        onClick={() => onToggle(on ? "off" : "on")}
+        title={on ? "Voice on: questions and corrections are read aloud" : "Read questions out loud"}
+        type="button"
+      >
+        {/* Two glyphs, not an animation: "on" and "on and talking right now" are different facts
+            and the second one is how a learner knows the sound is Nemesis and not a tab. */}
+        <Codicon name={speaking ? "unmute" : on ? "unmute" : "mute"} size="0.8125rem" />
+      </button>
+
+      {asking && (
+        <div className={cn(PANEL, "w-[17rem] p-3")}>
+          <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
+            Open the microphone after each question?
+          </p>
+          <p className="mt-1.5 text-[length:var(--canvas-text-meta)] leading-normal text-(--ui-text-tertiary)">
+            Nemesis reads the question, then starts listening so you can answer without touching
+            anything. You can still type.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              className="rounded-full bg-(--ui-action) px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-bg-editor) transition-opacity hover:opacity-90"
+              onClick={() => onSetAutoDictation("on")}
+              type="button"
+            >
+              Yes, listen
+            </button>
+            <button
+              className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
+              onClick={() => onSetAutoDictation("off")}
+              type="button"
+            >
+              No, I'll press it
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- session record
+
+/**
+ * What happened in this session, on request.
+ *
+ * 🔴 A PANEL, NEVER A COLUMN. The teaching surface shows one cognitive object and lets the rest go
+ * quiet; a permanent log beside it is the thing that whole design exists to avoid. But "the
+ * interface is calm" is not an answer to a learner asking what they said an hour ago, so the record
+ * exists and lives exactly one press away — behind the same kind of control as Sources and
+ * Objectives, and gone during a retrieval with them.
+ *
+ * 🔴 IT READS THE EVIDENCE LOG, WHICH IS APPEND-ONLY. `canvas-events.ts` is a capped ring buffer
+ * that drops its oldest rows, so a transcript built on it would silently lose the beginning of
+ * every long session — which is the part worth looking back at.
+ */
+export function SessionRecordControl({
+  entries,
+  locale,
+}: {
+  entries: readonly TranscriptEntry[];
+  locale?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const holder = useDismiss(open, () => setOpen(false));
+  const days = groupByDay(entries, locale);
+
+  return (
+    <div className="pointer-events-auto relative shrink-0" ref={holder}>
+      <button
+        aria-expanded={open}
+        aria-label="Session record"
+        className={CONTROL}
+        disabled={entries.length === 0}
+        onClick={() => setOpen((current) => !current)}
+        title="Session record"
+        type="button"
+      >
+        <Codicon name="history" size="0.8125rem" />
+      </button>
+
+      {open && (
+        <div className={cn(PANEL, "w-[22rem]")}>
+          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
+            Session record
+          </p>
+          {days.map((group) => (
+            <div key={group.day}>
+              <p className="px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                {group.day}
+              </p>
+              {group.entries.map((entry) => (
+                <div className="rounded-lg px-2 py-1.5" key={entry.id}>
+                  <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{entry.objective}</p>
+                  <p className="mt-0.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                    {entrySummary(entry)}
+                  </p>
+                  {/* Their own words, quoted rather than narrated — the same rule §K holds on the
+                      teaching surface: quote the learner, never tell them what they said. */}
+                  {entry.said && (
+                    <p className="mt-1 text-[length:var(--canvas-text-meta)] italic text-(--ui-text-quaternary)">
+                      “{entry.said.slice(0, 160)}{entry.said.length > 160 ? "…" : ""}”
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

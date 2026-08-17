@@ -46,6 +46,18 @@ function recogniser(): SpeechRecognitionConstructor | null {
   return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
 }
 
+/**
+ * Whether this browser can listen at all, without mounting the hook.
+ *
+ * 🔴 EXPORTED SO ONE FACT HAS ONE ANSWER. Voice mode's "shall I open the microphone for you?"
+ * question lives in the header and the microphone lives in the composer; both must agree, and two
+ * independent feature checks are two things that can disagree after a browser update. It is a
+ * property of the window, not of either component, so neither owns it.
+ */
+export function speechRecognitionSupported(): boolean {
+  return recogniser() !== null;
+}
+
 export interface Dictation {
   /** False in browsers with no Web Speech API — Firefox, most notably. The caller must still
    *  offer typing, so this hides the microphone rather than disabling the answer. */

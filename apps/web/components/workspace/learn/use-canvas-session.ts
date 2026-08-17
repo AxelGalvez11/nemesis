@@ -15,6 +15,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { deviceKey } from "@/lib/workspace/chat-api";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
+import type { IntentReason } from "@/lib/learn/learning-intent";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
   explainBlock,
@@ -109,6 +110,9 @@ type CanvasAside = {
   text: string;
   blockId: string | null;
   sources?: readonly ChatWebResult[];
+  /** Why Nemesis is offering to teach this, when it has a reason worth saying out loud. A plain
+   *  answer carries none and the offer stays a bare button. */
+  offer?: IntentReason;
   /** The learner's own question, retained only for the transient general-answer aside. It is the
    *  explicit topic if they press "Learn this"; the answer text is never mistaken for their goal. */
   question?: string;
@@ -167,7 +171,7 @@ export interface CanvasSession {
    * any) and general knowledge together, and lands in the SAME `aside` state `askAbout` already
    * uses, with `blockId: null`.
    */
-  askGeneral: (question: string) => Promise<void>;
+  askGeneral: (question: string, offer?: IntentReason) => Promise<void>;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
   learnFromAside: () => Promise<void>;
@@ -700,7 +704,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * distinguish which of the two callers set it, and it does not need to.
    */
   const askGeneral = useCallback(
-    async (question: string) => {
+    async (question: string, offer?: IntentReason) => {
       const id = requireUid();
       if (!id) return;
       const said = question.trim();
@@ -710,7 +714,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       const result = await askCanvasChat(id, latest.current, said);
       setBusy({ kind: null });
       if (!result.text) setError(result.error ?? "Nemesis had nothing to add.");
-      else setAside({ blockId: null, question: said, sources: result.sources, text: result.text });
+      // 🔴 THE ANSWER STILL COMES BACK IN FULL, WHATEVER THE OFFER SAYS. `offer` changes one line of
+      // copy above a button the learner may ignore; it never shortens or withholds what they asked
+      // for. Offering is not seizing.
+      else setAside({ blockId: null, offer, question: said, sources: result.sources, text: result.text });
     },
     [requireUid],
   );

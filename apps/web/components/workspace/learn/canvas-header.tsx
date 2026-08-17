@@ -20,7 +20,9 @@
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
-import { MinimapControl, ObjectivesControl, SourcesControl } from "./canvas-controls";
+import { MinimapControl, ObjectivesControl, SessionRecordControl, SourcesControl, VoiceControl } from "./canvas-controls";
+import type { AutoDictation, VoiceMode } from "@/lib/learn/voice-preferences";
+import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
 interface CanvasHeaderProps {
@@ -53,6 +55,25 @@ interface CanvasHeaderProps {
    *  attached material — disclosed in the Sources panel so a sourceless canvas does not report
    *  "Nothing attached yet" while it teaches from model knowledge (N10). */
   modelKnowledge?: boolean;
+  /**
+   * Voice mode's control, or absent where the canvas has no voice to offer.
+   *
+   * 🔴 SUPPLIED BY THE CALLER, NOT OWNED HERE. The preference has to outlive this component —
+   * the header unmounts on every retrieval (`minimal`), and state kept here would reset voice
+   * mode every time a question appeared.
+   */
+  /** The session record, read from the append-only evidence log. Empty means the control is
+   *  disabled rather than absent: "nothing has happened yet" is a real state worth being able to
+   *  see, and a control that vanishes reads as a feature that broke. */
+  transcript?: readonly TranscriptEntry[];
+  voice?: {
+    mode: VoiceMode;
+    autoDictation: AutoDictation;
+    dictationSupported: boolean;
+    speaking: boolean;
+    onToggle: (next: VoiceMode) => void;
+    onSetAutoDictation: (next: AutoDictation) => void;
+  };
 }
 
 export function CanvasHeader({
@@ -65,6 +86,8 @@ export function CanvasHeader({
   minimal = false,
   modelKnowledge = false,
   minimap,
+  transcript = [],
+  voice,
 }: CanvasHeaderProps) {
   return (
     <>
@@ -95,6 +118,17 @@ export function CanvasHeader({
         <>
           <SourcesControl canvas={canvas} modelKnowledge={modelKnowledge} onFiles={onFiles} onUrl={onUrl} />
           <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
+          <SessionRecordControl entries={transcript} />
+          {voice && (
+            <VoiceControl
+              autoDictation={voice.autoDictation}
+              dictationSupported={voice.dictationSupported}
+              onSetAutoDictation={voice.onSetAutoDictation}
+              onToggle={voice.onToggle}
+              speaking={voice.speaking}
+              voiceMode={voice.mode}
+            />
+          )}
           <MinimapControl
             coverage={minimap.coverage}
             decidedObjectiveKey={minimap.decidedObjectiveKey}
