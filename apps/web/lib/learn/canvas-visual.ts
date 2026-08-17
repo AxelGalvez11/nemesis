@@ -59,11 +59,14 @@ export type VisualRefusal =
    * A LaTeX escape hatch that leaves mathematics — `\href`, `\url`, `\includegraphics`, the `\html*`
    * family, or a macro definition.
    *
-   * 🔴 KaTeX ALREADY REFUSES THE FIRST GROUP UNDER `trust: false`, AND NAMING THEM HERE IS STILL THE
-   * IMPROVEMENT. A render-time rejection is silent, arrives after the decision to show something,
-   * and leaves no reason attached to anything a human reads. Refusing at the spec layer means the
-   * one interesting event in this whole file — a model reaching for a link or an external image
-   * inside a teaching equation — has a name.
+   * 🔴 KaTeX ALREADY BLOCKS THE FIRST GROUP UNDER `trust: false`, AND REFUSING THEM HERE IS STILL
+   * THE IMPROVEMENT — measured, not assumed. `trust: false` emits no anchor, but it does not throw
+   * either: it prints the literal `\href{https://evil.test}{click me}`, URL and all, in red where
+   * the equation should be. So the render-time defence holds the security line and hands the
+   * learner a red blob containing a model-chosen URL, with no reason attached to anything a human
+   * reads. Refusing at the spec layer means the one interesting event in this whole file — a model
+   * reaching for a link or an external image inside a teaching equation — has a NAME, and the
+   * teaching text stands on its own instead.
    *
    * 🔴 MACRO DEFINITIONS ARE HERE FOR A DIFFERENT REASON: EXPANSION, NOT ESCAPE. `\def\x{\x\x}` is
    * bounded only by KaTeX's `maxExpand`, and a teaching equation has no legitimate use for defining

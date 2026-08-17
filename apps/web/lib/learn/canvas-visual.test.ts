@@ -136,5 +136,15 @@ test("🔴 the equation renderer is bounded against expansion and size blowup", 
 
 test("🔴 the one animation on the occlusion screen yields to reduced motion", () => {
   const source = readFileSync(new URL("../../components/workspace/learn/figure-occlusion.tsx", import.meta.url), "utf8");
-  assert.match(source, /motion-reduce:transition-none/);
+  // 🔴 THE CLASS STRING, NOT THE FILE — AND THE FIRST VERSION OF THIS ASSERTION WAS DECORATION.
+  // It was `assert.match(source, /motion-reduce:transition-none/)`, and calibration proved it dead:
+  // deleting the class from the `<img>` turned NOTHING red, because the comment three lines above
+  // the class names the same token and the regex found that instead. A guard that passes on prose
+  // describing the code has no causal link to the code. Requiring both classes inside ONE
+  // double-quoted literal cannot be satisfied by a comment, which uses backticks inside a JSX block.
+  assert.match(
+    source,
+    /"[^"]*\btransition-opacity\b[^"]*\bmotion-reduce:transition-none\b[^"]*"/,
+    "the fade must carry its reduced-motion escape in the same class string",
+  );
 });
