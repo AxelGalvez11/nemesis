@@ -21,7 +21,8 @@ import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
-import { isOrdinaryChatQuestion } from "./canvas-chat-routing";
+import { readTurnIntent } from "@/lib/learn/learning-intent";
+import { offerLine } from "./offer-copy";
 import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
@@ -285,17 +286,49 @@ export function LearningCanvas({
    * interception is scoped to the one case it was built for: a canvas that holds no material at
    * all, where there is nothing else the text could reasonably mean.
    */
+  /**
+   * The learner's own recent utterances, newest last — the raw material for thread detection.
+   *
+   * 🔴 A REF, NOT STATE, AND THEIRS ONLY. Nothing renders from it, so state would re-render the
+   * whole canvas on every question for no visible reason. And it holds only what the LEARNER said:
+   * counting Nemesis's replies would make one long answer look like an engaged learner.
+   */
+  const recentAsks = useRef<string[]>([]);
+  const rememberAsk = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    // A short window. A thread is momentum, and momentum is recent by definition; keeping the whole
+    // session would let a subject mentioned twenty turns ago still vote.
+    recentAsks.current = [...recentAsks.current, trimmed].slice(-6);
+  }, []);
+
+  /** What this turn requires, from the utterance and everything else going on. */
+  const intentFor = useCallback(
+    (text: string) =>
+      readTurnIntent(text, {
+        attachedSources: canvas.sources.length,
+        recentAsks: recentAsks.current,
+        sessionUnderway: policy.decision !== null,
+      }),
+    [canvas.sources.length, policy.decision],
+  );
+
   const beginOrAnswer = useCallback(
     (asked: string) => {
       applyExplanationEvent({ kind: "new_turn" });
       const trimmed = asked.trim();
-      if (trimmed && canvas.sources.length === 0 && isOrdinaryChatQuestion(trimmed)) {
-        void session.askGeneral(trimmed);
+      // 🔴 NO MODES. The learner never picks "chat" or "tutor" — this reads what the turn needs.
+      // "What day is it" is answered even on an empty canvas; "teach me innate immunity" begins a
+      // lesson without the learner having to phrase it as a question first.
+      const intent = intentFor(trimmed);
+      if (trimmed && intent.kind !== "teach") {
+        rememberAsk(trimmed);
+        void session.askGeneral(trimmed, intent.because);
         return;
       }
       session.begin(asked || undefined);
     },
-    [applyExplanationEvent, canvas.sources.length, session],
+    [applyExplanationEvent, intentFor, rememberAsk, session],
   );
 
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
@@ -436,9 +469,22 @@ export function LearningCanvas({
       // else with a selection is a scoped edit instruction about that exact passage, which is a
       // different thing from an open-ended question and must keep mutating the document as it
       // does today.
-      if (routing.kind === "ordinary" && selected.length === 0 && isOrdinaryChatQuestion(text)) {
-        await session.askGeneral(text);
-        return;
+      // 🔴 AND THE SAME READING MID-CANVAS, NOT A SECOND RULE. `readTurnIntent` sees the attached
+      // sources and whether a lesson is already running, so "what does osmolarity mean" is still
+      // answered (rule 1), while a third question circling one idea is answered AND offered.
+      if (routing.kind === "ordinary" && selected.length === 0) {
+        const intent = intentFor(text);
+        if (intent.kind !== "teach") {
+          rememberAsk(text);
+          await session.askGeneral(text, intent.because);
+          return;
+        }
+        // An explicit "teach me this" typed into a canvas that has not begun starts the lesson
+        // rather than writing a paragraph into the document.
+        if (canvas.state === "empty") {
+          session.begin(text);
+          return;
+        }
       }
 
       // `ordinary` and `defer-to-policy` both take the normal path: the second is a scaffolding
@@ -774,13 +820,22 @@ export function LearningCanvas({
                 </div>
               )}
               {session.aside.question && (
-                <button
-                  className="mt-3 rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                  onClick={() => void session.learnFromAside()}
-                  type="button"
-                >
-                  Learn this
-                </button>
+                <div className="mt-3">
+                  {/* Only when Nemesis actually noticed something. A nudge on every reply is not a
+                      nudge, it is nagging, and the learner stops seeing it. */}
+                  {offerLine(session.aside.offer) && (
+                    <p className="mb-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                      {offerLine(session.aside.offer)}
+                    </p>
+                  )}
+                  <button
+                    className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                    onClick={() => void session.learnFromAside()}
+                    type="button"
+                  >
+                    Learn this
+                  </button>
+                </div>
               )}
               <button
                 className="mt-2 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
