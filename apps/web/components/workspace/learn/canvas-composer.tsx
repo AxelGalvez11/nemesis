@@ -43,7 +43,7 @@
 // silently swap it back to `1rem` for consistency with the rest of this file, which would
 // reintroduce the zoom by way of looking like a tidy-up.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
@@ -187,9 +187,14 @@ export function CanvasComposer({
    *  goes through `nextAnswerModality` — a capture that set this and was then thrown away has to
    *  take it back, and doing that by hand is exactly what was missed. */
   const inputModality = useRef<LearnerInputModality>(DEFAULT_ANSWER_MODALITY);
-  const modalityEvent = (event: Parameters<typeof nextAnswerModality>[1]) => {
+  /** 🔴 `useCallback([])` SO THIS IS SAFE TO PUT IN AN EFFECT'S DEPS. It closes over nothing that
+   *  changes — a ref and a pure import — so a stale closure and a fresh one are the same function.
+   *  Without a stable identity, anyone "completing" the deps of the prompt-changed effect below
+   *  would make it re-run on EVERY render, and that effect calls `setText("")`: the learner's
+   *  answer would vanish as they typed it. Stable identity makes the obvious edit harmless. */
+  const modalityEvent = useCallback((event: Parameters<typeof nextAnswerModality>[1]) => {
     inputModality.current = nextAnswerModality(inputModality.current, event);
-  };
+  }, []);
   /** When the current prompt appeared, for response latency. Reset per prompt, not per render. */
   const startedAt = useRef(Date.now());
 
