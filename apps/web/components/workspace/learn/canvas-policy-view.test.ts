@@ -341,8 +341,14 @@ test("🔴 §39: a verdict with a correction queued behind it spends NO window",
 
 test("🔴 a recognition decision has its own branch, before the catch-all that means `defer`", async () => {
   // 🔴 CALIBRATION: delete the `recognise` branch from PolicyScreen and this test reddens alone.
+  //
+  // 🔴 IT LOOKS FOR `if (` AND NOT JUST THE CONDITION, AND CALIBRATION IS WHY. Disabling the branch
+  // with `if (false && decision.action.type === "recognise")` left the condition's text in the file,
+  // so the first version of this guard passed over a branch that could never run. A source-text
+  // guard can only see text; making it see the STATEMENT is as close to seeing the behaviour as this
+  // app gets, since it has no DOM harness (canvas-runtime-branch.test.ts).
   const rendered = stripComments(await SOURCE);
-  const branch = rendered.indexOf('decision.action.type === "recognise"');
+  const branch = rendered.indexOf('if (decision.action.type === "recognise"');
   assert.notEqual(branch, -1, "a recognition ask has no branch, so it would paint the `defer` copy");
 
   const deferCopy = rendered.indexOf("Come back to this shortly");
@@ -361,7 +367,7 @@ test("🔴 an option is answered by PRESSING it, and the press carries the optio
   // 🔴 CALIBRATION: change `runtime.choose(option.text)` to an index and the text assertion
   // reddens; remove the `<button>` and the control assertion does.
   const rendered = stripComments(await SOURCE);
-  const branch = rendered.indexOf('decision.action.type === "recognise"');
+  const branch = rendered.indexOf('if (decision.action.type === "recognise"');
   const section = rendered.slice(branch, rendered.indexOf('decision.action.type === "show_correction"', branch));
   assert.match(section, /prompt\.choices\.options\.map/, "the options on the prompt must be what is rendered");
   assert.match(section, /<button/, "each option must be a real control the learner can press");
