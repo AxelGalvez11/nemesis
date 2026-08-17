@@ -114,6 +114,38 @@ test("🔴 the review step owns the only submit control that a low-confidence re
   assert.match(review, /mark\.legible \? mark\.text : ""/, "a gap must not be seeded with our description of it as if they wrote it");
 });
 
+test("🔴 the state that makes the sheet scratch paper is actually reachable", () => {
+  // 🔴 THE COMPOSER-SIDE TEST ABOVE CANNOT SEE THIS. It asserts the control is gated on
+  // `inSession`, which is only the deliverable if `inSession` is genuinely broader than
+  // `answering`. If the caller passed the same condition to both, the pencil would appear exactly
+  // when a question was open, the affordance would not exist, and that test would still be green.
+  //
+  // `inSession={sink.kind === "policy"}` is true for the whole policy-owned session, while
+  // `answering = Boolean(task && !task.answered && task.placeholder)` additionally requires an
+  // unanswered task with a prompt. Reading feedback after an answer is one state in the gap, which
+  // is exactly the moment someone reaches for paper to work the next thing out.
+  const canvas = code("learning-canvas.tsx");
+  assert.match(canvas, /inSession=\{sink\.kind === "policy"\}/, "the sheet's reachability comes from session ownership");
+  const composer = code("canvas-composer.tsx");
+  assert.match(
+    composer,
+    /const answering = Boolean\(task && !task\.answered && task\.placeholder\);/,
+    "answering must stay strictly narrower than inSession, or the two collapse and the affordance disappears",
+  );
+});
+
+test("🔴 the sheet cannot hand in or save a page it has not finished painting back", () => {
+  // Restoring saved ink is asynchronous: `image.src` is set in the mount effect and the paint
+  // happens in `onload`, while `hasInk` is true from the first render because there IS saved ink.
+  // Anything that reads the canvas in that window sees a BLANK page, so putting the sheet away
+  // quickly would save a blank over the learner's work and handing in would submit an empty
+  // answer to a judge.
+  const sheet = code("written-work-sheet.tsx");
+  assert.match(sheet, /const \[restored, setRestored\] = useState\(!initialInk\)/);
+  assert.match(sheet, /if \(!restored\) return;[\s\S]{0,200}toDataURL/, "keepInk must not write back before the restore lands");
+  assert.match(sheet, /!canvas \|\| !restored \|\| !hasInk/, "readDrawing must not send a page that is not painted yet");
+});
+
 test("🔴 nothing is read while the learner is still writing", () => {
   // The owner's first requirement, made structural. Every stroke handler is local drawing; the one
   // network call in the file is reached from a press.

@@ -481,19 +481,25 @@ const TASK_INTENT: Record<RetrievalTask, string> = {
  * free-body diagram, a statutory argument and a wiring fault trace equally.
  */
 const WRITTEN_WORK_GUIDANCE =
+  // 🔴 THE SECTION NAMES BELOW ARE THE RENDERER'S OWN LABELS, VERBATIM. They are neutral rather
+  // than third-person because the same text is shown back to the learner as their own words, and a
+  // heading written for a judge reads as Nemesis narrating them to themselves. See
+  // `written-response.ts`, which owns them and is pinned against this prompt by its own tests.
   "This is a page of work they did by hand, written out for you rather than typed. Read it as follows.\n" +
-  "- Numbered lines are their working in the order they wrote it. The order is evidence: a right method with a "
-  + "slip in it and a wrong method are the same lines in a different sequence.\n" +
-  "- A line marked [they crossed this out] is one THEY rejected. It shows how they reasoned and it is NOT "
-  + "something they are claiming. Never judge them on it.\n" +
-  "- A final answer is quoted separately when the page marked one. Judge the working and the final answer as "
-  + "two things: working that does not support a correct final answer, and correct working with a slip at the "
-  + "end, are different and need opposite teaching.\n" +
-  "- \"Nemesis could not read\" is OUR failure to read their page, never their omission and never their error. "
+  "- Under \"Working, in order:\" the numbered lines are their working in the order they wrote it. The order is "
+  + "evidence: a right method with a slip in it and a wrong method are the same lines in a different sequence.\n" +
+  "- A line marked [crossed out] is one THEY rejected. It shows how they reasoned and it is NOT something they "
+  + "are claiming. Never judge them on it.\n" +
+  "- \"Final answer as marked:\" is quoted separately when the page marked one, and \"No final answer marked\" "
+  + "means the page stopped short. Judge the working and the final answer as two things: working that does not "
+  + "support a correct final answer, and correct working with a slip at the end, are different and need "
+  + "opposite teaching.\n" +
+  "- \"Not read by Nemesis\" is OUR failure to read their page, never their omission and never their error. "
   + "Judge only what is there. If what could be read is not enough to settle the question, say so with a low "
   + "confidence rather than marking them down for the part we could not see.\n" +
-  "If the page says they checked this reading themselves, the text is exactly what they wrote, so a mistake in "
-  + "it is theirs. If it does not, the reading was confident. Either way, do not excuse an error as a misreading.\n"
+  "If the page says the reading was read back and confirmed by the writer, the text is exactly what they wrote, "
+  + "so a mistake in it is theirs. If it does not say so, the reading was confident. Either way, do not excuse "
+  + "an error as a misreading.\n"
   // 🔴 NAMED AGAINST THE EXISTING `ErrorType` VOCABULARY RATHER THAN A NEW ONE. Working reveals
   // failures a sentence cannot: the method can be right and the execution wrong, a step can rest on
   // something never established, the page can simply stop. Those want a cue and another go, a

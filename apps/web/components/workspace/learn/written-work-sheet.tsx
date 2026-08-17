@@ -88,6 +88,16 @@ export function WrittenWorkSheet({
   const filePicker = useRef<HTMLInputElement>(null);
   const capture = useWrittenWorkCapture();
   const [hasInk, setHasInk] = useState(Boolean(initialInk));
+  /**
+   * The saved ink has finished being painted back onto the canvas.
+   *
+   * 🔴 WITHOUT THIS, PUTTING THE PAGE AWAY QUICKLY ERASES IT. Restoring is asynchronous: the mount
+   * effect sets `image.src` and paints inside `onload`, while `hasInk` is true from the first
+   * render because there IS saved ink. Anything calling `keepInk` in between reads a blank canvas
+   * with `toDataURL`, hands that back as the learner's scratch work, and the page they spent five
+   * minutes on is gone. The same window would send a blank image to the reader.
+   */
+  const [restored, setRestored] = useState(!initialInk);
   const [state, setState] = useState<SheetState>({ kind: "page", message: null });
   /** Which question was open when the reading in `state` was taken. */
   const readFor = useRef<string | null>(null);
@@ -110,13 +120,25 @@ export function WrittenWorkSheet({
     ctx.fillRect(0, 0, rect.width, rect.height);
     if (!initialInk) return;
     const image = new Image();
-    image.onload = () => ctx.drawImage(image, 0, 0, rect.width, rect.height);
+    image.onload = () => {
+      ctx.drawImage(image, 0, 0, rect.width, rect.height);
+      setRestored(true);
+    };
+    // A saved page we cannot repaint is lost either way. Unlocking the surface at least lets the
+    // learner carry on rather than leaving them with a sheet that refuses every control for ever.
+    image.onerror = () => {
+      setRestored(true);
+      setHasInk(false);
+    };
     image.src = initialInk;
   }, []);
 
   /** The ink as it stands, for the parent to hold while the sheet is closed. Called on every way
    *  out, so no exit throws the learner's page away. */
   function keepInk() {
+    // 🔴 THE PARENT ALREADY HOLDS THE RIGHT ANSWER UNTIL THE RESTORE LANDS. Writing back now would
+    // overwrite their saved page with the blank canvas that is on screen while the image loads.
+    if (!restored) return;
     const canvas = canvasRef.current;
     onInkChange(canvas && hasInk ? canvas.toDataURL("image/png") : null);
   }
@@ -214,7 +236,9 @@ export function WrittenWorkSheet({
 
   function readDrawing() {
     const canvas = canvasRef.current;
-    if (!canvas || !hasInk || capture.busy || !promptId) return;
+    // `restored` for the same reason `keepInk` checks it: reading before the saved page is painted
+    // back would send a blank image and judge them on an empty answer.
+    if (!canvas || !restored || !hasInk || capture.busy || !promptId) return;
     canvas.toBlob((blob) => {
       if (blob) void readWork(blob);
     }, "image/png");
@@ -339,7 +363,7 @@ export function WrittenWorkSheet({
                 "bg-(--ui-action) text-[length:var(--canvas-text-small)] font-medium text-(--ui-bg-editor)",
                 "transition-opacity hover:opacity-90 disabled:opacity-40",
               )}
-              disabled={!hasInk || capture.busy || busy}
+              disabled={!restored || !hasInk || capture.busy || busy}
               onClick={readDrawing}
               type="button"
             >

@@ -33,6 +33,8 @@ import {
   type WrittenWork,
 } from "@/lib/handwriting/written-work";
 
+import { isAdmissionOfNotKnowing } from "./response-admission";
+
 /**
  * How sure the reading has to be, per mark and overall, before written work may be judged without
  * the learner seeing what was recognised.
@@ -245,28 +247,69 @@ const KIND_PREFIX: Record<WrittenMark["kind"], string> = {
 };
 
 /**
- * Whether this page can be handed over as one plain line, exactly as if it had been typed.
+ * The page handed over as plain text, exactly as if it had been typed, or null when it genuinely
+ * needs structure.
  *
  * 🔴 THIS IS NOT A COSMETIC SHORTCUT — IT KEEPS TWO NON-ATTEMPT RULES ALIVE THROUGH THE WRITTEN
  * DOOR. `isAdmissionOfNotKnowing` and `isEchoOfTheCue` (response-admission.ts) both run on the
  * submitted text before the judge sees it, and both require that NOTHING substantive is left over
  * once the admission or the cue is removed. A learner who writes "idk" by hand and gets it
- * rendered as *"Their work, in the order it reads:\n1. idk"* has just had their admission turned
- * into an attempt, judged `incorrect`, and stored as negative evidence — which is the precise
- * defect those two rules exist to prevent, arriving through a door neither was watching.
+ * rendered under a heading has just had their admission turned into an attempt, judged
+ * `incorrect`, and stored as negative evidence — the precise defect those two rules exist to
+ * prevent, arriving through a door neither was watching.
  *
- * So a page with one readable line and nothing else on it renders as that line and nothing else.
- * Structure is added only where there is structure to describe.
+ * 🔴 AND THE ADMISSION CHECK IS NOT COVERED BY THE SINGLE-LINE CASE. "I don't know how to start
+ * this" is one sentence to a person and frequently two marks to a vision model, because it was
+ * written across two lines. One mark renders plain and is caught; two render structured and are
+ * not, and the section headings alone are enough substantive text to defeat the rule. So the
+ * standing marks are also joined and tested as a whole, which is what closes the gap for a
+ * multi-line admission.
+ *
+ * 🔴 STRUCTURAL, NOT SUBJECT MATTER. `isAdmissionOfNotKnowing` recognises a learner reporting
+ * their own state, which reads identically for a law student and a machinist. Nothing here knows
+ * what any page is about.
  */
-function isPlainSingleLine(writing: ConfirmedWriting): boolean {
-  if (writing.marks.length !== 1) return false;
-  if (writing.relations.length > 0) return false;
-  const only = writing.marks[0];
-  if (!only || !only.legible || only.struckThrough) return false;
-  return only.kind === "line";
+function plainRendering(writing: ConfirmedWriting): string | null {
+  const standing = writing.marks.filter((mark) => mark.legible && !mark.struckThrough);
+
+  const only = writing.marks.length === 1 ? writing.marks[0] : null;
+  if (only && only.legible && !only.struckThrough && only.kind === "line" && writing.relations.length === 0) {
+    return only.text;
+  }
+
+  // 🔴 THE JOINED TEXT, REGARDLESS OF WHAT ELSE IS ON THE PAGE. If everything readable amounts to
+  // "I do not know", that is the answer however many marks it took and whatever was crossed out or
+  // unread beside it. The direction of error is deliberate: an admission read as an attempt writes
+  // a wrong verdict, while an attempt read as an admission writes no verdict at all.
+  const said = standing.map((mark) => mark.text).join(" ").trim();
+  return said && isAdmissionOfNotKnowing(said) ? said : null;
 }
 
-const CONFIRMED_NOTE = "They checked this reading themselves and confirmed it says what they wrote.";
+/**
+ * The labels the rendering uses.
+ *
+ * 🔴 NEUTRAL AND THIRD-PERSON-FREE, BECAUSE THE LEARNER READS THIS BACK AS THEIR OWN WORDS.
+ * `use-policy-runtime.ts` sets `feedback.answer` to whatever was submitted, and
+ * `canvas-policy-view.tsx` prints it inside `<LearnerUtterance>` — the bubble that says "this is
+ * what you said". Headings written for the judge ("Their work, in the order they wrote it") are
+ * addressed to a third party ABOUT the learner, and shown to the learner they read as Nemesis
+ * narrating them to themselves.
+ *
+ * The judge loses nothing: `evaluationMessages` already wraps the whole thing in its own frame
+ * (*"They wrote by hand: …"*), so the person is supplied there and a label only has to name what
+ * the section IS.
+ *
+ * 🔴 AND NEITHER GUARD WOULD HAVE CAUGHT IT. `canvas-learner-copy.test.ts` scans only
+ * `components/workspace/learn/` and its own header says `lib/learn/*.ts` literals are deliberately
+ * out of scope; this file's em-dash test reads dashes, not voice.
+ */
+const WORKING_HEADING = "Working, in order:";
+const STRUCK_PREFIX = "[crossed out]";
+const LAYOUT_PREFIX = "Layout:";
+const FINAL_ANSWER_PREFIX = "Final answer as marked:";
+const NO_FINAL_ANSWER = "No final answer marked on the page.";
+const UNREAD_PREFIX = "Not read by Nemesis";
+const CONFIRMED_NOTE = "Read back and confirmed by the writer.";
 
 /**
  * The written page as the text an evaluator reads.
@@ -290,7 +333,8 @@ const CONFIRMED_NOTE = "They checked this reading themselves and confirmed it sa
  * PURE.
  */
 export function renderWriting(writing: ConfirmedWriting): string {
-  if (isPlainSingleLine(writing)) return writing.marks[0]?.text ?? "";
+  const plain = plainRendering(writing);
+  if (plain !== null) return plain;
 
   const unread: string[] = [];
   const body: string[] = [];
@@ -305,7 +349,7 @@ export function renderWriting(writing: ConfirmedWriting): string {
     if (mark.struckThrough) {
       // Unnumbered and in place: a line someone crossed out is part of how they got where they
       // got, and is not one of the steps they are standing behind.
-      body.push(`   [they crossed this out] ${KIND_PREFIX[mark.kind]}${mark.text}`);
+      body.push(`   ${STRUCK_PREFIX} ${KIND_PREFIX[mark.kind]}${mark.text}`);
       return;
     }
     step += 1;
@@ -313,17 +357,13 @@ export function renderWriting(writing: ConfirmedWriting): string {
   });
 
   const sections: string[] = [];
-  if (body.length > 0) sections.push(`Their work, in the order it reads:\n${body.join("\n")}`);
-  if (writing.relations.length > 0) sections.push(`How it is laid out: ${writing.relations.join("; ")}`);
+  if (body.length > 0) sections.push(`${WORKING_HEADING}\n${body.join("\n")}`);
+  if (writing.relations.length > 0) sections.push(`${LAYOUT_PREFIX} ${writing.relations.join("; ")}`);
   sections.push(
-    finalAnswer && finalAnswer.legible
-      ? `They marked this as their final answer: ${finalAnswer.text}`
-      : "They did not mark anything on the page as a final answer.",
+    finalAnswer && finalAnswer.legible ? `${FINAL_ANSWER_PREFIX} ${finalAnswer.text}` : NO_FINAL_ANSWER,
   );
   if (unread.length > 0) {
-    sections.push(
-      `Nemesis could not read ${unread.length === 1 ? "one part" : `${unread.length} parts`} of this page: ${unread.join("; ")}.`,
-    );
+    sections.push(`${UNREAD_PREFIX} (${unread.length}): ${unread.join("; ")}.`);
   }
   if (writing.confirmed) sections.push(CONFIRMED_NOTE);
 

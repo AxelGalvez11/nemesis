@@ -215,9 +215,100 @@ test("a plain single line survives the confirmation step as a plain single line"
   assert.equal(isAdmissionOfNotKnowing(renderWriting(confirmed)), true);
 });
 
+test("🔴🔴 an admission the model split across two marks is still an admission", () => {
+  // 🔴 THE SINGLE-LINE CASE ABOVE DOES NOT COVER THIS, AND THE GAP WAS LIVE. Someone writes "I
+  // don't know" across two lines on the page and vision reports two marks, exactly as it should:
+  // it is reporting layout. Rendered structurally the result carries section headings, so plenty
+  // is left over once the admission phrase is stripped, so `isAdmissionOfNotKnowing` returns
+  // false, so it goes to the judge, comes back `incorrect`, and a person who told us they did not
+  // know is recorded as having got it wrong. Same defect D4 exists to prevent, one mark wider.
+  //
+  // 🔴 THE RULE IS THE SAME ONE TYPING GETS, NOT A LOOSER ONE. "I don't know how to start this"
+  // has substance left after the phrase is stripped and IS an attempt, typed or written; the fix
+  // is that the two doors agree, never that handwriting gets a broader escape hatch.
+  const rendered = renderWriting(writingAsRead(work({ marks: [mark("I don't"), mark("know")] })));
+  assert.equal(isAdmissionOfNotKnowing(rendered), true, `"${rendered}" was not read as an admission`);
+  assert.doesNotMatch(rendered, /Working, in order/, "an admission must not be dressed up as working");
+});
+
+test("a written page is held to the SAME admission rule as a typed answer, not a looser one", () => {
+  // The pairs below are what typing produces today. Written work joins its standing marks and asks
+  // the identical question, so the two doors cannot diverge.
+  const splits: readonly (readonly [string, string])[] = [["I don't", "know"], ["no", "idea"], ["not", "sure"]];
+  for (const [first, second] of splits) {
+    const joined = `${first} ${second}`;
+    const rendered = renderWriting(writingAsRead(work({ marks: [mark(first), mark(second)] })));
+    assert.equal(
+      isAdmissionOfNotKnowing(rendered),
+      isAdmissionOfNotKnowing(joined),
+      `"${joined}" is read differently written than typed`,
+    );
+  }
+  const attempt = ["I don't know", "how to start this"];
+  assert.equal(
+    isAdmissionOfNotKnowing(renderWriting(writingAsRead(work({ marks: attempt.map((line) => mark(line)) })))),
+    isAdmissionOfNotKnowing(attempt.join(" ")),
+    "a hedged sentence must be an attempt in both doors, or handwriting becomes a way to avoid being judged",
+  );
+});
+
+test("an admission stays an admission even beside crossed-out or unread marks", () => {
+  // The direction of error is deliberate: an admission read as an attempt writes a WRONG verdict,
+  // while an attempt read as an admission writes no verdict at all.
+  const messy = work({
+    marks: [mark("no idea"), mark("x = 2", { struckThrough: true }), mark("a smudge", { legible: false })],
+  });
+  assert.equal(isAdmissionOfNotKnowing(renderWriting(writingAsRead(messy))), true);
+});
+
+test("a real multi-line performance is NOT mistaken for an admission", () => {
+  // The other direction: the admission check must not swallow work. Anything substantive left over
+  // after the phrase is stripped means a real attempt, which is `isAdmissionOfNotKnowing`'s own
+  // rule and the reason this is safe to apply to a whole page.
+  const hedged = work({ marks: [mark("not sure, but"), mark("2x = 8"), mark("x = 4")] });
+  const rendered = renderWriting(writingAsRead(hedged));
+  assert.equal(isAdmissionOfNotKnowing(rendered), false, "a hedged attempt is still an attempt");
+  assert.match(rendered, /Working, in order/);
+});
+
+// ── the render is read BACK to the learner, so it cannot narrate them ─────────
+
+test("🔴 no label in the rendering talks about the learner in the third person", () => {
+  // `use-policy-runtime.ts` puts whatever was submitted into `feedback.answer`, and
+  // `canvas-policy-view.tsx` prints it inside `<LearnerUtterance>` — the bubble that means "this is
+  // what you said". A heading written for the judge ("Their work, in the order they wrote it")
+  // reads, there, as Nemesis narrating a person to themselves. The judge loses nothing: it gets its
+  // own third-person frame from `evaluationMessages` ("They wrote by hand: ...").
+  //
+  // 🔴 NEITHER EXISTING GUARD COVERS THIS. canvas-learner-copy.test.ts scans only
+  // components/workspace/learn/ and says so in its own header; this file's other guard reads
+  // dashes, not voice.
+  const rendered = renderWriting(
+    writingAsConfirmed(
+      work({
+        finalAnswerIndex: 2,
+        marks: [mark("2x + 6 = 14"), mark("x = 6", { struckThrough: true }), mark("2x = 8"), mark("x = 4"), mark("one line below", { legible: false })],
+        relations: ["the box sits under the working"],
+      }),
+      { finalAnswerIndex: 3, marks: ["2x + 6 = 14", "x = 6", "2x = 8", "x = 4", ""] },
+    ),
+  );
+  // Every section is present, so this is reading the full rendering and not a short one.
+  for (const section of ["Working, in order:", "Layout:", "Final answer as marked:", "Not read by Nemesis", "Read back and confirmed"]) {
+    assert.ok(rendered.includes(section), `the rendering is missing "${section}", so this guard is reading a partial page`);
+  }
+  // The labels are what this checks; the learner's OWN words are quoted verbatim and are not.
+  const labels = rendered
+    .split("\n")
+    .map((line) => line.replace(/^\s*\d+\.\s*/, "").replace(/^\s*\[crossed out\]\s*/, ""))
+    .join("\n")
+    .replace(/(?<=: ).*$/gm, "");
+  assert.doesNotMatch(labels, /\bthey\b|\btheir\b|\bthem\b|\bthemselves\b/i, `a label narrates the learner:\n${labels}`);
+});
+
 test("more than one mark is never rendered plain", () => {
   const rendered = renderWriting(writingAsRead(work({ marks: [mark("2x = 8"), mark("x = 4")] })));
-  assert.match(rendered, /Their work, in the order it reads/);
+  assert.match(rendered, /Working, in order:/);
 });
 
 // ── the render: the distinctions the evaluator needs ──────────────────────────
@@ -237,7 +328,7 @@ test("🔴 crossed-out work is kept, marked as retracted, and not numbered as a 
   const rendered = renderWriting(
     writingAsRead(work({ marks: [mark("2x = 8"), mark("x = 6", { struckThrough: true }), mark("x = 4")] })),
   );
-  assert.match(rendered, /\[they crossed this out\] x = 6/);
+  assert.match(rendered, /\[crossed out\] x = 6/);
   assert.doesNotMatch(rendered, /2\. x = 6/, "a retracted line must not be handed over as a step they stand behind");
   assert.match(rendered, /2\. x = 4/, "the numbering counts what they are claiming");
 });
@@ -246,7 +337,7 @@ test("🔴 an unread part is reported as a gap in our reading, never as somethin
   const rendered = renderWriting(
     writingAsRead(work({ marks: [mark("2x = 8"), mark("one line under it", { legible: false }), mark("x = 4")] })),
   );
-  assert.match(rendered, /could not read one part of this page: one line under it/);
+  assert.match(rendered, /Not read by Nemesis \(1\): one line under it/);
   assert.doesNotMatch(
     rendered,
     /^\s*\d+\. one line under it/m,
@@ -256,25 +347,25 @@ test("🔴 an unread part is reported as a gap in our reading, never as somethin
 
 test("the conclusion is stated apart from the working", () => {
   const rendered = renderWriting(writingAsRead(work({ finalAnswerIndex: 2 })));
-  assert.match(rendered, /They marked this as their final answer: x = 4/);
+  assert.match(rendered, /Final answer as marked: x = 4/);
 });
 
 test("🔴 a page that reaches no conclusion says so — that is what a partial derivation looks like", () => {
   const rendered = renderWriting(writingAsRead(work({ finalAnswerIndex: null })));
-  assert.match(rendered, /did not mark anything on the page as a final answer/);
+  assert.match(rendered, /No final answer marked on the page/);
 });
 
 test("a confirmed reading tells the judge a person stood behind the text; an unconfirmed one does not", () => {
   const confirmed = writingAsConfirmed(work(), { finalAnswerIndex: 2, marks: ["2x + 6 = 14", "2x = 8", "x = 4"] });
-  assert.match(renderWriting(confirmed), /checked this reading themselves/);
-  assert.doesNotMatch(renderWriting(writingAsRead(work())), /checked this reading themselves/);
+  assert.match(renderWriting(confirmed), /Read back and confirmed by the writer/);
+  assert.doesNotMatch(renderWriting(writingAsRead(work())), /Read back and confirmed/);
 });
 
 test("layout observations are carried through", () => {
   const rendered = renderWriting(
     writingAsRead(work({ relations: ["the arrow runs from the left circle to the box"] })),
   );
-  assert.match(rendered, /How it is laid out: the arrow runs from the left circle to the box/);
+  assert.match(rendered, /Layout: the arrow runs from the left circle to the box/);
 });
 
 // ── field-agnostic: the same render serves any discipline ─────────────────────

@@ -303,14 +303,14 @@ test("🔴 an unread part of the page is named to the judge as OUR failure, neve
   // and that lands in learner_evidence as a durable claim that someone does not understand
   // something they demonstrated completely in ink.
   const asked = judgedText("written", "1. first line");
-  assert.match(asked, /could not read[\s\S]{0,60}OUR failure/i);
+  assert.match(asked, /Not read by Nemesis[\s\S]{0,60}OUR failure/i);
   assert.match(asked, /never their omission and never their error/i);
   assert.match(asked, /low[\s\S]{0,3}confidence/i, "the judge needs somewhere honest to put a reading it could not settle");
 });
 
 test("🔴 crossed-out work is named as a retraction, not as something they are claiming", () => {
   const asked = judgedText("written", "1. first line");
-  assert.match(asked, /crossed this out/);
+  assert.match(asked, /\[crossed out\]/);
   assert.match(asked, /NOT[\s\S]{0,3}something they are claiming/i);
 });
 
@@ -361,8 +361,8 @@ test("🔴 the blanket 'forgive OCR errors' instruction is gone", () => {
 });
 
 test("the written guidance reaches ONLY written answers, and leaves the spoken one alone", () => {
-  assert.doesNotMatch(judgedText("typed", "the value"), /crossed this out/);
-  assert.doesNotMatch(judgedText("spoken", "the value"), /crossed this out/);
+  assert.doesNotMatch(judgedText("typed", "the value"), /\[crossed out\]/);
+  assert.doesNotMatch(judgedText("spoken", "the value"), /\[crossed out\]/);
   assert.match(judgedText("spoken", "the value"), /filler words/i);
   assert.doesNotMatch(judgedText("written", "1. first line"), /filler words/i);
 });
