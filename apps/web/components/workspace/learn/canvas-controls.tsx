@@ -727,7 +727,7 @@ export function VoiceControl({
         aria-pressed={on}
         className={cn(CONTROL, on && "text-(--ui-action) hover:text-(--ui-action)")}
         onClick={() => onToggle(on ? "off" : "on")}
-        title={on ? "Voice on — questions and corrections are read aloud" : "Read questions out loud"}
+        title={on ? "Voice on: questions and corrections are read aloud" : "Read questions out loud"}
         type="button"
       >
         {/* Two glyphs, not an animation: "on" and "on and talking right now" are different facts
