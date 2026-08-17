@@ -7,6 +7,8 @@ import { DiagramScene } from "./scenes/DiagramScene";
 import { AnatomyScene } from "./scenes/AnatomyScene";
 import { MathPlotScene } from "./scenes/MathPlotScene";
 import { CalculusScene } from "./scenes/CalculusScene";
+import { ChemistryScene } from "./scenes/ChemistryScene";
+import { EquilibriumScene } from "./scenes/EquilibriumScene";
 
 /**
  * The product showcase: one Canvas that changes what it renders, on its own.
@@ -41,8 +43,26 @@ import { CalculusScene } from "./scenes/CalculusScene";
  * Circulation as a flow diagram, then the heart itself in three dimensions — the
  * Canvas deciding space explains what boxes could not. Then a parabola with a
  * secant collapsing onto a tangent, then that same limit written symbolically.
- * Each pair is one idea in two representations, which is a much narrower claim
- * than "we support four content types", and the one that is actually true.
+ * Then a reaction's energy profile, then why a lower barrier leaves the yield
+ * alone. Each pair is one idea in two representations, which is a much narrower
+ * claim than "we support six content types", and the one that is actually true.
+ *
+ * ── WHY A THIRD PAIR, AND WHY CHEMISTRY ───────────────────────────────────────
+ *
+ * There were two pairs, and between them they were biology twice and mathematics
+ * twice. CLAUDE.md's standing test for anything on this product is whether it
+ * works for a law student and a mechanical engineering student, and a front door
+ * whose every worked example is a heart or an integral quietly answers "no". The
+ * owner asked for maths, biology and chemistry, so the set is now one pair each.
+ *
+ * A pair, not a single scene, deliberately: adding one lone chemistry diagram
+ * would have made the section three pairs of representations plus an orphan, and
+ * the orphan is the one that reads as "another content type we support".
+ *
+ * 🔴 THE NEXT ADDITION SHOULD BE NON-STEM. Three disciplines is what was asked
+ * for and it is still three sciences. A law or history pair — a causal chain
+ * drawn, then the same argument in prose — is the obvious fourth, and the shape
+ * of this file is what makes it a two-file change rather than a rewrite.
  *
  * ── NO CHROME ─────────────────────────────────────────────────────────────────
  *
@@ -52,15 +72,22 @@ import { CalculusScene } from "./scenes/CalculusScene";
  * one annotation, the plot's readout and the calculus are the lesson itself.
  */
 
-const SCENES = 4;
+const SCENES = 6;
 
 /**
  * Seconds per scene, including the hold at the end.
  *
  * Calm on purpose. The slowest thing in here is the calculus, which asks the
  * reader to follow a substitution; at six seconds that is a glance and a shrug.
- * Nine gives each state time to be understood and still brings the whole cycle
- * round in well under a minute.
+ * Nine gives each state time to be understood.
+ *
+ * Deliberately NOT shortened when the third pair arrived, though six scenes at
+ * nine seconds is a 54s cycle and a visitor who watches for twenty seconds sees
+ * two of them. Trimming the dwell to make more scenes fit in a glance would trade
+ * the one property these were tuned for — that each state can actually be
+ * followed — for an impression of variety. The line under the frame names the
+ * three disciplines instead, which buys the same breadth in a second of reading
+ * and costs the teaching nothing.
  */
 const SCENE_SECONDS = 9;
 const CYCLE = SCENES * SCENE_SECONDS;
@@ -126,10 +153,14 @@ export function CanvasShowcase() {
       raf = requestAnimationFrame(frame);
       const t = now / 1000;
 
-      // Held while off screen, and while the reader is actually doing something
-      // — dragging the heart, or moving the pointer across the Canvas. Interaction
-      // resumes on its own, so a cursor left resting over the section cannot
-      // freeze the sequence forever.
+      // Held while off screen, and while the reader is actually MANIPULATING
+      // something — dragging the heart. Moving the pointer across the Canvas used
+      // to hold it too, with RESUME_AFTER as the mitigation, and that was wrong:
+      // a reader whose cursor happens to rest over the section re-arms the hold
+      // with every small movement, so the one thing on the page whose whole job
+      // is to demonstrate change sits frozen for as long as they look at it.
+      // Removed at the owner's direction 2026-08-17. Hovering is not an
+      // instruction to stop.
       const held = !onScreen.current || t - lastInteract.current < RESUME_AFTER;
       if (held) {
         if (pausedAt === null) pausedAt = t;
@@ -185,7 +216,9 @@ export function CanvasShowcase() {
   const thinking = reduced ? 0 : handoff(p, SCENES, EDGE);
 
   // bands() always returns SCENES entries; the compiler cannot know that.
-  const [diagram, anatomy, plot, calculus] = slices as [
+  const [diagram, anatomy, plot, calculus, chemistry, equilibrium] = slices as [
+    (typeof slices)[number],
+    (typeof slices)[number],
     (typeof slices)[number],
     (typeof slices)[number],
     (typeof slices)[number],
@@ -197,17 +230,18 @@ export function CanvasShowcase() {
 
   return (
     <section className="shw" id="canvas" ref={sectionRef}>
-      <div className="wrap shw-inner">
-        <h2 className="shw-head">one canvas. whatever learning requires.</h2>
+      {/* wrap-wide, not wrap. The reading column is 1180 and the Canvas is the one
+          thing on this page that is not reading — capping it there left it at
+          1040px on a 1440 screen with the viewport budget nowhere near spent. */}
+      <div className="wrap-wide shw-inner">
+        <h2 className="shw-head">One Canvas. Whatever learning requires.</h2>
 
         {/* The frame is the argument. It has a border, a fixed size, and it does
             not move for the whole sequence — four representations appearing
             inside a box that holds still are legibly one surface. */}
-        <div
-          className="shw-canvas"
-          onPointerMove={note}
-          onPointerDown={note}
-        >
+        {/* onPointerDown only. A drag on the 3D scene is a real interaction and
+            should hold the clock; a pointer merely passing over the frame is not. */}
+        <div className="shw-canvas" onPointerDown={note}>
           <SceneLayer presence={diagram.presence}>
             <DiagramScene t={content(diagram.local)} />
           </SceneLayer>
@@ -225,6 +259,12 @@ export function CanvasShowcase() {
           <SceneLayer presence={calculus.presence}>
             <CalculusScene t={content(calculus.local)} />
           </SceneLayer>
+          <SceneLayer presence={chemistry.presence}>
+            <ChemistryScene t={content(chemistry.local)} />
+          </SceneLayer>
+          <SceneLayer presence={equilibrium.presence}>
+            <EquilibriumScene t={content(equilibrium.local)} />
+          </SceneLayer>
 
           {/* The handover. Small on purpose — this is a motion language, not a
               logo placement, and a full-size mark between scenes would turn a
@@ -234,7 +274,11 @@ export function CanvasShowcase() {
           </div>
         </div>
 
-        <p className="shw-line">See it. Move it. Work it out.</p>
+        {/* The disciplines are named here rather than labelled on the frame. A
+            54-second cycle means a visitor sees two scenes, so the breadth has to
+            be readable in a second; a mode label inside the Canvas would be the
+            chrome this section deliberately does without. */}
+        <p className="shw-line">Biology. Mathematics. Chemistry. One surface.</p>
       </div>
     </section>
   );

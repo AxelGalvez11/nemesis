@@ -1095,8 +1095,26 @@
    pinned inside it, because scroll position chose the representation; the
    sequence is on a clock now, so the section is the size of its contents and the
    page scrolls past it normally. */
-.shw { padding: clamp(80px, 11vw, 150px) 0; }
-.shw-inner { width: 100%; }
+/* Tighter than the other sections, deliberately. The owner asked for this Canvas
+   to be almost full screen, and "almost full screen" is a budget against the
+   VIEWPORT: at 150px of section padding plus a 58px sticky nav, a frame big
+   enough to fill the screen cannot be seen whole, which is the point of asking. */
+.shw { padding: clamp(32px, 4vw, 60px) 0; }
+
+/* THE WIDTH BUDGET LIVES HERE, not on the frame. The headline and the line
+   beneath belong to the Canvas and have to share its left edge: with the budget
+   on .shw-canvas alone the frame centred itself inside a 1364px wrap and the two
+   pieces of text stayed pinned to the wrap, leaving them ~113px adrift of the
+   thing they label. Sizing the inner column and letting the frame fill it means
+   there is one edge and it cannot drift. */
+.shw-inner {
+  /* The `+ 56px` is .wrap-wide's own horizontal padding. Without it the padding
+     comes out of the svh budget, so the frame lands 25px shorter than the height
+     it was asked for — the budget describes the FRAME, and this term is what
+     keeps the number in the expression and the number on screen the same thing. */
+  width: min(100%, 1440px, calc(62svh * 960 / 420 + 56px));
+  margin: 0 auto;
+}
 
 .shw-head {
   font-family: var(--sans);
@@ -1127,7 +1145,10 @@
      the letterboxing comes straight back. The third term is the height budget
      expressed as a width, so the box shrinks to fit a short window rather than
      being cropped by one. */
-  width: min(100%, 1040px, calc(54svh * 960 / 420));
+  /* Fills the inner column, which carries the budget (see .shw-inner). Height
+     still comes only from the ratio — setting a height or a max-height here is
+     what silently breaks 960/420 and brings the letterboxing back. */
+  width: 100%;
   aspect-ratio: 960 / 420;
   margin: 0 auto;
   border: 1px solid var(--line);
@@ -1256,6 +1277,9 @@
 .shw-axis line { stroke: var(--line-2); stroke-width: 1; }
 .shw-tick { font-family: var(--mono); font-size: 10px; fill: var(--text-3); }
 .shw-curve { fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
+/* The thing being compared AGAINST, in the chemistry scene: same shape language,
+   less ink, so the eye reads the catalysed path as the subject. */
+.shw-curve-soft { stroke: var(--text-3); stroke-width: 1.5; }
 .shw-secant { stroke: var(--text-2); stroke-width: 1.5; stroke-dasharray: 6 5; }
 .shw-guide { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 2 3; }
 .shw-point { fill: var(--text); }
