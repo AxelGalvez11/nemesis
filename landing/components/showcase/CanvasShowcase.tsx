@@ -45,6 +45,21 @@ import { SessionCanvas } from "./session/SessionCanvas";
 const RESUME_AFTER = 2.5;
 
 /**
+ * Where the session sits before the clock takes over.
+ *
+ * 🔴 NOT ZERO, AND THE REASON IS THE SERVER-RENDERED FRAME. At exactly 0 the
+ * handover is at its start: the incoming act is at zero opacity and the OUTGOING
+ * one — the third act's feedback screen — is at full. So the pre-hydration paint,
+ * and the permanent view for anyone without JavaScript, was the tail of a lesson
+ * about catalysis with no lead-in. 2.4 seconds in is the first act with its
+ * teaching passage fully drawn and its figure underway, which is the frame this
+ * section would choose to be photographed on. It is also exactly what reduced
+ * motion holds, so the two agree instead of being two different opinions about
+ * what a still Canvas should show.
+ */
+const FIRST_FRAME = 2.4 / CYCLE_SECONDS;
+
+/**
  * `?seek=0.42` freezes the session at one point in its cycle.
  *
  * 🔴 THIS IS A TESTABILITY AFFORDANCE, NOT DEBUG CODE LEFT IN. The owner's first
@@ -66,7 +81,7 @@ function readSeek(): number | null {
 
 export function CanvasShowcase() {
   const sectionRef = useRef<HTMLElement>(null);
-  const [progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(FIRST_FRAME);
   const [reduced, setReduced] = useState(false);
   const [seek, setSeek] = useState<number | null>(null);
 
@@ -131,7 +146,7 @@ export function CanvasShowcase() {
    * someone who asked the system to stop moving things should still be able to
    * see what a Nemesis session looks like.
    */
-  const p = seek ?? (reduced ? 2.4 / (CYCLE_SECONDS) : progress);
+  const p = seek ?? (reduced ? FIRST_FRAME : progress);
 
   return (
     <section className="shw" id="canvas" ref={sectionRef}>
