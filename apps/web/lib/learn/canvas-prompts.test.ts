@@ -322,10 +322,31 @@ test("🔴 the judge is told to read the working and the final answer as two thi
   assert.match(asked, /working and the final answer as[\s\S]{0,3}two things/i);
 });
 
-test("🔴 the failure shapes written work reveals are mapped onto the error types that already exist", () => {
+/** The written-work block alone.
+ *
+ *  🔴 SCOPED, AND CALIBRATION IS WHY. The first version of the mapping test below searched the
+ *  whole prompt for the words `careless`, `procedural` and the rest — and it PASSED with the entire
+ *  written mapping deleted, because those six words also appear in the base prompt's
+ *  `ERROR_TYPES.join(", ")` line. A guard that cannot fail when you break the thing it names has no
+ *  causal link to the code at all.
+ */
+function writtenGuidance(): string {
   const asked = judgedText("written", "1. first line");
+  const from = asked.indexOf("This is a page of work they did by hand");
+  const to = asked.indexOf("Judge MEANING, not vocabulary");
+  assert.ok(from >= 0 && to > from, "the written guidance block was not found, so this guard is reading nothing");
+  return asked.slice(from, to);
+}
+
+test("🔴 the failure shapes written work reveals are mapped onto the error types that already exist", () => {
+  // A judge handed only a six-word list reaches for `conceptual` for everything that is not
+  // obviously a forgotten term, and the distinctions working reveals collapse into one verdict.
+  const guidance = writtenGuidance();
   for (const kind of ["careless", "procedural", "missing_prerequisite", "conceptual"]) {
-    assert.ok(asked.includes(kind), `the written guidance never names \`${kind}\`, so the judge cannot reach for it`);
+    assert.ok(
+      guidance.includes(kind),
+      `the written guidance never names \`${kind}\`, so the judge has no instruction to reach for it`,
+    );
   }
 });
 
@@ -347,11 +368,8 @@ test("the written guidance reaches ONLY written answers, and leaves the spoken o
 });
 
 test("🔴 the written guidance names no subject, so it reads the same for a diagram and a derivation", () => {
-  const asked = judgedText("written", "1. first line");
-  const guidance = asked.slice(asked.indexOf("This is a page of work they did by hand"));
-  assert.ok(guidance.length > 200, "the guidance block was not found, so this guard is reading nothing");
   assert.doesNotMatch(
-    guidance,
+    writtenGuidance(),
     /\b(equation|algebra|chemistry|physics|molecule|reaction|statute|calculus)\b/i,
     "a rule that only makes sense for one field is wrong here",
   );

@@ -332,8 +332,31 @@ test("🔴 no code in this module names a subject, a discipline, or a notation",
 test("🔴 no learner-facing string in this module carries an em dash", () => {
   // lib/learn/ is outside canvas-learner-copy.test.ts's scan, and this module's gate reasons and
   // rendered labels are printed verbatim.
+  //
+  // 🔴 THE ESCAPED FORMS ARE CHECKED TOO, AND CALIBRATION IS WHY. Breaking this guard by writing
+  // the character as a unicode escape did not redden it: it is an em dash at runtime and a
+  // six-character escape in the source this reads. That is not a contrived evasion, it is the
+  // natural way to put the character in a `.ts` string, and it is the same class of hole
+  // canvas-learner-copy.test.ts already patched for the HTML entity forms.
   const offenders = (strippedSource("written-response.ts").match(/"[^"\n]*"/g) ?? []).filter((value) =>
-    /—|–|&mdash;|&ndash;/.test(value),
+    /—|–|&mdash;|&ndash;|\\u201[34]|\\x8[45]|&#8212;|&#8211;/i.test(value),
   );
   assert.deepEqual(offenders, [], `an em dash is in a learner-facing string:\n  ${offenders.join("\n  ")}`);
+});
+
+test("🔴 the confidence floor is high, and pinned as a number rather than only as a relationship", () => {
+  // 🔴 EVERY OTHER THRESHOLD TEST IN THIS FILE IS WRITTEN RELATIVE TO THE CONSTANT, which is right
+  // for testing the comparison and useless for testing the VALUE: dropping the floor to 0.05 left
+  // the sweep and the "below the floor asks" test both green, because both move with it. So the
+  // number itself is pinned here, once, with the reason attached.
+  //
+  // It is higher than canvas-judge.ts's 0.4 and match-elements.ts's 0.5 on purpose. Those decide
+  // how much weight to give something already recorded. This one decides whether to record
+  // anything at all, and the costs are lopsided: an unnecessary confirmation costs one press, a
+  // missed one costs a durable false claim about a person that the teaching policy then acts on.
+  assert.ok(
+    CONFIDENT_ENOUGH_TO_JUDGE >= 0.7,
+    `the floor is ${CONFIDENT_ENOUGH_TO_JUDGE}; below 0.7 a misread page reaches a judge unseen`,
+  );
+  assert.ok(CONFIDENT_ENOUGH_TO_JUDGE <= 0.95, "a floor this high asks for a confirmation on every single page");
 });

@@ -47,6 +47,29 @@ test("an image exactly at the ceiling is accepted", () => {
   assert.equal(checkImageUpload(imageOf("edge.png", "image/png", VISION_MAX_BYTES)).ok, true);
 });
 
+test("🔴 both handwriting routes share this check AND pass its status through unflattened", async () => {
+  // 🔴 FOUND BY CALIBRATION, NOT BY DESIGN. Replacing `status: upload.status` with a literal 400 in
+  // the work route reddened nothing at all: every assertion above tests this function, and nothing
+  // tested that a caller honours what it returns. A route answering 400 for a photo that is merely
+  // too large tells the learner "that did not work" instead of "try a smaller one", and the whole
+  // reason there are three status codes is gone.
+  //
+  // Driving the routes for real needs auth, a vision key and a network round trip, none of which
+  // belong in a unit test, so this reads the call sites. A source assertion is a blunt instrument
+  // and is used deliberately for one narrow property, exactly as canvas-prompts.test.ts does for
+  // `generateLesson`: the refusal travels from here to the response UNCHANGED.
+  const { readFile } = await import("node:fs/promises");
+  for (const route of ["../../app/api/handwriting/work/route.ts", "../../app/api/handwriting/analyze/route.ts"]) {
+    const source = await readFile(new URL(route, import.meta.url), "utf8");
+    assert.match(source, /checkImageUpload\(form\.get\("file"\)\)/, `${route} declares its own upload rules`);
+    assert.match(
+      source,
+      /if \(!upload\.ok\) return NextResponse\.json\(\{ error: upload\.error \}, \{ status: upload\.status \}\);/,
+      `${route} does not hand back the status this check chose`,
+    );
+  }
+});
+
 test("🔴 no refusal message carries an em dash — these are shown to the learner verbatim", () => {
   const messages = [
     checkImageUpload(null),
