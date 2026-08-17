@@ -24,7 +24,7 @@ import {
   type LearningCanvas,
   type SourceRef,
 } from "./canvas-model";
-import { parseCanvasVisual, type CanvasVisualRequest } from "./canvas-visual";
+import { validateCanvasVisual, type CanvasVisualRequest } from "./canvas-visual";
 import { canTransition } from "./canvas-state";
 
 /** A block the model proposes. It never chooses ids — we mint those, so a model cannot
@@ -279,9 +279,17 @@ function firstBlockProblem(blocks: readonly unknown[], ctx: CheckContext): strin
   return null;
 }
 
+/**
+ * 🔴 THE MESSAGE NAMES THE REASON NOW, AND THE OLD ONE WAS THE PROBLEM. This said "Malformed or
+ * unsupported semantic visual." to a model that had made one specific, correctable mistake — an
+ * edge pointing at a node it never declared, a ninth node, a `\href` — and told it none of them.
+ * A check whose whole purpose is to be read by whatever produced the input has to say what was
+ * wrong with the input.
+ */
 function visualProblem(value: unknown, removable: boolean): string | null {
   if (value === undefined || (removable && value === null)) return null;
-  return parseCanvasVisual(value) ? null : "Malformed or unsupported semantic visual.";
+  const result = validateCanvasVisual(value);
+  return result.ok ? null : `Semantic visual refused (${result.reason}): ${result.detail}.`;
 }
 
 /** A citation that does not resolve is worse than no citation — it is a claim of provenance

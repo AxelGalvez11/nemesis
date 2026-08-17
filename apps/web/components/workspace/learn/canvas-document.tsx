@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 
 import { markedTerms, splitByTerms, type MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
+import { routeVisual } from "@/lib/learn/visual-route";
+
 import { BOTTOM_KEEPOUT, TOP_KEEPOUT } from "./canvas-selection-menu";
 import { selectableRegion } from "./use-canvas-selection";
 import { SemanticVisual } from "./semantic-visual";
@@ -257,7 +259,14 @@ function BlockView({
       ) : (
         <>
         <BlockBody block={block} canvas={canvas} onTerm={onTerm} onToggleSource={onToggleSource} sourceOpen={sourceOpen} />
-        {block.visual && <SemanticVisual visual={block.visual} />}
+        {/* 🔴 ROUTED, NOT RENDERED-BECAUSE-PRESENT (§41). A block used to get a picture for the sole
+            reason that it carried one, which made "should this be drawn?" a question nobody asked.
+            The router answers it — and answers `prose` for a two-node diagram or a plot with no
+            range, both of which pass every bound in `canvas-visual.ts` and are still decoration.
+            🔴 A `CanvasBlock` CARRIES NO KNOWLEDGE OBJECT, and the router is told that honestly by
+            being given none. Absent knowledge means "not known" there, never "the knowledge said
+            no", so a valid request still renders here — see `visual-route.test.ts`. */}
+        <RoutedVisual visual={block.visual} />
         {/* §11 — *"Keep the old version internally so it can be restored."* The rewrite happened in
             place and there is exactly ONE explanation on screen; this is the way back to the other
             one, and it is deliberately not a second copy of the text sitting underneath.
@@ -503,6 +512,26 @@ function BlockText({
       )}
     </>
   );
+}
+
+/**
+ * A block's visual, if the router says it earns its place (§41).
+ *
+ * 🔴 THE ROUTER IS ASKED EVEN THOUGH THE SPEC IS ALREADY VALIDATED, and that is the point of the
+ * split. `parseCanvasVisual` ran when the lesson was parsed and answered "is this well formed and
+ * within bounds?" — a question about the REQUEST. Whether a picture helps is a question about the
+ * TEACHING, and a two-node diagram passes the first and fails the second. Rendering on validity
+ * alone is what put unearned pictures on the page.
+ *
+ * 🔴 NOTHING IS RENDERED IN PLACE OF A REFUSAL. No empty frame, no "diagram unavailable", no
+ * placeholder — §41 reserves this attention for the material, and a box announcing an absence is
+ * exactly the decoration the whole section refuses. The teaching text above it is the answer.
+ */
+function RoutedVisual({ visual }: { visual: CanvasBlock["visual"] }) {
+  if (!visual) return null;
+  const route = routeVisual({ request: visual });
+  if (route.decision !== "render" || route.representation === "source_figure") return null;
+  return <SemanticVisual visual={route.spec} />;
 }
 
 /** Stable per-source numbering for the citation marker, keyed to the source's own position in

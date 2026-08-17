@@ -29,9 +29,21 @@ function Equation({ visual }: { visual: Extract<CanvasVisualRequest, { kind: "eq
     try {
       return katex.renderToString(visual.latex, {
         displayMode: true,
+        // 🔴 BOUNDED EXPANSION AND BOUNDED SIZE — the two ways a well-formed string still costs the
+        // learner their tab. `\def\x{\x\x}` expands exponentially and `\rule{1e8em}{1e8em}` asks for
+        // a box no browser will survive; neither is malformed LaTeX, so neither is something the
+        // validator's bounds could have caught by counting characters. `canvas-visual.ts` refuses
+        // macro definitions by NAME before anything reaches here, and these are the floor under
+        // that: a limit that holds whether or not the deny list was complete.
+        maxExpand: 100,
+        maxSize: 50,
         output: "htmlAndMathml",
         strict: "warn",
         throwOnError: true,
+        // 🔴 THE SECURITY BOUNDARY, AND IT MUST NEVER BECOME A FUNCTION. `trust: true` — or a
+        // callback that returns true for anything — re-enables `\href`, `\url` and
+        // `\includegraphics` on a string a model wrote, which is a model writing a link into the
+        // learner's page.
         trust: false,
       });
     } catch {

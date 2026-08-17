@@ -20,6 +20,7 @@ import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
 import { normalizeForIdentity } from "@/lib/learn/knowledge-identity";
 import type { FigureKnowledge } from "@/lib/learn/knowledge-types";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
+import { routeVisual } from "@/lib/learn/visual-route";
 
 import { StoredFigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
@@ -396,23 +397,32 @@ function SourceTrail({ citations }: { citations: PolicyRuntime["citations"] }) {
   );
 }
 
+/**
+ * The diagram this decision is asking about, and which part of it is covered — decided by the
+ * ROUTER, not here (§41).
+ *
+ * 🔴 THE RULES USED TO LIVE IN THIS FUNCTION, AND THAT WAS THE SECOND VISUAL SYSTEM. §41 is
+ * explicit that the router "must absorb that path; a second, parallel visual system is how one
+ * product ends up with two of everything" — and it was already true: a source figure appeared
+ * because of the four conditions written out here, while a semantic visual appeared because a
+ * block happened to carry one, with nothing in the product comparing the two. Every condition
+ * below now lives in `routeVisual`, where it is a pure function with tests, and this asks it.
+ *
+ * 🔴 THE NORMALISER IS PASSED IN RATHER THAN IMPORTED BY THE ROUTER. Which label matches an
+ * objective is an IDENTITY question, and identity belongs to `knowledge-identity.ts` — a pure
+ * routing module reaching for it would decide, in passing, that its notion of sameness is the
+ * product's.
+ */
 function occlusionFor(decision: PolicyRuntime["decision"]): { figure: FigureKnowledge; hidden: FigureLabel } | null {
   if (!decision) return null;
-  const figure = decision.knowledge.figure;
-  if (!figure || decision.objective.capability !== "locate") return null;
-  // 🔴 NO PICTURE, NO OCCLUSION. `imageRef` names the figure inside its original container
-  // (`ppt/media/image3.png`) and is not a URL; handing it to an `<img src>` — which is what
-  // this did — makes the browser request a path from this application that has never existed,
-  // so the learner got a broken image in the middle of a question. Only a stored asset can be
-  // shown, and a figure without one simply does not host a visual interaction.
-  if (!figure.assetPath) return null;
-  const wanted = decision.objective.parameters.labelKey;
-  const hidden = figure.labels.find((label) => normalizeForIdentity(label.text) === wanted);
-  // 🔴 NO FALLBACK TO "THE FIRST LABEL". If the objective names a part this figure does not have,
-  // the two have drifted — a reparse, a better vision pass — and covering an arbitrary label would
-  // ask a question the evidence will attribute to a different one. Showing the picture uncovered is
-  // wrong too, so this renders no diagram at all and the prompt stands on its own.
-  return hidden ? { figure, hidden } : null;
+  const route = routeVisual({
+    knowledge: decision.knowledge,
+    labelKey: decision.objective.parameters.labelKey,
+    normalizeLabel: normalizeForIdentity,
+    operation: decision.objective.capability,
+  });
+  if (route.decision !== "render" || route.representation !== "source_figure") return null;
+  return { figure: route.figure, hidden: route.hidden };
 }
 
 function FeedbackScreen({
