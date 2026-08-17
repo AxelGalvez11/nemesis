@@ -17,6 +17,9 @@ export type CanvasEvent =
   // A conversational answer became a learning session because the learner explicitly asked it to.
   // Carries a count of promoted cited pages, never the question or answer text.
   | "canvas_learning_started_from_answer"
+  // A topic with no attached material was grounded from the web before teaching began. Counts
+  // only — never the topic, which is the learner's own words.
+  | "canvas_topic_grounded"
   | "source_attached"
   // Durable knowledge minted from an attached source. Counts only — never the extracted content,
   // which is the learner's own material.
