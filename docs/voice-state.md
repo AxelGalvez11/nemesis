@@ -79,6 +79,43 @@ The seam if the answer is yes: the provider ladder in `nemesis-transcribe` is th
 xAI already has a TTS API on the same key the STT lane uses, and `_shared/voice-cost.ts` is where the
 rate belongs. No account, key, or migration exists for it yet.
 
+## Decision: live dictation stays on the browser's recogniser, for now
+
+The brief asked whether to move live Canvas dictation from the Web Speech API to xAI streaming STT
+"if technically and economically appropriate". **Decision: not in this milestone.** Recorded here so
+it is a choice with a stated trigger rather than an omission.
+
+**Why not.** Web Speech costs **nothing** per use, works today, and is verified serving in
+production. xAI streaming is $0.20/hour and — more importantly — needs a WebSocket relay, because
+the provider key cannot go near a browser. That is real new infrastructure (proxy, audio encoding,
+interim handling, turn detection, reconnection) whose payoff is browser coverage and vocabulary
+accuracy, not a capability the learner does not otherwise have.
+
+**What it would actually buy, honestly stated.** Two things:
+
+1. **Firefox.** Web Speech is absent there, and the mic is correctly hidden rather than broken — but
+   a Firefox learner cannot speak answers at all.
+2. **Technical vocabulary.** A pharmacology student saying "hydrochlorothiazide", or a materials
+   student saying "austenitic", will get something mangled back. This is the one that could matter
+   for learning rather than convenience.
+
+**Why (2) is survivable today, and how we would know if it stops being.** The grader is explicitly
+told to judge *meaning, not vocabulary* — "if they express the right idea in everyday language, that
+is a correct answer, do not require the term the material used" — and spoken answers additionally
+get the leniency branch. So a mangled term should still be judged on what the learner meant.
+
+🔴 **The trigger to revisit is measurable, and we now store what it needs.** `learner_evidence`
+carries `response_modality`, so spoken and typed verdicts on the *same objectives* can be compared
+directly. If spoken answers show systematically worse outcomes than typed ones, that is the signal —
+and it is evidence, not a hunch. Until that comparison exists, switching would be paying for a
+problem nobody has measured.
+
+**A cheaper option exists if only accuracy matters.** Canvas answers are short (10–20 seconds), so
+xAI's *batch* STT — already wired in `nemesis-transcribe` at $0.10/hour — would give the vocabulary
+accuracy with no WebSocket infrastructure at all. What it loses is interim text appearing as the
+learner speaks, which is a real part of why dictation feels responsive. Worth knowing the option is
+there before anyone assumes streaming is the only route.
+
 ## Two known duplications, neither a correctness bug
 
 1. **Two Web Speech implementations** — `use-canvas-dictation.ts` (Canvas) and the dictation welded
