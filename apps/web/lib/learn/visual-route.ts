@@ -214,6 +214,14 @@ export function routeVisual(input: VisualRouteInput): VisualRoute {
   // hide the fact that something upstream is producing bad requests — and substituting one for an
   // UNSAFE one would hide a probe at the security boundary. The caller renders its teaching text
   // either way; only the record differs, and the record is the point.
+  //
+  // 🔴 DEFENCE IN DEPTH TODAY, NOT THE LIVE REFUSAL PATH, AND THE DIFFERENCE IS WORTH STATING. A
+  // stored `block.visual` has ALREADY been through this validator twice: `canvas-parse` drops an
+  // invalid one rather than storing it, and `canvas-ops` refuses the whole op that would write one.
+  // So `canvas-document` cannot hand this an invalid request, and the named refusals a model
+  // actually receives come from `canvas-ops`, not from here. This branch exists for the caller that
+  // does not yet exist and for the day one of those two filters is changed — which is exactly when
+  // nobody will be looking.
   const validation = validateCanvasVisual(input.request);
   if (!validation.ok) {
     return {
@@ -231,6 +239,19 @@ export function routeVisual(input: VisualRouteInput): VisualRoute {
   // two-node graph and a single-x plot both pass every bound in `canvas-visual.ts` and both are
   // decoration. §41: *"A picture that cannot be answered against is decoration, and decoration
   // competes with the material for the attention §19 reserves for it."*
+  // 🔴🔴 UNREACHABLE WITH TODAY'S CALLERS, AND SAID SO RATHER THAN COUNTED AS A WORKING RULE.
+  // Reaching this needs a `request` AND a `knowledge` in the same call, and neither caller supplies
+  // both: `canvas-policy-view` passes knowledge and no request (an `Exposition` is `{ mode }` and
+  // deliberately carries no material), while `canvas-document` passes a request and has no
+  // knowledge object to pass — a `CanvasBlock` carries `conceptIds`, which name COARSE objectives,
+  // and one concept holds knowledge of several types at once. Picking one to call "this block's
+  // knowledge" would invent a fact rather than read one.
+  //
+  // It stays because it is the right rule and the interface already admits it: the day a teaching
+  // action carries a visual, this fires with no further change. What it must not do is appear in a
+  // report as a routing rule that runs. `teaching-policy.ts` marks its provisional branch the same
+  // way — "UNREACHABLE ON TODAY'S DATA, AND SAID SO RATHER THAN COUNTED AS COVERAGE" — and the
+  // failure it guards against is this repo's most repeated one: implemented, merged, deployed, dead.
   if (input.knowledge?.type === "association") {
     return {
       because: `this is an arbitrary mapping, so there is no structure a picture could show — the work is making the link retrievable, not illustrating it`,

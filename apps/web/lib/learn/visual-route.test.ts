@@ -146,6 +146,35 @@ test("🔴 an association is an arbitrary mapping, so a valid request for it is 
   assert.equal(route.decision === "prose" && route.reason, "association-has-no-structure");
 });
 
+test("🔴🔴 the association rule is UNREACHABLE with today's callers, and the code says so", () => {
+  // 🔴 THIS TEST EXISTS BECAUSE THE TEST ABOVE IS MISLEADING ON ITS OWN. It passes by constructing
+  // an input no caller constructs: reaching that branch needs a `request` AND a `knowledge`, and
+  // `canvas-policy-view` supplies only the second while `canvas-document` supplies only the first.
+  // A green test next to a dead branch is precisely how "implemented, merged, deployed, dead" keeps
+  // happening here, so the honesty is pinned rather than left in a commit message.
+  //
+  // When a caller finally supplies both, this test fails and whoever wired it removes the comment
+  // in the same change. That is the whole mechanism — it polices the CLAIM, not the design.
+  const router = readFileSync(new URL("./visual-route.ts", import.meta.url), "utf8");
+  assert.match(router, /UNREACHABLE WITH TODAY'S CALLERS/);
+
+  const callers = [
+    readFileSync(new URL("../../components/workspace/learn/canvas-policy-view.tsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../../components/workspace/learn/canvas-document.tsx", import.meta.url), "utf8"),
+  ];
+  for (const caller of callers) {
+    const call = /routeVisual\(\{[^}]*\}\)/s.exec(caller)?.[0] ?? "";
+    assert.notEqual(call, "", "a caller stopped calling routeVisual");
+    const hasBoth = call.includes("knowledge:") && call.includes("request:");
+    assert.equal(
+      hasBoth,
+      false,
+      "a caller now supplies BOTH knowledge and a request — the association rule is live, so delete " +
+        "the UNREACHABLE note in visual-route.ts and this test with it.",
+    );
+  }
+});
+
 test("🔴 a plot whose points all share one x has no range to draw along", () => {
   const route = routeVisual({
     request: {
