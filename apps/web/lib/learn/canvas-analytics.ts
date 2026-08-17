@@ -14,6 +14,9 @@ import type { CanvasState, LearningCanvas } from "./canvas-model";
 
 export type CanvasEvent =
   | "canvas_created"
+  // A conversational answer became a learning session because the learner explicitly asked it to.
+  // Carries a count of promoted cited pages, never the question or answer text.
+  | "canvas_learning_started_from_answer"
   | "source_attached"
   // Durable knowledge minted from an attached source. Counts only — never the extracted content,
   // which is the learner's own material.
@@ -41,6 +44,9 @@ export type CanvasEvent =
   // Which teaching action the policy chose, and why. The distribution is how we find out
   // whether the loop is actually adapting or quietly advancing past everything.
   | "canvas_action_chosen"
+  // Which controller this canvas was assigned and whether the assignment was randomised, the
+  // default, or an explicit developer override. Names only; never source or learner content.
+  | "canvas_strategy_assigned"
   // 🔴 A TEACHING CONTROLLER COULD NOT DECIDE, AND WHY — the reason tally that keeps the A/B
   // comparison honest. Same construction as `canvas_causal_refused`: a controller that produced
   // nothing and a controller that is BROKEN both look like an empty screen, and only a named reason

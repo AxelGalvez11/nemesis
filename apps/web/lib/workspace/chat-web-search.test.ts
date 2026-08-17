@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb } from "./chat-web-search";
+import { buildFreshSearchQuery, citedWebResults, formatWebSearchContext, shouldSearchWeb } from "./chat-web-search";
 
 assert.equal(shouldSearchWeb("Explain the renin angiotensin system"), false);
 assert.equal(shouldSearchWeb("Who won the World Cup?"), true);
@@ -22,5 +22,17 @@ assert.match(
 );
 assert.equal(buildFreshSearchQuery("Explain beta blockers", new Date("2026-07-19T12:00:00Z")), "Explain beta blockers");
 assert.equal(buildFreshSearchQuery("Who won today's World Cup final?", new Date("2026-07-19T12:00:00Z")), "Who won today's World Cup final? current as of 2026-07-19");
+
+const sources = [
+  { description: "one", title: "One", url: "https://one.test" },
+  { description: "two", title: "Two", url: "https://two.test" },
+  { description: "three", title: "Three", url: "https://three.test" },
+];
+assert.deepEqual(
+  citedWebResults("The current rule is supported here [2], then qualified here [1]. [2]", sources),
+  [sources[1], sources[0]],
+);
+assert.deepEqual(citedWebResults("Out-of-range references [0] [9] are ignored, but [1] is real.", sources), [sources[0]]);
+assert.deepEqual(citedWebResults("No citation means no automatic source promotion.", sources), []);
 
 console.log("chat-web-search.test.ts OK");

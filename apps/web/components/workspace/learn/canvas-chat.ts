@@ -22,7 +22,12 @@
 // same thing are judged by the identical rule rather than by two rules that can quietly diverge.
 
 import { postChatCompletion, searchWebContext, type WireMsg } from "@/lib/workspace/chat-api";
-import { buildFreshSearchQuery, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+import {
+  buildFreshSearchQuery,
+  citedWebResults,
+  shouldSearchWeb,
+  type ChatWebResult,
+} from "@/lib/workspace/chat-web-search";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
@@ -138,5 +143,11 @@ export async function askCanvasChat(
   );
 
   if (reply.errorText) return { error: reply.errorText, sources: [], text: null };
-  return { error: null, sources, text: reply.text };
+  return {
+    error: null,
+    // Only the pages the answer cited become promotion candidates. Search rank is retrieval
+    // evidence, not permission to turn every hit into durable learning material.
+    sources: reply.text ? citedWebResults(reply.text, sources) : [],
+    text: reply.text,
+  };
 }

@@ -10,8 +10,18 @@ import {
   DEFAULT_STRATEGY,
   resolveStrategy,
   strategyOverrideFrom,
+  teachingExperimentEligible,
   TEACHING_STRATEGIES,
 } from "./teaching-strategy";
+
+test("the dated rollout admits only canvases created after it starts", () => {
+  const start = "2026-08-17T00:00:00.000Z";
+  assert.equal(teachingExperimentEligible("2026-08-17T00:00:00.000Z", start), true);
+  assert.equal(teachingExperimentEligible("2026-08-17T00:00:00.001Z", start), true);
+  assert.equal(teachingExperimentEligible("2026-08-16T23:59:59.999Z", start), false);
+  assert.equal(teachingExperimentEligible("not-a-date", start), false);
+  assert.equal(teachingExperimentEligible("2026-08-18T00:00:00.000Z", null), false);
+});
 
 // WHICH ARM A SESSION RUNS, AND THE ONE PROPERTY THE EXPERIMENT CANNOT SURVIVE LOSING.
 //
@@ -169,6 +179,10 @@ test("🔴🔴 the RUNTIME derives the arm, it does not store it", () => {
     "utf8",
   );
   assert.ok(hook.includes("resolveStrategy({"), "the runtime must derive the arm on every render");
+  assert.ok(
+    hook.includes("teachingExperimentEligible(canvas.createdAt, teachingExperimentStartedAt)"),
+    "the runtime must enroll only canvases created after the dated rollout starts",
+  );
   // 🔴 THE BINDING, NOT THE TYPE. An earlier version of this matched `useState[^\n]*Strategy` and
   // went red on `useState<StrategyOutcome>` — which is the DECISION, and is legitimately state: it
   // is the result of an async controller call and has nowhere else to live. What must never be

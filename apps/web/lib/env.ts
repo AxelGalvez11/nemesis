@@ -44,6 +44,16 @@ export const deliverablesOnCommandEnabled = process.env.NEXT_PUBLIC_DELIVERABLES
 // ASK_STREAMING=on — an eager client against an off server degrades cleanly to normal JSON.
 export const streamingEnabled = process.env.NEXT_PUBLIC_STREAMING === "true";
 
+// Teaching-controller experiment. A timestamp is the switch rather than a boolean so canvases that
+// already contain evidence never change controller when the experiment starts. Only canvases created
+// at or after this instant are eligible for stable `nemesis_policy` / `llm_teacher` assignment.
+// Unset or malformed => nobody is enrolled.
+const rawTeachingExperimentStartedAt = process.env.NEXT_PUBLIC_TEACHING_EXPERIMENT_STARTED_AT?.trim() ?? "";
+const parsedTeachingExperimentStartedAt = Date.parse(rawTeachingExperimentStartedAt);
+export const teachingExperimentStartedAt = Number.isFinite(parsedTeachingExperimentStartedAt)
+  ? new Date(parsedTeachingExperimentStartedAt).toISOString()
+  : null;
+
 // Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
 // When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
 // and pass its token to Supabase auth (options.captchaToken). Off (no key) ⇒ no widget, no token,
