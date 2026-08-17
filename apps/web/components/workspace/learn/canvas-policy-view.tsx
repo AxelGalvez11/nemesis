@@ -232,6 +232,52 @@ function PolicyScreen({
     );
   }
 
+  if (decision.action.type === "recognise" && prompt?.choices) {
+    // ── The recognition presentation ────────────────────────────────────────
+    //
+    // 🔴 THE SAME SCREEN AS A RETRIEVAL, WITH THE ANSWER SURFACE ON IT. Question at the top, nothing
+    // else, and the options directly underneath. There is no card, no "select one" instruction, no
+    // A/B/C/D lettering and no score: the learner presses the thing they think is right, which needs
+    // no explaining, and every letter on screen would be one more thing read before the answer is
+    // produced. Lettering would also have to survive the position balancer, which is exactly how a
+    // stale letter comes to name the wrong option.
+    //
+    // 🔴 THE OPTIONS ARE THE ANSWER, SO THE COMPOSER DOES NOT RECEIVE ONE. `use-policy-runtime`
+    // hosts no task for this action, so `answerSink` resolves to `none` and the composer stays what
+    // it is on every other non-question screen: a place to ask about the material. That is the same
+    // one-answer-surface rule `canvas-hosting.ts` exists to hold, arrived at from the other side.
+    //
+    // 🔴 AND IT IS NOT A MODE. Nothing here was switched on; the policy decided, from this learner's
+    // evidence, that this one question is better asked this way, and the next one will very probably
+    // be typed again.
+    const busy = runtime.judging || runtime.recording;
+    return (
+      <div className={`flex ${regionHeight(sharing)} flex-col items-center justify-center gap-8 px-6`}>
+        <h2 className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-title)] font-medium leading-snug text-balance text-(--ui-text-primary)">
+          {prompt.prompt}
+        </h2>
+        <ul className="flex w-full max-w-(--canvas-column) flex-col gap-2">
+          {prompt.choices.options.map((option) => (
+            <li key={option.text}>
+              <button
+                className="w-full rounded-2xl px-4 py-3 text-left text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) disabled:opacity-50"
+                disabled={busy}
+                // 🔴 THE TEXT, NEVER THE INDEX. An index is only true of the layout that produced it,
+                // and the layout is rebuilt whenever the canvas's pool changes. The durable row
+                // stores this same string, so what the learner pressed stays readable with no stored
+                // layout to resolve it against.
+                onClick={() => void runtime.choose(option.text)}
+                type="button"
+              >
+                {option.text}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
   if (decision.action.type === "show_correction") {
     // 🔴 THREE STATES SHARE THIS COMPONENT AND KEEP THEIR MEANINGS. `incorrect` had something to
     // repair, `partial` had something right worth keeping, and `not_demonstrated` had no attempt

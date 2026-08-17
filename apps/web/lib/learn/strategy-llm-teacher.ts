@@ -31,9 +31,11 @@ import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 
 import { extractJson } from "./canvas-parse";
+import type { ChoiceSet } from "./choice-set";
 import { expositionFor } from "./cognitive-mode";
 import { projectLearnerState } from "./learner-evidence";
 import type { LearnerEvidence } from "./learner-evidence";
+import { choiceSetsForPool } from "./objective-task";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import { easier, harder } from "./scaffold-prompt";
 import type { ScaffoldRung } from "./scaffold-rung";
@@ -100,7 +102,7 @@ const TEACHER_SYSTEM = [
 /**
  * The moves.
  *
- * 🔴 ELEVEN VERBS, AND EVERY ONE CHANGES WHAT THE LEARNER MEETS. The owner listed these; the
+ * 🔴 TWELVE VERBS, AND EVERY ONE CHANGES WHAT THE LEARNER MEETS. The owner listed eleven; the
  * temptation was to accept the list and map several onto the same action so the enum looked right.
  * That is the defect this repo keeps paying for — a lane that is implemented, merged, deployed and
  * dead. `harder` and `easier` move a rung that, until `scaffold-prompt.ts` existed, did not change a
@@ -119,6 +121,18 @@ const VERBS = [
   "correct",
   /** Put a competing belief they actually showed beside the right one. */
   "contrast",
+  /**
+   * Ask them to pick it out of options that include what they are confusing it with.
+   *
+   * 🔴 A REAL MOVE, NOT A PRESENTATION CHOICE, WHICH IS WHY IT IS A VERB. It changes what the learner
+   * has to do — discriminate rather than produce — and the evidence it writes is weaker and says so.
+   *
+   * 🔴 AND IT IS AVAILABLE FAR LESS OFTEN THAN THE MODEL WILL WANT IT. `actionFor` refuses it unless
+   * a genuinely confusable set of options exists for that objective; the refusal is counted, exactly
+   * like a `contrast` against no observed belief. This arm is the DEFAULT strategy, so leaving the
+   * verb out would have meant recognition never reaching a real learner at all.
+   */
+  "recognise",
   /** Same objective, one step more demanding. */
   "harder",
   /** Same objective, one step less demanding. */
@@ -381,6 +395,13 @@ function teacherMessages(
         "simplify  say the same thing in plainer language.\n" +
         "correct   state the answer plainly, because an attempt fell short.\n" +
         "contrast  put a competing belief they have ACTUALLY SHOWN beside the right one.\n" +
+        // 🔴 THE LINE STATES THE REFUSAL AS WELL AS THE MOVE. A model told only what a verb does will
+        // reach for it where it is unavailable, and every such reply is a wasted turn counted as
+        // `unknown-action`. Saying that options come from the material and may not exist turns a
+        // silent failure rate into a move the model can decline to make.
+        "recognise ask them to pick it out of options drawn from the material and from what they have " +
+        "confused it with. Available only where such options exist. Lower effort to answer, not " +
+        "lower difficulty, and a correct pick is WEAKER evidence than producing it.\n" +
         "harder    same objective, one step more demanding.\n" +
         "easier    same objective, one step less demanding.\n" +
         "advance   nothing here is worth the next minute. Go forward.\n" +
@@ -412,6 +433,8 @@ function actionFor(input: {
   snapshot: ObjectiveSnapshot;
   because: string;
   evidence: readonly LearnerEvidence[];
+  /** The options this runtime could honestly stage for THIS objective, or null when none exist. */
+  choices: ChoiceSet | null;
 }): TeachingAction | null {
   const id = input.entry.objective.identityKey;
   const because = input.because;
@@ -466,6 +489,15 @@ function actionFor(input: {
         type: "contrast",
       };
     }
+    case "recognise":
+      // 🔴 REFUSED WHEN NO HONEST SET EXISTS, EXACTLY LIKE `contrast` WITH NOTHING TO SEPARATE. The
+      // model may not conjure options: distractors are built from the source's own structure and from
+      // beliefs a judge already named, and a model-supplied list would be this arm authoring content
+      // — the line `TeachingStrategy`'s header draws ("a controller chooses; it does not author") and
+      // the same one the contrast case draws two branches down.
+      return input.choices
+        ? { because, choices: input.choices, objectiveId: id, rung: "recognition", type: "recognise" }
+        : null;
     case "defer":
       return { because, objectiveId: id, type: "defer" };
     case "revisit":
@@ -572,7 +604,21 @@ export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrateg
       const objectiveSnapshot = briefed.find((s) => s.identityKey === entry.objective.identityKey);
       if (!objectiveSnapshot) return refused("unknown-objective");
 
-      const action = actionFor({ because, entry, evidence: context.evidence, snapshot: objectiveSnapshot, verb });
+      // 🔴 THE SAME BUILDER BOTH ARMS USE, CALLED THE SAME WAY. The experiment's constraint is that
+      // everything except the choosing is identical; options built one way here and another way in
+      // `decideNext` would put different questions in front of two cohorts.
+      const choiceSets = choiceSetsForPool({
+        evidence: context.evidence,
+        objectives: context.objectives,
+      });
+      const action = actionFor({
+        because,
+        choices: choiceSets.get(entry.objective.identityKey) ?? null,
+        entry,
+        evidence: context.evidence,
+        snapshot: objectiveSnapshot,
+        verb,
+      });
       // The verb was legal and the objective was real, but the move is not available for THIS
       // objective — a contrast with no observed belief, a rung already at the end of the ladder.
       // Counted, never silently substituted with a different move the model did not choose.

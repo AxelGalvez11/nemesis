@@ -18,11 +18,22 @@
 // so it words a narrower question for a law student and a mechanical engineer identically. That is
 // the standing product rule, not a stylistic preference.
 //
-// 🔴 AND IT REFUSES THE TWO RUNGS NOBODY HAS BUILT. `recognition` needs options on screen, which
-// needs distractors and a surface that does not exist; `taught` means Nemesis supplies the answer,
-// which is `show_correction` and must not be duplicated here as a retrieval that gives itself away.
-// A refusal is returned and counted. Guessing would hand a learner a question the rest of the
+// 🔴 AND IT REFUSES THE TWO RUNGS A SENTENCE CANNOT EXPRESS. `taught` means Nemesis supplies the
+// answer, which is `show_correction` and must not be duplicated here as a retrieval that gives itself
+// away. A refusal is returned and counted. Guessing would hand a learner a question the rest of the
 // system cannot process — see `runtime-support.ts` for the same discipline one layer up.
+//
+// 🔴🔴 `recognition` IS STILL REFUSED HERE, AND THE REASON HAS CHANGED — READ THIS BEFORE "FIXING"
+// IT. This comment used to say the rung needed *"distractors and a surface that does not exist"*.
+// Both exist now: `choice-set.ts` builds the options and the Canvas renders them as the
+// `recognise` action. What it still is not is a TEXT TRANSFORM. Every rung on `WORDABLE` is the same
+// sentence altered — a clause dropped, a hint appended — and `promptAtRung` returns a string because
+// that is all those rungs need. A recognition task needs a set of options with a ground on each one,
+// which no `string` return can carry, and a caller handed a bare sentence would render a question
+// with the answer nowhere on screen while the row claimed the answer had been shown. So the two are
+// staged by different builders on purpose: this one narrows a question, `recognitionPromptFor`
+// replaces it. `rungIsWordable("recognition")` stays false because it answers "can this file word
+// it?", not "can the runtime stage it?".
 
 import type { LearningObjective } from "./learning-objective";
 import { rungRank, type ScaffoldRung } from "./scaffold-rung";

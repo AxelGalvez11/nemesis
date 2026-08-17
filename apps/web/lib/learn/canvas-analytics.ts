@@ -82,6 +82,19 @@ export type CanvasEvent =
   // Worth counting separately for a second reason: a rising rate here is a signal about the
   // QUESTION, not the person. It means the prompt is inviting its own answer back.
   | "canvas_cue_echoed"
+  // 🔴 ONE OPTION TAPPED ON A RECOGNITION TASK, SPLIT BY WHY THAT OPTION WAS ON SCREEN. The `ground`
+  // property is the whole value of the event: "they picked a belief they already held" and "they
+  // picked a neighbouring class" are different diagnoses, and a single `wrong` count would collapse
+  // them back into the flat signal that made multiple choice worth objecting to in the first place.
+  //
+  // 🔴 THE GROUND, NEVER THE OPTION TEXT. Analytics is a shared surface and an option's text is the
+  // learner's own material; the structural fact is what a funnel can be split by.
+  | "canvas_option_picked"
+  // 🔴 A TAP THAT NAMED NO OPTION ON RECORD — a stale render, or a pool rebuilt underneath the
+  // screen. Counted because it writes NOTHING, so without an event it is indistinguishable from a
+  // learner who never answered. It is our fault and never theirs, which is why it is not
+  // `canvas_option_picked` with a `ground` of "unknown": that would file a defect as a diagnosis.
+  | "canvas_option_unreadable"
   | "canvas_diagnosis_viewed"
   | "canvas_weakspots_relearned"
   | "canvas_retest_completed"

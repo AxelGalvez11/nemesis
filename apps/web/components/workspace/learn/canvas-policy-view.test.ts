@@ -329,3 +329,49 @@ test("🔴 §39: a verdict with a correction queued behind it spends NO window",
   assert.match(rendered, /correctionQueued=\{decision\?\.action\.type === "show_correction"\}/,
     "the queued-correction flag must come from the decision's action, not be inferred");
 });
+
+// ── the recognition ask actually paints, and is answered by pressing ─────────
+//
+// 🔴🔴 `PolicyScreen` IS AN IF/ELSE CHAIN, NOT AN EXHAUSTIVE SWITCH, SO A NEW ACTION TYPE IS NOT A
+// COMPILE ERROR HERE. `expositionOf` forces a decision in `teaching-policy.ts`; this file has no
+// such gate. An unhandled `recognise` falls through to the final arm and paints "Come back to this
+// shortly" over a question the learner was supposed to answer, with every test green and no error
+// anywhere. That is this repo's named failure shape, so it is pinned by source text in the style
+// `canvas-dead-controls.test.ts` established for exactly this reason.
+
+test("🔴 a recognition decision has its own branch, before the catch-all that means `defer`", async () => {
+  // 🔴 CALIBRATION: delete the `recognise` branch from PolicyScreen and this test reddens alone.
+  const rendered = stripComments(await SOURCE);
+  const branch = rendered.indexOf('decision.action.type === "recognise"');
+  assert.notEqual(branch, -1, "a recognition ask has no branch, so it would paint the `defer` copy");
+
+  const deferCopy = rendered.indexOf("Come back to this shortly");
+  assert.notEqual(deferCopy, -1, "the catch-all copy moved; this guard can no longer prove ordering");
+  assert.ok(
+    branch < deferCopy,
+    "the recognition branch must come BEFORE the catch-all, or the chain never reaches it",
+  );
+});
+
+test("🔴 an option is answered by PRESSING it, and the press carries the option's text", async () => {
+  // The owner's rule: tapping an option is the answer. A screen that printed the options and left
+  // the learner to type a letter would be a recognition task the runtime could not read, and would
+  // also route through the typed-answer path with its non-attempt guards.
+  //
+  // 🔴 CALIBRATION: change `runtime.choose(option.text)` to an index and the text assertion
+  // reddens; remove the `<button>` and the control assertion does.
+  const rendered = stripComments(await SOURCE);
+  const branch = rendered.indexOf('decision.action.type === "recognise"');
+  const section = rendered.slice(branch, rendered.indexOf('decision.action.type === "show_correction"', branch));
+  assert.match(section, /prompt\.choices\.options\.map/, "the options on the prompt must be what is rendered");
+  assert.match(section, /<button/, "each option must be a real control the learner can press");
+  assert.match(
+    section,
+    /runtime\.choose\(option\.text\)/,
+    "the press must carry the option's TEXT: an index is only true of the layout that produced it",
+  );
+  // 🔴 NO LETTERING. A/B/C/D would have to survive the answer-position balancer, which is exactly
+  // how a stale letter comes to name the wrong option — and it is one more thing read before the
+  // answer is produced, on a screen whose whole design is the question and nothing else.
+  assert.doesNotMatch(section, /["'`]\s*[A-D][).]\s*["'`]/, "options must not be lettered");
+});

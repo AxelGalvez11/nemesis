@@ -13,7 +13,15 @@
 
 import type { ExpectedEvidence, LearnerInputModality, LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
 import type { EvaluationInput } from "./canvas-prompts";
+import {
+  choiceCandidatesFrom,
+  choiceSetsFor,
+  type ChoicePoolEntry,
+  type ChoiceSelection,
+  type ChoiceSet,
+} from "./choice-set";
 import type { KnowledgeObject } from "./knowledge-types";
+import type { LearnerEvidence } from "./learner-evidence";
 import type { EvidenceVerdict } from "./learner-evidence";
 import type { LearningObjective, ObjectiveCapability } from "./learning-objective";
 import type { EvidenceToRecord, StoredObjective } from "./learner-store";
@@ -211,6 +219,20 @@ export interface RetrievalPrompt {
    * written before the field existed; a new prompt has no excuse.
    */
   rung: ScaffoldRung;
+  /**
+   * The options on screen, when this prompt is answered by picking rather than by producing.
+   *
+   * 🔴 ABSENT MEANS THERE ARE NO OPTIONS, WHICH IS EVERY PROMPT THIS RUNTIME BUILT BEFORE
+   * RECOGNITION EXISTED AND MOST OF THEM NOW. It is not "options unknown": a free-response prompt
+   * genuinely has none, and that is what makes the field's absence readable rather than a default.
+   *
+   * 🔴 PRESENT EXACTLY WHEN `rung` IS `recognition` — the two are set together by
+   * `recognitionPromptFor` and by nothing else, for the reason `stagedRung` exists. A prompt claiming
+   * the recognition rung with no options would record a demand the learner never met, which is the
+   * lie §33's ladder spent a whole file closing; a prompt carrying options at `independent` would
+   * claim unaided production for a question that showed the answer.
+   */
+  choices?: ChoiceSet;
 }
 
 /**
@@ -327,6 +349,63 @@ export function targetFor(objective: StoredObjective): ObjectiveTarget {
 }
 
 /**
+ * The question this objective asks at full unaided demand, before any rung transforms it.
+ *
+ * 🔴 EXTRACTED SO THERE IS ONE WORDING WITH TWO READERS, NEVER TWO WORDINGS. `retrievalPromptFor`
+ * built this inline; `choice-set.ts` now needs the same sentence, because an option already printed
+ * in the question is not a distractor and can only be recognised by comparing against the actual
+ * text. A second construction of "the question for this objective" would drift, and the drift would
+ * be invisible: the option filter would be checking a sentence the learner never saw.
+ *
+ * 🔴 BRANCHED ON THE CAPABILITY, NEVER ON THE KNOWLEDGE TYPE — unchanged from where this came from,
+ * and see that comment for why.
+ */
+export function baseQuestionFor(resolved: {
+  objective: LearningObjective;
+  knowledge: KnowledgeObject;
+}): string {
+  const { knowledge, objective } = resolved;
+  const predicting = objective.capability === "predict";
+  const explaining = objective.capability === "explain";
+  const locating = objective.capability === "locate" && Boolean(knowledge.figure?.assetPath);
+  const discriminating = objective.capability === "discriminate" && Boolean(knowledge.contrast);
+  const sequencing = objective.capability === "sequence";
+  return predicting
+    ? predictionPromptText(objective)
+    : explaining
+      ? explanationPromptText(objective)
+    : locating
+      ? locatePromptText(objective)
+    : sequencing
+      ? sequencePromptText(objective)
+      : discriminating && knowledge.contrast
+        ? discriminationPromptText(objective, knowledge.contrast)
+        : objectivePromptText(objective);
+}
+
+/**
+ * The task name this objective's answers are filed under.
+ *
+ * 🔴 EXTRACTED FOR THE SAME REASON AS THE WORDING, AND IT MATTERS MORE HERE BECAUSE IT IS STORED. A
+ * recognition prompt over a discrimination objective must file as `compare`, exactly as the unaided
+ * one does; a second copy of this mapping would eventually file one of them as `name` and every
+ * attempt at telling two classes apart would be recorded as producing a term. That is this codebase's
+ * named failure of mapping a wider vocabulary DOWN, and it has already happened once.
+ */
+export function taskNameFor(resolved: {
+  objective: LearningObjective;
+  knowledge: KnowledgeObject;
+}): RetrievalTask {
+  const { knowledge, objective } = resolved;
+  if (objective.capability === "predict") return "predict";
+  if (objective.capability === "explain") return "explain";
+  if (objective.capability === "locate" && knowledge.figure?.assetPath) return "locate";
+  if (objective.capability === "sequence") return "reconstruct";
+  if (objective.capability === "discriminate" && knowledge.contrast) return "compare";
+  return "name";
+}
+
+/**
  * Mint one prompt asking about one or more objectives.
  *
  * 🔴 THE ONLY WAY A PROMPT IS BUILT, AND THAT IS THE POINT. Everything that asks the learner
@@ -366,6 +445,9 @@ export function promptTargeting(input: {
    * A caller that forgets under-claims its own scaffolding, which costs a re-ask.
    */
   rung?: ScaffoldRung;
+  /** The options on screen, when there are any. 🔴 Absent means free response, which is every prompt
+   *  this runtime built before recognition existed — see `RetrievalPrompt.choices`. */
+  choices?: ChoiceSet;
 }): RetrievalPrompt {
   return {
     expectedAnswer: input.expectedAnswer,
@@ -377,7 +459,154 @@ export function promptTargeting(input: {
     scaffoldingLevel: input.scaffoldingLevel ?? UNSUPPORTED_RETRIEVAL,
     targets: input.targets,
     task: input.task,
+    ...(input.choices ? { choices: input.choices } : {}),
   };
+}
+
+/**
+ * The one prompt that is answered by TAPPING.
+ *
+ * 🔴 IT DELEGATES TO `promptTargeting` LIKE ITS SIBLING, AND FOR THE SAME REASON: a second
+ * construction site is how the two drift, and the field that drifts is the response identity, which
+ * is the idempotency key for everything this prompt goes on to write.
+ *
+ * 🔴 THE SENTENCE IS THE UNAIDED ONE, UNCHANGED. There is deliberately no "pick the correct option"
+ * instruction bolted on: the options are visibly tappable and the question is the whole screen, which
+ * is the same argument that removed the "answer below" line from the free-response surface. Rewording
+ * the question because the answer surface changed would also mean two learners meeting two different
+ * sentences about the same objective, which is what `stagedRung` refuses one rung up.
+ *
+ * 🔴 AND THE SCAFFOLDING LEVEL IS NOT `UNSUPPORTED_RETRIEVAL`. That constant means "the prompt and
+ * nothing else"; here the answer is on the screen, which is assistance the runtime genuinely offered.
+ * Leaving it at 0 would report an unaided attempt in the one column that measures how much help was
+ * on the table.
+ */
+export function recognitionPromptFor(
+  resolved: { objective: StoredObjective; knowledge: KnowledgeObject },
+  id: string,
+  choices: ChoiceSet,
+): RetrievalPrompt {
+  return promptTargeting({
+    choices,
+    expectedAnswer: resolved.objective.answer,
+    id,
+    operation: resolved.objective.capability,
+    prompt: baseQuestionFor(resolved),
+    // 🔴 NEVER `independent`, AND NEVER LEFT TO THE DEFAULT. `promptTargeting` defaults to the top of
+    // the ladder because that is what every prompt before this one actually staged; a recognition
+    // prompt that took the default would credit a tap as unaided production, which is the single most
+    // expensive false claim this evidence model can make.
+    rung: "recognition",
+    scaffoldingLevel: OPTIONS_ON_SCREEN,
+    targets: [targetFor(resolved.objective)],
+    task: taskNameFor(resolved),
+  });
+}
+
+/**
+ * Retrieval with the answer among options.
+ *
+ * 🔴 A SECOND POINT ON A SCALE WHOSE STEPS THE RUNTIME CAN NOW DISTINGUISH, WHICH IS THE ONLY REASON
+ * IT IS ALLOWED TO EXIST. `UNSUPPORTED_RETRIEVAL`'s own comment refuses to invent a level system
+ * before there is a second state to measure — *"inventing a scale before the runtime can distinguish
+ * its steps would produce numbers nothing measured"*. There is one now, and this is it. The number
+ * says how much was on offer, never whether the learner needed it.
+ */
+export const OPTIONS_ON_SCREEN = 1;
+
+/**
+ * Every objective on this canvas that could be asked with options, and what those options would be.
+ *
+ * 🔴 BUILT FROM THE WHOLE POOL IN ONE PASS, AND BOTH HALVES OF THAT MATTER. Distractors come from
+ * the canvas's OTHER objectives, so a per-objective builder would have nothing to draw from; and the
+ * correct answer's POSITION is balanced across the batch, which degenerates to "always first" if the
+ * batch is one. See `choiceSetsFor`.
+ *
+ * 🔴 THE PROMPT TEXT IS THE REAL ONE, TAKEN FROM `baseQuestionFor`. An option is discarded when it is
+ * already printed in the question, and that check is only worth anything against the sentence the
+ * learner will actually see.
+ *
+ * 🔴 CALLED BY BOTH CONTROLLER ARMS, WHICH IS WHY IT LIVES HERE RATHER THAN INSIDE EITHER. The
+ * experiment's constraint is that everything except the choosing is byte-for-byte the same; a set of
+ * options built one way for the structured arm and another way for the model arm would put different
+ * questions in front of two cohorts and the comparison would mean nothing.
+ */
+export function choiceSetsForPool(input: {
+  objectives: readonly { objective: LearningObjective; knowledge: KnowledgeObject }[];
+  /** Every row this learner holds for these objectives. Filtered per objective here. */
+  evidence: readonly LearnerEvidence[];
+}): Map<string, ChoiceSet> {
+  const pool: ChoicePoolEntry[] = input.objectives.map((entry) => ({
+    evidence: input.evidence.filter(
+      (row) => row.objectiveIdentityKey === entry.objective.identityKey,
+    ),
+    knowledge: entry.knowledge,
+    objective: entry.objective,
+    prompt: baseQuestionFor(entry),
+  }));
+  return choiceSetsFor(choiceCandidatesFrom(pool));
+}
+
+/**
+ * What one tap established.
+ *
+ * 🔴🔴 THIS IS THE ONE PLACE THIS CODEBASE JUDGES AN ANSWER WITHOUT AN EVALUATOR, AND THE EXEMPTION
+ * IS NARROW ENOUGH TO STATE EXACTLY. `evidenceForSubmission`'s rule is *"THE EVALUATOR DECIDES, NOT
+ * THE BUTTON"*, and it names the cheap disguise it is aimed at: string equality against the expected
+ * answer, which *"would call a correct answer wrong for a capital letter and cannot tell a wrong
+ * answer from a specific competing one"*. Neither objection applies to a tap. There is no free text
+ * to compare, so spelling cannot be got wrong; and the wrong options were minted FROM named competing
+ * models, so which one was picked is not merely known, it is the sharpest thing on the row. A model
+ * asked to re-read a tap would be guessing at a fact already established by construction.
+ *
+ * 🔴 `null` MEANS NO ACCOUNT EXISTS, AND THE CALLER MUST TURN IT INTO `noJudgement()`. It happens
+ * when the tapped text is not one of the options on record — a stale render, a rebuilt pool. Nobody
+ * answered anything wrongly; we simply do not know what was picked, and writing `incorrect` would
+ * charge a learner for our own race.
+ *
+ * 🔴 A CORRECT TAP IS `understood`, NEVER `strong`. Both project to `correct`, and the difference is
+ * kept on `latestVerdict` for a policy to read — so the more modest of the two is the honest one for
+ * a demonstration that consisted of pointing. What actually bounds the claim is the RUNG, which
+ * `satisfies(state, "independent")` refuses; the verdict is not doing that work and must not pretend
+ * to.
+ *
+ * 🔴 NO `confidence`. That field is how sure an EVALUATOR was of its own reading, and nothing read
+ * anything here. A `1` would assert a certainty measurement that never happened, and would then flow
+ * into `establishesBelief` as though a judge had spoken.
+ */
+export function outcomeForSelection(
+  objective: { identityKey: string },
+  /**
+   * The tap, already resolved.
+   *
+   * 🔴 RESOLVED BY THE CALLER RATHER THAN HERE, SO THE SET IS READ EXACTLY ONCE. The caller needs the
+   * ground too — to say something true on the verdict screen, and to split a funnel by it — and two
+   * reads of one tap is two places that can be given different option sets after an edit.
+   */
+  selection: ChoiceSelection,
+): SubmissionOutcome | null {
+  if (selection.kind === "unrecognised") return null;
+  if (selection.kind === "correct") {
+    return { objectiveIdentityKey: objective.identityKey, verdict: "understood" };
+  }
+  // 🔴🔴 `misconception` ONLY WHERE A COMPETING MODEL WAS ALREADY NAMED, AND THIS RESTRAINT IS THE
+  // WHOLE DIFFERENCE BETWEEN A DIAGNOSIS AND AN ACCUSATION. Picking the belief a judge has already
+  // caught this learner producing re-confirms it — that is a competing model, observed twice, and the
+  // policy's `misconception` branch is right to separate the pair. Picking a neighbouring class or a
+  // same-shape answer once is an error and may be nothing more; filing it as a held belief would
+  // teach against a model nobody has shown, which is the fabrication `strategy-llm-teacher.ts`
+  // refuses when it declines to take misconceptions from a model.
+  //
+  // 🔴 THE TEXT SURVIVES EITHER WAY. `responseText` carries the option that was tapped, verbatim, on
+  // every row this writes — so WHICH distractor was chosen is preserved even where no belief is
+  // claimed. That is the durable diagnostic; the verdict is only what may be concluded from it today.
+  return selection.ground.kind === "held_misconception"
+    ? {
+        misconceptions: [selection.ground.belief],
+        objectiveIdentityKey: objective.identityKey,
+        verdict: "misconception",
+      }
+    : { objectiveIdentityKey: objective.identityKey, verdict: "incorrect" };
 }
 
 /**
@@ -410,20 +639,8 @@ export function retrievalPromptFor(
   // mapping in a file that has no business holding one.
   const predicting = objective.capability === "predict";
   const explaining = objective.capability === "explain";
-  const locating = objective.capability === "locate" && Boolean(knowledge.figure?.assetPath);
   const discriminating = objective.capability === "discriminate" && Boolean(knowledge.contrast);
-  const sequencing = objective.capability === "sequence";
-  const base = predicting
-    ? predictionPromptText(objective)
-    : explaining
-      ? explanationPromptText(objective)
-    : locating
-      ? locatePromptText(objective)
-    : sequencing
-      ? sequencePromptText(objective)
-      : discriminating && knowledge.contrast
-        ? discriminationPromptText(objective, knowledge.contrast)
-        : objectivePromptText(objective);
+  const base = baseQuestionFor(resolved);
   // 🔴🔴 THE RUNG NOW REACHES THE QUESTION, AND UNTIL THIS LINE IT NEVER DID. `rung` arrived here,
   // was passed to `promptTargeting`, and was written onto every evidence row — while `prompt` was
   // worded from the capability alone. A `narrowed` retrieval and an `independent` one produced
@@ -483,17 +700,7 @@ export function retrievalPromptFor(
     // 🔴 `reconstruct` IS THE SPEC'S OWN WORD - "rebuild the structure from memory" - and a
     // procedure's structure IS its order. Filing it as `name` would record every attempt at a
     // sequence as producing a term.
-    task: predicting
-      ? "predict"
-      : explaining
-        ? "explain"
-        : locating
-          ? "locate"
-        : sequencing
-          ? "reconstruct"
-          : discriminating
-            ? "compare"
-            : "name",
+    task: taskNameFor(resolved),
     // 🔴 THE STAGED RUNG, NOT THE REQUESTED ONE. Writing what was asked for rather than what was
     // delivered is the whole defect being closed here: a row must record the demand the learner
     // actually met, or `meanScaffoldingLevel` and every claim built on it describe a session that
