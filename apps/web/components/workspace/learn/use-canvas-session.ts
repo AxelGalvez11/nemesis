@@ -12,10 +12,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { coverageNoticeForModel, readCoverage } from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
-import { deviceKey } from "@/lib/workspace/chat-api";
+import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { IntentReason } from "@/lib/learn/learning-intent";
+import { groundingQuery, groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
   explainBlock,
@@ -617,11 +618,45 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return;
       }
       if (title) update((current) => ({ ...current, title }));
-      // The learner's own words are the goal signal. "Teach me organic chemistry from scratch"
-      // already says where to start, so there is nothing left to ask them.
-      void openCanvas();
+
+      /**
+       * 🔴 A TOPIC WITH NO MATERIAL USED TO OPEN AN EMPTY ROOM. Measured in production: "Teach me
+       * innate immunity." set a title and a state, and every step after that reads KNOWLEDGE, which
+       * is built from SOURCES — of which there were none. The learner asked to be taught and got
+       * *"Nemesis has your material but hasn't found anything to ask you about yet."*
+       *
+       * So ground it first: one search, a few pages, promoted through `attachUrl` — the SAME door
+       * `learnFromAside` already uses and the same door an uploaded lecture goes through. There is
+       * one ingestion pipeline and one knowledge substrate; only where the material came from
+       * differs.
+       *
+       * 🔴 AND IT OPENS THE CANVAS EITHER WAY. If the search returns nothing usable, the learner
+       * still lands in their canvas and can attach something — the old empty state, reached
+       * honestly, rather than a spinner that never resolves. Grounding is a best effort on the way
+       * in, never a gate.
+       */
+      const ground = async () => {
+        const id = requireUid();
+        if (id && needsGrounding({ attachedSources: latest.current.sources.length, topic: title })) {
+          setBusy({ kind: "source", label: "Finding material on that" });
+          try {
+            const found = await searchWebContext(id, groundingQuery(title));
+            for (const source of groundingSources(found.sources)) await attachUrl(source.url);
+            canvasCapture("canvas_topic_grounded", latest.current, {
+              promoted: groundingSources(found.sources).length,
+            });
+          } catch {
+            // Nothing usable came back. The canvas still opens; see the note above.
+          }
+          setBusy({ kind: null });
+        }
+        // The learner's own words are the goal signal. "Teach me organic chemistry from scratch"
+        // already says where to start, so there is nothing left to ask them.
+        await openCanvas();
+      };
+      void ground();
     },
-    [openCanvas, update],
+    [attachUrl, openCanvas, requireUid, update],
   );
 
   /**
