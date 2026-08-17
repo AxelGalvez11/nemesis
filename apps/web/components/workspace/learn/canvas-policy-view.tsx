@@ -24,6 +24,7 @@ import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { StoredFigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
+import { correctionLead } from "./correction-copy";
 
 /** `Verdict` is declared but not exported by canvas-judge, and that file is Runtime's — so the
  *  type is derived from the exported map rather than reaching across a lane boundary to add an
@@ -240,12 +241,10 @@ function PolicyScreen({
     const said = decision.state.status;
     return (
       <Frame onContinue={onContinue} sharing={sharing}>
+        {/* 🔴 FROM `correction-copy.ts`, NOT INLINE. Voice mode reads this same sentence, and two
+            copies of it are two wordings that agree until somebody edits one. */}
         <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-          {said === "partial"
-            ? "You had part of this."
-            : said === "not_demonstrated"
-              ? "No attempt came back on this one. Here it is."
-              : "Here's the one to fix."}
+          {correctionLead(said)}
         </p>
         <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
           {decision.objective.cue} → {decision.objective.answer}

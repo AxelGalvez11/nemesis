@@ -30,6 +30,7 @@ import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
+import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
@@ -98,6 +99,10 @@ export function LearningCanvas({
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
   const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride);
+  // Voice mode. 🔴 `policy.judging` is the composer-busy signal: while an answer is being read the
+  // learner is waiting on a verdict, and opening a microphone at them is asking for an answer to a
+  // question they already gave.
+  const voice = useCanvasVoice(policy, policy.judging);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
@@ -650,6 +655,7 @@ export function LearningCanvas({
         // the canvas's actual knowledge, and each object now carries whether a source really states
         // it. The predicate lives in `canvas-provenance.ts` with the reasoning.
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
+        voice={voice.header}
         // 🔴 THE NARROW SLICE, NOT `policy` ITSELF — see the prop's own comment in
         // canvas-header.tsx. `decidedObjectiveKey` is derived here rather than handing the whole
         // `decision` down, so nothing below this line can reach into it for anything but the one
@@ -958,7 +964,11 @@ export function LearningCanvas({
           // safe ternary only because ownership was all-or-nothing. `sink` is a union that cannot
           // name two receivers, so there is no combination of states in which both branches are
           // live — see canvas-hosting.ts.
+          listenSignal={voice.listenSignal}
           onAnswer={(text, via, tookMs) => {
+            // 🔴 NEMESIS STOPS TALKING THE MOMENT THE LEARNER ANSWERS. Speech that outlives the
+            // screen it belongs to reads the previous question over the current one.
+            voice.stopSpeaking();
             // 🔴 CONTRACT RULE 2 — answering what the canvas is asking is a "next turn" exactly as
             // much as typing a fresh question is (`submit()`'s own dispatch, above). Before this,
             // an aside opened by "Explain this" survived every retrieval answer given afterwards,

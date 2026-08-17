@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import { correctionLead } from "./correction-copy";
 
 // UI-001 (docs/canvas-agent-board.md): source_state=degraded, learner_state=unknown,
 // not_demonstrated and incorrect must never look the same, because they call for opposite
@@ -52,15 +53,25 @@ test("🔴 a degraded source is never told it means the learner is done", async 
   );
 });
 
-test("🔴 not_demonstrated, partial and incorrect stay distinguishable in their own captions", async () => {
-  const source = await SOURCE;
+test("🔴 not_demonstrated, partial and incorrect stay distinguishable in their own captions", () => {
+  // 🔴 THE COPY MOVED TO `correction-copy.ts` AND THIS GUARD MOVED WITH IT. Voice mode reads the
+  // same lead-in aloud, so it could no longer be a ternary inside the renderer. The guard was
+  // bound to a FILE; what it protects is a BEHAVIOUR, so it now asserts on the function instead of
+  // on where the strings happen to be written. Checked by CALLING it rather than by matching
+  // source text, which is strictly stronger: a caption could be present in the file and unreachable.
+  const partial = correctionLead("partial");
+  const noAttempt = correctionLead("not_demonstrated");
+  const wrong = correctionLead("incorrect");
 
   // show_correction intentionally shares one renderer across three learner_state values (see the
   // block comment above it) — but each must still say something different, because
   // not_demonstrated must never read as "you got this wrong" (UI-001).
-  assert.match(source, /"You had part of this\."/);
-  assert.match(source, /"No attempt came back on this one\. Here it is\."/);
-  assert.match(source, /"Here's the one to fix\."/);
+  assert.equal(new Set([partial, noAttempt, wrong]).size, 3, "three states, three sentences");
+
+  // The one that is not a matter of taste: someone who attempted nothing is not told they erred.
+  assert.doesNotMatch(noAttempt, /wrong|fix|incorrect|mistake/i);
+  assert.match(noAttempt, /no attempt/i);
+  assert.match(partial, /part of this/i);
 });
 
 test("🔴 §K: the surviving arm never narrates the learner's own turn back at them", async () => {

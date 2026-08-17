@@ -92,6 +92,18 @@ interface CanvasComposerProps {
    */
   inSession?: boolean;
   /**
+   * A nonce that opens dictation when it changes — voice mode's hands-free loop.
+   *
+   * 🔴 A SIGNAL, NOT A `dictation` OBJECT PASSED IN FROM ABOVE. The parent must not reach past
+   * this component to `dictation.start()`: `startDictation` also snapshots `typedBefore` and
+   * resets the previous transcript, and an outside caller skipping those would append the new
+   * speech onto the last answer. One nonce reuses the whole correct sequence.
+   *
+   * 🔴 AND IT IS REFUSED WHENEVER THE COMPOSER IS ALREADY OCCUPIED — see the effect. A microphone
+   * that opens over a half-typed answer takes the learner's work with it.
+   */
+  listenSignal?: number | null;
+  /**
    * The Canvas is showing something the learner is meant to READ, and pressing on is the next
    * move. `null` when there is nothing to advance past.
    *
@@ -169,6 +181,7 @@ export function CanvasComposer({
   advanceBusy = false,
   pendingSources = [],
   onStart = null,
+  listenSignal = null,
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -328,6 +341,26 @@ export function CanvasComposer({
   const acceptDictation = () => dictation.stop();
 
   const listening = dictation.listening;
+
+  // ── Voice mode's hands-free loop: Nemesis stopped speaking, so start listening ──────────────
+  //
+  // 🔴 EVERY REFUSAL HERE IS SOMETHING THAT WOULD TAKE THE LEARNER'S WORK AWAY. Opening the
+  // microphone over text they have already typed, or over a pad they are drawing on, or while it
+  // is already listening, all end with a transcript appended to something they were still using.
+  // The signal is an offer, not a command; the composer decides whether it is a good moment.
+  //
+  // 🔴 AND IT ONLY EVER FIRES ON A CHANGE. `listenSignal` is a nonce rather than a boolean
+  // precisely so that "open the microphone" is an EVENT. A boolean left true would reopen the
+  // microphone every time this component re-rendered, which is the same session-flag failure the
+  // modality reducer above exists to prevent.
+  useEffect(() => {
+    if (listenSignal === null || !dictation.supported) return;
+    if (busy || listening || drawing || text.trim()) return;
+    startDictation();
+    // `startDictation` is stable enough for this purpose and deliberately not a dependency: adding
+    // it would re-run this on every render, which is exactly the reopening loop described above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listenSignal]);
 
   // ── §I: the composer is the only progression control ────────────────────────
   //
