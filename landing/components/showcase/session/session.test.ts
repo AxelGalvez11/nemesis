@@ -102,16 +102,40 @@ describe("it reads as a lesson, not a reel", () => {
       const at = (seconds: number) => sessionState((a * (CYCLE_SECONDS / ACTS) + seconds) / CYCLE_SECONDS);
       const kinds = (seconds: number) => at(seconds).surface.filter((i) => i.opacity > 0.5).map((i) => i.kind);
 
-      expect(kinds(2.0), `act ${a} teaches`).toContain("teach");
-      expect(at(4.6).continueButton.opacity, `act ${a} offers Continue`).toBeGreaterThan(0.5);
-      expect(kinds(6.5), `act ${a} asks`).toContain("question");
+      expect(kinds(1.5), `act ${a} teaches`).toContain("teach");
+      expect(at(3.5).continueButton.opacity, `act ${a} offers Continue`).toBeGreaterThan(0.5);
+      expect(kinds(6.0), `act ${a} asks`).toContain("question");
       // The learner is seen producing the answer, in the composer.
-      expect(at(8.8).composer.groups[0]!.opacity, `act ${a} shows an answer forming`).toBeGreaterThan(0.5);
-      expect(at(9.9).composer.sendOpacity, `act ${a} offers send`).toBeGreaterThan(0.5);
-      expect(at(10.6).thinking, `act ${a} thinks`).toBeGreaterThan(0.3);
-      expect(kinds(12.8), `act ${a} shows the learner's words back`).toContain("utterance");
-      expect(kinds(12.8), `act ${a} evaluates`).toContain("verdict");
-      expect(kinds(13.4), `act ${a} refines`).toContain("refine");
+      expect(at(7.6).composer.groups[0]!.opacity, `act ${a} shows an answer forming`).toBeGreaterThan(0.5);
+      expect(at(9.0).composer.sendOpacity, `act ${a} offers send`).toBeGreaterThan(0.5);
+      expect(at(9.8).thinking, `act ${a} thinks`).toBeGreaterThan(0.3);
+      expect(kinds(11.5), `act ${a} shows the learner's words back`).toContain("utterance");
+      expect(kinds(11.5), `act ${a} evaluates`).toContain("verdict");
+      expect(kinds(12.5), `act ${a} refines`).toContain("refine");
+    }
+  });
+
+  /**
+   * 🔴 THE OWNER'S ACTUAL TEST: ten to fifteen seconds of watching has to be
+   * enough to understand that Nemesis is teaching this person — which means the
+   * glance must contain the learner ANSWERING and Nemesis JUDGING it, not just a
+   * paragraph and a question. At the first tempo the send landed at 9.75s and the
+   * verdict at 12.15s, so a short look missed both of the beats that carry the
+   * argument.
+   */
+  it("a twelve-second glance contains the whole loop", () => {
+    for (let a = 0; a < ACTS; a++) {
+      const at = (seconds: number) => sessionState((a * (CYCLE_SECONDS / ACTS) + seconds) / CYCLE_SECONDS);
+      const seenBy = (limit: number, hit: (s: ReturnType<typeof sessionState>) => boolean) => {
+        for (let ms = 0; ms <= limit * 1000; ms += 50) if (hit(at(ms / 1000))) return true;
+        return false;
+      };
+
+      expect(seenBy(4, (s) => s.surface.some((i) => i.kind === "teach" && i.opacity > 0.9)), `act ${a}: teaching by 4s`).toBe(true);
+      expect(seenBy(5, (s) => s.continueButton.pressed > 0.5), `act ${a}: Continue pressed by 5s`).toBe(true);
+      expect(seenBy(7, (s) => s.surface.some((i) => i.kind === "question" && i.opacity > 0.9)), `act ${a}: question by 7s`).toBe(true);
+      expect(seenBy(10, (s) => s.composer.sendPressed > 0.5), `act ${a}: answer SENT by 10s`).toBe(true);
+      expect(seenBy(12, (s) => s.surface.some((i) => i.kind === "verdict" && i.opacity > 0.9)), `act ${a}: verdict by 12s`).toBe(true);
     }
   });
 
