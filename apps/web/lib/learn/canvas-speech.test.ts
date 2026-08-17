@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   isMostlyNotation,
   isSpokenAction,
+  shouldSpeakAction,
   speechFor,
   SPEECH_CHAR_LIMIT,
+  SPOKEN_EXPLANATION_LIMIT,
   type SpokenMoment,
 } from "./canvas-speech";
 
@@ -19,6 +21,31 @@ test("voice mode reads questions and corrections, and nothing else", () => {
   assert.equal(isSpokenAction("simplify"), false);
   // Two things side by side lose their whole shape flattened into a sentence.
   assert.equal(isSpokenAction("contrast"), false);
+});
+
+test("explanations are read only when short enough to be a remark", () => {
+  const short = "Blood leaves faster than it arrives, so pressure inside the tuft falls.";
+  const long = "x".repeat(SPOKEN_EXPLANATION_LIMIT + 1);
+
+  assert.equal(shouldSpeakAction({ actionType: "teach", text: short }), true);
+  assert.equal(shouldSpeakAction({ actionType: "teach", text: long }), false, "a paragraph stays on screen");
+  assert.equal(shouldSpeakAction({ actionType: "simplify", text: short }), true);
+
+  // An explicit request outranks the length rule: somebody who asked to be read to has stated the
+  // preference the rule exists to guess at.
+  assert.equal(shouldSpeakAction({ actionType: "teach", requested: true, text: long }), true);
+
+  // Questions and corrections are always read, whatever their length.
+  assert.equal(shouldSpeakAction({ actionType: "retrieve", text: long }), true);
+  assert.equal(shouldSpeakAction({ actionType: "show_correction", text: long }), true);
+
+  // 🔴 Contrast is spatial and stays absent even when short — flattening two things placed side by
+  // side into one sentence loses the whole reason it was chosen.
+  assert.equal(shouldSpeakAction({ actionType: "contrast", requested: true, text: short }), false);
+});
+
+test("the explanation bound is much tighter than the hard cap, and that gap is deliberate", () => {
+  assert.ok(SPOKEN_EXPLANATION_LIMIT < SPEECH_CHAR_LIMIT / 2);
 });
 
 test("a question is spoken as written", () => {

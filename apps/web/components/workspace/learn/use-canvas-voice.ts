@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isSpokenAction, speechFor, type SpokenMoment } from "@/lib/learn/canvas-speech";
+import { shouldSpeakAction, speechFor, type SpokenMoment } from "@/lib/learn/canvas-speech";
 import {
   DEFAULT_VOICE_MODE,
   readAutoDictation,
@@ -60,7 +60,22 @@ function momentFor(runtime: PolicyRuntime): { key: string; moment: SpokenMoment 
   // A verdict is on screen; the decision underneath has already moved on. Reading the next
   // question over the learner's own result is the loudest possible version of getting this wrong.
   if (feedback) return null;
-  if (!decision || !isSpokenAction(decision.action.type)) return null;
+  if (!decision) return null;
+
+  // An exposition short enough to be a remark is read; a paragraph stays on screen where it can be
+  // skimmed and re-read. See `shouldSpeakAction`.
+  if (decision.action.type === "teach" || decision.action.type === "simplify") {
+    // The same text the teach/simplify branch renders: `decision.knowledge.statement`.
+    // 🔴 NOT `runtime.exposition` — that is a MODE (transient/held plus a duration), not words.
+    const said = decision.knowledge.statement ?? "";
+    if (!shouldSpeakAction({ actionType: decision.action.type, text: said })) return null;
+    return {
+      key: `${decision.action.type}:${decision.objective.identityKey}`,
+      moment: { kind: "question", text: said },
+    };
+  }
+
+  if (!shouldSpeakAction({ actionType: decision.action.type, text: "" })) return null;
 
   if (decision.action.type === "retrieve") {
     if (!prompt) return null;

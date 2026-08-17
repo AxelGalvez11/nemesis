@@ -23,6 +23,7 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { readTurnIntent } from "@/lib/learn/learning-intent";
 import { offerLine } from "./offer-copy";
+import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
@@ -104,6 +105,23 @@ export function LearningCanvas({
   // learner is waiting on a verdict, and opening a microphone at them is asking for an answer to a
   // question they already gave.
   const voice = useCanvasVoice(policy, policy.judging);
+
+  /**
+   * The session record, read from the append-only evidence log.
+   *
+   * 🔴 THE LABEL COMES FROM THE TERRITORY, WHICH IS COARSER THAN THE OBJECTIVE, AND THAT IS STATED
+   * RATHER THAN HIDDEN. Territories are the only mapping from identity key to human text this
+   * surface holds; a per-objective label would be better and does not exist here yet. Where even
+   * that misses, `buildTranscript` shows the raw key rather than dropping the row — an incomplete
+   * record that looks complete is worse than an ugly line.
+   */
+  const transcript = useMemo(() => {
+    const byKey = new Map<string, string>();
+    for (const territory of policy.territories) {
+      for (const key of territory.identityKeys) byKey.set(key, territory.label);
+    }
+    return buildTranscript(policy.evidence, (key) => byKey.get(key) ?? null);
+  }, [policy.evidence, policy.territories]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
@@ -701,6 +719,7 @@ export function LearningCanvas({
         // the canvas's actual knowledge, and each object now carries whether a source really states
         // it. The predicate lives in `canvas-provenance.ts` with the reasoning.
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
+        transcript={transcript}
         voice={voice.header}
         // 🔴 THE NARROW SLICE, NOT `policy` ITSELF — see the prop's own comment in
         // canvas-header.tsx. `decidedObjectiveKey` is derived here rather than handing the whole

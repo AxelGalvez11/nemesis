@@ -20,8 +20,9 @@
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
-import { MinimapControl, ObjectivesControl, SourcesControl, VoiceControl } from "./canvas-controls";
+import { MinimapControl, ObjectivesControl, SessionRecordControl, SourcesControl, VoiceControl } from "./canvas-controls";
 import type { AutoDictation, VoiceMode } from "@/lib/learn/voice-preferences";
+import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
 interface CanvasHeaderProps {
@@ -61,6 +62,10 @@ interface CanvasHeaderProps {
    * the header unmounts on every retrieval (`minimal`), and state kept here would reset voice
    * mode every time a question appeared.
    */
+  /** The session record, read from the append-only evidence log. Empty means the control is
+   *  disabled rather than absent: "nothing has happened yet" is a real state worth being able to
+   *  see, and a control that vanishes reads as a feature that broke. */
+  transcript?: readonly TranscriptEntry[];
   voice?: {
     mode: VoiceMode;
     autoDictation: AutoDictation;
@@ -81,6 +86,7 @@ export function CanvasHeader({
   minimal = false,
   modelKnowledge = false,
   minimap,
+  transcript = [],
   voice,
 }: CanvasHeaderProps) {
   return (
@@ -112,6 +118,7 @@ export function CanvasHeader({
         <>
           <SourcesControl canvas={canvas} modelKnowledge={modelKnowledge} onFiles={onFiles} onUrl={onUrl} />
           <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
+          <SessionRecordControl entries={transcript} />
           {voice && (
             <VoiceControl
               autoDictation={voice.autoDictation}

@@ -38,6 +38,7 @@ import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
+import { entrySummary, groupByDay, type TranscriptEntry } from "@/lib/learn/session-transcript";
 import {
   shouldAskAboutAutoDictation,
   type AutoDictation,
@@ -760,6 +761,79 @@ export function VoiceControl({
               No, I'll press it
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- session record
+
+/**
+ * What happened in this session, on request.
+ *
+ * 🔴 A PANEL, NEVER A COLUMN. The teaching surface shows one cognitive object and lets the rest go
+ * quiet; a permanent log beside it is the thing that whole design exists to avoid. But "the
+ * interface is calm" is not an answer to a learner asking what they said an hour ago, so the record
+ * exists and lives exactly one press away — behind the same kind of control as Sources and
+ * Objectives, and gone during a retrieval with them.
+ *
+ * 🔴 IT READS THE EVIDENCE LOG, WHICH IS APPEND-ONLY. `canvas-events.ts` is a capped ring buffer
+ * that drops its oldest rows, so a transcript built on it would silently lose the beginning of
+ * every long session — which is the part worth looking back at.
+ */
+export function SessionRecordControl({
+  entries,
+  locale,
+}: {
+  entries: readonly TranscriptEntry[];
+  locale?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const holder = useDismiss(open, () => setOpen(false));
+  const days = groupByDay(entries, locale);
+
+  return (
+    <div className="pointer-events-auto relative shrink-0" ref={holder}>
+      <button
+        aria-expanded={open}
+        aria-label="Session record"
+        className={CONTROL}
+        disabled={entries.length === 0}
+        onClick={() => setOpen((current) => !current)}
+        title="Session record"
+        type="button"
+      >
+        <Codicon name="history" size="0.8125rem" />
+      </button>
+
+      {open && (
+        <div className={cn(PANEL, "w-[22rem]")}>
+          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
+            Session record
+          </p>
+          {days.map((group) => (
+            <div key={group.day}>
+              <p className="px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                {group.day}
+              </p>
+              {group.entries.map((entry) => (
+                <div className="rounded-lg px-2 py-1.5" key={entry.id}>
+                  <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{entry.objective}</p>
+                  <p className="mt-0.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                    {entrySummary(entry)}
+                  </p>
+                  {/* Their own words, quoted rather than narrated — the same rule §K holds on the
+                      teaching surface: quote the learner, never tell them what they said. */}
+                  {entry.said && (
+                    <p className="mt-1 text-[length:var(--canvas-text-meta)] italic text-(--ui-text-quaternary)">
+                      “{entry.said.slice(0, 160)}{entry.said.length > 160 ? "…" : ""}”
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </div>

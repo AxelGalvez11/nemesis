@@ -57,16 +57,46 @@ export type SpeechChoice = { spoken: Utterance; refused?: never } | { spoken?: n
 export const SPEECH_CHAR_LIMIT = 600;
 
 /**
- * Which teaching actions voice mode reads. 🔴 THE PRODUCT RULE, IN ONE PLACE.
+ * Which teaching actions voice mode always reads. 🔴 THE PRODUCT RULE, IN ONE PLACE.
  *
- * `teach` and `simplify` carry expositions — the explanations this deliberately leaves on screen.
- * `contrast` puts two things side by side, which is inherently spatial and loses its whole shape
- * when flattened into a sentence.
+ * `contrast` is absent and stays absent: it puts two things side by side, which is inherently
+ * spatial and loses its whole shape flattened into a sentence.
  */
 export const SPOKEN_ACTIONS: readonly string[] = ["retrieve", "show_correction"];
 
+/**
+ * Explanations are read only when they are SHORT enough to hold in one listen.
+ *
+ * 🔴 A SEPARATE, MUCH TIGHTER BOUND THAN `SPEECH_CHAR_LIMIT`, AND THE GAP IS THE POINT. A two-
+ * sentence explanation is a remark, and hearing it costs nothing. A paragraph read aloud is the
+ * failure this whole module argues against: the listener cannot skim it, cannot re-read the clause
+ * that did not land, and cannot set the pace. Roughly fifteen seconds of speech.
+ */
+export const SPOKEN_EXPLANATION_LIMIT = 220;
+
+/** Actions that carry an exposition — spoken only when short, or when the learner asked. */
+const EXPLANATORY_ACTIONS: readonly string[] = ["teach", "simplify"];
+
 export function isSpokenAction(actionType: string): boolean {
   return SPOKEN_ACTIONS.includes(actionType);
+}
+
+/**
+ * Should voice read this action's text?
+ *
+ * Questions and corrections: always. Explanations: only when short enough to be a remark, or when
+ * the learner explicitly asked to hear it — an explicit request outranks the length rule, because
+ * somebody who asked to be read to has stated the preference this rule exists to guess at.
+ */
+export function shouldSpeakAction(input: {
+  actionType: string;
+  text: string;
+  requested?: boolean;
+}): boolean {
+  if (isSpokenAction(input.actionType)) return true;
+  if (!EXPLANATORY_ACTIONS.includes(input.actionType)) return false;
+  if (input.requested) return true;
+  return input.text.trim().length <= SPOKEN_EXPLANATION_LIMIT;
 }
 
 /** Inline formatting a reader sees as emphasis and a synthesiser would pronounce. */
