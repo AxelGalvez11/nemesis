@@ -20,7 +20,7 @@ export function Closer() {
   return (
     <section className="nclose" id="start">
       <div className="wrap" data-reveal="up">
-        <h2>accelerate cognition.</h2>
+        <h2>Accelerate cognition.</h2>
         <div className="nclose-cta">
           <a
             className="btn btn-primary"
