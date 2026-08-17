@@ -54,7 +54,7 @@ import { cn } from "@/lib/utils";
 import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
-import { HandwritingPad } from "./handwriting-pad";
+import { WrittenWorkSheet } from "./written-work-sheet";
 import type { ActiveTask } from "./use-canvas-session";
 
 interface CanvasComposerProps {
@@ -172,9 +172,19 @@ export function CanvasComposer({
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  /** A third way to fill the composer, beside typing and dictation — see handwriting-pad.tsx's
-   *  file header. Takes the WHOLE pill's place while true, the same as `listening` does. */
+  /** The page is open. Takes the WHOLE pill's place while true, the same as `listening` does —
+   *  see written-work-sheet.tsx's file header. */
   const [drawing, setDrawing] = useState(false);
+  /**
+   * The learner's scratch work, held here so it survives the sheet being put away and reopened.
+   *
+   * 🔴 A REF ABOVE THE PROMPT-CHANGED EFFECT, WHICH IS THE POINT. Everything else in this
+   * component resets when the question moves on, and for the composer's text that is right. Ink is
+   * different: someone working a problem out over several minutes must not lose it because the
+   * page advanced. What must not survive a prompt change is a READING of that ink, and that is
+   * guarded by `answersTheSameQuestion` inside the sheet rather than by discarding their work.
+   */
+  const ink = useRef<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   /** The file input is triggered from a menu item now, so it needs a handle rather than a wrapping
    *  label. It stays `sr-only` rather than `hidden` — a hidden input is out of the accessibility
@@ -228,9 +238,14 @@ export function CanvasComposer({
     modalityEvent({ kind: "prompt_changed" });
     typedBefore.current = "";
     startedAt.current = Date.now();
-    // A pad left open from the PREVIOUS prompt is answering a question that no longer exists —
-    // close it rather than let a drawing meant for one task land as an answer to the next one.
-    setDrawing(false);
+    // 🔴 THE SHEET IS NOT CLOSED HERE, AND THAT IS A CHANGE FROM THE PAD IT REPLACED. The pad was
+    // a capture surface for one answer, so a pad left open from the previous prompt was answering
+    // a question that no longer existed. The sheet is somewhere to think, reachable before a
+    // question is on screen and useful across several of them, and shutting it on every prompt
+    // change would interrupt exactly the work it exists to host. The risk that closing it used to
+    // cover — a reading taken for one question landing as the answer to another — is now held by
+    // `answersTheSameQuestion`, which refuses that submission by identity instead of by hoping the
+    // surface was dismissed in time.
   }, [taskId]);
 
   useEffect(() => {
@@ -366,20 +381,36 @@ export function CanvasComposer({
       )}
     >
       <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
-        {/* 🔴 A THIRD WAY TO FILL THE COMPOSER TAKES ITS WHOLE PLACE, THE SAME AS DICTATION'S
-            `listening` BRANCH DOES FURTHER DOWN — see handwriting-pad.tsx's file header. Nothing
-            below this branches on `drawing`; the pad is a full substitute for the chips-and-pill
-            content, not a layer over it. */}
+        {/* 🔴 THE PAGE TAKES THE COMPOSER'S WHOLE PLACE, THE SAME AS DICTATION'S `listening` BRANCH
+            DOES FURTHER DOWN — see written-work-sheet.tsx's file header. Nothing below this
+            branches on `drawing`; the sheet is a full substitute for the chips-and-pill content,
+            not a layer over it, so there is still exactly one place you interact with Nemesis.
+
+            🔴 AND ITS SUBMISSION IS THE SAME SUBMISSION. It calls `onAnswer` with the modality and
+            the elapsed time this component already tracks for typed and spoken answers, so written
+            work is not a second route into the evidence log; it is a third way of producing the
+            one answer the one send path already carries. */}
         {drawing ? (
-          <HandwritingPad
-            onAccept={(value) => {
-              setText(value);
-              typedBefore.current = value;
-              modalityEvent({ kind: "captured", via: "written" });
-              setDrawing(false);
-              input.current?.focus();
+          <WrittenWorkSheet
+            busy={busy}
+            initialInk={ink.current}
+            onClose={() => setDrawing(false)}
+            onInkChange={(value) => {
+              ink.current = value;
             }}
-            onCancel={() => setDrawing(false)}
+            onSubmit={(value) => {
+              modalityEvent({ kind: "captured", via: "written" });
+              onAnswer(value, "written", Date.now() - startedAt.current);
+              modalityEvent({ kind: "submitted" });
+              setText("");
+              typedBefore.current = "";
+              setDrawing(false);
+            }}
+            // 🔴 NULL WHENEVER NOTHING IS BEING ASKED, WHICH IS WHAT MAKES THE SHEET SCRATCH PAPER
+            // REST OF THE TIME. `answering` is the composer's own positive signal that the policy
+            // is waiting for a performance; without one there is no prompt for written work to be
+            // evidence about, and the sheet renders no submit control at all.
+            promptId={answering ? taskId : null}
           />
         ) : (
         <>
@@ -631,16 +662,23 @@ export function CanvasComposer({
                 </button>
               )}
 
-              {/* 🔴 ANSWERING ONLY, UNLIKE DICTATION. Speaking a free-form question to Nemesis is
-                  ordinary; drawing one is not a case this product has — see handwriting-pad.tsx's
-                  file header for the rest of the reasoning. */}
-              {answering && (
+              {/* 🔴 WHENEVER A SESSION IS UNDERWAY, NOT ONLY WHILE A QUESTION IS OPEN — the owner's
+                  own framing, and a change from the pad this replaced. You reach for paper BEFORE
+                  you have an answer; a writing surface that only appears once a question is on
+                  screen is not somewhere to think, it is a second answer box with a pencil on it.
+                  What the sheet does with the page still depends entirely on whether anything is
+                  being asked, which is `promptId` above and not this button.
+
+                  🔴 STILL NOT A WAY TO ASK NEMESIS SOMETHING. Speaking a free-form question is
+                  ordinary; drawing one is not a case this product has, so nothing on the sheet
+                  reaches `onAsk`. */}
+              {inSession && (
                 <button
-                  aria-label="Write or draw your answer"
+                  aria-label="Open a page to work on"
                   className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
                   disabled={busy}
                   onClick={() => setDrawing(true)}
-                  title="Write or draw your answer"
+                  title="Open a page to work on"
                   type="button"
                 >
                   <Codicon name="edit" size="20px" />

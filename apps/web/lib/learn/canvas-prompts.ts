@@ -458,6 +458,53 @@ const TASK_INTENT: Record<RetrievalTask, string> = {
   solve: "work it through and show the reasoning",
 };
 
+/**
+ * What a `written` response IS, and the four things a judge must never do with one.
+ *
+ * 🔴 IT REPLACED A BLANKET "MAY CONTAIN OCR ERRORS, JUDGE THE INTENDED REASONING". That sentence
+ * was right when handwriting arrived as one flat transcription that nobody had checked, and it is
+ * wrong now for two reasons at once. Written work only reaches this judge after
+ * `writtenSubmissionGate` (written-response.ts) has either found the reading confident throughout
+ * or made the learner read it back and fix it, so an uncertain transcription cannot get here any
+ * more. And told to forgive transcription artifacts, a judge reads a genuine slipped digit as a
+ * misread character and returns `understood` — which erases exactly the distinction between a
+ * careless error and a correct answer that this whole path exists to make.
+ *
+ * 🔴 THE UNREAD-PARTS RULE IS THE ONE THAT PROTECTS THE LEARNER. A page we could only partly read
+ * looks, to anything reading the rendering, exactly like a page with steps missing. Without this
+ * instruction the honest verdict on our own reading failure is `partial`, and that lands in
+ * `learner_evidence` as a durable claim that someone does not fully understand something they
+ * demonstrated completely in ink.
+ *
+ * 🔴 FIELD-AGNOSTIC. Nothing here mentions a subject, a notation or a kind of problem. "Steps in
+ * order, a retraction, a conclusion, a gap in our reading" describe a chemistry mechanism, a
+ * free-body diagram, a statutory argument and a wiring fault trace equally.
+ */
+const WRITTEN_WORK_GUIDANCE =
+  "This is a page of work they did by hand, written out for you rather than typed. Read it as follows.\n" +
+  "- Numbered lines are their working in the order they wrote it. The order is evidence: a right method with a "
+  + "slip in it and a wrong method are the same lines in a different sequence.\n" +
+  "- A line marked [they crossed this out] is one THEY rejected. It shows how they reasoned and it is NOT "
+  + "something they are claiming. Never judge them on it.\n" +
+  "- A final answer is quoted separately when the page marked one. Judge the working and the final answer as "
+  + "two things: working that does not support a correct final answer, and correct working with a slip at the "
+  + "end, are different and need opposite teaching.\n" +
+  "- \"Nemesis could not read\" is OUR failure to read their page, never their omission and never their error. "
+  + "Judge only what is there. If what could be read is not enough to settle the question, say so with a low "
+  + "confidence rather than marking them down for the part we could not see.\n" +
+  "If the page says they checked this reading themselves, the text is exactly what they wrote, so a mistake in "
+  + "it is theirs. If it does not, the reading was confident. Either way, do not excuse an error as a misreading.\n"
+  // 🔴 NAMED AGAINST THE EXISTING `ErrorType` VOCABULARY RATHER THAN A NEW ONE. Working reveals
+  // failures a sentence cannot: the method can be right and the execution wrong, a step can rest on
+  // something never established, the page can simply stop. Those want a cue and another go, a
+  // prerequisite taught first, and more time respectively — opposite teaching from the same
+  // `incorrect`. The mapping is stated because a judge given only a six-word list reaches for
+  // `conceptual` for everything that is not obviously a forgotten term.
+  + "Say which kind of failure it was in errorType: a right method executed wrongly is `careless`, a wrong "
+  + "method is `procedural`, a step that rests on something they never established is "
+  + "`missing_prerequisite`, and a wrong idea underneath the working is `conceptual`. Working that simply "
+  + "stops before the end is an incomplete performance, not a wrong one.\n\n";
+
 /** Read one performance for what it MEANS (§21).
  *
  *  Two instructions here are load-bearing and easy to lose in a later edit:
@@ -515,7 +562,7 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
             "punctuation are normal and mean nothing about their understanding. Judge what they were getting at. " +
             "Where they corrected themselves, judge the correction, not the first attempt.\n\n"
           : input.response.via === "written"
-            ? "This was transcribed from handwriting or a drawing and may contain OCR errors. Judge the learner's intended reasoning, not transcription artifacts.\n\n"
+            ? WRITTEN_WORK_GUIDANCE
             : "") +
         ((input.context?.hintsUsed ?? 0) > 0
           ? `They used ${input.context?.hintsUsed} hint(s) before answering, so this is assisted rather than unaided recall.\n\n`
