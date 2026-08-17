@@ -61,7 +61,7 @@ import { clamp01, ease, window01 } from "../progress";
  * handover is the only thing that should follow the press, so the act ends when
  * the press has finished resolving.
  */
-export const ACT_SECONDS = 15.6;
+export const ACT_SECONDS = 14.7;
 export const ACTS = 3;
 export const CYCLE_SECONDS = ACT_SECONDS * ACTS;
 
@@ -110,8 +110,8 @@ export const SCRIPT: readonly Act[] = [
     subject: "Cardiac anatomy",
     figure: "anatomy",
     teach: [
-      "The left ventricle pushes blood through your entire body. The right ventricle only has to reach the lungs.",
-      "Same volume every beat, very different pressure. The chamber doing the harder job is built thicker.",
+      "The left ventricle pushes blood through your whole body. The right one only reaches the lungs.",
+      "Same volume every beat, very different pressure. The harder-working chamber is built thicker.",
     ],
     question: "Why does the left ventricle have a thicker wall than the right?",
     placeholder: "Answer in your own words…",
@@ -125,7 +125,7 @@ export const SCRIPT: readonly Act[] = [
     subject: "The derivative",
     figure: "plot",
     teach: [
-      "The average rate of change between two points is the slope of the line joining them.",
+      "The average rate between two points is the slope of the line joining them.",
       "Slide the second point toward the first and that line settles onto one direction.",
     ],
     question: "What happens to the secant as the two points move together?",
@@ -140,8 +140,8 @@ export const SCRIPT: readonly Act[] = [
     subject: "Catalysis",
     figure: "chemistry",
     teach: [
-      "A catalyst offers the reaction a lower path over the energy hill, so it gets there sooner.",
-      "It does not move where the reaction ends up. The start and the finish stay exactly where they were.",
+      "A catalyst offers a lower path over the energy hill, so the reaction gets there sooner.",
+      "It does not move where the reaction ends up. Start and finish stay put.",
     ],
     question: "Does a catalyst change how much product you end up with?",
     placeholder: "Answer in your own words…",
@@ -161,40 +161,57 @@ export const SCRIPT: readonly Act[] = [
    ────────────────────────────────────────────────────────────────────────────*/
 const B = {
   /** Teaching passage, one window per chunk. */
-  teachIn: [0.15, 1.05] as const,
-  teachIn2: [1.15, 2.05] as const,
+  teachIn: [0.15, 1.0] as const,
+  teachIn2: [1.05, 1.9] as const,
   /** Continue arrives while the passage is still settling. */
-  continueIn: [2.5, 3.1] as const,
+  continueIn: [2.3, 2.9] as const,
   /** Cursor travels to Continue and presses it. */
-  cursorToContinue: [3.3, 4.5] as const,
-  press: [4.5, 4.78] as const,
-  /** The passage leaves as the question arrives — they cross at 5.3. */
-  teachOut: [4.85, 5.7] as const,
-  questionIn: [5.15, 6.05] as const,
+  cursorToContinue: [3.1, 4.15] as const,
+  press: [4.15, 4.43] as const,
+  /** The passage leaves as the question arrives — they cross at 4.9. */
+  teachOut: [4.5, 5.3] as const,
+  questionIn: [4.8, 5.65] as const,
   /** Cursor moves into the composer, the answer forms in groups. */
-  cursorToInput: [6.35, 7.35] as const,
-  answerIn: [7.2, 8.0] as const,
-  answerIn2: [8.05, 8.85] as const,
+  cursorToInput: [5.85, 6.8] as const,
+  answerIn: [6.65, 7.4] as const,
+  answerIn2: [7.45, 8.2] as const,
   /** Send appears the moment there is something to send, then is pressed. */
-  sendIn: [8.5, 8.9] as const,
-  cursorToSend: [8.95, 9.75] as const,
-  sendPress: [9.75, 10.03] as const,
+  sendIn: [7.85, 8.25] as const,
+  cursorToSend: [8.3, 8.95] as const,
+  sendPress: [8.95, 9.23] as const,
   /** Composer empties, Nemesis thinks. */
-  thinking: [10.05, 11.15] as const,
+  thinking: [9.25, 10.3] as const,
   /** The learner's own words come back, then the verdict, then the refinement. */
-  utteranceIn: [10.95, 11.6] as const,
-  verdictIn: [11.5, 12.15] as const,
-  refineIn: [12.3, 13.1] as const,
+  utteranceIn: [10.1, 10.75] as const,
+  verdictIn: [10.65, 11.3] as const,
+  refineIn: [11.45, 12.25] as const,
   /** Second Continue arrives while the refinement is still settling — measured:
-   *  starting it at 13.5 left a 450ms hole after the refinement finished. */
-  continue2In: [13.0, 13.6] as const,
-  cursorToContinue2: [13.7, 14.85] as const,
-  press2: [14.85, 15.13] as const,
+   *  a later start left a 450ms hole after the refinement finished. */
+  continue2In: [12.15, 12.75] as const,
+  cursorToContinue2: [12.85, 13.95] as const,
+  press2: [13.95, 14.23] as const,
   /** Nothing after the press but the handover, which the NEXT act drives. An
    *  `actOut` window used to live here and was the 1650ms stall: it faded content
    *  that the incoming act was already fading, so for two seconds the arithmetic
    *  produced no visible change at all. */
 } as const;
+
+/**
+ * 🔴 THE WHOLE LOOP IS VISIBLE IN A GLANCE, WHICH IS WHY THESE MOVED.
+ *
+ * The owner's test is that someone watching for ten to fifteen seconds
+ * understands Nemesis is actively teaching them. At the first tempo the answer
+ * was sent at 9.75s and the verdict landed at 12.15s — so a short look showed
+ * teaching, a Continue and a question, and MISSED the two beats that carry the
+ * whole argument: the learner answering, and Nemesis judging it. The send now
+ * lands at 9.2s and the verdict at 11.3s.
+ *
+ * 🔴 AND THE COPY CAME DOWN WITH THE CLOCK. Simply pressing Continue earlier
+ * would have pulled the passage off screen before it could be read, which trades
+ * one failure for a worse one. Each teaching chunk is shorter, so the passage is
+ * fully legible in the time it is now given: about 28 words across roughly 4.9
+ * seconds of screen presence.
+ */
 
 const w = (t: number, [a, b]: readonly [number, number]) => ease(window01(t, a, b));
 
@@ -398,7 +415,7 @@ export function sessionState(t: number): SessionState {
   // it runs across the teaching and the question and is finished, and holding,
   // by the time the verdict lands. Re-running it under the feedback would put
   // motion under the one thing the learner is meant to read.
-  const figureT = clamp01(window01(s, 0.1, 11.4));
+  const figureT = clamp01(window01(s, 0.1, 10.6));
   // Dimmed, never removed, while the question owns attention — and back up for
   // the verdict, because the refinement refers to what the picture shows.
   // 🔴 0.28, NOT 0.45. At 0.55 opacity the heart very nearly disappeared against
