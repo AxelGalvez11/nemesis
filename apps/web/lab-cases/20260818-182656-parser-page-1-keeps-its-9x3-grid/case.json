@@ -1,0 +1,94 @@
+{
+  "id": "20260818-182656-parser-page-1-keeps-its-9x3-grid",
+  "kind": "parser",
+  "note": "Page 1 keeps its 9x3 grid",
+  "observed": {
+    "comparison": null,
+    "counts": {
+      "blocks": 12,
+      "equations": 0,
+      "figures": 0,
+      "figuresUnexamined": 0,
+      "headings": 4,
+      "listItems": 0,
+      "paragraphs": 4,
+      "tableCells": 108,
+      "tables": 4,
+      "units": 4
+    },
+    "report": {
+      "configured": {
+        "llamaparse": true,
+        "mistral": false,
+        "vision": true
+      },
+      "elapsedMs": 54,
+      "fileBytes": 6527,
+      "fileName": "ruled-tables.pdf",
+      "fileType": "application/pdf",
+      "kind": "pdf",
+      "lane": "production",
+      "laneNote": null,
+      "laneRan": "production",
+      "lookedAtFigures": false,
+      "outcome": {
+        "ok": true
+      },
+      "counts": {
+        "blocks": 12,
+        "equations": 0,
+        "figures": 0,
+        "figuresUnexamined": 0,
+        "headings": 4,
+        "listItems": 0,
+        "paragraphs": 4,
+        "tableCells": 108,
+        "tables": 4,
+        "units": 4
+      },
+      "document": {
+        "coverage": {
+          "version": 1,
+          "parserVersion": "extract-2026-08-16",
+          "unitKind": "page",
+          "units": 4,
+          "unitsNative": 4,
+          "unitsVision": 0,
+          "unitsBoth": 0,
+          "unitsUnread": 0,
+          "figures": {
+            "described": 0,
+            "found": 0,
+            "reasons": {},
+            "skipped": 0
+          },
+          "truncation": [],
+          "state": "complete"
+        },
+        "kind": "pdf",
+        "model": null,
+        "readBy": null,
+        "routeReason": "native-read-sufficient",
+        "skippedFigures": 0,
+        "text": "# Table 1\n\nA document states what it contains before anything reads it. The structure of a page is separate from the words printed on Where a figure sits is a fact about the page and not about its meaning. A measurement recorded without its method is a nu Content that was seen and not converted is a gap, not an absence. The cheapest correct answer is still the correct answer Reading order is a claim about intent and should be labelled as one. An identifier that repeats is an identifier that cannot be A document states what it contains before anything reads it. The structure of a page is separate from the words printed on Where a figure sits is a fact about the page and not about its meaning. A measurement recorded without its method is a nu\n\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Value 1-1-1 | Value 1-1-2 | Value 1-1-3 |\n| Value 1-2-1 | Value 1-2-2 | Value 1-2-3 |\n| Value 1-3-1 | Value 1-3-2 | Value 1-3-3 |\n| Value 1-4-1 | Value 1-4-2 | Value 1-4-3 |\n| Value 1-5-1 | Value 1-5-2 | Value 1-5-3 |\n| Value 1-6-1 | Value 1-6-2 | Value 1-6-3 |\n| Value 1-7-1 | Value 1-7-2 | Value 1-7-3 |\n| Value 1-8-1 | Value 1-8-2 | Value 1-8-3 |\n\n# Table 2\n\nThe cheapest correct answer is still the correct answer. A threshold chosen before the data is a preference wearing a numb An identifier that repeats is an identifier that cannot be trusted. What survives persistence is the only thing a later question The structure of a page is separate from the words printed on it. Every locator must point at something that existed before t A measurement recorded without its method is a number nobody can check. Two readers of the same file should not disag The cheapest correct answer is still the correct answer. A threshold chosen before the data is a preference wearing a numb An identifier that repeats is an identifier that cannot be trusted. What survives persistence is the only thing a later question\n\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Value 2-1-1 | Value 2-1-2 | Value 2-1-3 |\n| Value 2-2-1 | Value 2-2-2 | Value 2-2-3 |\n| Value 2-3-1 | Value 2-3-2 | Value 2-3-3 |\n| Value 2-4-1 | Value 2-4-2 | Value 2-4-3 |\n| Value 2-5-1 | Value 2-5-2 | Value 2-5-3 |\n| Value 2-6-1 | Value 2-6-2 | Value 2-6-3 |\n| Value 2-7-1 | Value 2-7-2 | Value 2-7-3 |\n| Value 2-8-1 | Value 2-8-2 | Value 2-8-3 |\n\n# Table 3\n\nEvery locator must point at something that existed before the parse began. Where a figure sits is a fact about the page and Two readers of the same file should not disagree about how many pages it has. Content that was seen and not converted i A threshold chosen before the data is a preference wearing a number. Reading order is a claim about intent and should be What survives persistence is the only thing a later question can ask about. A document states what it contains before anyth Every locator must point at something that existed before the parse began. Where a figure sits is a fact about the page and Two readers of the same file should not disagree about how many pages it has. Content that was seen and not converted i\n\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Value 3-1-1 | Value 3-1-2 | Value 3-1-3 |\n| Value 3-2-1 | Value 3-2-2 | Value 3-2-3 |\n| Value 3-3-1 | Value 3-3-2 | Value 3-3-3 |\n| Value 3-4-1 | Value 3-4-2 | Value 3-4-3 |\n| Value 3-5-1 | Value 3-5-2 | Value 3-5-3 |\n| Value 3-6-1 | Value 3-6-2 | Value 3-6-3 |\n| Value 3-7-1 | Value 3-7-2 | Value 3-7-3 |\n| Value 3-8-1 | Value 3-8-2 | Value 3-8-3 |\n\n# Table 4\n\nReading order is a claim about intent and should be labelled as one. An identifier that repeats is an identifier that cannot be A document states what it contains before anything reads it. The structure of a page is separate from the words printed on Where a figure sits is a fact about the page and not about its meaning. A measurement recorded without its method is a nu Content that was seen and not converted is a gap, not an absence. The cheapest correct answer is still the correct answer Reading order is a claim about intent and should be labelled as one. An identifier that repeats is an identifier that cannot be A document states what it contains before anything reads it. The structure of a page is separate from the words printed on\n\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Value 4-1-1 | Value 4-1-2 | Value 4-1-3 |\n| Value 4-2-1 | Value 4-2-2 | Value 4-2-3 |\n| Value 4-3-1 | Value 4-3-2 | Value 4-3-3 |\n| Value 4-4-1 | Value 4-4-2 | Value 4-4-3 |\n| Value 4-5-1 | Value 4-5-2 | Value 4-5-3 |\n| Value 4-6-1 | Value 4-6-2 | Value 4-6-3 |\n| Value 4-7-1 | Value 4-7-2 | Value 4-7-3 |\n| Value 4-8-1 | Value 4-8-2 | Value 4-8-3 |",
+        "title": "Table 1"
+      },
+      "figures": [],
+      "figuresWithheld": 0,
+      "unitText": [
+        "# Table 1\nA document states what it contains before anything reads it. The structure of a page is separate from the words printed on Where a figure sits is a fact about the page and not about its meaning. A measurement recorded without its method is a nu Content that was seen and not converted is a gap, not an absence. The cheapest correct answer is still the correct answer Reading order is a claim about intent and should be labelled as one. An identifier that repeats is an identifier that cannot be A document states what it contains before anything reads it. The structure of a page is separate from the words printed on Where a figure sits is a fact about the page and not about its meaning. A measurement recorded without its method is a nu\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Value 1-1-1 | Value 1-1-2 | Value 1-1-3 |\n| Value 1-2-1 | Value 1-2-2 | Value 1-2-3 |\n| Value 1-3-1 | Value 1-3-2 | Value 1-3-3 |\n| Value 1-4-1 | Value 1-4-2 | Value 1-4-3 |\n| Value 1-5-1 | Value 1-5-2 | Value 1-5-3 |\n| Value 1-6-1 | Value 1-6-2 | Value 1-6-3 |\n| Value 1-7-1 | Value 1-7-2 | Value 1-7-3 |\n| Value 1-8-1 | Value 1-8-2 | Value 1-8-3 |",
+        "# Table 2\nThe cheapest correct answer is still the correct answer. A threshold chosen before the data is a preference wearing a numb An identifier that repeats is an identifier that cannot be trusted. What survives persistence is the only thing a later question The structure of a page is separate from the words printed on it. Every locator must point at something that existed before t A measurement recorded without its method is a number nobody can check. Two readers of the same file should not disag The cheapest correct answer is still the correct answer. A threshold chosen before the data is a preference wearing a numb An identifier that repeats is an identifier that cannot be trusted. What survives persistence is the only thing a later question\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Value 2-1-1 | Value 2-1-2 | Value 2-1-3 |\n| Value 2-2-1 | Value 2-2-2 | Value 2-2-3 |\n| Value 2-3-1 | Value 2-3-2 | Value 2-3-3 |\n| Value 2-4-1 | Value 2-4-2 | Value 2-4-3 |\n| Value 2-5-1 | Value 2-5-2 | Value 2-5-3 |\n| Value 2-6-1 | Value 2-6-2 | Value 2-6-3 |\n| Value 2-7-1 | Value 2-7-2 | Value 2-7-3 |\n| Value 2-8-1 | Value 2-8-2 | Value 2-8-3 |",
+        "# Table 3\nEvery locator must point at something that existed before the parse began. Where a figure sits is a fact about the page and Two readers of the same file should not disagree about how many pages it has. Content that was seen and not converted i A threshold chosen before the data is a preference wearing a number. Reading order is a claim about intent and should be What survives persistence is the only thing a later question can ask about. A document states what it contains before anyth Every locator must point at something that existed before the parse began. Where a figure sits is a fact about the page and Two readers of the same file should not disagree about how many pages it has. Content that was seen and not converted i\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Value 3-1-1 | Value 3-1-2 | Value 3-1-3 |\n| Value 3-2-1 | Value 3-2-2 | Value 3-2-3 |\n| Value 3-3-1 | Value 3-3-2 | Value 3-3-3 |\n| Value 3-4-1 | Value 3-4-2 | Value 3-4-3 |\n| Value 3-5-1 | Value 3-5-2 | Value 3-5-3 |\n| Value 3-6-1 | Value 3-6-2 | Value 3-6-3 |\n| Value 3-7-1 | Value 3-7-2 | Value 3-7-3 |\n| Value 3-8-1 | Value 3-8-2 | Value 3-8-3 |",
+        "# Table 4\nReading order is a claim about intent and should be labelled as one. An identifier that repeats is an identifier that cannot be A document states what it contains before anything reads it. The structure of a page is separate from the words printed on Where a figure sits is a fact about the page and not about its meaning. A measurement recorded without its method is a nu Content that was seen and not converted is a gap, not an absence. The cheapest correct answer is still the correct answer Reading order is a claim about intent and should be labelled as one. An identifier that repeats is an identifier that cannot be A document states what it contains before anything reads it. The structure of a page is separate from the words printed on\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Value 4-1-1 | Value 4-1-2 | Value 4-1-3 |\n| Value 4-2-1 | Value 4-2-2 | Value 4-2-3 |\n| Value 4-3-1 | Value 4-3-2 | Value 4-3-3 |\n| Value 4-4-1 | Value 4-4-2 | Value 4-4-3 |\n| Value 4-5-1 | Value 4-5-2 | Value 4-5-3 |\n| Value 4-6-1 | Value 4-6-2 | Value 4-6-3 |\n| Value 4-7-1 | Value 4-7-2 | Value 4-7-3 |\n| Value 4-8-1 | Value 4-8-2 | Value 4-8-3 |"
+      ]
+    }
+  },
+  "savedAt": "2026-08-18T18:26:56.791Z",
+  "unit": 0,
+  "file": {
+    "bytes": 6527,
+    "name": "ruled-tables.pdf",
+    "path": "/private/tmp/nemesis-wt-lab/apps/web/lab-cases/20260818-182656-parser-page-1-keeps-its-9x3-grid/source-ruled-tables.pdf",
+    "type": "application/pdf"
+  }
+}

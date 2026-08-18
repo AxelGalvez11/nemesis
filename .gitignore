@@ -52,3 +52,8 @@ apps/desktop-agent/
 # Built by apps/web/scripts/build-parse-thread.mjs on prebuild. A 1 MB generated
 # bundle in git would be reviewed by nobody and would drift from its source.
 apps/web/workers/
+
+# Nemesis Lab (localhost-only internal testing environment).
+# The Lab's throwaway learner credentials. Never committed: it is a password for a
+# `@nemesis.test` account on one developer's machine.
+apps/web/.lab/
