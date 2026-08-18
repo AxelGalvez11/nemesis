@@ -24,6 +24,7 @@ import { evidenceFromRow, evidenceRow } from "./learner-store";
 import { objectivesForKnowledge } from "./learning-objective";
 import { decideNext } from "./policy-runtime";
 import { establishesMastery, masteryEvidenceIn } from "./recognition-value";
+import { createLlmTeacherStrategy, type TeacherTransport } from "./strategy-llm-teacher";
 import { chooseNextTeachingAction } from "./teaching-policy";
 
 // ── a canvas whose material is genuinely confusable ─────────────────────────
@@ -273,37 +274,124 @@ test("🔴🔴 a correct pick does NOT establish production, and the policy then
   assert.ok(next.type === "retrieve" && next.rung === "independent");
 });
 
-test("🔴🔴 a learner who has ALREADY produced it unaided is not probed again after a correct pick", () => {
-  // The owner's rule that production must not be demanded mechanically after every correct pick.
-  // 🔴 IT FALLS OUT OF DURABLE STATE, NOT OUT OF "the last answer was a tap" — which is why this
-  // test differs from the one above by exactly one row, and by nothing about the tap itself.
+/**
+ * The discriminating pair for "do not mechanically ask for production after every correct pick".
+ *
+ * 🔴🔴 TWO LOGS THAT DIFFER BY EXACTLY ONE ROW, AND BY NOTHING ABOUT THE TAP. Both end with the same
+ * correct recognition, at the same instant, with the same intervening work. The only difference is
+ * whether unaided production is anywhere on record — which is the point: what is owed is decided from
+ * DURABLE STATE, never from "the last answer was a tap".
+ *
+ * 🔴 THE PICK IS DELIBERATELY RECENT (a minute), SO THE TWO ANSWERS ARE STRUCTURALLY DIFFERENT
+ * RATHER THAN DIFFERENT ONLY IN PROSE. At this recency an ordinary demonstrated objective is not yet
+ * due, so the non-provisional learner gets `advance`; the provisional one is probed anyway, because
+ * confirming a recognition is not a scheduling decision and must not wait for a spacing interval.
+ * Asserting on `because` instead would be asserting on a sentence this codebase explicitly reserves
+ * for humans to read.
+ */
+function afterACorrectPick(alsoProducedEarlier: boolean) {
+  const picked = row({
+    id: "e6",
+    occurredAt: ago(60_000),
+    scaffoldRung: "recognition",
+    verdict: "understood",
+  });
   const produced = row({
     id: "e0",
     occurredAt: ago(8 * HOUR),
     scaffoldRung: "independent",
     verdict: "understood",
   });
-  const picked = row({
-    id: "e6",
-    occurredAt: ago(2 * HOUR),
-    scaffoldRung: "recognition",
-    verdict: "understood",
-  });
-  const log = [produced, ...STRUGGLING, picked];
+  const log = alsoProducedEarlier ? [produced, ...STRUGGLING, picked] : [...STRUGGLING, picked];
   const state = projectLearnerState(KEY, log);
-  assert.equal(state.demonstratedAt, "independent", "the highest rung ever reached, not the latest");
+  return {
+    action: chooseNextTeachingAction({
+      // Other material has intervened, so nothing is being held in working memory. Both sides.
+      interveningActs: 3,
+      knowledgeObject: TARGET.knowledge,
+      learnerState: state,
+      now: NOW,
+      objective: TARGET.objective,
+      recentEvidence: log,
+    }),
+    state,
+  };
+}
 
-  const next = chooseNextTeachingAction({
-    interveningActs: 3,
-    knowledgeObject: TARGET.knowledge,
-    learnerState: state,
-    now: new Date(NOW.getTime() + HOUR),
-    objective: TARGET.objective,
-    recentEvidence: log,
-  });
-  // Due for an ordinary retrieval on its own schedule, or nothing owed at all. What it must NOT be
-  // is a probe demanded because the last thing they did was tap.
-  assert.notEqual(next.because.includes("recognised rather than produced"), true);
+test("🔴🔴 a learner who has ALREADY produced it unaided is not probed again after a correct pick", () => {
+  const { action, state } = afterACorrectPick(true);
+  assert.equal(state.demonstratedAt, "independent", "the highest rung ever reached, not the latest");
+  // Nothing is owed. Not a probe, and specifically not one demanded because the last thing they did
+  // happened to be a tap.
+  assert.equal(action.type, "advance");
+});
+
+test("🔴🔴 the SAME pick, from a learner who has only ever recognised it, IS probed", () => {
+  // One row different, and the decision changes shape. Without this half the test above passes for a
+  // policy that never probes anything.
+  const { action, state } = afterACorrectPick(false);
+  assert.equal(state.demonstratedAt, "recognition");
+  assert.equal(action.type, "retrieve");
+  assert.ok(action.type === "retrieve" && action.rung === "independent");
+});
+
+// ── the arm a real learner actually meets ───────────────────────────────────
+//
+// 🔴🔴 `DEFAULT_STRATEGY` IS `llm_teacher`, SO EVERY TEST ABOVE THIS LINE EXERCISES THE ARM MOST
+// LEARNERS DO NOT GET. A verb added to that controller with no coverage is precisely the shape this
+// codebase keeps re-finding: implemented, merged, deployed, dead — and dead in the DEFAULT path,
+// where nobody would look. `TeacherTransport` is injectable for exactly this reason, in its own
+// words: *"so a test can prove this arm actually reaches a model"*.
+
+/** A transport that replies with one scripted decision. */
+function saying(reply: unknown): TeacherTransport {
+  return async () => ({ errorText: null, text: JSON.stringify(reply) });
+}
+
+function teachingContext(objectives: readonly ResolvedObjective[], evidence: readonly LearnerEvidence[]) {
+  return { evidence, now: NOW, objectives, uid: "learner-1" };
+}
+
+test("🔴🔴 the model arm can choose options, and gets the same set the structured arm would", async () => {
+  const outcome = await createLlmTeacherStrategy(
+    saying({ because: "unaided asking is not settling this", move: "recognise", objective: KEY }),
+  ).decide(teachingContext(POOL, STRUGGLING));
+
+  assert.equal(outcome.refusal, null);
+  assert.equal(outcome.decision?.action.type, "recognise", "the verb reached no action");
+  const action = outcome.decision!.action;
+  assert.ok(action.type === "recognise" && action.rung === "recognition");
+  // 🔴 REAL OPTIONS, BUILT BY THE SAME BUILDER. If the two arms could put different questions in
+  // front of two cohorts, the comparison between them would mean nothing.
+  const fromPolicy = choiceSetsForPool({ evidence: STRUGGLING, objectives: POOL }).get(KEY);
+  assert.deepEqual(action.type === "recognise" ? action.choices : null, fromPolicy);
+});
+
+test("🔴 the model may not conjure options: with nothing confusable, the move is REFUSED and counted", async () => {
+  // The same discipline the `contrast` verb already follows when no competing belief was observed.
+  // Silently substituting a plain retrieval would let the arm report a move it never made.
+  const outcome = await createLlmTeacherStrategy(
+    saying({ because: "options would help", move: "recognise", objective: TARGET.objective.identityKey }),
+  ).decide(teachingContext([TARGET], STRUGGLING));
+
+  assert.equal(outcome.decision, null);
+  assert.equal(outcome.refusal, "unknown-action");
+});
+
+test("🔴 every verb the model is offered maps to a real action or a counted refusal", async () => {
+  // 🔴 NOTHING SWEPT THE VERB LIST BEFORE THIS, so a verb could be added to the vocabulary and to
+  // the prompt while `actionFor` had no case for it — a move the model is invited to make and that
+  // can only ever come back as `unknown-action`. Checked over the two verbs this change touches
+  // rather than the whole list, because the others already have their own tests.
+  for (const move of ["recognise", "ask"]) {
+    const outcome = await createLlmTeacherStrategy(
+      saying({ because: "because", move, objective: KEY }),
+    ).decide(teachingContext(POOL, STRUGGLING));
+    assert.ok(
+      outcome.decision !== null,
+      `the verb "${move}" is offered to the model and produces no action on material that supports it`,
+    );
+  }
 });
 
 // ── the same material in another discipline behaves identically ─────────────
