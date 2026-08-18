@@ -208,14 +208,26 @@ test("🔴 the composer has exactly ONE answer route, and it comes from the sink
   // because ownership was all-or-nothing; once a task can sit beside a document, that ternary can
   // hand an answer typed at a recall card to the policy's prompt id.
   const source = await SOURCE;
-  assert.match(source, /task=\{sink\.kind === "none" \? null : sink\.task\}/, "the task is not the sink's");
+  // 🔴 THE COMPOSER IS TOLD WHAT A SUBMISSION MEANS, AND THE MEANING CARRIES THE TASK. This used to
+  // assert `task={sink.kind === "none" ? null : sink.task}`. The sink is still what decides, but it
+  // now does so through `composerIntent`, which is the one place that also outranks the stored
+  // canvas state — the predicate that used to route real answers into `begin()`.
+  assert.match(source, /intent=\{intent\}/, "the composer is not told what a submission means");
+  assert.match(
+    source,
+    /const intent = composerIntent\(\{[\s\S]{0,240}?\bsink,\n\s*\}\);/,
+    "the intent is not derived from the sink",
+  );
   // 🔴 RESHAPED FROM A TERNARY TO AN `if`/`else` INSIDE ONE `onAnswer` FUNCTION (contract rule 2,
   // 2026-08-15) — `applyExplanationEvent` has to run before EITHER receiver on every answer, and a
   // ternary choosing between two arrow functions has nowhere to put a step that both branches share.
   // The property this test exists for is unchanged: `sink.kind` still picks exactly one receiver,
   // never both, so the check follows the reshape rather than the literal `? … :` it used to require.
-  const onAnswer = source.slice(source.indexOf("onAnswer={"), source.indexOf("inSession={"));
-  assert.match(onAnswer, /if \(sink\.kind === "policy"\) void policy\.submit\(text, via, tookMs\);/);
+  const onAnswer = source.slice(source.indexOf("onAnswer={"), source.indexOf("intent={intent}"));
+  assert.match(
+    onAnswer,
+    /if \(intent\.kind === "answer" && intent\.sink === "policy"\) void policy\.submit\(text, via, tookMs\);/,
+  );
   assert.match(onAnswer, /else void session\.answerActiveTask\(text, via, tookMs\);/);
 
   // 🔴 THE COMPOSER IS RENDERED ONCE. Two <CanvasComposer> sites — one per runtime — would give the

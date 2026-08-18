@@ -190,7 +190,14 @@ test("🔴 a spoken answer takes the same single road as a typed one", () => {
   // to record the planned rung instead of the met one.
   const calls = (CANVAS.match(/policy\.submit\(/g) ?? []).length;
   assert.equal(calls, 1, "a second submit path would need its own copy of the assistance correction");
-  assert.match(CANVAS, /if \(sink\.kind === "policy"\) void policy\.submit\(text, via, tookMs\);/);
+  // 🔴 RE-POINTED, NOT RELAXED. The routing now reads the ONE composer intent rather than the sink
+  // directly — `composerIntent` is what also stops a stale `canvas.state` outranking a live question,
+  // which was throwing typed answers into `begin()`. The property here is unchanged: exactly one call
+  // site, and it fires only when the policy owns the answer.
+  assert.match(
+    CANVAS,
+    /if \(intent\.kind === "answer" && intent\.sink === "policy"\) void policy\.submit\(text, via, tookMs\);/,
+  );
   // And the sink only names the policy when the runtime is hosting a task, which it does for every
   // asking action including this one.
   assert.match(CANVAS, /hosted: policy\.task/);
