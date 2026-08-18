@@ -18,6 +18,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { labTrace } from "@/lib/lab/trace";
+
 import { useAuth } from "@/components/AuthProvider";
 import { teachingExperimentStartedAt } from "@/lib/env";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
@@ -40,6 +42,8 @@ import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import { readSelection } from "@/lib/learn/choice-set";
 import {
+  asUnaidedProduction,
+  completionPromptFor,
   evidenceForSubmission,
   judgementOf,
   objectiveAsTask,
@@ -61,7 +65,7 @@ import {
   type TeachingDecision,
   type TeachingStrategyId,
 } from "@/lib/learn/teaching-strategy";
-import type { TeachingAction } from "@/lib/learn/teaching-policy";
+import { performanceOf, type TeachingAction } from "@/lib/learn/teaching-policy";
 import { isAdmissionOfNotKnowing, isEchoOfTheCue } from "@/lib/learn/response-admission";
 import {
   KNOWLEDGE_DEADLINE_MS,
@@ -271,6 +275,17 @@ export interface PolicyRuntime {
    * it, and the layout is rebuilt whenever the pool changes.
    */
   choose: (option: string, tookMs?: number) => Promise<void>;
+  /**
+   * Are the options on screen yet?
+   *
+   * 🔴 THE VIEW MAY NOT DECIDE THIS FOR ITSELF. Whether options are painted and whether the row says
+   * `recognition` are the same fact, and the row is written here; a renderer holding its own
+   * `useState` for the reveal would be a second copy of the answer, free to disagree with the one
+   * the evidence used. It is exposed rather than owned by the component for exactly that reason.
+   */
+  choicesRevealed: boolean;
+  /** Show the options. Idempotent, and a no-op on a prompt that has none. */
+  revealChoices: () => void;
   admitUnknown: () => Promise<void>;
   /** Read the correction, then let the policy decide again from the same state. */
   acknowledge: () => void;
@@ -361,6 +376,18 @@ export function knowledgeSignature(canvas: LearningCanvas): string {
  */
 const KNOWLEDGE_RETRY_LIMIT = 3;
 const KNOWLEDGE_RETRY_DELAY_MS = 8_000;
+
+/**
+ * The prompt as it was ACTUALLY MET, which is not always the prompt that was minted.
+ *
+ * 🔴 ONE PLACE MAKES THIS CORRECTION, AND EVERY WRITE PATH GOES THROUGH IT. A typed answer, a
+ * dictated one, an "I don't know" and an echoed cue are four call sites that all record a row; the
+ * flag they have to consult is the same one, and four copies of "if they never opened the options,
+ * call it independent" is three chances to write the optimistic version by mistake.
+ */
+function asMet(active: RetrievalPrompt, choicesRevealed: boolean): RetrievalPrompt {
+  return active.choices && !choicesRevealed ? asUnaidedProduction(active) : active;
+}
 
 export function usePolicyRuntime(
   canvas: LearningCanvas,
@@ -474,6 +501,30 @@ export function usePolicyRuntime(
    * it able to answer "have they been told?" rather than "have we been here?".
    */
   const [correctionsShown, setCorrectionsShown] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * Objectives whose reasoning has been worked through in front of the learner this sitting.
+   *
+   * 🔴 SESSION STATE, NOT LEARNER STATE, AND IT LIVES HERE FOR THE SAME REASON `correctionsShown`
+   * DOES. A worked example writes no evidence row by design — being shown something is not evidence
+   * of knowing it — so nothing durable would tell the next turn that one had just been shown, and
+   * the obvious failure is showing it again. It dies with the sitting, which is correct: what
+   * survives to tomorrow is what the learner produced, not what we put on the screen.
+   */
+  const [modelled, setModelled] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * Has the learner asked to see the options on the recognition screen in front of them?
+   *
+   * 🔴🔴 THE FIELD INVARIANT 11 TURNS ON: "a task must record the assistance that was ACTUALLY
+   * AVAILABLE when answered", not the assistance the controller planned to give. The controller
+   * decides to ask at `recognition`; what the learner then meets is a question with the options one
+   * press away. If they produce the answer without pressing, the honest row says `independent` — and
+   * `asUnaidedProduction` is where that correction is made, off this flag.
+   *
+   * 🔴 IT RESETS WITH THE PROMPT, NEVER WITH THE DECISION. A decision can be recomputed for reasons
+   * that have nothing to do with the learner (evidence reloading, a strategy re-run); the prompt id
+   * changes exactly when the question in front of them does.
+   */
+  const [choicesRevealed, setChoicesRevealed] = useState(false);
   /**
    * The same acts as `actedOn`, with WHAT was done and WHEN.
    *
@@ -676,8 +727,9 @@ export function usePolicyRuntime(
         evidence.map((row) => row.id).join(","),
         actedOn.join(","),
         [...correctionsShown].sort().join(","),
+        [...modelled].sort().join(","),
       ].join("|"),
-    [actedOn, correctionsShown, decidedAt, evidence, inFocus, strategy],
+    [actedOn, correctionsShown, decidedAt, evidence, inFocus, modelled, strategy],
   );
 
   const [decided, setDecided] = useState<{ inputs: string; outcome: StrategyOutcome } | null>(null);
@@ -713,6 +765,7 @@ export function usePolicyRuntime(
           attention: { activeMs: Math.max(0, Math.round(canvas.activeMs)), availableMs: null },
           correctionsShown,
           evidence,
+          modelled,
           now: decidedAt,
           objectives: inFocus,
           recentActs,
@@ -728,10 +781,56 @@ export function usePolicyRuntime(
         // broken one would fall silent in exactly the conditions that break it.
         if (!live) return;
         canvasCapture("canvas_strategy_refused", canvas, { reason: "model-unreachable", strategy });
+        labTrace("controller", `${strategy} could not be reached`, () => ({ refusal: "model-unreachable", strategy }));
         setDecided({ inputs: decisionInputs, outcome: { decision: null, refusal: "model-unreachable", strategy } });
         return;
       }
       if (!live) return;
+      // 🔴 OBSERVABILITY ONLY — inert unless Nemesis Lab is open (lib/lab/trace.ts). This is the
+      // moment the whole teaching question is answered: which controller ran, what it was allowed to
+      // see, which objective it chose and why. A debug panel reconstructing it from the outside
+      // would be guessing at exactly the step the Lab exists to make legible.
+      labTrace(
+        "controller",
+        outcome.decision ? `${outcome.strategy} → ${outcome.decision.action.type}` : `${outcome.strategy} decided nothing`,
+        () => ({
+          action: outcome.decision?.action ?? null,
+          knowledge: outcome.decision?.knowledge ?? null,
+          movedOn: outcome.movedOn ?? [],
+          objective: outcome.decision?.objective ?? null,
+          objectivesConsidered: inFocus.map((entry) => ({
+            capability: entry.objective.capability,
+            identityKey: entry.objective.identityKey,
+            statement: entry.knowledge.statement,
+            type: entry.knowledge.type,
+          })),
+          // 🔴 `rationale` IS WHERE "WHY" LIVES, AND IT IS ARM-SPECIFIC BY CONSTRUCTION — the
+          // structured policy accounts for its choice differently from the model. Reported as the
+          // controller states it, never flattened into one sentence the two arms would have to share.
+          cognitiveMode: outcome.decision?.cognitiveMode ?? null,
+          exposition: outcome.decision?.exposition ?? null,
+          rationale: outcome.decision?.rationale ?? null,
+          refusal: outcome.refusal ?? null,
+          state: outcome.decision?.state ?? null,
+          strategy: outcome.strategy,
+          // 🔴 THE CONTEXT THE CONTROLLER WAS ACTUALLY GIVEN, so the Lab can put the OTHER arm in
+          // front of the identical inputs (§12) and re-run the same arm repeatedly (§13) without
+          // reconstructing anything. `signal` is deliberately not carried: an AbortSignal is not
+          // data, and a replay supplies its own.
+          context: {
+            actedOn,
+            attention: { activeMs: Math.max(0, Math.round(canvas.activeMs)), availableMs: null },
+            correctionsShown: [...correctionsShown],
+            evidence,
+            modelled: [...modelled],
+            now: decidedAt.toISOString(),
+            objectives: inFocus,
+            recentActs,
+            uid,
+          },
+        }),
+        Date.now() - decidedAt.getTime(),
+      );
       // 🔴🔴 OBJECTIVES THE CONTROLLER PASSED OVER ARE RECORDED AS WORKED, AND WITHOUT THIS THE
       // WHOLE "MOVE ON" MECHANISM WOULD BE A NO-OP THE LEARNER COULD FEEL. `controllerFor` sets an
       // objective aside for the length of ONE call; if nothing here remembers it, the next turn
@@ -911,12 +1010,33 @@ export function usePolicyRuntime(
     // condition like "anything that is not an exposition" would mint a prompt for `defer` the day
     // somebody added a field to it, and the prompt id is the idempotency key for evidence.
     const action = decision?.action ?? null;
-    if (!decision || !decisionKey || !action || (action.type !== "retrieve" && action.type !== "recognise")) {
+    // 🔴 ONE LIST DECIDES WHICH ACTIONS ASK FOR SOMETHING, AND IT IS NOT THIS FILE'S. `performanceOf`
+    // is exhaustive over the union in teaching-policy.ts, so a new asking action is a compile error
+    // there rather than a screen here that silently mints no prompt — which is precisely how a lane
+    // gets built, merged, and never reached. The condition this replaced named its two actions by
+    // hand and had to be edited in three places for each new one.
+    if (!decision || !decisionKey || !action || !performanceOf(action)) {
       setPrompt(null);
       return;
     }
     if (mintedFor.current === decisionKey) return;
     mintedFor.current = decisionKey;
+    if (action.type === "complete") {
+      // 🔴 THE SAME BUILDER THE CONTROLLER ASKED BEFORE CHOOSING, SO A NULL HERE IS A REAL DEFECT
+      // RATHER THAN A REFUSAL. `actionFor` in strategy-llm-teacher.ts calls `completionAvailable`
+      // and refuses when it says no, so by the time a decision arrives the answer is yes. If it ever
+      // is not, the honest response is to say so out loud — a silent fall back to the ordinary
+      // question would put an `independent` task on screen under a decision that said "completion",
+      // and the row would record whichever of the two the caller happened to trust.
+      const built = completionPromptFor(decision, crypto.randomUUID());
+      if (!built) {
+        setPrompt(null);
+        setError("Nemesis could not build that task from this material, so nothing was asked. Continue to move on.");
+        return;
+      }
+      setPrompt(built);
+      return;
+    }
     if (action.type === "recognise") {
       // 🔴 THE OPTIONS COME OFF THE ACTION, NEVER REBUILT HERE. The controller decided to ask at
       // `recognition` because THIS set existed; a second construction could return a different set,
@@ -937,8 +1057,52 @@ export function usePolicyRuntime(
     // means every retrieval this runtime ever stages is unaided, however many times a learner has
     // already missed it and however far `chooseNextTeachingAction` actually narrowed the ask. A
     // fully built, fully tested scaffolding decision with nothing downstream ever reading it.
+    // 🔴 THE NARROWING IS EXPLICIT RATHER THAN IMPLIED BY EXHAUSTION. Every other asking action has
+    // returned above, so this line only ever sees `retrieve` — but a reader (and the compiler) should
+    // not have to prove that by elimination, and the day a seventh action is added the honest failure
+    // is this branch refusing to compile rather than quietly wording someone else's task.
+    if (action.type !== "retrieve") return;
     setPrompt(retrievalPromptFor(decision, crypto.randomUUID(), action.rung));
   }, [decision, decisionKey]);
+
+  const promptId = prompt?.id ?? null;
+  useEffect(() => {
+    setChoicesRevealed(false);
+  }, [promptId]);
+
+  /**
+   * A worked example reached the learner.
+   *
+   * 🔴🔴 THE ONLY PLACE THIS ACTION IS EVER RECORDED, WHICH IS WHY IT FIRES ON DISPLAY RATHER THAN ON
+   * ACKNOWLEDGEMENT. `learner_evidence` holds claims about what a person has SHOWN, and reading a
+   * demonstration shows nothing — so there is no honest row to write and the durable question "did
+   * being walked through the working produce later unaided recall?" has to be answered by joining
+   * this event against the evidence rows that follow it. Firing on Continue would count only the
+   * examples people finished, which is a different and much less useful number.
+   *
+   * 🔴 KEYED ON `decisionKey`, SO ONE DEMONSTRATION IS ONE EVENT. The decision recomputes whenever
+   * evidence reloads; the key changes when the thing on screen does.
+   */
+  const reportedModel = useRef<string | null>(null);
+  useEffect(() => {
+    if (!decision || !decisionKey || decision.action.type !== "worked_example") return;
+    if (reportedModel.current === decisionKey) return;
+    reportedModel.current = decisionKey;
+    canvasCapture("canvas_worked_example_shown", canvas, {
+      objective: decision.objective.identityKey,
+      strategy: decidedStrategy,
+    });
+  }, [canvas, decidedStrategy, decision, decisionKey]);
+
+  const revealChoices = useCallback(() => {
+    if (!prompt?.choices || choicesRevealed) return;
+    setChoicesRevealed(true);
+    canvasCapture("canvas_choices_revealed", canvas, {
+      objective: decision?.objective.identityKey ?? null,
+      options: prompt.choices.options.length,
+      strategy: decidedStrategy,
+    });
+  }, [canvas, choicesRevealed, decidedStrategy, decision, prompt]);
 
   const refresh = useCallback(
     async (objectives: readonly StoredObjective[]) => {
@@ -987,6 +1151,7 @@ export function usePolicyRuntime(
       setRecording(true);
       try {
         let written = true;
+        labTrace("evidence", `writing ${built.length} row(s)`, () => ({ rows: built }));
         for (const row of built) {
           // Sequential rather than concurrent: they conflict on the same index, and a burst of
           // parallel upserts for one answer is exactly the shape that makes a duplicate look like a
@@ -994,6 +1159,7 @@ export function usePolicyRuntime(
           if (!(await recordEvidence(uid, row))) written = false;
         }
         if (!written) {
+          labTrace("evidence", "🔴 the write FAILED, so nothing was recorded", () => ({ rows: built }));
           setError("That answer was judged, but Nemesis could not save it. It won't count yet.");
           // 🔴 NO REFRESH ON FAILURE. Re-reading here would let the policy decide its next move from
           // a half-written performance, teaching from a learner model that is missing exactly the
@@ -1041,7 +1207,10 @@ export function usePolicyRuntime(
         unobtainedEvidence({
           canvasId: canvas.id || null,
           occurredAt: new Date().toISOString(),
-          prompt: active,
+          // 🔴 THE ASSISTANCE THEY ACTUALLY HAD, NOT THE ONE THAT WAS PLANNED. Saying "I don't know"
+          // to a question whose options were never opened is an unaided miss, and filing it at the
+          // `recognition` rung would understate what was asked of them.
+          prompt: asMet(active, choicesRevealed),
           responseText: said,
           responseModality,
           // 🔴 THE ARM THAT CHOSE THIS OPPORTUNITY, ON THE NON-ATTEMPT PATH TOO. Someone giving up
@@ -1052,7 +1221,7 @@ export function usePolicyRuntime(
         }),
       );
     },
-    [canvas, decision, decidedStrategy, prompt, record, uid],
+    [canvas, choicesRevealed, decision, decidedStrategy, prompt, record, uid],
   );
 
   const submit = useCallback(
@@ -1098,11 +1267,11 @@ export function usePolicyRuntime(
       setJudging(true);
       setPhase("reading_answer");
       const response = { text: said, via, ...(tookMs !== undefined ? { tookMs } : {}) };
-      const result = await evaluateLearningResponse(
-        uid,
-        canvas,
-        objectiveAsTask(decision.objective, active, response),
-      );
+      // 🔴 HELD IN A NAMED VALUE SO THE LAB CAN REPLAY THE JUDGE ON EXACTLY WHAT IT WAS GIVEN.
+      // Rebuilding this from the pieces at replay time would be a second construction of the task,
+      // free to differ from the one that produced the verdict under investigation.
+      const judgeInput = objectiveAsTask(decision.objective, active, response);
+      const result = await evaluateLearningResponse(uid, canvas, judgeInput);
       setJudging(false);
       setPhase(null);
 
@@ -1119,6 +1288,13 @@ export function usePolicyRuntime(
         // the wrong behaviour — it has to say which case it is in. The return stays because the
         // UI differs too: `record()` reports a save failure, which is not what happened here.
         canvasCapture("canvas_judge_failed", canvas, { objective: decision.objective.identityKey });
+        // The distinction the whole design turns on: a judge nobody could reach is NOT a learner
+        // who failed. From outside, both look like an answer that went nowhere.
+        labTrace("judge", "the judge could not be reached, so nothing was recorded", () => ({
+          answer: said,
+          error: result.error,
+          objective: decision.objective.identityKey,
+        }));
         // 🔴 SAYS WHAT IS TRUE HERE, NOT WHAT THE SHARED STRING SAYS. The evaluator's own message
         // ends "Your response was saved" — true on the six-stage path, where the answer is written
         // to the canvas before the judge is called, and FALSE here, where evidence is written only
@@ -1128,6 +1304,25 @@ export function usePolicyRuntime(
       }
 
       const evaluation = result.value;
+      labTrace(
+        "judge",
+        `${evaluation.verdict} on "${decision.objective.identityKey}"`,
+        () => ({
+          answer: said,
+          confidence: evaluation.confidence,
+          errorType: evaluation.errorType ?? null,
+          evaluation,
+          misconceptions: evaluation.misconceptions ?? null,
+          objective: decision.objective.identityKey,
+          question: active.prompt,
+          expectedAnswer: active.expectedAnswer,
+          judgeInput,
+          concepts: canvas.concepts,
+          statement: decision.knowledge.statement,
+          verdict: evaluation.verdict,
+          via,
+        }),
+      );
       // 🔴 THE VERDICT'S MODE IS MINTED FROM THE OBJECTIVE THAT WAS ANSWERED, AND FROM NOTHING
       // ABOUT THE ANSWER — §39. `evaluation` is right here and is deliberately not consulted:
       // "correctness does not determine advancement; cognitive mode does". Passing the verdict in
@@ -1170,7 +1365,12 @@ export function usePolicyRuntime(
           // the claim that we have an account of the performance. The unreachable-judge case is
           // `noJudgement()` and writes nothing; it is handled above, before anything is built.
           judgement: judgementOf([outcomeFor(decision.objective, evaluation)]),
-          prompt: active,
+          // 🔴🔴 THIS IS WHERE QUESTION-BEFORE-OPTIONS BECOMES HONEST RATHER THAN COSMETIC. A learner
+          // who typed the answer with nothing on screen but the question PRODUCED it, and the row has
+          // to say so — otherwise the strongest performance the surface can elicit is filed as the
+          // weakest evidence the ladder has, and the policy comes straight back to probe for a
+          // production that has already been given.
+          prompt: asMet(active, choicesRevealed),
           responseText: said,
           responseModality: via,
           // 🔴 WHICH CONTROLLER CHOSE THIS QUESTION. The experiment's grouping key, written at the
@@ -1182,7 +1382,7 @@ export function usePolicyRuntime(
         }),
       );
     },
-    [admitNothing, canvas, decision, decidedStrategy, judging, prompt, record, uid],
+    [admitNothing, canvas, choicesRevealed, decision, decidedStrategy, judging, prompt, record, uid],
   );
 
   /**
@@ -1203,6 +1403,11 @@ export function usePolicyRuntime(
       const active = prompt;
       const choices = active?.choices;
       if (!active || !choices || !decision || !uid || judging || recording) return;
+      // 🔴 A TAP IS ONLY MEANINGFUL ONCE THE OPTIONS ARE ON SCREEN. The view does not paint them
+      // before that, so this is unreachable through the UI — and it is exactly the kind of
+      // unreachable that stops being unreachable, at which point a row would claim the learner
+      // picked from a list they were never shown.
+      if (!choicesRevealed) return;
       setError(null);
       // 🔴 READ ONCE. The ground is needed three times below (the verdict sentence, the analytics
       // split, the outcome) and re-reading would be three places that can be handed different sets.
@@ -1279,7 +1484,7 @@ export function usePolicyRuntime(
         }),
       );
     },
-    [canvas, decision, decidedStrategy, judging, prompt, record, recording, uid],
+    [canvas, choicesRevealed, decision, decidedStrategy, judging, prompt, record, recording, uid],
   );
 
   /** Kept as a capability with no control on the recall surface: the caller decides whether to
@@ -1344,6 +1549,12 @@ export function usePolicyRuntime(
     if (seen && presenting.kind === "show_correction") {
       setCorrectionsShown((current) => new Set(current).add(seen));
     }
+    // 🔴 THE ONLY RECORD A WORKED EXAMPLE LEAVES ANYWHERE, AND IT IS DELIBERATELY NOT DURABLE. The
+    // learner demonstrated nothing by reading it, so there is no honest row to write; what the next
+    // turn needs is simply "we already did that here", which is a fact about this sitting.
+    if (seen && presenting.kind === "worked_example") {
+      setModelled((current) => new Set(current).add(seen));
+    }
     setDecidedAt(new Date());
   }, [decision, recording]);
 
@@ -1382,7 +1593,16 @@ export function usePolicyRuntime(
   // does not move the first.
   const task: HostedTask | null = useMemo(() => {
     if (status !== "ready" || feedback || !decision || !prompt) return null;
-    if (decision.action.type !== "retrieve" && decision.action.type !== "recognise") return null;
+    // 🔴 RESOLVED IN FAVOUR OF `performanceOf`, WHICH IS THE MORE GENERAL FORM. Both lanes found
+    // this defect independently; the other named `retrieve` and `recognise` explicitly, this asks
+    // the action whether it wants a performance at all, so the next action type that does cannot
+    // be forgotten here.
+    // 🔴🔴 EVERY ASK HOSTS A TASK NOW, AND UNTIL THIS LINE A RECOGNITION SCREEN HOSTED NONE. That was
+    // not a styling gap: `answerSink` reads this to decide who receives a typed answer, so a learner
+    // sitting in front of a recognition question who typed the answer instead of tapping had it
+    // routed as a general question about the material. It is also what makes "question first,
+    // options on request" possible at all — there has to be somewhere for the produced answer to go.
+    if (!performanceOf(decision.action)) return null;
     const knowledgeType = decision.knowledge.type;
     const operation = prompt.operation;
     return {
@@ -1437,13 +1657,24 @@ export function usePolicyRuntime(
   // `decision.action.type` directly here would be a fourth copy of a precedence this file has already
   // paid for getting wrong once: while a verdict is up, `decision` has moved on to the next action,
   // and a question that is still being read about would report itself as unanswered.
+  //
+  // 🔴 AND WHICH ACTIONS COUNT AS ASKING IS `performanceOf`'s ANSWER, NOT A SECOND LIST HERE. This
+  // read `presenting.kind === "retrieve" || presenting.kind === "recognise"` and would have gone
+  // stale the moment a third ask existed — a learner sitting in front of a completion task would
+  // have had their typing routed as a question about the material, which is the same defect the
+  // recognition ask hit before it. `learning-canvas.tsx` reads this property for that routing.
   const awaitingAnswer =
-    (presenting.kind === "retrieve" || presenting.kind === "recognise") && Boolean(prompt);
+    presenting.kind !== "verdict" &&
+    presenting.kind !== "nothing" &&
+    decision !== null &&
+    performanceOf(decision.action) !== null &&
+    prompt !== null;
 
   return {
     acknowledge,
     admitUnknown,
     awaitingAnswer,
+    choicesRevealed,
     choose,
     citations,
     claims,
@@ -1463,6 +1694,7 @@ export function usePolicyRuntime(
     phase,
     prompt,
     recording,
+    revealChoices,
     setFocus,
     status,
     strategy,

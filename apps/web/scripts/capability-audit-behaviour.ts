@@ -41,7 +41,16 @@ const TURNS = Number(process.env.AUDIT_TURNS ?? 8);
  * screen. 🔴 COPIED DELIBERATELY: this audit must not import a private list and thereby agree with
  * the code by construction. If the two ever disagree, that disagreement is the finding.
  */
-const RENDERABLE = ["retrieve", "show_correction", "contrast", "teach", "simplify"];
+const RENDERABLE = [
+  "retrieve",
+  "recognise",
+  "complete",
+  "worked_example",
+  "show_correction",
+  "contrast",
+  "teach",
+  "simplify",
+];
 
 interface Turn {
   verb: string;

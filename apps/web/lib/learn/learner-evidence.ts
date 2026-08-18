@@ -15,6 +15,7 @@ import { TRUSTED_ENOUGH_TO_UPDATE_STATE } from "./canvas-judge";
 import type { ErrorType, LearnerInputModality } from "./canvas-model";
 import type { ObjectiveCapability } from "./learning-objective";
 import { entails, higherRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
+import type { TaskForm } from "./task-form";
 import type { TeachingStrategyId } from "./teaching-strategy";
 
 /**
@@ -144,6 +145,21 @@ export interface LearnerEvidence {
   /** At what rung of the scaffolding ladder this response was produced — §33. Absent on every row
    *  written before the rung was recorded, which is why nothing may default it. */
   scaffoldRung?: ScaffoldRung;
+  /**
+   * Which KIND of task this response was produced against — the material's own question, a faded
+   * solution with a gap in it, or the relation carried to a case the source never stated.
+   *
+   * 🔴 NOT DERIVABLE FROM `scaffoldRung`, WHICH IS WHY IT IS ITS OWN FIELD. A transfer probe is
+   * `independent` exactly like an ordinary question, and it is the harder of the two; a completion
+   * is a production exactly like an ordinary answer, and it is the more assisted of the two. See
+   * task-form.ts.
+   *
+   * 🔴 ABSENT MEANS NOT RECORDED, NEVER `direct`. Every row written before this field existed came
+   * from a runtime that staged only the material's own question, and it is tempting to backfill
+   * them for that reason — but "we know it was direct" and "nothing observed the form" are
+   * different facts, and only the second one is true of them.
+   */
+  taskForm?: TaskForm;
   /** What this response said about THIS objective, including "nothing at all". */
   objectiveEvidence?: ObjectiveEvidence;
   /**

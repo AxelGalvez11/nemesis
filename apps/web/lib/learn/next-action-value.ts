@@ -70,6 +70,8 @@ export type SelectionReason =
    *  question and changing what the learner has to DO are different decisions and a trace that
    *  cannot tell them apart cannot answer "why was I shown a list?". */
   | "options-offered"
+  /** The task put part of a valid solution on screen and asked for the missing piece. */
+  | "partial-solution-offered"
   /** Demonstrated, eligible, and `retention-model.ts` predicts real decay since the last pass — worth
    *  more than an equally-eligible objective whose memory is barely touched. */
   | "increasingly-overdue";
@@ -316,7 +318,16 @@ export function value(input: ValueInput): ActionValue {
   // structured policy does not emit either today — only the model controller does — but a band that
   // silently fell through to a learner-state branch would score an exposition as though it were a
   // retrieval, and the fallback path can score any action the decision it rescued happens to carry.
-  if (action.type === "show_correction" || action.type === "teach" || action.type === "simplify") {
+  if (
+    action.type === "show_correction" ||
+    action.type === "teach" ||
+    action.type === "simplify" ||
+    // 🔴 A WORKED EXAMPLE BANDS WITH THE OTHER EXPOSITIONS BECAUSE IT IS ONE. What separates it is
+    // WHAT is put in front of the learner (a process rather than a claim), which is the action's
+    // business; how urgently material owed to someone should be shown is the same question for all
+    // four, and giving this one its own band would be a teaching rule encoded in a scorer.
+    action.type === "worked_example"
+  ) {
     score = BAND.exposition;
     reasons.push("owed-an-answer");
   } else if (action.type === "contrast") {
@@ -428,6 +439,13 @@ export function value(input: ValueInput): ActionValue {
   // `recognitionPreferred`. Weighting it here would be scoring one decision twice.
   if (action.type === "recognise") {
     reasons.push("options-offered");
+  }
+  // 🔴 A REASON, NOT A SCORE ADJUSTMENT. A completion is a way of ASKING and it is neither more nor
+  // less urgent than the retrieval it replaces — what changed is the task, not the value of spending
+  // the next minute here. A bonus would be this file deciding that faded examples are worth more,
+  // which is a teaching judgement and belongs to whoever chose the action.
+  if (action.type === "complete") {
+    reasons.push("partial-solution-offered");
   }
 
   return { reasons, score: score + clampToBand(delta) };

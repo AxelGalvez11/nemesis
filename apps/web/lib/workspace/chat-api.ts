@@ -38,6 +38,7 @@ import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/wor
 import { safeStreamPrefix, sanitizeAssistantText } from "@/lib/workspace/chat-tool-markup";
 import { serializeToolResult } from "@/lib/workspace/chat-tool-result";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
+import { labTrace } from "@/lib/lab/trace";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 
@@ -422,6 +423,35 @@ export function isFallbackModel(requested: string, answered: string | undefined)
   return family(requested) !== family(answered);
 }
 
+/**
+ * The provider's token split for one completion, when it reported one.
+ *
+ * 🔴 `undefined` MEANS THE PROVIDER SAID NOTHING, AND IS NOT `0`. DeepSeek and GLM report
+ * `usage` on a non-streamed body and omit it on a stream; a failover provider may omit it
+ * entirely. Returning zeros would tell a reader the call was free.
+ *
+ * `prompt_tokens` is INCLUSIVE of cache hits on both providers (the OpenAI convention), which is
+ * the same reading `supabase/functions/_shared/llm-cost.ts` takes — so a cost computed from this
+ * split matches the one the valve bills.
+ */
+export function completionUsage(body: unknown): ChatReply["usage"] {
+  const usage = (body as { usage?: Record<string, unknown> } | null)?.usage;
+  if (!usage || typeof usage !== "object") return undefined;
+  const num = (field: string): number | null => {
+    const value = usage[field];
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  };
+  const prompt = num("prompt_tokens");
+  const completion = num("completion_tokens");
+  if (prompt === null && completion === null) return undefined;
+  return {
+    cacheHitTokens: num("prompt_cache_hit_tokens") ?? 0,
+    completionTokens: completion ?? 0,
+    promptTokens: prompt ?? 0,
+    totalTokens: num("total_tokens") ?? (prompt ?? 0) + (completion ?? 0),
+  };
+}
+
 /** Tool calls from a non-streaming chat/completions response, if any. */
 export function completionToolCalls(body: unknown): AgentToolCall[] {
   if (typeof body !== "object" || body === null) return [];
@@ -521,6 +551,18 @@ export interface ChatReply {
    * it — so treat undefined as "unknown", never as "the model we asked for".
    */
   model?: string;
+  /**
+   * The provider's own token split for this call, when it reported one.
+   *
+   * 🔴 UNDEFINED MEANS NOBODY REPORTED IT — never zero. The valve returns the provider's body
+   * verbatim, so a non-streamed DeepSeek/GLM turn carries `usage`; a STREAMED turn does not,
+   * because the field arrives in an SSE chunk `readCompletionStreamFull` does not surface. A reader
+   * that coalesced this to 0 would show "this turn cost nothing" for exactly the turns nobody
+   * measured, which is the flattering-measurement failure this codebase pays for most often.
+   *
+   * It is a passthrough for observability. Metering is the valve's job and is unaffected.
+   */
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number; cacheHitTokens: number };
 }
 
 export interface ChatCompletionOptions {
@@ -572,6 +614,7 @@ export async function postChatCompletion(
       signal: options.signal,
     });
 
+  const startedAt = Date.now();
   try {
     let res = await call(key);
     // A revoked/unknown key (wiped server-side, restored browser) re-mints once —
@@ -590,11 +633,20 @@ export async function postChatCompletion(
       // Out of credits is an upsell moment, not just an error row: pop the
       // shell-mounted upgrade dialog on every budget-exhausted turn.
       if (errorKind === "budget" && !options.background) showUpgradePrompt(errorText, budgetResetOf(body));
+      // A refused call is the single most confusing thing to debug from the outside: it looks
+      // exactly like a model that had nothing to say. Say which it was.
+      labTrace(
+        "model_call",
+        `${decision.model} refused (${errorKind})`,
+        () => ({ asked: decision.model, error: errorText, kind: errorKind, messages: wireMessages, status: res.status }),
+        Date.now() - startedAt,
+      );
       return { errorKind, errorText, sources: [], text: null };
     }
     let text: string | null = null;
     let toolCalls: AgentToolCall[] = [];
     let answeringModel: string | undefined;
+    let usage: ChatReply["usage"];
     if (options.onDelta) {
       const streamed = await readCompletionStreamFull(res.body, options.onDelta);
       text = streamed.text.trim() ? streamed.text : null;
@@ -604,8 +656,29 @@ export async function postChatCompletion(
       text = completionText(body);
       toolCalls = completionToolCalls(body);
       answeringModel = completionModel(body);
+      usage = completionUsage(body);
     }
     if (text || toolCalls.length) {
+      // 🔴 OBSERVABILITY ONLY, AND INERT UNLESS NEMESIS LAB IS OPEN. `labTrace` returns on its
+      // first line when nothing is subscribed, and the payload below is a thunk, so a production
+      // turn builds none of it. This is the one door every model call in the product goes through,
+      // which is why one call site here answers "what was sent, what came back, how long, how many
+      // tokens" for the judge, the teacher, the lesson writer and chat alike.
+      labTrace(
+        "model_call",
+        `${decision.model} → ${answeringModel ?? "unknown"}`,
+        () => ({
+          answeredBy: answeringModel ?? null,
+          asked: decision.model,
+          messages: wireMessages,
+          response: text,
+          route: decision.route,
+          streamed: Boolean(options.onDelta),
+          toolCalls: toolCalls.length ? toolCalls : undefined,
+          usage: usage ?? null,
+        }),
+        Date.now() - startedAt,
+      );
       return {
         errorKind: null,
         errorText: null,
@@ -613,6 +686,7 @@ export async function postChatCompletion(
         text,
         ...(answeringModel ? { model: answeringModel } : {}),
         ...(toolCalls.length ? { toolCalls } : {}),
+        ...(usage ? { usage } : {}),
       };
     }
     return { errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
