@@ -434,8 +434,11 @@ export function LearningCanvas({
       // "nearest the viewport" are inventions about time and gaze; the active reading region is
       // derived from Continue presses the learner made themselves.
       const routing = routeComposerText(text, {
-        awaitingDemonstration:
-          policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback,
+        // 🔴 THE RUNTIME'S OWN ANSWER, NOT A THIRD COPY OF THE TEST. This read
+        // `action.type === "retrieve"` and would have gone stale the moment a second kind of ask
+        // existed: a learner sitting in front of an unanswered recognition task would have had their
+        // typing routed as a question about the material. See `PolicyRuntime.awaitingAnswer`.
+        awaitingDemonstration: policy.awaitingAnswer,
         hasReadingMaterial: canvas.blocks.length > 0,
         selectedBlockId: only?.id ?? null,
         unreadBlockIds: unreadChunk(canvas.blocks).map((block) => block.id),
@@ -586,7 +589,20 @@ export function LearningCanvas({
   // narrows the defect — a canvas reaching this render with nothing to show is NEVER a canvas that
   // is still thinking. It has finished, and it has nothing. `canvasPresence` still accepts the
   // input so the value stays correct if that early return is ever removed.
-  const working = busy.kind !== null;
+  // 🔴 `policy.phase` TOO, AND THAT SECOND CLAUSE IS A MEASURED DEFECT, NOT A TIDY-UP. Observed in
+  // production on a grounded topic canvas: `Teach me innate immunity.` attached three pages, the
+  // session's own `busy` cleared, and knowledge extraction carried on running underneath — during
+  // which this said `false`, the presence resolved to `quiet`, and the learner read *"Nemesis has
+  // your material but hasn't found anything to ask you about yet"* for about fifteen seconds before
+  // a perfectly good question appeared. Progress rendered as failure, which is the one thing
+  // `quiet` must never do.
+  //
+  // 🔴 `phase`, NOT `thinking`. `thinking` is `phase !== null` AND long enough to be worth SAYING
+  // OUT LOUD (`THINKING_VISIBLE_AFTER_MS`) — a deliberate delay so a fast step does not flash a
+  // caption. Whether a step is worth narrating and whether one is running are different questions,
+  // and using the narration flag here would reopen the same hole for exactly the length of that
+  // delay. `preparingLabel` already handles a null label honestly.
+  const working = busy.kind !== null || policy.phase !== null;
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -659,8 +675,10 @@ export function LearningCanvas({
   // reads each region's `requiresReading` property and returns at most one owner — the property is
   // the trigger, the control follows from it, and a future surface that asks the learner to read
   // gets one without anyone remembering to add it.
-  const awaitingDemonstration =
-    policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback;
+  // 🔴 THE RUNTIME'S OWN ANSWER, FOR THE REASON THE ROUTING SITE ABOVE NOW USES IT TOO. A Continue
+  // control offered beside an unanswered recognition task is §38's exact failure: a way past a
+  // question the learner has not answered.
+  const awaitingDemonstration = policy.awaitingAnswer;
   const continueRegion = continueOwner(
     [
       {

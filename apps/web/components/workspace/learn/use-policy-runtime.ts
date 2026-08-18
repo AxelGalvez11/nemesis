@@ -38,11 +38,14 @@ import type { KnowledgeObject } from "@/lib/learn/knowledge-types";
 import { policyAllowed, policyForced, type PolicyOverride } from "@/lib/learn/policy-override";
 import { loadEvidence, recordEvidence, type StoredObjective } from "@/lib/learn/learner-store";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
+import { readSelection } from "@/lib/learn/choice-set";
 import {
   evidenceForSubmission,
   judgementOf,
   objectiveAsTask,
   outcomeFor,
+  outcomeForSelection,
+  recognitionPromptFor,
   retrievalPromptFor,
   unobtainedEvidence,
   type RetrievalPrompt,
@@ -187,8 +190,22 @@ export interface PolicyRuntime {
     evaluation: ResponseEvaluation;
     answer: string;
     exposition: Exposition;
-    via: LearnerInputModality;
+    /** 🔴 `null` WHEN NOTHING OBSERVED A MODALITY, which is what a tapped option is. Defaulting it
+     *  to `typed` would put a claim about how the answer arrived onto a screen and into the DOM that
+     *  nothing measured, which is the same fabrication the evidence log refuses one layer down. */
+    via: LearnerInputModality | null;
   } | null;
+  /**
+   * A question is on screen and has not been answered yet.
+   *
+   * 🔴 ONE DEFINITION, TWO READERS, AND IT USED TO BE TWO COPIES. `learning-canvas.tsx` computed
+   * `policy.decision?.action.type === "retrieve" && Boolean(policy.prompt) && !policy.feedback` in
+   * two places — once to route composer text and once to decide who owns the Continue control — and
+   * a second kind of ask would have had to be added to both. This codebase's own record of what
+   * happens then is `presenting`: two places each deciding "what is on screen" and one of them being
+   * wrong cost the product its corrections entirely.
+   */
+  awaitingAnswer: boolean;
   /**
    * What the policy has put on screen for the learner to take in, and how — contract §39.
    *
@@ -240,6 +257,20 @@ export interface PolicyRuntime {
    *  so a forced session can show WHY it would otherwise have been refused. */
   coverage: CanvasKnowledge["coverage"];
   submit: (text: string, via: LearnerInputModality, tookMs?: number) => Promise<void>;
+  /**
+   * The learner tapped one of the options on a recognition task.
+   *
+   * 🔴 A SEPARATE ENTRY POINT FROM `submit`, AND NOT FOR TIDINESS. `submit` runs
+   * `isAdmissionOfNotKnowing` and `isEchoOfTheCue` before anything else, because a typed answer can
+   * fail to be an attempt at all. A tap is ALWAYS an attempt: the learner picked something that was
+   * put in front of them. Routed through `submit`, an option whose text overlapped the cue would be
+   * filed as "an opportunity passed and nothing was produced" over a real discrimination — a durable
+   * false claim, written by a guard doing exactly its job on the wrong kind of input.
+   *
+   * 🔴 IT TAKES THE OPTION'S TEXT, NEVER ITS INDEX. An index is only true of the layout that produced
+   * it, and the layout is rebuilt whenever the pool changes.
+   */
+  choose: (option: string, tookMs?: number) => Promise<void>;
   admitUnknown: () => Promise<void>;
   /** Read the correction, then let the policy decide again from the same state. */
   acknowledge: () => void;
@@ -831,12 +862,23 @@ export function usePolicyRuntime(
   const mintedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!decision || decision.action.type !== "retrieve" || !decisionKey) {
-      if (!decision || decision.action.type !== "retrieve") setPrompt(null);
+    // 🔴 TWO KINDS OF ASK MINT A PROMPT NOW, AND THE GUARD NAMES BOTH RATHER THAN LOOSENING. A
+    // condition like "anything that is not an exposition" would mint a prompt for `defer` the day
+    // somebody added a field to it, and the prompt id is the idempotency key for evidence.
+    const action = decision?.action ?? null;
+    if (!decision || !decisionKey || !action || (action.type !== "retrieve" && action.type !== "recognise")) {
+      setPrompt(null);
       return;
     }
     if (mintedFor.current === decisionKey) return;
     mintedFor.current = decisionKey;
+    if (action.type === "recognise") {
+      // 🔴 THE OPTIONS COME OFF THE ACTION, NEVER REBUILT HERE. The controller decided to ask at
+      // `recognition` because THIS set existed; a second construction could return a different set,
+      // or none, and the row would then record a demand the learner never met.
+      setPrompt(recognitionPromptFor(decision, crypto.randomUUID(), action.choices));
+      return;
+    }
     // 🔴 THE DECISION CARRIES BOTH, AND BOTH ARE HANDED OVER. A prompt for an `explain` objective is
     // worded from the objective and judged against the KNOWLEDGE — the two ends of the causal edge —
     // so passing the objective alone would word the question correctly and then mark the answer
@@ -850,7 +892,7 @@ export function usePolicyRuntime(
     // means every retrieval this runtime ever stages is unaided, however many times a learner has
     // already missed it and however far `chooseNextTeachingAction` actually narrowed the ask. A
     // fully built, fully tested scaffolding decision with nothing downstream ever reading it.
-    setPrompt(retrievalPromptFor(decision, crypto.randomUUID(), decision.action.rung));
+    setPrompt(retrievalPromptFor(decision, crypto.randomUUID(), action.rung));
   }, [decision, decisionKey]);
 
   const refresh = useCallback(
@@ -1098,6 +1140,103 @@ export function usePolicyRuntime(
     [admitNothing, canvas, decision, decidedStrategy, judging, prompt, record, uid],
   );
 
+  /**
+   * One option tapped on a recognition task.
+   *
+   * 🔴 NO JUDGE, AND THIS IS THE ONE PLACE THAT IS RIGHT. `submit`'s whole design is that the
+   * evaluator decides — and its own reason for that is about FREE TEXT: string comparison "would call
+   * a correct answer wrong for a capital letter and cannot tell a wrong answer from a specific
+   * competing one". Neither applies to a tap. There is nothing to spell, and which competing belief
+   * was picked was decided before the question was shown. Sending this to a model would spend a call
+   * to re-derive a fact already on the prompt, and could disagree with it.
+   *
+   * 🔴 IT NEVER PASSES THROUGH `isAdmissionOfNotKnowing` OR `isEchoOfTheCue`. Both exist because a
+   * typed answer can fail to be an attempt; a tap cannot. See `choose` on `PolicyRuntime`.
+   */
+  const choose = useCallback(
+    async (option: string, tookMs?: number) => {
+      const active = prompt;
+      const choices = active?.choices;
+      if (!active || !choices || !decision || !uid || judging || recording) return;
+      setError(null);
+      // 🔴 READ ONCE. The ground is needed three times below (the verdict sentence, the analytics
+      // split, the outcome) and re-reading would be three places that can be handed different sets.
+      const selection = readSelection(choices, option);
+      const outcome = outcomeForSelection(decision.objective, selection);
+      if (!outcome) {
+        // 🔴 NO ACCOUNT OF THIS PERFORMANCE EXISTS, SO NOTHING IS WRITTEN — `noJudgement()` in
+        // everything but name. The tapped text is not among the options on record, which means the
+        // set on screen is not the set being read: a stale render, or a pool rebuilt underneath. The
+        // learner did nothing wrong and no row may say they did.
+        canvasCapture("canvas_option_unreadable", canvas, { objective: decision.objective.identityKey });
+        return;
+      }
+      const correct = selection.kind === "correct";
+      // 🔴 THE VERDICT'S MODE COMES FROM THE OBJECTIVE, NOT FROM WHETHER THEY WERE RIGHT — §39,
+      // identical to the typed path three functions down. A mode read off correctness would rebuild
+      // the Continue that appears exactly when the learner was wrong.
+      setFeedback({
+        answer: option,
+        evaluation: {
+          // 🔴 CERTAIN, AND THAT IS NOT A FABRICATION. `confidence` is how sure the reading of an
+          // ANSWER is, and reading a tap is exact: the option that was pressed is the option that was
+          // pressed. It is display-only either way. What goes on the durable row is
+          // `outcomeForSelection`'s outcome, which deliberately carries no confidence at all, because
+          // there no judge spoke and absent means not observed.
+          confidence: 1,
+          demonstrated: correct ? [decision.objective.label] : [],
+          missing: correct ? [] : [decision.objective.label],
+          misconceptions: [...(outcome.misconceptions ?? [])],
+          verdict: outcome.verdict,
+          // 🔴 STRUCTURAL, AND IT NEVER TELLS THEM THEY WERE RIGHT OR WRONG IN WORDS. The headline
+          // above it already carries the verdict; this line says what the option they pressed IS, and
+          // it is derived from the ground rather than written per question, so it cannot claim
+          // anything the option set does not already assert.
+          feedback: selection.kind === "distractor" && selection.ground.kind === "held_misconception"
+            ? "That is the same answer you gave before."
+            : "That one is the answer to something else here.",
+        },
+        exposition: expositionFor({
+          capability: decision.objective.capability,
+          kind: "verdict",
+          knowledgeType: decision.knowledge.type,
+        }),
+        // 🔴 `null`, NOT `"typed"`. They tapped. See `PolicyRuntime["feedback"]`.
+        via: null,
+      });
+      canvasCapture("canvas_option_picked", canvas, {
+        // 🔴 THE GROUND, NEVER THE OPTION TEXT. Analytics is a shared surface and an option's text is
+        // the learner's own material; the ground is the structural fact ("they picked a belief they
+        // already held") and it is what a funnel can actually be split by.
+        ground: selection.kind === "distractor" ? selection.ground.kind : "correct",
+        objective: decision.objective.identityKey,
+        options: choices.options.length,
+        strategy: decidedStrategy,
+      });
+      await record(
+        evidenceForSubmission({
+          canvasId: canvas.id || null,
+          judgement: judgementOf([outcome]),
+          occurredAt: new Date().toISOString(),
+          prompt: active,
+          // 🔴🔴 THE OPTION THEY PICKED, VERBATIM, AND THIS IS THE WHOLE REASON THE FEATURE IS WORTH
+          // BUILDING. `responseText` is *"what the learner actually wrote or said, verbatim… kept raw
+          // so a better evaluator can re-read it"*, and for a recognition task it is the identity of
+          // the distractor. Without it the durable record would say only "wrong", which is precisely
+          // the objection multiple choice has always deserved and which this answers.
+          responseText: option,
+          // 🔴 NO `responseModality`. Absent means not observed, and a tap genuinely is not typed,
+          // spoken or written. `typed` would be a false claim in the one column that records how an
+          // answer arrived, and the column is constrained to those three values in the database — so
+          // the honest value is also the only one that would not need a migration to be wrong.
+          teachingStrategy: decidedStrategy,
+          ...(tookMs !== undefined ? { tookMs } : {}),
+        }),
+      );
+    },
+    [canvas, decision, decidedStrategy, judging, prompt, record, recording, uid],
+  );
+
   /** Kept as a capability with no control on the recall surface: the caller decides whether to
    *  offer a button for it, and the meaning is identical either way. */
   const admitUnknown = useCallback(async () => {
@@ -1232,9 +1371,18 @@ export function usePolicyRuntime(
     canvasCapture("canvas_strategy_conflict", canvas, { running: strategy, stored: conflict });
   }, [canvas, conflict, strategy]);
 
+  // 🔴 DERIVED FROM `presenting`, WHICH IS ALREADY THE ONE ANSWER TO "WHAT IS ON SCREEN". Reading
+  // `decision.action.type` directly here would be a fourth copy of a precedence this file has already
+  // paid for getting wrong once: while a verdict is up, `decision` has moved on to the next action,
+  // and a question that is still being read about would report itself as unanswered.
+  const awaitingAnswer =
+    (presenting.kind === "retrieve" || presenting.kind === "recognise") && Boolean(prompt);
+
   return {
     acknowledge,
     admitUnknown,
+    awaitingAnswer,
+    choose,
     citations,
     claims,
     coverage: knowledge.coverage,

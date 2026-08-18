@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { LEVEL_INSTRUCTIONS } from "./canvas-model";
-import { commandMessages, documentText, lessonMessages, territoryMessages } from "./canvas-prompts";
+import { commandMessages, documentText, evaluationMessages, lessonMessages, territoryMessages } from "./canvas-prompts";
 
 test("🔴 NO EM DASHES: every system prompt carries the rule, not just the shared one", () => {
   // Owner rule. It binds what NEMESIS WRITES, which is almost everything on the Canvas below the
@@ -276,4 +276,101 @@ test("🔴 the moment the canvas holds anything, whole-page rewriting is closed 
   assert.doesNotMatch(withContent, /replace_canvas/);
   assert.match(withContent, /Change as little as possible/i);
   assert.match(withContent, /Document outline/);
+});
+
+// ── judging written work ──────────────────────────────────────────────────────
+//
+// Written work reaches the judge as a RENDERING of a page (lib/learn/written-response.ts), not as
+// a sentence someone typed. Every assertion below protects one distinction that rendering makes
+// and that the judge is useless without.
+
+function judgedText(via: "typed" | "spoken" | "written", said: string): string {
+  return evaluationMessages({
+    concepts: [{ id: "k1", label: "working through a problem" }] as never,
+    expectedEvidence: { referenceAnswer: "the value that satisfies it" },
+    objective: { conceptId: "k1", label: "working through a problem" },
+    prompt: "Work it out.",
+    response: { text: said, via },
+    task: "solve",
+  })
+    .map((message) => message.content)
+    .join("\n");
+}
+
+test("🔴 an unread part of the page is named to the judge as OUR failure, never the learner's gap", () => {
+  // The whole path's most expensive failure mode. A page we could only partly read renders exactly
+  // like a page with steps missing, so the honest verdict on our own reading failure is `partial`,
+  // and that lands in learner_evidence as a durable claim that someone does not understand
+  // something they demonstrated completely in ink.
+  const asked = judgedText("written", "1. first line");
+  assert.match(asked, /Not read by Nemesis[\s\S]{0,60}OUR failure/i);
+  assert.match(asked, /never their omission and never their error/i);
+  assert.match(asked, /low[\s\S]{0,3}confidence/i, "the judge needs somewhere honest to put a reading it could not settle");
+});
+
+test("🔴 crossed-out work is named as a retraction, not as something they are claiming", () => {
+  const asked = judgedText("written", "1. first line");
+  assert.match(asked, /\[crossed out\]/);
+  assert.match(asked, /NOT[\s\S]{0,3}something they are claiming/i);
+});
+
+test("🔴 the judge is told to read the working and the final answer as two things", () => {
+  // "Right answer from invalid reasoning" and "right method with a slip at the end" are both
+  // invisible to a judge that reads a page as one blob.
+  const asked = judgedText("written", "1. first line");
+  assert.match(asked, /order they wrote it/i);
+  assert.match(asked, /working and the final answer as[\s\S]{0,3}two things/i);
+});
+
+/** The written-work block alone.
+ *
+ *  🔴 SCOPED, AND CALIBRATION IS WHY. The first version of the mapping test below searched the
+ *  whole prompt for the words `careless`, `procedural` and the rest — and it PASSED with the entire
+ *  written mapping deleted, because those six words also appear in the base prompt's
+ *  `ERROR_TYPES.join(", ")` line. A guard that cannot fail when you break the thing it names has no
+ *  causal link to the code at all.
+ */
+function writtenGuidance(): string {
+  const asked = judgedText("written", "1. first line");
+  const from = asked.indexOf("This is a page of work they did by hand");
+  const to = asked.indexOf("Judge MEANING, not vocabulary");
+  assert.ok(from >= 0 && to > from, "the written guidance block was not found, so this guard is reading nothing");
+  return asked.slice(from, to);
+}
+
+test("🔴 the failure shapes written work reveals are mapped onto the error types that already exist", () => {
+  // A judge handed only a six-word list reaches for `conceptual` for everything that is not
+  // obviously a forgotten term, and the distinctions working reveals collapse into one verdict.
+  const guidance = writtenGuidance();
+  for (const kind of ["careless", "procedural", "missing_prerequisite", "conceptual"]) {
+    assert.ok(
+      guidance.includes(kind),
+      `the written guidance never names \`${kind}\`, so the judge has no instruction to reach for it`,
+    );
+  }
+});
+
+test("🔴 the blanket 'forgive OCR errors' instruction is gone", () => {
+  // It was right when handwriting arrived as an unchecked flat transcription. It is wrong now: the
+  // submission gate means an uncertain reading cannot reach this judge at all, and told to forgive
+  // transcription artifacts a judge reads a genuine slip as a misread character and returns
+  // `understood`. That erases the exact distinction this path was built to make.
+  const asked = judgedText("written", "1. first line");
+  assert.doesNotMatch(asked, /may contain OCR errors/i);
+  assert.match(asked, /do not excuse an error as a misreading/i);
+});
+
+test("the written guidance reaches ONLY written answers, and leaves the spoken one alone", () => {
+  assert.doesNotMatch(judgedText("typed", "the value"), /\[crossed out\]/);
+  assert.doesNotMatch(judgedText("spoken", "the value"), /\[crossed out\]/);
+  assert.match(judgedText("spoken", "the value"), /filler words/i);
+  assert.doesNotMatch(judgedText("written", "1. first line"), /filler words/i);
+});
+
+test("🔴 the written guidance names no subject, so it reads the same for a diagram and a derivation", () => {
+  assert.doesNotMatch(
+    writtenGuidance(),
+    /\b(equation|algebra|chemistry|physics|molecule|reaction|statute|calculus)\b/i,
+    "a rule that only makes sense for one field is wrong here",
+  );
 });

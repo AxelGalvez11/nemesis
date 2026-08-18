@@ -19,10 +19,12 @@
 // 🔴 ASSOCIATION RECALL ONLY. This is the first executable piece of the eventual policy, not the
 // learning algorithm. It is deliberately small enough to be obviously correct.
 
+import type { ChoiceSet } from "./choice-set";
 import { expositionFor, NO_EXPOSITION, type Exposition } from "./cognitive-mode";
 import type { LearnerEvidence, LearnerObjectiveState } from "./learner-evidence";
 import type { LearningObjective } from "./learning-objective";
 import type { KnowledgeObject } from "./knowledge-types";
+import { recognitionPreferred } from "./recognition-value";
 import { eligibleForRetrieval } from "./retrieval-eligibility";
 import { scaffoldRungFor } from "./scaffold-decision";
 import { entails, type ScaffoldRung } from "./scaffold-rung";
@@ -48,6 +50,33 @@ export type TeachingAction =
    * `"independent"`.
    */
   | { type: "retrieve"; objectiveId: string; because: string; rung: ScaffoldRung }
+  /**
+   * Ask them to pick it out of genuinely confusable options — §33's `recognition` rung, staged.
+   *
+   * 🔴🔴 A DIFFERENT ACTION FROM `retrieve`, AND NOT BECAUSE THE SCREEN LOOKS DIFFERENT. The rung
+   * alone could have carried this: `retrieve` already states one, and `recognition` is already on the
+   * ladder. It was rejected because a rung is a LABEL on a question and this is a different QUESTION —
+   * with its own answer surface, its own deterministic reading, and its own way of failing. Carried on
+   * `retrieve` it would have inherited that action's every consumer silently, and the specific way
+   * this codebase loses features is a lane that is implemented, merged, deployed and never rendered.
+   * A separate member makes `expositionOf`'s exhaustive switch a compile error until someone decides
+   * what it presents, which is exactly the enforcement `TeachingAction`'s own doc claims for it.
+   *
+   * 🔴 IT IS NOT A MODE AND THE LEARNER NEVER TURNS IT ON. §33: *"The learner never sees a difficulty
+   * setting change. The Canvas simply changes the task."* It is chosen from the evidence for one
+   * objective on one turn and is gone the next.
+   *
+   * 🔴 `choices` IS CARRIED ON THE ACTION RATHER THAN REBUILT AT PROMPT TIME, FOR THE REASON
+   * `stagedRung` EXISTS. The decision to ask at `recognition` is only honest if a real set of options
+   * was available when it was made; a builder that re-derived them could come back with a different
+   * set, or with none, and the row would record a demand the learner never met. One construction, one
+   * decision, one thing on screen.
+   *
+   * 🔴 AND `rung` IS PINNED TO THE LITERAL, NOT LEFT AS `ScaffoldRung`. There is exactly one demand
+   * this action can express; a widened field would let a caller write `independent` onto a question
+   * that put the answer on screen, which is the evidence inflation §33 exists to prevent.
+   */
+  | { type: "recognise"; objectiveId: string; because: string; rung: "recognition"; choices: ChoiceSet }
   /** State the answer plainly. For a wrong attempt, or an opportunity that produced nothing. */
   | { type: "show_correction"; objectiveId: string; exposition: Exposition; because: string }
   /**
@@ -151,7 +180,12 @@ export function expositionOf(action: TeachingAction): Exposition {
     // next minute elsewhere; the learner sees whatever comes next, never a screen announcing that
     // something was skipped. A "we are moving on from X" card would be progress clutter, and would
     // also be the one place the system told a learner they had failed at something.
+    // 🔴 `recognise` PRESENTS NOTHING TO TAKE IN, THOUGH IT PUTS MORE ON SCREEN THAN ANY OTHER ASK.
+    // That is not a contradiction: §39's question is whether the learner is READING something, and
+    // options are the answer surface rather than material. Giving it an exposition would put a
+    // Continue on a question, or auto-advance past one.
     case "retrieve":
+    case "recognise":
     case "defer":
     case "revisit":
     case "advance":
@@ -219,6 +253,20 @@ export interface TeachingPolicyInput {
    * not track it, and the conservative one: it can only hold an objective back, never release it.
    */
   interveningActs?: number;
+  /**
+   * The options this runtime could honestly put on screen for this objective, if any.
+   *
+   * 🔴 A FACT ABOUT WHAT THE RUNTIME CAN STAGE, NEVER A CLAIM ABOUT THE LEARNER — the same kind of
+   * input as `correctionAlreadyShown` and `interveningActs`, and passed in for the same reason. The
+   * options are built from the WHOLE canvas's knowledge (a class the source set this one against, an
+   * answer to a question of the same shape) and this function sees one objective, so it cannot build
+   * them and must not try. See `choice-set.ts`.
+   *
+   * 🔴 ABSENT MEANS NO HONEST SET EXISTS, WHICH IS THE COMMON CASE AND NOT A FAILURE. Most material
+   * has no confusable neighbours, and a caller that does not build choice sets at all passes nothing
+   * and gets exactly the behaviour this policy had before recognition existed.
+   */
+  choices?: ChoiceSet;
 }
 
 /**
@@ -395,6 +443,37 @@ export function chooseNextTeachingAction(input: TeachingPolicyInput): TeachingAc
         const base = state.latestVerdict
           ? `this fell short and the answer has already been stated, and other material has come between — asking is what is owed now, not stating it again`
           : `an opportunity passed with nothing demonstrated and other material has come between, so the next thing owed here is a real attempt`;
+
+        // 🔴🔴 THE ONE PLACE RECOGNITION IS CHOSEN, AND IT SITS INSIDE THE BRANCH THAT HAD ALREADY
+        // DECIDED A RETRIEVAL IS OWED. Nothing above changes: working memory has cleared, an attempt
+        // fell short, an ask is what this state deserves. All that is settled here is the FORM, from
+        // the same evidence the rung is read from — which is why it cannot become a second, competing
+        // "should we ask" rule that disagrees with the branch it lives in.
+        //
+        // 🔴 AND IT IS BELOW `scaffoldRungFor` DELIBERATELY, THOUGH IT DOES NOT READ IT. That fold
+        // already reaches `recognition` at four straight misses (`RUNG_BY_STREAK`) and `stagedRung`
+        // has always refused it — *"recognition needs options on screen, which needs distractors and a
+        // surface that does not exist"* — silently returning the full unaided question and writing
+        // `independent` onto the row. So the ladder's bottom rung has been decided and discarded on
+        // every deep losing streak since it shipped. This is the surface that refusal was waiting for.
+        //
+        // 🔴 IT REFUSES FAR MORE OFTEN THAN IT ACCEPTS, AND THAT IS THE DESIGN. Options are earned by
+        // the material being genuinely confusable and by unaided production having already failed to
+        // resolve anything; everything else falls through to the ask that was owed anyway.
+        const recognition = recognitionPreferred({
+          choices: input.choices ?? null,
+          evidence: input.recentEvidence,
+        });
+        if (recognition.preferred && input.choices) {
+          return {
+            because: `${base} — and unaided asking has not settled it, so this one puts the answer beside what it is being confused with instead of asking it a fourth time`,
+            choices: input.choices,
+            objectiveId: id,
+            rung: "recognition",
+            type: "recognise",
+          };
+        }
+
         return {
           because: scaffold.rung === "independent"
             ? base
