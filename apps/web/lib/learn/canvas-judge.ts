@@ -199,7 +199,13 @@ export function validateEvaluation(raw: unknown, context: EvaluationContext): Ev
   }
 
   const kind = errorType(raw.errorType);
-  if (raw.errorType !== undefined && !kind) {
+  // 🔴 AN EMPTY STRING IS "THE JUDGE DID NOT SAY", NOT A VALUE WE FAILED TO RECOGNISE. Measured in
+  // production: a correct answer came back with `errorType: ""` — nothing had gone wrong, so there
+  // was no kind of failure to name — and this reported `errorType "" is not one we recognise`
+  // against a perfectly good reading. A rejection list that fills up with non-events is one nobody
+  // reads, which is how a real rejection gets missed.
+  const saidNothing = raw.errorType === undefined || (typeof raw.errorType === "string" && !raw.errorType.trim());
+  if (!saidNothing && !kind) {
     rejected.push(`errorType ${JSON.stringify(raw.errorType)} is not one we recognise`);
   }
 

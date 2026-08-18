@@ -42,6 +42,7 @@ import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 import { singleUnitCoverage } from "@/lib/notebooks/extract-coverage";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
+import { reuseStoredParse } from "@/lib/notebooks/parse-reuse";
 import { kindFor, parseDocument, sniffKind } from "@/lib/notebooks/parse-document";
 import { noTextMessage } from "@/lib/notebooks/parse-message";
 import { MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
@@ -211,6 +212,41 @@ export async function POST(req: Request): Promise<Response> {
   }));
 
   try {
+    // ── Have we already read exactly these bytes for this person? ──────────
+    //
+    // 🔴 THE SAME QUESTION THE WORKER ASKS, ASKED HERE FOR THE SAME REASON. A student who
+    // re-uploads last week's lecture, or files one document into a second folder, has already paid
+    // for it. Production had 21 hashed sources and 19 distinct hashes on the day this was written.
+    //
+    // 🔴 THE STORED PARSE IS READ THROUGH THE REAL ENVELOPE VALIDATOR, NEVER TRUSTED BY SHAPE.
+    // `readStructureEnvelope` is what every other consumer of `parsed_documents` goes through, and
+    // a row it cannot read is a row this lane declines to reuse — falling through to the parser,
+    // which is what happened before this block existed.
+    const reusable = sourceId ? await reuseStoredParse(check.userId, sourceId, contentHashOf(original)) : null;
+    if (reusable) {
+      console.info(JSON.stringify({
+        event: "file_extract_reused",
+        requestId,
+        kind,
+        parsedDocumentId: reusable.parsedDocumentId,
+        parserVersion: reusable.parserVersion,
+      }));
+      // 🔴 THE SAME RESPONSE SHAPE THE PARSING PATH RETURNS, FIELD FOR FIELD. A caller must not be
+      // able to tell a reused parse from a fresh one by the shape of what it received — a
+      // second, thinner response would be a second contract, and the first client to branch on its
+      // absence would make reuse a visible product behaviour instead of an invisible saving.
+      return NextResponse.json({
+        bytes: sourceSize,
+        coverage: reusable.coverage,
+        kind,
+        parsedDocumentId: reusable.parsedDocumentId,
+        text: reusable.text,
+        title: reusable.title ?? (sourceName.replace(/\.[^.]+$/, "").trim() || "Untitled document"),
+        ...(reusable.model ? { model: reusable.model } : {}),
+        ...(reusable.readBy ? { readBy: reusable.readBy } : {}),
+      });
+    }
+
     // 🔴 ONE PARSER, CALLED HERE AND BY THE WORKER. This block used to be a
     // ~150-line copy of the same decisions — which file kinds route to vision,
     // when a page counts as thin, what becomes coverage — and the file it was

@@ -26,6 +26,7 @@ import { emptyCanvas } from "@/lib/learn/canvas-model";
 import { evaluateLearningResponse } from "@/lib/learn/canvas-api";
 import { extractKnowledgeObjects } from "@/lib/learn/knowledge-extraction";
 import { projectLearnerState } from "@/lib/learn/learner-evidence";
+import { saveCanvas } from "@/lib/learn/canvas-store";
 import { loadEvidence, recordEvidence, saveKnowledge } from "@/lib/learn/learner-store";
 import {
   evidenceForSubmission,
@@ -292,8 +293,13 @@ async function main(): Promise<void> {
       headers: { Authorization: `Bearer ${key}` },
       method: "POST",
     });
+    // 🔴 `w`/`h`, NOT `width`/`height`, AND THIS CHECK COULD NEVER PASS UNTIL IT SAID SO. The route
+    // returns `SuggestedBox`, whose sides are `w` and `h`. Read as `width`/`height` they are always
+    // `undefined`, `typeof undefined === "number"` is always false, and the assertion below always
+    // failed — reporting "3 normalized masks" while calling them invalid, which reads as a broken
+    // product rather than a harness reading the wrong field. Nothing had ever got this far to notice.
     const occlusion = (await occlusionResponse.json().catch(() => null)) as {
-      boxes?: { x?: number; y?: number; width?: number; height?: number }[];
+      boxes?: { x?: number; y?: number; w?: number; h?: number; label?: string }[];
       error?: string;
       note?: string;
     } | null;
@@ -301,13 +307,26 @@ async function main(): Promise<void> {
       throw new Error(`production occlusion reader failed (${occlusionResponse.status}): ${occlusion?.error ?? "unknown"}`);
     }
     const boxes = Array.isArray(occlusion?.boxes) ? occlusion.boxes : [];
+    // 🔴 THE ROUTE'S OWN TOLERANCE, NOT A STRICTER ONE INVENTED HERE. `looksNormalized` accepts
+    // -0.02 to 1.02 because a fraction can round slightly outside the frame, and the route already
+    // refuses anything wider with a 502. A harness that demanded exactly 0-1 would fail a response
+    // production considers correct — reporting a defect that is really a disagreement between two
+    // definitions of the same word.
     const normalized = boxes.every((box) =>
-      [box.x, box.y, box.width, box.height].every(
-        (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1,
+      [box.x, box.y, box.w, box.h].every(
+        (value) => typeof value === "number" && Number.isFinite(value) && value >= -0.02 && value <= 1.02,
       ),
     );
-    check("OCCLUSION-MASKS", boxes.length > 0 && normalized, `${boxes.length} normalized masks`);
-    if (boxes.length === 0 || !normalized) throw new Error(occlusion?.note ?? "no valid occlusion masks returned");
+    // Every mask must also name the part it hides, or the locate task has nothing to ask about.
+    const maskLabelled = boxes.every((box) => typeof box.label === "string" && box.label.trim().length > 0);
+    check(
+      "OCCLUSION-MASKS",
+      boxes.length > 0 && normalized && maskLabelled,
+      `${boxes.length} masks · ${boxes.map((box) => box.label ?? "?").join(", ")}`,
+    );
+    if (boxes.length === 0 || !normalized || !maskLabelled) {
+      throw new Error(occlusion?.note ?? "no valid occlusion masks returned");
+    }
 
     const objectives = await saveKnowledge(userId, spatial);
     const objective = objectives.find((candidate) => candidate.capability === "locate");
@@ -321,6 +340,12 @@ async function main(): Promise<void> {
 
     const now = new Date().toISOString();
     const canvas = { ...emptyCanvas(crypto.randomUUID(), now), title: "Figure acceptance" };
+    // 🔴 THE CANVAS IS PERSISTED BEFORE ANY EVIDENCE NAMES IT. `learner_evidence.canvas_id` is a
+    // foreign key onto `learning_canvases`, so a canvas that exists only in memory makes every write
+    // fail — and `recordEvidence` swallows that into a console warning and returns false, so the
+    // failure surfaced as "evidence did not persist" with no cause. The browser never hits this
+    // because a canvas is saved the moment it opens; only a harness can invent one.
+    await saveCanvas(userId, canvas as never);
     const answer = String(objective.answer);
     const judged = await evaluateLearningResponse(
       userId,

@@ -25,12 +25,43 @@ import { parentPort, workerData } from "node:worker_threads";
 
 import { parseDocument } from "./parse-document";
 import {
+  withFigureCache,
+  type FigureDescription,
+  type FigureDescriptionStore,
+} from "@/lib/pdf/figure-cache";
+import type { FigureLabel } from "@/lib/learn/figure-labels";
+import {
   NO_SPEND,
   VisionLedger,
   documentUnitCap,
   withVisionBudget,
   type VisionSpend,
 } from "@/lib/pdf/vision-budget";
+
+/**
+ * What the thread asks the parent for while it is running.
+ *
+ * 🔴🔴 THE THREAD STILL HOLDS NO CREDENTIALS, AND THAT IS THE WHOLE DESIGN OF THIS CHANNEL. The
+ * figure-description cache lives in the database; the parent has the service role and this thread
+ * deliberately does not (see the header). So the thread ASKS, over the message port it already
+ * uses, and the parent answers. Terminating the thread mid-question leaves nothing to clean up:
+ * the parent's reply simply arrives at a port nobody is listening on.
+ *
+ * 🔴 AND A QUESTION THAT IS NEVER ANSWERED IS A CACHE MISS, NOT A HANG. `FIGURE_CACHE_TIMEOUT_MS`
+ * bounds every ask. A parent that has stopped replying — because it is shutting down, or because
+ * the deployment has no cache — must not be able to stall a parse the learner is waiting for.
+ */
+export type ParseThreadRequest =
+  | { cacheGet: { id: number; keys: string[] } }
+  | { cachePut: { entries: { contentKey: string; description: string; labels: unknown[] }[] } };
+
+/** What the parent sends back for a `cacheGet`. */
+export interface ParseThreadCacheReply {
+  cacheResult: { id: number; found: [string, { description: string; labels: unknown[] }][] };
+}
+
+/** How long the thread waits for the parent before treating a lookup as a miss. */
+export const FIGURE_CACHE_TIMEOUT_MS = 2_000;
 
 /** What the parent sends. Bytes are transferred, not copied. */
 export interface ParseThreadInput {
@@ -50,6 +81,14 @@ export interface ParseThreadInput {
    * every test. Those fall back to the per-document default rather than to unlimited.
    */
   visionUnitBudget?: number;
+  /**
+   * May this parse reach a paid document parser?
+   *
+   * 🔴 THE SAME REASON `visionUnitBudget` IS A NUMBER RATHER THAN A LEDGER: a claim lives in the
+   * database and this thread holds no client. The parent takes the day's slot before spawning and
+   * sends the answer. Absent means allowed, which is every test and the synchronous lane.
+   */
+  vendorAllowed?: boolean;
 }
 
 /**
@@ -106,9 +145,75 @@ function sampleRss(): number {
   return peakRss;
 }
 
+/**
+ * A cache that lives on the other side of the port.
+ *
+ * Returns a no-op store when there is no port to ask — a test importing this file, or a thread
+ * spawned without one. Every timeout, every malformed reply and every absent parent is a miss.
+ */
+export function portFigureCache(
+  ask: (request: ParseThreadRequest) => void,
+  onReply: (handler: (message: unknown) => void) => void,
+  timeoutMs = FIGURE_CACHE_TIMEOUT_MS,
+): FigureDescriptionStore {
+  let nextId = 1;
+  const waiting = new Map<number, (found: Map<string, FigureDescription>) => void>();
+
+  onReply((message) => {
+    const reply = (message as Partial<ParseThreadCacheReply>)?.cacheResult;
+    if (!reply || typeof reply.id !== "number") return;
+    const settle = waiting.get(reply.id);
+    if (!settle) return;
+    waiting.delete(reply.id);
+    const found = new Map<string, FigureDescription>();
+    for (const [key, value] of reply.found ?? []) {
+      if (typeof key === "string" && typeof value?.description === "string") {
+        found.set(key, { description: value.description, labels: (value.labels ?? []) as FigureLabel[] });
+      }
+    }
+    settle(found);
+  });
+
+  return {
+    async get(keys) {
+      if (keys.length === 0) return new Map();
+      const id = nextId++;
+      return await new Promise<Map<string, FigureDescription>>((resolve) => {
+        const timer = setTimeout(() => {
+          waiting.delete(id);
+          resolve(new Map());
+        }, timeoutMs);
+        if (typeof timer.unref === "function") timer.unref();
+        waiting.set(id, (found) => {
+          clearTimeout(timer);
+          resolve(found);
+        });
+        ask({ cacheGet: { id, keys: [...keys] } });
+      });
+    },
+
+    async put(entries) {
+      if (entries.length === 0) return;
+      // 🔴 FIRE AND FORGET, DELIBERATELY. A write the parent never performs costs money next time
+      // and nothing now; waiting for its acknowledgement would put a database round trip between
+      // the last figure and the parse result the learner is waiting for.
+      ask({
+        cachePut: {
+          entries: entries.map((entry) => ({
+            contentKey: entry.contentKey,
+            description: entry.description,
+            labels: [...entry.labels],
+          })),
+        },
+      });
+    },
+  };
+}
+
 export async function runParseThread(
   input: ParseThreadInput,
   post: (message: ParseThreadOutput) => void,
+  cache?: FigureDescriptionStore,
 ): Promise<void> {
   // Sampling on a timer, not once at the end: `rss` after a parse has already
   // been reduced by whatever the collector reclaimed, so an end-of-run reading
@@ -125,6 +230,11 @@ export async function runParseThread(
   const spent = (): VisionSpend => (ledger ? ledger.spend() : NO_SPEND);
   try {
     const outcome = await withVisionBudget(ledger, () =>
+      // 🔴 THE CACHE WRAPS THE LEDGER, NOT THE OTHER WAY ROUND, AND THE NESTING IS THE SAVING. A
+      // figure the cache answers never reaches `currentVisionLedger().take()`, so it costs neither
+      // a call nor a unit of this document's allowance — which is what stops a deck of repeated
+      // diagrams exhausting its budget on pictures it already knows about.
+      withFigureCache(cache ?? NO_CACHE, () =>
       parseDocument(
         new Uint8Array(input.bytes),
         input.fileName,
@@ -134,8 +244,11 @@ export async function runParseThread(
         // NOT set this: up to 40 vision calls on a request path is latency the
         // student waits through, on the one primitive with no entitlement, no
         // counter and no cache. Here the student is not waiting.
-        { lookAtFigures: true },
-      ),
+        {
+          lookAtFigures: true,
+          ...(input.vendorAllowed === undefined ? {} : { vendorAllowed: input.vendorAllowed }),
+        },
+      )),
     );
     sampleRss();
     post(
@@ -177,9 +290,26 @@ export async function runParseThread(
   }
 }
 
+/** The default when no port and no store is available: every figure is a miss, as before. */
+const NO_CACHE: FigureDescriptionStore = {
+  async get() {
+    return new Map();
+  },
+  async put() {
+    /* nowhere to remember it */
+  },
+};
+
 // Spawned as a thread: run immediately. Imported by a test: do nothing, so the
 // same file can be exercised without a Worker.
 if (parentPort && workerData) {
   const port = parentPort;
-  void runParseThread(workerData as ParseThreadInput, (message) => port.postMessage(message));
+  void runParseThread(
+    workerData as ParseThreadInput,
+    (message) => port.postMessage(message),
+    portFigureCache(
+      (request) => port.postMessage(request),
+      (handler) => port.on("message", handler),
+    ),
+  );
 }

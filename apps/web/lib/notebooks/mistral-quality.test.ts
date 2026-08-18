@@ -91,7 +91,7 @@ test("a PDF claims nothing, so the gate can never reject one", () => {
   // A PDF makes no checkable statement about its own contents, and Mistral measurably beats the
   // local reader there anyway — 16,823 words against 9,098, 60 of the local ones corrupted.
   const claim = claimOf("pdf", bytesOf("lib/notebooks/fixtures/two-column.pdf"));
-  assert.deepEqual(claim, { images: 0, notesChars: 0, notesSlides: 0, tables: 0 });
+  assert.deepEqual(claim, { docxImages: 0, images: 0, notesChars: 0, notesSlides: 0, tables: 0 });
   assert.deepEqual(judgeMistralRead(claim, model({ chars: 1, tables: 0 })), { ok: true });
 });
 
@@ -99,6 +99,7 @@ test("unreadable bytes claim nothing rather than failing the parse", () => {
   // A claim of nothing can never reject a read, which is the safe direction: a zip we cannot open
   // is not evidence that the vendor lost something.
   assert.deepEqual(claimOf("docx", new Uint8Array([1, 2, 3, 4])), {
+    docxImages: 0,
     images: 0,
     notesChars: 0,
     notesSlides: 0,
@@ -113,7 +114,7 @@ test("🔴 a deck whose speaker notes did not arrive is rejected", () => {
   // characters of notes across 46 slides, and Mistral's read of the whole deck came back with
   // 12,194 characters in total. Not tidier — a third of the concepts. Measured separately: its
   // vocabulary was a strict SUBSET of the local reader's, with zero words unique to it.
-  const claim = { images: 0, notesChars: 42_693, notesSlides: 46, tables: 0 };
+  const claim = { docxImages: 0, images: 0, notesChars: 42_693, notesSlides: 46, tables: 0 };
   const verdict = judgeMistralRead(claim, model({ chars: 12_194, tables: 0 }));
   assert.equal(verdict.ok, false);
   assert.equal(verdict.ok === false && verdict.missing, "speaker-notes");
@@ -122,7 +123,7 @@ test("🔴 a deck whose speaker notes did not arrive is rejected", () => {
 test("🔴 a Word document whose tables did not arrive is rejected", () => {
   // Also real: a PK activity sheet declaring six tables, of which Mistral returned zero — its
   // markdown pipe tables break apart wherever a cell contains a line break.
-  const verdict = judgeMistralRead({ images: 0, notesChars: 0, notesSlides: 0, tables: 6 }, model({ chars: 2_715, tables: 0 }));
+  const verdict = judgeMistralRead({ docxImages: 0, images: 0, notesChars: 0, notesSlides: 0, tables: 6 }, model({ chars: 2_715, tables: 0 }));
   assert.equal(verdict.ok, false);
   assert.equal(verdict.ok === false && verdict.missing, "tables");
 });
@@ -131,14 +132,14 @@ test("🔴 a read that DID bring the content through is accepted — the gate is
   // The owner's problem set: two tables declared, two tables returned. This is the case the whole
   // decision is for — near-identical output, and we stop owning the parser.
   assert.deepEqual(
-    judgeMistralRead({ images: 0, notesChars: 0, notesSlides: 0, tables: 2 }, model({ chars: 5_254, tables: 2 })),
+    judgeMistralRead({ docxImages: 0, images: 0, notesChars: 0, notesSlides: 0, tables: 2 }, model({ chars: 5_254, tables: 2 })),
     { ok: true },
   );
 
   // A deck whose notes arrived is accepted too, even though the read is shorter than the notes
   // alone — the threshold is for wholesale loss, not for shortfall.
   assert.deepEqual(
-    judgeMistralRead({ images: 0, notesChars: 42_693, notesSlides: 46, tables: 0 }, model({ chars: 30_000, tables: 0 })),
+    judgeMistralRead({ docxImages: 0, images: 0, notesChars: 42_693, notesSlides: 46, tables: 0 }, model({ chars: 30_000, tables: 0 })),
     { ok: true },
   );
 });
@@ -147,7 +148,7 @@ test("a deck with only a token note is not held to the notes rule", () => {
   // 🔴 POWERPOINT WRITES A NOTES PART FOR SLIDES NOBODY TYPED A NOTE ON. Holding every deck to
   // this rule would reject reads over a placeholder, which would make the legacy reader primary
   // again by accident — the exact outcome the owner's decision rules out.
-  const claim = { images: 0, notesChars: MIN_NOTES_CHARS - 1, notesSlides: 40, tables: 0 };
+  const claim = { docxImages: 0, images: 0, notesChars: MIN_NOTES_CHARS - 1, notesSlides: 40, tables: 0 };
   assert.deepEqual(judgeMistralRead(claim, model({ chars: 10, tables: 0 })), { ok: true });
 });
 
@@ -155,7 +156,7 @@ test("more tables than declared is fine — only a shortfall is a loss", () => {
   // A table split across pages can legitimately be read as two. Rejecting on inequality rather
   // than shortfall would fail honest reads.
   assert.deepEqual(
-    judgeMistralRead({ images: 0, notesChars: 0, notesSlides: 0, tables: 2 }, model({ chars: 100, tables: 3 })),
+    judgeMistralRead({ docxImages: 0, images: 0, notesChars: 0, notesSlides: 0, tables: 2 }, model({ chars: 100, tables: 3 })),
     { ok: true },
   );
 });

@@ -12,7 +12,7 @@
 // every later decision is made against a claim about a person that nobody ever observed.
 
 import { TRUSTED_ENOUGH_TO_UPDATE_STATE } from "./canvas-judge";
-import type { LearnerInputModality } from "./canvas-model";
+import type { ErrorType, LearnerInputModality } from "./canvas-model";
 import type { ObjectiveCapability } from "./learning-objective";
 import { entails, higherRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
 import type { TeachingStrategyId } from "./teaching-strategy";
@@ -72,6 +72,19 @@ export interface LearnerEvidence {
   confidence?: number;
   /** Named competing models, when the verdict is `misconception`. Kept so they can be taught against. */
   misconceptions?: readonly string[];
+  /**
+   * Which KIND of failure the evaluator established — the diagnosis behind the verdict.
+   *
+   * 🔴 THE DISTINCTION `verdict` CANNOT CARRY. Two learners can both be `incorrect` on the same
+   * objective, one having applied the right method and slipped in the arithmetic and the other
+   * having reached for a method that does not apply. Those are not the same learner and they are
+   * not owed the same next move; without this field they are the same row.
+   *
+   * 🔴 ABSENT MEANS NO KIND WAS NAMED, and a consumer must treat that as "we do not know" rather
+   * than as any particular kind. Every row written before this column existed reads back absent,
+   * and so does every row whose judge declined to say.
+   */
+  errorType?: ErrorType;
   /** Which canvas produced it — provenance only. 🔴 NEVER a filter for reading state back: the
    *  whole point is that a second canvas sees what the first one established. */
   canvasId?: string | null;

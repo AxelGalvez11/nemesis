@@ -36,12 +36,15 @@ import {
 } from "@/lib/notebooks/figure-assets";
 import { runParseOnThread, type ParseRunSpend } from "@/lib/notebooks/parse-run";
 import {
+  NO_SPEND,
   VisionLedger,
   documentUnitCap,
   userDailyUnitCap,
   withVisionBudget,
 } from "@/lib/pdf/vision-budget";
 import { contentHashOf, rowCounts, structureEnvelope } from "@/lib/notebooks/parse-record";
+import { decideReuse, findReusableParse } from "@/lib/notebooks/parse-reuse";
+import { runShadowEvaluation } from "@/lib/notebooks/parse-shadow";
 import {
   DEADLINE_ABORT_MS,
   isRetryable,
@@ -61,6 +64,8 @@ import {
   type DoclingServiceConfig,
 } from "@/lib/notebooks/docling-client";
 import { buildDoclingParse, doclingFallback, type DoclingKind } from "@/lib/notebooks/parse-docling";
+import { providerOfParserVersion, recordAiSpend, vendorParseDailyCap } from "@/lib/cost/ai-spend";
+import { supabaseFigureCache, withFigureCache } from "@/lib/pdf/figure-cache";
 import { nativeTextMap, probePdfNativeText } from "@/lib/pdf/native-probe";
 import { readPdfStructure } from "@/lib/pdf/structure";
 import type { CapturedFigure } from "@/lib/pdf/structure";
@@ -299,6 +304,34 @@ async function runClaimed(
   }
   reservation.granted = typeof granted === "number" ? granted : 0;
 
+  // ── May this document reach a paid parser today? ──────────────────────────
+  //
+  // 🔴🔴 THE ONE EXPENSIVE SUBSYSTEM THAT HAD NO CEILING. Vision reserves units above; the model
+  // valve enforces token budgets; search enforces unit budgets. Mistral and LlamaParse are billed
+  // per page, reached on every upload, and were bounded by nothing at all.
+  //
+  // 🔴 A REFUSAL MEANS "READ IT OURSELVES", NEVER "REFUSE THE DOCUMENT". Past the cap the learner
+  // still gets their lecture, parsed locally, with coverage saying honestly what it could not
+  // recover — which is the graceful degradation the owner asked for rather than the usual cap
+  // behaviour of refusing the work.
+  //
+  // 🔴 AND AN UNAPPLIED MIGRATION MUST NOT SILENTLY DISABLE THE VENDORS. An error here means the
+  // deployment cannot answer the question, and the safe reading of that is the behaviour it had
+  // before the question existed: allowed.
+  let vendorAllowed = true;
+  const { data: vendorSlot, error: vendorSlotError } = await admin.rpc("claim_vendor_parse", {
+    p_daily_cap: vendorParseDailyCap(),
+    p_user_id: job.user_id,
+  });
+  if (vendorSlotError) {
+    console.warn(JSON.stringify({ event: "vendor_parse_budget_unavailable", detail: vendorSlotError.message.slice(0, 120) }));
+  } else {
+    vendorAllowed = vendorSlot === true;
+    if (!vendorAllowed) {
+      console.info(JSON.stringify({ event: "vendor_parse_budget_spent", sourceId: job.id }));
+    }
+  }
+
   const heartbeat = async (): Promise<boolean> => {
     const { data } = await admin.rpc("renew_document_parse_lease", {
       p_lease_seconds: LEASE_SECONDS,
@@ -410,6 +443,55 @@ async function runClaimed(
     return { sourceId: job.id, outcome: finished ? "parsed" : "lease-lost" };
   };
 
+  // ── Have we already read exactly these bytes for this person? ─────────────
+  //
+  // 🔴🔴 ASKED BEFORE ANYTHING IS SPENT, WHICH IS THE WHOLE POINT AND WAS THE WHOLE GAP.
+  // `parsed_documents` has been keyed on `(user_id, content_hash, parser_version)` since it was
+  // created, and `record_parsed_document` consults that key — at WRITE time. Deduplicating the row
+  // after the file has been fetched, parsed, sent to a vendor and looked at by a vision model saves
+  // a row and none of the money. Measured on production the day this was written: 21 hashed
+  // sources, 19 distinct hashes.
+  //
+  // 🔴 IT IS A LOOKUP, NOT A JUDGEMENT. `decideReuse` refuses a failed parse — reusing one would
+  // make a document that failed once permanently unreadable — and refuses nothing else. A partial
+  // parse IS an answer; re-reading it spends the same money to reach the same place.
+  //
+  // 🔴 AND A LOOKUP THAT FAILS PARSES THE DOCUMENT. Every path out of `findReusableParse` and
+  // `reuse_document_parse` that is not an unambiguous hit falls through to the ordinary lanes
+  // below, which is exactly what happened before this block existed.
+  const existing = await findReusableParse(admin, job.user_id, contentHash);
+  const reuse = decideReuse(existing);
+  if (reuse.reuse) {
+    const { data: linked, error: reuseError } = await admin.rpc("reuse_document_parse", {
+      p_content_hash: contentHash,
+      p_parsed_document_id: reuse.parse.id,
+      p_source_id: job.id,
+      p_token: token,
+      p_user_id: job.user_id,
+    });
+    if (reuseError) {
+      // The migration may not be applied on this deployment. Parsing is always a correct answer.
+      console.warn(JSON.stringify({ event: "parse_reuse_unavailable", detail: reuseError.message.slice(0, 160) }));
+    } else if (typeof linked === "string") {
+      console.info(JSON.stringify({
+        event: "parse_reused",
+        docKind: reuse.parse.docKind,
+        parsedDocumentId: linked,
+        parserVersion: reuse.parse.parserVersion,
+        sourceId: job.id,
+        state: reuse.parse.state,
+        units: reuse.parse.unitCount,
+      }));
+      // 🔴 THE RESERVATION IS RELEASED UNSPENT. `settle_vision_units` refunds what was not used, and
+      // a reuse used none — so a document reused ten times must not accumulate ten documents' worth
+      // of reserved budget against the person who uploaded it.
+      reservation.spend = NO_SPEND;
+      return { sourceId: job.id, outcome: "reused" };
+    }
+    // `null` means the lease check refused or the parse did not survive its own validation. Both
+    // are ordinary races, and both mean: read the file.
+  }
+
   // ── The routed lane ────────────────────────────────────────────────────────
   //
   // 🔴 THE DEFAULT IS STILL OUR OWN PARSER, FOR EVERY FORMAT. With no
@@ -450,7 +532,10 @@ async function runClaimed(
     // the reservation would buy nothing. Same budget object, so a document that spends on
     // this lane and then falls through to the built-in parser cannot spend twice.
     const doclingLedger = new VisionLedger(reservation.granted);
-    const lane = await withVisionBudget(doclingLedger, () =>
+    // The same cache as the threaded lane. This one runs in-process, so it installs the store
+    // directly rather than answering questions over a port.
+    const lane = await withFigureCache(supabaseFigureCache(admin, job.user_id), () =>
+      withVisionBudget(doclingLedger, () =>
       runDoclingLane({
       admin,
       budgetMs: Math.max(0, DEADLINE_ABORT_MS - (Date.now() - startedAt) - DOCLING_FALLBACK_RESERVE_MS),
@@ -460,7 +545,7 @@ async function runClaimed(
       heartbeat,
         job,
         kind,
-      }),
+      })),
     );
     reservation.spend = doclingLedger.spend();
     if (lane.status === "parsed") {
@@ -487,7 +572,13 @@ async function runClaimed(
   }
 
   const run = await runParseOnThread(bytes, fileName, mimeType, {
+    // 🔴 THE CACHE IS THE PARENT'S BECAUSE THE CREDENTIALS ARE. The parse thread holds no database
+    // client by design; it asks over the port and this side answers from `figure_descriptions`. A
+    // picture this learner has already paid to have described costs nothing and does not consume a
+    // unit of this document's vision budget.
+    figureCache: supabaseFigureCache(admin, job.user_id),
     heartbeat,
+    vendorAllowed,
     visionUnitBudget: reservation.granted,
   });
   // Recorded before the switch, so every outcome below — including the refusals and the
@@ -533,12 +624,97 @@ async function runClaimed(
       return await fail(new Error((run as { error: string }).error));
   }
 
-  return await finish(
-    await withStoredFigures(run.parsed as ParsedDocument, run.figures),
-    run.ms,
-    run.peakRssMb,
-  );
+  const parsed = await withStoredFigures(run.parsed as ParsedDocument, run.figures);
+  const finished = await finish(parsed, run.ms, run.peakRssMb);
+
+  // ── What this document actually cost ──────────────────────────────────────
+  //
+  // 🔴🔴 THREE PROVIDERS WERE COUNTED NOWHERE AT ALL UNTIL THIS BLOCK. Mistral OCR and LlamaParse
+  // are billed per page and no column, log line or metric had ever recorded a page of either.
+  // Gemini vision was counted in units with no price attached anywhere. So "why did this lecture
+  // cost forty cents" had no query behind it — not a hard one, none.
+  //
+  // 🔴 THE VENDOR'S UNIT COUNT IS THE DOCUMENT'S OWN, AND THAT IS EXACT RATHER THAN CONVENIENT.
+  // Mistral bills per page of what it was handed, and `coverage.units` on a vendor-read parse IS
+  // the pages it returned — the same number `parseWithVendor` billed against. Reading it off the
+  // finished parse costs nothing and cannot drift from what was recorded.
+  //
+  // Written after `finish`, so a document whose lease was lost records no spend it did not own.
+  if (finished.outcome === "parsed") {
+    const vendor = providerOfParserVersion(parsed.readBy);
+    if (vendor) {
+      await recordAiSpend(admin, {
+        durationMs: Math.round(run.ms),
+        model: parsed.readBy ?? "",
+        provider: vendor,
+        reason: parsed.routeReason ?? "unrecorded",
+        scope: { operation: "parse", sourceId: job.id },
+        units: parsed.coverage.units || 0,
+        userId: job.user_id,
+      });
+    }
+    const visionUnits = reservation.spend?.units ?? 0;
+    if (visionUnits > 0) {
+      await recordAiSpend(admin, {
+        provider: "gemini_vision",
+        scope: { operation: "figures", sourceId: job.id },
+        units: visionUnits,
+        userId: job.user_id,
+      });
+    }
+  }
+
+  // ── Did the cheap route actually get away with it? ─────────────────────────
+  //
+  // 🔴🔴 AFTER `finish`, ALWAYS, AND THAT ORDER IS THE SAFETY. The learner's parse is recorded and
+  // their placement is linked before a single shadow byte is sent. Nothing below can make them wait
+  // for their document, nothing below can fail it, and a shadow run that throws leaves a completed
+  // job behind it.
+  //
+  // 🔴 ONLY FOR PARSES NOBODY WAS BILLED FOR. A document that already went to the vendor has
+  // nothing to compare against itself; `readBy` naming a vendor is the exact test.
+  //
+  // 🔴 AND ONLY WITH TIME LEFT. A vendor read can take tens of seconds, and spending the worker's
+  // remaining deadline on bookkeeping would turn an observation into a killed job — which
+  // `fail_document_parse` would then record as this document's failure.
+  const wasVendorRead = (parsed.readBy ?? "").startsWith("mistral/") || (parsed.readBy ?? "").startsWith("llamaparse/");
+  const msLeft = DEADLINE_ABORT_MS - (Date.now() - startedAt);
+  if (finished.outcome === "parsed" && !wasVendorRead && msLeft > SHADOW_RESERVE_MS) {
+    try {
+      const shadow = await runShadowEvaluation({
+        admin,
+        bytes,
+        contentHash,
+        fileName,
+        kind: parsed.kind,
+        mimeType,
+        routeReason: parsed.routeReason ?? "unrecorded",
+        shipped: parsed,
+        sourceId: job.id,
+        userId: job.user_id,
+      });
+      if (!shadow.ran) {
+        console.info(JSON.stringify({ event: "parse_shadow_skipped", sourceId: job.id, why: shadow.why }));
+      }
+    } catch (cause) {
+      // A check that can break the thing it is checking is not a check.
+      console.warn(JSON.stringify({
+        event: "parse_shadow_failed",
+        detail: cause instanceof Error ? cause.message.slice(0, 200) : "unknown",
+      }));
+    }
+  }
+
+  return finished;
 }
+
+/**
+ * Time the worker keeps back for itself before it will start a shadow evaluation.
+ *
+ * A vendor read of a lecture is tens of seconds, and the worker aborts itself at `DEADLINE_ABORT_MS`.
+ * Starting one with less than this left trades a bookkeeping row for a killed invocation.
+ */
+const SHADOW_RESERVE_MS = 90_000;
 
 /**
  * Is this the last time this row will ever be handed out?
