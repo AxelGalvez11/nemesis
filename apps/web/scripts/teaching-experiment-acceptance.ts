@@ -20,6 +20,7 @@ import type { StoredObjective } from "@/lib/learn/learner-store";
 import { objectivesForKnowledge } from "@/lib/learn/learning-objective";
 import { supportedObjectives } from "@/lib/learn/policy-runtime";
 import { controllerFor } from "@/lib/learn/strategy-registry";
+import { ASSIGNABLE_STRATEGIES, conflictingStrategy, resolveStrategy } from "@/lib/learn/teaching-strategy";
 import type {
   StrategyOutcome,
   TeachingContext,
@@ -182,6 +183,89 @@ async function main(): Promise<void> {
         `  same move  ${structured.objective.identityKey === model.objective.identityKey && structured.action.type === model.action.type}`,
       );
     }
+
+    // ── ASSIGNMENT, WHICH EVERYTHING ABOVE DELIBERATELY BYPASSES ────────────────────────────────
+    //
+    // 🔴 THE CHECKS ABOVE CALL `controllerFor` DIRECTLY, so they prove both arms OPERATE and that a
+    // turn is attributed to the arm that chose it. They prove nothing about which arm a learner
+    // would actually have been given, because they never ask. That is the half the experiment
+    // cannot survive losing: a session that changes controller partway writes rows under two labels
+    // — or worse under one — and nothing computed afterwards can find them, because there is
+    // nothing wrong with any single row.
+    const assignmentInputs = { canvasId: crypto.randomUUID(), learnerId: userId, override: null };
+
+    // Stability. The mechanism is that assignment is DERIVED from (learner, canvas) rather than
+    // stored, so a reload, a second tab and a remount are all literally this call. Repeating it is
+    // the point: a version that held the arm in state would satisfy a single call too.
+    const enrolled = resolveStrategy({ ...assignmentInputs, randomise: true });
+    const stable = Array.from({ length: 50 }, () => resolveStrategy({ ...assignmentInputs, randomise: true }));
+    check(
+      "ASSIGNMENT-STABLE",
+      stable.every((a) => a.strategy === enrolled.strategy && a.assignedBy === enrolled.assignedBy),
+      `${enrolled.strategy} on all ${stable.length + 1} resolutions (${enrolled.assignedBy})`,
+    );
+
+    // 🔴 AND IT IS NOT STABLE BY BEING CONSTANT. A function that returned one arm for everybody
+    // would pass the check above perfectly. Assignment has to actually vary across canvases, or
+    // "stable" is describing a bug.
+    const spread = new Set(
+      Array.from({ length: 40 }, (_, index) =>
+        resolveStrategy({ canvasId: `canvas-${index}`, learnerId: userId, override: null, randomise: true }).strategy,
+      ),
+    );
+    check("ASSIGNMENT-VARIES", spread.size > 1, `${spread.size} distinct arms across 40 canvases`);
+
+    // Eligibility. Randomisation admits only canvases created after the dated rollout instant, and
+    // an anonymous session is excluded by construction — there is no learner to hold an outcome
+    // against, so enrolling one would generate arm-labelled rows nothing can ever join to a person.
+    check(
+      "ASSIGNMENT-UNENROLLED-IS-DEFAULT",
+      resolveStrategy({ ...assignmentInputs, randomise: false }).assignedBy === "default",
+      `a canvas outside the rollout runs ${resolveStrategy({ ...assignmentInputs, randomise: false }).strategy}`,
+    );
+    check(
+      "ASSIGNMENT-ANONYMOUS-EXCLUDED",
+      resolveStrategy({ canvasId: assignmentInputs.canvasId, learnerId: null, override: null, randomise: true })
+        .assignedBy === "default",
+      "a session with no learner is not enrolled",
+    );
+
+    // No mid-session switching. `conflictingStrategy` is the product's own detector, run here over
+    // rows built from the two decisions this run actually produced — so it is checked against real
+    // arm labels rather than invented ones.
+    //
+    // 🔴 AND IT IS CALIBRATED IN PLACE, because a detector that never fires is indistinguishable
+    // from a clean result. The poisoned canvas below must be caught; if it is not, the clean verdict
+    // above it means nothing.
+    const canvasId = assignmentInputs.canvasId;
+    const rowFor = (strategy: TeachingStrategyId, id: string) =>
+      ({
+        canvasId,
+        demonstrationObtained: true,
+        id,
+        objectiveIdentityKey: outcomes.get(strategy)?.decision?.objective.identityKey ?? "k",
+        occurredAt: new Date().toISOString(),
+        teachingStrategy: strategy,
+        verdict: "understood",
+      }) as never;
+
+    const oneArm = [rowFor(enrolled.strategy, "e1"), rowFor(enrolled.strategy, "e2")];
+    check(
+      "NO-MID-SESSION-SWITCH",
+      conflictingStrategy({ canvasId, evidence: oneArm, running: enrolled.strategy }) === null,
+      `${oneArm.length} rows on one canvas, all ${enrolled.strategy}`,
+    );
+
+    const other = ASSIGNABLE_STRATEGIES.find((arm) => arm !== enrolled.strategy)!;
+    check(
+      "SWITCH-DETECTOR-FIRES",
+      conflictingStrategy({
+        canvasId,
+        evidence: [...oneArm, rowFor(other, "e3")],
+        running: enrolled.strategy,
+      }) === other,
+      `a canvas carrying both arms is reported as ${other}`,
+    );
 
     console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}`);
     if (failures > 0) process.exitCode = 1;
