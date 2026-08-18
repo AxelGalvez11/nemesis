@@ -80,6 +80,72 @@ const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST') ?? 'https://us.i.posthog.com'
 // 2026-08-06 — the one rate here that is published per REQUEST rather than inferred,
 // and less than a third of what the same search costs at Tavily.
 const UNIT_USD: Record<string, number> = { brave: 0.005, firecrawl: 0.01, linkup: 0.005, tavily: 0.016 }
+
+// ── Not asking the same question twice ──────────────────────────────────────
+//
+// 🔴 THE WINDOW IS A SESSION, NOT A DAY. This lane also serves questions about NOW — the router
+// sends "what happened today" through it — so a long cache would answer current events with stale
+// ones. Twenty minutes covers a conversation, a reload and a second look, and nothing further.
+const SEARCH_CACHE_TTL_SECONDS = 20 * 60
+
+/** The identity of a question, normalised so trivial differences are the same question. PURE. */
+function searchCacheKey(query: string): string {
+  return query.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500)
+}
+
+/** A stored answer to this learner's question, or null. Never throws: a cache that cannot be read
+ *  is a cache that misses, and a miss is exactly what happened before this existed. */
+async function cachedSearch(userId: string, query: string): Promise<unknown | null> {
+  const key = searchCacheKey(query)
+
+  if (!key) return null
+
+  try {
+    const { data, error } = await admin
+      .from('web_search_cache')
+      .select('response')
+      .eq('user_id', userId)
+      .eq('query_key', key)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
+
+    if (error || !data?.response) return null
+
+    return data.response
+  } catch {
+    return null
+  }
+}
+
+/** Remember one answer and hand the caller back an equivalent Response.
+ *
+ *  🔴 THE BODY IS CONSUMED HERE, SO A NEW ONE IS BUILT. A `Response` body is a stream: reading it
+ *  to store it would leave the caller holding an empty one, which is the kind of bug that looks
+ *  like an outage in the provider rather than a mistake in the cache. */
+async function cacheAndReturn(userId: string, query: string, response: Response): Promise<Response> {
+  const text = await response.text()
+  const key = searchCacheKey(query)
+
+  if (key) {
+    try {
+      const parsed = JSON.parse(text) as unknown
+
+      await admin.from('web_search_cache').upsert(
+        {
+          expires_at: new Date(Date.now() + SEARCH_CACHE_TTL_SECONDS * 1_000).toISOString(),
+          query_key: key,
+          response: parsed,
+          user_id: userId
+        },
+        { onConflict: 'user_id,query_key' }
+      )
+    } catch {
+      // A body that is not JSON, or a write that failed: the caller still gets their answer.
+    }
+  }
+
+  return new Response(text, { headers: { 'Content-Type': 'application/json' }, status: 200 })
+}
 const PRICE_REV = '2026-08-06'
 
 /** Which app is calling. MIRROR of resolveClient in _shared/llm-cost.ts. */
@@ -348,6 +414,29 @@ async function linkupSearch(body: Record<string, unknown>): Promise<Response | n
   })
 }
 
+/**
+ * One search answered from the cache: an event, and no meter movement.
+ *
+ * 🔴 `cost_credits: 0` AND NO COUNTER UPSERT, DELIBERATELY. `usage_events` serves two ledgers — the
+ * learner's entitlement meter and our provider bill — and this row belongs to neither in the usual
+ * way: nobody was billed, and nobody should be charged an allowance for it. What it IS is the only
+ * evidence that the cache is doing anything, so it is written rather than skipped.
+ */
+async function recordCacheHit(ctx: KeyContext, detail: string, client: string): Promise<void> {
+  try {
+    await admin.from('usage_events').insert({
+      cost_credits: 0,
+      counter_key: COUNTER_KEY,
+      event_type: 'nemesis_search_cache_hit',
+      metadata: { client, cost_usd: 0, detail: detail.slice(0, 200), kind: 'search', price_rev: PRICE_REV, provider: 'cache' },
+      period_start: ctx.periodStart,
+      user_id: ctx.userId
+    })
+  } catch {
+    // A missing observation is not a reason to fail a search the learner already has.
+  }
+}
+
 /** Record one spent unit against today's + this month's counters + the event ledger,
  *  and report what that unit cost us. `provider` is whichever upstream actually
  *  answered — they charge different rates, so the cheapest-first routing only shows
@@ -490,12 +579,42 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
   // shows up in the cost numbers if the winner is recorded honestly.
   // Brave/Tavily/Linkup have no scrape role, so SCRAPES go straight to Firecrawl.
   if (route === '/v2/search') {
+    // ── The same question, asked again ──────────────────────────────────────
+    //
+    // 🔴🔴 THE OWNER'S RULE: *"Do not repeatedly search for the same fact or repeatedly reacquire
+    // the same source when durable grounding already exists."* A chat turn that searches, an
+    // immediate follow-up that searches the same thing, and a page reload that searches it a third
+    // time were three billed searches for one question. Nothing looked.
+    //
+    // 🔴 SHORT, BECAUSE THIS LANE IS ALSO THE "CURRENT EVENTS" LANE. `classifyChatRequest` routes a
+    // question ABOUT NOW through here, and a cache measured in hours would answer today's news with
+    // yesterday's. The window is set to cover a session — a conversation, a reload, a second look —
+    // and nothing beyond it.
+    //
+    // 🔴 PER LEARNER, for the reason every other cache in this system is: a search result is a
+    // record that a particular person asked a particular question.
+    const cached = await cachedSearch(ctx.userId, detail)
+
+    if (cached) {
+      // 🔴 RECORDED, BUT NOT METERED. The event is written so the cache-hit rate is countable —
+      // a saving that leaves no trace is indistinguishable from a lane that stopped being used —
+      // and the learner's daily and monthly UNIT counters are deliberately not touched. A search
+      // nobody paid for must not spend somebody's allowance, or the cache would give with one hand
+      // and take with the other.
+      void recordCacheHit(ctx, detail, client)
+
+      return json(cached, 200)
+    }
+
     const brave = await braveSearch(body)
 
     if (brave) {
       void recordUsage(ctx, 'search', detail, 'brave', client)
 
-      return brave
+      // 🔴 THE BODY IS READ ONCE AND RE-SENT, because a Response body is a stream and reading it to
+      // cache it would leave the caller with an empty one. `storeSearch` is handed the parsed
+      // object and a fresh Response is built from it.
+      return await cacheAndReturn(ctx.userId, detail, brave)
     }
 
     const primary = await tavilySearch(body)
@@ -503,7 +622,10 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     if (primary) {
       void recordUsage(ctx, 'search', detail, 'tavily', client)
 
-      return primary
+      // 🔴 THE BODY IS READ ONCE AND RE-SENT, because a Response body is a stream and reading it to
+      // cache it would leave the caller with an empty one. `storeSearch` is handed the parsed
+      // object and a fresh Response is built from it.
+      return await cacheAndReturn(ctx.userId, detail, primary)
     }
 
     const secondary = await linkupSearch(body)
@@ -511,7 +633,10 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     if (secondary) {
       void recordUsage(ctx, 'search', detail, 'linkup', client)
 
-      return secondary
+      // 🔴 THE BODY IS READ ONCE AND RE-SENT, because a Response body is a stream and reading it to
+      // cache it would leave the caller with an empty one. `storeSearch` is handed the parsed
+      // object and a fresh Response is built from it.
+      return await cacheAndReturn(ctx.userId, detail, secondary)
     }
   }
 

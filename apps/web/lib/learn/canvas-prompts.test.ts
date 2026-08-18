@@ -3,7 +3,25 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { LEVEL_INSTRUCTIONS } from "./canvas-model";
-import { commandMessages, documentText, evaluationMessages, lessonMessages, territoryMessages } from "./canvas-prompts";
+import {
+  causalMessages,
+  commandMessages,
+  documentText,
+  evaluationMessages,
+  explainBlockMessages,
+  lessonMessages,
+  recallMessages,
+  relearnMessages,
+  selectionMessages,
+  simplifyMessages,
+  teachingMessages,
+  territoryMessages,
+  testMessages,
+} from "./canvas-prompts";
+import type { CanvasBlock } from "./canvas-model";
+
+/** The smallest real block a builder will accept. */
+const BLOCK: CanvasBlock = { content: "A paragraph.", id: "b1", type: "paragraph" };
 
 test("🔴 NO EM DASHES: every system prompt carries the rule, not just the shared one", () => {
   // Owner rule. It binds what NEMESIS WRITES, which is almost everything on the Canvas below the
@@ -14,18 +32,66 @@ test("🔴 NO EM DASHES: every system prompt carries the rule, not just the shar
   // judge's own, and the judge writes the FEEDBACK a learner reads — the exact surface the owner
   // was looking at when they made the rule. Asserting "the shared prompt has it" would have passed
   // while that one leaked. A twelfth builder added later fails this until it opts in.
-  const source = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
-  const systemPrompts = (source.match(/role: "system"/g) ?? []).length;
-  const viaShared = (source.match(/content: CANVAS_SYSTEM/g) ?? []).length;
-  const viaExplicit = (source.match(/NO_EM_DASH,/g) ?? []).length;
+  //
+  // 🔴 `canvasSystem(...)` IS THE THIRD CARRIER AND IT ARRIVED WITH THE PROMPT-CACHE WORK. It puts
+  // `CANVAS_SYSTEM` first and appends this job's invariant rules after it, so the identity — and
+  // with it this rule — still reaches every builder that uses it. A count that knew only about the
+  // literal `content: CANVAS_SYSTEM` went red on that refactor while nothing about the invariant
+  // had changed, which is exactly the "pinned to incidental text" failure the DOCX branch test
+  // above records.
+  // 🔴 CHECKED BY CALLING EVERY BUILDER, NOT BY COUNTING STRINGS IN THE FILE. The count-based
+  // version of this test went red on a refactor that moved each job's invariant rules into its
+  // system message for prompt caching — nothing about the invariant had changed, only the shape of
+  // the line that carried it. A guard pinned to incidental text cannot tell a defect from a
+  // rename, which is the failure the DOCX branch test in parse-document.test.ts already records.
+  // Calling the builders asks the question that actually matters: does the instruction reach the
+  // model.
+  const systemOf = (messages: { role: string; content: string }[]) =>
+    messages.filter((message) => message.role === "system").map((message) => message.content);
 
-  assert.ok(systemPrompts > 0, "there must be system prompts to check");
-  assert.equal(
-    viaShared + viaExplicit,
-    systemPrompts,
-    `${systemPrompts} system prompts but only ${viaShared + viaExplicit} carry the no-em-dash rule — ` +
-      "a new prompt must either use CANVAS_SYSTEM or append NO_EM_DASH",
-  );
+  const everyBuilder: Record<string, string[]> = {
+    causal: systemOf(causalMessages({ sources: [], topic: "t" })),
+    command: systemOf(commandMessages({ blocks: [], canvasTitle: "c", command: "x", concepts: [], level: null, selected: [], sources: [] })),
+    evaluation: systemOf(
+      evaluationMessages({
+        concepts: [],
+        expectedEvidence: {},
+        objective: { conceptId: "k1", label: "l" },
+        prompt: "p",
+        response: { text: "a", via: "typed" },
+        task: "explain",
+      }),
+    ),
+    explainBlock: systemOf(explainBlockMessages({ block: BLOCK, canvasTitle: "c", command: "why", sources: [] })),
+    lesson: systemOf(lessonMessages({ level: null, sources: [], topic: "x" })),
+    recall: systemOf(recallMessages({ blocks: [BLOCK], canvasTitle: "c", concepts: [], count: 4 })),
+    relearn: systemOf(relearnMessages({ canvasTitle: "c", level: null, misses: [], relevantBlocks: [], sources: [], weak: [] })),
+    selection: systemOf(selectionMessages({ action: "define", canvasTitle: "c", selectedText: "s", sources: [], surroundingText: "t" })),
+    simplify: systemOf(simplifyMessages({ block: BLOCK, canvasTitle: "c", selectedText: "s", sources: [] })),
+    teaching: systemOf(
+      teachingMessages({
+        action: { because: "they said the opposite", missing: ["m"], type: "correct" },
+        canvasTitle: "c",
+        demonstrated: [],
+        level: null,
+        objectiveId: "k1",
+        objectiveLabel: "l",
+        prompt: "p",
+        said: "s",
+        scope: [BLOCK],
+        sources: [],
+      }),
+    ),
+    territory: systemOf(territoryMessages({ count: 8, sources: [], topic: "t" })),
+    test: systemOf(testMessages({ blocks: [BLOCK], canvasTitle: "c", concepts: [], count: 4, format: "free" })),
+  };
+
+  for (const [name, prompts] of Object.entries(everyBuilder)) {
+    assert.ok(prompts.length > 0, `${name} must have a system prompt`);
+    for (const prompt of prompts) {
+      assert.ok(prompt.includes("Never use an em dash"), `${name}'s system prompt must carry the rule`);
+    }
+  }
 
   // And the rule genuinely reaches the wire, rather than merely existing in the module.
   const system = lessonMessages({ level: null, sources: [], topic: "x" })
@@ -373,4 +439,48 @@ test("🔴 the written guidance names no subject, so it reads the same for a dia
     /\b(equation|algebra|chemistry|physics|molecule|reaction|statute|calculus)\b/i,
     "a rule that only makes sense for one field is wrong here",
   );
+});
+
+test("🔴 the stable prefix is stable, and big enough to be worth caching", () => {
+  // 🔴 THIS IS A COST GUARD AND IT HAS TO BE MEASURED, NOT ASSERTED IN PROSE. Providers price a
+  // request by its longest common prefix with a recent one — DeepSeek's cached input is $0.0028 per
+  // million against $0.14, fifty times cheaper — so what decides how much of a turn qualifies is
+  // how much BYTE-IDENTICAL text sits ahead of the first volatile character.
+  //
+  // Before the prompt-cache work every canvas builder put a ~630-character identity in the system
+  // message and then opened the user message with the most volatile sentence in the request. The
+  // ~2,500 characters of block shape, term rules, visual rules and citation rules that are
+  // identical on every single turn sat AFTER that, uncacheable, and were paid for at full price on
+  // every answer a learner gave.
+  const turn = (objective: string) =>
+    teachingMessages({
+      action: { because: "they said the opposite", missing: ["m"], type: "correct" },
+      canvasTitle: "Pharmacology 2",
+      demonstrated: [],
+      level: null,
+      objectiveId: "k1",
+      objectiveLabel: objective,
+      prompt: "Why does it act?",
+      said: "Because of the thing",
+      scope: [BLOCK],
+      sources: [],
+    });
+
+  const first = turn("the first objective");
+  const second = turn("a completely different objective");
+  const systemOf = (messages: { role: string; content: string }[]) =>
+    messages.filter((message) => message.role === "system").map((message) => message.content).join("");
+
+  assert.equal(systemOf(first), systemOf(second), "the system message must not vary with the turn");
+  assert.ok(
+    systemOf(first).length > 2_000,
+    `the cacheable prefix is only ${systemOf(first).length} characters — the invariant rules have leaked back into the user message`,
+  );
+
+  // 🔴 AND NOTHING VOLATILE MAY BE IN IT. A scope of block ids frozen into a shared prefix is a
+  // licence to rewrite the wrong paragraph on the next turn; an objective id frozen into a JSON
+  // schema files evidence against the wrong concept. Both are silent.
+  assert.doesNotMatch(systemOf(first), /Pharmacology 2/);
+  assert.doesNotMatch(systemOf(first), /the first objective/);
+  assert.doesNotMatch(systemOf(first), /\bb1\b/);
 });
