@@ -1363,9 +1363,26 @@ export function usePolicyRuntime(
   // 🔴 IT ALSO CARRIES THE BRAIN'S OWN PAIR OUT UNTOUCHED. `operation` and `knowledgeType` are the
   // policy's decision; the runtime hands them to the surface so a presentation can differ by
   // cognitive demand (§9, §14.6) without re-deriving what the demand IS.
+  //
+  // 🔴🔴 RECOGNITION HOSTS A TASK TOO, AND LEAVING IT OUT WAS THE SECOND HALF OF THE SWALLOWED-ANSWER
+  // DEFECT. `awaitingAnswer` has always covered `retrieve` AND `recognise`; this built a task only
+  // for `retrieve`, so during a multiple-choice question `answerSink` resolved to `none` — and a
+  // learner who typed instead of tapping had their text routed to `begin()` on a pre-content canvas
+  // and to `onAsk` everywhere else. Either way the judge never saw it and no row was written.
+  //
+  // The comment this replaces reasoned *"the options ARE the answer, so the composer does not
+  // receive one"*. The options are AN answer surface; the composer is the primary one, and §2 of the
+  // owner's directive is that every modality converges on one pipeline. Someone who reads four
+  // options and types the answer in their own words has produced MORE than a tap, not less — and the
+  // row still files at `rung: "recognition"`, `scaffoldingLevel: OPTIONS_ON_SCREEN`, because that
+  // number says how much help was on the table, never whether the learner needed it.
+  //
+  // 🔴 TAPPING IS UNCHANGED. `CanvasPolicyView` still renders the options and still calls
+  // `runtime.choose`, which deliberately does not consult the judge. This adds a second way in, it
+  // does not move the first.
   const task: HostedTask | null = useMemo(() => {
     if (status !== "ready" || feedback || !decision || !prompt) return null;
-    if (decision.action.type !== "retrieve") return null;
+    if (decision.action.type !== "retrieve" && decision.action.type !== "recognise") return null;
     const knowledgeType = decision.knowledge.type;
     const operation = prompt.operation;
     return {

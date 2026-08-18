@@ -114,23 +114,29 @@ test("🔴 the review step owns the only submit control that a low-confidence re
   assert.match(review, /mark\.legible \? mark\.text : ""/, "a gap must not be seeded with our description of it as if they wrote it");
 });
 
-test("🔴 the state that makes the sheet scratch paper is actually reachable", () => {
-  // 🔴 THE COMPOSER-SIDE TEST ABOVE CANNOT SEE THIS. It asserts the control is gated on
-  // `inSession`, which is only the deliverable if `inSession` is genuinely broader than
-  // `answering`. If the caller passed the same condition to both, the pencil would appear exactly
-  // when a question was open, the affordance would not exist, and that test would still be green.
+test("🔴 the sheet's reachability and its submit control are two different gates", () => {
+  // 🔴 THE PREVIOUS VERSION OF THIS TEST ASSERTED A GAP THAT DOES NOT EXIST, BY MATCHING SOURCE
+  // STRINGS. It read `inSession={sink.kind === "policy"}` out of the canvas and the literal
+  // `const answering = Boolean(task && !task.answered && task.placeholder);` out of the composer,
+  // and concluded from the two SPELLINGS that `inSession` was broader — "reading feedback after an
+  // answer is one state in the gap". It is not: `use-policy-runtime` hosts no task while feedback
+  // is on screen, so the sink is `none` and `inSession` is false there too. A hosted policy task is
+  // always `answered: false` with a placeholder, so the two conditions coincide at runtime. The
+  // guard passed because the strings differed, not because the behaviour did.
   //
-  // `inSession={sink.kind === "policy"}` is true for the whole policy-owned session, while
-  // `answering = Boolean(task && !task.answered && task.placeholder)` additionally requires an
-  // unanswered task with a prompt. Reading feedback after an answer is one state in the gap, which
-  // is exactly the moment someone reaches for paper to work the next thing out.
-  const canvas = code("learning-canvas.tsx");
-  assert.match(canvas, /inSession=\{sink\.kind === "policy"\}/, "the sheet's reachability comes from session ownership");
+  // What is genuinely load-bearing, and is what this now checks: they are SEPARATE gates reading
+  // one decision, so widening the session gate later cannot silently hand someone a submit control
+  // over a question that is not open. `promptId={answering ? taskId : null}` is asserted above.
   const composer = code("canvas-composer.tsx");
   assert.match(
     composer,
-    /const answering = Boolean\(task && !task\.answered && task\.placeholder\);/,
-    "answering must stay strictly narrower than inSession, or the two collapse and the affordance disappears",
+    /const answering = intent\.kind === "answer";/,
+    "answering must come from the one intent, not be re-derived from a task shape",
+  );
+  assert.match(
+    composer,
+    /const inSession = intent\.kind === "answer" && intent\.sink === "policy";/,
+    "the session gate must be its own expression, or the two collapse into one and cannot diverge",
   );
 });
 

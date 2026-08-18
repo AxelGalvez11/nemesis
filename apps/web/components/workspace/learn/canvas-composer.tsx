@@ -49,13 +49,13 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
 import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model";
 import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
+import type { ComposerIntent } from "@/lib/learn/composer-intent";
 import { cn } from "@/lib/utils";
 
 import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
 import { WrittenWorkSheet } from "./written-work-sheet";
-import type { ActiveTask } from "./use-canvas-session";
 
 interface CanvasComposerProps {
   selected: readonly CanvasBlock[];
@@ -78,19 +78,28 @@ interface CanvasComposerProps {
    * this way: upload and record are both ways of bringing material in.
    */
   onRecord?: (() => void) | null;
-  /** What the canvas is asking for, or null while reading. */
-  task: ActiveTask | null;
+  /**
+   * 🔴🔴🔴 WHAT SUBMITTING MEANS RIGHT NOW. ONE VALUE, DECIDED BY THE CALLER, NEVER RE-DERIVED HERE.
+   *
+   * This replaces `task: ActiveTask | null` plus the presence of `onStart` plus `inSession` — three
+   * props that each independently implied a meaning, ordered by an `if` chain in `submit()`:
+   *
+   *     if (onStart) onStart(value);
+   *     else if (answering) onAnswer(value, …);
+   *     else onAsk(value);
+   *
+   * whose own comment claimed *"the caller only passes `onStart` in exactly that state, so this
+   * branch cannot capture a genuine answer"*. The caller was quietly breaking that invariant on
+   * every canvas that had material attached and had never had send pressed, which is most of them:
+   * a real question was on screen, `Submit answer` was on the button, and the answer went to
+   * `begin()` — a model call, a re-titled canvas, a different question, and no evidence row.
+   *
+   * Now there is one union that cannot hold two meanings and this component switches on it. See
+   * composer-intent.ts for the full account and for why `answer` outranks `start`.
+   */
+  intent: ComposerIntent;
   busy: boolean;
   busyLabel?: string;
-  /**
-   * A learning session is underway.
-   *
-   * 🔴 REMOVES THE ATTACH CONTROL, NOT THE ABILITY TO ATTACH. Mid-session is not an ingestion
-   * state: the learner is producing an answer, and a `+` sitting to the left of the cursor is a
-   * second affordance in the one place there should be exactly one. Adding material is still how a
-   * canvas starts — the control lives on the home and pre-session composer, where it is the point.
-   */
-  inSession?: boolean;
   /**
    * A nonce that opens dictation when it changes — voice mode's hands-free loop.
    *
@@ -161,7 +170,7 @@ interface CanvasComposerProps {
    * refusal that used to sit in `submit()` — `if (!value) return;` — silently threw exactly that
    * case away.
    */
-  onStart?: ((text: string) => void) | null;
+  onStart: (text: string) => void;
 }
 
 /** Grows to about six lines, then stops. Beyond that the box would eat the question. */
@@ -174,13 +183,12 @@ export function CanvasComposer({
   onAnswer,
   onFiles,
   onRecord = null,
-  task,
+  intent,
   busy,
   busyLabel,
-  inSession = false,
   advanceBusy = false,
   pendingSources = [],
-  onStart = null,
+  onStart,
   listenSignal = null,
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
@@ -241,10 +249,22 @@ export function CanvasComposer({
    *  mid-answer throws away neither half. */
   const typedBefore = useRef("");
 
-  // An unanswered prompt makes this the answer surface. Once it is answered the canvas shows
-  // feedback, and the composer goes back to being somewhere to ask about that feedback.
-  const answering = Boolean(task && !task.answered && task.placeholder);
-  const taskId = task?.id ?? null;
+  // 🔴 READ OFF THE INTENT, NEVER RE-DERIVED. `Boolean(task && !task.answered && task.placeholder)`
+  // used to live here, which meant two files each deciding whether a task was answerable — and the
+  // one that mattered for ROUTING was neither of them, it was whether `onStart` happened to be
+  // non-null. There is one decision now and it was made before this component rendered.
+  const answering = intent.kind === "answer";
+  const taskId = intent.kind === "answer" ? intent.task.id : null;
+  /** A learning session is underway: the policy is waiting on a performance.
+   *
+   * 🔴 REMOVES THE ATTACH CONTROL, NOT THE ABILITY TO ATTACH. Mid-session is not an ingestion
+   * state: the learner is producing an answer, and a `+` sitting to the left of the cursor is a
+   * second affordance in the one place there should be exactly one. Adding material is still how a
+   * canvas starts — the control lives on the home and pre-session composer, where it is the point.
+   *
+   * 🔴 DERIVED, NOT A PROP. It was `inSession={sink.kind === "policy"}` passed in beside `task` and
+   * `onStart`; three props saying overlapping things about one state is how they came apart. */
+  const inSession = intent.kind === "answer" && intent.sink === "policy";
 
   useEffect(() => {
     setText("");
@@ -301,8 +321,12 @@ export function CanvasComposer({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /** Material is waiting and the canvas has not begun — so an empty box is still submittable. */
-  const canStartFromAttachment = Boolean(onStart) && pendingSources.length > 0;
+  /** Material is waiting and the canvas has not begun — so an empty box is still submittable.
+   *
+   *  🔴 `intent.kind === "start"`, NOT `Boolean(onStart)`. The handler is always passed now; whether
+   *  it is the RIGHT one is the intent's decision, and asking "were we given a function?" is exactly
+   *  the reasoning that routed answers into `begin()`. */
+  const canStartFromAttachment = intent.kind === "start" && pendingSources.length > 0;
 
   const submit = () => {
     const value = text.trim();
@@ -319,15 +343,16 @@ export function CanvasComposer({
     // typing is the learner answering "the obvious thing", and the caller resolves what that is.
     if (!value && !canStartFromAttachment && selected.length === 0) return;
     setText("");
-    // 🔴 The routing that replaces a second composer. Same box, same key, different meaning —
-    // decided by whether the canvas is currently asking for something.
+    // 🔴🔴 ONE SWITCH ON ONE VALUE. Same box, same key, different meaning — and the meaning was
+    // decided once, by `composerIntent`, from the live surface rather than from which handlers this
+    // component happens to hold.
     //
-    // 🔴 STARTING OUTRANKS BOTH OTHER ROUTES. On a canvas that has not begun there is nothing to
-    // answer and nothing to ask ABOUT — `onAsk` there would question a canvas with no content. The
-    // caller only passes `onStart` in exactly that state, so this branch cannot capture a genuine
-    // answer or a mid-lesson question.
-    if (onStart) onStart(value);
-    else if (answering) onAnswer(value, inputModality.current, Date.now() - startedAt.current);
+    // 🔴 DO NOT REINTRODUCE `if (onStart) … else if (answering) …`. That ordering is the defect:
+    // `onStart` was non-null on every canvas whose stored state had not advanced, which includes
+    // every canvas with a question staged on attached material, and it silently outranked a real
+    // answer to a real question. `answer-is-not-a-start.test.ts` fails if the precedence returns.
+    if (intent.kind === "answer") onAnswer(value, inputModality.current, Date.now() - startedAt.current);
+    else if (intent.kind === "start") onStart(value);
     else onAsk(value);
     modalityEvent({ kind: "submitted" });
     typedBefore.current = "";
@@ -455,7 +480,12 @@ export function CanvasComposer({
             🔴 NOT SHOWN WHILE DICTATING, like the selection chip below it — the composer becomes a
             waveform in that state and a stack of chips over it is exactly the second card the
             file header says dictation must never grow. */}
-        {pendingSources.length > 0 && !listening && (
+        {/* 🔴 GATED ON THE INTENT, NOT ON THE LIST BEING NON-EMPTY. The caller used to withhold the
+            sources (`pendingSources={preContent ? … : []}`), which was a SECOND reading of the same
+            stale predicate that swallowed typed answers — and with the predicate fixed in one place
+            and not the other, a canvas asking a question still displayed "nothing has started yet"
+            chips underneath it. `canStartFromAttachment` is the one question, asked once. */}
+        {canStartFromAttachment && !listening && (
           <div className="mb-1.5 ml-1 flex flex-wrap items-center gap-1.5">
             {pendingSources.map((source) => (
               <span
@@ -673,8 +703,8 @@ export function CanvasComposer({
                         // nothing typed is a real option, because §3 makes it one.
                         canStartFromAttachment
                         ? START_WITH_MATERIAL_PLACEHOLDER
-                        : answering
-                          ? (task?.placeholder ?? ASK_PLACEHOLDER)
+                        : intent.kind === "answer"
+                          ? (intent.task.placeholder || ASK_PLACEHOLDER)
                           : ASK_PLACEHOLDER
                 }
                 ref={input}
