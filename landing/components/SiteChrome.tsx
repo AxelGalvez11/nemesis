@@ -27,7 +27,6 @@ export type BillingInterval = "monthly" | "annual";
  */
 export function planCheckoutUrl(interval: BillingInterval): string {
   return `https://app.enternemesis.com/pricing?interval=${interval}`;
-}`;
 }
 
 // The cursor-following card glow lived here until 2026-07-28: a rAF-throttled

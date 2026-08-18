@@ -157,6 +157,11 @@ const CUSTOMER_COPY_FILES = [
   "apps/web/components/workspace/onboarding/step-upgrade.tsx",
   "landing/app/pricing/page.tsx",
   "landing/components/PricingPlans.tsx",
+  // The phone paywall counts. It said "20 recording hours a month" rather than
+  // "20 hours of lecture recording", which is why a search for the web wording
+  // missed it once and left the phone advertising the old allowance -- hence the
+  // deliberately loose patterns below rather than a fixed phrase.
+  "apps/mobile/src/lib/purchases-logic.ts",
 ] as const;
 
 test("🔴 no customer-facing surface advertises lecture recording hours any more", () => {

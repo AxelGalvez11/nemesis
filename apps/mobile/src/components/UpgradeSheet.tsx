@@ -99,7 +99,7 @@ export function UpgradeSheet({
           testID={`upgrade-${option.identifier}`}
         >
           <View style={styles.planText}>
-            <Text style={styles.planName}>{paywallPlanName(option.identifier)}</Text>
+            <Text style={styles.planName}>{paywallPlanName()}</Text>
             <Text style={styles.planPitch}>{paywallPlanPitch(option.identifier)}</Text>
             {option.trialAvailable ? <Text style={styles.planTrial}>7 days free, then {option.priceString}/month</Text> : null}
           </View>

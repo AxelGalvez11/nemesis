@@ -1,54 +1,75 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   orderedPaywallPackages,
+  paywallInterval,
   paywallPlanName,
   paywallPlanPitch,
   planFromActiveEntitlements,
 } from "./purchases-logic.ts";
 
-Deno.test("pro entitlement outranks plus when both are active", () => {
-  assertEquals(planFromActiveEntitlements(["plus", "pro"]), "pro");
-  assertEquals(planFromActiveEntitlements(["pro", "plus"]), "pro");
-});
+// 🔴 THIS FILE USED TO ASSERT A RANKING ("pro outranks plus"). There is one paid
+// product now, so any recognised entitlement grants the whole thing and there is
+// nothing left to rank. The property worth keeping is the one that protected
+// subscribers: an unknown id can only fail to grant.
 
-Deno.test("a single active entitlement maps to its plan", () => {
-  assertEquals(planFromActiveEntitlements(["plus"]), "plus");
-  assertEquals(planFromActiveEntitlements(["pro"]), "pro");
+Deno.test("any recognised entitlement grants Nemesis", () => {
+  assertEquals(planFromActiveEntitlements(["nemesis"]), "nemesis");
+  assertEquals(planFromActiveEntitlements(["plus"]), "nemesis");
+  assertEquals(planFromActiveEntitlements(["pro"]), "nemesis");
+  assertEquals(planFromActiveEntitlements(["plus", "pro"]), "nemesis");
 });
 
 Deno.test("no entitlements, or only unknown ids, grant nothing", () => {
   assertEquals(planFromActiveEntitlements([]), null);
   // The dead demo entitlement from June must never grant a plan.
   assertEquals(planFromActiveEntitlements(["Pharma Orb Pro"]), null);
+  assertEquals(planFromActiveEntitlements(["platinum"]), null);
 });
 
-Deno.test("paywall shows Plus first, Pro second, whatever order RevenueCat sends", () => {
-  const shuffled = [{ identifier: "pro_monthly" }, { identifier: "plus_monthly" }];
+Deno.test("the dashboard's current ids still work, and the new ones already do", () => {
+  // The RevenueCat project still says plus/pro. Reconfiguring it must not need
+  // an app release, and this app already understands what it will say.
+  const legacy = [{ identifier: "pro_monthly" }, { identifier: "plus_monthly" }];
+  assertEquals(orderedPaywallPackages(legacy).length, 2);
+  const renamed = [{ identifier: "nemesis_annual" }, { identifier: "nemesis_monthly" }];
   assertEquals(
-    orderedPaywallPackages(shuffled).map((p) => p.identifier),
-    ["plus_monthly", "pro_monthly"],
+    orderedPaywallPackages(renamed).map((p) => p.identifier),
+    ["nemesis_monthly", "nemesis_annual"],
+    "monthly is shown first",
   );
 });
 
 Deno.test("unrecognised packages are dropped, not rendered", () => {
   const withStray = [
-    { identifier: "plus_monthly" },
+    { identifier: "nemesis_monthly" },
     { identifier: "$rc_lifetime" },
-    { identifier: "pro_monthly" },
+    { identifier: "nemesis_annual" },
   ];
   assertEquals(orderedPaywallPackages(withStray).length, 2);
 });
 
 Deno.test("a missing package simply leaves its card out", () => {
   assertEquals(
-    orderedPaywallPackages([{ identifier: "pro_monthly" }]).map((p) => p.identifier),
-    ["pro_monthly"],
+    orderedPaywallPackages([{ identifier: "nemesis_annual" }]).map((p) => p.identifier),
+    ["nemesis_annual"],
   );
 });
 
-Deno.test("names and pitches match the store listing", () => {
-  assertEquals(paywallPlanName("plus_monthly"), "Nemesis Plus");
-  assertEquals(paywallPlanName("pro_monthly"), "Nemesis Pro");
-  assertEquals(paywallPlanPitch("pro_monthly"), "70 recording hours a month and the highest AI limits");
-  assertEquals(paywallPlanPitch("plus_monthly"), "30 recording hours a month and higher AI limits");
+Deno.test("one product, so one name", () => {
+  assertEquals(paywallPlanName(), "Nemesis");
+});
+
+Deno.test("🔴 the paywall no longer sells recording hours", () => {
+  for (const id of ["nemesis_monthly", "nemesis_annual", "plus_monthly", "pro_monthly"]) {
+    const pitch = paywallPlanPitch(id);
+    assertEquals(/recording|lecture|transcription|hours/i.test(pitch), false, pitch);
+  }
+});
+
+Deno.test("the interval is display only, and reads off the identifier", () => {
+  assertEquals(paywallInterval("nemesis_annual"), "annual");
+  assertEquals(paywallInterval("nemesis_monthly"), "monthly");
+  assertEquals(paywallInterval("pro_monthly"), "monthly");
+  // An unknown shape defaults to monthly rather than claiming a yearly charge.
+  assertEquals(paywallInterval("something_else"), "monthly");
 });
