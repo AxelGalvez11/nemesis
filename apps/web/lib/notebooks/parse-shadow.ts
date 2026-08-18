@@ -285,6 +285,9 @@ export async function runShadowEvaluation(
   if (vendorDocument) {
     await recordAiSpend(input.admin, {
       durationMs: vendorMs,
+      // The vendor stamps its own provenance onto the coverage it returns, and for LlamaParse that
+      // names the TIER — which is what prices the row exactly instead of at a ceiling.
+      model: vendorDocument.coverage.parserVersion ?? "",
       provider: input.kind === "pdf" ? "mistral_ocr" : "llamaparse",
       reason: `shadow:${input.routeReason}`,
       scope: { operation: "shadow-eval", sourceId: input.sourceId },

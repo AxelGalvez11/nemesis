@@ -374,3 +374,32 @@ summed as zero.
 * **The vision price** (`UNIT_PRICE_USD.gemini_vision`) is the row to distrust first: Gemini
   bills images as input tokens, so a per-image price is an average over a token count that
   varies with resolution.
+
+### Correction, price revision `2026-08-18b`
+
+The first rate card was wrong on **both paid parsers, in the same direction, by about four
+times**, and the report could not have shown it.
+
+| | was | is | why |
+|---|---|---|---|
+| Mistral OCR | $0.001/page | **$0.004/page** | priced at the original OCR's $1/1,000 while we request `mistral-ocr-latest`, which resolves to the current generation (OCR 4, $4/1,000) |
+| LlamaParse | $0.001/page | **$0.00375/page** | priced at one credit a page; `LLAMA_DEFAULT_TIER` is `cost_effective` at three, a number `llamaparse-ocr.ts` already had written down |
+
+Two things follow, and the second matters more than the arithmetic.
+
+**Avoiding a paid call is worth four times what the first report claimed.** Every saving in
+this document was measured in pages avoided, so the page counts stand and only the dollars
+move — upward, in favour of the cheap-first work.
+
+**We cannot cost a Mistral call from our own records.** `MistralOcrResponse.model` echoes the
+alias we sent rather than resolving it, so all three production Mistral parses are stored as
+`mistral/mistral-ocr-latest` and could have been billed at $1, $2 or $4 per thousand. Those
+rows are now priced at the **dearest** generation and stamped `price_basis: "ceiling"`, and
+`ai_spend_report` reports `estimated_usd` separately from measured spend. Over-reporting gets
+investigated; under-reporting gets believed.
+
+The exact fix is to **pin the model version** instead of sending the alias. That is not an
+accounting change: it would freeze a live lane's parse quality at one version and give up the
+automatic upgrade `mistral-ocr.ts` argues for deliberately. Owner's call. LlamaParse does not
+have this problem — `parse-document.ts` stores `llamaparse/<tier>@<version>`, so the tier that
+ran is on the row and its price is exact.

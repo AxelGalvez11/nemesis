@@ -22,10 +22,48 @@ import {
 } from "./ai-spend";
 
 test("a page of paid parsing costs what the rate card says", () => {
-  // $1 per 1,000 pages. A 24-page drug chart is 2.4 cents.
-  assert.equal(unitCostUsd("mistral_ocr", 24).usd, 0.024);
-  assert.equal(unitCostUsd("llamaparse", 57).usd, 0.057);
+  // Mistral OCR 4, $4 per 1,000 pages. A 24-page handout is 9.6 cents.
+  assert.equal(unitCostUsd("mistral_ocr", 24).usd, 0.096);
   assert.equal(unitCostUsd("mistral_ocr", 24).priced, true);
+  // LlamaParse cost_effective, 3 credits a page at $1.25 per 1,000 credits.
+  assert.equal(unitCostUsd("llamaparse", 57, "llamaparse/cost_effective@latest").usd, 0.213_75);
+});
+
+test("🔴 the price the parser was written against and the price the ledger charges are the same", () => {
+  // The defect this pins: `llamaparse-ocr.ts` documented cost_effective as "3 credits/page
+  // (~$0.00375)" while the ledger charged $0.001, and nothing connected the two numbers. A parser
+  // whose own comment disagrees with the bill is a parser nobody can cost.
+  const parser = readFileSync(new URL("../notebooks/llamaparse-ocr.ts", import.meta.url), "utf8");
+  const tier = /LLAMA_DEFAULT_TIER = "([a-z_]+)"/.exec(parser)?.[1] ?? "";
+  assert.ok(tier.length > 0, "the default tier must still be readable from the parser");
+  const perPage = unitCostUsd("llamaparse", 1, `llamaparse/${tier}@latest`);
+  assert.equal(perPage.basis, "exact", "the tier we actually send must be priced exactly");
+  assert.equal(perPage.usd, 0.00375);
+});
+
+test("🔴 a tier we recorded is priced EXACTLY; one we did not is priced at a CEILING", () => {
+  const known = unitCostUsd("llamaparse", 10, "llamaparse/premium@2026-06");
+  assert.equal(known.basis, "exact");
+  assert.equal(known.usd, 0.75, "60 credits a page is not the default tier's 3");
+
+  const unknown = unitCostUsd("llamaparse", 10, "llamaparse/some_new_tier@latest");
+  assert.equal(unknown.basis, "ceiling");
+  assert.equal(unknown.priced, true, "an unrecognised tier is still billed, not free");
+});
+
+test("🔴🔴 the Mistral alias prices at the DEAREST generation, never the cheapest", () => {
+  // Every real production row is `mistral/mistral-ocr-latest`, because the vendor echoes the alias
+  // back instead of resolving it. Guessing the cheap end would under-report the bill fourfold, and
+  // a bill that reads low is a bill that gets believed.
+  const alias = unitCostUsd("mistral_ocr", 100, "mistral/mistral-ocr-latest");
+  assert.equal(alias.basis, "ceiling", "an alias is an estimate and must say so");
+  assert.equal(alias.usd, 0.4, "$4 per 1,000 pages, the current generation");
+
+  // A concrete version, if the vendor ever starts returning one, is priced for what it is.
+  const pinned = unitCostUsd("mistral_ocr", 100, "mistral/mistral-ocr-2503");
+  assert.equal(pinned.basis, "exact");
+  assert.equal(pinned.usd, 0.1);
+  assert.ok(alias.usd! > pinned.usd!, "the ceiling must never sit below a generation we know of");
 });
 
 test("🔴 an unknown provider reports as UNPRICED, never as free", () => {
@@ -56,7 +94,7 @@ test("🔴 who read a document is read off the provenance column, not guessed", 
 });
 
 test("🔴 the price revision is stamped, so a re-price cannot rewrite history", () => {
-  assert.match(PRICE_REV, /^\d{4}-\d{2}-\d{2}$/);
+  assert.match(PRICE_REV, /^\d{4}-\d{2}-\d{2}[a-z]?$/);
   const source = readFileSync(new URL("./ai-spend.ts", import.meta.url), "utf8");
   assert.match(source, /price_rev: PRICE_REV/, "every row must carry the revision it was priced at");
 });
