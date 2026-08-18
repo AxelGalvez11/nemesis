@@ -283,27 +283,36 @@ test("🔴 no label in the rendering talks about the learner in the third person
   // 🔴 NEITHER EXISTING GUARD COVERS THIS. canvas-learner-copy.test.ts scans only
   // components/workspace/learn/ and says so in its own header; this file's other guard reads
   // dashes, not voice.
-  const rendered = renderWriting(
-    writingAsConfirmed(
-      work({
-        finalAnswerIndex: 2,
-        marks: [mark("2x + 6 = 14"), mark("x = 6", { struckThrough: true }), mark("2x = 8"), mark("x = 4"), mark("one line below", { legible: false })],
-        relations: ["the box sits under the working"],
-      }),
-      { finalAnswerIndex: 3, marks: ["2x + 6 = 14", "x = 6", "2x = 8", "x = 4", ""] },
-    ),
-  );
-  // Every section is present, so this is reading the full rendering and not a short one.
-  for (const section of ["Working, in order:", "Layout:", "Final answer as marked:", "Not read by Nemesis", "Read back and confirmed"]) {
-    assert.ok(rendered.includes(section), `the rendering is missing "${section}", so this guard is reading a partial page`);
+  const page = work({
+    marks: [mark("2x + 6 = 14"), mark("x = 6", { struckThrough: true }), mark("2x = 8"), mark("x = 4"), mark("one line below", { legible: false })],
+    relations: ["the box sits under the working"],
+  });
+  const reading = { marks: ["2x + 6 = 14", "x = 6", "2x = 8", "x = 4", ""] };
+  // 🔴 BOTH BRANCHES OF THE CONCLUSION LINE, AND CALIBRATION IS WHY. The first version of this
+  // guard rendered only a page WITH a marked final answer, so putting a third-person sentence back
+  // into the no-conclusion label left it green: that branch was never reached.
+  const renderings = [
+    renderWriting(writingAsConfirmed(page, { ...reading, finalAnswerIndex: 3 })),
+    renderWriting(writingAsConfirmed(page, { ...reading, finalAnswerIndex: null })),
+    renderWriting(writingAsRead(page)),
+  ];
+
+  // Every section appears across the set, so this is reading full renderings and not short ones.
+  const all = renderings.join("\n");
+  for (const section of ["Working, in order:", "Layout:", "Final answer as marked:", "No final answer marked", "Not read by Nemesis", "Read back and confirmed", "[crossed out]"]) {
+    assert.ok(all.includes(section), `the renderings are missing "${section}", so this guard is reading a partial page`);
   }
-  // The labels are what this checks; the learner's OWN words are quoted verbatim and are not.
-  const labels = rendered
-    .split("\n")
-    .map((line) => line.replace(/^\s*\d+\.\s*/, "").replace(/^\s*\[crossed out\]\s*/, ""))
-    .join("\n")
-    .replace(/(?<=: ).*$/gm, "");
-  assert.doesNotMatch(labels, /\bthey\b|\btheir\b|\bthem\b|\bthemselves\b/i, `a label narrates the learner:\n${labels}`);
+
+  for (const rendered of renderings) {
+    // The labels are what this checks; the learner's OWN words are quoted verbatim and are not, so
+    // anything after a label's colon and any numbered or struck line is stripped first.
+    const labels = rendered
+      .split("\n")
+      .map((line) => line.replace(/^\s*\d+\.\s*/, "").replace(/^\s*\[crossed out\]\s*/, ""))
+      .join("\n")
+      .replace(/(?<=: ).*$/gm, "");
+    assert.doesNotMatch(labels, /\bthey\b|\btheir\b|\bthem\b|\bthemselves\b/i, `a label narrates the learner:\n${labels}`);
+  }
 });
 
 test("more than one mark is never rendered plain", () => {
