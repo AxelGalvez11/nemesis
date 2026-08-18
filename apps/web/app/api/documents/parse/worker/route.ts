@@ -36,12 +36,14 @@ import {
 } from "@/lib/notebooks/figure-assets";
 import { runParseOnThread, type ParseRunSpend } from "@/lib/notebooks/parse-run";
 import {
+  NO_SPEND,
   VisionLedger,
   documentUnitCap,
   userDailyUnitCap,
   withVisionBudget,
 } from "@/lib/pdf/vision-budget";
 import { contentHashOf, rowCounts, structureEnvelope } from "@/lib/notebooks/parse-record";
+import { decideReuse, findReusableParse } from "@/lib/notebooks/parse-reuse";
 import {
   DEADLINE_ABORT_MS,
   isRetryable,
@@ -409,6 +411,55 @@ async function runClaimed(
     // worker's result is the one that should stand.
     return { sourceId: job.id, outcome: finished ? "parsed" : "lease-lost" };
   };
+
+  // ── Have we already read exactly these bytes for this person? ─────────────
+  //
+  // 🔴🔴 ASKED BEFORE ANYTHING IS SPENT, WHICH IS THE WHOLE POINT AND WAS THE WHOLE GAP.
+  // `parsed_documents` has been keyed on `(user_id, content_hash, parser_version)` since it was
+  // created, and `record_parsed_document` consults that key — at WRITE time. Deduplicating the row
+  // after the file has been fetched, parsed, sent to a vendor and looked at by a vision model saves
+  // a row and none of the money. Measured on production the day this was written: 21 hashed
+  // sources, 19 distinct hashes.
+  //
+  // 🔴 IT IS A LOOKUP, NOT A JUDGEMENT. `decideReuse` refuses a failed parse — reusing one would
+  // make a document that failed once permanently unreadable — and refuses nothing else. A partial
+  // parse IS an answer; re-reading it spends the same money to reach the same place.
+  //
+  // 🔴 AND A LOOKUP THAT FAILS PARSES THE DOCUMENT. Every path out of `findReusableParse` and
+  // `reuse_document_parse` that is not an unambiguous hit falls through to the ordinary lanes
+  // below, which is exactly what happened before this block existed.
+  const existing = await findReusableParse(admin, job.user_id, contentHash);
+  const reuse = decideReuse(existing);
+  if (reuse.reuse) {
+    const { data: linked, error: reuseError } = await admin.rpc("reuse_document_parse", {
+      p_content_hash: contentHash,
+      p_parsed_document_id: reuse.parse.id,
+      p_source_id: job.id,
+      p_token: token,
+      p_user_id: job.user_id,
+    });
+    if (reuseError) {
+      // The migration may not be applied on this deployment. Parsing is always a correct answer.
+      console.warn(JSON.stringify({ event: "parse_reuse_unavailable", detail: reuseError.message.slice(0, 160) }));
+    } else if (typeof linked === "string") {
+      console.info(JSON.stringify({
+        event: "parse_reused",
+        docKind: reuse.parse.docKind,
+        parsedDocumentId: linked,
+        parserVersion: reuse.parse.parserVersion,
+        sourceId: job.id,
+        state: reuse.parse.state,
+        units: reuse.parse.unitCount,
+      }));
+      // 🔴 THE RESERVATION IS RELEASED UNSPENT. `settle_vision_units` refunds what was not used, and
+      // a reuse used none — so a document reused ten times must not accumulate ten documents' worth
+      // of reserved budget against the person who uploaded it.
+      reservation.spend = NO_SPEND;
+      return { sourceId: job.id, outcome: "reused" };
+    }
+    // `null` means the lease check refused or the parse did not survive its own validation. Both
+    // are ordinary races, and both mean: read the file.
+  }
 
   // ── The routed lane ────────────────────────────────────────────────────────
   //
