@@ -25,6 +25,11 @@ const VISUAL_RENDERER = readFileSync(
   new URL("../../components/workspace/learn/semantic-visual.tsx", import.meta.url),
   "utf8",
 );
+const ROUTER = readFileSync(new URL("./visual-route.ts", import.meta.url), "utf8");
+const POLICY_VIEW = readFileSync(
+  new URL("../../components/workspace/learn/canvas-policy-view.tsx", import.meta.url),
+  "utf8",
+);
 
 /** The stack §41 names, by the package that would appear if one were adopted. */
 //
@@ -88,6 +93,32 @@ test("🔴 the ordering that keeps this below the core survives", () => {
   const core = SECTION.indexOf("Excellent adaptive learning");
   const threeD = SECTION.indexOf("Selective 3D and advanced simulations");
   assert.ok(core < threeD, "the priority list has been reordered — 3D must remain last");
+});
+
+// 🔴 THE STATUS LINE AND THE PACKAGE LIST WERE THE ONLY THINGS TIED TO REALITY, AND §41 MAKES TWO
+// MORE CLAIMS THAT ROT THE SAME WAY. The section now says the router EXISTS and that it ABSORBED
+// the source-figure path. Both were future tense until this change, and a paragraph describing
+// built behaviour is exactly the kind this file's own header says "outlived the moment it was
+// true". So both claims fail here if the code stops backing them.
+test("🔴 §41's claim that the router exists is tied to the router existing", () => {
+  assert.match(SECTION, /The router exists/, "§41 no longer claims a router — has it been removed?");
+  assert.match(SECTION, /routeVisual\(\)/);
+  assert.match(ROUTER, /export function routeVisual/);
+  // The three decisions §41 names. A router that can only say yes is not a router.
+  for (const decision of ['decision: "render"', 'decision: "prose"', 'decision: "refused"']) {
+    assert.ok(ROUTER.includes(decision), `the router no longer returns ${decision}`);
+  }
+});
+
+test("🔴 §41's claim that the source-figure path was absorbed is tied to the component asking", () => {
+  assert.match(SECTION, /THE ROUTER HAS SUBSUMED IT/);
+  assert.ok(ROUTER.includes('"source_figure"'), "the router lost the source-figure representation");
+  // The whole point of the absorption: the component asks rather than deciding. If these four
+  // conditions reappear in the view, the second visual system has grown back.
+  assert.match(POLICY_VIEW, /routeVisual\(/, "canvas-policy-view no longer asks the router");
+  for (const rule of ["isOccludable", "figure.labels.find"]) {
+    assert.equal(POLICY_VIEW.includes(rule), false, `the occlusion rule "${rule}" has moved back into the view`);
+  }
 });
 
 test("🔴 the constrained-interface rule is still stated", () => {

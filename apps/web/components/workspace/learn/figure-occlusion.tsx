@@ -60,10 +60,15 @@ export function FigureOcclusion({ caption, hidden, labels, revealed = false, src
       <div className="relative inline-block w-full">
         {/* eslint-disable-next-line @next/next/no-img-element -- a parsed figure is an arbitrary
             runtime URL, not a build-time asset, so next/image's loader has nothing to optimise. */}
+        {/* 🔴 THE FADE IS SKIPPED UNDER REDUCED MOTION, AND IT IS THE ONLY MOTION ON THIS SCREEN.
+            A learner who has asked their system for less motion is answering a retrieval question
+            while the subject of that question fades in — 200ms of the diagram being partly there is
+            200ms of reading it badly. `motion-reduce:transition-none` snaps it to loaded instead;
+            the picture still appears only once it has decoded, so nothing flashes either way. */}
         <img
           alt={caption ?? "Diagram"}
           className={cn(
-            "w-full rounded-xl transition-opacity duration-200",
+            "w-full rounded-xl transition-opacity duration-200 motion-reduce:transition-none",
             loaded ? "opacity-100" : "opacity-0",
           )}
           onLoad={() => setLoaded(true)}

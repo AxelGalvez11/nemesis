@@ -29,9 +29,33 @@ function Equation({ visual }: { visual: Extract<CanvasVisualRequest, { kind: "eq
     try {
       return katex.renderToString(visual.latex, {
         displayMode: true,
+        // 🔴 BOUNDED EXPANSION AND BOUNDED SIZE — the two ways a WELL-FORMED string still costs the
+        // learner their tab. Neither is malformed LaTeX, so neither is something a validator could
+        // have caught by counting characters.
+        //
+        // 🔴 MEASURED, NOT ASSUMED, AND THE TWO BEHAVE DIFFERENTLY. A 2^20 macro chain
+        // (`\def\a{\b\b}\def\b{\c\c}…\a`) THROWS under `maxExpand: 100` and is caught by the
+        // `catch` below. `maxSize: 50` does not throw: it CLAMPS, rendering `\rule{9999em}{9999em}`
+        // at 50em instead of 9999em — which is the better of the two outcomes, because the learner
+        // gets a bounded box rather than an error where the equation should be.
+        //
+        // `canvas-visual.ts` refuses macro definitions by NAME before anything reaches here; these
+        // are the floor under that, holding whether or not the deny list was complete.
+        maxExpand: 100,
+        maxSize: 50,
         output: "htmlAndMathml",
         strict: "warn",
         throwOnError: true,
+        // 🔴 THE SECURITY BOUNDARY, AND IT MUST NEVER BECOME A FUNCTION. `trust: true` — or a
+        // callback that returns true for anything — re-enables `\href`, `\url` and
+        // `\includegraphics` on a string a model wrote, which is a model writing a live link into
+        // the learner's page.
+        //
+        // 🔴 MEASURED: IT HOLDS THE SECURITY LINE AND LOSES THE TEACHING MOMENT. With `trust: false`
+        // KaTeX emits NO anchor for `\href{https://evil.test}{click me}` — but it does not throw
+        // either. It prints the literal source, URL and all, in red (#cc0000) where the equation
+        // should be. That is why `canvas-visual.ts` refuses these by name BEFORE rendering: the link
+        // was never the only problem, and a red blob containing a model-chosen URL is not a lesson.
         trust: false,
       });
     } catch {

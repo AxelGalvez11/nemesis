@@ -1164,13 +1164,28 @@ keep deciding which engine to invoke, and an arm picker is exactly that.
 
 # 41. 🔴 THE VISUALIZATION LAYER — a router, not a graphics library (owner, 2026-08-14)
 
-## STATUS: FIRST TRUSTED ROUTES SHIPPED — equation, relationship and quantitative. ADVANCED ROUTES REMAIN PLANNED.
+## STATUS: FIRST TRUSTED ROUTES SHIPPED — source figure, equation, relationship and quantitative, behind a router. ADVANCED ROUTES REMAIN PLANNED.
 
-🔴 **Canvas now accepts a bounded semantic `visual` request on a teaching block.** Trusted
-code routes equations to KaTeX and renders simple conceptual relationships and quantitative
-series with deterministic SVG. The model cannot supply HTML, SVG, JavaScript, React, Mermaid, or
-renderer configuration. Geometry, advanced charting, and true 3D remain planned; extracted source
-figures continue through the separate evidence-backed figure path.
+🔴 **The router exists** — `routeVisual()` in `apps/web/lib/learn/visual-route.ts`. It is a pure
+function taking a knowledge object, the cognitive operation in flight, and an untrusted model
+request, and it returns one of three decisions: **render** a named representation, **prose** (no
+visual, which is the common and correct answer), or **refused** with a named reason. Canvas accepts
+a bounded semantic `visual` request on a teaching block; trusted code routes equations to KaTeX and
+renders simple conceptual relationships and quantitative series with deterministic SVG. The model
+cannot supply HTML, SVG, JavaScript, React, Mermaid, or renderer configuration. Geometry, advanced
+charting, and true 3D remain planned.
+
+🔴 **The source-figure path is absorbed, not parallel.** The four conditions that used to decide
+occlusion inside `canvas-policy-view.tsx` — a figure exists, its pixels were kept, it names enough
+parts, and the objective's label resolves — now live in the router as the `source_figure`
+representation, and that component asks for them. The source figure is **preferred over any
+concurrent model request** for the same moment, because it is the learner's own material.
+
+🔴 **`prose` and `refused` are different outcomes.** Both draw nothing. `prose` means a picture
+would not have helped — two nodes and one arrow is a sentence, and an association is an arbitrary
+mapping with no structure to show. `refused` means a request was malformed or unsafe, and carries a
+named reason (`dangling-edge`, `unsafe-latex`, `unknown-kind`, …) rather than a silence. Collapsing
+them would make "the boundary rejected something" indistinguishable from "we chose words".
 
 Read the advanced routes in this section as a description of where Canvas is **going**, not of what it does. It is
 recorded now for one reason the owner stated plainly: *"preserve this as an architectural
@@ -1253,12 +1268,13 @@ A visual participates in the teaching loop or it does not belong on the Canvas:
 never because visual content looks impressive.** A picture that cannot be answered against is
 decoration, and decoration competes with the material for the attention §19 reserves for it.
 
-🔴 **THE FIRST INSTANCE OF THIS ALREADY SHIPPED, AND THE ROUTER MUST SUBSUME IT RATHER THAN SIT
-BESIDE IT.** Source figures are stored as durable assets (`DocFigure.asset`, #619) and occluded
-for spatial retrieval (#620) — that is precisely "hide the labels on a figure and use it for
-retrieval", already in the teaching loop. In this taxonomy the source image is a renderer. When
-the router is built it must absorb that path; a second, parallel visual system is how one product
-ends up with two of everything.
+🔴 **THE FIRST INSTANCE OF THIS ALREADY SHIPPED, AND THE ROUTER HAS SUBSUMED IT RATHER THAN
+SITTING BESIDE IT.** Source figures are stored as durable assets (`DocFigure.asset`, #619) and
+occluded for spatial retrieval (#620) — that is precisely "hide the labels on a figure and use it
+for retrieval", already in the teaching loop. In this taxonomy the source image is a renderer, and
+it is now `routeVisual`'s `source_figure` representation: the decision moved out of
+`canvas-policy-view.tsx` and that component asks the router for it. A second, parallel visual
+system is how one product ends up with two of everything, and for a while this product had one.
 
 ## 🔴 THE 3D RULE — rare, and earned
 
