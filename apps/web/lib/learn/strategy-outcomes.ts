@@ -60,6 +60,7 @@
 
 import { performanceKey, type LearnerEvidence } from "./learner-evidence";
 import type { ObjectiveEvidence } from "./scaffold-rung";
+import { TASK_FORMS, type TaskForm } from "./task-form";
 import { TEACHING_STRATEGIES, type TeachingStrategyId } from "./teaching-strategy";
 
 /**
@@ -418,6 +419,56 @@ export interface RecoveryAfterMiss {
  * required would force every existing caller to fabricate an input, and a fabricated input is how a
  * measurement starts describing its own defaults.
  */
+/** What one task form bought, and what it cost in attention. */
+export interface TaskFormOutcome {
+  /** Rows at this form that were a real attempt — a response was put to this objective. */
+  attempts: number;
+  /** Of those, the ones that established the objective. */
+  demonstrations: number;
+  demonstrationRate: number | null;
+  /** Distinct objectives ever asked in this form. */
+  objectives: number;
+  /**
+   * Summed response latency across the performances at this form.
+   *
+   * 🔴 THE DENOMINATOR OF THE ONLY RATIO THAT MATTERS, PER FORM. The north star is durable learning
+   * per unit of ACTIVE ATTENTION, and a form that produces more demonstrations while costing three
+   * times the thinking time is not obviously better. Null when no row at this form recorded a
+   * latency, which is "not measured" and never zero.
+   */
+  activeAttentionMs: number | null;
+}
+
+/**
+ * What the durable record can say about the task forms, now that it records which one was asked.
+ *
+ * 🔴🔴 THIS IS THE WHOLE REASON `task_form` IS A COLUMN. Adding worked examples, faded completions
+ * and transfer probes without being able to tell afterwards whether they worked is the failure the
+ * owner named directly. Every question below is answerable from evidence rows alone, with no
+ * analytics join and no inference from the shape of a session.
+ *
+ * 🔴 AND NONE OF THEM IS A CAUSAL CLAIM. `completionThenIndependent` counts a sequence, not an
+ * effect: learners who get completions are not a random sample of learners, so the honest reading is
+ * "how often did an assisted answer come before an unaided one", and the randomised comparison lives
+ * in the A/B arms rather than here.
+ */
+export interface TaskFormOutcomes {
+  /** Did any row carry a form at all? False across every row written before the column existed. */
+  observed: boolean;
+  byForm: Readonly<Record<TaskForm, TaskFormOutcome>>;
+  /**
+   * Objectives where an assisted completion was followed, later, by an unaided demonstration.
+   *
+   * 🔴 THE FADING QUESTION, ASKED OF THE RECORD RATHER THAN ASSUMED. "Worked example, then
+   * completion, then independent" is the literature's sequence and Nemesis deliberately does not
+   * script it — so whether the middle step actually leads anywhere is an empirical question, and
+   * this is the numerator.
+   */
+  completionThenIndependent: number;
+  /** The denominator: objectives with a completion and any later unaided attempt at all. */
+  completionsWithLaterUnaidedAttempt: number;
+}
+
 export interface OutcomeContext {
   /** Objective identity → the identities it depends on. Straight from `prerequisiteMap`. */
   prerequisites?: ReadonlyMap<string, readonly string[]>;
@@ -526,6 +577,13 @@ export interface StrategyOutcomeSummary {
   /**
    * Demonstrations at an operation this learner had never demonstrated for that objective before.
    *
+   * 🔴🔴 RENAMED FROM `transferDemonstrations`, AND THE RENAME IS THE POINT RATHER THAN TIDYING.
+   * This is a PROXY: it counts a demonstration under an operation not previously demonstrated for
+   * that objective, which may be nothing more than meeting a second question about the same
+   * knowledge. Calling that "transfer" invited it to be read as evidence that a learner can use an
+   * idea in a case the material never stated, which it is not and cannot be. Nothing in Nemesis
+   * measures that today — see the transfer note in docs/canvas-cognitive-runtime.md.
+   *
    * 🔴🔴 THIS IS LIVE NOW, AND THE COMMENT THAT USED TO SIT HERE SAYING OTHERWISE WAS STALE. It read
    * "structurally unmeasurable today … `objectivesForKnowledge` mints `recall` and essentially
    * nothing else". That has not been true since the wide-grid and procedure lanes shipped:
@@ -540,7 +598,7 @@ export interface StrategyOutcomeSummary {
    * about the sample in hand, not about the product. A cohort of one `recall` session cannot show
    * transfer whatever the runtime is capable of staging.
    */
-  transferDemonstrations: number | null;
+  crossOperationDemonstrations: number | null;
 
   // ── DURABLE UNDERSTANDING PER UNIT OF ACTIVE ATTENTION ──────────────────────────────────────────
 
@@ -646,6 +704,8 @@ export interface StrategyOutcomeSummary {
    * amount". They do not scaffold at all. `null` whenever every observation is the floor.
    */
   meanScaffoldingLevel: number | null;
+  /** What each task form bought and cost — see `TaskFormOutcomes`. */
+  taskForms: TaskFormOutcomes;
 }
 
 /**
@@ -773,6 +833,51 @@ function recoveryAfterMissOf(rows: readonly LearnerEvidence[]): RecoveryAfterMis
     // after a miss never worked; the truth would be that it was never given the opportunity to.
     recoveryRate: missesWithLaterAttempt === 0 ? null : recovered / missesWithLaterAttempt,
     recovered,
+  };
+}
+
+function taskFormOutcomesOf(rows: readonly LearnerEvidence[]): TaskFormOutcomes {
+  const byForm = {} as Record<TaskForm, TaskFormOutcome>;
+  for (const form of TASK_FORMS) {
+    const mine = rows.filter((row) => row.taskForm === form);
+    const attempts = mine.filter(attemptEvidenceOf);
+    const demonstrations = attempts.filter(isMastery);
+    const { activeAttentionMs } = activeAttentionOf(mine);
+    byForm[form] = {
+      activeAttentionMs,
+      attempts: attempts.length,
+      demonstrationRate: attempts.length === 0 ? null : demonstrations.length / attempts.length,
+      demonstrations: demonstrations.length,
+      objectives: new Set(mine.map((row) => row.objectiveIdentityKey)).size,
+    };
+  }
+
+  let completionThenIndependent = 0;
+  let completionsWithLaterUnaidedAttempt = 0;
+
+  for (const objectiveRows of byObjective(rows).values()) {
+    const ordered = ascending(objectiveRows).filter(attemptEvidenceOf);
+    const firstCompletionAt = ordered.findIndex((row) => row.taskForm === "completion");
+    if (firstCompletionAt >= 0) {
+      // 🔴 UNAIDED MEANS THE RUNG, NOT THE FORM, AND THAT IS DELIBERATE RATHER THAN INCIDENTAL. A
+      // form added later that carries no assistance would still be an unaided production, and
+      // filtering on `taskForm === "direct"` would silently stop counting it the day it shipped.
+      const later = ordered.slice(firstCompletionAt + 1).filter((row) => row.scaffoldRung === "independent");
+      if (later.length > 0) {
+        completionsWithLaterUnaidedAttempt += 1;
+        if (later.some(isMastery)) completionThenIndependent += 1;
+      }
+    }
+  }
+
+  return {
+    byForm,
+    completionThenIndependent,
+    completionsWithLaterUnaidedAttempt,
+    // 🔴 "NOTHING RECORDED A FORM" IS A DIFFERENT FACT FROM "EVERY TASK WAS DIRECT", and a reader
+    // scanning three zeroes cannot tell them apart without this flag. Rows written before the column
+    // existed are the first case and there are a great many of them.
+    observed: rows.some((row) => row.taskForm !== undefined),
   };
 }
 
@@ -915,7 +1020,8 @@ export function summariseStrategy(
     // 🔴 `null` RATHER THAN 0 WHEN THIS COHORT SHOWS ONLY ONE OPERATION — a 0 would be read as "this
     // arm produced no transfer", and the truth is that transfer was not measured on it. The runtime
     // stages four operations now; see the field's own comment for what changed.
-    transferDemonstrations: operationsSeen.size > 1 ? transfer : null,
+    crossOperationDemonstrations: operationsSeen.size > 1 ? transfer : null,
+    taskForms: taskFormOutcomesOf(rows),
   };
 }
 

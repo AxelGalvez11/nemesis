@@ -38,6 +38,8 @@ import { isUnresolvedAttempt } from "./next-action-value";
 import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
 import { retrievabilityFor } from "./retention-model";
 import { readRung, type ScaffoldRung } from "./scaffold-rung";
+import { completionAvailable } from "./completion-task";
+import { workedExampleAvailable } from "./worked-example";
 import { semanticKeysOf, semanticRelationSummary, semanticRelationsOf } from "./semantic-relations";
 import type { MaterialScope, TeachingContext } from "./teaching-strategy";
 
@@ -140,6 +142,37 @@ export interface ObjectiveSnapshot {
    * not-yet-instrumented document contains.
    */
   importance: string | null;
+
+  /**
+   * Which of the grounded task builders can actually produce something for this objective.
+   *
+   * 🔴🔴 THE CONTROLLER IS TOLD WHAT IS POSSIBLE, NOT WHAT TO DO, AND THE DIFFERENCE IS THE BITTER
+   * LESSON CONSTRAINT THIS FILE LIVES UNDER. Nothing here says "procedural failures deserve a worked
+   * example" — that is a plausible teaching heuristic, not a universal truth, and encoding it would
+   * put the teacher back in the code. What is stated instead is a fact about the MATERIAL: a
+   * two-column association has no process to walk through, so no honest worked example exists over
+   * it, whatever the right teaching move might be.
+   *
+   * 🔴 AND WITHOUT IT THE MODEL SPENDS ITS TURNS BEING REFUSED. The builders refuse by design where
+   * the structure is missing, and a controller that cannot see which objectives have that structure
+   * would keep asking for moves that cannot be staged — a turn the learner does not get, once per
+   * refusal. Advertising the capability is what turns a refusal into a rare event rather than the
+   * normal cost of offering these actions at all.
+   */
+  canBeModelled: boolean;
+  canBeCompleted: boolean;
+
+  /**
+   * How this objective has been ASKED before, by task form rather than by verdict.
+   *
+   * 🔴 SEPARATE FROM `demonstrationCount`, WHICH CANNOT ANSWER THE QUESTION. "Produced it four
+   * times" says nothing about how much help was on the table for those four, and a teacher deciding
+   * whether to fade needs that apart from the verdict. It is exposed as a count and the policy
+   * reasons over it; there is deliberately no "a completion is worth 0.6 of a demonstration"
+   * anywhere.
+   */
+  completionAttempts: number;
+
 
   // ── what this sitting has already spent on it ─────────────────────────────
   /** Milliseconds of ACTIVE attention this sitting has given this objective. */
@@ -267,6 +300,9 @@ export function teachingSnapshot(context: TeachingContext): TeachingSnapshot {
       semanticRelations: semanticRelationsOf(entry.knowledge).map(semanticRelationSummary),
       state,
       statement: entry.knowledge.statement,
+      canBeCompleted: completionAvailable(entry),
+      canBeModelled: workedExampleAvailable(entry),
+      completionAttempts: mine.filter((row) => row.taskForm === "completion").length,
       terminologyInTheWay:
         lookups.length > 0 && terminologyFriction({ lookups, terms: [...requires, ...establishes] }).present,
       unresolvedAttempts: mine.filter(isUnresolvedAttempt).length,

@@ -512,7 +512,7 @@ sentences — it exists to stop the code and the matrix drifting apart, not to f
 knowledge_types: association, causal, classification, conceptual_system, procedure, spatial
 cognitive_operations: discriminate, explain, locate, predict, recall, sequence
 # The fields one judged demonstration writes. 🔴 `absent` always means NOT OBSERVED.
-evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseModality, responseText, scaffoldRung, scaffoldingLevel, taskId, teachingStrategy, verdict
+evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseModality, responseText, scaffoldRung, scaffoldingLevel, taskForm, taskId, teachingStrategy, verdict
 ```
 
 ### Implemented
@@ -527,6 +527,10 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 | Append-only evidence log as truth; state as a projection | `lib/learn/learner-evidence.ts`, `learner_evidence` table |
 | Raw observations preserved — `operation`, `response_latency_ms`, `response_modality`, `scaffolding_level` | Track B1; written, read back, and interpreted by nothing |
 | Scaffolding rung on every demonstration — §33's ordered ladder, so recognition can never satisfy a production requirement | `lib/learn/scaffold-rung.ts`; read through `satisfies()`, which makes the ambiguous question unaskable |
+| Worked examples — the reasoning worked through rather than the claim restated. Grounded in ordered steps, a directed relation or a class contrast; refuses by name where the material has none. Writes **no** evidence row | `lib/learn/worked-example.ts`; rendered by `canvas-policy-view.tsx`, chosen by the `model` verb |
+| Faded worked examples — most of a valid solution with one piece withheld. A real production, recorded at the `completion` rung, which by construction can never satisfy `independent` | `lib/learn/completion-task.ts`, `completionPromptFor`; ladder in `scaffold-rung.ts` |
+| Task form on every performance — `direct` / `completion`, separate from the assistance ladder because the two answer different questions | `lib/learn/task-form.ts`, `learner_evidence.task_form` |
+| Question before options — a recognition screen shows the question first and the options on request, and records the assistance actually taken rather than the one planned | `asUnaidedProduction` in `objective-task.ts`; `choicesRevealed` in `use-policy-runtime.ts` |
 | Per-objective evidence including `not_addressed` — an answer that never mentioned an objective is no longer read as a failed attempt | `objectiveEvidenceFor` in `lib/learn/objective-task.ts`; consumed by `projectLearnerState` |
 | Stateless one-decision policy (no sequence, no memory between calls) | `lib/learn/teaching-policy.ts`, `policy-runtime.ts` |
 | Evidence invariants §5 items 1–4, 6 | `use-policy-runtime.ts`, `objective-task.ts` |
@@ -535,6 +539,8 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 | Evidence persisting across sessions and canvases (§5.8) | proven live across two canvases, 2026-08-11 |
 | Judge failure writing nothing (§5.9) | `use-policy-runtime.ts` |
 | Skipping demonstrated competence (§7 deficit yield, partially) | `teaching-policy.ts` (`advance`) |
+| Successive relearning through the existing retention path — spaced passes raise stability, the forgetting estimate raises selection value, and the record crosses sittings | `retention-model.ts`, `retrieval-eligibility.ts`, `next-action-value.ts`; walked end to end by `successive-relearning.test.ts` |
+| Per-form outcome measurement — yield and active attention per task form, and "did completions lead to unaided production" | `strategy-outcomes.ts` (`taskForms`) |
 | Motion that reports real cognitive phases rather than simulating progress | `lib/learn/thinking-phases.ts` |
 
 ### Partially implemented
@@ -549,6 +555,26 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 | **Compositional Canvas** (§8) | **Step 7b shipped.** The Canvas owns the surface and the policy contributes a task to it; `CanvasDocument` and a hosted task now render together. Ownership (`policyOwnsCanvas`) is still computed and still reported — it is what `?policy=force` discloses against — but it no longer decides whether a question may appear. Reading material may coexist with a task; a second **answer-collecting** surface may not, and that asymmetry is `lib/learn/canvas-hosting.ts`. See [`canvas-task-hosting.md`](./canvas-task-hosting.md). |
 | **Variable tempo** (§9) | The runtime **exposes** `tempo` (`instant` / `deliberate`), derived from the policy's own knowledge-type and operation pair. Nothing renders differently for it yet — one presentation still serves every task. |
 | **Minimap** (§11) | The **runtime seam only**: a session-local `focusScope` filters candidate objectives before `decideNext`, so a selected territory constrains the policy without choosing an operation. Flat only — whole canvas, or a named selection of knowledge this canvas holds. There is no Minimap surface, and parent/child territories are blocked on a missing Brain contract (see below). |
+
+### Refused, with the reason
+
+- **Transfer probes.** Designed, built and removed before merge (2026-08-18). The intent is right —
+  changed surface conditions over a preserved, grounded relationship — but every derivation available
+  from a `CausalRelation` turned out to need a claim the extractor does not record. Inverting
+  `increases`/`decreases` assumes **monotonicity** over the whole range, and sources state a direction
+  at an operating point ("increasing PEEP increases oxygenation" reverses at high PEEP). Inverting
+  `enables` to "B cannot happen" asserts **necessity** from a claim of facilitation. Inverting
+  `prevents` to "B is free to happen" asserts A is the **sole** preventer. Inverting `inhibits`
+  ignores **redundant pathways**. All four are the inverse fallacy — denying the antecedent — and each
+  would have Nemesis mark a correct learner wrong against a claim the source never made.
+
+  What a sound version needs, in order of preference: (a) relation records that carry monotonicity,
+  necessity, sufficiency, exclusivity and the range the claim holds over, so the licensed
+  counterfactual is read rather than assumed; or (b) **composition** over two grounded relations
+  sharing a node, where the novel case is one the source never poses and the reference answer is the
+  chain of two things it does assert — which still needs a masking check against other paths on the
+  canvas. Neither is built. `crossOperationDemonstrations` in `strategy-outcomes.ts` is a proxy for
+  breadth of demand and is explicitly **not** a transfer measurement.
 
 ### Not implemented
 

@@ -40,6 +40,23 @@ export type ScaffoldRung =
   | "narrowed"
   /** Part of the answer was present: a blank to fill, a stem, a first letter. */
   | "cued"
+  /**
+   * Part of a valid SOLUTION was present — a worked example with one step withheld — and the
+   * learner supplied the missing piece.
+   *
+   * 🔴 IT SITS BELOW `cued` AND ABOVE `recognition`, AND BOTH EDGES ARE DELIBERATE. Above
+   * recognition because the learner PRODUCED rather than picked, and production is the thing
+   * recognition can never establish. Below `cued` because a partial solution supplies more of the
+   * surrounding structure than a first letter supplies of a word, and where the two are genuinely
+   * hard to rank the ladder's own asymmetry decides: under-crediting costs one more question,
+   * over-crediting skips a learner past something they cannot do. `cued` is the safe side.
+   *
+   * 🔴 IT IS NOT WORDABLE — see scaffold-prompt.ts. A completion cannot be produced by rewording
+   * the base question; it has to be BUILT from the knowledge object's own structure, and where that
+   * structure does not exist the task must refuse rather than invent a procedure. `easier`/`harder`
+   * therefore keep walking the three wordable rungs and never step onto this one.
+   */
+  | "completion"
   /** The answer was among options on screen. Discrimination, not production. */
   | "recognition"
   /** Nemesis supplied the answer. 🔴 A REAL RUNG AND NOT AN ABSENCE — being told is what happened,
@@ -51,7 +68,7 @@ export type ScaffoldRung =
  * Weakest first. 🔴 THE ONLY PLACE THE ORDER IS WRITTEN DOWN — every comparison below is derived
  * from this array, so the ladder cannot be reordered in one place and left stale in another.
  */
-const LADDER: readonly ScaffoldRung[] = ["taught", "recognition", "cued", "narrowed", "independent"];
+const LADDER: readonly ScaffoldRung[] = ["taught", "recognition", "completion", "cued", "narrowed", "independent"];
 
 export const SCAFFOLD_RUNGS: readonly ScaffoldRung[] = LADDER;
 

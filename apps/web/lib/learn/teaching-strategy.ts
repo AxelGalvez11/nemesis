@@ -191,6 +191,17 @@ export type StrategyRefusal =
   | "unknown-objective"
   /** The controller named an action outside the vocabulary it was given. */
   | "unknown-action"
+  /**
+   * The action is real, and this objective's material cannot support it honestly.
+   *
+   * 🔴 A DIFFERENT FACT FROM `unknown-action`, AND THE TALLY IS WHY. "The model said a word we do
+   * not have" is a controller that is not following its instructions; "the model asked for a worked
+   * example over a two-column association" is a controller reasoning sensibly about a canvas whose
+   * material has no process to model. Merging them would make a healthy arm look broken, and would
+   * hide the number that actually matters — how often the grounded builders refuse, which is what
+   * says whether these actions are worth offering on this material at all.
+   */
+  | "ungroundable-action"
   /** There was nothing to choose from. Not a failure — stated so it can be told from one. */
   | "no-candidates";
 
@@ -256,6 +267,22 @@ export interface TeachingContext {
   actedOn?: readonly string[];
   /** Objectives whose correction has already been displayed in this session. */
   correctionsShown?: ReadonlySet<string>;
+  /**
+   * Objectives whose reasoning has been WORKED THROUGH in front of the learner this sitting.
+   *
+   * 🔴 SESSION CONTEXT, NEVER A LEARNER BELIEF, AND THAT LINE IS THE WHOLE REASON IT LIVES HERE
+   * RATHER THAN IN `learner_evidence`. A worked example is something Nemesis did, not something the
+   * learner demonstrated; a durable row recording it would sit in the table every downstream
+   * projection reads as "what this person has shown", and `evidenceCount`, `lastEvidenceAt` and
+   * every "met N times" line would start counting screens the learner only read. Invariants 1 and 2
+   * hold here by construction: there is nothing durable to misread.
+   *
+   * 🔴 AND THE CONTROLLER GENUINELY NEEDS IT, which is why it is not simply dropped. Without it the
+   * same model can be shown twice in a row — the model has no memory between turns and the snapshot
+   * would carry no trace of an action that writes nothing. Exactly the role `correctionsShown`
+   * already plays for `show_correction`.
+   */
+  modelled?: ReadonlySet<string>;
   /**
    * Every term this learner has stopped to look up.
    *

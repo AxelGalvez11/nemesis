@@ -38,6 +38,8 @@ import type { LearnerEvidence } from "./learner-evidence";
 import { choiceSetsForPool } from "./objective-task";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import { easier, harder } from "./scaffold-prompt";
+import { completionAvailable } from "./completion-task";
+import { workedExampleFor } from "./worked-example";
 import type { ScaffoldRung } from "./scaffold-rung";
 import { expositionOf, type TeachingAction } from "./teaching-policy";
 import { teachingSnapshot, type ObjectiveSnapshot } from "./teaching-snapshot";
@@ -133,6 +135,34 @@ const VERBS = [
    * verb out would have meant recognition never reaching a real learner at all.
    */
   "recognise",
+  /**
+   * Work the reasoning through in front of them, start to finish.
+   *
+   * 🔴 A DIFFERENT MOVE FROM `teach`, AND THE DISTINCTION IS THE ONE THE WORKED-EXAMPLE LITERATURE
+   * TURNS ON. `teach` states the claim; this states the PROCESS — where you start, what you look
+   * up, how the parts compose, what you end up saying. A learner who cannot yet perform the
+   * operation gets nothing from being shown the conclusion a second time.
+   *
+   * 🔴 IT SHOWS THE ANSWER AND WRITES NO EVIDENCE, WHICH IS ONE DECISION AND NOT TWO. Modelling is
+   * not testing, so exposing the solution is the point; nothing the learner has demonstrated
+   * changes as a result, because no row is written at all.
+   *
+   * 🔴 AND IT IS AVAILABLE ONLY WHERE THE MATERIAL HAS A PROCESS. The brief says which objectives
+   * those are; asking for one elsewhere is refused rather than invented.
+   */
+  "model",
+  /**
+   * Show most of a valid solution with one piece missing and ask them to supply the piece.
+   *
+   * 🔴 THE STEP BETWEEN BEING SHOWN AND PERFORMING, WHICH NOTHING ELSE IN THIS VOCABULARY OCCUPIES.
+   * `easier` walks the same question down a ladder of hints; this changes the task into a partly
+   * worked solution with a gap in it.
+   *
+   * 🔴 THE EVIDENCE IT WRITES IS REAL AND WEAKER THAN UNAIDED PRODUCTION, and Nemesis enforces that
+   * rather than trusting anyone to remember it: a completion pass can never satisfy the "produced
+   * it unaided" test, so choosing this does not let a learner be marked as knowing something.
+   */
+  "complete",
   /** Same objective, one step more demanding. */
   "harder",
   /** Same objective, one step less demanding. */
@@ -202,6 +232,21 @@ export function brief(snapshot: ObjectiveSnapshot): string {
   if (snapshot.lastErrorType) {
     lines.push(`  how their last failure was diagnosed: ${snapshot.lastErrorType}`);
   }
+  // 🔴 WHAT THE MATERIAL CAN SUPPORT, NOT WHAT TO DO ABOUT IT. Absent, the model spends turns asking
+  // for moves that cannot be staged over a two-column table and gets refused; present, it is a fact
+  // about the source in the same register as "importance in the source".
+  const available = [
+    ...(snapshot.canBeModelled ? ["model"] : []),
+    ...(snapshot.canBeCompleted ? ["complete"] : []),
+  ];
+  lines.push(
+    available.length > 0
+      ? `  this material can also support: ${available.join(", ")}`
+      : "  this material supports asking and telling only: no process to work through, and no part that could be withheld without withholding the whole answer",
+  );
+  if (snapshot.completionAttempts > 0) {
+    lines.push(`  answered ${snapshot.completionAttempts} times with part of the solution already on screen`);
+  }
   if (snapshot.misconceptions.length > 0) {
     lines.push(`  competing beliefs they have actually shown: ${snapshot.misconceptions.join("; ")}`);
   }
@@ -266,6 +311,13 @@ function sittingNote(
   const corrected = [...(context.correctionsShown ?? new Set<string>())];
   if (corrected.length > 0) {
     lines.push(`Answers already stated plainly this sitting: ${corrected.join(", ")}.`);
+  }
+  // 🔴 THE SAME SERVICE `correctionsShown` DOES, FOR AN ACTION THAT LEAVES NO DURABLE TRACE AT ALL.
+  // A worked example writes no evidence row by design, so without this line the next turn has no way
+  // to know one was just shown and the obvious failure is showing it again.
+  const worked = [...(context.modelled ?? new Set<string>())];
+  if (worked.length > 0) {
+    lines.push(`Reasoning already worked through in front of them this sitting: ${worked.join(", ")}.`);
   }
   return lines.join("\n");
 }
@@ -414,7 +466,14 @@ function teacherMessages(
         // silent failure rate into a move the model can decline to make.
         "recognise ask them to pick it out of options drawn from the material and from what they have " +
         "confused it with. Available only where such options exist. Lower effort to answer, not " +
-        "lower difficulty, and a correct pick is WEAKER evidence than producing it.\n" +
+        "lower difficulty, and a correct pick is WEAKER evidence than producing it. They may still " +
+        "type an answer before the options are shown, and that counts as producing it.\n" +
+        "model     work the reasoning through in front of them, start to finish, showing the answer. " +
+        "This is MODELLING, not testing: it establishes nothing about what they know. Available " +
+        "only where the line above says so.\n" +
+        "complete  show most of a valid solution with one piece missing and ask them for the piece. " +
+        "Real production, but assisted, and recorded as weaker than an unaided answer. Available " +
+        "only where the line above says so.\n" +
         "harder    same objective, one step more demanding.\n" +
         "easier    same objective, one step less demanding.\n" +
         "advance   nothing here is worth the next minute. Go forward.\n" +
@@ -440,6 +499,20 @@ function teacherMessages(
  * the capability and the knowledge type. A model choosing it would let one screen auto-advance where
  * another waits, and the difference in measured time would be the renderer rather than the teaching.
  */
+/**
+ * What `actionFor` came back with.
+ *
+ * 🔴🔴 TWO REFUSALS, NOT ONE `null`, AND THE SPLIT IS WHAT KEEPS THE ARM'S HEALTH READABLE. Before
+ * the grounded builders existed there was one way to fail — the model named a verb this runtime
+ * could not stage — and `null` said it. There are two now: "we do not have that move" is a
+ * controller not following instructions, and "this material has no process to work through" is a
+ * controller reasoning perfectly well about a canvas of two-column associations. Reported as one
+ * number they are indistinguishable, and the arm looks broken exactly when it is working.
+ */
+type ActionOrRefusal =
+  | { readonly action: TeachingAction; readonly refusal?: undefined }
+  | { readonly action?: undefined; readonly refusal: StrategyRefusal };
+
 function actionFor(input: {
   verb: Verb;
   entry: ResolvedObjective;
@@ -448,7 +521,7 @@ function actionFor(input: {
   evidence: readonly LearnerEvidence[];
   /** The options this runtime could honestly stage for THIS objective, or null when none exist. */
   choices: ChoiceSet | null;
-}): TeachingAction | null {
+}): ActionOrRefusal {
   const id = input.entry.objective.identityKey;
   const because = input.because;
   const exposition = (kind: "correction" | "contrast") =>
@@ -463,28 +536,34 @@ function actionFor(input: {
 
   switch (input.verb) {
     case "ask":
-      return { because, objectiveId: id, rung: current, type: "retrieve" };
+      return { action: { because, objectiveId: id, rung: current, type: "retrieve" } };
     case "probe":
       // 🔴 ALWAYS `independent`, WHATEVER THE LADDER SAYS. A probe exists to settle whether a
       // recognition-level pass generalises to production (§31.2). Narrowing it would ask the learner
       // to recognise again and call the result a production probe.
-      return { because, objectiveId: id, rung: "independent", type: "retrieve" };
+      return { action: { because, objectiveId: id, rung: "independent", type: "retrieve" } };
     case "harder": {
       const up = harder(current);
       // 🔴 A REFUSAL, NOT A CLAMP. Returning the same rung would report a difficulty change that did
       // not happen — the exact lie `scaffold-prompt.ts` was written to end.
-      return up ? { because, objectiveId: id, rung: up, type: "retrieve" } : null;
+      return up
+        ? { action: { because, objectiveId: id, rung: up, type: "retrieve" } }
+        : { refusal: "unknown-action" };
     }
     case "easier": {
       const down = easier(current);
-      return down ? { because, objectiveId: id, rung: down, type: "retrieve" } : null;
+      return down
+        ? { action: { because, objectiveId: id, rung: down, type: "retrieve" } }
+        : { refusal: "unknown-action" };
     }
     case "teach":
-      return { because, exposition: exposition("correction"), objectiveId: id, type: "teach" };
+      return { action: { because, exposition: exposition("correction"), objectiveId: id, type: "teach" } };
     case "simplify":
-      return { because, exposition: exposition("correction"), objectiveId: id, type: "simplify" };
+      return { action: { because, exposition: exposition("correction"), objectiveId: id, type: "simplify" } };
     case "correct":
-      return { because, exposition: exposition("correction"), objectiveId: id, type: "show_correction" };
+      return {
+        action: { because, exposition: exposition("correction"), objectiveId: id, type: "show_correction" },
+      };
     case "contrast": {
       // 🔴🔴 DERIVED FROM THE EVIDENCE AND NEVER TAKEN FROM THE MODEL. Naming which false belief a
       // learner holds is authoring a claim about a person. A model-supplied list would let the
@@ -493,13 +572,15 @@ function actionFor(input: {
       const competing = input.snapshot.misconceptions;
       // Nothing to separate. A "contrast" against no observed belief is a retrieval with a
       // misleading name, so it is refused and counted rather than quietly downgraded.
-      if (competing.length === 0) return null;
+      if (competing.length === 0) return { refusal: "unknown-action" };
       return {
-        because,
-        competingWith: competing,
-        exposition: exposition("contrast"),
-        objectiveIds: [id],
-        type: "contrast",
+        action: {
+          because,
+          competingWith: competing,
+          exposition: exposition("contrast"),
+          objectiveIds: [id],
+          type: "contrast",
+        },
       };
     }
     case "recognise":
@@ -509,14 +590,43 @@ function actionFor(input: {
       // — the line `TeachingStrategy`'s header draws ("a controller chooses; it does not author") and
       // the same one the contrast case draws two branches down.
       return input.choices
-        ? { because, choices: input.choices, objectiveId: id, rung: "recognition", type: "recognise" }
-        : null;
+        ? {
+            action: { because, choices: input.choices, objectiveId: id, rung: "recognition", type: "recognise" },
+          }
+        : { refusal: "unknown-action" };
+    // 🔴🔴 THE TWO GROUNDED MOVES, AND BOTH ASK THE BUILDER RATHER THAN TRUSTING THE SNAPSHOT.
+    // The snapshot's `canBeModelled` / `canBeCompleted` lines exist to stop the model WASTING turns;
+    // they are not the authority on whether the thing can be staged. Reading
+    // them here instead of calling the builder would put the check one copy away from the code that
+    // actually has to produce the screen — which is the exact shape of defect this repo keeps
+    // finding: a decision that says yes and a builder that then returns nothing.
+    case "model":
+      return workedExampleFor(input.entry).modelled
+        ? {
+            action: {
+              because,
+              exposition: expositionFor({
+                capability: input.entry.objective.capability,
+                // A demonstration is material to be read, which is what `correction` resolves to for
+                // every knowledge type one can be built from. It is not a verdict about the learner.
+                kind: "correction",
+                knowledgeType: input.entry.knowledge.type,
+              }),
+              objectiveId: id,
+              type: "worked_example",
+            },
+          }
+        : { refusal: "ungroundable-action" };
+    case "complete":
+      return completionAvailable(input.entry)
+        ? { action: { because, objectiveId: id, rung: "completion", type: "complete" } }
+        : { refusal: "ungroundable-action" };
     case "defer":
-      return { because, objectiveId: id, type: "defer" };
+      return { action: { because, objectiveId: id, type: "defer" } };
     case "revisit":
-      return { because, objectiveId: id, type: "revisit" };
+      return { action: { because, objectiveId: id, type: "revisit" } };
     case "advance":
-      return { because, objectiveId: id, type: "advance" };
+      return { action: { because, objectiveId: id, type: "advance" } };
   }
 }
 
@@ -624,7 +734,7 @@ export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrateg
         evidence: context.evidence,
         objectives: context.objectives,
       });
-      const action = actionFor({
+      const chosen = actionFor({
         because,
         choices: choiceSets.get(entry.objective.identityKey) ?? null,
         entry,
@@ -633,9 +743,15 @@ export function createLlmTeacherStrategy(ask: TeacherTransport): TeachingStrateg
         verb,
       });
       // The verb was legal and the objective was real, but the move is not available for THIS
-      // objective — a contrast with no observed belief, a rung already at the end of the ladder.
-      // Counted, never silently substituted with a different move the model did not choose.
-      if (!action) return refused("unknown-action");
+      // objective — a contrast with no observed belief, a rung already at the end of the ladder, a
+      // worked example over material with no process in it. Counted, never silently substituted with
+      // a different move the model did not choose.
+      //
+      // 🔴 THE BUILDER'S OWN REASON, PASSED THROUGH RATHER THAN FLATTENED TO ONE NAME. See
+      // `ActionOrRefusal`: "we do not have that move" and "this material cannot support it" are
+      // different facts about the arm's health, and only the second is a healthy controller.
+      if (!chosen.action) return refused(chosen.refusal);
+      const action = chosen.action;
 
       const mine = context.evidence.filter((row) => row.objectiveIdentityKey === entry.objective.identityKey);
       const decision: TeachingDecision = {
