@@ -65,9 +65,26 @@ export interface ContentClaim {
    * disagree about what counts as a real image.
    */
   images: number;
+  /**
+   * Real pictures under `word/media/`. DOCX only, and DELIBERATELY A SEPARATE FIELD FROM `images`.
+   *
+   * 🔴 TWO NAMES BECAUSE THERE ARE TWO QUESTIONS, ASKED BY TWO DIFFERENT GATES, AND MERGING THEM
+   * WOULD SILENTLY CHANGE VENDOR ROUTING. `images` is read by `judgeMistralRead`, which judges the
+   * VENDOR's read; `modelFromLlama` has no picture branch, so setting `images` for DOCX would
+   * reject every LlamaParse read of a Word document that contains any picture — a routing change
+   * made as a side effect of adding a counter, and the note beside `images` explicitly declined to
+   * make it without a measurement. `docxImages` is read only by `officePreflight`, which judges
+   * OUR OWN read, where the question is answerable: the Word lane genuinely emits figure blocks
+   * (`pictureRefs`), so "the file holds four pictures and we produced none" is a real loss and not
+   * a structural certainty.
+   *
+   * Same filter as `images`, for the same reason: a 3x3 bullet glyph is not a claim that teaching
+   * content went missing.
+   */
+  docxImages: number;
 }
 
-const NO_CLAIM: ContentClaim = { images: 0, notesChars: 0, notesSlides: 0, tables: 0 };
+const NO_CLAIM: ContentClaim = { docxImages: 0, images: 0, notesChars: 0, notesSlides: 0, tables: 0 };
 
 /**
  * Notes worth failing a parse over.
@@ -142,17 +159,32 @@ export function claimOf(kind: string, bytes: Uint8Array): ContentClaim {
       // figures, all comfortably over this floor, none of them 3×3 glyphs.
       if (isTiff(data) && data.byteLength >= MIN_UNKNOWN_BYTES) images += 1;
     }
-    return { images, notesChars, notesSlides, tables: 0 };
+    return { docxImages: 0, images, notesChars, notesSlides, tables: 0 };
   }
 
   const document = parts["word/document.xml"];
   if (!document) return NO_CLAIM;
   const tables = (decoder.decode(document).match(/<w:tbl(?:\s|>)/g) ?? []).length;
+
+  // The same media filter the deck lane applies, over Word's own media folder.
+  let docxImages = 0;
+  for (const [name, data] of Object.entries(parts)) {
+    if (!name.startsWith("word/media/")) continue;
+    if (imageMime(name)) {
+      const size = imageSize(data);
+      if (!size) continue;
+      if (size.width < MIN_IMAGE_EDGE || size.height < MIN_IMAGE_EDGE) continue;
+      if (size.width * size.height < MIN_IMAGE_PIXELS) continue;
+      docxImages += 1;
+      continue;
+    }
+    if (isTiff(data) && data.byteLength >= MIN_UNKNOWN_BYTES) docxImages += 1;
+  }
   // Images are a PPTX-only claim: `modelFromLlama` has no image branch for either format, but a
   // Word document's pictures are decorative far more often than a lecture slide's, and Mistral's
   // own DOCX table loss was already the measured, real failure worth a gate — this does not widen
   // that without a measurement of its own.
-  return { images: 0, notesChars: 0, notesSlides: 0, tables };
+  return { docxImages, images: 0, notesChars: 0, notesSlides: 0, tables };
 }
 
 /** Why a vendor read was rejected, in words that name the missing thing. */
