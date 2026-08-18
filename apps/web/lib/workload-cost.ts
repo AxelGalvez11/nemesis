@@ -221,7 +221,12 @@ export const PLANS: Readonly<Record<PlanCode, Plan>> = {
     dailyTokens: 75_000,
     monthlyTokens: 1_000_000,
     priceUsd: 0,
-    searchMonthly: 60,
+    // 🔴 20, NOT 60. This model carried 60 from an audit note; the live
+    // plan_entitlements row says 20, read off production on 2026-08-18. A cost
+    // model that overstates a free allowance overstates what free costs, which
+    // is the direction that quietly justifies tightening something that was
+    // never loose.
+    searchMonthly: 20,
     voiceSeconds: 900,
   },
   nemesis: {

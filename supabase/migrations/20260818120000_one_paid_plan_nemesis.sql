@@ -132,6 +132,14 @@ INSERT INTO public.plan_entitlements (plan_code, entitlement_key, value_json) VA
   ('nemesis', 'mission_limit',                     '5'::jsonb),
   ('nemesis', 'watch_limit',                       '50'::jsonb),
   ('nemesis', 'watchlist_limit',                   '100'::jsonb),
+  -- 🔴 THESE TWO WERE MISSING, AND MISSING IS WORSE THAN WRONG. An entitlement
+  -- key with no row makes plan_entitlement_int return NULL, which consume_usage
+  -- reports as `missing_entitlement` -- a hard refusal, not a small allowance.
+  -- Every paid user would have lost daily and emailed watches. Found by reading
+  -- the live plan_entitlements table rather than trusting the audit note; the
+  -- DO block at the end of this migration now makes it impossible to repeat.
+  ('nemesis', 'watch_daily_enabled',               'true'::jsonb),
+  ('nemesis', 'watch_email_enabled',               'true'::jsonb),
   ('nemesis', 'ppt_export_enabled',                'true'::jsonb),
   ('nemesis', 'report_export_enabled',             'true'::jsonb),
   ('nemesis', 'stripe_plus_enabled',               'true'::jsonb),
@@ -140,10 +148,17 @@ INSERT INTO public.plan_entitlements (plan_code, entitlement_key, value_json) VA
   -- keys. Omitting them would make those reservations return
   -- `missing_entitlement` — an error, not a clean refusal. Setting them EQUAL TO
   -- FREE keeps the retired lanes working identically for everyone and makes it
-  -- impossible for paid to end up with LESS than free (a cap inversion), while
-  -- selling nobody an hour of lecture recording. They are advertised nowhere.
+  -- impossible for paid to end up with LESS than free, while selling nobody an
+  -- hour of lecture recording. They are advertised nowhere.
+  --
+  -- 🔴 THE LIVE AUDIO NUMBER IS 7200, NOT 900, AND THE DIFFERENCE WAS A CAP
+  -- INVERSION. This migration was first written with 900 from a stale reading of
+  -- free's rows. Free actually carries 7,200 seconds, so paid would have received
+  -- EIGHT TIMES LESS streaming audio than free — the exact inversion the ladder
+  -- guard exists to catch, on the two keys that guard no longer covers because
+  -- they were removed from the Plan shape. Read off production 2026-08-18.
   ('nemesis', 'transcription_seconds_month_limit', '3600'::jsonb),
-  ('nemesis', 'live_audio_seconds_month_limit',    '900'::jsonb)
+  ('nemesis', 'live_audio_seconds_month_limit',    '7200'::jsonb)
 ON CONFLICT (plan_code, entitlement_key) DO UPDATE
   SET value_json = EXCLUDED.value_json, updated_at = now();
 
@@ -309,5 +324,58 @@ UPDATE public.subscriptions
 -- a subscription whose period ends in 2027 still rolls its counters on the first
 -- of each month. Nothing here couples a counter window to a billing cycle, and
 -- nothing later may.
+
+-- ── The nemesis row set must be COMPLETE, and this is checked at apply time ──
+--
+-- 🔴 THE FAILURE THIS CATCHES IS A MISSING ROW, NOT A WRONG ONE. A key that no
+-- plan_entitlements row defines does not fall back to a default and does not
+-- grant a small amount: `plan_entitlement_int` returns NULL and every reservation
+-- path turns that into `missing_entitlement`, a hard refusal. Two keys
+-- (`watch_daily_enabled`, `watch_email_enabled`) were missing from the INSERT
+-- above when this migration was first written, which would have removed daily and
+-- emailed watches from every paid account with nothing anywhere reporting it.
+--
+-- Checked against the live table rather than against a list in this file, so it
+-- cannot go stale: whatever the retired paid tiers still define, `nemesis` must
+-- define too.
+DO $$
+DECLARE
+  v_missing text[];
+BEGIN
+  SELECT array_agg(DISTINCT entitlement_key ORDER BY entitlement_key)
+    INTO v_missing
+    FROM public.plan_entitlements
+   WHERE plan_code IN ('pro', 'plus', 'max', 'student', 'professional')
+     AND entitlement_key NOT IN (
+       SELECT entitlement_key FROM public.plan_entitlements WHERE plan_code = 'nemesis'
+     );
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'nemesis is missing entitlement keys that a retired paid tier defines: %', v_missing;
+  END IF;
+END $$;
+
+-- ── And paid may never offer LESS than free ─────────────────────────────────
+--
+-- The application-level ladder guard (planCapInversions) only covers the meters
+-- the Plan shape still carries. The compatibility floors above are not among
+-- them, which is exactly why the live-audio inversion got as far as it did. This
+-- checks EVERY numeric key the two plans share, from the table itself.
+DO $$
+DECLARE
+  v_inverted text;
+BEGIN
+  SELECT string_agg(format('%s: nemesis %s < free %s', f.entitlement_key, n.value_json #>> '{}', f.value_json #>> '{}'), '; ')
+    INTO v_inverted
+    FROM public.plan_entitlements f
+    JOIN public.plan_entitlements n
+      ON n.plan_code = 'nemesis' AND n.entitlement_key = f.entitlement_key
+   WHERE f.plan_code = 'free'
+     AND jsonb_typeof(f.value_json) = 'number'
+     AND jsonb_typeof(n.value_json) = 'number'
+     AND (n.value_json #>> '{}')::numeric < (f.value_json #>> '{}')::numeric;
+  IF v_inverted IS NOT NULL THEN
+    RAISE EXCEPTION 'paid offers less than free on: %', v_inverted;
+  END IF;
+END $$;
 
 COMMIT;
