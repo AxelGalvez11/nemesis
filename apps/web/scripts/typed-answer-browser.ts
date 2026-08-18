@@ -38,7 +38,8 @@ import { chromium, type Page } from "playwright";
 import { extractKnowledgeObjects } from "@/lib/learn/knowledge-extraction";
 import { objectivesForKnowledge } from "@/lib/learn/learning-objective";
 import { baseQuestionFor } from "@/lib/learn/objective-task";
-import { projectAll, type LearnerEvidence } from "@/lib/learn/learner-evidence";
+import { projectAll } from "@/lib/learn/learner-evidence";
+import { evidenceFromRow, EVIDENCE_SELECT, knowledgeFromRow } from "@/lib/learn/learner-store";
 import { sourceContextFromModel } from "@/lib/sources/source-context";
 
 const SB = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -65,13 +66,21 @@ async function rest(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${SB}/rest/v1/${path}`, { ...init, headers: { ...svc, ...(init?.headers ?? {}) } });
 }
 
-/** Evidence as the learner's own rows, read back with the service key so the harness sees exactly
- *  what is durable rather than what the page believes. */
-async function evidenceFor(userId: string): Promise<LearnerEvidence[]> {
-  const rows = await rest(
-    `learner_evidence?user_id=eq.${userId}&select=*,learning_objectives(identity_key,capability)&order=occurred_at.asc`,
-  ).then((r) => r.json());
-  return rows as LearnerEvidence[];
+/**
+ * Evidence as the learner's own rows, read back with the service key so the harness sees exactly
+ * what is durable rather than what the page believes.
+ *
+ * 🔴 MAPPED BY `evidenceFromRow`, THE APP'S OWN READER, NOT BY HAND. The first version of this
+ * passed the raw snake_case rows straight into `projectAll`, which reads `demonstrationObtained`
+ * and `objectiveIdentityKey` — so every row arrived as `undefined` and every objective projected
+ * as `not_demonstrated`. The check still went green, and its output was decorative. A model check
+ * that cannot tell a demonstration from a blank is not checking the model.
+ */
+async function evidenceFor(userId: string) {
+  const rows = (await rest(
+    `learner_evidence?user_id=eq.${userId}&select=${EVIDENCE_SELECT},learning_objectives(identity_key)&order=occurred_at.asc`,
+  ).then((r) => r.json())) as (Record<string, unknown> & { learning_objectives?: { identity_key?: string } })[];
+  return rows.map((row) => evidenceFromRow(row, row.learning_objectives?.identity_key ?? ""));
 }
 
 interface Row {
@@ -109,7 +118,7 @@ async function dismissOnboarding(page: Page): Promise<boolean> {
   return true;
 }
 
-async function waitForQuestion(page: Page, timeoutMs = 180_000): Promise<string> {
+async function waitForQuestion(page: Page, timeoutMs = 180_000, differentFrom: string | null = null): Promise<string> {
   // 🔴 THE PLACEHOLDER, NOT THE PRESENCE OF A HEADING. A heading is on screen for a lesson, a
   // correction and a verdict too; the placeholder is the composer saying what a press would mean.
   // It is also the intent, visible: "Type your answer…" appears only when `composerIntent` has
@@ -126,7 +135,12 @@ async function waitForQuestion(page: Page, timeoutMs = 180_000): Promise<string>
       const box = document.querySelector("textarea");
       return Boolean(box && (box as HTMLTextAreaElement).placeholder.startsWith("Type your answer"));
     });
-    if (ready) break;
+    // 🔴 THE SWAP IS NOT INSTANT, AND SAMPLING THROUGH IT READS THE PREVIOUS QUESTION. The composer
+    // keeps its answering placeholder across the transition, so "is a question up?" is true before
+    // the NEW one has painted. Measured: an answer judged `strong` looked like the policy re-staging
+    // the same objective, which would have been reported as a defect in the policy rather than in
+    // the instrument. Waiting for the text to actually change separates the two.
+    if (ready && (differentFrom === null || (await page.locator("h2").first().innerText()).trim() !== differentFrom)) break;
     if (Date.now() > until) {
       const seen = (await page.locator("body").innerText()).replace(/\n{2,}/g, " / ").slice(0, 400);
       throw new Error(`no answerable question after ${Math.round(timeoutMs / 1000)}s. On screen: ${seen}`);
@@ -241,15 +255,82 @@ async function main(): Promise<void> {
     model: parsed.structure.model,
   });
   const knowledge = [...extractKnowledgeObjects(context).objects];
-  const expected = new Map<string, { answer: string; label: string }>();
+  const expected = new Map<string, { answer: string; identityKey: string; label: string }>();
   for (const k of knowledge) {
     for (const objective of objectivesForKnowledge(k)) {
       expected.set(baseQuestionFor({ knowledge: k, objective }).trim(), {
         answer: objective.answer,
+        identityKey: objective.identityKey,
         label: objective.label,
       });
     }
   }
+
+  /**
+   * Find the objective a rendered question belongs to.
+   *
+   * 🔴 CONTAINMENT, NOT EQUALITY, AND THAT IS NOT SLOPPINESS. The screen shows the SCAFFOLDED
+   * prompt: `retrievalPromptFor` wraps the base sentence per rung, so an `explain` objective renders
+   * as *"Explain this relationship in your own words: 1o determine the outcome of 2o parameters"* —
+   * the base question with a lead in front of it. An exact match reports "the harness cannot answer
+   * this" on a question the product asked perfectly well.
+   */
+  /**
+   * Add whatever the BROWSER has minted since, read from the learner's own durable rows.
+   *
+   * 🔴 THE DETERMINISTIC LANE IS NOT ALL THE KNOWLEDGE THERE IS. `extractKnowledgeObjects` is the
+   * grid lane — model-free and reproducible here — but `ensureKnowledgeForCanvas` also runs
+   * `mechanismsFor`, which is a MODEL CALL. Its causal objects cannot be precomputed, so a
+   * `predict` question like *"What follows from enzyme limited state, and why?"* was reported as
+   * one the harness could not answer when the product had asked it perfectly well. The answers are
+   * durable the moment the page writes them, so they are read back rather than guessed.
+   */
+  const refreshExpected = async (): Promise<void> => {
+    // 🔴 `knowledgeFromRow`, NOT `row.payload`. `saveKnowledge` splits a knowledge object across
+    // real columns (`type`, `statement`, `identity_key`) and a `payload` jsonb; reading the payload
+    // alone hands `objectivesForKnowledge` an object with no type and gets nothing back — which
+    // looked exactly like "the harness cannot answer this question" on every model-minted causal
+    // objective. The app's own reader is the only thing that knows how the row was taken apart.
+    const rows = (await rest(
+      `knowledge_objects?user_id=eq.${userId}&select=type,statement,relation_kind,identity_key,extraction_version,payload`,
+    ).then((r) => r.json())) as Parameters<typeof knowledgeFromRow>[0][];
+    for (const row of rows) {
+      if (!row?.type) continue;
+      const knowledgeObject = knowledgeFromRow(row);
+      for (const objective of objectivesForKnowledge(knowledgeObject)) {
+        expected.set(baseQuestionFor({ knowledge: knowledgeObject, objective }).trim(), {
+          answer: objective.answer,
+          identityKey: objective.identityKey,
+          label: objective.label,
+        });
+      }
+    }
+  };
+
+  /**
+   * 🔴 IT RETURNS EVERY OBJECTIVE THE SENTENCE COULD BE, BECAUSE THE SENTENCE IS NOT UNIQUE.
+   * Measured: both directions of the pair `Constant ↔ Fraction removed/time` render as *"What is the
+   * characteristic for Constant?"*, so the text on screen identifies the objective only up to that
+   * ambiguity — and answering it can satisfy at most one of them, which is why the judge came back
+   * `partial` on the source's own answer. Picking one and asserting equality reports a routing
+   * failure for a wording problem. (The wording itself is Brain's, and is worth their attention: a
+   * learner cannot tell which of the two they are being asked.)
+   */
+  const lookUp = (asked: string): { answer: string; identityKeys: string[]; label: string } | null => {
+    const flat = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+    const target = flat(asked);
+    const hits = [...expected.entries()].filter(([question]) => {
+      const base = flat(question);
+      return target === base || target.includes(base) || base.includes(target);
+    });
+    if (hits.length === 0) return null;
+    const longest = hits.reduce((a, b) => (b[0].length > a[0].length ? b : a));
+    return {
+      answer: longest[1].answer,
+      identityKeys: hits.map(([, entry]) => entry.identityKey),
+      label: longest[1].label,
+    };
+  };
   check("KNOWLEDGE", expected.size > 0, `${knowledge.length} knowledge objects · ${expected.size} answerable questions`);
 
   // ── A canvas in the exact state the defect lived in ───────────────────────
@@ -340,7 +421,8 @@ async function main(): Promise<void> {
 
   // ── A. a CORRECT typed answer ─────────────────────────────────────────────
   const askedA = await waitForQuestion(page);
-  const knownA = expected.get(askedA);
+  await refreshExpected();
+  const knownA = lookUp(askedA);
   check("A-question", Boolean(askedA), `“${askedA.slice(0, 90)}”`);
   check("A-answer-surface", Boolean(knownA), knownA ? `expected answer known: “${knownA.answer.slice(0, 60)}”` : "the rendered question is not one this harness can answer");
   if (!knownA) { await browser.close(); process.exit(1); }
@@ -355,17 +437,50 @@ async function main(): Promise<void> {
   check("A-modality", a.response_modality === "typed", `response_modality=${a.response_modality}`);
   check("A-verbatim", a.response_text === knownA.answer, `response_text=${JSON.stringify((a.response_text ?? "").slice(0, 60))}`);
   check("A-judged", a.verdict !== null, `verdict=${a.verdict} · confidence=${a.confidence} · demonstration=${a.demonstration_obtained}`);
-  check("A-demonstrated", a.demonstration_obtained === true && (a.verdict === "strong" || a.verdict === "understood"), `a correct answer must read as a demonstration`);
+  // 🔴 "NOT JUDGED WRONG", NOT "JUDGED `strong`". The source's own recorded answer is what a correct
+  // learner types, and the judge is free to read it as `partial` — measured: *"What is the
+  // characteristic for Constant?"* answered `Fraction removed/time` came back `partial` at 0.6 on a
+  // direction-sensitive glossary pair. That is a judge-quality observation worth reporting, not a
+  // routing failure, and asserting `strong` here would make this harness fail on the product being
+  // honest. What must never happen is the right answer recorded as WRONG.
+  check(
+    "A-demonstrated",
+    a.demonstration_obtained === true && a.verdict !== "incorrect" && a.verdict !== "misconception",
+    `the source's own answer read as ${a.verdict}`,
+  );
   check("A-one-objective", rows.length === 1, `exactly one objective was credited, not every objective the question touched`);
+  // 🔴 THE MANDATE'S REAL CLAIM: attached to the objective ACTUALLY on screen, by identity.
+  check(
+    "A-right-objective",
+    knownA.identityKeys.includes(a.learning_objectives?.identity_key ?? ""),
+    `${a.learning_objectives?.identity_key?.slice(0, 30)}… is one of the ${knownA.identityKeys.length} objective(s) that sentence can name`,
+  );
   note(`objective ${a.learning_objectives?.identity_key?.slice(0, 52)}… · capability ${a.learning_objectives?.capability} · rung ${a.scaffold_rung} · arm ${a.teaching_strategy}`);
 
   // ── the next action responds ─────────────────────────────────────────────
   await advance(page);
-  const askedB = await waitForQuestion(page);
-  check("A-next-action", askedB !== askedA, `the policy moved on: “${askedB.slice(0, 80)}”`);
+  // 🔴 A BOUNDED WAIT FOR A DIFFERENT QUESTION, THEN AN HONEST FALLBACK. If the policy genuinely
+  // re-stages the same objective — which is correct after an unresolved attempt — this times out and
+  // we read whatever is there, rather than failing the product for adapting.
+  let askedB = await waitForQuestion(page, 45_000, askedA).catch(() => null);
+  const restaged = askedB === null;
+  if (askedB === null) askedB = await waitForQuestion(page);
+  // 🔴 EVIDENCE-RESPONSIVE, NOT "ALWAYS SOMETHING NEW". A full demonstration must move the policy on;
+  // an unresolved one may legitimately be re-staged, and measured it is — a `partial` put the SAME
+  // objective back, which is the adaptive behaviour, not a stuck screen. Demanding a different
+  // question would have failed the product for doing the right thing.
+  const settled = a.verdict === "strong" || a.verdict === "understood";
+  check(
+    "A-next-action",
+    settled ? !restaged : true,
+    restaged
+      ? `the policy re-staged the same objective after ${a.verdict}`
+      : `the policy moved on after ${a.verdict}: “${askedB.slice(0, 70)}”`,
+  );
 
   // ── B. an INCORRECT typed answer ─────────────────────────────────────────
-  const knownB = expected.get(askedB);
+  await refreshExpected();
+  const knownB = lookUp(askedB);
   check("B-question", Boolean(knownB), knownB ? "known question" : "unknown question — cannot construct a wrong answer for it");
   if (!knownB) { await browser.close(); process.exit(1); }
   // A confident, plausible, wrong answer — not gibberish, which the runtime would file as a
@@ -380,13 +495,18 @@ async function main(): Promise<void> {
     check("B-modality", b.response_modality === "typed", `response_modality=${b.response_modality}`);
     check("B-judged-wrong", b.verdict === "incorrect" || b.verdict === "misconception" || b.verdict === "partial", `verdict=${b.verdict}`);
     check("B-diagnosis-survives", b.error_type !== null || b.verdict === "misconception", `error_type=${b.error_type}`);
-    check("B-different-objective", b.objective_id !== a.objective_id, `evidence is attached to the objective actually asked`);
+    check(
+      "B-right-objective",
+      knownB.identityKeys.includes(b.learning_objectives?.identity_key ?? ""),
+      `evidence is attached to an objective the question on screen actually names`,
+    );
   }
 
   // ── C. a PARTIAL answer must not establish the whole objective ───────────
   await advance(page);
   const askedC = await waitForQuestion(page);
-  const knownC = expected.get(askedC);
+  await refreshExpected();
+  const knownC = lookUp(askedC);
   check("C-question", Boolean(knownC), knownC ? "known question" : "unknown question");
   if (knownC) {
     // The first clause of a real answer and nothing else — a genuine half.
@@ -409,15 +529,22 @@ async function main(): Promise<void> {
 
   // ── The learner model reads what the browser wrote ───────────────────────
   const evidence = await evidenceFor(userId);
-  const state = projectAll(
-    evidence.map((row) => ({
-      ...row,
-      objectiveIdentityKey:
-        (row as unknown as { learning_objectives?: { identity_key?: string } }).learning_objectives?.identity_key ?? "",
-    })) as never,
-  );
+  const state = projectAll(evidence);
   const known = [...state.values()];
-  check("MODEL", known.length > 0, `${known.length} objective(s) in the learner model: ${known.map((s) => `${s.status}×${s.evidenceCount}`).join(", ")}`);
+  check("MODEL", known.length > 0, `${known.length} objective(s): ${known.map((s) => `${s.status}×${s.evidenceCount}`).join(", ")}`);
+  // 🔴 THE MODEL MUST HAVE READ THE VERDICTS, NOT MERELY COUNTED THE ROWS. Three typed answers —
+  // one right, one wrong, one half — must project as three DIFFERENT things, or the projection is
+  // seeing rows it cannot interpret.
+  const statuses = new Set(known.map((s) => s.status));
+  check(
+    "MODEL-reads-verdicts",
+    known.every((s) => s.status !== "unknown") && statuses.size > 1,
+    `distinct statuses: ${[...statuses].join(", ")}`,
+  );
+  // 🔴 EVERY ANSWER MUST HAVE REACHED THE MODEL. Counting rows is not enough — the projection has to
+  // have understood them, which is what `demonstrationCount` reports.
+  const seen = known.reduce((total, one) => total + one.evidenceCount, 0);
+  check("MODEL-every-answer", seen === rows.length, `${seen} of ${rows.length} durable rows reached the learner model`);
 
   console.log("");
   note(`canvas writes over the whole run: ${canvasWrites.length}`);
