@@ -25,7 +25,7 @@
  *   npx tsx scripts/corpus-measure.mts [--dir <path>] [--limit N] [--json out.json]
  */
 
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 
 // Imported from the modules rather than the package index, matching the other scripts here:
@@ -65,6 +65,29 @@ const MIME: Record<string, string> = {
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
+
+/**
+ * pdf.js can reject a promise nobody is holding.
+ *
+ * 🔴🔴 A MALFORMED PDF CAN KILL THIS PROCESS THROUGH A `try`/`catch` THAT IS DOING ITS JOB. On
+ * `govdocs1-error-pdfs/error_set_2` the reader raised `FormatError: Illegal character: 41` from a
+ * detached promise — work pdf.js started that our call chain never awaits — so the rejection
+ * escaped every guard around `parseDocument` and Node terminated the process at document 176 of
+ * 535.
+ *
+ * 🔴 IN PRODUCTION THIS IS CONTAINED, AND IT WAS WORTH CHECKING RATHER THAN ASSUMING. The parse
+ * runs in a worker thread and `parse-run.ts` handles the worker's `error` and `exit` events, so a
+ * file like this fails ITS OWN JOB and no other learner is affected. What does happen is that the
+ * document fails outright instead of escalating to the vendor that might have read it — the router
+ * had already chosen `structure-unavailable`, and the crash arrives before anyone can act on it.
+ *
+ * Here the failure is recorded against the file and the sweep continues, because a measurement that
+ * stops at the first awkward document measures nothing.
+ */
+let pendingRejection: string | null = null;
+process.on("unhandledRejection", (reason) => {
+  pendingRejection = reason instanceof Error ? reason.message.slice(0, 120) : String(reason).slice(0, 120);
+});
 
 function arg(name: string, fallback: string): string {
   const at = process.argv.indexOf(name);
@@ -118,10 +141,33 @@ const root = arg("--dir", DEFAULT_CORPUS_DIR);
 const limit = Number(arg("--limit", "0")) || Number.POSITIVE_INFINITY;
 const jsonOut = arg("--json", "");
 
-const files = walk(root).sort().slice(0, limit === Number.POSITIVE_INFINITY ? undefined : limit);
-console.info(`${files.length} documents under ${root}\n`);
+const jsonl = arg("--jsonl", "");
 
+/**
+ * Rows already measured, so a re-run resumes instead of starting again.
+ *
+ * 🔴 APPEND-AS-YOU-GO, BECAUSE THE CORPUS CONTAINS FILES DESIGNED TO BREAK PARSERS. Holding 535
+ * results in memory and writing them at the end means one hostile document at position 176 destroys
+ * the other 175 answers.
+ */
+const done = new Set<string>();
 const rows: Row[] = [];
+if (jsonl && existsSync(jsonl)) {
+  for (const line of readFileSync(jsonl, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line) as Row;
+      rows.push(row);
+      done.add(row.file);
+    } catch { /* a half-written final line from a crash: re-measure that file */ }
+  }
+  console.info(`resuming: ${done.size} already measured`);
+}
+
+const files = walk(root).sort()
+  .filter((f) => !done.has(relative(root, f)))
+  .slice(0, limit === Number.POSITIVE_INFINITY ? undefined : limit);
+console.info(`${files.length} documents to measure under ${root}\n`);
 for (const [index, file] of files.entries()) {
   const rel = relative(root, file);
   const source = rel.split("/")[0] ?? "?";
@@ -179,7 +225,14 @@ for (const [index, file] of files.entries()) {
     };
   }
 
+  // A rejection that escaped every guard still belongs to the file being read when it arrived.
+  if (pendingRejection) {
+    row = { ...row, ok: false, reason: `detached-rejection:${pendingRejection}`, route: "failed" };
+    pendingRejection = null;
+  }
+
   rows.push(row);
+  if (jsonl) appendFileSync(jsonl, `${JSON.stringify(row)}\n`);
   if ((index + 1) % 25 === 0) console.info(`  ${index + 1}/${files.length}`);
 }
 
