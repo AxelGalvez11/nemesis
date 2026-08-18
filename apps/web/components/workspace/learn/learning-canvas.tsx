@@ -589,7 +589,20 @@ export function LearningCanvas({
   // narrows the defect — a canvas reaching this render with nothing to show is NEVER a canvas that
   // is still thinking. It has finished, and it has nothing. `canvasPresence` still accepts the
   // input so the value stays correct if that early return is ever removed.
-  const working = busy.kind !== null;
+  // 🔴 `policy.phase` TOO, AND THAT SECOND CLAUSE IS A MEASURED DEFECT, NOT A TIDY-UP. Observed in
+  // production on a grounded topic canvas: `Teach me innate immunity.` attached three pages, the
+  // session's own `busy` cleared, and knowledge extraction carried on running underneath — during
+  // which this said `false`, the presence resolved to `quiet`, and the learner read *"Nemesis has
+  // your material but hasn't found anything to ask you about yet"* for about fifteen seconds before
+  // a perfectly good question appeared. Progress rendered as failure, which is the one thing
+  // `quiet` must never do.
+  //
+  // 🔴 `phase`, NOT `thinking`. `thinking` is `phase !== null` AND long enough to be worth SAYING
+  // OUT LOUD (`THINKING_VISIBLE_AFTER_MS`) — a deliberate delay so a fast step does not flash a
+  // caption. Whether a step is worth narrating and whether one is running are different questions,
+  // and using the narration flag here would reopen the same hole for exactly the length of that
+  // delay. `preparingLabel` already handles a null label honestly.
+  const working = busy.kind !== null || policy.phase !== null;
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
