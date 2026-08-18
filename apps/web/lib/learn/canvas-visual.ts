@@ -12,6 +12,11 @@
 // did not say. `validateCanvasVisual` names the reason; `parseCanvasVisual` remains for the callers
 // that genuinely only need to know whether anything survived.
 
+import { validateStructure } from "./chem-notation";
+
+/** Every polarity a trusted renderer draws. */
+const POLARITIES: readonly EdgePolarity[] = ["increases", "decreases", "plain"];
+
 export interface CanvasVisualBase {
   /** What the learner should understand after seeing this visual. */
   learningGoal: string;
@@ -23,10 +28,26 @@ export interface EquationVisual extends CanvasVisualBase {
   latex: string;
 }
 
+/**
+ * How one thing acts on the next.
+ *
+ * 🔴 POLARITY, NOT A PATHWAY VOCABULARY, AND THE DISTINCTION IS THE FIELD-AGNOSTIC RULE. The
+ * question a diagram of relations has to answer is whether the arrow means MORE or LESS, and that
+ * question is general: a signalling cascade inhibits, a control loop damps, a precedent is
+ * distinguished, a subsidy suppresses demand. What is NOT here — and must never be — is
+ * `phosphorylates`, `transcribes`, or any other domain verb. Those belong in the edge LABEL, which
+ * is free text and already exists.
+ *
+ * 🔴 IT EXISTS BECAUSE THE RENDERER COULD NOT SAY "LESS". Measured before adding it: every edge
+ * drew the same arrowhead, so an inhibition could only be expressed by writing the word on the
+ * line, and a learner scanning a mechanism reads shape long before they read edge labels.
+ */
+export type EdgePolarity = "increases" | "decreases" | "plain";
+
 export interface FlowVisual extends CanvasVisualBase {
   kind: "relationship";
   nodes: readonly { id: string; label: string }[];
-  edges: readonly { from: string; to: string; label?: string }[];
+  edges: readonly { from: string; to: string; label?: string; polarity?: EdgePolarity }[];
 }
 
 export interface PlotVisual extends CanvasVisualBase {
@@ -39,7 +60,32 @@ export interface PlotVisual extends CanvasVisualBase {
   }[];
 }
 
-export type CanvasVisualRequest = EquationVisual | FlowVisual | PlotVisual;
+/**
+ * A molecule, named by its canonical notation rather than drawn (§42).
+ *
+ * 🔴 THE SAME SHAPE AS `EquationVisual`, AND THAT IS THE POINT. `latex` in, KaTeX draws; `value`
+ * in, a chemical depiction library draws. The model supplies notation and never geometry, so a
+ * structure cannot arrive with atoms in the wrong places — the depiction is computed from the
+ * string, and the string is kept so anybody can check what was asked for.
+ */
+export interface StructureVisual extends CanvasVisualBase {
+  kind: "structure";
+  /** Which canonical form `value` is written in. Today only SMILES is owned. */
+  notation: "smiles";
+  /** The canonical string itself. Shown beside the drawing, never hidden behind it. */
+  value: string;
+  /**
+   * Where the notation came from, when it was resolved rather than asserted.
+   *
+   * 🔴 OPTIONAL, AND ITS ABSENCE IS A REAL FACT ABOUT THE STRUCTURE. Present means a resolver was
+   * asked for this name and returned this string; absent means a model wrote it. Both may be
+   * correct and they are not equally trustworthy, and a surface that could not tell them apart
+   * would present a remembered SMILES exactly like a looked-up one.
+   */
+  resolvedFrom?: { name: string; provider: "pubchem"; id: string };
+}
+
+export type CanvasVisualRequest = EquationVisual | FlowVisual | PlotVisual | StructureVisual;
 
 /**
  * Why a request was refused. **A name, never a sentence** — the prose belongs in `detail`.
@@ -98,7 +144,19 @@ export type VisualRefusal =
   /** A coordinate that is not a finite number — NaN, Infinity, a string, a missing field. */
   | "non-finite-number"
   /** A series that is not an object, or carries no usable label. */
-  | "malformed-series";
+  | "malformed-series"
+  /**
+   * A chemical structure that is not usable notation. `detail` carries the specific reason.
+   *
+   * 🔴 ONE REASON RATHER THAN SIX, DELIBERATELY, AND THE SIX STILL EXIST. `ChemRefusal` in
+   * `chem-notation.ts` distinguishes prose-instead-of-notation from an unclosed ring from a
+   * runaway length, and `detail` carries that text verbatim. What this union must not become is a
+   * place where every notation Nemesis ever supports adds five members — the visual boundary cares
+   * that a structure was unusable, and the chemistry module owns why.
+   */
+  | "malformed-structure"
+  /** An edge polarity naming something no renderer draws. */
+  | "malformed-polarity";
 
 export type VisualValidation =
   | { ok: true; visual: CanvasVisualRequest }
@@ -198,7 +256,13 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
       if (item.label !== undefined && !label) {
         return refuse("text-out-of-bounds", "an edge label must be 1–80 characters when present");
       }
-      edges.push({ from, to, ...(label ? { label } : {}) });
+      // Absent means `plain`, and absent is what every request written before polarity existed
+      // sends. A missing polarity is not an unknown one.
+      if (item.polarity !== undefined && !POLARITIES.includes(item.polarity as EdgePolarity)) {
+        return refuse("malformed-polarity", `an edge polarity must be one of ${POLARITIES.join(", ")}`);
+      }
+      const polarity = (item.polarity as EdgePolarity | undefined) ?? undefined;
+      edges.push({ from, to, ...(label ? { label } : {}), ...(polarity && polarity !== "plain" ? { polarity } : {}) });
     }
     return { ok: true, visual: { ...common, edges, kind: "relationship", nodes } };
   }
@@ -246,7 +310,38 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
     };
   }
 
+  if (value.kind === "structure") {
+    // 🔴 THE NOTATION IS CHECKED BEFORE THE VALUE, so "we do not own InChI" is never reported as
+    // "that InChI is malformed" — one is a capability gap worth counting and the other is a typo.
+    const structure = validateStructure(value.notation, value.value);
+    if (!structure.ok) return refuse("malformed-structure", `${structure.reason}: ${structure.detail}`);
+    const resolved = resolvedFrom(value.resolvedFrom);
+    if (resolved === "malformed") {
+      return refuse("malformed-structure", "resolvedFrom must carry a provider, an id and the name that was looked up");
+    }
+    return {
+      ok: true,
+      visual: {
+        ...common,
+        kind: "structure",
+        notation: "smiles",
+        value: structure.value,
+        ...(resolved ? { resolvedFrom: resolved } : {}),
+      },
+    };
+  }
+
   return refuse("unknown-kind", `no trusted renderer owns ${JSON.stringify(value.kind)}`);
+}
+
+/** The provenance stamp on a resolved structure, or `malformed` when it is present and broken. */
+function resolvedFrom(value: unknown): StructureVisual["resolvedFrom"] | "malformed" | null {
+  if (value === undefined || value === null) return null;
+  if (!record(value)) return "malformed";
+  const name = boundedText(value.name, 120);
+  const id = boundedText(value.id, 40);
+  if (!name || !id || value.provider !== "pubchem") return "malformed";
+  return { id, name, provider: "pubchem" };
 }
 
 function countOf(value: unknown): string {

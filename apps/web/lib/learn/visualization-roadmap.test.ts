@@ -37,6 +37,12 @@ const VOICE_FUNCTION = readFileSync(
   "utf8",
 );
 
+const CHEM = readFileSync(new URL("./chem-notation.ts", import.meta.url), "utf8");
+const RESOLVER = readFileSync(new URL("./chem-resolver.ts", import.meta.url), "utf8");
+const REGISTRY = readFileSync(new URL("./reference-registry.ts", import.meta.url), "utf8");
+const PRONUNCIATION = readFileSync(new URL("./pronunciation-evidence.ts", import.meta.url), "utf8");
+const BAKEOFF = readFileSync(new URL("./tts-bakeoff.ts", import.meta.url), "utf8");
+
 const SECTION_42 = CONTRACT.slice(CONTRACT.indexOf("# 42."), CONTRACT.indexOf("# 43."));
 const SECTION_43 = CONTRACT.slice(CONTRACT.indexOf("# 43."));
 
@@ -151,8 +157,15 @@ test("§42's status line matches whether a registry or a generation wiring exist
   assert.ok(SECTION_42.length > 0, "§42 has gone missing from the contract");
   assert.match(
     SECTION_42,
-    /STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING\. RUNGS THREE AND FOUR EXIST AS ROUTER RULES WITH NO REGISTRY BEHIND THEM\./,
+    /STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, NOW INCLUDING CHEMICAL STRUCTURES\. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY\. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT\./,
     "§42 must say plainly which rungs are reached",
+  );
+  // 🔴 THE EMPTY REGISTRY IS THE CLAIM MOST LIKELY TO GO STALE, because seeding it is the obvious
+  // next task and the person doing it will not be reading this section.
+  assert.match(
+    REGISTRY,
+    /REFERENCE_REGISTRY: readonly CuratedEntry\[\] = \[\]/,
+    "the curated registry has rows — §42 still calls it empty",
   );
   // The claim is "no caller passes assets". If one starts to, this is the line that has to move.
   for (const view of [POLICY_VIEW, readFileSync(new URL("../../components/workspace/learn/canvas-document.tsx", import.meta.url), "utf8")]) {
@@ -191,8 +204,15 @@ test("§43's status line matches whether a language lane or a pronunciation prov
   assert.ok(SECTION_43.length > 0, "§43 has gone missing from the contract");
   assert.match(
     SECTION_43,
-    /THE LANGUAGE LANE HAS RULES, A LOCALE CONTRACT AND NO SESSION TYPE BEHIND IT\. PRONUNCIATION ASSESSMENT DOES NOT EXIST\./,
+    /A LISTENING BENCH EXISTS IN NEMESIS LAB AND NO PROVIDER HAS BEEN MEASURED\. PRONUNCIATION ASSESSMENT DOES NOT EXIST\./,
     "§43 must say plainly what is unreached",
+  );
+  // The refusal is the only reachable outcome while no provider is integrated.
+  assert.match(PRONUNCIATION, /reason: "no-provider"/);
+  assert.equal(
+    /https?:\/\//.test(PRONUNCIATION),
+    false,
+    "pronunciation-evidence.ts now calls something — §43 still says no provider is integrated",
   );
   // Every caller passes `canvas`. The day one passes the other purpose, this line is stale.
   const voiceHook = readFileSync(
@@ -227,4 +247,66 @@ test("🔴 the function that pays still bounds what the client may ask for", () 
   // anybody can remove with a fetch.
   assert.match(VOICE_FUNCTION, /reason: "locale-malformed"/);
   assert.match(VOICE_FUNCTION, /Math\.min\(1\.2, Math\.max\(0\.7,/);
+});
+
+
+// 🔴 §42'S CHEMISTRY CLAIMS AND §43'S BENCH CLAIMS ARE TIED THE SAME WAY. Both describe things that
+// are built, which is exactly the kind of paragraph this file's header says outlives the moment it
+// was true.
+
+test("🔴 §42's chemistry lane is the equation lane, and the spec carries notation rather than geometry", () => {
+  assert.match(SECTION_42, /CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION/);
+  assert.ok(VISUAL_CONTRACT.includes('kind: "structure"'), "the structure kind has gone from the spec");
+  assert.match(VISUAL_CONTRACT, /notation: "smiles"/);
+  // The rule with teeth for this lane: no renderer configuration, no path data, no SVG. Checked
+  // against the interface body only, so prose elsewhere in the file cannot satisfy or trip it.
+  const body = VISUAL_CONTRACT.slice(
+    VISUAL_CONTRACT.indexOf("export interface StructureVisual"),
+    VISUAL_CONTRACT.indexOf("export type CanvasVisualRequest"),
+  );
+  for (const term of ["svg", "path", "coordinates", "geometry"]) {
+    assert.equal(
+      new RegExp(`\\b${term}\\??:`, "i").test(body),
+      false,
+      `StructureVisual carries a ${term} field — the model is supplying drawing instructions again`,
+    );
+  }
+});
+
+test("🔴 the unclosed-ring refusal survives, because the parser accepts what it catches", () => {
+  assert.match(SECTION_42, /renders WRONG is worse than one that refuses/);
+  assert.match(CHEM, /structure-unclosed-ring/);
+});
+
+test("🔴 the resolver still prefers the isomeric form", () => {
+  // Dropping stereochemistry makes a chirality question unanswerable, and nothing downstream could
+  // tell that it had happened.
+  assert.match(SECTION_42, /prefers the \*\*isomeric\*\* SMILES/);
+  assert.match(RESOLVER, /SMILES_FIELDS = \["IsomericSMILES"/);
+});
+
+test("🔴 pathways reused the relationship renderer, and the extension stayed general", () => {
+  assert.match(SECTION_42, /PATHWAYS REUSED THE RELATIONSHIP RENDERER/);
+  assert.match(VISUAL_CONTRACT, /EdgePolarity = "increases" \| "decreases" \| "plain"/);
+  // The line that must not be crossed: a domain vocabulary in the spec.
+  for (const verb of ["phosphorylates", "transcribes", "binds", "catalyses"]) {
+    assert.equal(VISUAL_CONTRACT.includes(`"${verb}"`), false, `${verb} is in the spec — this is a pathway engine now`);
+  }
+});
+
+test("🔴 the bench cannot name a winner from a field of one", () => {
+  assert.match(SECTION_43, /One rated provider is never a winner/);
+  assert.match(BAKEOFF, /only-one-provider-rated/);
+  assert.match(BAKEOFF, /"tied"/);
+});
+
+test("🔴 no cost is asserted for any provider while the one rate we hold is disputed", () => {
+  assert.match(SECTION_43, /THE COST COLUMN IS `unverified` FOR EVERY PROVIDER/);
+  const rates = [...BAKEOFF.matchAll(/usdPerMillionChars: ([^,}]+)/g)].map((match) => match[1].trim());
+  assert.ok(rates.length > 0, "the provider catalogue has lost its cost column");
+  assert.deepEqual(
+    rates.filter((rate) => rate.replace(/;$/, "") !== "null" && rate.replace(/;$/, "") !== "number | null"),
+    [],
+    "a provider now claims a rate — reconcile it against what nemesis-speak actually bills first",
+  );
 });

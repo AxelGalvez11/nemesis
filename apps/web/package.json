@@ -63,6 +63,7 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "smiles-drawer": "^2.4.1",
     "streamdown": "^2.5.0",
     "stripe": "^20.1.0",
     "tailwind-merge": "^3.6.0",

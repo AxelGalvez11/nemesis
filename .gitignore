@@ -52,3 +52,8 @@ apps/desktop-agent/
 # Built by apps/web/scripts/build-parse-thread.mjs on prebuild. A 1 MB generated
 # bundle in git would be reviewed by nobody and would drift from its source.
 apps/web/workers/
+
+# Nemesis Lab bench results — measured on one machine, never shared as if they were
+# a fact about the product. The TTS bake-off writes ratings here; promotion into
+# `speech-route.ts` stays a deliberate commit.
+.nemesis-lab/

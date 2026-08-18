@@ -5,6 +5,8 @@ import { useId, useMemo } from "react";
 
 import type { CanvasVisualRequest, FlowVisual, PlotVisual } from "@/lib/learn/canvas-visual";
 
+import { ChemicalStructure } from "./chemical-structure";
+
 const WIDTH = 640;
 const PLOT_HEIGHT = 280;
 const COLOURS = ["var(--ui-accent)", "var(--ui-text-primary)", "#d97706", "#7c3aed"];
@@ -15,6 +17,7 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
       {visual.kind === "equation" ? <Equation visual={visual} /> : null}
       {visual.kind === "relationship" ? <Relationship visual={visual} /> : null}
       {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
+      {visual.kind === "structure" ? <ChemicalStructure visual={visual} /> : null}
       {visual.caption && (
         <figcaption className="mt-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
           {visual.caption}
@@ -74,7 +77,14 @@ function Equation({ visual }: { visual: Extract<CanvasVisualRequest, { kind: "eq
 
 function Relationship({ visual }: { visual: FlowVisual }) {
   const rawId = useId();
-  const markerId = `canvas-arrow-${rawId.replace(/[^A-Za-z0-9_-]/g, "")}`;
+  const safeId = rawId.replace(/[^A-Za-z0-9_-]/g, "");
+  const markerId = `canvas-arrow-${safeId}`;
+  // 🔴 A SECOND MARKER, AND IT IS WHAT MAKES A MECHANISM READABLE (§42). Every edge used to end in
+  // the same arrowhead, so "A inhibits B" could only be said by writing the word on the line — and
+  // a learner scanning a chain reads shape long before they read edge labels. A blunt bar is the
+  // conventional "stops this" in every field that draws influence, which is why the polarity is
+  // named `decreases` rather than `inhibits`: the shape is general, the verb is not.
+  const barId = `canvas-bar-${safeId}`;
   const height = Math.max(180, visual.nodes.length * 82);
   const positions = new Map(visual.nodes.map((node, index) => [node.id, { x: WIDTH / 2, y: 45 + index * 82 }]));
   return (
@@ -82,6 +92,9 @@ function Relationship({ visual }: { visual: FlowVisual }) {
       <defs>
         <marker id={markerId} markerHeight="8" markerWidth="8" orient="auto-start-reverse" refX="7" refY="4">
           <path d="M0,0 L8,4 L0,8 Z" fill="var(--ui-text-tertiary)" />
+        </marker>
+        <marker id={barId} markerHeight="10" markerWidth="10" orient="auto-start-reverse" refX="2" refY="5">
+          <path d="M1,0 L1,10" stroke="var(--ui-text-tertiary)" strokeWidth="2" />
         </marker>
       </defs>
       {visual.edges.map((edge, index) => {
@@ -91,7 +104,15 @@ function Relationship({ visual }: { visual: FlowVisual }) {
         const y2 = to.y - 23;
         return (
           <g key={`${edge.from}-${edge.to}-${index}`}>
-            <line markerEnd={`url(#${markerId})`} stroke="var(--ui-text-tertiary)" strokeWidth="1.5" x1={from.x} x2={to.x} y1={y1} y2={y2} />
+            <line
+              markerEnd={`url(#${edge.polarity === "decreases" ? barId : markerId})`}
+              stroke="var(--ui-text-tertiary)"
+              strokeWidth="1.5"
+              x1={from.x}
+              x2={to.x}
+              y1={y1}
+              y2={y2}
+            />
             {edge.label && (
               <text fill="var(--ui-text-tertiary)" fontSize="12" textAnchor="start" x={from.x + 12} y={(y1 + y2) / 2}>
                 {edge.label}

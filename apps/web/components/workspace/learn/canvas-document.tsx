@@ -536,7 +536,17 @@ function RoutedVisual({ visual }: { visual: CanvasBlock["visual"] }) {
   // spec-backed — none of the three carries a `spec` this renderer could draw. Narrowing by naming
   // the representations that DO belong here (rather than excluding the ones that do not) means a
   // new rung added to the router fails to compile here instead of silently falling through.
-  if (route.representation !== "equation" && route.representation !== "quantitative" && route.representation !== "relationship") {
+  //
+  // 🔴 EXPLICIT COMPARISONS RATHER THAN A LIST, BECAUSE ONLY THESE NARROW THE TYPE. An
+  // `includes()` against a string array compiles and then hands `route.spec` to a renderer on a
+  // branch TypeScript still believes could be an asset-backed route — the check would read as a
+  // guard while guarding nothing.
+  if (
+    route.representation !== "equation"
+    && route.representation !== "quantitative"
+    && route.representation !== "relationship"
+    && route.representation !== "structure"
+  ) {
     return null;
   }
   return <SemanticVisual visual={route.spec} />;

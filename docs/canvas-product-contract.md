@@ -1314,7 +1314,7 @@ enjoyable engineering should read this line as the answer.
 
 # 42. 🔴 SCIENTIFIC REPRESENTATION IS A TRUST LADDER — generation is the last rung, not the first (owner, 2026-08-18)
 
-## STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING. RUNGS THREE AND FOUR EXIST AS ROUTER RULES WITH NO REGISTRY BEHIND THEM.
+## STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, NOW INCLUDING CHEMICAL STRUCTURES. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
 
 §41 asked *which representation makes this idea land*. This section answers a second question §41
 never asked: **when the answer is "a picture", where may that picture come from, and how far does
@@ -1414,32 +1414,80 @@ provenance rather than about subject matter.
 | Equation | LaTeX | **shipped** (KaTeX) |
 | Relationship / pathway | nodes and edges | **shipped** (deterministic SVG) |
 | Quantitative | series of points | **shipped** (deterministic SVG) |
-| Licensed reference image | a registry asset id | **router rule only — no registry exists** |
+| Chemical structure (2D) | SMILES, resolved from a name where possible | **shipped** (`structure`, drawn by a depiction library) |
+| Relationship polarity | `increases` / `decreases` on an edge | **shipped** (arrowhead vs bar) |
+| Licensed reference image | a live provider query, or a curated registry row | **resolver shipped, curated registry EMPTY** |
 | Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
-| 2D chemical structure | SMILES / InChI / a resolver id | **not built** |
 | Macromolecular structure | a structure-database accession | **not built** |
 
-🔴 **THE TWO UNBUILT ROWS ARE THE SAME IDEA AS KaTeX AND THAT IS WHY THEY BELONG HERE.** A chemical
-structure is not an image-generation problem: the model emits a canonical string, a resolver
-validates it, and a depiction library draws it deterministically — exactly the equation lane with a
-different notation. Generating a benzene ring as pixels is the wrong instrument for a problem that
-has an exact answer. The same holds one level up for macromolecules, where the canonical form is an
-accession into a structure database rather than a drawing. Both remain **planned**, below §41's
-priority list, and neither may be simulated with an image model in the meantime — that would put a
-plausible-looking wrong structure in front of a learner, which the ladder exists to prevent.
+## 🔴 CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION
+
+A chemical structure is not an image-generation problem. The model emits a canonical string, a
+validator bounds it, and a depiction library draws it deterministically — exactly what KaTeX does
+for `latex`. Generating a benzene ring as pixels is the wrong instrument for a problem that has an
+exact answer.
+
+- **The spec carries notation, never geometry.** `StructureVisual` is `{ notation: "smiles", value }`,
+  and the canonical string is shown beside the drawing rather than hidden behind it. Anyone can check
+  what was asked for.
+- **A name becomes a structure through a resolver, not through recall.** `chem-resolver.ts` asks
+  PubChem for a compound name and prefers the **isomeric** SMILES, because a chirality question asked
+  against a structure that dropped its stereocentres is unanswerable. A model-written SMILES is still
+  accepted and is distinguishable from a resolved one: `resolvedFrom` is present or it is not, and
+  both may be right without being equally trustworthy.
+- **The validator is a shape check, not a chemistry engine**, and it refuses the two errors a grammar
+  accepts: unbalanced brackets, and a ring bond opened and never closed. That second one was measured
+  against the depiction library — `C1CC` parses cleanly and then draws the ring missing, and a
+  structure that renders WRONG is worse than one that refuses.
+- **Measured, in a real browser:** aspirin draws 15 bond strokes and 3 atom labels with identical
+  coordinates across two renders; L-alanine draws 12 bond strokes against 3 for the same molecule
+  written without stereochemistry. The wedge is in the picture, not just in the string. See
+  `scripts/visual-ladder-acceptance.mts`.
+
+Macromolecules remain **not built**. Their canonical form is an accession into a structure database
+rather than a drawing, and 2D stays the default whenever it teaches the concept adequately — §41's
+3D rule already says depth must be part of what has to be understood, not a way to look
+sophisticated. The clean boundary if that day comes: a `macromolecule` representation carrying an
+accession, resolved by a provider module shaped like `chem-resolver.ts`, drawn by an embedded viewer
+behind the same constrained interface. **Nothing may be simulated with an image model in the
+meantime** — that would put a plausible-looking wrong structure in front of a learner, which is the
+whole reason the ladder exists.
+
+## 🔴 PATHWAYS REUSED THE RELATIONSHIP RENDERER, AND NEEDED ONE THING
+
+The general `relationship` renderer already draws a pathway: nodes, directed edges, edge labels.
+Checked before extending it, and the one thing it could not say was **"less"** — every edge drew the
+same arrowhead, so an inhibition could only be expressed by writing the word on the line, and a
+learner scanning a mechanism reads shape long before they read labels.
+
+So edges gained an optional `polarity` of `increases` / `decreases` / `plain`, drawn as an arrowhead
+or a bar. That is the *entire* extension. What was deliberately NOT built is a pathway engine: there
+is no `phosphorylates`, no `transcribes`, no domain vocabulary anywhere in the spec. Polarity is
+general — a control loop damps, a subsidy suppresses demand, a precedent is distinguished — and
+domain verbs belong in the free-text edge label that already existed.
 
 ## What is deliberately NOT built yet
 
-- **No asset registry.** No table, no harvest, no licence ingestion. `routeVisual()` accepts an
-  `assets` candidate list and every caller in production omits it, so rungs three and four are
-  correct, tested, and unreached. Said plainly here rather than counted as coverage.
+- **The curated registry is empty.** `reference-images.ts` ships two providers — a live Wikimedia
+  Commons search that reads the **per-file** licence out of each result's metadata, and a curated
+  provider reading a checked-in registry. `REFERENCE_REGISTRY` has **no rows**, because a curated row
+  is a claim about a real file's licence and author and must be verified against that file before it
+  is written down. Seeding it from open textbook programmes and government image libraries is the
+  next piece of work; inventing rows would be the fastest way to put an unlicensed picture on screen.
+- **No Canvas caller passes `assets` yet.** `routeVisual()` accepts the candidate list and the
+  teaching surfaces omit it, so rungs three and four are correct, tested, exercised by the Lab, and
+  not yet reached from a lesson. Said plainly here rather than counted as coverage.
+- **The licence allow list has no wildcard, and that is load-bearing.** `startsWith("CC BY")` would
+  look reasonable and would silently admit `CC BY-NC`, which forbids the commercial use Nemesis is.
+  Non-commercial and no-derivatives licences are absent, so they fall through to "no licence
+  recorded" and the asset becomes unusable rather than unattributed.
 - **No wiring to `nemesis-media`.** That function exists and generates images for Nemesis desktop
   under a per-plan daily budget. It is not connected to the Canvas, and connecting it means
   implementing the rung-four rules above, not merely calling it.
 
 # 43. 🔴 WHEN THE SUBJECT IS AUDITORY — voice stops being an output channel (owner, 2026-08-18)
 
-## STATUS: THE SPEECH ROUTER SHIPPED AND IS SERVING THE CANVAS LANE. THE LANGUAGE LANE HAS RULES, A LOCALE CONTRACT AND NO SESSION TYPE BEHIND IT. PRONUNCIATION ASSESSMENT DOES NOT EXIST.
+## STATUS: THE SPEECH ROUTER SHIPPED AND IS SERVING THE CANVAS LANE. THE LANGUAGE LANE HAS RULES, A LOCALE CONTRACT AND NO SESSION TYPE BEHIND IT. A LISTENING BENCH EXISTS IN NEMESIS LAB AND NO PROVIDER HAS BEEN MEASURED. PRONUNCIATION ASSESSMENT DOES NOT EXIST.
 
 Everywhere else in this product, speech is a **second channel for text the learner could have
 read**. `canvas-speech.ts` argues that case and is right: it reads the question and the correction,
@@ -1513,6 +1561,35 @@ providers, native speakers rating accent, pronunciation, prosody, naturalness, p
 code-switching, numbers and names, latency and cost — **per locale**, because the winner is a
 per-locale fact.
 
+### 🔴 THE BENCH IS BUILT — `/dev-preview/tts-lab`
+
+One locale, one phrase, every provider that has a key on the machine, side by side with playback,
+measured latency, character count, and five rating axes. Four providers are in the catalogue and one
+is integrated in production; a provider with no key is shown as **unavailable rather than hidden**,
+so the bench never looks complete when it is not.
+
+Three rules make it a measurement rather than an endorsement:
+
+- **A locale is required and `auto` is refused.** Comparing four providers on `auto` compares four
+  guesses at which Spanish to speak, which is the exact confound the locale contract removes.
+- **All five axes or the rating does not count.** A half-filled card averaged over the axes somebody
+  bothered with ranks a provider on whatever its listener cared about that afternoon.
+- **One rated provider is never a winner.** `winnerFor()` refuses `only-one-provider-rated` and
+  refuses a tie. A field of one scoring 4/5 says nothing about whether another would score 5, and
+  declaring it the winner is how a default gets laundered into a measurement.
+
+Ratings persist to a gitignored file on the machine that did the listening. **The bench does not edit
+`speech-route.ts`** — it prints the exact line to add, and a human commits it. A lab surface that
+could silently change which provider production speaks through would make the difference between
+`measured` and `unmeasured-default` unauditable.
+
+🔴 **THE COST COLUMN IS `unverified` FOR EVERY PROVIDER, INCLUDING THE ONE WE PAY.** The two figures
+this repository holds for xAI TTS disagree — `nemesis-speak` bills $4.20 per million characters
+citing the vendor's announcement, and the brief that asked for this work cites $15 from the same
+vendor's docs. Both cannot be current, and the rate the FUNCTION bills is the one that reaches an
+invoice. A cost column filled with plausible numbers is how a bake-off ends up recommending the
+cheapest provider nobody priced.
+
 ## 🔴 THE MISSING HALF — speech recognition is not pronunciation assessment
 
 Nemesis has strong speech **input** (§14, `docs/voice-state.md`): the learner answers out loud, the
@@ -1522,6 +1599,16 @@ That answers *"what words did the learner probably say?"* It does not answer **"
 like a native speaker?"** — and for language teaching that second question is most of the subject.
 Phoneme-level accuracy, fluency and prosody scoring is a **different cognitive operation** from
 dictated recall, and Nemesis cannot perform it today with anything it has.
+
+### The boundary exists; nothing sits behind it
+
+`lib/learn/pronunciation-evidence.ts` defines the shape — what the learner said, per-word and
+per-phoneme accuracy, prosody and fluency where a provider offers them, and the locale assessed
+against. `assessPronunciation()` returns the same named refusal every time (`no-provider`), and it is
+**called rather than commented out**, so a surface asking for pronunciation evidence gets an honest
+"not built" instead of an empty object it would mistake for a perfect score. Every score field is
+optional because providers genuinely differ in what they return, and a required `prosody` would force
+whichever vendor is chosen to be fabricated into compliance.
 
 The loop the language lane needs:
 
@@ -1547,7 +1634,13 @@ lane as covering it.
 - **No language-learning session type.** `routeSpeech()` takes a `purpose` and every caller passes
   `canvas`. The rules, the locale contract and the refusals are correct and tested; nothing in
   production reaches the language lane. Said plainly rather than counted as coverage.
-- **No bake-off, no second provider, no pronunciation assessment.** See above.
+- **No provider has been measured.** The bench exists; nobody has listened. `MEASURED_PROVIDERS` is
+  empty and every locale reports `unmeasured-default`.
+- **The bake-off adapters are dev-only and unexercised.** Four adapters are written from each
+  vendor's documented request shape and **none has been run against the live service from this
+  repository**, which is why a provider failure is reported as a per-provider row rather than failing
+  the request: the first real run is itself the test of those four shapes.
+- **No pronunciation-assessment provider.** See above.
 - **The voice identity is still fixed.** `nemesis-speak` sends one `voice_id` for every utterance in
   every language. A locale now travels with the request and the pace does too, but *which speaker* is
   heard does not vary — and for a language lesson the speaker is part of the material, not a skin.

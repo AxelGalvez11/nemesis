@@ -78,6 +78,15 @@ export type VisualRepresentation =
   /** Values over a range. */
   | "quantitative"
   /**
+   * A molecule, drawn from its canonical notation (§42).
+   *
+   * 🔴 RUNG TWO, ALONGSIDE THE EQUATION — NOT AN IMAGE ROUTE. The model emits SMILES and a
+   * depiction library computes every atom position from it, so this is trustworthy on arithmetic
+   * in exactly the way a rendered equation is. Routing a structure to an image model instead would
+   * drop it two rungs and hand the learner plausible bonds in the wrong places.
+   */
+  | "structure"
+  /**
    * A picture retrieved from an openly licensed repository, shown with its credit line.
    *
    * 🔴 THE THIRD RUNG (§42), AND IT SITS BELOW EVERY DETERMINISTIC ROUTE ON PURPOSE. A retrieved

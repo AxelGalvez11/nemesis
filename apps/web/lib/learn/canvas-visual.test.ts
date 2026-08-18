@@ -148,3 +148,74 @@ test("🔴 the one animation on the occlusion screen yields to reduced motion", 
     "the fade must carry its reduced-motion escape in the same class string",
   );
 });
+
+// ───────────────────────────────────────────── §42: structures and edge polarity
+
+const ASPIRIN = "CC(=O)OC1=CC=CC=C1C(=O)O";
+
+function structure(over: Record<string, unknown> = {}) {
+  return { kind: "structure", learningGoal: "Recognise the ester group", notation: "smiles", value: ASPIRIN, ...over };
+}
+
+test("🔴 a structure arrives as notation, and the notation is what survives validation", () => {
+  const result = validateCanvasVisual(structure());
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.visual.kind === "structure" && result.visual.value, ASPIRIN);
+});
+
+test("🔴 a structure carrying raw SVG is refused on the alphabet, not drawn", () => {
+  const result = validateCanvasVisual(structure({ value: "<svg><path d='M0 0'/></svg>" }));
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "malformed-structure");
+  assert.match(result.ok === false ? result.detail : "", /structure-not-notation/);
+});
+
+test("a notation no depiction owns is refused as a structure problem, with the reason kept", () => {
+  const result = validateCanvasVisual(structure({ notation: "inchi", value: "InChI=1S/H2O/h1H2" }));
+  assert.equal(result.ok === false && result.reason, "malformed-structure");
+  assert.match(result.ok === false ? result.detail : "", /structure-unsupported-notation/);
+});
+
+test("🔴 a resolved structure keeps where it came from, and a half-filled stamp is refused", () => {
+  // "A model wrote this SMILES" and "a resolver returned it for this name" are both legitimate and
+  // are not equally trustworthy. A surface that cannot tell them apart presents them identically.
+  const ok = validateCanvasVisual(structure({ resolvedFrom: { id: "2244", name: "aspirin", provider: "pubchem" } }));
+  assert.equal(ok.ok, true);
+  assert.equal(ok.ok && ok.visual.kind === "structure" && ok.visual.resolvedFrom?.id, "2244");
+
+  const bad = validateCanvasVisual(structure({ resolvedFrom: { name: "aspirin" } }));
+  assert.equal(bad.ok, false);
+  assert.equal(bad.ok === false && bad.reason, "malformed-structure");
+});
+
+test("🔴 an edge may state whether it means more or less", () => {
+  const result = validateCanvasVisual({
+    edges: [{ from: "a", polarity: "increases", to: "b" }, { from: "b", polarity: "decreases", to: "c" }],
+    kind: "relationship",
+    learningGoal: "Follow the cascade",
+    nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }, { id: "c", label: "C" }],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.visual.kind === "relationship" && result.visual.edges[1].polarity, "decreases");
+});
+
+test("an edge with no polarity is unchanged from before polarity existed", () => {
+  const result = validateCanvasVisual({
+    edges: [{ from: "a", to: "b" }],
+    kind: "relationship",
+    learningGoal: "Follow the chain",
+    nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.visual.kind === "relationship" && "polarity" in result.visual.edges[0], false);
+});
+
+test("a polarity no renderer draws is refused by name", () => {
+  const result = validateCanvasVisual({
+    edges: [{ from: "a", polarity: "phosphorylates", to: "b" }],
+    kind: "relationship",
+    learningGoal: "Follow the chain",
+    nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }],
+  });
+  assert.equal(result.ok === false && result.reason, "malformed-polarity");
+});
