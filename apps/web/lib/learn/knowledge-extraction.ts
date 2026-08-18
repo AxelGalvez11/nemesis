@@ -179,7 +179,31 @@ function readKnowledgeObjects(context: SourceContext): Omit<KnowledgeExtraction,
   const objects: KnowledgeObject[] = [];
   const refusals: ExtractionRefusal[] = [];
 
-  if (context.quality === "failed") {
+  // 🔴 §46.6 — DIAGRAMS ARE A SECOND LANE, AND IT RUNS BEFORE EVERY EXIT. A deck of anatomy slides
+  // has no grid at all and frequently no text at all, so any early return placed above this starves
+  // the one document type image occlusion exists for.
+  //
+  // 🔴🔴 IT USED TO SIT BELOW THE `quality === "failed"` GATE, AND THE PRODUCTION HARNESS IS WHAT
+  // FOUND IT. `parseQuality` returns "failed" whenever `capabilities.text` is false — and a slide
+  // that is nothing but a labelled diagram has no text. So the exact material this lane was built
+  // for was declared *"nothing readable survived this document's parse"* while the parser had in
+  // fact stored the pixels and vision had read two labels off them:
+  //
+  //   PASS  FIGURE-LEGIBLE — 1 figures · 1 carry pixels and at least two labels
+  //   FAIL  SPATIAL-KNOWLEDGE — none extracted
+  //
+  // 🔴 AND THIS IS THE SECOND TIME, AT THE SECOND EXIT. The comment that used to live here said the
+  // lane had to run before the NO-TABLES return, for the same reason, and was *"found by re-reading
+  // the exit above rather than by a test"*. There was one more exit above that one. Moving it to the
+  // top of the function is what makes the claim structural rather than a fact about today's two
+  // returns: a lane that must run before every exit belongs before the first one.
+  const figures = figuresFromUnits(context);
+  objects.push(...figures);
+
+  // 🔴 A PARSE THAT YIELDED TEACHABLE DIAGRAMS DID NOT FAIL, WHATEVER ITS TEXT DID. The refusal is
+  // kept for the case it was written for — a document from which genuinely nothing came back — and
+  // that message is a false claim the moment a figure survived.
+  if (context.quality === "failed" && figures.length === 0) {
     return {
       objects,
       outcome: "failed",
@@ -195,14 +219,6 @@ function readKnowledgeObjects(context: SourceContext): Omit<KnowledgeExtraction,
   // whose structure was flattened was read INCOMPLETELY, and its grids may well have existed.
   const structured = context.capabilities.semanticUnits;
   const tables = readableUnits(context).filter((unit) => unitContent(unit).kind === "table");
-
-  // 🔴 §46.6 — DIAGRAMS ARE A SECOND LANE, AND IT MUST RUN BEFORE THE NO-TABLES RETURN. A deck of
-  // anatomy slides has no grid at all, so leaving this below the early return meant the one
-  // document type image occlusion exists for produced nothing — the lane would have been dead on
-  // arrival for its own use case. Found by re-reading the exit above rather than by a test, which
-  // is why the figure-only case is now asserted explicitly.
-  const figures = figuresFromUnits(context);
-  objects.push(...figures);
 
   if (tables.length === 0) {
     return {

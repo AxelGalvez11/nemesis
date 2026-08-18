@@ -33,6 +33,9 @@ const RECORD: EvidenceToRecord = {
   canvasId: "canvas-1",
   confidence: 0.8,
   demonstrationObtained: true,
+  // 🔴 A KIND THAT IS NOT THE FIRST IN `ERROR_TYPES`, so a reader that returned the head of the list
+  // instead of the stored value would not accidentally agree with this fixture.
+  errorType: "missing_prerequisite",
   evaluatorVersion: "eval/3",
   misconceptions: ["m1"],
   objectiveEvidence: "demonstrated",
@@ -104,6 +107,7 @@ const COLUMN_TO_FIELD: Record<string, keyof LearnerEvidence | null> = {
   canvas_id: "canvasId",
   confidence: "confidence",
   demonstration_obtained: "demonstrationObtained",
+  error_type: "errorType",
   evaluator_version: "evaluatorVersion",
   id: "id",
   misconceptions: "misconceptions",

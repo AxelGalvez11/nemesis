@@ -165,7 +165,14 @@ const NEEDS_OBJECTIVE: readonly Verb[] = VERBS.filter((verb) => verb !== "advanc
  * reason that the learner has forgotten something they were never asked. The whole `| null`
  * discipline in `teaching-snapshot.ts` is worth nothing if it is flattened into a zero here.
  */
-function brief(snapshot: ObjectiveSnapshot): string {
+/**
+ * 🔴 EXPORTED FOR ONE REASON: SO A TEST CAN READ WHAT THE MODEL IS ACTUALLY TOLD.
+ *
+ * A field can be stored, selected, mapped and put on the snapshot and still reach no reader — four
+ * green boundaries and a dead lane, which is a shape this codebase has shipped before. Deleting the
+ * diagnosis line below left all 3,764 tests passing until this was exported and asserted against.
+ */
+export function brief(snapshot: ObjectiveSnapshot): string {
   const lines = [
     `- id: ${snapshot.identityKey}`,
     `  asks: ${snapshot.label}  [${snapshot.capability} over ${snapshot.knowledgeType}]`,
@@ -189,6 +196,12 @@ function brief(snapshot: ObjectiveSnapshot): string {
       : `  predicted recall right now: ${Math.round(snapshot.retrievability * 100)}%`,
     `  importance in the source: ${snapshot.importance ?? "not read"}`,
   ];
+  // 🔴 THE DIAGNOSIS IS PRINTED ONLY WHEN ONE WAS MADE. "kind of failure: none" would read to a
+  // model as a positive finding — that the last attempt failed in no particular way — when what it
+  // means is that nobody looked. An absent line says nothing, which is the truth.
+  if (snapshot.lastErrorType) {
+    lines.push(`  how their last failure was diagnosed: ${snapshot.lastErrorType}`);
+  }
   if (snapshot.misconceptions.length > 0) {
     lines.push(`  competing beliefs they have actually shown: ${snapshot.misconceptions.join("; ")}`);
   }

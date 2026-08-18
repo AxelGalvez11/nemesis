@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabase";
 
 import type { LearnerEvidence, EvidenceVerdict } from "./learner-evidence";
 import type { KnowledgeObject } from "./knowledge-types";
-import type { LearnerInputModality } from "./canvas-model";
+import { ERROR_TYPES, type ErrorType, type LearnerInputModality } from "./canvas-model";
 import { objectivesForKnowledge, type LearningObjective, type ObjectiveCapability } from "./learning-objective";
 import { readRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
 import { isTeachingStrategy, type TeachingStrategyId } from "./teaching-strategy";
@@ -333,6 +333,20 @@ export interface EvidenceToRecord {
   demonstrationObtained: boolean;
   verdict: EvidenceVerdict | null;
   confidence?: number | null;
+  /**
+   * WHICH KIND OF FAILURE THE EVALUATOR ESTABLISHED, when it established one.
+   *
+   * 🔴 IT SITS HERE, WITH `verdict` AND `misconceptions`, AND NOT IN THE OBSERVATIONS BLOCK BELOW.
+   * That block's rule is *what was measured, never what it means* — and everything in it is known
+   * BEFORE the learner answers. This is the opposite: a claim made about the answer after reading
+   * it. Filing it below would put a judgement under a heading that promises there are none.
+   *
+   * 🔴 ABSENT MEANS NO KIND WAS NAMED. `canvas-judge.ts` already drops a value it does not
+   * recognise, so a row without one is a row where the judge genuinely said nothing — never a
+   * default, never inferred from the verdict, and never backfilled. `incorrect` with no kind is a
+   * real and common state: the performance fell short and we do not know why.
+   */
+  errorType?: ErrorType | null;
   misconceptions?: readonly string[];
   canvasId?: string | null;
   evaluatorVersion?: string | null;
@@ -432,6 +446,10 @@ export function evidenceRow(userId: string, evidence: EvidenceToRecord): Record<
     canvas_id: evidence.canvasId ?? null,
     confidence: evidence.confidence ?? null,
     demonstration_obtained: evidence.demonstrationObtained,
+    // 🔴 `?? null` IS "THE JUDGE NAMED NO KIND", and it is the only honest value for a row the
+    // evaluator did not diagnose. Never a fallback kind, and — because absent is so much more
+    // common than any one value — never the most frequent one either.
+    error_type: evidence.errorType ?? null,
     evaluator_version: evidence.evaluatorVersion ?? null,
     misconceptions: evidence.misconceptions ?? [],
     objective_evidence: evidence.objectiveEvidence ?? null,
@@ -516,7 +534,7 @@ export const EVIDENCE_COLUMNS: readonly string[] = [
  * from the write shape, and this literal cannot drift from the derived list.
  */
 export const EVIDENCE_SELECT =
-  "id,objective_id,canvas_id,confidence,demonstration_obtained,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_modality,response_text,scaffold_rung,scaffolding_level,task_id,teaching_strategy,verdict";
+  "id,objective_id,canvas_id,confidence,demonstration_obtained,error_type,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_modality,response_text,scaffold_rung,scaffolding_level,task_id,teaching_strategy,verdict";
 
 export async function recordEvidence(userId: string | null, evidence: EvidenceToRecord): Promise<boolean> {
   if (!userId) return false;
@@ -621,5 +639,18 @@ export function evidenceFromRow(
     // reports separately and nobody notices — an experiment quietly running three arms. An
     // unrecognised value reads as absent, which is what an unrecognised value means.
     ...(isTeachingStrategy(row.teaching_strategy) ? { teachingStrategy: row.teaching_strategy } : {}),
+    // 🔴 VALIDATED, NOT CAST — the third field under this rule, for the same reason as the two
+    // above it. The column is permissive text on purpose (a CHECK constraint would make a future
+    // kind fail the whole INSERT, and `recordEvidence` swallows that into a warning, so ONE
+    // unrecognised value would silently discard an entire demonstration). The validation therefore
+    // has to be here: an unknown string reads as absent, which is what an unknown string means.
+    ...(readErrorType(row.error_type) === null ? {} : { errorType: readErrorType(row.error_type)! }),
   };
+}
+
+/** A stored kind of failure, or null for anything this build does not recognise. */
+function readErrorType(value: unknown): ErrorType | null {
+  return typeof value === "string" && (ERROR_TYPES as readonly string[]).includes(value)
+    ? (value as ErrorType)
+    : null;
 }

@@ -11,7 +11,7 @@
 // Both are exercised by tests that reintroduce the specific defect, because a test that merely
 // checks "a task was produced" or "a row was written" passes through every one of these deaths.
 
-import type { ExpectedEvidence, LearnerInputModality, LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
+import type { ErrorType, ExpectedEvidence, LearnerInputModality, LearnerResponse, ResponseEvaluation, RetrievalTask } from "./canvas-model";
 import type { EvaluationInput } from "./canvas-prompts";
 import {
   choiceCandidatesFrom,
@@ -86,6 +86,21 @@ export interface SubmissionOutcome {
    * to, or it stays where it was named.
    */
   misconceptions?: readonly string[];
+  /**
+   * WHICH KIND OF FAILURE THIS WAS, when the evaluator established one.
+   *
+   * 🔴 THE DIAGNOSIS, NOT THE VERDICT, AND THAT IS WHY IT IS A SECOND FIELD. `incorrect` says the
+   * performance fell short; this says whether the learner had the right method and slipped, reached
+   * for the wrong method entirely, or never had the prerequisite. Those three call for three
+   * different next moves, and collapsing them into one verdict throws away the only signal that
+   * separates them.
+   *
+   * 🔴 ABSENT MEANS THE EVALUATOR NAMED NONE — never a default, never inferred from the verdict. A
+   * judge that returns `incorrect` without saying why has told us less, and writing a plausible
+   * kind here would be this layer authoring a diagnosis nobody made. `canvas-judge.ts` already
+   * drops an unrecognised value rather than passing it through, so absent arrives here honestly.
+   */
+  errorType?: ErrorType | null;
 }
 
 /**
@@ -946,6 +961,16 @@ function rowForTarget(input: {
     // taught against a mistake they never made.
     verdict: outcome?.verdict ?? null,
     ...(outcome?.confidence == null ? {} : { confidence: outcome.confidence }),
+    // 🔴 PER OUTCOME, NOT PER SUBMISSION, UNLIKE THE RUNG AND THE LATENCY ABOVE. One answer put to
+    // several objectives can fail differently against each — a chain where the learner had the
+    // mechanism right and the direction backwards is `careless` on one link and `conceptual` on
+    // another. Copying one diagnosis across every row would assert a kind of failure the judge
+    // named about a different objective.
+    //
+    // 🔴 AND IT IS SPREAD-WHEN-PRESENT, SO AN OBJECTIVE THE JUDGE STAYED SILENT ABOUT STAYS SILENT.
+    // A target with no outcome is one nothing was established about; giving it a kind of failure
+    // would invent a diagnosis for a question the answer never touched.
+    ...(outcome?.errorType == null ? {} : { errorType: outcome.errorType }),
     ...(outcome?.misconceptions ? { misconceptions: outcome.misconceptions } : {}),
   };
 }
@@ -970,6 +995,10 @@ export function outcomeFor(
 ): SubmissionOutcome {
   return {
     confidence: evaluation.confidence,
+    // 🔴 `?? null` RATHER THAN OMITTED, SO "THE JUDGE NAMED NONE" IS CARRIED RATHER THAN LOST. This
+    // is the field the whole chain existed to move: it was computed here, shown on screen, and
+    // dropped at this exact line for as long as it has existed.
+    errorType: evaluation.errorType ?? null,
     misconceptions: evaluation.misconceptions,
     objectiveIdentityKey: objective.identityKey,
     verdict: evaluation.verdict,

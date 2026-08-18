@@ -326,19 +326,59 @@ function spatialObjectives(object: KnowledgeObject, figure: FigureKnowledge): Le
   const knowledge = object.identityKey ?? knowledgeIdentityKey(object);
   return figure.labels.map((label) => {
     const parameters: ObjectiveParameters = { labelKey: normalizeForIdentity(label.text) };
+    // 🔴🔴 THE CAPTION IS USED ONLY WHERE IT DOES NOT CONTAIN THE ANSWER, AND IT USUALLY DOES. The
+    // comment here already said the cue *"deliberately does not name the part — naming it would
+    // print the answer"*, and the code then interpolated the whole caption. That was true while a
+    // caption was the document's own short line ("Figure 2. A diode."). It stopped being true when
+    // captions started coming from vision, which describes the picture by listing what is in it.
+    //
+    // Measured in production, this is the question a learner was actually shown:
+    //
+    //   In this diagram (This figure is a flowchart titled "CELLULAR ENERGY PATHWAY" … It shows
+    //   "GLUCOSE" … leading to "PYRUVATE" … which leads to "ATP" …), what is the covered part?
+    //
+    // Every answer the diagram can ask for, printed in the question that asks for it. The learner
+    // reads rather than retrieves, the judge marks it `understood`, and a demonstration goes into
+    // the durable record that the learner never made.
+    //
+    // 🔴 DROPPED WHOLE RATHER THAN EDITED. Cutting the answer out of the sentence leaves mangled
+    // prose ("It shows "" in a light blue box"), and a partial scrub is a rule that has to be right
+    // about every phrasing a model might use. Whether the caption names the answer is a question
+    // with one honest answer, and the fallback cue is complete on its own — the figure is on screen.
+    const safeCaption = mentions(figure.caption, label.text) ? "" : figure.caption;
     return {
       answer: label.text,
       capability: "locate" as const,
-      // The surface renders the figure; this is the words beside it. Deliberately does not name the
-      // part — naming it would print the answer.
-      cue: figure.caption ? `In this diagram (${figure.caption}), what is the covered part?` : "What is the covered part of this diagram?",
+      // The surface renders the figure; this is the words beside it.
+      cue: safeCaption
+        ? `In this diagram (${safeCaption}), what is the covered part?`
+        : "What is the covered part of this diagram?",
       identityKey: objectiveIdentityKey({ capability: "locate", knowledgeIdentityKey: knowledge, parameters }),
       identityVersion: OBJECTIVE_IDENTITY_VERSION,
       knowledgeIdentityKey: knowledge,
-      label: `Name the covered part of ${figure.caption || "the diagram"}`,
+      label: `Name the covered part of ${safeCaption || "the diagram"}`,
       parameters,
     };
   });
+}
+
+/**
+ * Does this text name that answer?
+ *
+ * 🔴 WORD BOUNDARIES, NOT `includes`. A bare substring test would find "ATP" inside "ATPase" and
+ * drop a caption that never gave the answer away, and — the direction that matters — would MISS
+ * nothing, so the cost of getting it wrong is asymmetric. Case-insensitive because a caption
+ * writing GLUCOSE and a label reading Glucose are the same word.
+ *
+ * 🔴 AND IT IS FIELD-AGNOSTIC BY CONSTRUCTION. It compares the answer against the text and knows
+ * nothing about what either means, so it works the same for a circuit diagram, a bone, a legal
+ * flowchart or a knitting pattern.
+ */
+function mentions(text: string | undefined, answer: string): boolean {
+  const needle = answer.trim();
+  if (!text || !needle) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, "iu").test(text);
 }
 
 /**

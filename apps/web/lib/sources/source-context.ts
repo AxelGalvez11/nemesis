@@ -18,6 +18,14 @@
 
 import { blockToText, readCoverage, readStructureEnvelope, type DocBlock, type DocEmphasis, type DocumentModel } from "@nemesis/shared";
 
+// 🔴 THE ONE EDGE FROM `sources` INTO `learn`, AND IT IS DELIBERATE. `figure-labels.ts` has no
+// imports of its own — it is a pure leaf describing the SHAPE of a figure's labels, which is a fact
+// about the source rather than a teaching policy, and it sits under `learn/` for historical reasons
+// only. So there is no cycle. The alternative was writing `labels.length >= 2` here, which is a
+// second, independently-editable copy of a judgement that already has one owner, and independently
+// drifting copies of one number is the defect shape this codebase has shipped most often.
+import { isOccludable } from "@/lib/learn/figure-labels";
+
 import {
   capabilitiesOfStored,
   deriveCapabilities,
@@ -241,7 +249,23 @@ export function unitContent(unit: CanonicalSourceUnit): UnitContent {
   if (unit.type === "figure") {
     const caption = unit.figure?.caption?.trim() || null;
     const description = unit.figure?.description?.trim() || null;
-    if (!caption && !description) return { kind: "empty" };
+    // 🔴🔴 NAMED PARTS ARE CONTENT, AND LEAVING THEM OUT MADE THE BEST DIAGRAMS INVISIBLE. This
+    // condition used to be `!caption && !description`, which judges PROSE — so a bare diagram whose
+    // parts are named in the picture itself was `empty`, `readableUnits` dropped it, and
+    // `figuresFromUnits` never saw it. The production occlusion harness found it: the parser stored
+    // the pixels, vision read two labels off them, and the extractor minted nothing.
+    //
+    // 🔴 IT IS THE MOST OCCLUDABLE SHAPE THERE IS. An anatomy plate, a circuit schematic, a labelled
+    // apparatus — no caption, no surrounding sentence, every part named. That is the material
+    // spatial knowledge exists for, and it was the material being discarded.
+    //
+    // 🔴 THE BAR IS `isOccludable`, NOT "ANY LABEL", so this admits exactly what an extractor can
+    // use. One label stays empty: covering the only label collapses the question to "what is this
+    // picture called", which the association lane already serves — and a unit admitted here that
+    // nothing can read would count as teachable material in coverage, which is worse than dropping
+    // it. A figure with no caption, no description and no labels is still empty, which is the case
+    // this branch was written for and the common one: logos, dividers, decorative photographs.
+    if (!caption && !description && !isOccludable(unit.figure?.labels ?? [])) return { kind: "empty" };
     return { caption, description, kind: "figure", rendered: (unit.text ?? "").trim() };
   }
 
