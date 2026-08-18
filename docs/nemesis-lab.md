@@ -24,23 +24,33 @@ cognition in a harness of its own.
 
 ## Running it
 
+**On the owner's machine it is already set up.** Start the `lab` server (`.claude/launch.json`) and
+open **http://localhost:3220/dev/lab**.
+
+That entry runs from `.nemesis-lab/`, a second checkout of `main` sitting inside the repo folder,
+rather than from the working copy. The reason is practical: the working copy sits on a feature
+branch with unfinished work on it, and switching that branch to reach the Lab would put that work at
+risk. A separate checkout means the Lab is always on `main` and the working copy is never disturbed.
+It costs almost no disk (its `node_modules` are hard links) and it is excluded from git locally, so
+it never shows up in `git status`.
+
+To refresh it after new work lands on `main`:
+
 ```bash
-cd apps/web && pnpm dev
+cd .nemesis-lab && git fetch origin main && git checkout --detach origin/main
 ```
 
-Then open **http://localhost:3000/dev/lab**. (There is also a `lab` entry in `.claude/launch.json`
-that starts it on port 3220.)
+**From any ordinary checkout that is on `main`**, the Lab is just the app:
 
-Two notes on setup:
+```bash
+cd apps/web && pnpm dev     # then http://localhost:3000/dev/lab
+```
 
-- **You must be on a checkout that has the Lab.** It landed in `feat/nemesis-lab`; if your working
-  copy is on an older branch, `git checkout main && git pull` first. A checkout without the Lab
-  simply has no `/dev/lab` route, which looks the same as the Lab being broken.
-- **The Tutor tab needs one key**, because the Lab creates its own throwaway test learner:
-  `SUPABASE_SERVICE_ROLE_KEY` in `apps/web/.env.local`, the same value already in the repo root
-  `.env`. This has already been added to this machine's `.env.local`, which is gitignored and never
-  reaches the browser. Without it the Parser tab still works completely and the Tutor tab says
-  exactly what is missing.
+**One key is needed for the Tutor tab**, because the Lab creates its own throwaway test learner:
+`SUPABASE_SERVICE_ROLE_KEY` in `apps/web/.env.local`, the same value already in the repo root
+`.env`. It is already in place on this machine. That file is gitignored and the key never reaches
+the browser. Without it the Parser tab still works completely, and the Tutor tab says exactly what
+is missing rather than failing vaguely.
 
 ## Where the data goes
 
