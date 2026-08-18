@@ -352,6 +352,16 @@ export function knowledgeSignature(canvas: LearningCanvas): string {
  * a forced session that looked like an owned one would make "did ownership work?" unanswerable by
  * looking, which is exactly what the old `?policy=1` cost.
  */
+/**
+ * How many extra looks a canvas gets while its parse is still landing, and how long between them.
+ *
+ * 🔴 SMALL AND FINITE. Each look is a real construction; an unbounded retry would bill for a canvas
+ * nobody is watching. Three looks eight seconds apart covers the window measured in production
+ * between a source attaching and its knowledge becoming readable, and gives up honestly after that.
+ */
+const KNOWLEDGE_RETRY_LIMIT = 3;
+const KNOWLEDGE_RETRY_DELAY_MS = 8_000;
+
 export function usePolicyRuntime(
   canvas: LearningCanvas,
   override: PolicyOverride,
@@ -486,6 +496,17 @@ export function usePolicyRuntime(
    *  could not tell it from evidence. */
   const [focus, setFocus] = useState<FocusScope>(WHOLE_CANVAS);
 
+  /** Bumped to ask for one more look when the parse had not landed yet. See the retry below. */
+  const [resolveNonce, setResolveNonce] = useState(0);
+  const retriesRef = useRef(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    },
+    [],
+  );
+
   const knowledgeInputs = knowledgeSignature(canvas);
 
   useEffect(() => {
@@ -567,10 +588,34 @@ export function usePolicyRuntime(
       // failure this guard exists to prevent, and it is why `supported.length` was never the same
       // question as ownership.
       if (supported.length === 0) {
+        // 🔴 "NOT READABLE YET" AND "NOTHING TO ASK" ARE OPPOSITE FACTS THAT ARRIVE IDENTICALLY.
+        // This file's own header documents the failure: knowledge resolves the moment a durable id
+        // lands, which is NOT the moment the parse is readable, so an early look legitimately comes
+        // back empty — and with the resolve key unchanged that verdict was permanent for the life of
+        // the mount. Reopening the canvas fixed it, which is why it read as canvas-specific.
+        //
+        // MEASURED IN PRODUCTION on a grounded topic canvas: three pages attached, 35 knowledge
+        // objects and 69 objectives written, and the learner still looking at "hasn't found anything
+        // to ask you about yet" until they pressed Try again — which is `window.location.assign`,
+        // i.e. the remount. The data was there the whole time.
+        //
+        // 🔴 A BOUNDED RETRY AGAINST A NAMED CONDITION, NOT A TIMER WALKING PHASES. It fires only
+        // while `no-durable-source` says the parse has not landed, and only a few times. A canvas
+        // that genuinely has nothing to teach settles on `unavailable` exactly as before, because
+        // that outcome is not this one.
+        if (resolved.outcome === "no-durable-source" && retriesRef.current < KNOWLEDGE_RETRY_LIMIT) {
+          retriesRef.current += 1;
+          setPhase(null);
+          retryTimer.current = setTimeout(() => {
+            if (live) setResolveNonce((current) => current + 1);
+          }, KNOWLEDGE_RETRY_DELAY_MS);
+          return;
+        }
         setPhase(null);
         setStatus("unavailable");
         return;
       }
+      retriesRef.current = 0;
       setPhase("finding_gap");
       const rows = await loadEvidence(uid, supported.map((entry) => entry.objective));
       if (!live) return;
@@ -591,7 +636,7 @@ export function usePolicyRuntime(
     // `knowledgeSignature`: a topic is an input too, and a key that could not see it meant a
     // topic-first canvas resolved once, against a title that had not arrived yet, and never again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, forced, knowledgeInputs, uid]);
+  }, [enabled, forced, knowledgeInputs, resolveNonce, uid]);
 
   const supported = useMemo(() => supportedObjectives(knowledge.objectives), [knowledge]);
 

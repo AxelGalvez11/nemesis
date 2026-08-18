@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
@@ -90,14 +91,56 @@ test("🔴 the effect is actually keyed on the knowledge inputs", async () => {
   // A correct signature consulted by nothing is the defect unchanged. The dependency array is the
   // thing that was wrong, so the dependency array is what this asserts.
   const source = await readFile(new URL("./use-policy-runtime.ts", import.meta.url), "utf8");
-  assert.match(
-    source,
-    /\}, \[enabled, forced, knowledgeInputs, uid\]\);/,
-    "the knowledge-resolving effect must depend on every input that resolution reads",
-  );
+
+  // 🔴 EVERY REQUIRED INPUT IS PRESENT — asserted per name rather than as one exact string. The
+  // defect this guards is a dependency that went MISSING, and pinning the literal array also failed
+  // on a dependency being ADDED, which is the opposite thing. It rejected `resolveNonce`, the input
+  // that lets a canvas look again while its parse is still landing — a fix, failing a guard for
+  // succeeding. Named deps still catch a removal, and no longer punish a legitimate addition.
+  // Located BY `knowledgeInputs`, because that names the one effect under test. Matching "the
+  // first dependency array in the file" found an unrelated `[]` and reported a missing `enabled`
+  // that was sitting correctly in the array three hundred lines further down.
+  const deps = source.match(/\}, \[([^\]]*\bknowledgeInputs\b[^\]]*)\]\);/);
+  assert.ok(deps, "the knowledge-resolving effect's dependency array was not found at all");
+  const listed = (deps[1] ?? "").split(",").map((entry) => entry.trim());
+  for (const required of ["enabled", "forced", "knowledgeInputs", "uid"]) {
+    assert.ok(
+      listed.includes(required),
+      `the knowledge-resolving effect must depend on \`${required}\` — resolution reads it`,
+    );
+  }
   assert.equal(
     source.includes("durableSignature"),
     false,
     "the sources-only key must be gone, not merely unused — leaving it invites the same mistake back",
   );
+});
+
+// ── the retry, which is the half the dependency array cannot see ────────────
+
+test("🔴 a canvas whose parse has not landed gets looked at again", () => {
+  // 🔴 THIS GUARD EXISTS BECAUSE THE FIRST VERSION OF THE FIX HAD NONE. Replacing the retry's
+  // condition with `false` — disabling the whole thing — left all 3,755 tests green. The dependency
+  // guard above proves the effect CAN re-run; nothing proved anything ever asks it to.
+  //
+  // The defect: knowledge resolves the moment a durable id lands, which is not the moment the parse
+  // is readable, so the first look legitimately returns nothing and that verdict was permanent for
+  // the life of the mount. Measured in production — three pages attached, 35 knowledge objects and
+  // 69 objectives written, and the learner still reading "hasn't found anything to ask you about
+  // yet" until they pressed Try again, which is a page reload.
+  const source = readFileSync(new URL("./use-policy-runtime.ts", import.meta.url), "utf8");
+
+  // The retry is CONDITIONAL ON THE NAMED OUTCOME, never on emptiness alone. A canvas that genuinely
+  // has nothing to teach must still settle, or it re-resolves for ever and bills for every look.
+  assert.match(
+    source,
+    /resolved\.outcome === "no-durable-source"[\s\S]{0,120}?KNOWLEDGE_RETRY_LIMIT/,
+    "the re-resolve must be gated on the parse not having landed, and bounded",
+  );
+  // And it must actually ask for another look.
+  assert.match(source, /setResolveNonce\(\(current\) => current \+ 1\)/, "the retry must request a re-resolve");
+  // Bounded, and small enough that an unwatched canvas cannot bill indefinitely.
+  const limit = source.match(/const KNOWLEDGE_RETRY_LIMIT = (\d+)/);
+  assert.ok(limit, "the retry limit must be a named constant");
+  assert.ok(Number(limit[1]) > 0 && Number(limit[1]) <= 5, `retry limit ${limit?.[1]} is not small and finite`);
 });
