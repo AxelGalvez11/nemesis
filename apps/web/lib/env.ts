@@ -103,6 +103,18 @@ export const deepseekBalanceAlertUsd = Number.isFinite(rawBalanceThreshold) ? ra
 export const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
+// ── The two Nemesis Prices (2026-08-17) ──────────────────────────────────────
+// One product, two billing periods. Price IDs are provider object identifiers and
+// belong in configuration, never in the codebase: the AMOUNTS they must carry are
+// asserted in packages/shared/src/plan.ts and checked against the live Price by
+// `stripePriceMatchesInterval`, so an environment variable pointing at the wrong
+// Price fails closed rather than quietly charging the wrong number.
+export const stripeNemesisMonthlyPriceId = process.env.STRIPE_NEMESIS_MONTHLY_PRICE_ID ?? "";
+export const stripeNemesisAnnualPriceId = process.env.STRIPE_NEMESIS_ANNUAL_PRICE_ID ?? "";
+
+// Legacy. Read ONLY by planForPriceId so a subscription already sitting on one of
+// these keeps working when Stripe replays its Price in a webhook. Nothing sells
+// them.
 export const stripePlusPriceId = process.env.STRIPE_PLUS_PRICE_ID ?? "";
 export const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID ?? "";
 // RETIRED 2026-08-05 (owner: "max is retired, agent pro is the ceiling").
