@@ -56,7 +56,10 @@ import { normalizedFigures, type NormalizedFigure } from "./figure-assets";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
-import { readPdfStructure, type CapturedFigure } from "@/lib/pdf/structure";
+import { escalatePdfPages } from "@/lib/pdf/page-escalation";
+import { preflightPdf, type NativePdfEvidence } from "@/lib/pdf/preflight";
+import { currentVisionLedger } from "@/lib/pdf/vision-budget";
+import { readPdfStructure, type CapturedFigure, type PdfStructureResult } from "@/lib/pdf/structure";
 import { accountForFigures, NO_ACCOUNTING } from "@/lib/pdf/figure-accounting";
 import { lookAtFigures, type FigureLookResult } from "@/lib/pdf/figure-look";
 import { matchFigureImages } from "@/lib/pdf/figure-match";
@@ -346,6 +349,19 @@ export async function parseWithVendor(
   kind: DocumentKind,
   options: ParseOptions = {},
   vendors: VendorClients = REAL_VENDOR_CLIENTS,
+  /**
+   * The structural read the PDF router already performed, handed in so this lane does not do it
+   * again.
+   *
+   * 🔴 THIS DELETES A WHOLE SECOND PASS OVER EVERY VENDOR-ROUTED PDF. `readFigureSource` opened the
+   * file, walked every page's operator list and decoded every image a SECOND time, purely to feed
+   * the figure gate — while the router had just done exactly that to decide whether to call the
+   * vendor at all. Passing it through means an escalated document is now cheaper AND faster than it
+   * was before this change, not merely more selective.
+   *
+   * `undefined` keeps the old behaviour for any caller that has no read to offer.
+   */
+  preread?: { structural: PdfStructureResult | null },
 ): Promise<ParseOutcome | null> {
   const vendor = vendorFor(kind);
   if (!vendor) return null;
@@ -448,7 +464,20 @@ export async function parseWithVendor(
   // the same line `parse-docling.ts` draws for the same reason; crossing it would rebuild the
   // double parse the vendor lane exists to remove. `detectTables` is off for that reason too:
   // this pass has no use for a grid.
-  const pdfFigures = kind === "pdf" ? await readFigureSource(bytes, options) : null;
+  const pdfFigures =
+    kind === "pdf"
+      ? preread
+        // Already read. `readFigureSource` and the router ask `readPdfStructure` for the same two
+        // things — the rectangles of the images the file paints and the pixels behind them — with
+        // the same `captureFigures` flag, so reusing the router's pass is the same evidence, not a
+        // weaker one. `null` from the router means the read threw, which is exactly what
+        // `readFigureSource` returned in that case too, and every consumer of it says "nobody
+        // looked" rather than "there were none".
+        ? preread.structural
+          ? { images: preread.structural.figureImages, model: preread.structural.model }
+          : null
+        : await readFigureSource(bytes, options)
+      : null;
 
   // 🔴 THE FIGURE HALF OF THE QUALITY GATE, AND IT ASKS ABOUT REGIONS RATHER THAN COUNTS.
   // A count test on this lecture says "3 figures lost"; a figure-to-figure geometric test says
@@ -578,17 +607,26 @@ export async function parseDocument(
   const kind = kindFor(fileName, mimeType) ?? sniffKind(bytes);
   if (!kind) return { ok: false, reason: "unsupported" };
 
-  // 🔴 THE VENDOR GETS FIRST REFUSAL, AND A REFUSAL COSTS NOTHING. Extraction is infrastructure
-  // (owner, 2026-08-13): Mistral answers "what is in this document and where", and everything
-  // below this line stays exactly as it was for the cases it declines. `null` means "not
-  // configured, or it did not work" — never a verdict about the file — so the local extractors
-  // run unchanged and an upload can never fail because a provider did.
+  // 🔴🔴 THE VENDOR NO LONGER GETS FIRST REFUSAL ON A PDF, AND THAT IS THE COST ARCHITECTURE'S
+  // CENTRAL CHANGE (owner, 2026-08-18). It used to: `if (vendorFor(kind))` ran before a single
+  // local byte was read, so a clean digitally-generated lecture was sent to Mistral OCR and billed
+  // per page for a result the file already contained. Mistral earned its position on real evidence
+  // and keeps it for the documents that evidence is about — a broken ligature font, a scan, a lost
+  // grid — but "some PDFs need pixels read" was never "every PDF does".
+  //
+  // A PDF now goes through `parsePdfRouted`, which reads the file's own structure FIRST (free,
+  // local, and a pass the vendor lane was already paying for a second time inside
+  // `readFigureSource`), measures it with `preflightPdf`, and calls the specialist only when the
+  // measurement names a reason. See `lib/pdf/preflight.ts`.
+  //
+  // Every OTHER vendor format is untouched here and keeps first refusal: the Office lanes make a
+  // different decision, from the file's own XML, in `officePreflight`.
   //
   // 🔴 BEFORE THE `image` GUARDS ON PURPOSE. Those guards exist to protect the Gemini call; a
   // provider that does not need them must not be gated by them. `mistralHandles` excludes images
   // anyway, so today this is ordering that documents an intent rather than ordering that changes
   // an outcome — which is precisely when it is cheap to get right.
-  if (vendorFor(kind)) {
+  if (kind !== "pdf" && vendorFor(kind)) {
     const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
     if (read) return read;
   }
@@ -616,8 +654,11 @@ export async function parseDocument(
     readBy = seen?.model;
     coverage = singleUnitCoverage({ read: Boolean(seen?.text.trim()), method: "vision" });
   } else if (kind === "pdf") {
-    const parsed = await parsePdf(bytes, options);
-    ({ coverage, model, readBy, text, title } = parsed);
+    const routed = await parsePdfRouted(bytes, fileName, mimeType, options);
+    // The specialist answered and its answer stands. Everything below this line is the native
+    // lane, which never ran.
+    if (routed.vendor) return routed.vendor;
+    ({ coverage, model, readBy, text, title } = routed.native);
   } else if (kind === "docx") {
     model = extractDocxModel(bytes);
     text = documentToText(model);
@@ -786,41 +827,205 @@ export async function parseDocument(
  * open, because a worse parse is better than no parse — but it never REPLACES a
  * structural one, per "a worse retry never replaces a better parse".
  */
-async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<{
-  coverage: ExtractionCoverage;
-  model: DocumentModel | undefined;
-  readBy: string | undefined;
-  text: string;
-  title: string | null;
+/**
+ * A PDF, routed: read it ourselves first, and pay a specialist only for a named reason.
+ *
+ * 🔴🔴 THIS IS THE ESCALATION CASCADE THE OWNER SPECIFIED, FOR THE FORMAT IT MATTERS MOST ON.
+ *
+ *     the file's own structure        free, local, and already being paid for
+ *       ↓ measured by `preflightPdf`
+ *     the cheap page lane             Gemini, per page, under a ledger, for pages that are pictures
+ *       ↓ only what it cannot pay for, or a cause it cannot fix
+ *     Mistral OCR                     per page, for a corrupt font, a lost grid or a whole scan
+ *
+ * 🔴 THE DECISION IS RECORDED WHETHER OR NOT IT COSTS ANYTHING. A cheap route taken is as much a
+ * decision as an expensive one, and a router whose only trace is its bill can never be audited for
+ * the documents it decided were fine. `parse_route` is emitted on every PDF.
+ *
+ * 🔴 AND THE VENDOR DECLINING IS NEVER A VERDICT ABOUT THE FILE. `parseWithVendor` returns null for
+ * "not configured", "did not answer" and "the read lost something the file declares" alike, and all
+ * three fall through to the native read that was already in hand. A PDF cannot become unreadable
+ * because a provider had a bad minute.
+ */
+async function parsePdfRouted(
+  bytes: Uint8Array,
+  fileName: string,
+  mimeType: string,
+  options: ParseOptions,
+): Promise<{
+  vendor: ParseOutcome | null;
+  native: { coverage: ExtractionCoverage; model: DocumentModel | undefined; readBy: string | undefined; text: string; title: string | null };
 }> {
-  // 🔴 A COPY. pdf.js detaches the buffer it is handed, and the vision pass
-  // below slices the ORIGINAL bytes per page. Handing it `bytes` directly makes
-  // every later read see zeroes — which does not throw, it silently reports an
-  // empty document.
-  let model: DocumentModel | undefined;
-  // Units the FILE declares. Beyond the cap they are unread, never absent.
-  let unreadBeyondCap = 0;
-  // Content located and not delivered, smaller than a page: today, table regions
-  // with no recoverable grid. Any non-zero value makes the document `partial`.
-  let unreadableRegions = 0;
-  // WHICH pages those regions were on. Empty when the structural read did not
-  // happen at all (the catch below), which reads as "we do not know where",
-  // never as "there was nowhere" — see `ExtractionCoverage.lostUnits`.
-  let unreadableRegionsByUnit: readonly { unit: number; count: number }[] = [];
+  const structural = await readPdfNatively(bytes, options);
+  const decision = preflightPdf(pdfEvidenceFrom(structural));
+
+  console.info(JSON.stringify({
+    event: "parse_route",
+    detail: decision.detail,
+    format: "pdf",
+    reason: decision.reason,
+    route: decision.route,
+    signals: decision.signals,
+  }));
+
+  if (decision.route === "vendor" && vendorFor("pdf")) {
+    // 🔴 THE PAGE-WISE BRANCH COMES FIRST, BECAUSE IT IS THE CHEAPER OF THE TWO ESCALATIONS AND
+    // `preflightPdf` only ever offers it for the one cause that is local to a page. It keeps the
+    // native structure for every page that was already readable and buys a real read only for the
+    // pages the cheap lane could not afford — which is the owner's *"escalate the difficult part,
+    // not the entire workload"*, made literal.
+    if (decision.pages && decision.pages.length > 0 && structural) {
+      const escalated = await escalatePdfPages(bytes, fileName, structural.model, decision.pages);
+      if (escalated.ok) {
+        console.info(JSON.stringify({
+          event: "parse_pages_escalated",
+          ms: escalated.durationMs,
+          missed: escalated.pagesMissed.length,
+          read: escalated.pagesRead.length,
+          readBy: escalated.readBy,
+        }));
+        // The merged model goes back through the ordinary native finish, so coverage, truncation,
+        // figure accounting and the text projection are computed exactly once, by the code that
+        // already owns them.
+        return {
+          native: await parsePdf(bytes, options, { model: escalated.model, structural }),
+          vendor: null,
+        };
+      }
+    } else {
+      const read = await parseWithVendor(bytes, fileName, mimeType, "pdf", options, REAL_VENDOR_CLIENTS, {
+        structural,
+      });
+      if (read) return { native: EMPTY_NATIVE, vendor: read };
+    }
+  }
+
+  return { native: await parsePdf(bytes, options, { structural }), vendor: null };
+}
+
+/** Never read — the vendor branch that returns it always returns a non-null `vendor` beside it. */
+const EMPTY_NATIVE = {
+  coverage: singleUnitCoverage({ method: "native" as const, read: false }),
+  model: undefined,
+  readBy: undefined,
+  text: "",
+  title: null,
+};
+
+/**
+ * The file's own structure, read once, before anything decides what to spend.
+ *
+ * 🔴 SPLIT OUT OF `parsePdf` SO THE ROUTING DECISION AND THE FIGURE SPEND ARE NOT THE SAME STEP.
+ * The preflight has to see the structural read to judge it, and the figure vision pass has to run
+ * on whichever model finally wins. Doing both inside one function meant a document about to be
+ * escalated had already paid for descriptions of figures the vendor model would replace.
+ *
+ * Never throws. A structural read that fails is `null`, which `preflightPdf` reads as the clearest
+ * escalation there is and which the native lane reads as "fall back to flat text".
+ */
+async function readPdfNatively(
+  bytes: Uint8Array,
+  options: ParseOptions,
+): Promise<PdfStructureResult | null> {
   try {
+    // 🔴 A COPY. pdf.js DETACHES the buffer it is handed, and both the vendor call and the vision
+    // pass slice the ORIGINAL bytes afterwards. Handing it `bytes` directly makes every later read
+    // see zeroes — which does not throw, it silently reports an empty document.
+    //
     // 🔴 CAPTURE THE FIGURES ON THE WAY PAST, BECAUSE THERE IS NO WAY BACK.
     // `page.cleanup()` releases the decoded image data, so a later pass would
     // have to re-parse every page's operator list to see a diagram again.
-    const structural = await readPdfStructure(new Uint8Array(bytes), {
+    return await readPdfStructure(new Uint8Array(bytes), {
       captureFigures: options.lookAtFigures === true,
       // 🔴 THE ENV VAR IS THE SWITCH, NOT A SECOND FLAG BESIDE IT. Asking for
       // tables unconditionally is safe because `layoutModelPath()` returns null
       // when `DOCLING_LAYOUT_ONNX` is unset, and no weights means no tables —
       // never an error. A separate boolean would be a second thing to keep in
       // step with the first, and the pair would eventually disagree.
+      //
+      // The DETERMINISTIC lattice detector runs regardless of that flag, which is what makes a
+      // ruled grid recoverable for free — measured on the generated corpus, 4 of 4 tables and 108
+      // cells, with no vendor call and no model weights.
       detectTables: true,
     });
-    model = structural.model;
+  } catch (cause) {
+    // Recorded as absent structure, not as a failed parse: the fallback below
+    // still produces real text, and calling the document unreadable because the
+    // richer reader refused would lose content we can still get.
+    //
+    // 🔴 BUT IT MUST SAY WHY, AND FOR MONTHS IT DID NOT. This was a bare
+    // `catch {}`. Degrading silently means the difference between "this PDF is
+    // genuinely unstructured" and "the structural reader is broken on every
+    // document in production" is invisible.
+    //
+    // Found by uploading one document and asking what the database actually
+    // held, because nothing in a log, a status or a metric would ever have said
+    // it. A fallback that hides its own reason is not a fallback, it is a leak.
+    console.warn(JSON.stringify({
+      event: "pdf_structure_unavailable",
+      detail: cause instanceof Error ? cause.message.slice(0, 300) : String(cause).slice(0, 300),
+      name: cause instanceof Error ? cause.name : typeof cause,
+      // The frame that actually threw is the whole point of logging this.
+      stack: cause instanceof Error ? (cause.stack ?? "").split("\n").slice(0, 4).join(" | ").slice(0, 500) : undefined,
+    }));
+    return null;
+  }
+}
+
+/**
+ * What `preflightPdf` needs, assembled from one structural read. PURE.
+ *
+ * 🔴 `visionAffordablePages` IS ASKED OF THE LEDGER RATHER THAN ASSUMED. The cheap page lane can
+ * only cover the gaps it can pay for, and the whole point of the `pages-beyond-vision-budget`
+ * branch is that the pages it CANNOT pay for are the ones worth escalating. Reading the ambient
+ * ledger here is what makes that branch true rather than decorative.
+ */
+export function pdfEvidenceFrom(structural: PdfStructureResult | null): NativePdfEvidence {
+  if (!structural) {
+    return {
+      declaredUnits: 0,
+      pageTexts: [],
+      structureFailed: true,
+      tableRegionsUnreadByUnit: [],
+      tablesRejected: {},
+      unitsWithContent: [],
+      visionAffordablePages: 0,
+    };
+  }
+  return {
+    declaredUnits: structural.declaredUnits,
+    pageTexts: unitTexts(structural.model),
+    structureFailed: false,
+    tableRegionsUnreadByUnit: structural.tableRegionsUnreadByUnit,
+    tablesRejected: structural.tablesRejected,
+    unitsWithContent: [...new Set(structural.model.blocks.map((block) => block.unit))],
+    visionAffordablePages: visionConfigured() ? currentVisionLedger().remaining() : 0,
+  };
+}
+
+async function parsePdf(
+  bytes: Uint8Array,
+  options: ParseOptions = {},
+  prepared?: { structural: PdfStructureResult | null; model?: DocumentModel },
+): Promise<{
+  coverage: ExtractionCoverage;
+  model: DocumentModel | undefined;
+  readBy: string | undefined;
+  text: string;
+  title: string | null;
+}> {
+  const structural = prepared ? prepared.structural : await readPdfNatively(bytes, options);
+  let model: DocumentModel | undefined = prepared?.model ?? structural?.model;
+  // Units the FILE declares. Beyond the cap they are unread, never absent.
+  let unreadBeyondCap = 0;
+  // Content located and not delivered, smaller than a page: today, table regions
+  // with no recoverable grid. Any non-zero value makes the document `partial`.
+  let unreadableRegions = 0;
+  // WHICH pages those regions were on. Empty when the structural read did not
+  // happen at all, which reads as "we do not know where", never as "there was
+  // nowhere" — see `ExtractionCoverage.lostUnits`.
+  let unreadableRegionsByUnit: readonly { unit: number; count: number }[] = [];
+  if (structural && model) {
     unreadBeyondCap = Math.max(structural.declaredUnits - structural.model.units.length, 0);
     // A table region the layout model found and the grid builder could not
     // reconstruct. Carried to coverage so a text-full page holding an
@@ -833,34 +1038,13 @@ async function parsePdf(bytes: Uint8Array, options: ParseOptions = {}): Promise<
     // figures — are never examined, because they have plenty of words AND a
     // load-bearing diagram. `planFigureVision` routes on an unexamined figure
     // large enough to hold something OR thin text, and either is sufficient.
+    //
+    // 🔴 IT RUNS AFTER THE ROUTING DECISION, NEVER BEFORE. A document on its way to the specialist
+    // would otherwise pay for descriptions of figures the vendor's own model then replaces.
     if (options.lookAtFigures) {
       const looked = await lookAtFigures(model, structural.figureImages);
       model = looked.model;
     }
-  } catch (cause) {
-    // Recorded as absent structure, not as a failed parse: the fallback below
-    // still produces real text, and calling the document unreadable because the
-    // richer reader refused would lose content we can still get.
-    //
-    // 🔴 BUT IT MUST SAY WHY, AND FOR MONTHS IT DID NOT. This was a bare
-    // `catch {}`. Degrading silently means the difference between "this PDF is
-    // genuinely unstructured" and "the structural reader is broken on every
-    // document in production" is invisible — and the second one is true right
-    // now: every parse in production is stored as flat text with no model, so
-    // no table, heading or locator survives, source indexing has nothing to
-    // consume, and the request still logs `state: "complete"`.
-    //
-    // Found by uploading one document and asking what the database actually
-    // held, because nothing in a log, a status or a metric would ever have said
-    // it. A fallback that hides its own reason is not a fallback, it is a leak.
-    console.warn(JSON.stringify({
-      event: "pdf_structure_unavailable",
-      detail: cause instanceof Error ? cause.message.slice(0, 300) : String(cause).slice(0, 300),
-      name: cause instanceof Error ? cause.name : typeof cause,
-      // The frame that actually threw is the whole point of logging this.
-      stack: cause instanceof Error ? (cause.stack ?? "").split("\n").slice(0, 4).join(" | ").slice(0, 500) : undefined,
-    }));
-    model = undefined;
   }
 
   // 🔴 BOTH READERS FAILING IS A VERDICT ABOUT THE FILE, NOT AN EXCEPTION.
