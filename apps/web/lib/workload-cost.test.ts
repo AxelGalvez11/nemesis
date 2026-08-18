@@ -341,8 +341,13 @@ test("the scenarios rise in cost, light through cap exhaustion", () => {
   }
 });
 
-test("🔴 every scenario is flagged synthetic, because Gemini has no meter", () => {
-  assert.deepEqual(syntheticProviders().sort(), ["gemini", "supabase", "vercel"]);
+test("🔴 every scenario is flagged synthetic, because there is no paying cohort", () => {
+  // 🔴 GEMINI CAME OFF THIS LIST AND THAT IS A REAL CHANGE, NOT A LOOSENED TEST.
+  // Its rate was `assumed` at $0.002 and is now `published` at $0.0000258 --
+  // 258 input tokens at Flash-Lite's rate -- and #681 gave it an actual meter in
+  // the parse worker. Infrastructure stays synthetic: Vercel and Supabase are
+  // still amortised guesses, so every scenario is still flagged.
+  assert.deepEqual(syntheticProviders().sort(), ["supabase", "vercel"]);
   for (const month of SCENARIOS) {
     assert.equal(modelStudentMonth(month).synthetic, true, `${month.label} must declare itself synthetic`);
   }

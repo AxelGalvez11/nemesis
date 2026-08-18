@@ -119,12 +119,27 @@ export const RATES: readonly ProviderRate[] = [
   // WHAT WOULD MAKE IT REAL: record a `gemini` billable operation per vision call
   // with its input/output token counts, which the API already returns. That is
   // the single highest-value instrumentation gap in this file.
-  { basis: "assumed", checked: "2026-08-18", provider: "gemini", service: "gemini-3.5-flash vision", source: "planning assumption -- NOT a provider price list", unit: "per_image", usd: 0.002 },
+  // 🔴 0.0000258, NOT 0.002. THIS WAS SEVENTY-SEVEN TIMES TOO HIGH and it was the
+  // single largest error in the document economics. The old row was honest about
+  // being a guess (`basis: "assumed"`) and the guess was simply wrong: Gemini does
+  // not bill per image at all, it bills the image as INPUT TOKENS, and an image at
+  // the ceiling this parser downscales to is ~258 of them. 258 tokens at
+  // Flash-Lite's published input rate is $0.0000258. Derivation and caveat come
+  // from apps/web/lib/cost/ai-spend.ts, which read ai.google.dev/pricing on the
+  // same day and now takes this row as its source rather than keeping a second one.
+  //
+  // If image pricing ever stops being token-shaped, this row is wrong and every
+  // vision column with it.
+  { basis: "published", checked: "2026-08-18", provider: "gemini", service: "gemini-3.5-flash vision", source: "ai.google.dev/pricing -- Flash-Lite input rate x ~258 tokens per downscaled image", unit: "per_image", usd: 0.0000258 },
 
   // ── Parsers. Per page, and only on the pages that escalate. ────────────────
   { basis: "published", checked: "2026-08-18", provider: "mistral", service: "mistral-ocr", source: "mistral.ai/pricing, $1 per 1,000 pages", unit: "per_page", usd: 0.001 },
   // 3 credits a page on the cost_effective tier, measured on the owner's own
   // coursework -- see LLAMA_DEFAULT_TIER in lib/notebooks/llamaparse-ocr.ts.
+  // The tier the parser ACTUALLY sends (`LLAMA_DEFAULT_TIER`), measured on real
+  // coursework: 3 credits/page. A "balanced tier, 1 credit/page" reading of the
+  // price list gives $0.001 and understates this lane by 3.75x, because that is
+  // not the tier this code uses.
   { basis: "mirrored", checked: "2026-08-18", provider: "llamaparse", service: "cost_effective", source: "apps/web/lib/notebooks/llamaparse-ocr.ts", unit: "per_page", usd: 0.00375 },
 
   // ── Brave. Web research. ──────────────────────────────────────────────────

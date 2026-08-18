@@ -49,11 +49,25 @@ export { COST_REGISTRY_REV, PROVIDER_ROLE, RATES, RETIRED_RATES, syntheticProvid
  */
 export const MEASUREMENT_STATE = {
   payingSubscribers: 0,
-  observedAt: "2026-08-17",
-  /** What would have to be instrumented before a percentile means anything. */
+  observedAt: "2026-08-18",
+  /**
+   * What would have to be instrumented before a percentile means anything.
+   *
+   * 🔴 TWO OF THESE CLOSED WHILE THIS FILE SAID THEY WERE OPEN, WHICH IS THE MORE
+   * EMBARRASSING DIRECTION TO BE WRONG IN: the model was claiming LESS measurement
+   * than the product actually had. `recordAiSpend` (lib/cost/ai-spend.ts, added by
+   * #681) now writes a `usage_events` row per Gemini vision call and per vendor
+   * parse, scoped to the source, from the parse worker. So images-per-user and
+   * pages-per-provider ARE recorded now; what is missing is only elapsed time and
+   * somebody to measure.
+   *
+   * Kept as a list rather than a boolean because "we have the meter" and "we have
+   * enough history for a percentile" are different claims, and only the first is
+   * true today.
+   */
   instrumentationGaps: [
-    "Gemini vision records no usage row at all -- images per user is unknown",
-    "Document ingestion records no per-provider page counts",
+    "No paying cohort exists, so every percentile below is over founder and test usage",
+    "Gemini vision and vendor parse pages are now recorded per source by recordAiSpend, but only from 2026-08-18 -- there is no history to take a percentile of",
     "Conversational voice seconds start being recorded by consume_voice_seconds; there is no history",
   ],
 } as const;
