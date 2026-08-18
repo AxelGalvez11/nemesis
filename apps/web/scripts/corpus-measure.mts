@@ -110,6 +110,7 @@ interface Row {
   readonly figures: number;
   readonly twoColumnUnits: number;
   readonly interleavedUnits: number;
+  readonly fullWidthOnTwoColumn: number;
   readonly ms: number;
 }
 
@@ -139,7 +140,7 @@ for (const [index, file] of files.entries()) {
 
     if (!outcome.ok) {
       row = {
-        bytes: bytes.length, chars: 0, figures: 0, file: rel, interleavedUnits: 0,
+        bytes: bytes.length, chars: 0, figures: 0, file: rel, fullWidthOnTwoColumn: 0, interleavedUnits: 0,
         kind: kindFor(file, MIME[extension] ?? "") ?? extension.slice(1), ms: Date.now() - started,
         ok: false, reason: outcome.reason, route: "failed", source, tables: 0, twoColumnUnits: 0, units: 0,
       };
@@ -155,6 +156,7 @@ for (const [index, file] of files.entries()) {
         chars: text.length,
         figures: blocks.filter((b) => b.kind === "figure").length,
         file: rel,
+        fullWidthOnTwoColumn: columns?.fullWidthOnTwoColumnUnits ?? 0,
         interleavedUnits: columns?.interleavedUnits ?? 0,
         kind: doc.kind,
         ms: Date.now() - started,
@@ -170,7 +172,7 @@ for (const [index, file] of files.entries()) {
     }
   } catch (cause) {
     row = {
-      bytes: bytes.length, chars: 0, figures: 0, file: rel, interleavedUnits: 0,
+      bytes: bytes.length, chars: 0, figures: 0, file: rel, fullWidthOnTwoColumn: 0, interleavedUnits: 0,
       kind: extension.slice(1), ms: Date.now() - started, ok: false,
       reason: cause instanceof Error ? `threw:${cause.message.slice(0, 60)}` : "threw",
       route: "failed", source, tables: 0, twoColumnUnits: 0, units: 0,
@@ -225,6 +227,16 @@ for (const kind of kinds) {
 for (const row of rows.filter((r) => r.kind === "pdf" && r.interleavedUnits > 0).slice(0, 15)) {
   console.info(`    ${row.interleavedUnits}/${row.twoColumnUnits} pages  ${row.file}`);
 }
+
+// 🔴 THE OTHER HALF OF THE COLUMN STORY, AND THE REPOSITORY'S OWN HISTORY SAYS IT IS THE BIGGER
+// HALF. `docs/column-segmentation.md` found that what looked like a reading-order defect was
+// overwhelmingly column FUSION — two columns welded into one line before ordering ever ran — and
+// records the fix as improving it without eliminating it. A full-width block on a two-column page
+// is either a legitimate banner or a weld, and this cannot tell them apart. It is an upper bound.
+const fusionSuspects = rows.filter((r) => r.kind === "pdf" && r.fullWidthOnTwoColumn > 0);
+const totalFullWidth = fusionSuspects.reduce((sum, r) => sum + r.fullWidthOnTwoColumn, 0);
+console.info(`\n  full-width blocks on two-column PDF pages: ${totalFullWidth} across ${fusionSuspects.length} document(s)`);
+console.info("  (an UPPER BOUND on column fusion — a banner title is legitimately this wide)");
 
 console.info("\n── Speed ────────────────────────────────────────────────────");
 const times = parsed.map((r) => r.ms).sort((a, b) => a - b);

@@ -73,12 +73,24 @@ export interface UnitOrderFinding {
   readonly crossings: number;
   readonly blocksConsidered: number;
   readonly interleaved: boolean;
+  /**
+   * Blocks on a two-column unit that span the page rather than sitting in a column.
+   *
+   * 🔴 AN UPPER BOUND ON COLUMN FUSION, NOT A COUNT OF IT, AND THE DIFFERENCE MATTERS. A banner
+   * title, a full-width figure and a table spanning both columns are all legitimately this wide.
+   * So is a line that WELDED TWO COLUMNS TOGETHER — which `docs/column-segmentation.md` identifies
+   * as the real defect behind what was first misdiagnosed as a reading-order problem, and reports
+   * as improved but not eliminated. This number cannot tell those apart; it says where to look.
+   */
+  readonly fullWidthBlocks: number;
 }
 
 export interface ColumnReport {
   readonly unitsWithGeometry: number;
   readonly twoColumnUnits: number;
   readonly interleavedUnits: number;
+  /** Summed across two-column units. See `UnitOrderFinding.fullWidthBlocks`. */
+  readonly fullWidthOnTwoColumnUnits: number;
   readonly findings: readonly UnitOrderFinding[];
 }
 
@@ -95,7 +107,9 @@ function orderedBlocks(model: DocumentModel, unit: number): DocBlock[] {
  * The gutter is found as the widest empty vertical band between block centres. Centres rather than
  * edges: a block's left edge moves with its indentation, and its centre does not.
  */
-function splitByGutter(blocks: readonly DocBlock[]): { left: Set<string>; right: Set<string> } | null {
+function splitByGutter(
+  blocks: readonly DocBlock[],
+): { left: Set<string>; right: Set<string>; fullWidth: number } | null {
   const spanning = blocks.map((b) => b.rect!);
   const leftEdge = Math.min(...spanning.map((r) => r.x));
   const rightEdge = Math.max(...spanning.map((r) => r.x + r.width));
@@ -124,7 +138,7 @@ function splitByGutter(blocks: readonly DocBlock[]): { left: Set<string>; right:
   const left = new Set(centres.slice(0, splitAfter + 1).map((c) => c.id));
   const right = new Set(centres.slice(splitAfter + 1).map((c) => c.id));
   if (left.size < MIN_BLOCKS_PER_COLUMN || right.size < MIN_BLOCKS_PER_COLUMN) return null;
-  return { left, right };
+  return { fullWidth: blocks.length - inColumns.length, left, right };
 }
 
 /**
@@ -148,6 +162,7 @@ export function columnInterleave(model: DocumentModel): ColumnReport {
         blocksConsidered: blocks.length,
         columns: 1,
         crossings: 0,
+        fullWidthBlocks: 0,
         interleaved: false,
         unit: unit.index,
       });
@@ -167,6 +182,7 @@ export function columnInterleave(model: DocumentModel): ColumnReport {
       blocksConsidered: sequence.length,
       columns: 2,
       crossings,
+      fullWidthBlocks: split.fullWidth,
       interleaved: crossings > MAX_CLEAN_CROSSINGS,
       unit: unit.index,
     });
@@ -174,6 +190,7 @@ export function columnInterleave(model: DocumentModel): ColumnReport {
 
   return {
     findings,
+    fullWidthOnTwoColumnUnits: findings.reduce((sum, f) => sum + f.fullWidthBlocks, 0),
     interleavedUnits: findings.filter((f) => f.interleaved).length,
     twoColumnUnits: findings.filter((f) => f.columns === 2).length,
     unitsWithGeometry: findings.length,
