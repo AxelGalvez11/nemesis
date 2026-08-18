@@ -20,6 +20,8 @@ import { Worker } from "node:worker_threads";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import type { FigureDescriptionStore } from "@/lib/pdf/figure-cache";
+
 import { DEADLINE_ABORT_MS, HEARTBEAT_MS, MEMORY_ABORT_MB } from "./parse-worker";
 
 /** Where `scripts/build-parse-thread.mjs` puts the bundle, relative to the app. */
@@ -96,7 +98,26 @@ export interface ParseRunOptions {
    * default — never to unlimited.
    */
   visionUnitBudget?: number;
+  /**
+   * Where already-known figure descriptions live.
+   *
+   * 🔴 IT IS THE PARENT'S, NOT THE THREAD'S, AND THAT IS THE POINT. The thread holds no
+   * credentials by design; the cache lives in the database. So the thread asks over the port it
+   * already uses and this side answers. Omitted means every figure is a miss — production's
+   * behaviour before the cache existed.
+   */
+  figureCache?: FigureDescriptionStore;
 }
+
+/** Every lookup misses and every write is dropped. The default, and today's behaviour. */
+const NO_THREAD_CACHE: FigureDescriptionStore = {
+  async get() {
+    return new Map();
+  },
+  async put() {
+    /* nowhere to remember it */
+  },
+};
 
 /**
  * Parse `bytes` on a worker thread, holding the lease from this one.
@@ -270,10 +291,46 @@ export async function runParseOnThread(
       threw?: string;
       peakRssMb?: number;
       visionSpend?: ParseRunSpend;
+      cacheGet?: { id: number; keys: string[] };
+      cachePut?: { entries: { contentKey: string; description: string; labels: unknown[] }[] };
     }) => {
       // The handshake, not a result. Everything after it may have cost money.
       if (message.ready) {
         threadReady = true;
+        return;
+      }
+
+      // 🔴🔴 THE FIGURE-DESCRIPTION CACHE, ANSWERED FROM THIS SIDE OF THE BOUNDARY. The thread
+      // deliberately holds no database client and no service-role key (see `parse-thread.ts`), so
+      // it asks and this side answers. A deployment with no store configured simply never replies
+      // usefully and every lookup is a miss — which is exactly what production did before the
+      // cache existed.
+      //
+      // 🔴 AND NEITHER BRANCH CAN FAIL A PARSE. A rejected lookup answers with nothing; a rejected
+      // write is a figure we will pay to describe again. Both are cheaper than a thrown parse.
+      if (message.cacheGet) {
+        const { id, keys } = message.cacheGet;
+        void (options.figureCache ?? NO_THREAD_CACHE)
+          .get(keys)
+          .then((found) => {
+            if (settled) return;
+            worker.postMessage({ cacheResult: { found: [...found.entries()], id } });
+          })
+          .catch(() => {
+            if (!settled) worker.postMessage({ cacheResult: { found: [], id } });
+          });
+        return;
+      }
+      if (message.cachePut) {
+        void (options.figureCache ?? NO_THREAD_CACHE)
+          .put(
+            message.cachePut.entries.map((entry) => ({
+              contentKey: entry.contentKey,
+              description: entry.description,
+              labels: (entry.labels ?? []) as never[],
+            })),
+          )
+          .catch(() => {});
         return;
       }
       // The thread's own peak is the one that matters — it holds the document.

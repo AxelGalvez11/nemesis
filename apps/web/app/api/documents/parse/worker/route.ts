@@ -64,6 +64,7 @@ import {
   type DoclingServiceConfig,
 } from "@/lib/notebooks/docling-client";
 import { buildDoclingParse, doclingFallback, type DoclingKind } from "@/lib/notebooks/parse-docling";
+import { supabaseFigureCache, withFigureCache } from "@/lib/pdf/figure-cache";
 import { nativeTextMap, probePdfNativeText } from "@/lib/pdf/native-probe";
 import { readPdfStructure } from "@/lib/pdf/structure";
 import type { CapturedFigure } from "@/lib/pdf/structure";
@@ -502,7 +503,10 @@ async function runClaimed(
     // the reservation would buy nothing. Same budget object, so a document that spends on
     // this lane and then falls through to the built-in parser cannot spend twice.
     const doclingLedger = new VisionLedger(reservation.granted);
-    const lane = await withVisionBudget(doclingLedger, () =>
+    // The same cache as the threaded lane. This one runs in-process, so it installs the store
+    // directly rather than answering questions over a port.
+    const lane = await withFigureCache(supabaseFigureCache(admin, job.user_id), () =>
+      withVisionBudget(doclingLedger, () =>
       runDoclingLane({
       admin,
       budgetMs: Math.max(0, DEADLINE_ABORT_MS - (Date.now() - startedAt) - DOCLING_FALLBACK_RESERVE_MS),
@@ -512,7 +516,7 @@ async function runClaimed(
       heartbeat,
         job,
         kind,
-      }),
+      })),
     );
     reservation.spend = doclingLedger.spend();
     if (lane.status === "parsed") {
@@ -539,6 +543,11 @@ async function runClaimed(
   }
 
   const run = await runParseOnThread(bytes, fileName, mimeType, {
+    // 🔴 THE CACHE IS THE PARENT'S BECAUSE THE CREDENTIALS ARE. The parse thread holds no database
+    // client by design; it asks over the port and this side answers from `figure_descriptions`. A
+    // picture this learner has already paid to have described costs nothing and does not consume a
+    // unit of this document's vision budget.
+    figureCache: supabaseFigureCache(admin, job.user_id),
     heartbeat,
     visionUnitBudget: reservation.granted,
   });

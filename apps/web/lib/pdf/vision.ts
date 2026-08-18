@@ -39,6 +39,8 @@
 
 import { descriptionWithoutLabels, parseFigureLabels, type FigureLabel } from "@/lib/learn/figure-labels";
 import { PAGE_BATCH_SIZE, PAGE_CONCURRENCY, parsePageTranscripts } from "@/lib/pdf/pages";
+import { currentFigureCache, splitByCache, type FigureDescription } from "@/lib/pdf/figure-cache";
+import { figureContentKey } from "@/lib/notebooks/figure-assets";
 import { currentVisionLedger } from "@/lib/pdf/vision-budget";
 
 /**
@@ -413,7 +415,34 @@ export async function readFiguresWithVision(
   // from a model looking at nine diagrams and having no comment on any of them.
   let reached = false;
 
-  const withinLimit = images.filter((image) => withinVisionLimit(image.bytes.byteLength));
+  // 🔴🔴 THE CACHE IS CONSULTED BEFORE THE LEDGER IS DEBITED, AND THAT ORDER IS THE SAVING. A
+  // figure this learner has already paid to have described costs nothing and must not consume a
+  // unit of the document's budget — otherwise a deck of repeated diagrams would exhaust its
+  // allowance on pictures it already knows about and leave the new ones unexamined. See
+  // `figure-cache.ts`: the store is ambient, keyed on the normalized pixels, and per learner.
+  const keyOf = (image: VisionImage) => figureContentKey(image.bytes);
+  let alreadyKnown = new Map<string, FigureDescription>();
+  try {
+    alreadyKnown = await currentFigureCache().get(images.map(keyOf));
+  } catch {
+    // A cache that cannot be read is a cache that misses. Never a reason to fail a parse.
+  }
+  const { hits, misses } = splitByCache(images, keyOf, alreadyKnown);
+  for (const hit of hits) {
+    out.set(hit.image.name, hit.found.description);
+    if (hit.found.labels.length > 0) found.set(hit.image.name, [...hit.found.labels]);
+  }
+  if (hits.length > 0) {
+    console.info(JSON.stringify({ event: "vision_cache_hits", hits: hits.length, of: images.length }));
+  }
+  if (misses.length === 0) {
+    // Everything was already known. Nothing is sent, nothing is billed, and `reached` stays false
+    // because no provider was reached — which is the truth, and which no caller reads as a failure
+    // while every figure has an answer.
+    return { descriptions: out, labels: found, notSent: new Set<string>(), reached: false, unattributed: new Set<string>() };
+  }
+
+  const withinLimit = misses.filter((image) => withinVisionLimit(image.bytes.byteLength));
   // 🔴 THE BUDGET IS TAKEN BEFORE THE FIRST BATCH IS BUILT, NOT CHECKED INSIDE THE LOOP.
   // Checking per batch would let three concurrent workers each pass a check against the
   // same remaining allowance and then all spend it — the classic read-then-write race,
@@ -429,7 +458,7 @@ export async function readFiguresWithVision(
   // the caller can record "nobody could afford to look" instead of letting it inherit the
   // verdict of the batch that did run. Without this the two are the same value downstream.
   const notSent = new Set<string>([
-    ...images.filter((image) => !withinVisionLimit(image.bytes.byteLength)).map((image) => image.name),
+    ...misses.filter((image) => !withinVisionLimit(image.bytes.byteLength)).map((image) => image.name),
     ...withinLimit.slice(granted).map((image) => image.name),
   ]);
   const batches: VisionImage[][] = [];
@@ -565,6 +594,29 @@ export async function readFiguresWithVision(
     }
   });
   await Promise.all(workers);
+
+  // 🔴 REMEMBER WHAT WAS JUST PAID FOR, AND ONLY WHAT WAS PAID FOR. Cache writes are scoped to the
+  // images that actually got a usable description on THIS call: a figure the ladder never reached,
+  // or one the model had nothing to say about, is not a fact worth making permanent for every
+  // future document that picture appears in.
+  //
+  // 🔴 AND A FAILED WRITE IS NOT A FAILED PARSE. The learner has their descriptions either way;
+  // the only cost of losing this is paying again next time.
+  const learned = usable
+    .filter((image) => (out.get(image.name) ?? "").trim())
+    .map((image) => ({
+      contentKey: figureContentKey(image.bytes),
+      description: out.get(image.name)!,
+      labels: found.get(image.name) ?? [],
+    }));
+  if (learned.length > 0) {
+    try {
+      await currentFigureCache().put(learned);
+    } catch {
+      /* remembering is an optimisation; forgetting costs money and nothing else */
+    }
+  }
+
   return {
     descriptions: out,
     labels: found,
