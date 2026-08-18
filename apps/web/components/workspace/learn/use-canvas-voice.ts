@@ -14,7 +14,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { shouldSpeakAction, speechFor, type SpokenMoment } from "@/lib/learn/canvas-speech";
+import { shouldSpeakAction, type SpokenMoment } from "@/lib/learn/canvas-speech";
+import { routeSpeech } from "@/lib/learn/speech-route";
 import {
   DEFAULT_VOICE_MODE,
   readAutoDictation,
@@ -132,13 +133,18 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
 
   useEffect(() => {
     if (!spokenMoment) return;
-    const choice = speechFor(spokenMoment.moment, spokenMoment.key);
+    // 🔴 THE ROUTER RATHER THAN `speechFor` DIRECTLY (§43). It still delegates the text decision to
+    // `speechFor`, so nothing about what gets said has changed; what it adds is the locale, the pace
+    // and the provider travelling WITH the utterance. This lane is `canvas` and passes no locale, so
+    // the request body is byte-identical to what shipped before — the seam exists, and the day a
+    // language session exists it passes the other purpose and a target locale here.
+    const route = routeSpeech({ key: spokenMoment.key, moment: spokenMoment.moment, purpose: "canvas" });
     // A refusal is a real outcome: notation, or too long. The screen still shows it; Nemesis simply
     // does not read it aloud, and no microphone opens for something that was never said.
-    if (!choice.spoken) return;
+    if (route.decision !== "speak") return;
 
     let cancelled = false;
-    void speech.speak(choice.spoken.key, choice.spoken.text).then(() => {
+    void speech.speak(route.utterance.key, route.utterance.text, { locale: route.locale, speed: route.speed }).then(() => {
       if (cancelled) return;
       const now = live.current;
       if (

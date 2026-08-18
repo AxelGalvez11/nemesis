@@ -30,6 +30,15 @@ const POLICY_VIEW = readFileSync(
   new URL("../../components/workspace/learn/canvas-policy-view.tsx", import.meta.url),
   "utf8",
 );
+const PROVENANCE = readFileSync(new URL("./visual-provenance.ts", import.meta.url), "utf8");
+const SPEECH_ROUTER = readFileSync(new URL("./speech-route.ts", import.meta.url), "utf8");
+const VOICE_FUNCTION = readFileSync(
+  new URL("../../../../supabase/functions/nemesis-speak/index.ts", import.meta.url),
+  "utf8",
+);
+
+const SECTION_42 = CONTRACT.slice(CONTRACT.indexOf("# 42."), CONTRACT.indexOf("# 43."));
+const SECTION_43 = CONTRACT.slice(CONTRACT.indexOf("# 43."));
 
 /** The stack §41 names, by the package that would appear if one were adopted. */
 //
@@ -130,4 +139,92 @@ test("🔴 the constrained-interface rule is still stated", () => {
     "§41's load-bearing constraint has been softened or removed",
   );
   assert.match(SECTION, /visualize\(\{/, "the semantic interface sketch is gone");
+});
+
+
+// 🔴 §42 AND §43 ROT THE SAME WAY §41 DOES, AND FASTER, BECAUSE BOTH DESCRIBE RUNGS AND LANES THAT
+// ARE CORRECT AND UNREACHED. A section saying "no registry exists" is true on the day it is written
+// and becomes the most misleading paragraph in the document the morning after somebody builds one.
+// The checks below fail when reality moves, so the status line has to move in the same change.
+
+test("§42's status line matches whether a registry or a generation wiring exists", () => {
+  assert.ok(SECTION_42.length > 0, "§42 has gone missing from the contract");
+  assert.match(
+    SECTION_42,
+    /STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING\. RUNGS THREE AND FOUR EXIST AS ROUTER RULES WITH NO REGISTRY BEHIND THEM\./,
+    "§42 must say plainly which rungs are reached",
+  );
+  // The claim is "no caller passes assets". If one starts to, this is the line that has to move.
+  for (const view of [POLICY_VIEW, readFileSync(new URL("../../components/workspace/learn/canvas-document.tsx", import.meta.url), "utf8")]) {
+    assert.equal(/assets:/.test(view), false, "a caller now supplies registry assets — §42's status line is stale");
+  }
+  assert.equal(
+    /nemesis-media/.test(ROUTER) || /nemesis-media/.test(PROVENANCE),
+    false,
+    "the generation rung has been wired — §42 still calls it a router rule only",
+  );
+});
+
+test("🔴 §42's ladder is the array, not the paragraph", () => {
+  // The whole mechanism of the section: an ordering a router calls, rather than one a reader
+  // is trusted to honour. Reordering the array without reordering the section fails here.
+  assert.match(PROVENANCE, /PROVENANCE_LADDER[^=]*=\s*\[\s*"source_figure",\s*"rendered",\s*"reference_image",\s*"generated_image",/);
+  assert.match(SECTION_42, /reuse source figure/);
+  const rungs = ["reuse source figure", "render deterministically", "retrieve licensed image", "generate an illustrative image"];
+  let cursor = -1;
+  for (const rung of rungs) {
+    const at = SECTION_42.indexOf(rung);
+    assert.ok(at > cursor, `§42's ladder no longer runs ${rungs.join(" → ")}`);
+    cursor = at;
+  }
+});
+
+test("🔴 §42's rule with teeth still has them", () => {
+  // The exception this rule would grow is "unless we have nothing else", and it would be added by
+  // somebody reasonable, in a hurry, with an empty registry.
+  assert.match(SECTION_42, /a generated picture may never be the answer key/i);
+  assert.match(PROVENANCE, /export function mayBearAccuracyClaim/);
+  assert.match(PROVENANCE, /return provenance !== "generated_image";/);
+});
+
+test("§43's status line matches whether a language lane or a pronunciation provider exists", () => {
+  assert.ok(SECTION_43.length > 0, "§43 has gone missing from the contract");
+  assert.match(
+    SECTION_43,
+    /THE LANGUAGE LANE HAS RULES, A LOCALE CONTRACT AND NO SESSION TYPE BEHIND IT\. PRONUNCIATION ASSESSMENT DOES NOT EXIST\./,
+    "§43 must say plainly what is unreached",
+  );
+  // Every caller passes `canvas`. The day one passes the other purpose, this line is stale.
+  const voiceHook = readFileSync(
+    new URL("../../components/workspace/learn/use-canvas-voice.ts", import.meta.url),
+    "utf8",
+  );
+  assert.equal(
+    /purpose: "language_learning"/.test(voiceHook),
+    false,
+    "a caller now enters the language lane — §43's status line is stale",
+  );
+});
+
+test("🔴 §43's locale refusal is a refusal, not a fallback", () => {
+  // The failure it prevents is invisible from the outside: fluent audio in the wrong variety.
+  assert.match(SECTION_43, /Silence is diagnosable; the wrong accent is not\./);
+  assert.match(SPEECH_ROUTER, /reason: "locale-unknown"/);
+  assert.equal(
+    /targetLocale.*\?\?\s*LOCALE_UNSPECIFIED/.test(SPEECH_ROUTER),
+    false,
+    "the target-language lane now falls back to `auto` — that is the failure §43 exists to prevent",
+  );
+});
+
+test("🔴 no provider is claimed as measured while no bake-off has run", () => {
+  assert.match(SPEECH_ROUTER, /MEASURED_PROVIDERS:\s*Readonly<Record<string, TtsProvider>>\s*=\s*\{\}/);
+  assert.match(SECTION_43, /every locale is `unmeasured-default`/);
+});
+
+test("🔴 the function that pays still bounds what the client may ask for", () => {
+  // The same argument the character cap makes: a cap that lives only in the caller is a cap
+  // anybody can remove with a fetch.
+  assert.match(VOICE_FUNCTION, /reason: "locale-malformed"/);
+  assert.match(VOICE_FUNCTION, /Math\.min\(1\.2, Math\.max\(0\.7,/);
 });

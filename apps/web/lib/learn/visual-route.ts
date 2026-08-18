@@ -31,6 +31,7 @@
 // every rule here a test rather than a promise.
 
 import { validateCanvasVisual, type CanvasVisualRequest, type VisualRefusal } from "./canvas-visual";
+import { chooseAsset, type AssetRefusal, type CandidateAsset } from "./visual-provenance";
 import { isOccludable, type FigureLabel } from "./figure-labels";
 import type { CognitiveOperation, FigureKnowledge, KnowledgeObject } from "./knowledge-types";
 import type { ObjectiveCapability } from "./learning-objective";
@@ -75,7 +76,24 @@ export type VisualRepresentation =
   /** Things standing in relation to one another — a mechanism, a hierarchy, a flow. */
   | "relationship"
   /** Values over a range. */
-  | "quantitative";
+  | "quantitative"
+  /**
+   * A picture retrieved from an openly licensed repository, shown with its credit line.
+   *
+   * 🔴 THE THIRD RUNG (§42), AND IT SITS BELOW EVERY DETERMINISTIC ROUTE ON PURPOSE. A retrieved
+   * image is trustworthy on somebody else's authority; an equation, a graph or a plot is
+   * trustworthy on arithmetic, and the encoding that produced it is stored and inspectable. So a
+   * request that can be rendered is never displaced by a photograph of the same idea.
+   */
+  | "reference_image"
+  /**
+   * A picture an image model produced. **Illustrative only, and never the answer key.**
+   *
+   * 🔴 THE LAST RUNG, AND THE OWNER NAMED IT THE LEAST TRUSTED ONE FOR SCIENTIFIC ACCURACY. See
+   * `visual-provenance.ts` for the rule with teeth: this representation is unreachable whenever the
+   * learner would be marked right or wrong against the picture.
+   */
+  | "generated_image";
 
 /** Why no visual was chosen, when nothing was wrong. */
 export type ProseReason =
@@ -108,7 +126,17 @@ export type ProseReason =
   /** The learner is not being asked to locate anything, so an occluded diagram answers no question. */
   | "operation-is-not-spatial"
   /** Every point sits at one x, so there is no range to plot along. */
-  | "plot-has-no-range";
+  | "plot-has-no-range"
+  /**
+   * Pictures were offered for this moment and none of them may be shown.
+   *
+   * 🔴 DISTINCT FROM `nothing-to-show`, AND THE DIFFERENCE IS THE INTERESTING FACT. "the registry
+   * had nothing" is a coverage gap; "the registry had something and it was unlicensed, or it was
+   * generated and the learner would have been graded against it" is a bookkeeping failure or a
+   * hole exactly where a teaching interaction wanted a trustworthy picture. `assetRefusal` carries
+   * the rule that decided it, so the two can be counted apart.
+   */
+  | "no-trusted-asset";
 
 /**
  * One routing decision.
@@ -120,7 +148,7 @@ export type ProseReason =
 export type VisualRoute =
   | {
       decision: "render";
-      representation: Exclude<VisualRepresentation, "source_figure">;
+      representation: Exclude<VisualRepresentation, "generated_image" | "reference_image" | "source_figure">;
       spec: CanvasVisualRequest;
       because: string;
     }
@@ -132,7 +160,27 @@ export type VisualRoute =
       hidden: FigureLabel;
       because: string;
     }
-  | { decision: "prose"; reason: ProseReason; because: string }
+  | {
+      decision: "render";
+      representation: "generated_image" | "reference_image";
+      /**
+       * The chosen picture, with whatever provenance it was offered under.
+       *
+       * 🔴 THE ASSET TRAVELS WITH ITS LICENCE, NOT A FLATTENED URL. A credit line that has to be
+       * looked up separately at render time is a credit line that will one day not be, and an
+       * unattributed CC-BY figure on screen is the failure `visual-provenance.ts` refuses the
+       * asset outright to avoid. The renderer calls `creditLineFor` on this object.
+       */
+      asset: CandidateAsset;
+      because: string;
+    }
+  | {
+      decision: "prose";
+      reason: ProseReason;
+      /** Which asset rule decided it, when `reason` is `no-trusted-asset`. */
+      assetRefusal?: AssetRefusal;
+      because: string;
+    }
   | { decision: "refused"; reason: VisualRefusal; detail: string; because: string };
 
 export interface VisualRouteInput {
@@ -166,6 +214,22 @@ export interface VisualRouteInput {
   readonly labelKey?: string;
   /** How a label's text becomes a key, so the caller's identity rules stay the caller's. */
   readonly normalizeLabel?: (text: string) => string;
+  /**
+   * Pictures the registry offers for this moment — the third and fourth rungs of §42.
+   *
+   * 🔴 OPTIONAL, AND ABSENT IS THE ONLY VALUE ANY CALLER PASSES TODAY. No registry exists yet, so
+   * this is stated as a gap rather than counted as a working route: `canvas-policy-view` and
+   * `canvas-document` both omit it, and with it omitted the router behaves exactly as it did
+   * before §42. The rules below are the right rules and they are tested, but nothing in production
+   * reaches them, which is the same honesty the `association` branch keeps a few lines further
+   * down. This repo's most repeated failure is *implemented, merged, deployed, dead* — the
+   * defence is saying so, not pretending the branch runs.
+   *
+   * 🔴 CANDIDATES, NOT A CHOICE. The caller supplies what it found; which one may actually be
+   * shown — and whether any may — is `visual-provenance.ts`'s decision, so a caller cannot
+   * accidentally put an unlicensed or invented picture on screen by picking one itself.
+   */
+  readonly assets?: readonly CandidateAsset[];
 }
 
 /**
@@ -192,7 +256,14 @@ export function routeVisual(input: VisualRouteInput): VisualRoute {
   // request arriving alongside it is discarded, not merged — two pictures for one question is the
   // dashboard §41 forbids.
   const figureRoute = sourceFigureRoute(input);
-  if (figureRoute) return figureRoute;
+  // 🔴 A PROSE ANSWER FROM RUNG 1 IS NOT ALWAYS THE END OF THE LADDER. "this figure was parsed
+  // before its pixels were kept" means the source's picture is UNAVAILABLE, which is exactly the
+  // condition §42's lower rungs exist for. "the learner is not being asked to locate anything"
+  // means no picture-based interaction was wanted at all, and dropping to a licensed image there
+  // would answer a question nobody asked. `assetFallback` tells those two apart by reason.
+  if (figureRoute) {
+    return figureRoute.decision === "prose" ? assetFallback(input, figureRoute) : figureRoute;
+  }
 
   // ── 2. Nothing requested ──────────────────────────────────────────────────────────────────
   //
@@ -201,11 +272,11 @@ export function routeVisual(input: VisualRouteInput): VisualRoute {
   // sibling classes would be the router deciding pedagogy from a payload shape, which is
   // `teaching-policy.ts`'s job and not this file's.
   if (input.request === undefined || input.request === null) {
-    return {
+    return assetFallback(input, {
       because: "no visual was requested and the material carries no figure of its own — prose is the representation",
       decision: "prose",
       reason: "nothing-to-show",
-    };
+    });
   }
 
   // ── 3. A request must be well formed and safe ─────────────────────────────────────────────
@@ -359,6 +430,62 @@ function sourceFigureRoute(input: VisualRouteInput): VisualRoute | null {
     figure,
     hidden,
     representation: "source_figure",
+  };
+}
+
+/**
+ * Which `prose` outcomes mean "no picture was AVAILABLE" rather than "a picture would not have
+ * helped" — the only ones §42's lower rungs may answer.
+ *
+ * 🔴 THE LIST IS SHORT ON PURPOSE, AND EVERY REASON LEFT OUT IS LEFT OUT FOR A STATED REASON.
+ * `too-few-relations`, `plot-has-no-range` and `association-has-no-structure` are the router
+ * deciding a picture does not help HERE; reaching for a stock image after concluding that would
+ * turn a considered "no" into "no, so let us find one anyway", which is the dashboard §41 forbids.
+ * `label-not-in-figure` and `figure-not-occludable` are about a specific interaction failing on a
+ * specific figure, and substituting a different picture would ask the question against material the
+ * evidence will attribute elsewhere.
+ */
+const ASSET_ELIGIBLE_PROSE: readonly ProseReason[] = ["figure-has-no-asset", "nothing-to-show"];
+
+/**
+ * The third and fourth rungs, reached only when everything above them had nothing to offer.
+ *
+ * Returns the prose decision it was handed whenever the ladder does not apply, so the caller's
+ * existing outcome is preserved exactly rather than reshaped by a route that found nothing.
+ */
+function assetFallback(
+  input: VisualRouteInput,
+  prose: Extract<VisualRoute, { decision: "prose" }>,
+): VisualRoute {
+  if (!ASSET_ELIGIBLE_PROSE.includes(prose.reason)) return prose;
+
+  const candidates = input.assets ?? [];
+  if (candidates.length === 0) return prose;
+
+  // 🔴 `locate` IS THE ACCURACY-BEARING OPERATION, THE SAME ONE RUNG 1 KEYS ON. It is the operation
+  // that asks a question OF the picture — cover a part, name what is hidden — so the picture
+  // becomes the answer key and an invented one would mark a learner wrong against detail that was
+  // never true. Every other operation puts the picture beside the teaching rather than inside the
+  // grading.
+  const choice = chooseAsset({ accuracyBearing: input.operation === "locate", candidates });
+
+  if (!choice.ok) {
+    return {
+      assetRefusal: choice.reason,
+      because: `${candidates.length === 1 ? "a picture was" : "pictures were"} offered for this moment and none may be shown: ${choice.detail}`,
+      decision: "prose",
+      reason: "no-trusted-asset",
+    };
+  }
+
+  return {
+    asset: choice.asset,
+    because:
+      choice.asset.provenance === "reference_image"
+        ? "nothing higher on the ladder was available, and this figure carries a licence that lets Nemesis show it with its credit"
+        : "nothing trustworthy was available and nothing is being graded against the picture, so an illustration is allowed — labelled as one",
+    decision: "render",
+    representation: choice.asset.provenance,
   };
 }
 

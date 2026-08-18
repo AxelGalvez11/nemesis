@@ -30,6 +30,20 @@ export type SpeechFailure =
   /** The browser refused to play — autoplay policy, no output device. */
   | "playback-blocked";
 
+/**
+ * How an utterance should be synthesised, as `speech-route.ts` decided it.
+ *
+ * 🔴 PASSED PER UTTERANCE, NOT SET ON THE HOOK. §43's whole point is that a language lesson speaks
+ * its example in the target variety and the correction that follows it in the language of
+ * instruction — two locales, seconds apart, in one session. A hook-level setting could not express
+ * that, and would quietly read the correction in the accent being taught.
+ */
+export interface SpokenVoice {
+  /** BCP-47, or `auto`. Omitted entirely when `auto`, so the request body is unchanged from before §43. */
+  locale?: string;
+  speed?: number;
+}
+
 export interface CanvasSpeech {
   /** True from the moment a request goes out until playback ends or fails. */
   speaking: boolean;
@@ -43,7 +57,7 @@ export interface CanvasSpeech {
    * moment to decide whether to open the microphone, so resolving early would open it over the
    * tail of the question.
    */
-  speak: (key: string, text: string) => Promise<void>;
+  speak: (key: string, text: string, voice?: SpokenVoice) => Promise<void>;
   /** Stop immediately and forget what was playing. Safe to call when nothing is. */
   stop: () => void;
 }
@@ -81,7 +95,7 @@ export function useCanvasSpeech(): CanvasSpeech {
   }, [releaseAudio]);
 
   const speak = useCallback(
-    async (key: string, text: string) => {
+    async (key: string, text: string, voice?: SpokenVoice) => {
       if (spoken.current.has(key)) return;
       // Claimed BEFORE the await, not after. Two renders can call this in the same tick, and a
       // check-then-await-then-mark would send two paid requests for one question.
@@ -101,7 +115,14 @@ export function useCanvasSpeech(): CanvasSpeech {
         }
 
         const res = await fetch(`${supabaseUrl}/functions/v1/nemesis-speak`, {
-          body: JSON.stringify({ text }),
+          // 🔴 OMITTED WHEN UNSET RATHER THAN SENT AS A DEFAULT. `nemesis-speak` already has
+          // defaults for both, and sending `locale: "auto"` explicitly would make the function
+          // unable to tell "the caller chose auto" from "the caller is old and sends neither".
+          body: JSON.stringify({
+            text,
+            ...(voice?.locale && voice.locale !== "auto" ? { locale: voice.locale } : {}),
+            ...(typeof voice?.speed === "number" ? { speed: voice.speed } : {}),
+          }),
           headers: {
             apikey: supabaseAnonKey,
             Authorization: `Bearer ${token}`,

@@ -1311,3 +1311,254 @@ right."*
 A beautiful renderer attached to a policy that asks the wrong question next is worth less than
 plain text attached to the right one. Anyone tempted to start at 5 or 6 because it is the more
 enjoyable engineering should read this line as the answer.
+
+# 42. 🔴 SCIENTIFIC REPRESENTATION IS A TRUST LADDER — generation is the last rung, not the first (owner, 2026-08-18)
+
+## STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING. RUNGS THREE AND FOUR EXIST AS ROUTER RULES WITH NO REGISTRY BEHIND THEM.
+
+§41 asked *which representation makes this idea land*. This section answers a second question §41
+never asked: **when the answer is "a picture", where may that picture come from, and how far does
+its origin let it be trusted?**
+
+The owner's ordering, in their own words:
+
+```text
+source already contains the right figure
+        ↓
+reuse source figure
+
+exact scientific representation can be rendered from data
+        ↓
+render deterministically
+
+good open/public-domain reference image exists
+        ↓
+retrieve licensed image
+
+none of the above works
+        ↓
+generate an illustrative image
+```
+
+*"The last rung should be the least trusted one for scientific accuracy."*
+
+🔴 **THE ORDERING IS CODE, NOT PROSE.** `PROVENANCE_LADDER` in
+`apps/web/lib/learn/visual-provenance.ts` is the list above, and `trustRank()` is its index.
+`routeVisual()` consults it. A section of a document asserting an ordering is a section somebody
+will read past; a sorted array that a router calls is one they have to change on purpose.
+
+🔴 **THE FAILURE THIS PREVENTS IS THE CHEAPEST RUNG WINNING BY DEFAULT.** Generation is the easiest
+route to reach for: one call, no registry, no licence bookkeeping, and a picture every single time.
+Every other rung needs something to exist first — a parsed figure, a canonical encoding, a licensed
+asset. Without an ordering that code applies, the rung that requires the least work becomes the rung
+that gets used, and it is the one that invents plausible-looking detail.
+
+## Why a render outranks even a licensed photograph
+
+This is the rung order most likely to be got backwards, because a photograph looks more "real" than
+an SVG. A deterministic render is not a picture somebody vouched for — **it is the canonical
+encoding, drawn.** If the encoding is right the depiction is right; if the encoding is wrong the
+depiction is wrong in a way that is inspectable, because the string that produced it is stored. A
+retrieved image is trustworthy on somebody else's authority. A rendered one is trustworthy on
+arithmetic.
+
+Only the learner's own source figure outranks it, and that is a **pedagogy** ordering rather than an
+accuracy one: the source figure is what they will meet again in the exam and what their lecturer
+drew on.
+
+## 🔴 THE RULE WITH TEETH — a generated picture may never be the answer key
+
+`mayBearAccuracyClaim()` returns false for `generated_image`, with no threshold, no confidence
+score, and no "unless we have nothing else" branch.
+
+An occlusion question — cover a part, ask what it is — is **graded against the picture**, so the
+picture *is* the answer key. A generated image cannot be one: its labels, proportions and
+adjacencies are whatever made a plausible picture. Marking a learner **wrong** against invented
+detail is worse than showing them nothing, because it also writes durable evidence against them
+(§25) for a question that had no correct answer.
+
+So a generated image is reachable only where nothing is graded against it — beside an explanation,
+never inside a retrieval. And when it is shown it is labelled `Illustrative — not a source figure`,
+which is not a disclaimer but the one fact a learner needs to know how to read it. A retrieved
+histology plate and a generated impression of one look equally authoritative on a screen.
+
+## 🔴 A REPOSITORY NAME IS NOT A LICENCE
+
+Open repositories are *reservoirs*, not licences. Media in the broadest of them is intended to be
+reusable, but **the licence rides on each individual file**, so a registry row recording only "from
+that repository" has recorded nothing legally useful. `visual-provenance.ts` therefore reads the
+per-asset `licence` field and never the `source` field, refuses anything outside an **allow list**
+of reusable licences (an unrecognised string is a no, never a maybe), and refuses a `CC-BY`-family
+asset whose credit line was not kept — so the credit always exists to display at the moment the
+picture is shown. A licence stored in a database and never rendered is a record of a promise nobody
+kept.
+
+Candidate repositories the owner named — open textbook programmes, government and public-health
+image libraries, commons collections, historical medical archives — are **sources to harvest into a
+registry with per-asset licence metadata**, not services to query live at teaching time.
+
+## 🔴 FIELD-AGNOSTIC, AS EVERYWHERE ELSE
+
+Nothing in `visual-provenance.ts` names a field, a topic or a discipline, and nothing may. A
+licensed diagram is trusted because its licence and author are recorded, not because of what it
+depicts; a generated one is distrusted for the same reason whether it illustrates a kidney, a truss,
+or a contract-formation sequence. The owner's design test applies unchanged: **would this work for a
+law student and a mechanical engineering student?** The ladder does, because it is a rule about
+provenance rather than about subject matter.
+
+## The representation primitives this implies, and their status
+
+| Representation | Canonical form the model emits | Status |
+|---|---|---|
+| Source figure | the figure already in the learner's material | **shipped** (§41, `source_figure`) |
+| Equation | LaTeX | **shipped** (KaTeX) |
+| Relationship / pathway | nodes and edges | **shipped** (deterministic SVG) |
+| Quantitative | series of points | **shipped** (deterministic SVG) |
+| Licensed reference image | a registry asset id | **router rule only — no registry exists** |
+| Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
+| 2D chemical structure | SMILES / InChI / a resolver id | **not built** |
+| Macromolecular structure | a structure-database accession | **not built** |
+
+🔴 **THE TWO UNBUILT ROWS ARE THE SAME IDEA AS KaTeX AND THAT IS WHY THEY BELONG HERE.** A chemical
+structure is not an image-generation problem: the model emits a canonical string, a resolver
+validates it, and a depiction library draws it deterministically — exactly the equation lane with a
+different notation. Generating a benzene ring as pixels is the wrong instrument for a problem that
+has an exact answer. The same holds one level up for macromolecules, where the canonical form is an
+accession into a structure database rather than a drawing. Both remain **planned**, below §41's
+priority list, and neither may be simulated with an image model in the meantime — that would put a
+plausible-looking wrong structure in front of a learner, which the ladder exists to prevent.
+
+## What is deliberately NOT built yet
+
+- **No asset registry.** No table, no harvest, no licence ingestion. `routeVisual()` accepts an
+  `assets` candidate list and every caller in production omits it, so rungs three and four are
+  correct, tested, and unreached. Said plainly here rather than counted as coverage.
+- **No wiring to `nemesis-media`.** That function exists and generates images for Nemesis desktop
+  under a per-plan daily budget. It is not connected to the Canvas, and connecting it means
+  implementing the rung-four rules above, not merely calling it.
+
+# 43. 🔴 WHEN THE SUBJECT IS AUDITORY — voice stops being an output channel (owner, 2026-08-18)
+
+## STATUS: THE SPEECH ROUTER SHIPPED AND IS SERVING THE CANVAS LANE. THE LANGUAGE LANE HAS RULES, A LOCALE CONTRACT AND NO SESSION TYPE BEHIND IT. PRONUNCIATION ASSESSMENT DOES NOT EXIST.
+
+Everywhere else in this product, speech is a **second channel for text the learner could have
+read**. `canvas-speech.ts` argues that case and is right: it reads the question and the correction,
+refuses explanations, and stays out of the way so the learner's eyes stay on the material (§19,
+§41). Reading is faster, skimmable and learner-paced.
+
+**When the subject is a language, the sound is the subject.** Pronunciation, stress, rhythm,
+intonation, vowel quality, minimal pairs, listening comprehension and conversational pacing do not
+survive text at all. A language lesson delivered silently has not taught most of what it claimed to.
+So in that one lane, and only that one, voice moves from an optional output to part of the learning
+substrate — and nearly every rule §41 and `canvas-speech.ts` established inverts.
+
+## 🔴 THE LOCALE IS THE DECISION, AND `auto` IS NOT ONE
+
+Before this section every utterance went to the provider as `language: "auto"` — the client sent no
+locale at all. For a question read aloud in the learner's own language that is right: the provider
+identifies the language from the text and nothing depends on which variety it picks.
+
+For a language lesson it is the whole ballgame. **`es-MX` and `es-ES` differ in exactly the features
+being taught**, as do `pt-BR` and `pt-PT`, and `auto` on a Spanish sentence returns *some* Spanish,
+chosen by a provider that was not told which one the learner is studying.
+
+So `routeSpeech()` in `apps/web/lib/learn/speech-route.ts` **refuses to speak a target-language
+utterance without an explicit locale** (`locale-unknown`) rather than falling back. Falling back
+would produce fluent, confident audio in the wrong variety, and neither the learner nor a log could
+tell it had happened. **Silence is diagnosable; the wrong accent is not.**
+
+🔴 **AND THE LOCALE BELONGS TO THE MOMENT, NOT THE SESSION.** A Spanish lesson speaks its example in
+`es-MX` and the correction that follows it in the language of instruction, seconds apart. A
+session-level locale would read *"Almost — the stress falls on the last syllable"* in a Mexican
+accent, which is not a teaching decision anybody made.
+
+## The rules that invert
+
+| | Canvas lane | Language lane |
+|---|---|---|
+| What speech is | an alternative to reading | the material itself |
+| Locale | `auto` is fine | required, or nothing is spoken |
+| Pace | 0.95 — a question must be held in working memory | 1.0 — natural |
+| Unspeakable text | letter-ratio heuristic | explicit mathematical markup only |
+
+🔴 **THE PACE ROW IS A TEACHING CLAIM, NOT A SETTING.** Slowing a target-language utterance teaches
+a rhythm the language does not have: connected speech, elision and stress timing are precisely what
+disappears when speech is slowed, and precisely what the learner must be able to hear later. A
+learner drilled at 0.95 has been trained on a dialect nobody speaks.
+
+🔴 **THE LAST ROW WAS A REAL DEFECT, FOUND BY WRITING THIS SECTION.** `isMostlyNotation()` refuses
+anything under roughly two-thirds letters, which is a good heuristic for teaching prose and rejects
+exactly the utterances a language lesson is made of. `¿Sí?` is two letters in four characters.
+A Japanese line framed in 「」 fails the same way. **The shortest, most useful pronunciation drills
+were the ones the rule rejected**, so the target-language lane uses `hasNotationMarkup()` — explicit
+LaTeX and maths delimiters — which is decisive in any language.
+
+## 🔴 TTS IS AN INTERCHANGEABLE OUTPUT SERVICE, NEVER PART OF COGNITION
+
+The owner's framing, and the architecture follows it: every decision carries a `provider`, and the
+locale→provider table is **data**.
+
+What is deliberately absent is a union of vendor names with no integration behind any of them. One
+provider is integrated (xAI, on the key the transcription lane already uses, at a TTS rate the cost
+comment records); listing four more would read as a working multi-provider router to the next person
+and this repo has been burned by exactly that gap before.
+
+🔴 **AND EVERY ROW SAYS HOW IT WAS CHOSEN.** `ProviderEvidence` is `measured` or
+`unmeasured-default`, and today **every locale is `unmeasured-default`**. The owner is explicit that
+published language counts are not quality per locale: *"there is no reason to assume the provider
+that wins Japanese also wins Mexican Spanish."* A table populated from vendors' own coverage claims
+would be indistinguishable at a glance from one populated by listening, so the field exists to keep
+them distinguishable. Filling it requires a **bake-off inside Nemesis Lab**: same sentence, several
+providers, native speakers rating accent, pronunciation, prosody, naturalness, pacing,
+code-switching, numbers and names, latency and cost — **per locale**, because the winner is a
+per-locale fact.
+
+## 🔴 THE MISSING HALF — speech recognition is not pronunciation assessment
+
+Nemesis has strong speech **input** (§14, `docs/voice-state.md`): the learner answers out loud, the
+judge is told to forgive false starts, and the modality is kept in the durable record.
+
+That answers *"what words did the learner probably say?"* It does not answer **"did they say them
+like a native speaker?"** — and for language teaching that second question is most of the subject.
+Phoneme-level accuracy, fluency and prosody scoring is a **different cognitive operation** from
+dictated recall, and Nemesis cannot perform it today with anything it has.
+
+The loop the language lane needs:
+
+```text
+Nemesis speaks a native example
+        ↓
+learner listens, then repeats or responds
+        ↓
+STT: what did they say?          pronunciation assessment: how did they say it?
+        ↓
+Nemesis diagnoses the specific phoneme, stress or contour
+        ↓
+targeted correction → try again / continue the conversation
+```
+
+Only the first, second and third-left boxes exist. **The third-right box has no provider, no
+integration and no evidence schema**, and until it does, Nemesis can teach vocabulary and grammar in
+a language but must not claim to teach pronunciation. Stated here so nobody reads the shipped voice
+lane as covering it.
+
+## What is deliberately NOT built yet
+
+- **No language-learning session type.** `routeSpeech()` takes a `purpose` and every caller passes
+  `canvas`. The rules, the locale contract and the refusals are correct and tested; nothing in
+  production reaches the language lane. Said plainly rather than counted as coverage.
+- **No bake-off, no second provider, no pronunciation assessment.** See above.
+- **The voice identity is still fixed.** `nemesis-speak` sends one `voice_id` for every utterance in
+  every language. A locale now travels with the request and the pace does too, but *which speaker* is
+  heard does not vary — and for a language lesson the speaker is part of the material, not a skin.
+  Naming this here so the locale work is not mistaken for having finished the job.
+- The canvas lane's request body is **byte-identical to what shipped before this section** when no
+  locale is passed, which is what makes the seam safe to add now.
+
+## 🔴 PRIORITY
+
+This sits inside §41's ordering, not beside it. A language lane with excellent audio attached to a
+policy that asks the wrong question next is worth less than the core loop being right. Build the
+locale contract and refusals first — they are cheap and they prevent a silent wrong-accent failure —
+and treat the bake-off and pronunciation assessment as work that follows a real language-learning
+session type, not work that precedes it.

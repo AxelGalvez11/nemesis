@@ -530,7 +530,15 @@ function BlockText({
 function RoutedVisual({ visual }: { visual: CanvasBlock["visual"] }) {
   if (!visual) return null;
   const route = routeVisual({ request: visual });
-  if (route.decision !== "render" || route.representation === "source_figure") return null;
+  if (route.decision !== "render") return null;
+  // 🔴 THIS COMPONENT OWNS THE RENDERED RUNG AND ONLY THAT ONE. `source_figure` belongs to
+  // `FigureOcclusion` in the policy view, and §42's image rungs are asset-backed rather than
+  // spec-backed — none of the three carries a `spec` this renderer could draw. Narrowing by naming
+  // the representations that DO belong here (rather than excluding the ones that do not) means a
+  // new rung added to the router fails to compile here instead of silently falling through.
+  if (route.representation !== "equation" && route.representation !== "quantitative" && route.representation !== "relationship") {
+    return null;
+  }
   return <SemanticVisual visual={route.spec} />;
 }
 

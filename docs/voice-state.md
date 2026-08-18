@@ -1,8 +1,13 @@
-# Voice in Nemesis — what is actually built, measured 2026-08-17
+# Voice in Nemesis — what is actually built, measured 2026-08-17, corrected 2026-08-18
 
 Written because the handoff brief treated voice as "the next major unfinished product slice". Most
 of it is finished, shipped, and serving. This records what was verified and how, so nobody funds a
 rebuild of something that works — and so the one genuinely missing piece is stated plainly.
+
+🔴 **ONE SECTION OF IT WAS ALREADY WRONG ON THE DAY IT WAS WRITTEN.** §4 claimed Nemesis had no
+text-to-speech; the function had shipped. It is corrected in place below, with the correction
+labelled rather than silently applied, because a status document that quietly rewrites itself
+teaches the next reader to trust none of it.
 
 Method: read the code, then confirm against the **served production bundle** at
 `app.enternemesis.com`, with a probe calibrated before it was trusted (a positive control that must
@@ -60,24 +65,44 @@ app does not use them, on purpose, for cost — and `workload-cost.test.ts:119` 
 
 Anyone reaching for streaming must change that test deliberately, which is the point.
 
-## 4. Nemesis speaking back — DOES NOT EXIST
+## 4. Nemesis speaking back — BUILT, AND THIS SECTION WAS WRONG (corrected 2026-08-18)
 
-There is **no text-to-speech anywhere** in the codebase. Searched `apps/web` and
-`supabase/functions` for `speechSynthesis`, `text-to-speech`, `tts`, `elevenlabs`, `/audio/speech`:
-the only two hits are comments in the STT cost table.
+🔴 **THIS SECTION SAID "there is no text-to-speech anywhere in the codebase" AND IT HAD STOPPED
+BEING TRUE.** `supabase/functions/nemesis-speak` takes a short piece of text and returns MP3 bytes,
+on the xAI key the transcription lane already uses; `lib/learn/canvas-speech.ts` decides what may be
+said; `components/workspace/learn/use-canvas-speech.ts` plays it. The document was written on
+2026-08-17 and the function predates it — the search that produced the claim was run before the
+lane landed and the conclusion was never re-run. This is the exact failure mode the rest of this
+file was written to prevent, so the correction is recorded rather than quietly overwritten.
 
-So voice today is **half-duplex**: the learner can talk, but must read. That is a coherent product —
-speaking exposes a mental model better than typing does, which is the pedagogical reason §7 wanted
-it — but it is not hands-free study.
+So voice is **full-duplex**, with a deliberately narrow mouth. What Nemesis says is bounded on
+purpose, and the bounds are the interesting part:
 
-**This is a product decision, not an engineering one, and it is not made here.** Whether Nemesis
-speaks changes what the product *is* for a learner walking to class. It also changes the cost shape:
-every taught turn would carry an audio generation, where today the marginal cost of voice input is
-zero (the browser's own recogniser).
+| Rule | Where | Why |
+|---|---|---|
+| Reads the question and the correction; refuses explanations | `canvas-speech.ts` | a paragraph read aloud cannot be skimmed, re-read, or paced by the learner |
+| Refuses text that is mostly notation | `canvas-speech.ts` | a synthesiser reading `\frac` aloud once turns voice off for ever |
+| 600 characters, enforced in the function and not only the client | `nemesis-speak` | a cap that lives only in the caller is a cap anybody can remove with a fetch |
+| No cache | `nemesis-speak` | a considered cost decision, recorded with the figure that would justify revisiting it |
 
-The seam if the answer is yes: the provider ladder in `nemesis-transcribe` is the pattern to copy,
-xAI already has a TTS API on the same key the STT lane uses, and `_shared/voice-cost.ts` is where the
-rate belongs. No account, key, or migration exists for it yet.
+### What §43 added on top of it
+
+`lib/learn/speech-route.ts` now decides the **locale, the pace and the provider** for each utterance,
+where before every request went out as `language: "auto"` at a fixed 0.95. Nothing about the canvas
+lane's behaviour changed — with no locale passed the request body is byte-identical — but the seam
+now exists, and with it the rule that a **target-language utterance is refused rather than spoken in
+a guessed variety**. See §43 of the canvas product contract.
+
+## 5. Judging HOW something was said — DOES NOT EXIST
+
+The gap this document should have been naming. Speech recognition answers *"what words did the
+learner probably say?"*. It does not answer *"did they say them like a native speaker?"* — phoneme
+accuracy, stress placement, intonation contour, fluency. For every subject Nemesis teaches today that
+second question is irrelevant. For teaching a language it is most of the subject.
+
+There is no provider, no integration and no evidence schema for it. **This is a product decision and
+it is not made here** — the same standing this document gave to text-to-speech, which is the one
+call in the original that has held up.
 
 ## Decision: live dictation stays on the browser's recogniser, for now
 

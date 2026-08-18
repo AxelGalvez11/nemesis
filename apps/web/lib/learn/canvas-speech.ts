@@ -26,7 +26,22 @@ export type SpokenMoment =
   | { kind: "question"; text: string }
   /** A correction. The lead-in carries the verdict ("You had part of this.") and matters as much
    *  as the answer does — hearing only the answer loses whether they were right. */
-  | { kind: "correction"; lead: string; answer: string };
+  | { kind: "correction"; lead: string; answer: string }
+  /**
+   * An utterance in the language being learned — §43's inversion.
+   *
+   * 🔴 THIS ONE IS NOT A READING OF THE SCREEN, IT IS THE MATERIAL. Everywhere else in this file
+   * speech is an alternative channel for text the learner could have read; here the sound *is* the
+   * knowledge, and the written form is the alternative channel. Pronunciation, stress, rhythm and
+   * intonation do not survive text at all, so a language lesson delivered silently has not taught
+   * most of what it claimed to.
+   *
+   * 🔴 IT CARRIES NO LOCALE OF ITS OWN, DELIBERATELY. Which locale to speak it in is a routing
+   * decision (`speech-route.ts`), and a moment that carried its own locale would let the screen and
+   * the voice disagree about which variety is being taught — the learner reading Mexican Spanish
+   * and hearing Castilian.
+   */
+  | { kind: "target_language"; text: string };
 
 /** Why nothing will be spoken. Named so a silent canvas is diagnosable. */
 export type SpeechRefusal =
@@ -119,6 +134,22 @@ function stripFormatting(raw: string): string {
 }
 
 /**
+ * Explicit mathematical markup — LaTeX commands, or text fenced in dollar delimiters.
+ *
+ * 🔴 SPLIT OUT OF `isMostlyNotation` BECAUSE THE TWO TESTS ANSWER DIFFERENT QUESTIONS, AND ONE OF
+ * THEM IS WRONG FOR §43. This half is decisive on its own in any language: a reader never sees
+ * `\frac`, so anything containing it is a rendering artefact rather than something to say. The
+ * LETTER-RATIO half is a heuristic tuned for teaching prose, where punctuation is sparse — and it
+ * misfires on exactly the utterances a language lesson is made of. "¿Sí?" is two letters in four
+ * characters and would be refused as notation; so would a Japanese line framed in 「」. The
+ * shortest, most useful pronunciation drills are the ones the ratio rejects, so the
+ * target-language lane uses this test alone. See `speech-route.ts`.
+ */
+export function hasNotationMarkup(text: string): boolean {
+  return /\\[a-zA-Z]{2,}|\$\$?[^$]+\$\$?/.test(text);
+}
+
+/**
  * Whether what is left is notation rather than language.
  *
  * 🔴 A RATIO, NOT A KEYWORD LIST — the field-agnostic rule. "Contains \frac" only catches LaTeX a
@@ -130,8 +161,7 @@ function stripFormatting(raw: string): string {
 export function isMostlyNotation(text: string): boolean {
   const stripped = text.replace(/\s/g, "");
   if (stripped.length === 0) return false;
-  // Explicit LaTeX commands or delimiters are decisive on their own — a reader never sees them.
-  if (/\\[a-zA-Z]{2,}|\$\$?[^$]+\$\$?/.test(text)) return true;
+  if (hasNotationMarkup(text)) return true;
   let wordish = 0;
   for (const character of stripped) if (/[\p{L}]/u.test(character)) wordish += 1;
   // Below roughly two-thirds letters, a synthesiser is reading symbols rather than words.
@@ -147,14 +177,18 @@ export function isMostlyNotation(text: string): boolean {
  */
 export function speechFor(moment: SpokenMoment, key: string): SpeechChoice {
   const raw =
-    moment.kind === "question"
-      ? moment.text
+    moment.kind === "correction"
       // The verdict first, then the answer, with a full stop between so the synthesiser pauses.
-      : `${moment.lead.trim().replace(/[.!?]?$/, ".")} ${moment.answer}`;
+      ? `${moment.lead.trim().replace(/[.!?]?$/, ".")} ${moment.answer}`
+      : moment.text;
 
   const text = stripFormatting(raw);
   if (!text) return { refused: "empty-after-cleanup" };
-  if (isMostlyNotation(text)) return { refused: "notation-not-speakable" };
+  // 🔴 THE NOTATION TEST IS CHOSEN BY MOMENT, NOT APPLIED UNIFORMLY. See `hasNotationMarkup` for
+  // why the letter ratio is the wrong instrument for a target-language utterance: it refuses
+  // "¿Sí?" as notation, and that is a drill rather than a formula.
+  const unspeakable = moment.kind === "target_language" ? hasNotationMarkup(text) : isMostlyNotation(text);
+  if (unspeakable) return { refused: "notation-not-speakable" };
   if (text.length > SPEECH_CHAR_LIMIT) return { refused: "too-long-to-speak" };
   return { spoken: { key, text } };
 }
