@@ -48,6 +48,10 @@ const RECORD: EvidenceToRecord = {
   responseText: "AT1 blockade lowers aldosterone, so less potassium is excreted.",
   scaffoldRung: "independent",
   scaffoldingLevel: 0,
+  // 🔴 NOT `direct`, FOR THE SAME REASON THE STRATEGY BELOW IS NOT THE DEFAULT ARM. `direct` is what
+  // a reader that fell back to a default would also produce; `transfer` can only arrive here by
+  // genuinely surviving write, select and read.
+  taskForm: "transfer",
   taskId: "task-1",
   // 🔴 THE BASELINE ARM ON PURPOSE, NOT THE DEFAULT. A fixture carrying `nemesis_policy` would pass
   // this round trip identically while proving less: `nemesis_policy` is what a broken reader that
@@ -123,6 +127,7 @@ const COLUMN_TO_FIELD: Record<string, keyof LearnerEvidence | null> = {
   response_text: "responseText",
   scaffold_rung: "scaffoldRung",
   scaffolding_level: "scaffoldingLevel",
+  task_form: "taskForm",
   task_id: "taskId",
   teaching_strategy: "teachingStrategy",
   verdict: "verdict",

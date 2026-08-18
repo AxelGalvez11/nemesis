@@ -21,11 +21,28 @@ import { normalizeForIdentity } from "@/lib/learn/knowledge-identity";
 import type { FigureKnowledge } from "@/lib/learn/knowledge-types";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { routeVisual } from "@/lib/learn/visual-route";
+import { workedExampleFor } from "@/lib/learn/worked-example";
 
 import { StoredFigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 import { correctionLead } from "./correction-copy";
+
+/**
+ * The affordance that turns a recognition screen into "produce it if you can, pick it if you cannot".
+ *
+ * 🔴🔴 A BUTTON RATHER THAN A TIMER, AND THE PRODUCT OBJECTIVE IS WHY. The learning-science finding
+ * is that a chance to retrieve BEFORE seeing options is worth having; the laboratory protocol that
+ * established it uses a forced delay. Nemesis optimises durable understanding per unit of ATTENTION,
+ * so a countdown that makes every learner wait — the one who already knows it and the one who never
+ * will alike — spends the very thing being optimised in order to reproduce an experimental control.
+ * A press costs nothing to anyone who wants the options, and the learner who can produce the answer
+ * types it and is credited with a production instead of a recognition.
+ *
+ * 🔴 EXPORTED SO A TEST CAN ASSERT THE SCREEN RATHER THAN THE STRING. A copy of this label in a test
+ * file passes forever after the button is deleted.
+ */
+export const SHOW_CHOICES_LABEL = "Show the options";
 
 /** `Verdict` is declared but not exported by canvas-judge, and that file is Runtime's — so the
  *  type is derived from the exported map rather than reaching across a lane boundary to add an
@@ -181,7 +198,17 @@ function PolicyScreen({
     );
   }
 
-  if (decision.action.type === "retrieve" && prompt) {
+  // 🔴 THREE ACTIONS SHARE THIS SCREEN, AND THAT IS THE PRODUCT RULE RATHER THAN A SAVING. §33: "the
+  // learner never sees a difficulty setting change; the Canvas simply changes the task." A faded
+  // worked example and a transfer case are different TASKS, not different modes — no banner naming
+  // them, no label saying this one is harder, nothing for a learner to choose between. What differs
+  // on screen is what the question says and, for a completion, the part of the solution above it.
+  if (
+    (decision.action.type === "retrieve" ||
+      decision.action.type === "complete" ||
+      decision.action.type === "transfer") &&
+    prompt
+  ) {
     // ── The retrieval presentation ──────────────────────────────────────────
     //
     // 🔴 THE QUESTION IS THE WHOLE SCREEN, AND EVERYTHING REMOVED FROM HERE WAS REMOVED ON PURPOSE.
@@ -211,6 +238,17 @@ function PolicyScreen({
 
     return (
       <div className={`flex ${regionHeight(sharing)} flex-col items-center justify-center gap-6 px-6`}>
+        {/* 🔴 THE PART OF THE SOLUTION THAT WAS SUPPLIED, AND THE EVIDENCE ROW ALREADY SAYS SO. This
+            is the only thing that separates a completion from an ordinary ask on screen, and the
+            `completion` rung on the row it writes is the claim that it was here. A completion whose
+            `given` never rendered would be an unaided question filed as an assisted one. */}
+        {prompt.given && prompt.given.length > 0 && (
+          <ol className="w-full max-w-(--canvas-column) space-y-2 rounded-2xl px-5 py-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary)">
+            {prompt.given.map((line, index) => (
+              <li key={`${index}-${line}`}>{line}</li>
+            ))}
+          </ol>
+        )}
         {occluded && (
           <StoredFigureOcclusion
             caption={occluded.figure.caption}
@@ -244,10 +282,17 @@ function PolicyScreen({
     // produced. Lettering would also have to survive the position balancer, which is exactly how a
     // stale letter comes to name the wrong option.
     //
-    // 🔴 THE OPTIONS ARE THE ANSWER, SO THE COMPOSER DOES NOT RECEIVE ONE. `use-policy-runtime`
-    // hosts no task for this action, so `answerSink` resolves to `none` and the composer stays what
-    // it is on every other non-question screen: a place to ask about the material. That is the same
-    // one-answer-surface rule `canvas-hosting.ts` exists to hold, arrived at from the other side.
+    // 🔴🔴 THE QUESTION COMES FIRST AND THE OPTIONS COME ON REQUEST, WHICH IS A CHANGE OF SUBSTANCE
+    // RATHER THAN OF LAYOUT. Painting the options with the question denies the learner the one thing
+    // that would produce the stronger evidence: a moment to retrieve before the answer set is on
+    // screen. The composer now receives an answer on this screen too — `use-policy-runtime` hosts a
+    // task for every asking action — so someone who can produce it simply types it, and the row that
+    // gets written says `independent` rather than `recognition` because that is what happened.
+    //
+    // 🔴 A BUTTON, NOT A COUNTDOWN, AND THE OBJECTIVE IS WHY. See `SHOW_CHOICES_LABEL`: the finding
+    // is about the opportunity to retrieve, not about the waiting, and Nemesis is optimising
+    // understanding per unit of ATTENTION — a forced delay spends exactly what is being optimised in
+    // order to reproduce a laboratory control. Nobody waits, and nobody is blocked.
     //
     // 🔴 AND IT IS NOT A MODE. Nothing here was switched on; the policy decided, from this learner's
     // evidence, that this one question is better asked this way, and the next one will very probably
@@ -258,6 +303,7 @@ function PolicyScreen({
         <h2 className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-title)] font-medium leading-snug text-balance text-(--ui-text-primary)">
           {prompt.prompt}
         </h2>
+        {runtime.choicesRevealed ? (
         <ul className="flex w-full max-w-(--canvas-column) flex-col gap-2">
           {prompt.choices.options.map((option) => (
             <li key={option.text}>
@@ -276,8 +322,59 @@ function PolicyScreen({
             </li>
           ))}
         </ul>
+        ) : (
+          // 🔴 AN ORDINARY BUTTON, SO KEYBOARD, TOUCH AND SCREEN READERS REACH IT FOR FREE. It is
+          // also disabled while an answer is being read, for the same reason the options are: two
+          // ways to resolve one question, both live, is two rows racing for one response id.
+          <button
+            className="rounded-full px-4 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-50"
+            disabled={busy}
+            onClick={runtime.revealChoices}
+            type="button"
+          >
+            {SHOW_CHOICES_LABEL}
+          </button>
+        )}
       </div>
     );
+  }
+
+  if (decision.action.type === "worked_example") {
+    // ── The demonstration ───────────────────────────────────────────────────
+    //
+    // 🔴 THE PROCESS, NOT THE CLAIM, WHICH IS THE WHOLE DIFFERENCE FROM THE `teach` SCREEN BELOW.
+    // That one prints `cue → answer` and the source's sentence. This one prints the moves: where you
+    // start, what you look up, how the parts compose, what you end up saying. A learner who could
+    // not perform the operation gains nothing from meeting the conclusion a second time.
+    //
+    // 🔴 IT SHOWS THE ANSWER ON PURPOSE AND WRITES NOTHING. Modelling is not testing. Nothing about
+    // what this learner has demonstrated changes as a result, because no evidence row exists to
+    // change it — see `assistance-evidence.test.ts`.
+    const modelled = workedExampleFor(decision);
+    // 🔴 NO SILENT FALLBACK TO A DIFFERENT SCREEN. The controller only chooses this move after the
+    // same builder said yes, so an empty result is a defect rather than a state. Dropping through to
+    // the hold screen below would tell a learner to "come back shortly" in answer to a decision that
+    // said the opposite — which is exactly the invisible failure this repo keeps finding.
+    if (modelled.modelled) {
+      return (
+        <Frame onContinue={onContinue} sharing={sharing}>
+          <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+            {modelled.modelled.lead}
+          </p>
+          <ol className="mt-4 list-decimal space-y-3 pl-5">
+            {modelled.modelled.steps.map((step, index) => (
+              <li
+                className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)"
+                key={`${index}-${step}`}
+              >
+                {step}
+              </li>
+            ))}
+          </ol>
+          <SourceTrail citations={citations} />
+        </Frame>
+      );
+    }
   }
 
   if (decision.action.type === "show_correction") {

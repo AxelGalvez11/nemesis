@@ -512,7 +512,7 @@ sentences — it exists to stop the code and the matrix drifting apart, not to f
 knowledge_types: association, causal, classification, conceptual_system, procedure, spatial
 cognitive_operations: discriminate, explain, locate, predict, recall, sequence
 # The fields one judged demonstration writes. 🔴 `absent` always means NOT OBSERVED.
-evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseModality, responseText, scaffoldRung, scaffoldingLevel, taskId, teachingStrategy, verdict
+evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, misconceptions, objectiveEvidence, objectiveRowId, occurredAt, operation, responseId, responseLatencyMs, responseModality, responseText, scaffoldRung, scaffoldingLevel, taskForm, taskId, teachingStrategy, verdict
 ```
 
 ### Implemented
@@ -527,6 +527,11 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 | Append-only evidence log as truth; state as a projection | `lib/learn/learner-evidence.ts`, `learner_evidence` table |
 | Raw observations preserved — `operation`, `response_latency_ms`, `response_modality`, `scaffolding_level` | Track B1; written, read back, and interpreted by nothing |
 | Scaffolding rung on every demonstration — §33's ordered ladder, so recognition can never satisfy a production requirement | `lib/learn/scaffold-rung.ts`; read through `satisfies()`, which makes the ambiguous question unaskable |
+| Worked examples — the reasoning worked through rather than the claim restated. Grounded in ordered steps, a directed relation or a class contrast; refuses by name where the material has none. Writes **no** evidence row | `lib/learn/worked-example.ts`; rendered by `canvas-policy-view.tsx`, chosen by the `model` verb |
+| Faded worked examples — most of a valid solution with one piece withheld. A real production, recorded at the `completion` rung, which by construction can never satisfy `independent` | `lib/learn/completion-task.ts`, `completionPromptFor`; ladder in `scaffold-rung.ts` |
+| Transfer probes — the same asserted relation put to a case the material never stated, with the reference answer derived from the source's own direction and a named refusal where it will not invert | `lib/learn/transfer-task.ts`, `transferPromptFor` |
+| Task form on every performance — `direct` / `completion` / `transfer`, separate from the assistance ladder because a transfer is unaided AND harder | `lib/learn/task-form.ts`, `learner_evidence.task_form` |
+| Question before options — a recognition screen shows the question first and the options on request, and records the assistance actually taken rather than the one planned | `asUnaidedProduction` in `objective-task.ts`; `choicesRevealed` in `use-policy-runtime.ts` |
 | Per-objective evidence including `not_addressed` — an answer that never mentioned an objective is no longer read as a failed attempt | `objectiveEvidenceFor` in `lib/learn/objective-task.ts`; consumed by `projectLearnerState` |
 | Stateless one-decision policy (no sequence, no memory between calls) | `lib/learn/teaching-policy.ts`, `policy-runtime.ts` |
 | Evidence invariants §5 items 1–4, 6 | `use-policy-runtime.ts`, `objective-task.ts` |
@@ -535,6 +540,8 @@ evidence_fields: canvasId, confidence, demonstrationObtained, evaluatorVersion, 
 | Evidence persisting across sessions and canvases (§5.8) | proven live across two canvases, 2026-08-11 |
 | Judge failure writing nothing (§5.9) | `use-policy-runtime.ts` |
 | Skipping demonstrated competence (§7 deficit yield, partially) | `teaching-policy.ts` (`advance`) |
+| Successive relearning through the existing retention path — spaced passes raise stability, the forgetting estimate raises selection value, and the record crosses sittings | `retention-model.ts`, `retrieval-eligibility.ts`, `next-action-value.ts`; walked end to end by `successive-relearning.test.ts` |
+| Per-form outcome measurement — yield and active attention per task form, "did completions lead to unaided production", transfer after direct production | `strategy-outcomes.ts` (`taskForms`) |
 | Motion that reports real cognitive phases rather than simulating progress | `lib/learn/thinking-phases.ts` |
 
 ### Partially implemented

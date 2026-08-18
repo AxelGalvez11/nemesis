@@ -178,7 +178,7 @@ test("🔴🔴 transfer and scaffolding read ABSENT on a cohort that shows only 
     row({ objectiveEvidence: "demonstrated", occurredAt: at(0), teachingStrategy: "nemesis_policy" }),
     row({ objectiveEvidence: "demonstrated", occurredAt: at(HOUR), teachingStrategy: "nemesis_policy" }),
   ]);
-  assert.equal(summary.transferDemonstrations, null, "one operation in the corpus means no transfer measurement");
+  assert.equal(summary.crossOperationDemonstrations, null, "one operation in the corpus means no transfer measurement");
   assert.equal(summary.meanScaffoldingLevel, null, "every observation at the floor is not 'equally scaffolded'");
 });
 
@@ -189,7 +189,7 @@ test("🔴 transfer becomes measurable the day a second operation ships, without
     row({ objectiveEvidence: "demonstrated", occurredAt: at(0), operation: "recall", teachingStrategy: "nemesis_policy" }),
     row({ objectiveEvidence: "demonstrated", occurredAt: at(HOUR), operation: "predict", teachingStrategy: "nemesis_policy" }),
   ]);
-  assert.equal(summary.transferDemonstrations, 1, "produced under a demand it had never been produced under");
+  assert.equal(summary.crossOperationDemonstrations, 1, "produced under a demand it had never been produced under");
 });
 
 test("🔴🔴 rows with no arm are EXCLUDED, never folded into the control", () => {

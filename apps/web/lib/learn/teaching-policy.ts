@@ -143,6 +143,55 @@ export type TeachingAction =
    *
    * Absent means the whole canvas has nothing owed, which is the original meaning and still occurs.
    */
+  /**
+   * Show HOW the operation is performed, worked through, before asking them to perform it — the
+   * worked-example move.
+   *
+   * 🔴 NOT `teach` UNDER A SECOND NAME, AND THE DIFFERENCE IS WHAT IS ON THE SCREEN. `teach` states
+   * the CLAIM: the cue, the answer, the sentence the source wrote. This states the PROCESS: where
+   * you start, what you look up, how the parts compose, what you end up saying. A learner who
+   * cannot yet perform the operation gets nothing from being shown the conclusion again, which is
+   * the whole finding the worked-example literature rests on and the one move this vocabulary had
+   * no way to make.
+   *
+   * 🔴 IT MAY SHOW THE ANSWER, BECAUSE ITS PURPOSE IS MODELLING RATHER THAN TESTING — and that is
+   * safe for exactly one reason: it writes NO evidence row. Viewing is not evidence of mastery
+   * (invariant 1) and being shown a worked example is not either (invariant 2); both hold because
+   * there is no row to hold them of.
+   *
+   * 🔴 AND IT REFUSES RATHER THAN INVENTS. `worked-example.ts` assembles the demonstration from
+   * grounded structure — ordered steps, a directed relation, a class contrast — and returns a named
+   * refusal where the material has none. A made-up procedure taught as though the source had said
+   * it is the failure this action is one step away from.
+   */
+  | { type: "worked_example"; objectiveId: string; exposition: Exposition; because: string }
+  /**
+   * A faded worked example: most of a valid solution on screen, one piece withheld, the learner
+   * supplying the piece.
+   *
+   * 🔴 A REAL PERFORMANCE, AND AN ASSISTED ONE, WHICH IS WHY IT CARRIES A RUNG AT ALL. The learner
+   * produced something, so it writes evidence like any other answer; part of the solution was in
+   * front of them, so the rung is `completion` — below `cued`, above `recognition` — and
+   * `satisfies(state, "independent")` can never become true off the back of one. Invariant 4 is
+   * enforced by the ladder rather than by anyone remembering it.
+   *
+   * 🔴 THE RUNG IS FIXED AND NOT A PARAMETER. A `complete` action offered at any other rung would be
+   * a completion task recorded as something else; there is exactly one demand this action stages.
+   */
+  | { type: "complete"; objectiveId: string; because: string; rung: "completion" }
+  /**
+   * The same grounded relation, put to a case the material never stated.
+   *
+   * 🔴 THE RUNG IS `independent` AND THE TASK IS HARDER THAN THE ORDINARY ONE. Nothing about the
+   * answer is on screen — the question names a condition and never the consequence — so no
+   * assistance is claimed. What separates it from `retrieve` is not help, it is the CASE, and that
+   * lives in `taskForm` rather than on this ladder. See transfer-task.ts.
+   *
+   * 🔴 AND IT REFUSES WHERE THE RELATION WILL NOT CARRY. A transfer over knowledge that asserts no
+   * invertible direction would mean inventing a case and then judging the learner against the
+   * invention, which invariant 12 exists to forbid.
+   */
+  | { type: "transfer"; objectiveId: string; because: string; rung: "independent" }
   | { type: "advance"; because: string; objectiveId?: string };
 
 /**
@@ -169,6 +218,12 @@ export function expositionOf(action: TeachingAction): Exposition {
     // other holds still for, which is §39's whole complaint about verdicts deciding advancement.
     case "teach":
     case "simplify":
+    // 🔴 A WORKED EXAMPLE IS ALWAYS SOMETHING TO READ. It is the longest thing this runtime puts on
+    // screen and the one whose value is entirely in being inspected; auto-advancing past a
+    // demonstration the learner had not finished is the exact defect §39's `deliberate` mode
+    // exists to prevent. `expositionFor` resolves the pair to `deliberate` for every knowledge type
+    // a worked example can be built from, and the action carries whatever it resolved.
+    case "worked_example":
       return action.exposition;
     // 🔴 NOT AN ABSENCE OF INFORMATION — A RETRIEVAL ASKS FOR PRODUCTION AND A HOLD SHOWS A STATUS.
     // Neither puts material in front of the learner to process, and saying so is different from
@@ -186,10 +241,60 @@ export function expositionOf(action: TeachingAction): Exposition {
     // Continue on a question, or auto-advance past one.
     case "retrieve":
     case "recognise":
+    // 🔴 BOTH ASK FOR PRODUCTION, SO BOTH PRESENT NOTHING TO TAKE IN. A completion puts a partly
+    // worked solution on screen and it is still an ASK — the `given` lines are the question's own
+    // material, not an exposition to be read and dismissed with a Continue. Giving either an
+    // exposition would print a way past a question the learner has not answered, which is §38's
+    // exact failure.
+    case "complete":
+    case "transfer":
     case "defer":
     case "revisit":
     case "advance":
       return NO_EXPOSITION;
+  }
+}
+
+/**
+ * What the learner is being asked to PRODUCE, for any action — the companion to `expositionOf`.
+ *
+ * 🔴🔴 IT EXISTS BECAUSE THE ANSWER WAS WRITTEN OUT LONGHAND IN FOUR PLACES AND THE FOURTH WAS
+ * ALREADY WRONG. `use-policy-runtime.ts` decided which actions need a prompt minted
+ * (`type !== "retrieve" && type !== "recognise"`), which ones host a task for the composer
+ * (`type !== "retrieve"` — a recognition screen therefore had nowhere for a typed answer to land),
+ * and which ones are awaiting an answer (`retrieve` or `recognise`); `learning-canvas.ts` read the
+ * third to route typing. Three copies of one list, already disagreeing, and each new performance
+ * action multiplies the ways a lane can be built and never reached. This is the list.
+ *
+ * 🔴 IT RETURNS THE DEMAND, NOT A BOOLEAN, because every caller that needs the answer also needs the
+ * rung: the prompt builder stages it, the row records it, and a boolean would send them back to the
+ * action's own shape to find it — which is the duplication this removes.
+ *
+ * 🔴 EXHAUSTIVE OVER THE UNION FOR THE REASON `expositionOf` IS. A new action is a compile error
+ * here until someone decides whether it asks the learner for anything.
+ */
+export function performanceOf(
+  action: TeachingAction,
+): { readonly rung: ScaffoldRung; readonly choices?: ChoiceSet } | null {
+  switch (action.type) {
+    case "retrieve":
+      return { rung: action.rung };
+    case "recognise":
+      return { choices: action.choices, rung: action.rung };
+    case "complete":
+    case "transfer":
+      return { rung: action.rung };
+    // Nothing is asked for. A worked example is read, an exposition is read, and the three holds
+    // put nothing on screen at all.
+    case "worked_example":
+    case "show_correction":
+    case "teach":
+    case "simplify":
+    case "contrast":
+    case "defer":
+    case "revisit":
+    case "advance":
+      return null;
   }
 }
 

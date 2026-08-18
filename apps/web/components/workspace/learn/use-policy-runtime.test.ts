@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+import { NO_EXPOSITION } from "@/lib/learn/cognitive-mode";
+import { performanceOf, type TeachingAction } from "@/lib/learn/teaching-policy";
 import { KNOWLEDGE_DEADLINE_MS } from "@/lib/learn/thinking-phases";
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
@@ -216,12 +218,18 @@ test("🔴 the scaffold rung reaches retrievalPromptFor, not just its default", 
   // reddens — confirmed by reverting the fix, running this file alone, and restoring it.
   const code = strip(await read("./use-policy-runtime.ts"));
 
-  // 🔴 THE GUARD NOW NAMES BOTH KINDS OF ASK, AND IT IS STILL WHAT MAKES `.rung` WELL-TYPED BELOW.
-  // It used to read `decision.action.type !== "retrieve"`. A recognition task also mints a prompt, so
-  // the narrowing had to widen — but it must stay an ALLOW-LIST of the two asks rather than becoming
-  // "anything that is not an exposition", which would mint a prompt for `defer` the day somebody
-  // added a field to it, and a prompt id is the idempotency key for evidence.
-  const guardStart = code.indexOf('action.type !== "retrieve" && action.type !== "recognise"');
+  // 🔴🔴 THE GUARD IS NO LONGER A HAND-WRITTEN LIST OF ACTION NAMES, AND THE REPLACEMENT IS STRICTLY
+  // STRONGER RATHER THAN LOOSER. It read `action.type !== "retrieve" && action.type !== "recognise"`,
+  // which had to be edited in three separate places for every new asking action — and the three had
+  // already drifted: the prompt guard named two actions, the hosted-task guard named one, and a
+  // learner typing at a recognition screen therefore had nowhere for the answer to land. It now asks
+  // `performanceOf`, whose switch in teaching-policy.ts is exhaustive over the union, so a new action
+  // is a COMPILE ERROR there rather than a screen here that silently mints nothing.
+  //
+  // 🔴 IT IS STILL AN ALLOW-LIST, AND THAT IS ASSERTED BY CALLING IT RATHER THAN BY MATCHING TEXT —
+  // the property being protected is "a `defer` must never mint a prompt", and `performanceOf` can be
+  // executed and asked.
+  const guardStart = code.indexOf("!performanceOf(action)");
   assert.notEqual(guardStart, -1, "the ask-only guard must still exist — it is what makes `.rung` and `.choices` well-typed below");
 
   const call = code.indexOf("setPrompt(retrievalPromptFor(", guardStart);
@@ -233,6 +241,49 @@ test("🔴 the scaffold rung reaches retrievalPromptFor, not just its default", 
     /retrievalPromptFor\(decision, crypto\.randomUUID\(\), action\.rung\)/,
     "the rung teaching-policy.ts chose for this retrieval must be passed through — omitting it is not a compile error, it is every retrieval silently staying independent",
   );
+});
+
+test("🔴 the ask-only guard is an allow-list, asked rather than described", () => {
+  // 🔴 THE BEHAVIOURAL HALF OF THE GUARD ABOVE. The source assertion says the runtime consults
+  // `performanceOf`; this says what `performanceOf` actually answers, so the pair together mean
+  // "only these actions mint a prompt" rather than "a particular sentence is still in the file".
+  //
+  // 🔴 CALIBRATION: make `performanceOf` return `{ rung: "independent" }` for `defer` and this test
+  // reddens on its own, while the source assertion above stays green — which is exactly the blind
+  // spot a text-matching guard leaves.
+  const because = "because";
+  const asks: TeachingAction[] = [
+    { because, objectiveId: "o", rung: "independent", type: "retrieve" },
+    { because, objectiveId: "o", rung: "completion", type: "complete" },
+    { because, objectiveId: "o", rung: "independent", type: "transfer" },
+  ];
+  for (const action of asks) {
+    assert.ok(performanceOf(action), `${action.type} asks the learner for something and must mint a prompt`);
+  }
+
+  const silent: TeachingAction[] = [
+    { because, exposition: NO_EXPOSITION, objectiveId: "o", type: "worked_example" },
+    { because, exposition: NO_EXPOSITION, objectiveId: "o", type: "teach" },
+    { because, exposition: NO_EXPOSITION, objectiveId: "o", type: "simplify" },
+    { because, exposition: NO_EXPOSITION, objectiveId: "o", type: "show_correction" },
+    { because, competingWith: ["x"], exposition: NO_EXPOSITION, objectiveIds: ["o"], type: "contrast" },
+    { because, objectiveId: "o", type: "defer" },
+    { because, objectiveId: "o", type: "revisit" },
+    { because, type: "advance" },
+  ];
+  for (const action of silent) {
+    assert.equal(
+      performanceOf(action),
+      null,
+      `${action.type} asks the learner for nothing — minting a prompt for it would put an idempotency key on a screen with no question`,
+    );
+  }
+
+  // 🔴 AND A WORKED EXAMPLE IS THE ONE MOST LIKELY TO BE GOT WRONG. It is the newest exposition and
+  // the only one that shows the answer on purpose; if it ever minted a prompt, the learner would be
+  // asked to answer a screen that had just told them the answer, and the row would be a durable
+  // demonstration of reading.
+  assert.equal(performanceOf(silent[0]!), null);
 });
 
 test("🔴 the options the policy chose reach the recognition prompt, never rebuilt at mint time", async () => {

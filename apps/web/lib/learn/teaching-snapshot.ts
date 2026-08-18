@@ -38,6 +38,9 @@ import { isUnresolvedAttempt } from "./next-action-value";
 import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
 import { retrievabilityFor } from "./retention-model";
 import { readRung, type ScaffoldRung } from "./scaffold-rung";
+import { completionAvailable } from "./completion-task";
+import { transferAvailable } from "./transfer-task";
+import { workedExampleAvailable } from "./worked-example";
 import { semanticKeysOf, semanticRelationSummary, semanticRelationsOf } from "./semantic-relations";
 import type { MaterialScope, TeachingContext } from "./teaching-strategy";
 
@@ -140,6 +143,41 @@ export interface ObjectiveSnapshot {
    * not-yet-instrumented document contains.
    */
   importance: string | null;
+
+  /**
+   * Which of the grounded task builders can actually produce something for this objective.
+   *
+   * 🔴🔴 THE CONTROLLER IS TOLD WHAT IS POSSIBLE, NOT WHAT TO DO, AND THE DIFFERENCE IS THE BITTER
+   * LESSON CONSTRAINT THIS FILE LIVES UNDER. Nothing here says "procedural failures deserve a worked
+   * example" — that is a plausible teaching heuristic, not a universal truth, and encoding it would
+   * put the teacher back in the code. What is stated instead is a fact about the MATERIAL: a
+   * two-column association has no process to walk through, so no honest worked example exists over
+   * it, whatever the right teaching move might be.
+   *
+   * 🔴 AND WITHOUT IT THE MODEL SPENDS ITS TURNS BEING REFUSED. The builders refuse by design where
+   * the structure is missing, and a controller that cannot see which objectives have that structure
+   * would keep asking for moves that cannot be staged — a turn the learner does not get, once per
+   * refusal. Advertising the capability is what turns a refusal into a rare event rather than the
+   * normal cost of offering these actions at all.
+   */
+  canBeModelled: boolean;
+  canBeCompleted: boolean;
+  canBeTransferred: boolean;
+
+  /**
+   * How this objective has been ASKED before, by task form rather than by verdict.
+   *
+   * 🔴 SEPARATE FROM `demonstrationCount`, WHICH CANNOT ANSWER THE QUESTION. "Produced it four
+   * times" says nothing about whether any of those four were the material's own case or a case it
+   * never stated, and those are the two things a teacher most needs apart: a learner who has
+   * answered the same question four times has weaker evidence than one who has used the relation
+   * once somewhere new. It is exposed as counts and the policy reasons over them; there is
+   * deliberately no "transfer is worth +30 mastery" anywhere.
+   */
+  transferAttempts: number;
+  transferDemonstrations: number;
+  completionAttempts: number;
+
 
   // ── what this sitting has already spent on it ─────────────────────────────
   /** Milliseconds of ACTIVE attention this sitting has given this objective. */
@@ -267,6 +305,17 @@ export function teachingSnapshot(context: TeachingContext): TeachingSnapshot {
       semanticRelations: semanticRelationsOf(entry.knowledge).map(semanticRelationSummary),
       state,
       statement: entry.knowledge.statement,
+      canBeCompleted: completionAvailable(entry),
+      canBeModelled: workedExampleAvailable(entry),
+      canBeTransferred: transferAvailable({ knowledge: entry.knowledge }),
+      completionAttempts: mine.filter((row) => row.taskForm === "completion").length,
+      transferAttempts: mine.filter((row) => row.taskForm === "transfer").length,
+      transferDemonstrations: mine.filter(
+        (row) =>
+          row.taskForm === "transfer" &&
+          row.demonstrationObtained &&
+          (row.verdict === "strong" || row.verdict === "understood"),
+      ).length,
       terminologyInTheWay:
         lookups.length > 0 && terminologyFriction({ lookups, terms: [...requires, ...establishes] }).present,
       unresolvedAttempts: mine.filter(isUnresolvedAttempt).length,

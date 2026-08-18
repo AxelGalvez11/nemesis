@@ -49,6 +49,18 @@ export type CanvasEvent =
   | "canvas_action_chosen"
   // Which controller this canvas was assigned and whether the assignment was randomised, the
   // default, or an explicit developer override. Names only; never source or learner content.
+  // 🔴 A WORKED EXAMPLE WAS PUT IN FRONT OF THE LEARNER — the only durable trace this action leaves,
+  // and deliberately so. Modelling writes NO row in `learner_evidence`, because that table holds
+  // claims about what a learner has shown and reading a demonstration shows nothing. Which means the
+  // question "did being shown the working produce later unaided recall?" has to be answered by
+  // joining this event's timestamp and objective against the evidence rows that follow it, rather
+  // than from the evidence table alone. Objective identity keys and counts only; never the material.
+  | "canvas_worked_example_shown"
+  // 🔴 THE LEARNER ASKED FOR THE OPTIONS RATHER THAN PRODUCING THE ANSWER. The rate is the whole
+  // measurement behind question-before-options: if nobody ever answers before revealing, the
+  // affordance is costing a tap and buying nothing; if many do, recognition was being credited as
+  // the ceiling for learners who could produce.
+  | "canvas_choices_revealed"
   | "canvas_strategy_assigned"
   // 🔴 A TEACHING CONTROLLER COULD NOT DECIDE, AND WHY — the reason tally that keeps the A/B
   // comparison honest. Same construction as `canvas_causal_refused`: a controller that produced
