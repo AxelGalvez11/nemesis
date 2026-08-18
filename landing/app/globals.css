@@ -304,6 +304,21 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 
 /* pricing */
 .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: start; }
+/* Two cards, not three. A three-column grid holding two cards leaves a dead
+   column and shoves both cards off-centre, which reads as a plan that failed to
+   load rather than as a two-plan choice. `align-items: stretch` so the switch on
+   one card cannot make the other card shorter than it. */
+.plans-two { grid-template-columns: repeat(2, 1fr); max-width: 720px; margin: 0 auto; align-items: stretch; }
+.plans-two .plan { display: flex; flex-direction: column; }
+.plans-two .plan-cta { margin-top: auto; }
+/* The monthly/yearly switch. Told apart by the inverted ground the featured card
+   already uses, because this site has one ink and no second hue to signal with. */
+.plan-toggle { display: flex; gap: 4px; padding: 3px; margin: 0 0 20px; border: 1px solid var(--line); border-radius: 2px; }
+.plan-toggle-opt { flex: 1; cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 650; letter-spacing: 0.06em;
+  text-transform: uppercase; padding: 8px 6px; border: 0; border-radius: 2px; background: transparent; color: var(--text-3);
+  transition: color 0.15s, background 0.15s; }
+.plan-toggle-opt:hover { color: var(--text); }
+.plan-toggle-opt.is-on, .plan-toggle-opt.is-on:hover { background: var(--text); color: var(--bg); }
 .plan { padding: 32px 28px; text-align: left; }
 /* "Most popular" was a red gradient, a red border and a red chip. It is now a
    heavier border and an inverted chip — a difference in WEIGHT, not in hue,

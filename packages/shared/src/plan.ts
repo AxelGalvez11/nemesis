@@ -174,9 +174,18 @@ export function intervalFromStripe(raw: string | null | undefined): BillingInter
  * config, never in the codebase — but the AMOUNTS are asserted here so a
  * misconfigured environment variable pointing at the wrong Price fails closed
  * instead of quietly charging the wrong number.
+ *
+ * Owner decision 2026-08-18: $19.99 a month, $199.99 a year. Consumer .99
+ * pricing, and the annual keeps Nemesis under $200.
+ *
+ * 🔴 $19.99 IS ALSO WHAT AGENT PRO USED TO COST. Validating a Stripe Price by
+ * amount alone would therefore accept a stale STRIPE_PRO_PRICE_ID as if it were
+ * the new monthly Nemesis price. The checkout and catalog paths validate the
+ * Price ID they were configured with AND the amount; see
+ * `stripePriceMatchesInterval` in apps/web/lib/billing-contract.ts.
  */
-export const NEMESIS_MONTHLY_CENTS = 1_900;
-export const NEMESIS_ANNUAL_CENTS = 9_600;
+export const NEMESIS_MONTHLY_CENTS = 1_999;
+export const NEMESIS_ANNUAL_CENTS = 19_999;
 
 export function priceCents(interval: BillingInterval): number {
   return interval === "annual" ? NEMESIS_ANNUAL_CENTS : NEMESIS_MONTHLY_CENTS;
@@ -185,18 +194,100 @@ export function priceCents(interval: BillingInterval): number {
 /**
  * What the annual plan works out at per month, for display.
  *
- * 9600 / 12 = exactly 800, so this is $8 with no rounding sleight of hand. The
- * moment the annual price stops dividing evenly this returns a rounded number
- * and the UI must keep printing the real annual charge beside it — which it does,
- * because showing "$8/month" without "$96 billed annually" is the deceptive
- * pattern the owner explicitly ruled out.
+ * 19999 / 12 = 1666.58, so this ROUNDS — $16.67 a month is not a number anyone
+ * is ever charged, and twelve of them do not add back to $199.99. That is
+ * exactly why the UI is required to print "$199.99 billed annually" next to it;
+ * showing "$16.67/month" alone is the deceptive pattern the owner ruled out.
  */
 export function annualPerMonthCents(): number {
   return Math.round(NEMESIS_ANNUAL_CENTS / 12);
 }
 
-/** What twelve months at the monthly rate would cost, for the saving line. */
+/**
+ * The saving against paying monthly for a year, as a whole percent.
+ *
+ * 🔴 ARITHMETIC, NOT A MARKETING CONSTANT. $19.99 x 12 = $239.88 against
+ * $199.99 is $39.89, or 16.63% — which rounds to the 17% the UI says. If either
+ * price changes, this number changes with it and the copy cannot go stale.
+ *
+ * The customer-facing line is "Save 17%", never "2 months free": $199.99 is
+ * 10.005 months at the monthly rate, so "2 months free" would be a claim the
+ * arithmetic does not support.
+ */
 export function annualSavingPercent(): number {
   const atMonthly = NEMESIS_MONTHLY_CENTS * 12;
   return Math.round(((atMonthly - NEMESIS_ANNUAL_CENTS) / atMonthly) * 100);
+}
+
+/** Cents to the string the customer reads. `1999` -> `"$19.99"`. */
+export function formatUsdCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+// ── Conversational voice ─────────────────────────────────────────────────────
+
+/**
+ * 🔴 THIS IS NOT LECTURE TRANSCRIPTION, AND THE DISTINCTION IS THE WHOLE POINT.
+ *
+ * Nemesis used to sell recorded-lecture hours: an hour of audio in, a transcript
+ * and study material out, priced in the tens of hours. That product is retired
+ * (owner, 2026-08-18) and the new Nemesis plan deliberately does NOT inherit its
+ * allowance.
+ *
+ * What xAI is used for now is CONVERSATION, and only that:
+ *
+ *     learner speaks -> xAI STT -> DeepSeek -> xAI TTS -> Nemesis speaks back
+ *
+ * Both halves of that round trip are metered into ONE counter, in seconds of
+ * talking, because a learner experiences it as one thing — time spent talking to
+ * Nemesis — not as two provider invoices. Speech in is billed by audio duration;
+ * speech out is billed by character and converted to seconds at
+ * `VOICE_SPEECH_CHARS_PER_SECOND` so both land in the same unit.
+ *
+ * 🔴 THE OLD KEY IS NOT REUSED. `transcription_seconds_month_limit` and
+ * `live_audio_seconds_month_limit` still exist and still mean what they meant —
+ * batch lecture transcription and the AssemblyAI streaming copilot. Overloading
+ * either one to mean conversational voice would silently change the meaning of a
+ * limit that live code still reserves against.
+ */
+export const VOICE_ENTITLEMENT_KEY = "voice_seconds_month_limit";
+export const VOICE_COUNTER_KEY = "voice_seconds_month";
+
+/**
+ * Paid Nemesis: five hours of conversation a month.
+ *
+ * An internal launch allowance, chosen to be generous against how voice mode
+ * actually gets used (short exchanges inside a Canvas, not hour-long calls) while
+ * bounding the one lane that bills per second. At the surveyed rates a
+ * subscriber who exhausts it costs about eighty cents. It is a ROW, not code —
+ * raising it later is an UPDATE, not a billing change.
+ */
+export const NEMESIS_VOICE_SECONDS_MONTH = 18_000;
+
+/**
+ * Free: fifteen minutes.
+ *
+ * Enough to hear Nemesis speak, ask it something out loud and get an answer back
+ * — the feature demonstrates itself — and small enough that a free account that
+ * uses every second of it costs about four cents a month. Fifteen minutes is
+ * also what free already gets on the streaming audio lane, so it is the smallest
+ * allowance the existing architecture already expresses.
+ */
+export const FREE_VOICE_SECONDS_MONTH = 900;
+
+/** Speaking rate used to convert synthesised characters into metered seconds.
+ *  ~850 characters a minute, the same figure apps/web/lib/workload-cost.ts uses
+ *  to turn transcript characters back into audio minutes. */
+export const VOICE_SPEECH_CHARS_PER_SECOND = 850 / 60;
+
+/** Metered seconds for a piece of synthesised speech. Always at least 1: a call
+ *  that reached the provider was paid for, and must not meter as free. */
+export function voiceSecondsForCharacters(characters: number): number {
+  if (!Number.isFinite(characters) || characters <= 0) return 0;
+  return Math.max(1, Math.ceil(characters / VOICE_SPEECH_CHARS_PER_SECOND));
+}
+
+/** The conversational voice allowance for a plan, in seconds per calendar month. */
+export function voiceSecondsForPlan(plan: Plan): number {
+  return plan === "nemesis" ? NEMESIS_VOICE_SECONDS_MONTH : FREE_VOICE_SECONDS_MONTH;
 }

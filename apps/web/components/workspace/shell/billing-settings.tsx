@@ -1,32 +1,40 @@
 "use client";
 
-// Settings → Billing, in the workspace design language (owner 2026-07-20
-// evening: "beautify the billing page in the settings pop up"). Same data
-// flow as the standalone /account/billing panel — entitlements RPC, Stripe
-// catalog for live prices, checkout/portal redirects — but rendered with
-// desktop-ui cards instead of the old landing-page styles.
+// Settings → Billing, in the workspace design language.
+//
+// ── ONE PLAN, SO THERE IS NO LADDER TO CLIMB ─────────────────────────────────
+//
+// This panel used to render a card per tier with a rank table deciding which
+// button each one got: "Current plan", "Included in your plan", "Change plan in
+// billing", "Upgrade to Student". With one paid product the whole apparatus goes
+// away — a student is either on Free, in which case they can buy Nemesis, or on
+// Nemesis, in which case the only billing action left is Stripe's own portal.
+//
+// 🔴 THE PRICES COME FROM packages/shared, NOT FROM THE STRIPE CATALOG. This
+// panel used to render "Price in checkout" whenever the catalog call failed,
+// which is a blank where a price should be. The catalog is still fetched, but
+// only to WARN: if Stripe disagrees with what we are showing, that is a
+// misconfiguration the owner needs to see, not something to hide by showing
+// Stripe's number instead.
 
 import { useEffect, useState } from "react";
 
-import type { EntitlementSnapshot } from "@nemesis/shared";
+import {
+  annualPerMonthCents,
+  annualSavingPercent,
+  canonicalPlan,
+  formatUsdCents,
+  NEMESIS_ANNUAL_CENTS,
+  NEMESIS_MONTHLY_CENTS,
+  type EntitlementSnapshot,
+} from "@nemesis/shared";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useAuth } from "@/components/AuthProvider";
 import { fetchEntitlements } from "@/lib/api";
-import { planLabel, type CheckoutPlan } from "@/lib/billing-contract";
+import { INTERVAL_PRICE_CENTS, planLabel, type CheckoutInterval } from "@/lib/billing-contract";
 import { phCapture } from "@/lib/posthog";
 import { cn } from "@/lib/utils";
-
-const PLAN_RANK: Record<string, number> = {
-  free: 0,
-  plus: 1,
-  student: 1,
-  pro: 2,
-  professional: 3,
-  max: 4,
-  enterprise: 4,
-};
-const rankOf = (plan?: string | null): number => PLAN_RANK[(plan ?? "free").toLowerCase()] ?? 0;
 
 interface CatalogPrice {
   unitAmount: number | null;
@@ -34,71 +42,49 @@ interface CatalogPrice {
   interval: string | null;
 }
 
-interface BillingCatalog {
-  plus: CatalogPrice;
-  pro: CatalogPrice;
+interface IntervalOption {
+  id: CheckoutInterval;
+  label: string;
+  perMonth: string;
+  billedAs: string;
 }
 
-function formatPrice(price: CatalogPrice | undefined): { amount: string; interval: string } {
-  if (!price || price.unitAmount == null) return { amount: "Price in checkout", interval: "" };
-  const amount = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: price.currency.toUpperCase(),
-    minimumFractionDigits: price.unitAmount % 100 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(price.unitAmount / 100);
-  return { amount, interval: price.interval ? ` / ${price.interval}` : "" };
-}
-
-interface PlanCardSpec {
-  tier: CheckoutPlan;
-  name: string;
-  tagline: string;
-  cta: string;
-  features: string[];
-  recommended?: boolean;
-}
-
-// Two cards since 2026-08-05: Max was retired and Agent Pro is the ceiling
-// (owner). `tier` narrows to CheckoutPlan, so a card for a plan nobody can buy
-// will not compile.
-//
-// Recording hours must match plan_entitlements.transcription_seconds_month_limit
-// and the same lines on app/pricing/page.tsx — the drift guard in
-// lib/workload-cost.test.ts reads this file and fails when they disagree.
-const PLAN_CARDS: PlanCardSpec[] = [
+const INTERVALS: readonly IntervalOption[] = [
   {
-    tier: "plus",
-    name: "Student",
-    tagline: "Everyday studying, upgraded.",
-    cta: "Upgrade to Student",
-    features: [
-      "Higher limits for answers, notes, and study decks",
-      "Turn lectures into organized study material",
-      "30 hours of lecture recording each month",
-      "A calendar built from your syllabus",
-    ],
+    billedAs: "Billed monthly. Cancel anytime.",
+    id: "monthly",
+    label: "Monthly",
+    perMonth: formatUsdCents(NEMESIS_MONTHLY_CENTS),
   },
   {
-    tier: "pro",
-    name: "Agent Pro",
-    tagline: "Everything in Student, plus:",
-    cta: "Upgrade to Agent Pro",
-    recommended: true,
-    features: [
-      "Web-grounded answers with source citations",
-      "Higher desktop-agent automation limits",
-      "70 hours of lecture recording each month",
-    ],
+    // The real charge sits next to the per-month figure, always: $16.67 is a
+    // rounded twelfth of $199.99 and is never itself billed.
+    billedAs: `${formatUsdCents(NEMESIS_ANNUAL_CENTS)} billed annually. Cancel anytime.`,
+    id: "annual",
+    label: `Yearly · Save ${annualSavingPercent()}%`,
+    perMonth: formatUsdCents(annualPerMonthCents()),
   },
+];
+
+/** The default, and the fallback: an unknown interval can only ever mean the
+ *  cheaper commitment, never the larger charge. */
+const MONTHLY = INTERVALS[0]!;
+
+
+const NEMESIS_FEATURES = [
+  "Everything in Free, with room for a full course load",
+  "Talk to Nemesis out loud, and hear it answer",
+  "Answers grounded in the web, with real sources",
+  "Enough headroom that you stop thinking about limits",
 ];
 
 export function BillingSettings() {
   const { session } = useAuth();
   const [snapshot, setSnapshot] = useState<EntitlementSnapshot | null>(null);
-  const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
+  const [priceMismatch, setPriceMismatch] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [interval, setInterval] = useState<CheckoutInterval>("monthly");
 
   useEffect(() => {
     void fetchEntitlements()
@@ -113,13 +99,20 @@ export function BillingSettings() {
     void fetch("/api/stripe/catalog", { headers: { Authorization: `Bearer ${token}` } })
       .then(async (res) => {
         if (!res.ok) throw new Error("catalog unavailable");
-        return res.json() as Promise<{ plans: BillingCatalog }>;
+        return res.json() as Promise<{ intervals: Record<CheckoutInterval, CatalogPrice> }>;
       })
       .then((body) => {
-        if (!cancelled) setCatalog(body.plans);
+        if (cancelled) return;
+        const disagrees = (["monthly", "annual"] as const).some(
+          (id) => body.intervals?.[id]?.unitAmount != null
+            && body.intervals[id].unitAmount !== INTERVAL_PRICE_CENTS[id],
+        );
+        setPriceMismatch(disagrees);
       })
       .catch(() => {
-        // Checkout stays authoritative when the price catalog can't be read.
+        // Checkout stays authoritative when the price catalog can't be read, and
+        // the amounts above come from source control, so there is nothing to fix
+        // up here — a failed read is not evidence of a wrong price.
       });
     return () => { cancelled = true; };
   }, [session?.access_token]);
@@ -127,7 +120,13 @@ export function BillingSettings() {
   async function post(action: string, path: string, payload?: Record<string, unknown>) {
     setBusy(action);
     setError(null);
-    if (payload?.plan) phCapture("checkout_started", { plan: payload.plan });
+    if (payload?.interval) {
+      phCapture("checkout_started", {
+        billing_interval: payload.interval,
+        plan: "nemesis",
+        source: "billing_settings",
+      });
+    }
     try {
       const token = session?.access_token;
       if (!token) throw new Error("Sign in first.");
@@ -146,15 +145,17 @@ export function BillingSettings() {
     }
   }
 
-  const currentRank = rankOf(snapshot?.plan);
-  const prices: Record<PlanCardSpec["tier"], { amount: string; interval: string }> = {
-    plus: formatPrice(catalog?.plus),
-    pro: formatPrice(catalog?.pro),
-  };
+  const paid = snapshot != null && canonicalPlan(snapshot.plan) === "nemesis";
+  const selected = INTERVALS.find((option) => option.id === interval) ?? MONTHLY;
 
   return (
     <div className="grid gap-4">
       {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[length:var(--canvas-text-meta)] text-destructive" role="alert">{error}</p>}
+      {priceMismatch && (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-[length:var(--canvas-text-meta)] text-destructive" role="alert">
+          Billing is being updated. If checkout shows a different price from the one here, close it and try again shortly.
+        </p>
+      )}
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-base)_4%,var(--background))] p-5">
         <div>
@@ -163,9 +164,9 @@ export function BillingSettings() {
           <p className="mt-1 max-w-md text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
             {!snapshot
               ? "Checking subscription status…"
-              : currentRank > 0
-                ? "Manage, change, or cancel your subscription through Stripe."
-                : "Pick a plan below — Stripe shows the recurring total before you subscribe."}
+              : paid
+                ? "Manage, change or cancel your subscription through Stripe. Switching between monthly and yearly happens there too."
+                : "Free is the whole product, for part of the month. Nemesis gives you room for a full course load."}
           </p>
         </div>
         <Button disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")} size="sm" variant="secondary">
@@ -173,68 +174,65 @@ export function BillingSettings() {
         </Button>
       </section>
 
-      {/* Two columns, not three. A 3-column grid holding 2 cards reads as a
-          failed load — the landing page hit exactly this when Max came off it. */}
-      <div className="grid grid-cols-2 gap-3 max-lg:grid-cols-1">
-        {PLAN_CARDS.map((card) => {
-          const tierRank = rankOf(card.tier);
-          const isCurrent = snapshot != null && currentRank === tierRank;
-          const included = snapshot != null && currentRank > tierRank;
-          const price = prices[card.tier];
-          const highlighted = isCurrent || (card.recommended && currentRank === 0);
-          return (
-            <section
-              className={cn(
-                "flex flex-col rounded-2xl border border-(--ui-stroke-secondary) bg-background p-5",
-                highlighted && "border-(--theme-primary) ring-1 ring-(--theme-primary)",
-              )}
-              key={card.tier}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-[length:var(--canvas-text-small)] font-semibold">{card.name}</h3>
-                {isCurrent ? (
-                  <span className="rounded-full bg-(--theme-primary) px-2 py-0.5 text-[length:var(--canvas-text-meta)] font-semibold text-white">Current</span>
-                ) : card.recommended && currentRank === 0 ? (
-                  <span className="rounded-full border border-(--theme-primary) px-2 py-0.5 text-[length:var(--canvas-text-meta)] font-semibold text-(--theme-primary)">Recommended</span>
-                ) : null}
-              </div>
-              <p className="mt-3">
-                <span className="text-[length:var(--canvas-text-title)] font-semibold tracking-tight">{price.amount}</span>
-                <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{price.interval}</span>
-              </p>
-              <ul className="mt-4 grid gap-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-secondary)">
-                <li className="font-medium text-foreground">{card.tagline}</li>
-                {card.features.map((feature) => (
-                  <li className="flex gap-2" key={feature}>
-                    <Codicon className="mt-0.5 shrink-0 text-(--theme-primary)" name="check" size="0.75rem" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto pt-4">
-                {isCurrent ? (
-                  <Button className="w-full" disabled size="sm" variant="secondary">Current plan</Button>
-                ) : included ? (
-                  <Button className="w-full" disabled size="sm" variant="secondary">Included in your plan</Button>
-                ) : currentRank > 0 ? (
-                  <Button className="w-full" disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")} size="sm" variant="secondary">
-                    {busy === "portal" ? "Opening billing…" : "Change plan in billing"}
-                  </Button>
-                ) : (
-                  <Button className="w-full" disabled={busy === card.tier} onClick={() => void post(card.tier, "/api/stripe/checkout", { plan: card.tier })} size="sm" variant="default">
-                    {busy === card.tier ? "Opening checkout…" : card.cta}
-                  </Button>
+      {!paid && snapshot != null && (
+        <section className="flex flex-col rounded-2xl border border-(--theme-primary) bg-background p-5 ring-1 ring-(--theme-primary)">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[length:var(--canvas-text-small)] font-semibold">Nemesis</h3>
+          </div>
+
+          <div className="mt-3 flex gap-1 rounded-full border border-(--ui-stroke-secondary) p-1" role="group" aria-label="Billing period">
+            {INTERVALS.map((option) => (
+              <button
+                aria-pressed={option.id === interval}
+                className={cn(
+                  "flex-1 rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] font-semibold transition-colors",
+                  option.id === interval
+                    ? "bg-(--theme-primary) text-white"
+                    : "text-(--ui-text-tertiary) hover:text-foreground",
                 )}
-              </div>
-              {currentRank === 0 && (
-                <p className="mt-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">
-                  Card required. Your subscription starts when you confirm in Stripe. Cancel anytime.
-                </p>
-              )}
-            </section>
-          );
-        })}
-      </div>
+                key={option.id}
+                onClick={() => {
+                  setInterval(option.id);
+                  phCapture("pricing_interval_selected", { billing_interval: option.id, source: "billing_settings" });
+                }}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <p className="mt-4">
+            <span className="text-[length:var(--canvas-text-title)] font-semibold tracking-tight">{selected.perMonth}</span>
+            <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)"> / month</span>
+          </p>
+          <p className="mt-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{selected.billedAs}</p>
+
+          <ul className="mt-4 grid gap-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-secondary)">
+            {NEMESIS_FEATURES.map((feature) => (
+              <li className="flex gap-2" key={feature}>
+                <Codicon className="mt-0.5 shrink-0 text-(--theme-primary)" name="check" size="0.75rem" />
+                <span>{feature}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-auto pt-4">
+            <Button
+              className="w-full"
+              disabled={busy === "checkout"}
+              onClick={() => void post("checkout", "/api/stripe/checkout", { interval })}
+              size="sm"
+              variant="default"
+            >
+              {busy === "checkout" ? "Opening checkout…" : "Get Nemesis"}
+            </Button>
+          </div>
+          <p className="mt-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">
+            Card required. Your subscription starts when you confirm in Stripe. Cancel anytime.
+          </p>
+        </section>
+      )}
     </div>
   );
 }
