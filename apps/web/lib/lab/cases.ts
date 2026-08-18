@@ -51,6 +51,18 @@ export interface LabCase {
   observed: Record<string, unknown>;
 }
 
+/**
+ * Is this id one this module will touch a path with?
+ *
+ * 🔴 EVERY READER CHECKS, NOT JUST THE DELETE. The id arrives from a URL segment on `[id]` and
+ * `[id]/rerun`, and a localhost-only route is still a route: `..` in a path segment turns "read one
+ * case" into "read any file this process can reach". Holding the delete to one standard and the two
+ * reads to another is the shape of gap that gets found from the outside.
+ */
+function safeId(id: string): boolean {
+  return /^[\w.\-]+$/.test(id) && !id.includes("..");
+}
+
 function caseDir(id: string): string {
   return `${CASE_ROOT}${id}/`;
 }
@@ -91,6 +103,7 @@ export function listCases(): LabCase[] {
 }
 
 export function readCase(id: string): LabCase | null {
+  if (!safeId(id)) return null;
   try {
     return JSON.parse(readFileSync(`${caseDir(id)}case.json`, "utf8")) as LabCase;
   } catch {
@@ -99,9 +112,7 @@ export function readCase(id: string): LabCase | null {
 }
 
 export function deleteCase(id: string): boolean {
-  // 🔴 THE ID IS ATTACKER-SHAPED EVEN HERE. A localhost-only route is still a route, and `..` in a
-  // path segment is how a delete of one case becomes a delete of something else.
-  if (!/^[\w.\-]+$/.test(id) || id.includes("..")) return false;
+  if (!safeId(id)) return false;
   const dir = caseDir(id);
   if (!existsSync(dir)) return false;
   rmSync(dir, { force: true, recursive: true });
@@ -111,6 +122,10 @@ export function deleteCase(id: string): boolean {
 /** Read the file a parser case saved, for a rerun. */
 export function readCaseFile(entry: LabCase): Uint8Array | null {
   if (!entry.file) return null;
+  // 🔴 THE STORED PATH MUST STILL BE INSIDE THE CASE ROOT. `case.json` is a file on disk, so its
+  // `path` is data rather than something this module computed just now, and a hand-edited or
+  // hand-copied case must not be able to make a rerun read anything it likes.
+  if (!entry.file.path.startsWith(CASE_ROOT)) return null;
   try {
     return new Uint8Array(readFileSync(entry.file.path));
   } catch {

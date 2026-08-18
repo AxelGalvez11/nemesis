@@ -24,22 +24,23 @@ cognition in a harness of its own.
 
 ## Running it
 
-From the repo root:
-
 ```bash
 cd apps/web && pnpm dev
 ```
 
-Then open **http://localhost:3000/dev/lab**.
+Then open **http://localhost:3000/dev/lab**. (There is also a `lab` entry in `.claude/launch.json`
+that starts it on port 3220.)
 
-One piece of setup is needed once. The Lab creates its own throwaway test learner, which needs the
-service key in `apps/web/.env.local`:
+Two notes on setup:
 
-```
-SUPABASE_SERVICE_ROLE_KEY=<the value already in the repo root .env>
-```
-
-Without it the Parser tab still works completely; the Tutor tab says exactly what is missing.
+- **You must be on a checkout that has the Lab.** It landed in `feat/nemesis-lab`; if your working
+  copy is on an older branch, `git checkout main && git pull` first. A checkout without the Lab
+  simply has no `/dev/lab` route, which looks the same as the Lab being broken.
+- **The Tutor tab needs one key**, because the Lab creates its own throwaway test learner:
+  `SUPABASE_SERVICE_ROLE_KEY` in `apps/web/.env.local`, the same value already in the repo root
+  `.env`. This has already been added to this machine's `.env.local`, which is gitignored and never
+  reaches the browser. Without it the Parser tab still works completely and the Tutor tab says
+  exactly what is missing.
 
 ## Where the data goes
 
@@ -154,6 +155,23 @@ cd apps/web && ../../node_modules/.bin/tsx scripts/lab-replay.ts --strict
 Teaching cases rerun in the browser, because a teaching turn needs a real learner session to reach
 the model and to write evidence under row-level security. The command line lists them as skipped
 rather than counting a skip as a pass.
+
+## Known limits, stated rather than left to be discovered
+
+**Two of the seven diagnostic links have never fired.** The debug panel's *how the answer was
+marked* and *what was written down* rows are wired at the exact points where the judge returns and
+where evidence is written — but no turn has ever reached them, because the product currently cannot:
+a typed answer to a Canvas question is routed away from the teaching runtime before it gets there
+(learning-canvas.tsx:1079, gated on `sink.kind === "policy"`). So those two rows are wired and
+uncalibrated. An instrument that has never fired has no demonstrated link to the thing it measures,
+and that is worth saying out loud rather than discovering later.
+
+That is also the Lab's first real finding, and it came with something new: the evidence WRITER is
+fine. Seeding learner conditions wrote 256 rows through the same production function under the same
+learner's session. So the failure is upstream of the writer, not in it.
+
+The same gap means the judge half of a teaching replay has never executed either — it only runs for
+a case that recorded a judge input, and no judge has yet run.
 
 ## What the Lab is not
 
