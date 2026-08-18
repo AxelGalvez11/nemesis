@@ -13,7 +13,12 @@ import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 
 import { blocksForConcepts } from "./canvas-diagnosis";
-import { parseEvaluation } from "./canvas-judge";
+import {
+  chooseCanvasModel,
+  EscalationLedger,
+  type CanvasEscalationReason,
+} from "./canvas-escalation";
+import { parseEvaluation, verdictIsTrustworthy } from "./canvas-judge";
 import type { CognitiveAction } from "./canvas-policy";
 import {
   conceptLabel,
@@ -72,10 +77,45 @@ import type {
  *  raw-markup-in-the-content-channel problems came from. */
 const WRITE: ChatRouteDecision = { route: "conversation", model: "deepseek-chat", searchWeb: false };
 
+/**
+ * The same lane, thinking.
+ *
+ * 🔴 REACHED ONLY THROUGH `chooseCanvasModel`, AND ONLY AFTER SOMETHING MEASURABLY FAILED. See
+ * `canvas-escalation.ts`: this is the SAME MODEL at the same per-token price with `thinking`
+ * enabled, so the whole cost of the rung is the reasoning tokens it emits — which is why it is the
+ * rung to reach for rather than a premium tier. A paid plan raises how many rescues a session may
+ * make; it never changes which model an ordinary turn uses.
+ */
+const RESCUE: ChatRouteDecision = { route: "conversation", model: "deepseek-reasoner", searchWeb: false };
+
 export interface CanvasCallResult<T> {
   value: T | null;
   /** A student-readable line when something went wrong, else null. */
   error: string | null;
+}
+
+/**
+ * One escalation ledger per learner, for as long as the tab is open.
+ *
+ * 🔴 PER LEARNER RATHER THAN MODULE-GLOBAL, for the reason `VisionLedger` is async-local: a single
+ * shared counter would let one person's failed lesson spend another's rescue budget. A Map keyed
+ * by uid is the browser equivalent — one entry, one tab, one person — and it is bounded by the
+ * number of accounts a single browser session can hold, which is one.
+ */
+const LEDGERS = new Map<string, EscalationLedger>();
+
+/** The ledger for this learner, created on first use. `plan` is a ceiling and nothing else. */
+export function escalationLedgerFor(uid: string, plan: string | null = null): EscalationLedger {
+  const existing = LEDGERS.get(uid);
+  if (existing) return existing;
+  const fresh = new EscalationLedger(plan);
+  LEDGERS.set(uid, fresh);
+  return fresh;
+}
+
+/** What this learner's session escalated for, for telemetry and for the owner's cost view. */
+export function escalationReport(uid: string): ReturnType<EscalationLedger["report"]> {
+  return escalationLedgerFor(uid).report();
 }
 
 async function ask(
@@ -83,14 +123,63 @@ async function ask(
   messages: Parameters<typeof postChatCompletion>[1],
   signal?: AbortSignal,
   onDelta?: (delta: string, accumulated: string) => void,
+  decision: ChatRouteDecision = WRITE,
 ): Promise<{ text: string | null; error: string | null }> {
   const reply = await postChatCompletion(uid, messages, {
-    decision: WRITE,
+    decision,
     signal,
     ...(onDelta ? { onDelta } : {}),
   });
   if (reply.errorText) return { text: null, error: reply.errorText };
   return { text: reply.text, error: null };
+}
+
+/**
+ * Ask cheaply; if the answer does not survive validation, ask once more with the thinking model.
+ *
+ * 🔴🔴 THE VALIDATOR IS THE ESCALATION SIGNAL, AND IT IS THE ONLY ONE THIS FUNCTION TRUSTS. Nothing
+ * here guesses that a turn is hard. `read` is the SAME parser the caller would have run anyway —
+ * `parseCanvasOps`, `parseLesson`, `parseEvaluation` — and `null` from it means the cheap model
+ * produced something the product cannot use. Today that is a dead end the learner reads as "try
+ * again"; one retry on a rung that costs the same per token is the cheapest thing that turns a
+ * failed turn into a turn.
+ *
+ * 🔴 ONE RESCUE. NEVER A LOOP. `alreadyEscalatedThisTurn` is passed as `true` on the second pass by
+ * construction — there is no third pass in this function — which is what stops a model having a bad
+ * minute from becoming an invoice.
+ */
+async function askValidated<T>(
+  uid: string,
+  messages: Parameters<typeof postChatCompletion>[1],
+  read: (text: string) => T | null,
+  signal?: AbortSignal,
+): Promise<{ value: T | null; error: string | null; escalated: CanvasEscalationReason | null }> {
+  const first = await ask(uid, messages, signal);
+  if (first.error) return { error: first.error, escalated: null, value: null };
+  const value = first.text ? read(first.text) : null;
+  if (value !== null) return { error: null, escalated: null, value };
+
+  const ledger = escalationLedgerFor(uid);
+  const choice = chooseCanvasModel(
+    { alreadyEscalatedThisTurn: false, reason: "cheap-model-unusable-output" },
+    ledger.state(),
+  );
+  if (!choice.escalated) {
+    console.info(JSON.stringify({ event: "canvas_escalation_declined", detail: choice.detail }));
+    return { error: null, escalated: null, value: null };
+  }
+
+  ledger.note(choice.reason);
+  console.info(JSON.stringify({
+    event: "canvas_escalated",
+    detail: choice.detail,
+    model: choice.model,
+    reason: choice.reason,
+    spent: ledger.spent,
+  }));
+  const second = await ask(uid, messages, signal, undefined, RESCUE);
+  if (second.error) return { error: second.error, escalated: choice.reason, value: null };
+  return { error: null, escalated: choice.reason, value: second.text ? read(second.text) : null };
 }
 
 // -------------------------------------------------------------------- lesson
@@ -100,16 +189,21 @@ export async function generateLesson(
   input: { topic: string; level: LearningCanvas["level"]; sources: readonly CanvasSource[] },
   signal?: AbortSignal,
 ): Promise<CanvasCallResult<ParsedLesson>> {
-  const { text, error } = await ask(
+  // 🔴 THE FAILED-PARSE PATH IS THE ESCALATION TRIGGER, AND IT USED TO BE A DEAD END. A lesson the
+  // cheap model wrote and the parser refused reached the learner as "try again" — a turn that cost
+  // money and produced nothing. One rescue on the thinking rung is the cheapest thing that turns
+  // that into a lesson; see `canvas-escalation.ts` for why it is bounded and why a paid plan raises
+  // only the bound.
+  const { value: lesson, error } = await askValidated(
     uid,
     // 🔴 NO DEFAULT. `?? "basics_known"` used to sit here, so a canvas whose learner was never
     // asked told the model they knew the basics — a claim about a person, invented at the boundary
     // and applied to everyone. Absent is passed through as absent.
     lessonMessages({ topic: input.topic, level: input.level, sources: input.sources }),
+    (text) => parseLesson(text, input.sources),
     signal,
   );
   if (error) return { value: null, error };
-  const lesson = text ? parseLesson(text, input.sources) : null;
   return lesson
     ? { value: lesson, error: null }
     : { value: null, error: "Nemesis couldn't build a lesson from that. Try again, or add more material." };
@@ -368,20 +462,52 @@ export async function evaluateLearningResponse(
   input: Omit<EvaluationInput, "concepts">,
   signal?: AbortSignal,
 ): Promise<CanvasCallResult<ResponseEvaluation>> {
-  const { text, error } = await ask(
-    uid,
-    evaluationMessages({ ...input, concepts: canvas.concepts }),
-    signal,
-  );
-  if (error) return { value: null, error };
+  const messages = evaluationMessages({ ...input, concepts: canvas.concepts });
+  const conceptIds = canvas.concepts.map((concept) => concept.id);
+  const read = (text: string) => {
+    const { evaluation, rejected } = parseEvaluation(text, { conceptIds });
+    if (rejected.length > 0) console.warn("canvas evaluation: refused parts of a reading", rejected);
+    return evaluation;
+  };
 
-  const { evaluation, rejected } = parseEvaluation(text ?? "", {
-    conceptIds: canvas.concepts.map((concept) => concept.id),
-  });
-  if (rejected.length > 0) console.warn("canvas evaluation: refused parts of a reading", rejected);
-  return evaluation
-    ? { value: evaluation, error: null }
-    : { value: null, error: "Nemesis couldn't read that answer. Your response was saved." };
+  const { value: first, error } = await askValidated(uid, messages, read, signal);
+  if (error) return { value: null, error };
+  if (!first) return { value: null, error: "Nemesis couldn't read that answer. Your response was saved." };
+
+  // 🔴🔴 THE SECOND NAMED REASON, AND IT IS A MEASUREMENT RATHER THAN A FEELING. Below
+  // `TRUSTED_ENOUGH_TO_UPDATE_STATE` the judge is telling us it could not tell, and
+  // `verdictIsTrustworthy` will refuse to let this verdict move anything Nemesis believes about the
+  // learner. So the turn produced an observation and no claim: the person answered and found out
+  // nothing about whether they were right. That is the unresolved ambiguity the owner's rule names,
+  // already detected by code that exists, and re-judging once on the thinking rung is the only
+  // thing that can settle it.
+  //
+  // 🔴 THE STRONGER READING IS TAKEN ONLY IF IT IS ACTUALLY MORE SETTLED. A rescue that comes back
+  // equally unsure is not an improvement, and replacing a verdict with an equally uncertain one
+  // would make the learner's record depend on which call happened to be second.
+  if (!verdictIsTrustworthy(first)) {
+    const ledger = escalationLedgerFor(uid);
+    const choice = chooseCanvasModel(
+      { alreadyEscalatedThisTurn: false, reason: "judgement-did-not-settle" },
+      ledger.state(),
+    );
+    if (choice.escalated) {
+      ledger.note(choice.reason);
+      console.info(JSON.stringify({
+        event: "canvas_escalated",
+        confidence: first.confidence,
+        detail: choice.detail,
+        model: choice.model,
+        reason: choice.reason,
+        spent: ledger.spent,
+      }));
+      const second = await ask(uid, messages, signal, undefined, RESCUE);
+      const rejudged = second.text ? read(second.text) : null;
+      if (rejudged && rejudged.confidence > first.confidence) return { value: rejudged, error: null };
+    }
+  }
+
+  return { value: first, error: null };
 }
 
 /** A free-response test prompt as an evaluation task. */
