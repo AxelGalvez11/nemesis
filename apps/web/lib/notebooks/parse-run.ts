@@ -107,6 +107,8 @@ export interface ParseRunOptions {
    * behaviour before the cache existed.
    */
   figureCache?: FigureDescriptionStore;
+  /** Whether this parse may reach a paid document parser. See `ParseOptions.vendorAllowed`. */
+  vendorAllowed?: boolean;
 }
 
 /** Every lookup misses and every write is dropped. The default, and today's behaviour. */
@@ -199,6 +201,7 @@ export async function runParseOnThread(
       fileName,
       mimeType,
       ...(options.visionUnitBudget === undefined ? {} : { visionUnitBudget: options.visionUnitBudget }),
+      ...(options.vendorAllowed === undefined ? {} : { vendorAllowed: options.vendorAllowed }),
     },
     transferList: [transfer],
     // A parse must not be able to read the environment it did not need. The

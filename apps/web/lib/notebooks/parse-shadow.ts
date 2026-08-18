@@ -35,6 +35,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { documentToText, type DocumentModel } from "@nemesis/shared";
 
+import { recordAiSpend } from "@/lib/cost/ai-spend";
+
 import { parseWithVendor, type DocumentKind, type ParsedDocument } from "./parse-document";
 
 /**
@@ -274,6 +276,21 @@ export async function runShadowEvaluation(
       event: "parse_shadow_record_failed",
       detail: cause instanceof Error ? cause.message.slice(0, 160) : "unknown",
     }));
+  }
+
+  // 🔴 THE CHECK PAYS FOR ITSELF OUT OF THE SAME LEDGER EVERYTHING ELSE DOES. A shadow evaluation is
+  // duplicate spend by construction, and the one thing that would make it indefensible is for it to
+  // be invisible in the cost report while the routing decisions it audits are visible. `operation`
+  // says what it was for, so it can be subtracted from — or argued about alongside — the saving.
+  if (vendorDocument) {
+    await recordAiSpend(input.admin, {
+      durationMs: vendorMs,
+      provider: input.kind === "pdf" ? "mistral_ocr" : "llamaparse",
+      reason: `shadow:${input.routeReason}`,
+      scope: { operation: "shadow-eval", sourceId: input.sourceId },
+      units: vendorDocument.coverage.units || 0,
+      userId: input.userId,
+    });
   }
 
   console.info(JSON.stringify({

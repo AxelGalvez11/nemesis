@@ -81,6 +81,14 @@ export interface ParseThreadInput {
    * every test. Those fall back to the per-document default rather than to unlimited.
    */
   visionUnitBudget?: number;
+  /**
+   * May this parse reach a paid document parser?
+   *
+   * 🔴 THE SAME REASON `visionUnitBudget` IS A NUMBER RATHER THAN A LEDGER: a claim lives in the
+   * database and this thread holds no client. The parent takes the day's slot before spawning and
+   * sends the answer. Absent means allowed, which is every test and the synchronous lane.
+   */
+  vendorAllowed?: boolean;
 }
 
 /**
@@ -236,7 +244,10 @@ export async function runParseThread(
         // NOT set this: up to 40 vision calls on a request path is latency the
         // student waits through, on the one primitive with no entitlement, no
         // counter and no cache. Here the student is not waiting.
-        { lookAtFigures: true },
+        {
+          lookAtFigures: true,
+          ...(input.vendorAllowed === undefined ? {} : { vendorAllowed: input.vendorAllowed }),
+        },
       )),
     );
     sampleRss();

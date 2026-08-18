@@ -64,6 +64,7 @@ import {
   type DoclingServiceConfig,
 } from "@/lib/notebooks/docling-client";
 import { buildDoclingParse, doclingFallback, type DoclingKind } from "@/lib/notebooks/parse-docling";
+import { providerOfParserVersion, recordAiSpend, vendorParseDailyCap } from "@/lib/cost/ai-spend";
 import { supabaseFigureCache, withFigureCache } from "@/lib/pdf/figure-cache";
 import { nativeTextMap, probePdfNativeText } from "@/lib/pdf/native-probe";
 import { readPdfStructure } from "@/lib/pdf/structure";
@@ -302,6 +303,34 @@ async function runClaimed(
     console.warn(JSON.stringify({ event: "vision_reserve_unavailable", detail: reserveError.message.slice(0, 120) }));
   }
   reservation.granted = typeof granted === "number" ? granted : 0;
+
+  // ── May this document reach a paid parser today? ──────────────────────────
+  //
+  // 🔴🔴 THE ONE EXPENSIVE SUBSYSTEM THAT HAD NO CEILING. Vision reserves units above; the model
+  // valve enforces token budgets; search enforces unit budgets. Mistral and LlamaParse are billed
+  // per page, reached on every upload, and were bounded by nothing at all.
+  //
+  // 🔴 A REFUSAL MEANS "READ IT OURSELVES", NEVER "REFUSE THE DOCUMENT". Past the cap the learner
+  // still gets their lecture, parsed locally, with coverage saying honestly what it could not
+  // recover — which is the graceful degradation the owner asked for rather than the usual cap
+  // behaviour of refusing the work.
+  //
+  // 🔴 AND AN UNAPPLIED MIGRATION MUST NOT SILENTLY DISABLE THE VENDORS. An error here means the
+  // deployment cannot answer the question, and the safe reading of that is the behaviour it had
+  // before the question existed: allowed.
+  let vendorAllowed = true;
+  const { data: vendorSlot, error: vendorSlotError } = await admin.rpc("claim_vendor_parse", {
+    p_daily_cap: vendorParseDailyCap(),
+    p_user_id: job.user_id,
+  });
+  if (vendorSlotError) {
+    console.warn(JSON.stringify({ event: "vendor_parse_budget_unavailable", detail: vendorSlotError.message.slice(0, 120) }));
+  } else {
+    vendorAllowed = vendorSlot === true;
+    if (!vendorAllowed) {
+      console.info(JSON.stringify({ event: "vendor_parse_budget_spent", sourceId: job.id }));
+    }
+  }
 
   const heartbeat = async (): Promise<boolean> => {
     const { data } = await admin.rpc("renew_document_parse_lease", {
@@ -549,6 +578,7 @@ async function runClaimed(
     // unit of this document's vision budget.
     figureCache: supabaseFigureCache(admin, job.user_id),
     heartbeat,
+    vendorAllowed,
     visionUnitBudget: reservation.granted,
   });
   // Recorded before the switch, so every outcome below — including the refusals and the
@@ -596,6 +626,43 @@ async function runClaimed(
 
   const parsed = await withStoredFigures(run.parsed as ParsedDocument, run.figures);
   const finished = await finish(parsed, run.ms, run.peakRssMb);
+
+  // ── What this document actually cost ──────────────────────────────────────
+  //
+  // 🔴🔴 THREE PROVIDERS WERE COUNTED NOWHERE AT ALL UNTIL THIS BLOCK. Mistral OCR and LlamaParse
+  // are billed per page and no column, log line or metric had ever recorded a page of either.
+  // Gemini vision was counted in units with no price attached anywhere. So "why did this lecture
+  // cost forty cents" had no query behind it — not a hard one, none.
+  //
+  // 🔴 THE VENDOR'S UNIT COUNT IS THE DOCUMENT'S OWN, AND THAT IS EXACT RATHER THAN CONVENIENT.
+  // Mistral bills per page of what it was handed, and `coverage.units` on a vendor-read parse IS
+  // the pages it returned — the same number `parseWithVendor` billed against. Reading it off the
+  // finished parse costs nothing and cannot drift from what was recorded.
+  //
+  // Written after `finish`, so a document whose lease was lost records no spend it did not own.
+  if (finished.outcome === "parsed") {
+    const vendor = providerOfParserVersion(parsed.readBy);
+    if (vendor) {
+      await recordAiSpend(admin, {
+        durationMs: Math.round(run.ms),
+        model: parsed.readBy ?? "",
+        provider: vendor,
+        reason: parsed.routeReason ?? "unrecorded",
+        scope: { operation: "parse", sourceId: job.id },
+        units: parsed.coverage.units || 0,
+        userId: job.user_id,
+      });
+    }
+    const visionUnits = reservation.spend?.units ?? 0;
+    if (visionUnits > 0) {
+      await recordAiSpend(admin, {
+        provider: "gemini_vision",
+        scope: { operation: "figures", sourceId: job.id },
+        units: visionUnits,
+        userId: job.user_id,
+      });
+    }
+  }
 
   // ── Did the cheap route actually get away with it? ─────────────────────────
   //

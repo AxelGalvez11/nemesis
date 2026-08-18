@@ -55,7 +55,7 @@ test("🔴 an empty stored description is a miss, not a hit", () => {
 });
 
 test("labels ride along, because they came off the same request and cost nothing extra", () => {
-  const labels = [{ box: { height: 0.1, width: 0.1, x: 0.1, y: 0.1 }, text: "atrium" }] as FigureDescription["labels"];
+  const labels: FigureDescription["labels"] = [{ text: "atrium", x: 0.42, y: 0.31 }];
   const { hits } = splitByCache([image("a")], (entry) => entry.name, new Map([["a", described("heart", labels)]]));
   assert.equal(hits[0]?.found.labels.length, 1);
 });

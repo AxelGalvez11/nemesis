@@ -596,6 +596,23 @@ export async function parseWithVendor(
  */
 export interface ParseOptions {
   /**
+   * May this parse reach a paid document parser at all?
+   *
+   * 🔴🔴 THE BOUND MISTRAL AND LLAMAPARSE NEVER HAD. Vision has a per-document cap, a per-user
+   * daily cap and a ledger; the model valve has token budgets; search has unit budgets. The two
+   * document parsers — billed per page, reached on every upload, and until this week reached FIRST
+   * on every PDF — were bounded by nothing at all. `claim_vendor_parse` takes one of the day's
+   * slots before a parse begins and passes the answer here.
+   *
+   * 🔴 `false` MEANS "READ IT OURSELVES", NEVER "REFUSE IT". A learner past the cap still gets
+   * their document, parsed locally, with coverage saying honestly what could not be recovered.
+   * That is the graceful degradation the owner asked for, and it is the opposite of the usual cap
+   * behaviour of refusing the work.
+   *
+   * Absent means allowed, which is every existing caller and every test.
+   */
+  vendorAllowed?: boolean;
+  /**
    * Send unexamined figures to a vision model.
    *
    * 🔴 OFF BY DEFAULT, AND THAT IS A COST DECISION, NOT A DEFAULT-BY-ACCIDENT.
@@ -693,7 +710,7 @@ export async function parseDocument(
       signals: decision.signals,
     }));
     routeReason = decision.reason;
-    if (decision.route === "vendor") {
+    if (decision.route === "vendor" && options.vendorAllowed !== false) {
       const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
       if (read) return read;
     }
@@ -802,7 +819,7 @@ export async function parseDocument(
       signals: decision.signals,
     }));
     routeReason = decision.reason;
-    if (decision.route === "vendor") {
+    if (decision.route === "vendor" && options.vendorAllowed !== false) {
       const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
       if (read) return read;
     }
@@ -946,7 +963,13 @@ async function parsePdfRouted(
     signals: decision.signals,
   }));
 
-  if (decision.route === "vendor" && vendorFor("pdf")) {
+  if (decision.route === "vendor" && options.vendorAllowed === false) {
+    console.info(JSON.stringify({
+      event: "parse_vendor_budget_spent",
+      format: "pdf",
+      reason: decision.reason,
+    }));
+  } else if (decision.route === "vendor" && vendorFor("pdf")) {
     // 🔴 THE PAGE-WISE BRANCH COMES FIRST, BECAUSE IT IS THE CHEAPER OF THE TWO ESCALATIONS AND
     // `preflightPdf` only ever offers it for the one cause that is local to a page. It keeps the
     // native structure for every page that was already readable and buys a real read only for the
