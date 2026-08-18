@@ -29,6 +29,7 @@
 // `runtime-support.ts` was created to end one layer up.
 
 import { actsOnObjective, msOnObjective, MAX_IDLE_MS, type TeachingAct } from "./attention-budget";
+import type { ErrorType } from "./canvas-model";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import { projectLearnerState, type LearnerEvidence, type LearnerObjectiveState } from "./learner-evidence";
 import { terminologyFriction, type TermLookup } from "./learner-friction";
@@ -77,6 +78,21 @@ export interface ObjectiveSnapshot {
    * teaching difference. `strategy-llm-teacher.ts` derives `competingWith` from here for that reason.
    */
   misconceptions: readonly string[];
+  /**
+   * The KIND of failure the evaluator named most recently on this objective, or null when it has
+   * never named one.
+   *
+   * 🔴 THE LATEST, NOT A TALLY, AND THAT IS A CLAIM ABOUT WHAT A DIAGNOSIS IS. Counting kinds would
+   * say "three careless, two conceptual" about a learner who has since stopped making either — the
+   * useful fact is what went wrong the last time they tried, because that is what the next move has
+   * to answer. A history of kinds is a different question, and the rows are all still there for
+   * anyone who wants to ask it.
+   *
+   * 🔴 NULL MEANS NO KIND WAS EVER NAMED — never "no failures". An objective with three wrong
+   * answers and no diagnosis reads null here and `unresolvedAttempts: 3` above, and a controller
+   * that confused the two would conclude the learner was doing fine.
+   */
+  lastErrorType: ErrorType | null;
   /**
    * Typical time this learner has taken to answer this, in milliseconds. `null` when unrecorded.
    *
@@ -235,6 +251,12 @@ export function teachingSnapshot(context: TeachingContext): TeachingSnapshot {
       minutesSinceLastEvidence: state.lastEvidenceAt
         ? Math.round((nowMs - Date.parse(state.lastEvidenceAt)) / 60_000)
         : null,
+      // 🔴 THE LAST ROW THAT NAMED ONE, NOT THE LAST ROW. Evidence is ordered oldest-first, so this
+      // walks back to the most recent DIAGNOSIS — an answer the judge could not classify does not
+      // erase what the one before it established. `find` on the reversed list would read the newest
+      // row and report null for a learner whose last diagnosed failure was two attempts ago.
+      lastErrorType:
+        [...mine].reverse().find((row) => row.errorType !== undefined)?.errorType ?? null,
       misconceptions: [
         ...new Set(mine.filter((row) => row.verdict === "misconception").flatMap((row) => row.misconceptions ?? [])),
       ],
