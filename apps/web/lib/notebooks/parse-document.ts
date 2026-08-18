@@ -155,6 +155,20 @@ export interface ParsedDocument {
   /** How the text was obtained, when it was not the file's own text layer. */
   readBy?: string;
   /**
+   * Why this format's router chose the lane it chose — `native-read-sufficient`, `glyph-substitution`,
+   * `speaker-notes`, and so on.
+   *
+   * 🔴 IT TRAVELS WITH THE PARSE BECAUSE THE SHADOW EVALUATION HAS TO ATTRIBUTE A FALSE PASS TO THE
+   * RULE THAT PRODUCED IT, NOT TO "THE PARSER". Knowing that 0.7% of cheap passes lost something is
+   * a number; knowing that all of them came through `native-page-vision-covers-gaps` is a fix.
+   * `readBy` cannot answer it — a native read has no `readBy` at all, so every native reason would
+   * look identical.
+   *
+   * Absent for formats with no router (image, xlsx, csv, text), which is the honest answer: there
+   * was no decision to record.
+   */
+  routeReason?: string;
+  /**
    * Figures this lane could not process, having looked: past a ceiling, or with no pixels.
    *
    * 🔴 ABSENT MEANS NOBODY COUNTED, AND `0` NOW MEANS SOMEBODY COUNTED AND FOUND NONE. It was
@@ -639,6 +653,8 @@ export async function parseDocument(
   let title: string | null = null;
   let text = "";
   let readBy: string | undefined;
+  /** Which routing rule produced this lane. See `ParsedDocument.routeReason`. */
+  let routeReason: string | undefined;
   let skippedFigures = 0;
   let coverage: ExtractionCoverage;
   let model: DocumentModel | undefined;
@@ -658,6 +674,7 @@ export async function parseDocument(
     // The specialist answered and its answer stands. Everything below this line is the native
     // lane, which never ran.
     if (routed.vendor) return routed.vendor;
+    routeReason = routed.reason;
     ({ coverage, model, readBy, text, title } = routed.native);
   } else if (kind === "docx") {
     // 🔴 OUR READ FIRST, AND THE VENDOR ONLY FOR WHAT IT LOST. Word XML is a manifest: `<w:tbl>`
@@ -675,6 +692,7 @@ export async function parseDocument(
       route: decision.route,
       signals: decision.signals,
     }));
+    routeReason = decision.reason;
     if (decision.route === "vendor") {
       const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
       if (read) return read;
@@ -783,6 +801,7 @@ export async function parseDocument(
       route: decision.route,
       signals: decision.signals,
     }));
+    routeReason = decision.reason;
     if (decision.route === "vendor") {
       const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
       if (read) return read;
@@ -853,6 +872,7 @@ export async function parseDocument(
     text,
     title,
     ...(readBy ? { readBy } : {}),
+    ...(routeReason ? { routeReason } : {}),
     ...(model ? { model } : {}),
   };
 
@@ -911,6 +931,7 @@ async function parsePdfRouted(
   options: ParseOptions,
 ): Promise<{
   vendor: ParseOutcome | null;
+  reason: string;
   native: { coverage: ExtractionCoverage; model: DocumentModel | undefined; readBy: string | undefined; text: string; title: string | null };
 }> {
   const structural = await readPdfNatively(bytes, options);
@@ -946,6 +967,7 @@ async function parsePdfRouted(
         // already owns them.
         return {
           native: await parsePdf(bytes, options, { model: escalated.model, structural }),
+          reason: decision.reason,
           vendor: null,
         };
       }
@@ -953,11 +975,11 @@ async function parsePdfRouted(
       const read = await parseWithVendor(bytes, fileName, mimeType, "pdf", options, REAL_VENDOR_CLIENTS, {
         structural,
       });
-      if (read) return { native: EMPTY_NATIVE, vendor: read };
+      if (read) return { native: EMPTY_NATIVE, reason: decision.reason, vendor: read };
     }
   }
 
-  return { native: await parsePdf(bytes, options, { structural }), vendor: null };
+  return { native: await parsePdf(bytes, options, { structural }), reason: decision.reason, vendor: null };
 }
 
 /** Never read — the vendor branch that returns it always returns a non-null `vendor` beside it. */

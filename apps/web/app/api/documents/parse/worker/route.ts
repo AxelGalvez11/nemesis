@@ -44,6 +44,7 @@ import {
 } from "@/lib/pdf/vision-budget";
 import { contentHashOf, rowCounts, structureEnvelope } from "@/lib/notebooks/parse-record";
 import { decideReuse, findReusableParse } from "@/lib/notebooks/parse-reuse";
+import { runShadowEvaluation } from "@/lib/notebooks/parse-shadow";
 import {
   DEADLINE_ABORT_MS,
   isRetryable,
@@ -584,12 +585,60 @@ async function runClaimed(
       return await fail(new Error((run as { error: string }).error));
   }
 
-  return await finish(
-    await withStoredFigures(run.parsed as ParsedDocument, run.figures),
-    run.ms,
-    run.peakRssMb,
-  );
+  const parsed = await withStoredFigures(run.parsed as ParsedDocument, run.figures);
+  const finished = await finish(parsed, run.ms, run.peakRssMb);
+
+  // ── Did the cheap route actually get away with it? ─────────────────────────
+  //
+  // 🔴🔴 AFTER `finish`, ALWAYS, AND THAT ORDER IS THE SAFETY. The learner's parse is recorded and
+  // their placement is linked before a single shadow byte is sent. Nothing below can make them wait
+  // for their document, nothing below can fail it, and a shadow run that throws leaves a completed
+  // job behind it.
+  //
+  // 🔴 ONLY FOR PARSES NOBODY WAS BILLED FOR. A document that already went to the vendor has
+  // nothing to compare against itself; `readBy` naming a vendor is the exact test.
+  //
+  // 🔴 AND ONLY WITH TIME LEFT. A vendor read can take tens of seconds, and spending the worker's
+  // remaining deadline on bookkeeping would turn an observation into a killed job — which
+  // `fail_document_parse` would then record as this document's failure.
+  const wasVendorRead = (parsed.readBy ?? "").startsWith("mistral/") || (parsed.readBy ?? "").startsWith("llamaparse/");
+  const msLeft = DEADLINE_ABORT_MS - (Date.now() - startedAt);
+  if (finished.outcome === "parsed" && !wasVendorRead && msLeft > SHADOW_RESERVE_MS) {
+    try {
+      const shadow = await runShadowEvaluation({
+        admin,
+        bytes,
+        contentHash,
+        fileName,
+        kind: parsed.kind,
+        mimeType,
+        routeReason: parsed.routeReason ?? "unrecorded",
+        shipped: parsed,
+        sourceId: job.id,
+        userId: job.user_id,
+      });
+      if (!shadow.ran) {
+        console.info(JSON.stringify({ event: "parse_shadow_skipped", sourceId: job.id, why: shadow.why }));
+      }
+    } catch (cause) {
+      // A check that can break the thing it is checking is not a check.
+      console.warn(JSON.stringify({
+        event: "parse_shadow_failed",
+        detail: cause instanceof Error ? cause.message.slice(0, 200) : "unknown",
+      }));
+    }
+  }
+
+  return finished;
 }
+
+/**
+ * Time the worker keeps back for itself before it will start a shadow evaluation.
+ *
+ * A vendor read of a lecture is tens of seconds, and the worker aborts itself at `DEADLINE_ABORT_MS`.
+ * Starting one with less than this left trades a bookkeeping row for a killed invocation.
+ */
+const SHADOW_RESERVE_MS = 90_000;
 
 /**
  * Is this the last time this row will ever be handed out?
