@@ -196,4 +196,40 @@ assert.match(
 // larger charge.
 assert.match(pricingPage, /\?\?\s*"monthly"/, "an unknown interval means monthly");
 
+// ── Nothing may gate a capability on a tier name ────────────────────────────
+//
+// 🔴 THE FAILURE THIS CATCHES IS COMPLETELY SILENT, AND IT ALREADY HAPPENED.
+// `resolve_user_plan` now returns the canonical `nemesis` / `free` /
+// `enterprise`, so every `plan === 'pro'` in the edge functions stopped matching
+// the moment the migration landed. Three of them lived in nemesis-llm and gated
+// the premium reasoning lane: High-effort turns would have quietly stopped being
+// upgraded for EVERY user, including the owner's own comped account, with no
+// error, no failing test and nothing visible in the browser. A fourth, in the
+// news gate, would have shown paying subscribers the unpaid teaser.
+//
+// This scans for equality against a retired tier name in the functions that
+// decide what a user can do. Compatibility LISTS are fine and are how old
+// records keep working; it is a lone `=== "pro"` deciding a capability that is
+// the bug.
+const GATED_FUNCTIONS = [
+  "supabase/functions/nemesis-llm/index.ts",
+  "supabase/functions/ask/index.ts",
+  "supabase/functions/nemesis-media/index.ts",
+  "supabase/functions/research/index.ts",
+] as const;
+
+for (const path of GATED_FUNCTIONS) {
+  const source = readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1 ");
+  for (const tier of ["pro", "plus", "max", "student", "professional"]) {
+    const gate = new RegExp(`plan\\s*[!=]==?\\s*['"\`]${tier}['"\`]`);
+    assert.doesNotMatch(
+      source,
+      gate,
+      `${path} still decides something by comparing the plan to "${tier}" -- a code resolve_user_plan no longer returns`,
+    );
+  }
+}
+
 console.log("billing-contract.test.ts OK");

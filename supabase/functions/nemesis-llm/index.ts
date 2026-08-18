@@ -621,25 +621,42 @@ async function chatCompletions(req: Request): Promise<Response> {
   const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'
   let useGlm = requested.toLowerCase().startsWith('glm')
 
-  // High answer mode rides the premium GLM lane for Agent Pro / Max (owner routing
-  // decision 2026-07-14): Instant and Medium stay on DeepSeek; a High-effort turn is
-  // upgraded to GLM when the plan qualifies. Students picking High are NOT errored —
-  // they keep DeepSeek's own deep thinking. Effort is read from every encoding the
-  // desktop backend can emit (OpenRouter-style reasoning.effort, flat reasoning_effort,
-  // DeepSeek-style thinking.effort).
+  // High answer mode rides the premium GLM lane.
+  //
+  // 🔴 THE PLAN TERM IS GONE, AND REMOVING IT IS THE POINT (owner, 2026-08-18:
+  // "remove plan-based model gating that exists solely because of Student vs Pro",
+  // and "do NOT give Free a worse tutor or worse reasoning"). This used to read
+  // `ctx.plan === 'pro' || ctx.plan === 'max'`, which was a LADDER gate: it
+  // existed to make Agent Pro worth more than Student.
+  //
+  // 🔴 AND IT WOULD HAVE FAILED SILENTLY EITHER WAY. `resolve_user_plan` now
+  // returns the canonical `nemesis`/`free`/`enterprise`, so `=== 'pro'` stopped
+  // matching for EVERYONE the moment the migration landed -- including the
+  // owner's own comped account. Nothing would have errored; High-effort turns
+  // would just have quietly stopped being upgraded, on every plan.
+  //
+  // What still gates the upgrade is what SHOULD gate it: the turn actually asked
+  // for high effort, the mode is enabled, and the provider key exists. That is
+  // need-based cost routing, and it is deliberately kept.
+  //
+  // Effort is read from every encoding the desktop backend can emit
+  // (OpenRouter-style reasoning.effort, flat reasoning_effort, DeepSeek-style
+  // thinking.effort).
   const effortHigh =
     ((body.reasoning as { effort?: string } | undefined)?.effort ??
       (body.reasoning_effort as string | undefined) ??
       (body.thinking as { effort?: string } | undefined)?.effort) === 'high'
-  const glmUpgrade = GLM_HIGH_MODE && !useGlm && effortHigh && Boolean(GLM_KEY) && (ctx.plan === 'pro' || ctx.plan === 'max')
+  const glmUpgrade = GLM_HIGH_MODE && !useGlm && effortHigh && Boolean(GLM_KEY)
 
   if (glmUpgrade) useGlm = true
 
-  // The mix (2026-07-17): a High-effort turn on Agent Pro / Max routes to the
-  // premium v4-pro model — unless GLM is the chosen High lane. The hard timeout +
-  // fast-tier fallback live in the DeepSeek branch below (v4-pro is ~2x slower and
-  // fails a minority of the time). Students on lighter plans keep fast deep-thinking.
-  const proUpgrade = PRO_HIGH_MODE && !useGlm && effortHigh && (ctx.plan === 'pro' || ctx.plan === 'max')
+  // A High-effort turn routes to the premium v4-pro model — unless GLM is the
+  // chosen High lane. The hard timeout + fast-tier fallback live in the DeepSeek
+  // branch below (v4-pro is ~2x slower and fails a minority of the time).
+  //
+  // Same story as the GLM gate above: the plan term is gone on purpose, and it
+  // had also stopped matching anything.
+  const proUpgrade = PRO_HIGH_MODE && !useGlm && effortHigh
 
   const resolved = useGlm
     ? { model: glmUpgrade ? GLM_MODEL : requested }
@@ -674,15 +691,12 @@ async function chatCompletions(req: Request): Promise<Response> {
       return json({ error: 'GLM provider key not configured on the server' }, 500)
     }
 
-    // GLM 5.2 is the premium "highest" answer mode — Agent Pro and Max plans only
-    // (owner pricing decision 2026-07-14). The automatic DeepSeek-outage failover
-    // below is deliberately NOT gated: uptime insurance covers every plan.
-    if (ctx.plan !== 'pro' && ctx.plan !== 'max') {
-      return json(
-        { error: { code: 'plan_required', message: 'The highest answer mode needs the Agent Pro or Max plan.' } },
-        403
-      )
-    }
+    // 🔴 THE 403 IS GONE. It refused the highest answer mode to anyone not on
+    // 'pro' or 'max' — two codes `resolve_user_plan` no longer returns, so after
+    // the migration it would have refused EVERY user, with a message naming two
+    // plans nobody can buy. There is one product now; a request that explicitly
+    // asked for high effort gets the lane it asked for, and what bounds the spend
+    // is the monthly token allowance, not a tier name.
 
     upstream = await callProvider(GLM_BASE, GLM_KEY, body)
   } else if (proUpgrade) {
