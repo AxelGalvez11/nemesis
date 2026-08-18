@@ -16,12 +16,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildDocument, type DocumentModel } from "@nemesis/shared";
+import { buildDocument, documentToText, type DocumentModel } from "@nemesis/shared";
 
 import {
   DEFAULT_SHADOW_DAILY_CAP,
   DEFAULT_SHADOW_RATE,
   judgeShadow,
+  judgeStructure,
   recoveryOf,
   SERIOUS_TEXT_RATIO,
   shadowDailyCap,
@@ -169,4 +170,121 @@ test("a parse with no model counts honestly rather than optimistically", () => {
   assert.equal(counted.tables, 0);
   assert.equal(counted.units, 0);
   assert.equal(counted.chars, "flat text only".length);
+});
+
+// ── The structural judge ────────────────────────────────────────────────────────────────────────
+
+test("🔴🔴 a table whose cells moved one column is SERIOUS, though every count is identical", () => {
+  const grid = (rows: string[][]) => ({
+    headerRows: 1,
+    rows,
+  });
+  const model = (rows: string[][]): DocumentModel =>
+    buildDocument({
+      blocks: [{ headingPath: [], kind: "table", table: grid(rows), text: "", unit: 0 }],
+      format: "pdf",
+      title: null,
+      units: [{ index: 0, kind: "page" }],
+    });
+
+  const ours = model([
+    ["Clause", "Obligation", "Remedy"],
+    ["4.1", "specific performance", "notice within 14 days"],
+    ["4.2", "damages", "notice within 30 days"],
+  ]);
+  const theirs = model([
+    ["Clause", "Obligation", "Remedy"],
+    ["4.1", "notice within 14 days", "specific performance"],
+    ["4.2", "notice within 30 days", "damages"],
+  ]);
+
+  // The old comparison sees nothing: one table each, same rows, same cells, same characters.
+  const counts = judgeShadow(
+    recoveryOf(ours, documentToText(ours)),
+    recoveryOf(theirs, documentToText(theirs)),
+  );
+  assert.equal(counts.outcome, "safe", "this is precisely what a count-based judge cannot see");
+
+  const structure = judgeStructure(
+    { model: ours, text: documentToText(ours) },
+    { model: theirs, text: documentToText(theirs) },
+  );
+  assert.equal(structure.outcome, "serious");
+  assert.equal(structure.signals.misplacedTables, 1);
+  assert.match(structure.detail, /wrong columns/);
+});
+
+test("🔴 a page BOTH parsers read across the gutter is not blamed on the cheap route", () => {
+  // A hard page is not evidence against us. Blaming it would make the measurement useless on
+  // exactly the documents where it matters most.
+  const across = (): DocumentModel =>
+    buildDocument({
+      blocks: [
+        { headingPath: [], kind: "paragraph", rect: { height: 40, width: 230, x: 60, y: 100 }, text: "Left column opening statement of the argument.", unit: 0 },
+        { headingPath: [], kind: "paragraph", rect: { height: 40, width: 230, x: 330, y: 100 }, text: "Right column opening statement of the argument.", unit: 0 },
+        { headingPath: [], kind: "paragraph", rect: { height: 40, width: 230, x: 60, y: 150 }, text: "Left column second statement continuing on.", unit: 0 },
+        { headingPath: [], kind: "paragraph", rect: { height: 40, width: 230, x: 330, y: 150 }, text: "Right column second statement continuing on.", unit: 0 },
+        { headingPath: [], kind: "paragraph", rect: { height: 40, width: 230, x: 60, y: 200 }, text: "Left column third statement to close it out.", unit: 0 },
+        { headingPath: [], kind: "paragraph", rect: { height: 40, width: 230, x: 330, y: 200 }, text: "Right column third statement to close it out.", unit: 0 },
+      ],
+      format: "pdf",
+      title: null,
+      units: [{ index: 0, kind: "page", size: { height: 792, width: 612 } }],
+    });
+
+  const ours = across();
+  const theirs = across();
+  const verdict = judgeStructure(
+    { model: ours, text: documentToText(ours) },
+    { model: theirs, text: documentToText(theirs) },
+  );
+  assert.equal(verdict.signals.interleavedOurs, 1, "we did read it across");
+  assert.equal(verdict.signals.interleavedTheirs, 1, "and so did they");
+  assert.equal(verdict.outcome, "safe", "a hard page is not a cheap-route failure");
+});
+
+test("🔴 passage-order agreement is RECORDED and classifies nothing", () => {
+  // The rule the owner set: do not invent a threshold before collecting data. This signal has no
+  // defensible cut point yet, so it must appear on every row and decide none of them.
+  const one = "The first proposition, stated at length so it counts as a passage.\nThe second proposition, also stated at length here.";
+  const two = "The second proposition, also stated at length here.\nThe first proposition, stated at length so it counts as a passage.";
+  const verdict = judgeStructure({ text: one }, { text: two });
+  assert.ok(verdict.signals.sharedPassages > 0, "the passages must be recognised as shared");
+  assert.ok(verdict.signals.orderAgreement < 1, "and the disagreement must be measured");
+  assert.equal(verdict.outcome, "safe", "but it must not decide the verdict");
+});
+
+test("the worse of the two judges wins", () => {
+  const source = readFileSync(new URL("./parse-shadow.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /structure\.outcome === "serious" \? \("serious" as const\) : counts\.outcome/,
+    "a structural failure must not be overridden by a passing count comparison",
+  );
+});
+
+test("a single mis-parsed cell in a large table is NOT called serious", () => {
+  // The other edge of the provisional threshold. One wrong cell in a forty-eight cell table is a
+  // parse imperfection, not a destroyed relationship, and a comparator that shouted about it would
+  // be ignored within a week.
+  const rows = (swap: boolean) => {
+    const grid = [["Sample", "Mass (g)", "Yield (%)", "Notes"]];
+    for (let i = 1; i <= 11; i += 1) {
+      grid.push([`S${i}`, `${i * 3}`, `${40 + i}`, `run ${i}`]);
+    }
+    if (swap) grid[5]![2] = "different";
+    return { headerRows: 1, rows: grid };
+  };
+  const model = (swap: boolean): DocumentModel =>
+    buildDocument({
+      blocks: [{ headingPath: [], kind: "table", table: rows(swap), text: "", unit: 0 }],
+      format: "pdf",
+      title: null,
+      units: [{ index: 0, kind: "page" }],
+    });
+
+  const verdict = judgeStructure({ model: model(true), text: "" }, { model: model(false), text: "" });
+  assert.equal(verdict.signals.tablesCompared, 1);
+  assert.equal(verdict.signals.misplacedTables, 0, "one cell in forty-eight is not a misplacement");
+  assert.equal(verdict.outcome, "safe");
 });

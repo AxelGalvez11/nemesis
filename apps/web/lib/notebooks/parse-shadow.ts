@@ -37,6 +37,7 @@ import { documentToText, type DocumentModel } from "@nemesis/shared";
 
 import { recordAiSpend } from "@/lib/cost/ai-spend";
 
+import { columnInterleave, orderAgreement, tableFidelity } from "./parse-fidelity";
 import { parseWithVendor, type DocumentKind, type ParsedDocument } from "./parse-document";
 
 /**
@@ -184,6 +185,127 @@ export function judgeShadow(
     : { detail: "the cheap route recovered everything the vendor did", outcome: "safe" };
 }
 
+// ── Was the structure right, not just the amount? ───────────────────────────────────────────────
+
+/**
+ * Above this share of values present, a position that disagrees is a value IN THE WRONG PLACE.
+ *
+ * 🔴 THIS ONE IS A DEFINITION RATHER THAN A DIAL. If both parses hold essentially the same values
+ * and a grid position holds different ones, the value has not gone missing — it is somewhere else
+ * in the same table. That makes `1 - positionAgreement` a misplacement RATE that needs no threshold
+ * to interpret, which is the whole reason the two measures are kept apart instead of averaged.
+ */
+export const MISPLACED_VALUE_FLOOR = 0.9;
+
+/**
+ * How much of a grid must be in the wrong place before the row is called `serious`.
+ *
+ * 🔴🔴 THIS IS THE ONE NUMBER IN THIS FILE THAT IS PROVISIONAL, AND IT IS MARKED SO IT GETS
+ * RECALIBRATED RATHER THAN INHERITED. The metric above is definitional; the alarm level is not.
+ * A quarter is set from the arithmetic of the failure it must catch: a table whose columns shift by
+ * one leaves the header row and the key column agreeing by construction, so even a total swap of
+ * two columns in a three-column table only moves 44% of positions — and a single mis-parsed cell in
+ * a 48-cell table moves 2%. A quarter sits between those with room on both sides.
+ *
+ * 🔴 IT IS ALSO WHY `structure` IS STORED ON EVERY ROW. `worstPositionAgreement` is recorded whether
+ * or not it trips this, so the distribution can set this number properly once there are rows to
+ * read it off. Until then it is a first guess that says out loud that it is one.
+ */
+export const MIN_MISPLACED_SHARE = 0.25;
+
+export interface StructureSignals {
+  readonly twoColumnUnits: number;
+  readonly interleavedOurs: number;
+  readonly interleavedTheirs: number;
+  readonly sharedPassages: number;
+  /** Recorded, never classified. See `judgeStructure`. */
+  readonly orderAgreement: number;
+  readonly tablesCompared: number;
+  readonly misplacedTables: number;
+  readonly worstPositionAgreement: number | null;
+}
+
+export interface StructureVerdict {
+  readonly outcome: "safe" | "serious";
+  readonly detail: string;
+  readonly signals: StructureSignals;
+}
+
+/**
+ * Compare two parses on STRUCTURE: did the cells land in the right columns, did the page read down
+ * its columns rather than across them, did the passages come out in the same sequence.
+ *
+ * 🔴🔴 THIS EXISTS BECAUSE `judgeShadow` COUNTS, AND THE TWO WORST FAILURES PRESERVE EVERY COUNT.
+ * A table whose values all landed one column to the left has the same number of tables, rows, cells
+ * and characters as a correct one. A two-column page read across the gutter has every word. Both
+ * pass the count comparison as `safe`, and both would teach a learner a relationship the document
+ * never stated.
+ *
+ * 🔴 AND ONE OF THE THREE SIGNALS IS DELIBERATELY NOT ALLOWED TO DECIDE ANYTHING. Passage-order
+ * agreement is a real measurement with no defensible cut point yet: some legitimate disagreement is
+ * two parsers splitting sentences differently rather than either reading out of sequence, and
+ * nothing in the corpus can currently say where one ends and the other begins. So it is RECORDED on
+ * every row and classifies nothing. When `parse_shadow_evals` has enough rows to show the
+ * distribution, a threshold can be set from it — which is the only honest order to do this in.
+ *
+ * PURE.
+ */
+export function judgeStructure(
+  ours: { readonly model?: DocumentModel; readonly text: string },
+  theirs: { readonly model?: DocumentModel; readonly text: string },
+): StructureVerdict {
+  const ourColumns = ours.model ? columnInterleave(ours.model) : null;
+  const theirColumns = theirs.model ? columnInterleave(theirs.model) : null;
+  const order = orderAgreement(ours.text, theirs.text);
+
+  const ourTables = (ours.model?.blocks ?? []).flatMap((b) => (b.table ? [b.table] : []));
+  const theirTables = (theirs.model?.blocks ?? []).flatMap((b) => (b.table ? [b.table] : []));
+
+  let misplaced = 0;
+  let worstPosition: number | null = null;
+  const compared = Math.min(ourTables.length, theirTables.length);
+  for (let i = 0; i < compared; i += 1) {
+    const fidelity = tableFidelity(ourTables[i]!, theirTables[i]!);
+    if (worstPosition === null || fidelity.positionAgreement < worstPosition) {
+      worstPosition = fidelity.positionAgreement;
+    }
+    if (
+      fidelity.valueAgreement >= MISPLACED_VALUE_FLOOR &&
+      1 - fidelity.positionAgreement >= MIN_MISPLACED_SHARE
+    ) {
+      misplaced += 1;
+    }
+  }
+
+  const signals: StructureSignals = {
+    interleavedOurs: ourColumns?.interleavedUnits ?? 0,
+    interleavedTheirs: theirColumns?.interleavedUnits ?? 0,
+    misplacedTables: misplaced,
+    orderAgreement: Math.round(order.agreement * 1000) / 1000,
+    sharedPassages: order.sharedPassages,
+    tablesCompared: compared,
+    twoColumnUnits: ourColumns?.twoColumnUnits ?? 0,
+    worstPositionAgreement: worstPosition === null ? null : Math.round(worstPosition * 1000) / 1000,
+  };
+
+  const faults: string[] = [];
+  if (misplaced > 0) {
+    faults.push(`${misplaced} table(s) hold the right values in the wrong columns`);
+  }
+  // 🔴 ONLY WHEN THE VENDOR GOT IT RIGHT. A page both parsers read across the gutter is a hard page,
+  // not evidence against the cheap route, and blaming the cheap route for it would make the whole
+  // measurement useless on exactly the documents it matters most for.
+  if (signals.interleavedOurs > signals.interleavedTheirs) {
+    faults.push(
+      `${signals.interleavedOurs - signals.interleavedTheirs} page(s) read across the column gutter that the vendor read down it`,
+    );
+  }
+
+  return faults.length > 0
+    ? { detail: `the cheap route kept the content and lost the structure: ${faults.join("; ")}`, outcome: "serious", signals }
+    : { detail: "structure agrees", outcome: "safe", signals };
+}
+
 export interface ShadowInput {
   readonly admin: SupabaseClient;
   readonly userId: string;
@@ -246,11 +368,29 @@ export async function runShadowEvaluation(
   const vendorDocument =
     vendorOutcome && (vendorOutcome.ok || vendorOutcome.reason === "no-text") ? vendorOutcome.document : null;
 
-  const verdict = vendorDocument
-    ? judgeShadow(
-        nativeRecovery,
-        recoveryOf(vendorDocument.model, vendorDocument.model ? documentToText(vendorDocument.model) : vendorDocument.text),
-      )
+  const vendorText = vendorDocument
+    ? (vendorDocument.model ? documentToText(vendorDocument.model) : vendorDocument.text)
+    : "";
+
+  // 🔴 TWO INDEPENDENT JUDGES, AND THE WORSE ONE WINS. `judgeShadow` asks whether the cheap route
+  // recovered as MUCH; `judgeStructure` asks whether what it recovered is in the RIGHT SHAPE. A
+  // parse can pass either and fail the other, and the two failures look nothing alike: one is a
+  // missing table, the other is a table whose columns are shuffled. Taking the worse verdict is the
+  // only combination that cannot hide a fault behind a pass.
+  const counts = vendorDocument
+    ? judgeShadow(nativeRecovery, recoveryOf(vendorDocument.model, vendorText))
+    : null;
+  const structure = vendorDocument
+    ? judgeStructure({ model: input.shipped.model, text: input.shipped.text }, { model: vendorDocument.model, text: vendorText })
+    : null;
+
+  const verdict = counts && structure
+    ? {
+        detail: structure.outcome === "serious" && counts.outcome !== "serious"
+          ? structure.detail
+          : counts.detail,
+        outcome: structure.outcome === "serious" ? ("serious" as const) : counts.outcome,
+      }
     : {
         detail: "the vendor did not answer, so this sample says nothing about the cheap route",
         outcome: "vendor-unavailable" as const,
@@ -263,6 +403,9 @@ export async function runShadowEvaluation(
       doc_kind: input.kind,
       native: nativeRecovery as unknown as Record<string, unknown>,
       outcome: verdict.outcome,
+      // Recorded on every row whether or not it decided anything, so a threshold for
+      // passage-order agreement can eventually be READ OFF the distribution rather than guessed.
+      structure: (structure?.signals ?? {}) as unknown as Record<string, unknown>,
       route_reason: input.routeReason,
       source_id: input.sourceId,
       user_id: input.userId,
