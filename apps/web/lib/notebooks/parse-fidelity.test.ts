@@ -237,3 +237,55 @@ test("fragments too short to be evidence are ignored", () => {
   const result = orderAgreement("Fig. 3\nTable 1\np. 44", "p. 44\nTable 1\nFig. 3");
   assert.equal(result.sharedPassages, 0);
 });
+
+test("🔴🔴 orphaned fragments at the margin are not a column", () => {
+  // The false positive that a corpus sweep found and the unit tests had not: a page of
+  // single-column mathematics whose subscripts land as their own blocks out at the right margin.
+  // Enough of them to pass a block count, nowhere near enough text to be a column.
+  const body = (y: number) =>
+    para("A paragraph of ordinary body text running across the measure of the page.", 90, y, 300);
+  const orphan = (y: number, text: string) => para(text, 520, y, 20);
+
+  const model = pageOf([
+    body(100), orphan(105, "1 2"),
+    body(150), orphan(155, "V"),
+    body(200), orphan(205, "n"),
+    body(250), orphan(255, "x"),
+  ]);
+  const finding = columnInterleave(model).findings[0]!;
+  assert.equal(finding.columns, 1, "fragments carrying four characters are not a column of text");
+  assert.equal(finding.interleaved, false);
+});
+
+test("a genuine two-column page is still found when both sides carry text", () => {
+  // The guard above must not cost the real case: both columns hold comparable prose.
+  const model = pageOf([
+    para("Left column carrying a full measure of running prose about the topic.", 60, 100),
+    para("Left column continuing with a second full paragraph of the argument.", 60, 150),
+    para("Right column carrying its own full measure of running prose as well.", 330, 100),
+    para("Right column continuing with a second full paragraph of that half.", 330, 150),
+  ]);
+  assert.equal(columnInterleave(model).findings[0]?.columns, 2);
+});
+
+test("🔴🔴 a diagram's scattered labels are not two columns of text", () => {
+  // The second false positive a corpus sweep found: a full-page figure whose cell labels cluster
+  // left and right with enough characters between them to pass a text-mass test. A column is made
+  // of lines; a diagram is made of tokens.
+  const label = (text: string, x: number, y: number) => para(text, x, y, 40);
+  const model = pageOf([
+    label("C C C C C NL", 60, 100), label("2", 60, 140), label("B U C C NL", 60, 180), label("3", 60, 220),
+    label("U X C C C NL", 380, 100), label("1", 380, 140), label("L L L 1 -", 380, 180), label("4", 380, 220),
+  ]);
+  assert.equal(columnInterleave(model).findings[0]?.columns, 1);
+});
+
+test("a two-column page of running prose survives every guard", () => {
+  const model = pageOf([
+    para("The first paragraph of the left column, long enough to be a typeset line of prose.", 60, 100),
+    para("The second paragraph of the left column, also a proper line of running text here.", 60, 150),
+    para("The first paragraph of the right column, equally long and equally full of prose.", 330, 100),
+    para("The second paragraph of the right column, closing the page with more real text.", 330, 150),
+  ]);
+  assert.equal(columnInterleave(model).findings[0]?.columns, 2, "the true case must still be found");
+});

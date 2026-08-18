@@ -55,6 +55,42 @@ export const FULL_WIDTH_SHARE = 0.7;
 export const MIN_BLOCKS_PER_COLUMN = 2;
 
 /**
+ * Share of a unit's text each side must carry before the space between them is a column gutter.
+ *
+ * 🔴🔴 ADDED AFTER READING WHAT THE DETECTOR ACTUALLY FLAGGED, WHICH IS THE ONLY WAY THIS KIND OF
+ * MISTAKE GETS FOUND. Counting blocks alone, the detector called a page of single-column German
+ * mathematics a two-column page: the body text sat at x≈0.15–0.38 and a scatter of orphaned
+ * subscript and superscript fragments — "1 2", "V", "z" — sat out at x≈0.87, far enough away to
+ * look like a gutter and numerous enough to look like a column. On the first corpus sweep this
+ * produced a claimed 37% reading-order defect rate that was largely not reading order at all.
+ *
+ * A column CARRIES TEXT. Three characters at the right margin is a fragment, however many of them
+ * there are, so both sides must hold a fifth of the unit's characters before the split is believed.
+ *
+ * 🔴 AND THE FRAGMENTS ARE THEMSELVES A REAL DEFECT — the one `docs/column-segmentation.md` records
+ * as fragmentation, where a sentence survives extraction in pieces that do not sit next to each
+ * other. This measure must not report it as a DIFFERENT defect it is not.
+ */
+export const MIN_COLUMN_TEXT_SHARE = 0.2;
+
+/**
+ * Median characters per block a side must reach before it is a column OF TEXT.
+ *
+ * 🔴🔴 THE SECOND FALSE-POSITIVE CLASS, FOUND THE SAME WAY AS THE FIRST — BY LOOKING. With the
+ * text-mass guard in place the detector still called page 7 of a table-structure paper two-column:
+ * a full-page FIGURE whose cell labels — "C C C C C NL", "2", "U X C C C NL" — scatter across the
+ * page in two loose clusters that carry plenty of characters between them.
+ *
+ * A column of running text is made of LINES. A diagram is made of TOKENS. Twenty-five characters is
+ * comfortably below a typeset line in any column width and far above a label, so it separates the
+ * two without knowing anything about what either says.
+ *
+ * 🔴 MEDIAN, NOT MEAN, because one long caption inside a figure would drag a mean over the bar
+ * while leaving the page just as much a diagram as it was.
+ */
+export const MIN_COLUMN_MEDIAN_CHARS = 25;
+
+/**
  * Gutter crossings a correctly-ordered two-column page is allowed.
  *
  * 🔴 ONE IS THE CORRECT READ AND THE ALLOWANCE IS TWO. Reading a two-column page properly means
@@ -138,6 +174,24 @@ function splitByGutter(
   const left = new Set(centres.slice(0, splitAfter + 1).map((c) => c.id));
   const right = new Set(centres.slice(splitAfter + 1).map((c) => c.id));
   if (left.size < MIN_BLOCKS_PER_COLUMN || right.size < MIN_BLOCKS_PER_COLUMN) return null;
+
+  // Both sides must carry text, not merely exist. See `MIN_COLUMN_TEXT_SHARE`.
+  const blocksIn = (ids: ReadonlySet<string>) => inColumns.filter((b) => ids.has(b.id));
+  const charsIn = (ids: ReadonlySet<string>) =>
+    blocksIn(ids).reduce((sum, b) => sum + b.text.trim().length, 0);
+  const total = inColumns.reduce((sum, b) => sum + b.text.trim().length, 0);
+  if (total === 0) return null;
+  if (charsIn(left) < total * MIN_COLUMN_TEXT_SHARE) return null;
+  if (charsIn(right) < total * MIN_COLUMN_TEXT_SHARE) return null;
+
+  // And each side must be made of lines rather than labels. See `MIN_COLUMN_MEDIAN_CHARS`.
+  const medianChars = (ids: ReadonlySet<string>) => {
+    const lengths = blocksIn(ids).map((b) => b.text.trim().length).sort((a, b) => a - b);
+    return lengths.length === 0 ? 0 : (lengths[Math.floor(lengths.length / 2)] ?? 0);
+  };
+  if (medianChars(left) < MIN_COLUMN_MEDIAN_CHARS) return null;
+  if (medianChars(right) < MIN_COLUMN_MEDIAN_CHARS) return null;
+
   return { fullWidth: blocks.length - inColumns.length, left, right };
 }
 
