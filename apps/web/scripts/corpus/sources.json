@@ -1,0 +1,47 @@
+{
+  "$comment": [
+    "Openly-licensed document sources for the parser evaluation corpus.",
+    "",
+    "WHY A MANIFEST RATHER THAN CHECKED-IN FILES: these documents are other people's work under",
+    "other people's licences, several hundred megabytes of it. Pinning the commit gives an exactly",
+    "reproducible corpus without vendoring a gigabyte of third-party material into this repository",
+    "or taking on the redistribution obligations that would come with it.",
+    "",
+    "EVERY SOURCE CARRIES A LICENCE AND IT IS RECORDED HERE. A corpus whose provenance nobody can",
+    "state is a corpus nobody can publish a result from."
+  ],
+  "sources": [
+    {
+      "id": "pypdf-samples",
+      "url": "https://github.com/py-pdf/sample-files",
+      "commit": "89039b6078fd0c9f98bf3d6fcb5583fac6b0ecaf",
+      "license": "CC-BY-SA-4.0",
+      "paths": ["."],
+      "why": "Deliberately constructed PDF pathologies: multi-column LaTeX, AcroForm and LibreOffice forms, rotated/cropped/scaled pages, CMYK and grayscale images, Arabic right-to-left text, PDF/A, annotations, attachments, unreadable metadata."
+    },
+    {
+      "id": "docling-tests",
+      "url": "https://github.com/docling-project/docling",
+      "commit": "c4b5ed6202d669e2fba2654affb843f3b1611de2",
+      "license": "MIT",
+      "paths": ["tests/data"],
+      "why": "Real academic papers and the Office formats Nemesis also ingests: DOCX with tables and equations, PPTX decks with speaker notes, XLSX workbooks. The reference set a mature parser tests itself against."
+    },
+    {
+      "id": "unstructured-examples",
+      "url": "https://github.com/Unstructured-IO/unstructured",
+      "commit": "104b585d4e84ad987b121e86aecf80315e8a12a6",
+      "license": "Apache-2.0",
+      "paths": ["example-docs"],
+      "why": "Real-world business and government documents, plus the specific failures a parser meets in the field: multi-column layouts, multi-row/column table cells, embedded CID fonts, rotated pages, invalid PDF structure, Korean text with tables, memos and army forms."
+    },
+    {
+      "id": "openpreserve-format-corpus",
+      "url": "https://github.com/openpreserve/format-corpus",
+      "commit": "366f068cec399d0cdfd61fa473de3ab6dc858098",
+      "license": "CC-BY-4.0 / mixed, per-directory — see the repository's own LICENCE files",
+      "paths": ["."],
+      "why": "A digital-preservation corpus: real documents collected because they are awkward. Scans, old producers, damaged files, and formats in versions nobody generates any more."
+    }
+  ]
+}
