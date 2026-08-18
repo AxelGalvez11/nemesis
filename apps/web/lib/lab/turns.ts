@@ -14,8 +14,7 @@
  * PURE. No React, no I/O.
  */
 
-import { costUsd } from "../../../../supabase/functions/_shared/llm-cost";
-
+import { labCostUsd } from "./cost";
 import type { LabTraceEvent } from "./trace";
 
 export interface LabTurn {
@@ -138,9 +137,9 @@ export function foldTurns(events: readonly LabTraceEvent[]): LabTurn[] {
           completion: tokens.completion + usage.completionTokens,
           prompt: tokens.prompt + usage.promptTokens,
         };
-        // 🔴 PRICED WITH THE VALVE'S OWN CANONICAL TABLE, not a number typed here. If the two ever
-        // disagreed, the Lab would be reporting a cost the business does not pay.
-        const priced = costUsd(detail.answeredBy ?? "", {
+        // 🔴 PRICED FROM A MIRROR OF THE VALVE'S CANONICAL TABLE, kept honest by `cost.test.ts`
+        // rather than by an import the deployed build cannot resolve. See lib/lab/cost.ts.
+        const priced = labCostUsd(detail.answeredBy ?? "", {
           cacheHitTokens: usage.cacheHitTokens,
           completionTokens: usage.completionTokens,
           promptTokens: usage.promptTokens,
