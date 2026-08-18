@@ -22,10 +22,16 @@ for (const legacy of ["plus", "pro", "max", "student", "professional", "trial"])
 }
 
 // The rates are the registry's, not this file's.
+//
+// 🔴 SCANNED WITH COMMENTS STRIPPED. The first version of this check failed on
+// the module's own header, which explains that the streaming-lecture rate was
+// removed -- the guard found the name it was looking for in the sentence saying
+// it is gone. Twice today; hence the helper.
 const source = readFileSync(new URL("./chat-economics.ts", import.meta.url), "utf8");
-assert.match(source, /from "@\/lib\/provider-costs"/);
-assert.doesNotMatch(source, /SEARCH_UNIT_COST_USD = 0\./, "no hand-written search rate");
-assert.doesNotMatch(source, /LIVE_TRANSCRIPTION_HOURLY_COST_USD/, "the streaming lecture lane is not what voice costs");
+const code = source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/.*$/gm, "$1 ");
+assert.match(code, /from "@\/lib\/provider-costs"/);
+assert.doesNotMatch(code, /SEARCH_UNIT_COST_USD\s*=\s*0\./, "no hand-written search rate");
+assert.doesNotMatch(code, /LIVE_TRANSCRIPTION_HOURLY_COST_USD/, "the streaming lecture lane is not what voice costs");
 assert.equal(SEARCH_UNIT_COST_USD, 0.005);
 
 // Voice is priced in BOTH directions: speech in by the hour, speech out by the
