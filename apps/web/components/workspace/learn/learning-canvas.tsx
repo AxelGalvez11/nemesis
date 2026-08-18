@@ -647,8 +647,33 @@ export function LearningCanvas({
 
   /** This canvas has not begun: no lesson, no task, no evidence — only whatever material is
    *  waiting. The one state in which a submission MEANS "start", which is why it is named once
-   *  here and read in three places rather than re-tested inline in each. */
-  const preContent = canvas.state === "empty" || canvas.state === "sources_attached";
+   *  here and read in three places rather than re-tested inline in each.
+   *
+   * 🔴🔴 A CANVAS THAT IS ASKING SOMETHING HAS BEGUN, WHATEVER ITS STORED STATE SAYS — AND LEAVING
+   * THAT OUT SILENTLY DISCARDED EVERY TYPED ANSWER ON A DOCUMENT-STARTED CANVAS.
+   *
+   * `canvas.state` stays `sources_attached` after material is attached; nothing advances it when the
+   * policy runtime stages a question. So `preContent` remained true with a real question on screen,
+   * `onStart` was still passed to the composer, and `canvas-composer.tsx`'s routing puts starting
+   * ABOVE answering:
+   *
+   *     if (onStart) onStart(value);
+   *     else if (answering) onAnswer(...);
+   *
+   * Its comment says *"the caller only passes `onStart` in exactly that state, so this branch cannot
+   * capture a genuine answer"* — an invariant this line was quietly breaking. The learner typed an
+   * answer, saw a `Submit answer` button, pressed it, and the text went to `begin()`: a model call,
+   * a re-titled canvas, a different question, and NO evidence row. No error, because nothing failed.
+   *
+   * 🔴 MEASURED, NOT REASONED: eight browser attempts wrote zero rows, `learner_evidence` saw only a
+   * GET and never a POST, and production holds ZERO `typed` rows across fourteen days. Handwriting
+   * was unaffected because the writing sheet has its own submission path.
+   *
+   * 🔴 THE SINK, NOT THE STATE, BECAUSE THE SINK IS WHAT THE SCREEN IS ACTUALLY DOING. Waiting for
+   * `canvas.state` to advance would put the same latent bug one step further away; `sink.kind` is
+   * already the one place that decides whether an answer surface exists at all, and it is computed
+   * directly above. */
+  const preContent = (canvas.state === "empty" || canvas.state === "sources_attached") && sink.kind === "none";
 
   // 🔴 THE COMPOSER IS NOW PRESENT BEFORE THE CANVAS HAS BEGUN, AND THAT IS THE WHOLE OF §15.
   //
