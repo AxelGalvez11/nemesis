@@ -113,10 +113,16 @@ function PricingInner() {
   const params = useSearchParams();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [interval, setInterval] = useState<CheckoutInterval>("monthly");
-
   const checkoutStatus = params.get("checkout");
   const intentInterval = params.get("interval");
+  // 🔴 THE CHOICE ARRIVES IN THE URL, AND IT HAS TO SURVIVE BEING SIGNED OUT.
+  // The marketing site's yearly button links here as ?interval=annual. Reading
+  // that only inside the resume effect meant it applied ONLY to someone already
+  // signed in: a visitor who pressed "Get Nemesis" under the yearly toggle
+  // landed on a page showing $19.99 a month. Caught in the browser, not by a test.
+  const [interval, setInterval] = useState<CheckoutInterval>(
+    () => asInterval(params.get("interval")) ?? "monthly",
+  );
   const selected = INTERVALS.find((candidate) => candidate.id === interval) ?? MONTHLY;
 
   const startCheckout = useCallback(

@@ -1,5 +1,6 @@
 // pnpm --filter @nemesis/web exec tsx lib/billing-contract.test.ts
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   checkoutIdempotencyKey,
   customerIdempotencyKey,
@@ -173,5 +174,26 @@ assert.equal(subscriptionWebhookAction("invoice.paid"), null);
 assert.equal(subscriptionWebhookAction("invoice.payment_failed"), null);
 assert.equal(subscriptionGrantsAccess("past_due"), true, "a retrying card keeps access");
 assert.equal(subscriptionGrantsAccess("unpaid"), false, "an exhausted retry schedule does not");
+
+// ── The choice has to survive the hop from the marketing site ───────────────
+//
+// 🔴 FOUND IN THE BROWSER, NOT BY A TEST. www.enternemesis.com links here as
+// /pricing?interval=annual when someone presses "Get Nemesis" under the yearly
+// toggle. Reading that parameter only inside the resume-checkout effect meant it
+// applied ONLY to someone already signed in — everyone else landed on a page
+// showing $19.99 a month, having just chosen $16.67.
+//
+// This is a source assertion, which is weaker than rendering the component: it
+// proves the parameter reaches the initial state, not that the toggle paints.
+// The paint was checked in the browser at 375px and 1280px, light and dark.
+const pricingPage = readFileSync(new URL("../app/pricing/page.tsx", import.meta.url), "utf8");
+assert.match(
+  pricingPage,
+  /useState<CheckoutInterval>\(\s*\(\)\s*=>\s*asInterval\(params\.get\("interval"\)\)/,
+  "the pricing page must take its opening interval from the URL",
+);
+// And an unrecognised value must fall back to the CHEAPER commitment, never the
+// larger charge.
+assert.match(pricingPage, /\?\?\s*"monthly"/, "an unknown interval means monthly");
 
 console.log("billing-contract.test.ts OK");
