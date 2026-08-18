@@ -46,6 +46,7 @@ import { mistralHandles, readWithMistral } from "./mistral-ocr";
 import { llamaHandles, llamaTier, readWithLlama } from "./llamaparse-ocr";
 import { modelFromLlama, type LlamaResult } from "./llamaparse-model";
 import { claimOf, judgeFigureAccounting, judgeMistralRead } from "./mistral-quality";
+import { preflightOffice } from "./office-preflight";
 import { modelFromMistral, titleFromMistral, unitKindFor } from "./mistral-model";
 import { csvToModel } from "./csv-model";
 import { readCsv } from "./csv-structure";
@@ -626,10 +627,9 @@ export async function parseDocument(
   // provider that does not need them must not be gated by them. `mistralHandles` excludes images
   // anyway, so today this is ordering that documents an intent rather than ordering that changes
   // an outcome — which is precisely when it is cheap to get right.
-  if (kind !== "pdf" && vendorFor(kind)) {
-    const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
-    if (read) return read;
-  }
+  // Every vendor-capable format now decides for itself, from its own evidence, in its own branch
+  // below: `parsePdfRouted` for PDF, `preflightOffice` for DOCX and PPTX. Nothing is routed to a
+  // paid parser before something local has looked at the file.
 
   if (kind === "image") {
     if (bytes.byteLength > VISION_MAX_BYTES) return { ok: false, reason: "too-large-image" };
@@ -660,8 +660,25 @@ export async function parseDocument(
     if (routed.vendor) return routed.vendor;
     ({ coverage, model, readBy, text, title } = routed.native);
   } else if (kind === "docx") {
+    // 🔴 OUR READ FIRST, AND THE VENDOR ONLY FOR WHAT IT LOST. Word XML is a manifest: `<w:tbl>`
+    // either appears or it does not, `word/media/` either holds pictures or it does not. Reading
+    // it is free and local, so the question "is there anything a vendor could restore" is
+    // answerable before anyone is billed to answer it.
     model = extractDocxModel(bytes);
     text = documentToText(model);
+    const decision = preflightOffice("docx", claimOf("docx", bytes), model, text);
+    console.info(JSON.stringify({
+      event: "parse_route",
+      detail: decision.detail,
+      format: "docx",
+      reason: decision.reason,
+      route: decision.route,
+      signals: decision.signals,
+    }));
+    if (decision.route === "vendor") {
+      const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
+      if (read) return read;
+    }
     title = model.title;
     // 🔴 ONE "document", NOT ONE PAGE. Word paginates at layout time, so
     // claiming "page 1 of 1" for a 40-page dissertation would invent a locator
@@ -731,6 +748,46 @@ export async function parseDocument(
     // back to a diagram was re-downloading and re-parsing the whole file. Taking a
     // reference now costs nothing: the same arrays, kept rather than collected.
     normalized = normalizedFigures(deck.imageBytes, deck.media.images);
+
+    // 🔴🔴 THE ROUTING DECISION HAPPENS BEFORE A SINGLE FIGURE IS SENT ANYWHERE, AND THE ORDER IS
+    // THE COST DECISION. Building a provisional model with no descriptions costs nothing — it is
+    // the same `pptxToModel` over the same already-unzipped deck — while the vision pass below it
+    // is real money on the one primitive that is billed per image. A deck about to be escalated
+    // must not first pay to describe figures the vendor's own model would replace.
+    //
+    // The provisional model is DISCARDED when the deck stays local: the real one is built below
+    // with the descriptions and the §46.6 labels in it. Two builds of a pure function over the
+    // same input is not a second parse.
+    const provisional = pptxToModel(
+      {
+        deckTitle: deck.deckTitle,
+        images: deck.media.images,
+        slides: deck.slides,
+        slideTitles: deck.slideTitles,
+        structure: deck.structure,
+      },
+      new Map<string, string>(),
+      new Map<string, FigureLabel[]>(),
+    );
+    const decision = preflightOffice(
+      "pptx",
+      claimOf("pptx", bytes),
+      provisional,
+      pptxTextWithFigures(deck, new Map<string, string>()).text,
+    );
+    console.info(JSON.stringify({
+      event: "parse_route",
+      detail: decision.detail,
+      format: "pptx",
+      reason: decision.reason,
+      route: decision.route,
+      signals: decision.signals,
+    }));
+    if (decision.route === "vendor") {
+      const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
+      if (read) return read;
+    }
+
     // 🔴 `readFiguresWithVision`, NOT `describeFiguresWithVision` — SAME CALL, TWO ANSWERS (§46.6).
     // The labelled-diagram labels come back off the request that was already being made, so a deck
     // full of anatomy slides costs exactly what it did before. Nothing extra is sent and nothing
