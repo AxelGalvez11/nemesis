@@ -15,6 +15,7 @@ import { projectLearnerState, type LearnerEvidence, type LearnerObjectiveState }
 import type { KnowledgeObject } from "./knowledge-types";
 import { mostValuable, value } from "./next-action-value";
 import { terminologyFriction, type TermLookup } from "./learner-friction";
+import { choiceSetsForPool } from "./objective-task";
 import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisites";
 import { retrievabilityFor } from "./retention-model";
 import { runtimeCanStage } from "./runtime-support";
@@ -49,6 +50,12 @@ const STUCK_STATUSES: readonly LearnerObjectiveState["status"][] = [
  */
 const ACTIONABLE: readonly TeachingAction["type"][] = [
   "retrieve",
+  // 🔴 A RETRIEVAL, WHICH IS WHY IT IS HERE AND SITS NEXT TO ONE. `recognise` asks the learner to do
+  // something and produces evidence; the only difference from the line above is the demand it asks
+  // at. Leaving it off this allow-list would mean the policy could choose it and the arbitration
+  // would then never select it — a decision made and discarded, which is the exact silent shape the
+  // allow-list's own comment says the flip from a deny-list was meant to prevent.
+  "recognise",
   "show_correction",
   "contrast",
   "teach",
@@ -143,12 +150,24 @@ export function decideNext(input: {
     ...input.objectives.filter(({ objective }) => acted.has(objective.identityKey)),
   ];
 
+  // 🔴 BUILT ONCE, FROM THE WHOLE POOL, BEFORE ANY OBJECTIVE IS DECIDED ABOUT. A recognition task's
+  // options come from the canvas's OTHER objectives, so this cannot be done inside the per-objective
+  // loop below — and the correct answer's position is balanced across the batch, which degenerates to
+  // "always first" the moment the batch is one. See `choiceSetsForPool`.
+  //
+  // 🔴 THE POOL IS `input.objectives`, NOT `ordered` AND NOT THE OWED SUBSET. Ordering is a
+  // presentation decision that changes every turn; keying the layout on it would reshuffle which seat
+  // holds the answer between renders of the same question. Keyed on the pool it is a function of the
+  // canvas and is stable for the sitting.
+  const choiceSets = choiceSetsForPool({ evidence: input.evidence, objectives: input.objectives });
+
   const decisions = ordered.map(({ knowledge, objective }) => {
     // 🔴 FILTERED BY OBJECTIVE, NEVER BY CANVAS. The evidence handed in is everything this learner
     // holds for these objectives across every session — a canvas filter here would silently turn
     // the durable learner model back into a session transcript, and every test would still pass.
     const mine = input.evidence.filter((entry) => entry.objectiveIdentityKey === objective.identityKey);
     const state = projectLearnerState(objective.identityKey, mine);
+    const choices = choiceSets.get(objective.identityKey);
     const action = chooseNextTeachingAction({
       correctionAlreadyShown: corrected.has(objective.identityKey),
       interveningActs: interveningActs(objective.identityKey, actedInOrder),
@@ -157,6 +176,9 @@ export function decideNext(input: {
       now: input.now,
       objective,
       recentEvidence: mine,
+      // Absent when no honest set of options exists for this objective, which is the common case and
+      // is what the policy already behaved as before recognition existed.
+      ...(choices ? { choices } : {}),
     });
     // 🔴 ONE READ OF THE ACTION, TWO SHAPES OF THE SAME ANSWER. `cognitiveMode` is not a second
     // decision — it is `exposition.mode`, assigned here so the two cannot be set independently.

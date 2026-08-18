@@ -37,8 +37,15 @@ export interface LearnerUtteranceProps {
    * capability (§26), so styling them apart would invent a distinction the cognition layer
    * deliberately does not make. It rides on the element as a data attribute so a later question
    * ("do spoken answers score worse?") can be asked of the DOM without a second visual language.
+   *
+   * 🔴 `null` IS "NOT OBSERVED", AND IT IS A REAL CASE RATHER THAN A GAP. A learner who taps an
+   * option did not type, speak or write it, so every value of the union would be a false claim about
+   * how those words arrived. The default was `"typed"`, which is exactly the kind of quiet
+   * fabrication this codebase refuses in the evidence log, and it had no business being different in
+   * the DOM. When it is null the attribute is not emitted at all, so a query for spoken answers can
+   * never accidentally count a tap as one.
    */
-  via?: LearnerInputModality;
+  via?: LearnerInputModality | null;
 }
 
 export function LearnerUtterance({ children, className, via = "typed" }: LearnerUtteranceProps) {
@@ -53,7 +60,7 @@ export function LearnerUtterance({ children, className, via = "typed" }: Learner
         className,
       )}
       data-learner-utterance=""
-      data-via={via}
+      {...(via ? { "data-via": via } : {})}
     >
       {children}
     </p>

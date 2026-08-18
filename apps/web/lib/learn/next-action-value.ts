@@ -65,6 +65,11 @@ export type SelectionReason =
    *  `scaffold-decision.ts`. Carried on the trace so "why did Nemesis ask it this way" is answerable
    *  from the same record as "why did Nemesis ask it at all". */
   | "scaffold-narrowed"
+  /** The ask was staged as a discrimination between confusable options rather than as a production —
+   *  see `recognition-value.ts`. Its own entry rather than `scaffold-narrowed`, because narrowing a
+   *  question and changing what the learner has to DO are different decisions and a trace that
+   *  cannot tell them apart cannot answer "why was I shown a list?". */
+  | "options-offered"
   /** Demonstrated, eligible, and `retention-model.ts` predicts real decay since the last pass — worth
    *  more than an equally-eligible objective whose memory is barely touched. */
   | "increasingly-overdue";
@@ -416,6 +421,13 @@ export function value(input: ValueInput): ActionValue {
   // answer as "why did Nemesis ask it at all", and this is that answer's home in the trace.
   if (action.type === "retrieve" && action.rung !== "independent") {
     reasons.push("scaffold-narrowed");
+  }
+  // 🔴 THE SAME RULE FOR THE SAME REASON, AND ALSO NOT A MODIFIER. A recognition ask does not become
+  // worth more or less than the retrieval it replaced — the band and the modifiers above already
+  // scored the OBJECTIVE, and what form to ask it in was settled from the same evidence by
+  // `recognitionPreferred`. Weighting it here would be scoring one decision twice.
+  if (action.type === "recognise") {
+    reasons.push("options-offered");
   }
 
   return { reasons, score: score + clampToBand(delta) };

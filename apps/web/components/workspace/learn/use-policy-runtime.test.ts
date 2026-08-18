@@ -216,8 +216,13 @@ test("🔴 the scaffold rung reaches retrievalPromptFor, not just its default", 
   // reddens — confirmed by reverting the fix, running this file alone, and restoring it.
   const code = strip(await read("./use-policy-runtime.ts"));
 
-  const guardStart = code.indexOf('if (!decision || decision.action.type !== "retrieve"');
-  assert.notEqual(guardStart, -1, "the retrieve-only guard must still exist — it is what makes `.rung` well-typed below");
+  // 🔴 THE GUARD NOW NAMES BOTH KINDS OF ASK, AND IT IS STILL WHAT MAKES `.rung` WELL-TYPED BELOW.
+  // It used to read `decision.action.type !== "retrieve"`. A recognition task also mints a prompt, so
+  // the narrowing had to widen — but it must stay an ALLOW-LIST of the two asks rather than becoming
+  // "anything that is not an exposition", which would mint a prompt for `defer` the day somebody
+  // added a field to it, and a prompt id is the idempotency key for evidence.
+  const guardStart = code.indexOf('action.type !== "retrieve" && action.type !== "recognise"');
+  assert.notEqual(guardStart, -1, "the ask-only guard must still exist — it is what makes `.rung` and `.choices` well-typed below");
 
   const call = code.indexOf("setPrompt(retrievalPromptFor(", guardStart);
   assert.notEqual(call, -1, "the one place a RetrievalPrompt is minted must still exist, after the guard");
@@ -225,7 +230,46 @@ test("🔴 the scaffold rung reaches retrievalPromptFor, not just its default", 
 
   assert.match(
     statement,
-    /retrievalPromptFor\(decision, crypto\.randomUUID\(\), decision\.action\.rung\)/,
+    /retrievalPromptFor\(decision, crypto\.randomUUID\(\), action\.rung\)/,
     "the rung teaching-policy.ts chose for this retrieval must be passed through — omitting it is not a compile error, it is every retrieval silently staying independent",
   );
+});
+
+test("🔴 the options the policy chose reach the recognition prompt, never rebuilt at mint time", async () => {
+  // 🔴 THE SAME DEFECT AS THE RUNG, ONE ACTION OVER, AND WORSE IF IT LANDS. `recognitionPromptFor`
+  // takes the set as an argument, so a call site that built its own would compile — and could come
+  // back with a DIFFERENT set, or with none, while the row still recorded `scaffoldRung:
+  // "recognition"`. That is a durable claim that the answer was on screen when it may not have been.
+  //
+  // 🔴 CALIBRATION: replace `action.choices` in that call with a freshly built set (or drop the
+  // argument, which is a compile error) and this test reddens on its own.
+  const code = strip(await read("./use-policy-runtime.ts"));
+  const call = code.indexOf("setPrompt(recognitionPromptFor(");
+  assert.notEqual(call, -1, "the one place a recognition prompt is minted must exist");
+  const statement = code.slice(call, code.indexOf(";", call));
+  assert.match(
+    statement,
+    /recognitionPromptFor\(decision, crypto\.randomUUID\(\), action\.choices\)/,
+    "the options must come off the action the controller decided with, never be rebuilt here",
+  );
+});
+
+test("🔴 a tapped option never passes through the non-attempt guards that free text does", async () => {
+  // 🔴 THE BUG THIS PREVENTS IS SILENT AND DURABLE. `isAdmissionOfNotKnowing` and `isEchoOfTheCue`
+  // both run inside `submit` before anything else, because a TYPED answer can fail to be an attempt
+  // at all. A tap always is one. Routed through `submit`, an option whose text overlapped the cue
+  // would be written as "an opportunity passed and nothing was produced" over a real discrimination.
+  //
+  // 🔴 CALIBRATION: make `choose` delegate to `submit(option, "typed")` and this test reddens.
+  const code = strip(await read("./use-policy-runtime.ts"));
+  const start = code.indexOf("const choose = useCallback(");
+  assert.notEqual(start, -1, "the tap entry point must exist and must be its own callback");
+  const body = code.slice(start, code.indexOf("const admitUnknown", start));
+  assert.doesNotMatch(body, /isAdmissionOfNotKnowing|isEchoOfTheCue/, "a tap is always an attempt");
+  assert.doesNotMatch(body, /\bsubmit\(/, "a tap must not be routed through the typed-answer path");
+  // And it records the option's TEXT, which is the whole diagnostic — see `outcomeForSelection`.
+  assert.match(body, /responseText: option/, "the option that was tapped must be stored verbatim");
+  // 🔴 NO MODALITY. A tap is not typed, spoken or written, and the column is constrained to those
+  // three. Writing one would be a false claim about how the answer arrived.
+  assert.doesNotMatch(body, /responseModality:/, "a tap has no input modality to record");
 });
