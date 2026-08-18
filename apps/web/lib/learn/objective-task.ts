@@ -28,6 +28,8 @@ import type { EvidenceToRecord, StoredObjective } from "./learner-store";
 import type { ClassContrast } from "./wide-grid-classification";
 import { stagedRung } from "./scaffold-prompt";
 import type { ObjectiveEvidence, ScaffoldRung } from "./scaffold-rung";
+import { completionTaskFor } from "./completion-task";
+import { DIRECT_TASK, type TaskForm } from "./task-form";
 import type { TeachingStrategyId } from "./teaching-strategy";
 
 /** Which evaluator's judgement this is. Recorded on every row: evidence from a different judge is
@@ -248,6 +250,26 @@ export interface RetrievalPrompt {
    * claim unaided production for a question that showed the answer.
    */
   choices?: ChoiceSet;
+  /**
+   * Which KIND of task this is, alongside how much help it carries.
+   *
+   * 🔴 NOT THE SAME QUESTION AS `rung`, AND KEEPING THEM APART IS WHAT MAKES BOTH HONEST. `rung`
+   * says how much of THIS ANSWER was on screen. This says what was being asked at all: the
+   * material's own question, or a faded solution with a gap in it. A completion is a real production
+   * AND an assisted one, and one ordered field cannot say both.
+   *
+   * 🔴 REQUIRED, for the reason `rung` is required. Absent would mean "nobody recorded the form",
+   * which is true of historical rows and false of anything this runtime mints from now on.
+   */
+  form: TaskForm;
+  /**
+   * The part of a valid solution already on screen, in order, when the task is a completion.
+   *
+   * 🔴 ABSENT MEANS NOTHING WAS SUPPLIED. It is the renderer's whole input for the faded example —
+   * a completion whose `given` never reached the Canvas would be an ordinary question recorded as
+   * an assisted one, which is the precise direction of lie the rung ladder exists to prevent.
+   */
+  given?: readonly string[];
 }
 
 /**
@@ -463,10 +485,17 @@ export function promptTargeting(input: {
   /** The options on screen, when there are any. 🔴 Absent means free response, which is every prompt
    *  this runtime built before recognition existed — see `RetrievalPrompt.choices`. */
   choices?: ChoiceSet;
+  /** Which kind of task this is. 🔴 Defaults to `direct` because that is what every caller that
+   *  does not say is asking: the material's own question, unchanged. A completion has to say so,
+   *  exactly as a scaffolded prompt has to state its own rung. */
+  form?: TaskForm;
+  /** The part of a solution already on screen — completions only. */
+  given?: readonly string[];
 }): RetrievalPrompt {
   return {
     expectedAnswer: input.expectedAnswer,
     expectedEvidence: input.expectedEvidence ?? { referenceAnswer: input.expectedAnswer },
+    form: input.form ?? DIRECT_TASK,
     id: input.id,
     operation: input.operation,
     prompt: input.prompt,
@@ -475,6 +504,7 @@ export function promptTargeting(input: {
     targets: input.targets,
     task: input.task,
     ...(input.choices ? { choices: input.choices } : {}),
+    ...(input.given ? { given: input.given } : {}),
   };
 }
 
@@ -528,6 +558,73 @@ export function recognitionPromptFor(
  * says how much was on offer, never whether the learner needed it.
  */
 export const OPTIONS_ON_SCREEN = 1;
+
+/**
+ * Retrieval with part of a valid solution on screen.
+ *
+ * 🔴 THE SAME NUMBER AS `OPTIONS_ON_SCREEN`, AND THAT IS NOT A COPY-PASTE. `scaffoldingLevel` counts
+ * how much assistance was AVAILABLE, and both tasks put exactly one assist on the table: a set of
+ * options in one, a partly worked solution in the other. WHICH assist it was is `scaffoldRung`'s
+ * question and `taskForm`'s, and both are recorded. Collapsing the two constants into one shared name
+ * would be the mistake — they are equal today and there is no rule saying they must stay equal.
+ */
+export const SOLUTION_PART_ON_SCREEN = 1;
+
+/**
+ * A faded worked example: part of a valid solution, one piece withheld.
+ *
+ * 🔴 IT REFUSES RATHER THAN FALLING BACK TO THE ORDINARY QUESTION. Returning `retrievalPromptFor`
+ * when the knowledge has no structure to fade would put an `independent` task on screen while the
+ * decision that produced it said "completion" — and the row would then record whichever of the two
+ * the caller happened to trust. A null forces the caller to say so, and `strategy-llm-teacher.ts`
+ * turns it into a named refusal the analytics can count.
+ */
+export function completionPromptFor(
+  resolved: { objective: StoredObjective; knowledge: KnowledgeObject },
+  id: string,
+): RetrievalPrompt | null {
+  const built = completionTaskFor(resolved);
+  if (!built.task) return null;
+  const task = built.task;
+  return promptTargeting({
+    expectedAnswer: task.expectedAnswer,
+    expectedEvidence: {
+      referenceAnswer: task.expectedAnswer,
+      ...(task.requiredConcepts.length > 0 ? { requiredConcepts: [...task.requiredConcepts] } : {}),
+    },
+    form: "completion",
+    given: task.given,
+    id,
+    operation: resolved.objective.capability,
+    prompt: task.question,
+    // 🔴 THE RUNG AND THE FORM ARE SET TOGETHER HERE AND NOWHERE ELSE, for the reason
+    // `recognitionPromptFor` sets its pair together: a completion recorded at `independent` would
+    // claim unaided production of something that had most of its solution printed above it.
+    rung: "completion",
+    scaffoldingLevel: SOLUTION_PART_ON_SCREEN,
+    targets: [targetFor(resolved.objective)],
+    task: taskNameFor(resolved),
+  });
+}
+
+/**
+ * The same prompt, recorded as what it turned out to be: answered before the options were shown.
+ *
+ * 🔴🔴 INVARIANT 11 — "a task must record the assistance that was ACTUALLY AVAILABLE when answered",
+ * not the assistance the controller planned to give. A recognition screen that shows its question
+ * first and its options only on request has two possible histories, and the runtime knows which one
+ * happened: if the learner produced the answer with nothing on screen but the question, the row that
+ * says `recognition` is false — it under-credits a real unaided production and would have the policy
+ * come back to ask for one that has already been given.
+ *
+ * 🔴 IT DROPS THE OPTIONS AS WELL AS THE RUNG. Leaving `choices` attached would leave a prompt
+ * claiming `independent` while carrying the answer set, which is the pairing `RetrievalPrompt.choices`
+ * spends its own comment forbidding.
+ */
+export function asUnaidedProduction(prompt: RetrievalPrompt): RetrievalPrompt {
+  const { choices: _dropped, ...rest } = prompt;
+  return { ...rest, rung: "independent", scaffoldingLevel: UNSUPPORTED_RETRIEVAL };
+}
 
 /**
  * Every objective on this canvas that could be asked with options, and what those options would be.
@@ -942,6 +1039,10 @@ function rowForTarget(input: {
     // The rung the TASK set, identical on every row this submission writes: the learner answered
     // one question at one demand, whatever it turned out to establish.
     scaffoldRung: prompt.rung,
+    // 🔴 WHICH KIND OF TASK IT WAS, BESIDE HOW MUCH HELP IT CARRIED. Without it a completion and an
+    // ordinary cued question are one row shape, and "did faded examples lead anywhere?" is a
+    // question the durable record cannot answer no matter how long it runs. See task-form.ts.
+    taskForm: prompt.form,
     // 🔴 THE WHOLE MEASURED DURATION ON EVERY ROW, NEVER DIVIDED AMONG THEM. The learner spent that
     // long producing this answer; they did not spend a quarter of it on each link. Splitting it
     // would be an interpretation, and a wrong one — the observation is the performance's.

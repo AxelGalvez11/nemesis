@@ -16,6 +16,7 @@ import type { KnowledgeObject } from "./knowledge-types";
 import { ERROR_TYPES, type ErrorType, type LearnerInputModality } from "./canvas-model";
 import { objectivesForKnowledge, type LearningObjective, type ObjectiveCapability } from "./learning-objective";
 import { readRung, type ObjectiveEvidence, type ScaffoldRung } from "./scaffold-rung";
+import { readTaskForm, type TaskForm } from "./task-form";
 import { isTeachingStrategy, type TeachingStrategyId } from "./teaching-strategy";
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 
@@ -394,6 +395,9 @@ export interface EvidenceToRecord {
    * questions must stay rewritable.
    */
   scaffoldRung?: ScaffoldRung | null;
+  /** Which kind of task the response was produced against — see task-form.ts. Null means the row
+   *  predates the column; it never means "the ordinary question". */
+  taskForm?: TaskForm | null;
   /**
    * What this response said about THIS objective specifically.
    *
@@ -468,6 +472,7 @@ export function evidenceRow(userId: string, evidence: EvidenceToRecord): Record<
     response_modality: evidence.responseModality ?? null,
     response_text: evidence.responseText ?? null,
     scaffold_rung: evidence.scaffoldRung ?? null,
+    task_form: evidence.taskForm ?? null,
     scaffolding_level: evidence.scaffoldingLevel ?? null,
     task_id: evidence.taskId ?? null,
     // 🔴 `?? null` MEANS "NO ARM RECORDED", AND IT MUST NEVER BECOME `?? DEFAULT_STRATEGY`. Writing
@@ -534,7 +539,7 @@ export const EVIDENCE_COLUMNS: readonly string[] = [
  * from the write shape, and this literal cannot drift from the derived list.
  */
 export const EVIDENCE_SELECT =
-  "id,objective_id,canvas_id,confidence,demonstration_obtained,error_type,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_modality,response_text,scaffold_rung,scaffolding_level,task_id,teaching_strategy,verdict";
+  "id,objective_id,canvas_id,confidence,demonstration_obtained,error_type,evaluator_version,misconceptions,objective_evidence,occurred_at,operation,response_id,response_latency_ms,response_modality,response_text,scaffold_rung,scaffolding_level,task_form,task_id,teaching_strategy,verdict";
 
 export async function recordEvidence(userId: string | null, evidence: EvidenceToRecord): Promise<boolean> {
   if (!userId) return false;
@@ -621,6 +626,10 @@ export function evidenceFromRow(
     // `taught` and making every entailment check pass. `readRung` returns null instead, which every
     // consumer already has to handle because rows written before this column exist.
     ...(readRung(row.scaffold_rung) === null ? {} : { scaffoldRung: readRung(row.scaffold_rung)! }),
+    // 🔴 VALIDATED ON THE WAY OUT, NOT BY A CONSTRAINT — the asymmetry `error_type` already
+    // established. A task taxonomy is expected to grow, and a value the database refused would cost
+    // the whole demonstration rather than one field.
+    ...(readTaskForm(row.task_form) === null ? {} : { taskForm: readTaskForm(row.task_form)! }),
     ...(row.objective_evidence == null
       ? {}
       : { objectiveEvidence: row.objective_evidence as ObjectiveEvidence }),

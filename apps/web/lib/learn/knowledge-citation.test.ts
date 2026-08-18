@@ -261,9 +261,18 @@ test("🔴 the surface renders it, and renders NOTHING when there is nothing hon
   // that remembers it would have made it go red for the wrong one, and the tempting fix is to bump
   // the number. Counting both sides means adding a screen can only fail this when the screen is
   // actually missing its disclosure.
-  const claimScreens = (VIEW.match(/\{decision\.objective\.cue\} → \{decision\.objective\.answer\}/g) ?? []).length;
+  //
+  // 🔴 AND A CLAIM IS NOT ONLY A `cue → answer` LINE ANY MORE. The worked-example screen puts the
+  // material's own reasoning on the page, step by step, and shows no cue-arrow-answer at all — so
+  // counting only that literal would have let the newest claim-bearing screen ship with no
+  // disclosure while this test stayed green. Both shapes are counted, and the two-sided equality is
+  // kept: adding a screen can still only fail this when the screen is actually missing its trail.
+  const cueAndAnswer = (VIEW.match(/\{decision\.objective\.cue\} → \{decision\.objective\.answer\}/g) ?? []).length;
+  const workedSteps = (VIEW.match(/modelled\.modelled\.steps\.map/g) ?? []).length;
+  const claimScreens = cueAndAnswer + workedSteps;
   const trails = (VIEW.match(/<SourceTrail citations=\{citations\} \/>/g) ?? []).length;
-  assert.ok(claimScreens >= 2, `expected the claim-bearing screens to still exist, found ${claimScreens}`);
+  assert.ok(cueAndAnswer >= 2, `expected the claim-bearing screens to still exist, found ${cueAndAnswer}`);
+  assert.equal(workedSteps, 1, "the worked example must still render the grounded steps it was built from");
   assert.equal(trails, claimScreens, "every screen that shows a claim must disclose where it came from");
   // 🔴 NO FALLBACK, AND THIS IS THE HALF THAT PROTECTS THE CONTRACT. `groundCanonicalAnchor`
   // returning null is the function saying it cannot honestly point at anything; a placeholder would

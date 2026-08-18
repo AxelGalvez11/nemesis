@@ -96,14 +96,24 @@ test("🔴 stepping the ladder REFUSES at the ends rather than silently clamping
   assert.equal(harder("cued"), "narrowed");
 });
 
-test("🔴 the two rungs nobody built are REFUSED, not guessed at", () => {
-  // `recognition` needs options on screen, which needs distractors and a surface that does not
-  // exist. `taught` means Nemesis supplies the answer, which is `show_correction` — duplicating it
-  // here would be a retrieval that gives itself away.
+test("🔴 the rungs this module cannot word are REFUSED, not guessed at", () => {
+  // `recognition` needs options on screen, which needs distractors and a surface this module has no
+  // access to. `taught` means Nemesis supplies the answer, which is `show_correction` — duplicating
+  // it here would be a retrieval that gives itself away.
   assert.equal(rungIsWordable("recognition"), false);
   assert.equal(rungIsWordable("taught"), false);
+  // 🔴 AND `completion` IS THE THIRD, FOR A REASON WORTH STATING: it is not the base question with
+  // different words at all. A faded worked example has to be BUILT from the knowledge object's own
+  // structure — an ordered run, a directed relation — and where that structure is missing the task
+  // must refuse rather than invent a procedure. Wording it here would mean this module inventing
+  // one, and `easier`/`harder` would then walk a learner onto a rung with nothing behind it.
+  assert.equal(rungIsWordable("completion"), false);
+  assert.equal(promptAtRung({ base: "x", objective: association, rung: "completion" }), null);
   assert.equal(promptAtRung({ base: "x", objective: association, rung: "recognition" }), null);
   assert.deepEqual([...wordableRungs()], ["cued", "narrowed", "independent"]);
+  // The ladder walk is unchanged by the new rung, so no existing scaffolding decision moves.
+  assert.equal(easier("cued"), null);
+  assert.equal(harder("independent"), null);
 });
 
 test("🔴🔴 the rung reaches the REAL prompt builder, not just this module", () => {

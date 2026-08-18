@@ -146,15 +146,35 @@ test("🔴 the retrieval screen carries the question and NOTHING else", async ()
   // the answer is produced and costs the very thing being measured. Every addition here arrives
   // reasonable — a hint, a counter, a "1 of 4", a skip button — and each one is another thing to
   // read first. The rule is easier to hold than to relitigate: this branch renders one heading.
+  //
+  // 🔴 ONE EXCEPTION EXISTS AND IT IS NOT A LOOSENING. A completion task IS a partly worked solution
+  // with a gap in it — the supplied part is the question, not decoration around it, and the row it
+  // writes records the `completion` rung precisely because that part was on screen. So the rule is
+  // now stated in two halves: the shared ask screen may render the supplied solution, and it may
+  // render NOTHING ELSE. The check below splits the branch at the guard and holds the original rule
+  // over everything outside it, so a hint, a counter or a skip button is caught exactly as before.
   const source = await readFile(new URL("./canvas-policy-view.tsx", import.meta.url), "utf8");
   const from = source.indexOf('decision.action.type === "retrieve"');
   const to = source.indexOf("if (decision.action.type ===", from + 10);
   assert.ok(from !== -1 && to > from, "the retrieve branch moved");
   const branch = source.slice(from, to);
 
+  const guardAt = branch.indexOf("prompt.given && prompt.given.length > 0 && (");
+  assert.notEqual(guardAt, -1, "the supplied part of a completion no longer reaches the screen");
+  const suppliedEndsAt = branch.indexOf(")}", guardAt);
+  assert.ok(suppliedEndsAt > guardAt, "the supplied-solution block lost its shape");
+  const outsideTheSuppliedPart = branch.slice(0, guardAt) + branch.slice(suppliedEndsAt);
+
   for (const forbidden of ["<button", "<p ", "<ul", "<li", "<span"]) {
-    assert.equal(branch.includes(forbidden), false, `the retrieval screen grew a ${forbidden}`);
+    assert.equal(
+      outsideTheSuppliedPart.includes(forbidden),
+      false,
+      `the retrieval screen grew a ${forbidden}`,
+    );
   }
+  // And the supplied part really is conditional: an unconditional render would put an empty box
+  // above every ordinary question, which is the same "read something first" cost in a new shape.
+  assert.match(branch, /\{prompt\.given && prompt\.given\.length > 0 && \(/);
   assert.match(branch, /text-center/, "the question must be centred, not a left-aligned document section");
 });
 
