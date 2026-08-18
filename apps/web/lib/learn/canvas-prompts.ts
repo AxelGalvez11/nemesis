@@ -11,6 +11,7 @@
 import { EXAM_ITEM_RULES } from "@/lib/workspace/item-writing";
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
+import { focusMaterial, type FocusQuery } from "./canvas-focus-material";
 import { groundingBlock } from "./canvas-grounding";
 import { CAUSAL_EXTRACTION_PROMPT } from "./causal-extraction-contract";
 import { SEMANTIC_EXTRACTION_PROMPT } from "./semantic-grounded";
@@ -81,6 +82,33 @@ const TERMS_RULE =
   "the sentence containing it. Do not name ordinary words, words the document has already introduced, or words that " +
   "are merely long.";
 
+/**
+ * What "simpler" asks for. Named here rather than only inside `SELECTION_INTENT` because it is
+ * also half of `SIMPLIFY_RULE`, and two copies of an instruction are two instructions the moment
+ * one is edited.
+ */
+const SELECTION_INTENT_SIMPLER =
+  "Rewrite the passage below so it is easier to follow, keeping every technical term that the learner needs " +
+  "and every claim the original made. Same meaning, plainer construction. Do not add new information and do not remove content.";
+
+/** The contract every selection answer follows, identical on every selection. */
+const SELECTION_ANSWER_RULE =
+  "If the attached material defines this itself, prefer that meaning and set \"fromSource\" to the source title. " +
+  "If it does not, answer from established knowledge and leave \"fromSource\" empty — never imply the learner's " +
+  "own material said something it did not.\n\n" +
+  'Return JSON: {"answer":"…","fromSource":"…"}';
+
+/** "Simpler" — the one selection action that edits the page. Identical on every use. */
+const SIMPLIFY_RULE =
+  `${SELECTION_INTENT_SIMPLER}\n\n` +
+  "You are rewriting one passage and nothing else. Do not write a heading. Do not add a second paragraph. " +
+  "Do not comment on the change.\n\n" +
+  'Return JSON: {"content":"…"}';
+
+/** Answering a question about one block. Identical on every use. */
+const EXPLAIN_BLOCK_RULE =
+  "Answer in at most three sentences, plainly. Return JSON: {\"answer\":\"…\"}";
+
 const VISUAL_RULE =
   '"visual" is optional and is a SEMANTIC REQUEST, never rendering code. Use it only when a visual makes a relationship materially easier to understand than the prose. ' +
   'Allowed shapes are: {"kind":"equation","latex":"…","learningGoal":"…","caption":"…"}; ' +
@@ -93,12 +121,83 @@ const BLOCK_SHAPE =
   'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…],"visual":{…}}. ' +
   `Do not include an id — ids are assigned by the application.\n\n${TERMS_RULE}\n\n${VISUAL_RULE}`;
 
+/**
+ * The system message for one canvas job: the identity, then this job's INVARIANT rules.
+ *
+ * 🔴🔴 THIS IS A CACHE DECISION AND IT IS WORTH SAYING WHY IT IS SAFE. Every provider Nemesis routes
+ * to prices a request by its LONGEST COMMON PREFIX with a recent one — DeepSeek's cache-hit input
+ * rate is `0.0028` against `0.14` per million, fifty times cheaper, and `llm-cost.ts` already bills
+ * the two shares separately. What decides how much of a turn qualifies is how much STABLE text sits
+ * ahead of the first volatile character.
+ *
+ * Before this, every canvas prompt put a single ~600-character identity in the system message and
+ * then opened the user message with the most volatile sentence in the whole request — the learner's
+ * name for their canvas, the objective they are on, the words they just typed. Everything after
+ * that was uncacheable, including roughly 2,500 characters of block shape, term rules, visual rules
+ * and citation rules that are BYTE-IDENTICAL on every single turn of that job.
+ *
+ * 🔴 NOTHING IS REWORDED TO ACHIEVE THIS, AND NOTHING VOLATILE IS FROZEN. The strings moved are the
+ * same strings, in the same order, saying the same thing to the same model; only the role they
+ * arrive in changed. The owner's constraint — *"do not contort prompts in ways that reduce teaching
+ * quality merely to achieve cache hits"* — is met by that being the whole of the change. Anything
+ * that varies per turn (a scope list of block ids, an objective id inside a JSON schema, the
+ * learner's level) stays exactly where it was, in the user message, because freezing it would be a
+ * teaching change wearing a cost justification.
+ *
+ * 🔴 AND `CANVAS_SYSTEM` STAYS FIRST FOR EVERY JOB, so the shared identity is a common prefix
+ * ACROSS jobs and not merely within one. A learner who reads a block, asks for it simpler, then
+ * answers a question shares that much of three different prompts.
+ */
+function canvasSystem(...invariant: readonly string[]): WireMsg {
+  return { content: [CANVAS_SYSTEM, ...invariant.filter(Boolean)].join("\n\n"), role: "system" };
+}
+
 function materialSection(sources: readonly CanvasSource[], topic: string): string {
   const grounding = groundingBlock(sources);
   if (grounding) return `MATERIAL (cite these excerpt ids):\n\n${grounding}`;
   // Topic-first learning (§6B). No material means no citations are possible, and saying so
   // is what stops the model producing citation-shaped decoration.
   return `There is no attached material. The learner asked to be taught: "${topic}". Write from established knowledge in the field and leave every sourceRefs list empty.`;
+}
+
+/**
+ * The material for ONE TURN, rather than the whole lecture.
+ *
+ * 🔴🔴 THE DIFFERENCE BETWEEN THIS AND `materialSection` IS THE DIFFERENCE BETWEEN A COST THAT
+ * SCALES WITH THE DOCUMENT AND ONE THAT SCALES WITH THE QUESTION. `groundingBlock` will send up to
+ * 120,000 characters — about thirty thousand tokens — and it was being sent on every correction,
+ * every "explain this", every "put it more simply", for the whole life of a canvas. Correcting one
+ * wrong answer about one objective does not need the other forty pages.
+ *
+ * 🔴 THREE BUILDERS STILL CALL `materialSection` AND MUST KEEP DOING SO: the lesson, the knowledge
+ * territory and the causal extraction each read the WHOLE document once, to produce something
+ * durable that every later turn retrieves instead of regenerating. That is the shape the owner
+ * asked for — *"cache what is stable, retrieve instead of regenerate"* — and narrowing those three
+ * would not save money, it would make the durable thing wrong.
+ *
+ * 🔴 AND THE OMISSION IS STATED, EXACTLY AS `groundingBlock` STATES ITS OWN. A model told to cite
+ * the material, holding a subset of it, and not told that it is a subset, is a model set up to
+ * invent a citation for the part it cannot see.
+ */
+function focusedMaterialSection(
+  sources: readonly CanvasSource[],
+  topic: string,
+  query: FocusQuery,
+): string {
+  if (sources.length === 0) return materialSection(sources, topic);
+  const focused = focusMaterial(sources, query);
+  const narrowed = focused.sources.map((entry) => ({ ...entry.source, excerpts: [...entry.excerpts] }));
+  const grounding = groundingBlock(narrowed);
+  if (!grounding) return materialSection(sources, topic);
+  return (
+    `MATERIAL (cite these excerpt ids):\n\n${grounding}` +
+    (focused.omitted > 0
+      ? `\n\n(This is the part of the material that relates to what you are being asked to do. ` +
+        `${focused.omitted} further excerpt${focused.omitted === 1 ? "" : "s"} of the learner's material ` +
+        `${focused.omitted === 1 ? "was" : "were"} not included. Do not cite an id you cannot see, and do not ` +
+        `claim to have covered material you were not shown.)`
+      : "")
+  );
 }
 
 // -------------------------------------------------------------------- lesson
@@ -120,7 +219,7 @@ export function lessonMessages(input: {
   sources: readonly CanvasSource[];
 }): WireMsg[] {
   return [
-    { content: CANVAS_SYSTEM, role: "system" },
+    canvasSystem(BLOCK_SHAPE, CITATION_RULE),
     {
       content:
         `Write a study document that teaches ${input.topic ? `"${input.topic}"` : "the attached material"}.\n\n` +
@@ -136,7 +235,6 @@ export function lessonMessages(input: {
         "Then write 8-25 blocks. Open with a heading, then the single idea everything else depends on, then the substance, " +
         "then why it matters. Each block covers one thing. Use conceptIds to say which concepts a block teaches; every " +
         "concept you declare must be taught by at least one block.\n\n" +
-        `${BLOCK_SHAPE}\n\n${CITATION_RULE}\n\n` +
         'Return JSON: {"title":"…","concepts":[{"id":"k1","label":"…"}],"blocks":[…]}\n\n' +
         materialSection(input.sources, input.topic),
       role: "user",
@@ -186,20 +284,33 @@ export function commandMessages(input: {
         "Change as little as possible — edit the blocks the request is about and leave the rest alone.";
 
   return [
-    { content: CANVAS_SYSTEM, role: "system" },
+    canvasSystem(BLOCK_SHAPE, CITATION_RULE),
     {
       content:
         `The learner is reading "${input.canvasTitle}"${input.level ? ` at the "${input.level}" level` : ""} and said:\n\n"${input.command}"\n\n` +
         (scoped ? `They have highlighted this:\n\n${selection}\n\n` : "") +
         (empty ? "" : `Document outline (id, type, opening):\n${outline}\n\n`) +
         `Concepts: ${input.concepts.map((c) => `${c.id}=${c.label}`).join(", ") || "none"}\n\n` +
-        `${allowed}\n\n${BLOCK_SHAPE}\n\n${CITATION_RULE}\n\n` +
+        // 🔴 `allowed` STAYS IN THE USER MESSAGE. It names the block ids this turn may touch, which
+        // is the most volatile string in the request and the one thing that must never be frozen
+        // into a shared prefix: a scope from the previous turn is a licence to rewrite the wrong
+        // paragraph.
+        `${allowed}\n\n` +
         (empty
           ? 'Return JSON: {"operations":[{"operation":"replace_canvas","blocks":[{"type":"heading","content":"…","sourceRefs":[…]}]}]}\n\n'
           : 'Return JSON: {"operations":[{"operation":"replace_block","blockId":"…","content":"…","conceptIds":[…],"sourceRefs":[…]}]}\n' +
             'Use annotate_block ({"operation":"annotate_block","blockId":"…","note":"…"}) when the learner wants a clarification ' +
             "beside the text rather than a rewrite of it.\n\n") +
-        materialSection(input.sources, input.canvasTitle),
+        // 🔴 AN EMPTY CANVAS IS A LESSON BUILD AND KEEPS THE WHOLE DOCUMENT. Everything else is an
+        // EDIT — "add a section on X", "make this shorter" — and an edit is about the part of the
+        // material the request and the selection are about. Getting this backwards would either
+        // build a first page from a tenth of the lecture or ship the lecture on every keystroke.
+        (empty
+          ? materialSection(input.sources, input.canvasTitle)
+          : focusedMaterialSection(input.sources, input.canvasTitle, {
+              scope: input.selected,
+              texts: [input.command, ...input.selected.map((block) => block.content)],
+            })),
       role: "user",
     },
   ];
@@ -679,7 +790,7 @@ export function teachingMessages(input: {
   })();
 
   return [
-    { content: CANVAS_SYSTEM, role: "system" },
+    canvasSystem(BLOCK_SHAPE, CITATION_RULE),
     {
       content:
         `The learner is working on "${input.objectiveLabel}" in "${input.canvasTitle}".\n\n` +
@@ -690,14 +801,20 @@ export function teachingMessages(input: {
         `You may ONLY change these blocks: ${input.scope.map((b) => b.id).join(", ") || "(none — insert only)"}. ` +
         "Permitted operations: replace_block, insert_before, insert_after, annotate_block. " +
         "Any operation naming another block, or attempting to rewrite the whole page, will be discarded.\n\n" +
-        `${BLOCK_SHAPE}\n\n${CITATION_RULE}\n\n` +
         'Return JSON: {"operations":[…],"followUp":{"task":"explain","q":"…","expected":["…","…"],"why":"…","conceptId":"' +
         `${input.objectiveId}"}}\n\n` +
         "`followUp` is the next thing you ask them, and it must be answerable in their own words. `expected` " +
         "is 2-3 short checkable claims a complete answer makes — this is what the answer will be judged " +
         `against, so write claims and not topics. conceptId MUST be "${input.objectiveId}".\n\n` +
         `The blocks that currently teach this idea:\n${scopeText || "(none — the page has no block for it yet)"}\n\n` +
-        materialSection(input.sources, input.canvasTitle),
+        // 🔴 THE MATERIAL FOR THIS OBJECTIVE, NOT FOR THE LECTURE. The scope blocks already declare
+        // which excerpts they were built from, so the evidence that grounds this correction is
+        // named by the page itself; the objective, the question and the learner's own answer add
+        // the vocabulary. Sending the other forty pages would not make the correction better.
+        focusedMaterialSection(input.sources, input.canvasTitle, {
+          scope: input.scope,
+          texts: [input.objectiveLabel, input.prompt, input.said, ...input.demonstrated],
+        }),
       role: "user",
     },
   ];
@@ -738,7 +855,7 @@ export function relearnMessages(input: {
   misses: readonly RelearnMiss[];
 }): WireMsg[] {
   return [
-    { content: CANVAS_SYSTEM, role: "system" },
+    canvasSystem(BLOCK_SHAPE, CITATION_RULE),
     {
       content:
         `The learner has been tested on "${input.canvasTitle}" and these ideas did not land:\n` +
@@ -750,11 +867,19 @@ export function relearnMessages(input: {
         "the original length. Do not re-explain anything they already understood. Address the specific misunderstanding " +
         "each wrong answer reveals, rather than restating the original explanation.\n\n" +
         (input.level ? `${LEVEL_INSTRUCTIONS[input.level]}\n\n` : "") +
-        `${BLOCK_SHAPE}\n\n${CITATION_RULE}\n\n` +
         'Return JSON: {"operations":[{"operation":"replace_canvas","blocks":[…]}]} — one replace_canvas holding the ' +
         "short focused document. Use only the concept ids listed above.\n\n" +
         `The parts of the original document that covered these ideas:\n${documentText(input.relevantBlocks)}\n\n` +
-        materialSection(input.sources, input.canvasTitle),
+        // §14's hypothesis applied to the material as well as to the document: the relearn already
+        // sends only the blocks that covered what went wrong, and those blocks name the excerpts
+        // behind them.
+        focusedMaterialSection(input.sources, input.canvasTitle, {
+          scope: input.relevantBlocks,
+          texts: [
+            ...input.weak.map((concept) => concept.label),
+            ...input.misses.map((miss) => (miss.kind === "choice" ? `${miss.question} ${miss.correct}` : `${miss.question} ${miss.said}`)),
+          ],
+        }),
       role: "user",
     },
   ];
@@ -824,9 +949,7 @@ const SELECTION_INTENT: Record<string, string> = {
   explain:
     "Explain what this means in this context, in at most three short sentences. " +
     "Explain the idea, not the wording. Assume they have read the surrounding passage.",
-  simpler:
-    "Rewrite the passage below so it is easier to follow, keeping every technical term that the learner needs " +
-    "and every claim the original made. Same meaning, plainer construction. Do not add new information and do not remove content.",
+  simpler: SELECTION_INTENT_SIMPLER,
   example:
     "Give one concrete example that makes this clear, in at most three short sentences. " +
     "A specific case, not a restatement of the definition.",
@@ -848,7 +971,7 @@ export function selectionMessages(input: {
 }): WireMsg[] {
   const intent = SELECTION_INTENT[input.action] ?? SELECTION_INTENT.explain;
   return [
-    { content: CANVAS_SYSTEM, role: "system" },
+    canvasSystem(SELECTION_ANSWER_RULE),
     {
       content:
         `The learner is studying "${input.canvasTitle}"` +
@@ -858,11 +981,14 @@ export function selectionMessages(input: {
         `It appears in this sentence: "${input.surroundingText}"\n\n` +
         (input.passage ? `Which sits in this passage:\n${input.passage}\n\n` : "") +
         `${intent}\n\n` +
-        "If the attached material defines this itself, prefer that meaning and set \"fromSource\" to the source title. " +
-        "If it does not, answer from established knowledge and leave \"fromSource\" empty — never imply the learner's " +
-        "own material said something it did not.\n\n" +
-        'Return JSON: {"answer":"…","fromSource":"…"}\n\n' +
-        materialSection(input.sources, input.canvasTitle),
+        // 🔴 THE SELECTED WORDS ARE THE QUERY. A learner highlighting a term wants what THEIR
+        // material says about it, and their material says it in the excerpts that share its
+        // vocabulary. `scope` is empty here because a selection names no block — the surrounding
+        // sentence and the passage carry the whole of the signal.
+        focusedMaterialSection(input.sources, input.canvasTitle, {
+          scope: [],
+          texts: [input.selectedText, input.surroundingText, input.passage ?? "", input.objective ?? ""],
+        }),
       role: "user",
     },
   ];
@@ -876,19 +1002,19 @@ export function simplifyMessages(input: {
   sources: readonly CanvasSource[];
 }): WireMsg[] {
   return [
-    { content: CANVAS_SYSTEM, role: "system" },
+    canvasSystem(SIMPLIFY_RULE),
     {
       content:
         `The learner is reading "${input.canvasTitle}" and highlighted: "${input.selectedText}"\n\n` +
         `They asked for it to be put more simply. Rewrite THIS ONE passage:\n${input.block.content}\n\n` +
-        `${SELECTION_INTENT.simpler}\n\n` +
-        // Scope stated twice on purpose: the model reaches for a full-page rewrite whenever the
-        // instruction is ambiguous, and a rewrite of everything would silently undo the
-        // teaching loop's earlier local corrections.
-        "You are rewriting one passage and nothing else. Do not write a heading. Do not add a second paragraph. " +
-        "Do not comment on the change.\n\n" +
-        'Return JSON: {"content":"…"}\n\n' +
-        materialSection(input.sources, input.canvasTitle),
+        // Scope stated twice on purpose — see `SIMPLIFY_RULE`, which carries both statements: the
+        // model reaches for a full-page rewrite whenever the instruction is ambiguous, and a
+        // rewrite of everything would silently undo the teaching loop's earlier local corrections.
+        "" +
+        focusedMaterialSection(input.sources, input.canvasTitle, {
+          scope: [input.block],
+          texts: [input.selectedText, input.block.content],
+        }),
       role: "user",
     },
   ];
@@ -901,13 +1027,16 @@ export function explainBlockMessages(input: {
   sources: readonly CanvasSource[];
 }): WireMsg[] {
   return [
-    { content: CANVAS_SYSTEM, role: "system" },
+    canvasSystem(EXPLAIN_BLOCK_RULE),
     {
       content:
         `The learner is reading "${input.canvasTitle}" and asked: "${input.command}"\n\n` +
         `About this passage:\n${input.block.content}\n\n` +
-        "Answer in at most three sentences, plainly. Return JSON: {\"answer\":\"…\"}\n\n" +
-        materialSection(input.sources, input.canvasTitle),
+        "" +
+        focusedMaterialSection(input.sources, input.canvasTitle, {
+          scope: [input.block],
+          texts: [input.command, input.block.content],
+        }),
       role: "user",
     },
   ];
