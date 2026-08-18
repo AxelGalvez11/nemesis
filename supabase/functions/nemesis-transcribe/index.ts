@@ -203,6 +203,43 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
     usedSeconds: Number(reservation.used) || seconds,
   };
 
+  // ── The free rung, and it is the first one ────────────────────────────────
+  //
+  // 🔴🔴 THE OWNER'S CASCADE, AND ITS TOP STEP WAS MISSING: *"existing transcript available →
+  // on-device/native transcript available and trustworthy → use it → otherwise cheap batch STT."*
+  // Every rung below this one is a paid provider, and the whole ladder ran even when the device
+  // that made the recording had already produced a transcript for free. Audio is the most expensive
+  // lane in this product by a wide margin — roughly fifteen times the entire AI lane — so the
+  // cheapest transcription is the one nobody is billed for.
+  //
+  // 🔴 "TRUSTWORTHY" IS A MEASUREMENT, NOT A CLAIM. A client can send anything, and a caller that
+  // sent three words for a forty-minute lecture would get a lecture with three words in it and no
+  // way to tell. `deviceTranscriptUsable` checks density against the duration the SAME request
+  // declares, so a transcript that stopped early, was never granted permission, or came back empty
+  // falls through to a paid provider exactly as if it had never been offered.
+  //
+  // 🔴 AND IT SETTLES THE RESERVATION AT ZERO. `finalize_transcription_job` subtracts
+  // `reserved - actual` from the month's counter, so a device transcript gives the whole
+  // reservation back: a learner must not spend their paid transcription allowance on minutes
+  // nobody paid a provider for.
+  const deviceTranscript = typeof body.deviceTranscript === "string" ? body.deviceTranscript.trim() : "";
+  const deviceEngine = typeof body.deviceTranscriptEngine === "string"
+    ? body.deviceTranscriptEngine.trim().slice(0, 60)
+    : "";
+  if (deviceTranscriptUsable(deviceTranscript, seconds)) {
+    await patchJob(jobId, {
+      provider: "device",
+      provider_notes: note([`device: accepted (${deviceEngine || "unnamed engine"}, ${deviceTranscript.length} chars)`]),
+      transcript: deviceTranscript,
+    });
+    // Zero actual seconds: nothing was sent anywhere, so nothing is billed and the reservation is
+    // returned in full. `reportVoiceCost` is deliberately NOT called — there is no cost to report,
+    // and reporting a zero would put a provider on the bill that never ran.
+    await finalize({ p_actual_seconds: 0, p_job_id: jobId, p_status: "done" });
+    await removeObject(storagePath);
+    return json({ jobId, usage: { ...usage, usedSeconds: Math.max(0, usage.usedSeconds - seconds) } }, 200, req);
+  }
+
   // Signed URL outlives the AssemblyAI queue comfortably; the object itself is
   // deleted once the transcript is back (below for Groq, by /status for
   // AssemblyAI).
@@ -389,6 +426,38 @@ async function handleSubmit(req: Request, userId: string, body: Record<string, u
   await patchJob(jobId, { provider_notes: note(attempts) });
   await finalize({ p_error: "provider rejected the job", p_job_id: jobId, p_status: "error" });
   return json({ error: "The transcription provider is unavailable. Try again in a moment." }, 502, req);
+}
+
+/**
+ * Characters of transcript per second of audio, below which a device transcript is not one.
+ *
+ * 🔴 MEASURED FROM SPEECH ITSELF, NOT CHOSEN. Ordinary lecture delivery is roughly 130-160 words a
+ * minute and an English word averages about five characters with its space, so a real transcript
+ * runs 11-13 characters per second. Four is a third of the slowest end: it accepts a quiet
+ * seminar, a recording with long pauses and a language whose words are shorter, and it refuses the
+ * cases that actually happen — a transcript that stopped after the first minute, one the device
+ * never had permission to make, and one that is a placeholder.
+ *
+ * 🔴 IT IS A FLOOR, NEVER A CEILING. Too much text is not a reason to distrust a transcript.
+ */
+export const MIN_DEVICE_CHARS_PER_SECOND = 4;
+
+/** Below this many characters nothing is a lecture, however short the clip. */
+export const MIN_DEVICE_CHARS = 40;
+
+/**
+ * Is this client-supplied transcript worth using instead of paying for one? PURE.
+ *
+ * 🔴 THE FAILURE THIS PREVENTS IS SILENT AND PERMANENT. A short or empty device transcript accepted
+ * here becomes the lecture: the audio is deleted immediately afterwards, so there is no second
+ * chance to transcribe it properly. Falling through to a paid provider costs cents; accepting a
+ * three-word transcript costs the recording.
+ */
+export function deviceTranscriptUsable(transcript: string, seconds: number): boolean {
+  const text = transcript.trim();
+  if (text.length < MIN_DEVICE_CHARS) return false;
+  if (!Number.isFinite(seconds) || seconds <= 0) return false;
+  return text.length >= seconds * MIN_DEVICE_CHARS_PER_SECOND;
 }
 
 /** The attempt trail as one bounded line. Diagnostics must never be the reason a
