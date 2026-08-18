@@ -48,7 +48,7 @@ test("🔴 each form's yield and its cost in attention are both readable", () =>
       taskForm: "completion",
       verdict: "incorrect",
     }),
-    row({ atMs: START + 2000, id: "c", responseId: "p3", taskForm: "transfer" }),
+    row({ atMs: START + 2000, id: "c", responseId: "p3" }),
   ];
   const forms = summariseStrategy("llm_teacher", rows).taskForms;
 
@@ -60,10 +60,14 @@ test("🔴 each form's yield and its cost in attention are both readable", () =>
   // costing three times the thinking time is not obviously better, and without this the comparison
   // would silently be "which form gets more right answers".
   assert.equal(forms.byForm.completion.activeAttentionMs, 50_000);
-  assert.equal(forms.byForm.transfer.attempts, 1);
-  assert.equal(forms.byForm.transfer.activeAttentionMs, 10_000);
-  assert.equal(forms.byForm.direct.attempts, 0);
-  assert.equal(forms.byForm.direct.demonstrationRate, null, "no attempts is not a zero rate");
+  assert.equal(forms.byForm.direct.attempts, 1);
+  assert.equal(forms.byForm.direct.activeAttentionMs, 10_000);
+
+  // 🔴 AND A FORM WITH NO ATTEMPTS REPORTS `null`, NOT ZERO. A zero rate reads as "they got
+  // everything wrong at this form"; nothing was asked at it.
+  const untouched = summariseStrategy("llm_teacher", [rows[0]!]).taskForms;
+  assert.equal(untouched.byForm.direct.attempts, 0);
+  assert.equal(untouched.byForm.direct.demonstrationRate, null, "no attempts is not a zero rate");
 });
 
 test("🔴 'nothing recorded a form' is distinguishable from 'every task was direct'", () => {
@@ -106,27 +110,12 @@ test("🔴🔴 'did faded examples lead to unaided production?' is answerable fr
   assert.equal(stillOpen.completionThenIndependent, 0);
 });
 
-test("🔴 transfer by someone who had already produced it is counted apart from transfer by someone who had not", () => {
-  const afterProducing = [
-    row({ atMs: START, id: "5", responseId: "p5" }),
-    row({ atMs: START + 3 * RETENTION_DELAY_MS, id: "6", responseId: "p6", taskForm: "transfer" }),
-  ];
-  const cold = [
-    row({ atMs: START, id: "7", objectiveIdentityKey: OTHER, responseId: "p7", taskForm: "transfer" }),
-  ];
-  const forms = summariseStrategy("llm_teacher", [...afterProducing, ...cold]).taskForms;
-  assert.equal(forms.byForm.transfer.demonstrations, 2);
-  // 🔴 AVERAGING THE TWO WOULD HIDE BOTH. Using a relation in a new case AFTER producing it in the
-  // old one is the thing worth having; doing it cold is a different and rarer event.
-  assert.equal(forms.transferAfterDirectDemonstration, 1);
-});
-
 test("🔴 the north-star ratio is still durable learning over active attention, not accuracy", () => {
   // Unchanged by any of this, and asserted here so the new per-form numbers cannot quietly become
   // the headline. A demonstration only counts as durable when a real delay preceded it.
   const spaced = [
     row({ atMs: START, id: "8", responseId: "p8" }),
-    row({ atMs: START + RETENTION_DELAY_MS, id: "9", responseId: "p9", taskForm: "transfer" }),
+    row({ atMs: START + RETENTION_DELAY_MS, id: "9", responseId: "p9" }),
   ];
   const summary = summariseStrategy("llm_teacher", spaced);
   assert.equal(summary.durableDemonstrations, 1);

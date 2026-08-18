@@ -179,19 +179,6 @@ export type TeachingAction =
    * a completion task recorded as something else; there is exactly one demand this action stages.
    */
   | { type: "complete"; objectiveId: string; because: string; rung: "completion" }
-  /**
-   * The same grounded relation, put to a case the material never stated.
-   *
-   * 🔴 THE RUNG IS `independent` AND THE TASK IS HARDER THAN THE ORDINARY ONE. Nothing about the
-   * answer is on screen — the question names a condition and never the consequence — so no
-   * assistance is claimed. What separates it from `retrieve` is not help, it is the CASE, and that
-   * lives in `taskForm` rather than on this ladder. See transfer-task.ts.
-   *
-   * 🔴 AND IT REFUSES WHERE THE RELATION WILL NOT CARRY. A transfer over knowledge that asserts no
-   * invertible direction would mean inventing a case and then judging the learner against the
-   * invention, which invariant 12 exists to forbid.
-   */
-  | { type: "transfer"; objectiveId: string; because: string; rung: "independent" }
   | { type: "advance"; because: string; objectiveId?: string };
 
 /**
@@ -247,7 +234,6 @@ export function expositionOf(action: TeachingAction): Exposition {
     // exposition would print a way past a question the learner has not answered, which is §38's
     // exact failure.
     case "complete":
-    case "transfer":
     case "defer":
     case "revisit":
     case "advance":
@@ -282,7 +268,6 @@ export function performanceOf(
     case "recognise":
       return { choices: action.choices, rung: action.rung };
     case "complete":
-    case "transfer":
       return { rung: action.rung };
     // Nothing is asked for. A worked example is read, an exposition is read, and the three holds
     // put nothing on screen at all.

@@ -15,10 +15,10 @@
 -- over-crediting skips a learner past something they cannot do.
 --
 -- 🔴 WHY `task_form` IS A SEPARATE COLUMN AND NOT ANOTHER RUNG. The rung is an ORDERED axis — how
--- much of this task's answer was on screen. A transfer probe has none of its answer on screen and is
--- HARDER than the ordinary question, so expressing it as a rung would mean inventing a step above
--- `independent`, and every `entails` comparison would then quietly credit a transfer pass with an
--- ordinary pass the learner never gave. Two columns, each saying one true thing.
+-- much of this task's answer was on screen. WHICH KIND of task was set is a different question, and
+-- a form added later may carry no assistance at all while still being a different task; folding the
+-- two into one ordered column would make every such form a claim about assistance it never gave.
+-- Two columns, each saying one true thing.
 --
 -- 🔴 AND `task_form` DELIBERATELY HAS NO CHECK CONSTRAINT, for the reason the `error_type` migration
 -- gives next door: a taxonomy of task kinds is expected to grow, and a value the database did not
@@ -55,7 +55,7 @@ alter table public.learner_evidence
   add column if not exists task_form text;
 
 comment on column public.learner_evidence.task_form is
-  'Which kind of task the response was produced against: direct (the material''s own question), completion (part of a valid solution on screen, one piece withheld), or transfer (the same grounded relation put to a case the source never stated). Null means no form was recorded — never inferred, never backfilled. Validated on read, not by a constraint, so an unknown value cannot fail the insert.';
+  'Which kind of task the response was produced against: direct (the material''s own question) or completion (part of a valid solution on screen, one piece withheld). Null means no form was recorded — never inferred, never backfilled. Deliberately unconstrained: the set is expected to grow, and validating on read rather than by a constraint means an unrecognised value costs one field instead of the whole demonstration.';
 
 comment on column public.learner_evidence.scaffold_rung is
   'At what cognitive demand the response was produced. Ordered, weakest first: taught < recognition < completion < cued < narrowed < independent. A property of the task, known before the learner answers. Null means not recorded and never means a rung.';

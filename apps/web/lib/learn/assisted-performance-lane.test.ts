@@ -32,7 +32,6 @@ import {
   completionPromptFor,
   evidenceForSubmission,
   judgementOf,
-  transferPromptFor,
 } from "./objective-task";
 import { createLlmTeacherStrategy, brief, type TeacherTransport } from "./strategy-llm-teacher";
 import { resolveStrategy, type TeachingContext } from "./teaching-strategy";
@@ -44,6 +43,7 @@ const NOW = new Date("2026-08-18T09:00:00.000Z");
 
 const VIEW = readFileSync(new URL("../../components/workspace/learn/canvas-policy-view.tsx", import.meta.url), "utf8");
 const RUNTIME = readFileSync(new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url), "utf8");
+const STORE = readFileSync(new URL("./learner-store.ts", import.meta.url), "utf8");
 
 function says(move: string, objective: string): TeacherTransport {
   return async () => ({
@@ -58,11 +58,11 @@ function context(objectives: readonly ResolvedObjective[], evidence: readonly Le
 
 // ── the controller can actually name them ───────────────────────────────────
 
-test("🔴 the model's word becomes the action, for all three moves", async () => {
+test("🔴 the model's word becomes the action, for both grounded moves", async () => {
   const cases = [
     { action: "worked_example", entry: resolved(ASSAY, 1), move: "model" },
     { action: "complete", entry: resolved(PLEADING, 2), move: "complete" },
-    { action: "transfer", entry: resolved(OHM), move: "transfer" },
+    { action: "complete", entry: resolved(OHM), move: "complete" },
   ] as const;
 
   for (const { action, entry, move } of cases) {
@@ -79,7 +79,7 @@ test("🔴🔴 an unsupported move is a NAMED refusal, never a quietly different
   // correction — when the grounded builder cannot produce a task. The learner would then be asked a
   // question nobody chose, and the row would record it as though it had been chosen.
   const glossary = resolved(association("g4", "novation", "substitution of a new contract"));
-  for (const move of ["model", "complete", "transfer"] as const) {
+  for (const move of ["model", "complete"] as const) {
     const strategy = createLlmTeacherStrategy(says(move, glossary.objective.identityKey));
     const outcome = await strategy.decide(context([glossary]));
     assert.equal(outcome.decision, null, `${move} produced a decision over material that cannot support it`);
@@ -93,26 +93,27 @@ test("🔴🔴 an unsupported move is a NAMED refusal, never a quietly different
 
 test("🔴 the controller is TOLD what the material can support, so refusals stay rare", () => {
   // 🔴 A FACT ABOUT THE SOURCE, NOT A TEACHING RULE. Nothing here says when to model or when to
-  // transfer; it says a two-column glossary has no process in it, which is true whatever the right
-  // move would be.
+  // complete; it says a two-column glossary has no process in it and no part that could be withheld
+  // without withholding the whole answer, which is true whatever the right move would be.
   const snapshot = teachingSnapshot(context([resolved(ASSAY, 1), resolved(OHM), resolved(association("g5", "estoppel", "a bar to resiling"))]));
   const [steps, relation, glossary] = snapshot.objectives;
 
   assert.equal(steps!.canBeModelled, true);
   assert.equal(steps!.canBeCompleted, true);
-  assert.equal(steps!.canBeTransferred, false, "an ordered run asserts no direction to carry to a new case");
 
-  assert.equal(relation!.canBeTransferred, true);
+  assert.equal(relation!.canBeModelled, true);
   assert.equal(relation!.canBeCompleted, true);
 
   assert.equal(glossary!.canBeModelled, false);
   assert.equal(glossary!.canBeCompleted, false);
-  assert.equal(glossary!.canBeTransferred, false);
 
   // And it reaches the words the model actually reads — a snapshot field no brief line prints is a
   // field the controller cannot see.
   assert.match(brief(steps!), /this material can also support: model, complete/);
   assert.match(brief(glossary!), /supports asking and telling only/);
+  // 🔴 AND THE ADVERTISEMENT NEVER NAMES A MOVE THE VOCABULARY DOES NOT HAVE. A brief that offered
+  // `transfer` would spend a turn per objective being refused for a verb that no longer exists.
+  assert.doesNotMatch(brief(relation!), /transfer/);
 });
 
 // ── the screen exists ───────────────────────────────────────────────────────
@@ -123,15 +124,13 @@ test("🔴 every new action has a branch that paints it", () => {
   // just decided to teach them something.
   assert.match(VIEW, /decision\.action\.type === "worked_example"/);
   assert.match(VIEW, /decision\.action\.type === "complete"/);
-  assert.match(VIEW, /decision\.action\.type === "transfer"/);
   // The worked example paints the demonstration it was built from, rather than the claim.
   assert.match(VIEW, /modelled\.modelled\.steps\.map/);
   // The completion paints the part of the solution that was supplied.
   assert.match(VIEW, /\{prompt\.given && prompt\.given\.length > 0 && \(/);
 
-  // And the runtime mints a prompt for the two that ask for something.
+  // And the runtime mints a prompt for the one that asks for something.
   assert.match(RUNTIME, /completionPromptFor\(decision, crypto\.randomUUID\(\)\)/);
-  assert.match(RUNTIME, /transferPromptFor\(decision, crypto\.randomUUID\(\)\)/);
 });
 
 test("🔴 the worked example the controller chose is the one the screen can build", () => {
@@ -179,38 +178,13 @@ test("🔴🔴 a completion answer changes what the controller sees next", async
   assert.match(brief(after), /last asked at demand: completion/);
 });
 
-test("🔴🔴 a transfer answer is visible to the controller as transfer, not as another right answer", async () => {
-  const entry = resolved(OHM);
-  const key = entry.objective.identityKey;
-  const prompt = transferPromptFor(entry, "p-2")!;
-  const readBack = evidenceForSubmission({
-    canvasId: "c1",
-    judgement: judgementOf([{ objectiveIdentityKey: key, verdict: "strong" }]),
-    occurredAt: NOW.toISOString(),
-    prompt,
-    responseText: "the current rises again, since the resistance was what suppressed it",
-    teachingStrategy: "llm_teacher",
-  }).map((row, index) => evidenceFromRow({ ...evidenceRow("user-1", row), id: `t${index}` }, key));
-
-  const after = teachingSnapshot(context([entry], readBack)).objectives[0]!;
-  assert.equal(after.transferAttempts, 1);
-  assert.equal(after.transferDemonstrations, 1);
-  assert.match(after.state.status, /correct/);
-  assert.match(brief(after), /met 1 cases the material never stated, and got 1 of them right/);
-
-  // 🔴 CALIBRATION: drop `taskForm: prompt.form` from `rowForTarget` in objective-task.ts and this
-  // assertion reddens while every verdict-shaped assertion above stays green — which is exactly the
-  // shape of the loss it protects against.
-  assert.equal(readBack[0]!.taskForm, "transfer");
-});
-
-test("🔴 one transfer answer credits ONE objective, and not its neighbours", () => {
-  // 🔴 THE FAN-OUT INVARIANT, ON THE NEWEST TASK FORM. A transfer probe is one question about one
-  // relation; a runtime that spread its verdict across the canvas would credit relations the learner
-  // never touched, and the record would say they had used ideas they had never met.
-  const asked = resolved(OHM);
-  const untouched = resolved(PHARMACOKINETICS);
-  const prompt = transferPromptFor(asked, "p-3")!;
+test("🔴 one completion answer credits ONE objective, and not its neighbours", () => {
+  // 🔴 THE FAN-OUT INVARIANT, ON THE NEWEST TASK FORM. A completion is one question about one
+  // objective; a runtime that spread its verdict across the canvas would credit steps the learner
+  // never supplied, and the record would say they had produced work they never did.
+  const asked = resolved(PLEADING, 2);
+  const untouched = resolved(ASSAY, 1);
+  const prompt = completionPromptFor(asked, "p-3")!;
   assert.equal(prompt.targets.length, 1);
   assert.equal(prompt.targets[0]!.identityKey, asked.objective.identityKey);
 
@@ -219,12 +193,84 @@ test("🔴 one transfer answer credits ONE objective, and not its neighbours", (
     judgement: judgementOf([{ objectiveIdentityKey: asked.objective.identityKey, verdict: "understood" }]),
     occurredAt: NOW.toISOString(),
     prompt,
-    responseText: "it goes back up",
+    responseText: "State any positive case relied on.",
     teachingStrategy: "llm_teacher",
   }).map((row, index) => evidenceFromRow({ ...evidenceRow("u", row), id: `x${index}` }, asked.objective.identityKey));
 
   assert.equal(projectLearnerState(untouched.objective.identityKey, rows).status, "unknown");
   assert.equal(projectLearnerState(asked.objective.identityKey, rows).status, "correct");
+});
+
+// ── the worked example reaches the NEXT decision ────────────────────────────
+
+test("🔴🔴 a worked example that was shown changes what the next controller call can SEE", async () => {
+  // 🔴 THE WHOLE RISK OF AN ACTION THAT WRITES NO EVIDENCE. `show_correction` has `correctionsShown`
+  // and `retrieve` has the evidence row itself; a worked example has neither, so without this the
+  // next turn would have no trace that one had just been shown — and the obvious failure is showing
+  // it again, forever, because the state that produced the decision has not changed.
+  //
+  // 🔴 IT IS PROVEN BY READING THE BYTES THE MODEL RECEIVES, NOT BY ASSERTING THE SET WAS PASSED. A
+  // context field that reaches `teachingSnapshot` and never reaches the prompt is invisible to the
+  // controller, which is the same "carried but never read" defect one layer up.
+  const entry = resolved(ASSAY, 1);
+  const key = entry.objective.identityKey;
+
+  const seen: string[] = [];
+  const capture: TeacherTransport = async (_uid, messages) => {
+    seen.push(messages.map((message) => String(message.content)).join("\n"));
+    return { errorText: null, text: JSON.stringify({ because: "b", move: "ask", objective: key }) };
+  };
+  const strategy = createLlmTeacherStrategy(capture);
+
+  await strategy.decide(context([entry]));
+  assert.equal(seen.length, 1);
+  assert.doesNotMatch(seen[0]!, /worked through in front of them/, "nothing was modelled yet");
+
+  await strategy.decide({ ...context([entry]), modelled: new Set([key]) });
+  assert.equal(seen.length, 2);
+  // 🔴 CALIBRATION: delete the `modelled` block from `sittingNote` and this line reddens while every
+  // other test in this file stays green.
+  assert.match(seen[1]!, /Reasoning already worked through in front of them this sitting/);
+  assert.ok(seen[1]!.includes(key), "the model is told WHICH objective was modelled, not merely that one was");
+});
+
+test("🔴🔴 having been shown a worked example is NOT durable, and is not mastery", async () => {
+  // Two halves of one invariant, both checked against the real projection.
+  const entry = resolved(ASSAY, 1);
+  const key = entry.objective.identityKey;
+
+  // 1. Exposure lives in the sitting, not in the record. `modelled` is a `TeachingContext` field —
+  //    it never reaches `evidenceForSubmission`, `recordEvidence` or `EVIDENCE_SELECT`, so there is
+  //    no row for a later session to read as a demonstration.
+  assert.equal(RUNTIME.includes("recordEvidence(uid, { modelled"), false);
+  assert.match(RUNTIME, /const \[modelled, setModelled\] = useState<ReadonlySet<string>>/);
+  assert.equal(STORE.includes("modelled"), false, "exposure must not be a column");
+
+  // 2. And after modelling, the learner's state is exactly what it was before: unknown.
+  const before = teachingSnapshot(context([entry]));
+  const after = teachingSnapshot({ ...context([entry]), modelled: new Set([key]) });
+  assert.deepEqual(after.objectives[0]!.state, before.objectives[0]!.state);
+  assert.equal(after.objectives[0]!.state.status, "unknown");
+  assert.equal(after.objectives[0]!.state.demonstrationCount, 0);
+  assert.equal(after.objectives[0]!.state.demonstratedAt, null);
+
+  // 3. The controller can therefore still ask for it — being shown something is not a reason to stop
+  //    asking, and this is where that would silently break if exposure ever became evidence.
+  const outcome = await createLlmTeacherStrategy(says("ask", key)).decide({
+    ...context([entry]),
+    modelled: new Set([key]),
+  });
+  assert.equal(outcome.decision?.action.type, "retrieve");
+});
+
+test("🔴 the decision is recomputed when something has been modelled, not served from cache", () => {
+  // 🔴 A SET THE CONTROLLER CAN SEE BUT THE MEMO CANNOT is worse than not having it: the snapshot
+  // would change and the cached decision would not, so the model would never be asked again with
+  // the new information. `decisionInputs` is the cache key, and exposure has to be in it.
+  const inputs = RUNTIME.slice(RUNTIME.indexOf("const decisionInputs = useMemo("));
+  const body = inputs.slice(0, inputs.indexOf("  const [decided,"));
+  assert.match(body, /\[\.\.\.modelled\]\.sort\(\)\.join\(","\)/, "exposure is not part of the cache key");
+  assert.match(body, /\[actedOn, correctionsShown, decidedAt, evidence, inFocus, modelled, strategy\]/);
 });
 
 // ── attempt before tell, without a "pretesting mode" ───────────────────────

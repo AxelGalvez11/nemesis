@@ -39,7 +39,6 @@ import { choiceSetsForPool } from "./objective-task";
 import type { ResolvedObjective } from "./canvas-knowledge";
 import { easier, harder } from "./scaffold-prompt";
 import { completionAvailable } from "./completion-task";
-import { transferAvailable } from "./transfer-task";
 import { workedExampleFor } from "./worked-example";
 import type { ScaffoldRung } from "./scaffold-rung";
 import { expositionOf, type TeachingAction } from "./teaching-policy";
@@ -164,18 +163,6 @@ const VERBS = [
    * it unaided" test, so choosing this does not let a learner be marked as knowing something.
    */
   "complete",
-  /**
-   * Put the same relation to a case the material never stated.
-   *
-   * 🔴 THE ONE MOVE THAT SEPARATES HAVING THE RELATIONSHIP FROM HAVING THE SENTENCE. Every other ask
-   * in this list puts the learner back in front of the case the source wrote. Here the remembered
-   * answer is WRONG and only using the relation is right.
-   *
-   * 🔴 GROUNDED OR REFUSED. The changed case is derived from the relation the source asserted, never
-   * imagined; where the relation will not carry to a new case the move is refused rather than made
-   * up, so a learner is never judged against a scenario Nemesis invented.
-   */
-  "transfer",
   /** Same objective, one step more demanding. */
   "harder",
   /** Same objective, one step less demanding. */
@@ -251,21 +238,14 @@ export function brief(snapshot: ObjectiveSnapshot): string {
   const available = [
     ...(snapshot.canBeModelled ? ["model"] : []),
     ...(snapshot.canBeCompleted ? ["complete"] : []),
-    ...(snapshot.canBeTransferred ? ["transfer"] : []),
   ];
   lines.push(
     available.length > 0
       ? `  this material can also support: ${available.join(", ")}`
-      : "  this material supports asking and telling only: no process to work through, no part to withhold, no relation that carries to a new case",
+      : "  this material supports asking and telling only: no process to work through, and no part that could be withheld without withholding the whole answer",
   );
   if (snapshot.completionAttempts > 0) {
     lines.push(`  answered ${snapshot.completionAttempts} times with part of the solution already on screen`);
-  }
-  if (snapshot.transferAttempts > 0) {
-    lines.push(
-      `  met ${snapshot.transferAttempts} cases the material never stated, and got ` +
-        `${snapshot.transferDemonstrations} of them right`,
-    );
   }
   if (snapshot.misconceptions.length > 0) {
     lines.push(`  competing beliefs they have actually shown: ${snapshot.misconceptions.join("; ")}`);
@@ -494,9 +474,6 @@ function teacherMessages(
         "complete  show most of a valid solution with one piece missing and ask them for the piece. " +
         "Real production, but assisted, and recorded as weaker than an unaided answer. Available " +
         "only where the line above says so.\n" +
-        "transfer  put the same relation to a case the material never stated, so the remembered " +
-        "answer is wrong and only using the relation is right. Harder than asking. Available only " +
-        "where the line above says so.\n" +
         "harder    same objective, one step more demanding.\n" +
         "easier    same objective, one step less demanding.\n" +
         "advance   nothing here is worth the next minute. Go forward.\n" +
@@ -617,9 +594,9 @@ function actionFor(input: {
             action: { because, choices: input.choices, objectiveId: id, rung: "recognition", type: "recognise" },
           }
         : { refusal: "unknown-action" };
-    // 🔴🔴 THE THREE GROUNDED MOVES, AND ALL THREE ASK THE BUILDER RATHER THAN TRUSTING THE SNAPSHOT.
-    // The snapshot's `canBeModelled` / `canBeCompleted` / `canBeTransferred` lines exist to stop the
-    // model WASTING turns; they are not the authority on whether the thing can be staged. Reading
+    // 🔴🔴 THE TWO GROUNDED MOVES, AND BOTH ASK THE BUILDER RATHER THAN TRUSTING THE SNAPSHOT.
+    // The snapshot's `canBeModelled` / `canBeCompleted` lines exist to stop the model WASTING turns;
+    // they are not the authority on whether the thing can be staged. Reading
     // them here instead of calling the builder would put the check one copy away from the code that
     // actually has to produce the screen — which is the exact shape of defect this repo keeps
     // finding: a decision that says yes and a builder that then returns nothing.
@@ -643,10 +620,6 @@ function actionFor(input: {
     case "complete":
       return completionAvailable(input.entry)
         ? { action: { because, objectiveId: id, rung: "completion", type: "complete" } }
-        : { refusal: "ungroundable-action" };
-    case "transfer":
-      return transferAvailable({ knowledge: input.entry.knowledge })
-        ? { action: { because, objectiveId: id, rung: "independent", type: "transfer" } }
         : { refusal: "ungroundable-action" };
     case "defer":
       return { action: { because, objectiveId: id, type: "defer" } };

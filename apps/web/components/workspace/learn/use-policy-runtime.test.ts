@@ -255,7 +255,6 @@ test("🔴 the ask-only guard is an allow-list, asked rather than described", ()
   const asks: TeachingAction[] = [
     { because, objectiveId: "o", rung: "independent", type: "retrieve" },
     { because, objectiveId: "o", rung: "completion", type: "complete" },
-    { because, objectiveId: "o", rung: "independent", type: "transfer" },
   ];
   for (const action of asks) {
     assert.ok(performanceOf(action), `${action.type} asks the learner for something and must mint a prompt`);

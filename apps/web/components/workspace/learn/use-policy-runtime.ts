@@ -49,7 +49,6 @@ import {
   outcomeForSelection,
   recognitionPromptFor,
   retrievalPromptFor,
-  transferPromptFor,
   unobtainedEvidence,
   type RetrievalPrompt,
 } from "@/lib/learn/objective-task";
@@ -974,17 +973,14 @@ export function usePolicyRuntime(
     }
     if (mintedFor.current === decisionKey) return;
     mintedFor.current = decisionKey;
-    if (action.type === "complete" || action.type === "transfer") {
-      // 🔴 THE SAME BUILDERS THE CONTROLLER ASKED BEFORE CHOOSING, SO A NULL HERE IS A REAL DEFECT
-      // RATHER THAN A REFUSAL. `actionFor` in strategy-llm-teacher.ts calls `completionAvailable` /
-      // `transferAvailable` and refuses when they say no, so by the time a decision arrives the
-      // answer is yes. If it ever is not, the honest response is to say so out loud — a silent
-      // fall back to the ordinary question would put an `independent` task on screen under a
-      // decision that said "completion", and the row would record whichever the caller trusted.
-      const built =
-        action.type === "complete"
-          ? completionPromptFor(decision, crypto.randomUUID())
-          : transferPromptFor(decision, crypto.randomUUID());
+    if (action.type === "complete") {
+      // 🔴 THE SAME BUILDER THE CONTROLLER ASKED BEFORE CHOOSING, SO A NULL HERE IS A REAL DEFECT
+      // RATHER THAN A REFUSAL. `actionFor` in strategy-llm-teacher.ts calls `completionAvailable`
+      // and refuses when it says no, so by the time a decision arrives the answer is yes. If it ever
+      // is not, the honest response is to say so out loud — a silent fall back to the ordinary
+      // question would put an `independent` task on screen under a decision that said "completion",
+      // and the row would record whichever of the two the caller happened to trust.
+      const built = completionPromptFor(decision, crypto.randomUUID());
       if (!built) {
         setPrompt(null);
         setError("Nemesis could not build that task from this material, so nothing was asked. Continue to move on.");

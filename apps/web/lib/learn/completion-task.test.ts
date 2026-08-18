@@ -27,8 +27,10 @@ import { projectLearnerState, satisfies, type LearnerEvidence } from "./learner-
 import { evidenceFromRow, evidenceRow } from "./learner-store";
 import { completionPromptFor, evidenceForSubmission, judgementOf, SOLUTION_PART_ON_SCREEN } from "./objective-task";
 import { entails } from "./scaffold-rung";
+import { chooseNextTeachingAction } from "./teaching-policy";
 
 const NOW = "2026-08-18T09:00:00.000Z";
+const ENTRY = resolved(PHARMACOKINETICS);
 
 test("🔴 a procedure is faded by blanking ONE step and showing the rest, in any discipline", () => {
   for (const material of [ASSAY, PLEADING, BEARING]) {
@@ -146,6 +148,57 @@ test("🔴🔴 a completion pass is a real demonstration that CANNOT satisfy una
   // this line reddens on its own, while the two above stay green.
   assert.equal(satisfies(state, "independent"), false, "a partly supplied solution never establishes unaided production");
   assert.equal(satisfies(state, "recognition"), true, "producing the missing piece does establish picking it out");
+});
+
+test("🔴🔴 what the ordering MEANS: the only rung the runtime ever requires is `independent`", () => {
+  // 🔴 THE LADDER IS AN ASSISTANCE ORDERING, NOT A CLAIM THAT EVERY COMPLETION IS COGNITIVELY HARDER
+  // OR EASIER THAN EVERY CUED QUESTION. That claim would be false — a completion over a four-step
+  // procedure and a first-letter cue on a one-word answer are not comparable as difficulty, and
+  // nothing here says they are.
+  //
+  // What the order has to deliver is ONE thing: assisted work can never pass for unaided production.
+  // And the reason no scoring system is needed to deliver it is measurable rather than asserted —
+  // every comparison the runtime actually makes is against `independent`. `recognition-value.ts`,
+  // `learner-evidence.ts`'s `satisfies`, `teaching-policy.ts` and `next-action-value.ts` are the
+  // four call sites, and all four ask the same question.
+  //
+  // 🔴 SO THE RELATIVE ORDER OF `completion` AND `cued` IS BEHAVIOURALLY INERT TODAY, and this test
+  // pins that rather than leaving it as a hope: two learners whose best demonstration differs only
+  // in which of those two rungs it was produced at are treated identically.
+  const key = ENTRY.objective.identityKey;
+  const at = (rung: "completion" | "cued"): LearnerEvidence => ({
+    demonstrationObtained: true,
+    id: `e-${rung}`,
+    objectiveEvidence: "demonstrated",
+    objectiveIdentityKey: key,
+    occurredAt: NOW,
+    scaffoldRung: rung,
+    taskForm: rung === "completion" ? "completion" : "direct",
+    verdict: "understood",
+  });
+
+  const viaCompletion = projectLearnerState(key, [at("completion")]);
+  const viaCue = projectLearnerState(key, [at("cued")]);
+
+  // Same status, same count, and — the part that matters — the same answer to the only question
+  // anything downstream asks.
+  assert.equal(viaCompletion.status, viaCue.status);
+  assert.equal(satisfies(viaCompletion, "independent"), false);
+  assert.equal(satisfies(viaCue, "independent"), false);
+
+  // And the same teaching decision falls out of both, which is the behavioural form of "inert".
+  const decisionFrom = (state: typeof viaCompletion) =>
+    chooseNextTeachingAction({
+      knowledgeObject: ENTRY.knowledge,
+      learnerState: state,
+      now: new Date(Date.parse(NOW) + 4 * 60 * 60 * 1000),
+      objective: ENTRY.objective,
+      recentEvidence: [],
+    });
+  const fromCompletion = decisionFrom(viaCompletion);
+  const fromCue = decisionFrom(viaCue);
+  assert.equal(fromCompletion.type, "retrieve");
+  assert.deepEqual(fromCompletion, fromCue, "the two rungs must not produce different teaching");
 });
 
 test("🔴 stronger assistance cannot masquerade as weaker, in either direction", () => {

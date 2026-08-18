@@ -2,18 +2,16 @@
 //
 // 🔴 THIS IS NOT THE SCAFFOLD RUNG, AND THE TWO ANSWER DIFFERENT QUESTIONS. `ScaffoldRung` is an
 // ORDERED axis — how much of THIS TASK'S ANSWER was on screen when the learner answered. This is an
-// UNORDERED one — what cognitive operation the task staged. The distinction is load-bearing in both
-// directions:
+// UNORDERED one — what KIND of task was staged. A completion is both: the learner produced the
+// missing piece, so it is weaker than unaided production and moves down the rung ladder, AND it is a
+// different shape of task from the material's own question, which the rung cannot say.
 //
-//     completion   part of a valid solution supplied, the learner produced the missing piece
-//                  → weaker than unaided production, so it also moves DOWN the rung ladder
-//     transfer     the same grounded principle, a case the material never stated
-//                  → nothing about the answer supplied, so the rung stays `independent`
-//
-// A transfer probe is HARDER than the ordinary question and carries no assistance at all. Trying to
-// express that as a rung would mean inventing a sixth rung above `independent`, which would claim
-// that a transfer pass ENTAILS an ordinary pass — it does not, and `entails` would then quietly
-// credit recall the learner never produced. Two fields, each saying one true thing.
+// 🔴 TWO VALUES TODAY, AND THE SET IS EXPECTED TO GROW. A transfer form — the same grounded relation
+// put to a case the material never stated — was drafted alongside this one and removed before merge:
+// every way it could derive a reference answer from a `CausalRelation` required a monotonicity,
+// necessity or exclusivity claim the extractor does not record. See docs/canvas-cognitive-runtime.md.
+// The column is deliberately unconstrained so adding a form later is a code change and not a
+// migration.
 //
 // 🔴 AND IT IS A PROPERTY OF THE TASK, KNOWN BEFORE THE LEARNER ANSWERS. Same side of
 // `learner-store.ts`'s line as the rung: what was measured, never what it means.
@@ -27,11 +25,9 @@ export type TaskForm =
   /** The objective's own question, asked as the material states it. */
   | "direct"
   /** Part of a valid solution was on screen; the learner supplied the missing piece. */
-  | "completion"
-  /** The same grounded relation, applied to a case the material never stated. */
-  | "transfer";
+  | "completion";
 
-export const TASK_FORMS: readonly TaskForm[] = ["direct", "completion", "transfer"];
+export const TASK_FORMS: readonly TaskForm[] = ["direct", "completion"];
 
 /**
  * What a task is when nothing says otherwise.
@@ -54,9 +50,9 @@ export function readTaskForm(value: unknown): TaskForm | null {
 /**
  * Does this form put part of the answer in front of the learner?
  *
- * 🔴 THE ONE PLACE THAT QUESTION IS ANSWERED, so a caller cannot decide for itself that a transfer
- * probe was "assisted because we showed them the case". A transfer names a condition; it never
- * names the consequence being asked for.
+ * 🔴 THE ONE PLACE THAT QUESTION IS ANSWERED, so a caller cannot decide for itself what counts as
+ * assistance. A form added later that shows the learner CONTEXT rather than part of the answer must
+ * come back false here, and must say so in this function rather than at its own call site.
  */
 export function formSuppliesPartOfTheAnswer(form: TaskForm): boolean {
   return form === "completion";

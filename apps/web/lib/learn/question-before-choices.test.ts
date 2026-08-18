@@ -31,6 +31,9 @@ import { SHOW_CHOICES_LABEL } from "../../components/workspace/learn/canvas-poli
 
 const VIEW = readFileSync(new URL("../../components/workspace/learn/canvas-policy-view.tsx", import.meta.url), "utf8");
 const RUNTIME = readFileSync(new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url), "utf8");
+const CANVAS = readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8");
+const STORE = readFileSync(new URL("./learner-store.ts", import.meta.url), "utf8");
+const TASKS = readFileSync(new URL("./objective-task.ts", import.meta.url), "utf8");
 
 // Material from a field with no drugs, no courts and no circuits in it, so nothing here can be
 // passing because of a subject-matter special case.
@@ -143,6 +146,54 @@ test("🔴 once the options are on screen the attempt can never be an unaided on
   const readBack: LearnerEvidence = evidenceFromRow({ ...evidenceRow("u", rows[0]!), id: "e2" }, KEY);
   assert.equal(readBack.scaffoldRung, "recognition");
   assert.equal(satisfies(projectLearnerState(KEY, [readBack]), "independent"), false);
+});
+
+test("🔴🔴 the reveal is one-way: nothing can put the options back in the box", () => {
+  // 🔴 THE ATTACK: reveal → hide → type, and the row says `independent` while the learner has read
+  // the answer set. It is closed by there being no hide at all — `choicesRevealed` has exactly one
+  // transition to true, it is guarded against re-entry, and the ONLY thing that sets it false is the
+  // question in front of the learner being replaced.
+  const stripped = RUNTIME.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.equal((stripped.match(/setChoicesRevealed\(true\)/g) ?? []).length, 1);
+  assert.equal((stripped.match(/setChoicesRevealed\(false\)/g) ?? []).length, 1);
+  // The single reset is keyed on the PROMPT ID, not on the decision, the round or a render. A
+  // decision recomputes for reasons that have nothing to do with the learner; the prompt id changes
+  // exactly when the question does.
+  assert.match(stripped, /useEffect\(\(\) => \{\s*setChoicesRevealed\(false\);\s*\}, \[promptId\]\);/);
+  assert.match(stripped, /const promptId = prompt\?\.id \?\? null;/);
+  // And the view offers no way back — one control, one direction.
+  assert.equal(VIEW.includes("revealChoices(false)"), false);
+  assert.equal(/hideChoices|collapseChoices/.test(VIEW), false);
+});
+
+test("🔴 a re-mint is a NEW question, so a lost reveal cannot silently upgrade an old attempt", () => {
+  // 🔴 THE OTHER HALF OF THE ATTACK: refresh, reconnect, or a decision recomputed mid-question. All
+  // three land in the same place — the effect that mints a prompt calls `crypto.randomUUID()`, so a
+  // re-mint carries a new id, and the id is the `response_id` an evidence row is keyed on.
+  //
+  // 🔴 WHICH MEANS THE OLD ROW CANNOT BE REWRITTEN. `recordEvidence` upserts with
+  // `ignoreDuplicates` on `(user_id, objective_id, response_id)` — ON CONFLICT DO NOTHING. A stale
+  // client replaying an answer against an id that already has a `recognition` row cannot turn it
+  // into an `independent` one; the write is discarded, not applied.
+  const stripped = RUNTIME.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.equal((stripped.match(/crypto\.randomUUID\(\)/g) ?? []).length >= 1, true);
+  assert.match(STORE, /ignoreDuplicates: true, onConflict: "user_id,objective_id,response_id"/);
+  // The row's `response_id` is the prompt id, which is what ties the two facts together.
+  assert.match(TASKS, /responseId: prompt\.id/);
+});
+
+test("🔴 a spoken answer takes the same single road as a typed one", () => {
+  // 🔴 VOICE IS NOT A SECOND SUBMIT PATH, AND THAT IS THE ONLY REASON IT IS SAFE. Dictation and
+  // voice mode both hand their text to the composer's `onAnswer`, which has exactly ONE call to
+  // `policy.submit` — so the `asMet` correction applies to a spoken answer given while the options
+  // are visible without anything having to remember it. A second call site would be a second chance
+  // to record the planned rung instead of the met one.
+  const calls = (CANVAS.match(/policy\.submit\(/g) ?? []).length;
+  assert.equal(calls, 1, "a second submit path would need its own copy of the assistance correction");
+  assert.match(CANVAS, /if \(sink\.kind === "policy"\) void policy\.submit\(text, via, tookMs\);/);
+  // And the sink only names the policy when the runtime is hosting a task, which it does for every
+  // asking action including this one.
+  assert.match(CANVAS, /hosted: policy\.task/);
 });
 
 test("🔴 every write path asks what was ACTUALLY on screen, not what was planned", () => {

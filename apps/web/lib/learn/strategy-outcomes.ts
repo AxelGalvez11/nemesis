@@ -467,14 +467,6 @@ export interface TaskFormOutcomes {
   completionThenIndependent: number;
   /** The denominator: objectives with a completion and any later unaided attempt at all. */
   completionsWithLaterUnaidedAttempt: number;
-  /**
-   * Transfer demonstrations by learners who had already produced the ordinary answer.
-   *
-   * 🔴 SEPARATED FROM THE REST BECAUSE THE TWO POPULATIONS MEAN DIFFERENT THINGS. Using a relation in
-   * a new case after producing it in the old one is the thing worth having; doing it without ever
-   * having produced it is a different and rarer event, and averaging them hides both.
-   */
-  transferAfterDirectDemonstration: number;
 }
 
 export interface OutcomeContext {
@@ -585,12 +577,12 @@ export interface StrategyOutcomeSummary {
   /**
    * Demonstrations at an operation this learner had never demonstrated for that objective before.
    *
-   * 🔴🔴 RENAMED FROM `transferDemonstrations`, AND THE RENAME IS THE POINT RATHER THAN TIDYING. A
-   * real transfer task form exists now — the same relation put to a case the material never stated,
-   * recorded as `taskForm: "transfer"` — and it is counted in `taskForms` below. Two different
-   * quantities called "transfer" in one summary is how a comparison gets read backwards: this one is
-   * a PROXY (produced under a demand not previously produced under, which may be nothing more than
-   * meeting a second question about the same knowledge), and the other is the thing itself.
+   * 🔴🔴 RENAMED FROM `transferDemonstrations`, AND THE RENAME IS THE POINT RATHER THAN TIDYING.
+   * This is a PROXY: it counts a demonstration under an operation not previously demonstrated for
+   * that objective, which may be nothing more than meeting a second question about the same
+   * knowledge. Calling that "transfer" invited it to be read as evidence that a learner can use an
+   * idea in a case the material never stated, which it is not and cannot be. Nothing in Nemesis
+   * measures that today — see the transfer note in docs/canvas-cognitive-runtime.md.
    *
    * 🔴🔴 THIS IS LIVE NOW, AND THE COMMENT THAT USED TO SIT HERE SAYING OTHERWISE WAS STALE. It read
    * "structurally unmeasurable today … `objectivesForKnowledge` mints `recall` and essentially
@@ -862,28 +854,19 @@ function taskFormOutcomesOf(rows: readonly LearnerEvidence[]): TaskFormOutcomes 
 
   let completionThenIndependent = 0;
   let completionsWithLaterUnaidedAttempt = 0;
-  let transferAfterDirectDemonstration = 0;
 
   for (const objectiveRows of byObjective(rows).values()) {
     const ordered = ascending(objectiveRows).filter(attemptEvidenceOf);
     const firstCompletionAt = ordered.findIndex((row) => row.taskForm === "completion");
     if (firstCompletionAt >= 0) {
-      // 🔴 UNAIDED MEANS THE RUNG, NOT THE FORM. A transfer probe is `independent` too, and an answer
-      // produced at a new case with nothing on screen is every bit the unaided production a direct
-      // question would have been. Filtering on `taskForm === "direct"` would drop exactly the
-      // strongest evidence the runtime can collect.
+      // 🔴 UNAIDED MEANS THE RUNG, NOT THE FORM, AND THAT IS DELIBERATE RATHER THAN INCIDENTAL. A
+      // form added later that carries no assistance would still be an unaided production, and
+      // filtering on `taskForm === "direct"` would silently stop counting it the day it shipped.
       const later = ordered.slice(firstCompletionAt + 1).filter((row) => row.scaffoldRung === "independent");
       if (later.length > 0) {
         completionsWithLaterUnaidedAttempt += 1;
         if (later.some(isMastery)) completionThenIndependent += 1;
       }
-    }
-    let producedDirectly = false;
-    for (const row of ordered) {
-      if (row.taskForm === "transfer" && isMastery(row) && producedDirectly) {
-        transferAfterDirectDemonstration += 1;
-      }
-      if (row.taskForm === "direct" && isMastery(row)) producedDirectly = true;
     }
   }
 
@@ -895,7 +878,6 @@ function taskFormOutcomesOf(rows: readonly LearnerEvidence[]): TaskFormOutcomes 
     // scanning three zeroes cannot tell them apart without this flag. Rows written before the column
     // existed are the first case and there are a great many of them.
     observed: rows.some((row) => row.taskForm !== undefined),
-    transferAfterDirectDemonstration,
   };
 }
 

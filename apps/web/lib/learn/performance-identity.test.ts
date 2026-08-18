@@ -49,9 +49,9 @@ const RECORD: EvidenceToRecord = {
   scaffoldRung: "independent",
   scaffoldingLevel: 0,
   // 🔴 NOT `direct`, FOR THE SAME REASON THE STRATEGY BELOW IS NOT THE DEFAULT ARM. `direct` is what
-  // a reader that fell back to a default would also produce; `transfer` can only arrive here by
+  // a reader that fell back to a default would also produce; `completion` can only arrive here by
   // genuinely surviving write, select and read.
-  taskForm: "transfer",
+  taskForm: "completion",
   taskId: "task-1",
   // 🔴 THE BASELINE ARM ON PURPOSE, NOT THE DEFAULT. A fixture carrying `nemesis_policy` would pass
   // this round trip identically while proving less: `nemesis_policy` is what a broken reader that

@@ -39,7 +39,6 @@ import { dependentsOf, prerequisiteMap, termsOf } from "./objective-prerequisite
 import { retrievabilityFor } from "./retention-model";
 import { readRung, type ScaffoldRung } from "./scaffold-rung";
 import { completionAvailable } from "./completion-task";
-import { transferAvailable } from "./transfer-task";
 import { workedExampleAvailable } from "./worked-example";
 import { semanticKeysOf, semanticRelationSummary, semanticRelationsOf } from "./semantic-relations";
 import type { MaterialScope, TeachingContext } from "./teaching-strategy";
@@ -162,20 +161,16 @@ export interface ObjectiveSnapshot {
    */
   canBeModelled: boolean;
   canBeCompleted: boolean;
-  canBeTransferred: boolean;
 
   /**
    * How this objective has been ASKED before, by task form rather than by verdict.
    *
    * 🔴 SEPARATE FROM `demonstrationCount`, WHICH CANNOT ANSWER THE QUESTION. "Produced it four
-   * times" says nothing about whether any of those four were the material's own case or a case it
-   * never stated, and those are the two things a teacher most needs apart: a learner who has
-   * answered the same question four times has weaker evidence than one who has used the relation
-   * once somewhere new. It is exposed as counts and the policy reasons over them; there is
-   * deliberately no "transfer is worth +30 mastery" anywhere.
+   * times" says nothing about how much help was on the table for those four, and a teacher deciding
+   * whether to fade needs that apart from the verdict. It is exposed as a count and the policy
+   * reasons over it; there is deliberately no "a completion is worth 0.6 of a demonstration"
+   * anywhere.
    */
-  transferAttempts: number;
-  transferDemonstrations: number;
   completionAttempts: number;
 
 
@@ -307,15 +302,7 @@ export function teachingSnapshot(context: TeachingContext): TeachingSnapshot {
       statement: entry.knowledge.statement,
       canBeCompleted: completionAvailable(entry),
       canBeModelled: workedExampleAvailable(entry),
-      canBeTransferred: transferAvailable({ knowledge: entry.knowledge }),
       completionAttempts: mine.filter((row) => row.taskForm === "completion").length,
-      transferAttempts: mine.filter((row) => row.taskForm === "transfer").length,
-      transferDemonstrations: mine.filter(
-        (row) =>
-          row.taskForm === "transfer" &&
-          row.demonstrationObtained &&
-          (row.verdict === "strong" || row.verdict === "understood"),
-      ).length,
       terminologyInTheWay:
         lookups.length > 0 && terminologyFriction({ lookups, terms: [...requires, ...establishes] }).present,
       unresolvedAttempts: mine.filter(isUnresolvedAttempt).length,

@@ -198,17 +198,12 @@ function PolicyScreen({
     );
   }
 
-  // 🔴 THREE ACTIONS SHARE THIS SCREEN, AND THAT IS THE PRODUCT RULE RATHER THAN A SAVING. §33: "the
+  // 🔴 TWO ACTIONS SHARE THIS SCREEN, AND THAT IS THE PRODUCT RULE RATHER THAN A SAVING. §33: "the
   // learner never sees a difficulty setting change; the Canvas simply changes the task." A faded
-  // worked example and a transfer case are different TASKS, not different modes — no banner naming
-  // them, no label saying this one is harder, nothing for a learner to choose between. What differs
-  // on screen is what the question says and, for a completion, the part of the solution above it.
-  if (
-    (decision.action.type === "retrieve" ||
-      decision.action.type === "complete" ||
-      decision.action.type === "transfer") &&
-    prompt
-  ) {
+  // worked example is a different TASK, not a different mode — no banner naming it, no label saying
+  // this one is easier, nothing for a learner to choose between. What differs on screen is what the
+  // question says and the part of the solution above it.
+  if ((decision.action.type === "retrieve" || decision.action.type === "complete") && prompt) {
     // ── The retrieval presentation ──────────────────────────────────────────
     //
     // 🔴 THE QUESTION IS THE WHOLE SCREEN, AND EVERYTHING REMOVED FROM HERE WAS REMOVED ON PURPOSE.

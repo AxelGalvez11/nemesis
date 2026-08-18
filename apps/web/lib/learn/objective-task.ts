@@ -29,7 +29,6 @@ import type { ClassContrast } from "./wide-grid-classification";
 import { stagedRung } from "./scaffold-prompt";
 import type { ObjectiveEvidence, ScaffoldRung } from "./scaffold-rung";
 import { completionTaskFor } from "./completion-task";
-import { transferTaskFor } from "./transfer-task";
 import { DIRECT_TASK, type TaskForm } from "./task-form";
 import type { TeachingStrategyId } from "./teaching-strategy";
 
@@ -256,9 +255,8 @@ export interface RetrievalPrompt {
    *
    * 🔴 NOT THE SAME QUESTION AS `rung`, AND KEEPING THEM APART IS WHAT MAKES BOTH HONEST. `rung`
    * says how much of THIS ANSWER was on screen. This says what was being asked at all: the
-   * material's own question, a faded solution with a gap in it, or the relation carried to a case
-   * the source never stated. A transfer probe is `independent` AND harder than the ordinary
-   * question; a completion is a real production AND assisted. One ordered field cannot say either.
+   * material's own question, or a faded solution with a gap in it. A completion is a real production
+   * AND an assisted one, and one ordered field cannot say both.
    *
    * 🔴 REQUIRED, for the reason `rung` is required. Absent would mean "nobody recorded the form",
    * which is true of historical rows and false of anything this runtime mints from now on.
@@ -488,8 +486,8 @@ export function promptTargeting(input: {
    *  this runtime built before recognition existed — see `RetrievalPrompt.choices`. */
   choices?: ChoiceSet;
   /** Which kind of task this is. 🔴 Defaults to `direct` because that is what every caller that
-   *  does not say is asking: the material's own question, unchanged. A completion or a transfer
-   *  has to say so, exactly as a scaffolded prompt has to state its own rung. */
+   *  does not say is asking: the material's own question, unchanged. A completion has to say so,
+   *  exactly as a scaffolded prompt has to state its own rung. */
   form?: TaskForm;
   /** The part of a solution already on screen — completions only. */
   given?: readonly string[];
@@ -606,42 +604,6 @@ export function completionPromptFor(
     scaffoldingLevel: SOLUTION_PART_ON_SCREEN,
     targets: [targetFor(resolved.objective)],
     task: taskNameFor(resolved),
-  });
-}
-
-/**
- * The same grounded relation, put to a case the material never stated.
- *
- * 🔴 `task: "apply"` RATHER THAN THE OBJECTIVE'S USUAL TASK NAME, AND THE JUDGE ALREADY KNOWS IT.
- * `TASK_INTENT` in canvas-prompts.ts has read *"use the idea on a concrete situation"* for `apply`
- * since it was written, and nothing has ever emitted it — the judge has been told how to score this
- * kind of answer for longer than there has been a way to ask for one. `operation` stays the
- * objective's capability, because the capability has not changed: it is the same thing being known.
- *
- * 🔴 AND THE RUNG STAYS `independent`. See transfer-task.ts: the question names a condition and
- * never the consequence, so nothing about the answer is on screen.
- */
-export function transferPromptFor(
-  resolved: { objective: StoredObjective; knowledge: KnowledgeObject },
-  id: string,
-): RetrievalPrompt | null {
-  const built = transferTaskFor({ knowledge: resolved.knowledge });
-  if (!built.task) return null;
-  const task = built.task;
-  return promptTargeting({
-    expectedAnswer: task.expectedAnswer,
-    expectedEvidence: {
-      referenceAnswer: task.expectedAnswer,
-      requiredConcepts: [...task.requiredConcepts],
-    },
-    form: "transfer",
-    id,
-    operation: resolved.objective.capability,
-    prompt: task.question,
-    rung: "independent",
-    scaffoldingLevel: UNSUPPORTED_RETRIEVAL,
-    targets: [targetFor(resolved.objective)],
-    task: "apply",
   });
 }
 

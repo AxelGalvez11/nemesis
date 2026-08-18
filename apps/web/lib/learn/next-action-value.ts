@@ -72,8 +72,6 @@ export type SelectionReason =
   | "options-offered"
   /** The task put part of a valid solution on screen and asked for the missing piece. */
   | "partial-solution-offered"
-  /** The task carried the same grounded relation to a case the material never stated. */
-  | "carried-to-a-new-case"
   /** Demonstrated, eligible, and `retention-model.ts` predicts real decay since the last pass — worth
    *  more than an equally-eligible objective whose memory is barely touched. */
   | "increasingly-overdue";
@@ -442,15 +440,12 @@ export function value(input: ValueInput): ActionValue {
   if (action.type === "recognise") {
     reasons.push("options-offered");
   }
-  // 🔴 REASONS, NOT SCORE ADJUSTMENTS. Both are ways of ASKING and neither is more or less urgent
-  // than the retrieval it replaces — what changed is the task, not the value of spending the next
-  // minute here. A bonus for either would be this file deciding that faded examples or transfer
-  // probes are worth more, which is a teaching judgement and belongs to whoever chose the action.
+  // 🔴 A REASON, NOT A SCORE ADJUSTMENT. A completion is a way of ASKING and it is neither more nor
+  // less urgent than the retrieval it replaces — what changed is the task, not the value of spending
+  // the next minute here. A bonus would be this file deciding that faded examples are worth more,
+  // which is a teaching judgement and belongs to whoever chose the action.
   if (action.type === "complete") {
     reasons.push("partial-solution-offered");
-  }
-  if (action.type === "transfer") {
-    reasons.push("carried-to-a-new-case");
   }
 
   return { reasons, score: score + clampToBand(delta) };

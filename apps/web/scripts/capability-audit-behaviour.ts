@@ -45,7 +45,6 @@ const RENDERABLE = [
   "retrieve",
   "recognise",
   "complete",
-  "transfer",
   "worked_example",
   "show_correction",
   "contrast",
