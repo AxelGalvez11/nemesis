@@ -558,9 +558,27 @@ export function LearningCanvas({
   // which the owner has now said should not come back: *"The only button should be 'continue'
   // below reading passages, thats it."* The six session methods they called went with them.
 
-  // 🔴 `loading` IS WAITED FOR, NOT TREATED AS "NO". Resolving this canvas's knowledge is a round
-  // trip, and painting the legacy runtime in the meantime would not merely flicker — the stage
-  // machine's own effects would start generating a lesson for a canvas the policy is about to own.
+  // 🔴🔴 THIS USED TO RETURN ON `policy.status === "loading"` TOO, AND THAT WAS THE BLANK SCREEN.
+  //
+  // Measured 2026-08-18 against production: a learner types anything on the front door and gets an
+  // EMPTY PAGE — no composer, no reply, nothing they can do — for as long as the canvas takes to
+  // resolve its knowledge. 25 seconds for a plain greeting; 59 for "teach me pharmacokinetics",
+  // which has to search for material and ingest it first. No error, no crash, no console line: the
+  // component was returning a surface with one optional caption in it, and the caption only appears
+  // once a NAMED phase has been running long enough to be worth saying out loud. Most of that time
+  // there was literally nothing on screen.
+  //
+  // 🔴 THE REASON IT WAS WRITTEN IS GONE. The comment here used to say that painting early would
+  // let "the stage machine's own effects start generating a lesson for a canvas the policy is about
+  // to own". That machine no longer exists: nothing below this line generates anything on mount,
+  // and `composeSurface` already withholds every content region while the policy has nothing —
+  // `policyPresenting` requires `status === "ready"`, so a loading canvas resolves to `preparing`,
+  // which is a real surface WITH the composer under it. Suppressing the whole page was protecting
+  // against a runtime that had already been deleted.
+  //
+  // 🔴 WHAT STAYS IS `!session.ready`, WHICH IS A DIFFERENT CLAIM. That means the canvas itself has
+  // not loaded from the database yet — there is no title, no sources, no state, and a composer
+  // would have nothing to submit into. It is one read and it is fast.
   //
   // 🔴 AND IT CARRIES THE EXIT, WHICH IT DID NOT (UX brief §38.2). This branch used to return a
   // bare `<main>` with a caption in it: no header, therefore no way out. Harmless while the shell
@@ -568,14 +586,13 @@ export function LearningCanvas({
   // canvas, it is a page a learner cannot leave — on the exact entry paths (deep link, hard
   // refresh, fresh sign-in) that land here first. `CanvasSurface` renders the `×` above the
   // branch, so this state cannot be reached without one.
-  if (!session.ready || policy.status === "loading") {
+  if (!session.ready) {
     return (
       <CanvasSurface onExit={leave}>
         <div className="flex h-full items-center justify-center">
-          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL. Resolving a canvas's knowledge normally
-              finishes far inside the threshold, and a caption that appeared and vanished in 200ms
-              would be a flicker rather than information. It surfaces only when a step has genuinely
-              been running long enough to be worth naming — and it names the step that IS running. */}
+          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
+              database read long. It was not fine while it also covered knowledge resolution, which
+              is a model call and an ingestion and can run for a minute. */}
           {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
         </div>
       </CanvasSurface>
@@ -607,12 +624,18 @@ export function LearningCanvas({
   // reports work that is genuinely in flight and nothing else. It is what separates "Nemesis is
   // busy" from "Nemesis has nothing for you", which are opposite things to say to a learner.
   //
-  // 🔴 `policy.status === "loading"` IS DELIBERATELY ABSENT, AND THE COMPILER IS WHY. Writing it
-  // here is a type error: the branch above returns on `loading`, so by this point the status is
-  // provably `ready | unavailable`. That is worth recording rather than working around, because it
-  // narrows the defect — a canvas reaching this render with nothing to show is NEVER a canvas that
-  // is still thinking. It has finished, and it has nothing. `canvasPresence` still accepts the
-  // input so the value stays correct if that early return is ever removed.
+  // 🔴🔴 `policy.status === "loading"` IS LOAD-BEARING HERE NOW, AND IT IS THE OTHER HALF OF THE
+  // BLANK-SCREEN FIX. This comment used to say the clause was deliberately absent because the early
+  // return above made it unreachable — and it ended with the exact sentence that turned out to
+  // matter: *"`canvasPresence` still accepts the input so the value stays correct if that early
+  // return is ever removed."* It has been removed, so the input is supplied.
+  //
+  // 🔴 WITHOUT IT THE BLANK PAGE COMES BACK WEARING WORSE COPY. Knowledge resolution does not always
+  // name a phase — for a canvas with no sources `topicTerritory` returns before `onPhase` is ever
+  // called — so `phase` can be null while the policy is genuinely still loading. `working` would be
+  // false, presence would resolve to `quiet`, and the learner would read *"Nemesis has your material
+  // but hasn't found anything to ask you about yet"* about a canvas that is still working it out.
+  // Progress rendered as failure is the one thing `quiet` must never do.
   // 🔴 `policy.phase` TOO, AND THAT SECOND CLAUSE IS A MEASURED DEFECT, NOT A TIDY-UP. Observed in
   // production on a grounded topic canvas: `Teach me innate immunity.` attached three pages, the
   // session's own `busy` cleared, and knowledge extraction carried on running underneath — during
@@ -626,7 +649,7 @@ export function LearningCanvas({
   // caption. Whether a step is worth narrating and whether one is running are different questions,
   // and using the narration flag here would reopen the same hole for exactly the length of that
   // delay. `preparingLabel` already handles a null label honestly.
-  const working = busy.kind !== null || policy.phase !== null;
+  const working = busy.kind !== null || policy.phase !== null || policy.status === "loading";
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
