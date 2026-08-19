@@ -44,20 +44,41 @@ export type SpeechPurpose = "canvas" | "language_learning";
 /**
  * A synthesiser Nemesis can actually call.
  *
- * 🔴 ONE MEMBER, AND LISTING PROVIDERS WE CANNOT CALL WOULD MAKE THIS FILE LOOK LIKE IT ROUTES. The
- * owner is right that speech should be an interchangeable output service rather than part of
- * Nemesis's cognition, and the shape that makes it interchangeable is here: a `provider` on every
- * decision and a lookup table that is DATA. What is deliberately absent is a union of vendor names
- * with no integration behind any of them — that reads as a working multi-provider router to the
- * next person, and this repo has been burned by exactly that gap once already.
+ * 🔴 TWO MEMBERS, BOTH INTEGRATED, AND THAT RULE HAS NOT CHANGED. This union may only name a
+ * synthesiser Nemesis can actually call today: `xai` through `nemesis-speak`, `azure` through
+ * `/api/speech/tts`. A union of vendor names with no integration behind them reads as a working
+ * multi-provider router to the next person, and this repo has been burned by exactly that gap once
+ * already.
  *
- * Widening it is a small change: add the member, add the row to `MEASURED_PROVIDERS`, and teach
- * `nemesis-speak` the second endpoint. What must not happen is the table filling up from vendors'
- * own coverage claims instead of from a bake-off — see `ProviderEvidence`.
+ * 🔴 THE SECOND MEMBER ARRIVED WITH A JOB, NOT AS A REPLACEMENT. See `TARGET_LANGUAGE_PROVIDER`.
+ * What must still not happen is this table filling up from vendors' own coverage claims instead of
+ * from a bake-off — see `ProviderEvidence`.
  */
-export type TtsProvider = "xai";
+export type TtsProvider = "xai" | "azure";
 
+/**
+ * Who speaks when nothing about the moment argues otherwise.
+ *
+ * xAI, because the Canvas lane is what it has always served and it works: one voice, no locale
+ * decision to make, and a key that already lives in the function that pays for it.
+ */
 export const DEFAULT_PROVIDER: TtsProvider = "xai";
+
+/**
+ * Who speaks the language being learned.
+ *
+ * 🔴 A DIFFERENT PROVIDER FOR A DIFFERENT JOB, NOT A MIGRATION (§47). Everything above about the
+ * Canvas lane stays true — and none of it helps here, because the one thing this lane needs is the
+ * one thing xAI does not offer: a catalogue. `es-MX` has to map to a named voice somebody can point
+ * at, and it has to map to the SAME one tomorrow, or a learner comparing today's attempt with
+ * yesterday's is comparing two voices. Azure publishes four hundred neural voices with a queryable
+ * list; that is the whole reason it is here.
+ *
+ * 🔴 AND IT DEGRADES TO xAI RATHER THAN TO SILENCE. `/api/speech/tts` refuses without a locale, but
+ * a deployment with no Azure credential should still speak a Spanish sentence badly rather than not
+ * at all — `capabilities.ts` holds that ordering, and this constant is what it falls back FROM.
+ */
+export const TARGET_LANGUAGE_PROVIDER: TtsProvider = "azure";
 
 /**
  * How the provider for a locale was chosen.
@@ -180,10 +201,22 @@ export interface SpeechRouteInput {
  * only integration that exists — but it is reported as unmeasured so a report can tell the two
  * apart.
  */
-export function providerForLocale(locale: string): { evidence: ProviderEvidence; provider: TtsProvider } {
+export function providerForLocale(
+  locale: string,
+  /**
+   * What the speech is for.
+   *
+   * 🔴 THE ARGUMENT THAT MAKES THIS A ROUTER RATHER THAN A CONSTANT. The same locale gets a
+   * different synthesiser depending on whether the sound is the material or merely the channel:
+   * `es-MX` on a correction is xAI reading instruction aloud, and `es-MX` on the sentence being
+   * taught is Azure speaking a named Mexican voice. One locale, two right answers.
+   */
+  purpose: SpeechPurpose | "target_language" = "canvas",
+): { evidence: ProviderEvidence; provider: TtsProvider } {
   const measured = MEASURED_PROVIDERS[locale.trim()];
-  return measured
-    ? { evidence: "measured", provider: measured }
+  if (measured) return { evidence: "measured", provider: measured };
+  return purpose === "target_language"
+    ? { evidence: "unmeasured-default", provider: TARGET_LANGUAGE_PROVIDER }
     : { evidence: "unmeasured-default", provider: DEFAULT_PROVIDER };
 }
 
@@ -261,9 +294,9 @@ export function routeSpeech(input: SpeechRouteInput): SpeechRoute {
     };
   }
 
-  const { evidence, provider } = providerForLocale(target);
+  const { evidence, provider } = providerForLocale(target, "target_language");
   return {
-    because: "the sound is the material here, so it is spoken in the established variety at the pace real speech runs at",
+    because: "the sound is the material here, so it is spoken in the established variety at the pace real speech runs at, through the synthesiser that can name that variety",
     decision: "speak",
     locale: target,
     provider,

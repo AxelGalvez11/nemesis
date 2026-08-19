@@ -13,6 +13,7 @@ import {
   CANVAS_SPEED,
   isWellFormedLocale,
   MEASURED_PROVIDERS,
+  providerForLocale,
   routeSpeech,
   TARGET_LANGUAGE_SPEED,
 } from "./speech-route";
@@ -145,7 +146,34 @@ test("🔴 every locale reports its provider as unmeasured until a bake-off has 
   assert.deepEqual(MEASURED_PROVIDERS, {}, "a provider table filled from vendor claims is the failure §43 names");
   const route = routeSpeech({ key: "t9", moment: TARGET, purpose: "language_learning", targetLocale: "ja-JP" });
   assert.equal(route.decision === "speak" && route.providerEvidence, "unmeasured-default");
-  assert.equal(route.decision === "speak" && route.provider, "xai");
+});
+
+test("🔴 the target-language lane goes to Azure and the Canvas lane does not (§47)", () => {
+  // 🔴 THIS ASSERTION USED TO SAY `xai` FOR BOTH, AND THE CHANGE IS THE POINT RATHER THAN A FIXUP.
+  // Azure did not arrive as a migration: the Canvas lane still runs on the synthesiser that already
+  // works and already has a key. What Azure has that xAI does not is a CATALOGUE — `ja-JP` mapping to
+  // a voice somebody can name, and to the same one tomorrow — and naming the variety is the entire
+  // thing §43 refuses to guess at.
+  const language = routeSpeech({ key: "t9a", moment: TARGET, purpose: "language_learning", targetLocale: "ja-JP" });
+  assert.equal(language.decision === "speak" && language.provider, "azure");
+
+  // A correction inside a language lesson is instruction ABOUT the target language, not an example
+  // of it — so it stays on the Canvas synthesiser, in the language of instruction.
+  const correction = routeSpeech({
+    instructionLocale: "en-GB",
+    key: "t9b",
+    moment: { answer: "el gato", kind: "correction", lead: "Close" },
+    purpose: "language_learning",
+  });
+  assert.equal(correction.decision === "speak" && correction.provider, "xai");
+
+  const canvas = routeSpeech({ key: "t9c", moment: { kind: "question", text: "What does this show?" }, purpose: "canvas" });
+  assert.equal(canvas.decision === "speak" && canvas.provider, "xai");
+
+  // 🔴 A MEASURED WINNER STILL OVERRIDES BOTH. The bake-off table is the top of the routing
+  // hierarchy; §47 changed the DEFAULT for one lane, not the rule that listening beats defaults.
+  assert.equal(providerForLocale("ja-JP", "target_language").provider, "azure");
+  assert.equal(providerForLocale("ja-JP", "canvas").provider, "xai");
 });
 
 // ───────────────────────────────────────────────────────── locale shape

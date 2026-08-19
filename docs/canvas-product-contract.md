@@ -1533,7 +1533,9 @@ domain verbs belong in the free-text edge label that already existed.
 
 # 43. 🔴 WHEN THE SUBJECT IS AUDITORY — voice stops being an output channel (owner, 2026-08-18)
 
-## STATUS: THE SPEECH ROUTER SHIPPED AND IS SERVING THE CANVAS LANE. THE LANGUAGE LANE HAS RULES, A LOCALE CONTRACT AND NO SESSION TYPE BEHIND IT. A LISTENING BENCH EXISTS IN NEMESIS LAB AND NO PROVIDER HAS BEEN MEASURED. PRONUNCIATION ASSESSMENT DOES NOT EXIST.
+## STATUS: THE SPEECH ROUTER SHIPPED AND IS SERVING THE CANVAS LANE. THE LANGUAGE LANE HAS RULES, A LOCALE CONTRACT AND NO SESSION TYPE BEHIND IT. A LISTENING BENCH EXISTS IN NEMESIS LAB AND NO PROVIDER HAS BEEN MEASURED. PRONUNCIATION ASSESSMENT SHIPPED IN §47 AND NO LESSON CALLS IT YET.
+
+🔴 **THE LAST CLAUSE CHANGED ON 2026-08-19 AND THE OLD ONE IS RECORDED RATHER THAN ERASED.** This line read *"PRONUNCIATION ASSESSMENT DOES NOT EXIST"* from the day §43 was written until Azure was integrated. It moved because a guard in `visualization-roadmap.test.ts` went red the moment the provider landed — which is the entire mechanism, working exactly once as designed. What has NOT changed: no Canvas lesson enters the language lane, every caller still passes `purpose: "canvas"`, and no provider has won a listening test.
 
 Everywhere else in this product, speech is a **second channel for text the learner could have
 read**. `canvas-speech.ts` argues that case and is right: it reads the question and the correction,
@@ -1999,3 +2001,122 @@ strictly need to be. Only one of those is a bug.
 - **No text measurement.** Nothing calls `getComputedTextLength`, and nothing may — a layout that
   differs between server and browser moves the picture after the learner has seen it.
 - **Still no interaction.** Dragging a point remains §41 priority five.
+
+# 47. 🔴 AZURE EARNS TWO CAPABILITIES, NOT THE SPEECH STACK (owner, 2026-08-19)
+
+## STATUS: PROVIDER LAYER, MULTILINGUAL TTS AND PRONUNCIATION ASSESSMENT SHIPPED AND TESTED. NO CANVAS LESSON EMITS A DRILL YET. NO LEARNER AUDIO IS STORED.
+
+The owner supplied an Azure Speech resource and asked for two things: a large multilingual voice
+catalogue, and pronunciation assessment. They also asked, twice and in their own words, for the
+things NOT to do: *"Do not unnecessarily replace the current speech stack"* and *"Avoid scattering
+Azure-specific code throughout the app."*
+
+## 🔴 THE UNIT IS A CAPABILITY, NOT A VENDOR
+
+"We use Azure" is not a fact anybody can act on. Azure serves two of Nemesis's three speech
+capabilities and not the third; xAI serves two and not the others; the browser serves the one nobody
+pays for. `lib/speech/capabilities.ts` is a table of *capability × provider*, and it is the only file
+a provider swap touches.
+
+| Capability | Serving | Standby | Why |
+|---|---|---|---|
+| TTS — Canvas | xAI | Azure | Works, paid for, no new secret, no locale decision to make |
+| TTS — target language | **Azure** | xAI | The variety IS the material, and only Azure publishes a catalogue to name it from |
+| Pronunciation | **Azure** | — | The only integrated engine that scores HOW rather than WHAT |
+| Transcription | browser / xAI / AssemblyAI | — | Unchanged |
+
+🔴 **`serving` IS MEASURED FROM THE ENVIRONMENT, NEVER ASSERTED.** A row saying "Azure serves
+pronunciation" in a deployment with no Azure key is a lie the code tells itself. `capabilityReport`
+takes a map of which credentials exist and stamps `unconfigured` on the rows that cannot run. This
+repo has already shipped one table that described intent and read as description — §41's eleven
+knowledge kinds against one lane — and a capability registry is the same trap in different clothes.
+
+## 🔴 WHY THE CANVAS LANE DID NOT MOVE
+
+`nemesis-speak` reads a question aloud, bills at a rate it logs per utterance, and reads a key from
+secrets that already exist. Replacing it would be a migration with no beneficiary.
+
+What it cannot do is name a variety. It takes `auto` or a bare language, picks a voice nobody chose,
+and offers no catalogue. §43 refuses to guess across exactly that gap. **Two providers, two jobs.**
+
+## 🔴 THE VOICE FOR A LOCALE IS DETERMINISTIC, AND THAT IS A TEACHING REQUIREMENT
+
+A learner drilling one sentence hears the target four times. If the voice changes between attempts
+they are comparing their production against a moving target, and any progress they hear might be the
+voice. `selectVoice` sorts neural first, generally-available before preview, then alphabetically —
+the last being a tie-break that cannot drift rather than a quality judgement.
+
+A region with no voice **refuses**; `es-ES` is not silently served for `es-MX`. Fallback is opt-in
+and the response says `match: "region-fallback"` so a surface can be honest about it.
+
+## 🔴 AN OMITTED WORD HAS NO SCORE, NEVER A ZERO
+
+Azure reports a skipped word with an error type and no accuracy at all. The obvious normalisation —
+default the missing number to zero — makes *"did not say it"* and *"said it terribly"* the same
+value. Every layer downstream then treats them identically: the diagnosis names a vowel in a word
+nobody said, and the progress comparison reports an enormous improvement the moment the learner says
+it at all. This is the single most load-bearing line in the transform.
+
+The same rule holds one level up: below 50% completeness, `diagnose` returns `off-target` and names
+no sounds. A learner who said a different sentence has no pronunciation problem to diagnose.
+
+## 🔴 THE FIELD THE WHOLE INTEGRATION IS FOR
+
+`NBestPhonemes` → `likelyProduced`. *"Your /r/ scored 0.3"* tells a learner they were wrong, which
+they suspected. *"You produced something closer to /ɾ/"* tells them what they did, which is the only
+half they could not work out for themselves. A score is a grade; this is a lesson.
+
+## 🔴 NOTHING IN THE DIAGNOSIS KNOWS ANY LANGUAGE
+
+No list of hard sounds, no Spanish rolled-R rule, no English th-fronting rule. Every judgement is
+structural — which unit scored lowest, what the assessor said was produced instead, where in the word
+it sits. The standing CLAUDE.md rule applies unchanged: a heuristic that only made sense for Spanish
+would be silently wrong on Japanese, and this product serves both.
+
+## 🔴 THE KEY IS READ IN ONE FILE, AND A TEST ENFORCES IT
+
+Next.js will not inline a non-`NEXT_PUBLIC_` variable into a client bundle, so importing the config
+module from a component yields an EMPTY key — safe, and completely silent. The next person debugging
+"why is Azure not working in the browser" fixes it the obvious way, by renaming the variable, and
+ships a Speech credential to every visitor. No review catches a one-word rename in an env file.
+
+So `lib/speech/secrets.test.ts` reads the source and fails on: a second reader of `AZURE_SPEECH_KEY`,
+any `NEXT_PUBLIC_AZURE` reference in shipped code, any `"use client"` file importing
+`lib/speech/azure/`, an unauthenticated route, or anything shaped like a committed key. The config
+module also throws outright if evaluated in a browser.
+
+**The region is validated before it becomes a hostname.** Every Azure endpoint is
+`https://{region}.something.microsoft.com`, so an unchecked region is a configuration string deciding
+where Nemesis sends a bearer credential.
+
+## 🔴 NO LEARNER AUDIO IS STORED, AND THAT IS A DECISION RATHER THAN AN OMISSION
+
+`use-pronunciation-attempt` records one attempt, posts it, and releases it. Nothing writes it to
+storage and nothing puts it in `learner_evidence`. A recording of a person's voice is not the same
+object as a transcript of what they said, and retaining one is a privacy decision the owner has not
+been asked to make. The previous attempt's *numbers* are held in the component so the retry can be
+compared; they die with the screen.
+
+## 🔴 THE LIVE HARNESS CHECKS THE TWO HALVES AGAINST EACH OTHER
+
+`npm run azure-speech` synthesises a sentence with Azure and then asks Azure to score that audio
+against the same sentence. A native-quality reading must come back near the top of the scale. If the
+SSML, the audio format, the assessment header or the normalisation is wrong, that number collapses —
+and **no fixture-driven test can produce it**. With no credential every check reports `SKIP` and the
+script exits 0, because this runs in environments that deliberately have no Azure key and a red build
+there teaches people to ignore it.
+
+## What is deliberately NOT built
+
+- **No Canvas lesson emits a pronunciation drill yet.** The capture hook, the routes, the assessment,
+  the diagnosis and the retry comparison all work and are tested; no teaching prompt asks for one.
+- **No new language-learning UI.** The owner was explicit: build the backend and the data layer, and
+  do not invent an interface. What exists is a hook a surface can call.
+- **No streaming recognition.** `/api/speech/token` exists for the day the browser SDK is wanted;
+  nothing calls it yet.
+- **No attempt history.** A drill is a handful of tries inside one screen. When attempts need to
+  outlive it they belong in `learner_evidence` with everything else, which is a schema change
+  somebody makes on purpose.
+- **No bake-off winners.** `MEASURED_PROVIDERS` is still empty. Azure serving the language lane is an
+  argument about capability, not a claim that it sounds best — §43's rule that vendor coverage is not
+  quality evidence is untouched.

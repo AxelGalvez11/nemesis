@@ -216,15 +216,21 @@ test("§43's status line matches whether a language lane or a pronunciation prov
   assert.ok(SECTION_43.length > 0, "§43 has gone missing from the contract");
   assert.match(
     SECTION_43,
-    /A LISTENING BENCH EXISTS IN NEMESIS LAB AND NO PROVIDER HAS BEEN MEASURED\. PRONUNCIATION ASSESSMENT DOES NOT EXIST\./,
-    "§43 must say plainly what is unreached",
+    /PRONUNCIATION ASSESSMENT SHIPPED IN §47 AND NO LESSON CALLS IT YET\./,
+    "§43 must say plainly what is and is not reached",
   );
-  // The refusal is the only reachable outcome while no provider is integrated.
-  assert.match(PRONUNCIATION, /reason: "no-provider"/);
+  // 🔴 THE SCHEMA FILE STAYS PURE AND CLIENT-SAFE, WHICH IS WHY IT NEVER GREW THE PROVIDER. §47 put
+  // the assessor in `lib/speech`, which is server-only; this file is the vocabulary every surface
+  // reads. A URL appearing here means the boundary collapsed into the type it was protecting.
   assert.equal(
     /https?:\/\//.test(PRONUNCIATION),
     false,
-    "pronunciation-evidence.ts now calls something — §43 still says no provider is integrated",
+    "pronunciation-evidence.ts now calls something — it is the schema, not the provider",
+  );
+  assert.match(
+    readFileSync(new URL("../speech/pronunciation.ts", import.meta.url), "utf8"),
+    /reason: "no-provider"/,
+    "the named gap disappeared — a deployment with no key must still say so",
   );
   // Every caller passes `canvas`. The day one passes the other purpose, this line is stale.
   const voiceHook = readFileSync(
@@ -510,4 +516,29 @@ test("🔴 §46 — nothing in the layout module measures text", () => {
   for (const forbidden of ["getComputedTextLength", "getBBox", "measureText", "document.", "window."]) {
     assert.ok(!layout.includes(forbidden), `visual-layout.ts reaches for ${forbidden}`);
   }
+});
+
+test("🔴 §47 — the speech registry only names providers Nemesis can actually call", () => {
+  // 🔴 THE FAILURE THIS GUARDS AGAINST HAS HAPPENED IN THIS REPO ONCE. §41 described eleven
+  // knowledge kinds while the code had one lane, and the gap read as description rather than intent.
+  // A provider union is the same trap: a vendor name with no integration behind it reads as a working
+  // multi-provider router to the next person who opens the file.
+  const speechRoute = readFileSync(new URL("./speech-route.ts", import.meta.url), "utf8");
+  const capabilities = readFileSync(new URL("../speech/capabilities.ts", import.meta.url), "utf8");
+  const union = speechRoute.match(/export type TtsProvider =([^;]+);/)?.[1] ?? "";
+  const named = [...union.matchAll(/"([a-z]+)"/g)].map((match) => match[1]).sort();
+  assert.deepEqual(named, ["azure", "xai"], "a synthesiser was named that nothing calls");
+  for (const provider of named) {
+    assert.match(capabilities, new RegExp(`provider: "${provider}"`), `${provider} routes but has no capability row`);
+  }
+  assert.match(CONTRACT, /# 47\. .*AZURE EARNS TWO CAPABILITIES/);
+});
+
+test("🔴 §47 — the Azure key has exactly one reader, and it is not a client module", () => {
+  // The full scan lives in lib/speech/secrets.test.ts. This is the contract-facing half: the status
+  // line above claims the key is server-side, and a claim in a document is worth what enforces it.
+  const config = readFileSync(new URL("../speech/azure/config.ts", import.meta.url), "utf8");
+  assert.match(config, /typeof window !== "undefined"/, "the server-only guard was removed");
+  assert.ok(!config.includes("use client"));
+  assert.match(CONTRACT, /THE KEY IS READ IN ONE FILE, AND A TEST ENFORCES IT/);
 });

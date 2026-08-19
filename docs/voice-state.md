@@ -161,3 +161,21 @@ deterministically from the paper, and skips any question whose explanation names
 letter. Called from the Canvas (`canvas-parse.ts:275`), the Study tab, and the agent tools. Its
 header already makes the argument that a balanced-in-order sequence (A,B,C,D,A,B,C,D) is *more*
 exploitable than clustering, not less.
+
+## Update — 2026-08-19: Azure Speech integrated (§47)
+
+Two capabilities changed. Nothing above was replaced.
+
+- **Pronunciation assessment now exists.** It did not when this document was written. Azure scores an
+  attempt at word, syllable and phoneme level and reports what the learner *likely produced* instead
+  of the target sound. `lib/speech/pronunciation-diagnosis.ts` turns that into a named word, a named
+  sound and one corrective line; `pronunciation-progress.ts` compares a retry with the attempt before
+  it. **No Canvas lesson calls any of it yet** — the capture hook and the routes work and are tested,
+  and no teaching prompt asks for a drill.
+- **The target-language TTS lane moved to Azure.** The Canvas lane (§1 above, `nemesis-speak`) is
+  unchanged and stays on xAI. The split is in `lib/speech/capabilities.ts`.
+- **Learner audio is still not stored anywhere.** The attempt hook records, posts to the assessor, and
+  releases. Retaining a recording of a person's voice is a decision nobody has been asked to make.
+
+The architecture, the environment variables and how to test any of it live in
+[`speech-architecture.md`](./speech-architecture.md).
