@@ -344,14 +344,39 @@ test("§44's status line matches whether a lesson emits these or anything execut
   assert.ok(SECTION_44.length > 0, "§44 has gone missing from the contract");
   assert.match(
     SECTION_44,
-    /STATUS: ALL FIVE REPRESENTATIONS SHIPPED AND ROUTED, WITH EVERY NUMERIC CLAIM VERIFIED\. NO CANVAS LESSON EMITS ONE YET\. NOTHING EXECUTES CODE\./,
-    "§44 must say plainly what is unreached",
+    /STATUS: ALL FIVE REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED\. NOTHING EXECUTES CODE\./,
+    "§44 must say plainly what is reached",
   );
-  // The moment a teaching prompt asks for one of these, the status line is stale.
+  // 🔴 THE CLAIM FLIPPED ON 2026-08-19 AND THIS GUARD IS WHY IT COULD NOT BE FORGOTTEN. It asserted
+  // for months that no prompt asked for these; the day the vocabulary was extended it went red, and
+  // moving the status line was part of the same commit. That is the entire mechanism.
   const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
-  for (const kind of ['"table"', '"timeline"', '"construction"', '"vectors"']) {
-    assert.equal(prompts.includes(kind), false, `canvas-prompts now asks for ${kind} — §44's status line is stale`);
+  for (const kind of ['"table"', '"timeline"', '"construction"', '"vectors"', '"code"']) {
+    assert.ok(prompts.includes(kind), `canvas-prompts stopped offering ${kind} — §44's status line is stale`);
   }
+  // Nothing runs the code, and the label saying so is still on screen.
+  assert.equal(prompts.includes("traceOrigin"), false, "the prompt now sets traceOrigin — that stamp is the validator's");
+});
+
+test("🔴 the vocabulary offered to the model and the vocabulary the validator accepts are the same set", () => {
+  // 🔴 THE DRIFT THIS PREVENTS IS SILENT IN BOTH DIRECTIONS. A shape the validator accepts but the
+  // prompt never mentions is a renderer nobody can reach — which is exactly the state chemistry,
+  // tables, timelines, constructions, vectors and code traces sat in for months, built and invisible.
+  // A shape the prompt offers but the validator rejects is worse: the model produces it, every
+  // instance is refused, and the lesson silently loses its visual with no sign that anything is wrong.
+  const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
+  const rule = prompts.slice(prompts.indexOf("const VISUAL_RULE ="), prompts.indexOf("const BLOCK_SHAPE"));
+  const offered = new Set([...rule.matchAll(/"kind":"([a-z_]+)"/g)].map((match) => match[1]));
+  // Both declaration sites: the union lives in `canvas-visual.ts`, the five §44 shapes in
+  // `subject-visuals.ts`. Reading one would let the other drift, which is the whole failure mode.
+  const subjectShapes = readFileSync(new URL("./subject-visuals.ts", import.meta.url), "utf8");
+  const accepted = new Set(
+    [...`${VISUAL_CONTRACT}\n${subjectShapes}`.matchAll(/kind: "([a-z_]+)";/g)].map((match) => match[1]),
+  );
+  // The router's asset lanes are representations rather than request shapes — a model never asks for
+  // a source figure, it asks for a concept and the router finds one.
+  accepted.delete("source_figure");
+  assert.deepEqual([...offered].sort(), [...accepted].sort());
 });
 
 test("🔴 five representations, and not one of them is named after a subject", () => {

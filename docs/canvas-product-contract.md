@@ -1316,6 +1316,8 @@ enjoyable engineering should read this line as the answer.
 
 ## STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, NOW INCLUDING CHEMICAL STRUCTURES. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
 
+🔴 **"SERVING" WAS HALF TRUE UNTIL 2026-08-19 AND THE HALF IT WAS MISSING IS WORTH NAMING.** The structure lane was built, routed, dark-mode-correct and covered by six browser checks — and the teaching prompt never mentioned it, so no lesson could ask for a molecule. Rungs one and two were serving for figures and equations, and merely *reachable* for chemistry. The prompt vocabulary now names `structure`, so a lesson on functional groups can draw one. Rungs three and four are unchanged: the registry is still empty and nothing generates.
+
 §41 asked *which representation makes this idea land*. This section answers a second question §41
 never asked: **when the answer is "a picture", where may that picture come from, and how far does
 its origin let it be trusted?**
@@ -1706,7 +1708,9 @@ session type, not work that precedes it.
 
 # 44. 🔴 FIVE SHAPES, SEVEN SUBJECTS — and the arithmetic is checked before it is drawn (owner, 2026-08-19)
 
-## STATUS: ALL FIVE REPRESENTATIONS SHIPPED AND ROUTED, WITH EVERY NUMERIC CLAIM VERIFIED. NO CANVAS LESSON EMITS ONE YET. NOTHING EXECUTES CODE.
+## STATUS: ALL FIVE REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED. NOTHING EXECUTES CODE.
+
+🔴 **"NO CANVAS LESSON EMITS ONE YET" WAS TRUE FOR THE FIRST DAY OF THIS SECTION'S LIFE AND IS RECORDED RATHER THAN ERASED.** Every renderer here was built, routed, verified and tested while the teaching prompt offered the model three shapes out of nine — so no lesson could produce one, and a capability nobody is told about is indistinguishable from one that was never built. The vocabulary in `canvas-prompts.ts` now names all nine. A guard in `visualization-roadmap.test.ts` went red the moment it did, which is why this line moved in the same commit, and a second guard now holds the offered vocabulary and the accepted vocabulary to being the same set in both directions.
 
 The owner asked for computer science, accounting, history, statistics, geometry,
 physics/engineering and finance. **That is seven subjects and five representations.**

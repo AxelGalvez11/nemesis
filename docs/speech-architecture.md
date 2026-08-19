@@ -131,7 +131,13 @@ can be compared with it. It dies with the screen.
 cd apps/web
 npx tsx --test "lib/speech/*.test.ts" "lib/speech/azure/*.test.ts"   # fixtures, no network
 npm run azure-speech                                                  # real Azure, needs the key
+npm run dev   # then open /dev-preview/azure-speech
 ```
+
+`/dev-preview/azure-speech` is the fastest way to find out whether the credential works: pick a
+locale, hear the voice Azure chose, then record yourself and see a real score. It calls the same
+`/api/speech/*` routes a lesson will, so a green bench means every remaining gate is wiring rather
+than integration. It **404s in production** — the bench spends real money and quota.
 
 The fixture tests cover English, Spanish and Japanese — chosen because the response *shape* genuinely
 differs between them, not for coverage theatre. Japanese is the one that catches a parser assuming a

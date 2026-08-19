@@ -109,11 +109,43 @@ const SIMPLIFY_RULE =
 const EXPLAIN_BLOCK_RULE =
   "Answer in at most three sentences, plainly. Return JSON: {\"answer\":\"…\"}";
 
+/**
+ * The shapes a lesson may ask for.
+ *
+ * 🔴 THIS LIST IS THE ONLY THING THAT MAKES A RENDERER REACHABLE, AND FOR MONTHS IT NAMED THREE OF
+ * NINE. Chemistry, tables, timelines, constructions, vectors and code traces were all built, routed,
+ * verified and tested — and no lesson could produce one, because nothing ever told the model they
+ * existed. A capability nobody is told about is indistinguishable from one that was never built.
+ *
+ * 🔴 SHAPES, NEVER SUBJECTS, WHICH IS WHY THERE ARE NINE AND NOT TWENTY. A table serves accounting,
+ * finance and statistics; a constructed figure serves geometry and half of physics; a timeline serves
+ * history, geology and any process with an order. Naming subjects here would teach the Canvas a
+ * discipline, which §41 forbids and which would break the day a law student needed a timeline.
+ *
+ * 🔴 STATED NUMBERS ARE RECOMPUTED BEFORE ANYTHING IS DRAWN, AND THE MODEL IS TOLD SO. A total that
+ * does not sum, an angle the coordinates disagree with, or forces that do not cancel produce NO
+ * PICTURE rather than a wrong one. Saying that here is not a threat — it is the information that
+ * makes the difference between a model asserting a total and a model computing one.
+ *
+ * 🔴 AND IT STAYS A SEMANTIC REQUEST. Nothing in this vocabulary accepts geometry, markup, colour,
+ * layout or code that runs. `structure` takes a canonical SMILES string and a depiction library draws
+ * it; `equation` takes LaTeX and KaTeX draws it. The model says WHAT, never HOW.
+ */
 const VISUAL_RULE =
   '"visual" is optional and is a SEMANTIC REQUEST, never rendering code. Use it only when a visual makes a relationship materially easier to understand than the prose. ' +
-  'Allowed shapes are: {"kind":"equation","latex":"…","learningGoal":"…","caption":"…"}; ' +
-  '{"kind":"relationship","nodes":[{"id":"n1","label":"…"}],"edges":[{"from":"n1","to":"n2","label":"…"}],"learningGoal":"…","caption":"…"}; ' +
-  'or {"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}],"learningGoal":"…","caption":"…"}. ' +
+  'Allowed shapes are: {"kind":"equation","latex":"…"}; ' +
+  '{"kind":"relationship","nodes":[{"id":"n1","label":"…"}],"edges":[{"from":"n1","to":"n2","label":"…","polarity":"increases"|"decreases"}]} — use polarity when one thing drives or blocks another; ' +
+  '{"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}]}; ' +
+  '{"kind":"structure","notation":"smiles"|"reaction-smiles","value":"CC(=O)Oc1ccccc1C(=O)O","highlight":[0,1],"carbons":"skeletal"|"all","conditions":"…"} — a molecule or a reaction, given ONLY as canonical notation; never coordinates, never a drawing; ' +
+  '{"kind":"table","columns":[{"key":"c1","label":"…","numeric":true}],"rows":[{"cells":{"c1":100}}],"totals":[{"column":"c1","value":100}],"balance":{"left":"c1","right":"c2"},"hidden":{"column":"c1","row":0}}; ' +
+  '{"kind":"timeline","unit":"years","events":[{"at":-49,"atLabel":"49 BCE","label":"…","until":-44,"lane":"…","uncertain":true}],"hidden":0} — "at" is a plain number on any scale you choose and "atLabel" is what a human reads, so eras, geological time and seconds all work without a date format; ' +
+  '{"kind":"construction","points":[{"id":"A","x":0,"y":0,"label":"A"}],"segments":[{"from":"A","to":"B","label":"4"}],"circles":[{"centre":"A","through":"B"}],"angles":[{"at":"A","from":"B","to":"C","degrees":90}]}; ' +
+  '{"kind":"vectors","bodyLabel":"…","axesDegrees":30,"vectors":[{"label":"Weight","magnitude":98,"degrees":270,"unit":"N"}],"equilibrium":true}; ' +
+  'or {"kind":"code","language":"python","source":"…","trace":[{"line":1,"note":"…","variables":[{"name":"total","value":"0"}]}]}. ' +
+  'Every shape also takes "learningGoal" and "caption". ' +
+  "A stated total, balance, angle or equilibrium is RECOMPUTED from the data you supply, and a claim that does not hold produces no visual at all — so state one only when you have worked it out. " +
+  '"hidden" covers one cell or one event so the learner has something to retrieve rather than only read; use it when the visual is being taught rather than merely shown. ' +
+  "A code trace is your account of what the code would do — nothing here executes it, and the learner is told so on screen. " +
   "Leave it absent when text is clearer. Never emit HTML, SVG, Mermaid, JavaScript, React, renderer names, styling, or arbitrary code. " +
   "The prose must still explain the idea; the visual is a representation of it, not a replacement for teaching.";
 
