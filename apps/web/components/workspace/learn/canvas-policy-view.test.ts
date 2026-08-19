@@ -11,10 +11,10 @@ import { correctionLead } from "./correction-copy";
 
 const SOURCE = readFile(new URL("./canvas-policy-view.tsx", import.meta.url), "utf8");
 
-/** 🔴 THE OWNERSHIP COLOUR MOVED INTO ITS OWN COMPONENT (§46.2), SO THE GUARD FOLLOWED IT. Checking
- *  only this file would now pass while `LearnerUtterance` painted the learner's words by verdict —
- *  the same defect §35.1 exists for, one file over. */
-const UTTERANCE = readFile(new URL("./learner-utterance.tsx", import.meta.url), "utf8");
+/** 🔴 THE AUTO-ADVANCE MOVED OUT OF THIS FILE (2026-08-19) AND THE GUARD FOLLOWED IT. It is shared
+ *  with the conversational reply now, because a reply has to end the same way a verdict does; a
+ *  guard still reading this file would go green on a second, divergent copy of the timer. */
+const SCREEN_EXIT = readFile(new URL("./use-screen-exit.ts", import.meta.url), "utf8");
 
 test("🔴 a degraded source is never told it means the learner is done", async () => {
   const source = await SOURCE;
@@ -106,17 +106,27 @@ test("🔴 §K: the surviving arm never narrates the learner's own turn back at 
     );
   }
 
-  // ...and the quote itself must still be RENDERED, or this test would pass by deleting the
-  // context rather than the narration.
-  // 🔴 THIS USED TO REQUIRE QUOTE MARKS AROUND THE ANSWER, AND THAT WAS THE SHAPE, NOT THE
-  // PROPERTY. §46.2 replaced the quoted line with `LearnerUtterance`, whose tinted ground says
-  // authorship structurally; punctuation reads as "someone said this", which is true of every line
-  // on the screen. What must still hold is that the learner's own words are RENDERED, or this test
-  // would pass by deleting the context rather than the narration.
-  assert.match(
+  // 🔴🔴 AND THE LEARNER'S OWN WORDS ARE NOT RENDERED AT ALL — THIS ASSERTION IS INVERTED FROM WHAT
+  // IT USED TO BE, AND THE INVERSION IS THE OWNER'S (2026-08-19). It required the echo, on the
+  // reasoning that a §K test banning "You said" could otherwise be satisfied by deleting the
+  // learner's words along with the narration. That reasoning was sound while a Canvas printed both
+  // voices. It does not survive *"The user should not create a permanent chat bubble every time
+  // they answer or ask something… User input is not automatically visual content."*
+  //
+  // 🔴 SO THE GUARD IS NOW THE OPPOSITE ONE, AND IT IS STRONGER: not "the answer is not narrated"
+  // but "the answer is not on screen". `feedback.answer` may still be READ in this file — it keys
+  // the screen, which is what makes each verdict a new screen — so the test bans it from JSX
+  // rather than from the file, which is the difference between using a value and painting it.
+  const painted = [...rendered.matchAll(/[>{]\s*\{?feedback\.answer\}?\s*[<}]/g)];
+  assert.deepEqual(
+    painted.map((hit) => hit[0]),
+    [],
+    "the learner's own answer is being painted back at them — the Canvas shows what deserves attention now, and they already know what they typed",
+  );
+  assert.doesNotMatch(
     rendered,
-    /<LearnerUtterance[^>]*>\{feedback\.answer\}<\/LearnerUtterance>/,
-    "the learner's own words stopped being shown at all",
+    /LearnerUtterance/,
+    "the learner-bubble component is back; a Canvas that prints both voices is a transcript",
   );
 
   // No stage label and no step counter reach this arm either. These are the other three §K
@@ -176,8 +186,12 @@ test("🔴 K3: a correct answer needs NO CONTROL to advance — asserted as beha
   // `show_correction`, `teach` and `simplify` declare exactly the same `transient` exposition and
   // had no timer at all, so a wrong answer to a one-line association left the learner on a screen
   // with no Continue and no advance, permanently. This test follows the property, not the address.
-  const exit = rendered.slice(rendered.indexOf("function useScreenExit"));
-  assert.ok(exit, "the shared screen-exit rule is gone");
+  // 🔴 AND IT MOVED AGAIN, ONE FILE OUT, FOR THE SAME REASON IT MOVED THE FIRST TIME. A
+  // conversational reply now ends itself exactly as a transient correction does; while the hook was
+  // private to this component that was impossible without a second copy, and the copy that got the
+  // next bug fix would not have been the one with the bug. See use-screen-exit.ts.
+  const exit = stripComments(await SCREEN_EXIT);
+  assert.match(exit, /export function useScreenExit/, "the shared screen-exit rule is gone");
   assert.match(exit, /if \(!selfAdvancing \|\| !held \|\| blocked\) return;/,
     "the auto-advance gate must wait for BOTH the exposure window and the real evidence write");
   // 🔴 AND THE VERDICT MUST NOT LEAK BACK INTO THE GATE. This is the specific regression: someone
@@ -223,76 +237,11 @@ test("🔴 §35.1: Nemesis's verdict is a SENTENCE, on every outcome including a
   const body = feedback.indexOf("feedback.evaluation.feedback");
   assert.ok(body > gate, "the feedback body must stay inside the not-passed branch");
 
-  // And the learner's own words must still be rendered, or this passes by deleting the context.
-  const quote = feedback.indexOf("{feedback.answer}");
-  assert.notEqual(quote, -1, "the learner's own words stopped being shown");
-  assert.ok(quote < gate, "the learner's words show on every outcome — they are theirs");
-});
-
-test("🔴 §35.1: the learner's words are BLUE in every case — blue is authorship, never a grade", async () => {
-  const rendered = stripComments(await SOURCE);
-
-  // > "Blue means: this came from you. It does NOT mean correct. Keep that semantic stable."
-  //
-  // 🔴 THE DEFECT THIS REPLACES WAS SHIPPED AND EXPLICIT. A `VERDICT_TONE` map painted the
-  // learner's own answer green / amber / red by verdict, under a comment reading "THE COLOUR IS
-  // THE FEEDBACK". Their sentence and Nemesis's judgement of it were the same object.
-  // 🔴 THE ELEMENT MOVED (§46.2); THE RULE DID NOT. The colour used to be a `LEARNER_VOICE`
-  // constant applied at this one call site. It now lives inside `LearnerUtterance`, so the check
-  // is in two parts: this file must route the learner's words through that component, and that
-  // component must paint them with the ownership token unconditionally. Checking only the first
-  // would let the second colour them by verdict; checking only the second would let this file
-  // stop using it. Both, or the guarantee has a seam.
-  const utterance = stripComments(await UTTERANCE);
-  assert.match(rendered, /\{feedback\.answer\}/);
-  const quoteLine = /<LearnerUtterance[^>]*>\{feedback\.answer\}<\/LearnerUtterance>/.exec(rendered);
-  assert.ok(quoteLine, "the learner's words must render through LearnerUtterance");
-  assert.match(
-    utterance,
-    /text-\(--ui-learner\)/,
-    "LearnerUtterance stopped painting the learner's words with the ownership token",
-  );
-
-  // 🔴 AND THE COMPONENT MUST NOT BE ABLE TO TAKE A VERDICT AT ALL. This is stronger than the
-  // check it replaces: the old one proved one call site passed no grade, which stays green the
-  // moment a second call site passes one. A component with no such prop cannot be handed a grade
-  // from anywhere.
-  for (const forbidden of ["verdict", "correct", "passed", "evaluation", "status"]) {
-    assert.doesNotMatch(
-      utterance,
-      new RegExp(`\\b${forbidden}\\??:\\s`),
-      `LearnerUtterance accepts \`${forbidden}\` — ownership is not a spectrum, and a prop is all it takes for the grade to come back`,
-    );
-  }
-
-  // 🔴 NO VERDICT-KEYED COLOUR MAY EXIST ON THIS SURFACE AT ALL. Asserting only "the quote is
-  // blue" would stay green if someone reintroduced the map and applied it somewhere else on the
-  // learner's material — which is the same defect one element over.
-  for (const tone of ["--ui-green", "--ui-yellow", "--ui-red"]) {
-    assert.doesNotMatch(
-      rendered,
-      new RegExp(`(strong|understood|partial|incorrect|misconception):\\s*"text-\\(${escapeRegExp(tone)}\\)"`),
-      `a verdict-keyed colour map is back: ${tone}`,
-    );
-  }
-
-  // 🔴 AND BLUE ON WRONG ANSWERS TOO — the half that must not soften. If a miss kept red while a
-  // pass went blue, blue would mean "correct" by contrast and the grade would be back through the
-  // side door. So the colour cannot be conditional on the verdict in any form.
-  // 🔴 SCOPED TO THE QUOTE'S OWN className, NOT A PROXIMITY WINDOW. My first version looked for a
-  // ternary within 80 characters of the answer and went red on the `<h2>` beneath it — which
-  // branches on `passed` CORRECTLY, because Nemesis's annotation is exactly the thing that should
-  // change with the verdict. A guard that cannot tell the learner's element from Nemesis's would
-  // have been "fixed" by making the annotation unconditional, destroying the point of the change.
-  assert.ok(
-    !/\?/.test(quoteLine[0]),
-    `the learner's colour must not branch on the outcome: ${quoteLine[0]}`,
-  );
-  assert.doesNotMatch(
-    rendered,
-    /(passed|verdict)\s*\?[^;\n]{0,120}--ui-learner/,
-    "ownership is not a spectrum: either the learner wrote it or they did not",
-  );
+  // 🔴 AND THE HEADLINE NOW CARRIES THE SCREEN ALONE. This used to also require the learner's
+  // echoed answer above it, "or this passes by deleting the context". The context was deleted, on
+  // purpose (2026-08-19) — so the requirement that replaced it is that the headline must survive
+  // being the only thing left, which the two assertions above already state. Adding a second
+  // rendered element here would just re-pin the transcript in a different shape.
 });
 
 function escapeRegExp(literal: string): string {
@@ -305,7 +254,37 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[^\S\n]*\/\/.*$/gm, "");
 }
 
-// ── §39: the exposure window is the policy's, and it is spent once ───────────
+test("🔴 THE CANVAS PRINTS ONE VOICE — the learner's words are not visual content", async () => {
+  const rendered = stripComments(await SOURCE);
+
+  // 🔴🔴 THIS TEST REPLACES "the learner's words are BLUE in every case", AND THE REPLACEMENT IS A
+  // DELIBERATE NARROWING RATHER THAN A DELETION. §35.1 ruled that blue means authorship and never a
+  // grade — written because a shipped `VERDICT_TONE` map painted the learner's own answer green,
+  // amber or red, so their sentence and Nemesis's judgement of it were the same object. That rule
+  // needed an authorship colour because the screen printed two voices. It prints one now (owner,
+  // 2026-08-19: *"user input → DeepSeek interprets it → Canvas changes"*), so the question "which
+  // voice is this" cannot be asked, and the component that answered it is deleted.
+  //
+  // 🔴 WHAT MUST NOT COME BACK IS BOTH HALVES AT ONCE: the echo, and any colour keyed to a verdict.
+  // Either alone is how the old defect reassembles — an echo with no colour is a chat bubble, and a
+  // verdict-keyed colour map with no echo is the same map waiting for one.
+  assert.doesNotMatch(
+    rendered,
+    /LearnerUtterance|--ui-learner/,
+    "the learner-voice treatment is back in the policy view, which means the learner's words are being staged back at them",
+  );
+
+  // 🔴 NO VERDICT-KEYED COLOUR MAY EXIST ON THIS SURFACE AT ALL. Kept verbatim from the test this
+  // replaces: asserting only "nothing is echoed" would stay green if someone reintroduced the map
+  // and applied it to Nemesis's own correction text — the same defect one element over.
+  for (const tone of ["--ui-green", "--ui-yellow", "--ui-red"]) {
+    assert.doesNotMatch(
+      rendered,
+      new RegExp(`(strong|understood|partial|incorrect|misconception):\\s*"text-\\(${escapeRegExp(tone)}\\)"`),
+      `a verdict-keyed colour map is back: ${tone}`,
+    );
+  }
+});
 
 test("🔴 §39: the hold comes from the POLICY's exposition, never a number this file picked", async () => {
   // 🔴 THIS GUARD EXISTS BECAUSE CALIBRATION FOUND NOTHING GUARDING IT. Replacing

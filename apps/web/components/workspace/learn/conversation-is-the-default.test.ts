@@ -92,10 +92,24 @@ test("🔴 the canvas picks the mechanism for a study turn, not the model", () =
 });
 
 test("🔴 Learn this is offered for a subject, never for a greeting", () => {
-  assert.match(canvas, /\{session\.aside\.topic && \(/, "the offer is gated on something other than a subject");
+  // 🔴 THE OFFER MOVED INTO `canvas-reply.tsx` WITH THE REST OF THE REPLY (2026-08-19), SO THE
+  // GUARD FOLLOWED IT. The property is unchanged and is the one that matters: the button appears
+  // when the turn NAMED something, not when the turn was a question. It once read `aside.question`,
+  // which every turn has, so "Hello. What can I do for you?" came with a Learn this button that had
+  // nothing to start.
+  const reply = code(readFileSync(new URL("./canvas-reply.tsx", import.meta.url), "utf8"));
+  assert.match(reply, /\{topic && \(/, "the offer is gated on something other than a subject");
   assert.ok(
-    !/\{session\.aside\.question && \(/.test(canvas),
+    !/\{question && \(/.test(reply),
     "the offer is back on `question`, which every turn has — including a greeting",
+  );
+  // 🔴 AND THE COMPONENT MUST NOT BE ABLE TO SEE THE LEARNER'S QUESTION AT ALL. Stronger than the
+  // check it replaces: a prop that does not exist cannot be gated on by accident, and it also pins
+  // the vanishing-Canvas rule at the type level — the learner's own words are not this surface's
+  // to render (*"User input is not automatically visual content"*).
+  assert.ok(
+    !/^\s*question\??:/m.test(reply),
+    "the reply component accepts the learner's question — a prop is all it takes for the echo to come back",
   );
   assert.match(session, /topic: decision\.topic \?\? undefined/, "the model's subject never reaches the aside");
 });

@@ -41,8 +41,16 @@ export interface CanvasVoice {
     onToggle: (next: VoiceMode) => void;
     onSetAutoDictation: (next: AutoDictation) => void;
   };
-  /** Straight onto `<CanvasComposer listenSignal={…}>`. Changes when the microphone should open. */
-  listenSignal: number | null;
+  /**
+   * The composer's dictation channel. Changes when voice mode wants the microphone opened.
+   *
+   * 🔴 IT CARRIES `"start"` AND NOTHING ELSE, WHICH IS THE HONEST SHAPE OF WHAT VOICE MODE KNOWS.
+   * Hands-free means Nemesis finished speaking so the learner may now answer; when they have
+   * FINISHED answering is theirs to say, through the composer's own ✓ or by releasing Space. This
+   * hook has no way to know that and must not pretend to. See `CanvasComposerProps.dictationSignal`
+   * for why the channel carries a verb at all.
+   */
+  dictationSignal: { nonce: number; command: "start" } | null;
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
    *  talking while somebody is composing a reply to it. */
   stopSpeaking: () => void;
@@ -98,7 +106,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
   const [mode, setMode] = useState<VoiceMode>(DEFAULT_VOICE_MODE);
   const [autoDictation, setAutoDictation] = useState<AutoDictation>("unasked");
   const [dictationSupported, setDictationSupported] = useState(false);
-  const [listenSignal, setListenSignal] = useState<number | null>(null);
+  const [listenNonce, setListenNonce] = useState(0);
   const speech = useCanvasSpeech();
 
   // Browser-only facts, corrected after the first paint. See the file header.
@@ -153,8 +161,8 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
         return;
       }
       // A nonce rather than a boolean, so the composer treats this as an EVENT. See its own
-      // `listenSignal` comment for why a latched flag reopens the microphone on every render.
-      setListenSignal((current) => (current ?? 0) + 1);
+      // `dictationSignal` comment for why a latched flag reopens the microphone on every render.
+      setListenNonce((current) => current + 1);
     });
 
     return () => {
@@ -174,7 +182,9 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
       onToggle,
       speaking: speech.speaking,
     },
-    listenSignal,
+    // 🔴 `null` UNTIL THE FIRST REAL REQUEST. Zero is a nonce like any other, and emitting an
+    // object on mount would open the microphone at a learner who has not been spoken to yet.
+    dictationSignal: listenNonce > 0 ? { command: "start", nonce: listenNonce } : null,
     stopSpeaking: speech.stop,
   };
 }

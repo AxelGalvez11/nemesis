@@ -173,8 +173,54 @@ test("🔴 no internal action name leaks into the prompt", () => {
 // ── Reading the decision ────────────────────────────────────────────────────
 
 test("a plain decision is read", () => {
-  const read = readTurnDecision('{"say":"hey. what are you working on?","then":"reply","topic":null,"offer":null}');
-  assert.deepEqual(read, { offer: null, say: "hey. what are you working on?", then: "reply", topic: null });
+  const read = readTurnDecision(
+    '{"say":"hey. what are you working on?","then":"reply","topic":null,"offer":null,"weight":"micro"}',
+  );
+  assert.deepEqual(read, {
+    offer: null,
+    say: "hey. what are you working on?",
+    then: "reply",
+    topic: null,
+    weight: "micro",
+  });
+});
+
+// ── The weight: how long a reply owns a Canvas that shows one thing at a time ────────────────
+
+test("🔴 an unstated weight is READING, not micro — the asymmetry is which mistake is recoverable", () => {
+  // A reply held one beat too long costs a keypress. A reply that vanishes before it was finished
+  // is gone, silently, and neither the learner nor we ever find out. Same direction of safety
+  // `readingRequirementOf` takes for a missing cognitive mode, stated in both places.
+  assert.equal(readTurnDecision('{"say":"ACE also degrades bradykinin.","then":"reply"}')?.weight, "reading");
+  // A value the model invented is not a value. It falls to the same safe side rather than being
+  // passed through to a component that would then have no branch for it.
+  assert.equal(readTurnDecision('{"say":"ok","then":"reply","weight":"instant"}')?.weight, "reading");
+});
+
+test("🔴 prose the model wrote instead of JSON is READING too", () => {
+  // This is the branch where the model ignored the envelope and simply answered — which is usually
+  // a real, substantial answer to a real question, and is exactly the thing that must not evaporate
+  // while it is being read.
+  const read = decisionOrReply("Renin acts on angiotensinogen to form angiotensin I.");
+  assert.equal(read?.weight, "reading");
+  assert.equal(read?.then, "reply");
+});
+
+test("🔴 all three weights survive the round trip", () => {
+  for (const weight of ["micro", "brief", "reading"] as const) {
+    assert.equal(readTurnDecision(`{"say":"x","then":"reply","weight":"${weight}"}`)?.weight, weight);
+  }
+});
+
+test("🔴 the contract tells the model what a weight DOES to the screen, not what it is called", () => {
+  // The same shape the `then` rules take. A model choosing between three labels needs to know that
+  // one of them makes its sentence disappear on its own; the internal name for that is worth
+  // nothing to it. And the tie-break has to be stated, or brevity wins by default.
+  const last = turnRouterMessages({ context: EMPTY, utterance: "what does ACE stand for?" }).at(-1)?.content ?? "";
+  assert.match(last, /"weight"/);
+  assert.match(last, /vanishes after about a second/);
+  assert.match(last, /until they press Continue/);
+  assert.match(last, /choose the heavier one/);
 });
 
 test("a fenced decision is read", () => {

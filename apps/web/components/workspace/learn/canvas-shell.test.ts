@@ -199,15 +199,30 @@ test("a correction is prose, not a card", () => {
     );
   }
 
-  // The learner's own words are likewise not a card. 🔴 THE QUOTE MARKS THIS USED TO REQUIRE ARE
-  // GONE (§46.2): `LearnerUtterance` carries authorship on a tinted ground instead, because
-  // punctuation reads as "someone said this" — true of every line on the screen — and the old
-  // treatment leaned on 24.75px to do the rest, which §46.3 forbids. The property is unchanged:
-  // the learner's own words are still rendered.
-  assert.match(
+  // 🔴🔴 AND THE LEARNER'S OWN WORDS ARE NOT ON THIS SCREEN AT ALL — INVERTED FROM WHAT THIS
+  // ASSERTED (owner, 2026-08-19). It required the echo, first as a quoted line and then as
+  // `LearnerUtterance`'s tinted bubble, on the §46.2 reasoning that a learner must "be able to
+  // distinguish instantly: This came from me / This came from Nemesis". That question only arises on
+  // a screen that prints both voices, and this one prints one: *"user input → DeepSeek interprets it
+  // → Canvas changes… Do not append a permanent user bubble."*
+  //
+  // 🔴 IT BELONGS IN THIS TEST RATHER THAN ONLY IN `canvas-policy-view.test.ts` BECAUSE THIS TEST
+  // OWNS "not a card". A bubble is a card — a container with its own ground, hugging its text — and
+  // it was the one thing on this screen exempted from that rule. Removing the exemption is the same
+  // property this test already enforces on every paragraph, applied to the last element that had a
+  // reason to be different and no longer does.
+  //
+  // 🔴 IT MATCHES JSX AND THE IMPORT PATH, NOT THE BARE WORD, AND THAT IS NOT PEDANTRY. `read()`
+  // here does not strip comments, and the explanation of why the bubble was removed necessarily
+  // names it — so a guard on the bare identifier would fail on the paragraph describing the fix,
+  // which is exactly how a comment gets deleted to make a test pass. `canvas-policy-view.test.ts`
+  // records that same failure happening once already ("an earlier version grepped raw source and
+  // failed on this file's own header"). Painting requires an element or an import; prose is
+  // neither.
+  assert.doesNotMatch(
     policy,
-    /<LearnerUtterance[^>]*>\{feedback\.answer\}<\/LearnerUtterance>/,
-    "the learner's words are still shown",
+    /<LearnerUtterance|learner-utterance/,
+    "the learner-bubble is back on the correction screen — the Canvas shows what deserves attention now, and the learner already knows what they typed",
   );
 });
 

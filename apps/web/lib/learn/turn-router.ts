@@ -61,6 +61,47 @@ export type TurnAction =
   | "study";
 
 /**
+ * How much of the learner's attention this reply is worth — the ONE thing the model says about a
+ * conversational turn that the Canvas cannot work out for itself.
+ *
+ * 🔴 IT IS SEMANTIC, NOT A WORD COUNT, AND THAT IS THE WHOLE REASON IT LIVES ON THE DECISION.
+ * The owner's rule (2026-08-19): *"do not base this only on raw word count. Use semantic
+ * importance."* Length is a fine tiebreak INSIDE a category and a terrible way to choose the
+ * category: "ACE inhibition raises bradykinin, which is what causes the cough" is short and is
+ * material; "Doing well, thanks for asking, what would you like to look at next" is longer and is
+ * nothing. Only the thing that wrote the sentence knows which it produced.
+ *
+ * 🔴 THREE VALUES, MATCHING THE THREE THE OWNER DESCRIBED, AND NO MORE. A fourth would be a
+ * shade between two of these that the model would have to guess at and the Canvas would have to
+ * invent a behaviour for. What each one MEANS on screen is `lib/learn/turn-exposition.ts`'s to
+ * decide; this file only carries which one the turn was.
+ *
+ * 🔴 AND IT IS DELIBERATELY NOT A `type` FIELD NAMING "question" / "correction" / "passage". Those
+ * are the TEACHING policy's moves and it already emits them (`ExpositionKind` in
+ * `cognitive-mode.ts`, rendered by `canvas-policy-view.tsx`). A second, parallel vocabulary
+ * arriving through the conversational door would be two state machines describing one screen —
+ * exactly the "second competing system" this change exists to avoid. The conversational door
+ * produces one kind of thing, a reply, and the only open question about it is how long it deserves.
+ */
+export type TurnWeight =
+  /**
+   * An acknowledgement. "Exactly." "Not quite — kidney." "Hey." Nothing to study, and the learner
+   * has finished reading it before they have finished registering that it appeared.
+   */
+  | "micro"
+  /**
+   * A fact, stated and done with. "ACE stands for angiotensin-converting enzyme." Worth a beat to
+   * read, worth nothing to dwell on, and it must not ask the learner to press anything.
+   */
+  | "brief"
+  /**
+   * Material. An explanation the learner could genuinely lose by having it taken away — a
+   * mechanism, a worked step, a correction of a real misconception. This is the only weight that
+   * waits for the learner.
+   */
+  | "reading";
+
+/**
  * Something worth saying out loud above the "Learn this" offer.
  *
  * 🔴 AN OBSERVATION ABOUT THE CONVERSATION, NEVER A VERDICT ABOUT THE LEARNER — the rule
@@ -86,6 +127,18 @@ export interface TurnDecision {
    */
   topic: string | null;
   offer: TurnOffer | null;
+  /**
+   * How long `say` deserves the Canvas.
+   *
+   * 🔴 THE CANVAS DOES NOT SHOW THE LEARNER'S WORDS BACK, SO THIS IS WHAT REPLACES A TRANSCRIPT.
+   * Nothing accumulates on screen any more (owner, 2026-08-19: *"The Canvas should not display a
+   * growing chat history"*), which means every reply has to end by itself or say why it is
+   * staying. A reply with no declared weight is a reply the surface would have to guess about, and
+   * the two guesses are not symmetric: vanishing material the learner needed is silent and
+   * unrecoverable, while holding a "Hey." one beat too long is merely mildly annoying. So the
+   * fallback in `readTurnDecision` is `"reading"`.
+   */
+  weight: TurnWeight;
 }
 
 /** Everything the canvas already knows, stated as facts for the model to reason over. */
@@ -194,7 +247,8 @@ const NEMESIS_SYSTEM = [
 const DECISION_CONTRACT = [
   "Answer with a single JSON object and nothing else:",
   "",
-  '{"say": "...", "then": "reply" | "study", "topic": "..." | null, "offer": "returning" | "reasoning" | null}',
+  '{"say": "...", "then": "reply" | "study", "weight": "micro" | "brief" | "reading", '
+  + '"topic": "..." | null, "offer": "returning" | "reasoning" | null}',
   "",
   '"say" is what Nemesis says out loud. Always write something, even when you also act.',
   "",
@@ -222,6 +276,25 @@ const DECISION_CONTRACT = [
   // 🔴 ON EVERY TURN THAT HAS ONE, NOT ONLY ON A STUDY TURN. It is also what the "Learn this"
   // button under a plain answer would start, and whether a turn HAS a nameable subject is the
   // honest test for whether that button belongs there at all. Under "hello" it does not.
+  '"weight" is how much of the learner\'s attention this reply is worth. The canvas shows one thing '
+  + "at a time and clears itself, so this decides whether your sentence disappears on its own or "
+  + "waits for the learner to say they have finished with it.",
+  '  "micro" is an acknowledgement with nothing to study in it: "Exactly.", "Not quite, kidney.", '
+  + '"Hey.", "No problem." It vanishes after about a second.',
+  '  "brief" is one fact, stated and finished: "ACE stands for angiotensin-converting enzyme." It '
+  + "sits long enough to read and then clears itself.",
+  '  "reading" is material the learner would genuinely lose if it were taken away: a mechanism, a '
+  + "worked step, why a wrong idea is wrong, anything with more than one thing to hold. It stays on "
+  + "screen until they press Continue.",
+  "",
+  // 🔴 SAID OUT LOUD BECAUSE THE FAILURE IS INVISIBLE FROM THE MODEL'S SIDE. A wrongly-"reading"
+  // greeting puts a button under "Hey." — irritating and instantly obvious. A wrongly-"micro"
+  // explanation deletes itself out from under someone who was mid-sentence, and neither they nor
+  // we ever find out. Naming the asymmetry is what stops the model optimising for brevity here.
+  "When you are between two of these, choose the heavier one. Something that vanishes before the "
+  + "learner finished reading it is lost for good; something that waits a moment too long only "
+  + "costs a keypress.",
+  "",
   '"topic" is the subject this turn is about, whenever the learner named one. On a "study" turn it '
   + 'is what gets taught; on a "reply" it is what a Learn this button beside the answer would start, '
   + "so give it for a real question about a subject and leave it null for a greeting, a remark or "
@@ -340,6 +413,23 @@ function asOffer(value: unknown): TurnOffer | null {
   return value === "returning" || value === "reasoning" ? value : null;
 }
 
+/**
+ * The declared weight, or `"reading"` when the model did not say.
+ *
+ * 🔴 THE DEFAULT IS THE HEAVY ONE, WHICH IS THE SAME ASYMMETRY THIS FILE ALREADY USES FOR `then`.
+ * There the cheap mistake is answering someone who wanted teaching, so an unreadable decision
+ * falls back to conversation. Here the cheap mistake is holding a trivial line one beat too long,
+ * so an unreadable weight falls back to material that waits. Both defaults are chosen by which
+ * failure the learner can recover from, not by which is more likely.
+ *
+ * 🔴 IT IS ALSO THE SAME RULE `readingRequirementOf` APPLIES TO A MISSING COGNITIVE MODE — "wrongly
+ * deliberate costs one press; wrongly transient advances past material they were meant to read."
+ * One product, one direction of safety, stated in both places rather than in neither.
+ */
+function asWeight(value: unknown): TurnWeight {
+  return value === "micro" || value === "brief" || value === "reading" ? value : "reading";
+}
+
 function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -367,6 +457,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     say,
     then: then ?? "reply",
     topic: asText(parsed.topic) || null,
+    weight: asWeight(parsed.weight),
   };
 }
 
@@ -382,5 +473,9 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   if (read) return read;
   const prose = raw.trim();
   if (!prose) return null;
-  return { offer: null, say: prose, then: "reply", topic: null };
+  // 🔴 `"reading"` FOR THE SAME REASON `asWeight` DEFAULTS THERE, AND IT MATTERS MORE HERE. This is
+  // the branch where the model ignored the envelope entirely and just wrote prose — which is
+  // usually a real, substantial answer to a real question, and is exactly the kind of thing that
+  // must not evaporate. A model that produces a bare "sure!" here costs the learner one keypress.
+  return { offer: null, say: prose, then: "reply", topic: null, weight: "reading" };
 }

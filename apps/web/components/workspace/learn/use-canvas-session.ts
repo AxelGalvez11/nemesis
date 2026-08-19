@@ -16,6 +16,8 @@ import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { TurnDecision, TurnOffer } from "@/lib/learn/turn-router";
+import type { Exposition } from "@/lib/learn/cognitive-mode";
+import { expositionOfReply } from "@/lib/learn/turn-exposition";
 import { groundingQuery, groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
@@ -121,6 +123,26 @@ type CanvasAside = {
   /** The subject the model read out of the turn, or absent when it had none. What "Learn this"
    *  starts, and whether that button is shown at all. */
   topic?: string;
+  /**
+   * How this reply ENDS, when the surface is the one that has to end it.
+   *
+   * 🔴🔴 IT IS WHAT REPLACES A "DISMISS" BUTTON, AND THAT SWAP IS THE OWNER'S RULE (2026-08-19):
+   * *"Trivial things vanish. Meaningful things wait for the learner."* A `transient` exposition
+   * makes the reply fade on its own after the window `turn-exposition.ts` computed; a `deliberate`
+   * one makes it wait for Continue. Neither is a control the learner has to notice and press to
+   * get their lesson back, which is what "Dismiss" was.
+   *
+   * 🔴 PRESENT ONLY ON THE CANVAS-WIDE REPLY (`blockId: null`). A block-anchored aside is an
+   * annotation pinned to a paragraph, opened deliberately by "Explain this" on that exact passage,
+   * and it is dismissed by its own `×` next to the text it belongs to. It is not a Canvas moment
+   * and must not evaporate while the learner is looking between it and the sentence above it, so
+   * it carries no exposition and nothing times it out.
+   *
+   * 🔴 IT IS THE POLICY'S OWN `Exposition` TYPE, NOT A SECOND TIMING VOCABULARY. See
+   * `lib/learn/turn-exposition.ts` — one union, one `useScreenExit`, one place a duration can come
+   * from.
+   */
+  exposition?: Exposition;
 } | null;
 
 export interface CanvasSession {
@@ -788,7 +810,20 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // a document command instead of starting one. One predicate, one meaning.
         if (isPreContent(latest.current.state)) {
           if (decision.say) {
-            setAside({ blockId: null, offer: decision.offer ?? undefined, question: said, sources: [], text: decision.say });
+            // 🔴 IT CARRIES AN EXPOSITION LIKE ANY OTHER REPLY, AND THIS IS THE "alright." CASE FROM
+            // THE CONTRACT — a turn that speaks and acts at once. The canvas is about to be taken
+            // over by `begin()`, so this sentence has a natural end; without an exposition it would
+            // still be sitting there, undismissable and stale, over a lesson that had started
+            // underneath it. The model is told to keep `say` to a few words on a study turn, so in
+            // practice this is a `micro` and gone in about a second.
+            setAside({
+              blockId: null,
+              exposition: expositionOfReply(decision),
+              offer: decision.offer ?? undefined,
+              question: said,
+              sources: [],
+              text: decision.say,
+            });
           }
           begin(decision.topic ?? said);
         } else {
@@ -810,6 +845,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       }
       setAside({
         blockId: null,
+        // 🔴 THE MODEL SAID WHAT KIND OF MOVE THIS IS; THIS TURNS IT INTO A DURATION. The two
+        // decisions are deliberately in different files — see `lib/learn/turn-exposition.ts` — so
+        // "how long does a fact sit for" stays a product number we can change once, rather than
+        // something the model re-guesses on every turn.
+        exposition: expositionOfReply(decision),
         offer: decision.offer ?? undefined,
         question: said,
         sources: result.sources,

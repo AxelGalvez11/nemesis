@@ -289,11 +289,16 @@ function plainRendering(writing: ConfirmedWriting): string | null {
  * The labels the rendering uses.
  *
  * 🔴 NEUTRAL AND THIRD-PERSON-FREE, BECAUSE THE LEARNER READS THIS BACK AS THEIR OWN WORDS.
- * `use-policy-runtime.ts` sets `feedback.answer` to whatever was submitted, and
- * `canvas-policy-view.tsx` prints it inside `<LearnerUtterance>` — the bubble that says "this is
- * what you said". Headings written for the judge ("Their work, in the order they wrote it") are
- * addressed to a third party ABOUT the learner, and shown to the learner they read as Nemesis
- * narrating them to themselves.
+ * `written-work-sheet.tsx` renders exactly what they wrote, with these labels over it. Headings
+ * written for the judge ("Their work, in the order they wrote it") are addressed to a third party
+ * ABOUT the learner, and shown to the learner they read as Nemesis narrating them to themselves.
+ *
+ * 🔴 AND THE RULE OUTLIVED THE OTHER SURFACE IT USED TO CITE. This once pointed at the verdict
+ * screen, which printed the submitted answer back in a tinted bubble; that echo is gone (owner,
+ * 2026-08-19 — *"User input is not automatically visual content"*). The written-work sheet is a
+ * different case and stays: the learner DREW the thing, and they cannot make sense of a comment on
+ * their working without their working in front of them. Showing work being discussed is not the
+ * same act as staging a conversation back at somebody who was in it.
  *
  * The judge loses nothing: `evaluationMessages` already wraps the whole thing in its own frame
  * (*"They wrote by hand: …"*), so the person is supplied there and a label only has to name what

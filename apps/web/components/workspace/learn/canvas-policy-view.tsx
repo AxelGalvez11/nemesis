@@ -15,7 +15,11 @@ import { useEffect, useRef, useState } from "react";
 
 import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
-import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
+import type { Exposition } from "@/lib/learn/cognitive-mode";
+// 🔴 THE SHARED EXIT, NOT A LOCAL ONE. It lived in this file and only policy screens could use
+// it; a conversational reply now ends the same way and renders outside this component. See
+// use-screen-exit.ts for why a second copy is the same bug in a file nobody would look in.
+import { useScreenExit, type ScreenExit } from "./use-screen-exit";
 
 import { normalizeForIdentity } from "@/lib/learn/knowledge-identity";
 import type { FigureKnowledge } from "@/lib/learn/knowledge-types";
@@ -24,7 +28,6 @@ import { routeVisual } from "@/lib/learn/visual-route";
 import { workedExampleFor } from "@/lib/learn/worked-example";
 
 import { StoredFigureOcclusion } from "./figure-occlusion";
-import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 import { correctionLead } from "./correction-copy";
 
@@ -645,10 +648,11 @@ function FeedbackScreen({
    * seconds" and is the exact `mini-lecture → Continue → retrieve` shape §39 bans.
    *
    * 🔴 THE BUDGET IS SPENT BY THE SCREEN CARRYING THE ANSWER, WHICH IS THE CORRECTION, NOT THIS
-   * ONE. This screen shows the learner their own words back; the correction shows `cue → answer`.
-   * The learner already knows what they typed, so holding it is the half of the emission worth
-   * dropping. Zero is not "instant" in practice either — `recording` still gates the advance, and
-   * that is a real wait on a real evidence write rather than an invented one.
+   * ONE. This screen carries a verdict — three words on a pass, a sentence on a miss; the
+   * correction carries `cue → answer`, which is the part with something to learn in it. Holding
+   * the verdict is therefore the half of the emission worth dropping. Zero is not "instant" in
+   * practice either — `recording` still gates the advance, and that is a real wait on a real
+   * evidence write rather than an invented one.
    *
    * 🔴 IT IS NOT A FIX FOR THE FUSED SHAPE, AND SHOULD NOT BE MISTAKEN FOR ONE. Two screens with
    * one budget still fades twice. Rendering the verdict and the correction as ONE emission is the
@@ -667,25 +671,38 @@ function FeedbackScreen({
       onContinue={onContinue}
       sharing={sharing}
     >
-      {/* The learner's own words. They stay on screen — the verdict below is ABOUT them — but the
-          attribution in front of them does not (§K): it tells the learner something they already
-          know, in a voice that exists only to stage the exchange.
-          🔴 THE QUOTE MARKS AND THE 24.75px ARE GONE, REPLACED BY THE BUBBLE (§46.2/§46.3).
-          Quotation marks are punctuation, not ownership — they read as "someone said this", which
-          is true of every line on the screen — and size was doing the rest of the work, which
-          §46.3 forbids. `LearnerUtterance` says authorship structurally instead, at body size.
-          🔴 A §K guard in canvas-policy-view.test.ts strips comments before checking, so prose
-          like this cannot trip it; an earlier version grepped raw source and failed on this file's
-          own header. A guard that cannot tell rendered copy from a comment about it gets "fixed"
-          by deleting the explanation. */}
-      <LearnerUtterance via={feedback.via}>{feedback.answer}</LearnerUtterance>
+      {/* 🔴🔴 THE LEARNER'S OWN WORDS ARE NO LONGER PRINTED BACK AT THEM, AND THIS IS THE ONE
+          PLACE THEY EVER WERE. Owner, 2026-08-19: *"The user should not create a permanent chat
+          bubble every time they answer or ask something… User input is not automatically visual
+          content."* The worked example is exact — Nemesis asks where SGLT2 inhibitors act, the
+          learner says "Pancreas", and the Canvas must NOT render `You: Pancreas`. It becomes
+          "Not the pancreas → kidney" and the reason why.
+
+          🔴 WHAT THIS REPLACES WAS CORRECT UNDER THE OLD RULE, WHICH IS WHY IT SURVIVED SO LONG.
+          §46.2 asked that a learner "be able to distinguish instantly: This came from me / This
+          came from Nemesis", and `LearnerUtterance` answered it well — a tinted bubble at body
+          size, deliberately not coloured by verdict. That question only exists on a surface where
+          both voices are printed. This one prints one voice, so the component it needed is deleted
+          rather than hidden, and §35.1's "blue means authorship, never a grade" has nothing left to
+          govern here. The rule did not get weaker; the screen it governed stopped existing.
+
+          🔴 THE LEARNER'S WORDS ARE NOT LOST. They are in the evidence log, which is what the
+          transcript view reads (`buildTranscript`), and in the conversation packet every model
+          call carries. What changed is that the CANVAS no longer stages the exchange back at
+          somebody who was there for it.
+
+          🔴 AND NEMESIS MAY STILL QUOTE THEM. The verdict prose below is written by the judge,
+          which has the answer, so "you said pancreas, but" is available to it whenever repeating
+          the learner actually teaches something. What is gone is the AUTOMATIC echo: quoting is
+          now a thing the explanation does on purpose, not a thing the frame does every time. */}
 
       {/* 🔴 NEMESIS'S VERDICT, AS A SENTENCE, ON EVERY OUTCOME INCLUDING A PASS.
-          It used to render only on a miss, because the colour on the quote above carried the
-          result — and the old comment said so: *"a score rendered as a sentence… the colour already
-          says it"*. THAT ARGUMENT INVERTS ONCE THE COLOUR IS GONE. With blue meaning authorship,
-          this is the only thing left that can carry the verdict, so it stops being redundant and
-          becomes the entire signal.
+          It used to render only on a miss, because a colour on the learner's echoed answer carried
+          the result — *"a score rendered as a sentence… the colour already says it"*. Both of that
+          argument's supports are now gone: the colour went when it became authorship rather than a
+          grade (§35.1), and the echo went with the chat bubble (2026-08-19). This line is the ONLY
+          thing left on the screen that can say what happened, so it is not redundant, it is the
+          entire signal.
           🔴 AND SILENCE WOULD BE AMBIGUOUS HERE IN A WAY IT IS NOT ELSEWHERE. Nemesis judges by
           MEANING, so a learner answering in their own informal words genuinely cannot tell whether
           they were understood. If a partial answer produced a headline and a pass produced nothing,
@@ -701,8 +718,8 @@ function FeedbackScreen({
           passed
             ? // Quieter on a pass, and that ordering is the contract's rather than a preference:
               // feedback intensity scales with information value. A pass carries little — three
-              // words — so it is set at the secondary weight and does not compete with the answer
-              // it is confirming. A miss carries the most and keeps its full weight and prose.
+              // words — so it is set at the secondary weight and gets out of the way of whatever
+              // comes next. A miss carries the most and keeps its full weight and prose.
               "mt-4 text-[length:var(--canvas-text-body)] font-normal leading-snug text-(--ui-text-tertiary)"
             : "mt-4 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)"
         }
@@ -721,64 +738,6 @@ function FeedbackScreen({
       )}
     </Frame>
   );
-}
-
-/** The single measure the rest of the canvas is set to, so the policy's page reads as the same
- *  column as the document and the composer rather than a fourth centred thing. */
-/**
- * How a screen that is not asking anything ENDS. Exactly one implementation, for every such screen.
- *
- * 🔴🔴 IT USED TO LIVE INSIDE `FeedbackScreen`, WHICH MEANT ONLY THE VERDICT COULD END ITSELF —
- * AND A WRONG ANSWER LEFT THE LEARNER WITH NO WAY FORWARD AT ALL. Measured in a browser on a real
- * lecture: a wrong typed answer produced *"Here's the one to fix. Constant → Amount removed/time"*
- * and then nothing. No Continue, no timer, surviving a reload. The canvas was over.
- *
- * The two halves were each individually correct, which is why it survived. §39 says a one-line
- * association is `transient` — it ENDS ITSELF after about a second — so `readingRequirementOf`
- * rightly withholds the Continue, since offering one would be a button on a screen that is already
- * leaving. But "ends itself" was implemented in one component and declared by four. A screen that
- * names a timer to a component with no timer is a screen with no exit.
- *
- * 🔴 `blocked` STAYS IN THE GATE, AND DROPPING IT WOULD INVERT THE SAFE FAILURE. `submit()` sets
- * feedback BEFORE the evidence write finishes, so a timer alone could advance mid-write and the
- * learner could answer again with the answer still on screen — recording that echo as a real
- * demonstration. Advancing waits for the LATER of the two, so a bug here costs a missed advance,
- * never a fabricated one.
- */
-interface ScreenExit {
-  readonly exposition: Exposition;
-  /** Advancing is refused while true — the last answer's evidence is still being written. */
-  readonly blocked: boolean;
-  /** Overrides the exposition's own window. `0` when a queued correction owns the budget instead;
-   *  `null`/absent means "use what the policy declared". */
-  readonly holdMs?: number | null;
-  readonly onAcknowledge: () => void;
-}
-
-function useScreenExit(exit: ScreenExit | null): void {
-  const latest = useRef(exit?.onAcknowledge);
-  latest.current = exit?.onAcknowledge;
-  const exposition = exit?.exposition ?? null;
-  const blocked = exit?.blocked ?? false;
-  // 🔴 THE DURATION IS THE POLICY'S, WHICH IS WHY IT IS READ OFF THE UNION RATHER THAN DEFAULTED.
-  // `exposureMs` exists only on the transient member, so there is no branch in which this component
-  // could supply a number nobody chose.
-  const declared = exposition && exposition.mode === "transient" ? exposition.exposureMs : null;
-  const holdMs = exit?.holdMs ?? declared;
-  const selfAdvancing = exposition ? advancesItself(exposition) : false;
-
-  const [held, setHeld] = useState(false);
-  useEffect(() => {
-    if (holdMs === null) return;
-    setHeld(false);
-    const timer = window.setTimeout(() => setHeld(true), holdMs);
-    return () => window.clearTimeout(timer);
-  }, [holdMs]);
-
-  useEffect(() => {
-    if (!selfAdvancing || !held || blocked) return;
-    latest.current?.();
-  }, [blocked, held, selfAdvancing]);
 }
 
 function Frame({

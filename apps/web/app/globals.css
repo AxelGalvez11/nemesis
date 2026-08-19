@@ -883,6 +883,32 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-passage-enter { from { opacity: 0; } to { opacity: 1; } }
 .canvas-passage-enter { animation: canvas-passage-enter 180ms ease-out both; }
 
+/* The lesson, while the learner is looking at something they asked for instead
+   (owner, 2026-08-19). "Subtly recede/fade it. Replace it with the
+   clarification."
+   🔴 IT RECEDES, IT DOES NOT LEAVE. The passage or question stays mounted, in
+   place, at the same size — so when the answer goes away the learner's eye is
+   still on the line it was on. Unmounting it, scrolling it away, or pushing it
+   down to make room would each lose the thing they were asking ABOUT, which is
+   the one thing this transition exists to protect.
+   🔴 OPACITY ONLY. No blur, no scale, no translate. Blur makes text that is
+   still legible-by-design illegible; scale reflows nothing but reads as the
+   page moving away, and the brief is explicit that these must not animate like
+   messages arriving. 0.28 is dim enough that the reply is unambiguously the
+   bright thing and light enough that a diagram or an equation behind it can
+   still be referred to, which learners do.
+   🔴 AND IT STAYS INTERACTIVE. Text underneath is still selectable and
+   scrollable: someone reading an answer about a passage may well want to point
+   at the passage. The reply layer above is `pointer-events-none` apart from its
+   own card, precisely so this remains true.
+   240ms is slower than `.canvas-swap`'s 140ms on purpose -- the thing arriving
+   should land before the thing behind it has finished stepping back, or the
+   screen reads as briefly empty. */
+.canvas-receded {
+  opacity: 0.28;
+  transition: opacity 240ms ease-out;
+}
+
 /* The thinking state's caption, changing as the real step changes. Slower than
    the swap: this is ambient, and a fast flicker between phases reads as churn. */
 @keyframes canvas-phrase-in { from { opacity: 0; } to { opacity: 1; } }
@@ -957,6 +983,12 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   [data-workspace] .animate-pulse {
     animation: none;
   }
+  /* 🔴 THE DIMMING STAYS, THE TRANSITION STOPS — the same rule as `.canvas-forming`
+     just below. Someone who asked the system to stop moving still needs to be able
+     to tell which of two things on screen is the live one; dropping the recede
+     entirely would leave a reply and the lesson behind it at equal weight, which is
+     the stacked-transcript look this whole change exists to remove. */
+  .canvas-receded { transition: none; }
   /* 🔴 THE LINES STAY, THE SWEEP STOPS — they must not vanish. Someone who asked
      the system to stop moving still has to be able to see that this region is
      busy, so the placeholder holds its resting contrast and only the travelling

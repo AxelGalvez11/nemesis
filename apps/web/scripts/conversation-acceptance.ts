@@ -218,7 +218,15 @@ async function main(): Promise<void> {
       // the "Learn this" button appears beside a plain answer, so a null on a real question is a
       // missing offer and a value under "hello" is an offer to learn a greeting.
       const topic = decision?.topic ?? null;
-      console.log(`${mark}  ${JSON.stringify(item.utterance)} → ${then} · topic=${topic === null ? "—" : JSON.stringify(topic)}   "${(decision?.say ?? "").slice(0, 56)}"`);
+      // 🔴 `weight` IS PRINTED FOR THE SAME REASON, AND IT IS THE NEWEST THING THE MODEL DECIDES.
+      // The Canvas shows one thing at a time and clears itself (owner, 2026-08-19), so this is what
+      // says whether a reply vanishes on its own or waits for the learner. A `reading` on "hey"
+      // means a Continue button under a greeting; a `micro` on an explanation means material
+      // deleting itself out from under somebody mid-sentence, which is the failure nobody can see
+      // happening. Neither is expressible as a pass/fail here — what a sentence is worth is a
+      // judgement — so it is REPORTED, and read next to the reply beside it.
+      const weight = decision?.weight ?? "—";
+      console.log(`${mark}  ${JSON.stringify(item.utterance)} → ${then} · ${weight} · topic=${topic === null ? "—" : JSON.stringify(topic)}   "${(decision?.say ?? "").slice(0, 56)}"`);
       if (category.name.startsWith("Bare topics")) {
         const seen = bare.find((b) => b.utterance === item.utterance);
         if (seen) seen.afterGreeting = then;
@@ -254,7 +262,7 @@ async function main(): Promise<void> {
         if (ok) passed += 1;
       }
       const mark = turn.expect === null ? "   ·" : ok ? "   ok" : "  FAIL";
-      console.log(`${mark}  ${JSON.stringify(turn.said)} → ${then}`);
+      console.log(`${mark}  ${JSON.stringify(turn.said)} → ${then} · ${decision?.weight ?? "—"}`);
       console.log(`         "${(decision?.say ?? "").replace(/\n+/g, " ").slice(0, 140)}"`);
       history.push({ replied: decision?.say ?? "", said: turn.said });
     }

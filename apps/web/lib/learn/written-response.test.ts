@@ -274,11 +274,15 @@ test("a real multi-line performance is NOT mistaken for an admission", () => {
 // ── the render is read BACK to the learner, so it cannot narrate them ─────────
 
 test("🔴 no label in the rendering talks about the learner in the third person", () => {
-  // `use-policy-runtime.ts` puts whatever was submitted into `feedback.answer`, and
-  // `canvas-policy-view.tsx` prints it inside `<LearnerUtterance>` — the bubble that means "this is
-  // what you said". A heading written for the judge ("Their work, in the order they wrote it")
-  // reads, there, as Nemesis narrating a person to themselves. The judge loses nothing: it gets its
-  // own third-person frame from `evaluationMessages` ("They wrote by hand: ...").
+  // `written-work-sheet.tsx` renders exactly what the learner wrote, with these labels over it. A
+  // heading written for the judge ("Their work, in the order they wrote it") reads, there, as
+  // Nemesis narrating a person to themselves. The judge loses nothing: it gets its own third-person
+  // frame from `evaluationMessages` ("They wrote by hand: ...").
+  //
+  // 🔴 THE OTHER SURFACE THIS USED TO CITE IS GONE AND THE RULE IS NOT. The verdict screen printed
+  // the submitted answer back in a bubble; that echo was removed with the chat history (2026-08-19).
+  // Work the learner DREW is a different case and still renders — they cannot read a comment on
+  // their working without their working in front of them.
   //
   // 🔴 NEITHER EXISTING GUARD COVERS THIS. canvas-learner-copy.test.ts scans only
   // components/workspace/learn/ and says so in its own header; this file's other guard reads

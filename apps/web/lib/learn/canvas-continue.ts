@@ -102,8 +102,21 @@ export function readingRequirementOf(mode: DeclaredMode | null): {
   return { requiresReading: mode === "deliberate", unknown: false };
 }
 
-/** Where a region paints, so whoever owns that area can render the control in the right place. */
-export type RegionPlacement = "document" | "policy";
+/**
+ * Where a region paints, so whoever owns that area can render the control in the right place.
+ *
+ * 🔴 `"reply"` IS THE CONVERSATIONAL ANSWER, AND ADDING IT IS WHAT KEEPS §38 TRUE UNDER THE
+ * VANISHING CANVAS (owner, 2026-08-19). A reply that is genuinely material — *"ACE also breaks
+ * down bradykinin, so blocking ACE raises it, which is what causes the cough"* — is exactly what
+ * this module's trigger describes: material the learner was asked to read. It therefore has to be
+ * able to own the button.
+ *
+ * 🔴 AND IT HAD TO ENTER THROUGH HERE RATHER THAN RENDERING ITS OWN. That is the whole argument
+ * at the top of this file, arriving in practice: a reply can sit over an unread passage, and a
+ * reply can sit over a correction. If it printed its own control there would be two buttons saying
+ * "Continue" in one viewport — the exact thing `continueOwner` returning ONE region prevents.
+ */
+export type RegionPlacement = "document" | "policy" | "reply";
 
 /**
  * A region of the Canvas, reduced to the only thing this decision needs.
@@ -145,18 +158,58 @@ export function continueOwner(
     readonly busy: boolean;
   },
 ): CanvasRegion | null {
-  if (gates.awaitingDemonstration) return null;
+  // Nothing is offered while work is in flight, whatever the region: pressing on now would race
+  // whatever is being generated. This one applies to every placement including `reply`.
   if (gates.busy) return null;
 
   const owed = regions.filter((region) => region.requiresReading);
   if (owed.length === 0) return null;
 
-  // 🔴 THE POLICY'S REGION WINS WHEN BOTH ARE OWED, AND THE ORDER IS THE RULE. A correction is
-  // what Nemesis has just put in front of the learner; a passage below it is material they were
-  // already working through. If the passage won, someone who had just been corrected would be
-  // offered a way past the reading instead of past the correction they were meant to absorb —
+  // 🔴🔴 THE CONVERSATIONAL REPLY IS EXEMPT FROM THE PRODUCTION GUARD, AND THE REASON IS THAT ITS
+  // BUTTON DOES NOT ADVANCE ANYTHING.
+  //
+  // N3 forbids a control that lets the learner press PAST an unanswered question. Every other
+  // region's Continue does exactly that: it acknowledges the policy's screen and asks for the next
+  // cognitive action. A reply's Continue dismisses an answer the learner themselves asked for and
+  // puts back the question that is still sitting underneath it, unanswered, with the composer still
+  // the only way to answer it. Suppressing it does not protect retrieval; it just strands them.
+  //
+  // 🔴 AND WITHOUT THIS THE OWNER'S OWN WORKED EXAMPLE IS A DEAD END. Nemesis asks "why can ACE
+  // inhibitors cause cough?", the learner asks back "what does ACE normally do?", and the model
+  // answers with something substantial enough to be `reading` — material, so no timer, by design.
+  // With the gate applied it would also get no button: a paragraph on screen, `awaitingDemonstration`
+  // still true, and no way to put it away. That is the "no screen is a dead end" invariant broken by
+  // the guard that exists to protect a different screen.
+  //
+  // 🔴 IT IS SAFE BECAUSE THE HANDLER IS DIFFERENT, NOT BECAUSE WE PROMISE TO BE CAREFUL. The reply
+  // region's `onContinue` in `learning-canvas.tsx` calls `dismissAside`; it never reaches
+  // `policy.acknowledge`. There is no route from this branch to the next cognitive action.
+  const reply = owed.find((region) => region.placement === "reply");
+  if (reply) return reply;
+
+  if (gates.awaitingDemonstration) return null;
+
+  // 🔴 THE ORDER IS THE RULE: THE MOST RECENT THING NEMESIS PUT THERE WINS.
+  //
+  // A reply beats a correction beats a passage, and each step of that is the same argument. A
+  // passage is material the learner was already working through; a correction is what Nemesis has
+  // just put in front of them; a reply is what Nemesis put there in answer to something they asked
+  // one second ago. Offering the button to anything older would hand the learner a way past a
+  // screen they are not looking at, while the screen they ARE looking at has no exit — which is
   // §34 invariant 5 broken by a button rather than by a policy.
-  return owed.find((region) => region.placement === "policy") ?? owed[0] ?? null;
+  //
+  // 🔴 THE REPLY OUTRANKING THE POLICY IS THE INTERRUPTION CASE, WRITTEN DOWN. The learner asked a
+  // question in the middle of a correction: the correction is still on screen, receded, precisely
+  // so they do not lose what they were asking about. Both regions want reading. The one they
+  // interrupted FOR is the one whose Continue means anything.
+  // `reply` is deliberately absent: it already returned above, before the production gate. Listing
+  // it here as well would be a second answer to a question that has one.
+  const order: readonly RegionPlacement[] = ["policy", "document"];
+  for (const placement of order) {
+    const found = owed.find((region) => region.placement === placement);
+    if (found) return found;
+  }
+  return owed[0] ?? null;
 }
 
 /** Does this placement render the control right now? The form a component actually needs. */
