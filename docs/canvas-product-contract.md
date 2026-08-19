@@ -1701,3 +1701,110 @@ policy that asks the wrong question next is worth less than the core loop being 
 locale contract and refusals first — they are cheap and they prevent a silent wrong-accent failure —
 and treat the bake-off and pronunciation assessment as work that follows a real language-learning
 session type, not work that precedes it.
+
+# 44. 🔴 FIVE SHAPES, SEVEN SUBJECTS — and the arithmetic is checked before it is drawn (owner, 2026-08-19)
+
+## STATUS: ALL FIVE REPRESENTATIONS SHIPPED AND ROUTED, WITH EVERY NUMERIC CLAIM VERIFIED. NO CANVAS LESSON EMITS ONE YET. NOTHING EXECUTES CODE.
+
+The owner asked for computer science, accounting, history, statistics, geometry,
+physics/engineering and finance. **That is seven subjects and five representations.**
+
+| Subject | Representation | Shared with |
+|---|---|---|
+| Accounting | `table` | finance, statistics |
+| Finance | `table` + `timeline` | accounting, history |
+| Statistics | `table` + `quantitative` (already shipped) | accounting |
+| History | `timeline`; causation already had `relationship` | finance |
+| Geometry | `construction` | physics |
+| Physics / engineering | `vectors` | geometry |
+| Computer science | `code` | nothing |
+
+🔴 **BUILDING "ACCOUNTING MODE" WOULD HAVE BUILT THE TABLE THREE TIMES** — once for accounting, once
+for finance, once for statistics — and taught the Canvas three subjects it must not know. §41's rule
+holds: the router chooses on the SHAPE of the knowledge, never on the discipline. There is no
+`accounting` and no `physics` in the representation vocabulary and there must never be.
+
+## 🔴 THE RULE THIS SECTION ADDS — an unverified computed answer may not be an answer key
+
+§42 forbids grading a learner against a picture Nemesis cannot vouch for: a generated image has no
+standing as evidence because its detail was invented. **A worked total, a stated angle and a claimed
+equilibrium are the same thing in numbers.** The model asserted them; until something recomputes
+them they are exactly as trustworthy as a generated diagram.
+
+So `visual-verification.ts` recomputes every numeric claim **before the spec is admitted**:
+
+| Claim | Checked by |
+|---|---|
+| A column's stated total | summing the column |
+| Two columns that must balance | summing both sides |
+| An angle labelled on a figure | measuring it from the supplied coordinates |
+| Forces claimed to cancel | resolving them |
+
+🔴 **A MISMATCH REFUSES; IT NEVER SILENTLY CORRECTS.** Substituting the right total would hide a
+model producing bad arithmetic — the same argument `visual-route.ts` already makes for refusing a
+malformed visual rather than replacing it. `failed-verification` is its own refusal reason precisely
+so a REASONING failure is countable and does not read as a formatting one.
+
+🔴 **AND IT IS ONE MODULE, NOT FOUR.** A T-account that must balance, a triangle whose angle at A is
+claimed to be 30°, and a free-body diagram claimed to be in equilibrium are the same operation: the
+model stated a number, the structure implies a number, and they must agree. Four implementations of
+"close enough" would drift, and the one that drifts is always the one nobody is looking at.
+
+Money and geometry get **different tolerances**, and that is a domain fact rather than a preference:
+a trial balance out by half a cent is out, and an angle refused for half a degree would refuse every
+correct figure a model can actually place.
+
+## 🔴 GEOMETRY NEEDS NO SOLVER TO BE HONEST
+
+Constructing *"a triangle with a 30° angle at A"* from a description is a hard problem. **Checking
+that supplied points really do form 30° at A is arithmetic.** So the model places the points and
+trusted code marks them, and a figure whose label disagrees with its own coordinates is refused
+rather than drawn — which is the failure that would otherwise teach a wrong number with a picture
+backing it up.
+
+Interaction is deliberately absent. Dragging a point is §41 priority five and this work sits below
+that line; a static, correct figure teaches most of school geometry.
+
+## 🔴 TIME IS A NUMBER PLUS A LABEL
+
+`at` places an event and `atLabel` is what a human reads. So BCE is a negative number, deep time is
+millions, a reaction is seconds, and an uncertain date is a number with a flag drawn faint.
+
+**No date parser, calendar table or era convention exists anywhere in this codebase to be wrong
+about any of them.** Parsing "44 BC" is where naive timelines break, and history is full of it.
+
+## 🔴 THE CODE TRACE IS NARRATED AND SAYS SO ON SCREEN
+
+Nothing in this repository executes learner or model code. A trace is therefore the model's account
+of what *would* happen, and it may be wrong in exactly the way an invented diagram is wrong.
+
+- `traceOrigin` is **stamped by the validator, never accepted from the request** — a model cannot
+  tell the Canvas that its narration was an execution. Measured: a request claiming
+  `traceOrigin: "executed"` is stored as `narrated`.
+- The rendered block carries the line *"Walkthrough written by Nemesis, not produced by running the
+  code"*, and that line is not decoration.
+- A trace step naming a line the snippet does not have is **refused**, because it means the trace and
+  the code have drifted apart — the model narrated a different program — and highlighting nothing
+  would hide that completely.
+
+Executing code for real is a **security commitment**, not a feature flag. It would be a new
+`traceOrigin` value and a security review, never a quiet change of meaning.
+
+## What is deliberately NOT built
+
+- **No Canvas lesson emits any of these yet.** All five validate, route, verify and render, and the
+  teaching prompts do not produce them. Said plainly rather than counted as coverage, exactly as §42
+  says of its lower rungs.
+- **No execution.** See above.
+- **No interaction** on constructions, and no circuit schematics or ray diagrams — both are separate
+  primitives with their own layout problems that share nothing with `vectors`.
+- **Statistics gets tables and plots and no simulation.** Distributions are drawable today; sampling
+  and resampling are not.
+
+## 🔴 PRIORITY — this sits where §41 put it
+
+The owner deferred language voice work only because it needs API keys, and deferred music, geography
+and spectroscopy outright. This section is the middle of that ordering, and it does not outrank §41's
+list: the core learning algorithm and Canvas session quality still come first. A perfect free-body
+diagram attached to a policy that asks the wrong question next is worth less than plain text attached
+to the right one.

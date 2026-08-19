@@ -43,8 +43,16 @@ const REGISTRY = readFileSync(new URL("./reference-registry.ts", import.meta.url
 const PRONUNCIATION = readFileSync(new URL("./pronunciation-evidence.ts", import.meta.url), "utf8");
 const BAKEOFF = readFileSync(new URL("./tts-bakeoff.ts", import.meta.url), "utf8");
 
+const SUBJECTS = readFileSync(new URL("./subject-visuals.ts", import.meta.url), "utf8");
+const VERIFICATION = readFileSync(new URL("./visual-verification.ts", import.meta.url), "utf8");
+const SUBJECT_RENDERER = readFileSync(
+  new URL("../../components/workspace/learn/subject-visual.tsx", import.meta.url),
+  "utf8",
+);
+
 const SECTION_42 = CONTRACT.slice(CONTRACT.indexOf("# 42."), CONTRACT.indexOf("# 43."));
-const SECTION_43 = CONTRACT.slice(CONTRACT.indexOf("# 43."));
+const SECTION_43 = CONTRACT.slice(CONTRACT.indexOf("# 43."), CONTRACT.indexOf("# 44."));
+const SECTION_44 = CONTRACT.slice(CONTRACT.indexOf("# 44."));
 
 /** The stack §41 names, by the package that would appear if one were adopted. */
 //
@@ -315,4 +323,87 @@ test("🔴 no price stands without its provenance, and the disputed one still sa
   // A recalled figure may never become a cost — that rule lives in pricedFor.
   assert.match(BAKEOFF, /if \(pricing\.usdPerMillionChars === null \|\| pricing\.evidence === "recalled"\) return null;/);
   assert.match(BAKEOFF, /disputed: the function bills 4\.20/);
+});
+
+
+// 🔴 §44 MAKES FOUR CLAIMS THAT ROT, AND EVERY ONE OF THEM IS ABOUT SOMETHING BEING CHECKED. A
+// section that says "the arithmetic is verified" is worthless the day a verification is quietly
+// skipped, and the person skipping it will be doing so to make a test pass.
+
+test("§44's status line matches whether a lesson emits these or anything executes", () => {
+  assert.ok(SECTION_44.length > 0, "§44 has gone missing from the contract");
+  assert.match(
+    SECTION_44,
+    /STATUS: ALL FIVE REPRESENTATIONS SHIPPED AND ROUTED, WITH EVERY NUMERIC CLAIM VERIFIED\. NO CANVAS LESSON EMITS ONE YET\. NOTHING EXECUTES CODE\./,
+    "§44 must say plainly what is unreached",
+  );
+  // The moment a teaching prompt asks for one of these, the status line is stale.
+  const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
+  for (const kind of ['"table"', '"timeline"', '"construction"', '"vectors"']) {
+    assert.equal(prompts.includes(kind), false, `canvas-prompts now asks for ${kind} — §44's status line is stale`);
+  }
+});
+
+test("🔴 five representations, and not one of them is named after a subject", () => {
+  const ROUTER_TEXT = readFileSync(new URL("./visual-route.ts", import.meta.url), "utf8");
+  for (const shape of ['"table"', '"timeline"', '"construction"', '"vectors"', '"code"']) {
+    assert.ok(ROUTER_TEXT.includes(shape), `the router lost the ${shape} representation`);
+  }
+  // The line that must never be crossed. §41's rule, checked on the new vocabulary.
+  for (const subject of ["accounting", "physics", "finance", "history", "geometry", "statistics"]) {
+    assert.equal(
+      new RegExp(`representation[^\\n]*"${subject}"|\\| "${subject}"`).test(ROUTER_TEXT),
+      false,
+      `"${subject}" has become a representation — the router has learned a subject`,
+    );
+  }
+});
+
+test("🔴 every numeric claim is still recomputed rather than trusted", () => {
+  assert.match(SECTION_44, /an unverified computed answer may not be an answer key/i);
+  // Each of the four checks §44 tabulates, called from the validator rather than merely existing.
+  for (const call of ["verifyTotal(", "verifyBalance(", "verifyAngle(", "verifyEquilibrium("]) {
+    assert.ok(SUBJECTS.includes(call), `${call} is no longer called — a claim is being trusted again`);
+  }
+  // The refusal exists and is produced from a verification result rather than hand-written, so a
+  // check cannot be dropped while the reason survives as a decoration.
+  assert.match(SUBJECTS, /refuse\("failed-verification"/);
+  assert.match(SUBJECTS, /function fromVerification/);
+});
+
+test("🔴 a mismatch still refuses rather than silently correcting", () => {
+  assert.match(SECTION_44, /A MISMATCH REFUSES; IT NEVER SILENTLY CORRECTS/);
+  // The shape of the fix somebody would reach for: replacing the stated value with the computed one.
+  assert.equal(
+    /stated\s*=\s*sum|value:\s*sum\b/.test(SUBJECTS),
+    false,
+    "a stated total is being overwritten with the computed one — that hides the model producing it",
+  );
+});
+
+test("🔴 money and geometry still do not share a tolerance", () => {
+  assert.match(SECTION_44, /different tolerances/);
+  assert.match(VERIFICATION, /export function moneyAgrees/);
+  assert.match(VERIFICATION, /Math\.abs\(a - b\) < 0\.005/);
+});
+
+test("🔴 the code trace cannot claim to have been executed", () => {
+  assert.match(SECTION_44, /stamped by the validator, never accepted from the request/);
+  // The stamp is written by the validator, not read from the request.
+  assert.match(SUBJECTS, /traceOrigin: "narrated" as const/);
+  assert.equal(
+    /traceOrigin:\s*(value|item)\.traceOrigin/.test(SUBJECTS),
+    false,
+    "traceOrigin is being read from the request — a model can now claim its narration was an execution",
+  );
+  // And the learner-facing label survives.
+  assert.match(SUBJECT_RENDERER, /not produced by running the code/);
+});
+
+test("🔴 nothing executes code", () => {
+  assert.match(SECTION_44, /Nothing in this repository executes learner or model code/);
+  for (const danger of ["eval(", "new Function(", "child_process", "vm.runIn"]) {
+    assert.equal(SUBJECTS.includes(danger), false, `${danger} has appeared in the subject lane`);
+    assert.equal(SUBJECT_RENDERER.includes(danger), false, `${danger} has appeared in the subject renderer`);
+  }
 });

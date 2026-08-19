@@ -546,6 +546,11 @@ function RoutedVisual({ visual }: { visual: CanvasBlock["visual"] }) {
     && route.representation !== "quantitative"
     && route.representation !== "relationship"
     && route.representation !== "structure"
+    && route.representation !== "table"
+    && route.representation !== "timeline"
+    && route.representation !== "construction"
+    && route.representation !== "vectors"
+    && route.representation !== "code"
   ) {
     return null;
   }

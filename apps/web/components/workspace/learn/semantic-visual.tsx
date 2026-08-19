@@ -6,6 +6,7 @@ import { useId, useMemo } from "react";
 import type { CanvasVisualRequest, FlowVisual, PlotVisual } from "@/lib/learn/canvas-visual";
 
 import { ChemicalStructure } from "./chemical-structure";
+import { CodeTrace, Construction, DataTable, Timeline, VectorDiagram } from "./subject-visual";
 
 const WIDTH = 640;
 const PLOT_HEIGHT = 280;
@@ -18,6 +19,11 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
       {visual.kind === "relationship" ? <Relationship visual={visual} /> : null}
       {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
       {visual.kind === "structure" ? <ChemicalStructure visual={visual} /> : null}
+      {visual.kind === "table" ? <DataTable visual={visual} /> : null}
+      {visual.kind === "timeline" ? <Timeline visual={visual} /> : null}
+      {visual.kind === "construction" ? <Construction visual={visual} /> : null}
+      {visual.kind === "vectors" ? <VectorDiagram visual={visual} /> : null}
+      {visual.kind === "code" ? <CodeTrace visual={visual} /> : null}
       {visual.caption && (
         <figcaption className="mt-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
           {visual.caption}

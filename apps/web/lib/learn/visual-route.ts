@@ -102,7 +102,25 @@ export type VisualRepresentation =
    * `visual-provenance.ts` for the rule with teeth: this representation is unreachable whenever the
    * learner would be marked right or wrong against the picture.
    */
-  | "generated_image";
+  | "generated_image"
+  /**
+   * The five §44 shapes: rows and columns, events on a scale, a constructed figure, labelled
+   * vectors, code with a trace.
+   *
+   * 🔴 ONE REPRESENTATION NAME PER SHAPE, AND NONE PER SUBJECT. There is no `accounting` and no
+   * `physics` here and there must never be: a table is a table whether it holds a trial balance or
+   * a contingency table, and the moment a representation is named after a discipline the router has
+   * learned a subject.
+   *
+   * 🔴 ALL FIVE ARE DETERMINISTIC, SO THEY SIT AT RUNG TWO BESIDE THE EQUATION AND THE STRUCTURE.
+   * Every one is computed from a stated encoding, and every numeric claim in it was recomputed
+   * before it got here — which is what earns them a place above any retrieved or generated picture.
+   */
+  | "table"
+  | "timeline"
+  | "construction"
+  | "vectors"
+  | "code";
 
 /** Why no visual was chosen, when nothing was wrong. */
 export type ProseReason =
@@ -136,6 +154,14 @@ export type ProseReason =
   | "operation-is-not-spatial"
   /** Every point sits at one x, so there is no range to plot along. */
   | "plot-has-no-range"
+  /**
+   * A table with one row and one column, or a figure with nothing drawn on it.
+   *
+   * 🔴 THE SAME RULE `too-few-relations` HOLDS, APPLIED TO THE NEW SHAPES. A one-cell table is a
+   * sentence with a border, and a construction with points and no segments, circles or angles is a
+   * scatter of dots. Both pass every bound in the validator and both are decoration.
+   */
+  | "too-little-to-draw"
   /**
    * Pictures were offered for this moment and none of them may be shown.
    *
@@ -345,6 +371,26 @@ export function routeVisual(input: VisualRouteInput): VisualRoute {
       because: `only ${spec.nodes.length} things stand in relation here, which a sentence states more directly than a diagram of it`,
       decision: "prose",
       reason: "too-few-relations",
+    };
+  }
+
+  // 🔴 THE EARNING RULES FOR THE NEW SHAPES, AND EACH ONE IS A PICTURE THAT PASSES VALIDATION AND
+  // TEACHES NOTHING. A single cell, a figure with no lines: valid, drawable, and worse than the
+  // sentence they replace. The timeline's own version of this rule lives in the validator instead,
+  // because "every event at one position" makes the layout undefined rather than merely unhelpful.
+  if (spec.kind === "table" && spec.columns.length < 2 && spec.rows.length < 2) {
+    return {
+      because: "a single cell is a sentence with a border drawn round it",
+      decision: "prose",
+      reason: "too-little-to-draw",
+    };
+  }
+
+  if (spec.kind === "construction" && !spec.segments?.length && !spec.circles?.length && !spec.angles?.length) {
+    return {
+      because: "these points are not joined by anything, so the figure is a scatter of dots",
+      decision: "prose",
+      reason: "too-little-to-draw",
     };
   }
 

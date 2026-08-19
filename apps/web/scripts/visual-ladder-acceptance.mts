@@ -410,6 +410,170 @@ if (!bundlePath || !chromium) {
   }
 }
 
+// ── 7. §44 — five shapes, and the arithmetic checked before anything is drawn ──────────────────
+//
+// 🔴 NO BROWSER CHECK FOR THESE, AND THE REASON IS THE DIFFERENCE FROM CHEMISTRY. The chemistry
+// lane needed a real renderer exercised because a third-party library was computing the geometry
+// and its behaviour was the unknown. These five are drawn by deterministic SVG in this repository
+// from specs whose every numeric claim was recomputed here — so the checks below ARE the proof of
+// the numbers. What they do not prove is layout, which needs React built and a browser.
+
+const tAccount = {
+  balance: { left: "debit", right: "credit" },
+  columns: [
+    { key: "account", label: "Account" },
+    { key: "debit", label: "Debit", numeric: true },
+    { key: "credit", label: "Credit", numeric: true },
+  ],
+  kind: "table" as const,
+  learningGoal: "See both sides of the entry",
+  rows: [
+    { cells: { account: "Equipment", debit: 20000 } },
+    { cells: { account: "Cash", credit: 20000 } },
+  ],
+};
+
+const balanced = routeVisual({ request: tAccount });
+const unbalanced = routeVisual({
+  request: { ...tAccount, rows: [{ cells: { account: "Equipment", debit: 20000 } }, { cells: { account: "Cash", credit: 19000 } }] },
+});
+
+check(
+  "18. an accounting entry renders as a table, and one that does not balance is REFUSED",
+  balanced.decision === "render" && balanced.representation === "table" &&
+    unbalanced.decision === "refused" && unbalanced.reason === "failed-verification",
+  `balanced → ${balanced.decision}${balanced.decision === "render" ? `/${balanced.representation}` : ""}; ` +
+    `off by 1000 → ${unbalanced.decision}/${unbalanced.decision === "refused" ? unbalanced.reason : ""}: ` +
+    `${unbalanced.decision === "refused" ? unbalanced.detail : ""}`,
+);
+
+const badTotal = routeVisual({
+  request: {
+    columns: [{ key: "item", label: "Item" }, { key: "amount", label: "Amount", numeric: true }],
+    kind: "table",
+    learningGoal: "Add the column",
+    rows: [{ cells: { amount: 100, item: "Rent" } }, { cells: { amount: 250, item: "Wages" } }],
+    totals: [{ column: "amount", value: 400 }],
+  },
+});
+check(
+  "19. a stated total that does not sum never reaches a learner",
+  badTotal.decision === "refused" && badTotal.reason === "failed-verification",
+  badTotal.decision === "refused" ? badTotal.detail : "the wrong total was accepted",
+);
+
+const bce = routeVisual({
+  request: {
+    events: [
+      { at: -44, atLabel: "44 BCE", label: "Caesar assassinated" },
+      { at: -27, atLabel: "27 BCE", label: "Augustus takes power", uncertain: true },
+    ],
+    kind: "timeline",
+    learningGoal: "Place the end of the Republic",
+    unit: "years",
+  },
+});
+check(
+  "20. history gets a timeline, and BCE needs no calendar because time is a number plus a label",
+  bce.decision === "render" && bce.representation === "timeline",
+  `two BCE events with display labels → ${bce.decision}${bce.decision === "render" ? `/${bce.representation}` : ""} — ` +
+    `no date parser exists in this codebase to be wrong about eras`,
+);
+
+const triangle = {
+  angles: [{ at: "A", degrees: 90, from: "B", to: "C" }],
+  kind: "construction" as const,
+  learningGoal: "Identify the right angle",
+  points: [
+    { id: "A", label: "A", x: 0, y: 0 },
+    { id: "B", label: "B", x: 4, y: 0 },
+    { id: "C", label: "C", x: 0, y: 3 },
+  ],
+  segments: [{ from: "A", to: "B" }, { from: "B", to: "C" }, { from: "C", to: "A" }],
+};
+const trueAngle = routeVisual({ request: triangle });
+const falseAngle = routeVisual({ request: { ...triangle, angles: [{ at: "A", degrees: 30, from: "B", to: "C" }] } });
+check(
+  "21. geometry needs no solver: a label that disagrees with its own coordinates is refused",
+  trueAngle.decision === "render" && trueAngle.representation === "construction" &&
+    falseAngle.decision === "refused" && falseAngle.reason === "failed-verification",
+  `labelled 90° and measuring 90° → render; labelled 30° and measuring 90° → ` +
+    `${falseAngle.decision}: ${falseAngle.decision === "refused" ? falseAngle.detail : ""}`,
+);
+
+const incline = {
+  bodyLabel: "10 kg block",
+  equilibrium: true,
+  kind: "vectors" as const,
+  learningGoal: "See which forces cancel",
+  vectors: [
+    { degrees: 270, label: "Weight", magnitude: 98, unit: "N" },
+    { degrees: 60, label: "Normal", magnitude: 84.87, unit: "N" },
+    { degrees: 150, label: "Friction", magnitude: 49, unit: "N" },
+  ],
+};
+const balancedForces = routeVisual({ request: incline });
+const wrongForces = routeVisual({
+  request: { ...incline, vectors: [{ degrees: 270, label: "Weight", magnitude: 98 }, { degrees: 90, label: "Normal", magnitude: 50 }] },
+});
+check(
+  "22. a free-body diagram claiming balance is checked, so a wrong drawing cannot grade a right answer",
+  balancedForces.decision === "render" && balancedForces.representation === "vectors" &&
+    wrongForces.decision === "refused" && wrongForces.reason === "failed-verification",
+  `a real incline → render/vectors; forces that do not cancel → ${wrongForces.decision}: ` +
+    `${wrongForces.decision === "refused" ? wrongForces.detail : ""}`,
+);
+
+const code = routeVisual({
+  request: {
+    kind: "code",
+    language: "python",
+    learningGoal: "Follow the accumulator",
+    source: "total = 0\nfor n in [1, 2, 3]:\n    total += n\nprint(total)",
+    trace: [{ line: 1, note: "total starts at zero", variables: [{ name: "total", value: "0" }] }],
+    traceOrigin: "executed",
+  },
+});
+check(
+  "23. a code trace is stamped narrated, and a model cannot claim its narration was an execution",
+  code.decision === "render" && code.representation === "code" &&
+    code.spec.kind === "code" && code.spec.traceOrigin === "narrated",
+  code.decision === "render" && code.spec.kind === "code"
+    ? `the request said traceOrigin "executed" and the stored spec says "${code.spec.traceOrigin}"`
+    : "the code spec did not route",
+);
+
+const driftedTrace = routeVisual({
+  request: {
+    kind: "code",
+    language: "python",
+    learningGoal: "Follow it",
+    source: "x = 1\ny = 2",
+    trace: [{ line: 40, note: "somewhere else entirely" }],
+  },
+});
+check(
+  "24. a trace pointing past the end of its own snippet is refused",
+  driftedTrace.decision === "refused",
+  driftedTrace.decision === "refused"
+    ? `${driftedTrace.reason}: ${driftedTrace.detail} — the trace and the code had drifted apart`
+    : "a trace naming a line that does not exist was accepted",
+);
+
+const oneCell = routeVisual({
+  request: {
+    columns: [{ key: "a", label: "Only" }],
+    kind: "table",
+    learningGoal: "See the number",
+    rows: [{ cells: { a: 1 } }],
+  },
+});
+check(
+  "25. a one-cell table is prose, because a valid picture still has to earn its place",
+  oneCell.decision === "prose" && oneCell.reason === "too-little-to-draw",
+  `${oneCell.decision}${oneCell.decision === "prose" ? `/${oneCell.reason}` : ""}: ${oneCell.because}`,
+);
+
 console.log("");
 console.log(`${checks - failures}/${checks} checks passed${live ? " (live providers)" : " (injected provider responses)"}`);
 if (failures > 0) process.exitCode = 1;

@@ -1,5 +1,11 @@
 # The capability plan — language first, then seven subjects that are really five primitives
 
+> **Status, 2026-08-19:** the owner deferred Phases 0–1 (they need two API keys — a voice provider
+> and a pronunciation assessor) and asked for Phases 3–7 instead. **Phases 3–7 are now built**; see
+> §44 of the canvas product contract. The verifier that was Phase 2 was built *inside* them rather
+> than as a separate phase, because a T-account that does not check its own balance is not a
+> T-account. Phases 0–1 remain the next work the moment the keys exist.
+
 Owner's priorities, 2026-08-19:
 
 1. **Language** — a voice native to the target language, and a way to judge how the learner said it

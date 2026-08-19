@@ -13,6 +13,16 @@
 // that genuinely only need to know whether anything survived.
 
 import { validateStructure, type ChemNotation } from "./chem-notation";
+import {
+  SUBJECT_KINDS,
+  validateSubjectVisual,
+  type CodeVisual,
+  type ConstructionVisual,
+  type SubjectVisual,
+  type TableVisual,
+  type TimelineVisual,
+  type VectorsVisual,
+} from "./subject-visuals";
 
 /** Every polarity a trusted renderer draws. */
 const POLARITIES: readonly EdgePolarity[] = ["increases", "decreases", "plain"];
@@ -116,7 +126,21 @@ export interface StructureVisual extends CanvasVisualBase {
   reactionLabel?: string;
 }
 
-export type CanvasVisualRequest = EquationVisual | FlowVisual | PlotVisual | StructureVisual;
+export type CanvasVisualRequest =
+  | EquationVisual
+  | FlowVisual
+  | PlotVisual
+  | StructureVisual
+  | SubjectVisual;
+
+export type {
+  CodeVisual,
+  ConstructionVisual,
+  SubjectVisual,
+  TableVisual,
+  TimelineVisual,
+  VectorsVisual,
+};
 
 /**
  * Why a request was refused. **A name, never a sentence** — the prose belongs in `detail`.
@@ -187,7 +211,25 @@ export type VisualRefusal =
    */
   | "malformed-structure"
   /** An edge polarity naming something no renderer draws. */
-  | "malformed-polarity";
+  | "malformed-polarity"
+  /**
+   * A §44 subject representation that is not well formed. `detail` names which and why.
+   *
+   * 🔴 ONE MEMBER FOR FIVE SHAPES, THE SAME CHOICE `malformed-structure` MADE FOR CHEMISTRY. The
+   * specific reasons live in `subject-visuals.ts` and travel in `detail`; what this union must not
+   * become is a place where every representation the Canvas ever learns adds five members.
+   */
+  | "malformed-subject"
+  /**
+   * The structure was fine and the ARITHMETIC was not — a total that does not sum, a balance that
+   * does not balance, an angle that disagrees with its own coordinates, forces that do not cancel.
+   *
+   * 🔴 THE MOST IMPORTANT REFUSAL ADDED SINCE `unsafe-latex`, AND FOR THE SAME KIND OF REASON.
+   * `unsafe-latex` exists so a security probe has a name; this exists so a REASONING failure has
+   * one. A model that produces a plausible table with a wrong total is failing at the thing it is
+   * being trusted to do, and reporting that as "malformed" would make it invisible.
+   */
+  | "failed-verification";
 
 export type VisualValidation =
   | { ok: true; visual: CanvasVisualRequest }
@@ -394,6 +436,17 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
         ...(reactionLabel ? { reactionLabel } : {}),
       },
     };
+  }
+
+  if (typeof value.kind === "string" && SUBJECT_KINDS.includes(value.kind)) {
+    // 🔴 DELEGATED, NOT REIMPLEMENTED, AND THE BOUNDARY STAYS HERE. `subject-visuals.ts` owns the
+    // five shapes' rules and their arithmetic; this switch stays the one place a model request is
+    // admitted, so there is never a second front door.
+    const result = validateSubjectVisual(value.kind, value, common);
+    if (result.ok) return { ok: true, visual: result.visual };
+    return result.reason === "failed-verification"
+      ? refuse("failed-verification", result.detail)
+      : refuse("malformed-subject", `${result.reason}: ${result.detail}`);
   }
 
   return refuse("unknown-kind", `no trusted renderer owns ${JSON.stringify(value.kind)}`);
