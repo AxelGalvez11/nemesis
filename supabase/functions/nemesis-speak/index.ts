@@ -26,6 +26,7 @@
 // pays for itself is on the QUESTION text, and this is where it goes.
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 // Both spellings, longer-name-last, for the reason the transcribe function documents at length:
 // Deno.env.get IS case-sensitive, Supabase stores secret names verbatim, and a case mismatch fails
@@ -39,6 +40,59 @@ const MAX_CHARS = 600;
 
 /** USD per character. $4.20 per million, read off x.ai/news/grok-stt-and-tts-apis. */
 const USD_PER_CHAR = 4.2 / 1_000_000;
+
+/** Characters a second of speech, mirroring VOICE_SPEECH_CHARS_PER_SECOND in
+ *  packages/shared/src/plan.ts (850 a minute). Speech OUT is billed by the
+ *  character and speech IN by duration; converting here is what lets both halves
+ *  of a conversation land in one meter the learner can understand. */
+const CHARS_PER_SECOND = 850 / 60;
+
+/**
+ * Charge this turn against the learner's monthly conversational voice allowance.
+ *
+ * 🔴 BEFORE THE PROVIDER CALL, NOT AFTER. Metering after a successful synthesis
+ * is metering nothing: the money is spent the moment xAI answers, so a check
+ * that runs afterwards can only ever report an overrun it already paid for.
+ *
+ * 🔴 AND NOT `transcription_seconds_month_limit`. That key means recorded
+ * lectures, a product Nemesis no longer sells. Conversational voice has its own
+ * key, its own counter and its own allowance; see migration 20260818120000.
+ */
+async function chargeVoiceSeconds(userId: string, characters: number): Promise<
+  { allowed: true } | { allowed: false; reason: string }
+> {
+  // A meter that cannot be reached must not silently become no meter at all —
+  // but it must also not take voice mode down for everyone the first time an
+  // environment is missing a key. A missing service role is a CONFIGURATION
+  // failure and is refused; a transient database error is not, and is allowed
+  // through with a loud log, because one un-metered reply costs a fifth of a cent.
+  if (!SERVICE_KEY) return { allowed: false, reason: "not-configured" };
+  const seconds = Math.max(1, Math.ceil(characters / CHARS_PER_SECOND));
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/rpc/consume_voice_seconds`, {
+      body: JSON.stringify({ p_user_id: userId, p_seconds: seconds, p_kind: "tts" }),
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+    if (!res.ok) {
+      console.error(JSON.stringify({ event: "voice_meter_unreachable", status: res.status }));
+      return { allowed: true };
+    }
+    const verdict = await res.json().catch(() => null) as { allowed?: unknown; reason?: unknown } | null;
+    if (verdict?.allowed === true) return { allowed: true };
+    return { allowed: false, reason: typeof verdict?.reason === "string" ? verdict.reason : "quota_exceeded" };
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "voice_meter_failed",
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    return { allowed: true };
+  }
+}
 
 const ALLOWED_ORIGINS = [
   "https://app.enternemesis.com",
@@ -105,6 +159,19 @@ Deno.serve(async (req) => {
   // `auto` rather than a hardcoded "en": Nemesis is field-agnostic and language-agnostic, and a
   // learner studying in Spanish should not hear their question read in an English accent.
   const language = typeof body.language === "string" && body.language.trim() ? body.language.trim() : "auto";
+
+  const charge = await chargeVoiceSeconds(userId, text.length);
+  if (!charge.allowed) {
+    // 402, not 403: this is "you have used this month's voice", which the client
+    // turns into an offer rather than an error. `voice-quota` is the reason the
+    // canvas reads to decide between the two.
+    return json({
+      error: charge.reason === "not-configured"
+        ? "Voice is not configured yet."
+        : "You have used this month's voice time.",
+      reason: charge.reason === "not-configured" ? "no-provider-key" : "voice-quota",
+    }, charge.reason === "not-configured" ? 503 : 402, req);
+  }
 
   try {
     const res = await fetch("https://api.x.ai/v1/tts", {

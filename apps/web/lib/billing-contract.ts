@@ -1,23 +1,48 @@
 /**
- * What can be BOUGHT. Max ($99) was retired on 2026-08-05 (owner: "max is
- * retired, agent pro is the ceiling"), so it is gone from this union and every
- * sale path that reads it — checkout, the catalog and the billing cards all
- * narrow through this type, which is why removing it here is the retirement.
+ * What can be BOUGHT, and the guards that stop the wrong thing being charged.
  *
- * Retiring a plan is NOT the same as forgetting it. `planForPriceId` in
- * lib/stripe.ts still maps the Max price (and STRIPE_MAX_LEGACY_PRICE_IDS) to
- * the `max` plan, `planLabel` below still names it, and plan_entitlements still
- * carries its rows — so a subscription created before today keeps working
- * instead of silently falling back to free. There are none, but "no sale path"
- * and "no memory of it" are different guarantees and only the first was asked for.
+ * ── ONE PRODUCT, TWO WAYS TO PAY FOR IT ───────────────────────────────────────
+ *
+ * This file used to enumerate a ladder: `CheckoutPlan = "plus" | "pro"`, with
+ * Max retired above it. Every sale path narrowed through that type, which is why
+ * "which plan is this?" was answered by string comparison in a dozen places.
+ *
+ * Since 2026-08-17 there is one paid product, Nemesis. What checkout still has
+ * to choose is the BILLING INTERVAL, and an interval is not a capability — so
+ * the type this file exports is an interval, and the entitlement it grants is
+ * always the same. See packages/shared/src/plan.ts.
+ *
+ * 🔴 LEGACY NAMES ARE NOT FORGOTTEN, THEY ARE JUST NOT FOR SALE. `planForPriceId`
+ * in lib/stripe.ts still maps the retired Student/Agent Pro/Max prices so a
+ * replayed webhook keeps granting access, and `planLabel` below still resolves
+ * them. "No sale path" and "no memory of it" are different guarantees.
  */
-export type CheckoutPlan = "plus" | "pro";
+
+import {
+  NEMESIS_ANNUAL_CENTS,
+  NEMESIS_MONTHLY_CENTS,
+  canonicalPlanLabel,
+  type BillingInterval,
+} from "@nemesis/shared";
+
+/** What checkout picks. NOT a plan — both intervals buy the same Nemesis. */
+export type CheckoutInterval = BillingInterval;
 export type StripeMode = "test" | "live";
 
 export const NEMESIS_TRIAL_PERIOD_DAYS = 7;
-export const MONTHLY_PLAN_PRICE_CENTS: Record<CheckoutPlan, number> = {
-  plus: 999,
-  pro: 1_999,
+
+/** The amounts a Stripe Price must carry to be the Nemesis price for that
+ *  interval. Sourced from packages/shared so the pricing page, the catalog and
+ *  Checkout cannot disagree about what Nemesis costs. */
+export const INTERVAL_PRICE_CENTS: Record<CheckoutInterval, number> = {
+  annual: NEMESIS_ANNUAL_CENTS,
+  monthly: NEMESIS_MONTHLY_CENTS,
+};
+
+/** Stripe's own word for each interval, for validating `recurring.interval`. */
+export const STRIPE_INTERVAL: Record<CheckoutInterval, "month" | "year"> = {
+  annual: "year",
+  monthly: "month",
 };
 
 interface StripePriceLike {
@@ -28,14 +53,26 @@ interface StripePriceLike {
   recurring?: { interval?: string | null } | null;
 }
 
-/** Fail closed when an environment variable still points at an obsolete or
- * annual Stripe Price. The marketing page, catalog, and Checkout must agree. */
-export function stripePriceMatchesPlan(plan: CheckoutPlan, price: StripePriceLike): boolean {
+/**
+ * Fail closed when an environment variable points at the wrong Stripe Price.
+ * The pricing page, the catalog and Checkout must agree on the amount.
+ *
+ * 🔴 THIS IS NOT ENOUGH ON ITS OWN, AND THE REASON IS A COLLISION. Nemesis
+ * monthly is $19.99 — the SAME amount retired Agent Pro charged. A stale
+ * STRIPE_PRO_PRICE_ID would therefore pass an amount-only check while selling a
+ * price that grants a retired plan code. Callers must ALSO confirm the Price ID
+ * came from STRIPE_NEMESIS_MONTHLY_PRICE_ID / STRIPE_NEMESIS_ANNUAL_PRICE_ID;
+ * `nemesisPriceIdFor` in lib/stripe.ts is the only place those are read.
+ */
+export function stripePriceMatchesInterval(
+  interval: CheckoutInterval,
+  price: StripePriceLike,
+): boolean {
   return price.active !== false
     && price.currency === "usd"
     && price.type === "recurring"
-    && price.recurring?.interval === "month"
-    && price.unit_amount === MONTHLY_PLAN_PRICE_CENTS[plan];
+    && price.recurring?.interval === STRIPE_INTERVAL[interval]
+    && price.unit_amount === INTERVAL_PRICE_CENTS[interval];
 }
 
 /** Freemium (owner decision 2026-07-20): checkout NEVER grants a trial — the free
@@ -67,25 +104,16 @@ export function subscriptionWebhookAction(eventType: string): SubscriptionWebhoo
   }
 }
 
+/**
+ * What the customer is shown for a stored plan code.
+ *
+ * 🔴 DELEGATES, AND THE DELEGATION IS THE POINT. This used to be a switch that
+ * printed "Nemesis Student" / "Nemesis Agent Pro" / "Nemesis Max" — names no
+ * customer should ever see again, on a plan they cannot buy. One canonical
+ * answer now: `Nemesis` or `Free`.
+ */
 export function planLabel(plan: string | null | undefined): string {
-  switch ((plan ?? "free").toLowerCase()) {
-    case "plus":
-    case "student":
-      return "Nemesis Student";
-    case "pro":
-      return "Nemesis Agent Pro";
-    // Retired 2026-08-05 and deliberately still named: a label is how an old
-    // record READS, not something anyone can buy. Dropping it would print
-    // "Free" next to a subscription that is not free.
-    case "max":
-      return "Nemesis Max";
-    case "professional":
-      return "Professional";
-    case "enterprise":
-      return "Enterprise";
-    default:
-      return "Free";
-  }
+  return canonicalPlanLabel(plan);
 }
 
 export function subscriptionGrantsAccess(status: string | null | undefined): boolean {
@@ -104,10 +132,17 @@ interface CheckoutSessionLike {
   metadata?: Record<string, string> | null;
 }
 
+/**
+ * An open Checkout session this student can be sent back to.
+ *
+ * Matched on the INTERVAL, not the plan: both intervals now carry
+ * `plan: "nemesis"`, so a student who opened monthly and then chose annual must
+ * get a new session rather than the old one.
+ */
 export function reusableCheckoutUrl(
   sessions: CheckoutSessionLike[],
   userId: string,
-  plan: CheckoutPlan,
+  interval: CheckoutInterval,
   nowMs = Date.now(),
 ): string | null {
   const session = sessions.find((candidate) =>
@@ -116,7 +151,7 @@ export function reusableCheckoutUrl(
     Boolean(candidate.url) &&
     (candidate.expires_at == null || candidate.expires_at * 1000 > nowMs) &&
     candidate.metadata?.user_id === userId &&
-    candidate.metadata?.plan === plan);
+    candidate.metadata?.interval === interval);
   return session?.url ?? null;
 }
 

@@ -24,6 +24,8 @@
 /** The environment this module reads, as a plain string bag — `process.env` satisfies it, and a
  *  test can pass `{ MISTRAL_API_KEY: "k" }` without fabricating the rest of the environment.
  *  Only MISTRAL_API_KEY and MISTRAL_OCR_MODEL are ever read. */
+import { toMistralPages } from "./page-selection";
+
 export type MistralEnv = Readonly<Record<string, string | undefined>>;
 
 const MISTRAL_OCR_URL = "https://api.mistral.ai/v1/ocr";
@@ -244,13 +246,33 @@ export function buildMistralRequest(input: {
   model: string;
   /** Office formats reject the flag PDFs need — see `include_image_base64` below. */
   office?: boolean;
+  /**
+   * CANONICAL 0-based page indices to read, and the document's total page count.
+   *
+   * 🔴 THE DIFFERENCE BETWEEN PAYING FOR TWENTY PAGES AND PAYING FOR FOUR
+   * HUNDRED. This request used to send the whole document every time, so a
+   * 400-page PDF with two scanned pages was billed as 400 OCR pages. The local
+   * reader already knows which pages it could not read; `toMistralPages` turns
+   * that list into this parameter.
+   *
+   * Omitting `pages` (or passing no selection) reads the whole document, which
+   * is the right behaviour for a document that IS a scan.
+   */
+  pages?: readonly number[];
+  totalPages?: number;
 }): string {
+  const pages = input.pages && input.totalPages != null
+    ? toMistralPages(input.pages, input.totalPages)
+    : null;
   return JSON.stringify({
     model: input.model,
     document: {
       type: "document_url",
       document_url: `data:${input.mime};base64,${input.base64}`,
     },
+    // Only the pages the cheap local read could not handle. `null` means the
+    // whole document, which is what a fully scanned PDF actually needs.
+    ...(pages ? { pages } : {}),
     // Labelled regions, so a heading arrives as a heading rather than as a line of markdown we
     // would have to re-infer with a regex — which is the keyword-list mistake in another costume.
     include_blocks: true,

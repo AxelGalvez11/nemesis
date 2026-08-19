@@ -10,28 +10,23 @@ import { captureCtaClick } from "@/lib/posthog";
 export const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
 export const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
 
-/** Paid plan ids, as the app and Stripe know them. "plus" is sold as "Student".
- *
- *  "max" came off this site on 2026-07-31 when the owner set a $20/mo ceiling, and
- *  was RETIRED outright on 2026-08-05 ("agent pro is the ceiling"). It is gone from
- *  the type rather than merely unused on the page, so a future plan card cannot
- *  reintroduce a $99 tier just by typing a string. As of the retirement the app no
- *  longer sells it either: a stale `?plan=max` link now resolves to Student rather
- *  than to a $99 checkout. */
-export type PaidPlan = "plus" | "pro";
+/** How often you pay for Nemesis. There is ONE paid product, so this is not a
+ *  plan id — the old `PaidPlan = "plus" | "pro"` union was, and every surface
+ *  that read it had to know which tier it was selling. */
+export type BillingInterval = "monthly" | "annual";
 
 /**
- * Where a "Get <plan>" button on this site must point.
+ * Where a "Get Nemesis" button on this site must point.
  *
  * NOT /sign-up. Every plan button used to go to the bare sign-up page, which threw the
- * choice away: someone picked Agent Pro, made an account, and landed in the app on the
+ * choice away: someone picked a plan, made an account, and landed in the app on the
  * free tier having never been asked to pay. The app's own /pricing already handles the
- * whole flow — it stashes the plan, sends a signed-out visitor to
- * /sign-up?next=/pricing?plan=X, and resumes Stripe checkout the moment they are
- * authenticated. Linking here hands the funnel to that code instead of dropping it.
+ * whole flow — it stashes the choice, sends a signed-out visitor to
+ * /sign-up?next=/pricing?interval=X, and resumes Stripe checkout the moment they are
+ * authenticated.
  */
-export function planCheckoutUrl(plan: PaidPlan): string {
-  return `https://app.enternemesis.com/pricing?plan=${plan}`;
+export function planCheckoutUrl(interval: BillingInterval): string {
+  return `https://app.enternemesis.com/pricing?interval=${interval}`;
 }
 
 // The cursor-following card glow lived here until 2026-07-28: a rAF-throttled

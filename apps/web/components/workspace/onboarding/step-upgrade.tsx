@@ -1,6 +1,6 @@
 "use client";
 
-// The last screen: your semester is set up, and here is what more costs.
+// The last screen: your semester is set up, and here is what Nemesis costs.
 //
 // SHOWN AFTER THE WORK IS SAVED, NOT BEFORE. It is not a step, it does not
 // appear in the progress bar, and it cannot block anything — the folders and
@@ -13,47 +13,52 @@
 // product feel like it is not paying attention. The caller checks the plan and
 // simply does not render this otherwise.
 //
-// The numbers here are recording hours, because that is the honest difference
-// between the tiers — it is the one cost that scales with use, roughly sixteen
-// times the whole AI lane for a heavy student. Everything else is limits the
-// free plan already gives generously.
+// 🔴 THIS SCREEN USED TO SELL RECORDING HOURS, and it cannot any more. Nemesis
+// no longer offers lecture or meeting transcription; the honest difference
+// between Free and Nemesis is how much of the month you get, plus talking to it
+// out loud. One offer now, monthly or yearly, no ladder to compare.
 
 import { useState } from "react";
 
+import { annualPerMonthCents, annualSavingPercent, formatUsdCents, NEMESIS_ANNUAL_CENTS, NEMESIS_MONTHLY_CENTS } from "@nemesis/shared";
 import { Button } from "@/components/desktop-ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { Check, ExternalLink, Loader2 } from "@/lib/workspace/icons";
+import { type CheckoutInterval } from "@/lib/billing-contract";
 import { phCapture } from "@/lib/posthog";
 import { cn } from "@/lib/utils";
 
-/** Kept deliberately short. The full comparison lives on the billing screen;
- *  this is a first-day nudge, not a pricing page.
- *
- *  🔴 Recording hours must match plan_entitlements.transcription_seconds_month_limit,
- *  the cards in billing-settings.tsx, and app/pricing/page.tsx. Those three had
- *  already drifted apart by more than 3x once. */
 interface Offer {
-  tier: "plus" | "pro";
-  name: string;
-  hours: string;
-  lines: string[];
+  id: CheckoutInterval;
+  label: string;
+  perMonth: string;
+  billedAs: string;
   recommended?: boolean;
 }
 
+/** Kept deliberately short. The full picture lives on the billing screen; this
+ *  is a first-day nudge, not a pricing page. */
 const OFFERS: readonly Offer[] = [
   {
-    hours: "30 hours",
-    lines: ["Higher limits for answers, notes and decks", "Turn lectures into study material"],
-    name: "Student",
-    tier: "plus",
+    billedAs: "Billed monthly",
+    id: "monthly",
+    label: "Monthly",
+    perMonth: formatUsdCents(NEMESIS_MONTHLY_CENTS),
   },
   {
-    hours: "70 hours",
-    lines: ["Everything in Student", "Answers grounded in the web, with sources"],
-    name: "Agent Pro",
+    // The real charge is on the card, never only the per-month figure.
+    billedAs: `${formatUsdCents(NEMESIS_ANNUAL_CENTS)} billed annually`,
+    id: "annual",
+    label: `Yearly · Save ${annualSavingPercent()}%`,
+    perMonth: formatUsdCents(annualPerMonthCents()),
     recommended: true,
-    tier: "pro",
   },
+];
+
+const NEMESIS_LINES = [
+  "Room for a full course load, every week",
+  "Talk to Nemesis out loud, and hear it answer",
+  "Answers grounded in the web, with real sources",
 ];
 
 interface StepUpgradeProps {
@@ -69,15 +74,15 @@ export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProp
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function checkout(tier: Offer["tier"]) {
-    setBusy(tier);
+  async function checkout(interval: CheckoutInterval) {
+    setBusy(interval);
     setError(null);
-    phCapture("checkout_started", { from: "onboarding", plan: tier });
+    phCapture("checkout_started", { billing_interval: interval, from: "onboarding", plan: "nemesis" });
     try {
       const token = session?.access_token;
       if (!token) throw new Error("Sign in first.");
       const res = await fetch("/api/stripe/checkout", {
-        body: JSON.stringify({ plan: tier }),
+        body: JSON.stringify({ interval }),
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         method: "POST",
       });
@@ -107,12 +112,21 @@ export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProp
       </div>
 
       <div className="rounded-xl border border-border p-3">
-        <p className="text-xs font-medium text-foreground">Your free plan includes 30 minutes of lecture recording a month</p>
+        <p className="text-xs font-medium text-foreground">Your free plan is the whole product</p>
         <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">
-          Enough to run one class through it end to end. Recording is the one thing that costs real money to run, so it
-          is what the paid plans mostly buy you.
+          Same Canvas, same teaching, same reasoning. Nemesis is the same thing with room for a full course load,
+          and the ability to talk to it out loud.
         </p>
       </div>
+
+      <ul className="flex flex-col gap-1.5">
+        {NEMESIS_LINES.map((line) => (
+          <li className="flex gap-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground" key={line}>
+            <Check className="mt-0.5 shrink-0 text-(--theme-primary)" size={12} />
+            <span>{line}</span>
+          </li>
+        ))}
+      </ul>
 
       {error && (
         <p className="rounded-lg border border-(--ui-danger)/40 bg-(--ui-danger)/10 px-3 py-2 text-xs text-(--ui-danger)">
@@ -127,41 +141,28 @@ export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProp
               "flex flex-col rounded-xl border border-border p-4",
               offer.recommended && "border-(--theme-primary) ring-1 ring-(--theme-primary)",
             )}
-            key={offer.tier}
+            key={offer.id}
           >
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">{offer.name}</h3>
-              {offer.recommended && (
-                <span className="rounded-full border border-(--theme-primary) px-2 py-0.5 text-[0.625rem] font-semibold text-(--theme-primary)">
-                  Most picked
-                </span>
-              )}
+              <h3 className="text-sm font-semibold text-foreground">{offer.label}</h3>
             </div>
-            <p className="mt-2 text-xs font-medium text-foreground">{offer.hours} of recording a month</p>
-            <ul className="mt-2 flex flex-col gap-1.5">
-              {offer.lines.map((line) => (
-                <li className="flex gap-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground" key={line}>
-                  <Check className="mt-0.5 shrink-0 text-(--theme-primary)" size={12} />
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
+            <p className="mt-2 text-sm font-semibold text-foreground">{offer.perMonth}<span className="text-xs font-normal text-muted-foreground"> / month</span></p>
+            <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">{offer.billedAs}</p>
             <div className="mt-auto pt-3">
               <Button
                 className="w-full"
                 disabled={busy !== null}
-                onClick={() => void checkout(offer.tier)}
+                onClick={() => void checkout(offer.id)}
                 size="sm"
-                type="button"
-                variant={offer.recommended ? "default" : "outline"}
+                variant={offer.recommended ? "default" : "secondary"}
               >
-                {busy === offer.tier ? (
+                {busy === offer.id ? (
                   <>
-                    <Loader2 className="animate-spin" size={13} /> Opening checkout…
+                    <Loader2 className="animate-spin" size={13} /> Opening checkout
                   </>
                 ) : (
                   <>
-                    See {offer.name} <ExternalLink size={12} />
+                    Get Nemesis <ExternalLink size={13} />
                   </>
                 )}
               </Button>
@@ -170,17 +171,13 @@ export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProp
         ))}
       </div>
 
-      {/* Said plainly, because the price is not on this screen and a student
-          should never reach a card form by surprise. */}
-      <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
-        Prices are shown in checkout before anything is charged. Cancel any time.
-      </p>
-
-      <div className="flex justify-end">
-        <Button onClick={onDone} type="button" variant="outline">
-          Start using Nemesis
-        </Button>
-      </div>
+      <button
+        className="self-start text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        onClick={onDone}
+        type="button"
+      >
+        Maybe later
+      </button>
     </div>
   );
 }

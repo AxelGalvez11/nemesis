@@ -38,6 +38,8 @@ const BASE = "https://api.cloud.llamaindex.ai/api/v1/parsing";
  * (~$0.00375). `parse_page_with_agent` produced identical output on the PDF tested, so paying for a
  * stronger tier bought nothing there either.
  */
+import { toLlamaTargetPages } from "./page-selection";
+
 export const LLAMA_DEFAULT_TIER = "cost_effective";
 export const LLAMA_DEFAULT_VERSION = "latest";
 
@@ -110,9 +112,19 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function readWithLlama(
   bytes: Uint8Array,
   fileName: string,
-  options: { env?: LlamaEnv; signal?: AbortSignal } = {},
+  options: {
+    env?: LlamaEnv;
+    signal?: AbortSignal;
+    /** CANONICAL 0-based indices of the pages the local reader could not handle,
+     *  with the document's page count. Omit to read the whole document. */
+    pages?: readonly number[];
+    totalPages?: number;
+  } = {},
 ): Promise<LlamaOutcome> {
   const env = options.env ?? process.env;
+  const targetPages = options.pages && options.totalPages != null
+    ? toLlamaTargetPages(options.pages, options.totalPages)
+    : null;
   const key = (env.LLAMAPARSE_API_KEY ?? "").trim();
   const started = Date.now();
   const since = () => Date.now() - started;
@@ -129,6 +141,12 @@ export async function readWithLlama(
   form.append("tier", tier);
   // 🔴 BOTH, ALWAYS. See LLAMA_DEFAULT_TIER: a tier without a version fails AFTER the upload.
   form.append("version", version);
+  // 🔴 TARGETED PAGES, WHEN THE LOCAL READER ALREADY HANDLED THE REST.
+  // `target_pages` is a comma-separated 0-BASED string, and an EMPTY string is
+  // not "no pages" -- it is an unset parameter, meaning every page. That is why
+  // `toLlamaTargetPages` returns null rather than "" and this only appends when
+  // there is a real selection. See lib/notebooks/page-selection.ts.
+  if (targetPages) form.append("target_pages", targetPages);
 
   let jobId: string;
   try {

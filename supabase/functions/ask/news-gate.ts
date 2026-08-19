@@ -31,11 +31,27 @@ export interface NewsGateDecision {
   query: string;
 }
 
-// EVERY non-free DB tier is "paid" for news — the owner's "Plus/Pro only" means "paid, not free", and
-// professional/enterprise are HIGHER tiers than pro (locking them out would silently break the feature
-// for the biggest customers). An explicit allow-list of the known paid tiers (not `!== "free"`) so an
-// empty/garbage/leaked-status value fails CLOSED — unpaid → teaser, never giving the feature away.
-const PAID_PLANS = new Set(["plus", "pro", "student", "professional", "enterprise"]);
+// Every paid plan code, present and retired.
+//
+// 🔴 `nemesis` HAD TO BE ADDED HERE, AND ITS ABSENCE WOULD HAVE BEEN SILENT.
+// `resolve_user_plan` now returns the canonical code, so without this row every
+// paying subscriber would have fallen to the unpaid branch and seen the teaser
+// instead of live news -- a paid feature quietly withheld from the people paying
+// for it, with nothing anywhere reporting a failure.
+//
+// The retired codes stay because an old record still says them. An explicit
+// allow-list (not `!== "free"`) so an empty, garbage or leaked-status value fails
+// CLOSED -- unpaid means teaser, never giving the feature away.
+const PAID_PLANS = new Set([
+  "nemesis",
+  "plus",
+  "pro",
+  "max",
+  "student",
+  "professional",
+  "trial",
+  "enterprise",
+]);
 
 /** Decide news fetching + teaser for one answer. Pure. */
 export function decideNewsGate(input: NewsGateInput): NewsGateDecision {

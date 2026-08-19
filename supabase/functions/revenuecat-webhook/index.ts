@@ -18,7 +18,7 @@
 // RevenueCat cannot attach a Supabase JWT.
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { effectivePlan } from "../../../packages/shared/src/entitlements.ts";
+import { effectivePlanCode } from "../../../packages/shared/src/plan.ts";
 import { applePlanFromEvent, subscriptionUserId, type RevenueCatEvent } from "../_shared/revenuecat.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -66,7 +66,10 @@ serve(async (req: Request): Promise<Response> => {
       user_id: userId,
       apple_plan: applePlan,
       rc_app_user_id: event.app_user_id ?? null,
-      plan: effectivePlan(existing?.stripe_plan, applePlan),
+      // effectivePlanCode, not effectivePlan: a comped `enterprise` account that
+      // also has an App Store receipt must keep its own entitlement rows.
+      plan: effectivePlanCode(existing?.stripe_plan, applePlan),
+      billing_provider: "apple",
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
     if (writeError) throw writeError;

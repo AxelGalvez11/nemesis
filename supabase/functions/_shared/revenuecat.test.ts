@@ -1,11 +1,15 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { applePlanFromEvent, subscriptionUserId } from "./revenuecat.ts";
 
-Deno.test("purchases and renewals grant the entitlement's plan, pro winning", () => {
-  assertEquals(applePlanFromEvent({ type: "INITIAL_PURCHASE", entitlement_ids: ["plus"] }), "plus");
-  assertEquals(applePlanFromEvent({ type: "RENEWAL", entitlement_ids: ["pro"] }), "pro");
-  assertEquals(applePlanFromEvent({ type: "PRODUCT_CHANGE", entitlement_ids: ["plus", "pro"] }), "pro");
-  assertEquals(applePlanFromEvent({ type: "UNCANCELLATION", entitlement_ids: ["plus"] }), "plus");
+Deno.test("any recognised entitlement grants the one paid product", () => {
+  // There is nothing left to rank. The dashboard still says plus/pro, and both
+  // must keep working -- renaming them there is a separate, live change.
+  assertEquals(applePlanFromEvent({ type: "INITIAL_PURCHASE", entitlement_ids: ["plus"] }), "nemesis");
+  assertEquals(applePlanFromEvent({ type: "RENEWAL", entitlement_ids: ["pro"] }), "nemesis");
+  assertEquals(applePlanFromEvent({ type: "PRODUCT_CHANGE", entitlement_ids: ["plus", "pro"] }), "nemesis");
+  assertEquals(applePlanFromEvent({ type: "UNCANCELLATION", entitlement_ids: ["plus"] }), "nemesis");
+  // And the id the dashboard should eventually carry already works.
+  assertEquals(applePlanFromEvent({ type: "INITIAL_PURCHASE", entitlement_ids: ["nemesis"] }), "nemesis");
 });
 
 Deno.test("only EXPIRATION revokes — cancellation keeps the paid-for weeks", () => {

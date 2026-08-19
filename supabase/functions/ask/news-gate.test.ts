@@ -14,7 +14,9 @@ Deno.test("decideNewsGate: Plus with a query → fetch the panel (paid, unlocked
 Deno.test("decideNewsGate: ALL non-free DB plan tiers are paid (not just plus/pro)", () => {
   // resolve_user_plan returns subscriptions.plan, CHECK-constrained to these tiers (migration 0122).
   // professional/enterprise are HIGHER than pro — they must see news, not the upgrade teaser.
-  for (const plan of ["plus", "pro", "student", "professional", "enterprise"]) {
+  // 🔴 `nemesis` IS THE ONE THAT MATTERS NOW. Every other name here is a record
+  // that still exists rather than a plan anyone can buy.
+  for (const plan of ["nemesis", "plus", "pro", "max", "student", "professional", "trial", "enterprise"]) {
     const d = decideNewsGate({ ...base, plan, query: "ozempic" });
     assertEquals(d.fetch, true, `${plan} should fetch news`);
     assertEquals(d.locked, false, `${plan} should not be locked`);

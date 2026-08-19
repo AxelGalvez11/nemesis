@@ -37,13 +37,16 @@ const GRANTING_TYPES = new Set([
  *    it needs the transferred_from/to arrays — a deliberate follow-up, not a
  *    guess here.
  *  - TEST: the dashboard's "send test event" button. */
-export function applePlanFromEvent(event: RevenueCatEvent): "plus" | "pro" | "free" | null {
+export function applePlanFromEvent(event: RevenueCatEvent): "nemesis" | "free" | null {
   const type = event.type ?? "";
   if (type === "EXPIRATION") return "free";
   if (!GRANTING_TYPES.has(type)) return null;
   const ids = event.entitlement_ids ?? [];
-  if (ids.includes("pro")) return "pro";
-  if (ids.includes("plus")) return "plus";
+  // One paid product, so there is nothing left to rank: any recognised
+  // entitlement grants Nemesis. `plus` and `pro` are still accepted because the
+  // RevenueCat dashboard still says them -- renaming them there is a separate,
+  // live change, and this must keep working either way.
+  if (ids.some((id) => id === "nemesis" || id === "pro" || id === "plus")) return "nemesis";
   // A granting event for an entitlement we don't recognise (a dashboard
   // experiment, the dead "Pharma Orb Pro" demo) must not grant a plan — but it
   // must not revoke one either.

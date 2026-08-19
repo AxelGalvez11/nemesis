@@ -5,96 +5,89 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
+import {
+  annualPerMonthCents,
+  annualSavingPercent,
+  formatUsdCents,
+  NEMESIS_ANNUAL_CENTS,
+  NEMESIS_MONTHLY_CENTS,
+} from "@nemesis/shared";
 import { useAuth } from "@/components/AuthProvider";
-import { type CheckoutPlan } from "@/lib/billing-contract";
+import { type CheckoutInterval } from "@/lib/billing-contract";
 import { phCapture } from "@/lib/posthog";
 
-/** Whatever checkout can actually sell — no second list to fall out of step
- *  with it. This page used to keep its own union including "max", which
- *  survived Max's retirement and meant a stale ?plan=max link still auto-started
- *  a checkout, landing the visitor in Stripe looking at Student. */
-type PaidPlan = CheckoutPlan;
+/**
+ * ONE PRODUCT, TWO WAYS TO PAY FOR IT.
+ *
+ * This page used to be a ladder — Student $9.99 and Agent Pro $19.99, with Max
+ * $99 above them before it was retired — and every card carried its own feature
+ * list, its own recording-hours claim and its own drift. It is now a choice
+ * between free and Nemesis, and then between paying monthly or yearly.
+ *
+ * 🔴 THE AMOUNTS ARE RENDERED FROM packages/shared/src/plan.ts, NOT FROM STRIPE.
+ * A pricing page that fetches its own prices shows nothing when the provider is
+ * slow, misconfigured or not yet set up — and a blank price is worse than a
+ * stale one. The Stripe Price is still verified, at CHECKOUT, where being wrong
+ * would actually charge somebody: /api/stripe/checkout refuses to open a session
+ * whose Price does not carry exactly the amount below.
+ *
+ * 🔴 NO FEATURE MATRIX, AND NO PROVIDER NAMES. The proposition is one full
+ * Nemesis product. Token quotas, parser page allowances, search credits and the
+ * names of the companies whose APIs sit underneath are internal cost controls;
+ * putting any of them on this page turns a product into a metering dashboard.
+ */
 
-interface Tier {
-  id: PaidPlan;
-  name: string;
-  price: string;
-  cadence: string;
-  tagline: string;
-  features: string[];
-  cta: string;
-  featured?: boolean;
+interface Interval {
+  id: CheckoutInterval;
+  label: string;
+  /** The big number: what it works out at each month. */
+  monthlyEquivalent: string;
+  /** The true charge, always shown next to the big number. */
+  billedAs: string;
 }
 
-// Nemesis tiers — freemium: the free plan works every day with no card, and these
-// paid plans raise the limits. The plans map to Stripe prices (plan "plus" | "pro"
-// → STRIPE_{PLUS,PRO}_PRICE_ID); the $ shown here must match those prices.
-//
-// RECORDING ALLOWANCES MUST MATCH plan_entitlements.transcription_seconds_month_limit,
-// which workload-cost.ts mirrors as PLANS[...].transcriptionMinutes. They drifted badly
-// once — this page undersold the plans by more than 3x and nothing failed on it — so
-// there is now a test ("advertised recording allowances match the plan caps") that reads
-// this file and every other surface making the same claim. Change the cap and the copy
-// together, or that test fails.
-//
-// The old copy also said "live copilot". There is no live lane any more: a recording
-// is transcribed and written up once, after it stops.
-//
-// EVERY LINE HERE MUST NAME SOMETHING A STUDENT CAN REACH. Deep research, watches,
-// missions, evidence briefs and saved reports are PharmaOrb leftovers: their
-// entitlement rows still exist, but there is no route, no nav entry and no chat tool
-// for any of them, and BrowseTopics / WatchButton / ResearchReportView are rendered
-// by nothing. Do not put them back on this page.
-const TIERS: Tier[] = [
+const INTERVALS: readonly Interval[] = [
   {
-    cta: "Get Student",
-    cadence: "/ month",
-    features: [
-      "Cited answers and research support for any field",
-      "Turn your lectures into notes + exam-ready flashcards",
-      "30 hours of lecture recording each month",
-      "A calendar built from your syllabus",
-      "Higher daily limits for answers, notes & decks",
-    ],
-    id: "plus",
-    name: "Student",
-    price: "$9.99",
-    tagline: "For the student who lives in it.",
+    billedAs: "Billed monthly. Cancel anytime.",
+    id: "monthly",
+    label: "Monthly",
+    monthlyEquivalent: formatUsdCents(NEMESIS_MONTHLY_CENTS),
   },
   {
-    cta: "Get Agent Pro",
-    cadence: "/ month",
-    featured: true,
-    features: [
-      "Everything in Student, with room for a full course load",
-      "70 hours of lecture recording each month",
-      "Web-grounded answers with real citations",
-      "The highest answer quality, on every question",
-    ],
-    id: "pro",
-    name: "Agent Pro",
-    price: "$19.99",
-    tagline: "For a full course load, every week.",
+    // 🔴 THE SECOND LINE IS NOT OPTIONAL. $16.67 is $199.99 divided by twelve and
+    // rounded; nobody is ever charged it. Showing it without the real annual
+    // charge beside it is the deceptive pattern the owner ruled out.
+    billedAs: `${formatUsdCents(NEMESIS_ANNUAL_CENTS)} billed annually. Cancel anytime.`,
+    id: "annual",
+    label: `Yearly · Save ${annualSavingPercent()}%`,
+    monthlyEquivalent: formatUsdCents(annualPerMonthCents()),
   },
 ];
 
-// MAX'S CARD CAME OFF 2026-07-31, and Max was RETIRED OUTRIGHT 2026-08-05 (owner:
-// "max is retired, agent pro is the ceiling"). The $20/mo ceiling came from the
-// nearest competitor, whose most expensive plan is $19 a month — against that, a $99
-// row reads as a different category of product rather than as a generous option.
-//
-// Since the retirement nothing sells it: CheckoutPlan is plus | pro, the checkout
-// route has no max branch, and a stale ?plan=max link now just leaves the visitor
-// here to choose. What deliberately survives is RESOLUTION — plan_entitlements.max,
-// planForPriceId and planLabel — so a subscription that predates the retirement
-// keeps its entitlements instead of silently becoming free. Nothing needed
-// migrating: Max had no subscribers. Archiving the Stripe price is a live billing
-// change and remains the owner's call, not a side effect of a pricing-page edit.
+/** The default, and the fallback: an unknown interval can only ever mean the
+ *  cheaper commitment, never the larger charge. */
+const MONTHLY = INTERVALS[0]!;
+
+
+/** What Free actually is: the whole product, for less of the month. Not a worse
+ *  tutor, not a smaller model, not a degraded Canvas. */
+const FREE_LINES = [
+  "The same teaching Canvas, and the same reasoning behind it",
+  "Bring your own lectures, slides, notes and readings",
+  "Ask, get taught, get tested — every day",
+];
+
+const NEMESIS_LINES = [
+  "Everything in Free, with room for a full course load",
+  "Talk to Nemesis out loud, and hear it answer",
+  "Answers grounded in the web, with real sources",
+  "Enough headroom that you stop thinking about limits",
+];
 
 // The marketing site's typeface, loaded ONLY for this route.
 //
 // www.enternemesis.com is set in Hanken Grotesk and the app is set in the system
-// stack. That is normally invisible, but pressing "Get Student" on the marketing
+// stack. That is normally invisible, but pressing "Get Nemesis" on the marketing
 // site lands here in one hop, and a typeface change across that hop is the single
 // loudest signal that you have left one product for another. Self-hosted by
 // next/font, scoped by a CSS variable on this page's own root, so no other screen
@@ -107,39 +100,54 @@ const pricingSans = Hanken_Grotesk({
 
 const INTENT_KEY = "nemesis.checkout.intent";
 
+/** A stored or querystring intent, narrowed. Anything else (a stale ?plan=max
+ *  link, a typo) leaves the visitor on the page to choose rather than starting
+ *  a checkout for something they did not pick. */
+function asInterval(value: null | string): CheckoutInterval | null {
+  return value === "monthly" || value === "annual" ? value : null;
+}
+
 function PricingInner() {
   const { session } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const checkoutStatus = params.get("checkout");
-  const intentPlan = params.get("plan");
+  const intentInterval = params.get("interval");
+  // 🔴 THE CHOICE ARRIVES IN THE URL, AND IT HAS TO SURVIVE BEING SIGNED OUT.
+  // The marketing site's yearly button links here as ?interval=annual. Reading
+  // that only inside the resume effect meant it applied ONLY to someone already
+  // signed in: a visitor who pressed "Get Nemesis" under the yearly toggle
+  // landed on a page showing $19.99 a month. Caught in the browser, not by a test.
+  const [interval, setInterval] = useState<CheckoutInterval>(
+    () => asInterval(params.get("interval")) ?? "monthly",
+  );
+  const selected = INTERVALS.find((candidate) => candidate.id === interval) ?? MONTHLY;
 
   const startCheckout = useCallback(
-    async (plan: PaidPlan) => {
+    async (chosen: CheckoutInterval) => {
       setError(null);
 
-      // Not signed in yet: remember the plan and route through sign-up, returning to
-      // this page so we can resume checkout the moment they're authenticated.
+      // Not signed in yet: remember the choice and route through sign-up, returning to
+      // this page so we can resume checkout the moment they are authenticated.
       if (!session?.access_token) {
         try {
-          window.sessionStorage.setItem(INTENT_KEY, plan);
+          window.sessionStorage.setItem(INTENT_KEY, chosen);
         } catch {
           /* best-effort */
         }
-        const next = encodeURIComponent(`/pricing?plan=${plan}`);
+        const next = encodeURIComponent(`/pricing?interval=${chosen}`);
         router.push(`/sign-up?next=${next}`);
 
         return;
       }
 
-      setBusy(plan);
-      phCapture("checkout_started", { plan, source: "pricing" });
+      setBusy(true);
+      phCapture("checkout_started", { billing_interval: chosen, plan: "nemesis", source: "pricing" });
       try {
         const res = await fetch("/api/stripe/checkout", {
-          body: JSON.stringify({ plan }),
+          body: JSON.stringify({ interval: chosen }),
           headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
           method: "POST",
         });
@@ -155,14 +163,14 @@ function PricingInner() {
         window.location.href = body.url as string;
       } catch (e) {
         setError(e instanceof Error ? e.message : "Checkout failed.");
-        setBusy(null);
+        setBusy(false);
       }
     },
     [router, session],
   );
 
-  // Resume checkout after the sign-up round trip: once we're signed in and a plan is
-  // pending (via ?plan= or the stashed intent), kick off Stripe automatically.
+  // Resume checkout after the sign-up round trip: once we are signed in and a
+  // choice is pending (via ?interval= or the stashed intent), open Stripe.
   useEffect(() => {
     if (!session?.access_token || checkoutStatus) {
       return;
@@ -174,21 +182,18 @@ function PricingInner() {
         return null;
       }
     })();
-    // A plan this page cannot sell is not a plan: an unrecognised ?plan= (a
-    // stale max link, a typo) simply leaves the visitor on the pricing page to
-    // choose, rather than auto-starting a checkout for something else.
-    const asPlan = (value: null | string): PaidPlan | null =>
-      value === "plus" || value === "pro" ? value : null;
-    const plan = asPlan(intentPlan) ?? asPlan(stashed);
-    if (plan) {
-      void startCheckout(plan);
+    const pending = asInterval(intentInterval) ?? asInterval(stashed);
+    if (pending) {
+      setInterval(pending);
+      void startCheckout(pending);
     }
     // Only re-run when auth state settles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token]);
 
-  function onCta(tier: Tier) {
-    void startCheckout(tier.id);
+  function chooseInterval(next: CheckoutInterval) {
+    setInterval(next);
+    phCapture("pricing_interval_selected", { billing_interval: next });
   }
 
   return (
@@ -204,10 +209,10 @@ function PricingInner() {
 
       <section className="nm-hero">
         <p className="nm-eyebrow">Pricing</p>
-        <h1 className="nm-title">Upgrade when you need more.</h1>
+        <h1 className="nm-title">One Nemesis. Free, or all of it.</h1>
         <p className="nm-sub">
-          The free plan keeps working every day, no card required. Paid plans raise the limits, and you can cancel
-          anytime.
+          The free plan is the real product, with less of the month in it. Nemesis gives you room for a full
+          course load. Pay monthly or yearly, and cancel whenever you like.
         </p>
       </section>
 
@@ -221,45 +226,82 @@ function PricingInner() {
       {error ? <p className="nm-banner nm-banner-err">{error}</p> : null}
 
       <section className="nm-tiers">
-        {TIERS.map((tier) => (
-          <article className={`nm-card${tier.featured ? " nm-card-featured" : ""}`} key={tier.id}>
-            {tier.featured ? <span className="nm-tag">Most popular</span> : null}
-            {/* Price first, then the name — the marketing page's order. Someone who
-                arrived by pressing "Get Student" is here to check a number. */}
-            <p className="nm-price">
-              <strong>{tier.price}</strong>
-              <span className="nm-cadence">/mo</span>
-            </p>
-            <h2 className="nm-card-name">{tier.name}</h2>
-            <p className="nm-card-tagline">{tier.tagline}</p>
-            <ul className="nm-features">
-              {tier.features.map((feature) => (
-                <li key={feature}>
-                  <svg aria-hidden height="13" viewBox="0 0 16 16" width="13">
-                    <path d="M3 8.5 6.2 11.7 13 4.9" fill="none" stroke="currentColor" strokeWidth="2" />
-                  </svg>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <div className="nm-cta-wrap">
+        <article className="nm-card">
+          <p className="nm-price">
+            <strong>$0</strong>
+          </p>
+          <h2 className="nm-card-name">Free</h2>
+          <p className="nm-card-tagline">Everything Nemesis does, for part of the month.</p>
+          <ul className="nm-features">
+            {FREE_LINES.map((line) => (
+              <li key={line}>
+                <svg aria-hidden height="13" viewBox="0 0 16 16" width="13">
+                  <path d="M3 8.5 6.2 11.7 13 4.9" fill="none" stroke="currentColor" strokeWidth="2" />
+                </svg>
+                {line}
+              </li>
+            ))}
+          </ul>
+          <div className="nm-cta-wrap">
+            <Link className="nm-cta" href={session?.access_token ? "/" : "/sign-up"}>
+              Continue free
+            </Link>
+            <p className="nm-trialhint">No card required.</p>
+          </div>
+        </article>
+
+        <article className="nm-card nm-card-featured">
+          <div className="nm-toggle" role="group" aria-label="Billing period">
+            {INTERVALS.map((option) => (
               <button
-                className={`nm-cta${tier.featured ? " nm-cta-primary" : ""}`}
-                disabled={busy === tier.id}
-                onClick={() => onCta(tier)}
+                aria-pressed={option.id === interval}
+                className={`nm-toggle-option${option.id === interval ? " nm-toggle-on" : ""}`}
+                key={option.id}
+                onClick={() => chooseInterval(option.id)}
                 type="button"
               >
-                {busy === tier.id ? "Opening checkout…" : tier.cta}
+                {option.label}
               </button>
-              <p className="nm-trialhint">Billed monthly. Cancel anytime.</p>
-            </div>
-          </article>
-        ))}
+            ))}
+          </div>
+          <p className="nm-price">
+            <strong>{selected.monthlyEquivalent}</strong>
+            <span className="nm-cadence">/mo</span>
+          </p>
+          <h2 className="nm-card-name">Nemesis</h2>
+          <p className="nm-card-tagline">{selected.billedAs}</p>
+          <ul className="nm-features">
+            {NEMESIS_LINES.map((line) => (
+              <li key={line}>
+                <svg aria-hidden height="13" viewBox="0 0 16 16" width="13">
+                  <path d="M3 8.5 6.2 11.7 13 4.9" fill="none" stroke="currentColor" strokeWidth="2" />
+                </svg>
+                {line}
+              </li>
+            ))}
+          </ul>
+          <div className="nm-cta-wrap">
+            <button
+              className="nm-cta nm-cta-primary"
+              disabled={busy}
+              onClick={() => void startCheckout(interval)}
+              type="button"
+            >
+              {busy ? "Opening checkout…" : "Get Nemesis"}
+            </button>
+            <p className="nm-trialhint">
+              {interval === "annual"
+                ? `Save ${annualSavingPercent()}% against paying monthly.`
+                : "Switch to yearly whenever you like."}
+            </p>
+          </div>
+        </article>
       </section>
 
       <p className="nm-fineprint">
-        Cancel anytime. Prices in USD. Nemesis reads your school accounts to help you — it never submits work or sends
-        email on your behalf. Works in your browser today; an iPhone app is on the way.
+        Cancel anytime. Prices in USD. Monthly and yearly are the same Nemesis — the only difference is how often
+        you pay. Nemesis reads your school accounts to help you; it never submits work or sends email on your
+        behalf. Works in your browser today; an iPhone app is on the way.
       </p>
     </main>
   );
@@ -316,9 +358,7 @@ const PRICING_CSS = `
 .nm-banner { max-width:760px; margin:0 auto 24px; padding:13px 16px; border-radius:2px; font-size:14px; background:var(--nm-wash); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
 .nm-banner-ok { background:var(--nm-text); border-color:var(--nm-text); color:var(--nm-bg); font-weight:600; }
 .nm-banner-err { border-color:var(--nm-line-2); border-width:2px; padding:12px 15px; color:var(--nm-text); font-weight:600; }
-/* Two columns since Max was removed. A three-column grid holding two cards leaves
-   a dead third column and shoves both cards off-centre, which reads as a plan that
-   failed to load rather than as a two-plan ladder. */
+/* Two columns: Free and Nemesis. */
 .nm-tiers { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; max-width:760px; margin:0 auto; align-items:stretch; }
 .nm-card { position:relative; background:transparent; border:1px solid var(--nm-line); border-radius:2px; padding:32px 28px; display:flex; flex-direction:column; }
 .nm-card-featured { border-color:var(--nm-line-2); border-width:2px; padding:31px 27px; }
@@ -341,4 +381,13 @@ const PRICING_CSS = `
 .nm-trialhint { color:var(--nm-faint); font-size:12px; letter-spacing:0.02em; margin:10px 0 0; text-align:center; }
 .nm-fineprint { max-width:640px; margin:36px auto 0; text-align:center; color:var(--nm-faint); font-size:13.5px; line-height:1.7; }
 @media (max-width:820px) { .nm-tiers { grid-template-columns:1fr; max-width:440px; } }
+/* The interval switch. Two words, told apart by the same inverted ground the
+   popular plan's chip uses, because this page has one ink and no second hue. */
+.nm-toggle { display:flex; gap:4px; padding:3px; margin:0 0 20px; border:1px solid var(--nm-line); border-radius:2px; }
+.nm-toggle-option { flex:1; cursor:pointer; font-family:inherit; font-size:11.5px; font-weight:650; letter-spacing:0.06em;
+  text-transform:uppercase; padding:8px 6px; border:0; border-radius:2px; background:transparent; color:var(--nm-faint); transition:color 0.15s, background 0.15s; }
+.nm-toggle-option:hover { color:var(--nm-text); }
+.nm-toggle-on, .nm-toggle-on:hover { background:var(--nm-text); color:var(--nm-bg); }
+a.nm-cta { display:block; text-align:center; text-decoration:none; }
 `;
+

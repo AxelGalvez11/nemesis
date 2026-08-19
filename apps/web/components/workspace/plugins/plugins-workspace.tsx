@@ -4,7 +4,10 @@ import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 
 const PLUGINS = [
-  { id: "web", name: "Web research", description: "Ground chats with Linkup, Tavily, and Firecrawl search.", icon: "globe", status: "Connected" },
+  { id: "web", name: "Web research", // Named the providers, two of which Nemesis does not use. A student has no
+  // reason to know whose API answers a search, and naming a retired one is
+  // simply wrong.
+  description: "Ground answers in the web, with real sources.", icon: "globe", status: "Connected" },
   { id: "files", name: "Files and images", description: "Attach study material directly to a chat, from your files or your Library.", icon: "files", status: "Connected" },
   { id: "calendar", name: "Calendar", description: "Turn study plans into scheduled review blocks and reminders.", icon: "calendar", status: "Built in" },
   { id: "lms", name: "Learning management system", description: "Import courses, assignments, and due dates from your school.", icon: "organization", status: "Coming soon" },
