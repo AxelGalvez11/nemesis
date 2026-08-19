@@ -1808,3 +1808,126 @@ and spectroscopy outright. This section is the middle of that ordering, and it d
 list: the core learning algorithm and Canvas session quality still come first. A perfect free-body
 diagram attached to a policy that asks the wrong question next is worth less than plain text attached
 to the right one.
+
+# 45. 🔴 THE MODEL MAY WRITE A CALCULATION, NEVER A DRAWING (owner, 2026-08-19)
+
+## STATUS: EXPRESSIONS, DISTRIBUTIONS AND SEEDED SIMULATION SHIPPED AND TESTED. NO LESSON EMITS ONE YET. NOTHING MODEL-WRITTEN REACHES THE DOM.
+
+The owner asked whether Nemesis could *"just code them as needed"*. This section is the answer, and
+it draws one line:
+
+> **Model-written computation is safe. Model-written rendering is not.**
+
+A calculation returns **numbers**, and trusted code can check them, bound them, draw them, occlude
+them and mark a learner against them. Generated markup returns **pixels**, and nothing downstream
+can do any of those things. §41's rule — *"must not generate arbitrary Three.js, D3 or React
+visualization code"* — is unchanged and unsoftened. What §45 adds is the other half: a model may
+write the maths.
+
+## What this buys
+
+| The model writes | Trusted code does | The learner sees |
+|---|---|---|
+| `x^2` over −3…3 | evaluates it at 160 points | a parabola, on the existing plot renderer |
+| `normal, mean 100, sd 15` | computes the density curve | a bell curve |
+| `sample 500, seed 42` | draws them, bins them | a histogram that is the same tomorrow |
+| `(x+1)^2` vs `x^2+2x+1` | evaluates both at 97 points | a refusal, if they ever disagree |
+
+🔴 **AND NO NEW VISUAL KIND WAS ADDED.** A function plot IS a quantitative plot whose points were
+computed rather than listed. A `function` representation would have meant a second plot renderer, a
+second set of axis rules, and two places for a chart to disagree with itself.
+
+## 🔴 THE DEFENCE IS AN AST ALLOW LIST, AND THAT WAS MEASURED RATHER THAN ASSUMED
+
+The obvious way to run a model's expression safely is to evaluate it with a scope containing exactly
+the functions we permit. **That is not enough, and there is a probe that proves it.** With a
+constrained scope:
+
+- `import("x")` fails — it resolves through the scope and is undefined. ✅
+- `createUnit("z")` fails — same. ✅
+- **`config({})` RUNS**, and returns the parser's entire configuration, because it lives on the
+  parser instance rather than in the scope. ❌
+
+So `expression.ts` walks the parsed tree and refuses **every node type and every function name** not
+on its list. Five node types are permitted — constant, symbol, operator, parenthesis, function call.
+Everything else mathjs can parse is a capability rather than a gap: `FunctionAssignmentNode` defines
+functions, `AccessorNode` and `IndexNode` reach into objects, `AssignmentNode` mutates scope,
+`BlockNode` sequences statements. None appears in `x^2 + 3sin(x)`, and each is a step away from an
+expression and towards a program.
+
+The constrained scope stays underneath as the floor. Node count and character count are bounded,
+because a short string can carry a deep tree that is then evaluated four hundred times.
+
+## 🔴 A SIMULATION THAT CHANGES EACH TIME IS NOT A TEACHING OBJECT
+
+Every other representation on this Canvas is deterministic: the same equation draws the same
+picture, the same SMILES draws the same molecule, and a learner returning tomorrow sees what they saw
+before. Sampling would break that.
+
+So **the seed is a required argument** — no default, no fallback to the clock. `Math.random` is never
+called anywhere in `statistics.ts`, and there is a test that replaces it with a throwing stub to
+prove it. Two learners on one question see the same five hundred points, and the seed travels back
+out with them so the record can say which simulation was shown.
+
+## 🔴 TWO DEFECTS FOUND BY BUILDING THIS, BOTH THE KIND THAT LOOK FINE
+
+**A pole is not a hole.** `1/x` sampled across zero never lands *on* zero — with 160 points from −5
+to 5 the nearest sample sits at ±0.03 — so nothing is undefined, the curve came back as one
+continuous run, and the renderer drew a line from −31.8 straight up to +31.8 through the origin. A
+picture of a function that is continuous at exactly the place the lesson is about. Curves are now
+split where adjacent points **flip sign while both are large**, which catches a pole and leaves an
+ordinary zero crossing alone. It cannot catch a pole that does not flip sign (`1/x²`), which draws a
+spike up and back down — the right shape, and recorded here as a known limit.
+
+**A parser-only mathjs instance cannot compile arithmetic.** Operators do not compile to JavaScript
+maths; `a / b` compiles to a call into the instance's namespace, so `sin(pi/2)` parsed happily and
+then failed with *"Function divide missing in provided namespace"*. The eight arithmetic
+dependencies are now imported by name, which keeps the instance small and keeps `createUnit` off it.
+
+## 🔴 THE ALGEBRA CHECK IS SAMPLED, NOT PROVED, AND SAYS SO
+
+`verifyEquivalence` evaluates two expressions at 97 points and reports whether they ever disagree.
+That catches every ordinary teaching error — a dropped term, a sign, a mis-expanded bracket — and it
+**cannot certify an identity**. The asymmetry is the right way round: a disagreement is real and
+trustworthy, a pass is evidence. The check exists to stop wrong algebra reaching a learner, not to
+award marks.
+
+Two details that make it usable rather than annoying: sample points are offset by an irrational
+amount so they avoid the round numbers where a wrong formula accidentally agrees, and points where
+either side is undefined are skipped — `x/x` and `1` agree everywhere both exist, and refusing that
+would refuse a correct simplification. A disagreement is reported **with the point that found it**,
+because "these are not equivalent" is an assertion and "at x = 2 one gives 9 and the other 7" is a
+lesson.
+
+## Libraries, and how few there are
+
+Two libraries do arithmetic Nemesis does not do itself:
+
+- **mathjs** (Apache-2.0) — the expression parser only. Not its evaluator, not its matrices, not its
+  units.
+- **simple-statistics** (ISC) — mean, deviation, quantiles, regression. The functions where a subtle
+  mistake is easy and hard to spot.
+
+The distributions are implemented here, in four lines each, because the shape drawn on screen and the
+numbers checked against it should come from one place rather than from two libraries' conventions.
+The binomial is computed **in logs**: `choose(1000, 500)` overflows a double long before the
+probability does, so the naive factorial form returns Infinity for exactly the interesting cases.
+There is a test that sums a 1000-trial binomial to one.
+
+## The plot bound moved, and why for everyone
+
+Series were capped at 40 points, which was right for data a model lists by hand — past that it is a
+runaway. A computed curve is generated by trusted code and forty points across a sine wave draws a
+visible polygon. The bound is now 400 per series and 1200 per plot, **raised for everyone rather
+than made conditional**: a validator cannot tell a computed series from a claimed one, and the risk
+of a large point count is payload size, which the bound handles, not correctness.
+
+## What is deliberately NOT built
+
+- **No lesson emits a computed curve yet.** The resolvers, the checks and the bounds all work; the
+  teaching prompts do not ask for them.
+- **No symbolic algebra.** Nothing here solves, differentiates or simplifies. `verifyEquivalence`
+  compares by sampling and says so.
+- **No interaction** — no dragging a tangent point, no slider that redraws. §41 priority five.
+- **The expression layer never reaches the browser.** It is used where a lesson is built; the
+  renderers only ever receive points.

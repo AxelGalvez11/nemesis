@@ -52,7 +52,11 @@ const SUBJECT_RENDERER = readFileSync(
 
 const SECTION_42 = CONTRACT.slice(CONTRACT.indexOf("# 42."), CONTRACT.indexOf("# 43."));
 const SECTION_43 = CONTRACT.slice(CONTRACT.indexOf("# 43."), CONTRACT.indexOf("# 44."));
-const SECTION_44 = CONTRACT.slice(CONTRACT.indexOf("# 44."));
+const SECTION_44 = CONTRACT.slice(CONTRACT.indexOf("# 44."), CONTRACT.indexOf("# 45."));
+const SECTION_45 = CONTRACT.slice(CONTRACT.indexOf("# 45."));
+const EXPRESSION = readFileSync(new URL("./expression.ts", import.meta.url), "utf8");
+const STATISTICS = readFileSync(new URL("./statistics.ts", import.meta.url), "utf8");
+const COMPUTED = readFileSync(new URL("./computed-series.ts", import.meta.url), "utf8");
 
 /** The stack §41 names, by the package that would appear if one were adopted. */
 //
@@ -406,4 +410,84 @@ test("🔴 nothing executes code", () => {
     assert.equal(SUBJECTS.includes(danger), false, `${danger} has appeared in the subject lane`);
     assert.equal(SUBJECT_RENDERER.includes(danger), false, `${danger} has appeared in the subject renderer`);
   }
+});
+
+
+// 🔴 §45 IS THE SECTION MOST DANGEROUS TO GET WRONG, because it is the one place a model's output is
+// EXECUTED. Every check below guards something that would look like a harmless simplification.
+
+test("§45's status line matches whether a lesson emits one and where the parser runs", () => {
+  assert.ok(SECTION_45.length > 0, "§45 has gone missing from the contract");
+  assert.match(
+    SECTION_45,
+    /STATUS: EXPRESSIONS, DISTRIBUTIONS AND SEEDED SIMULATION SHIPPED AND TESTED\. NO LESSON EMITS ONE YET\. NOTHING MODEL-WRITTEN REACHES THE DOM\./,
+  );
+  // The expression layer must not reach the browser: no client component may import it.
+  const clientFiles = ["subject-visual.tsx", "semantic-visual.tsx", "chemical-structure.tsx", "canvas-document.tsx"];
+  for (const file of clientFiles) {
+    const source = readFileSync(new URL(`../../components/workspace/learn/${file}`, import.meta.url), "utf8");
+    for (const heavy of ["expression", "computed-series", "mathjs", "simple-statistics"]) {
+      assert.equal(
+        source.includes(`/${heavy}"`) || source.includes(`"${heavy}"`),
+        false,
+        `${file} imports ${heavy} — the maths layer has reached the learner's bundle`,
+      );
+    }
+  }
+});
+
+test("🔴 the line §45 draws is still drawn: computation yes, rendering no", () => {
+  assert.match(SECTION_45, /Model-written computation is safe\. Model-written rendering is not\./);
+  // §41's rule is the other half and must not have been softened to make room.
+  assert.match(
+    SECTION,
+    /must not generate arbitrary Three\.js, D3 or React visualization code/,
+    "§41's constraint was softened when §45 landed",
+  );
+});
+
+test("🔴 the AST allow list is still the defence, not the scope", () => {
+  // The probe that proved it: config({}) runs under a constrained scope and is stopped by the walk.
+  assert.match(SECTION_45, /`config\(\{\}\)` RUNS/);
+  assert.match(EXPRESSION, /ALLOWED_NODES/);
+  assert.match(EXPRESSION, /tree\.traverse\(/);
+  for (const dangerous of ["FunctionAssignmentNode", "AccessorNode", "IndexNode", "ObjectNode", "ArrayNode", "AssignmentNode", "BlockNode"]) {
+    assert.equal(
+      new RegExp(`ALLOWED_NODES[^\\]]*"${dangerous}"`, "s").test(EXPRESSION),
+      false,
+      `${dangerous} has been added to the allow list — that is a program, not an expression`,
+    );
+  }
+});
+
+test("🔴 no escape hatch has been added to the function list", () => {
+  for (const name of ["import", "createUnit", "config", "eval", "parse", "compile"]) {
+    assert.equal(
+      new RegExp(`^\\s+${name}:`, "m").test(EXPRESSION),
+      false,
+      `${name} has been added to the callable functions`,
+    );
+  }
+});
+
+test("🔴 simulation is still seeded, and Math.random is still absent", () => {
+  assert.match(SECTION_45, /A SIMULATION THAT CHANGES EACH TIME IS NOT A TEACHING OBJECT/);
+  assert.equal(
+    /Math\.random\(\)/.test(STATISTICS),
+    false,
+    "Math.random has appeared in the statistics lane — simulations are no longer reproducible",
+  );
+  // The seed is a required positional argument, not an option with a default.
+  assert.match(STATISTICS, /export function sample\(spec: DistributionSpec, count: number, seed: number\)/);
+});
+
+test("🔴 a pole still splits the curve", () => {
+  assert.match(SECTION_45, /A pole is not a hole/i);
+  assert.match(COMPUTED, /crossesPole/);
+});
+
+test("🔴 the algebra check still says it is sampled rather than proved", () => {
+  assert.match(SECTION_45, /SAMPLED, NOT PROVED/);
+  assert.match(VERIFICATION, /SAMPLED, NOT PROVED/);
+  assert.match(VERIFICATION, /reason: "not-equivalent"|fail\(\s*"not-equivalent"/s);
 });

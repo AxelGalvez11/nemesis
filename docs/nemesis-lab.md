@@ -88,7 +88,7 @@ If you want the claims checked rather than the surfaces looked at:
 pnpm --filter @nemesis/web exec tsx scripts/visual-ladder-acceptance.mts
 ```
 
-Twenty-five checks against the production router. It runs against **injected provider responses** by
+Thirty-one checks against the production router. It runs against **injected provider responses** by
 default and says so in its own output; pass `--live` to run the same checks against PubChem and
 Wikimedia Commons from a machine with outbound access.
 
@@ -98,7 +98,7 @@ picture, dark mode changing colour without moving a single bond, a small molecul
 structure instead of collapsing into text, a highlighted group, and a full reaction scheme with its
 conditions over the arrow. They skip loudly if the depiction library or Playwright is missing.
 
-The last eight cover §44's five shapes, and they need no browser — those are drawn by deterministic
+The last thirteen cover §44's five shapes and §45's computed curves, and they need no browser — those are drawn by deterministic
 SVG in this repository rather than by a third-party library, so the arithmetic is where the risk
 lives and the arithmetic is what they check. A T-account that does not balance, a column total that
 does not sum, an angle that disagrees with its own coordinates and forces that do not cancel are each

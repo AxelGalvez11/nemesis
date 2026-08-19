@@ -171,9 +171,15 @@ function Quantitative({ visual }: { visual: PlotVisual }) {
         ))}
       </svg>
       <div className="flex flex-wrap gap-x-4 gap-y-1 px-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-        {visual.series.map((series, index) => (
-          <span className="flex items-center gap-1.5" key={series.label}><span className="h-2 w-2 rounded-full" style={{ background: COLOURS[index] }} />{series.label}</span>
-        ))}
+        {/* 🔴 DEDUPED BY LABEL (§45). A curve computed from an expression comes back as one series
+            per continuous segment — `1/x` is two — and all of them carry the same name. Listing the
+            legend per series would print "1/x" twice for one curve and imply two functions. */}
+        {visual.series
+          .map((series, index) => ({ colour: COLOURS[index], label: series.label }))
+          .filter((entry, index, all) => all.findIndex((other) => other.label === entry.label) === index)
+          .map((entry) => (
+            <span className="flex items-center gap-1.5" key={entry.label}><span className="h-2 w-2 rounded-full" style={{ background: entry.colour }} />{entry.label}</span>
+          ))}
       </div>
     </div>
   );

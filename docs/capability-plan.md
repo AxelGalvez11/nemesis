@@ -5,6 +5,11 @@
 > §44 of the canvas product contract. The verifier that was Phase 2 was built *inside* them rather
 > than as a separate phase, because a T-account that does not check its own balance is not a
 > T-account. Phases 0–1 remain the next work the moment the keys exist.
+>
+> **Update, later the same day:** the owner asked whether Nemesis could *"just code them as needed"*.
+> §45 answers that — the model may write a CALCULATION (evaluated under an allow list, drawn by the
+> renderers that already exist) and still may not write a DRAWING. That added function plotting,
+> distributions, seeded simulation and a sampled algebra checker on top of Phases 3–7.
 
 Owner's priorities, 2026-08-19:
 

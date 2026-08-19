@@ -23,6 +23,9 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 
 import { validateCanvasVisual } from "../lib/learn/canvas-visual.ts";
+import { checkExpression } from "../lib/learn/expression.ts";
+import { curve, distributionCurve, sampledHistogram } from "../lib/learn/computed-series.ts";
+import { verifyEquivalence, verifyExpressionValue } from "../lib/learn/visual-verification.ts";
 import { statesStereochemistry } from "../lib/learn/chem-notation.ts";
 import { resolveStructure } from "../lib/learn/chem-resolver.ts";
 import { findReferenceImages, type CuratedEntry } from "../lib/learn/reference-images.ts";
@@ -572,6 +575,78 @@ check(
   "25. a one-cell table is prose, because a valid picture still has to earn its place",
   oneCell.decision === "prose" && oneCell.reason === "too-little-to-draw",
   `${oneCell.decision}${oneCell.decision === "prose" ? `/${oneCell.reason}` : ""}: ${oneCell.because}`,
+);
+
+// ── 8. §45 — the model may write a calculation, never a drawing ────────────────────────────────
+
+const parabola = curve({ expression: "x^2", from: -3, to: 3 });
+const asymptote = curve({ expression: "1/x", from: -5, to: 5 });
+check(
+  "26. a formula becomes points, and a pole splits the curve instead of drawing through it",
+  parabola.ok && parabola.value.length === 1 && asymptote.ok && asymptote.value.length === 2,
+  parabola.ok && asymptote.ok
+    ? `x^2 → ${parabola.value.length} segment of ${parabola.value[0].points.length} points; ` +
+      `1/x → ${asymptote.value.length} segments, so no line is drawn from -31.8 to +31.8 through the origin`
+    : "a curve was refused",
+);
+
+const program = curve({ expression: "config({})", from: 0, to: 1 });
+const assignment = checkExpression("f(x) = x^2", ["x"]);
+check(
+  "27. the one place a model's output runs refuses anything that is not an expression",
+  program.ok === false && program.reason === "expression-unknown-function" &&
+    assignment.ok === false && assignment.reason === "expression-not-an-expression",
+  `config({}) → ${program.ok === false ? program.reason : "ACCEPTED"}; ` +
+    `f(x)=x^2 → ${assignment.ok === false ? assignment.reason : "ACCEPTED"} — ` +
+    `a constrained evaluation scope alone lets config({}) through, which is why the AST is walked`,
+);
+
+const first = sampledHistogram({ kind: "normal", mean: 0, sd: 1 }, 400, 99);
+const again = sampledHistogram({ kind: "normal", mean: 0, sd: 1 }, 400, 99);
+const elsewhere = sampledHistogram({ kind: "normal", mean: 0, sd: 1 }, 400, 100);
+check(
+  "28. a simulation is reproducible, so the same question shows the same picture tomorrow",
+  first.ok && again.ok && elsewhere.ok &&
+    JSON.stringify(first.value.points) === JSON.stringify(again.value.points) &&
+    JSON.stringify(first.value.points) !== JSON.stringify(elsewhere.value.points),
+  first.ok ? `seed ${first.value.seed} reproduces exactly; a different seed does not` : "sampling failed",
+);
+
+const rightExpansion = verifyEquivalence("(x+1)^2", "x^2 + 2*x + 1");
+const wrongExpansion = verifyEquivalence("(x+1)^2", "x^2 + 1");
+const holeySimplification = verifyEquivalence("x/x", "1");
+check(
+  "29. a wrong expansion is caught by sampling, and a correct one with a hole still passes",
+  rightExpansion.ok && !wrongExpansion.ok && holeySimplification.ok,
+  `(x+1)^2 = x^2+2x+1 → verified; (x+1)^2 = x^2+1 → ` +
+    `${wrongExpansion.ok ? "MISSED" : wrongExpansion.detail}; x/x = 1 → verified despite the hole at zero`,
+);
+
+const statedWrong = verifyExpressionValue("x^2 + 1", { x: 3 }, 9);
+check(
+  "30. a stated value that the formula does not give is refused",
+  statedWrong.ok === false && statedWrong.reason === "value-mismatch",
+  statedWrong.ok === false ? statedWrong.detail : "a wrong value was accepted",
+);
+
+const bell = distributionCurve({ kind: "normal", mean: 100, sd: 15 }, 40, 160);
+const bellPlot = bell.ok
+  ? routeVisual({
+      request: {
+        kind: "quantitative",
+        learningGoal: "See where most of the distribution sits",
+        series: [{ label: "density", points: bell.value[0].points }],
+        xLabel: "score",
+        yLabel: "density",
+      },
+    })
+  : null;
+check(
+  "31. a computed curve routes through the plot renderer that already existed — no new visual kind",
+  bellPlot?.decision === "render" && bellPlot.representation === "quantitative",
+  bell.ok && bellPlot?.decision === "render"
+    ? `${bell.value[0].points.length} computed points → ${bellPlot.representation}, the same renderer a hand-listed series uses`
+    : "the computed curve did not route",
 );
 
 console.log("");
