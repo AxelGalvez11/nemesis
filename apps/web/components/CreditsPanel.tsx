@@ -3,16 +3,22 @@
 import { useEffect, useState } from "react";
 import { buildCreditsSummary, type CreditsSummary } from "@nemesis/shared";
 import { fetchEntitlements, fetchMissions, fetchUsage, fetchWatches } from "@/lib/api";
+import { planLabel } from "@/lib/billing-contract";
 
 // The inner list — plan name, a "Today" group (resettable daily meters) and a "Slots" group (permanent
 // monitors/scheduled). Rendered by BOTH the modal (CreditsPanel) and the Settings "Usage" section, so the
 // numbers read identically everywhere. Pure presentation over the display model built in shared.
 export function CreditsBreakdown({ summary }: { summary: CreditsSummary }) {
-  const planLabel = summary.plan.charAt(0).toUpperCase() + summary.plan.slice(1);
+  // 🔴 NOT `plan.charAt(0).toUpperCase() + plan.slice(1)`, WHICH IS WHAT THIS WAS.
+  // Capitalising the stored code prints whatever is in the column, so a legacy
+  // subscriber read "Pro" and an internal account read "Enterprise" — retired
+  // names, shown to the customer, months after the ladder was withdrawn. There is
+  // one function that turns a stored code into a name a customer should see.
+  const label = planLabel(summary.plan);
   return (
     <div>
       <p className="muted" style={{ fontSize: 13, margin: "0 0 4px" }}>
-        You're on the <b>{planLabel}</b> plan.
+        You're on the <b>{label}</b> plan.
       </p>
 
       {summary.daily.length > 0 ? (
