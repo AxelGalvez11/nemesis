@@ -48,6 +48,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
 import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model";
+import { endsPushToTalk, isTypingTarget, startsPushToTalk } from "@/lib/learn/canvas-hotkeys";
 import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
 import { cn } from "@/lib/utils";
@@ -401,6 +402,70 @@ export function CanvasComposer({
     // it would re-run this on every render, which is exactly the reopening loop described above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listenSignal]);
+
+  // ── Hold space to talk ──────────────────────────────────────────────────────
+  //
+  // 🔴 SPACE IS THE MOST DANGEROUS KEY TO CLAIM. It types a character, it scrolls the page, and it
+  // activates whatever button has focus — including the Continue the learner just pressed with the
+  // mouse. Every one of those is prevented here rather than hoped away: the decision refuses inside
+  // any text field (canvas-hotkeys.ts), and the default is stopped on the way down AND on the way
+  // up, because a button's `click` is synthesised from keyup.
+  //
+  // 🔴🔴 RELEASE IS TRACKED BY WHO STARTED IT. Without `heldByKey`, letting go of space would also
+  // close a microphone the learner had opened with the button and was still talking into. The flag
+  // is the difference between "stop the thing this key started" and "stop dictation".
+  //
+  // 🔴🔴 AND KEYUP IS NOT GUARANTEED TO ARRIVE. Hold space, press Cmd-Tab, and the window loses
+  // focus mid-hold: no keyup is ever delivered and the microphone stays open indefinitely. That is
+  // the one failure here that costs money and privacy rather than a click, so blur and a hidden tab
+  // release it exactly as letting go does.
+  //
+  // 🔴 RELEASING DOES NOT SUBMIT. `dictation.stop()` is what ✓ does: the transcript lands in the
+  // composer as editable text. Speech recognition mishears, and auto-submitting would make a
+  // transcription error indistinguishable from a wrong answer in the evidence.
+  const heldByKey = useRef(false);
+  useEffect(() => {
+    const release = () => {
+      if (!heldByKey.current) return;
+      heldByKey.current = false;
+      dictation.stop();
+    };
+    const onDown = (event: KeyboardEvent) => {
+      if (!startsPushToTalk(event, {
+        drawing,
+        listening,
+        supported: dictation.supported,
+        typing: isTypingTarget(document.activeElement),
+      })) return;
+      event.preventDefault();
+      heldByKey.current = true;
+      startDictation();
+    };
+    const onUp = (event: KeyboardEvent) => {
+      if (!endsPushToTalk(event) || !heldByKey.current) return;
+      event.preventDefault();
+      release();
+    };
+    const onHidden = () => { if (document.visibilityState === "hidden") release(); };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", release);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", release);
+      document.removeEventListener("visibilitychange", onHidden);
+      // 🔴 AND ON UNMOUNT TOO. The composer disappears while a recording is running and while the
+      // canvas reloads; a microphone opened by a key hold must not outlive the surface it was
+      // opened for.
+      release();
+    };
+    // `startDictation` is deliberately not a dependency, the same choice the voice-mode effect
+    // above makes: it is redefined every render, and depending on it would rebind four listeners
+    // on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dictation.supported, dictation.stop, drawing, listening]);
 
   // ── §I: the composer is the only progression control ────────────────────────
   //

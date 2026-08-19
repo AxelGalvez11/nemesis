@@ -14,6 +14,7 @@ import { hostnameOf } from "@/lib/favicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
+import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
@@ -68,6 +69,37 @@ const CANVAS_EXIT_ROUTE = "/learn";
  *  matter, no assumption about what kind of passage this is, so it reads correctly over a statute,
  *  a mechanism and a worked calculation alike. */
 const EXPLAIN_THIS = "Explain this.";
+
+/**
+ * Command-Enter presses whatever Continue is on screen.
+ *
+ * 🔴 A COMPONENT RATHER THAN AN EFFECT IN THE CANVAS BODY, AND NOT FOR TIDINESS. `continueRegion`
+ * is computed below the canvas's early return, and a hook cannot sit after a conditional return.
+ * Mounting the listener here also means it exists exactly when a full canvas is on screen and
+ * unmounts while one is still loading — which is the correct lifetime, not a workaround.
+ *
+ * 🔴 IT READS A REF RATHER THAN CLOSING OVER THE HANDLER. `onContinue` is a new function on every
+ * render; a dependency on it would add and remove a window listener each time. The ref keeps one
+ * listener for the life of the canvas and still calls the current handler.
+ */
+function ContinueHotkey({ onContinue }: { onContinue: (() => void) | null }): null {
+  const latest = useRef(onContinue);
+  latest.current = onContinue;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      // 🔴 `available` IS THE HANDLER'S OWN EXISTENCE, NOT A SECOND READING OF THE STATE. `advance`
+      // is null exactly when `continueOwner` refused — while a demonstration is owed, and while the
+      // canvas is busy. Asking the same question again here is how the keyboard ends up with a path
+      // the button does not have.
+      if (!pressesContinue(event, { available: latest.current !== null, typing: isTypingTarget(document.activeElement) })) return;
+      event.preventDefault();
+      latest.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return null;
+}
 
 export function LearningCanvas({
   canvasId,
@@ -788,6 +820,37 @@ export function LearningCanvas({
     { awaitingDemonstration, busy: busy.kind !== null || policy.recording },
   );
 
+  /**
+   * Pressing the Continue that is on screen, whichever region owns it — or null when none is.
+   *
+   * 🔴🔴 ONE FUNCTION, SO THE KEYBOARD CANNOT HAVE A PATH THE BUTTON DOES NOT. Command-Enter and
+   * the visible control now call exactly this; the alternative — a shortcut that reaches into
+   * `policy.acknowledge()` on its own — is a second way to advance the canvas, free to keep working
+   * after the button's own conditions change. `continueOwner` already guarantees at most one owner,
+   * so there is nothing to arbitrate here, only one place to say what pressing it does.
+   *
+   * 🔴 NULL IS THE REFUSAL AND IT IS INHERITED, NEVER RESTATED. `continueOwner` returns null while a
+   * demonstration is owed (its N3 guard: a control that moves the learner on while an answer is
+   * owed is a way to press past the question) and while the canvas is busy. Both the button and the
+   * key get that for free by asking whether this is null.
+   */
+  const advance = continueBelongsTo(continueRegion, "policy")
+    ? () => {
+        // 🔴 DISPATCHES `policy_continue` BEFORE ACKNOWLEDGING, NOT BECAUSE THIS CALL CHANGES
+        // ANYTHING — `nextExplanationState` returns the state unchanged for this event — but
+        // because the call site is what keeps that row real rather than theoretical. Contract
+        // rule 2's two categories are only "explicit in the code, not incidental" if pressing
+        // Continue on a correction provably does NOT also clear an unrelated aside three
+        // questions old; this is where that gets exercised, and it is what a future edit
+        // routing `onContinue` into `new_turn` by mistake would have to walk past.
+        applyExplanationEvent({ kind: "policy_continue" });
+        policy.acknowledge();
+      }
+    : continueBelongsTo(continueRegion, "document")
+      ? () => session.finishReadingChunk()
+      : null;
+
+
   return (
     // One uninterrupted sheet. The controls and the composer float on it; nothing divides it —
     // the sheet, its scrim, the floating strip and the `×` all come from `CanvasSurface`, which
@@ -851,6 +914,9 @@ export function LearningCanvas({
           header height — nothing is reserved, painted or bounded up there; the page simply
           starts below where the controls sit (12px inset + 28px control + 24px breathing room,
           compact-UI pass -- was 16+32+24=72, tightened alongside the header it clears). */}
+      {/* Command-Enter presses whatever Continue is on screen. Renders nothing. */}
+      <ContinueHotkey onContinue={advance} />
+
       <div className="relative h-full overflow-y-auto pt-[64px]">
         {/* 🔴 THE POLICY'S CONTRIBUTION COMES FIRST IN THE FLOW, NOT OVER THE TOP OF THE DOCUMENT.
             An overlay would hide the very material 7b exists to keep visible, and a learner who
@@ -866,14 +932,7 @@ export function LearningCanvas({
             // Continue on a correction provably does NOT also clear an unrelated aside three
             // questions old; this is where that gets exercised, and it is what a future edit
             // routing `onContinue` into `new_turn` by mistake would have to walk past.
-            onContinue={
-              continueBelongsTo(continueRegion, "policy")
-                ? () => {
-                    applyExplanationEvent({ kind: "policy_continue" });
-                    policy.acknowledge();
-                  }
-                : null
-            }
+            onContinue={continueBelongsTo(continueRegion, "policy") ? advance : null}
             runtime={policy}
             sharing={regions.sharing}
           />
@@ -1025,11 +1084,14 @@ export function LearningCanvas({
             // instead of a handler that happens to agree with the others today.
             onDismissAside={() => applyExplanationEvent({ kind: "dismiss_aside" })}
             showContinue={continueBelongsTo(continueRegion, "document")}
+            // 🔴 THE SAME FUNCTION THE KEYBOARD CALLS. `advance` is non-null exactly when
+            // `showContinue` is true, so the fallback is unreachable and exists only to keep the
+            // prop non-nullable — routing this through the shared derivation is what stops
+            // command-enter and the button drifting into two ways of moving on.
+            onFinishReading={advance ?? session.finishReadingChunk}
             // §11 — free and local: the previous wording is already on the block, so this is a
             // state change rather than a request, and it cannot fail.
             onRestore={session.restoreRewritten}
-            // §38 — the learner sets the reading pace. Writes no evidence; see the handler.
-            onFinishReading={session.finishReadingChunk}
             onSelect={onSelect}
             onTerm={(block, mark, rect) => void lookUpTerm(block, mark, rect)}
             onToggleCollapsed={session.toggleCollapsed}
