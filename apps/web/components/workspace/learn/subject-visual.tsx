@@ -24,8 +24,9 @@ import type {
   TimelineVisual,
   VectorsVisual,
 } from "@/lib/learn/canvas-visual";
+import { layoutConstruction, layoutTimeline, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
 
-const WIDTH = 640;
+const WIDTH = VISUAL_WIDTH;
 
 /** What a covered cell or event shows instead of its value. */
 const COVERED = "?";
@@ -111,88 +112,79 @@ export function DataTable({ visual }: { visual: TableVisual }) {
 }
 
 export function Timeline({ visual }: { visual: TimelineVisual }) {
-  const positions = visual.events.flatMap((event) => [event.at, event.until ?? event.at]);
-  const min = Math.min(...positions);
-  const max = Math.max(...positions);
-  const span = max - min || 1;
-  // Lanes let two threads run in parallel. Unlaned events share the first row, which is the common
-  // case and must not cost a lane label.
-  const lanes = [...new Set(visual.events.map((event) => event.lane ?? ""))];
-  const rowHeight = 46;
-  const top = 26;
-  const height = top + lanes.length * rowHeight + 24;
-  const left = 12;
-  const right = 12;
-  const x = (value: number) => left + ((value - min) / span) * (WIDTH - left - right);
+  // 🔴 WHERE EACH LABEL GOES IS DECIDED IN `visual-layout.ts`, NOT HERE. Two events four years apart
+  // on a three-century scale used to print one label on top of the other — arithmetically correct,
+  // completely unreadable. A label that cannot be placed beside its neighbour is now lifted a tier
+  // and tied back to its marker by a leader line, and the lane grows to hold it.
+  const layout = layoutTimeline(visual);
 
   return (
-    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${height}`}>
-      {lanes.map((lane, laneIndex) => {
-        const y = top + laneIndex * rowHeight + rowHeight / 2;
-        return (
-          <g key={lane || "default"}>
-            <line stroke="var(--ui-stroke-primary)" strokeWidth="1" x1={left} x2={WIDTH - right} y1={y} y2={y} />
-            {lane && (
-              <text fill="var(--ui-text-quaternary)" fontSize="10" x={left} y={y - rowHeight / 2 + 8}>
-                {lane}
-              </text>
-            )}
-          </g>
-        );
-      })}
-      {visual.events.map((event, index) => {
-        const laneIndex = Math.max(0, lanes.indexOf(event.lane ?? ""));
-        const y = top + laneIndex * rowHeight + rowHeight / 2;
-        const covered = visual.hidden === index;
-        const isSpan = event.until !== undefined && event.until !== event.at;
-        return (
-          <g key={index}>
-            {isSpan ? (
-              <rect
-                fill="var(--ui-accent)"
-                height="10"
-                // An uncertain span is drawn faint rather than annotated: the shape carries the
-                // doubt, which is what a reader takes in before they read anything.
-                opacity={event.uncertain ? 0.35 : 0.8}
-                rx="5"
-                width={Math.max(4, x(event.until!) - x(event.at))}
-                x={x(event.at)}
-                y={y - 5}
-              />
-            ) : (
-              <circle
-                cx={x(event.at)}
-                cy={y}
-                fill={event.uncertain ? "var(--ui-bg-secondary)" : "var(--ui-accent)"}
-                r="5"
-                stroke="var(--ui-accent)"
-                strokeDasharray={event.uncertain ? "2 2" : undefined}
-                strokeWidth="1.5"
-              />
-            )}
-            <text
-              fill={covered ? "var(--ui-text-quaternary)" : "var(--ui-text-primary)"}
-              fontSize="12"
-              textAnchor={x(event.at) > WIDTH * 0.75 ? "end" : "start"}
-              x={x(event.at) + (x(event.at) > WIDTH * 0.75 ? -8 : 8)}
-              y={y - 10}
-            >
-              {covered ? COVERED : event.label}
+    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
+      {layout.lanes.map((lane) => (
+        <g key={lane.name || "default"}>
+          <line stroke="var(--ui-stroke-primary)" strokeWidth="1" x1={layout.left} x2={layout.right} y1={lane.axisY} y2={lane.axisY} />
+          {lane.name && (
+            // Below the axis, because everything a reader has to read is above it.
+            <text fill="var(--ui-text-quaternary)" fontSize="10" x={layout.left} y={lane.axisY + 14}>
+              {lane.name}
             </text>
-            <text
-              fill="var(--ui-text-quaternary)"
-              fontSize="10"
-              textAnchor={x(event.at) > WIDTH * 0.75 ? "end" : "start"}
-              x={x(event.at) + (x(event.at) > WIDTH * 0.75 ? -8 : 8)}
-              y={y + 18}
-            >
-              {covered ? "" : `${event.atLabel ?? event.at}${event.uncertain ? " (uncertain)" : ""}`}
-            </text>
-          </g>
-        );
-      })}
+          )}
+        </g>
+      ))}
+      {layout.marks.map((mark) => (
+        <g key={mark.index}>
+          {mark.tier > 0 && (
+            // The leader. Without it a lifted label is floating text with no stated owner, which is
+            // a worse failure than the overlap it was lifted to avoid.
+            <line
+              opacity="0.5"
+              stroke="var(--ui-stroke-primary)"
+              strokeWidth="1"
+              x1={mark.x}
+              x2={mark.x}
+              y1={mark.axisY - 7}
+              y2={mark.dateY + 3}
+            />
+          )}
+          {mark.isSpan ? (
+            <rect
+              fill="var(--ui-accent)"
+              height="10"
+              // An uncertain span is drawn faint rather than annotated: the shape carries the
+              // doubt, which is what a reader takes in before they read anything.
+              opacity={mark.uncertain ? 0.35 : 0.8}
+              rx="5"
+              width={Math.max(4, mark.endX - mark.x)}
+              x={mark.x}
+              y={mark.axisY - 5}
+            />
+          ) : (
+            <circle
+              cx={mark.x}
+              cy={mark.axisY}
+              fill={mark.uncertain ? "var(--ui-bg-secondary)" : "var(--ui-accent)"}
+              r="5"
+              stroke="var(--ui-accent)"
+              strokeDasharray={mark.uncertain ? "2 2" : undefined}
+              strokeWidth="1.5"
+            />
+          )}
+          <text
+            fill={mark.covered ? "var(--ui-text-quaternary)" : "var(--ui-text-primary)"}
+            fontSize="12"
+            textAnchor={mark.anchor}
+            x={mark.textX}
+            y={mark.labelY}
+          >
+            {mark.label}
+          </text>
+          <text fill="var(--ui-text-quaternary)" fontSize="10" textAnchor={mark.anchor} x={mark.textX} y={mark.dateY}>
+            {mark.date}
+          </text>
+        </g>
+      ))}
       {visual.unit && (
-        <text fill="var(--ui-text-quaternary)" fontSize="10" x={left} y={height - 6}>
+        <text fill="var(--ui-text-quaternary)" fontSize="10" textAnchor="end" x={layout.right} y={layout.height - 4}>
           {visual.unit}
         </text>
       )}
@@ -201,92 +193,43 @@ export function Timeline({ visual }: { visual: TimelineVisual }) {
 }
 
 export function Construction({ visual }: { visual: ConstructionVisual }) {
-  // The figure is laid out in its own coordinate space and fitted here, so a model may place points
-  // in whatever units the problem uses — centimetres, metres, arbitrary — without knowing the canvas.
-  const xs = visual.points.map((point) => point.x);
-  const ys = visual.points.map((point) => point.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const spanX = maxX - minX || 1;
-  const spanY = maxY - minY || 1;
-  const pad = 40;
-  const height = 320;
-  const scale = Math.min((WIDTH - pad * 2) / spanX, (height - pad * 2) / spanY);
-  // y is flipped: mathematics counts upward and SVG counts downward, and a figure drawn without
-  // this is a correct construction mirrored, which looks like a different figure.
-  const px = (value: number) => pad + (value - minX) * scale;
-  const py = (value: number) => height - pad - (value - minY) * scale;
-  const at = (id: string) => visual.points.find((point) => point.id === id)!;
+  // 🔴 THE FIGURE IS FITTED AND EVERY LABEL PLACED IN `visual-layout.ts`. Point names used to sit up
+  // and to the right of their point whatever the shape, so on a triangle with its right angle at the
+  // origin the vertex name, the side length and the angle mark all landed on the same spot. Labels
+  // now go outward from the middle of the figure and the angle mark goes inward along its own
+  // bisector, which is the space the vertex label has just vacated.
+  const layout = layoutConstruction(visual);
 
   return (
-    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${height}`}>
-      {visual.circles?.map((circle, index) => {
-        const centre = at(circle.centre);
-        const through = at(circle.through);
-        const radius = Math.hypot(through.x - centre.x, through.y - centre.y) * scale;
-        return (
-          <circle
-            cx={px(centre.x)}
-            cy={py(centre.y)}
-            fill="none"
-            key={index}
-            r={radius}
-            stroke="var(--ui-stroke-primary)"
-            strokeWidth="1.5"
-          />
-        );
-      })}
-      {visual.segments?.map((segment, index) => {
-        const from = at(segment.from);
-        const to = at(segment.to);
-        return (
-          <g key={index}>
-            <line
-              stroke="var(--ui-text-primary)"
-              strokeWidth="1.5"
-              x1={px(from.x)}
-              x2={px(to.x)}
-              y1={py(from.y)}
-              y2={py(to.y)}
-            />
-            {segment.label && (
-              <text
-                fill="var(--ui-text-tertiary)"
-                fontSize="11"
-                textAnchor="middle"
-                x={(px(from.x) + px(to.x)) / 2}
-                y={(py(from.y) + py(to.y)) / 2 - 6}
-              >
-                {segment.label}
-              </text>
-            )}
-          </g>
-        );
-      })}
-      {visual.angles?.map((angle, index) => {
-        const vertex = at(angle.at);
-        // The mark is drawn from the verified measurement, so what is on screen and what was checked
-        // are the same number — there is no second place for them to disagree.
-        return (
-          <text
-            fill="var(--ui-accent)"
-            fontSize="11"
-            key={index}
-            textAnchor="middle"
-            x={px(vertex.x)}
-            y={py(vertex.y) - 14}
-          >
+    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
+      {layout.circles.map((circle, index) => (
+        <circle cx={circle.cx} cy={circle.cy} fill="none" key={index} r={circle.r} stroke="var(--ui-stroke-primary)" strokeWidth="1.5" />
+      ))}
+      {layout.segments.map((segment, index) => (
+        <g key={index}>
+          <line stroke="var(--ui-text-primary)" strokeWidth="1.5" x1={segment.x1} x2={segment.x2} y1={segment.y1} y2={segment.y2} />
+          {segment.label && (
+            <text fill="var(--ui-text-tertiary)" fontSize="11" textAnchor={segment.anchor} x={segment.labelX} y={segment.labelY}>
+              {segment.label}
+            </text>
+          )}
+        </g>
+      ))}
+      {layout.angles.map((angle, index) => (
+        <g key={index}>
+          {/* The mark and the number are drawn from the verified measurement, so what is on screen
+              and what was checked are the same angle — there is no second place for them to disagree. */}
+          <path d={angle.markPath} fill="none" stroke="var(--ui-accent)" strokeWidth="1.5" />
+          <text fill="var(--ui-accent)" fontSize="11" textAnchor={angle.anchor} x={angle.labelX} y={angle.labelY}>
             {angle.degrees}°
           </text>
-        );
-      })}
-      {visual.points.map((point) => (
+        </g>
+      ))}
+      {layout.points.map((point) => (
         <g key={point.id}>
-          <circle cx={px(point.x)} cy={py(point.y)} fill="var(--ui-text-primary)" r="3.5" />
-          <text fill="var(--ui-text-secondary)" fontSize="12" x={px(point.x) + 8} y={py(point.y) - 8}>
-            {point.label ?? point.id}
+          <circle cx={point.cx} cy={point.cy} fill="var(--ui-text-primary)" r="3.5" />
+          <text fill="var(--ui-text-secondary)" fontSize="12" textAnchor={point.anchor} x={point.labelX} y={point.labelY}>
+            {point.label}
           </text>
         </g>
       ))}

@@ -491,3 +491,23 @@ test("🔴 the algebra check still says it is sampled rather than proved", () =>
   assert.match(VERIFICATION, /SAMPLED, NOT PROVED/);
   assert.match(VERIFICATION, /reason: "not-equivalent"|fail\(\s*"not-equivalent"/s);
 });
+
+test("🔴 §46 — the renderers place what they are handed and compute nothing", () => {
+  // 🔴 THE DEFECT THIS GUARDS AGAINST IS NOT A WRONG NUMBER, IT IS A NUMBER IN THE WRONG FILE. Three
+  // layout defects shipped because position was computed inside React components, where the only way
+  // to ask "do these two labels overlap?" is to render a browser and look. Move that arithmetic back
+  // into a component and the assertions in `visual-layout.test.ts` stop covering what ships.
+  assert.match(VISUAL_RENDERER, /layoutFlow/, "the relationship renderer stopped using the layout module");
+  assert.match(SUBJECT_RENDERER, /layoutTimeline/, "the timeline renderer stopped using the layout module");
+  assert.match(SUBJECT_RENDERER, /layoutConstruction/, "the construction renderer stopped using the layout module");
+  assert.match(CONTRACT, /# 46\. .*WHERE THINGS GO IS ARITHMETIC/);
+});
+
+test("🔴 §46 — nothing in the layout module measures text", () => {
+  // A layout that asks the browser how wide a string is gives one answer on the server and another
+  // in the page, and the picture moves after the learner has already looked at it.
+  const layout = readFileSync(new URL("./visual-layout.ts", import.meta.url), "utf8");
+  for (const forbidden of ["getComputedTextLength", "getBBox", "measureText", "document.", "window."]) {
+    assert.ok(!layout.includes(forbidden), `visual-layout.ts reaches for ${forbidden}`);
+  }
+});

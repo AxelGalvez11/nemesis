@@ -1931,3 +1931,71 @@ of a large point count is payload size, which the bound handles, not correctness
 - **No interaction** — no dragging a tangent point, no slider that redraws. §41 priority five.
 - **The expression layer never reaches the browser.** It is used where a lesson is built; the
   renderers only ever receive points.
+
+# 46. 🔴 WHERE THINGS GO IS ARITHMETIC, AND ARITHMETIC BELONGS SOMEWHERE A TEST CAN REACH IT (owner, 2026-08-19)
+
+## STATUS: LAYOUT LIFTED OUT OF THE RENDERERS INTO `visual-layout.ts`, WITH THE THREE SHIPPED DEFECTS NOW ASSERTED AGAINST.
+
+Three layout defects shipped in §44 and §42's renderers. **Every test passed. Every number was
+right.** They were found by generating a sheet of every visual Nemesis can draw and looking at it.
+
+| What was wrong | What a learner saw |
+|---|---|
+| The relationship diagram put every node in one centred column | An inhibitor acting on the third step of a cascade was drawn *in* the chain, so it read as a step of it |
+| The timeline had no collision avoidance | Two events four years apart on a three-century scale printed one label on top of the other |
+| A vertex label, a side label and an angle mark all had fixed offsets | On a right angle at the origin, all three landed in the same square centimetre |
+
+🔴 **THE COMMON CAUSE IS WHERE THE ARITHMETIC LIVED, NOT WHAT IT SAID.** Each position was computed
+inline inside a React component. A component needs a DOM to run, a DOM needs a browser, and a browser
+needs a screenshot somebody re-examines — so "do these two labels overlap?" was not a question the
+test suite could ask. It was a question only a person looking at a picture could ask, and nobody was
+looking.
+
+## The rule
+
+**Position is computed in `visual-layout.ts` and only drawn in the components.** Every function there
+is pure: a verified visual in, coordinates out. No DOM, no measurement, no state. The renderers place
+what they are handed and decide nothing.
+
+That turns each defect into an assertion — *no two boxes on a row overlap; no two labels on a tier
+overlap; no leader line crosses a label; the angle mark and the vertex label go opposite ways* — and
+those assertions run in the ordinary suite, in milliseconds, with no browser.
+
+## What the fixes actually do
+
+- **Rows are ranked from the END of the graph, not the start.** Ranking by distance from a source
+  puts an inhibitor level with a ligand it has nothing to do with; ranking by distance to a SINK puts
+  every node one row above what it feeds, so a branch lands beside the step it competes with. This is
+  also what stops most long edges existing at all; the few that remain are bowed clear of the boxes
+  they would otherwise cross.
+- **Edges into one node get separate doorways.** Fixing the column exposed a second defect
+  underneath it: both arrows now arrived at the exact centre of the shared target, so the blunt bar
+  meaning "blocks" was drawn *underneath* the arrowhead meaning "drives" — losing the one distinction
+  §42 added the polarity for.
+- **A timeline label that will not fit beside its neighbour is lifted a tier**, with a leader line
+  back to its marker, and the lane grows to hold it. Not shrunk — no font size fits "31 BCE
+  (uncertain)" into four pixels — and not dropped, because a dropped event is a missing fact.
+  **Tiers are assigned right to left**, because the thing a label collides with is the leader of an
+  event to its *right*, and going left to right decides where a label goes before knowing whether a
+  line is about to be ruled across it.
+- **Every construction label is pushed away from the middle of the figure**, and the angle mark goes
+  *inward* along its own bisector — into the space the vertex label has just left. A right angle gets
+  the conventional square rather than an arc, because that is the one angle a reader is expected to
+  recognise without reading the number.
+
+## 🔴 TEXT WIDTH IS ESTIMATED AND THE ESTIMATE LEANS GENEROUS
+
+These functions run on the server, where there is no font metrics engine, and they must give the same
+answer the browser will — so width is `characters × fontSize × 0.55`, deliberately above the real
+average for mixed-case text. Under-estimating puts two labels back on top of each other, which is the
+defect this whole section exists about. Over-estimating spreads them slightly further apart than they
+strictly need to be. Only one of those is a bug.
+
+## What is deliberately NOT built
+
+- **No general graph layout.** No force simulation, no crossing minimisation, no orthogonal routing.
+  A relationship diagram is 2–8 nodes by contract; anything more elaborate is a graphics library, and
+  §41 says this is a router.
+- **No text measurement.** Nothing calls `getComputedTextLength`, and nothing may — a layout that
+  differs between server and browser moves the picture after the learner has seen it.
+- **Still no interaction.** Dragging a point remains §41 priority five.
