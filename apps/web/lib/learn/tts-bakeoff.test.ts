@@ -7,8 +7,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ProviderPricing } from "./tts-bakeoff";
 import {
   isCompleteRating,
+  pricedFor,
   PROVIDER_CATALOGUE,
   promotionLine,
   RATING_AXES,
@@ -74,18 +76,49 @@ test("🔴 no vendor claim is in the inputs to a winner", () => {
   assert.equal(winnerFor.length, 2, "winnerFor must take only a locale and ratings");
 });
 
-test("🔴 an unverified price prints as unknown rather than as an estimate", () => {
-  // A cost column filled with plausible numbers is how a bake-off recommends a provider nobody priced.
-  const sample = { chars: 1_000_000, latencyMs: 1, locale: "es-MX", phrase: "x", provider: "xai" as const };
+test("🔴 a recalled price prints as unknown rather than as an estimate", () => {
+  // A cost column filled with plausible numbers is how a bake-off recommends a provider nobody
+  // priced. The evidence field is what stops a remembered figure reaching the column at all.
+  const sample = { chars: 1_000_000, latencyMs: 1, locale: "es-MX", phrase: "x", provider: "cartesia" as const };
   assert.equal(sampleCostUsd(sample), null);
-  assert.equal(sampleCostUsd(sample, [{ advertisedLocales: null, keyEnv: "X", label: "x", provider: "xai", usdPerMillionChars: 4.2 }]), 4.2);
+
+  const recalled: ProviderPricing = {
+    checkedOn: null,
+    evidence: "recalled",
+    model: "pay-as-you-go",
+    source: "somebody's memory",
+    usdPerMillionChars: 4.2,
+  };
+  assert.equal(pricedFor(1_000_000, recalled), null, "a recalled figure must not become a cost");
+  assert.equal(pricedFor(1_000_000, { ...recalled, evidence: "published", source: "a pricing page" }), 4.2);
+  assert.equal(pricedFor(1_000_000, { ...recalled, evidence: "invoiced", source: "a statement" }), 4.2);
 });
 
-test("🔴 the shipped catalogue records no prices and no coverage counts", () => {
-  // Both are things somebody has to read off a live page. A remembered figure is worse than a blank.
+test("🔴 every price in the shipped catalogue carries where it came from", () => {
+  // The rule that replaced "no prices at all": a rate may exist, but never alone.
   for (const entry of PROVIDER_CATALOGUE) {
-    assert.equal(entry.usdPerMillionChars, null, `${entry.provider} carries an unverified price`);
+    assert.ok(entry.pricing.source.trim().length > 0, `${entry.provider} has a price with no source`);
+    assert.ok(
+      ["invoiced", "published", "recalled"].includes(entry.pricing.evidence),
+      `${entry.provider} has no pricing evidence`,
+    );
+    if (entry.pricing.evidence === "published") {
+      assert.ok(entry.pricing.checkedOn, `${entry.provider} claims a published rate with no date`);
+    }
+    // Coverage counts are still things somebody has to read off a live page.
     assert.equal(entry.advertisedLocales, null, `${entry.provider} carries an unverified coverage claim`);
+  }
+});
+
+test("🔴 exactly one provider's rate is settled from our own records, and it is flagged as disputed", () => {
+  // xAI is the only one Nemesis pays today, so it is the only one an invoice could settle. The
+  // dispute is recorded rather than resolved, because resolving it needs a statement nobody has.
+  const settled = PROVIDER_CATALOGUE.filter((entry) => entry.pricing.evidence !== "recalled");
+  assert.deepEqual(settled.map((entry) => entry.provider), ["xai"]);
+  assert.match(settled[0].pricing.caveat ?? "", /disputed/);
+  for (const entry of PROVIDER_CATALOGUE) {
+    if (entry.provider === "xai") continue;
+    assert.equal(entry.pricing.usdPerMillionChars, null, `${entry.provider} carries a price nobody read`);
   }
 });
 

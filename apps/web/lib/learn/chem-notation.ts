@@ -19,8 +19,16 @@
 // browser bundle to answer "is this a plausible string". Same reason `canvas-visual.ts` refuses
 // `\href` by name rather than asking KaTeX.
 
-/** Which canonical form the value is written in. */
-export type ChemNotation = "smiles";
+/**
+ * Which canonical form the value is written in.
+ *
+ * 🔴 REACTIONS ARE A SEPARATE NOTATION, NOT A SMILES THAT HAPPENS TO CONTAIN `>`. Auto-detecting
+ * one from the other would make "we do not draw reactions" indistinguishable from "that reaction
+ * was malformed", and the `structure-unsupported-notation` refusal exists precisely to keep a
+ * capability gap countable. Naming it also means the teaching model has to decide which it is
+ * asking for, which is the decision a reaction question turns on.
+ */
+export type ChemNotation = "reaction-smiles" | "smiles";
 
 /**
  * Every character SMILES may contain.
@@ -45,6 +53,23 @@ const SMILES_ALPHABET = /^[A-Za-z0-9@+\-[\]()=#$:/\\%.*]+$/;
  */
 export const MAX_SMILES_LENGTH = 300;
 
+/**
+ * The longest reaction Nemesis will draw.
+ *
+ * Three molecule lists rather than one, so the bound is larger than `MAX_SMILES_LENGTH` — but not
+ * three times larger. A scheme past this is a synthesis route, which wants to be several steps the
+ * learner walks through rather than one picture they squint at.
+ */
+export const MAX_REACTION_LENGTH = 600;
+
+/**
+ * The reaction separator, and the two it divides.
+ *
+ * Reaction SMILES is `reactants>agents>products` — agents (catalysts, solvents, the conditions
+ * over the arrow) sit in the middle and may be empty, which is why `A>>B` is legal and common.
+ */
+const REACTION_PARTS = 3;
+
 export type ChemRefusal =
   /** Not a string, or empty after trimming. */
   | "structure-empty"
@@ -64,7 +89,18 @@ export type ChemRefusal =
    */
   | "structure-unclosed-ring"
   /** A notation no trusted depiction owns. */
-  | "structure-unsupported-notation";
+  | "structure-unsupported-notation"
+  /**
+   * A reaction that is not `reactants>agents>products`.
+   *
+   * 🔴 ITS OWN REASON RATHER THAN `structure-not-notation`, because the mistake is different in
+   * kind. A missing `>` is a model that wrote one molecule where a reaction was asked for — a
+   * misunderstanding of the question, not a typo in the chemistry — and the two want different
+   * corrections.
+   */
+  | "structure-not-a-reaction"
+  /** A reaction with no reactants or no products. An arrow needs both ends. */
+  | "structure-half-a-reaction";
 
 export type ChemValidation =
   | { ok: true; value: string }
@@ -106,16 +142,71 @@ export function validateSmiles(raw: unknown): ChemValidation {
   return { ok: true, value };
 }
 
-/** Validate a value under a named notation. Today one notation is owned; the rest are refused. */
-export function validateStructure(notation: unknown, value: unknown): ChemValidation {
-  if (notation !== "smiles") {
+/**
+ * Validate a reaction: `reactants>agents>products`.
+ *
+ * 🔴 EACH SIDE IS CHECKED AS ORDINARY SMILES, WHICH IS WHY THIS IS SHORT. A reaction is three
+ * molecule lists separated by arrows, and every rule that makes a molecule drawable — the alphabet,
+ * the balance, the ring closures — applies unchanged to each side. `detail` names WHICH side failed,
+ * because "the products are malformed" and "the reactants are malformed" send a model to different
+ * places.
+ */
+export function validateReaction(raw: unknown): ChemValidation {
+  if (typeof raw !== "string") {
+    return { detail: `expected a string, received ${typeof raw}`, ok: false, reason: "structure-empty" };
+  }
+  const value = raw.trim();
+  if (!value) return { detail: "the reaction is empty", ok: false, reason: "structure-empty" };
+  if (value.length > MAX_REACTION_LENGTH) {
     return {
-      detail: `no trusted depiction owns ${JSON.stringify(notation)} — resolve it to SMILES first`,
+      detail: `${value.length} characters, past the ${MAX_REACTION_LENGTH} a reaction scheme can stay readable at`,
       ok: false,
-      reason: "structure-unsupported-notation",
+      reason: "structure-too-long",
     };
   }
-  return validateSmiles(value);
+
+  const parts = value.split(">");
+  if (parts.length !== REACTION_PARTS) {
+    return {
+      detail:
+        parts.length < REACTION_PARTS
+          ? `a reaction is reactants>agents>products — this has ${parts.length - 1} arrow${parts.length === 2 ? "" : "s"}, not 2`
+          : `a reaction has exactly 2 arrows — this has ${parts.length - 1}`,
+      ok: false,
+      reason: "structure-not-a-reaction",
+    };
+  }
+
+  const [reactants, agents, products] = parts;
+  if (!reactants.trim() || !products.trim()) {
+    return {
+      detail: !reactants.trim() ? "the reaction has no reactants" : "the reaction has no products",
+      ok: false,
+      reason: "structure-half-a-reaction",
+    };
+  }
+
+  // 🔴 AGENTS MAY BE EMPTY AND THAT IS NORMAL. `A>>B` is the ordinary way to write a reaction whose
+  // conditions are stated in words rather than as molecules, which is most of what a lesson shows.
+  const sides: Array<[string, string]> = [["reactants", reactants], ["products", products]];
+  if (agents.trim()) sides.push(["agents", agents]);
+  for (const [side, text] of sides) {
+    const checked = validateSmiles(text);
+    if (!checked.ok) return { detail: `${side}: ${checked.detail}`, ok: false, reason: checked.reason };
+  }
+
+  return { ok: true, value };
+}
+
+/** Validate a value under a named notation. Anything unnamed is refused rather than guessed at. */
+export function validateStructure(notation: unknown, value: unknown): ChemValidation {
+  if (notation === "smiles") return validateSmiles(value);
+  if (notation === "reaction-smiles") return validateReaction(value);
+  return {
+    detail: `no trusted depiction owns ${JSON.stringify(notation)} — resolve it to SMILES first`,
+    ok: false,
+    reason: "structure-unsupported-notation",
+  };
 }
 
 /** `(` against `)` and `[` against `]`, reported by which one went wrong. */

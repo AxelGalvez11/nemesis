@@ -149,8 +149,10 @@ export async function GET() {
       available: Boolean(process.env[entry.keyEnv]),
       keyEnv: entry.keyEnv,
       label: entry.label,
+      // The rate travels with its provenance, so the Lab cannot print a remembered figure as a
+      // price. See ProviderPricing for why the three evidence levels are not degrees of one thing.
+      pricing: entry.pricing,
       provider: entry.provider,
-      usdPerMillionChars: entry.usdPerMillionChars,
     })),
   });
 }

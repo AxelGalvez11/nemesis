@@ -257,7 +257,12 @@ test("🔴 the function that pays still bounds what the client may ask for", () 
 test("🔴 §42's chemistry lane is the equation lane, and the spec carries notation rather than geometry", () => {
   assert.match(SECTION_42, /CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION/);
   assert.ok(VISUAL_CONTRACT.includes('kind: "structure"'), "the structure kind has gone from the spec");
-  assert.match(VISUAL_CONTRACT, /notation: "smiles"/);
+  // 🔴 THE NOTATION IS A NAMED TYPE, NOT A LITERAL, SINCE REACTIONS LANDED. Asserting the literal
+  // would fail the moment a second notation is owned — which is a capability being ADDED, exactly
+  // the change this guard must not punish. What matters is that the field carries a notation name
+  // and that `chem-notation.ts` decides which names exist.
+  assert.match(VISUAL_CONTRACT, /notation: ChemNotation/);
+  assert.match(CHEM, /export type ChemNotation = "reaction-smiles" \| "smiles"/);
   // The rule with teeth for this lane: no renderer configuration, no path data, no SVG. Checked
   // against the interface body only, so prose elsewhere in the file cannot satisfy or trip it.
   const body = VISUAL_CONTRACT.slice(
@@ -300,13 +305,14 @@ test("🔴 the bench cannot name a winner from a field of one", () => {
   assert.match(BAKEOFF, /"tied"/);
 });
 
-test("🔴 no cost is asserted for any provider while the one rate we hold is disputed", () => {
-  assert.match(SECTION_43, /THE COST COLUMN IS `unverified` FOR EVERY PROVIDER/);
-  const rates = [...BAKEOFF.matchAll(/usdPerMillionChars: ([^,}]+)/g)].map((match) => match[1].trim());
+test("🔴 no price stands without its provenance, and the disputed one still says so", () => {
+  assert.match(SECTION_43, /THE COST COLUMN/);
+  // Every rate carries where it came from. A bare number in this table is the failure.
+  const sources = [...BAKEOFF.matchAll(/source: "([^"]*)"/g)].map((match) => match[1]);
+  const rates = [...BAKEOFF.matchAll(/usdPerMillionChars: ([^,\n}]+)/g)].map((match) => match[1].trim().replace(/;$/, ""));
+  assert.ok(sources.length >= 4, "provider pricing has lost its source field");
   assert.ok(rates.length > 0, "the provider catalogue has lost its cost column");
-  assert.deepEqual(
-    rates.filter((rate) => rate.replace(/;$/, "") !== "null" && rate.replace(/;$/, "") !== "number | null"),
-    [],
-    "a provider now claims a rate — reconcile it against what nemesis-speak actually bills first",
-  );
+  // A recalled figure may never become a cost — that rule lives in pricedFor.
+  assert.match(BAKEOFF, /if \(pricing\.usdPerMillionChars === null \|\| pricing\.evidence === "recalled"\) return null;/);
+  assert.match(BAKEOFF, /disputed: the function bills 4\.20/);
 });

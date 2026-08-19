@@ -47,20 +47,52 @@ export interface ProviderCatalogueEntry {
    */
   readonly advertisedLocales: number | null;
   /**
-   * USD per million characters, from the provider's own pricing page.
+   * What a million characters costs, and how much that figure can be trusted.
    *
-   * 🔴 `null` MEANS UNVERIFIED, AND THE LAB PRINTS IT AS UNKNOWN RATHER THAN ESTIMATING. A cost
-   * column filled with plausible numbers is how a bake-off ends up recommending the cheapest
-   * provider that nobody priced.
+   * 🔴 A RATE WITHOUT ITS PROVENANCE IS THE THING THIS WHOLE MODULE EXISTS TO REFUSE. §43 already
+   * says a provider's language count is marketing rather than evidence; a price recalled from
+   * memory is worse, because it is the number a decision actually turns on. So a rate never travels
+   * alone — it carries where it came from and whether anybody checked.
+   */
+  readonly pricing: ProviderPricing;
+}
+
+/**
+ * How a price got into this table.
+ *
+ * 🔴 THE THREE VALUES ARE NOT DEGREES OF THE SAME THING. `invoiced` means this is what Nemesis is
+ * actually billed and can be read off a statement. `published` means somebody opened the vendor's
+ * pricing page on a stated date and copied it. `recalled` means it came from an assistant's or a
+ * person's memory and **has not been checked against anything** — it is a starting point for a
+ * conversation, never an input to a decision. Collapsing `recalled` into `published` would be the
+ * exact failure §43 names one level up.
+ */
+export type PricingEvidence = "invoiced" | "published" | "recalled";
+
+export interface ProviderPricing {
+  /**
+   * USD per million characters, or null when nobody has written a figure down at all.
    *
-   * 🔴 THE ONE FIGURE THIS REPO HOLDS IS ALREADY DISPUTED, WHICH IS WHY THE FIELD IS NULLABLE
-   * RATHER THAN OPTIONAL. `supabase/functions/nemesis-speak/index.ts` bills xAI TTS at $4.20 per
-   * million characters, citing x.ai's own announcement; the brief that asked for this work cites
-   * $15 per million from the same vendor's docs. Both cannot be current. Until somebody reads the
-   * live pricing page, neither belongs in this table — and the cost the FUNCTION bills is the one
-   * that reaches an invoice, so that is the number to reconcile against.
+   * 🔴 READ IT TOGETHER WITH `evidence` OR NOT AT ALL. A number here with `evidence: "recalled"` is
+   * not a price; it is a hypothesis about a price.
    */
   readonly usdPerMillionChars: number | null;
+  readonly evidence: PricingEvidence;
+  /**
+   * How the vendor actually sells it, because "per million characters" flatters some sellers.
+   *
+   * 🔴 THE COMPARISON IS NOT LIKE FOR LIKE AND SAYING SO IS THE POINT. A pay-as-you-go provider
+   * bills what you use. A subscription provider sells a monthly credit allowance, so the effective
+   * rate depends entirely on how much of that allowance gets used — a tier that is half empty costs
+   * double its headline rate, and a per-million column silently assumes it is always full.
+   */
+  readonly model: "pay-as-you-go" | "subscription-credits" | "unknown";
+  /** Where the figure came from, in words a person can go and re-check. */
+  readonly source: string;
+  /** ISO date the figure was last confirmed, or null when it never was. */
+  readonly checkedOn: string | null;
+  /** Anything that makes the headline rate misleading — tiers, free allowances, model variants. */
+  readonly caveat?: string;
 }
 
 /**
@@ -71,11 +103,84 @@ export interface ProviderCatalogueEntry {
  * the Lab is honest about which columns are real on any given machine.
  */
 export const PROVIDER_CATALOGUE: readonly ProviderCatalogueEntry[] = [
-  { advertisedLocales: null, keyEnv: "XAI_API_KEY", label: "xAI", provider: "xai", usdPerMillionChars: null },
-  { advertisedLocales: null, keyEnv: "CARTESIA_API_KEY", label: "Cartesia", provider: "cartesia", usdPerMillionChars: null },
-  { advertisedLocales: null, keyEnv: "ELEVENLABS_API_KEY", label: "ElevenLabs", provider: "elevenlabs", usdPerMillionChars: null },
-  { advertisedLocales: null, keyEnv: "GOOGLE_TTS_API_KEY", label: "Google Cloud", provider: "google", usdPerMillionChars: null },
+  {
+    advertisedLocales: null,
+    keyEnv: "XAI_API_KEY",
+    label: "xAI",
+    pricing: {
+      checkedOn: null,
+      // 🔴 THE ONLY RATE IN THIS TABLE NEMESIS CAN SETTLE FROM ITS OWN RECORDS, AND IT IS DISPUTED.
+      // `nemesis-speak` bills at this rate and logs a USD figure per utterance, so a month of those
+      // logs against a statement settles it — which is why the evidence is `invoiced` rather than
+      // `published`. The brief that asked for this work cites $15 per million from the same vendor.
+      // Both cannot be current, and the one the function bills is the one that reaches an invoice.
+      caveat: "disputed: the function bills 4.20, the commissioning brief cites 15.00 — reconcile against a statement",
+      evidence: "invoiced",
+      model: "pay-as-you-go",
+      source: "supabase/functions/nemesis-speak/index.ts USD_PER_CHAR",
+      usdPerMillionChars: 4.2,
+    },
+    provider: "xai",
+  },
+  {
+    advertisedLocales: null,
+    keyEnv: "CARTESIA_API_KEY",
+    label: "Cartesia",
+    pricing: {
+      caveat: "sold as monthly credits — the effective rate depends on how full the tier runs",
+      checkedOn: null,
+      evidence: "recalled",
+      model: "subscription-credits",
+      source: "not checked — no figure has been read off cartesia.ai/pricing",
+      usdPerMillionChars: null,
+    },
+    provider: "cartesia",
+  },
+  {
+    advertisedLocales: null,
+    keyEnv: "ELEVENLABS_API_KEY",
+    label: "ElevenLabs",
+    pricing: {
+      caveat: "sold as monthly credits across tiers — the headline rate falls steeply with volume",
+      checkedOn: null,
+      evidence: "recalled",
+      model: "subscription-credits",
+      source: "not checked — no figure has been read off elevenlabs.io/pricing",
+      usdPerMillionChars: null,
+    },
+    provider: "elevenlabs",
+  },
+  {
+    advertisedLocales: null,
+    keyEnv: "GOOGLE_TTS_API_KEY",
+    label: "Google Cloud",
+    pricing: {
+      // 🔴 ONE PROVIDER, SEVERAL PRICES, AND THE VOICE TIER DECIDES WHICH. Google prices its basic,
+      // neural and studio voice families very differently, so a single number for "Google" is
+      // meaningless without naming the voice family — and the voice family is exactly what a
+      // language lesson is choosing. Whoever fills this in must fill in the tier too.
+      caveat: "priced per voice family — basic, neural and studio differ by an order of magnitude",
+      checkedOn: null,
+      evidence: "recalled",
+      model: "pay-as-you-go",
+      source: "not checked — no figure has been read off cloud.google.com/text-to-speech/pricing",
+      usdPerMillionChars: null,
+    },
+    provider: "google",
+  },
 ];
+
+/**
+ * What one utterance costs, or null when the provider's rate is not established.
+ *
+ * 🔴 `recalled` RATES RETURN NULL, WHICH IS THE WHOLE REASON THE EVIDENCE FIELD EXISTS. A cost
+ * estimate computed from a half-remembered price looks exactly like one computed from an invoice,
+ * and the Lab would print both to the same number of decimal places.
+ */
+export function pricedFor(chars: number, pricing: ProviderPricing): number | null {
+  if (pricing.usdPerMillionChars === null || pricing.evidence === "recalled") return null;
+  return (chars * pricing.usdPerMillionChars) / 1_000_000;
+}
 
 /** One thing a person listened to. */
 export interface BakeoffSample {
@@ -97,11 +202,10 @@ export interface RatedSample {
   readonly sample: BakeoffSample;
 }
 
-/** What a sample cost, or null when the provider's rate has not been verified. */
+/** What a sample cost, or null when the provider's rate has not been established. */
 export function sampleCostUsd(sample: BakeoffSample, catalogue: readonly ProviderCatalogueEntry[] = PROVIDER_CATALOGUE): number | null {
-  const rate = catalogue.find((entry) => entry.provider === sample.provider)?.usdPerMillionChars;
-  if (rate === null || rate === undefined) return null;
-  return (sample.chars * rate) / 1_000_000;
+  const pricing = catalogue.find((entry) => entry.provider === sample.provider)?.pricing;
+  return pricing ? pricedFor(sample.chars, pricing) : null;
 }
 
 /** The mean of the five axes for one rating. */

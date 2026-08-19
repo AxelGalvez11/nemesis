@@ -54,9 +54,31 @@ Ratings persist to `.nemesis-lab/tts-bakeoff.json`, which is gitignored: they we
 machine and are not a fact about the product until somebody decides they are. **The bench never edits
 `speech-route.ts`.** It prints the exact line to add to `MEASURED_PROVIDERS`, and a human commits it.
 
-The cost column reads `unverified` for every provider, including the one we already pay. The two
-figures this repository holds for xAI TTS disagree with each other, and a cost column full of
-plausible numbers is how a bake-off ends up recommending the cheapest provider nobody priced.
+### Prices, and why most of them read "not priced"
+
+Every rate in the provider table carries **where it came from**, and the three levels are not
+degrees of the same thing:
+
+- **invoiced** — this is what Nemesis is actually billed and can be read off a statement.
+- **published** — somebody opened the vendor's pricing page on a stated date and copied it.
+- **recalled** — it came from somebody's memory and **has not been checked against anything**.
+
+A recalled figure is never turned into a cost. The bench prints "not priced" instead, because a
+price and a hypothesis about a price must not render to the same number of decimal places.
+
+Today exactly one provider is settled: **xAI at $4.20 per million characters**, from what
+`nemesis-speak` actually bills — and even that is flagged *disputed*, because the brief that
+commissioned this work cites $15 from the same vendor. A month of the function's own `tts_spoken`
+logs against a statement settles it. The other three are unpriced.
+
+Two things make a single per-million number misleading, and the table records both:
+
+- **How it is sold.** Pay-as-you-go bills what you use. Subscription credits sell a monthly
+  allowance, so the effective rate depends on how full the tier runs — a half-empty tier costs
+  double its headline rate, and a per-million column silently assumes it is always full.
+- **Voice family.** One vendor can price basic, neural and studio voices an order of magnitude
+  apart, so "the Google price" is meaningless without naming the tier — and the tier is exactly what
+  a language lesson is choosing.
 
 ## Running the acceptance harness instead
 
@@ -66,9 +88,12 @@ If you want the claims checked rather than the surfaces looked at:
 pnpm --filter @nemesis/web exec tsx scripts/visual-ladder-acceptance.mts
 ```
 
-Thirteen checks against the production router. It runs against **injected provider responses** by
+Seventeen checks against the production router. It runs against **injected provider responses** by
 default and says so in its own output; pass `--live` to run the same checks against PubChem and
-Wikimedia Commons from a machine with outbound access. The last two checks launch a real browser and
-prove the chemical drawing is computed geometry — identical coordinates across two renders, and a
-stereocentre that visibly changes the picture — rather than an image model's impression. They skip
-loudly if the depiction library or Playwright is missing.
+Wikimedia Commons from a machine with outbound access.
+
+The last six launch a real browser, and they are the ones that prove the chemistry is drawn rather
+than imagined: identical coordinates across two renders, a stereocentre that visibly changes the
+picture, dark mode changing colour without moving a single bond, a small molecule drawing as a
+structure instead of collapsing into text, a highlighted group, and a full reaction scheme with its
+conditions over the arrow. They skip loudly if the depiction library or Playwright is missing.

@@ -20,7 +20,14 @@ interface ProviderRow {
   keyEnv: string;
   label: string;
   provider: string;
-  usdPerMillionChars: number | null;
+  pricing: {
+    usdPerMillionChars: number | null;
+    evidence: "invoiced" | "published" | "recalled";
+    model: string;
+    source: string;
+    checkedOn: string | null;
+    caveat?: string;
+  };
 }
 
 interface SampleRow {
@@ -132,6 +139,8 @@ export default function TtsLabPage() {
             <th>key</th>
             <th>advertised locales</th>
             <th>USD / M chars</th>
+            <th>how it is sold</th>
+            <th>where the price came from</th>
           </tr>
         </thead>
         <tbody>
@@ -143,7 +152,19 @@ export default function TtsLabPage() {
               </td>
               {/* Advertised, never measured. The whole reason both columns exist. */}
               <td className="text-neutral-400">{row.advertisedLocales ?? "unverified"}</td>
-              <td className="text-neutral-400">{row.usdPerMillionChars ?? "unverified"}</td>
+              {/* 🔴 A RECALLED FIGURE PRINTS AS "not priced", NEVER AS A NUMBER. A price and a
+                  hypothesis about a price must not render identically. */}
+              <td className={row.pricing.evidence === "recalled" ? "text-neutral-400" : ""}>
+                {row.pricing.evidence === "recalled" || row.pricing.usdPerMillionChars === null
+                  ? "not priced"
+                  : `$${row.pricing.usdPerMillionChars.toFixed(2)}`}
+              </td>
+              <td className="text-neutral-400">{row.pricing.model}</td>
+              <td className="text-neutral-400">
+                {row.pricing.evidence}
+                {row.pricing.checkedOn ? ` ${row.pricing.checkedOn}` : ""}
+                {row.pricing.caveat ? <div className="text-amber-700">{row.pricing.caveat}</div> : null}
+              </td>
             </tr>
           ))}
         </tbody>

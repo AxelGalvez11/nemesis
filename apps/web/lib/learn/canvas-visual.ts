@@ -12,7 +12,7 @@
 // did not say. `validateCanvasVisual` names the reason; `parseCanvasVisual` remains for the callers
 // that genuinely only need to know whether anything survived.
 
-import { validateStructure } from "./chem-notation";
+import { validateStructure, type ChemNotation } from "./chem-notation";
 
 /** Every polarity a trusted renderer draws. */
 const POLARITIES: readonly EdgePolarity[] = ["increases", "decreases", "plain"];
@@ -70,8 +70,8 @@ export interface PlotVisual extends CanvasVisualBase {
  */
 export interface StructureVisual extends CanvasVisualBase {
   kind: "structure";
-  /** Which canonical form `value` is written in. Today only SMILES is owned. */
-  notation: "smiles";
+  /** Which canonical form `value` is written in. A molecule, or a reaction scheme. */
+  notation: ChemNotation;
   /** The canonical string itself. Shown beside the drawing, never hidden behind it. */
   value: string;
   /**
@@ -83,6 +83,37 @@ export interface StructureVisual extends CanvasVisualBase {
    * would present a remembered SMILES exactly like a looked-up one.
    */
   resolvedFrom?: { name: string; provider: "pubchem"; id: string };
+  /**
+   * Atoms to pick out, by their position in the notation, counting heavy atoms from zero.
+   *
+   * 🔴 INDICES, NOT COLOURS OR SHAPES. The model says WHICH atoms matter; trusted code decides how
+   * "matters" looks, exactly as it decides where every bond goes. A `highlight` carrying a hex
+   * colour would be the model supplying rendering instructions, which is the one thing §41 forbids
+   * across every representation.
+   *
+   * 🔴 THIS IS WHAT MAKES A STRUCTURE ANSWERABLE-AGAINST. Without it a drawn molecule can only be
+   * looked at; with it a lesson can ask "which part of aspirin is the ester?" and mark the answer,
+   * which is the difference §41 draws between a learning object and decoration.
+   */
+  highlight?: readonly number[];
+  /**
+   * Whether carbon atoms are labelled.
+   *
+   * 🔴 A TEACHING CHOICE THAT CHANGES WHAT THE PICTURE TEACHES, WHICH IS WHY IT IS IN THE SPEC
+   * RATHER THAN IN A THEME. Skeletal notation — bare corners for carbon — is the convention every
+   * exam uses and is unreadable to somebody in their first week, who needs to see that the corners
+   * ARE carbons before the shorthand means anything. Defaults to `skeletal`, because that is what
+   * the learner will be shown everywhere else.
+   */
+  carbons?: "all" | "skeletal";
+  /**
+   * Text above and below the reaction arrow — conditions, reagents, a name.
+   *
+   * Ignored for a single molecule. Reaction conditions are prose ("H+, heat", "reflux 2h") rather
+   * than notation, which is why they are separate fields instead of being smuggled into the string.
+   */
+  conditions?: string;
+  reactionLabel?: string;
 }
 
 export type CanvasVisualRequest = EquationVisual | FlowVisual | PlotVisual | StructureVisual;
@@ -315,18 +346,52 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
     // "that InChI is malformed" — one is a capability gap worth counting and the other is a typo.
     const structure = validateStructure(value.notation, value.value);
     if (!structure.ok) return refuse("malformed-structure", `${structure.reason}: ${structure.detail}`);
+    const notation = value.notation as ChemNotation;
     const resolved = resolvedFrom(value.resolvedFrom);
     if (resolved === "malformed") {
       return refuse("malformed-structure", "resolvedFrom must carry a provider, an id and the name that was looked up");
     }
+
+    // 🔴 BOUNDED AND INTEGER, because these indices are handed to a renderer that will look them
+    // up. A negative, fractional or absurd index is not a highlight that misses — it is an array
+    // access in somebody else's library on a number a model chose.
+    let highlight: number[] | null = null;
+    if (value.highlight !== undefined) {
+      if (!Array.isArray(value.highlight) || value.highlight.length === 0 || value.highlight.length > 40) {
+        return refuse("malformed-structure", "highlight must be 1–40 atom indices");
+      }
+      highlight = [];
+      for (const index of value.highlight) {
+        if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 300) {
+          return refuse("malformed-structure", "every highlight index must be a whole number from 0 to 300");
+        }
+        highlight.push(index);
+      }
+    }
+
+    const carbons = value.carbons === undefined ? null : value.carbons;
+    if (carbons !== null && carbons !== "all" && carbons !== "skeletal") {
+      return refuse("malformed-structure", 'carbons must be "skeletal" or "all"');
+    }
+
+    const conditions = value.conditions === undefined ? null : boundedText(value.conditions, 60);
+    const reactionLabel = value.reactionLabel === undefined ? null : boundedText(value.reactionLabel, 60);
+    if ((value.conditions !== undefined && !conditions) || (value.reactionLabel !== undefined && !reactionLabel)) {
+      return refuse("text-out-of-bounds", "reaction arrow text must be 1–60 characters when present");
+    }
+
     return {
       ok: true,
       visual: {
         ...common,
         kind: "structure",
-        notation: "smiles",
+        notation,
         value: structure.value,
         ...(resolved ? { resolvedFrom: resolved } : {}),
+        ...(highlight ? { highlight } : {}),
+        ...(carbons && carbons !== "skeletal" ? { carbons } : {}),
+        ...(conditions ? { conditions } : {}),
+        ...(reactionLabel ? { reactionLabel } : {}),
       },
     };
   }

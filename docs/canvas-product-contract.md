@@ -1415,6 +1415,8 @@ provenance rather than about subject matter.
 | Relationship / pathway | nodes and edges | **shipped** (deterministic SVG) |
 | Quantitative | series of points | **shipped** (deterministic SVG) |
 | Chemical structure (2D) | SMILES, resolved from a name where possible | **shipped** (`structure`, drawn by a depiction library) |
+| Reaction scheme | `reactants>agents>products`, conditions as prose | **shipped** (`reaction-smiles`) |
+| Group highlighting inside a structure | atom indices | **shipped** (what makes a structure answerable-against) |
 | Relationship polarity | `increases` / `decreases` on an edge | **shipped** (arrowhead vs bar) |
 | Licensed reference image | a live provider query, or a curated registry row | **resolver shipped, curated registry EMPTY** |
 | Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
@@ -1439,10 +1441,54 @@ exact answer.
   accepts: unbalanced brackets, and a ring bond opened and never closed. That second one was measured
   against the depiction library — `C1CC` parses cleanly and then draws the ring missing, and a
   structure that renders WRONG is worse than one that refuses.
-- **Measured, in a real browser:** aspirin draws 15 bond strokes and 3 atom labels with identical
-  coordinates across two renders; L-alanine draws 12 bond strokes against 3 for the same molecule
-  written without stereochemistry. The wedge is in the picture, not just in the string. See
-  `scripts/visual-ladder-acceptance.mts`.
+- **Reactions are a separate notation, not a SMILES containing an arrow.** Sniffing one from the
+  other would make "we do not draw reactions" indistinguishable from "that reaction was malformed",
+  and it makes the teaching model state which it is asking for — the decision a reaction question
+  turns on. Each side is validated as ordinary SMILES, and a refusal names WHICH side failed.
+- **Measured, in a real browser:** aspirin draws 18 bond strokes with identical coordinates across
+  two renders; L-alanine draws 14 against 6 for the same molecule written without stereochemistry;
+  acetic acid draws as a structure rather than the string `COOHCH3`; highlighting four atoms adds
+  52 marks; an esterification draws 13 bonds and 8 text elements. See
+  `scripts/visual-ladder-acceptance.mts` — 17 checks.
+
+### What the depiction library offers, and what Nemesis takes
+
+🔴 **THIS TABLE EXISTS BECAUSE "WHAT WE ARE NOT USING" WAS INVISIBLE.** A library is adopted for one
+feature and its other capabilities become invisible defaults — nobody decides against them, so
+nobody knows they were available. Each row below is a decision.
+
+| Capability | Status | Why |
+|---|---|---|
+| Molecule depiction from SMILES | **used** | rung two |
+| Stereochemistry (wedge/hash) | **used** | measured: a stereocentre visibly changes the drawing |
+| `dark` / `light` themes | **used** | see below — colour is baked into the SVG, so it is a redraw |
+| Reaction schemes (`reactants>agents>products`) | **used** | conditions ride above the arrow as prose |
+| Atom highlighting | **used** | what makes a structure answerable-against |
+| `compactDrawing: false` | **used** | the default collapsed small molecules into text |
+| `showCarbons` | **used** | a stated teaching choice on the spec, not a theme |
+| `getTotalOverlapScore()` | **used** | refuses a drawing whose atoms sit on one another |
+| `getMolecularFormula()` | available, **not used** | a formula label is a teaching decision nobody has made |
+| Weight/heatmap overlays (`GaussDrawer`) | available, **declined** | a model-attention heatmap is not a teaching object |
+| `atomVisualization: "balls"` | available, **declined** | a second visual language for the same fact |
+| Canvas (bitmap) rendering | available, **declined** | SVG scales and stays inspectable; a bitmap does neither |
+| Debug helpers | available, **declined** | developer output, not learner output |
+| CIP / R,S descriptors | **not reachable** | computed internally and not exported — see below |
+
+🔴 **THE ONE THAT HURTS IS R/S.** The library computes stereo priority internally to decide which
+way a wedge points, but does not expose the resulting descriptor. So Nemesis can *draw* a
+stereocentre correctly and cannot *say* whether it is R or S — which is the question chirality is
+actually examined on. Naming a centre would need a cheminformatics layer (an order of magnitude
+more weight) or a resolver call. **Not built, and not to be faked**: asking a language model to
+label a stereocentre is precisely the plausible-and-unverifiable answer the ladder exists to refuse.
+
+### 🔴 DARK MODE IS A REDRAW, NOT A RESTYLE
+
+The library writes stroke and label colours into the SVG attributes rather than reading CSS
+variables, so a theme toggle cannot repaint an existing drawing. `ChemicalStructure` therefore takes
+the theme as an effect dependency and draws again. **Measured:** bonds render `#222222` in light and
+`#ffffff` in dark, at identical coordinates — the geometry is untouched by the theme, which is what
+makes redrawing safe. Without this, switching to dark left a molecule in near-black strokes on a
+near-black ground: invisible, with nothing on screen to explain why.
 
 Macromolecules remain **not built**. Their canonical form is an accession into a structure database
 rather than a drawing, and 2D stays the default whenever it teaches the concept adequately — §41's

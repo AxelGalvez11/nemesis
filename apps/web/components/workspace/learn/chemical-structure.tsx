@@ -26,6 +26,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useTheme } from "@/components/theme-provider";
 import type { StructureVisual } from "@/lib/learn/canvas-visual";
 import { statesStereochemistry } from "@/lib/learn/chem-notation";
 
@@ -40,11 +41,22 @@ type StructureFailure =
    * `canvas-visual.ts` keeps with KaTeX. The spec layer refuses prose, markup and unclosed rings
    * before anything loads; a valence nobody can draw is caught here, by the only code that knows.
    */
-  | "structure-unparsable";
+  | "structure-unparsable"
+  /**
+   * The layout came out overlapping badly enough that the drawing is not readable.
+   *
+   * 🔴 A REFUSAL THE LIBRARY MAKES POSSIBLE AND NOTHING WAS ASKING FOR. `getTotalOverlapScore()`
+   * reports how much the computed geometry collides with itself — near zero for a clean molecule,
+   * large when a crowded or bridged structure could not be laid out flat. A picture with atoms
+   * sitting on top of one another is worse than the notation, and until this check existed
+   * Nemesis would have shown it confidently. Measured: aspirin scores about 1e-15.
+   */
+  | "structure-unreadable";
 
 export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
   const target = useRef<SVGSVGElement | null>(null);
   const [failure, setFailure] = useState<StructureFailure | null>(null);
+  const { theme } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -64,12 +76,59 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
         // 🔴 A NEW DRAWER PER RENDER. `SvgDrawer` keeps an `svgWrapper` across draws and reuses it
         // unless told to clear; sharing one instance between two structures on a page is how the
         // second molecule ends up drawn on top of the first.
-        const drawer = new library.SvgDrawer({ height: HEIGHT, padding: 12, width: WIDTH });
-        const parsed = library.Parser.parse(visual.value);
-        if (cancelled) return;
+        //
+        // 🔴 `compactDrawing: false`, AND THE DEFAULT WAS A REAL DEFECT. With it on — the library's
+        // default — a small molecule is collapsed into condensed text: acetic acid renders as the
+        // string "COOHCH3" with no bonds at all. Chemically correct and pedagogically useless, and
+        // it hits exactly the tiny molecules a functional-group lesson is made of.
+        //
+        // 🔴 `showCarbons` CARRIES A TEACHING CHOICE FROM THE SPEC. Skeletal notation is what every
+        // exam uses and is unreadable to somebody in their first week, who has to see that the bare
+        // corners ARE carbons before the shorthand means anything.
+        const options = {
+          compactDrawing: false,
+          fontFamily: "inherit",
+          height: HEIGHT,
+          padding: 12,
+          ...(visual.carbons === "all" ? { showCarbons: "all" } : {}),
+          width: WIDTH,
+        };
         element.replaceChildren();
-        drawer.draw(parsed, element, "light");
-        if (!cancelled) setFailure(null);
+
+        let overlap = 0;
+        if (visual.notation === "reaction-smiles") {
+          // 🔴 A DIFFERENT DRAWER, NOT A DIFFERENT MODE. The reaction drawer lays out several
+          // molecules, the plus signs between them and the arrow; the conditions ride ABOVE that
+          // arrow as prose rather than being smuggled into the notation.
+          const reaction = library.ReactionParser.parse(visual.value);
+          if (cancelled) return;
+          new library.ReactionDrawer({}, { ...options, height: HEIGHT, width: Math.round(WIDTH / 2.4) }).draw(
+            reaction,
+            element,
+            theme,
+            null,
+            visual.conditions ?? "",
+            visual.reactionLabel ?? "",
+          );
+        } else {
+          const drawer = new library.SvgDrawer(options);
+          const parsed = library.Parser.parse(visual.value);
+          if (cancelled) return;
+          // The fifth argument is `infoOnly`; the sixth is the atoms to pick out. Passing the
+          // indices the spec carried is the whole of §42's "answerable-against" seam.
+          drawer.draw(parsed, element, theme, null, false, visual.highlight ? [...visual.highlight] : []);
+          overlap = drawer.getTotalOverlapScore();
+        }
+
+        if (cancelled) return;
+        // A clean layout scores near zero. Past this the atoms are sitting on one another and the
+        // notation below is the more honest thing to show.
+        if (overlap > MAX_OVERLAP) {
+          setFailure("structure-unreadable");
+          element.replaceChildren();
+          return;
+        }
+        setFailure(null);
       } catch {
         if (!cancelled) setFailure("structure-unparsable");
       }
@@ -78,7 +137,11 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
     return () => {
       cancelled = true;
     };
-  }, [visual.value]);
+    // 🔴 THE THEME IS A DEPENDENCY, NOT A STYLE. The library bakes stroke and label colours into the
+    // emitted SVG attributes rather than reading CSS, so a dark-mode toggle cannot repaint this
+    // drawing — it has to be drawn again. Without `theme` here, switching to dark leaves a molecule
+    // in near-black strokes on a near-black ground: invisible, with nothing on screen to say why.
+  }, [theme, visual.carbons, visual.conditions, visual.highlight, visual.notation, visual.reactionLabel, visual.value]);
 
   return (
     <div>
@@ -118,3 +181,13 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
 
 const WIDTH = 480;
 const HEIGHT = 320;
+
+/**
+ * How much self-overlap makes a drawing worse than its notation.
+ *
+ * 🔴 CALIBRATED, NOT GUESSED. A clean molecule scores around 1e-15 — floating-point noise. The
+ * score climbs with genuine collisions, so anything meaningfully above zero means atoms are being
+ * drawn on top of one another. Set loose enough that a crowded but legible fused-ring system still
+ * renders, and tight enough that a hairball does not.
+ */
+const MAX_OVERLAP = 1;

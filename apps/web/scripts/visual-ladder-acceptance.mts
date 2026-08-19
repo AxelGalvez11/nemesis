@@ -301,13 +301,15 @@ if (!bundlePath || !chromium) {
     // atom. A geometry check that counts the wrong element fails a working renderer, which is worse
     // than not checking.
     const probe = `(() => {
-      const draw = (value) => {
+      // Mirrors the options ChemicalStructure passes, so what is measured here is what a learner
+      // sees — not the library's defaults, which collapse small molecules into text.
+      const draw = (value, theme, highlight) => {
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         svg.setAttribute("width", "480");
         svg.setAttribute("height", "360");
         document.body.appendChild(svg);
-        const drawer = new SmilesDrawer.SvgDrawer({ height: 360, width: 480 });
-        drawer.draw(SmilesDrawer.Parser.parse(value), svg, "light");
+        const drawer = new SmilesDrawer.SvgDrawer({ compactDrawing: false, height: 360, padding: 12, width: 480 });
+        drawer.draw(SmilesDrawer.Parser.parse(value), svg, theme || "light", null, false, highlight || []);
         return svg;
       };
       const shape = (svg) => {
@@ -325,6 +327,22 @@ if (!bundlePath || !chromium) {
       const second = draw(${JSON.stringify(smiles)});
       const chiral = draw("C[C@@H](N)C(=O)O");
       const flat = draw("CC(N)C(=O)O");
+      const stroke = (svg) => { const l = svg.querySelector("line"); return l && l.getAttribute("stroke"); };
+      const light = draw(${JSON.stringify(smiles)}, "light");
+      const dark = draw(${JSON.stringify(smiles)}, "dark");
+      // The acid that used to collapse into the text "COOHCH3" with the library's default options.
+      const smallAcid = draw("CC(=O)O");
+      const highlighted = draw(${JSON.stringify(smiles)}, "light", [0, 1, 2, 3]);
+      let reactionBonds = 0;
+      let reactionText = 0;
+      try {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        document.body.appendChild(svg);
+        new SmilesDrawer.ReactionDrawer({}, { compactDrawing: false, height: 170, padding: 12, width: 200 })
+          .draw(SmilesDrawer.ReactionParser.parse("CC(=O)O.CCO>>CC(=O)OCC.O"), svg, "light", null, "H+, heat", "esterification");
+        reactionBonds = svg.querySelectorAll("line").length;
+        reactionText = svg.querySelectorAll("text").length;
+      } catch (e) { reactionBonds = -1; }
       return {
         deterministic: geometry(first) === geometry(second),
         bonds: shape(first).line || 0,
@@ -332,6 +350,14 @@ if (!bundlePath || !chromium) {
         chiralBonds: shape(chiral).line || 0,
         flatBonds: shape(flat).line || 0,
         stereoChangesTheDrawing: geometry(chiral) !== geometry(flat),
+        lightStroke: stroke(light),
+        darkStroke: stroke(dark),
+        themeChangesGeometry: geometry(light) !== geometry(dark),
+        smallAcidBonds: shape(smallAcid).line || 0,
+        highlightMarks: shape(highlighted).circle || 0,
+        plainMarks: shape(first).circle || 0,
+        reactionBonds,
+        reactionText,
       };
     })()`;
     const result = (await page.evaluate(probe)) as {
@@ -354,6 +380,30 @@ if (!bundlePath || !chromium) {
       result.stereoChangesTheDrawing && result.chiralBonds > result.flatBonds,
       `L-alanine drew ${result.chiralBonds} bond strokes against ${result.flatBonds} for the same ` +
         `molecule written without stereochemistry — the wedge is in the picture, not just in the string`,
+    );
+    check(
+      "14. dark mode is a REDRAW, and the geometry is untouched by it",
+      result.lightStroke !== result.darkStroke && !result.themeChangesGeometry,
+      `bonds stroke ${result.lightStroke} in light and ${result.darkStroke} in dark, at identical coordinates — ` +
+        `the library bakes colour into the SVG, so a theme switch has to redraw rather than restyle`,
+    );
+    check(
+      "15. a small molecule draws as a structure rather than collapsing into text",
+      result.smallAcidBonds > 0,
+      `acetic acid drew ${result.smallAcidBonds} bonds — with the library's default compactDrawing it ` +
+        `renders as the string "COOHCH3" with no bonds at all, which is exactly the size of molecule a ` +
+        `functional-group lesson is made of`,
+    );
+    check(
+      "16. a group inside a molecule can be picked out, which is what makes a structure answerable-against",
+      result.highlightMarks > result.plainMarks,
+      `highlighting four atoms added ${result.highlightMarks - result.plainMarks} marks to the drawing`,
+    );
+    check(
+      "17. a reaction draws as a scheme, with its conditions over the arrow",
+      result.reactionBonds > 0 && result.reactionText > 0,
+      `esterification drew ${result.reactionBonds} bonds and ${result.reactionText} text elements ` +
+        `(reactants, plus signs, arrow, conditions, products)`,
     );
   } finally {
     await browser.close();

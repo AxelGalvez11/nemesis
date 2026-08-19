@@ -219,3 +219,64 @@ test("a polarity no renderer draws is refused by name", () => {
   });
   assert.equal(result.ok === false && result.reason, "malformed-polarity");
 });
+
+// ───────────────────────────────────────────── structures: reactions, highlights, carbon labels
+
+test("a reaction is accepted under its own notation and refused under the molecule one", () => {
+  const reaction = {
+    conditions: "H+, heat",
+    kind: "structure",
+    learningGoal: "Predict the ester",
+    notation: "reaction-smiles",
+    value: "CC(=O)O.CCO>>CC(=O)OCC.O",
+  };
+  const ok = validateCanvasVisual(reaction);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.ok && ok.visual.kind === "structure" && ok.visual.conditions, "H+, heat");
+  assert.equal(validateCanvasVisual({ ...reaction, notation: "smiles" }).ok, false);
+});
+
+test("🔴 a highlight is atom indices, and a model cannot smuggle a colour through it", () => {
+  const withIndices = validateCanvasVisual({
+    highlight: [0, 1, 2, 3],
+    kind: "structure",
+    learningGoal: "Find the ester group",
+    notation: "smiles",
+    value: "CC(=O)OC1=CC=CC=C1C(=O)O",
+  });
+  assert.equal(withIndices.ok, true);
+  assert.deepEqual(withIndices.ok && withIndices.visual.kind === "structure" ? withIndices.visual.highlight : null, [0, 1, 2, 3]);
+
+  for (const bad of [["#ff0000"], [-1], [1.5], [9999], [], Array.from({ length: 41 }, (_, i) => i)]) {
+    const result = validateCanvasVisual({
+      highlight: bad,
+      kind: "structure",
+      learningGoal: "Find the group",
+      notation: "smiles",
+      value: "CCO",
+    });
+    assert.equal(result.ok, false, `${JSON.stringify(bad)} was accepted as a highlight`);
+    assert.equal(result.ok === false && result.reason, "malformed-structure");
+  }
+});
+
+test("carbon labelling is a stated teaching choice, and skeletal is the unstated default", () => {
+  const all = validateCanvasVisual({ carbons: "all", kind: "structure", learningGoal: "See the carbons", notation: "smiles", value: "CCO" });
+  assert.equal(all.ok && all.visual.kind === "structure" && all.visual.carbons, "all");
+  // The default is not stored, so a spec written before this option existed is byte-identical.
+  const skeletal = validateCanvasVisual({ carbons: "skeletal", kind: "structure", learningGoal: "See the shape", notation: "smiles", value: "CCO" });
+  assert.equal(skeletal.ok && skeletal.visual.kind === "structure" && skeletal.visual.carbons, undefined);
+  assert.equal(validateCanvasVisual({ carbons: "balls", kind: "structure", learningGoal: "x", notation: "smiles", value: "CCO" }).ok, false);
+});
+
+test("reaction arrow text is bounded like every other piece of model prose", () => {
+  const result = validateCanvasVisual({
+    conditions: "x".repeat(61),
+    kind: "structure",
+    learningGoal: "Predict the product",
+    notation: "reaction-smiles",
+    value: "CCO>>CC=O",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "text-out-of-bounds");
+});
