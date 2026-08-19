@@ -57,6 +57,20 @@ export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) 
   return (
     <main
       className="relative h-full min-h-0 bg-(--ui-bg-editor)"
+      // 🔴🔴 SELECTION ON, EVERYWHERE ON THE CANVAS — owner call, 2026-08-19: "selection on
+      // everywhere". `[data-workspace]` sets `user-select: none` for the whole app and individual
+      // components opted back in one at a time, so whether you could highlight a sentence depended
+      // on which screen you happened to be reading. That is worse than either answer: a learner
+      // cannot tell a deliberate restriction from a broken page.
+      //
+      // 🔴 REUSING THE EXISTING OPT-IN RATHER THAN WRITING A NEW RULE. `desktop-chrome.css` already
+      // has `[data-selectable-text='true'] *` at the specificity needed to beat the workspace
+      // default, and it is where anyone looking for "why can I select here" will look. A second
+      // mechanism spelled differently would be a second answer to one question.
+      //
+      // 🔴 SCOPED TO THE CANVAS, NOT LIFTED GLOBALLY. Turning selection on at `[data-workspace]`
+      // would reach every other surface in the app, none of which was asked about.
+      data-selectable-text="true"
       style={{ ["--canvas-column" as string]: CANVAS_COLUMN_PX }}
     >
       {/* A masthead the page scrolls under, NOT a fade over it — owner call, 2026-08-19.

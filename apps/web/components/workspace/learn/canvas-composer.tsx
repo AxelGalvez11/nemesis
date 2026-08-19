@@ -56,6 +56,7 @@ import { cn } from "@/lib/utils";
 import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
+import { ComposerSend } from "./composer-controls";
 import { WrittenWorkSheet } from "./written-work-sheet";
 
 interface CanvasComposerProps {
@@ -856,22 +857,14 @@ export function CanvasComposer({
                   carries over with the product's own accent). `disabled:opacity-40` still dims it
                   when there is truly nothing to send, so the two real states (nothing typed vs.
                   ready to send) stay visibly different without a colour swap between them. */}
-              {showSend && (
-                <button
-                  aria-label={answering ? "Submit answer" : "Send"}
-                  className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
-                  disabled={busy}
-                  onClick={submit}
-                  type="button"
-                >
-                  {/* 🔴 `spinning` IS NOT OPTIONAL ON A LOADING GLYPH. Without the modifier the
-                      codicon renders a static broken circle — it had been sitting there perfectly
-                      still through every wait, reading as a decorative icon or a rendering fault
-                      rather than as activity. Fixing it is a BUG FIX, not a decision that a spinner
-                      is what thinking looks like in Nemesis; see canvas-thinking.tsx. */}
-                  <Codicon name={busy ? "loading" : "arrow-up"} size="20px" spinning={busy} />
-                </button>
-              )}
+              {/* 🔴 ALWAYS PRESENT, DIMMED WHEN EMPTY. `showSend` used to remove it from the DOM, so the
+                  pill changed shape on the first keystroke. See `ComposerSend`. */}
+              <ComposerSend
+                busy={busy}
+                disabled={!showSend}
+                label={answering ? "Submit answer" : "Send"}
+                onClick={submit}
+              />
 
             </>
           )}

@@ -196,7 +196,13 @@ test("the session composer drops the attach control but keeps answering", async 
   // 🔴 The mic and submit are NOT conditional — dropping them would remove ways to answer, which is
   // the opposite of the point.
   assert.match(composer, /aria-label=\{answering \? "Answer out loud" : "Dictate"\}/);
-  assert.match(composer, /aria-label=\{answering \? "Submit answer" : "Send"\}/);
+  // 🔴 REPOINTED 2026-08-19. The send control moved into `ComposerSend` so the front door and the
+  // session composer stop drawing two different buttons for the same action, so the literal
+  // `aria-label={...}` is no longer written here — it is passed as `label`. The property is
+  // unchanged and is still the one that matters: the way to submit is never conditional on being
+  // mid-answer.
+  assert.match(composer, /label=\{answering \? "Submit answer" : "Send"\}/);
+  assert.match(composer, /<ComposerSend/, "the composer no longer uses the shared send control");
   // A permanently painted scrollbar track inside a one-line control.
   assert.match(composer, /overflow-hidden/);
 });

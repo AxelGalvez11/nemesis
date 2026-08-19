@@ -183,6 +183,55 @@ async function main() {
       `opacity over 1.8s: ${trace.map((o) => o.toFixed(2)).join(" ")}`);
   }
 
+  // ── the send control exists before there is anything to send ──────────────
+  await page.locator("body").click({ position: { x: 40, y: 400 } });
+  const sendWhenEmpty = await page.evaluate(() => {
+    const send = [...document.querySelectorAll("button")].find((b) =>
+      ["Send", "Start", "Submit answer"].includes(b.getAttribute("aria-label") ?? ""));
+    if (!send) return null;
+    const r = send.getBoundingClientRect();
+    return { disabled: send.hasAttribute("disabled"), h: Math.round(r.height), w: Math.round(r.width) };
+  });
+  check("K1-send-always-present", sendWhenEmpty !== null,
+    sendWhenEmpty ? `${sendWhenEmpty.w}x${sendWhenEmpty.h}, disabled=${sendWhenEmpty.disabled}` : "no send control on an empty composer");
+  check("K2-send-is-dimmed-not-absent", sendWhenEmpty?.disabled === true, sendWhenEmpty?.disabled ? "dimmed, not removed" : "an empty composer offered a live send");
+
+  // ── text is selectable ────────────────────────────────────────────────────
+  //
+  // 🔴 COMPUTED STYLE, NOT A CONSTRUCTED Range. A `Range` built in JS reads back correctly even when
+  // no drag on the page selects anything, so the obvious check passes while the feature is dead.
+  const selectable = await page.evaluate(() => {
+    const text = [...document.querySelectorAll("p, h1, h2, li")]
+      .find((el) => (el.textContent ?? "").trim().length > 20);
+    if (!text) return null;
+    return { tag: text.tagName, userSelect: getComputedStyle(text).userSelect };
+  });
+  check("S1-canvas-text-is-selectable", selectable?.userSelect === "text",
+    selectable ? `${selectable.tag} userSelect=${selectable.userSelect}` : "no text found to check");
+
+  // ── content fades OUT and back IN, not just in ────────────────────────────
+  //
+  // 🔴 SAMPLED THROUGH A REAL CONTENT CHANGE. The fade-out is the half that did not exist, and it is
+  // invisible to every unit test: it needs the outgoing subtree to survive unmount, which only
+  // happens in a running React tree.
+  const fadeTrace: number[] = [];
+  const sampling = (async () => {
+    for (let i = 0; i < 40; i += 1) {
+      fadeTrace.push(await page.evaluate(() => {
+        const el = document.querySelector<HTMLElement>('[style*="opacity"]');
+        return el ? Number(getComputedStyle(el).opacity) : 1;
+      }));
+      await page.waitForTimeout(40);
+    }
+  })();
+  await page.locator("textarea").click();
+  await page.keyboard.type("what is a hydroxyl group", { delay: 5 });
+  await page.keyboard.press("Enter");
+  await sampling;
+  const dipped = fadeTrace.some((o) => o < 0.9 && o > 0);
+  check("F1-content-fades-rather-than-popping", dipped,
+    `opacity samples: ${fadeTrace.filter((o) => o < 1).map((o) => o.toFixed(2)).join(" ") || "never left 1.00"}`);
+
   await page.screenshot({ path: "/tmp/canvas-verify-light.png" });
   await browser.close();
   await fetch(`${SB}/auth/v1/admin/users/${userId}`, { headers: svc, method: "DELETE" });
