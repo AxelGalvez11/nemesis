@@ -22,7 +22,9 @@ import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
-import { readTurnIntent } from "@/lib/learn/learning-intent";
+import { projectAll } from "@/lib/learn/learner-evidence";
+import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
+import type { TurnSurroundings } from "./canvas-chat";
 import { offerLine } from "./offer-copy";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
@@ -306,48 +308,78 @@ export function LearningCanvas({
    * all, where there is nothing else the text could reasonably mean.
    */
   /**
-   * The learner's own recent utterances, newest last — the raw material for thread detection.
+   * The conversation so far, oldest first, BOTH SIDES.
    *
-   * 🔴 A REF, NOT STATE, AND THEIRS ONLY. Nothing renders from it, so state would re-render the
-   * whole canvas on every question for no visible reason. And it holds only what the LEARNER said:
-   * counting Nemesis's replies would make one long answer look like an engaged learner.
+   * 🔴 IT USED TO HOLD ONLY THE LEARNER'S OWN UTTERANCES, AND IT NEVER LEFT THE BROWSER. Six of
+   * their questions were kept here purely to feed a word-overlap heuristic that guessed whether
+   * they were circling one subject; not one of them was ever sent to the model. So every
+   * conversational turn was literally stateless, and "why?" or "no, I meant the first one" had
+   * nothing to resolve against. It now holds what Nemesis said too, and it rides the packet.
+   *
+   * 🔴 A REF, NOT STATE. Nothing renders from it, so state would re-render the whole canvas on
+   * every turn for no visible reason.
+   *
+   * 🔴 AND IT IS DELIBERATELY NOT PERSISTED. The Canvas is not a chat log: contract rule 2 keeps a
+   * conversational reply on screen only until the next turn, and the owner's own framing is that
+   * these responses stay transient while the canvas is the durable thing. What survives a reload is
+   * the canvas and its evidence; the small talk that got there does not need to.
    */
-  const recentAsks = useRef<string[]>([]);
-  const rememberAsk = useCallback((text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    // A short window. A thread is momentum, and momentum is recent by definition; keeping the whole
-    // session would let a subject mentioned twenty turns ago still vote.
-    recentAsks.current = [...recentAsks.current, trimmed].slice(-6);
+  const conversation = useRef<TurnExchange[]>([]);
+  const remember = useCallback((exchange: TurnExchange) => {
+    if (!exchange.said.trim()) return;
+    conversation.current = [...conversation.current, exchange].slice(-HISTORY_TURNS);
   }, []);
 
-  /** What this turn requires, from the utterance and everything else going on. */
-  const intentFor = useCallback(
-    (text: string) =>
-      readTurnIntent(text, {
-        attachedSources: canvas.sources.length,
-        recentAsks: recentAsks.current,
-        sessionUnderway: policy.decision !== null,
-      }),
-    [canvas.sources.length, policy.decision],
+  /** What only this component knows about the canvas's runtime, for the packet. */
+  const surroundings = useCallback((): TurnSurroundings => {
+    const projected = projectAll(policy.evidence);
+    let demonstrated = 0;
+    for (const state of projected.values()) if (state.demonstratedAt !== null) demonstrated += 1;
+    return {
+      demonstrated,
+      history: conversation.current,
+      lessonInProgress: policy.decision !== null,
+      objectives: policy.claims.length,
+    };
+  }, [policy.claims.length, policy.decision, policy.evidence]);
+
+  /**
+   * One turn of talking to Nemesis.
+   *
+   * 🔴 NO MODES, AND NOW NO CLASSIFIER EITHER. The learner never picks "chat" or "tutor", and the
+   * software no longer guesses which they meant from the shape of their sentence. The utterance,
+   * the conversation so far and everything the canvas knows go to the model, and what comes back
+   * says both what to say and what to do. See lib/learn/turn-router.ts.
+   */
+  const converse = useCallback(
+    async (asked: string) => {
+      const trimmed = asked.trim();
+      if (!trimmed) return;
+      const decision = await session.converse(trimmed, surroundings(), () => {
+        // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
+        // moves on. The action in flight is stamped rather than a bare `true`, which is what makes
+        // attention return by itself; see `materialOwnsAttention`.
+        setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
+      });
+      remember({ replied: decision?.say ?? "", said: trimmed });
+    },
+    [policy.decision, remember, session, surroundings],
   );
 
   const beginOrAnswer = useCallback(
     (asked: string) => {
       applyExplanationEvent({ kind: "new_turn" });
       const trimmed = asked.trim();
-      // 🔴 NO MODES. The learner never picks "chat" or "tutor" — this reads what the turn needs.
-      // "What day is it" is answered even on an empty canvas; "teach me innate immunity" begins a
-      // lesson without the learner having to phrase it as a question first.
-      const intent = intentFor(trimmed);
-      if (trimmed && intent.kind !== "teach") {
-        rememberAsk(trimmed);
-        void session.askGeneral(trimmed, intent.because);
+      // An empty send with material staged is "learn this material with me", which is not an
+      // utterance at all — there is nothing for the model to read, and the composer's own chips
+      // already said what the send means.
+      if (!trimmed) {
+        session.begin(undefined);
         return;
       }
-      session.begin(asked || undefined);
+      void converse(trimmed);
     },
-    [applyExplanationEvent, intentFor, rememberAsk, session],
+    [applyExplanationEvent, converse, session],
   );
 
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
@@ -483,43 +515,34 @@ export function LearningCanvas({
       // below this point writes into the document (`session.command`), through a system prompt
       // that says outright "you are not chatting". "What does osmolarity mean" typed with nothing
       // selected used to take that same path and come back as a paragraph permanently inserted
-      // into the study document. See canvas-chat-routing.ts for the decision and canvas-chat.ts
-      // for what answers it.
+      // into the study document. See canvas-chat.ts for the one call that decides which of those
+      // a typed message is, and lib/learn/turn-router.ts for the contract it decides under.
       //
       // 🔴 `selected.length === 0` ONLY. A single block selected already has its own, more specific
       // routes above (empty send = "explain this", "where/which source" = ask about it) — anything
       // else with a selection is a scoped edit instruction about that exact passage, which is a
       // different thing from an open-ended question and must keep mutating the document as it
       // does today.
-      // 🔴 AND THE SAME READING MID-CANVAS, NOT A SECOND RULE. `readTurnIntent` sees the attached
-      // sources and whether a lesson is already running, so "what does osmolarity mean" is still
-      // answered (rule 1), while a third question circling one idea is answered AND offered.
+      // 🔴 AND THE SAME READING MID-CANVAS, NOT A SECOND RULE. The model sees the attached sources,
+      // the conversation so far and whether a lesson is running, so "what does osmolarity mean" is
+      // still answered (rule 1) and "summarize this" still writes into the document — the same one
+      // call decides which, here and on the front door. There is no second reading of the learner.
       if (routing.kind === "ordinary" && selected.length === 0) {
-        const intent = intentFor(text);
-        if (intent.kind !== "teach") {
-          rememberAsk(text);
-          await session.askGeneral(text, intent.because);
-          return;
-        }
-        // An explicit "teach me this" typed into a canvas that has not begun starts the lesson
-        // rather than writing a paragraph into the document.
-        if (canvas.state === "empty") {
-          session.begin(text);
-          return;
-        }
+        await converse(text);
+        return;
       }
 
-      // `ordinary` and `defer-to-policy` both take the normal path: the second is a scaffolding
-      // request (§33), which is the policy's to answer, not a rewrite.
+      // `defer-to-policy` takes the normal path: it is a scaffolding request (§33), which is the
+      // policy's to answer, not a rewrite. So is anything typed with a passage staged, which is a
+      // scoped instruction about that exact text rather than an open turn of conversation.
       // 🔴 THE LEARNER ASKED, SO WHAT COMES BACK IS THE ACTION — until the policy moves on. The
       // action in flight is stamped here rather than a bare `true`, which is what makes attention
-      // return by itself; see `materialOwnsAttention`. This is the only place a learner request
-      // writes blocks.
+      // return by itself; see `materialOwnsAttention`.
       setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
       await session.command(text, selected);
       clearSelection();
     },
-    [applyExplanationEvent, canvas, clearSelection, policy.decision, policy.feedback, policy.prompt, selected, session],
+    [applyExplanationEvent, canvas, clearSelection, converse, policy.decision, policy.feedback, policy.prompt, selected, session],
   );
 
   // 🔴 EVERY state prints its own primary action in the page, and the top controls carry none.
@@ -834,7 +857,7 @@ export function LearningCanvas({
         )}
 
         {/* An ordinary question, answered without touching the document (canvas-chat.ts,
-            canvas-chat-routing.ts). Reuses the `.canvas-swap` treatment `canvas-document.tsx`
+            lib/learn/turn-router.ts). Reuses the `.canvas-swap` treatment `canvas-document.tsx`
             already uses for a block-scoped "Explain this", the same quote-strip and Dismiss, so an
             ad hoc answer reads as one motion system rather than two effects that happen to agree.
             🔴 RENDERED HERE, NOT INSIDE `CanvasDocument`. `CanvasDocument` only mounts once the
@@ -879,7 +902,11 @@ export function LearningCanvas({
                   ))}
                 </div>
               )}
-              {session.aside.question && (
+              {/* 🔴 A SUBJECT, NOT A QUESTION. This read `aside.question`, which every turn has, so
+                  "Hello. What can I do for you?" came with a Learn this button that had nothing to
+                  start. The model says whether the turn named something worth learning; a greeting
+                  does not. See `topic` in lib/learn/turn-router.ts. */}
+              {session.aside.topic && (
                 <div className="mt-3">
                   {/* Only when Nemesis actually noticed something. A nudge on every reply is not a
                       nudge, it is nagging, and the learner stops seeing it. */}

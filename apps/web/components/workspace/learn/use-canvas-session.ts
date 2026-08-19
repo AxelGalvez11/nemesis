@@ -15,7 +15,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
-import type { IntentReason } from "@/lib/learn/learning-intent";
+import type { TurnDecision, TurnOffer } from "@/lib/learn/turn-router";
 import { groundingQuery, groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
@@ -60,7 +60,8 @@ import { readingSubjectFor, thinkingCopy } from "@/lib/learn/thinking-phases";
 import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
-import { askCanvasChat } from "./canvas-chat";
+import { isPreContent } from "@/lib/learn/canvas-hosting";
+import { askCanvasChat, type TurnSurroundings } from "./canvas-chat";
 import { prepareWebSourcePromotion } from "./web-source-promotion";
 
 const RECALL_CARDS = 8;
@@ -104,7 +105,7 @@ export interface BusyState {
 }
 
 /** A transient answer, shared between `askAbout` (block-scoped, via a citation marker) and
- *  `askGeneral` (canvas-wide, `blockId: null`) so both write the same shape and contract rule 2's
+ *  `converse` (canvas-wide, `blockId: null`) so both write the same shape and contract rule 2's
  *  "clears on the next turn" rule only has one store to apply to. Named so the `useState` call and
  *  the `CanvasSession` field below cannot quietly drift into two different shapes. */
 type CanvasAside = {
@@ -113,10 +114,13 @@ type CanvasAside = {
   sources?: readonly ChatWebResult[];
   /** Why Nemesis is offering to teach this, when it has a reason worth saying out loud. A plain
    *  answer carries none and the offer stays a bare button. */
-  offer?: IntentReason;
-  /** The learner's own question, retained only for the transient general-answer aside. It is the
-   *  explicit topic if they press "Learn this"; the answer text is never mistaken for their goal. */
+  offer?: TurnOffer;
+  /** The learner's own question, retained only for the transient general-answer aside. Never
+   *  mistaken for their goal: the answer text is not what they asked for. */
   question?: string;
+  /** The subject the model read out of the turn, or absent when it had none. What "Learn this"
+   *  starts, and whether that button is shown at all. */
+  topic?: string;
 } | null;
 
 export interface CanvasSession {
@@ -129,7 +133,7 @@ export interface CanvasSession {
    * 🔴 `blockId: null` IS A GENUINE, RENDERED CASE, NOT AN UNUSED CORNER OF THE TYPE. It was
    * already representable (this field predates this comment) but nothing ever constructed one and
    * nothing ever rendered one: `canvas-document.tsx`'s per-block rendering only ever matches
-   * `aside.blockId === block.id`, which a null `blockId` can never satisfy. `askGeneral` below is
+   * `aside.blockId === block.id`, which a null `blockId` can never satisfy. `converse` below is
    * the first thing that mints one, for a question that is not about any particular passage, and
    * `learning-canvas.tsx` renders that case at the top of the canvas rather than under a block.
    */
@@ -163,16 +167,25 @@ export interface CanvasSession {
   command: (text: string, selected: readonly CanvasBlock[]) => Promise<void>;
   askAbout: (block: CanvasBlock, question: string) => Promise<void>;
   /**
-   * Answer an ordinary question in plain text, without touching the document. See canvas-chat.ts
-   * for why this exists and canvas-chat-routing.ts for what routes a typed message here rather
-   * than to `command`.
+   * Take one conversational turn: read what the learner meant, say something back, and carry out
+   * whatever that turn asked for. See canvas-chat.ts for the call and lib/learn/turn-router.ts for
+   * why the model rather than a regex decides which of those it is.
    *
    * 🔴 NOT SCOPED TO A BLOCK, UNLIKE `askAbout`. "What does osmolarity mean" typed with nothing
    * selected is not about any one passage, so this asks the whole canvas's material (when it has
-   * any) and general knowledge together, and lands in the SAME `aside` state `askAbout` already
-   * uses, with `blockId: null`.
+   * any) and general knowledge together, and a plain answer lands in the SAME `aside` state
+   * `askAbout` already uses, with `blockId: null`.
+   *
+   * Returns the decision so the caller can keep the conversation's own transcript; the canvas is
+   * already updated by the time it resolves.
    */
-  askGeneral: (question: string, offer?: IntentReason) => Promise<void>;
+  converse: (
+    said: string,
+    surroundings: TurnSurroundings,
+    /** Fired immediately before a `study` turn writes into an existing study document, so the
+     *  caller can stamp the action that was in flight when the learner asked for material. */
+    onStudyDocument?: () => void,
+  ) => Promise<TurnDecision | null>;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
   learnFromAside: () => Promise<void>;
@@ -728,33 +741,84 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   );
 
   /**
-   * Answer a question that is not about any one passage. See canvas-chat.ts for the call this
-   * makes and canvas-chat-routing.ts for what decides a typed message belongs here rather than in
-   * `command`.
+   * One conversational turn: read it, say something, and do what it asked for.
+   *
+   * 🔴🔴 THE MODEL DECIDES WHAT THE TURN MEANT; THIS FUNCTION DECIDES WHAT THAT CAN DO. Those are
+   * different jobs and keeping them apart is the whole point. `askCanvasChat` comes back with
+   * "reply" or "study" — an intent, in the learner's terms. Which mechanism a "study" turn reaches
+   * is not the model's to pick, because it depends on a fact the canvas already holds and the
+   * model would only be guessing at: a canvas that has not begun starts a session, and a canvas
+   * that has steers the study document it already owns. Handing that choice to the model would be
+   * asking it to rediscover something the software knows for certain.
    *
    * 🔴 SAME `aside` STATE `askAbout` USES, `blockId: null`. Two answer stores would have meant two
    * places contract rule 2's "clears on the next turn" rule had to be implemented, and the second
    * one would have been the one nobody remembered to wire up. `learning-canvas.tsx`'s
    * `applyExplanationEvent` already clears any non-null `aside` on `new_turn`; it does not
    * distinguish which of the two callers set it, and it does not need to.
+   *
+   * 🔴 A `study` TURN THAT REACHES `command` SETS NO ASIDE, BECAUSE `command` CLEARS ONE. The
+   * document rewriting itself IS the reply there, and a sentence that appeared for an instant and
+   * then vanished under the write would read as a glitch rather than as an answer.
    */
-  const askGeneral = useCallback(
-    async (question: string, offer?: IntentReason) => {
+  const converse = useCallback(
+    async (
+      question: string,
+      surroundings: TurnSurroundings,
+      onStudyDocument?: () => void,
+    ): Promise<TurnDecision | null> => {
       const id = requireUid();
-      if (!id) return;
+      if (!id) return null;
       const said = question.trim();
-      if (!said) return;
+      if (!said) return null;
       setError(null);
       setBusy({ kind: "command", blockIds: [], label: "Thinking" });
-      const result = await askCanvasChat(id, latest.current, said);
+      const result = await askCanvasChat(id, latest.current, said, surroundings);
       setBusy({ kind: null });
-      if (!result.text) setError(result.error ?? "Nemesis had nothing to add.");
-      // 🔴 THE ANSWER STILL COMES BACK IN FULL, WHATEVER THE OFFER SAYS. `offer` changes one line of
-      // copy above a button the learner may ignore; it never shortens or withholds what they asked
-      // for. Offering is not seizing.
-      else setAside({ blockId: null, offer, question: said, sources: result.sources, text: result.text });
+      const decision = result.decision;
+      if (!decision) {
+        setError(result.error ?? "Nemesis had nothing to add.");
+        return null;
+      }
+
+      if (decision.then === "study") {
+        // 🔴 `isPreContent` RATHER THAN `state === "empty"`, WHICH IS THE PREDICATE THE COMPOSER
+        // ALREADY USES for "this canvas has not begun". The old rule here was `=== "empty"`, so
+        // "teach me this" typed on a canvas with a file attached but no lesson yet fell through to
+        // a document command instead of starting one. One predicate, one meaning.
+        if (isPreContent(latest.current.state)) {
+          if (decision.say) {
+            setAside({ blockId: null, offer: decision.offer ?? undefined, question: said, sources: [], text: decision.say });
+          }
+          begin(decision.topic ?? said);
+        } else {
+          // 🔴 STAMPED BEFORE THE WRITE, NOT AFTER IT. `materialOwnsAttention` compares the action
+          // that was in flight WHEN THE LEARNER ASKED against the one in flight now; reading it
+          // after the round trip would record whichever action the policy had moved on to.
+          onStudyDocument?.();
+          await command(said, []);
+        }
+        return decision;
+      }
+
+      // 🔴 THE ANSWER COMES BACK IN FULL, WHATEVER THE OFFER SAYS. `offer` changes one line of copy
+      // above a button the learner may ignore; it never shortens or withholds what they asked for.
+      // Offering is not seizing.
+      if (!decision.say) {
+        setError("Nemesis had nothing to add.");
+        return null;
+      }
+      setAside({
+        blockId: null,
+        offer: decision.offer ?? undefined,
+        question: said,
+        sources: result.sources,
+        text: decision.say,
+        topic: decision.topic ?? undefined,
+      });
+      return decision;
     },
-    [requireUid],
+    [begin, command, requireUid],
   );
 
   /**
@@ -767,8 +831,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    */
   const learnFromAside = useCallback(async () => {
     const current = aside;
-    if (!current || current.blockId !== null || !current.question?.trim()) return;
-    const topic = current.question.trim();
+    if (!current || current.blockId !== null) return;
+    // 🔴 THE SUBJECT THE MODEL READ, FALLING BACK TO WHAT THEY TYPED. `begin` takes this as the
+    // canvas TITLE, so starting from the raw question left canvases called "what is incretin?".
+    const topic = (current.topic ?? current.question ?? "").trim();
+    if (!topic) return;
     const sources = current.sources ?? [];
     setAside(null);
     for (const source of sources) await attachUrl(source.url);
@@ -1360,7 +1427,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     begin,
     command,
     askAbout,
-    askGeneral,
+    converse,
     learnFromAside,
     markKnown,
     toggleCollapsed,
