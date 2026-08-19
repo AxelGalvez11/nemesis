@@ -59,7 +59,7 @@ type Verdict = keyof typeof VERDICT_HEADLINE;
  * NOT run when the same question re-renders because evidence reloaded or the clock moved. A fade
  * that retriggered on every render would strobe the question while the learner was reading it.
  */
-function screenKey(runtime: PolicyRuntime): string {
+export function screenKey(runtime: PolicyRuntime): string {
   if (runtime.feedback) return `feedback:${runtime.feedback.answer}`;
   if (!runtime.decision) return "empty";
   return `${runtime.decision.action.type}:${runtime.prompt?.id ?? runtime.decision.objective.identityKey}`;

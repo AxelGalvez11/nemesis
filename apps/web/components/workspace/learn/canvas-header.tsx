@@ -42,15 +42,6 @@ interface CanvasHeaderProps {
   minimap: Pick<PolicyRuntime, "coverage" | "evidence" | "focus" | "outcome" | "setFocus" | "territories"> & {
     decidedObjectiveKey: string | null;
   };
-  /**
-   * A retrieval is on screen and the learner is meant to answer it, not manage the canvas.
-   *
-   * 🔴 THE TITLE IS THE PROBLEM, NOT JUST THE MENU. A fast associative recall is answered in about a
-   * second, so everything on screen is read BEFORE the answer is produced. The canvas's own name is
-   * text, at the top, in the reading position — it gets read first and it teaches nothing.
-   * Management actions belong to the session, not to the moment inside it.
-   */
-  minimal?: boolean;
   /** Whether this canvas holds knowledge that provably came from the model rather than from
    *  attached material — disclosed in the Sources panel so a sourceless canvas does not report
    *  "Nothing attached yet" while it teaches from model knowledge (N10). */
@@ -83,7 +74,6 @@ export function CanvasHeader({
   onRename,
   onDelete,
   activeTaskId,
-  minimal = false,
   modelKnowledge = false,
   minimap,
   transcript = [],
@@ -96,11 +86,18 @@ export function CanvasHeader({
           🔴 Stays `pointer-events-none` (inherited). It is `flex-1`, so making it clickable
           turned a full-width strip of dead label into a click trap: the document scrolls
           underneath it, and selecting the top line of text hit the title instead. */}
-      {!minimal && (
-        <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
-          {canvas.title || "New canvas"}
-        </span>
-      )}
+      {/* 🔴🔴 ALWAYS SHOWN NOW — owner call, 2026-08-19: "why do the icons on the right disappear?".
+          This whole row used to be withheld while a question was on screen (`minimal`), on the
+          reasoning that a fast recall is answered in about a second, so every glyph visible is read
+          BEFORE the answer forms and the canvas's own name teaches nothing. That reasoning is sound
+          and the effect was not: chrome that comes and goes reads as the page breaking, and the
+          reference the canvas is being matched to keeps its chrome constant through everything.
+          🔴 THE TITLE CAME BACK WITH THE ICONS, deliberately and not as a side effect — `minimal`
+          gated both, and a row that keeps its controls but loses its name is a third state nobody
+          asked for. */}
+      <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
+        {canvas.title || "New canvas"}
+      </span>
 
       {/* §1: compact controls, floating. Not a toolbar — see the note at the top of
           canvas-controls.tsx for what that costs when it slips.
@@ -114,8 +111,7 @@ export function CanvasHeader({
           canvas-home's SessionRow, which already has pin/move/delete, a rename affordance too) —
           an accepted, named cost, not a silent one. Delete is unaffected: canvas-home's own
           per-row delete already reaches the same `deleteCanvas` this control called. */}
-      {!minimal && (
-        <>
+      <>
           {/* 🔴 THREE GLYPHS AND A MENU — owner call, 2026-08-19: "i only want icons for 'x' on
               left, 'source and outputs' and 'progress' for the minimap of objectives", then "add a
               '⋯' for options". The `×` is `canvas-surface.tsx`'s and is not in this row.
@@ -138,8 +134,7 @@ export function CanvasHeader({
             entries={transcript}
             voice={voice}
           />
-        </>
-      )}
+      </>
     </>
   );
 }

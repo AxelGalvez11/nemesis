@@ -14,13 +14,24 @@
 // pipeline and one knowledge substrate, and the source of the material is the only thing that
 // varies.
 //
-// 🔴 CONSERVATIVE BY MANDATE, AND THE NUMBERS ARE THE PRODUCT RULE, NOT A GUESS. One search, then
-// a small number of pages actually read. Searching five reworded variants would cost five metered
-// units to answer the same question, and promoting all ten hits would make Brave's rank order the
-// curriculum and hand the learner ten durable sources they never chose.
-
-/** How many pages a topic is grounded on before teaching starts. */
-export const GROUNDING_SOURCE_LIMIT = 3;
+// 🔴🔴 THE COUNT CAP IS GONE — owner call, 2026-08-19: "why even cap? shouldnt deepseek decide
+// whether the sources are enough and or good or not? ... take off caps because latency shouldnt be
+// an issue if quality is good." It was three. The reasoning for three was that promoting every hit
+// "would make Brave's rank order the curriculum", and that reasoning was answered rather than
+// overruled: rank order is not the curriculum, because nothing downstream teaches in rank order.
+// The teaching controller reads knowledge extracted from every source together and chooses what is
+// worth the learner's next minute; giving it three of ten pages does not protect it from a bad
+// ranking, it just gives it less to choose from and makes WHICH three a decision made here, by a
+// constant, with no view of the material.
+//
+// 🔴 ONE SEARCH, STILL. That half of the old rule stands and is a different question — searching
+// five reworded variants spends five metered units to answer one question, and no one asked for
+// that.
+//
+// 🔴 AND THE DEDUPLICATION STAYS, BECAUSE IT WAS NEVER A BUDGET. One page per host is a QUALITY
+// property: a topic taught from three pages of one site inherits that site's framing, and it would
+// still do that at thirty. What was removed is the count; what is kept is everything that made the
+// chosen pages worth reading.
 
 export interface WebHit {
   url: string;
@@ -61,12 +72,11 @@ export function groundingQuery(topic: string): string {
  * Deduplicated by host as well as by URL: three pages of one site is a narrower grounding than one
  * page each from three, and a topic taught from a single domain inherits that domain's framing.
  */
-export function groundingSources(hits: readonly WebHit[], limit = GROUNDING_SOURCE_LIMIT): WebHit[] {
+export function groundingSources(hits: readonly WebHit[]): WebHit[] {
   const chosen: WebHit[] = [];
   const seenUrl = new Set<string>();
   const seenHost = new Set<string>();
   for (const hit of hits) {
-    if (chosen.length >= limit) break;
     const url = hit.url?.trim();
     if (!url) continue;
     if (!hit.title?.trim() && !hit.description?.trim()) continue;

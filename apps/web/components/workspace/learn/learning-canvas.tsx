@@ -31,6 +31,7 @@ import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
+import { CanvasFade } from "./canvas-fade";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -38,7 +39,7 @@ import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
 import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
-import { CanvasPolicyView } from "./canvas-policy-view";
+import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";
@@ -705,6 +706,26 @@ export function LearningCanvas({
     working,
   });
 
+  /**
+   * What is on screen, as one string — the identity `CanvasFade` swaps on.
+   *
+   * 🔴 COMPOSED FROM THE THREE THINGS THAT CAN OCCUPY THE SURFACE, and from nothing else. `presence`
+   * covers the states with no content of their own (preparing, quiet, invitation); `screenKey`
+   * is the policy view's OWN existing identity for a teaching screen, exported rather than
+   * reimplemented so the outer fade and the inner remount can never disagree about what "a
+   * different screen" means; the aside contributes its text because two consecutive replies are two
+   * different things to read even though neither is a teaching screen.
+   *
+   * 🔴 NOTHING ABOUT BUSY, LOADING OR THE CLOCK. Those change many times inside one screen, and a
+   * key that moved with them would fade the canvas out and back in while the learner was reading —
+   * which is the flicker this exists to remove, arriving as the fix for it.
+   */
+  const surfaceKey = [
+    presence,
+    regions.policy ? screenKey(policy) : "-",
+    session.aside ? `aside:${session.aside.text.slice(0, 40)}` : "-",
+  ].join("|");
+
   // 🔴 THE NAME OF THE STEP THAT IS RUNNING, OR NONE — never a guess. `CanvasThinkingPreview`
   // accepts `null` and says so in its own header ("when the caller has no honest label it passes
   // none and the lines carry the state alone"), so there is nothing to invent here. The session's
@@ -903,7 +924,6 @@ export function LearningCanvas({
         // learner may be reading rather than answering, and stripping the title and navigation from
         // someone who is reading takes away their way out. So: quiet when the policy is alone,
         // continuous across question and feedback, never quiet over a document.
-        minimal={regions.policy && !regions.sharing}
         onFiles={(files) => void session.attachFiles(files)}
         onUrl={(url) => void session.attachUrl(url)}
         onRename={session.rename}
@@ -918,6 +938,20 @@ export function LearningCanvas({
       <ContinueHotkey onContinue={advance} />
 
       <div className="relative h-full overflow-y-auto pt-[64px]">
+        {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
+            fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
+            below what anyone notices; the owner's reading ("there are also no fade in or fade out
+            animations?") was accurate. Fading OUT needs the outgoing subtree to survive its own
+            unmount, which is what `CanvasFade` does and why it is a component rather than a class.
+
+            🔴 ONE WRAPPER AROUND ALL THREE REGIONS, NOT THREE WRAPPERS. A question replacing a reply
+            is the same motion as a correction replacing a question; wrapping each region separately
+            would fade them independently and produce a moment with both on screen at once.
+
+            🔴 THE KEY IS WHAT IS BEING SHOWN, NOT WHETHER SOMETHING IS LOADING. Keying on `busy`
+            would fade the page out and back in every time a request started, which is the flicker
+            this is meant to remove. */}
+        <CanvasFade contentKey={surfaceKey}>
         {/* 🔴 THE POLICY'S CONTRIBUTION COMES FIRST IN THE FLOW, NOT OVER THE TOP OF THE DOCUMENT.
             An overlay would hide the very material 7b exists to keep visible, and a learner who
             wanted to look something up would have to dismiss the question to do it. It sits above
@@ -1122,6 +1156,8 @@ export function LearningCanvas({
             The states themselves are unreachable in both directions and stay that way without any
             help from this file: `canvas-state.ts` refuses any transition INTO an evidence stage,
             and `canvas-store.ts` coerces a canvas already stored in one to `learn` on read. */}
+
+        </CanvasFade>
 
         {/* A whole-page job says so once, in the middle, rather than blanking the document.
             🔴 AND NEVER WHILE THE POLICY IS CONTRIBUTING. This greys everything beneath it, which

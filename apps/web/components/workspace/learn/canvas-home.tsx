@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
+import { ComposerSend } from "./composer-controls";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { putPending } from "./pending-attachment";
@@ -305,15 +306,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   <Codicon name="mic" size="var(--composer-icon)" />
                 </button>
               )}
-              <button
-                aria-label="Start"
-                className="ml-[8px] flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) disabled:opacity-40"
-                disabled={!text.trim()}
-                onClick={start}
-                type="button"
-              >
-                <Codicon name="arrow-up" size="var(--composer-icon)" />
-              </button>
+              {/* 🔴 THE SAME CONTROL AS THE SESSION COMPOSER'S, not a second one that looks similar.
+                  This was a plain transparent circle while the canvas's was a filled accent one, so
+                  the primary action changed appearance between the front door and the room behind
+                  it. See `ComposerSend`. */}
+              <ComposerSend disabled={!text.trim()} label="Start" onClick={start} />
             </>
           )}
         </div>

@@ -666,9 +666,28 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           setBusy({ kind: "source", label: "Finding material on that" });
           try {
             const found = await searchWebContext(id, groundingQuery(title));
-            for (const source of groundingSources(found.sources)) await attachUrl(source.url);
+            const chosen = groundingSources(found.sources);
+            // 🔴🔴 ONE PAGE PER `try`, NOT ONE `try` AROUND THE WHOLE LOOP. With a cap of three this
+            // barely mattered; with the cap removed (owner call, 2026-08-19) a single unreachable
+            // page part-way down the list would have aborted every page after it, and the outer
+            // catch would have swallowed that silently — so a topic would ground on four pages
+            // instead of twelve and look exactly like a topic that only had four. The failure this
+            // prevents is the one that reads as "he took the cap off and it stopped working".
+            let promoted = 0;
+            for (const source of chosen) {
+              try {
+                await attachUrl(source.url);
+                promoted += 1;
+              } catch {
+                // This page could not be read. The others still can.
+              }
+            }
             canvasCapture("canvas_topic_grounded", latest.current, {
-              promoted: groundingSources(found.sources).length,
+              // 🔴 WHAT LANDED, NOT WHAT WAS CHOSEN. The old line recomputed `groundingSources` and
+              // reported its length, so the number recorded was how many pages we MEANT to read —
+              // which is the same number whether ingestion worked or every page failed.
+              offered: chosen.length,
+              promoted,
             });
           } catch {
             // Nothing usable came back. The canvas still opens; see the note above.
