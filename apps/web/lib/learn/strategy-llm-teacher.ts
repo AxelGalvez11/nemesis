@@ -96,6 +96,11 @@ const TEACHER_SYSTEM = [
   "- Slow is not wrong. Latency is context, never a verdict.",
   "- You may only act on the misconceptions listed. Do not infer or invent one.",
   "- Never ask the same question twice in a row.",
+  "- If the learner opened this sitting by asking to be TAUGHT or walked through something, and they have produced no",
+  "  evidence on it yet, teach it before you test it. Being asked is the learner telling you they have not met this,",
+  "  so opening with a question answers something they did not ask and reads as being quizzed on material never shown.",
+  "  This does not apply once they have produced anything, and it does not apply when they asked to be tested or drilled,",
+  "  or when they attached material without saying what they wanted. Those are still yours to decide from the evidence.",
   "",
   "Your entire output is the JSON object requested: no greeting, no commentary, no explanation outside the JSON.",
   "Never use an em dash. The character - must not appear anywhere in your output.",
@@ -283,6 +288,20 @@ function sittingNote(
   shown: number,
 ): string {
   const lines: string[] = [];
+  // 🔴 FIRST, BECAUSE IT REFRAMES EVERYTHING UNDER IT. What the learner asked for changes how the
+  // zero-evidence state should read: with no opening, "nothing produced yet" means we know nothing
+  // and must ask; with "teach me X" it means they have told us they have not met it.
+  //
+  // 🔴 BOUNDED AT 200 CHARACTERS. This is learner text on a per-turn model call, so it is the one
+  // field here with no natural ceiling; an unbounded one would let a pasted paragraph set the size
+  // of every subsequent teaching decision in the sitting.
+  const opening = context.opening?.trim().slice(0, 200);
+  if (opening) {
+    lines.push(
+      `The learner opened this sitting by saying: "${opening}"`,
+      "Those are their own words about what they came for. Treat it as something they told you, not as an inference about what they know.",
+    );
+  }
   const attention = context.attention;
   if (attention) {
     lines.push(`Attention spent this sitting so far: about ${Math.round(attention.activeMs / 60_000)} minutes.`);

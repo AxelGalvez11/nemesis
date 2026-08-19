@@ -48,6 +48,81 @@ test("🔴 a page whose every mark came back unreadable is blocked, not submitte
   assert.equal(gate.kind, "blocked", "an unread page of working is not a blank page");
 });
 
+// ── a drawing is not proofread, because it cannot be ─────────────────────────
+//
+// 🔴🔴 REPORTED 2026-08-19: a chemistry structure came back as "A curved angle open to the right"
+// over a box asking the learner to fix anything Nemesis got wrong. `text` on a `figure` is the
+// model's DESCRIPTION of a shape, not the learner's words, so there is nothing they could usefully
+// correct — and a confirm step that cannot be acted on teaches people to press through it, which is
+// how a gate stops working on the pages where it matters.
+
+test("🔴🔴 an unsure DRAWING goes straight to marking — there is nothing to proofread", () => {
+  // Calibration: restore the old `for (const mark of work.marks)` loop and this reddens alone.
+  const gate = writtenSubmissionGate(
+    work({ legibility: 0.4, marks: [mark("A curved angle open to the right", { confidence: 0.3, kind: "figure" })] }),
+  );
+  assert.equal(gate.kind, "ready", "a drawing was sent back to the learner to be spell-checked");
+});
+
+test("🔴🔴 an unsure LINE OF WRITING still stops — this is the property being preserved", () => {
+  // The whole point of narrowing rather than removing. Misread handwriting must never become a
+  // failure the learner did not earn, and that is about words.
+  const gate = writtenSubmissionGate(work({ marks: [mark("x = 4", { confidence: 0.3 })] }));
+  assert.equal(gate.kind, "confirm", "an uncertain reading of the learner's own words was submitted unchecked");
+});
+
+test("🔴🔴 an unsure DRAWING beside confident WRITING does not stop the page", () => {
+  // 🔴 THE ONE CASE THAT DISCRIMINATES THE PER-MARK LOOP, and the first version of this file did not
+  // have it. Every other drawing test here is satisfied by the `textual.length === 0` early return,
+  // so reverting the loop to `work.marks` left all of them green — a guard that passes while the
+  // thing it names is broken. Here the page HAS textual marks, so the early return does not fire and
+  // the loop is the only thing standing between an unreadable squiggle and a confirm box the learner
+  // cannot act on.
+  const gate = writtenSubmissionGate(
+    work({ marks: [mark("an arrow and a ring", { confidence: 0.1, kind: "figure" }), mark("x = 4")] }),
+  );
+  assert.equal(gate.kind, "ready", "an unsure drawing dragged confident writing into a proofread");
+});
+
+test("🔴 a page mixing a confident drawing with an unsure line still stops on the line", () => {
+  const gate = writtenSubmissionGate(
+    work({
+      marks: [mark("a benzene ring", { confidence: 0.2, kind: "figure" }), mark("x = 4", { confidence: 0.3 })],
+    }),
+  );
+  assert.equal(gate.kind, "confirm");
+});
+
+test("🔴 a drawing that could not be read at all does not ask the learner to describe it", () => {
+  // `unread` used to trigger the confirm for any kind. An unread FIGURE is "there is a shape here I
+  // could not identify" — the learner typing what it was would be dictating, not correcting.
+  const gate = writtenSubmissionGate(
+    work({
+      marks: [
+        mark("a shape beside the equation", { kind: "figure", legible: false }),
+        mark("x = 4"),
+      ],
+    }),
+  );
+  assert.equal(gate.kind, "ready");
+});
+
+test("🔴 an ARROW is not text either", () => {
+  const gate = writtenSubmissionGate(
+    work({ legibility: 0.4, marks: [mark("an arrow from A to B", { confidence: 0.2, kind: "connector" })] }),
+  );
+  assert.equal(gate.kind, "ready");
+});
+
+test("🔴 a page of nothing but drawings, none of them read, is STILL blocked", () => {
+  // The narrowing must not turn "I saw nothing" into "ready". That path is `standing.length === 0`
+  // and it is upstream of everything above.
+  const gate = writtenSubmissionGate(
+    work({ marks: [mark("something drawn", { kind: "figure", legible: false })] }),
+  );
+  assert.equal(gate.kind, "blocked");
+});
+
 test("🔴 a page with only crossed-out work is blocked — nothing is being claimed", () => {
   const gate = writtenSubmissionGate(work({ marks: [mark("x = 6", { struckThrough: true })] }));
   assert.equal(gate.kind, "blocked");

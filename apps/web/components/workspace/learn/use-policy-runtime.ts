@@ -402,6 +402,14 @@ export function usePolicyRuntime(
    * other was refused — which is not a comparison, it is two different populations.
    */
   strategyOverride: TeachingStrategyId | null = null,
+  /**
+   * What the learner said to open this sitting, when this canvas began from an utterance.
+   *
+   * 🔴 PASSED THROUGH UNREAD BY THIS HOOK. See `TeachingContext.opening` for why the controller
+   * gets the words rather than a flag: deciding here whether they "sound like" a teach request
+   * would put a classifier in front of the model, which is the thing #689 removed.
+   */
+  opening: string | null = null,
 ): PolicyRuntime {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
@@ -768,6 +776,7 @@ export function usePolicyRuntime(
           modelled,
           now: decidedAt,
           objectives: inFocus,
+          opening,
           recentActs,
           signal: abort.signal,
           uid,

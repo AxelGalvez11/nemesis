@@ -493,17 +493,76 @@ export function CanvasComposer({
   });
   const showSend = control === "send";
 
+  // The page itself. Held as a value rather than written inline because it is now rendered in
+  // the canvas's free space, ABOVE this component's own bottom-docked pill — see the note at
+  // the top of the return.
+  const sheet = (
+        <WrittenWorkSheet
+          busy={busy}
+          initialInk={ink.current}
+          onClose={() => setDrawing(false)}
+          onInkChange={(value) => {
+            ink.current = value;
+          }}
+          onSubmit={(value) => {
+            modalityEvent({ kind: "captured", via: "written" });
+            onAnswer(value, "written", Date.now() - startedAt.current);
+            modalityEvent({ kind: "submitted" });
+            setText("");
+            typedBefore.current = "";
+            setDrawing(false);
+          }}
+          // 🔴 NULL WHENEVER NOTHING IS BEING ASKED, WHICH IS WHAT MAKES THE SHEET SCRATCH PAPER
+          // REST OF THE TIME. `answering` is the composer's own positive signal that the policy
+          // is waiting for a performance; without one there is no prompt for written work to be
+          // evidence about, and the sheet renders no submit control at all.
+          promptId={answering ? taskId : null}
+        />
+  );
+
   return (
-    // The pill FLOATS: no footer container, no top border, canvas visible all around it. The
-    // gradient is a scrim so text scrolling underneath does not collide with the input — page
-    // colour fading to nothing, which draws no edge of its own.
-    <div
-      className={cn(
-        "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4",
-        "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
+    <>
+      {/* 🔴🔴 THE SHEET IS THE CANVAS'S FREE SPACE, NOT THE COMPOSER'S — owner call, 2026-08-19:
+          "the drawing should not be inside a chat composer box, the chat composer should stay same
+          size, user should be able to draw in the free space in canvas".
+
+          It used to REPLACE the composer's contents, inside the composer's own
+          `max-w-[var(--composer-max-width)]` pill at the bottom of the screen. The reasoning for
+          that was real and is written up in written-work-sheet.tsx: one place you interact with
+          Nemesis, and no second card stacked over the input. But it made the page you work on as
+          wide as a chat box and as tall as whatever was left under it, which is the wrong shape for
+          working something out — and it took the composer away while you did, so there was no way
+          to say anything while a page was open.
+
+          Now it fills the room between the masthead and the composer, and the composer below is
+          untouched. The single-surface property it was protecting survives in the place it actually
+          matters: submission. `onSubmit` is unchanged, still routes through the same `onAnswer` with
+          the same modality and elapsed time, so written work is still one answer on one path and
+          not a second route into the evidence log. */}
+      {drawing && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-[136px] top-[64px] z-20 flex justify-center px-4">
+          <div className="pointer-events-auto flex w-full max-w-(--canvas-column) flex-col justify-center">
+            {sheet}
+          </div>
+        </div>
       )}
-    >
-      <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
+
+      {/* The pill FLOATS: no footer container, no top border, canvas visible all around it. The
+          gradient is a scrim so text scrolling underneath does not collide with the input — page
+          colour fading to nothing, which draws no edge of its own.
+          🔴 THIS ONE STAYS, UNLIKE THE MASTHEAD'S. The top gradient was removed the same day
+          because it reached 24px into the column's resting position and dissolved the top of the
+          question; this one sits under the content rather than over its resting place, and what it
+          prevents — a paragraph printing through the input — has no other fix that does not draw a
+          hard line across the page. If it turns out to be eating descenders too, it goes the same
+          way. */}
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4",
+          "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
+        )}
+      >
+        <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
         {/* 🔴 THE PAGE TAKES THE COMPOSER'S WHOLE PLACE, THE SAME AS DICTATION'S `listening` BRANCH
             DOES FURTHER DOWN — see written-work-sheet.tsx's file header. Nothing below this
             branches on `drawing`; the sheet is a full substitute for the chips-and-pill content,
@@ -513,29 +572,6 @@ export function CanvasComposer({
             the elapsed time this component already tracks for typed and spoken answers, so written
             work is not a second route into the evidence log; it is a third way of producing the
             one answer the one send path already carries. */}
-        {drawing ? (
-          <WrittenWorkSheet
-            busy={busy}
-            initialInk={ink.current}
-            onClose={() => setDrawing(false)}
-            onInkChange={(value) => {
-              ink.current = value;
-            }}
-            onSubmit={(value) => {
-              modalityEvent({ kind: "captured", via: "written" });
-              onAnswer(value, "written", Date.now() - startedAt.current);
-              modalityEvent({ kind: "submitted" });
-              setText("");
-              typedBefore.current = "";
-              setDrawing(false);
-            }}
-            // 🔴 NULL WHENEVER NOTHING IS BEING ASKED, WHICH IS WHAT MAKES THE SHEET SCRATCH PAPER
-            // REST OF THE TIME. `answering` is the composer's own positive signal that the policy
-            // is waiting for a performance; without one there is no prompt for written work to be
-            // evidence about, and the sheet renders no submit control at all.
-            promptId={answering ? taskId : null}
-          />
-        ) : (
         <>
         {/* 🔴 THE ATTACHMENT PREVIEW (§2, §26) — IMMEDIATELY ABOVE THE INPUT, WHICH IS WHERE THE
             BRIEF DRAWS IT. This is the whole replacement for a dedicated "1 source attached →
@@ -845,8 +881,8 @@ export function CanvasComposer({
           <p className="mt-2 pl-4 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}
         </>
-        )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

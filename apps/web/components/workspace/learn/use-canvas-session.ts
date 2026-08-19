@@ -128,6 +128,15 @@ export interface CanvasSession {
   busy: BusyState;
   error: string | null;
   /**
+   * What the learner said to open this sitting, when the canvas began from an utterance rather than
+   * from an attached file. `null` on a canvas reopened later, or one started from material.
+   *
+   * 🔴 THE SITTING'S, NOT THE CANVAS'S. Deliberately not read from or written to the stored canvas:
+   * it answers "what did they come here for just now", and a persisted answer would still be
+   * steering the teaching controller on a visit a week later. See `TeachingContext.opening`.
+   */
+  opening: string | null;
+  /**
    * A transient answer to a question that did not change the page (§4).
    *
    * 🔴 `blockId: null` IS A GENUINE, RENDERED CASE, NOT AN UNUSED CORNER OF THE TYPE. It was
@@ -243,6 +252,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const [canvas, setCanvas] = useState<LearningCanvas>(() => newCanvas());
   const [busy, setBusy] = useState<BusyState>({ kind: null });
   const [error, setError] = useState<string | null>(null);
+  /** What the learner said to open this sitting, when a canvas began from an utterance rather than
+   *  from a file. Read by the teaching controller; see `TeachingContext.opening`. */
+  const [opening, setOpening] = useState<string | null>(null);
   const [aside, setAside] = useState<CanvasAside>(null);
   /** The prompt whose answer is being read right now. Per-question rather than a page-wide busy
    *  flag, so judging one answer does not freeze the rest of the page. */
@@ -782,6 +794,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       }
 
       if (decision.then === "study") {
+        // 🔴 THE LEARNER'S OWN WORDS, KEPT FOR THIS SITTING ONLY. The teaching controller needs to
+        // know the difference between "teach me glycolysis" and "quiz me on glycolysis", which the
+        // topic alone cannot carry — both reduce to "glycolysis". Not persisted and not written to
+        // the canvas: it describes how this session opened, and a stored one would still be
+        // steering the controller next week. See `TeachingContext.opening`.
+        setOpening(said);
         // 🔴 `isPreContent` RATHER THAN `state === "empty"`, WHICH IS THE PREDICATE THE COMPOSER
         // ALREADY USES for "this canvas has not begun". The old rule here was `=== "empty"`, so
         // "teach me this" typed on a canvas with a file attached but no lesson yet fell through to
@@ -1404,6 +1422,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     error,
     aside,
     judging,
+    opening,
     ready,
     dismissError: () => setError(null),
     /**
