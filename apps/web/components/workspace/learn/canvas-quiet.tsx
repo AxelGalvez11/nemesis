@@ -36,14 +36,30 @@ export function CanvasQuiet({ onRetry }: { onRetry: () => void }) {
       role="status"
       style={{ paddingTop: TOP_INSET }}
     >
+      {/* 🔴🔴 NOT "YOUR MATERIAL" — owner call, 2026-08-19: *"why does it still show this? i didnt
+          upload anything?"* He had not. He typed "organic chemistry functional groups" and Nemesis
+          went and found three pages itself (OpenStax, Wikipedia, a functional-groups guide). Calling
+          those "your material" tells a learner they attached something they never attached, and the
+          first thing they do is go looking for a file they cannot find.
+
+          🔴 THE FIX IS TO STOP CLAIMING OWNERSHIP, NOT TO BRANCH ON PROVENANCE. A version that said
+          "your material" or "the pages Nemesis found" depending on where the sources came from would
+          be right more often and wrong in a worse way — a canvas holding both would have to pick
+          one and misdescribe the other. The sentence does not need the possessive at all: what the
+          learner needs to know is that Nemesis has nothing to ask yet, and the subject stays
+          Nemesis, which is the rule this file already holds.
+
+          🔴 AND SHORTER, because the owner also asked for less: *"i dont want this unnessary wordy
+          gray text"*. "Your canvas is safe either way" was reassurance about a danger nobody had
+          raised, which is how a calm interface starts sounding nervous. */}
       <p className="text-[length:var(--canvas-text-body)] text-(--ui-text-secondary)">
-        Nemesis has your material but hasn&rsquo;t found anything to ask you about yet.
+        Nemesis hasn&rsquo;t found anything to ask you about yet.
       </p>
-      {/* Two moves, and both of them exist. Typing is the one the composer below already offers —
-          said out loud because a learner looking at an empty canvas has no reason to believe the
-          box at the bottom will do anything. */}
+      {/* Typing is the move the composer below already offers — said out loud because a learner
+          looking at an empty canvas has no reason to believe the box at the bottom will do
+          anything. */}
       <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-        Tell it what you want to work on, or try again. Your canvas is safe either way.
+        Tell it what you want to work on, or try again.
       </p>
       <button
         className="mt-5 rounded-full px-4 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"

@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { citationLine, taughtClaim } from "@/lib/learn/taught-claim";
 import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
@@ -399,12 +400,7 @@ function PolicyScreen({
         <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
           {correctionLead(said)}
         </p>
-        <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
-          {decision.objective.cue} → {decision.objective.answer}
-        </h2>
-        <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
-          {decision.knowledge.statement}
-        </p>
+        <TaughtClaimLines decision={decision} />
         <SourceTrail citations={citations} />
         {/* 🔴 THE "Got it" BUTTON IS GONE — §I. Moving on is the composer's `✓` now, so the Canvas
             introduces no separate Next, Continue or Done reading. The behaviour it used to carry is
@@ -435,15 +431,12 @@ function PolicyScreen({
         onContinue={onContinue}
         sharing={sharing}
       >
-        <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-          {simplifying ? "Same idea, plainer words." : "Worth having in front of you first."}
-        </p>
-        <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
-          {decision.objective.cue} → {decision.objective.answer}
-        </h2>
-        <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
-          {decision.knowledge.statement}
-        </p>
+        {/* 🔴 NO PREAMBLE — owner call, 2026-08-19: "i dont want this unnessary wordy gray text".
+            "Worth having in front of you first" sat in the position the eye lands first and told the
+            learner nothing they could not already see. The correction and contrast screens keep
+            theirs, because those say something the screen does not: what you answered, and that two
+            things are being confused. `simplifying` is still read by `Frame` below. */}
+        <TaughtClaimLines decision={decision} />
         {/* Same rule as the two screens below: a claim shown here keeps the origin it would have
             anywhere else, or the Canvas reads as having lost the source. */}
         <SourceTrail citations={citations} />
@@ -462,9 +455,7 @@ function PolicyScreen({
         sharing={sharing}
       >
         <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Two of these are getting mixed up.</p>
-        <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
-          {decision.objective.cue} → {decision.objective.answer}
-        </h2>
+        <TaughtClaimLines decision={decision} />
         {/* The list has a real marker now. Each row used to open with an em dash, which was the
             list's ONLY marker because the <ul> had none of its own — so the punctuation was doing
             structural work. That is a reason the design was wrong, not a reason to keep the em
@@ -549,15 +540,43 @@ function PolicyScreen({
  * origin the same way, or the same fact appears sourced on one and unsourced on the other.
  */
 function SourceTrail({ citations }: { citations: PolicyRuntime["citations"] }) {
-  if (citations.length === 0) return null;
+  // 🔴 THE DE-DUPLICATION LIVES IN `citationLine`, NOT HERE. It printed `sourceTitle, label`
+  // unconditionally, and a web extractor routinely names the section what it named the page — so
+  // the owner was shown "From 3.1Functional Groups, 3.1Functional Groups" and the provenance line
+  // read as a bug rather than as a source.
+  const line = citationLine(citations);
+  if (!line) return null;
+
+  return <p className="mt-4 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">From {line}</p>;
+}
+
+/**
+ * The claim being taught: one heading, and the prose under it when the prose says anything more.
+ *
+ * 🔴🔴 ONE COMPONENT FOR THE THREE SCREENS THAT SHOW A CLAIM. Correction, teach/simplify and
+ * contrast each wrote `{cue} → {answer}` inline with the statement beneath, which is why a claim
+ * with only one side printed itself twice on all three and why fixing one would have left the other
+ * two doing it. What varies between those screens is the line ABOVE this (what the move is), which
+ * stays where it is; what does not vary is the claim, which is this.
+ */
+function TaughtClaimLines({ decision }: { decision: NonNullable<PolicyRuntime["decision"]> }) {
+  const claim = taughtClaim({
+    answer: decision.objective.answer,
+    cue: decision.objective.cue,
+    statement: decision.knowledge.statement,
+  });
 
   return (
-    <p className="mt-4 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-      From{" "}
-      {citations
-        .map((citation) => (citation.label ? `${citation.sourceTitle}, ${citation.label}` : citation.sourceTitle))
-        .join(" · ")}
-    </p>
+    <>
+      <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
+        {claim.heading}
+      </h2>
+      {claim.body && (
+        <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
+          {claim.body}
+        </p>
+      )}
+    </>
   );
 }
 
