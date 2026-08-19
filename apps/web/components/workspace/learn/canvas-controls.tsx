@@ -40,7 +40,6 @@ import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import { entrySummary, groupByDay, type TranscriptEntry } from "@/lib/learn/session-transcript";
 import {
-  shouldAskAboutAutoDictation,
   type AutoDictation,
   type VoiceMode,
 } from "@/lib/learn/voice-preferences";
@@ -298,38 +297,33 @@ const MEANING: Record<ObjectiveState, string> = {
   untouched: "Not covered yet",
 };
 
-export function ObjectivesControl({
+/**
+ * What Nemesis is working on, as a panel body.
+ *
+ * 🔴 NO LONGER ITS OWN HEADER BUTTON — owner call, 2026-08-19. The header is down to three glyphs
+ * (`\u00d7`, Sources and outputs, Progress) plus `\u22ef`, and this moved inside the last of them. The
+ * BODY is what mattered and it is unchanged; only the way in did.
+ */
+function ObjectivesPanel({
   canvas,
   activeTaskId,
 }: {
   canvas: LearningCanvas;
   activeTaskId?: string | null;
 }) {
-  const [open, setOpen] = useState(false);
-  const holder = useDismiss(open, () => setOpen(false));
-
   const objectives = objectiveMap(canvas, activeTaskId);
   const focus = currentObjectiveLabel(canvas, activeTaskId);
 
-  return (
-    <div className="pointer-events-auto relative shrink-0" ref={holder}>
-      <button
-        aria-expanded={open}
-        aria-label="Objectives"
-        className={CONTROL}
-        disabled={objectives.length === 0}
-        onClick={() => setOpen((current) => !current)}
-        title="Objectives"
-        type="button"
-      >
-        <Codicon name="list-tree" size="0.8125rem" />
-      </button>
+  if (objectives.length === 0) {
+    return (
+      <p className="px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
+        Nothing to work on yet.
+      </p>
+    );
+  }
 
-      {open && (
-        <div className={cn(PANEL, "w-[20rem]")}>
-          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
-            Objectives
-          </p>
+  return (
+    <>
           {objectives.map((objective) => (
             <div className="flex items-start gap-2.5 px-2 py-1.5" key={objective.id} title={MEANING[objective.state]}>
               <span
@@ -358,15 +352,13 @@ export function ObjectivesControl({
             </div>
           ))}
 
-          {/* 🔴 No percentage, here or anywhere (§9). */}
-          {focus && (
-            <p className="mt-1.5 border-t border-(--ui-stroke-tertiary) px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
-              Nemesis is currently working on <span className="text-(--ui-text-secondary)">{focus}</span>.
-            </p>
-          )}
-        </div>
+      {/* 🔴 No percentage, here or anywhere (§9). */}
+      {focus && (
+        <p className="mt-1.5 border-t border-(--ui-stroke-tertiary) px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
+          Nemesis is currently working on <span className="text-(--ui-text-secondary)">{focus}</span>.
+        </p>
       )}
-    </div>
+    </>
   );
 }
 
@@ -495,10 +487,10 @@ export function MinimapControl({
     <div className="pointer-events-auto relative shrink-0" ref={holder}>
       <button
         aria-expanded={open}
-        aria-label="Territory"
+        aria-label="Progress"
         className={CONTROL}
         onClick={() => setOpen((current) => !current)}
-        title="Territory"
+        title="Progress"
         type="button"
       >
         <Codicon name="map" size="0.8125rem" />
@@ -700,70 +692,166 @@ function MenuItem({
  * this control, and because a modal over a canvas is the second card the composer's own header
  * spends a paragraph refusing.
  */
-export function VoiceControl({
-  autoDictation,
-  dictationSupported,
-  onSetAutoDictation,
-  onToggle,
-  speaking,
-  voiceMode,
+/**
+ * Everything the canvas can be told to do that is not "here is the material" or "here is where you
+ * are" — behind one `\u22ef`, the way the reference puts its own session options.
+ *
+ * 🔴 THIS EXISTS BECAUSE THE HEADER LOST THREE BUTTONS, NOT INSTEAD OF THEM. Owner call,
+ * 2026-08-19: the header is `\u00d7` on the left, Sources and outputs, and Progress. Objectives, the
+ * session record and voice came out of that row — and voice in particular was the ONLY way into
+ * voice mode, so deleting the glyph without giving it a home would have shipped a feature that
+ * exists, is deployed, and cannot be reached. That is the specific way this codebase loses things,
+ * so the menu landed in the same change that removed the icons rather than after it.
+ *
+ * 🔴 THE TWO VOICE PREFERENCES ARE BOTH STATED, AND THE ONE-TIME QUESTION IS GONE. `VoiceControl`
+ * asked "open the microphone after each question?" in a popover the first time voice was switched
+ * on, because there was nowhere to put a second preference. A menu is that somewhere: both are
+ * rows, both show their current state, and a learner who wants to change their mind has somewhere
+ * to go rather than having to remember what they answered once.
+ */
+export function OptionsControl({
+  canvas,
+  activeTaskId,
+  entries,
+  locale,
+  voice,
 }: {
-  voiceMode: VoiceMode;
-  autoDictation: AutoDictation;
-  /** False where the Web Speech API is absent — Firefox, most notably. Offering to open a
-   *  microphone that cannot listen is a promise the product cannot keep. */
-  dictationSupported: boolean;
-  /** Audio is playing right now, so the icon can say so rather than looking idle. */
-  speaking: boolean;
-  onToggle: (next: VoiceMode) => void;
-  onSetAutoDictation: (next: AutoDictation) => void;
+  canvas: LearningCanvas;
+  activeTaskId?: string | null;
+  entries: readonly TranscriptEntry[];
+  locale?: string;
+  voice?: {
+    mode: VoiceMode;
+    autoDictation: AutoDictation;
+    dictationSupported: boolean;
+    speaking: boolean;
+    onToggle: (next: VoiceMode) => void;
+    onSetAutoDictation: (next: AutoDictation) => void;
+  };
 }) {
-  const on = voiceMode === "on";
-  const asking = shouldAskAboutAutoDictation({ autoDictation, dictationSupported, voiceMode });
+  const [open, setOpen] = useState(false);
+  // Which face the menu is showing. Sub-views render IN PLACE rather than as a second floating
+  // panel: a panel hanging off a panel is two things to dismiss and two places to mis-click.
+  const [view, setView] = useState<"menu" | "objectives" | "record">("menu");
+  const holder = useDismiss(open, () => {
+    setOpen(false);
+    setView("menu");
+  });
+
+  const voiceOn = voice?.mode === "on";
+  const listenOn = voice?.autoDictation === "on";
 
   return (
-    <div className="pointer-events-auto relative shrink-0">
+    <div className="pointer-events-auto relative shrink-0" ref={holder}>
       <button
-        aria-label={on ? "Turn voice off" : "Read questions out loud"}
-        aria-pressed={on}
-        className={cn(CONTROL, on && "text-(--ui-action) hover:text-(--ui-action)")}
-        onClick={() => onToggle(on ? "off" : "on")}
-        title={on ? "Voice on: questions and corrections are read aloud" : "Read questions out loud"}
+        aria-expanded={open}
+        aria-label="Options"
+        className={cn(CONTROL, voiceOn && "text-(--ui-action) hover:text-(--ui-action)")}
+        onClick={() => {
+          setOpen((current) => !current);
+          setView("menu");
+        }}
+        title="Options"
         type="button"
       >
-        {/* Two glyphs, not an animation: "on" and "on and talking right now" are different facts
-            and the second one is how a learner knows the sound is Nemesis and not a tab. */}
-        <Codicon name={speaking ? "unmute" : on ? "unmute" : "mute"} size="0.8125rem" />
+        {/* 🔴 THE GLYPH REPORTS VOICE, BECAUSE VOICE IS THE ONE OPTION IN HERE THAT MAKES NOISE.
+            Everything else behind this button is something the learner goes and looks at; voice
+            acts on its own, afterwards, and a learner who left it on deserves to see that from the
+            closed menu rather than by being spoken to. */}
+        <Codicon name={voice?.speaking ? "unmute" : "kebab-vertical"} size="0.8125rem" />
       </button>
 
-      {asking && (
-        <div className={cn(PANEL, "w-[17rem] p-3")}>
-          <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
-            Open the microphone after each question?
-          </p>
-          <p className="mt-1.5 text-[length:var(--canvas-text-meta)] leading-normal text-(--ui-text-tertiary)">
-            Nemesis reads the question, then starts listening so you can answer without touching
-            anything. You can still type.
-          </p>
-          <div className="mt-3 flex gap-2">
+      {open && (
+        <div className={cn(PANEL, view === "menu" ? "w-[15rem]" : "w-[22rem]")}>
+          {view !== "menu" && (
             <button
-              className="rounded-full bg-(--ui-action) px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-bg-editor) transition-opacity hover:opacity-90"
-              onClick={() => onSetAutoDictation("on")}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary)"
+              onClick={() => setView("menu")}
               type="button"
             >
-              Yes, listen
+              <Codicon name="chevron-left" size="0.6875rem" />
+              {view === "objectives" ? "Objectives" : "Session record"}
             </button>
-            <button
-              className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
-              onClick={() => onSetAutoDictation("off")}
-              type="button"
-            >
-              No, I'll press it
-            </button>
-          </div>
+          )}
+
+          {view === "menu" && (
+            <>
+              {voice && (
+                <>
+                  <ToggleItem
+                    checked={voiceOn}
+                    label="Read questions out loud"
+                    onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
+                  />
+                  {/* Offering to open a microphone that cannot listen is a promise the product
+                      cannot keep — the same refusal `VoiceControl` made, kept. */}
+                  <ToggleItem
+                    checked={listenOn}
+                    disabled={!voice.dictationSupported}
+                    hint={voice.dictationSupported ? undefined : "This browser has no speech recognition"}
+                    label="Open the mic after each question"
+                    onClick={() => voice.onSetAutoDictation(listenOn ? "off" : "on")}
+                  />
+                  <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
+                </>
+              )}
+              <MenuItem icon="list-tree" label="Objectives" onClick={() => setView("objectives")} />
+              <MenuItem icon="history" label="Session record" onClick={() => setView("record")} />
+            </>
+          )}
+
+          {view === "objectives" && <ObjectivesPanel activeTaskId={activeTaskId} canvas={canvas} />}
+          {view === "record" && <SessionRecordPanel entries={entries} locale={locale} />}
         </div>
       )}
     </div>
+  );
+}
+
+/** A preference that is on or off, showing which it currently is. Separate from `MenuItem` because
+ *  a row that reports state and a row that performs an action are different things, and a check
+ *  mark that sometimes means "selected" and sometimes means nothing is how a menu stops being
+ *  readable. */
+function ToggleItem({
+  checked,
+  label,
+  onClick,
+  disabled,
+  hint,
+}: {
+  checked: boolean;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  hint?: string;
+}) {
+  return (
+    <button
+      aria-checked={checked}
+      className={cn(
+        "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left text-[length:var(--canvas-text-small)] transition-colors",
+        disabled
+          ? "cursor-not-allowed text-(--ui-text-quaternary)"
+          : "text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary)",
+      )}
+      disabled={disabled}
+      onClick={onClick}
+      role="menuitemcheckbox"
+      title={hint}
+      type="button"
+    >
+      <span className="mt-[2px] flex h-[12px] w-[12px] shrink-0 items-center justify-center">
+        {checked && <Codicon name="check" size="0.6875rem" />}
+      </span>
+      <span className="leading-snug">
+        {label}
+        {hint && (
+          <span className="mt-0.5 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+            {hint}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }
 
@@ -782,37 +870,31 @@ export function VoiceControl({
  * that drops its oldest rows, so a transcript built on it would silently lose the beginning of
  * every long session — which is the part worth looking back at.
  */
-export function SessionRecordControl({
+/**
+ * What happened in this session, as a panel body. See `ObjectivesPanel` for why this stopped being
+ * its own header button on 2026-08-19; the reasoning about the record itself is unchanged and
+ * still lives above `groupByDay`.
+ */
+function SessionRecordPanel({
   entries,
   locale,
 }: {
   entries: readonly TranscriptEntry[];
   locale?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const holder = useDismiss(open, () => setOpen(false));
   const days = groupByDay(entries, locale);
 
-  return (
-    <div className="pointer-events-auto relative shrink-0" ref={holder}>
-      <button
-        aria-expanded={open}
-        aria-label="Session record"
-        className={CONTROL}
-        disabled={entries.length === 0}
-        onClick={() => setOpen((current) => !current)}
-        title="Session record"
-        type="button"
-      >
-        <Codicon name="history" size="0.8125rem" />
-      </button>
+  if (entries.length === 0) {
+    return (
+      <p className="px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
+        Nothing has happened yet.
+      </p>
+    );
+  }
 
-      {open && (
-        <div className={cn(PANEL, "w-[22rem]")}>
-          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
-            Session record
-          </p>
-          {days.map((group) => (
+  return (
+    <>
+      {days.map((group) => (
             <div key={group.day}>
               <p className="px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
                 {group.day}
@@ -834,8 +916,6 @@ export function SessionRecordControl({
               ))}
             </div>
           ))}
-        </div>
-      )}
-    </div>
+    </>
   );
 }

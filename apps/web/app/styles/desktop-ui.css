@@ -392,6 +392,23 @@
     --canvas-text-lead: 18px;
     --canvas-text-title: 24px;
 
+    /* 🔴 THE QUESTION IS NO LONGER THE CEILING — owner call, 2026-08-19: "i need questions to not
+       be super big". It sat at `--canvas-text-title` (24px), which is this scale's largest step and
+       the reference's own h1. Centred, alone, and balanced across two lines, 24px reads as a
+       headline rather than as something being asked of you.
+
+       20px/28px is the reference's h2, measured the same day it was asked for
+       (chatgpt.com, 1440x727: h1 24/32, h2 20/28, h3 18/28, body 16/26). It stays inside the
+       restrained ladder §46.3 requires, and the mechanism §46.3 actually names for prominence —
+       "spacing, grouping, indentation, hierarchy through position" — is unchanged: the question is
+       still the only thing on an otherwise empty screen, which is what makes it the subject.
+
+       🔴 ITS OWN TOKEN, NOT A SMALLER `--canvas-text-title`. Four other places read that token —
+       the canvas list's h1, the association drill, the billing price — and none of them was
+       reported as too big. Shrinking the shared step to fix the question would have quietly
+       restyled three screens nobody looked at. */
+    --canvas-text-question: 20px;
+
     /* 🔴 THE LIGHT RAMP IS CALIBRATED, THE DARK ONE IS PINNED BELOW. These four steps used to be
        shared by both themes, which cannot be right: the same alpha over a near-white page and over
        a near-black one lands at two different places on the contrast curve, and only one of them

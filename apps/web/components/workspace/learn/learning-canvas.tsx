@@ -135,7 +135,7 @@ export function LearningCanvas({
   const leave = useCallback(() => router.push(CANVAS_EXIT_ROUTE), [router]);
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
-  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride);
+  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride, session.opening);
   // Voice mode. 🔴 `policy.judging` is the composer-busy signal: while an answer is being read the
   // learner is waiting on a verdict, and opening a microphone at them is asking for an answer to a
   // question they already gave.
@@ -951,7 +951,16 @@ export function LearningCanvas({
             nothing here has to remember to dismiss it. */}
         {session.aside && session.aside.blockId === null && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
-            <div className="canvas-swap border-l-2 border-(--ui-stroke-secondary) py-0.5 pl-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
+            {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
+                and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
+                ASIDES: something attached to the document, subordinate to it, quoted off to one
+                side. But when Nemesis answers what you asked, that reply IS the page — there is no
+                document beside it for it to be an aside to — and dressing it as marginalia while it
+                is the only thing on screen made Nemesis read as if it were quoting someone else.
+                Plain text at full strength, in the same column and at the same 16px/26px as the
+                reference. See `canvas-document.tsx`, which keeps the rule for the genuinely
+                block-scoped case ("Explain this" on a passage), where the quotation is true. */}
+            <div className="canvas-swap text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
               {session.aside.text}
               {/* Which live pages the answer actually used, each individually promotable. This is
                   the "distinct" half of temporary-versus-durable: seeing it here is USING it for
@@ -1006,13 +1015,13 @@ export function LearningCanvas({
                   </button>
                 </div>
               )}
-              <button
-                className="mt-2 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
-                onClick={() => applyExplanationEvent({ kind: "dismiss_aside" })}
-                type="button"
-              >
-                Dismiss
-              </button>
+              {/* 🔴 NO "Dismiss" — owner call, 2026-08-19, AND NOTHING IS STRANDED BY REMOVING IT.
+                  The reply already clears on `new_turn` through the same `applyExplanationEvent`
+                  every route through `submit()` calls, so saying anything at all replaces it; the
+                  button was a second way to do what the next message does anyway. A chat reply that
+                  asks to be dismissed reads as a notification rather than as an answer, which is
+                  the whole complaint. `dismiss_aside` stays in `canvas-explanation-turn.ts` — it is
+                  still how the block-scoped popover closes. */}
             </div>
           </div>
         )}

@@ -59,13 +59,23 @@ export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) 
       className="relative h-full min-h-0 bg-(--ui-bg-editor)"
       style={{ ["--canvas-column" as string]: CANVAS_COLUMN_PX }}
     >
-      {/* A scrim, NOT a header. Without it, scrolled paragraphs print straight through the
-          floating title and neither is readable. It is the page's own colour fading to nothing
-          over 88px — the same device the composer already uses at the bottom — so it draws no
-          line, no rectangle and no edge: there is no row where the colour steps. The acceptance
-          check measures exactly that (the largest colour change between adjacent rows), because
-          "is there a divider" is a question about steps, not about whether anything is painted. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[88px] bg-gradient-to-b from-(--ui-bg-editor) via-(--ui-bg-editor)/90 to-transparent" />
+      {/* A masthead the page scrolls under, NOT a fade over it — owner call, 2026-08-19.
+          🔴🔴 THE GRADIENT WAS FADING THE LETTERS, NOT THE BACKGROUND, AND ONLY DARK MODE SHOWED IT.
+          It stood 88px tall while the scroll container rests at `pt-[64px]`, so the top ~24px of
+          whatever was on screen sat under a ramp that is ~90% opaque at its midpoint. Over a light
+          page that is white-on-white and invisible; over a dark one the ramp is black and the
+          learner's white text dissolved into it. The reported symptom was exactly that — "the
+          letters have a fade on top" — and it was reproducible on any screen whose first line sits
+          at the top of the column, which for a retrieval is the question itself.
+
+          🔴 SOLID, AND SHORTER THAN THE CONTENT'S RESTING OFFSET. 56px clears the 12px/32px control
+          row with room to spare and still stops 8px short of `pt-[64px]`, so at rest it covers
+          nothing at all and there is no row where a letter is half-painted. It draws no visible
+          edge for the same reason the gradient claimed to: it is the page's own colour. What it
+          gives up is the soft hand-off — scrolled text now ends at a hard line instead of thinning
+          out — which is what the reference does too, and is the price of text that is never
+          half-erased. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[56px] bg-(--ui-bg-editor)" />
 
       {/* 🔴 32px TALL, 12px FROM THE EDGE -- DOWN FROM 36/16 (compact-UI pass, design judgement,
           owner spec 2026-08-12). Quieted alongside the composer and the two controls it carries;

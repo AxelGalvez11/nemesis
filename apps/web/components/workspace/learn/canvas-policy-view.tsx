@@ -259,7 +259,7 @@ function PolicyScreen({
           // Optically centred rather than mathematically: the composer occupies the bottom of the
           // screen, so true centre reads as low. `pb-40` above lifts the block into where the eye
           // expects the subject of the page to be.
-          className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-title)] font-medium leading-snug text-balance text-(--ui-text-primary)"
+          className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-question)] font-medium leading-[1.4] text-balance text-(--ui-text-primary)"
         >
           {prompt.prompt}
         </h2>
@@ -295,7 +295,7 @@ function PolicyScreen({
     const busy = runtime.judging || runtime.recording;
     return (
       <div className={`flex ${regionHeight(sharing)} flex-col items-center justify-center gap-8 px-6`}>
-        <h2 className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-title)] font-medium leading-snug text-balance text-(--ui-text-primary)">
+        <h2 className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-question)] font-medium leading-[1.4] text-balance text-(--ui-text-primary)">
           {prompt.prompt}
         </h2>
         {runtime.choicesRevealed ? (

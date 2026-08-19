@@ -171,13 +171,30 @@ test("nothing offers a one-key reveal of the answer", () => {
   assert.ok(!/I don&rsquo;t know/.test(policy), "the admission is the composer's, not a button on the task");
 });
 
-test("the top scrim fades to nothing, so it draws no edge", () => {
+test("🔴🔴 the masthead is solid and never overlaps the resting content", () => {
+  // REPOINTED, 2026-08-19. The old assertion demanded `to-transparent` — a gradient — on the
+  // grounds that a fade draws no edge. It draws no edge and it DOES fade whatever is under it:
+  // at 88px it reached 24px into a column that rests at `pt-[64px]`, so in dark mode the top of
+  // the learner's own question dissolved into black. "Draws no edge" was the wrong property to
+  // protect; "never paints over a letter" is the right one, and a solid band shorter than the
+  // resting offset gives both.
   const shell = read("canvas-surface.tsx");
-  const scrim = /className="pointer-events-none absolute inset-x-0 top-0 [^"]*bg-gradient-to-b ([^"]+)"/.exec(shell);
-  assert.ok(scrim?.[1], "expected a top scrim on the canvas");
-  // A gradient terminating in a colour would put a step at its lower edge — which is a divider
-  // drawn 88px lower down, exactly the thing being removed.
-  assert.match(scrim[1], /to-transparent/);
+  const band = /className="pointer-events-none absolute inset-x-0 top-0 z-20 h-\[(\d+)px\] ([^"]+)"/.exec(shell);
+  assert.ok(band, "expected a masthead band at the top of the canvas");
+
+  const height = Number(band[1]!);
+  assert.ok(!/gradient/.test(band[2]!), "the masthead fades again — it will erase the top of the question");
+
+  // The scroll container's own top padding — which lives in `learning-canvas.tsx`, a different
+  // file from the band. Read rather than hard-coded: the two numbers are only meaningful against
+  // each other, they are declared apart, and pinning one while the other moves is exactly how this
+  // came back the first time.
+  const resting = /overflow-y-auto pt-\[(\d+)px\]/.exec(read("learning-canvas.tsx"));
+  assert.ok(resting, "expected the scrolling column to declare its top offset");
+  assert.ok(
+    height < Number(resting[1]!),
+    `the masthead (${height}px) reaches into the resting column (${resting[1]!}px) and will cover text`,
+  );
 });
 
 test("a correction is prose, not a card", () => {

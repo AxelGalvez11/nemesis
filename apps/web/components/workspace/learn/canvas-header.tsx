@@ -20,7 +20,7 @@
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
-import { MinimapControl, ObjectivesControl, SessionRecordControl, SourcesControl, VoiceControl } from "./canvas-controls";
+import { MinimapControl, OptionsControl, SourcesControl } from "./canvas-controls";
 import type { AutoDictation, VoiceMode } from "@/lib/learn/voice-preferences";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
@@ -116,19 +116,13 @@ export function CanvasHeader({
           per-row delete already reaches the same `deleteCanvas` this control called. */}
       {!minimal && (
         <>
+          {/* 🔴 THREE GLYPHS AND A MENU — owner call, 2026-08-19: "i only want icons for 'x' on
+              left, 'source and outputs' and 'progress' for the minimap of objectives", then "add a
+              '⋯' for options". The `×` is `canvas-surface.tsx`'s and is not in this row.
+              Objectives, the session record and voice moved INSIDE `OptionsControl`; none of them
+              was deleted, and voice especially could not be, because that button was the only way
+              into voice mode. */}
           <SourcesControl canvas={canvas} modelKnowledge={modelKnowledge} onFiles={onFiles} onUrl={onUrl} />
-          <ObjectivesControl activeTaskId={activeTaskId} canvas={canvas} />
-          <SessionRecordControl entries={transcript} />
-          {voice && (
-            <VoiceControl
-              autoDictation={voice.autoDictation}
-              dictationSupported={voice.dictationSupported}
-              onSetAutoDictation={voice.onSetAutoDictation}
-              onToggle={voice.onToggle}
-              speaking={voice.speaking}
-              voiceMode={voice.mode}
-            />
-          )}
           <MinimapControl
             coverage={minimap.coverage}
             decidedObjectiveKey={minimap.decidedObjectiveKey}
@@ -137,6 +131,12 @@ export function CanvasHeader({
             outcome={minimap.outcome}
             setFocus={minimap.setFocus}
             territories={minimap.territories}
+          />
+          <OptionsControl
+            activeTaskId={activeTaskId}
+            canvas={canvas}
+            entries={transcript}
+            voice={voice}
           />
         </>
       )}
