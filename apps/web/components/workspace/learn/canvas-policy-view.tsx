@@ -379,7 +379,21 @@ function PolicyScreen({
     // teaching; sharing a first renderer is not the same as merging the states.
     const said = decision.state.status;
     return (
-      <Frame onContinue={onContinue} sharing={sharing}>
+      // 🔴🔴 `advance` IS WHAT MAKES THIS SCREEN ENDABLE AT ALL, AND ITS ABSENCE WAS A DEAD END.
+      // MEASURED IN A BROWSER, on a real pharmacokinetics lecture: a wrong typed answer produced
+      // *"Here's the one to fix. Constant → Amount removed/time"* and then NOTHING — no Continue, no
+      // timer, no way on, surviving a reload. The learner's canvas was over.
+      //
+      // The two halves each looked right on their own. `expositionFor({kind:"correction"})` returns
+      // `transient` for an association recalled — one line, read in about a second — so §39 says the
+      // screen ends ITSELF and `readingRequirementOf` correctly withholds the Continue. But the only
+      // implementation of "ends itself" was inside `FeedbackScreen`. A screen that declares a timer
+      // to a component that does not own one is a screen with no exit.
+      <Frame
+        advance={{ blocked: runtime.recording, exposition: runtime.exposition, onAcknowledge: runtime.acknowledge }}
+        onContinue={onContinue}
+        sharing={sharing}
+      >
         {/* 🔴 FROM `correction-copy.ts`, NOT INLINE. Voice mode reads this same sentence, and two
             copies of it are two wordings that agree until somebody edits one. */}
         <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
@@ -414,7 +428,13 @@ function PolicyScreen({
     // choose and not the renderer's. Two near-identical components would drift.
     const simplifying = decision.action.type === "simplify";
     return (
-      <Frame onContinue={onContinue} sharing={sharing}>
+      // Same exit rule as the correction above, for the same reason: these declare an exposition and
+      // must obey whichever ending it names.
+      <Frame
+        advance={{ blocked: runtime.recording, exposition: runtime.exposition, onAcknowledge: runtime.acknowledge }}
+        onContinue={onContinue}
+        sharing={sharing}
+      >
         <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
           {simplifying ? "Same idea, plainer words." : "Worth having in front of you first."}
         </p>
@@ -433,7 +453,14 @@ function PolicyScreen({
 
   if (decision.action.type === "contrast") {
     return (
-      <Frame onContinue={onContinue} sharing={sharing}>
+      // Declares `deliberate` today, so this changes nothing — passed anyway so that EVERY screen
+      // carrying an exposition obeys the same exit rule. The dead end above happened because one
+      // screen was the exception.
+      <Frame
+        advance={{ blocked: runtime.recording, exposition: runtime.exposition, onAcknowledge: runtime.acknowledge }}
+        onContinue={onContinue}
+        sharing={sharing}
+      >
         <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Two of these are getting mixed up.</p>
         <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
           {decision.objective.cue} → {decision.objective.answer}
@@ -589,9 +616,6 @@ function FeedbackScreen({
   // depend on whether the answer was right. Advancement is `exposition` and nothing else.
   const passed = verdictIsPass(verdict);
 
-  const latestAcknowledge = useRef(onAcknowledge);
-  latestAcknowledge.current = onAcknowledge;
-
   // ── §39: cognitive mode advances the screen, correctness does not ───────────
   //
   // 🔴 THIS INVERTS THE OLD RULE, IN BOTH DIRECTIONS. It used to be `passed` — a correct answer
@@ -609,8 +633,6 @@ function FeedbackScreen({
   // DEFAULTED. `exposureMs` exists only on the transient member, so there is no branch in which
   // this component could supply a number nobody chose. The old `MIN_VERDICT_READ_MS = 2000` was
   // this file's own constant and is deliberately gone.
-  const selfAdvancing = advancesItself(exposition);
-
   /**
    * How long this screen holds before it is eligible to move on.
    *
@@ -636,26 +658,15 @@ function FeedbackScreen({
    */
   const holdMs = exposition.mode === "transient" ? (correctionQueued ? 0 : exposition.exposureMs) : null;
 
-  const [minReadDone, setMinReadDone] = useState(false);
-  useEffect(() => {
-    if (holdMs === null) return;
-    setMinReadDone(false);
-    const timer = window.setTimeout(() => setMinReadDone(true), holdMs);
-    return () => window.clearTimeout(timer);
-  }, [holdMs]);
-
-  // 🔴 `recording` STAYS IN THE GATE, AND DROPPING IT WOULD INVERT THE SAFE FAILURE. `submit()`
-  // sets feedback BEFORE the evidence write finishes, so a timer alone could advance mid-write and
-  // the learner could answer again with the answer still on screen — recording that echo as a real
-  // demonstration. Advancing waits for the LATER of the two, so a bug here costs a missed advance,
-  // never a fabricated one.
-  useEffect(() => {
-    if (!selfAdvancing || !minReadDone || recording) return;
-    latestAcknowledge.current();
-  }, [minReadDone, recording, selfAdvancing]);
-
+  // 🔴 THE TIMER MOVED INTO `Frame`, AND THAT MOVE IS A BUG FIX. It lived here, so only the VERDICT
+  // screen could end itself — while `show_correction`, `teach` and `simplify` declare exactly the
+  // same `transient` exposition and had no timer at all. See `Frame`.
   return (
-    <Frame onContinue={onContinue} sharing={sharing}>
+    <Frame
+      advance={{ blocked: recording, exposition, holdMs, onAcknowledge }}
+      onContinue={onContinue}
+      sharing={sharing}
+    >
       {/* The learner's own words. They stay on screen — the verdict below is ABOUT them — but the
           attribution in front of them does not (§K): it tells the learner something they already
           know, in a voice that exists only to stage the exchange.
@@ -714,10 +725,67 @@ function FeedbackScreen({
 
 /** The single measure the rest of the canvas is set to, so the policy's page reads as the same
  *  column as the document and the composer rather than a fourth centred thing. */
+/**
+ * How a screen that is not asking anything ENDS. Exactly one implementation, for every such screen.
+ *
+ * 🔴🔴 IT USED TO LIVE INSIDE `FeedbackScreen`, WHICH MEANT ONLY THE VERDICT COULD END ITSELF —
+ * AND A WRONG ANSWER LEFT THE LEARNER WITH NO WAY FORWARD AT ALL. Measured in a browser on a real
+ * lecture: a wrong typed answer produced *"Here's the one to fix. Constant → Amount removed/time"*
+ * and then nothing. No Continue, no timer, surviving a reload. The canvas was over.
+ *
+ * The two halves were each individually correct, which is why it survived. §39 says a one-line
+ * association is `transient` — it ENDS ITSELF after about a second — so `readingRequirementOf`
+ * rightly withholds the Continue, since offering one would be a button on a screen that is already
+ * leaving. But "ends itself" was implemented in one component and declared by four. A screen that
+ * names a timer to a component with no timer is a screen with no exit.
+ *
+ * 🔴 `blocked` STAYS IN THE GATE, AND DROPPING IT WOULD INVERT THE SAFE FAILURE. `submit()` sets
+ * feedback BEFORE the evidence write finishes, so a timer alone could advance mid-write and the
+ * learner could answer again with the answer still on screen — recording that echo as a real
+ * demonstration. Advancing waits for the LATER of the two, so a bug here costs a missed advance,
+ * never a fabricated one.
+ */
+interface ScreenExit {
+  readonly exposition: Exposition;
+  /** Advancing is refused while true — the last answer's evidence is still being written. */
+  readonly blocked: boolean;
+  /** Overrides the exposition's own window. `0` when a queued correction owns the budget instead;
+   *  `null`/absent means "use what the policy declared". */
+  readonly holdMs?: number | null;
+  readonly onAcknowledge: () => void;
+}
+
+function useScreenExit(exit: ScreenExit | null): void {
+  const latest = useRef(exit?.onAcknowledge);
+  latest.current = exit?.onAcknowledge;
+  const exposition = exit?.exposition ?? null;
+  const blocked = exit?.blocked ?? false;
+  // 🔴 THE DURATION IS THE POLICY'S, WHICH IS WHY IT IS READ OFF THE UNION RATHER THAN DEFAULTED.
+  // `exposureMs` exists only on the transient member, so there is no branch in which this component
+  // could supply a number nobody chose.
+  const declared = exposition && exposition.mode === "transient" ? exposition.exposureMs : null;
+  const holdMs = exit?.holdMs ?? declared;
+  const selfAdvancing = exposition ? advancesItself(exposition) : false;
+
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    if (holdMs === null) return;
+    setHeld(false);
+    const timer = window.setTimeout(() => setHeld(true), holdMs);
+    return () => window.clearTimeout(timer);
+  }, [holdMs]);
+
+  useEffect(() => {
+    if (!selfAdvancing || !held || blocked) return;
+    latest.current?.();
+  }, [blocked, held, selfAdvancing]);
+}
+
 function Frame({
   children,
   sharing = false,
   onContinue = null,
+  advance = null,
 }: {
   children: React.ReactNode;
   sharing?: boolean;
@@ -725,7 +793,16 @@ function Frame({
    *  otherwise, and the decision is NOT made here: `continueTarget` answers it once for the whole
    *  surface, so the reading passage and the correction can never both offer one. */
   onContinue?: (() => void) | null;
+  /**
+   * How this screen ends when it does NOT get the button.
+   *
+   * 🔴 EVERY SCREEN CARRYING AN EXPOSITION MUST PASS THIS. `onContinue` and `advance` are the only
+   * two exits there are, and `continueOwner` gives the button to at most one region — so a screen
+   * with neither is a canvas the learner cannot leave. See `useScreenExit`.
+   */
+  advance?: ScreenExit | null;
 }) {
+  useScreenExit(advance);
   return (
     <div className={`flex ${regionHeight(sharing)} items-center justify-center px-6`}>
       <div className="w-full max-w-(--canvas-column)">

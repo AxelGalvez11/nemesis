@@ -13,6 +13,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { hostnameOf } from "@/lib/favicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
+import { composerIntent } from "@/lib/learn/composer-intent";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
@@ -645,10 +646,32 @@ export function LearningCanvas({
     stageTask: session.activeTask,
   });
 
-  /** This canvas has not begun: no lesson, no task, no evidence — only whatever material is
-   *  waiting. The one state in which a submission MEANS "start", which is why it is named once
-   *  here and read in three places rather than re-tested inline in each. */
-  const preContent = canvas.state === "empty" || canvas.state === "sources_attached";
+  /**
+   * 🔴🔴🔴 WHAT SUBMITTING MEANS RIGHT NOW — ONE VALUE, NOT FIVE BOOLEANS RACING THROUGH HANDLER
+   * PRECEDENCE.
+   *
+   * This replaces `preContent = canvas.state === "empty" || canvas.state === "sources_attached"`,
+   * which was read in three places and was WRONG in all of them the moment the policy staged a
+   * question. Nothing advances `canvas.state` when that happens — knowledge resolves as soon as a
+   * source's durable id lands, and `openCanvas()` (the only writer of `learn`) runs inside
+   * `begin()`, which the learner has not pressed yet. So `preContent` stayed true with a real
+   * question on screen, `onStart` was still handed to the composer, and the composer's routing put
+   * starting above answering. The learner typed an answer, pressed **Submit answer**, and the text
+   * went to `begin()`: no judge, no evidence row, and their canvas re-titled underneath them.
+   *
+   * 🔴 IT IS NOT A THEORY. Production holds exactly one typed answer that reached the judge —
+   * canvas `796a6045`, 2026-08-14 — and that canvas is stored at `learn`. The predicate is the
+   * discriminator.
+   *
+   * See composer-intent.ts. The rule it encodes is the owner's: *if Nemesis is visibly asking the
+   * learner a question, submitting through the primary composer is an answer to that question.*
+   */
+  const intent = composerIntent({
+    awaitingAnswer: policy.awaitingAnswer,
+    canvasState: canvas.state,
+    policyPresenting,
+    sink,
+  });
 
   // 🔴 THE COMPOSER IS NOW PRESENT BEFORE THE CANVAS HAS BEGUN, AND THAT IS THE WHOLE OF §15.
   //
@@ -1056,8 +1079,8 @@ export function LearningCanvas({
 
       {showComposer && !recording && (
         <CanvasComposer
-          busy={sink.kind === "policy" ? policy.judging : busy.kind === "command"}
-          busyLabel={sink.kind === "policy" ? THINKING_COPY.reading_answer : busy.label}
+          busy={intent.kind === "answer" && intent.sink === "policy" ? policy.judging : busy.kind === "command"}
+          busyLabel={intent.kind === "answer" && intent.sink === "policy" ? THINKING_COPY.reading_answer : busy.label}
           // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
           // the policy. What a submission IS comes from whether something is currently being
           // asked, which is the rule this component already ran on.
@@ -1076,10 +1099,13 @@ export function LearningCanvas({
             // because nothing on THIS path — as opposed to `session.command`'s — had ever been
             // told to clear it: `askAbout`'s "disappears" was only ever true of the ask route.
             applyExplanationEvent({ kind: "new_turn" });
-            if (sink.kind === "policy") void policy.submit(text, via, tookMs);
+            // 🔴 THE INTENT NAMES THE RECEIVER. `sink.kind` said the same thing and is still what
+            // the intent was built from, but reading it again here would be a second place deciding
+            // who owns an answer — which is exactly the shape of the defect above.
+            if (intent.kind === "answer" && intent.sink === "policy") void policy.submit(text, via, tookMs);
             else void session.answerActiveTask(text, via, tookMs);
           }}
-          inSession={sink.kind === "policy"}
+          intent={intent}
           // 🔴 THE COMPOSER NO LONGER CARRIES PROGRESSION (§38/§39). `✓` was the one control that
           // moved the learner past material; it is a `Continue` below that material now, because
           // §38 allows exactly one button and §39 makes the trigger the policy's declared cognitive
@@ -1104,10 +1130,15 @@ export function LearningCanvas({
           // 🔴 `beginOrAnswer`, NOT `session.begin` DIRECTLY. A blank canvas with a question-shaped
           // ask and nothing attached is answered rather than swallowed as a lesson title, see that
           // function's own comment for why the check is scoped to exactly this state.
-          onStart={preContent ? beginOrAnswer : null}
-          pendingSources={preContent ? canvas.sources.map((source) => ({ id: source.id, title: source.title })) : []}
+          // 🔴 ALWAYS PASSED, AND THAT IS THE POINT. It used to be `preContent ? beginOrAnswer :
+          // null`, and the composer decided what a submission meant by asking whether it had been
+          // given a function. Presence is not meaning: `intent` says whether starting is what this
+          // submission IS, and this handler is simply how starting is done when it is.
+          onStart={beginOrAnswer}
+          // Unconditional too — the composer shows the chips only while `intent.kind === "start"`,
+          // which is the same question asked once instead of twice.
+          pendingSources={canvas.sources.map((source) => ({ id: source.id, title: source.title }))}
           selected={selected}
-          task={sink.kind === "none" ? null : sink.task}
         />
       )}
     </CanvasSurface>

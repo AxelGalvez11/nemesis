@@ -18,6 +18,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { labTrace } from "@/lib/lab/trace";
+
 import { useAuth } from "@/components/AuthProvider";
 import { teachingExperimentStartedAt } from "@/lib/env";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
@@ -779,10 +781,56 @@ export function usePolicyRuntime(
         // broken one would fall silent in exactly the conditions that break it.
         if (!live) return;
         canvasCapture("canvas_strategy_refused", canvas, { reason: "model-unreachable", strategy });
+        labTrace("controller", `${strategy} could not be reached`, () => ({ refusal: "model-unreachable", strategy }));
         setDecided({ inputs: decisionInputs, outcome: { decision: null, refusal: "model-unreachable", strategy } });
         return;
       }
       if (!live) return;
+      // 🔴 OBSERVABILITY ONLY — inert unless Nemesis Lab is open (lib/lab/trace.ts). This is the
+      // moment the whole teaching question is answered: which controller ran, what it was allowed to
+      // see, which objective it chose and why. A debug panel reconstructing it from the outside
+      // would be guessing at exactly the step the Lab exists to make legible.
+      labTrace(
+        "controller",
+        outcome.decision ? `${outcome.strategy} → ${outcome.decision.action.type}` : `${outcome.strategy} decided nothing`,
+        () => ({
+          action: outcome.decision?.action ?? null,
+          knowledge: outcome.decision?.knowledge ?? null,
+          movedOn: outcome.movedOn ?? [],
+          objective: outcome.decision?.objective ?? null,
+          objectivesConsidered: inFocus.map((entry) => ({
+            capability: entry.objective.capability,
+            identityKey: entry.objective.identityKey,
+            statement: entry.knowledge.statement,
+            type: entry.knowledge.type,
+          })),
+          // 🔴 `rationale` IS WHERE "WHY" LIVES, AND IT IS ARM-SPECIFIC BY CONSTRUCTION — the
+          // structured policy accounts for its choice differently from the model. Reported as the
+          // controller states it, never flattened into one sentence the two arms would have to share.
+          cognitiveMode: outcome.decision?.cognitiveMode ?? null,
+          exposition: outcome.decision?.exposition ?? null,
+          rationale: outcome.decision?.rationale ?? null,
+          refusal: outcome.refusal ?? null,
+          state: outcome.decision?.state ?? null,
+          strategy: outcome.strategy,
+          // 🔴 THE CONTEXT THE CONTROLLER WAS ACTUALLY GIVEN, so the Lab can put the OTHER arm in
+          // front of the identical inputs (§12) and re-run the same arm repeatedly (§13) without
+          // reconstructing anything. `signal` is deliberately not carried: an AbortSignal is not
+          // data, and a replay supplies its own.
+          context: {
+            actedOn,
+            attention: { activeMs: Math.max(0, Math.round(canvas.activeMs)), availableMs: null },
+            correctionsShown: [...correctionsShown],
+            evidence,
+            modelled: [...modelled],
+            now: decidedAt.toISOString(),
+            objectives: inFocus,
+            recentActs,
+            uid,
+          },
+        }),
+        Date.now() - decidedAt.getTime(),
+      );
       // 🔴🔴 OBJECTIVES THE CONTROLLER PASSED OVER ARE RECORDED AS WORKED, AND WITHOUT THIS THE
       // WHOLE "MOVE ON" MECHANISM WOULD BE A NO-OP THE LEARNER COULD FEEL. `controllerFor` sets an
       // objective aside for the length of ONE call; if nothing here remembers it, the next turn
@@ -1103,6 +1151,7 @@ export function usePolicyRuntime(
       setRecording(true);
       try {
         let written = true;
+        labTrace("evidence", `writing ${built.length} row(s)`, () => ({ rows: built }));
         for (const row of built) {
           // Sequential rather than concurrent: they conflict on the same index, and a burst of
           // parallel upserts for one answer is exactly the shape that makes a duplicate look like a
@@ -1110,6 +1159,7 @@ export function usePolicyRuntime(
           if (!(await recordEvidence(uid, row))) written = false;
         }
         if (!written) {
+          labTrace("evidence", "🔴 the write FAILED, so nothing was recorded", () => ({ rows: built }));
           setError("That answer was judged, but Nemesis could not save it. It won't count yet.");
           // 🔴 NO REFRESH ON FAILURE. Re-reading here would let the policy decide its next move from
           // a half-written performance, teaching from a learner model that is missing exactly the
@@ -1217,11 +1267,11 @@ export function usePolicyRuntime(
       setJudging(true);
       setPhase("reading_answer");
       const response = { text: said, via, ...(tookMs !== undefined ? { tookMs } : {}) };
-      const result = await evaluateLearningResponse(
-        uid,
-        canvas,
-        objectiveAsTask(decision.objective, active, response),
-      );
+      // 🔴 HELD IN A NAMED VALUE SO THE LAB CAN REPLAY THE JUDGE ON EXACTLY WHAT IT WAS GIVEN.
+      // Rebuilding this from the pieces at replay time would be a second construction of the task,
+      // free to differ from the one that produced the verdict under investigation.
+      const judgeInput = objectiveAsTask(decision.objective, active, response);
+      const result = await evaluateLearningResponse(uid, canvas, judgeInput);
       setJudging(false);
       setPhase(null);
 
@@ -1238,6 +1288,13 @@ export function usePolicyRuntime(
         // the wrong behaviour — it has to say which case it is in. The return stays because the
         // UI differs too: `record()` reports a save failure, which is not what happened here.
         canvasCapture("canvas_judge_failed", canvas, { objective: decision.objective.identityKey });
+        // The distinction the whole design turns on: a judge nobody could reach is NOT a learner
+        // who failed. From outside, both look like an answer that went nowhere.
+        labTrace("judge", "the judge could not be reached, so nothing was recorded", () => ({
+          answer: said,
+          error: result.error,
+          objective: decision.objective.identityKey,
+        }));
         // 🔴 SAYS WHAT IS TRUE HERE, NOT WHAT THE SHARED STRING SAYS. The evaluator's own message
         // ends "Your response was saved" — true on the six-stage path, where the answer is written
         // to the canvas before the judge is called, and FALSE here, where evidence is written only
@@ -1247,6 +1304,25 @@ export function usePolicyRuntime(
       }
 
       const evaluation = result.value;
+      labTrace(
+        "judge",
+        `${evaluation.verdict} on "${decision.objective.identityKey}"`,
+        () => ({
+          answer: said,
+          confidence: evaluation.confidence,
+          errorType: evaluation.errorType ?? null,
+          evaluation,
+          misconceptions: evaluation.misconceptions ?? null,
+          objective: decision.objective.identityKey,
+          question: active.prompt,
+          expectedAnswer: active.expectedAnswer,
+          judgeInput,
+          concepts: canvas.concepts,
+          statement: decision.knowledge.statement,
+          verdict: evaluation.verdict,
+          via,
+        }),
+      );
       // 🔴 THE VERDICT'S MODE IS MINTED FROM THE OBJECTIVE THAT WAS ANSWERED, AND FROM NOTHING
       // ABOUT THE ANSWER — §39. `evaluation` is right here and is deliberately not consulted:
       // "correctness does not determine advancement; cognitive mode does". Passing the verdict in
@@ -1498,8 +1574,29 @@ export function usePolicyRuntime(
   // 🔴 IT ALSO CARRIES THE BRAIN'S OWN PAIR OUT UNTOUCHED. `operation` and `knowledgeType` are the
   // policy's decision; the runtime hands them to the surface so a presentation can differ by
   // cognitive demand (§9, §14.6) without re-deriving what the demand IS.
+  //
+  // 🔴🔴 RECOGNITION HOSTS A TASK TOO, AND LEAVING IT OUT WAS THE SECOND HALF OF THE SWALLOWED-ANSWER
+  // DEFECT. `awaitingAnswer` has always covered `retrieve` AND `recognise`; this built a task only
+  // for `retrieve`, so during a multiple-choice question `answerSink` resolved to `none` — and a
+  // learner who typed instead of tapping had their text routed to `begin()` on a pre-content canvas
+  // and to `onAsk` everywhere else. Either way the judge never saw it and no row was written.
+  //
+  // The comment this replaces reasoned *"the options ARE the answer, so the composer does not
+  // receive one"*. The options are AN answer surface; the composer is the primary one, and §2 of the
+  // owner's directive is that every modality converges on one pipeline. Someone who reads four
+  // options and types the answer in their own words has produced MORE than a tap, not less — and the
+  // row still files at `rung: "recognition"`, `scaffoldingLevel: OPTIONS_ON_SCREEN`, because that
+  // number says how much help was on the table, never whether the learner needed it.
+  //
+  // 🔴 TAPPING IS UNCHANGED. `CanvasPolicyView` still renders the options and still calls
+  // `runtime.choose`, which deliberately does not consult the judge. This adds a second way in, it
+  // does not move the first.
   const task: HostedTask | null = useMemo(() => {
     if (status !== "ready" || feedback || !decision || !prompt) return null;
+    // 🔴 RESOLVED IN FAVOUR OF `performanceOf`, WHICH IS THE MORE GENERAL FORM. Both lanes found
+    // this defect independently; the other named `retrieve` and `recognise` explicitly, this asks
+    // the action whether it wants a performance at all, so the next action type that does cannot
+    // be forgotten here.
     // 🔴🔴 EVERY ASK HOSTS A TASK NOW, AND UNTIL THIS LINE A RECOGNITION SCREEN HOSTED NONE. That was
     // not a styling gap: `answerSink` reads this to decide who receives a typed answer, so a learner
     // sitting in front of a recognition question who typed the answer instead of tapping had it
