@@ -24,7 +24,7 @@
 // PURE. No React, no I/O.
 
 import { validateStructure, type ChemNotation } from "./chem-notation";
-import type { StructureVisual } from "./canvas-visual";
+import { parseCanvasVisual, type CanvasVisualRequest, type StructureVisual } from "./canvas-visual";
 
 /**
  * One piece of a reply: prose to render as markdown, or a drawing to mount.
@@ -36,7 +36,7 @@ import type { StructureVisual } from "./canvas-visual";
  */
 export type ReplySegment =
   | { kind: "prose"; text: string }
-  | { kind: "visual"; visual: StructureVisual };
+  | { kind: "visual"; visual: CanvasVisualRequest };
 
 /**
  * Fences this understands. The language tag is the notation.
@@ -72,23 +72,58 @@ const FENCE_RE = /```([a-zA-Z-]+)[ \t]*\r?\n([\s\S]*?)```/g;
 const INLINE_RE = /\[(smiles|reaction|reaction-smiles)\s*:\s*([^\]\n]+)\]/gi;
 
 /**
+ * `[figure 2]` — "mount the second visual from this turn's list, here".
+ *
+ * 🔴🔴 THE OTHER EIGHT KINDS COULD NOT FIT IN A TOKEN, WHICH IS WHY THIS EXISTS ALONGSIDE
+ * `[smiles: …]` RATHER THAN REPLACING IT. A molecule is one short string, so a bracketed token
+ * carries it whole. A plot is a set of labelled series of coordinate pairs, a table is columns and
+ * rows, a construction is points and segments — none of that survives being flattened into a line
+ * inside a JSON string, and every attempt to encode it there is a parser waiting to disagree with
+ * itself.
+ *
+ * So structure travels as DATA on the turn (`visuals`), and only the POSITION travels in the
+ * prose. That keeps the property the fenced form was chosen for — the drawing lands exactly where
+ * the model put it, between the sentence that introduces it and the one that follows — without
+ * asking a strict-JSON turn to emit nested quotes.
+ *
+ * 🔴 IT CANNOT COLLIDE WITH A CITATION MARKER: `[1]` is bare digits, this requires the word.
+ */
+const FIGURE_RE = /\[figure\s+(\d{1,2})\]/gi;
+
+/**
  * Split a reply into prose and the drawings it asked for.
+ *
+ * `visuals` is the turn's own list, already validated. A `[figure n]` marker resolves into it by
+ * position, one-based; a marker pointing past the end is left in the prose rather than dropped,
+ * because a sentence that says "as the figure shows" with nothing after it is worse than a visible
+ * stray token.
  *
  * A reply with no fences returns exactly one prose segment holding the original string, so the
  * ordinary case is untouched and the renderer has one path rather than two.
  */
-export function replySegments(text: string): ReplySegment[] {
+export function replySegments(text: string, visuals: readonly CanvasVisualRequest[] = []): ReplySegment[] {
   const segments: ReplySegment[] = [];
   let cursor = 0;
 
   // 🔴 BOTH FORMS, IN THE ORDER THEY APPEAR IN THE TEXT. Matching one pattern and then the other
   // would emit the drawings out of order whenever a reply mixed them, and position is the whole
   // reason this is a split.
-  const matches = [...text.matchAll(FENCE_RE), ...text.matchAll(INLINE_RE)].sort(
+  const matches = [...text.matchAll(FENCE_RE), ...text.matchAll(INLINE_RE), ...text.matchAll(FIGURE_RE)].sort(
     (a, b) => (a.index ?? 0) - (b.index ?? 0),
   );
 
   for (const match of matches) {
+    // A `[figure n]` marker resolves against the turn's own validated list.
+    if (match[0].toLowerCase().startsWith("[figure")) {
+      const visual = visuals[Number(match[1]) - 1];
+      if (!visual) continue;
+      const beforeFigure = text.slice(cursor, match.index);
+      if (beforeFigure.trim()) segments.push({ kind: "prose", text: beforeFigure });
+      segments.push({ kind: "visual", visual });
+      cursor = match.index + match[0].length;
+      continue;
+    }
+
     const notation = FENCE_NOTATION[match[1]!.toLowerCase()];
     // 🔴 AN UNKNOWN LANGUAGE IS LEFT ALONE, NOT SWALLOWED. ```python in an answer is a code block
     // and must reach the markdown renderer as one; consuming it here would delete it from the page.
@@ -125,6 +160,39 @@ export function replySegments(text: string): ReplySegment[] {
 }
 
 /** Does this reply ask for any drawing at all? Lets a caller skip the split entirely. */
-export function hasReplyVisuals(text: string): boolean {
-  return replySegments(text).some((segment) => segment.kind === "visual");
+export function hasReplyVisuals(text: string, visuals: readonly CanvasVisualRequest[] = []): boolean {
+  return replySegments(text, visuals).some((segment) => segment.kind === "visual");
 }
+
+/**
+ * The visuals a turn may mount, from whatever the model put in its `visuals` field.
+ *
+ * 🔴 EVERY ONE GOES THROUGH `validateCanvasVisual`, THE SAME GATE THE TEACHING PATH USES. A model
+ * writing a plot from a conversation is exactly as untrusted as one writing it from a document:
+ * `subject-visuals.ts` recomputes every numeric claim, refuses geometry that does not agree with
+ * itself, and rejects LaTeX containing `\href`. A conversational door into the drawing system that
+ * skipped that would be a second, weaker standard for the same pictures.
+ *
+ * 🔴 A REFUSED VISUAL IS DROPPED, NOT REPAIRED. Its `[figure n]` marker then finds nothing and
+ * stays in the prose as a visible token, which is the honest failure: the learner can see that
+ * something was meant to be there. Silently renumbering the survivors would move every later
+ * figure under the wrong sentence.
+ */
+export function replyVisuals(value: unknown): CanvasVisualRequest[] {
+  if (!Array.isArray(value)) return [];
+  // 🔴 VALIDATE FIRST, BOUND SECOND, AND THE ORDER IS A BUG I SHIPPED AND A TEST CAUGHT. Slicing
+  // first bounds the model's ATTEMPTS rather than the figures that survive: four malformed entries
+  // at the head of the list would then discard every good one behind them, and the learner would
+  // get an answer full of markers pointing at nothing. The cap exists to protect the SCREEN.
+  return value
+    .map((entry) => parseCanvasVisual(entry))
+    .filter((v): v is CanvasVisualRequest => v !== null)
+    .slice(0, MAX_REPLY_VISUALS);
+}
+
+/**
+ * 🔴 A BOUND, BECAUSE A TURN THAT DRAWS TWELVE FIGURES IS NOT ANSWERING A QUESTION. Four is more
+ * than any single answer has needed, and the cost of an unbounded list is a screen the learner
+ * has to scroll past to reach the sentence they asked for.
+ */
+export const MAX_REPLY_VISUALS = 4;

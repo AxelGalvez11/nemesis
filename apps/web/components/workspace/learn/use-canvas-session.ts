@@ -13,6 +13,7 @@ import { coverageNoticeForModel, readCoverage } from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
 import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
+import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { TurnDecision, TurnOffer } from "@/lib/learn/turn-router";
@@ -148,9 +149,11 @@ type CanvasAside = {
   /** The learner's own question, retained only for the transient general-answer aside. Never
    *  mistaken for their goal: the answer text is not what they asked for. */
   question?: string;
-  /** The subject the model read out of the turn, or absent when it had none. What "Learn this"
-   *  starts, and whether that button is shown at all. */
+  /** The subject the model read out of the turn, or absent when it had none. What `learnFromAside`
+   *  starts when the learner asks to be taught it. */
   topic?: string;
+  /** Figures this reply draws, validated, in the order its `[figure n]` markers count into. */
+  visuals?: readonly CanvasVisualRequest[];
 } | null;
 
 export interface CanvasSession {
@@ -915,6 +918,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         sources: result.sources,
         text: decision.say,
         topic: decision.topic ?? undefined,
+        visuals: decision.visuals,
       });
       return decision;
     },

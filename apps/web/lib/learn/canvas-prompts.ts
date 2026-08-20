@@ -994,10 +994,27 @@ export function documentText(blocks: readonly CanvasBlock[]): string {
  *  the learner eventually needs the term itself, not a paraphrase of it — so the formal word is
  *  kept and glossed, never replaced. */
 const SELECTION_INTENT: Record<string, string> = {
+  // 🔴 REPORTED 2026-08-20, WITH A SCREENSHOT: the learner highlighted "retatrutide's" and got back
+  // *"'retatrutide's' means something that belongs to or is connected to retatrutide"*. A lesson in
+  // the possessive apostrophe, delivered to someone asking what a drug is.
+  //
+  // The model followed its instructions exactly. It was told to say what "this term" means "HERE,
+  // in this context", it was handed the string `retatrutide's`, and the honest answer to that
+  // literal question IS the grammar. Nothing was broken; the prompt asked the wrong question.
+  //
+  // 🔴 THE FIX IS A SENTENCE, NOT A STRIPPER, AND THAT IS DELIBERATE. The obvious repair is to trim
+  // a trailing `'s` before the lookup — but that is an English rule quietly deciding what a learner
+  // meant, in a product whose standing test is "would this work for a law student and a mechanical
+  // engineering student", in any language. Telling the model to look through the inflection is the
+  // same fix without the rule, and it also covers plurals, cases and conjugations no strip list
+  // would have reached.
   define:
     "Say what this term means HERE, in this context, in one or two short sentences. " +
     "Use plainer words than the sentence it came from. Keep the technical term itself — the learner needs the word, " +
-    "not a replacement for it — and explain it rather than swapping it out.",
+    "not a replacement for it — and explain it rather than swapping it out. " +
+    "If the highlighted text is an inflected form — a possessive, a plural, a conjugation, a case ending — " +
+    "define the underlying term it is a form OF. Never explain the grammar; the learner highlighted a word " +
+    "because they did not know the thing, not because they did not know the ending.",
   explain:
     "Explain what this means in this context, in at most three short sentences. " +
     "Explain the idea, not the wording. Assume they have read the surrounding passage.",

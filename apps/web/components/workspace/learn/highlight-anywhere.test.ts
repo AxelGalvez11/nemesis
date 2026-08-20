@@ -49,7 +49,11 @@ test("🔴🔴 the conversational reply is a selectable region", () => {
   // that the first run keeps the id other lanes probe by.
   assert.match(canvasCode, /selectableRegion\(index === 0 \? "reply" : `reply-\$\{index\}`\)/);
   assert.match(canvasCode, /<AssistantMarkdown[\s\S]{0,600}?text=\{segment\.text\}/, "the reply no longer renders its own text");
-  assert.match(canvasCode, /replySegments\(replyText\)/, "the reply is no longer split into prose and drawings");
+  // 🔴 REPOINTED AGAIN 2026-08-20, and the reason is the reason this comment keeps growing: this
+  // line has now pinned an exact call THREE times. The property is that the reply is split before
+  // it is rendered, not how many arguments the splitter takes — it gained a second one when a reply
+  // became able to draw all nine visual kinds rather than only a molecule.
+  assert.match(canvasCode, /replySegments\(replyText\b/, "the reply is no longer split into prose and drawings");
 });
 
 test("🔴🔴 the claim being taught is too, both of its lines", () => {

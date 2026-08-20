@@ -174,7 +174,11 @@ test("🔴 no internal action name leaks into the prompt", () => {
 
 test("a plain decision is read", () => {
   const read = readTurnDecision('{"say":"hey. what are you working on?","then":"reply","topic":null,"offer":null}');
-  assert.deepEqual(read, { offer: null, say: "hey. what are you working on?", then: "reply", topic: null });
+  // 🔴 `visuals` IS ALWAYS PRESENT AND USUALLY EMPTY, WHICH IS THE POINT OF A DEEP EQUAL HERE. A
+  // turn that draws nothing must still produce a list, so every downstream reader can index into
+  // it without a null check — the alternative is an optional field that is absent on the ordinary
+  // path and therefore untested on it.
+  assert.deepEqual(read, { offer: null, say: "hey. what are you working on?", then: "reply", topic: null, visuals: [] });
 });
 
 test("a fenced decision is read", () => {

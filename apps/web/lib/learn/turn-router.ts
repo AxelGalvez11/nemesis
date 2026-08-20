@@ -40,6 +40,9 @@
 // unrecognised case to TEACH. Here an unparseable or empty decision falls back to conversation.
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
+
+import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
+import type { CanvasVisualRequest } from "./canvas-visual";
 import { extractJson } from "./canvas-parse";
 
 /**
@@ -86,6 +89,18 @@ export interface TurnDecision {
    */
   topic: string | null;
   offer: TurnOffer | null;
+  /**
+   * Figures this turn wants to draw, already validated, in the order `[figure n]` counts into.
+   *
+   * 🔴 REPORTED 2026-08-20: *"i thought we integrated the new chem draw and math plot abilities but
+   * it says it still cant."* It could not, and it was right to say so. `SemanticVisual` renders
+   * nine kinds, and until now a REPLY could reach exactly one of them — a molecule, through
+   * `[smiles: …]`. Asked for a plot, the model correctly reported a capability it did not have.
+   *
+   * A model cannot fit a plot in a bracketed token, so structure rides here and only POSITION
+   * rides in `say`. Empty on nearly every turn.
+   */
+  visuals: readonly CanvasVisualRequest[];
 }
 
 /** Everything the canvas already knows, stated as facts for the model to reason over. */
@@ -190,19 +205,47 @@ const NEMESIS_SYSTEM = [
   // times. `say` is a STRING INSIDE A JSON OBJECT and the contract demands strict JSON, so a fence
   // needs literal newlines and backticks inside that string and the model steers away. A bracketed
   // token costs it nothing. The parser accepts both.
-  "You can DRAW a molecule, not only describe one. Write [smiles: CCO] inline in your answer, with "
-  + "the SMILES after the colon, and the canvas replaces it with a real structural diagram exactly "
-  + "where you put it. Use [reaction: A>>B] for a reaction. Draw when the shape is the point, and "
-  + "whenever a learner asks to be SHOWN a structure. Keep writing the prose around it as normal, "
-  + "and do not draw something whose shape adds nothing to the sentence beside it.",
+  "You can DRAW, not only describe. A molecule fits in the line itself: write [smiles: CCO] inline "
+  + "and the canvas replaces it with a real structural diagram exactly where you put it, or "
+  + "[reaction: A>>B] for a reaction.",
+
+  // 🔴 THE OTHER EIGHT ARE NEW HERE, 2026-08-20, AND THEY ARE WHY THE MODEL USED TO REFUSE. It was
+  // told about one kind and had one channel, so "plot this" got an honest "I can't" out of a
+  // renderer that has drawn plots for weeks. A capability the model is not told about does not
+  // exist, however completely it is built.
+  "For anything with structure — a plot, a diagram, a table, a timeline, a geometric construction, "
+  + "a force diagram, an equation, a traced snippet of code — put the figure in the \"visuals\" "
+  + "array and write [figure 1], [figure 2] inline where each one belongs. Every kind takes "
+  + "\"kind\" and \"learningGoal\", plus its own fields: quantitative (series of {x,y} points, "
+  + "xLabel, yLabel), relationship (nodes, edges), table (columns, rows), timeline (events), "
+  + "construction (points, segments), vectors (vectors, bodyLabel), equation (latex), code "
+  + "(language, source, trace). At most " + String(MAX_REPLY_VISUALS) + " per answer.",
+
+  "Draw when the shape, the trend or the arrangement is the point, and whenever the learner asks "
+  + "to be SHOWN something. Keep writing the prose around it as normal, and do not draw something "
+  + "that adds nothing to the sentence beside it.",
 
   "Keep continuity. Earlier turns of this conversation are given to you; resolve references like "
   + "\"why?\", \"that one\", \"keep going\" or \"no, I meant the first one\" against them rather than "
   + "asking the learner to repeat themselves.",
 
-  "Write plainly and as short as the turn allows. No heading, no bullet list of learning points, no "
-  + "closing offer to help further, no unearned enthusiasm. Never use an em dash character; use a "
-  + "comma, a colon, or a new sentence instead.",
+  // 🔴 REPORTED 2026-08-20: *"why are nemesis's responses so short, is there a prompt telling it to
+  // give short answers?"* There was, and this is it. It read "write plainly and as short as the
+  // turn allows", which was written to stop cheerful padding and did — along with the working.
+  //
+  // 🔴 THE OLD RULE MADE BREVITY THE GOAL, WHICH IS THE WRONG TARGET. Asked to integrate x², the
+  // model returned the answer and no derivation, because the shortest true response to "integrate
+  // x²" is "x³/3 + C" and it had been told to be short. The learner wanted the steps. Length is
+  // not a virtue or a vice; it is a function of what the question needs, and that is what this now
+  // says. The padding clauses survive verbatim, because they were never the problem.
+  "Give the question the length it needs, the way a good explanation does. Work through a "
+  + "derivation, a proof, a calculation or a procedure step by step, showing the intermediate "
+  + "steps rather than only the result. Use headings, short lists or a table when the material "
+  + "genuinely has that shape. Answer a small question in a sentence.",
+
+  "No closing offer to help further, no restating the question back, no unearned enthusiasm, no "
+  + "summary of what you are about to say. Never use an em dash character; use a comma, a colon, "
+  + "or a new sentence instead.",
 ].join("\n\n");
 
 /**
@@ -214,7 +257,7 @@ const NEMESIS_SYSTEM = [
 const DECISION_CONTRACT = [
   "Answer with a single JSON object and nothing else:",
   "",
-  '{"say": "...", "then": "reply" | "study", "topic": "..." | null, "offer": "returning" | "reasoning" | null}',
+  '{"say": "...", "then": "reply" | "study", "topic": "..." | null, "offer": "returning" | "reasoning" | null, "visuals": [...]}',
   "",
   '"say" is what Nemesis says out loud. Always write something, even when you also act.',
   "",
@@ -403,6 +446,8 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     say,
     then: then ?? "reply",
     topic: asText(parsed.topic) || null,
+    // Refused figures are dropped here, never repaired — see `replyVisuals`.
+    visuals: replyVisuals(parsed.visuals),
   };
 }
 
@@ -418,5 +463,5 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   if (read) return read;
   const prose = raw.trim();
   if (!prose) return null;
-  return { offer: null, say: prose, then: "reply", topic: null };
+  return { offer: null, say: prose, then: "reply", topic: null, visuals: [] };
 }

@@ -816,6 +816,8 @@ export function LearningCanvas({
    * would be asserting exactly the thing that has gone wrong on this surface before. */
   const replyText = session.aside?.blockId === null ? session.aside.text : "";
   const replyConsulted = session.aside?.blockId === null ? session.aside.consulted : undefined;
+  /** Hoisted for the same narrowing reason as the two above: `session.aside` is re-read per line. */
+  const replyVisualList = session.aside?.blockId === null ? session.aside.visuals ?? [] : [];
 
     const lessonHeld = policyPresenting && !regions.policy;
 
@@ -1159,7 +1161,7 @@ export function LearningCanvas({
                   🔴 EACH PROSE RUN KEEPS ITS OWN SELECTABLE MARKER. Offsets are measured against the
                   marked element, so one marker wrapping prose AND an SVG would fail
                   `readCanvasSelection`'s integrity check on every selection. */}
-              {replySegments(replyText).map((segment, index) =>
+              {replySegments(replyText, replyVisualList).map((segment, index) =>
                 segment.kind === "visual" ? (
                   <SemanticVisual key={`v${index}`} visual={segment.visual} />
                 ) : (
@@ -1195,39 +1197,21 @@ export function LearningCanvas({
                 />
               )}
 
-              {/* 🔴 A SUBJECT, NOT A QUESTION. This read `aside.question`, which every turn has, so
-                  "Hello. What can I do for you?" came with a Learn this button that had nothing to
-                  start. The model says whether the turn named something worth learning; a greeting
-                  does not. See `topic` in lib/learn/turn-router.ts. */}
-              {/* 🔴🔴 ONE CONTROL UNDER AN ANSWER, NEVER TWO. Owner, 2026-08-20: *"its showing
-                  'back to lesson' pill and 'learn this' which i didnt ask for these at all."* Both
-                  were individually justified and together they were clutter: two pills stacked
-                  under a two-line answer, offering to start a lesson AND to return to a different
-                  one, with no way to tell which was which.
+              {/* 🔴🔴 "LEARN THIS" IS GONE, 2026-08-20. Owner: *"why does nemesis still show
+                  'learn this'?"*, having already said once before that it was clutter they had not
+                  asked for.
 
-                  🔴 THE HELD LESSON WINS, BECAUSE ONLY ONE OF THEM IS AN EXIT. "Back to the lesson"
-                  is what makes a displaced teaching screen reachable at all — without it the lesson
-                  is gone for the session, which `no-screen-is-a-dead-end.test.ts` calls the
-                  product's worst failure. "Learn this" is an OFFER, and an offer can wait for a
-                  turn when nothing is already owed. */}
-              {!lessonHeld && session.aside.topic && (
-                <div className="mt-3">
-                  {/* Only when Nemesis actually noticed something. A nudge on every reply is not a
-                      nudge, it is nagging, and the learner stops seeing it. */}
-                  {offerLine(session.aside.offer) && (
-                    <p className="mb-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                      {offerLine(session.aside.offer)}
-                    </p>
-                  )}
-                  <button
-                    className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                    onClick={() => void session.learnFromAside()}
-                    type="button"
-                  >
-                    Learn this
-                  </button>
-                </div>
-              )}
+                  🔴 THE GATE WAS THE PROBLEM, AND NARROWING IT WOULD NOT HAVE BEEN ENOUGH. It hung
+                  on `aside.topic` — "did this turn name a subject?" — which nearly every real
+                  question does, so a button offering to start a lesson sat under nearly every
+                  answer. The line ABOVE it was properly rare; the button was not, and a nudge that
+                  appears every time is not a nudge.
+
+                  🔴 THE CAPABILITY IS UNTOUCHED, WHICH IS THE STANDING RULE HERE — remove the
+                  control, not the feature. `learnFromAside` still exists and the router still reads
+                  `topic` off every turn; asking to be taught in words is the door now, and it is
+                  the one the semantic front door was built to open. §46's "Teach me X" acceptance
+                  cases go through that door, not this button. */}
               {/* 🔴🔴 THE WAY BACK, AND IT IS NOT OPTIONAL POLISH — IT IS THE EXIT.
                   `no-screen-is-a-dead-end.test.ts` states the rule this obeys: a screen the learner
                   cannot leave is the product's worst failure mode, and it has already shipped once.
