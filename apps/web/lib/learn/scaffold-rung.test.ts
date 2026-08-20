@@ -272,8 +272,8 @@ test("🔴 NEMESIS MUST NOT INFER B BECAUSE THE OVERALL ANSWER WAS GOOD", () => 
     teachingStrategy: null,
     canvasId: "canvas-1",
     judgement: judgementOf([
-      outcomeFor({ identityKey: "A-inward-ion" }, GOOD),
-      outcomeFor({ identityKey: "C-influx-depolarizes" }, GOOD),
+      outcomeFor({ identityKey: "A-inward-ion" }, GOOD)!,
+      outcomeFor({ identityKey: "C-influx-depolarizes" }, GOOD)!,
     ]),
     occurredAt: AT,
     prompt: PHASE_0,
@@ -297,7 +297,7 @@ test("🔴 every row of one submission records the rung the TASK set", () => {
     // Pre-experiment boundary test: no controller chose this, and `null` says so.
     teachingStrategy: null,
     canvasId: null,
-    judgement: judgementOf([outcomeFor({ identityKey: "A-inward-ion" }, GOOD)]),
+    judgement: judgementOf([outcomeFor({ identityKey: "A-inward-ion" }, GOOD)!]),
     occurredAt: AT,
     prompt: PHASE_0,
     responseText: "Sodium enters the cell.",
@@ -324,7 +324,7 @@ test("🔴 a scaffolded prompt records ITS rung, not the default", () => {
     // Pre-experiment boundary test: no controller chose this, and `null` says so.
     teachingStrategy: null,
     canvasId: null,
-    judgement: judgementOf([outcomeFor({ identityKey: "obj-1" }, GOOD)]),
+    judgement: judgementOf([outcomeFor({ identityKey: "obj-1" }, GOOD)!]),
     occurredAt: AT,
     prompt: recognised,
     responseText: "active site",
@@ -369,7 +369,7 @@ test("🔴 silence about ONE target among several is still `not_addressed`", () 
     // Pre-experiment boundary test: no controller chose this, and `null` says so.
     teachingStrategy: null,
     canvasId: null,
-    judgement: judgementOf([outcomeFor({ identityKey: "A-inward-ion" }, GOOD)]),
+    judgement: judgementOf([outcomeFor({ identityKey: "A-inward-ion" }, GOOD)!]),
     occurredAt: AT,
     prompt: PHASE_0,
     responseText: "Sodium enters the cell, causing rapid depolarization.",
@@ -392,7 +392,7 @@ test("🔴 a contradicted objective is recorded as contradicted, not as silence"
     teachingStrategy: null,
     canvasId: null,
     judgement: judgementOf([
-      outcomeFor({ identityKey: "A-inward-ion" }, { ...GOOD, verdict: "misconception" }),
+      outcomeFor({ identityKey: "A-inward-ion" }, { ...GOOD, verdict: "misconception" })!,
     ]),
     occurredAt: AT,
     prompt: promptTargeting({

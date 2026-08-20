@@ -260,6 +260,30 @@ export interface MovedOn {
 export interface TeachingContext {
   /** The candidate objectives, already narrowed by focus. Both arms choose only from these. */
   objectives: readonly ResolvedObjective[];
+  /**
+   * What the learner said to open this sitting, in their own words, when this canvas began from an
+   * utterance rather than from a file.
+   *
+   * 🔴🔴 THIS IS EVIDENCE THE LEARNER SUPPLIED, WHICH IS WHY IT DOES NOT ERODE THE INVARIANT IT
+   * LOOKS LIKE IT MIGHT. `teaching-policy.ts` guards *"unknown means Nemesis lacks evidence, not
+   * that the learner lacks knowledge"*, and from that it follows that an empty canvas opens by
+   * ASKING rather than by teaching. That is right when somebody attaches a document and says
+   * nothing: we know nothing about them, and assuming ignorance would be a claim we cannot make.
+   * It is wrong when they typed "teach me functional groups", because then we are not inferring
+   * anything — they told us. Reported by the owner on 2026-08-19, who asked to be taught organic
+   * chemistry and was immediately quizzed on it.
+   *
+   * 🔴 THE UTTERANCE, NOT A FLAG, AND NOT THE TOPIC. A boolean computed up in the UI ("this looked
+   * like a teach request") would put a second classifier in front of the model, which is precisely
+   * what #689 deleted. The controller already reads the learner; give it the words and let it
+   * decide. The topic alone is no good either: "quiz me on glycolysis" and "teach me glycolysis"
+   * reduce to the same topic and mean opposite things.
+   *
+   * 🔴 NOT PERSISTED, AND SCOPED TO THE SITTING. It describes how this session started, not a fact
+   * about the canvas; a stored one would still be steering the controller a week later, long after
+   * the learner had met the material.
+   */
+  opening?: string | null;
   /** Everything this learner holds for these objectives, across every session. */
   evidence: readonly LearnerEvidence[];
   now: Date;

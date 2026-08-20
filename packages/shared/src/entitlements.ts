@@ -1,7 +1,24 @@
 // MVP web-beta entitlements (0122). These are the public plan/usage shapes used by
 // web now and mobile later; the database remains the source of truth.
 
-export type PlanCode = "free" | "plus" | "pro" | "max" | "student" | "professional" | "enterprise";
+/**
+ * Every plan code that can appear in a stored row.
+ *
+ * 🔴 THIS IS A DATA TYPE, NOT A PRODUCT LADDER. Only `free` and `nemesis` are
+ * sold; `enterprise` is a comp; the rest are retired names that old rows and
+ * replayed Stripe webhooks still carry. What any of them GRANTS is decided in
+ * one place: `canonicalPlan` / `entitlementPlanCode` in ./plan.ts.
+ */
+export type PlanCode =
+  | "free"
+  | "nemesis"
+  | "plus"
+  | "pro"
+  | "max"
+  | "student"
+  | "professional"
+  | "trial"
+  | "enterprise";
 
 export type EntitlementKey =
   | "ask_daily_limit"
@@ -48,25 +65,17 @@ export interface QuotaExceededError {
 // A student can hold a Stripe subscription (web) and an Apple subscription
 // (iPhone) at the same time. The `subscriptions` table keeps one row per user;
 // each store writes its OWN column (`stripe_plan` / `apple_plan`) and the
-// effective `plan` — the only column the edge functions read — is always the
+// effective `plan` -- the only column the edge functions read -- is always the
 // best of the two. When one side lapses, the other takes over automatically
 // instead of a last-webhook-wins race silently downgrading a paying student.
+//
+// 🔴 "THE HIGHER PLAN WINS" IS NOW A BOOLEAN OR, AND THE RANKING IS GONE.
+// Ranking mattered while the stores could disagree about HOW MUCH product
+// someone had bought. With one paid product (owner, 2026-08-17) the question
+// collapses to "does either store say they are paid". The implementation lives
+// in ./plan.ts so the application has exactly one answer; this is the historical
+// name, kept because the RevenueCat webhook and the Stripe webhook both import
+// it and neither should have to learn a new one to get the same behaviour.
 // ---------------------------------------------------------------------------
 
-/** Rank of the paid ladder. Unknown strings rank as free so a bad write can
- *  never grant access, only fail to. */
-const PLAN_RANK: Readonly<Record<string, number>> = { free: 0, plus: 1, pro: 2, max: 3 };
-
-export function planRank(plan: string | null | undefined): number {
-  return PLAN_RANK[plan ?? "free"] ?? 0;
-}
-
-/** The plan a user is actually entitled to, given what each store says. */
-export function effectivePlan(
-  stripePlan: string | null | undefined,
-  applePlan: string | null | undefined,
-): PlanCode {
-  const winner = planRank(applePlan) > planRank(stripePlan) ? applePlan : stripePlan;
-  const rank = planRank(winner);
-  return rank === 3 ? "max" : rank === 2 ? "pro" : rank === 1 ? "plus" : "free";
-}
+export { effectivePlan } from "./plan.ts";

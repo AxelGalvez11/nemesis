@@ -1,11 +1,12 @@
 import type Stripe from "stripe";
-import { effectivePlan } from "@nemesis/shared";
+import { effectivePlanCode, intervalFromStripe } from "@nemesis/shared";
 import { NEMESIS_TRIAL_PERIOD_DAYS, planLabel, subscriptionWebhookAction } from "@/lib/billing-contract";
 import { buildWelcomeEmail, sendEmail } from "@/lib/email";
 import { stripeWebhookSecret } from "@/lib/env";
 import { adminClient, json } from "@/lib/server";
 import {
   assertStripeBillingWritesAllowed,
+  intervalForPriceId,
   planForPriceId,
   planFromStripeStatus,
   stripe,
@@ -82,11 +83,20 @@ export async function POST(req: Request) {
         eventSubscription,
       );
       if (subscriptionAction === "created") {
-        await phServerCapture(result.userId, "subscription_started", { plan: result.plan, price_id: result.priceId });
+        await phServerCapture(result.userId, "subscription_started", {
+          billing_interval: result.interval,
+          plan: result.plan,
+          price_id: result.priceId,
+        });
       } else if (subscriptionAction === "deleted" && result.subscriptionId === eventSubscription.id) {
-        await phServerCapture(result.userId, "subscription_canceled", { plan: result.plan, price_id: result.priceId });
+        await phServerCapture(result.userId, "subscription_canceled", {
+          billing_interval: result.interval,
+          plan: result.plan,
+          price_id: result.priceId,
+        });
       } else if (subscriptionAction === "trial_will_end") {
         await phServerCapture(result.userId, "subscription_trial_ending", {
+          billing_interval: result.interval,
           plan: result.plan,
           price_id: result.priceId,
           trial_end: eventSubscription.trial_end
@@ -137,12 +147,14 @@ async function reconcileCustomerSubscriptions(
     subscriptions.push(subscription);
   }
 
+  // 🔴 THE TIE-BREAK USED TO RANK pro ABOVE plus. With one paid product there is
+  // nothing to rank: every entitled subscription grants the same Nemesis. What
+  // still matters is picking the one that runs LONGEST, so a cancellation
+  // arriving out of order cannot mirror a subscription that has already lapsed
+  // over one that is still paying.
   const entitled = subscriptions
     .filter((subscription) => entitledPlan(subscription) !== "free")
-    .sort((a, b) => {
-      const planDifference = (entitledPlan(b) === "pro" ? 2 : 1) - (entitledPlan(a) === "pro" ? 2 : 1);
-      return planDifference || (subscriptionPeriodEndSeconds(b) ?? 0) - (subscriptionPeriodEndSeconds(a) ?? 0);
-    });
+    .sort((a, b) => (subscriptionPeriodEndSeconds(b) ?? 0) - (subscriptionPeriodEndSeconds(a) ?? 0));
   const newest = subscriptions.sort((a, b) => b.created - a.created)[0];
   return mirrorSubscription(entitled[0] ?? newest ?? fallbackSubscription, fallbackUserId);
 }
@@ -157,8 +169,14 @@ async function mirrorSubscription(subscription: Stripe.Subscription, fallbackUse
 
   const item = subscriptionItem(subscription);
   const priceId = item?.price.id ?? null;
-  // Resolve the plan from the actual price id (plus vs pro) — not "any recognized price = plus".
+  // Resolve the plan from the actual price id — not "any recognized price is paid".
   const plan = planFromStripeStatus(subscription.status, priceId);
+  // How often they pay, recorded next to the entitlement and never consulted to
+  // decide one. Read from the configured Price ID first (that is the definitive
+  // answer for a price we sell) and fall back to what Stripe says the price
+  // recurs at, which is what a replayed LEGACY price will carry.
+  const interval = intervalForPriceId(priceId)
+    ?? intervalFromStripe(item?.price.recurring?.interval ?? null);
   // Dual-store rule: Stripe owns stripe_plan; the effective `plan` is the best
   // of both stores, so a Stripe cancellation cannot downgrade someone whose
   // Apple subscription (apple_plan, written by the RevenueCat webhook) still pays.
@@ -178,8 +196,13 @@ async function mirrorSubscription(subscription: Stripe.Subscription, fallbackUse
 
   const { error: subscriptionMirrorError } = await admin.from("subscriptions").upsert({
     user_id: userId,
-    plan: effectivePlan(plan, existingRow?.apple_plan),
+    // 🔴 effectivePlanCode, NOT effectivePlan. The plain version returns the
+    // canonical `nemesis`, which would flatten a comped `enterprise` account to
+    // a subscriber's allowance the first time any webhook fired for it.
+    plan: effectivePlanCode(plan, existingRow?.apple_plan),
     stripe_plan: plan,
+    billing_interval: interval,
+    billing_provider: "stripe",
     status: subscription.status,
     stripe_customer_id: customerId,
     stripe_livemode: subscription.livemode,
@@ -192,7 +215,7 @@ async function mirrorSubscription(subscription: Stripe.Subscription, fallbackUse
   }, { onConflict: "user_id" });
   if (subscriptionMirrorError) throw subscriptionMirrorError;
 
-  return { userId, plan, priceId, subscriptionId: subscription.id };
+  return { interval, userId, plan, priceId, subscriptionId: subscription.id };
 }
 
 async function lookupUserIdByCustomer(customerId: string, livemode: boolean): Promise<string | null> {

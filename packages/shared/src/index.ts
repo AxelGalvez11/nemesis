@@ -41,6 +41,42 @@ export * from "./health-context.ts";
 // Phase-6a backend gaps (§8): GET /compare structured comparison shapes.
 // (SourceDetail for GET /sources/{id} lives in search.ts alongside SourceRef.)
 export * from "./compare.ts";
+// THE CANONICAL PLAN: free | nemesis, with billing interval stored separately.
+//
+// 🔴 NAMED, NOT `export *`, AND DELIBERATELY NOT YET EXPORTING `effectivePlan`.
+// `entitlements.ts` still exports the OLD ladder-ranking `effectivePlan`, and
+// two modules exporting that name through one barrel is an ambiguity the
+// compiler rejects. Until the sale path is migrated (see the PR description),
+// the ladder version remains the live one and this module is the destination —
+// exporting both under one name would let a caller get whichever the bundler
+// happened to pick, which is the worst of the two states.
+export {
+  annualPerMonthCents,
+  annualSavingPercent,
+  canonicalPlan,
+  effectivePlanCode,
+  entitlementPlanCode,
+  formatUsdCents,
+  FREE_VOICE_SECONDS_MONTH,
+  intervalFromStripe,
+  intervalLabel,
+  isInternalPlan,
+  isLegacyPlanCode,
+  isPaid,
+  NEMESIS_ANNUAL_CENTS,
+  NEMESIS_MONTHLY_CENTS,
+  NEMESIS_VOICE_SECONDS_MONTH,
+  planLabel as canonicalPlanLabel,
+  priceCents,
+  VOICE_COUNTER_KEY,
+  VOICE_ENTITLEMENT_KEY,
+  voiceSecondsForCharacters,
+  voiceSecondsForPlan,
+  type BillingInterval,
+  type BillingProvider,
+  type Plan,
+} from "./plan.ts";
+
 // MVP web-beta entitlements + usage snapshots (0122).
 export * from "./entitlements.ts";
 // Missions (scheduled background deep-research runs): types + cadence math + entitlement + labels (pure).

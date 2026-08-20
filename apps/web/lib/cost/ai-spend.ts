@@ -31,12 +31,17 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { usdFor } from "@/lib/provider-costs";
+
 /**
  * Price list revision. Sources read on this date:
  *   mistral.ai/pricing        — OCR, $1 per 1,000 pages
- *   cloud.llamaindex.ai/pricing — LlamaParse, 1 credit per page on the balanced tier,
- *                                $1 per 1,000 credits
+ *   cloud.llamaindex.ai/pricing — LlamaParse. 🔴 THE TIER MATTERS AND IT IS NOT THE BALANCED ONE:
+ *                                this code sends `cost_effective`, measured at 3 credits/page, so
+ *                                the rate is ~$0.00375 and not the $0.001 a 1-credit reading gives.
  *   ai.google.dev/pricing     — Gemini Flash-Lite, an image is ~258 input tokens
+ *
+ * The numbers themselves live in `lib/provider-costs.ts`. See `REGISTRY_LOOKUP` below for why.
  */
 export const PRICE_REV = "2026-08-18";
 
@@ -49,18 +54,39 @@ export type SpendProvider =
   /** Gemini vision. One unit is one image or one PDF page — the same unit `VisionLedger` counts. */
   | "gemini_vision";
 
-/** USD per unit, at `PRICE_REV`. */
-export const UNIT_PRICE_USD: Readonly<Record<SpendProvider, number>> = {
-  // 🔴 THE VISION NUMBER IS THE ONE TO DISTRUST FIRST, AND IT SAYS SO HERE RATHER THAN IN A
-  // DOCUMENT NOBODY OPENS. Gemini bills images as INPUT TOKENS, not as images, so a per-image price
-  // is an average over a token count that varies with resolution. 258 tokens at Flash-Lite's input
-  // rate is the published arithmetic and it is right to within a rounding error for the images this
-  // parser sends, which are all downscaled to the same ceiling. If image pricing ever stops being
-  // token-shaped, this row is wrong and the whole vision column with it.
-  gemini_vision: 0.0000258,
-  llamaparse: 0.001,
-  mistral_ocr: 0.001,
+/**
+ * Where each provider's rate is looked up. NOT a price list.
+ *
+ * 🔴🔴 THIS MODULE NO LONGER OWNS A PRICE, AND THAT IS THE WHOLE POINT. It used to hold its own
+ * `UNIT_PRICE_USD`, and `lib/provider-costs.ts` held another, and the two DISAGREED: Gemini vision
+ * was $0.0000258 here and $0.002 there (77x), LlamaParse $0.001 here and $0.00375 there (3.75x).
+ * Both files were internally reasonable and both were quoted as fact — the ledger priced what was
+ * actually spent while the margin model priced what a month would cost, from different numbers.
+ * Whichever you read, you were confidently wrong about one of them.
+ *
+ * Each had one of the two right. Gemini's token-shaped derivation was correct HERE and the
+ * assumption over there was wrong; LlamaParse's tier was correct THERE — `cost_effective` is 3
+ * credits a page, the tier this code actually sends — and the 1-credit balanced-tier reading here
+ * was wrong. Both corrections now live in the registry, and this module reads them.
+ *
+ * A price belongs in exactly one file. `ai-spend.test.ts` asserts these resolve to the registry's
+ * numbers, so a future edit to one cannot reopen the gap.
+ */
+const REGISTRY_LOOKUP: Readonly<Record<SpendProvider, { provider: "gemini" | "llamaparse" | "mistral"; service: string; unit: "per_image" | "per_page" }>> = {
+  gemini_vision: { provider: "gemini", service: "gemini-3.5-flash vision", unit: "per_image" },
+  llamaparse: { provider: "llamaparse", service: "cost_effective", unit: "per_page" },
+  mistral_ocr: { provider: "mistral", service: "mistral-ocr", unit: "per_page" },
 };
+
+/** USD per unit, at `PRICE_REV`, resolved from the one registry. */
+export const UNIT_PRICE_USD: Readonly<Record<SpendProvider, number>> = Object.freeze(
+  Object.fromEntries(
+    (Object.keys(REGISTRY_LOOKUP) as SpendProvider[]).map((key) => {
+      const at = REGISTRY_LOOKUP[key];
+      return [key, usdFor(at.provider, at.service, at.unit, 1)];
+    }),
+  ) as Record<SpendProvider, number>,
+);
 
 export interface SpendResult {
   /** USD, or null when the provider is not in the price list. */

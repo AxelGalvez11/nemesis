@@ -1,105 +1,190 @@
-# Nemesis Lab — two benches, both local only
+# Nemesis Lab
 
-Written 2026-08-18. These are development surfaces. Both refuse to run when `NODE_ENV` is
-`production`, and neither is reachable from the product.
+A localhost-only place to look directly at the two hidden halves of Nemesis:
 
-## Why they exist
+1. **Did Nemesis understand the source correctly?**
+2. **Given that understanding, does Nemesis actually teach correctly?**
 
-Two decisions in the canvas contract cannot be made by reading code. §42 asks which representation a
-concept should get, and the only way to know whether the ladder behaves is to run a real concept
-down it and look. §43 asks which speech provider sounds native in a particular locale, and the only
-way to know is to listen. Everything else in this repository can be settled by a test; these two
-cannot.
+It is not a learner-facing feature and never appears in the product. It does not exist in a
+deployed build at all: every page and every one of its API routes goes through one shared check
+(`apps/web/lib/lab/gate.ts`) that returns "not found" whenever the code is running in production.
 
-## 1. Visual ladder — `/dev-preview/visual-lab`
+## The one rule this is built on
 
-Type a concept — *aspirin*, *nephron*, *T-cell receptor signalling*, *mitochondrion*, *hemoglobin* —
-and the page shows, for that one concept:
+**The Lab may have special observability. It must not have special parsing or special teaching.**
 
-- what kind of picture was needed;
-- whether a canonical chemical structure resolved, and what the resolver returned;
-- every reference-image candidate found, each with its provenance, its **per-file** licence, its
-  credit line and a link to the original;
-- which rung of the ladder won, and the router's own sentence explaining why;
-- the actual drawing, rendered by the same component the Canvas uses.
+Every parse on these pages is `parseDocument` — the same function the upload route and the
+background worker call. Every teaching decision is `controllerFor`, every verdict is
+`evaluateLearningResponse`, every evidence row is `recordEvidence`. What the Lab adds is
+*reporting*: the whole document model instead of the text, the whole turn instead of the question.
 
-**It calls the production router.** `routeVisual()` decides, not the page. A lab that made its own
-decision would show a picture of the ladder rather than the ladder, and would keep agreeing with
-itself long after production stopped agreeing with it.
+If a page here ever needed its own parser or its own tutor to work, the page would be wrong. That
+is why the Tutor Lab mounts the real `LearningCanvas` component rather than re-sequencing the
+cognition in a harness of its own.
 
-The `explain` / `locate` switch is worth playing with: `locate` means the learner would be marked
-right or wrong against the picture, and flipping it is what makes a generated illustration
-unreachable. Watching that happen is half the point of the surface.
+## Running it
 
-## 2. TTS bake-off — `/dev-preview/tts-lab`
+**On the owner's machine it is already set up.** Start the `lab` server (`.claude/launch.json`) and
+open **http://localhost:3220/dev/lab**.
 
-Pick a locale, type a phrase, press **Speak all**. Every provider that has an API key set on the
-machine synthesises the same sentence, and you get playback, measured latency, the character count,
-and five rating axes: native accent, pronunciation, prosody, naturalness, conversational pacing.
+That entry runs from `.nemesis-lab/`, a second checkout of `main` sitting inside the repo folder,
+rather than from the working copy. The reason is practical: the working copy sits on a feature
+branch with unfinished work on it, and switching that branch to reach the Lab would put that work at
+risk. A separate checkout means the Lab is always on `main` and the working copy is never disturbed.
+It costs almost no disk (its `node_modules` are hard links) and it is excluded from git locally, so
+it never shows up in `git status`.
 
-Keys are read from the environment: `XAI_API_KEY`, `CARTESIA_API_KEY`, `ELEVENLABS_API_KEY`,
-`GOOGLE_TTS_API_KEY`. Cartesia and ElevenLabs additionally need a voice id
-(`CARTESIA_VOICE_ID`, `ELEVENLABS_VOICE_ID`) because guessing an identifier produces a 404 that reads
-like the provider being broken. A provider with no key shows as **unavailable rather than hidden**,
-so the bench never looks complete when it is not.
+To refresh it after new work lands on `main`:
 
-Three rules make this a measurement rather than an endorsement:
-
-- **A locale is required; `auto` is refused.** Four providers on `auto` are four guesses at which
-  Spanish to speak.
-- **All five axes, or the rating does not count.**
-- **One rated provider is never a winner** — nor is a tie.
-
-Ratings persist to `.nemesis-lab/tts-bakeoff.json`, which is gitignored: they were measured on one
-machine and are not a fact about the product until somebody decides they are. **The bench never edits
-`speech-route.ts`.** It prints the exact line to add to `MEASURED_PROVIDERS`, and a human commits it.
-
-### Prices, and why most of them read "not priced"
-
-Every rate in the provider table carries **where it came from**, and the three levels are not
-degrees of the same thing:
-
-- **invoiced** — this is what Nemesis is actually billed and can be read off a statement.
-- **published** — somebody opened the vendor's pricing page on a stated date and copied it.
-- **recalled** — it came from somebody's memory and **has not been checked against anything**.
-
-A recalled figure is never turned into a cost. The bench prints "not priced" instead, because a
-price and a hypothesis about a price must not render to the same number of decimal places.
-
-Today exactly one provider is settled: **xAI at $4.20 per million characters**, from what
-`nemesis-speak` actually bills — and even that is flagged *disputed*, because the brief that
-commissioned this work cites $15 from the same vendor. A month of the function's own `tts_spoken`
-logs against a statement settles it. The other three are unpriced.
-
-Two things make a single per-million number misleading, and the table records both:
-
-- **How it is sold.** Pay-as-you-go bills what you use. Subscription credits sell a monthly
-  allowance, so the effective rate depends on how full the tier runs — a half-empty tier costs
-  double its headline rate, and a per-million column silently assumes it is always full.
-- **Voice family.** One vendor can price basic, neural and studio voices an order of magnitude
-  apart, so "the Google price" is meaningless without naming the tier — and the tier is exactly what
-  a language lesson is choosing.
-
-## Running the acceptance harness instead
-
-If you want the claims checked rather than the surfaces looked at:
-
-```
-pnpm --filter @nemesis/web exec tsx scripts/visual-ladder-acceptance.mts
+```bash
+cd .nemesis-lab && git fetch origin main && git checkout --detach origin/main
 ```
 
-Thirty-one checks against the production router. It runs against **injected provider responses** by
-default and says so in its own output; pass `--live` to run the same checks against PubChem and
-Wikimedia Commons from a machine with outbound access.
+**From any ordinary checkout that is on `main`**, the Lab is just the app:
 
-Six of them launch a real browser, and they are the ones that prove the chemistry is drawn rather
-than imagined: identical coordinates across two renders, a stereocentre that visibly changes the
-picture, dark mode changing colour without moving a single bond, a small molecule drawing as a
-structure instead of collapsing into text, a highlighted group, and a full reaction scheme with its
-conditions over the arrow. They skip loudly if the depiction library or Playwright is missing.
+```bash
+cd apps/web && pnpm dev     # then http://localhost:3000/dev/lab
+```
 
-The last thirteen cover §44's five shapes and §45's computed curves, and they need no browser — those are drawn by deterministic
-SVG in this repository rather than by a third-party library, so the arithmetic is where the risk
-lives and the arithmetic is what they check. A T-account that does not balance, a column total that
-does not sum, an angle that disagrees with its own coordinates and forces that do not cancel are each
-**refused** rather than drawn. What they do not prove is layout, which needs React built.
+**One key is needed for the Tutor tab**, because the Lab creates its own throwaway test learner:
+`SUPABASE_SERVICE_ROLE_KEY` in `apps/web/.env.local`, the same value already in the repo root
+`.env`. It is already in place on this machine. That file is gitignored and the key never reaches
+the browser. Without it the Parser tab still works completely, and the Tutor tab says exactly what
+is missing rather than failing vaguely.
+
+## Where the data goes
+
+The Lab runs against the hosted Supabase project, and that is forced rather than chosen. Real
+cognition needs the model door, and the model door (`supabase/functions/nemesis-llm`) resolves the
+caller against *its own* project — so a JWT minted by a local Supabase stack can never be verified
+there. "Local database, production model" is impossible, not merely awkward.
+
+So isolation comes from **identity** instead. Everything the Lab writes belongs to one dedicated
+account, `nemesis-lab@nemesis.test`, which owns nothing else, ever. Your Library, your learner
+history, your evidence and your experiment assignments are untouched.
+
+**Reset** (in the Tutor tab header) deletes everything that account owns, by user id. No timestamp
+window, no name matching, no guessing about who made what — the account exists only because the Lab
+created it, so identity is the strongest possible proof of ownership.
+
+## Parser
+
+Drop in a real PDF, PowerPoint, Word file, spreadsheet, CSV, text file or image.
+
+- **Original | Extracted**, page by page. The left side is the actual file rendered; the right side
+  is what Nemesis believes it contains. For formats the browser cannot render (PowerPoint, Word) the
+  left side says so plainly rather than showing you the extraction twice.
+- **Rendered / Markdown / Structure.** Rendered draws the model — tables as real grids with their
+  merges, pictures as their actual extracted pixels. Markdown is the exact string that travels
+  downstream to knowledge extraction. Structure is the model itself: block kind, reading order,
+  headings, bounding boxes, spans.
+- **Tables** show rows, columns, cell count, merged cells, header rows, the page, the bounding box,
+  and every cell's own coordinates on hover. This is what catches "all the right words, the wrong
+  columns" — which a character count never can.
+- **Pictures** are listed whether or not anyone looked at them. Three states, and they are not the
+  same: *described* (vision looked and had something to say), *skipped* (something decided not to
+  look, and named the reason), *never examined* (nobody looked and nobody decided — the only one
+  that is a gap in the pipeline).
+- **Speaker notes** appear separately for PowerPoint, with a note saying they are recovered from a
+  text marker rather than from document structure — because that is the truth about how the parser
+  represents them.
+- **Which parser ran, and why** is shown at the top: native or vendor, the routing reason, the
+  parser version, the time, and everything the parse knew it could not recover.
+- **The page strip** marks the pages worth looking at — table, picture, equation, lost text, or a
+  disagreement between two lanes — so a 100-page lecture does not have to be read by hand.
+
+Nothing on this page is repaired, reordered or beautified, and nothing is saved. If the parser got
+something wrong, the wrong result is what you see.
+
+### Comparing parsers
+
+"Native only" re-reads the file with the paid parser forbidden. "Paid reference ($)" calls the paid
+parser — **only when you press it**, never because the page is open.
+
+Disagreements are reported per page, ordered by how much teaching they can destroy: table structure
+first, then merges, figures and equations, then headings and reading order, and **text last**. A
+character count is the one number that reliably ranks a worse read higher, so it is never the
+headline.
+
+A lane that did not run — no vendor key, a format no vendor reads — says so. An empty list of
+differences from a comparison that never happened would look exactly like two parsers agreeing.
+
+## Tutor
+
+Press **Open in Tutor Lab** on a source you just inspected. That button is the one moment the Lab
+writes anything: it files the parse as a lab source, through the production write path, under the
+lab learner.
+
+The middle of the page is the real Canvas. Beside it, a panel shows every turn as a chain:
+
+- what it decided to do, and about which objective
+- what it asked
+- how the answer was marked, and what kind of mistake
+- what was written down
+
+Each link says plainly whether it happened, so a missing link is visible rather than inferred. That
+is what separates *bad extraction* from *bad retrieval* from *bad learner model* from *bad policy*
+from *bad model response* from *bad judge* from *bad evidence write* — without reading a log or a
+database row.
+
+Numbers are never invented. "tokens not reported" and "0" are different words because they are
+different facts: a streamed call reports no usage, which is not a free call. "no write was
+attempted" and "0 rows written" are different too.
+
+### Starting learner conditions
+
+Unknown, partially known, established, known misconception. These are not flags — each one writes
+real evidence rows through the real evidence writer, because that is what those states *are* in this
+system. Seeded rows are marked `lab-seed:` so they can always be told apart from a demonstration a
+person actually made.
+
+### Comparing the two teaching controllers
+
+Nemesis policy and the LLM teacher, on identical inputs taken from the last real decision. **Freeze
+inputs** holds them, so repeated runs cannot differ because the learner state moved underneath them.
+
+Running the same arm several times over unchanged inputs answers a question nothing else can: if the
+runs disagree with each other, the instability is the model. If they agree and the product still
+wanders, the instability is upstream.
+
+## Replays
+
+Save any bad parse or bad teaching moment as a regression case. A case holds the file itself (not a
+reference to one) or the whole frozen turn, so it reproduces without the session that found it.
+
+Reruns report **drift**, never pass or fail. You saved these because they were wrong; treating the
+recorded behaviour as the expected result would build a guard that goes red the day someone fixes
+the defect.
+
+Parser cases also run from the command line, which is how they reach a merge gate:
+
+```bash
+cd apps/web && ../../node_modules/.bin/tsx scripts/lab-replay.ts --strict
+```
+
+Teaching cases rerun in the browser, because a teaching turn needs a real learner session to reach
+the model and to write evidence under row-level security. The command line lists them as skipped
+rather than counting a skip as a pass.
+
+## Known limits, stated rather than left to be discovered
+
+**Two of the seven diagnostic links have never fired.** The debug panel's *how the answer was
+marked* and *what was written down* rows are wired at the exact points where the judge returns and
+where evidence is written — but no turn has ever reached them, because the product currently cannot:
+a typed answer to a Canvas question is routed away from the teaching runtime before it gets there
+(learning-canvas.tsx:1079, gated on `sink.kind === "policy"`). So those two rows are wired and
+uncalibrated. An instrument that has never fired has no demonstrated link to the thing it measures,
+and that is worth saying out loud rather than discovering later.
+
+That is also the Lab's first real finding, and it came with something new: the evidence WRITER is
+fine. Seeding learner conditions wrote 256 rows through the same production function under the same
+learner's session. So the failure is upstream of the writer, not in it.
+
+The same gap means the judge half of a teaching replay has never executed either — it only runs for
+a case that recorded a judge input, and no judge has yet run.
+
+## What the Lab is not
+
+It is the first verification layer, not the last. Localhost success is not evidence that production
+works: that still needs a preview deploy and a small production smoke. What the Lab buys is finding
+the problem in minutes instead of hours, and being able to prove the fix later.

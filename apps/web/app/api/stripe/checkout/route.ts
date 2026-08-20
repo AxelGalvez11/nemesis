@@ -1,14 +1,19 @@
-import { appUrl, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
+import { appUrl } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
-import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
+import {
+  assertStripeBillingWritesAllowed,
+  nemesisPriceIdFor,
+  stripe,
+  stripeFailureDetail,
+} from "@/lib/stripe";
 import {
   checkoutIdempotencyKey,
   customerIdempotencyKey,
   reusableCheckoutUrl,
-  stripePriceMatchesPlan,
+  stripePriceMatchesInterval,
   subscriptionCheckoutTerms,
   subscriptionRemainsOpen,
-  type CheckoutPlan,
+  type CheckoutInterval,
 } from "@/lib/billing-contract";
 
 export async function POST(req: Request) {
@@ -16,30 +21,36 @@ export async function POST(req: Request) {
     const user = await verifyBearer(req);
     if (!user) return json({ error: "authentication required" }, 401);
 
-    // Which plan to buy. Defaults to plus (no body) for backward compatibility.
+    // WHAT to buy is no longer a question — there is one paid product. All that
+    // is chosen here is how often they pay for it.
     //
-    // Max was retired 2026-08-05 (owner: "agent pro is the ceiling"). An old
-    // link asking for plan "max" now falls through to plus rather than erroring
-    // — this route's contract has always been "anything unrecognised means
-    // plus", and a 500 on a stale bookmark helps nobody. Nothing sells $99 any
-    // more; see CheckoutPlan in lib/billing-contract.ts.
-    let plan: CheckoutPlan = "plus";
+    // Defaults to monthly, and anything unrecognised (including a bookmarked
+    // link still asking for "plus", "pro" or "max") means monthly rather than a
+    // 500. This route's contract has always been "unrecognised means the cheapest
+    // thing on sale", and a stale bookmark should sell Nemesis, not error.
+    let interval: CheckoutInterval = "monthly";
     try {
       const body = await req.json();
-      if (body?.plan === "pro") plan = "pro";
-    } catch { /* no body → plus */ }
-    const priceByPlan = { plus: stripePlusPriceId, pro: stripeProPriceId } as const;
-    const priceId = priceByPlan[plan];
-    if (!priceId) return json({ error: `STRIPE_${plan.toUpperCase()}_PRICE_ID missing` }, 500);
+      if (body?.interval === "annual") interval = "annual";
+    } catch { /* no body → monthly */ }
+    const priceId = nemesisPriceIdFor(interval);
+    if (!priceId) {
+      return json({ error: `STRIPE_NEMESIS_${interval === "annual" ? "ANNUAL" : "MONTHLY"}_PRICE_ID missing` }, 500);
+    }
 
     const stripeClient = stripe();
     const checkoutPrice = await stripeClient.prices.retrieve(priceId);
-    if (!stripePriceMatchesPlan(plan, checkoutPrice)) {
+    // 🔴 THE PRICE ID CAME FROM CONFIG, SO THE AMOUNT IS WHAT IS VERIFIED HERE.
+    // Nemesis monthly costs exactly what retired Agent Pro cost, so an amount
+    // alone proves nothing about WHICH price this is — reading it through
+    // `nemesisPriceIdFor` is what makes the identity certain, and this check is
+    // what stops a correctly-named variable pointing at a wrong-priced Price.
+    if (!stripePriceMatchesInterval(interval, checkoutPrice)) {
       console.error("stripe_checkout_price_mismatch", {
         active: checkoutPrice.active,
         currency: checkoutPrice.currency,
         interval: checkoutPrice.recurring?.interval,
-        plan,
+        wanted: interval,
         unitAmount: checkoutPrice.unit_amount,
       });
       return json({
@@ -97,12 +108,13 @@ export async function POST(req: Request) {
       for await (const checkoutSession of stripeClient.checkout.sessions.list({ customer: customerId, status: "open", limit: 100 })) {
         openCheckoutSessions.push(checkoutSession);
       }
-      const existingCheckoutUrl = reusableCheckoutUrl(openCheckoutSessions, user.id, plan);
+      const existingCheckoutUrl = reusableCheckoutUrl(openCheckoutSessions, user.id, interval);
       if (existingCheckoutUrl) return json({ url: existingCheckoutUrl, mode: "checkout" });
 
-      // A student must never be able to complete two different plan checkouts
-      // from separate tabs. Expire any prior Nemesis subscription session
-      // before creating the newly selected plan.
+      // A student must never be able to complete two different checkouts from
+      // separate tabs — monthly in one and annual in the other would bill them
+      // twice for the same product. Expire any prior Nemesis subscription
+      // session before creating the newly selected one.
       for (const checkoutSession of openCheckoutSessions) {
         if (
           checkoutSession.mode === "subscription" &&
@@ -150,9 +162,9 @@ export async function POST(req: Request) {
       cancel_url: `${appUrl}/pricing?checkout=cancelled`,
       subscription_data: {
         ...checkoutTerms.subscription_data,
-        metadata: { user_id: user.id, plan },
+        metadata: { user_id: user.id, plan: "nemesis", interval },
       },
-      metadata: { user_id: user.id, plan },
+      metadata: { user_id: user.id, plan: "nemesis", interval },
     }, { idempotencyKey: checkoutIdempotencyKey(user.id, mode, attemptId) });
 
     return json({ url: session.url });

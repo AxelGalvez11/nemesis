@@ -17,6 +17,15 @@
 // So the sheet opens whenever a session is underway, and grows a submit control only when there is
 // something for the work to be an answer to.
 //
+// 🔴 IT LIVES IN THE CANVAS'S FREE SPACE, AND USED TO LIVE INSIDE THE COMPOSER (owner call,
+// 2026-08-19). The old arrangement had this replace the composer's contents inside its pill, on the
+// principle that there must be exactly one place you interact with Nemesis and never a second card
+// stacked over the input. That principle was sound and the shape it produced was not: a page to work
+// on that is as wide as a chat box, and no way to say anything while it is open. It now fills the
+// room between the masthead and the composer, and the composer is untouched beneath it. The single
+// surface that actually mattered was never the pixels — it was the submission, and `onSubmit` still
+// goes through the composer's one `onAnswer` with the same modality and elapsed time.
+//
 // 🔴 AND IT DOES NOT WATCH YOU WRITE. Nothing here reads a stroke, grades a line, or sends
 // anything anywhere until the learner presses a button. The owner's first requirement, made
 // structural: there is exactly one call site for the vision request in this file and it is inside

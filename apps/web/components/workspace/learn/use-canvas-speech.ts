@@ -26,6 +26,9 @@ export type SpeechFailure =
   | "not-signed-in"
   /** The provider key is not set on the function. Nameable so "not configured" and "broken" differ. */
   | "not-configured"
+  /** This month's conversational voice allowance is used up. NOT an error: it is
+   *  an offer, and the canvas keeps working in text exactly as before. */
+  | "voice-quota"
   | "provider-error"
   /** The browser refused to play — autoplay policy, no output device. */
   | "playback-blocked";
@@ -133,7 +136,11 @@ export function useCanvasSpeech(): CanvasSpeech {
 
         if (!res.ok) {
           if (alive.current) {
-            setFailure(res.status === 503 ? "not-configured" : "provider-error");
+            setFailure(
+              res.status === 402 ? "voice-quota"
+                : res.status === 503 ? "not-configured"
+                : "provider-error",
+            );
             setSpeaking(false);
           }
           return;

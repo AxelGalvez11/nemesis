@@ -30,6 +30,7 @@ import {
   standingMarks,
   unreadMarks,
   type WrittenMark,
+  type WrittenMarkKind,
   type WrittenWork,
 } from "@/lib/handwriting/written-work";
 
@@ -93,7 +94,28 @@ export function writtenSubmissionGate(work: WrittenWork): WrittenGate {
     return { kind: "blocked", reason: NOTHING_READ };
   }
 
-  if (unread.length > 0) return { kind: "confirm", reason: CHECK_BEFORE_SUBMITTING };
+  // 🔴🔴 A DRAWING CANNOT BE PROOFREAD, SO IT IS NOT SENT TO BE PROOFREAD. Owner call, 2026-08-19:
+  // a chemistry structure came back as "A curved angle open to the right" with a box asking them to
+  // fix anything Nemesis got wrong. There is nothing to fix. For a `line`, a `label` or an
+  // `annotation`, `text` is what the LEARNER WROTE and a misreading is correctable by retyping it —
+  // that is the misread-handwriting failure this gate exists to prevent, and it is untouched. For a
+  // `figure` or a `connector`, `text` is the model's own DESCRIPTION of a shape (the type says so:
+  // "something drawn with no legible text of its own"). Handing that back asks the learner to edit
+  // our prose about their drawing, which improves no reading and mostly teaches them to press
+  // Confirm without looking — which would blunt the gate on the pages where it does matter.
+  //
+  // 🔴 THIS NARROWS THE GATE, IT DOES NOT WEAKEN THE PROPERTY. "Uncertain handwriting must not
+  // become a failure they did not earn" is about text. A page whose marks are entirely non-textual
+  // has no handwriting to be uncertain about; the reading either found a shape or it did not, and
+  // "did not" is still `blocked` above via `standing.length === 0`.
+  const textual = work.marks.filter((mark) => TEXTUAL_KINDS.has(mark.kind));
+
+  if (unread.some((mark) => TEXTUAL_KINDS.has(mark.kind))) {
+    return { kind: "confirm", reason: CHECK_BEFORE_SUBMITTING };
+  }
+
+  // Nothing on this page is the learner's own words. There is no reading for them to correct.
+  if (textual.length === 0) return { kind: "ready" };
 
   // 🔴 `null` IS NOT A PASS. A model that did not say how sure it was has not told us it was sure,
   // and defaulting silence to confidence is the exact shape of every absent-is-zero defect this
@@ -102,9 +124,9 @@ export function writtenSubmissionGate(work: WrittenWork): WrittenGate {
     return { kind: "confirm", reason: CHECK_BEFORE_SUBMITTING };
   }
 
-  // 🔴 EVERY MARK, INCLUDING THE STRUCK-OUT ONES. A misread retraction is still a misreading, and
-  // the judge is shown crossed-out work as part of how someone reasoned.
-  for (const mark of work.marks) {
+  // 🔴 EVERY TEXTUAL MARK, INCLUDING THE STRUCK-OUT ONES. A misread retraction is still a
+  // misreading, and the judge is shown crossed-out work as part of how someone reasoned.
+  for (const mark of textual) {
     if (mark.confidence === null || mark.confidence < CONFIDENT_ENOUGH_TO_JUDGE) {
       return { kind: "confirm", reason: CHECK_BEFORE_SUBMITTING };
     }
@@ -112,6 +134,10 @@ export function writtenSubmissionGate(work: WrittenWork): WrittenGate {
 
   return { kind: "ready" };
 }
+
+/** The kinds whose `text` is the learner's own words rather than a description of a shape. See the
+ *  narrowing note inside `writtenSubmissionGate`. */
+const TEXTUAL_KINDS: ReadonlySet<WrittenMarkKind> = new Set<WrittenMarkKind>(["annotation", "label", "line"]);
 
 /**
  * Was this reading taken against the question that is open now?

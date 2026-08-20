@@ -1,14 +1,22 @@
 import Stripe from "stripe";
+import type { Plan } from "@nemesis/shared";
 import {
   stripeAllowLive,
   stripeAllowTestBilling,
   stripeMaxLegacyPriceIds,
   stripeMaxPriceId,
+  stripeNemesisAnnualPriceId,
+  stripeNemesisMonthlyPriceId,
   stripePlusPriceId,
   stripeProPriceId,
   stripeSecretKey,
 } from "./env";
-import { stripeKeyMode, subscriptionGrantsAccess, type StripeMode } from "./billing-contract";
+import {
+  stripeKeyMode,
+  subscriptionGrantsAccess,
+  type CheckoutInterval,
+  type StripeMode,
+} from "./billing-contract";
 
 let cached: Stripe | null = null;
 
@@ -39,17 +47,46 @@ export function assertStripeBillingWritesAllowed(): StripeMode {
   return mode;
 }
 
-export type PaidPlan = "free" | "plus" | "pro" | "max";
+/**
+ * What a Stripe price grants. Two answers, always.
+ *
+ * 🔴 THE LEGACY PRICE IDS ARE STILL READ, AND THAT IS DELIBERATE. Nothing sells
+ * Student, Agent Pro or Max any more, but Stripe replays events for
+ * subscriptions created under those prices and a webhook that resolved them to
+ * `free` would cancel a subscriber's access on a redelivery. They map to
+ * `nemesis` because that is what a paid subscription now entitles you to.
+ */
+export type PaidPlan = Plan;
+
+/** The Price ID configured for each interval. The ONLY place they are read. */
+export function nemesisPriceIdFor(interval: CheckoutInterval): string {
+  return interval === "annual" ? stripeNemesisAnnualPriceId : stripeNemesisMonthlyPriceId;
+}
+
+/** Which interval a configured Price ID is for, or null if it is not one of ours. */
+export function intervalForPriceId(priceId: string | null | undefined): CheckoutInterval | null {
+  if (!priceId) return null;
+  if (stripeNemesisMonthlyPriceId && priceId === stripeNemesisMonthlyPriceId) return "monthly";
+  if (stripeNemesisAnnualPriceId && priceId === stripeNemesisAnnualPriceId) return "annual";
+  return null;
+}
+
+/** Every Price ID that grants Nemesis: the two on sale, plus the retired ones. */
+function paidPriceIds(): string[] {
+  return [
+    stripeNemesisMonthlyPriceId,
+    stripeNemesisAnnualPriceId,
+    stripePlusPriceId,
+    stripeProPriceId,
+    stripeMaxPriceId,
+    ...stripeMaxLegacyPriceIds,
+  ].filter(Boolean);
+}
 
 /** Which plan a Stripe price grants. Unrecognized prices grant nothing (free). */
 export function planForPriceId(priceId: string | null | undefined): PaidPlan {
-  if (priceId && (
-    (stripeMaxPriceId && priceId === stripeMaxPriceId)
-    || stripeMaxLegacyPriceIds.includes(priceId)
-  )) return "max";
-  if (priceId && stripeProPriceId && priceId === stripeProPriceId) return "pro";
-  if (priceId && stripePlusPriceId && priceId === stripePlusPriceId) return "plus";
-  return "free";
+  if (!priceId) return "free";
+  return paidPriceIds().includes(priceId) ? "nemesis" : "free";
 }
 
 /** Effective plan from a subscription: the price's plan when active/trialing, else free. */

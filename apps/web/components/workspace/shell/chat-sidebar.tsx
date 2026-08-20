@@ -7,7 +7,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { IconSearch, IconX } from "@tabler/icons-react";
 import { PanelLeft } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -22,6 +22,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { SearchField } from "@/components/desktop-ui/search-field";
+import { fetchEntitlements } from "@/lib/api";
+import { planLabel } from "@/lib/billing-contract";
 import { useAuth } from "@/components/AuthProvider";
 import type { SettingsSection } from "@/components/SettingsSurface";
 import { useSessions } from "@/lib/workspace/sessions-store";
@@ -374,6 +376,24 @@ function StudentSidebarFooter({
   const { signOut } = useAuth();
   const router = useRouter();
 
+  // 🔴 THIS BADGE USED TO BE THE LITERAL STRING "Student", AND IT WAS ON EVERY
+  // SCREEN. It never read a plan at all, so it went on naming a tier that was
+  // withdrawn — to free users, to paying users, and to internal accounts alike.
+  // Found on production, in the sidebar, after the pricing page had already been
+  // switched over. A hardcoded plan name is not a default; it is a wrong answer
+  // that cannot be corrected by fixing billing.
+  //
+  // Renders nothing until the plan is known, because a placeholder here is
+  // indistinguishable from a claim.
+  const [plan, setPlan] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void fetchEntitlements()
+      .then((snapshot) => { if (alive) setPlan(snapshot.plan); })
+      .catch(() => { /* the badge simply stays absent; it is not worth an error */ });
+    return () => { alive = false; };
+  }, []);
+
   return (
     <SidebarFooter className="sticky bottom-0 shrink-0 gap-1 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-[var(--nav-row-inset)] py-2">
       <div className="flex min-w-0 items-center gap-1">
@@ -384,7 +404,9 @@ function StudentSidebarFooter({
             <Button aria-label="Account menu" className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-[var(--nav-row-radius)] px-1.5 py-1 text-left text-foreground transition-colors duration-100 ease hover:bg-(--ui-control-hover-background) active:scale-[0.99] motion-reduce:active:scale-100" size="sm" variant="ghost">
               <span className="grid size-6 shrink-0 place-items-center rounded-full bg-(--ui-bg-quaternary) text-[length:var(--canvas-text-meta)] font-semibold uppercase text-(--ui-text-secondary) shadow-[inset_0_0_0_1px_var(--ui-stroke-tertiary)]">{accountInitial}</span>
               <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-meta)] font-medium">{accountEmail || "Sign in"}</span>
-              <span className="max-w-20 shrink truncate rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[length:var(--canvas-text-meta)] font-semibold text-(--theme-primary)">Student</span>
+              {plan ? (
+                <span className="max-w-20 shrink truncate rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[length:var(--canvas-text-meta)] font-semibold text-(--theme-primary)">{planLabel(plan)}</span>
+              ) : null}
               <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-up" size="0.8rem" />
             </Button>
           </DropdownMenuTrigger>

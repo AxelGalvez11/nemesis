@@ -171,16 +171,23 @@ test("🔴 K3: a correct answer needs NO CONTROL to advance — asserted as beha
   // of the readability floor and the real evidence write. Dropping `recording` would let a timer
   // advance mid-write, and the learner could answer again with the answer still on screen — an echo
   // recorded as a real demonstration. A bug here must cost a missed advance, never a fabricated one.
-  assert.match(feedback, /if \(!selfAdvancing \|\| !minReadDone \|\| recording\) return;/,
+  // 🔴 THE GATE MOVED OUT OF THIS COMPONENT AND INTO `useScreenExit`, AND THAT MOVE WAS A BUG FIX,
+  // NOT A REFACTOR. While it lived here, the VERDICT was the only screen that could end itself —
+  // `show_correction`, `teach` and `simplify` declare exactly the same `transient` exposition and
+  // had no timer at all, so a wrong answer to a one-line association left the learner on a screen
+  // with no Continue and no advance, permanently. This test follows the property, not the address.
+  const exit = rendered.slice(rendered.indexOf("function useScreenExit"));
+  assert.ok(exit, "the shared screen-exit rule is gone");
+  assert.match(exit, /if \(!selfAdvancing \|\| !held \|\| blocked\) return;/,
     "the auto-advance gate must wait for BOTH the exposure window and the real evidence write");
   // 🔴 AND THE VERDICT MUST NOT LEAK BACK INTO THE GATE. This is the specific regression: someone
   // restores `passed` to the advance condition because a wrong answer auto-advancing looks like a
   // bug. It is not — it is §39's transient correction, and `cognitive-mode.ts` records that Canvas
   // UI came within one commit of shipping the opposite.
-  const gateLine = /if \([^)]*\) return;\n\s*latestAcknowledge/.exec(feedback)?.[0] ?? "";
+  const gateLine = /if \([^)]*\) return;\n\s*latest\.current/.exec(exit)?.[0] ?? "";
   assert.equal(gateLine.includes("passed"), false,
     "correctness is back in the advance gate — §39 says cognitive mode decides advancement, and a verdict must not reach this condition");
-  assert.match(feedback, /latestAcknowledge\.current\(\)/, "the advance must call the CURRENT acknowledge, not a stale closure");
+  assert.match(exit, /latest\.current\?\.\(\)/, "the advance must call the CURRENT acknowledge, not a stale closure");
   assert.match(rendered, /recording=\{runtime\.recording\}/, "the runtime's own recording flag must be passed in, not guessed locally");
 });
 

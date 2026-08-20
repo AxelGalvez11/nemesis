@@ -95,15 +95,22 @@ export default function DrillPreviewPage() {
               onAsk={() => undefined}
               onClearSelection={() => undefined}
               onFiles={() => undefined}
+              onStart={() => undefined}
               selected={[]}
-              task={{
-                kind: "question",
-                id: step.pairs[0]?.id ?? "",
-                prompt: "",
-                placeholder: drillPlaceholder(step),
-                index: 0,
-                total: 1,
-                answered: false,
+              // The drill IS a question, so the composer's one meaning here is `answer`. Naming it
+              // rather than implying it through props is the whole of composer-intent.ts.
+              intent={{
+                kind: "answer",
+                sink: "policy",
+                task: {
+                  kind: "question",
+                  id: step.pairs[0]?.id ?? "",
+                  prompt: "",
+                  placeholder: drillPlaceholder(step),
+                  index: 0,
+                  total: 1,
+                  answered: false,
+                },
               }}
             />
           )}

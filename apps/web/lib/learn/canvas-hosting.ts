@@ -137,6 +137,20 @@ export function isEvidenceStage(state: CanvasState): boolean {
 }
 
 /**
+ * This canvas's STORED state says it has not begun: no lesson, no evidence, only whatever material
+ * is waiting.
+ *
+ * 🔴 NECESSARY FOR "SUBMITTING MEANS START", NEVER SUFFICIENT — see composer-intent.ts. Nothing
+ * advances `canvas.state` when the policy stages a question, so this stayed true with a real
+ * question on screen and every typed answer on such a canvas was routed into `begin()`. It is
+ * exported so that exactly one list of pre-content states exists; it is NOT exported as a licence
+ * to test it alone.
+ */
+export function isPreContent(state: CanvasState): boolean {
+  return PRE_CONTENT_STATES.includes(state);
+}
+
+/**
  * A name for the cognitive action in flight, stable while that action is what the learner is doing.
  *
  * 🔴 THE OBJECTIVE *AND* THE ACTION TYPE, BECAUSE EITHER ALONE IS THE WRONG GRAIN. The objective

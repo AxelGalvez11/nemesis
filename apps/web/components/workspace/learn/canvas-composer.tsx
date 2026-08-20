@@ -48,14 +48,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
 import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model";
+import { endsPushToTalk, isTypingTarget, startsPushToTalk } from "@/lib/learn/canvas-hotkeys";
 import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
+import type { ComposerIntent } from "@/lib/learn/composer-intent";
 import { cn } from "@/lib/utils";
 
 import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
+import { ComposerSend } from "./composer-controls";
 import { WrittenWorkSheet } from "./written-work-sheet";
-import type { ActiveTask } from "./use-canvas-session";
 
 interface CanvasComposerProps {
   selected: readonly CanvasBlock[];
@@ -78,19 +80,28 @@ interface CanvasComposerProps {
    * this way: upload and record are both ways of bringing material in.
    */
   onRecord?: (() => void) | null;
-  /** What the canvas is asking for, or null while reading. */
-  task: ActiveTask | null;
+  /**
+   * 🔴🔴🔴 WHAT SUBMITTING MEANS RIGHT NOW. ONE VALUE, DECIDED BY THE CALLER, NEVER RE-DERIVED HERE.
+   *
+   * This replaces `task: ActiveTask | null` plus the presence of `onStart` plus `inSession` — three
+   * props that each independently implied a meaning, ordered by an `if` chain in `submit()`:
+   *
+   *     if (onStart) onStart(value);
+   *     else if (answering) onAnswer(value, …);
+   *     else onAsk(value);
+   *
+   * whose own comment claimed *"the caller only passes `onStart` in exactly that state, so this
+   * branch cannot capture a genuine answer"*. The caller was quietly breaking that invariant on
+   * every canvas that had material attached and had never had send pressed, which is most of them:
+   * a real question was on screen, `Submit answer` was on the button, and the answer went to
+   * `begin()` — a model call, a re-titled canvas, a different question, and no evidence row.
+   *
+   * Now there is one union that cannot hold two meanings and this component switches on it. See
+   * composer-intent.ts for the full account and for why `answer` outranks `start`.
+   */
+  intent: ComposerIntent;
   busy: boolean;
   busyLabel?: string;
-  /**
-   * A learning session is underway.
-   *
-   * 🔴 REMOVES THE ATTACH CONTROL, NOT THE ABILITY TO ATTACH. Mid-session is not an ingestion
-   * state: the learner is producing an answer, and a `+` sitting to the left of the cursor is a
-   * second affordance in the one place there should be exactly one. Adding material is still how a
-   * canvas starts — the control lives on the home and pre-session composer, where it is the point.
-   */
-  inSession?: boolean;
   /**
    * A nonce that opens dictation when it changes — voice mode's hands-free loop.
    *
@@ -161,7 +172,7 @@ interface CanvasComposerProps {
    * refusal that used to sit in `submit()` — `if (!value) return;` — silently threw exactly that
    * case away.
    */
-  onStart?: ((text: string) => void) | null;
+  onStart: (text: string) => void;
 }
 
 /** Grows to about six lines, then stops. Beyond that the box would eat the question. */
@@ -174,13 +185,12 @@ export function CanvasComposer({
   onAnswer,
   onFiles,
   onRecord = null,
-  task,
+  intent,
   busy,
   busyLabel,
-  inSession = false,
   advanceBusy = false,
   pendingSources = [],
-  onStart = null,
+  onStart,
   listenSignal = null,
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
@@ -241,10 +251,22 @@ export function CanvasComposer({
    *  mid-answer throws away neither half. */
   const typedBefore = useRef("");
 
-  // An unanswered prompt makes this the answer surface. Once it is answered the canvas shows
-  // feedback, and the composer goes back to being somewhere to ask about that feedback.
-  const answering = Boolean(task && !task.answered && task.placeholder);
-  const taskId = task?.id ?? null;
+  // 🔴 READ OFF THE INTENT, NEVER RE-DERIVED. `Boolean(task && !task.answered && task.placeholder)`
+  // used to live here, which meant two files each deciding whether a task was answerable — and the
+  // one that mattered for ROUTING was neither of them, it was whether `onStart` happened to be
+  // non-null. There is one decision now and it was made before this component rendered.
+  const answering = intent.kind === "answer";
+  const taskId = intent.kind === "answer" ? intent.task.id : null;
+  /** A learning session is underway: the policy is waiting on a performance.
+   *
+   * 🔴 REMOVES THE ATTACH CONTROL, NOT THE ABILITY TO ATTACH. Mid-session is not an ingestion
+   * state: the learner is producing an answer, and a `+` sitting to the left of the cursor is a
+   * second affordance in the one place there should be exactly one. Adding material is still how a
+   * canvas starts — the control lives on the home and pre-session composer, where it is the point.
+   *
+   * 🔴 DERIVED, NOT A PROP. It was `inSession={sink.kind === "policy"}` passed in beside `task` and
+   * `onStart`; three props saying overlapping things about one state is how they came apart. */
+  const inSession = intent.kind === "answer" && intent.sink === "policy";
 
   useEffect(() => {
     setText("");
@@ -301,8 +323,12 @@ export function CanvasComposer({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /** Material is waiting and the canvas has not begun — so an empty box is still submittable. */
-  const canStartFromAttachment = Boolean(onStart) && pendingSources.length > 0;
+  /** Material is waiting and the canvas has not begun — so an empty box is still submittable.
+   *
+   *  🔴 `intent.kind === "start"`, NOT `Boolean(onStart)`. The handler is always passed now; whether
+   *  it is the RIGHT one is the intent's decision, and asking "were we given a function?" is exactly
+   *  the reasoning that routed answers into `begin()`. */
+  const canStartFromAttachment = intent.kind === "start" && pendingSources.length > 0;
 
   const submit = () => {
     const value = text.trim();
@@ -319,15 +345,16 @@ export function CanvasComposer({
     // typing is the learner answering "the obvious thing", and the caller resolves what that is.
     if (!value && !canStartFromAttachment && selected.length === 0) return;
     setText("");
-    // 🔴 The routing that replaces a second composer. Same box, same key, different meaning —
-    // decided by whether the canvas is currently asking for something.
+    // 🔴🔴 ONE SWITCH ON ONE VALUE. Same box, same key, different meaning — and the meaning was
+    // decided once, by `composerIntent`, from the live surface rather than from which handlers this
+    // component happens to hold.
     //
-    // 🔴 STARTING OUTRANKS BOTH OTHER ROUTES. On a canvas that has not begun there is nothing to
-    // answer and nothing to ask ABOUT — `onAsk` there would question a canvas with no content. The
-    // caller only passes `onStart` in exactly that state, so this branch cannot capture a genuine
-    // answer or a mid-lesson question.
-    if (onStart) onStart(value);
-    else if (answering) onAnswer(value, inputModality.current, Date.now() - startedAt.current);
+    // 🔴 DO NOT REINTRODUCE `if (onStart) … else if (answering) …`. That ordering is the defect:
+    // `onStart` was non-null on every canvas whose stored state had not advanced, which includes
+    // every canvas with a question staged on attached material, and it silently outranked a real
+    // answer to a real question. `answer-is-not-a-start.test.ts` fails if the precedence returns.
+    if (intent.kind === "answer") onAnswer(value, inputModality.current, Date.now() - startedAt.current);
+    else if (intent.kind === "start") onStart(value);
     else onAsk(value);
     modalityEvent({ kind: "submitted" });
     typedBefore.current = "";
@@ -377,6 +404,70 @@ export function CanvasComposer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listenSignal]);
 
+  // ── Hold space to talk ──────────────────────────────────────────────────────
+  //
+  // 🔴 SPACE IS THE MOST DANGEROUS KEY TO CLAIM. It types a character, it scrolls the page, and it
+  // activates whatever button has focus — including the Continue the learner just pressed with the
+  // mouse. Every one of those is prevented here rather than hoped away: the decision refuses inside
+  // any text field (canvas-hotkeys.ts), and the default is stopped on the way down AND on the way
+  // up, because a button's `click` is synthesised from keyup.
+  //
+  // 🔴🔴 RELEASE IS TRACKED BY WHO STARTED IT. Without `heldByKey`, letting go of space would also
+  // close a microphone the learner had opened with the button and was still talking into. The flag
+  // is the difference between "stop the thing this key started" and "stop dictation".
+  //
+  // 🔴🔴 AND KEYUP IS NOT GUARANTEED TO ARRIVE. Hold space, press Cmd-Tab, and the window loses
+  // focus mid-hold: no keyup is ever delivered and the microphone stays open indefinitely. That is
+  // the one failure here that costs money and privacy rather than a click, so blur and a hidden tab
+  // release it exactly as letting go does.
+  //
+  // 🔴 RELEASING DOES NOT SUBMIT. `dictation.stop()` is what ✓ does: the transcript lands in the
+  // composer as editable text. Speech recognition mishears, and auto-submitting would make a
+  // transcription error indistinguishable from a wrong answer in the evidence.
+  const heldByKey = useRef(false);
+  useEffect(() => {
+    const release = () => {
+      if (!heldByKey.current) return;
+      heldByKey.current = false;
+      dictation.stop();
+    };
+    const onDown = (event: KeyboardEvent) => {
+      if (!startsPushToTalk(event, {
+        drawing,
+        listening,
+        supported: dictation.supported,
+        typing: isTypingTarget(document.activeElement),
+      })) return;
+      event.preventDefault();
+      heldByKey.current = true;
+      startDictation();
+    };
+    const onUp = (event: KeyboardEvent) => {
+      if (!endsPushToTalk(event) || !heldByKey.current) return;
+      event.preventDefault();
+      release();
+    };
+    const onHidden = () => { if (document.visibilityState === "hidden") release(); };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", release);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", release);
+      document.removeEventListener("visibilitychange", onHidden);
+      // 🔴 AND ON UNMOUNT TOO. The composer disappears while a recording is running and while the
+      // canvas reloads; a microphone opened by a key hold must not outlive the surface it was
+      // opened for.
+      release();
+    };
+    // `startDictation` is deliberately not a dependency, the same choice the voice-mode effect
+    // above makes: it is redefined every render, and depending on it would rebind four listeners
+    // on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dictation.supported, dictation.stop, drawing, listening]);
+
   // ── §I: the composer is the only progression control ────────────────────────
   //
   //   exposition   empty composer  ->  ✓            response begins  ->  send
@@ -403,17 +494,76 @@ export function CanvasComposer({
   });
   const showSend = control === "send";
 
+  // The page itself. Held as a value rather than written inline because it is now rendered in
+  // the canvas's free space, ABOVE this component's own bottom-docked pill — see the note at
+  // the top of the return.
+  const sheet = (
+        <WrittenWorkSheet
+          busy={busy}
+          initialInk={ink.current}
+          onClose={() => setDrawing(false)}
+          onInkChange={(value) => {
+            ink.current = value;
+          }}
+          onSubmit={(value) => {
+            modalityEvent({ kind: "captured", via: "written" });
+            onAnswer(value, "written", Date.now() - startedAt.current);
+            modalityEvent({ kind: "submitted" });
+            setText("");
+            typedBefore.current = "";
+            setDrawing(false);
+          }}
+          // 🔴 NULL WHENEVER NOTHING IS BEING ASKED, WHICH IS WHAT MAKES THE SHEET SCRATCH PAPER
+          // REST OF THE TIME. `answering` is the composer's own positive signal that the policy
+          // is waiting for a performance; without one there is no prompt for written work to be
+          // evidence about, and the sheet renders no submit control at all.
+          promptId={answering ? taskId : null}
+        />
+  );
+
   return (
-    // The pill FLOATS: no footer container, no top border, canvas visible all around it. The
-    // gradient is a scrim so text scrolling underneath does not collide with the input — page
-    // colour fading to nothing, which draws no edge of its own.
-    <div
-      className={cn(
-        "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4",
-        "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
+    <>
+      {/* 🔴🔴 THE SHEET IS THE CANVAS'S FREE SPACE, NOT THE COMPOSER'S — owner call, 2026-08-19:
+          "the drawing should not be inside a chat composer box, the chat composer should stay same
+          size, user should be able to draw in the free space in canvas".
+
+          It used to REPLACE the composer's contents, inside the composer's own
+          `max-w-[var(--composer-max-width)]` pill at the bottom of the screen. The reasoning for
+          that was real and is written up in written-work-sheet.tsx: one place you interact with
+          Nemesis, and no second card stacked over the input. But it made the page you work on as
+          wide as a chat box and as tall as whatever was left under it, which is the wrong shape for
+          working something out — and it took the composer away while you did, so there was no way
+          to say anything while a page was open.
+
+          Now it fills the room between the masthead and the composer, and the composer below is
+          untouched. The single-surface property it was protecting survives in the place it actually
+          matters: submission. `onSubmit` is unchanged, still routes through the same `onAnswer` with
+          the same modality and elapsed time, so written work is still one answer on one path and
+          not a second route into the evidence log. */}
+      {drawing && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-[136px] top-[64px] z-20 flex justify-center px-4">
+          <div className="pointer-events-auto flex w-full max-w-(--canvas-column) flex-col justify-center">
+            {sheet}
+          </div>
+        </div>
       )}
-    >
-      <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
+
+      {/* The pill FLOATS: no footer container, no top border, canvas visible all around it. The
+          gradient is a scrim so text scrolling underneath does not collide with the input — page
+          colour fading to nothing, which draws no edge of its own.
+          🔴 THIS ONE STAYS, UNLIKE THE MASTHEAD'S. The top gradient was removed the same day
+          because it reached 24px into the column's resting position and dissolved the top of the
+          question; this one sits under the content rather than over its resting place, and what it
+          prevents — a paragraph printing through the input — has no other fix that does not draw a
+          hard line across the page. If it turns out to be eating descenders too, it goes the same
+          way. */}
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4",
+          "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
+        )}
+      >
+        <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
         {/* 🔴 THE PAGE TAKES THE COMPOSER'S WHOLE PLACE, THE SAME AS DICTATION'S `listening` BRANCH
             DOES FURTHER DOWN — see written-work-sheet.tsx's file header. Nothing below this
             branches on `drawing`; the sheet is a full substitute for the chips-and-pill content,
@@ -423,29 +573,6 @@ export function CanvasComposer({
             the elapsed time this component already tracks for typed and spoken answers, so written
             work is not a second route into the evidence log; it is a third way of producing the
             one answer the one send path already carries. */}
-        {drawing ? (
-          <WrittenWorkSheet
-            busy={busy}
-            initialInk={ink.current}
-            onClose={() => setDrawing(false)}
-            onInkChange={(value) => {
-              ink.current = value;
-            }}
-            onSubmit={(value) => {
-              modalityEvent({ kind: "captured", via: "written" });
-              onAnswer(value, "written", Date.now() - startedAt.current);
-              modalityEvent({ kind: "submitted" });
-              setText("");
-              typedBefore.current = "";
-              setDrawing(false);
-            }}
-            // 🔴 NULL WHENEVER NOTHING IS BEING ASKED, WHICH IS WHAT MAKES THE SHEET SCRATCH PAPER
-            // REST OF THE TIME. `answering` is the composer's own positive signal that the policy
-            // is waiting for a performance; without one there is no prompt for written work to be
-            // evidence about, and the sheet renders no submit control at all.
-            promptId={answering ? taskId : null}
-          />
-        ) : (
         <>
         {/* 🔴 THE ATTACHMENT PREVIEW (§2, §26) — IMMEDIATELY ABOVE THE INPUT, WHICH IS WHERE THE
             BRIEF DRAWS IT. This is the whole replacement for a dedicated "1 source attached →
@@ -455,7 +582,12 @@ export function CanvasComposer({
             🔴 NOT SHOWN WHILE DICTATING, like the selection chip below it — the composer becomes a
             waveform in that state and a stack of chips over it is exactly the second card the
             file header says dictation must never grow. */}
-        {pendingSources.length > 0 && !listening && (
+        {/* 🔴 GATED ON THE INTENT, NOT ON THE LIST BEING NON-EMPTY. The caller used to withhold the
+            sources (`pendingSources={preContent ? … : []}`), which was a SECOND reading of the same
+            stale predicate that swallowed typed answers — and with the predicate fixed in one place
+            and not the other, a canvas asking a question still displayed "nothing has started yet"
+            chips underneath it. `canStartFromAttachment` is the one question, asked once. */}
+        {canStartFromAttachment && !listening && (
           <div className="mb-1.5 ml-1 flex flex-wrap items-center gap-1.5">
             {pendingSources.map((source) => (
               <span
@@ -673,8 +805,8 @@ export function CanvasComposer({
                         // nothing typed is a real option, because §3 makes it one.
                         canStartFromAttachment
                         ? START_WITH_MATERIAL_PLACEHOLDER
-                        : answering
-                          ? (task?.placeholder ?? ASK_PLACEHOLDER)
+                        : intent.kind === "answer"
+                          ? (intent.task.placeholder || ASK_PLACEHOLDER)
                           : ASK_PLACEHOLDER
                 }
                 ref={input}
@@ -725,22 +857,14 @@ export function CanvasComposer({
                   carries over with the product's own accent). `disabled:opacity-40` still dims it
                   when there is truly nothing to send, so the two real states (nothing typed vs.
                   ready to send) stay visibly different without a colour swap between them. */}
-              {showSend && (
-                <button
-                  aria-label={answering ? "Submit answer" : "Send"}
-                  className="ml-[8px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
-                  disabled={busy}
-                  onClick={submit}
-                  type="button"
-                >
-                  {/* 🔴 `spinning` IS NOT OPTIONAL ON A LOADING GLYPH. Without the modifier the
-                      codicon renders a static broken circle — it had been sitting there perfectly
-                      still through every wait, reading as a decorative icon or a rendering fault
-                      rather than as activity. Fixing it is a BUG FIX, not a decision that a spinner
-                      is what thinking looks like in Nemesis; see canvas-thinking.tsx. */}
-                  <Codicon name={busy ? "loading" : "arrow-up"} size="20px" spinning={busy} />
-                </button>
-              )}
+              {/* 🔴 ALWAYS PRESENT, DIMMED WHEN EMPTY. `showSend` used to remove it from the DOM, so the
+                  pill changed shape on the first keystroke. See `ComposerSend`. */}
+              <ComposerSend
+                busy={busy}
+                disabled={!showSend}
+                label={answering ? "Submit answer" : "Send"}
+                onClick={submit}
+              />
 
             </>
           )}
@@ -750,8 +874,8 @@ export function CanvasComposer({
           <p className="mt-2 pl-4 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}
         </>
-        )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

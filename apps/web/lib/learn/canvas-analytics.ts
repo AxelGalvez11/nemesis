@@ -20,6 +20,12 @@ export type CanvasEvent =
   // A topic with no attached material was grounded from the web before teaching began. Counts
   // only — never the topic, which is the learner's own words.
   | "canvas_topic_grounded"
+  // The judge declined to grade a submission because it was not aimed at the question, so nothing
+  // was recorded and the text went to conversation. Counts only — never the sentence, which is the
+  // learner's own words. Worth an event because "how often is someone talking rather than
+  // answering while a question is up" is the number that says whether the composer is behaving
+  // like a conversation.
+  | "canvas_submission_not_an_attempt"
   | "source_attached"
   // Durable knowledge minted from an attached source. Counts only — never the extracted content,
   // which is the learner's own material.

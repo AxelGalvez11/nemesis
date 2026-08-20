@@ -246,11 +246,17 @@ test("🔴 and hands the result out — a value nobody receives is a value nobod
 
 test("🔴 the surface renders it, and renders NOTHING when there is nothing honest to show", () => {
   assert.match(VIEW, /const \{ citations,/, "the view must actually read it off the runtime");
-  assert.match(
-    VIEW,
-    /function SourceTrail\(\{ citations \}[\s\S]{0,200}?if \(citations\.length === 0\) return null;/,
-    "an empty list must render nothing at all, by returning null before any markup",
-  );
+  // 🔴 REPOINTED 2026-08-19 TO THE PROPERTY, NOT THE SHAPE. This demanded the literal
+  // `if (citations.length === 0) return null;`. The de-duplication that fixed
+  // "From 3.1Functional Groups, 3.1Functional Groups" moved the emptiness question into
+  // `citationLine`, which returns null for an empty list AND for a list of blank titles — strictly
+  // more cases than the old line caught — and this went red for a change that improved exactly what
+  // it exists to protect. What matters is that the early return happens before any markup.
+  const trail = /function SourceTrail\(\{ citations \}[\s\S]{0,400}?\n\}/.exec(VIEW);
+  assert.ok(trail, "SourceTrail is gone");
+  const markupAt = trail[0].indexOf("return <");
+  const beforeMarkup = markupAt === -1 ? trail[0] : trail[0].slice(0, markupAt);
+  assert.match(beforeMarkup, /return null;/, "an empty list must render nothing at all, by returning null before any markup");
   // 🔴 EVERY SCREEN THAT SHOWS A CLAIM, NOT JUST THE CORRECTION. Disclosing the origin on one screen
   // and not another makes the same fact look sourced in one place and unsourced in the other.
   //
@@ -267,7 +273,12 @@ test("🔴 the surface renders it, and renders NOTHING when there is nothing hon
   // counting only that literal would have let the newest claim-bearing screen ship with no
   // disclosure while this test stayed green. Both shapes are counted, and the two-sided equality is
   // kept: adding a screen can still only fail this when the screen is actually missing its trail.
-  const cueAndAnswer = (VIEW.match(/\{decision\.objective\.cue\} → \{decision\.objective\.answer\}/g) ?? []).length;
+  // 🔴 REPOINTED 2026-08-19. This counted the literal `{decision.objective.cue} → {…answer}`, which
+  // three screens each wrote out by hand — and writing it three times is what let a one-sided claim
+  // print as "X → X" on all three at once. The join now happens once, in `<TaughtClaimLines>`, so
+  // the thing to count is the shared component. The equality below is unchanged and is the part
+  // that matters: as many trails as screens showing a claim.
+  const cueAndAnswer = (VIEW.match(/<TaughtClaimLines decision=\{decision\} \/>/g) ?? []).length;
   const workedSteps = (VIEW.match(/modelled\.modelled\.steps\.map/g) ?? []).length;
   const claimScreens = cueAndAnswer + workedSteps;
   const trails = (VIEW.match(/<SourceTrail citations=\{citations\} \/>/g) ?? []).length;

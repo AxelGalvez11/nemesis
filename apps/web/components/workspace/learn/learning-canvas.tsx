@@ -13,6 +13,8 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { hostnameOf } from "@/lib/favicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
+import { composerIntent } from "@/lib/learn/composer-intent";
+import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
@@ -21,12 +23,15 @@ import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
-import { readTurnIntent } from "@/lib/learn/learning-intent";
+import { projectAll } from "@/lib/learn/learner-evidence";
+import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
+import type { TurnSurroundings } from "./canvas-chat";
 import { offerLine } from "./offer-copy";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
+import { CanvasFade } from "./canvas-fade";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -34,7 +39,7 @@ import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
 import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
-import { CanvasPolicyView } from "./canvas-policy-view";
+import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";
@@ -65,6 +70,37 @@ const CANVAS_EXIT_ROUTE = "/learn";
  *  matter, no assumption about what kind of passage this is, so it reads correctly over a statute,
  *  a mechanism and a worked calculation alike. */
 const EXPLAIN_THIS = "Explain this.";
+
+/**
+ * Command-Enter presses whatever Continue is on screen.
+ *
+ * 🔴 A COMPONENT RATHER THAN AN EFFECT IN THE CANVAS BODY, AND NOT FOR TIDINESS. `continueRegion`
+ * is computed below the canvas's early return, and a hook cannot sit after a conditional return.
+ * Mounting the listener here also means it exists exactly when a full canvas is on screen and
+ * unmounts while one is still loading — which is the correct lifetime, not a workaround.
+ *
+ * 🔴 IT READS A REF RATHER THAN CLOSING OVER THE HANDLER. `onContinue` is a new function on every
+ * render; a dependency on it would add and remove a window listener each time. The ref keeps one
+ * listener for the life of the canvas and still calls the current handler.
+ */
+function ContinueHotkey({ onContinue }: { onContinue: (() => void) | null }): null {
+  const latest = useRef(onContinue);
+  latest.current = onContinue;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      // 🔴 `available` IS THE HANDLER'S OWN EXISTENCE, NOT A SECOND READING OF THE STATE. `advance`
+      // is null exactly when `continueOwner` refused — while a demonstration is owed, and while the
+      // canvas is busy. Asking the same question again here is how the keyboard ends up with a path
+      // the button does not have.
+      if (!pressesContinue(event, { available: latest.current !== null, typing: isTypingTarget(document.activeElement) })) return;
+      event.preventDefault();
+      latest.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return null;
+}
 
 export function LearningCanvas({
   canvasId,
@@ -100,7 +136,23 @@ export function LearningCanvas({
   const leave = useCallback(() => router.push(CANVAS_EXIT_ROUTE), [router]);
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
-  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride);
+  /**
+   * The judge decided a submission was not an attempt at the question on screen.
+   *
+   * 🔴 THE SAME `converse` THE COMPOSER'S ORDINARY PATH USES, not a second conversational route.
+   * What the learner typed is answered exactly as it would have been with no question up; the
+   * question itself is untouched and still waiting.
+   */
+  // 🔴 THROUGH A REF, BECAUSE THE CYCLE IS REAL AND NOT AN ACCIDENT. `converse` is defined below and
+  // needs `policy` (it reads the learner model to build the turn's surroundings); `policy` needs
+  // this callback. A ref is the seam: this closes over nothing, and whatever `converse` is by the
+  // time the judge answers is what runs.
+  const converseRef = useRef<((said: string) => Promise<void>) | null>(null);
+  const notAnAttempt = useCallback((said: string) => {
+    void converseRef.current?.(said);
+  }, []);
+
+  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride, session.opening, notAnAttempt);
   // Voice mode. 🔴 `policy.judging` is the composer-busy signal: while an answer is being read the
   // learner is waiting on a verdict, and opening a microphone at them is asking for an answer to a
   // question they already gave.
@@ -305,48 +357,78 @@ export function LearningCanvas({
    * all, where there is nothing else the text could reasonably mean.
    */
   /**
-   * The learner's own recent utterances, newest last — the raw material for thread detection.
+   * The conversation so far, oldest first, BOTH SIDES.
    *
-   * 🔴 A REF, NOT STATE, AND THEIRS ONLY. Nothing renders from it, so state would re-render the
-   * whole canvas on every question for no visible reason. And it holds only what the LEARNER said:
-   * counting Nemesis's replies would make one long answer look like an engaged learner.
+   * 🔴 IT USED TO HOLD ONLY THE LEARNER'S OWN UTTERANCES, AND IT NEVER LEFT THE BROWSER. Six of
+   * their questions were kept here purely to feed a word-overlap heuristic that guessed whether
+   * they were circling one subject; not one of them was ever sent to the model. So every
+   * conversational turn was literally stateless, and "why?" or "no, I meant the first one" had
+   * nothing to resolve against. It now holds what Nemesis said too, and it rides the packet.
+   *
+   * 🔴 A REF, NOT STATE. Nothing renders from it, so state would re-render the whole canvas on
+   * every turn for no visible reason.
+   *
+   * 🔴 AND IT IS DELIBERATELY NOT PERSISTED. The Canvas is not a chat log: contract rule 2 keeps a
+   * conversational reply on screen only until the next turn, and the owner's own framing is that
+   * these responses stay transient while the canvas is the durable thing. What survives a reload is
+   * the canvas and its evidence; the small talk that got there does not need to.
    */
-  const recentAsks = useRef<string[]>([]);
-  const rememberAsk = useCallback((text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    // A short window. A thread is momentum, and momentum is recent by definition; keeping the whole
-    // session would let a subject mentioned twenty turns ago still vote.
-    recentAsks.current = [...recentAsks.current, trimmed].slice(-6);
+  const conversation = useRef<TurnExchange[]>([]);
+  const remember = useCallback((exchange: TurnExchange) => {
+    if (!exchange.said.trim()) return;
+    conversation.current = [...conversation.current, exchange].slice(-HISTORY_TURNS);
   }, []);
 
-  /** What this turn requires, from the utterance and everything else going on. */
-  const intentFor = useCallback(
-    (text: string) =>
-      readTurnIntent(text, {
-        attachedSources: canvas.sources.length,
-        recentAsks: recentAsks.current,
-        sessionUnderway: policy.decision !== null,
-      }),
-    [canvas.sources.length, policy.decision],
+  /** What only this component knows about the canvas's runtime, for the packet. */
+  const surroundings = useCallback((): TurnSurroundings => {
+    const projected = projectAll(policy.evidence);
+    let demonstrated = 0;
+    for (const state of projected.values()) if (state.demonstratedAt !== null) demonstrated += 1;
+    return {
+      demonstrated,
+      history: conversation.current,
+      lessonInProgress: policy.decision !== null,
+      objectives: policy.claims.length,
+    };
+  }, [policy.claims.length, policy.decision, policy.evidence]);
+
+  /**
+   * One turn of talking to Nemesis.
+   *
+   * 🔴 NO MODES, AND NOW NO CLASSIFIER EITHER. The learner never picks "chat" or "tutor", and the
+   * software no longer guesses which they meant from the shape of their sentence. The utterance,
+   * the conversation so far and everything the canvas knows go to the model, and what comes back
+   * says both what to say and what to do. See lib/learn/turn-router.ts.
+   */
+  const converse = useCallback(
+    async (asked: string) => {
+      const trimmed = asked.trim();
+      if (!trimmed) return;
+      const decision = await session.converse(trimmed, surroundings(), () => {
+        // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
+        // moves on. The action in flight is stamped rather than a bare `true`, which is what makes
+        // attention return by itself; see `materialOwnsAttention`.
+        setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
+      });
+      remember({ replied: decision?.say ?? "", said: trimmed });
+    },
+    [policy.decision, remember, session, surroundings],
   );
 
   const beginOrAnswer = useCallback(
     (asked: string) => {
       applyExplanationEvent({ kind: "new_turn" });
       const trimmed = asked.trim();
-      // 🔴 NO MODES. The learner never picks "chat" or "tutor" — this reads what the turn needs.
-      // "What day is it" is answered even on an empty canvas; "teach me innate immunity" begins a
-      // lesson without the learner having to phrase it as a question first.
-      const intent = intentFor(trimmed);
-      if (trimmed && intent.kind !== "teach") {
-        rememberAsk(trimmed);
-        void session.askGeneral(trimmed, intent.because);
+      // An empty send with material staged is "learn this material with me", which is not an
+      // utterance at all — there is nothing for the model to read, and the composer's own chips
+      // already said what the send means.
+      if (!trimmed) {
+        session.begin(undefined);
         return;
       }
-      session.begin(asked || undefined);
+      void converse(trimmed);
     },
-    [applyExplanationEvent, intentFor, rememberAsk, session],
+    [applyExplanationEvent, converse, session],
   );
 
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
@@ -359,6 +441,7 @@ export function LearningCanvas({
     askedOnce.current = true;
     beginOrAnswer(openingAsk);
   }, [beginOrAnswer, canvas.state, openingAsk, session.ready]);
+  converseRef.current = converse;
 
   // Material chosen on the landing page, before this canvas existed. Same shape as the opening
   // instruction above and latched the same way.
@@ -482,43 +565,34 @@ export function LearningCanvas({
       // below this point writes into the document (`session.command`), through a system prompt
       // that says outright "you are not chatting". "What does osmolarity mean" typed with nothing
       // selected used to take that same path and come back as a paragraph permanently inserted
-      // into the study document. See canvas-chat-routing.ts for the decision and canvas-chat.ts
-      // for what answers it.
+      // into the study document. See canvas-chat.ts for the one call that decides which of those
+      // a typed message is, and lib/learn/turn-router.ts for the contract it decides under.
       //
       // 🔴 `selected.length === 0` ONLY. A single block selected already has its own, more specific
       // routes above (empty send = "explain this", "where/which source" = ask about it) — anything
       // else with a selection is a scoped edit instruction about that exact passage, which is a
       // different thing from an open-ended question and must keep mutating the document as it
       // does today.
-      // 🔴 AND THE SAME READING MID-CANVAS, NOT A SECOND RULE. `readTurnIntent` sees the attached
-      // sources and whether a lesson is already running, so "what does osmolarity mean" is still
-      // answered (rule 1), while a third question circling one idea is answered AND offered.
+      // 🔴 AND THE SAME READING MID-CANVAS, NOT A SECOND RULE. The model sees the attached sources,
+      // the conversation so far and whether a lesson is running, so "what does osmolarity mean" is
+      // still answered (rule 1) and "summarize this" still writes into the document — the same one
+      // call decides which, here and on the front door. There is no second reading of the learner.
       if (routing.kind === "ordinary" && selected.length === 0) {
-        const intent = intentFor(text);
-        if (intent.kind !== "teach") {
-          rememberAsk(text);
-          await session.askGeneral(text, intent.because);
-          return;
-        }
-        // An explicit "teach me this" typed into a canvas that has not begun starts the lesson
-        // rather than writing a paragraph into the document.
-        if (canvas.state === "empty") {
-          session.begin(text);
-          return;
-        }
+        await converse(text);
+        return;
       }
 
-      // `ordinary` and `defer-to-policy` both take the normal path: the second is a scaffolding
-      // request (§33), which is the policy's to answer, not a rewrite.
+      // `defer-to-policy` takes the normal path: it is a scaffolding request (§33), which is the
+      // policy's to answer, not a rewrite. So is anything typed with a passage staged, which is a
+      // scoped instruction about that exact text rather than an open turn of conversation.
       // 🔴 THE LEARNER ASKED, SO WHAT COMES BACK IS THE ACTION — until the policy moves on. The
       // action in flight is stamped here rather than a bare `true`, which is what makes attention
-      // return by itself; see `materialOwnsAttention`. This is the only place a learner request
-      // writes blocks.
+      // return by itself; see `materialOwnsAttention`.
       setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
       await session.command(text, selected);
       clearSelection();
     },
-    [applyExplanationEvent, canvas, clearSelection, policy.decision, policy.feedback, policy.prompt, selected, session],
+    [applyExplanationEvent, canvas, clearSelection, converse, policy.decision, policy.feedback, policy.prompt, selected, session],
   );
 
   // 🔴 EVERY state prints its own primary action in the page, and the top controls carry none.
@@ -534,9 +608,27 @@ export function LearningCanvas({
   // which the owner has now said should not come back: *"The only button should be 'continue'
   // below reading passages, thats it."* The six session methods they called went with them.
 
-  // 🔴 `loading` IS WAITED FOR, NOT TREATED AS "NO". Resolving this canvas's knowledge is a round
-  // trip, and painting the legacy runtime in the meantime would not merely flicker — the stage
-  // machine's own effects would start generating a lesson for a canvas the policy is about to own.
+  // 🔴🔴 THIS USED TO RETURN ON `policy.status === "loading"` TOO, AND THAT WAS THE BLANK SCREEN.
+  //
+  // Measured 2026-08-18 against production: a learner types anything on the front door and gets an
+  // EMPTY PAGE — no composer, no reply, nothing they can do — for as long as the canvas takes to
+  // resolve its knowledge. 25 seconds for a plain greeting; 59 for "teach me pharmacokinetics",
+  // which has to search for material and ingest it first. No error, no crash, no console line: the
+  // component was returning a surface with one optional caption in it, and the caption only appears
+  // once a NAMED phase has been running long enough to be worth saying out loud. Most of that time
+  // there was literally nothing on screen.
+  //
+  // 🔴 THE REASON IT WAS WRITTEN IS GONE. The comment here used to say that painting early would
+  // let "the stage machine's own effects start generating a lesson for a canvas the policy is about
+  // to own". That machine no longer exists: nothing below this line generates anything on mount,
+  // and `composeSurface` already withholds every content region while the policy has nothing —
+  // `policyPresenting` requires `status === "ready"`, so a loading canvas resolves to `preparing`,
+  // which is a real surface WITH the composer under it. Suppressing the whole page was protecting
+  // against a runtime that had already been deleted.
+  //
+  // 🔴 WHAT STAYS IS `!session.ready`, WHICH IS A DIFFERENT CLAIM. That means the canvas itself has
+  // not loaded from the database yet — there is no title, no sources, no state, and a composer
+  // would have nothing to submit into. It is one read and it is fast.
   //
   // 🔴 AND IT CARRIES THE EXIT, WHICH IT DID NOT (UX brief §38.2). This branch used to return a
   // bare `<main>` with a caption in it: no header, therefore no way out. Harmless while the shell
@@ -544,14 +636,13 @@ export function LearningCanvas({
   // canvas, it is a page a learner cannot leave — on the exact entry paths (deep link, hard
   // refresh, fresh sign-in) that land here first. `CanvasSurface` renders the `×` above the
   // branch, so this state cannot be reached without one.
-  if (!session.ready || policy.status === "loading") {
+  if (!session.ready) {
     return (
       <CanvasSurface onExit={leave}>
         <div className="flex h-full items-center justify-center">
-          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL. Resolving a canvas's knowledge normally
-              finishes far inside the threshold, and a caption that appeared and vanished in 200ms
-              would be a flicker rather than information. It surfaces only when a step has genuinely
-              been running long enough to be worth naming — and it names the step that IS running. */}
+          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
+              database read long. It was not fine while it also covered knowledge resolution, which
+              is a model call and an ingestion and can run for a minute. */}
           {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
         </div>
       </CanvasSurface>
@@ -583,12 +674,18 @@ export function LearningCanvas({
   // reports work that is genuinely in flight and nothing else. It is what separates "Nemesis is
   // busy" from "Nemesis has nothing for you", which are opposite things to say to a learner.
   //
-  // 🔴 `policy.status === "loading"` IS DELIBERATELY ABSENT, AND THE COMPILER IS WHY. Writing it
-  // here is a type error: the branch above returns on `loading`, so by this point the status is
-  // provably `ready | unavailable`. That is worth recording rather than working around, because it
-  // narrows the defect — a canvas reaching this render with nothing to show is NEVER a canvas that
-  // is still thinking. It has finished, and it has nothing. `canvasPresence` still accepts the
-  // input so the value stays correct if that early return is ever removed.
+  // 🔴🔴 `policy.status === "loading"` IS LOAD-BEARING HERE NOW, AND IT IS THE OTHER HALF OF THE
+  // BLANK-SCREEN FIX. This comment used to say the clause was deliberately absent because the early
+  // return above made it unreachable — and it ended with the exact sentence that turned out to
+  // matter: *"`canvasPresence` still accepts the input so the value stays correct if that early
+  // return is ever removed."* It has been removed, so the input is supplied.
+  //
+  // 🔴 WITHOUT IT THE BLANK PAGE COMES BACK WEARING WORSE COPY. Knowledge resolution does not always
+  // name a phase — for a canvas with no sources `topicTerritory` returns before `onPhase` is ever
+  // called — so `phase` can be null while the policy is genuinely still loading. `working` would be
+  // false, presence would resolve to `quiet`, and the learner would read *"Nemesis has your material
+  // but hasn't found anything to ask you about yet"* about a canvas that is still working it out.
+  // Progress rendered as failure is the one thing `quiet` must never do.
   // 🔴 `policy.phase` TOO, AND THAT SECOND CLAUSE IS A MEASURED DEFECT, NOT A TIDY-UP. Observed in
   // production on a grounded topic canvas: `Teach me innate immunity.` attached three pages, the
   // session's own `busy` cleared, and knowledge extraction carried on running underneath — during
@@ -602,7 +699,13 @@ export function LearningCanvas({
   // caption. Whether a step is worth narrating and whether one is running are different questions,
   // and using the narration flag here would reopen the same hole for exactly the length of that
   // delay. `preparingLabel` already handles a null label honestly.
-  const working = busy.kind !== null || policy.phase !== null;
+  // 🔴🔴 `policy.deciding` IS THE THIRD STATE THAT WAS MISSING, AND ITS ABSENCE RENDERED PROGRESS AS
+  // A DEAD END. Between two questions the controller is choosing the next move: `status` is already
+  // `ready`, no phase is narrated, and `busy` is the session's rather than the policy's — so none of
+  // the three flags below held, `canvasPresentation` fell through to `quiet`, and the learner read
+  // "Nemesis hasn't found anything to ask you about yet" with a Try again button, mid-lesson.
+  const working =
+    busy.kind !== null || policy.phase !== null || policy.status === "loading" || policy.deciding;
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -626,6 +729,26 @@ export function LearningCanvas({
     working,
   });
 
+  /**
+   * What is on screen, as one string — the identity `CanvasFade` swaps on.
+   *
+   * 🔴 COMPOSED FROM THE THREE THINGS THAT CAN OCCUPY THE SURFACE, and from nothing else. `presence`
+   * covers the states with no content of their own (preparing, quiet, invitation); `screenKey`
+   * is the policy view's OWN existing identity for a teaching screen, exported rather than
+   * reimplemented so the outer fade and the inner remount can never disagree about what "a
+   * different screen" means; the aside contributes its text because two consecutive replies are two
+   * different things to read even though neither is a teaching screen.
+   *
+   * 🔴 NOTHING ABOUT BUSY, LOADING OR THE CLOCK. Those change many times inside one screen, and a
+   * key that moved with them would fade the canvas out and back in while the learner was reading —
+   * which is the flicker this exists to remove, arriving as the fix for it.
+   */
+  const surfaceKey = [
+    presence,
+    regions.policy ? screenKey(policy) : "-",
+    session.aside ? `aside:${session.aside.text.slice(0, 40)}` : "-",
+  ].join("|");
+
   // 🔴 THE NAME OF THE STEP THAT IS RUNNING, OR NONE — never a guess. `CanvasThinkingPreview`
   // accepts `null` and says so in its own header ("when the caller has no honest label it passes
   // none and the lines carry the state alone"), so there is nothing to invent here. The session's
@@ -645,10 +768,32 @@ export function LearningCanvas({
     stageTask: session.activeTask,
   });
 
-  /** This canvas has not begun: no lesson, no task, no evidence — only whatever material is
-   *  waiting. The one state in which a submission MEANS "start", which is why it is named once
-   *  here and read in three places rather than re-tested inline in each. */
-  const preContent = canvas.state === "empty" || canvas.state === "sources_attached";
+  /**
+   * 🔴🔴🔴 WHAT SUBMITTING MEANS RIGHT NOW — ONE VALUE, NOT FIVE BOOLEANS RACING THROUGH HANDLER
+   * PRECEDENCE.
+   *
+   * This replaces `preContent = canvas.state === "empty" || canvas.state === "sources_attached"`,
+   * which was read in three places and was WRONG in all of them the moment the policy staged a
+   * question. Nothing advances `canvas.state` when that happens — knowledge resolves as soon as a
+   * source's durable id lands, and `openCanvas()` (the only writer of `learn`) runs inside
+   * `begin()`, which the learner has not pressed yet. So `preContent` stayed true with a real
+   * question on screen, `onStart` was still handed to the composer, and the composer's routing put
+   * starting above answering. The learner typed an answer, pressed **Submit answer**, and the text
+   * went to `begin()`: no judge, no evidence row, and their canvas re-titled underneath them.
+   *
+   * 🔴 IT IS NOT A THEORY. Production holds exactly one typed answer that reached the judge —
+   * canvas `796a6045`, 2026-08-14 — and that canvas is stored at `learn`. The predicate is the
+   * discriminator.
+   *
+   * See composer-intent.ts. The rule it encodes is the owner's: *if Nemesis is visibly asking the
+   * learner a question, submitting through the primary composer is an answer to that question.*
+   */
+  const intent = composerIntent({
+    awaitingAnswer: policy.awaitingAnswer,
+    canvasState: canvas.state,
+    policyPresenting,
+    sink,
+  });
 
   // 🔴 THE COMPOSER IS NOW PRESENT BEFORE THE CANVAS HAS BEGUN, AND THAT IS THE WHOLE OF §15.
   //
@@ -719,6 +864,37 @@ export function LearningCanvas({
     { awaitingDemonstration, busy: busy.kind !== null || policy.recording },
   );
 
+  /**
+   * Pressing the Continue that is on screen, whichever region owns it — or null when none is.
+   *
+   * 🔴🔴 ONE FUNCTION, SO THE KEYBOARD CANNOT HAVE A PATH THE BUTTON DOES NOT. Command-Enter and
+   * the visible control now call exactly this; the alternative — a shortcut that reaches into
+   * `policy.acknowledge()` on its own — is a second way to advance the canvas, free to keep working
+   * after the button's own conditions change. `continueOwner` already guarantees at most one owner,
+   * so there is nothing to arbitrate here, only one place to say what pressing it does.
+   *
+   * 🔴 NULL IS THE REFUSAL AND IT IS INHERITED, NEVER RESTATED. `continueOwner` returns null while a
+   * demonstration is owed (its N3 guard: a control that moves the learner on while an answer is
+   * owed is a way to press past the question) and while the canvas is busy. Both the button and the
+   * key get that for free by asking whether this is null.
+   */
+  const advance = continueBelongsTo(continueRegion, "policy")
+    ? () => {
+        // 🔴 DISPATCHES `policy_continue` BEFORE ACKNOWLEDGING, NOT BECAUSE THIS CALL CHANGES
+        // ANYTHING — `nextExplanationState` returns the state unchanged for this event — but
+        // because the call site is what keeps that row real rather than theoretical. Contract
+        // rule 2's two categories are only "explicit in the code, not incidental" if pressing
+        // Continue on a correction provably does NOT also clear an unrelated aside three
+        // questions old; this is where that gets exercised, and it is what a future edit
+        // routing `onContinue` into `new_turn` by mistake would have to walk past.
+        applyExplanationEvent({ kind: "policy_continue" });
+        policy.acknowledge();
+      }
+    : continueBelongsTo(continueRegion, "document")
+      ? () => session.finishReadingChunk()
+      : null;
+
+
   return (
     // One uninterrupted sheet. The controls and the composer float on it; nothing divides it —
     // the sheet, its scrim, the floating strip and the `×` all come from `CanvasSurface`, which
@@ -771,7 +947,6 @@ export function LearningCanvas({
         // learner may be reading rather than answering, and stripping the title and navigation from
         // someone who is reading takes away their way out. So: quiet when the policy is alone,
         // continuous across question and feedback, never quiet over a document.
-        minimal={regions.policy && !regions.sharing}
         onFiles={(files) => void session.attachFiles(files)}
         onUrl={(url) => void session.attachUrl(url)}
         onRename={session.rename}
@@ -782,7 +957,24 @@ export function LearningCanvas({
           header height — nothing is reserved, painted or bounded up there; the page simply
           starts below where the controls sit (12px inset + 28px control + 24px breathing room,
           compact-UI pass -- was 16+32+24=72, tightened alongside the header it clears). */}
+      {/* Command-Enter presses whatever Continue is on screen. Renders nothing. */}
+      <ContinueHotkey onContinue={advance} />
+
       <div className="relative h-full overflow-y-auto pt-[64px]">
+        {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
+            fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
+            below what anyone notices; the owner's reading ("there are also no fade in or fade out
+            animations?") was accurate. Fading OUT needs the outgoing subtree to survive its own
+            unmount, which is what `CanvasFade` does and why it is a component rather than a class.
+
+            🔴 ONE WRAPPER AROUND ALL THREE REGIONS, NOT THREE WRAPPERS. A question replacing a reply
+            is the same motion as a correction replacing a question; wrapping each region separately
+            would fade them independently and produce a moment with both on screen at once.
+
+            🔴 THE KEY IS WHAT IS BEING SHOWN, NOT WHETHER SOMETHING IS LOADING. Keying on `busy`
+            would fade the page out and back in every time a request started, which is the flicker
+            this is meant to remove. */}
+        <CanvasFade contentKey={surfaceKey}>
         {/* 🔴 THE POLICY'S CONTRIBUTION COMES FIRST IN THE FLOW, NOT OVER THE TOP OF THE DOCUMENT.
             An overlay would hide the very material 7b exists to keep visible, and a learner who
             wanted to look something up would have to dismiss the question to do it. It sits above
@@ -797,21 +989,14 @@ export function LearningCanvas({
             // Continue on a correction provably does NOT also clear an unrelated aside three
             // questions old; this is where that gets exercised, and it is what a future edit
             // routing `onContinue` into `new_turn` by mistake would have to walk past.
-            onContinue={
-              continueBelongsTo(continueRegion, "policy")
-                ? () => {
-                    applyExplanationEvent({ kind: "policy_continue" });
-                    policy.acknowledge();
-                  }
-                : null
-            }
+            onContinue={continueBelongsTo(continueRegion, "policy") ? advance : null}
             runtime={policy}
             sharing={regions.sharing}
           />
         )}
 
         {/* An ordinary question, answered without touching the document (canvas-chat.ts,
-            canvas-chat-routing.ts). Reuses the `.canvas-swap` treatment `canvas-document.tsx`
+            lib/learn/turn-router.ts). Reuses the `.canvas-swap` treatment `canvas-document.tsx`
             already uses for a block-scoped "Explain this", the same quote-strip and Dismiss, so an
             ad hoc answer reads as one motion system rather than two effects that happen to agree.
             🔴 RENDERED HERE, NOT INSIDE `CanvasDocument`. `CanvasDocument` only mounts once the
@@ -823,7 +1008,16 @@ export function LearningCanvas({
             nothing here has to remember to dismiss it. */}
         {session.aside && session.aside.blockId === null && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
-            <div className="canvas-swap border-l-2 border-(--ui-stroke-secondary) py-0.5 pl-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
+            {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
+                and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
+                ASIDES: something attached to the document, subordinate to it, quoted off to one
+                side. But when Nemesis answers what you asked, that reply IS the page — there is no
+                document beside it for it to be an aside to — and dressing it as marginalia while it
+                is the only thing on screen made Nemesis read as if it were quoting someone else.
+                Plain text at full strength, in the same column and at the same 16px/26px as the
+                reference. See `canvas-document.tsx`, which keeps the rule for the genuinely
+                block-scoped case ("Explain this" on a passage), where the quotation is true. */}
+            <div className="canvas-swap text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
               {session.aside.text}
               {/* Which live pages the answer actually used, each individually promotable. This is
                   the "distinct" half of temporary-versus-durable: seeing it here is USING it for
@@ -856,7 +1050,11 @@ export function LearningCanvas({
                   ))}
                 </div>
               )}
-              {session.aside.question && (
+              {/* 🔴 A SUBJECT, NOT A QUESTION. This read `aside.question`, which every turn has, so
+                  "Hello. What can I do for you?" came with a Learn this button that had nothing to
+                  start. The model says whether the turn named something worth learning; a greeting
+                  does not. See `topic` in lib/learn/turn-router.ts. */}
+              {session.aside.topic && (
                 <div className="mt-3">
                   {/* Only when Nemesis actually noticed something. A nudge on every reply is not a
                       nudge, it is nagging, and the learner stops seeing it. */}
@@ -874,13 +1072,13 @@ export function LearningCanvas({
                   </button>
                 </div>
               )}
-              <button
-                className="mt-2 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
-                onClick={() => applyExplanationEvent({ kind: "dismiss_aside" })}
-                type="button"
-              >
-                Dismiss
-              </button>
+              {/* 🔴 NO "Dismiss" — owner call, 2026-08-19, AND NOTHING IS STRANDED BY REMOVING IT.
+                  The reply already clears on `new_turn` through the same `applyExplanationEvent`
+                  every route through `submit()` calls, so saying anything at all replaces it; the
+                  button was a second way to do what the next message does anyway. A chat reply that
+                  asks to be dismissed reads as a notification rather than as an answer, which is
+                  the whole complaint. `dismiss_aside` stays in `canvas-explanation-turn.ts` — it is
+                  still how the block-scoped popover closes. */}
             </div>
           </div>
         )}
@@ -952,11 +1150,14 @@ export function LearningCanvas({
             // instead of a handler that happens to agree with the others today.
             onDismissAside={() => applyExplanationEvent({ kind: "dismiss_aside" })}
             showContinue={continueBelongsTo(continueRegion, "document")}
+            // 🔴 THE SAME FUNCTION THE KEYBOARD CALLS. `advance` is non-null exactly when
+            // `showContinue` is true, so the fallback is unreachable and exists only to keep the
+            // prop non-nullable — routing this through the shared derivation is what stops
+            // command-enter and the button drifting into two ways of moving on.
+            onFinishReading={advance ?? session.finishReadingChunk}
             // §11 — free and local: the previous wording is already on the block, so this is a
             // state change rather than a request, and it cannot fail.
             onRestore={session.restoreRewritten}
-            // §38 — the learner sets the reading pace. Writes no evidence; see the handler.
-            onFinishReading={session.finishReadingChunk}
             onSelect={onSelect}
             onTerm={(block, mark, rect) => void lookUpTerm(block, mark, rect)}
             onToggleCollapsed={session.toggleCollapsed}
@@ -978,6 +1179,8 @@ export function LearningCanvas({
             The states themselves are unreachable in both directions and stay that way without any
             help from this file: `canvas-state.ts` refuses any transition INTO an evidence stage,
             and `canvas-store.ts` coerces a canvas already stored in one to `learn` on read. */}
+
+        </CanvasFade>
 
         {/* A whole-page job says so once, in the middle, rather than blanking the document.
             🔴 AND NEVER WHILE THE POLICY IS CONTRIBUTING. This greys everything beneath it, which
@@ -1056,8 +1259,8 @@ export function LearningCanvas({
 
       {showComposer && !recording && (
         <CanvasComposer
-          busy={sink.kind === "policy" ? policy.judging : busy.kind === "command"}
-          busyLabel={sink.kind === "policy" ? THINKING_COPY.reading_answer : busy.label}
+          busy={intent.kind === "answer" && intent.sink === "policy" ? policy.judging : busy.kind === "command"}
+          busyLabel={intent.kind === "answer" && intent.sink === "policy" ? THINKING_COPY.reading_answer : busy.label}
           // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
           // the policy. What a submission IS comes from whether something is currently being
           // asked, which is the rule this component already ran on.
@@ -1076,10 +1279,13 @@ export function LearningCanvas({
             // because nothing on THIS path — as opposed to `session.command`'s — had ever been
             // told to clear it: `askAbout`'s "disappears" was only ever true of the ask route.
             applyExplanationEvent({ kind: "new_turn" });
-            if (sink.kind === "policy") void policy.submit(text, via, tookMs);
+            // 🔴 THE INTENT NAMES THE RECEIVER. `sink.kind` said the same thing and is still what
+            // the intent was built from, but reading it again here would be a second place deciding
+            // who owns an answer — which is exactly the shape of the defect above.
+            if (intent.kind === "answer" && intent.sink === "policy") void policy.submit(text, via, tookMs);
             else void session.answerActiveTask(text, via, tookMs);
           }}
-          inSession={sink.kind === "policy"}
+          intent={intent}
           // 🔴 THE COMPOSER NO LONGER CARRIES PROGRESSION (§38/§39). `✓` was the one control that
           // moved the learner past material; it is a `Continue` below that material now, because
           // §38 allows exactly one button and §39 makes the trigger the policy's declared cognitive
@@ -1104,10 +1310,15 @@ export function LearningCanvas({
           // 🔴 `beginOrAnswer`, NOT `session.begin` DIRECTLY. A blank canvas with a question-shaped
           // ask and nothing attached is answered rather than swallowed as a lesson title, see that
           // function's own comment for why the check is scoped to exactly this state.
-          onStart={preContent ? beginOrAnswer : null}
-          pendingSources={preContent ? canvas.sources.map((source) => ({ id: source.id, title: source.title })) : []}
+          // 🔴 ALWAYS PASSED, AND THAT IS THE POINT. It used to be `preContent ? beginOrAnswer :
+          // null`, and the composer decided what a submission meant by asking whether it had been
+          // given a function. Presence is not meaning: `intent` says whether starting is what this
+          // submission IS, and this handler is simply how starting is done when it is.
+          onStart={beginOrAnswer}
+          // Unconditional too — the composer shows the chips only while `intent.kind === "start"`,
+          // which is the same question asked once instead of twice.
+          pendingSources={canvas.sources.map((source) => ({ id: source.id, title: source.title }))}
           selected={selected}
-          task={sink.kind === "none" ? null : sink.task}
         />
       )}
     </CanvasSurface>

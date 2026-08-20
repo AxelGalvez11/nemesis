@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   groundingQuery,
   groundingSources,
-  GROUNDING_SOURCE_LIMIT,
   needsGrounding,
   type WebHit,
 } from "./topic-grounding";
@@ -63,8 +62,15 @@ test("🔴 one page per host — a topic taught from one domain inherits its fra
 
 test("the promotion count is bounded — search rank must not become the curriculum", () => {
   const many = Array.from({ length: 10 }, (_, i) => hit(`https://site${i}.test/p`));
-  assert.equal(groundingSources(many).length, GROUNDING_SOURCE_LIMIT);
-  assert.ok(GROUNDING_SOURCE_LIMIT <= 3, "grounding must stay small");
+  // 🔴 REPOINTED 2026-08-19. This asserted `GROUNDING_SOURCE_LIMIT <= 3` with the message "grounding
+  // must stay small" — a guard whose entire job was to stop the count rising, written when small
+  // WAS the product rule. The owner changed the rule, so the guard is repointed to the properties
+  // that survive it rather than deleted: one page per host, answer order preserved, nothing without
+  // a title or description. Deleting it would have thrown away the quality filter along with the
+  // budget, which is the mistake this change is one edit away from.
+  const hosts = groundingSources(many).map((hit) => new URL(hit.url).host);
+  assert.equal(new Set(hosts).size, hosts.length, "two pages from one host is a narrower grounding");
+  assert.ok(groundingSources(many).length > 3, "the count cap is back");
 });
 
 test("an unparseable URL is skipped rather than promoted into a failing fetch", () => {

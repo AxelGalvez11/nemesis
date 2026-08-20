@@ -18,6 +18,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { labTrace } from "@/lib/lab/trace";
+
 import { useAuth } from "@/components/AuthProvider";
 import { teachingExperimentStartedAt } from "@/lib/env";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
@@ -85,6 +87,8 @@ export interface PolicyRuntime {
    *  still computed and still reported (`ownership`), it just no longer decides whether a question
    *  may appear. See docs/canvas-task-hosting.md §1. */
   status: "loading" | "ready" | "unavailable";
+  /** A teaching controller is running right now — see the state's own note. */
+  deciding: boolean;
   /**
    * What the policy is contributing right now, or null when it has nothing to ask.
    *
@@ -400,6 +404,23 @@ export function usePolicyRuntime(
    * other was refused — which is not a comparison, it is two different populations.
    */
   strategyOverride: TeachingStrategyId | null = null,
+  /**
+   * What the learner said to open this sitting, when this canvas began from an utterance.
+   *
+   * 🔴 PASSED THROUGH UNREAD BY THIS HOOK. See `TeachingContext.opening` for why the controller
+   * gets the words rather than a flag: deciding here whether they "sound like" a teach request
+   * would put a classifier in front of the model, which is the thing #689 removed.
+   */
+  opening: string | null = null,
+  /**
+   * The judge decided a submission was not an attempt at the question — hand the text back so the
+   * canvas can answer it as conversation.
+   *
+   * 🔴 A CALLBACK RATHER THAN THIS HOOK CALLING `converse` ITSELF. The policy runtime owns the
+   * teaching loop and knows nothing about the conversational lane; giving it one would be a second
+   * route into `askCanvasChat` and a second place that decides what a turn means.
+   */
+  notAnAttempt: ((said: string) => void) | null = null,
 ): PolicyRuntime {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
@@ -731,13 +752,33 @@ export function usePolicyRuntime(
   );
 
   const [decided, setDecided] = useState<{ inputs: string; outcome: StrategyOutcome } | null>(null);
+  /**
+   * A teaching controller is running right now.
+   *
+   * 🔴🔴 THE GAP BETWEEN TWO QUESTIONS HAD NO NAME, SO THE CANVAS CALLED IT "NOTHING TO ASK".
+   * Reported by the owner, 2026-08-19: "Nemesis hasn't found anything to ask you about yet" showing
+   * BETWEEN questions. `canvasPresentation` falls through to `quiet` when nothing else is true, and
+   * `working` was `busy.kind !== null || policy.phase !== null || policy.status === "loading"` —
+   * none of which holds while the controller is deciding the next move. `status` is already `ready`
+   * (knowledge loaded), no phase is named (choosing a move narrates nothing), and `busy` belongs to
+   * the session rather than the policy. So progress rendered as a dead end, complete with a "Try
+   * again" button for something that was working.
+   *
+   * 🔴 A FLAG ON THE ACTUAL CALL, NOT A TIMER AND NOT `decision === null`. `decision` is also null
+   * when the controller has genuinely finished and chosen nothing, which is the real `quiet` and
+   * must stay reachable — that state is the one #690's note is about. This says the narrower thing:
+   * a request is in flight.
+   */
+  const [deciding, setDeciding] = useState(false);
 
   useEffect(() => {
     if (status !== "ready") {
       setDecided(null);
+      setDeciding(false);
       return;
     }
     let live = true;
+    setDeciding(true);
     // 🔴 BOTH ARMS GO THROUGH THIS EFFECT, INCLUDING THE ONE THAT CANNOT BLOCK. Running
     // `nemesis_policy` synchronously in a memo and `llm_teacher` here would put the two controllers
     // at different points in the React lifecycle — settling in different frames, against different
@@ -766,6 +807,7 @@ export function usePolicyRuntime(
           modelled,
           now: decidedAt,
           objectives: inFocus,
+          opening,
           recentActs,
           signal: abort.signal,
           uid,
@@ -779,10 +821,57 @@ export function usePolicyRuntime(
         // broken one would fall silent in exactly the conditions that break it.
         if (!live) return;
         canvasCapture("canvas_strategy_refused", canvas, { reason: "model-unreachable", strategy });
+        labTrace("controller", `${strategy} could not be reached`, () => ({ refusal: "model-unreachable", strategy }));
         setDecided({ inputs: decisionInputs, outcome: { decision: null, refusal: "model-unreachable", strategy } });
+        setDeciding(false);
         return;
       }
       if (!live) return;
+      // 🔴 OBSERVABILITY ONLY — inert unless Nemesis Lab is open (lib/lab/trace.ts). This is the
+      // moment the whole teaching question is answered: which controller ran, what it was allowed to
+      // see, which objective it chose and why. A debug panel reconstructing it from the outside
+      // would be guessing at exactly the step the Lab exists to make legible.
+      labTrace(
+        "controller",
+        outcome.decision ? `${outcome.strategy} → ${outcome.decision.action.type}` : `${outcome.strategy} decided nothing`,
+        () => ({
+          action: outcome.decision?.action ?? null,
+          knowledge: outcome.decision?.knowledge ?? null,
+          movedOn: outcome.movedOn ?? [],
+          objective: outcome.decision?.objective ?? null,
+          objectivesConsidered: inFocus.map((entry) => ({
+            capability: entry.objective.capability,
+            identityKey: entry.objective.identityKey,
+            statement: entry.knowledge.statement,
+            type: entry.knowledge.type,
+          })),
+          // 🔴 `rationale` IS WHERE "WHY" LIVES, AND IT IS ARM-SPECIFIC BY CONSTRUCTION — the
+          // structured policy accounts for its choice differently from the model. Reported as the
+          // controller states it, never flattened into one sentence the two arms would have to share.
+          cognitiveMode: outcome.decision?.cognitiveMode ?? null,
+          exposition: outcome.decision?.exposition ?? null,
+          rationale: outcome.decision?.rationale ?? null,
+          refusal: outcome.refusal ?? null,
+          state: outcome.decision?.state ?? null,
+          strategy: outcome.strategy,
+          // 🔴 THE CONTEXT THE CONTROLLER WAS ACTUALLY GIVEN, so the Lab can put the OTHER arm in
+          // front of the identical inputs (§12) and re-run the same arm repeatedly (§13) without
+          // reconstructing anything. `signal` is deliberately not carried: an AbortSignal is not
+          // data, and a replay supplies its own.
+          context: {
+            actedOn,
+            attention: { activeMs: Math.max(0, Math.round(canvas.activeMs)), availableMs: null },
+            correctionsShown: [...correctionsShown],
+            evidence,
+            modelled: [...modelled],
+            now: decidedAt.toISOString(),
+            objectives: inFocus,
+            recentActs,
+            uid,
+          },
+        }),
+        Date.now() - decidedAt.getTime(),
+      );
       // 🔴🔴 OBJECTIVES THE CONTROLLER PASSED OVER ARE RECORDED AS WORKED, AND WITHOUT THIS THE
       // WHOLE "MOVE ON" MECHANISM WOULD BE A NO-OP THE LEARNER COULD FEEL. `controllerFor` sets an
       // objective aside for the length of ONE call; if nothing here remembers it, the next turn
@@ -813,10 +902,17 @@ export function usePolicyRuntime(
         canvasCapture("canvas_strategy_refused", canvas, { reason: outcome.refusal, strategy });
       }
       setDecided({ inputs: decisionInputs, outcome });
+      setDeciding(false);
     })();
     return () => {
       live = false;
       abort.abort();
+      // 🔴 CLEARED ON TEARDOWN TOO, OR A STUCK `true` IS WORSE THAN THE BUG IT FIXES. Every `if
+      // (!live) return` inside the async body above leaves without clearing it — that is correct,
+      // because a superseded run must not touch state a newer one owns — so the only place that can
+      // honestly end this run's claim is its own cleanup. Without this, an aborted decision leaves
+      // the canvas reporting "preparing" for ever: a spinner where there used to be a wrong answer.
+      setDeciding(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decisionInputs, status]);
@@ -1103,6 +1199,7 @@ export function usePolicyRuntime(
       setRecording(true);
       try {
         let written = true;
+        labTrace("evidence", `writing ${built.length} row(s)`, () => ({ rows: built }));
         for (const row of built) {
           // Sequential rather than concurrent: they conflict on the same index, and a burst of
           // parallel upserts for one answer is exactly the shape that makes a duplicate look like a
@@ -1110,6 +1207,7 @@ export function usePolicyRuntime(
           if (!(await recordEvidence(uid, row))) written = false;
         }
         if (!written) {
+          labTrace("evidence", "🔴 the write FAILED, so nothing was recorded", () => ({ rows: built }));
           setError("That answer was judged, but Nemesis could not save it. It won't count yet.");
           // 🔴 NO REFRESH ON FAILURE. Re-reading here would let the policy decide its next move from
           // a half-written performance, teaching from a learner model that is missing exactly the
@@ -1217,11 +1315,11 @@ export function usePolicyRuntime(
       setJudging(true);
       setPhase("reading_answer");
       const response = { text: said, via, ...(tookMs !== undefined ? { tookMs } : {}) };
-      const result = await evaluateLearningResponse(
-        uid,
-        canvas,
-        objectiveAsTask(decision.objective, active, response),
-      );
+      // 🔴 HELD IN A NAMED VALUE SO THE LAB CAN REPLAY THE JUDGE ON EXACTLY WHAT IT WAS GIVEN.
+      // Rebuilding this from the pieces at replay time would be a second construction of the task,
+      // free to differ from the one that produced the verdict under investigation.
+      const judgeInput = objectiveAsTask(decision.objective, active, response);
+      const result = await evaluateLearningResponse(uid, canvas, judgeInput);
       setJudging(false);
       setPhase(null);
 
@@ -1238,6 +1336,13 @@ export function usePolicyRuntime(
         // the wrong behaviour — it has to say which case it is in. The return stays because the
         // UI differs too: `record()` reports a save failure, which is not what happened here.
         canvasCapture("canvas_judge_failed", canvas, { objective: decision.objective.identityKey });
+        // The distinction the whole design turns on: a judge nobody could reach is NOT a learner
+        // who failed. From outside, both look like an answer that went nowhere.
+        labTrace("judge", "the judge could not be reached, so nothing was recorded", () => ({
+          answer: said,
+          error: result.error,
+          objective: decision.objective.identityKey,
+        }));
         // 🔴 SAYS WHAT IS TRUE HERE, NOT WHAT THE SHARED STRING SAYS. The evaluator's own message
         // ends "Your response was saved" — true on the six-stage path, where the answer is written
         // to the canvas before the judge is called, and FALSE here, where evidence is written only
@@ -1247,6 +1352,59 @@ export function usePolicyRuntime(
       }
 
       const evaluation = result.value;
+
+      // 🔴🔴 THE JUDGE DECLINED TO GRADE THIS, SO NOTHING IS GRADED AND NOTHING IS RECORDED.
+      //
+      // Reported by the owner, 2026-08-19: with a question on screen he typed "what is on the news
+      // today?" and Nemesis answered "Not quite. Here's the gap." and wrote a durable row —
+      // `incorrect`, confidence 0.95, evidence `contradicted`, errorType `conceptual`. Asking about
+      // the news became proof he misunderstood sulfur bonding. Two older rows say "what?" — someone
+      // saying they did not follow — filed the same way.
+      //
+      // 🔴 THE INVARIANT IS NOT WEAKENED. `composerIntent` still says ANSWER, still outranks
+      // everything, and is untouched; a real attempt still cannot be misrouted to chat. The one
+      // component that already reads the sentence has simply been given a way to say "this was not
+      // aimed at the question", and that is the ONLY way out. See `Verdict.not_an_attempt`.
+      //
+      // 🔴 NO ROW, NOT EVEN AN EMPTY ONE. `unanswered` exists for "we asked and learned nothing" and
+      // is the wrong shape here: the learner was never asked about what they typed, so there is no
+      // opportunity to record. Absence of a question is not absence of an answer.
+      if (evaluation.verdict === "not_an_attempt") {
+        labTrace("judge", "not an attempt: routed to conversation, nothing recorded", () => ({
+          answer: said,
+          objective: decision.objective.identityKey,
+          question: active.prompt,
+        }));
+        canvasCapture("canvas_submission_not_an_attempt", canvas, {
+          objective: decision.objective.identityKey,
+        });
+        setJudging(false);
+        // 🔴 THE QUESTION STAYS ON SCREEN. They did not answer it and they did not dismiss it; the
+        // canvas has no business moving on, and coming back to find it gone would be the product
+        // deciding their aside was a surrender.
+        notAnAttempt?.(said);
+        return;
+      }
+
+      labTrace(
+        "judge",
+        `${evaluation.verdict} on "${decision.objective.identityKey}"`,
+        () => ({
+          answer: said,
+          confidence: evaluation.confidence,
+          errorType: evaluation.errorType ?? null,
+          evaluation,
+          misconceptions: evaluation.misconceptions ?? null,
+          objective: decision.objective.identityKey,
+          question: active.prompt,
+          expectedAnswer: active.expectedAnswer,
+          judgeInput,
+          concepts: canvas.concepts,
+          statement: decision.knowledge.statement,
+          verdict: evaluation.verdict,
+          via,
+        }),
+      );
       // 🔴 THE VERDICT'S MODE IS MINTED FROM THE OBJECTIVE THAT WAS ANSWERED, AND FROM NOTHING
       // ABOUT THE ANSWER — §39. `evaluation` is right here and is deliberately not consulted:
       // "correctness does not determine advancement; cognitive mode does". Passing the verdict in
@@ -1288,7 +1446,11 @@ export function usePolicyRuntime(
           // 🔴 `judged(...)` RATHER THAN A BARE ARRAY — RUNTIME-006. Reaching this line is itself
           // the claim that we have an account of the performance. The unreachable-judge case is
           // `noJudgement()` and writes nothing; it is handled above, before anything is built.
-          judgement: judgementOf([outcomeFor(decision.objective, evaluation)]),
+          // 🔴 `.filter(Boolean)` RATHER THAN `!`. `outcomeFor` returns null only for
+          // `not_an_attempt`, which returned above — but an assertion here would be a promise about
+          // a branch in another file, and the next verdict that declines to produce an outcome would
+          // land as a runtime null inside the durable write rather than as a compile error.
+          judgement: judgementOf([outcomeFor(decision.objective, evaluation)].filter((o) => o !== null)),
           // 🔴🔴 THIS IS WHERE QUESTION-BEFORE-OPTIONS BECOMES HONEST RATHER THAN COSMETIC. A learner
           // who typed the answer with nothing on screen but the question PRODUCED it, and the row has
           // to say so — otherwise the strongest performance the surface can elicit is filed as the
@@ -1306,7 +1468,7 @@ export function usePolicyRuntime(
         }),
       );
     },
-    [admitNothing, canvas, choicesRevealed, decision, decidedStrategy, judging, prompt, record, uid],
+    [admitNothing, canvas, choicesRevealed, decision, decidedStrategy, judging, notAnAttempt, prompt, record, uid],
   );
 
   /**
@@ -1498,8 +1660,29 @@ export function usePolicyRuntime(
   // 🔴 IT ALSO CARRIES THE BRAIN'S OWN PAIR OUT UNTOUCHED. `operation` and `knowledgeType` are the
   // policy's decision; the runtime hands them to the surface so a presentation can differ by
   // cognitive demand (§9, §14.6) without re-deriving what the demand IS.
+  //
+  // 🔴🔴 RECOGNITION HOSTS A TASK TOO, AND LEAVING IT OUT WAS THE SECOND HALF OF THE SWALLOWED-ANSWER
+  // DEFECT. `awaitingAnswer` has always covered `retrieve` AND `recognise`; this built a task only
+  // for `retrieve`, so during a multiple-choice question `answerSink` resolved to `none` — and a
+  // learner who typed instead of tapping had their text routed to `begin()` on a pre-content canvas
+  // and to `onAsk` everywhere else. Either way the judge never saw it and no row was written.
+  //
+  // The comment this replaces reasoned *"the options ARE the answer, so the composer does not
+  // receive one"*. The options are AN answer surface; the composer is the primary one, and §2 of the
+  // owner's directive is that every modality converges on one pipeline. Someone who reads four
+  // options and types the answer in their own words has produced MORE than a tap, not less — and the
+  // row still files at `rung: "recognition"`, `scaffoldingLevel: OPTIONS_ON_SCREEN`, because that
+  // number says how much help was on the table, never whether the learner needed it.
+  //
+  // 🔴 TAPPING IS UNCHANGED. `CanvasPolicyView` still renders the options and still calls
+  // `runtime.choose`, which deliberately does not consult the judge. This adds a second way in, it
+  // does not move the first.
   const task: HostedTask | null = useMemo(() => {
     if (status !== "ready" || feedback || !decision || !prompt) return null;
+    // 🔴 RESOLVED IN FAVOUR OF `performanceOf`, WHICH IS THE MORE GENERAL FORM. Both lanes found
+    // this defect independently; the other named `retrieve` and `recognise` explicitly, this asks
+    // the action whether it wants a performance at all, so the next action type that does cannot
+    // be forgotten here.
     // 🔴🔴 EVERY ASK HOSTS A TASK NOW, AND UNTIL THIS LINE A RECOGNITION SCREEN HOSTED NONE. That was
     // not a styling gap: `answerSink` reads this to decide who receives a typed answer, so a learner
     // sitting in front of a recognition question who typed the answer instead of tapping had it
@@ -1604,6 +1787,7 @@ export function usePolicyRuntime(
     submit,
     task,
     territories,
+    deciding,
     thinking,
   };
 }

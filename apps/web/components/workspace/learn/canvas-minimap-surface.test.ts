@@ -102,10 +102,21 @@ test("🔴 established is never rendered as a completion checkmark or 'done' —
   assert.doesNotMatch(body, /\bdone\b|\bcomplete[d]?\b|\bfinished\b/i, "completion language reached a territory row");
 });
 
-test("the control is gated by !minimal, alongside its siblings — session chrome, not the composer", async () => {
+test("the control sits alongside its siblings in the one control row", async () => {
+  // 🔴 REPOINTED 2026-08-19, AND THE OLD ASSERTION WAS THE POINT OF THE CHANGE. It required
+  // `MinimapControl` to be inside `{!minimal && ...}` — the block that hid the whole row whenever a
+  // question was on screen — with the failure message "it would stay on screen during a retrieval".
+  // Staying on screen is now what the owner asked for: "why do the icons on the right disappear?".
+  // `minimal` is gone entirely, so this can no longer assert where it sits relative to a gate; what
+  // it still protects is that the minimap is one of the header's controls and not something bolted
+  // on somewhere else.
   const header = stripComments(await HEADER_SOURCE);
-  const gated = /\{!minimal && \(\s*<>[\s\S]*?<MinimapControl[\s\S]*?<\/>\s*\)\}/.exec(header);
-  assert.ok(gated, "MinimapControl is not inside the !minimal block — it would stay on screen during a retrieval");
+  assert.ok(!/minimal/.test(header), "the header can hide itself again");
+  // 🔴 `[\s\S]*?` BETWEEN THE CONTROLS, NOT `\s*`. `stripComments` here removes `//` lines but leaves
+  // `{/* ... */}` blocks, and the row is documented with one — so a whitespace-only gap asserted a
+  // formatting detail rather than the ordering, and failed on correct code.
+  const row = /<SourcesControl[\s\S]*?<MinimapControl[\s\S]*?<OptionsControl/.exec(header);
+  assert.ok(row, "MinimapControl is not in the header's control row beside Sources and Options");
 });
 
 test("MinimapControl receives a narrow slice, not the whole PolicyRuntime, through CanvasHeader", async () => {

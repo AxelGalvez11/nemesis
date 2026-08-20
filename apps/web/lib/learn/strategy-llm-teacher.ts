@@ -96,6 +96,13 @@ const TEACHER_SYSTEM = [
   "- Slow is not wrong. Latency is context, never a verdict.",
   "- You may only act on the misconceptions listed. Do not infer or invent one.",
   "- Never ask the same question twice in a row.",
+  "- SHOW SOMETHING BEFORE YOU TEST IT. If there is no evidence at all for an objective, teach it first. Nobody",
+  "  arrives at a subject expecting to be examined on it before it has been put in front of them, and a question asked",
+  "  into that silence is not a measurement of the learner, it is a measurement of whether they happened to know",
+  "  already. Once they have produced ANYTHING on an objective, this stops applying and the choice is yours again.",
+  "- The exception is when they asked to be tested, quizzed or drilled. Then test. They said what they wanted.",
+  "- Teaching first is not a claim that they do not know it. It is the material arriving before the question about it,",
+  "  which is what every competent explanation does. Recording what they then produce is still the only evidence.",
   "",
   "Your entire output is the JSON object requested: no greeting, no commentary, no explanation outside the JSON.",
   "Never use an em dash. The character - must not appear anywhere in your output.",
@@ -283,6 +290,20 @@ function sittingNote(
   shown: number,
 ): string {
   const lines: string[] = [];
+  // 🔴 FIRST, BECAUSE IT REFRAMES EVERYTHING UNDER IT. What the learner asked for changes how the
+  // zero-evidence state should read: with no opening, "nothing produced yet" means we know nothing
+  // and must ask; with "teach me X" it means they have told us they have not met it.
+  //
+  // 🔴 BOUNDED AT 200 CHARACTERS. This is learner text on a per-turn model call, so it is the one
+  // field here with no natural ceiling; an unbounded one would let a pasted paragraph set the size
+  // of every subsequent teaching decision in the sitting.
+  const opening = context.opening?.trim().slice(0, 200);
+  if (opening) {
+    lines.push(
+      `The learner opened this sitting by saying: "${opening}"`,
+      "Those are their own words about what they came for. Treat it as something they told you, not as an inference about what they know.",
+    );
+  }
   const attention = context.attention;
   if (attention) {
     lines.push(`Attention spent this sitting so far: about ${Math.round(attention.activeMs / 60_000)} minutes.`);

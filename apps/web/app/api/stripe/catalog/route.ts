@@ -1,6 +1,6 @@
-import { stripePlusPriceId, stripeProPriceId } from "@/lib/env";
+import { stripeNemesisAnnualPriceId, stripeNemesisMonthlyPriceId } from "@/lib/env";
 import { json, verifyBearer } from "@/lib/server";
-import { stripePriceMatchesPlan, type CheckoutPlan } from "@/lib/billing-contract";
+import { stripePriceMatchesInterval, type CheckoutInterval } from "@/lib/billing-contract";
 import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
 
 interface CatalogPrice {
@@ -9,11 +9,22 @@ interface CatalogPrice {
   interval: string | null;
 }
 
+/**
+ * What Nemesis costs, read back from Stripe.
+ *
+ * 🔴 THIS IS A VERIFICATION SURFACE, NOT THE PRICING PAGE'S SOURCE OF TRUTH.
+ * The pricing page renders its amounts from packages/shared/src/plan.ts so it
+ * cannot be blanked by a Stripe outage or a missing Price. This route exists so
+ * a misconfigured environment is visible as a 503 rather than as a customer
+ * being charged the wrong number, and so the two can be compared.
+ *
+ * One product, two intervals. There is no plan to choose here any more.
+ */
 export async function GET(req: Request) {
   try {
     const user = await verifyBearer(req);
     if (!user) return json({ error: "authentication required" }, 401);
-    if (!stripePlusPriceId || !stripeProPriceId) {
+    if (!stripeNemesisMonthlyPriceId || !stripeNemesisAnnualPriceId) {
       return json({ error: "stripe_catalog_not_configured" }, 503);
     }
 
@@ -22,44 +33,39 @@ export async function GET(req: Request) {
     // longer computes or advertises trial eligibility. The mode assertion stays
     // so a misconfigured key fails here the same way the checkout route would.
     assertStripeBillingWritesAllowed();
-    // Two plans, always. Max ($99) was retired 2026-08-05 and this catalog no
-    // longer reads STRIPE_MAX_PRICE_ID, so leaving that variable set in the
-    // environment does nothing — the sale path is closed in code, not config.
-    const [plusPrice, proPrice] = await Promise.all([
-      stripeClient.prices.retrieve(stripePlusPriceId),
-      stripeClient.prices.retrieve(stripeProPriceId),
+    const [monthlyPrice, annualPrice] = await Promise.all([
+      stripeClient.prices.retrieve(stripeNemesisMonthlyPriceId),
+      stripeClient.prices.retrieve(stripeNemesisAnnualPriceId),
     ]);
 
-    const configuredPrices: Array<{
-      plan: CheckoutPlan;
-      price: typeof plusPrice;
-    }> = [
-      { plan: "plus", price: plusPrice },
-      { plan: "pro", price: proPrice },
+    const configured: Array<{ interval: CheckoutInterval; price: typeof monthlyPrice }> = [
+      { interval: "monthly", price: monthlyPrice },
+      { interval: "annual", price: annualPrice },
     ];
-    for (const { plan, price } of configuredPrices) {
-      if (!stripePriceMatchesPlan(plan, price)) {
+    for (const { interval, price } of configured) {
+      if (!stripePriceMatchesInterval(interval, price)) {
         console.error("stripe_catalog_price_mismatch", {
           active: price.active,
           currency: price.currency,
           interval: price.recurring?.interval,
-          plan,
           unitAmount: price.unit_amount,
+          wanted: interval,
         });
         return json({ error: "stripe_catalog_price_mismatch" }, 503);
       }
     }
 
-    const serialize = (price: typeof plusPrice): CatalogPrice => ({
+    const serialize = (price: typeof monthlyPrice): CatalogPrice => ({
       unitAmount: price.unit_amount,
       currency: price.currency,
       interval: price.recurring?.interval ?? null,
     });
 
     return json({
-      plans: {
-        plus: serialize(plusPrice),
-        pro: serialize(proPrice),
+      plan: "nemesis",
+      intervals: {
+        annual: serialize(annualPrice),
+        monthly: serialize(monthlyPrice),
       },
     });
   } catch (error) {

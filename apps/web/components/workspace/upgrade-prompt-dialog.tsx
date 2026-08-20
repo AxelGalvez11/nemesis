@@ -48,21 +48,25 @@ export function UpgradePromptDialog() {
     <Dialog onOpenChange={(open) => { if (!open) dismissUpgradePrompt(); }} open={state.open}>
       <DialogContent className="max-w-[26rem]" fitContent>
         <DialogHeader>
-          <DialogTitle>You&rsquo;re out of credits</DialogTitle>
+          {/* 🔴 NOT "you're out of credits". Nemesis is not a credit meter and
+              must never read like one (owner, 2026-08-18): a student should not
+              be told a balance, only that this month is used up and when it
+              comes back. */}
+          <DialogTitle>That&rsquo;s everything for now</DialogTitle>
           <DialogDescription>
-            {state.message ?? "Today's AI allowance on your plan is used up."}
+            {state.message ?? "You've used what your plan gives you for today."}
           </DialogDescription>
         </DialogHeader>
         <p className="px-1 text-sm leading-relaxed text-muted-foreground">
           {state.reset === "monthly"
             ? "Your monthly allowance resets on the 1st."
-            : `Free credits reset at ${nextDailyReset(new Date()).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`}{" "}
-          Upgrade to keep going right now — your work stays put either way.
+            : `It comes back at ${nextDailyReset(new Date()).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`}{" "}
+          Nemesis gives you room for a full course load if you want to keep going now. Your work stays put either way.
         </p>
         <DialogFooter>
           <Button onClick={dismissUpgradePrompt} variant="secondary">Wait for reset</Button>
           <Button asChild onClick={dismissUpgradePrompt}>
-            <Link href="/pricing">Upgrade</Link>
+            <Link href="/pricing">Get Nemesis</Link>
           </Button>
         </DialogFooter>
       </DialogContent>
