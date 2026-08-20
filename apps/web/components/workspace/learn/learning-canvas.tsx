@@ -44,6 +44,8 @@ import { CanvasHeader } from "./canvas-header";
 import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
+import { BloubDock } from "@/components/bloub/bloub-dock";
+import { stateForCanvas } from "@/lib/character/stations";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";
@@ -654,6 +656,9 @@ export function LearningCanvas({
     return (
       <CanvasSurface onExit={leave}>
         <div className="flex h-full items-center justify-center">
+          {/* Nothing is docked yet — there is no composer to stand above — so the character
+              simply holds the middle, which is where it would have walked to anyway. */}
+          <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
           {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
               database read long. It was not fine while it also covered knowledge resolution, which
               is a model call and an ingestion and can run for a minute. */}
@@ -1404,6 +1409,22 @@ export function LearningCanvas({
           </div>
         </div>
       )}
+
+      {/* 🔴 THE CHARACTER, AND IT IS NOT A LOADING INDICATOR. It lives above the composer for
+          the whole session, not only while something is running, because a companion that only
+          appears when you are waiting IS a spinner with a face. What changes while Nemesis works
+          is where it stands and what it does: it walks to the middle of the surface and comes
+          back, and `canvas-motion.test.ts`'s rule still holds — the CAPTION beside it is still
+          the name of a step that is genuinely executing, and nothing here narrates progress.
+
+          🔴 IT TAKES NO SPACE AND NO CLICKS. Absolutely positioned, `pointer-events: none`,
+          outside the flow — it cannot reflow the lesson it is sitting on, and it cannot swallow
+          a press meant for the composer behind it. */}
+      <BloubDock
+        anchor="#canvas-composer"
+        contain
+        state={stateForCanvas({ thinking: policy.thinking, preparing: presence === "preparing" })}
+      />
 
       {/* 🔴 ALONGSIDE THE QUESTION, NOT OVER IT. A judgement that runs long leaves the stimulus
           exactly where it was — the learner keeps the thing they just answered in view, so nothing

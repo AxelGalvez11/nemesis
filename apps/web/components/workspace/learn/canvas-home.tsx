@@ -21,7 +21,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { BloubBot } from "@/components/bloub/bloub-bot";
+import { stateForCanvas } from "@/lib/character/stations";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { ComposerSend } from "./composer-controls";
 import { CanvasRecorder } from "./canvas-recorder";
@@ -47,6 +50,8 @@ const CANVAS_COMPOSER_INSET = 16;
 
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const router = useRouter();
+  // The character's look is a device preference, the same as the theme and the scale.
+  const { bloubShape, bloubColor } = useTheme();
   const [text, setText] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   /** The whole page is a drop target, not just the composer — the copy has always said "drop a
@@ -209,6 +214,35 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               animating it out at the far end instead. Fading it here makes the composer the only
               thing that survives the transition, which is exactly what the learner should be
               following with their eye. */}
+          {/* 🔴 A GREETER, NOT THE DOCK. Everywhere else the character is parked lower-left
+              above a composer pinned to the foot of the page; this composer is centred in normal
+              flow, so a corner dock would put it in an empty corner far from the only thing on
+              screen. It stands above the question instead, which is where the eye already is.
+
+              🔴 AND IT LEAVES WITH THE GREETING, on the same curve. It belongs to the block that
+              has no counterpart on the canvas; carrying it through the transition would leave it
+              hanging over a composer that has already travelled, and it would then have to be
+              animated out at the far end instead.
+
+              This is also the one place the entrance turn belongs — the eyes go right round the
+              body and come back, which is a real arrival and costs a beat. It is off everywhere
+              else precisely because it would then happen on every appearance. */}
+          <div
+            className="mb-5"
+            style={{
+              opacity: departing ? 0 : 1,
+              transition: `opacity ${Math.round(DOCK_MS * 0.55)}ms ease-out`,
+            }}
+          >
+            <BloubBot
+              color={bloubColor}
+              entrance
+              shape={bloubShape}
+              size={64}
+              state={stateForCanvas({ thinking: false, preparing: false, listening })}
+              track
+            />
+          </div>
           <h1
             className="text-[length:var(--canvas-text-title)] font-medium tracking-[-0.01em] text-(--ui-text-primary)"
             style={{
