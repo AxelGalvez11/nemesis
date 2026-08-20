@@ -171,9 +171,19 @@ test("🔴 no internal action name leaks into the prompt", () => {
 });
 
 // ── Reading the decision ────────────────────────────────────────────────────
+//
+// 🔴🔴 THE FORMAT CHANGED ON 2026-08-20 AND THESE TESTS CHANGED WITH IT. The answer used to be a
+// `say` STRING INSIDE the JSON object, where every backslash the model wrote had to be doubled —
+// so `\frac` made JSON.parse refuse the entire decision and the raw envelope leaked onto the
+// learner's screen. The decision is now a fenced block and the answer is everything outside it,
+// which is what lets a reply contain real LaTeX and real SMILES.
+
+/** A turn in the wire format: the decision block, then the answer. */
+const turn = (decision: Record<string, unknown>, answer: string) =>
+  "```json\n" + JSON.stringify(decision) + "\n```\n" + answer;
 
 test("a plain decision is read", () => {
-  const read = readTurnDecision('{"say":"hey. what are you working on?","then":"reply","topic":null,"offer":null}');
+  const read = readTurnDecision(turn({ offer: null, then: "reply", topic: null }, "hey. what are you working on?"));
   // 🔴 `visuals` IS ALWAYS PRESENT AND USUALLY EMPTY, WHICH IS THE POINT OF A DEEP EQUAL HERE. A
   // turn that draws nothing must still produce a list, so every downstream reader can index into
   // it without a null check — the alternative is an optional field that is absent on the ordinary
@@ -181,8 +191,8 @@ test("a plain decision is read", () => {
   assert.deepEqual(read, { offer: null, say: "hey. what are you working on?", then: "reply", topic: null, visuals: [] });
 });
 
-test("a fenced decision is read", () => {
-  const read = readTurnDecision('```json\n{"say":"alright.","then":"study","topic":"pharmacokinetics"}\n```');
+test("a study decision is read, and its answer comes from outside the block", () => {
+  const read = readTurnDecision(turn({ then: "study", topic: "pharmacokinetics" }, "alright."));
   assert.equal(read?.then, "study");
   assert.equal(read?.topic, "pharmacokinetics");
   assert.equal(read?.say, "alright.");
@@ -207,16 +217,16 @@ test("🔴 a topic is asked for on a plain reply too, because it gates the Learn
 });
 
 test("an offer is read only when it is one of the two things it can be", () => {
-  assert.equal(readTurnDecision('{"say":"x","then":"reply","offer":"returning"}')?.offer, "returning");
-  assert.equal(readTurnDecision('{"say":"x","then":"reply","offer":"confused"}')?.offer, null);
+  assert.equal(readTurnDecision(turn({ offer: "returning", then: "reply" }, "x"))?.offer, "returning");
+  assert.equal(readTurnDecision(turn({ offer: "confused", then: "reply" }, "x"))?.offer, null);
 });
 
 test("🔴🔴 an unrecognised action falls back to conversation, never to teaching", () => {
   // Calibration: change `then ?? "reply"` in turn-router.ts to `then ?? "study"` and this reddens
   // on its own. It is the same asymmetry the deleted classifier stated and then got backwards —
   // answering someone who wanted a lesson costs one turn; teaching someone who said hello does not.
-  assert.equal(readTurnDecision('{"say":"hey","then":"teach"}')?.then, "reply");
-  assert.equal(readTurnDecision('{"say":"hey"}')?.then, "reply");
+  assert.equal(readTurnDecision(turn({ then: "teach" }, "hey"))?.then, "reply");
+  assert.equal(readTurnDecision(turn({}, "hey"))?.then, "reply");
 });
 
 test("🔴 text that is not a decision is not a decision", () => {
@@ -241,37 +251,44 @@ test("🔴 nothing in this module can produce a study turn the model did not ask
     "hello",
     "innate immunity",
     "this sucks",
-    '{"say":"ok"}',
-    '{"say":"ok","then":"reply"}',
-    '{"say":"ok","then":"START_LEARNING"}',
-    '{"then":"studying"}',
+    turn({}, "ok"),
+    turn({ then: "reply" }, "ok"),
+    turn({ then: "START_LEARNING" }, "ok"),
+    turn({ then: "studying" }, "ok"),
+    // 🔴 AND THE OLD FORMAT TOO. A model reaching for the retired shape must not be able to teach
+    // by accident: `{"say":…,"then":"study"}` with no fence around it is not a decision any more.
+    '{"say":"ok","then":"study"}',
   ];
   for (const raw of notStudy) {
     const read = decisionOrReply(raw);
     assert.notEqual(read?.then, "study", `"${raw}" was turned into a lesson`);
   }
-  assert.equal(decisionOrReply('{"say":"alright.","then":"study"}')?.then, "study");
+  // ...and the positive case, so this cannot pass by refusing everything.
+  assert.equal(decisionOrReply(turn({ then: "study" }, "alright."))?.then, "study");
 });
 
-test("🔴🔴🔴 the model is NOT told to write mathematics, because telling it breaks the turn", () => {
-  // 🔴 THIS TEST IS THE INVERSE OF THE ONE IT REPLACED, AND THE INVERSION IS THE FINDING.
+test("🔴🔴🔴 the model IS told to write real LaTeX now, because the prose left the JSON", () => {
+  // 🔴 THIS TEST HAS BEEN INVERTED TWICE AND BOTH INVERSIONS WERE EARNED, so the history stays.
   //
-  // Reported 2026-08-20: "i asked it to integrate x^2 but it only gave me the answer not a step by
-  // step solution". The first diagnosis was right — AssistantMarkdown runs rehype-katex and needs
-  // delimiters, and nothing told the model that — and both fixes for it FAILED IN A BROWSER.
+  // Reported: "i asked it to integrate x^2 but it only gave me the answer not a step by step
+  // solution", then "what i need is for the math and any other things like chemistry to able to
+  // render in the canvas".
   //
-  // Asked for `\(`, and again asked for `$$`, the model answered by converting the LaTeX into
-  // Unicode math glyphs separated by LITERAL NEWLINES: `∫ 𝑥 2 𝑑 𝑥`, and `𝑓𝑟𝑎𝑐` where `\frac`
-  // belonged. A literal newline cannot appear inside a JSON string, so the decision did not parse
-  // and `decisionOrReply` printed the raw envelope on screen. Raw backslashes are ugly; a raw
-  // `{"say": ...}` is broken.
+  // Round 1 — instruct `\(` delimiters. The model wrote `\int` and `\,` into the `say` STRING,
+  // where they are invalid JSON escapes, so JSON.parse refused the whole decision and the raw
+  // envelope leaked onto the screen. Round 2 — instruct `$$`. Same failure. Both were reverted and
+  // a guard was written protecting the ABSENCE of any maths instruction.
   //
-  // So this guards the absence. Anyone re-adding a math instruction here must re-run
-  // scripts/reply-visuals-browser.ts and show three clean runs first.
+  // Round 3 is this one, and it removes the CAUSE rather than the symptom: the answer is no longer
+  // inside the JSON object at all. Outside it there is no escaping to get wrong, so asking for
+  // LaTeX is finally safe — and necessary, because told nothing the model substitutes Unicode
+  // (∫x² dx), which reads correctly and is not typeset.
   const prompt = turnRouterMessages({ context: EMPTY, utterance: "integrate x^2 dx" }).map((m) => m.content).join("\n");
-  assert.ok(!/\$\$/.test(prompt), "a $$ math instruction is back; it produced unparseable turns when measured");
-  assert.ok(!/[Ww]rap every piece of mathematics/.test(prompt), "the backslash delimiter instruction is back");
+  assert.match(prompt, /\$\$/, "the model is not told which math delimiter to use");
+  assert.match(prompt, /outside the JSON/, "it is not told WHY the delimiter is safe, which is the part that changed");
+  assert.ok(!/"say": "\.\.\."/.test(prompt), "the retired all-in-one-object format is back in the contract");
 });
+
 
 test("🔴🔴 a BROKEN envelope is never shown to the learner as the answer", () => {
   // 🔴 MEASURED, NOT IMAGINED. Driven in a browser, a turn whose JSON was broken by literal
@@ -296,4 +313,38 @@ test("🔴🔴 plain prose is still passed straight through — that rule was ri
   // ...including prose that happens to be ABOUT JSON.
   const about = 'A JSON object looks like {"name": "value"} and is read by every language.';
   assert.equal(decisionOrReply(about)?.say, about);
+});
+
+test("🔴🔴 the contract shows the visuals field FILLED IN, never as an empty array", () => {
+  // 🔴 THE EMPTY ARRAY WAS THE BUG, AND IT LOOKED LIKE DOCUMENTATION. The contract read
+  // `"visuals": []` — in the highest-signal position in the whole prompt — and the model obliged on
+  // every turn. Measured: asked to plot y = x², it wrote the answer, typeset the coordinates, put
+  // `[figure 1]` in exactly the right place, and sent `visuals: []`. It had understood the marker
+  // perfectly and been shown that the payload is empty.
+  //
+  // With one filled example in the same block: 1 figure, 14 painted marks.
+  //
+  // Calibration: put `"visuals": []` back and this reddens.
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "plot y = x squared" }).map((m) => m.content).join("\n");
+  assert.ok(!/"visuals": \[\]/.test(prompt), "the visuals example is empty again; the model will copy it");
+  assert.match(prompt, /"kind": "quantitative"/, "the contract no longer shows a figure being filled in");
+  assert.match(prompt, /"points": \[\{"x":0,"y":0\}/, "the example does not show real points");
+});
+
+test("🔴 the answer is taken from OUTSIDE the block, on both sides of it", () => {
+  // A model that writes a sentence, then the block, then the rest is describing one answer in two
+  // halves. Dropping either loses part of it.
+  const read = readTurnDecision('Here it is.\n```json\n{"then":"reply"}\n```\nAnd the working follows.');
+  assert.match(read?.say ?? "", /Here it is\./);
+  assert.match(read?.say ?? "", /And the working follows\./);
+});
+
+test("🔴🔴 LaTeX in the answer survives, because it is no longer inside a JSON string", () => {
+  // The whole point of the format. `\int` and `\,` are invalid JSON escapes; out here they are just
+  // characters, and AssistantMarkdown's rehype-katex typesets them.
+  // Calibration: this is the exact string a model produced in a browser on 2026-08-20.
+  const raw = '```json\n{"then":"reply","topic":"integration"}\n```\n$$\\int x^2 \\, dx = \\frac{x^3}{3} + C$$';
+  const read = readTurnDecision(raw);
+  assert.equal(read?.then, "reply");
+  assert.match(read?.say ?? "", /\\int x\^2 \\, dx = \\frac\{x\^3\}\{3\} \+ C/, "the LaTeX did not survive");
 });

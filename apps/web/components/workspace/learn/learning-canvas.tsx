@@ -1169,6 +1169,14 @@ export function LearningCanvas({
                     <AssistantMarkdown
                       className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
                       namedCitations
+                      // 🔴 INLINE `$x$` IS MATHS ON THIS SURFACE, WHICH IS THE OPPOSITE OF THE
+                      // CHAT DEFAULT AND DELIBERATE. The flag is off globally because of an owner
+                      // screenshot: "$0.20 per million input tokens and $1.20" turned into
+                      // italics. That reasoning is about a surface where prices come up and
+                      // notation does not. This one is the reverse — a learner working through
+                      // kinetics or a proof meets `$k$` far more often than a dollar sign — and
+                      // `$$…$$` display maths already rendered here regardless.
+                      singleDollarMath
                       sources={replyConsulted}
                       text={segment.text}
                     />

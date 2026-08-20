@@ -75,15 +75,25 @@ async function main(): Promise<void> {
   await page.waitForSelector("textarea", { timeout: 60_000 });
   await page.waitForTimeout(1_200);
   await page.locator("textarea").click();
-  await page.keyboard.type("integrate x^2 dx, show the working", { delay: 6 });
+  await page.keyboard.type(process.env.PROBE_Q ?? "integrate x^2 dx, show the working", { delay: 6 });
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => !document.querySelector('[role="status"]'), { polling: 500, timeout: 180_000 }).catch(() => null);
   await page.waitForTimeout(2_000);
 
   for (const raw of raws) console.log("RAW>>>", JSON.stringify(raw.slice(0, 1200)), "\n");
-  const shown = await page.evaluate(() => (document.querySelector('[data-selectable-id^="reply"]') as HTMLElement | null)?.innerText ?? "(nothing)");
+  const shown = await page.evaluate(() => (document.querySelector('[data-selectable-id^="reply"]') as HTMLElement | null)?.innerText ?? "(no reply region)");
+  const whole = await page.evaluate(() => (document.querySelector("main[data-selectable-text]") as HTMLElement | null)?.innerText?.slice(0, 700) ?? "(no main)");
+  console.log("WHOLE PAGE>>>", JSON.stringify(whole));
+  const katexTex = await page.evaluate(() => [...document.querySelectorAll("annotation")].map((a) => a.textContent).slice(0, 4));
+  console.log("KATEX SOURCE>>>", JSON.stringify(katexTex));
   console.log("SCREEN>>>", JSON.stringify(shown.slice(0, 500)));
   const katex = await page.evaluate(() => document.querySelectorAll(".katex").length);
+  const figures = await page.evaluate(() => ({
+    figures: document.querySelectorAll("figure").length,
+    painted: [...document.querySelectorAll("figure svg path, figure svg line, figure svg polyline, figure svg circle")]
+      .filter((n) => { const r = n.getBoundingClientRect(); return r.width > 2 || r.height > 2; }).length,
+  }));
+  console.log("FIGURES>>>", JSON.stringify(figures));
   console.log("KATEX ELEMENTS>>>", katex);
 
   await browser.close();
