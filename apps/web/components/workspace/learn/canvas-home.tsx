@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 
 import { BloubBot } from "@/components/bloub/bloub-bot";
 import { stateForCanvas } from "@/lib/character/stations";
+import { usePoke } from "@/components/bloub/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
@@ -62,6 +63,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    *  mid-sentence throws away neither half. Same contract as the session composer. */
   const typedBefore = useRef("");
   const listening = dictation.listening;
+
   /** Record mode on the front door. A lecture recorded here has no canvas yet, so it starts one —
    *  the same thing dropping a file here does. */
   const [recording, setRecording] = useState(false);
@@ -69,6 +71,15 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   const composerBox = useRef<HTMLDivElement>(null);
   /** The send is on its way out: the greeting fades and the composer travels down. */
   const [departing, setDeparting] = useState(false);
+
+  // 🔴 IT DOES NOT LEAVE WITH THE GREETING ANY MORE (owner 2026-08-20: "when the chat composer
+  // animates downward the blob should also just stay centered with thinking animations"). It
+  // used to fade on the same curve as the question, on the reasoning that it belonged to the
+  // block with no counterpart on the canvas. Watching the real transition says otherwise: the
+  // send is the moment the character has the most to say, and fading it out left the composer
+  // travelling alone while a SECOND character faded in on the far side. It stays put and starts
+  // thinking instead, so one character carries the whole handoff.
+  const greeter = usePoke(stateForCanvas({ thinking: departing, preparing: false, listening }));
   /** How far down, in px. Measured at the moment of the send; see `start`. */
   const [lift, setLift] = useState(0);
 
@@ -227,19 +238,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               This is also the one place the entrance turn belongs — the eyes go right round the
               body and come back, which is a real arrival and costs a beat. It is off everywhere
               else precisely because it would then happen on every appearance. */}
-          <div
-            className="mb-5"
-            style={{
-              opacity: departing ? 0 : 1,
-              transition: `opacity ${Math.round(DOCK_MS * 0.55)}ms ease-out`,
-            }}
-          >
+          <div className="mb-5">
             <BloubBot
               color={bloubColor}
               entrance
+              onPoke={greeter.poke}
               shape={bloubShape}
               size={64}
-              state={stateForCanvas({ thinking: false, preparing: false, listening })}
+              state={greeter.state}
               track
             />
           </div>

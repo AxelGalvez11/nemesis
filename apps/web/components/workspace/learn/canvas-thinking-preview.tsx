@@ -32,7 +32,7 @@
 // the lines stay, the sweep stops. Someone who asked the system to stop moving still has to be
 // able to see that the region is busy, so they hold their resting contrast rather than vanishing.
 
-import { Bloub } from "./bloub";
+import { BloubBot } from "@/components/bloub/bloub-bot";
 
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
 const LINE_HEIGHT = "12px";
@@ -78,14 +78,18 @@ export function CanvasThinkingPreview({
       >
         {/* 🔴 DECORATIVE, DELIBERATELY. The label below is the accessible announcement; naming the
             drawing as well would have a screen reader read the state twice.
-            🔴 `orbit`, NOT `thinking`, AND THAT IS A DELIBERATE DEPARTURE FROM THE OBVIOUS NAME.
-            Bloub's own `thinking` state is a three-dot pulse in which "la boule DEVIENT le point du
-            milieu" — the character dissolves INTO the indicator, which is elegant and is not what
-            was asked for ("a nice little minimalist mascot"). Rendered at this size it reads as an
-            ordinary typing indicator with no character in it at all; that is what the first browser
-            run showed. `orbit` keeps the ball and its eyes on screen with rings turning around it,
-            which says "working" while still being someone. One prop to change back. */}
-        <Bloub size={128} state="orbit" />
+
+            🔴 `thinking`, NOT `orbit` (owner 2026-08-20: "why is it only doing swirl?"). This said
+            `orbit` because at 128px bloub's own `thinking` dissolves the ball INTO the middle dot
+            and reads as an ordinary typing indicator with no character in it. That reasoning was
+            sound and the owner overruled it, having watched the rings on the real surface: the
+            rings are the loudest thing in the catalogue and they played on every wait, so they
+            stopped meaning anything. One prop to change back.
+
+            🔴 AND IT IS THE ONE CHARACTER NOW. This used to render a second, parallel renderer
+            (`./bloub`) while the dock rendered another on the same screen — two mascots, both
+            centred, overlapping. See the file header of components/bloub/bloub-bot.tsx. */}
+        <BloubBot size={128} state="thinking" />
         {label && (
           <span className="canvas-phrase text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
             {label.replace(/…$/, "")}…

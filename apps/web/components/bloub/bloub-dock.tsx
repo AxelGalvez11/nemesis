@@ -30,6 +30,7 @@ import {
 import type { StateId } from "@/lib/bloub/states";
 
 import { BloubBot } from "./bloub-bot";
+import { usePoke } from "./use-poke";
 import { speedOf, stationOf } from "@/lib/character/stations";
 
 /** How often the anchor and the attention target are re-measured. */
@@ -45,7 +46,14 @@ export interface BloubDockProps {
    * tracks its top edge; when it does not, the dock falls back to `bottom`.
    */
   anchor?: string;
-  /** Distance from the left edge, px. */
+  /**
+   * Distance from the left edge, px — used only when the anchor cannot be measured.
+   *
+   * 🔴 NORMALLY THE ANCHOR DECIDES, NOT THIS (owner 2026-08-20: "can we have the blob be just
+   * above the chat composer on the left side"). The composer is a centred column on a wide page,
+   * so a character pinned to the PAGE's lower-left sat hundreds of pixels away from it, in an
+   * empty corner. It now lines up with the composer's own left edge and travels with it.
+   */
   left?: number;
   /** Distance from the bottom when there is no anchor, px. */
   bottom?: number;
@@ -81,8 +89,11 @@ export function BloubDock({
   className,
 }: BloubDockProps) {
   const { bloubShape, bloubColor } = useTheme();
+  // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
+  const { state: shown, poke } = usePoke(state);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState(bottom);
+  const [inset, setInset] = useState(left);
   const [travel, setTravel] = useState({ dx: 0, dy: 0, k: 1 });
   const [aimAt, setAimAt] = useState<{ x: number; y: number } | null>(null);
   const targetRef = useRef<AttentionTarget>(getAttention());
@@ -103,6 +114,7 @@ export function BloubDock({
       const r = el.getBoundingClientRect();
       if (r.height === 0) {
         setOffset(bottom);
+        setInset(left);
         return;
       }
       // Measured against whatever the dock is positioned within. Using the window's
@@ -114,6 +126,13 @@ export function BloubDock({
           ? host.offsetParent.getBoundingClientRect().bottom
           : window.innerHeight;
       setOffset(Math.max(bottom, floor - r.top + gap));
+      // Lined up with the composer's left edge, in the same coordinate space the dock is
+      // positioned in. `left` survives only as the fallback for a composer that is not there.
+      const originX =
+        contain && host?.offsetParent instanceof HTMLElement
+          ? host.offsetParent.getBoundingClientRect().left
+          : 0;
+      setInset(Math.max(8, r.left - originX));
     };
     measure();
     const timer = window.setInterval(measure, MEASURE_MS);
@@ -122,10 +141,10 @@ export function BloubDock({
       window.clearInterval(timer);
       window.removeEventListener("resize", measure);
     };
-  }, [anchor, bottom, gap, contain]);
+  }, [anchor, bottom, gap, contain, left]);
 
   // ── Where it stands ──────────────────────────────────────────────────────────
-  const station = stationOf(state);
+  const station = stationOf(shown);
   useEffect(() => {
     const measure = () => {
       const host = hostRef.current;
@@ -141,7 +160,7 @@ export function BloubDock({
       // The UNTRANSFORMED corner, computed rather than measured: reading the host's own
       // rect would already include the transform, and the two would chase each other
       // every 120ms until the character drifted off the screen.
-      const cornerX = pr.left + left + size / 2;
+      const cornerX = pr.left + inset + size / 2;
       const cornerY = pr.bottom - offset - size / 2;
       // Optically above the middle. A form parked on the exact centre of a page reads as
       // sitting low, because the eye weights the top of a column more heavily.
@@ -158,7 +177,7 @@ export function BloubDock({
       window.clearInterval(timer);
       window.removeEventListener("resize", measure);
     };
-  }, [station, contain, left, offset, size, centreScale]);
+  }, [station, contain, inset, offset, size, centreScale]);
 
   // ── What it is looking at ────────────────────────────────────────────────────
   //
@@ -207,7 +226,7 @@ export function BloubDock({
       className={["bloub-dock", className].filter(Boolean).join(" ")}
       style={{
         position: contain ? "absolute" : "fixed",
-        left,
+        left: inset,
         bottom: offset,
         transform: `translate3d(${travel.dx}px, ${travel.dy}px, 0) scale(${travel.k})`,
       }}
@@ -217,9 +236,10 @@ export function BloubDock({
         aimAt={aimAt}
         color={bloubColor}
         shape={bloubShape}
+        onPoke={poke}
         size={size}
-        speed={speedOf(state)}
-        state={state}
+        speed={speedOf(shown)}
+        state={shown}
         track
       />
     </div>

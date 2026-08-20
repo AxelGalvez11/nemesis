@@ -97,6 +97,15 @@ export interface BloubBotProps {
    * face simply never arrives. Worth it for a deliberate entrance; wrong as a default.
    */
   entrance?: boolean;
+  /**
+   * Called when the learner clicks the character.
+   *
+   * 🔴 GIVING THIS TURNS ON POINTER EVENTS, AND NOTHING ELSE DOES. The character is inert by
+   * default because it floats over a composer, and something decorative that swallows a press
+   * meant for the input is worse than no character. Only a surface that has somewhere for a
+   * click to GO may switch that off, and it does so by having somewhere for it to go.
+   */
+  onPoke?: () => void;
   /** Freeze at this many seconds into the state. Reproducible; no loop is started. */
   frozenAt?: number;
   /** Playback rate. 0 pauses the scene clock. */
@@ -118,6 +127,7 @@ export function BloubBot({
   track = false,
   aimAt = null,
   entrance = false,
+  onPoke,
   frozenAt,
   speed = 1,
   reducedMotion,
@@ -429,7 +439,8 @@ export function BloubBot({
   return (
     <svg
       ref={svgRef}
-      className={["bloub", className].filter(Boolean).join(" ")}
+      className={["bloub", onPoke ? "bloub-pokeable" : "", className].filter(Boolean).join(" ")}
+      onClick={onPoke}
       width={size}
       height={size}
       viewBox={`${-VB} ${-VB} ${VB * 2} ${VB * 2}`}
