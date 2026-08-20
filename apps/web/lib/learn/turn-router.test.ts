@@ -188,7 +188,7 @@ test("a plain decision is read", () => {
   // turn that draws nothing must still produce a list, so every downstream reader can index into
   // it without a null check — the alternative is an optional field that is absent on the ordinary
   // path and therefore untested on it.
-  assert.deepEqual(read, { offer: null, say: "hey. what are you working on?", then: "reply", topic: null, visuals: [] });
+  assert.deepEqual(read, { say: "hey. what are you working on?", then: "reply", topic: null, visuals: [] });
 });
 
 test("a study decision is read, and its answer comes from outside the block", () => {
@@ -212,13 +212,28 @@ test("🔴 a topic is asked for on a plain reply too, because it gates the Learn
   // has — so a greeting came with an offer to learn "hello". Whether the turn NAMED something is a
   // different question, and it is the model's to answer.
   const last = turnRouterMessages({ context: EMPTY, utterance: "hello" }).at(-1)?.content ?? "";
-  assert.match(last, /on a "reply" it is what a Learn this button beside the answer would start/);
+  // 🔴 THE PHRASE MOVED WITH THE FEATURE. This pinned "what a Learn this button beside the answer
+  // would start" — the offer was deleted on 2026-08-20 and the prompt kept describing it, which
+  // only surfaced by grepping the LIVE bundle for "Learn this" after a deploy. A prompt is shipped
+  // text that nothing renders, so nothing else could have caught it.
+  assert.match(last, /it is what Nemesis would teach if the learner then asked to learn it/);
+  assert.ok(!/Learn this/.test(last), "the prompt describes a button this product no longer has");
   assert.match(last, /leave it null for a greeting/);
 });
 
-test("an offer is read only when it is one of the two things it can be", () => {
-  assert.equal(readTurnDecision(turn({ offer: "returning", then: "reply" }, "x"))?.offer, "returning");
-  assert.equal(readTurnDecision(turn({ offer: "confused", then: "reply" }, "x"))?.offer, null);
+test("🔴🔴 there is no `offer` field, and its removal is the finding", () => {
+  // It named why a learner might be shown a "Learn this" button and rendered as one line above it.
+  // That offer was deleted on 2026-08-20 and the whole chain behind it kept running for hours: the
+  // model was still asked to compute `offer` every turn, this module still parsed it, the session
+  // still stored it, and `offerLine` was still IMPORTED by learning-canvas.tsx and never called.
+  //
+  // 🔴 FOUND BY GREPPING THE LIVE BUNDLE, which is the only instrument that sees this. A prompt is
+  // shipped text that nothing renders — no screenshot and no unit test looks at it — so a contract
+  // describing a deleted button survives every check the product has.
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "hello" }).map((m) => m.content).join("\n");
+  assert.ok(!/"offer"/.test(prompt), "the model is still being asked to compute a dead field");
+  assert.ok(!/Learn this/.test(prompt), "the prompt still describes a button this product does not have");
+  assert.ok(!("offer" in (readTurnDecision(turn({ then: "reply" }, "x")) ?? {})), "the decision still carries it");
 });
 
 test("🔴🔴 an unrecognised action falls back to conversation, never to teaching", () => {

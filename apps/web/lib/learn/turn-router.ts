@@ -64,14 +64,18 @@ export type TurnAction =
   | "study";
 
 /**
- * Something worth saying out loud above the "Learn this" offer.
+ * 🔴 `TurnOffer` WAS DELETED HERE ON 2026-08-20, AND IT HAD BEEN DEAD FOR HOURS BEFORE ANYONE
+ * NOTICED. It named why a learner might be shown a "Learn this" button, and rendered as one line of
+ * copy above it. That offer was removed the same day — the owner asked about it twice — and the
+ * whole chain behind it kept running: the model was still asked to compute `offer` on every turn,
+ * `readTurnDecision` still parsed it, `use-canvas-session` still stored it on the aside, and
+ * `offerLine` was still IMPORTED by `learning-canvas.tsx` and never called.
  *
- * 🔴 AN OBSERVATION ABOUT THE CONVERSATION, NEVER A VERDICT ABOUT THE LEARNER — the rule
- * `offer-copy.ts` already holds and the reason this list is two values and not a mood detector.
- * Absent on nearly every reply, because a nudge on every single answer is nagging.
+ * Found by grepping the LIVE bundle for "Learn this" after the deploy, which is the only instrument
+ * that sees this class of drift: a prompt is shipped text that nothing renders, so no screenshot
+ * and no unit test looks at it.
+ *
  */
-export type TurnOffer = "returning" | "reasoning";
-
 export interface TurnDecision {
   /**
    * What Nemesis says. Present even when it also acts: acting silently reads as a bug, and the
@@ -88,7 +92,6 @@ export interface TurnDecision {
    * a null topic is the answer to the second question.
    */
   topic: string | null;
-  offer: TurnOffer | null;
   /**
    * Figures this turn wants to draw, already validated, in the order `[figure n]` counts into.
    *
@@ -275,7 +278,7 @@ const DECISION_CONTRACT = [
   "Answer with a fenced JSON block for the decision, then your answer as ordinary text after it:",
   "",
   "```json",
-  '{"then": "reply" | "study", "topic": "..." | null, "offer": "returning" | "reasoning" | null,',
+  '{"then": "reply" | "study", "topic": "..." | null,',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -317,15 +320,19 @@ const DECISION_CONTRACT = [
   // 🔴 ON EVERY TURN THAT HAS ONE, NOT ONLY ON A STUDY TURN. It is also what the "Learn this"
   // button under a plain answer would start, and whether a turn HAS a nameable subject is the
   // honest test for whether that button belongs there at all. Under "hello" it does not.
+  // 🔴 THIS NO LONGER DESCRIBES A BUTTON, BECAUSE THE BUTTON IS GONE. It read "what a Learn this
+  // button beside the answer would start" — accurate when written, and stale the moment that offer
+  // was deleted on 2026-08-20. Found by grepping the LIVE bundle for "Learn this" after the deploy,
+  // which is the only way this kind of drift ever surfaces: the prompt is shipped text that nothing
+  // renders, so no screenshot and no unit test can catch it describing a product that changed.
+  //
+  // The field itself is unchanged and still earns its place: whether a turn NAMED a subject is what
+  // `learnFromAside` starts when the learner asks to be taught it, and it is the honest test that
+  // kept "hello" from being treated as a topic.
   '"topic" is the subject this turn is about, whenever the learner named one. On a "study" turn it '
-  + 'is what gets taught; on a "reply" it is what a Learn this button beside the answer would start, '
-  + "so give it for a real question about a subject and leave it null for a greeting, a remark or "
-  + "anything with no subject in it.",
-  "",
-  '"offer" says why a learner reading a plain answer might be shown a Learn this button. Use '
-  + '"returning" when they keep circling the same subject across turns, "reasoning" when they are '
-  + "working something out rather than asking for a fact. Use null on nearly every turn; it is a "
-  + "remark about the conversation, never a judgement about the learner.",
+  + "is what gets taught; on a \"reply\" it is what Nemesis would teach if the learner then asked to "
+  + "learn it. Give it for a real question about a subject and leave it null for a greeting, a "
+  + "remark or anything with no subject in it.",
   "",
   // 🔴🔴 AN ORDERED PROCEDURE, NOT A PILE OF MAXIMS, AND THE ORDER IS MEASURED. Three earlier
   // drafts each fixed one direction and broke the other, because the two rules genuinely conflict
@@ -447,9 +454,6 @@ function asAction(value: unknown): TurnAction | null {
   return value === "reply" || value === "study" ? value : null;
 }
 
-function asOffer(value: unknown): TurnOffer | null {
-  return value === "returning" || value === "reasoning" ? value : null;
-}
 
 function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -489,7 +493,6 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   // something JSON-shaped that says nothing, and treating it as a turn would blank the screen.
   if (!then && !say) return null;
   return {
-    offer: asOffer(parsed.offer),
     say,
     // 🔴 THE FALLBACK IS "reply", NOT "study". The expensive mistake is teaching somebody who did
     // not ask to be taught, and a model that skipped the field has told us nothing about which
@@ -526,9 +529,9 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   // `JSON.parse` has already refused it.
   if (looksLikeEnvelope(prose)) {
     const salvaged = salvageSay(prose);
-    return salvaged ? { offer: null, say: salvaged, then: "reply", topic: null, visuals: [] } : null;
+    return salvaged ? { say: salvaged, then: "reply", topic: null, visuals: [] } : null;
   }
-  return { offer: null, say: prose, then: "reply", topic: null, visuals: [] };
+  return { say: prose, then: "reply", topic: null, visuals: [] };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

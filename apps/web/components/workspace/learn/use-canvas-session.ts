@@ -16,7 +16,7 @@ import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
-import type { TurnDecision, TurnOffer } from "@/lib/learn/turn-router";
+import type { TurnDecision } from "@/lib/learn/turn-router";
 import { groundingQuery, groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
@@ -153,9 +153,6 @@ type CanvasAside = {
    * a searched answer never presents itself as something the model simply knew.
    */
   consulted?: readonly ChatWebResult[];
-  /** Why Nemesis is offering to teach this, when it has a reason worth saying out loud. A plain
-   *  answer carries none and the offer stays a bare button. */
-  offer?: TurnOffer;
   /** The learner's own question, retained only for the transient general-answer aside. Never
    *  mistaken for their goal: the answer text is not what they asked for. */
   question?: string;
@@ -906,7 +903,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // a document command instead of starting one. One predicate, one meaning.
         if (isPreContent(latest.current.state)) {
           if (decision.say) {
-            setAside({ blockId: null, kind: "opening", offer: decision.offer ?? undefined, question: said, sources: [], text: decision.say });
+            setAside({ blockId: null, kind: "opening", question: said, sources: [], text: decision.say });
           }
           begin(decision.topic ?? said);
         } else {
@@ -933,7 +930,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // turn, and whatever the policy was showing steps aside for it. The `study` branch above
         // writes `opening` for the opposite reason.
         kind: "reply",
-        offer: decision.offer ?? undefined,
         question: said,
         consulted: result.consulted,
         sources: result.sources,
