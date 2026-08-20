@@ -515,9 +515,31 @@ test("🔴🔴 the force diagram's reaches stay inside the box at the shared hei
 
 test("🔴 a figure has no fill — it is content in the column, not a card on the page", () => {
   // Calibration: put `bg-(--ui-bg-secondary)` back on the <figure> and this reddens.
-  const figure = withoutComments(SEMANTIC_SOURCE).match(/<figure className="[^"]*"/)?.[0] ?? "";
-  assert.ok(figure, "the figure element moved");
-  assert.ok(!/\bbg-/.test(figure), `the figure is filled again: ${figure}`);
-  // The hairline stays: a wide table with no boundary bleeds into the prose above it.
-  assert.match(figure, /border-\(--ui-stroke-tertiary\)/);
+  // 🔴 REPOINTED: the className became a conditional when a structure's frame learned to fit its
+  // content, so a regex expecting one literal string stopped matching anything and passed on an
+  // empty haystack. Read every class string the <figure> can wear instead — the property is that
+  // NONE of them carries a fill.
+  const source = withoutComments(SEMANTIC_SOURCE);
+  const figure = source.slice(source.indexOf("<figure"), source.indexOf("{visual.kind === \"equation\""));
+  const classes = figure.match(/"[^"]*rounded-xl[^"]*"/g) ?? [];
+  assert.ok(classes.length >= 1, "the figure element moved");
+  for (const one of classes) {
+    assert.ok(!/\bbg-/.test(one), `the figure is filled again: ${one}`);
+    // The hairline stays: a wide table with no boundary bleeds into the prose above it.
+    assert.match(one, /border-\(--ui-stroke-tertiary\)/);
+  }
+});
+
+test("🔴 a molecule's FRAME fits the molecule; every other figure still fills the column", () => {
+  // Owner, twice: *"can you make the size of it be smaller to fit with the canvas sizing?"* The
+  // drawing was already bounded and the FRAME was not, so ethanol sat in the middle of a mostly
+  // empty 640px panel — and the emptiness was the complaint.
+  //
+  // 🔴 STRUCTURE ONLY. A plot, a table and a timeline are drawn ACROSS the column on purpose: a
+  // shrink-wrapped plot is a smaller plot. Calibration: give every kind `w-fit` and the second
+  // assertion reddens.
+  const source = withoutComments(SEMANTIC_SOURCE);
+  assert.match(source, /visual\.kind === "structure"\s*\?\s*"my-4 mx-auto w-fit max-w-full/);
+  const fitCount = (source.match(/w-fit/g) ?? []).length;
+  assert.equal(fitCount, 1, `${fitCount} figure kinds shrink-wrap; only a structure should`);
 });
