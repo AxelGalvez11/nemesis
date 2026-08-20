@@ -312,3 +312,30 @@ test("🔴 a click reaches the character", async () => {
   const poke = await rf(new URL("../../components/bloub/use-poke.ts", import.meta.url), "utf8");
   assert.match(poke, /REACTIONS[^=]*=\s*\[\s*"swirl"/, "a poke no longer leads with the spin");
 });
+
+test("🔴 pressing Speak twice actually speaks twice", async () => {
+  // 🔴 I SHIPPED THIS BUG INSIDE THE FEATURE THAT FIXES IT. `useCanvasSpeech.speak` keeps a set
+  // of utterance keys and returns SILENTLY on a repeat — correct for the routed lane, where a
+  // question must not be read (or paid for) twice because a render ran again. The on-demand
+  // control first derived its key from the text, so the second press of a repeat button hit that
+  // guard and did nothing: exactly the silent no-op the owner reported, rebuilt one layer down.
+  //
+  // Source-read, because this is a wiring fact with no return value to inspect.
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(
+    new URL("../../components/workspace/learn/use-canvas-voice.ts", import.meta.url),
+    "utf8",
+  );
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+  const call = /speech\.speak\(\s*`aloud:([^`]*)`/.exec(code);
+  assert.ok(call, "the on-demand speak call is gone or renamed");
+  assert.ok(
+    !call[1]!.includes("text"),
+    `the utterance key is derived from the text (\`aloud:${call[1]}\`), so a second press is deduped into silence`,
+  );
+  assert.match(code, /aloudPress\.current \+= 1/, "nothing advances the per-press counter");
+});
