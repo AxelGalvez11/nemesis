@@ -34,6 +34,8 @@ import { nextExplanationState, type ExplanationEvent } from "./canvas-explanatio
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
 import { CanvasSourceCards } from "./canvas-source-cards";
+import { SemanticVisual } from "./semantic-visual";
+import { replySegments } from "@/lib/learn/reply-visuals";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -806,6 +808,15 @@ export function LearningCanvas({
   const replySources =
     session.aside?.sources?.length ? session.aside.sources : session.aside?.consulted ?? [];
 
+  /** The reply's own text and its index-aligned pages, hoisted out of the JSX.
+   *
+   * 🔴 HOISTED BECAUSE A CLOSURE LOSES THE NARROWING. `session.aside` is checked non-null by the
+   * gate around the block below, but the `.map` callback is a function and TypeScript cannot carry
+   * a narrowing across it — and the honest fix is a value, not a `!`. A non-null assertion here
+   * would be asserting exactly the thing that has gone wrong on this surface before. */
+  const replyText = session.aside?.blockId === null ? session.aside.text : "";
+  const replyConsulted = session.aside?.blockId === null ? session.aside.consulted : undefined;
+
     const lessonHeld = policyPresenting && !regions.policy;
 
   const surfaceKey = [
@@ -1134,22 +1145,35 @@ export function LearningCanvas({
                   🔴 THE SELECTABLE MARKER MOVES TO THE WRAPPER, WHICH IS STILL AN ELEMENT HOLDING
                   ONLY THIS PROSE. Offsets are measured against the marked element; the pills, the
                   offer line and the buttons are siblings of this div, not children of it. */}
-              <div {...selectableRegion("reply")}>
-                <AssistantMarkdown
-                  className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
-                  // 🔴🔴 `consulted`, NEVER `sources`. An `[n]` is an INDEX into the list the model
-                  // was numbered against; `sources` holds the same pages in ANSWER order, so an
-                  // answer citing [4] before [1] would open the wrong page for both and drop [6]
-                  // and [7] entirely. A citation resolving to real text from the wrong place is the
-                  // precise failure this repository's provenance rules exist to prevent.
-                  // 🔴 THE REFERENCE'S PILL, ON THIS SURFACE ONLY. Measured off ChatGPT
-                  // 2026-08-20: favicon + site name at 9px, with "+N" for a collapsed run. The chat
-                  // surface keeps its bare dot, which is what the owner asked for twice in August.
-                  namedCitations
-                  sources={session.aside.consulted}
-                  text={session.aside.text}
-                />
-              </div>
+              {/* 🔴🔴 A REPLY CAN DRAW NOW. Reported 2026-08-20: "i asked it to create the chemical
+                  structures using the new tools we gave it" — and it answered in prose, because a
+                  reply was a string and nothing on this path could produce a picture.
+                  `SemanticVisual` has rendered nine kinds including `structure` for weeks; every one
+                  was reachable only from the TEACHING path. The capability existed and the
+                  conversation had no way to reach it.
+
+                  🔴 THE SEGMENTS KEEP THEIR ORDER, which is the whole reason this is a split rather
+                  than a `visuals` array. A drawing lands exactly where the model put it, between the
+                  sentence that introduces it and the one that follows.
+
+                  🔴 EACH PROSE RUN KEEPS ITS OWN SELECTABLE MARKER. Offsets are measured against the
+                  marked element, so one marker wrapping prose AND an SVG would fail
+                  `readCanvasSelection`'s integrity check on every selection. */}
+              {replySegments(replyText).map((segment, index) =>
+                segment.kind === "visual" ? (
+                  <SemanticVisual key={`v${index}`} visual={segment.visual} />
+                ) : (
+                  <div key={`p${index}`} {...selectableRegion(index === 0 ? "reply" : `reply-${index}`)}>
+                    <AssistantMarkdown
+                      className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
+                      namedCitations
+                      sources={replyConsulted}
+                      text={segment.text}
+                    />
+                  </div>
+                ),
+              )}
+
               {/* Which live pages the answer actually used, each individually promotable. This is
                   the "distinct" half of temporary-versus-durable: seeing it here is USING it for
                   one answer; pressing the small `+` is the separate, explicit act of keeping it. */}

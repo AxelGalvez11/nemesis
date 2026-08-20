@@ -176,6 +176,26 @@ const NEMESIS_SYSTEM = [
   + "material, and a question outside it should still get a real answer. When live web results are "
   + "supplied, use them for anything time-sensitive and cite the numbered result inline like this: [1].",
 
+  // 🔴🔴 THE CANVAS CAN DRAW A MOLECULE, AND UNTIL THIS LINE EXISTED THE MODEL HAD NO WAY TO KNOW.
+  // Reported 2026-08-20: "i asked it to create the chemical structures using the new tools we gave
+  // it", and it answered "Alcohol: R-OH (hydroxyl group)" in prose. `ChemicalStructure` had been
+  // rendering SMILES for weeks — from the TEACHING path only — so the capability was real, reachable
+  // by code, and invisible to the one participant who decides whether to use it.
+  //
+  // 🔴 IT SAYS WHEN NOT TO, TOO. A drawing of `CCO` beside the words "ethanol is CCO" teaches
+  // nothing that the words did not; the picture earns its place when the SHAPE is the lesson.
+  // Without that clause the cheapest way to look helpful is to draw everything.
+  // 🔴 THE ONE-LINE FORM IS THE ONE IT IS TOLD ABOUT, AND THAT IS A MEASURED CHOICE. The first
+  // version described a fenced block; driven twice in a browser, the model answered in prose both
+  // times. `say` is a STRING INSIDE A JSON OBJECT and the contract demands strict JSON, so a fence
+  // needs literal newlines and backticks inside that string and the model steers away. A bracketed
+  // token costs it nothing. The parser accepts both.
+  "You can DRAW a molecule, not only describe one. Write [smiles: CCO] inline in your answer, with "
+  + "the SMILES after the colon, and the canvas replaces it with a real structural diagram exactly "
+  + "where you put it. Use [reaction: A>>B] for a reaction. Draw when the shape is the point, and "
+  + "whenever a learner asks to be SHOWN a structure. Keep writing the prose around it as normal, "
+  + "and do not draw something whose shape adds nothing to the sentence beside it.",
+
   "Keep continuity. Earlier turns of this conversation are given to you; resolve references like "
   + "\"why?\", \"that one\", \"keep going\" or \"no, I meant the first one\" against them rather than "
   + "asking the learner to repeat themselves.",
@@ -252,6 +272,22 @@ const DECISION_CONTRACT = [
   + "to be written or changed? Then \"study\". Go ahead with what they said: do not ask which part "
   + "first and do not ask them to narrow it down, because the learning system asks better questions "
   + "than you can from here. Keep \"say\" to a few words.",
+  "",
+  // 🔴🔴 MEASURED 2026-08-20, BASELINE 6/8 ON THIS EXACT SET. "show me functional groups" started a
+  // LESSON: the canvas was retitled, four web pages were searched and ingested, and the owner
+  // watched "Reading that page…" while waiting for a list he could have read in ten seconds.
+  //
+  // 🔴 THE ASYMMETRY IS THE ARGUMENT, AND IT IS WHY THIS SITS INSIDE STEP 1 RATHER THAN AFTER IT.
+  // Choosing "reply" wrongly costs one sentence and the learner asks again. Choosing "study"
+  // wrongly costs minutes, retitles their canvas and takes the screen. Where the two readings are
+  // close, the cheap mistake is the right one to make.
+  "   Two phrasings do NOT belong in step 1, and they are the only exceptions to it. \"show me X\", "
+  + "\"what are the X\", \"list the X\", \"give me the X\" and \"which X are there\" ask for the "
+  + "information itself, in your answer, right now. Those are \"reply\", and the answer must "
+  + "actually contain the thing rather than asking which part they meant. Everything else in step 1 "
+  + "is unchanged: \"teach me\", \"walk me through\", \"help me understand\", \"quiz me\" and \"test "
+  + "me\" are all still \"study\", including when they name the same subject a \"show me\" would "
+  + "have.",
   "",
   "2. Otherwise \"reply\". A greeting, a remark, a complaint, an acknowledgement, or a question "
   + "they simply want answered all change nothing on the page. \"then\" is not about whether the "

@@ -55,4 +55,10 @@ export const START_WITH_MATERIAL_PLACEHOLDER = "Say how to approach this, or jus
  * that the ingestion path can read it; `canvas-shell.test.ts` pins the three doors equal so the
  * promise cannot be made in one place and broken in another.
  */
-export const ACCEPTED_MATERIAL = ".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic";
+// 🔴 `.heif` WAS MISSING, AND IT IS WHAT AN IPHONE ACTUALLY WRITES. `IMAGE_EXTENSIONS` in
+// `chat-attachments.ts` has listed both `.heic` and `.heif` all along and the reader handles both;
+// this list had only the first, so the OS picker greyed out half of a learner's camera roll and the
+// refusal happened before any code of ours ran. Kept in step with that list by hand because the two
+// serve different jobs -- one is what we can READ, this is what the dialog OFFERS -- and a guard
+// asserts they do not drift.
+export const ACCEPTED_MATERIAL = ".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic,.heif";
