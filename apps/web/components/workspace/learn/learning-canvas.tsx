@@ -1439,6 +1439,8 @@ export function LearningCanvas({
           error={session.selectionError}
           forceOpen={!text.selection && Boolean(term)}
           onAct={(action) => void act(action)}
+          onSpeak={(text) => voice.speakAloud(text)}
+          speaking={voice.header.speaking}
           onDismiss={dismissSelection}
           rect={pointed.rect}
           selection={pointed.selection}

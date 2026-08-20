@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { shouldSpeakAction, type SpokenMoment } from "@/lib/learn/canvas-speech";
-import { routeSpeech } from "@/lib/learn/speech-route";
+import { LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
 import {
   DEFAULT_VOICE_MODE,
   readAutoDictation,
@@ -46,6 +46,8 @@ export interface CanvasVoice {
     voiceId: string;
     onSetVoice: (next: string) => void;
   };
+  /** Speak an arbitrary passage on demand; pressing again repeats it. */
+  speakAloud: (text: string) => void;
   /** Straight onto `<CanvasComposer listenSignal={…}>`. Changes when the microphone should open. */
   listenSignal: number | null;
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
@@ -207,6 +209,26 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
       voiceId,
     },
     listenSignal,
+    /**
+     * Speak an arbitrary passage on demand.
+     *
+     * 🔴 THIS IS A DIFFERENT DECISION FROM THE AUTOMATIC ONE, AND THAT IS THE POINT. The routed
+     * lane reads questions and corrections and REFUSES explanations, which is right: nobody
+     * wants a paragraph of prose read at them every turn. But it also meant there was no way to
+     * hear anything else at all — the owner asked Nemesis to say something in German and got
+     * silence, because a reply is an explanation and explanations are not spoken. Owner
+     * 2026-08-20: "there's no way to repeat it, have it repeat phrases or words spoken aloud."
+     *
+     * Asked for explicitly, any passage may be spoken, and pressing it again repeats it. The
+     * safety rules that belong to the SOUND rather than to the policy still apply — `speak`
+     * refuses notation and bounds the length — because those protect the learner from an
+     * unlistenable noise, not from hearing a paragraph they chose.
+     */
+    speakAloud: (text: string) => {
+      // Restarting mid-sentence is what "repeat" means when it is already talking.
+      speech.stop();
+      void speech.speak(`aloud:${text.slice(0, 48)}`, text, { locale: LOCALE_UNSPECIFIED, speed: 1, voiceId });
+    },
     stopSpeaking: speech.stop,
   };
 }
