@@ -29,6 +29,7 @@ import {
 
 import { correctionLead } from "./correction-copy";
 import { speechRecognitionSupported } from "./use-canvas-dictation";
+import { DEFAULT_VOICE, readVoice, VOICE_STORAGE_KEY } from "@/lib/learn/canvas-voices";
 import { useCanvasSpeech } from "./use-canvas-speech";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
@@ -41,6 +42,9 @@ export interface CanvasVoice {
     speaking: boolean;
     onToggle: (next: VoiceMode) => void;
     onSetAutoDictation: (next: AutoDictation) => void;
+    /** Which speaker the learner chose. See `lib/learn/canvas-voices.ts`. */
+    voiceId: string;
+    onSetVoice: (next: string) => void;
   };
   /** Straight onto `<CanvasComposer listenSignal={…}>`. Changes when the microphone should open. */
   listenSignal: number | null;
@@ -100,6 +104,10 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
   const [autoDictation, setAutoDictation] = useState<AutoDictation>("unasked");
   const [dictationSupported, setDictationSupported] = useState(false);
   const [listenSignal, setListenSignal] = useState<number | null>(null);
+  /** 🔴 STARTS AT THE DEFAULT AND IS CORRECTED AFTER THE FIRST PAINT, exactly like `mode` above.
+   *  Reading `localStorage` during render is a hydration mismatch; this file already solved that
+   *  once and the answer is the effect below, not a second pattern. */
+  const [voiceId, setVoiceId] = useState<string>(DEFAULT_VOICE);
   const speech = useCanvasSpeech();
 
   // Browser-only facts, corrected after the first paint. See the file header.
@@ -108,6 +116,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
     setMode(readVoiceMode(storage));
     setAutoDictation(readAutoDictation(storage));
     setDictationSupported(speechRecognitionSupported());
+    setVoiceId(readVoice(storage?.getItem(VOICE_STORAGE_KEY) ?? null));
   }, []);
 
   /** The latest values, for the post-speech decision. 🔴 READ AT THE MOMENT OF USE, NEVER LATCHED
@@ -121,6 +130,15 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
     writeVoiceMode(typeof window === "undefined" ? null : window.localStorage, next);
     // Turning it off must silence what is already playing, not merely stop the next one.
     if (next === "off") speech.stop();
+  }, [speech]);
+
+  const onSetVoice = useCallback((next: string) => {
+    const chosen = readVoice(next);
+    setVoiceId(chosen);
+    if (typeof window !== "undefined") window.localStorage.setItem(VOICE_STORAGE_KEY, chosen);
+    // 🔴 SILENCE WHAT IS PLAYING. Changing the speaker mid-sentence and hearing the old one finish
+    // reads as the setting not having worked; the next utterance is where the choice takes effect.
+    speech.stop();
   }, [speech]);
 
   const onSetAutoDictation = useCallback((next: AutoDictation) => {
@@ -144,7 +162,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
     if (route.decision !== "speak") return;
 
     let cancelled = false;
-    void speech.speak(route.utterance.key, route.utterance.text, { locale: route.locale, speed: route.speed }).then(() => {
+    void speech.speak(route.utterance.key, route.utterance.text, { locale: route.locale, speed: route.speed, voiceId }).then(() => {
       if (cancelled) return;
       const now = live.current;
       if (
@@ -183,8 +201,10 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
       dictationSupported,
       mode,
       onSetAutoDictation,
+      onSetVoice,
       onToggle,
       speaking: speech.speaking,
+      voiceId,
     },
     listenSignal,
     stopSpeaking: speech.stop,

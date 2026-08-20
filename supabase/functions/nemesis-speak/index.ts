@@ -137,6 +137,15 @@ async function verifyUser(token: string): Promise<string | null> {
   }
 }
 
+/**
+ * The voice heard when the learner has not chosen one, and the one an unknown id falls back to.
+ *
+ * 🔴 THE VALUE THAT SHIPPED, UNCHANGED. Every canvas that has ever spoken has spoken in this voice;
+ * changing the default in the same commit that adds the choice would silently re-voice the product
+ * for everybody who never asked for anything.
+ */
+const DEFAULT_VOICE = "eve";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
@@ -155,7 +164,25 @@ Deno.serve(async (req) => {
     language?: unknown;
     locale?: unknown;
     speed?: unknown;
+    voice?: unknown;
   };
+
+  // 🔴🔴 THERE IS NO CATALOGUE ENDPOINT, AND THAT WAS ESTABLISHED BY ASKING RATHER THAN ASSUMING.
+  // The first version of this handler proxied `GET https://api.x.ai/v1/voices` so the client would
+  // never hold a hardcoded list. Deployed and called, it returns **404**: xAI publishes no voice
+  // catalogue on this key, and no public documentation this repository could find lists the ids.
+  //
+  // A proxy to an endpoint that does not exist is the dormant-lane shape this codebase keeps
+  // finding, so it is gone rather than left in place returning an error for ever. The set is
+  // established EMPIRICALLY instead, by `scripts/xai-voices-probe.sh`, which sends two characters
+  // in each candidate voice and reports which return audio. Its last run:
+  //
+  //     eve 200 · ara 200 · rex 200 · gork 200 · sal 200 · leo 200
+  //     ani 502 · thomas 502 · zzzznotavoice 502
+  //
+  // The three refusals are the calibration: the probe can tell an accepted id from a rejected one,
+  // so the six are a measurement and not a guess. Re-run it before adding to the client's list.
+
   const text = typeof body.text === "string" ? body.text.trim() : "";
   if (!text) return json({ error: "Nothing to say.", reason: "empty-text" }, 400, req);
   if (text.length > MAX_CHARS) {
@@ -192,6 +219,19 @@ Deno.serve(async (req) => {
   const requestedSpeed = typeof body.speed === "number" && Number.isFinite(body.speed) ? body.speed : 0.95;
   const speed = Math.min(1.2, Math.max(0.7, requestedSpeed));
 
+  // 🔴🔴 SHAPE-CHECKED AND THEN TRUSTED, WITH A FALLBACK RATHER THAN A REJECTION. The set of valid
+  // ids lives at the provider and changes without telling us, so an allow-list compiled into this
+  // file would start refusing voices that work the day xAI adds one. What is checked here is that
+  // the value cannot be anything but an identifier — it goes straight into a provider request body,
+  // and an unchecked string from anybody holding a bearer token is the one real hazard.
+  //
+  // 🔴 AND AN UNKNOWN ID FALLS BACK TO THE DEFAULT INSTEAD OF FAILING. A voice xAI has retired
+  // would otherwise 502 every utterance for whoever had it selected, and they would have no way to
+  // tell that from voice mode being broken. Silently hearing the default voice is recoverable;
+  // silence is not.
+  const requestedVoice = typeof body.voice === "string" ? body.voice.trim() : "";
+  const voice = /^[a-zA-Z0-9_-]{1,64}$/.test(requestedVoice) ? requestedVoice : DEFAULT_VOICE;
+
   const charge = await chargeVoiceSeconds(userId, text.length);
   if (!charge.allowed) {
     // 402, not 403: this is "you have used this month's voice", which the client
@@ -215,7 +255,7 @@ Deno.serve(async (req) => {
         // memory while composing an answer is not a podcast. §43's target-language lane sends 1
         // instead, because slowing an example teaches a rhythm the language does not have.
         speed,
-        voice_id: "eve",
+        voice_id: voice,
       }),
       headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
       method: "POST",
