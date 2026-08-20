@@ -36,11 +36,21 @@ test("🔴🔴 a canvas that is still resolving reports itself as WORKING", () =
   // The other half. Without it the blank page returns wearing worse copy: knowledge resolution does
   // not always name a phase, so `working` would be false and presence would land on `quiet` — which
   // tells the learner there is nothing to ask them about while it is still working it out.
-  assert.match(
-    code,
-    /const working = busy\.kind !== null \|\| policy\.phase !== null \|\| policy\.status === "loading";/,
-    "a loading policy no longer counts as work in flight",
-  );
+  // 🔴 REPOINTED 2026-08-19 FROM THE EXPRESSION TO ITS TERMS. This pinned the whole line, so ADDING
+  // a fourth thing that counts as work — `policy.deciding`, which fixed "nothing to ask you about"
+  // appearing between two questions — failed a guard whose own comment says more states should
+  // count, not fewer. Each term is asserted separately now: dropping any one still reddens, and
+  // adding one does not.
+  for (const term of [
+    /busy\.kind !== null/,
+    /policy\.phase !== null/,
+    /policy\.status === "loading"/,
+    // The gap between two questions: ready, no phase named, session not busy. Without this the
+    // canvas reported a dead end mid-lesson, with a Try again button for something that was working.
+    /policy\.deciding/,
+  ]) {
+    assert.match(code, new RegExp(`const working =[\\s\\S]{0,240}?${term.source}`), `\`working\` no longer counts ${term.source}`);
+  }
 });
 
 // ── What the learner is shown instead, at the level that decides it ─────────

@@ -361,7 +361,7 @@ async function main(): Promise<void> {
 
     const rows = evidenceForSubmission({
       canvasId: canvas.id,
-      judgement: judgementOf([outcomeFor(objective, judged.value)]),
+      judgement: judgementOf([outcomeFor(objective, judged.value)!]),
       occurredAt: now,
       prompt,
       responseModality: "typed",

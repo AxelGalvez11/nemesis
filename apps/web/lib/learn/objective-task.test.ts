@@ -59,7 +59,7 @@ function judged(input: {
     teachingStrategy: null,
     canvasId: "c1",
     occurredAt: input.occurredAt ?? "2026-08-11T12:00:00.000Z",
-    judgement: judgementOf([outcomeFor(input.objective ?? GENERIC_TO_BRAND, input.evaluation ?? EVALUATION)]),
+    judgement: judgementOf([outcomeFor(input.objective ?? GENERIC_TO_BRAND, input.evaluation ?? EVALUATION)!]),
     prompt: input.prompt,
     responseText: input.text ?? "Cozaar",
     ...(input.tookMs !== undefined ? { tookMs: input.tookMs } : {}),
@@ -277,7 +277,7 @@ test("🔴 responseId identifies the ANSWER, never the objective", () => {
     teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    judgement: judgementOf([outcomeFor(GENERIC_TO_BRAND, EVALUATION), outcomeFor(BRAND_TO_GENERIC, EVALUATION)]),
+    judgement: judgementOf([outcomeFor(GENERIC_TO_BRAND, EVALUATION)!, outcomeFor(BRAND_TO_GENERIC, EVALUATION)!]),
     prompt,
     responseText: "Cozaar",
     tookMs: 4200,
@@ -359,7 +359,7 @@ test("🔴 acceptance 1+2: one submission across three objectives is ONE perform
     teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
+    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION)!)),
     prompt: CHAIN_PROMPT,
     responseText: "the whole mechanism",
     tookMs: 20_000,
@@ -384,7 +384,7 @@ test("🔴 acceptance 3: an objective the answer did not address is NOT demonstr
     teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    judgement: judgementOf([outcomeFor(CHAIN[0]!, EVALUATION), outcomeFor(CHAIN[1]!, EVALUATION)]),
+    judgement: judgementOf([outcomeFor(CHAIN[0]!, EVALUATION)!, outcomeFor(CHAIN[1]!, EVALUATION)!]),
     prompt: CHAIN_PROMPT,
     responseText: "the first two links",
     tookMs: 12_000,
@@ -407,7 +407,7 @@ test("🔴 acceptance 4: a double submit is one row per objective, not two", () 
     teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
+    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION)!)),
     prompt: CHAIN_PROMPT,
     responseText: "the whole mechanism",
   });
@@ -418,7 +418,7 @@ test("🔴 acceptance 4: a double submit is one row per objective, not two", () 
     // A later clock, because the second arrival really is later. It must change nothing that the
     // index conflicts on.
     occurredAt: "2026-08-12T00:00:07.000Z",
-    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
+    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION)!)),
     prompt: CHAIN_PROMPT,
     responseText: "the whole mechanism",
   });
@@ -444,7 +444,7 @@ test("🔴 a judged outcome for an objective the task did not target writes NO r
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
     judgement: judgementOf([
-      outcomeFor(GENERIC_TO_BRAND, EVALUATION),
+      outcomeFor(GENERIC_TO_BRAND, EVALUATION)!,
       { objectiveIdentityKey: "association:v2:never-asked", verdict: "incorrect" },
     ]),
     prompt: askedAbout(GENERIC_TO_BRAND, "answer-1"),
@@ -484,7 +484,7 @@ test("🔴 the operation is the TASK'S, identical on every row it writes", () =>
     teachingStrategy: null,
     canvasId: "c1",
     occurredAt: "2026-08-12T00:00:00.000Z",
-    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION))),
+    judgement: judgementOf(CHAIN.map((objective) => outcomeFor(objective, EVALUATION)!)),
     prompt: CHAIN_PROMPT,
     responseText: "the whole mechanism",
   });

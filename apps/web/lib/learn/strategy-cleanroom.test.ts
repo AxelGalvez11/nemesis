@@ -255,7 +255,7 @@ test("🔴🔴 same objective, same action: the question and the evidence are ID
   } as unknown as ResponseEvaluation;
   const shared = {
     canvasId: "canvas-1",
-    judgement: judgementOf([outcomeFor(target.objective, evaluation)]),
+    judgement: judgementOf([outcomeFor(target.objective, evaluation)!]),
     occurredAt: "2026-08-14T12:00:05.000Z",
     responseText: "Diovan",
     tookMs: 5_000,

@@ -42,7 +42,7 @@ const submit = (evaluations: Record<string, ResponseEvaluation | undefined>) =>
     canvasId: "c1",
     judgement: judgementOf(
       Object.entries(evaluations).flatMap(([key, value]) =>
-        value ? [outcomeFor({ identityKey: key }, value)] : [],
+        value ? [outcomeFor({ identityKey: key }, value)!] : [],
       ),
     ),
     occurredAt: "2026-08-18T00:00:00.000Z",

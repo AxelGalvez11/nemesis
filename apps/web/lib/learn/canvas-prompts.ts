@@ -692,7 +692,27 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         '- "partial": going the right way, but something expected is missing or vague.\n' +
         '- "incorrect": does not get there, or is mostly off the point.\n' +
         '- "misconception": reveals a specific, nameable false belief — not merely a gap. Use this only when you can ' +
-        "state the wrong belief in one sentence.\n\n" +
+        "state the wrong belief in one sentence.\n" +
+        // 🔴🔴 THE ONLY VERDICT THAT IS NOT A GRADE, AND THE REASON IT EXISTS. The composer is the
+        // one input, so while a question is up EVERY sentence arrives here — including sentences
+        // that were never aimed at it. "what is on the news today?" was graded `incorrect` with
+        // confidence 0.95 and written to the learner's durable record as evidence they
+        // misunderstood sulfur bonding; "what?" — someone saying they did not follow — twice more.
+        // This is how the judge says "not mine to grade" instead of grading it anyway.
+        //
+        // 🔴 WORDED AROUND WHAT THE SENTENCE IS DOING, NOT AROUND ITS PUNCTUATION. "Ends with a
+        // question mark" cannot separate "what is on the news today?" from "what is the structural
+        // feature for alcohol?" — the same shape, opposite meanings — and a rule like that in front
+        // of the model is exactly what was deleted in #689.
+        //
+        // 🔴 AND THE BAR IS DELIBERATELY HIGH. A wrong `not_an_attempt` silently discards a real
+        // performance, which is worse than a harsh grade: the learner answered and nothing was
+        // recorded. When it is arguable, grade it.
+        '- "not_an_attempt": they were not trying to answer THIS question at all. A question of their own, an aside, ' +
+        "a remark about how it is going, or a request to do something else. This is not a grade and nothing is " +
+        "recorded: their words are answered as conversation and the question stays on screen. A confused, partial or " +
+        "plainly wrong attempt at the question is NOT this — it is an attempt, and it gets one of the verdicts above. " +
+        "If you can read it as an attempt at all, it is an attempt.\n\n" +
         `If the performance fell short, say WHY with errorType, one of: ${ERROR_TYPES.join(", ")}. ` +
         "This matters more than the verdict: a forgotten term and a backwards causal model both look wrong, and " +
         "they need opposite teaching.\n\n" +

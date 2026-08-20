@@ -136,7 +136,23 @@ export function LearningCanvas({
   const leave = useCallback(() => router.push(CANVAS_EXIT_ROUTE), [router]);
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
-  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride, session.opening);
+  /**
+   * The judge decided a submission was not an attempt at the question on screen.
+   *
+   * 🔴 THE SAME `converse` THE COMPOSER'S ORDINARY PATH USES, not a second conversational route.
+   * What the learner typed is answered exactly as it would have been with no question up; the
+   * question itself is untouched and still waiting.
+   */
+  // 🔴 THROUGH A REF, BECAUSE THE CYCLE IS REAL AND NOT AN ACCIDENT. `converse` is defined below and
+  // needs `policy` (it reads the learner model to build the turn's surroundings); `policy` needs
+  // this callback. A ref is the seam: this closes over nothing, and whatever `converse` is by the
+  // time the judge answers is what runs.
+  const converseRef = useRef<((said: string) => Promise<void>) | null>(null);
+  const notAnAttempt = useCallback((said: string) => {
+    void converseRef.current?.(said);
+  }, []);
+
+  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride, session.opening, notAnAttempt);
   // Voice mode. 🔴 `policy.judging` is the composer-busy signal: while an answer is being read the
   // learner is waiting on a verdict, and opening a microphone at them is asking for an answer to a
   // question they already gave.
@@ -425,6 +441,7 @@ export function LearningCanvas({
     askedOnce.current = true;
     beginOrAnswer(openingAsk);
   }, [beginOrAnswer, canvas.state, openingAsk, session.ready]);
+  converseRef.current = converse;
 
   // Material chosen on the landing page, before this canvas existed. Same shape as the opening
   // instruction above and latched the same way.
@@ -682,7 +699,13 @@ export function LearningCanvas({
   // caption. Whether a step is worth narrating and whether one is running are different questions,
   // and using the narration flag here would reopen the same hole for exactly the length of that
   // delay. `preparingLabel` already handles a null label honestly.
-  const working = busy.kind !== null || policy.phase !== null || policy.status === "loading";
+  // 🔴🔴 `policy.deciding` IS THE THIRD STATE THAT WAS MISSING, AND ITS ABSENCE RENDERED PROGRESS AS
+  // A DEAD END. Between two questions the controller is choosing the next move: `status` is already
+  // `ready`, no phase is narrated, and `busy` is the session's rather than the policy's — so none of
+  // the three flags below held, `canvasPresentation` fell through to `quiet`, and the learner read
+  // "Nemesis hasn't found anything to ask you about yet" with a Try again button, mid-lesson.
+  const working =
+    busy.kind !== null || policy.phase !== null || policy.status === "loading" || policy.deciding;
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //

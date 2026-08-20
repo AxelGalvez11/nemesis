@@ -106,7 +106,7 @@ test("🔴 the declared evidence fields are the ones a demonstration actually wr
         misconceptions: [],
         missing: [],
         verdict: "strong",
-      }),
+      })!,
     ]),
     prompt: retrievalPromptFor({ knowledge, objective }, "prompt-1"),
     responseText: "Cozaar",

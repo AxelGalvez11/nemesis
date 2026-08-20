@@ -77,7 +77,7 @@ function judged(response: { text: string; via: "typed" | "spoken" | "written"; t
     teachingStrategy: null,
     canvasId: null,
     occurredAt: "2026-08-12T00:00:00.000Z",
-    judgement: judgementOf([outcomeFor(OBJECTIVE, EVALUATION)]),
+    judgement: judgementOf([outcomeFor(OBJECTIVE, EVALUATION)!]),
     prompt: PROMPT,
     responseText: response.text,
     responseModality: response.via,
