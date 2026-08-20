@@ -144,7 +144,15 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
     if (route.decision !== "speak") return;
 
     let cancelled = false;
-    void speech.speak(route.utterance.key, route.utterance.text, { locale: route.locale, speed: route.speed }).then(() => {
+    void speech
+      .speak(route.utterance.key, route.utterance.text, {
+        locale: route.locale,
+        // 🔴 THE ROUTER'S CHOICE, CARRIED RATHER THAN RECOMPUTED. Until §47 this was decided and
+        // dropped, so every utterance went to xAI whatever the router said.
+        provider: route.provider,
+        speed: route.speed,
+      })
+      .then(() => {
       if (cancelled) return;
       const now = live.current;
       if (

@@ -581,3 +581,25 @@ test("🔴 §47 — the Azure key has exactly one reader, and it is not a client
   assert.ok(!config.includes("use client"));
   assert.match(CONTRACT, /THE KEY IS READ IN ONE FILE, AND A TEST ENFORCES IT/);
 });
+
+test("🔴 §47 — the provider the router chose is the provider that is actually called", () => {
+  // 🔴 THIS IS THE DEFECT THE GUARD EXISTS FOR, AND IT SHIPPED. `routeSpeech` has returned a
+  // `provider` since §43 and grew a second value in §47 — and `use-canvas-speech` posted every
+  // utterance to `nemesis-speak` regardless. Every router test passed, the contract described two
+  // synthesisers, and one of them could never speak a word.
+  //
+  // A decision that is computed, logged, tested and then discarded at the call site is worse than no
+  // decision, because everything upstream of the call site looks correct.
+  const speechHook = readFileSync(
+    new URL("../../components/workspace/learn/use-canvas-speech.ts", import.meta.url),
+    "utf8",
+  );
+  const voiceHook = readFileSync(
+    new URL("../../components/workspace/learn/use-canvas-voice.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(speechHook, /provider\?:\s*"xai"\s*\|\s*"azure"/, "the speech hook cannot be told which provider to use");
+  assert.match(speechHook, /\/api\/speech\/tts/, "the speech hook has no way to reach Azure");
+  assert.match(speechHook, /nemesis-speak/, "the speech hook lost the xAI lane");
+  assert.match(voiceHook, /provider: route\.provider/, "the router's provider is decided and then dropped");
+});

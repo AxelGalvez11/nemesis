@@ -59,6 +59,37 @@ Azure and everything else to xAI.
   response and the response is `Cache-Control: no-store, private`.
 - All four routes require a signed-in user (`verifyBearer`).
 
+## How a single utterance picks its provider
+
+The router decides; the client obeys. One utterance, one provider, chosen per moment:
+
+```
+momentFor(runtime)          what is about to be said
+    │
+    ▼
+routeSpeech({ moment, purpose, targetLocale })
+    │
+    ├─ moment.kind === "target_language"  →  provider "azure", locale REQUIRED, speed 1
+    └─ question / correction              →  provider "xai",   locale optional, speed 0.95
+    │
+    ▼
+useCanvasSpeech.speak(key, text, { locale, speed, provider })
+    │
+    ├─ provider "azure"  →  POST /api/speech/tts        (Next route, key in Vercel)
+    └─ provider "xai"    →  POST functions/v1/nemesis-speak (Supabase fn, key in fn secrets)
+```
+
+🔴 **The last step did not exist until §47's follow-up, and its absence made the whole router
+decorative.** `routeSpeech` returned a provider from the day §43 shipped; `useCanvasSpeech` ignored
+it and posted everything to `nemesis-speak`. Every router test passed and Azure could not speak.
+`visualization-roadmap.test.ts` now asserts the client honours the choice.
+
+The two providers sit behind different kinds of endpoint for one reason only: **where the credential
+lives.** `AZURE_SPEECH_KEY` is in Vercel, so Azure is a Next route; `XAI_API_KEY` is in the Supabase
+project's function secrets, so xAI is an edge function. That is an accident of history rather than a
+design, and it is exactly the sort of thing a caller should not have to know — hence the provider
+name in the middle.
+
 ## The endpoints
 
 | Route | Does |

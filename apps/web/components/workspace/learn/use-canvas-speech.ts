@@ -45,6 +45,18 @@ export interface SpokenVoice {
   /** BCP-47, or `auto`. Omitted entirely when `auto`, so the request body is unchanged from before §43. */
   locale?: string;
   speed?: number;
+  /**
+   * Which synthesiser says this.
+   *
+   * 🔴 THIS FIELD IS WHY THE ROUTER WAS NOT ACTUALLY ROUTING (§47). `routeSpeech` has returned a
+   * `provider` since §43 and grew a second value in §47 — and this hook ignored it and posted every
+   * utterance to `nemesis-speak`. A decision that is computed, logged, tested, and then discarded at
+   * the call site is worse than no decision: every test of the router passed, the contract said two
+   * providers, and one of them could never speak.
+   *
+   * Defaults to xAI, so the Canvas lane is byte-identical to what shipped.
+   */
+  provider?: "xai" | "azure";
 }
 
 export interface CanvasSpeech {
@@ -117,22 +129,44 @@ export function useCanvasSpeech(): CanvasSpeech {
           return;
         }
 
-        const res = await fetch(`${supabaseUrl}/functions/v1/nemesis-speak`, {
-          // 🔴 OMITTED WHEN UNSET RATHER THAN SENT AS A DEFAULT. `nemesis-speak` already has
-          // defaults for both, and sending `locale: "auto"` explicitly would make the function
-          // unable to tell "the caller chose auto" from "the caller is old and sends neither".
-          body: JSON.stringify({
-            text,
-            ...(voice?.locale && voice.locale !== "auto" ? { locale: voice.locale } : {}),
-            ...(typeof voice?.speed === "number" ? { speed: voice.speed } : {}),
-          }),
-          headers: {
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          method: "POST",
-        });
+        // 🔴 TWO PROVIDERS, TWO ENDPOINTS, AND THE CHOICE IS THE ROUTER'S RATHER THAN THIS HOOK'S.
+        // Azure lives behind a Next route because its key is in Vercel; xAI lives behind a Supabase
+        // function because its key is in that project's secrets. The difference is where a credential
+        // sits, which is exactly the sort of thing a caller should not have to know — so the router
+        // names a provider and this picks the door.
+        //
+        // 🔴 AZURE REQUIRES A LOCALE AND THIS DOES NOT PAPER OVER THAT. `/api/speech/tts` refuses
+        // without one, deliberately (§43: guessing a variety teaches the wrong accent invisibly). A
+        // route that asked for Azure without a locale is a caller bug, and it fails loudly here
+        // rather than being quietly downgraded to a provider that would have guessed.
+        const useAzure = voice?.provider === "azure";
+        const res = useAzure
+          ? await fetch("/api/speech/tts", {
+              body: JSON.stringify({
+                fallback: true,
+                locale: voice?.locale,
+                ...(typeof voice?.speed === "number" ? { rate: voice.speed } : {}),
+                text,
+              }),
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              method: "POST",
+            })
+          : await fetch(`${supabaseUrl}/functions/v1/nemesis-speak`, {
+              // 🔴 OMITTED WHEN UNSET RATHER THAN SENT AS A DEFAULT. `nemesis-speak` already has
+              // defaults for both, and sending `locale: "auto"` explicitly would make the function
+              // unable to tell "the caller chose auto" from "the caller is old and sends neither".
+              body: JSON.stringify({
+                text,
+                ...(voice?.locale && voice.locale !== "auto" ? { locale: voice.locale } : {}),
+                ...(typeof voice?.speed === "number" ? { speed: voice.speed } : {}),
+              }),
+              headers: {
+                apikey: supabaseAnonKey,
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              method: "POST",
+            });
 
         if (!res.ok) {
           if (alive.current) {
