@@ -174,7 +174,14 @@ test("🔴 no internal action name leaks into the prompt", () => {
 
 test("a plain decision is read", () => {
   const read = readTurnDecision('{"say":"hey. what are you working on?","then":"reply","topic":null,"offer":null}');
-  assert.deepEqual(read, { offer: null, say: "hey. what are you working on?", then: "reply", topic: null });
+  assert.deepEqual(read, {
+    needsWeb: false,
+    offer: null,
+    say: "hey. what are you working on?",
+    then: "reply",
+    topic: null,
+    webQuery: null,
+  });
 });
 
 test("a fenced decision is read", () => {

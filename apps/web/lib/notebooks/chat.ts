@@ -10,7 +10,24 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { postChatCompletion, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
-import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+
+/**
+ * Every notebook turn, before the student's effort dial is applied.
+ *
+ * 🔴 FIXED RATHER THAN CLASSIFIED, AND THAT IS NOT A SHORTCUT. A notebook answers ONLY from the
+ * sources attached to it (owner 2026-07-20: the web-grounding step was removed on purpose), and it
+ * carries no tools. So the two things a route decides on the Sessions surface — whether to search
+ * and whether tools ride — are already settled here by the surface itself. What is left is how hard
+ * to think about the student's own material, and the answer to that is always "properly". Running a
+ * classifier to choose between one possible answer and itself would be a model call spent on
+ * nothing.
+ */
+export const NOTEBOOK_DECISION: ChatRouteDecision = {
+  model: "deepseek-reasoner",
+  route: "learning",
+  searchWeb: false,
+};
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
 import { appendMessage, listMessages, touchChat } from "./chats-api";
@@ -78,7 +95,7 @@ export function buildSourceContext(sources: NotebookWireSource[], budget = SOURC
  *  student's instructions (if any), the source text (budgeted), then trimmed history + the new user
  *  message. PURE. */
 export function buildNotebookWireMessages(opts: BuildNotebookWireOpts): WireMsg[] {
-  const decision = opts.decision ?? applyChatEffort(classifyChatRequest(opts.userText), opts.effort ?? DEFAULT_CHAT_EFFORT);
+  const decision = opts.decision ?? applyChatEffort(NOTEBOOK_DECISION, opts.effort ?? DEFAULT_CHAT_EFFORT);
   const parts = [NOTEBOOK_SYSTEM_PROMPT, routeInstruction(decision.route)];
   const instructions = opts.instructions?.trim();
   if (instructions) {
@@ -230,7 +247,7 @@ export async function sendNotebookTurn(opts: SendNotebookTurnOpts): Promise<void
   notebookChatStore.append(opts.chatId, { role: "user", content: displayText, at: nowIso() });
   notebookChatStore.setWorking(opts.chatId, true);
   void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "user", content: displayText }).catch(() => {});
-  const decision = applyChatEffort(classifyChatRequest(userText), opts.effort ?? DEFAULT_CHAT_EFFORT);
+  const decision = applyChatEffort(NOTEBOOK_DECISION, opts.effort ?? DEFAULT_CHAT_EFFORT);
   const assistantAt = nowIso();
   try {
     // Grounded mode (owner 2026-07-20): notebook answers come only from the

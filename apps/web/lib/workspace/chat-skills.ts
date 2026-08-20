@@ -1,5 +1,14 @@
 // Chat skills — task-specific expertise packets injected into the system
-// prompt when the student's request matches one.
+// prompt when the turn calls for one.
+//
+// 🔴 WHICH ONES RIDE IS DECIDED BY THE MODEL (chat-intent.ts), NOT BY A REGEX. Each skill used to
+// carry its own `match: RegExp`, and selectChatSkills walked the catalog testing them against the
+// student's message. That made a word list the author of Nemesis's personality: "explain" anywhere
+// in a sentence handed over the entire Teaching packet, "quiz me" handed over Socratic tutoring,
+// and "I have no clue, bruh" handed over nothing at all, because it contains none of the words a
+// student in trouble is assumed to use. What remains here is the craft itself plus the limits
+// (MAX_ACTIVE_SKILLS, SKILL_CHAR_BUDGET, `excludes`), which are facts about our prompt budget
+// rather than readings of what somebody meant.
 //
 // Why: a frontier model carries this craft internally; a cheaper model has to
 // be told. Spelling out the procedure is what closes most of the quality gap,
@@ -19,8 +28,18 @@ export interface ChatSkill {
   id: string;
   /** Short label — what this skill teaches the model to do well. */
   name: string;
-  /** Fires when the student's message matches. */
-  match: RegExp;
+  /**
+   * When this skill applies, in one line, written for the model that chooses.
+   *
+   * 🔴 THIS REPLACED A RegExp, and the replacement is the point. A regex per skill meant a message
+   * containing the word "explain" received the entire Teaching packet whether or not the student
+   * wanted teaching, and a student who wrote "I have no clue, bruh" received nothing, because that
+   * sentence contains none of the words. The regex was deciding which personality the model got.
+   *
+   * Written as a CONDITION, not as a keyword list: "the student wants something explained" holds
+   * for a law student and a machinist alike, where any list of trigger words never will.
+   */
+  when: string;
   /** The procedure, written as instructions to the model. */
   instructions: string;
   /** Ids this skill must never share a turn with, because their instructions
@@ -52,6 +71,7 @@ export const SKILL_CHAR_SHARE = SKILL_CHAR_BUDGET / MAX_ACTIVE_SKILLS;
 
 const FLASHCARD_CRAFT: ChatSkill = {
   id: "flashcard-craft",
+  when: "the student wants flashcards made, or is asking how to write good ones",
   instructions: [
     "SKILL — writing flashcards that actually work:",
     "Every card tests ONE fact. If a card needs the word 'and', it is probably two cards.",
@@ -68,12 +88,12 @@ const FLASHCARD_CRAFT: ChatSkill = {
     CONSISTENT_NAMING_RULE,
     "Say how many cards you saved and which deck they went to. One line. The card the app shows opens the deck; the cards themselves do not belong in chat.",
   ].join("\n"),
-  match: /\b(flash\s?cards?|flashcards?|anki|cloze|make (?:me )?(?:some )?cards?|add (?:these|this|it|them) to (?:my )?(?:deck|study)|study cards?|(?:flashcard|study) deck)\b/i,
   name: "Flashcard craft",
 };
 
 const QUANTITATIVE_CHECK: ChatSkill = {
   id: "quantitative-check",
+  when: "the turn contains a calculation, a conversion, a dose, a rate, or any number that has to come out right",
   instructions: [
     "SKILL — quantitative work you can stake an answer on:",
     "First restate every given quantity with its unit, and name what is being solved for. If a needed value is missing, ask for it instead of assuming one.",
@@ -83,12 +103,12 @@ const QUANTITATIVE_CHECK: ChatSkill = {
     "Give the final answer with its unit and a sensible number of significant figures — do not copy out every digit the arithmetic produced.",
     "If the result falls in a range where being wrong would be dangerous, say so explicitly and tell the student to have it verified before acting on it. Never present a calculation as clinical, dosing, financial, or safety advice.",
   ].join("\n"),
-  match: /\b(calculat|comput|convert|dosage|dose|dosing|mg\/|mcg|mmol|molarity|molar|concentration|dilution|titrat|half[- ]life|clearance|creatinine|bmi|infusion rate|drip rate|how (?:much|many)|what(?:'s| is) the (?:value|rate|amount|percentage|percent)|solve for|equation)\b/i,
   name: "Quantitative check",
 };
 
 const EVIDENCE_HONESTY: ChatSkill = {
   id: "evidence-honesty",
+  when: "the answer will rest on sources, studies, guidelines or citations, and getting the attribution right matters",
   instructions: [
     "SKILL — sourcing you can defend:",
     "Cite only sources actually present in the supplied results or in the student's own notes. Never produce a DOI, PMID, journal name, author, year, or URL from memory — a fabricated citation is worse than no citation.",
@@ -98,51 +118,48 @@ const EVIDENCE_HONESTY: ChatSkill = {
     "Note when evidence is old, small, preliminary, or from an interested party — a claim's strength depends on it.",
     "Attribute guideline or consensus claims to the body that issued them, or say plainly that you cannot confirm which body says it.",
   ].join("\n"),
-  match: /\b(cite|citation|source[sd]?|reference[sd]?|evidence|study|studies|trial|meta[- ]analysis|systematic review|guideline|literature|peer[- ]reviewed|doi|pubmed|pmid|journal|according to|who says|is it true|prove)\b/i,
   name: "Evidence honesty",
 };
 
 const TEST_CRAFT: ChatSkill = {
   id: "test-craft",
+  when: "the student wants a practice test, quiz or exam questions written",
   instructions: [
     "SKILL — writing exam questions that measure understanding:",
     "When the student asks you to CREATE a test, you MUST call add_practice_test. Do not print the requested test and answer key in chat; the saved tool result is the deliverable.",
     "Count, difficulty, and format are AUTO — never ask the learner to configure them. Size the test to the material: roughly one question per distinct testable concept, no fewer than 5 and no more than 15, multiple-choice, at mixed difficulty. If the learner stated preferences (a count, a difficulty, a focus) in this request or earlier in the conversation, follow those exactly.",
     EXAM_ITEM_RULES,
   ].join("\n"),
-  match:
-    /\b(practice (?:test|exam|quiz|questions?)|quiz(?:zes)?|quiz me|test me|mcqs?|multiple[- ]choice|exam questions?|question bank|board[- ]style|write (?:me )?(?:some )?(?:practice )?questions?|(?:make|create|build|generate|draft) (?:me )?(?:an? )?(?:practice )?(?:test|exam|quiz))\b/i,
   name: "Test craft",
 };
 
 const SLIDES_BUILDER: ChatSkill = {
   id: "slides-builder",
+  when: "the student wants a slide deck or presentation made",
   instructions: [
     "SKILL — saving a requested slide deliverable:",
     "The student asked you to CREATE slides. You MUST call create_slide_deck. Do not print the slides as headings and bullets in chat.",
     "Give every slide one purpose, concise teaching bullets, and useful speaker notes. The tool result becomes a fullscreen preview link and the deck is also filed in Library.",
     SAVED_WRITING_TELLS,
   ].join("\n"),
-  match:
-    /\b(?:create|make|build|generate|draft|prepare|save|put together|give me)\b[^.?!]{0,100}\b(?:slides?|slide deck|presentation)\b/i,
   name: "Slides builder",
 };
 
 const NOTES_BUILDER: ChatSkill = {
   id: "notes-builder",
+  when: "the student wants notes or a study guide written and kept",
   instructions: [
     "SKILL — saving a requested note deliverable:",
     "The student asked you to CREATE notes. You MUST call create_library_note. Do not leave the requested note only inside chat.",
     "Write skimmable markdown with a clear title, concise sections, worked examples where useful, misconceptions, and a recap. The tool result becomes the clickable Library link.",
     SAVED_WRITING_TELLS,
   ].join("\n"),
-  match:
-    /\b(?:create|make|build|generate|draft|prepare|save|put together|give me)\b[^.?!]{0,100}\b(?:study notes?|class notes?|lecture notes?|study guide|revision guide)\b/i,
   name: "Notes builder",
 };
 
 const TEACHING: ChatSkill = {
   id: "teaching",
+  when: "the student wants something explained, or has said in any words that they do not follow it, including frustration, giving up, or saying it makes no sense",
   instructions: [
     "SKILL — teaching, not lecturing:",
     "Find out what they already have before you explain. Ask one diagnostic question, or use what their own notes and past answers show. Explaining what they already know wastes the turn; explaining over their head wastes it too.",
@@ -156,8 +173,6 @@ const TEACHING: ChatSkill = {
     "Push back on re-reading and highlighting — both feel productive and do very little. Tell them to space the topic over days and to practise it shuffled with related material rather than in one block.",
     "Never manufacture confidence to keep the explanation tidy. If something is genuinely contested, or you do not know it, say so plainly. A fluent wrong explanation is the most expensive thing you can hand a student, because they will build on it.",
   ].join("\n"),
-  match:
-    /\b(teach me|explain|help me understand|walk me through|talk me through|i (?:don'?t|do not) (?:understand|get)|i'?m (?:confused|lost)|confused about|makes? no sense|break (?:this|it) down|what(?:'s| is) the difference between|why (?:does|is|are|do)|how (?:does|do|is) .{0,40}\bwork|eli5|simpler terms|dumb it down)\b/i,
   name: "Teaching",
 };
 
@@ -184,6 +199,7 @@ const TEACHING: ChatSkill = {
 const SOCRATIC_TUTORING: ChatSkill = {
   excludes: ["teaching"],
   id: "socratic-tutoring",
+  when: "the student asked to be quizzed, drilled or tutored, meaning they want to be asked questions rather than told answers",
   instructions: [
     "SKILL — tutoring by questioning. The student asked to be taught or quizzed, so this turn is a conversation, not a lesson:",
     "Ask exactly ONE question, then STOP and wait. Never a numbered list of questions, never a second question 'while you are at it'. One question, then the turn ends.",
@@ -195,8 +211,6 @@ const SOCRATIC_TUTORING: ChatSkill = {
     "If they ask to stop being quizzed, stop at once and just explain.",
     "Never pretend an answer was right to be encouraging. Say plainly that it is not, name the part that was sound, and ask again.",
   ].join("\n"),
-  match:
-    /\b(quiz me|test me|tutor me|be my tutor|socratic|ask me (?:some )?questions?|ask me about|drill me|help me (?:study|revise|prepare|practi[cs]e)|study with me|revise with me|practi[cs]e with me|check my understanding|test my (?:understanding|knowledge)|keep asking|one question at a time)\b/i,
   name: "Socratic tutoring",
 };
 
@@ -205,6 +219,7 @@ const SOCRATIC_TUTORING: ChatSkill = {
  *  whether to mine concepts or offer a calendar import. */
 const SYLLABUS_INTAKE: ChatSkill = {
   id: "syllabus-intake",
+  when: "a syllabus or course schedule is in play and its DATES are the point",
   instructions: [
     "SKILL — a syllabus or course schedule the student uploaded:",
     "What matters in this document is its DATES. Read every dated item: exams, quizzes, assignment and project deadlines, presentations, rotations, and recurring class meetings.",
@@ -215,7 +230,6 @@ const SYLLABUS_INTAKE: ChatSkill = {
     "Classify each one: exam for tests, assignment for anything due, rotation for placements, class for recurring meetings, other for the rest.",
     "Afterwards write ONE short line — 'I've put the events into your calendar.' — plus a second line only if something could not be added.",
   ].join("\n"),
-  match: /\b(syllabus|syllabi|course schedule|course outline|grading policy|office hours|class schedule|rotation schedule)\b/i,
   name: "Syllabus intake",
   excludes: ["lecture-intake"],
 };
@@ -232,6 +246,7 @@ const SYLLABUS_INTAKE: ChatSkill = {
  *  this packet must not ask them again — hence the last line. */
 const LECTURE_INTAKE: ChatSkill = {
   id: "lecture-intake",
+  when: "the student attached course material such as slides, a lecture or a reading, and wants something done with it",
   instructions: [
     "SKILL — reading uploaded course material, and what to do next:",
     "The student attached course material. Do NOT summarise it slide by slide and do not narrate what each page contains. Mine it for what is worth learning.",
@@ -243,22 +258,16 @@ const LECTURE_INTAKE: ChatSkill = {
     "END your reply by offering the deliverables in exactly these words: 'Want me to turn this into notes, flashcards, a practice test, or all three?' Then stop and wait — create nothing until they answer.",
     "If the student ALREADY said what they want in this same message, skip that question entirely and build what they asked for.",
   ].join("\n"),
-  match: /### Attachment: [^\n]+\.(?:pptx|pdf|docx)\b/i,
   name: "Lecture intake",
 };
 
-/** Order matters: earlier skills win the budget when several match, and only
- *  MAX_ACTIVE_SKILLS get a slot.
+/** Order breaks ties, and only ties: a model that asks for three skills gets the first
+ *  MAX_ACTIVE_SKILLS of them in this order, and something has to decide which two.
  *
- *  SOCRATIC_TUTORING sits ahead of TEACHING because "quiz me on X" matches both
- *  and the tutoring reading is the right one — it also excludes Teaching outright
- *  so the two cannot contradict each other in the same prompt.
- *
- *  Both, plus TEST_CRAFT, sit ahead of EVIDENCE_HONESTY deliberately —
- *  EVIDENCE_HONESTY matches bare `study` and `studies`, which in a studying app
- *  fires on a large share of messages, so from behind it would starve the skills
- *  a "quiz me" or "explain this" turn is actually about. It still takes the
- *  second slot on those turns. */
+ *  SOCRATIC_TUTORING sits ahead of TEACHING because a turn that is genuinely both is a tutoring
+ *  turn, and it excludes Teaching outright so the two cannot contradict each other in one prompt.
+ *  EVIDENCE_HONESTY sits last because it is the widest packet here: it improves almost any answer
+ *  slightly, and from the front it would crowd out the skill a turn is actually about. */
 export const CHAT_SKILLS: ChatSkill[] = [
   SLIDES_BUILDER,
   NOTES_BUILDER,
@@ -272,11 +281,21 @@ export const CHAT_SKILLS: ChatSkill[] = [
   EVIDENCE_HONESTY,
 ];
 
-/** Which skills apply to one message. Pure and deterministic — no model call,
- *  so routing a turn through a skill costs nothing but the injected text. */
-export function selectChatSkills(userText: string, catalog: ChatSkill[] = CHAT_SKILLS): ChatSkill[] {
-  const text = userText.trim();
-  if (!text) return [];
+/**
+ * Which of the skills the model asked for actually ride this turn.
+ *
+ * 🔴 THE MODEL CHOOSES, THIS FUNCTION ENFORCES. It picks by meaning (see chat-intent.ts); the
+ * limits below are facts about our prompt budget and about which packets contradict each other,
+ * which is not something a model reading one message can know. An id that is not in the catalog is
+ * dropped silently: a model naming a skill that does not exist costs the turn some craft, and
+ * failing the turn over it would cost the answer.
+ *
+ * Catalog ORDER still breaks ties, exactly as before, because only MAX_ACTIVE_SKILLS get a slot
+ * and something has to decide which. It no longer decides WHETHER a skill is relevant.
+ */
+export function selectChatSkills(requested: readonly string[], catalog: ChatSkill[] = CHAT_SKILLS): ChatSkill[] {
+  const wanted = new Set(requested);
+  if (wanted.size === 0) return [];
   const chosen: ChatSkill[] = [];
   const barred = new Set<string>();
   let used = 0;
@@ -284,7 +303,7 @@ export function selectChatSkills(userText: string, catalog: ChatSkill[] = CHAT_S
     if (chosen.length >= MAX_ACTIVE_SKILLS) break;
     // Barred by a skill already chosen: its rules would contradict that one's.
     if (barred.has(skill.id)) continue;
-    if (!skill.match.test(text)) continue;
+    if (!wanted.has(skill.id)) continue;
     const cost = skill.instructions.length;
     if (used + cost > SKILL_CHAR_BUDGET) continue;
     chosen.push(skill);

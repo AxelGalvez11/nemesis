@@ -71,6 +71,23 @@ export type TurnOffer = "returning" | "reasoning";
 
 export interface TurnDecision {
   /**
+   * Does answering this need live sources off the web.
+   *
+   * 🔴 THE MODEL ANSWERS THIS NOW, WHERE A WORD LIST USED TO. `askCanvasChat` imported Sessions'
+   * `shouldSearchWeb` — `latest|current|today|price|weather|score|version|…` — and the header of
+   * that import argued the rule should stay deterministic because searching spends money. The
+   * spending is real; the word list was never what made it careful. It bought a search for any
+   * sentence containing "update" and refused one for "has the guideline been revised", and it
+   * could not read a question asked in Spanish at all.
+   *
+   * A canvas turn that asks for the web costs one extra round: the search runs, and this same
+   * packet is asked again with the results in it. Only web turns pay it, and on those the search
+   * itself dominates the wait.
+   */
+  needsWeb: boolean;
+  /** What to type into a search engine, when `needsWeb`. Null otherwise. */
+  webQuery: string | null;
+  /**
    * What Nemesis says. Present even when it also acts: acting silently reads as a bug, and the
    * owner's example ("alright.") is a turn that speaks and acts at once.
    */
@@ -194,7 +211,8 @@ const NEMESIS_SYSTEM = [
 const DECISION_CONTRACT = [
   "Answer with a single JSON object and nothing else:",
   "",
-  '{"say": "...", "then": "reply" | "study", "topic": "..." | null, "offer": "returning" | "reasoning" | null}',
+  '{"say": "...", "then": "reply" | "study", "topic": "..." | null, "offer": "returning" | "reasoning" | null, '
+  + '"needsWeb": true | false, "webQuery": "..." | null}',
   "",
   '"say" is what Nemesis says out loud. Always write something, even when you also act.',
   "",
@@ -226,6 +244,18 @@ const DECISION_CONTRACT = [
   + 'is what gets taught; on a "reply" it is what a Learn this button beside the answer would start, '
   + "so give it for a real question about a subject and leave it null for a greeting, a remark or "
   + "anything with no subject in it.",
+  "",
+  '"needsWeb" is true when answering well depends on something that changes or that you could not '
+  + "have memorised: recent or ongoing events, current prices, standings, releases, versions, laws, "
+  + "guidelines, schedules, anything the learner says is new or has changed, or a specific source "
+  + "they want read. It is false for settled knowledge, explanations, definitions, calculations, "
+  + "translations, and anything answerable from the attached material. Searching costs money and "
+  + "time, so when it is genuinely borderline, say false. If live web results are already in this "
+  + "packet, the search has happened: answer from them and say false.",
+  "",
+  '"webQuery" is what to type into a search engine, when needsWeb is true. Write it as a search '
+  + "rather than as a sentence, and put a date or year in it yourself when recency is the point. "
+  + "Null when needsWeb is false.",
   "",
   '"offer" says why a learner reading a plain answer might be shown a Learn this button. Use '
   + '"returning" when they keep circling the same subject across turns, "reasoning" when they are '
@@ -360,6 +390,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   // Neither field survived, so there is no decision here — only text that happened to be JSON.
   if (!then && !say) return null;
   return {
+    needsWeb: parsed.needsWeb === true,
     offer: asOffer(parsed.offer),
     // 🔴 THE FALLBACK IS "reply", NOT "study". See the header: the expensive mistake is teaching
     // somebody who did not ask to be taught, and a model that answered in prose instead of JSON
@@ -367,6 +398,8 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     say,
     then: then ?? "reply",
     topic: asText(parsed.topic) || null,
+    // A query without a search is dropped: the half that spends money loses the contradiction.
+    webQuery: parsed.needsWeb === true ? asText(parsed.webQuery) || null : null,
   };
 }
 
@@ -382,5 +415,5 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   if (read) return read;
   const prose = raw.trim();
   if (!prose) return null;
-  return { offer: null, say: prose, then: "reply", topic: null };
+  return { needsWeb: false, offer: null, say: prose, then: "reply", topic: null, webQuery: null };
 }

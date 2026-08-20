@@ -6,34 +6,23 @@ export interface ChatWebResult {
   description: string;
 }
 
-const EXPLICIT_WEB_PATTERN = /\b(search(?: the)? web|web search|look(?:\s+(?:it|this|that))?\s+up|browse|online|internet|source(?:s)?|cite|link(?:s)?)\b/i;
-const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live|what (?:has )?changed)\b/i;
-// A question about Nemesis itself is not a changing-world fact. Keep the useful "who is/are X"
-// search gate while excluding only the self-referential forms that previously bought a search and
-// returned an answer about an unrelated person.
-const CHANGING_FACT_PATTERN = /\bwho\s+(?:(?:is|are)\s+(?!you\b|u\b|ya\b|this\b|nemesis\b)|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
-const LIVE_SPORTS_PATTERN = /\b(world cup|super bowl|olympics?|playoffs?|finals?|tournament|match|game|who won|score|standings)\b/i;
-const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
-const EMERGING_ENTITY_PATTERN = /\b(?:what|who)\s+(?:is|are)\s+(?:the\s+)?[\p{L}\p{N}._-]+(?:\s+[\p{L}\p{N}._-]+){0,4}\s+(?:agent|ai|app|company|framework|library|model|platform|plugin|product|project|service|software|tool)\b/iu;
-
-export function shouldSearchWeb(query: string): boolean {
-  const compact = query.trim();
-  if (compact.length < 3) return false;
-  return EXPLICIT_WEB_PATTERN.test(compact)
-    || CURRENT_INFO_PATTERN.test(compact)
-    || CHANGING_FACT_PATTERN.test(compact)
-    || LIVE_SPORTS_PATTERN.test(compact)
-    || EMERGING_ENTITY_PATTERN.test(compact)
-    || RECENT_YEAR_PATTERN.test(compact)
-    || /https?:\/\//i.test(compact);
-}
-
-/** Time-sensitive searches need an explicit date. Without it, providers can
- * rank an old winner or schedule above today's result. */
-export function buildFreshSearchQuery(query: string, now = new Date()): string {
-  if (!CURRENT_INFO_PATTERN.test(query) && !CHANGING_FACT_PATTERN.test(query) && !LIVE_SPORTS_PATTERN.test(query)) return query;
-  const date = now.toISOString().slice(0, 10);
-  return `${query.trim()} current as of ${date}`;
+/**
+ * A message that carries a URL is asking for that page, whatever else it says.
+ *
+ * 🔴 THE ONLY KEYWORD RULE LEFT IN THIS FILE, AND IT IS NOT A KEYWORD RULE. Everything else that
+ * used to live here — EXPLICIT_WEB_PATTERN, CURRENT_INFO_PATTERN, CHANGING_FACT_PATTERN,
+ * LIVE_SPORTS_PATTERN, EMERGING_ENTITY_PATTERN, RECENT_YEAR_PATTERN — was a list of English words
+ * standing in for "does this need the live web". A word list cannot answer that: it is English-only,
+ * so a student asking in Spanish never got a search, and it is blind to shape, so "has the EU signed
+ * off on that rule yet" contains no listed word and was answered from stale training data. That
+ * judgement is now made by the model, once, alongside everything else it decides (chat-intent.ts).
+ *
+ * A URL is different in kind. It is not a guess about what the student meant; the address is
+ * literally in the message, and no reading of the sentence changes whether one is present. So it
+ * stays in code, and it is checked in ADDITION to the model's answer rather than instead of it.
+ */
+export function carriesUrl(text: string): boolean {
+  return /https?:\/\//i.test(text);
 }
 
 /** How many web results reach the model. Ten, not five (owner 2026-08-04):

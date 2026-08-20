@@ -21,18 +21,21 @@
 // the exact hole the unit-economics audit already found once (see lib/learn/canvas-api.ts's own
 // header comment) and this file exists specifically not to repeat it.
 //
-// 🔴 WEB SEARCH RIDES THE SAME REGEX-FIRST GATE SESSIONS CHAT ALREADY USES (`shouldSearchWeb`,
-// lib/workspace/chat-web-search.ts). That stays a deterministic decision on purpose: it spends
-// money and adds latency, and it is a RETRIEVAL choice rather than a reading of what the learner
-// meant. Nothing here reimplements it; it is imported and reused so a canvas question about "the
-// current inflation rate" and a Sessions question about the same thing are judged by the identical
-// rule rather than by two rules that can quietly diverge.
+// 🔴 WEB SEARCH IS PART OF THE SAME DECISION NOW. It used to ride Sessions' `shouldSearchWeb` — a
+// list of English words: latest, current, today, price, weather, score, version — and the comment
+// here defended that as "a RETRIEVAL choice rather than a reading of what the learner meant".
+// That was wrong, and the two halves of the sentence are the reason: deciding whether a question
+// turns on something that changes IS a reading of what the learner meant, and no word list has
+// ever done it. It bought a search for any sentence containing "update" and refused one for "has
+// that guideline been revised", and it could not read a question asked in Spanish at all.
+//
+// So the model says whether it needs the web, in the same envelope as everything else. A turn that
+// asks for one costs a second round: search, then ask the identical packet again with the results
+// in it. Only web turns pay, and on those the search is most of the wait anyway.
 
 import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import {
-  buildFreshSearchQuery,
   citedWebResults,
-  shouldSearchWeb,
   type ChatWebResult,
 } from "@/lib/workspace/chat-web-search";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
@@ -82,16 +85,10 @@ export async function askCanvasChat(
   surroundings: TurnSurroundings,
   signal?: AbortSignal,
 ): Promise<CanvasTurnReply> {
-  let webContext = "";
-  let sources: ChatWebResult[] = [];
-  if (shouldSearchWeb(question)) {
-    const result = await searchWebContext(uid, buildFreshSearchQuery(question), signal);
-    webContext = result.context;
-    sources = result.sources;
-  }
-
   const materialContext = groundingBlock(canvas.sources);
-  const reply = await postChatCompletion(
+
+  /** One round of the envelope. `webContext` is empty on the first pass and full on the second. */
+  const ask = (webContext: string) => postChatCompletion(
     uid,
     turnRouterMessages({
       context: {
@@ -117,8 +114,23 @@ export async function askCanvasChat(
     { decision: CHAT_DECISION, signal },
   );
 
-  if (reply.errorText) return { decision: null, error: reply.errorText, sources: [] };
-  const decision = reply.text ? decisionOrReply(reply.text) : null;
+  const first = await ask("");
+  if (first.errorText) return { decision: null, error: first.errorText, sources: [] };
+  let decision = first.text ? decisionOrReply(first.text) : null;
+  let sources: ChatWebResult[] = [];
+
+  // 🔴 THE SECOND ROUND HAPPENS ONLY WHEN THE MODEL ASKED FOR IT, and only once — the packet it
+  // gets back says the search has already run, so a model that asks again is answered from what it
+  // was given rather than sent round a third time.
+  if (decision?.needsWeb) {
+    const found = await searchWebContext(uid, decision.webQuery || question, signal);
+    sources = found.sources;
+    const second = await ask(found.context);
+    if (second.errorText) return { decision: null, error: second.errorText, sources: [] };
+    // A failed second round still leaves the first answer standing, which is better than an error.
+    decision = (second.text ? decisionOrReply(second.text) : null) ?? decision;
+  }
+
   return {
     decision,
     error: null,
