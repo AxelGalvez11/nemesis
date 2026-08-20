@@ -12,7 +12,6 @@ import { useEffect } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useTheme } from "@/components/theme-provider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
-import { OutputViewerDialog } from "@/components/workspace/sessions/output-viewer-dialog";
 import { UpgradePromptDialog } from "@/components/workspace/upgrade-prompt-dialog";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -231,7 +230,6 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
         </div>
       </main>
       <UpgradePromptDialog />
-      <OutputViewerDialog />
       {/* Mounted at the SHELL, not on a surface. A recording keeps processing
           after you leave the chat, so the thing that says so has to outlive
           every route change — and a failure that happened while the student was

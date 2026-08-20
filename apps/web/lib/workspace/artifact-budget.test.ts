@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildWireMessages, HISTORY_CHAR_BUDGET } from "@/lib/workspace/chat-api";
-import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { ChatMessage } from "@/lib/workspace/chat-message";
 
 test("BUDGET: artifact notes are counted inside the history budget, not added after it", () => {
   // A long conversation that also carries a big recording write-up. If the
   // expansion happens after the trim, the wire blows the budget it enforced.
-  const history: SessionMessage[] = [];
+  const history: ChatMessage[] = [];
   for (let i = 0; i < 25; i += 1) {
     history.push({ at: "", content: `turn ${i} ${"z".repeat(900)}`, role: i % 2 ? "assistant" : "user" });
   }

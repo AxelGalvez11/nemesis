@@ -4,7 +4,7 @@
 //
 // 🔴 THIS IS THE FIFTH THING §L SAYS THE COMPOSER DOES. "type a topic · ask a question · upload
 // material · dictate · record where supported." The first four worked. Recording was started only
-// by `RecordWorkspace`, hosted on /sessions and /notebooks — neither of which is in the sidebar —
+// by `RecordWorkspace`, which moved here from the deleted Sessions folder on 2026-08-20 —
 // so the front door named a capability it did not have. The landing copy was corrected rather than
 // left as a false promise; this is the other half of that repair.
 //
@@ -24,7 +24,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useAuth } from "@/components/AuthProvider";
-import { RecordWorkspace } from "@/components/workspace/sessions/record-workspace";
+import { RecordWorkspace } from "./record-workspace";
 import { supabase } from "@/lib/supabase";
 import {
   canvasRecordingCopy,

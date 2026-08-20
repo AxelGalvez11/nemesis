@@ -21,7 +21,6 @@ export interface NavItem {
   /** Name of the @vscode/codicons glyph, without the `codicon-` prefix. */
   readonly codicon: string;
   readonly route?: string;
-  readonly action?: "new-session";
 }
 
 export const SIDEBAR_NAV: readonly NavItem[] = [

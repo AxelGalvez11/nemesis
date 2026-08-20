@@ -5,10 +5,10 @@ import { buildWireMessages, CHAT_SYSTEM_PROMPT, chatSystemPrompt, collapseOutput
 import { WRITING_VOICE } from "@nemesis/shared";
 import { toolsAllowed } from "@/lib/workspace/chat-effort";
 import { classifyChatRequest } from "@/lib/workspace/chat-routing";
-import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { ChatMessage } from "@/lib/workspace/chat-message";
 
-const message = (role: SessionMessage["role"], content: string): SessionMessage =>
-  ({ content, id: `${role}-${content.slice(0, 8)}`, role } as SessionMessage);
+const message = (role: ChatMessage["role"], content: string): ChatMessage =>
+  ({ content, id: `${role}-${content.slice(0, 8)}`, role } as ChatMessage);
 
 const systemText = (text: string) =>
   buildWireMessages([], text).filter((wire) => wire.role === "system").map((wire) => wire.content).join("\n");
