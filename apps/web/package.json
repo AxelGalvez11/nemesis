@@ -16,7 +16,8 @@
     "test": "tsx --test components/workspace/*/*.test.ts lib/*.test.ts lib/*/*.test.ts lib/*/*/*.test.ts",
     "lint": "next lint",
     "parse-thread": "node scripts/build-parse-thread.mjs",
-    "mascot:board": "tsx scripts/mascot-board.mts"
+    "mascot:board": "tsx scripts/mascot-board.mts",
+    "character:board": "tsx scripts/bloub-board.mts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
