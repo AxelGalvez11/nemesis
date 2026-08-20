@@ -24,7 +24,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { teachingExperimentStartedAt } from "@/lib/env";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { evaluateLearningResponse } from "@/lib/learn/canvas-api";
-import type { LearnerInputModality, LearningCanvas, ResponseEvaluation } from "@/lib/learn/canvas-model";
+import type { CanvasSource, LearnerInputModality, LearningCanvas, ResponseEvaluation } from "@/lib/learn/canvas-model";
 import { ensureKnowledgeForCanvas, type CanvasKnowledge } from "@/lib/learn/canvas-knowledge";
 import {
   applyFocus,
@@ -163,6 +163,16 @@ export interface PolicyRuntime {
    * `citationsForKnowledge`, which refuses rather than guesses.
    */
   citations: readonly KnowledgeCitation[];
+  /**
+   * The canvas's own sources, carried so a citation can be turned into something pressable.
+   *
+   * 🔴 THE SAME LIST `citations` WAS RESOLVED AGAINST, AND THAT IS WHY IT RIDES HERE RATHER THAN
+   * BEING PASSED SEPARATELY TO THE VIEW. A renderer handed citations from one list and sources from
+   * another could resolve a ref against a canvas that never held it — the "plausible citation
+   * pointing at the wrong text" that `knowledge-citation.ts` calls the exact defect the two-locator
+   * design exists to make impossible.
+   */
+  sources: readonly CanvasSource[];
   /**
    * Which teaching controller is running this session.
    *
@@ -1763,6 +1773,7 @@ export function usePolicyRuntime(
     choicesRevealed,
     choose,
     citations,
+    sources: canvas.sources,
     claims,
     coverage: knowledge.coverage,
     decision,

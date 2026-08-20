@@ -14,6 +14,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { citationLine, taughtClaim } from "@/lib/learn/taught-claim";
+import { sourcePills } from "@/lib/learn/source-pill";
+import type { CanvasSource } from "@/lib/learn/canvas-model";
 import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
@@ -29,6 +31,7 @@ import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 import { correctionLead } from "./correction-copy";
 import { selectableRegion } from "./use-canvas-selection";
+import { CanvasSourcePills } from "./canvas-source-pills";
 
 /**
  * The affordance that turns a recognition screen into "produce it if you can, pick it if you cannot".
@@ -143,7 +146,7 @@ function PolicyScreen({
   runtime: PolicyRuntime;
   sharing: boolean;
 }) {
-  const { citations, decision, feedback, prompt } = runtime;
+  const { citations, decision, feedback, prompt, sources } = runtime;
 
   // Feedback outranks the next prompt: someone who has just answered should read what it showed
   // before being asked the next thing, even though the policy has already moved on underneath.
@@ -373,7 +376,7 @@ function PolicyScreen({
               </li>
             ))}
           </ol>
-          <SourceTrail citations={citations} />
+          <SourceTrail citations={citations} sources={sources} />
         </Frame>
       );
     }
@@ -407,7 +410,7 @@ function PolicyScreen({
           {correctionLead(said)}
         </p>
         <TaughtClaimLines decision={decision} />
-        <SourceTrail citations={citations} />
+        <SourceTrail citations={citations} sources={sources} />
         {/* 🔴 THE "Got it" BUTTON IS GONE — §I. Moving on is the composer's `✓` now, so the Canvas
             introduces no separate Next, Continue or Done reading. The behaviour it used to carry is
             not lost: this screen wrote no evidence, and something still has to say the learner has
@@ -445,7 +448,7 @@ function PolicyScreen({
         <TaughtClaimLines decision={decision} />
         {/* Same rule as the two screens below: a claim shown here keeps the origin it would have
             anywhere else, or the Canvas reads as having lost the source. */}
-        <SourceTrail citations={citations} />
+        <SourceTrail citations={citations} sources={sources} />
       </Frame>
     );
   }
@@ -478,7 +481,7 @@ function PolicyScreen({
             out of `decision` exactly as `show_correction` does, so a citation there and silence here
             would read as "we lost the source" — the disclosure failure canvas-provenance.ts exists
             to argue against. One component, both screens, one rule. */}
-        <SourceTrail citations={citations} />
+        <SourceTrail citations={citations} sources={sources} />
         {/* Its "Got it" is gone for the same reason as `show_correction`'s — see there. */}
       </Frame>
     );
@@ -545,11 +548,32 @@ function PolicyScreen({
  * 🔴 ONE COMPONENT BECAUSE THE RULE IS ONE RULE. Two screens show a claim; both must disclose its
  * origin the same way, or the same fact appears sourced on one and unsourced on the other.
  */
-function SourceTrail({ citations }: { citations: PolicyRuntime["citations"] }) {
-  // 🔴 THE DE-DUPLICATION LIVES IN `citationLine`, NOT HERE. It printed `sourceTitle, label`
-  // unconditionally, and a web extractor routinely names the section what it named the page — so
-  // the owner was shown "From 3.1Functional Groups, 3.1Functional Groups" and the provenance line
-  // read as a bug rather than as a source.
+function SourceTrail({
+  citations,
+  sources,
+}: {
+  citations: PolicyRuntime["citations"];
+  sources: readonly CanvasSource[];
+}) {
+  // 🔴🔴 PILLS, NOT A LINE OF GREY TEXT — owner call, 2026-08-20. The line said "From 3.1Functional
+  // Groups" at `--ui-text-quaternary`, which is what this app uses for things nobody is meant to act
+  // on, and it was part of the "unnecessary wordy gray text" he asked about. The answer is not to
+  // remove the provenance — a claim that loses its origin is the thing the evidence rules exist to
+  // prevent — but to make it worth its space: a site you recognise by its icon, or a document you
+  // can look inside.
+  // 🔴 THE REFUSAL COMES FIRST, BEFORE ANY MARKUP EXISTS IN THIS FUNCTION. `knowledge-citation.ts`
+  // insists an empty list means "this canvas cannot honestly point at anything" and must reach the
+  // surface as silence — never a greyed-out pill, never "source unknown". Writing it as the first
+  // statement makes that unmissable to a reader, and it is what `knowledge-citation.test.ts` reads.
+  if (citations.length === 0) return null;
+
+  const pills = sourcePills(sources, citations);
+  if (pills.length > 0) return <CanvasSourcePills pills={pills} />;
+
+  // 🔴 THE TEXT LINE SURVIVES AS THE FALLBACK, AND THAT IS NOT TIDINESS. `sourcePill` refuses any
+  // citation whose source this canvas no longer holds, and a canvas written before `sourceUrl`
+  // existed has citations that resolve to a title and nothing else. Dropping to silence there would
+  // trade a working provenance line for a missing one; `citationLine` still says where it came from.
   const line = citationLine(citations);
   if (!line) return null;
 
