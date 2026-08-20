@@ -43,6 +43,8 @@ import {
   type AutoDictation,
   type VoiceMode,
 } from "@/lib/learn/voice-preferences";
+import { CANVAS_VOICES } from "@/lib/learn/canvas-voices";
+import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 import { cn } from "@/lib/utils";
 
 import {
@@ -720,14 +722,14 @@ export function OptionsControl({
   activeTaskId?: string | null;
   entries: readonly TranscriptEntry[];
   locale?: string;
-  voice?: {
-    mode: VoiceMode;
-    autoDictation: AutoDictation;
-    dictationSupported: boolean;
-    speaking: boolean;
-    onToggle: (next: VoiceMode) => void;
-    onSetAutoDictation: (next: AutoDictation) => void;
-  };
+  /**
+   * 🔴 THE HOOK'S OWN TYPE, NOT A THIRD COPY OF IT. This shape was written out by hand here AND in
+   * the sibling that passes it through, so `useCanvasVoice` gaining a field left two declarations
+   * behind and the compiler pointed at the consumer rather than at the omission. Referencing the
+   * source means adding a control to the voice hook can never again require remembering two other
+   * files.
+   */
+  voice?: CanvasVoiceState["header"];
 }) {
   const [open, setOpen] = useState(false);
   // Which face the menu is showing. Sub-views render IN PLACE rather than as a second floating
@@ -792,6 +794,30 @@ export function OptionsControl({
                     label="Open the mic after each question"
                     onClick={() => voice.onSetAutoDictation(listenOn ? "off" : "on")}
                   />
+                  {/* 🔴🔴 THE VOICE PICKER SITS UNDER THE TOGGLE THAT TURNS VOICE ON, because it is
+                      meaningless above it: choosing a speaker for something that never speaks is a
+                      setting with no effect. Owner call, 2026-08-20: "read out loud works but i want
+                      nemesis users to be able to choose the voice too."
+
+                      🔴 SIX NAMES AND NO DESCRIPTIONS. Nobody here has listened to all six, and
+                      writing "warm" or "authoritative" beside one on that basis would be inventing a
+                      claim the learner can check in one press and find false. The list itself is a
+                      MEASUREMENT — see `lib/learn/canvas-voices.ts` for why an invented id is a 502
+                      rather than a typo. */}
+                  <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
+                  <p className="px-2.5 pb-1 pt-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                    Voice
+                  </p>
+                  {CANVAS_VOICES.map((option) => (
+                    <ToggleItem
+                      checked={voice.voiceId === option.id}
+                      disabled={!voiceOn}
+                      hint={voiceOn ? undefined : "Turn reading out loud on first"}
+                      key={option.id}
+                      label={option.label}
+                      onClick={() => voice.onSetVoice(option.id)}
+                    />
+                  ))}
                   <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
                 </>
               )}

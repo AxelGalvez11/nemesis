@@ -24,6 +24,7 @@ import { MinimapControl, OptionsControl, SourcesControl } from "./canvas-control
 import type { AutoDictation, VoiceMode } from "@/lib/learn/voice-preferences";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
+import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
@@ -57,14 +58,14 @@ interface CanvasHeaderProps {
    *  disabled rather than absent: "nothing has happened yet" is a real state worth being able to
    *  see, and a control that vanishes reads as a feature that broke. */
   transcript?: readonly TranscriptEntry[];
-  voice?: {
-    mode: VoiceMode;
-    autoDictation: AutoDictation;
-    dictationSupported: boolean;
-    speaking: boolean;
-    onToggle: (next: VoiceMode) => void;
-    onSetAutoDictation: (next: AutoDictation) => void;
-  };
+  /**
+   * 🔴 THE HOOK'S OWN TYPE, NOT A THIRD COPY OF IT. This shape was written out by hand here AND in
+   * the sibling that passes it through, so `useCanvasVoice` gaining a field left two declarations
+   * behind and the compiler pointed at the consumer rather than at the omission. Referencing the
+   * source means adding a control to the voice hook can never again require remembering two other
+   * files.
+   */
+  voice?: CanvasVoiceState["header"];
 }
 
 export function CanvasHeader({
