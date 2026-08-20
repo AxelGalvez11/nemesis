@@ -39,7 +39,12 @@ const policyCode = code(policy);
 
 test("🔴🔴 the conversational reply is a selectable region", () => {
   // The exact surface in the screenshot. Calibration: delete the spread and this reddens alone.
-  assert.match(canvasCode, /<p \{\.\.\.selectableRegion\("reply"\)\}>\{session\.aside\.text\}<\/p>/);
+  // 🔴 REPOINTED 2026-08-20. This pinned `<p {...selectableRegion("reply")}>{session.aside.text}</p>`
+  // and went red when the reply started rendering through `AssistantMarkdown`, so its `[n]` markers
+  // could become inline favicon pills. The element changed; the property did not. What matters is
+  // that the reply carries a marker and that the marker is on a wrapper holding only this prose.
+  assert.match(canvasCode, /\{\.\.\.selectableRegion\("reply"\)\}/);
+  assert.match(canvasCode, /<AssistantMarkdown[\s\S]{0,900}?text=\{session\.aside\.text\}/, "the reply no longer renders its own text");
 });
 
 test("🔴🔴 the claim being taught is too, both of its lines", () => {
@@ -64,8 +69,8 @@ test("🔴🔴 the marker goes on the element holding ONLY that text", () => {
   // saying it was fixed.
   const replyAt = canvasCode.indexOf('selectableRegion("reply")');
   assert.notEqual(replyAt, -1, "the reply is no longer marked");
-  const marked = canvasCode.slice(replyAt - 40, replyAt + 80);
-  assert.match(marked, /<p /, "the marker is not on a dedicated element");
+  const marked = canvasCode.slice(replyAt - 60, replyAt + 80);
+  assert.match(marked, /<div |<p /, "the marker is not on a dedicated element");
   assert.ok(
     !/className="canvas-swap[^"]*"\s*\{\.\.\.selectableRegion/.test(canvasCode),
     "the marker is on the wrapper that also holds the pills and buttons",
@@ -101,4 +106,35 @@ test("🔴 a document block still IS rewritable, so this took nothing away", () 
   assert.match(code(document_), /rewritable/, "the document block no longer claims to be rewritable");
   const withBlock = selectionActions("passage", true).map((option) => option.action);
   assert.ok(withBlock.includes("simpler"), "simpler is gone even where there is a block to rewrite");
+});
+
+// ── Inline citations, and the misattribution that was one line away ─────────
+
+test("🔴🔴🔴 an inline [n] resolves against the INDEX-ALIGNED list, never the cited one", () => {
+  // THE defect this change came closest to shipping, and it would have looked like a feature.
+  //
+  // `citedWebResults` returns the pages in ANSWER order: an answer citing [4] then [1] gives
+  // `[fourth, first]`. `AssistantMarkdown` resolves a marker by INDEX — `sources[n - 1]` — so
+  // handing it that list makes [4] open whichever page happened to be cited fourth, and drops [6]
+  // and [7] entirely. The owner's own screenshot shows markers [1] [4] [6] [7] against four pills,
+  // which is exactly the shape that misattributes.
+  //
+  // A citation that resolves to real text from the wrong place is the failure `knowledge-citation.ts`
+  // calls "the exact defect the whole two-locator design exists to make impossible".
+  //
+  // Calibration: pass `session.aside.sources` to the renderer and this reddens.
+  assert.match(canvasCode, /sources=\{session\.aside\.consulted\}/);
+  assert.ok(
+    !/sources=\{session\.aside\.sources\}/.test(canvasCode),
+    "inline citations resolve against the answer-ordered list and will attribute sentences to the wrong page",
+  );
+});
+
+test("🔴🔴 a searched answer still shows its pages when the model cited none", () => {
+  // Measured in a browser: "whats the latest news on ai?" returned an answer plainly built from
+  // live pages with not one [n] in it, so `citedWebResults` returned empty and the row vanished.
+  // The search ran and was paid for; a surface showing nothing claims the model knew it alone.
+  assert.match(canvasCode, /const replySources =/);
+  assert.match(canvasCode, /session\.aside\?\.sources\?\.length \? session\.aside\.sources : session\.aside\?\.consulted \?\? \[\]/);
+  assert.match(canvasCode, /\{replySources\.length > 0 && \(/);
 });

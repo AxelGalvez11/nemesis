@@ -132,7 +132,16 @@ type CanvasAside = {
    * inventing a second classification of it.
    */
   kind: "reply" | "opening";
+  /** Pages that earned a place: what the promote control and `learnFromAside` act on. */
   sources?: readonly ChatWebResult[];
+  /**
+   * Every page the search returned, in the order the model was numbered against.
+   *
+   * 🔴 `[n]` RESOLVES INTO THIS AND NEVER INTO `sources`, which is in ANSWER order — see
+   * `CanvasTurnReply`. It is also what the pill row falls back to when the model cited nothing, so
+   * a searched answer never presents itself as something the model simply knew.
+   */
+  consulted?: readonly ChatWebResult[];
   /** Why Nemesis is offering to teach this, when it has a reason worth saying out loud. A plain
    *  answer carries none and the offer stays a bare button. */
   offer?: TurnOffer;
@@ -825,7 +834,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!said) return null;
       setError(null);
       setBusy({ kind: "command", blockIds: [], label: "Thinking" });
-      const result = await askCanvasChat(id, latest.current, said, surroundings);
+      // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
+      // `thinking-phases.ts`'s rule holds: a caption is emitted by a step that is genuinely running,
+      // never by a timer walking through plausible-sounding stages.
+      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, () => {
+        setBusy({ kind: "command", blockIds: [], label: "Searching the web" });
+      });
       setBusy({ kind: null });
       const decision = result.decision;
       if (!decision) {
@@ -875,6 +889,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         kind: "reply",
         offer: decision.offer ?? undefined,
         question: said,
+        consulted: result.consulted,
         sources: result.sources,
         text: decision.say,
         topic: decision.topic ?? undefined,

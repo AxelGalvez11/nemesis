@@ -51,6 +51,7 @@ import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model
 import { endsPushToTalk, isTypingTarget, startsPushToTalk } from "@/lib/learn/canvas-hotkeys";
 import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
+import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
 
 import { composerControl } from "./canvas-progression";
@@ -152,7 +153,15 @@ interface CanvasComposerProps {
    * learn this"* button — a whole page to say what a chip says in a line, and a second control
    * where §15 allows exactly one.
    */
-  pendingSources?: readonly { readonly id: string; readonly title: string }[];
+  /**
+   * The material this canvas holds, as chips above the composer.
+   *
+   * 🔴🔴 `sourceUrl` IS NEW AND IT IS THE WHOLE FIX. Owner, twice: *"any sources still dont have the
+   * favicon thumbnail bubbles and are not clickable."* These chips took `{id, title}` and nothing
+   * else, so a web page Nemesis had gone and read was drawn with a FILE icon and no way to open it
+   * — the surface asserting that a page on the internet was an uploaded document.
+   */
+  pendingSources?: readonly { readonly id: string; readonly title: string; readonly sourceUrl?: string }[];
   /**
    * This canvas has not begun. Submitting starts it; `null` once it has.
    *
@@ -589,16 +598,43 @@ export function CanvasComposer({
             chips underneath it. `canStartFromAttachment` is the one question, asked once. */}
         {canStartFromAttachment && !listening && (
           <div className="mb-1.5 ml-1 flex flex-wrap items-center gap-1.5">
-            {pendingSources.map((source) => (
-              <span
-                className="flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2.5 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)"
-                key={source.id}
-                title={source.title}
-              >
-                <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
-                <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{source.title}</span>
-              </span>
-            ))}
+            {pendingSources.map((source) => {
+              // 🔴 THE HOST DECIDES THE CHIP, NOT A FLAG. `sourceUrl` is documented as absent for
+              // every file upload and present only for a page, so its presence IS the question
+              // "can this be opened?" — the same rule `lib/learn/source-pill.ts` states for the
+              // pills under a claim. One idea, spelled once.
+              const host = hostnameOf(source.sourceUrl);
+              const body = (
+                <>
+                  {host ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+                    <img alt="" className="shrink-0 rounded-full" height={14} src={faviconUrl(host)} width={14} />
+                  ) : (
+                    <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+                  )}
+                  <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                    {source.title}
+                  </span>
+                </>
+              );
+              const shell = "flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)";
+              return host && source.sourceUrl ? (
+                <a
+                  className={cn(shell, "no-underline transition-colors hover:bg-(--ui-bg-tertiary)")}
+                  href={source.sourceUrl}
+                  key={source.id}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                  title={source.title}
+                >
+                  {body}
+                </a>
+              ) : (
+                <span className={shell} key={source.id} title={source.title}>
+                  {body}
+                </span>
+              );
+            })}
           </div>
         )}
 

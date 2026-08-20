@@ -33,6 +33,7 @@ import {
   buildFreshSearchQuery,
   citedWebResults,
   shouldSearchWeb,
+  usableWebResults,
   type ChatWebResult,
 } from "@/lib/workspace/chat-web-search";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
@@ -63,8 +64,31 @@ export interface TurnSurroundings {
 
 export interface CanvasTurnReply {
   decision: TurnDecision | null;
-  /** Live web results actually used, in the order cited. Empty when no search ran. */
+  /**
+   * Live web results actually used, in the order CITED. Empty when no search ran.
+   *
+   * 🔴 ANSWER ORDER, WHICH IS WHY IT MUST NEVER BE USED TO RESOLVE AN `[n]` MARKER. `citedWebResults`
+   * walks the answer and pushes each first-seen result, so an answer citing [4] then [1] returns
+   * `[fourth, first]` — index 0 is the page the model called 4. This list answers "which pages
+   * earned a place in the canvas", which is what the promote control and `learnFromAside` need.
+   */
   sources: readonly ChatWebResult[];
+  /**
+   * Every result the search returned, in the order the MODEL was shown them.
+   *
+   * 🔴🔴 THIS EXISTS BECAUSE `[n]` IS AN INDEX INTO THIS LIST AND NOTHING ELSE. Resolving a marker
+   * against `sources` above would attribute a sentence to the wrong page — `[4]` would open
+   * whichever page happened to be cited fourth — and a citation that resolves to real text from the
+   * wrong place is the exact defect this repository's provenance rules exist to make impossible.
+   *
+   * 🔴 AND IT IS ALSO THE HONEST FALLBACK WHEN THE MODEL CITES NOTHING. Measured in a browser on
+   * 2026-08-20: "whats the latest news on ai?" returned an answer plainly built from live pages
+   * (a hack, an ECB warning, a phone launch) with NOT ONE `[n]` in it — so `citedWebResults`
+   * returned empty, and the learner saw an answer about this week's news with no indication that
+   * anything had been searched at all. The search ran, it was paid for, it shaped the answer; a
+   * surface that shows nothing is claiming the model knew this by itself.
+   */
+  consulted: readonly ChatWebResult[];
   error: string | null;
 }
 
@@ -81,10 +105,26 @@ export async function askCanvasChat(
   question: string,
   surroundings: TurnSurroundings,
   signal?: AbortSignal,
+  /**
+   * Called the moment this turn decides to buy a web search, so the surface can say so.
+   *
+   * 🔴🔴 THE SEARCH WAS INVISIBLE, AND THE OWNER NOTICED BEFORE ANY OF US: *"i believe its doing a
+   * websearch but there isnt any indication for that."* `converse` sets one label, "Thinking", for
+   * the whole turn — so a question that quietly went and read four pages looked exactly like one
+   * answered from the model's own head. That matters beyond politeness: a learner who cannot tell
+   * whether an answer came from the live web has no way to judge how much to trust it, and this
+   * product's whole evidence argument is that provenance is visible.
+   *
+   * 🔴 A CALLBACK RATHER THAN A RETURN FIELD, BECAUSE THE POINT IS THE TIMING. `sources` already
+   * comes back in the reply, but that arrives AFTER the search and the model call — several seconds
+   * too late to be the thing that says "searching". This fires before the request goes out.
+   */
+  onSearching?: () => void,
 ): Promise<CanvasTurnReply> {
   let webContext = "";
   let sources: ChatWebResult[] = [];
   if (shouldSearchWeb(question)) {
+    onSearching?.();
     const result = await searchWebContext(uid, buildFreshSearchQuery(question), signal);
     webContext = result.context;
     sources = result.sources;
@@ -117,13 +157,16 @@ export async function askCanvasChat(
     { decision: CHAT_DECISION, signal },
   );
 
-  if (reply.errorText) return { decision: null, error: reply.errorText, sources: [] };
+  if (reply.errorText) return { consulted: [], decision: null, error: reply.errorText, sources: [] };
   const decision = reply.text ? decisionOrReply(reply.text) : null;
   return {
     decision,
     error: null,
     // Only the pages the answer cited become promotion candidates. Search rank is retrieval
     // evidence, not permission to turn every hit into durable learning material.
+    // 🔴 THE SAME LIST THE MODEL WAS NUMBERED AGAINST. `formatWebSearchContext` numbers
+    // `usableWebResults(sources)`, so that is what an `[n]` counts into — not the raw results.
+    consulted: usableWebResults([...sources]),
     sources: decision?.say ? citedWebResults(decision.say, sources) : [],
   };
 }

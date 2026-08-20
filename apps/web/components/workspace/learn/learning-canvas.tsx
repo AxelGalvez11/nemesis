@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
+import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
@@ -787,6 +788,25 @@ export function LearningCanvas({
    * key that moved with them would fade the canvas out and back in while the learner was reading —
    * which is the flicker this exists to remove, arriving as the fix for it.
    */
+  /**
+   * A teaching screen exists and this reply is standing in front of it.
+   *
+   * 🔴 COMPUTED ONCE BECAUSE TWO PLACES READ IT AND THEY MUST NEVER DISAGREE. The reply decides
+   * which single control it offers from this, and the control itself is gated on it; written out
+   * twice — once negated — a future edit changes one and the learner gets either two pills or none.
+   * "None" is the dangerous half: the way back to a displaced lesson would simply not be drawn.
+   */
+/** The pages to show under a reply: what it CITED, or failing that what it READ.
+   *
+   * 🔴 CITED FIRST BECAUSE IT IS THE STRONGER CLAIM — these pages supported particular sentences.
+   * The fallback is weaker and still true: this answer was built from these. Never nothing, which
+   * is what a searched answer showed before and which presents live research as the model's own
+   * recall. Derived once so the row's condition and its contents cannot disagree. */
+  const replySources =
+    session.aside?.sources?.length ? session.aside.sources : session.aside?.consulted ?? [];
+
+    const lessonHeld = policyPresenting && !regions.policy;
+
   const surfaceKey = [
     presence,
     regions.policy ? screenKey(policy) : "-",
@@ -1092,13 +1112,55 @@ export function LearningCanvas({
                   no block behind a reply to rewrite. `selectionActions` already drops that option
                   when the region does not claim it, so the toolbar offers exactly the four that
                   work here. */}
-              <p {...selectableRegion("reply")}>{session.aside.text}</p>
+              {/* 🔴🔴 THE SAME RENDERER THE CHAT SURFACE USES, AND SUPPLYING `sources` IS THE WHOLE
+                  FIX. Owner, 2026-08-20: *"nemesis still doesnt have inline text source pills or
+                  bubbles with the favicon for thumbnail."* The answer came back with `[1]`, `[4]`,
+                  `[6]` sitting in the prose as literal characters, because this rendered
+                  `{session.aside.text}` as a raw string.
+
+                  `AssistantMarkdown`'s own documentation states the behaviour that was missing:
+                  supplying `sources` "turns the answer's [n] markers into inline source pills;
+                  omitting them leaves the text as-is". `citationsToMarkdown` rewrites each marker
+                  into a link and the renderer draws it as a favicon dot the height of the
+                  surrounding text. It has been built and tested on the chat surface since August;
+                  the Canvas simply never called it.
+
+                  🔴 THE CANVAS'S OWN TYPE WINS. `MARKDOWN_CONTAINER_CLASS_NAME` sets
+                  `--conversation-text-font-size`, which is the sessions surface's scale, not the
+                  16px/26px this canvas was measured to. The overrides below are last in the string
+                  so they take precedence, and the reading measure stays the canvas column's.
+
+                  🔴 THE SELECTABLE MARKER MOVES TO THE WRAPPER, WHICH IS STILL AN ELEMENT HOLDING
+                  ONLY THIS PROSE. Offsets are measured against the marked element; the pills, the
+                  offer line and the buttons are siblings of this div, not children of it. */}
+              <div {...selectableRegion("reply")}>
+                <AssistantMarkdown
+                  className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
+                  // 🔴🔴 `consulted`, NEVER `sources`. An `[n]` is an INDEX into the list the model
+                  // was numbered against; `sources` holds the same pages in ANSWER order, so an
+                  // answer citing [4] before [1] would open the wrong page for both and drop [6]
+                  // and [7] entirely. A citation resolving to real text from the wrong place is the
+                  // precise failure this repository's provenance rules exist to prevent.
+                  sources={session.aside.consulted}
+                  text={session.aside.text}
+                />
+              </div>
               {/* Which live pages the answer actually used, each individually promotable. This is
                   the "distinct" half of temporary-versus-durable: seeing it here is USING it for
                   one answer; pressing the small `+` is the separate, explicit act of keeping it. */}
-              {session.aside.sources && session.aside.sources.length > 0 && (
+              {/* 🔴🔴 THE PAGES THAT WERE READ, EVEN WHEN THE MODEL CITED NONE OF THEM. Measured in
+                  a browser 2026-08-20: "whats the latest news on ai?" produced an answer plainly
+                  built from live pages — a hack, an ECB warning, a phone launch — with not one `[n]`
+                  in it. `citedWebResults` therefore returned empty and the row vanished, so a
+                  searched answer presented itself as something the model simply knew. The search
+                  ran and was paid for; showing nothing is the dishonest option.
+
+                  🔴 CITED FIRST WHEN THERE IS ONE, because it is the stronger claim: these pages
+                  supported particular sentences. The fallback is the weaker and still-true one:
+                  these are the pages this answer was built from. */}
+              {replySources.length > 0 && (
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {session.aside.sources.map((source) => (
+                  {replySources.map((source) => (
                     <span
                       className="inline-flex items-center gap-1 rounded-full bg-(--ui-bg-elevated) py-1 pl-1.5 pr-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary)"
                       key={source.url}
@@ -1150,7 +1212,18 @@ export function LearningCanvas({
                   "Hello. What can I do for you?" came with a Learn this button that had nothing to
                   start. The model says whether the turn named something worth learning; a greeting
                   does not. See `topic` in lib/learn/turn-router.ts. */}
-              {session.aside.topic && (
+              {/* 🔴🔴 ONE CONTROL UNDER AN ANSWER, NEVER TWO. Owner, 2026-08-20: *"its showing
+                  'back to lesson' pill and 'learn this' which i didnt ask for these at all."* Both
+                  were individually justified and together they were clutter: two pills stacked
+                  under a two-line answer, offering to start a lesson AND to return to a different
+                  one, with no way to tell which was which.
+
+                  🔴 THE HELD LESSON WINS, BECAUSE ONLY ONE OF THEM IS AN EXIT. "Back to the lesson"
+                  is what makes a displaced teaching screen reachable at all — without it the lesson
+                  is gone for the session, which `no-screen-is-a-dead-end.test.ts` calls the
+                  product's worst failure. "Learn this" is an OFFER, and an offer can wait for a
+                  turn when nothing is already owed. */}
+              {!lessonHeld && session.aside.topic && (
                 <div className="mt-3">
                   {/* Only when Nemesis actually noticed something. A nudge on every reply is not a
                       nudge, it is nagging, and the learner stops seeing it. */}
@@ -1185,7 +1258,7 @@ export function LearningCanvas({
                   !regions.policy` is precisely "the policy has a screen and this reply is standing
                   in front of it" — on an ordinary conversational canvas with no lesson behind it
                   there is nothing to go back to, and a button offering to would be a dead control. */}
-              {policyPresenting && !regions.policy && (
+              {lessonHeld && (
                 <div className="mt-6">
                   <button
                     className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
@@ -1450,7 +1523,14 @@ export function LearningCanvas({
           onStart={beginOrAnswer}
           // Unconditional too — the composer shows the chips only while `intent.kind === "start"`,
           // which is the same question asked once instead of twice.
-          pendingSources={canvas.sources.map((source) => ({ id: source.id, title: source.title }))}
+          pendingSources={canvas.sources.map((source) => ({
+            id: source.id,
+            title: source.title,
+            // 🔴 SPREAD CONDITIONALLY, NOT PASSED AS `?? undefined`. An explicit `sourceUrl:
+            // undefined` and an absent key read the same to the component but not to a reader:
+            // absent means "this is not a link", which is the field's documented meaning.
+            ...(source.sourceUrl ? { sourceUrl: source.sourceUrl } : {}),
+          }))}
           selected={selected}
         />
       )}
