@@ -733,6 +733,18 @@ export function LearningCanvas({
   const working =
     busy.kind !== null || policy.phase !== null || policy.status === "loading" || policy.deciding;
 
+  /**
+   * The learner just sent something and Nemesis is making the answer to it.
+   *
+   * 🔴🔴 `busy` ONLY, AND DELIBERATELY NOT THE THREE POLICY FLAGS `working` ALSO CARRIES. `busy` is
+   * the SESSION's — it is set by `converse`, `command` and `attachFiles`, which is to say by things
+   * the learner just did. The policy flags cover knowledge resolution, which this session MEASURED
+   * running for minutes on a topic-only canvas; keying the thinking screen on those would take a
+   * lesson off the screen of someone reading it, for minutes, which is #690's blank screen with a
+   * drawing on top.
+   */
+  const turnInFlight = busy.kind !== null;
+
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
   // This line used to call `composeSurface` directly, and it did so WITHOUT `hasReadingMaterial`,
@@ -757,6 +769,7 @@ export function LearningCanvas({
     }),
     aside: asideOnScreen,
     policyPresenting,
+    turnInFlight,
     working,
   });
 
@@ -1015,7 +1028,7 @@ export function LearningCanvas({
             wanted to look something up would have to dismiss the question to do it. It sits above
             the reading and the reading continues beneath it — one continuous surface, which is why
             neither is in a panel, a modal or a column of its own. */}
-        {regions.policy && (
+        {regions.policy && presence !== "preparing" && (
           <CanvasPolicyView
             // 🔴 DISPATCHES `policy_continue` BEFORE ACKNOWLEDGING, NOT BECAUSE THIS CALL CHANGES
             // ANYTHING — `nextExplanationState` returns the state unchanged for this event — but
@@ -1045,7 +1058,7 @@ export function LearningCanvas({
             `replyOnScreen` computes — that is the point: `composeSurface` decides the RELATIONSHIP
             between this and the policy's screen (which of them yields, and to which), and reading
             the raw state here would be a second opinion free to disagree with the first. */}
-        {regions.reply && session.aside && (
+        {regions.reply && session.aside && presence !== "preparing" && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
             {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
                 and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
@@ -1190,7 +1203,7 @@ export function LearningCanvas({
             case, so what followed was an empty page with nothing running to explain it, on the
             first thing a student ever does. The trigger is now "there is no content to show",
             which is the question that was actually being asked. */}
-        {presence === "preparing" && <CanvasThinkingPreview label={preparingLabel} />}
+        {presence === "preparing" && <CanvasThinkingPreview label={preparingLabel} mascot={turnInFlight} />}
 
         {/* 🔴 A CANVAS WITH NOTHING TO PRESENT AND NOTHING RUNNING SAYS SO. This is the other half
             of the same defect, and it must NOT be a caption: `thinking-phases.ts` rules that a
@@ -1224,7 +1237,7 @@ export function LearningCanvas({
           <CanvasQuiet onRetry={() => window.location.assign(`/learn?c=${canvas.id}`)} />
         )}
 
-        {regions.document && (
+        {regions.document && presence !== "preparing" && (
           <>
 
         {["learn", "targeted_relearn"].includes(canvas.state) && (

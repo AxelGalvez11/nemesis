@@ -32,6 +32,8 @@
 // the lines stay, the sweep stops. Someone who asked the system to stop moving still has to be
 // able to see that the region is busy, so they hold their resting contrast rather than vanishing.
 
+import { Bloub } from "./bloub";
+
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
 const LINE_HEIGHT = "12px";
 
@@ -39,7 +41,60 @@ const LINE_HEIGHT = "12px";
  *  image; an uneven last line is what a paragraph of prose actually looks like from a distance. */
 const LINES: readonly string[] = ["100%", "92%", "64%"];
 
-export function CanvasThinkingPreview({ label = null }: { label?: string | null }) {
+export function CanvasThinkingPreview({
+  label = null,
+  mascot = false,
+}: {
+  label?: string | null;
+  /**
+   * The learner just sent something and is waiting for the answer to it.
+   *
+   * 🔴🔴 TWO WAITS, TWO SHAPES, AND THE §21 ARGUMENT ABOVE IS WHY BOTH EXIST RATHER THAN ONE
+   * REPLACING THE OTHER. The forming lines are set to the column, the position and the leading a
+   * QUESTION occupies, so the first question lands where the placeholder already was — "the
+   * structure resolves into the content rather than being swapped for it". That reasoning holds
+   * exactly where it was written: a canvas generating its first question.
+   *
+   * It does not hold for a conversational turn. What lands there is a paragraph of unknown length,
+   * so lines pretending to be its shape would be a guess, and the wait is usually seconds rather
+   * than a minute. What that moment needs is different: the learner's own words are never rendered,
+   * so this is the ONLY acknowledgement that their send happened at all.
+   *
+   * Owner's call, 2026-08-20, both halves: a mascot for the thinking state, and it replaces what
+   * was on screen rather than sitting under it.
+   */
+  mascot?: boolean;
+}) {
+  if (mascot) {
+    return (
+      <div
+        aria-live="polite"
+        // 🔴 `min-h-[70vh]`, NOT `min-h-full`. This renders inside `CanvasFade`, which is a plain
+        // `<div>` with no height of its own, so a percentage minimum has nothing to resolve
+        // against and collapses to the content — measured in a browser: the mascot sat at the very
+        // top of the column instead of the middle of the page. A viewport unit always resolves.
+        className="flex min-h-[70vh] flex-col items-center justify-center gap-6 px-6"
+        role="status"
+      >
+        {/* 🔴 DECORATIVE, DELIBERATELY. The label below is the accessible announcement; naming the
+            drawing as well would have a screen reader read the state twice.
+            🔴 `orbit`, NOT `thinking`, AND THAT IS A DELIBERATE DEPARTURE FROM THE OBVIOUS NAME.
+            Bloub's own `thinking` state is a three-dot pulse in which "la boule DEVIENT le point du
+            milieu" — the character dissolves INTO the indicator, which is elegant and is not what
+            was asked for ("a nice little minimalist mascot"). Rendered at this size it reads as an
+            ordinary typing indicator with no character in it at all; that is what the first browser
+            run showed. `orbit` keeps the ball and its eyes on screen with rings turning around it,
+            which says "working" while still being someone. One prop to change back. */}
+        <Bloub size={128} state="orbit" />
+        {label && (
+          <span className="canvas-phrase text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+            {label.replace(/…$/, "")}…
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       aria-live="polite"
