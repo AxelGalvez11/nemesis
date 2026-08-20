@@ -217,9 +217,12 @@ async function main() {
   const fadeTrace: number[] = [];
   const sampling = (async () => {
     for (let i = 0; i < 40; i += 1) {
+      // 🔴 NULL-SAFE. The wrapper is briefly absent while the canvas swaps regions, and
+      // `getComputedStyle(null)` throws rather than returning anything — which killed the run at the
+      // exact moment the thing being measured was happening.
       fadeTrace.push(await page.evaluate(() => {
-        const el = document.querySelector<HTMLElement>('[style*="opacity"]');
-        return el ? Number(getComputedStyle(el).opacity) : 1;
+        const el = document.querySelector('[style*="opacity"]');
+        return el instanceof HTMLElement ? Number(getComputedStyle(el).opacity) : 1;
       }));
       await page.waitForTimeout(40);
     }

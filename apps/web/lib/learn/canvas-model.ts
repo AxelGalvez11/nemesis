@@ -432,13 +432,38 @@ export interface CanvasAnswer {
  *  model made unreachable: an answer records which wrong option was picked, never the belief
  *  behind it, so "you think the 3 only multiplies the first term" was not expressible even in
  *  principle. */
-export type Verdict = "strong" | "understood" | "partial" | "incorrect" | "misconception";
+/**
+ * 🔴🔴 `not_an_attempt` IS NOT A GRADE, AND IT IS THE ONLY MEMBER THAT WRITES NO EVIDENCE.
+ *
+ * The product invariant is unchanged and still right: *"if Nemesis is visibly asking the learner a
+ * question, submitting through the primary composer is an answer to that question"*. Without it a
+ * real answer goes to `begin()` and is lost, which is the defect `composer-intent.ts` exists to
+ * prevent. But it made the composer a place where EVERY sentence is graded, so on 2026-08-19 the
+ * owner typed "what is on the news today?" while a question was up and Nemesis replied "Not quite.
+ * Here's the gap." and wrote a durable row: verdict `incorrect`, confidence 0.95, evidence
+ * `contradicted`, errorType `conceptual`. Asking about the news became proof he misunderstood
+ * sulfur bonding. Two more rows say "what?" — someone saying they did not follow — recorded the
+ * same way.
+ *
+ * 🔴 THE FIX IS NOT A CLASSIFIER IN FRONT OF THE COMPOSER. A rule like "ends with a question mark"
+ * is what #689 deleted, and it cannot separate "what is on the news today?" from "what is the
+ * structural feature for alcohol?" — the same shape, opposite meanings. The judge ALREADY reads the
+ * text and already had everything it needed to say "this is not an attempt". What it lacked was the
+ * vocabulary. This is that word.
+ *
+ * 🔴 IT IS DELIBERATELY THE ONLY WAY OUT, AND IT IS DOWNSTREAM. `composerIntent` stays pure and
+ * still says ANSWER; the submission still reaches the judge; a genuine attempt still cannot be
+ * misrouted to chat. All that changes is that the one component already reading the sentence may
+ * now decline to grade it.
+ */
+export type Verdict = "strong" | "understood" | "partial" | "incorrect" | "misconception" | "not_an_attempt";
 
 export const VERDICTS: readonly Verdict[] = [
   "strong",
   "understood",
   "partial",
   "incorrect",
+  "not_an_attempt",
   "misconception",
 ];
 

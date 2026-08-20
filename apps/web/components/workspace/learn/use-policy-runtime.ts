@@ -87,6 +87,8 @@ export interface PolicyRuntime {
    *  still computed and still reported (`ownership`), it just no longer decides whether a question
    *  may appear. See docs/canvas-task-hosting.md §1. */
   status: "loading" | "ready" | "unavailable";
+  /** A teaching controller is running right now — see the state's own note. */
+  deciding: boolean;
   /**
    * What the policy is contributing right now, or null when it has nothing to ask.
    *
@@ -410,6 +412,15 @@ export function usePolicyRuntime(
    * would put a classifier in front of the model, which is the thing #689 removed.
    */
   opening: string | null = null,
+  /**
+   * The judge decided a submission was not an attempt at the question — hand the text back so the
+   * canvas can answer it as conversation.
+   *
+   * 🔴 A CALLBACK RATHER THAN THIS HOOK CALLING `converse` ITSELF. The policy runtime owns the
+   * teaching loop and knows nothing about the conversational lane; giving it one would be a second
+   * route into `askCanvasChat` and a second place that decides what a turn means.
+   */
+  notAnAttempt: ((said: string) => void) | null = null,
 ): PolicyRuntime {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
@@ -741,13 +752,33 @@ export function usePolicyRuntime(
   );
 
   const [decided, setDecided] = useState<{ inputs: string; outcome: StrategyOutcome } | null>(null);
+  /**
+   * A teaching controller is running right now.
+   *
+   * 🔴🔴 THE GAP BETWEEN TWO QUESTIONS HAD NO NAME, SO THE CANVAS CALLED IT "NOTHING TO ASK".
+   * Reported by the owner, 2026-08-19: "Nemesis hasn't found anything to ask you about yet" showing
+   * BETWEEN questions. `canvasPresentation` falls through to `quiet` when nothing else is true, and
+   * `working` was `busy.kind !== null || policy.phase !== null || policy.status === "loading"` —
+   * none of which holds while the controller is deciding the next move. `status` is already `ready`
+   * (knowledge loaded), no phase is named (choosing a move narrates nothing), and `busy` belongs to
+   * the session rather than the policy. So progress rendered as a dead end, complete with a "Try
+   * again" button for something that was working.
+   *
+   * 🔴 A FLAG ON THE ACTUAL CALL, NOT A TIMER AND NOT `decision === null`. `decision` is also null
+   * when the controller has genuinely finished and chosen nothing, which is the real `quiet` and
+   * must stay reachable — that state is the one #690's note is about. This says the narrower thing:
+   * a request is in flight.
+   */
+  const [deciding, setDeciding] = useState(false);
 
   useEffect(() => {
     if (status !== "ready") {
       setDecided(null);
+      setDeciding(false);
       return;
     }
     let live = true;
+    setDeciding(true);
     // 🔴 BOTH ARMS GO THROUGH THIS EFFECT, INCLUDING THE ONE THAT CANNOT BLOCK. Running
     // `nemesis_policy` synchronously in a memo and `llm_teacher` here would put the two controllers
     // at different points in the React lifecycle — settling in different frames, against different
@@ -792,6 +823,7 @@ export function usePolicyRuntime(
         canvasCapture("canvas_strategy_refused", canvas, { reason: "model-unreachable", strategy });
         labTrace("controller", `${strategy} could not be reached`, () => ({ refusal: "model-unreachable", strategy }));
         setDecided({ inputs: decisionInputs, outcome: { decision: null, refusal: "model-unreachable", strategy } });
+        setDeciding(false);
         return;
       }
       if (!live) return;
@@ -870,10 +902,17 @@ export function usePolicyRuntime(
         canvasCapture("canvas_strategy_refused", canvas, { reason: outcome.refusal, strategy });
       }
       setDecided({ inputs: decisionInputs, outcome });
+      setDeciding(false);
     })();
     return () => {
       live = false;
       abort.abort();
+      // 🔴 CLEARED ON TEARDOWN TOO, OR A STUCK `true` IS WORSE THAN THE BUG IT FIXES. Every `if
+      // (!live) return` inside the async body above leaves without clearing it — that is correct,
+      // because a superseded run must not touch state a newer one owns — so the only place that can
+      // honestly end this run's claim is its own cleanup. Without this, an aborted decision leaves
+      // the canvas reporting "preparing" for ever: a spinner where there used to be a wrong answer.
+      setDeciding(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decisionInputs, status]);
@@ -1313,6 +1352,40 @@ export function usePolicyRuntime(
       }
 
       const evaluation = result.value;
+
+      // 🔴🔴 THE JUDGE DECLINED TO GRADE THIS, SO NOTHING IS GRADED AND NOTHING IS RECORDED.
+      //
+      // Reported by the owner, 2026-08-19: with a question on screen he typed "what is on the news
+      // today?" and Nemesis answered "Not quite. Here's the gap." and wrote a durable row —
+      // `incorrect`, confidence 0.95, evidence `contradicted`, errorType `conceptual`. Asking about
+      // the news became proof he misunderstood sulfur bonding. Two older rows say "what?" — someone
+      // saying they did not follow — filed the same way.
+      //
+      // 🔴 THE INVARIANT IS NOT WEAKENED. `composerIntent` still says ANSWER, still outranks
+      // everything, and is untouched; a real attempt still cannot be misrouted to chat. The one
+      // component that already reads the sentence has simply been given a way to say "this was not
+      // aimed at the question", and that is the ONLY way out. See `Verdict.not_an_attempt`.
+      //
+      // 🔴 NO ROW, NOT EVEN AN EMPTY ONE. `unanswered` exists for "we asked and learned nothing" and
+      // is the wrong shape here: the learner was never asked about what they typed, so there is no
+      // opportunity to record. Absence of a question is not absence of an answer.
+      if (evaluation.verdict === "not_an_attempt") {
+        labTrace("judge", "not an attempt: routed to conversation, nothing recorded", () => ({
+          answer: said,
+          objective: decision.objective.identityKey,
+          question: active.prompt,
+        }));
+        canvasCapture("canvas_submission_not_an_attempt", canvas, {
+          objective: decision.objective.identityKey,
+        });
+        setJudging(false);
+        // 🔴 THE QUESTION STAYS ON SCREEN. They did not answer it and they did not dismiss it; the
+        // canvas has no business moving on, and coming back to find it gone would be the product
+        // deciding their aside was a surrender.
+        notAnAttempt?.(said);
+        return;
+      }
+
       labTrace(
         "judge",
         `${evaluation.verdict} on "${decision.objective.identityKey}"`,
@@ -1373,7 +1446,11 @@ export function usePolicyRuntime(
           // 🔴 `judged(...)` RATHER THAN A BARE ARRAY — RUNTIME-006. Reaching this line is itself
           // the claim that we have an account of the performance. The unreachable-judge case is
           // `noJudgement()` and writes nothing; it is handled above, before anything is built.
-          judgement: judgementOf([outcomeFor(decision.objective, evaluation)]),
+          // 🔴 `.filter(Boolean)` RATHER THAN `!`. `outcomeFor` returns null only for
+          // `not_an_attempt`, which returned above — but an assertion here would be a promise about
+          // a branch in another file, and the next verdict that declines to produce an outcome would
+          // land as a runtime null inside the durable write rather than as a compile error.
+          judgement: judgementOf([outcomeFor(decision.objective, evaluation)].filter((o) => o !== null)),
           // 🔴🔴 THIS IS WHERE QUESTION-BEFORE-OPTIONS BECOMES HONEST RATHER THAN COSMETIC. A learner
           // who typed the answer with nothing on screen but the question PRODUCED it, and the row has
           // to say so — otherwise the strongest performance the surface can elicit is filed as the
@@ -1391,7 +1468,7 @@ export function usePolicyRuntime(
         }),
       );
     },
-    [admitNothing, canvas, choicesRevealed, decision, decidedStrategy, judging, prompt, record, uid],
+    [admitNothing, canvas, choicesRevealed, decision, decidedStrategy, judging, notAnAttempt, prompt, record, uid],
   );
 
   /**
@@ -1710,6 +1787,7 @@ export function usePolicyRuntime(
     submit,
     task,
     territories,
+    deciding,
     thinking,
   };
 }

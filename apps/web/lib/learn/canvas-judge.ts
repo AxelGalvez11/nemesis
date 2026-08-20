@@ -249,4 +249,8 @@ export const VERDICT_HEADLINE: Record<Verdict, string> = {
   partial: "You have part of this.",
   incorrect: "Not quite. Here's the gap.",
   misconception: "There's a specific thing to untangle here.",
+  // 🔴 PRESENT SO THE MAP IS TOTAL, NOT BECAUSE A LEARNER SHOULD EVER READ IT. `not_an_attempt` is
+  // routed to conversation before any verdict screen renders; if this string is ever on screen, the
+  // routing has failed and the wording should say something true rather than grade them.
+  not_an_attempt: "Nemesis did not read that as an answer.",
 };

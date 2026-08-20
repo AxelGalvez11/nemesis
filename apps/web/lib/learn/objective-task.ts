@@ -1093,7 +1093,19 @@ function rowForTarget(input: {
 export function outcomeFor(
   objective: { identityKey: string },
   evaluation: ResponseEvaluation,
-): SubmissionOutcome {
+): SubmissionOutcome | null {
+  // 🔴🔴 A NON-ATTEMPT PRODUCES NO OUTCOME AT ALL, AND THE RETURN TYPE SAYS SO. `not_an_attempt` is
+  // the judge declining to grade a sentence that was not aimed at the question — see `Verdict`. It
+  // is not a sixth grade and it must never reach `EvidenceVerdict`, because the durable record has
+  // no way to express "this was not an answer" and would have to store it as one.
+  //
+  // 🔴 `null` RATHER THAN A ZERO-CONFIDENCE ROW. A row saying "we asked and learned nothing" is a
+  // real thing this codebase already writes — `unanswered` below is exactly that — and it is the
+  // WRONG thing here: the learner was never asked what they typed about, so there is no
+  // opportunity to record as having produced nothing. Absence of a question is not absence of an
+  // answer.
+  if (evaluation.verdict === "not_an_attempt") return null;
+
   return {
     confidence: evaluation.confidence,
     // 🔴 `?? null` RATHER THAN OMITTED, SO "THE JUDGE NAMED NONE" IS CARRIED RATHER THAN LOST. This

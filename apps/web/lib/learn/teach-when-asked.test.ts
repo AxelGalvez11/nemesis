@@ -93,14 +93,23 @@ test("🔴🔴 the instruction is scoped, and does not say 'always teach first'"
   // unconditional "open by teaching" would erode exactly that, and would also teach someone who
   // asked to be TESTED. The rule has to name all three limits or it is a different rule.
   const source = readFileSync(new URL("./strategy-llm-teacher.ts", import.meta.url), "utf8");
-  const start = source.indexOf("If the learner opened this sitting by asking to be TAUGHT");
-  assert.ok(start > 0, "the teach-when-asked instruction is not in the system prompt");
+  const start = source.indexOf("SHOW SOMETHING BEFORE YOU TEST IT");
+  assert.ok(start > 0, "the show-before-testing instruction is not in the system prompt");
   // The prompt is an array of string literals, so the sentence is split across elements; flatten the
   // quoting away before reading it rather than trying to match across it.
   const rule = source.slice(start, start + 900).replace(/",?\n\s*"/g, " ").replace(/\s+/g, " ");
-  assert.match(rule, /produced no evidence on it yet/, "it does not require the absence of evidence");
-  assert.match(rule, /asked to be tested or drilled/, "it does not exempt a request to be tested");
-  assert.match(rule, /attached material without saying/, "it does not exempt a canvas begun from a file");
+  // 🔴 BROADENED 2026-08-19, ON THE OWNER'S SECOND REPORT: "why is it asking me retrieval questions
+  // from the get go? thats not how chatgpt or other ai will teach users." The rule used to require
+  // that they had ASKED to be taught, which meant it only ever fired in the session where the words
+  // were typed — reopening the canvas dropped it and the quizzing came straight back. What survives
+  // is the part that matters: it is bounded by evidence, and an explicit request to be tested wins.
+  assert.match(rule, /no evidence at all for an objective/, "it does not require the absence of evidence");
+  assert.match(rule, /Once they have produced ANYTHING/, "it does not stop once the learner has produced something");
+  assert.match(rule, /asked to be tested, quizzed or drilled/, "it does not exempt a request to be tested");
+  // 🔴 AND IT STILL DOES NOT CLAIM THE LEARNER IS IGNORANT, which is the invariant it sits beside:
+  // "unknown means Nemesis lacks evidence, not that the learner lacks knowledge". Showing material
+  // before asking about it asserts nothing about them; only what they produce is evidence.
+  assert.match(rule, /not a claim that they do not know it/, "it no longer distinguishes teaching from assuming ignorance");
 });
 
 test("🔴 the runtime actually passes it — the field is not decorative", () => {
@@ -112,7 +121,7 @@ test("🔴 the runtime actually passes it — the field is not decorative", () =
   const runtime = readFileSync(new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url), "utf8");
 
   assert.match(session, /setOpening\(said\);/, "the session never records what was said");
-  assert.match(canvas, /usePolicyRuntime\(canvas, policyOverride, strategyOverride, session\.opening\)/,
+  assert.match(canvas, /usePolicyRuntime\(canvas, policyOverride, strategyOverride, session\.opening, notAnAttempt\)/,
     "the canvas does not hand the opening to the runtime");
   assert.match(runtime, /^\s+opening,$/m, "the runtime does not put the opening on the teaching context");
 });

@@ -301,7 +301,7 @@ async function main(): Promise<void> {
       const outagePrompt = retrievalPromptFor({ knowledge: zeroOrder, objective }, randomUUID());
       const outageRows = evidenceForSubmission({
         canvasId: null,
-        judgement: outage.value ? judgementOf([outcomeFor(objective, outage.value)]) : noJudgement(),
+        judgement: outage.value ? judgementOf([outcomeFor(objective, outage.value)!]) : noJudgement(),
         occurredAt: new Date().toISOString(),
         prompt: outagePrompt,
         responseText: paraphrase,
@@ -333,7 +333,7 @@ async function main(): Promise<void> {
       const unauthorisedPrompt = retrievalPromptFor({ knowledge: zeroOrder, objective }, randomUUID());
       const unauthorisedRows = evidenceForSubmission({
         canvasId: null,
-        judgement: unauthorised.value ? judgementOf([outcomeFor(objective, unauthorised.value)]) : noJudgement(),
+        judgement: unauthorised.value ? judgementOf([outcomeFor(objective, unauthorised.value)!]) : noJudgement(),
         occurredAt: new Date().toISOString(),
         prompt: unauthorisedPrompt,
         responseText: paraphrase,
@@ -566,7 +566,7 @@ async function main(): Promise<void> {
   if (judged.value) {
     const rows = evidenceForSubmission({
       canvasId: null,
-      judgement: judgementOf([outcomeFor(target.objective, judged.value)]),
+      judgement: judgementOf([outcomeFor(target.objective, judged.value)!]),
       occurredAt: now.toISOString(),
       prompt: wrongPrompt,
       responseText: wrongAnswer,
@@ -701,7 +701,7 @@ async function main(): Promise<void> {
       if (answered.value) {
         for (const row of evidenceForSubmission({
           canvasId: null,
-          judgement: judgementOf([outcomeFor(entry.objective, answered.value)]),
+          judgement: judgementOf([outcomeFor(entry.objective, answered.value)!]),
           occurredAt: new Date().toISOString(),
           prompt: turnPrompt,
           responseText: String(entry.objective.answer),
