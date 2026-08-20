@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { canvasPresentation } from "./canvas-presence";
@@ -84,9 +84,15 @@ test("🔴 the mascot is for a turn, and the forming lines are kept for the othe
   // where it was written and nowhere else. Deleting them to make room for the mascot would throw
   // away a measured design for a case it is still right about.
   assert.match(previewCode, /if \(mascot\) \{/);
-  assert.match(previewCode, /<Bloub /);
   assert.match(previewCode, /canvas-forming/, "the forming lines were deleted rather than kept");
   assert.match(canvasCode, /mascot=\{turnInFlight\}/);
+  // 🔴 REPOINTED 2026-08-20. This pinned `<Bloub ` INSIDE this component, and went red when the
+  // character moved to `BloubDock` — which was a fix, not a regression: two mounts of one renderer
+  // were putting two sets of three dots on the same screen. The property was never "this file draws
+  // the mascot", it is "a turn in flight shows the mascot somewhere, and the forming lines survive
+  // for the other wait". So this asserts the branch exists and the dock owns the drawing.
+  assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again, which is the two-mounts defect");
+  assert.match(previewCode, /role="status"/, "the mascot branch no longer announces itself as busy");
 });
 
 // ── The composer travels to where it is about to be ─────────────────────────
@@ -128,6 +134,13 @@ test("🔴🔴 bloub's MIT licence travels with the code that needs it", () => {
   const licence = readFileSync(new URL("../../../lib/bloub/LICENSE", import.meta.url), "utf8");
   assert.match(licence, /MIT License/);
   assert.match(licence, /Jérémy Perret/);
-  const renderer = readFileSync(new URL("./bloub.tsx", import.meta.url), "utf8");
-  assert.match(renderer, /MIT/, "the renderer does not say where the engine came from");
+  // 🔴 REPOINTED 2026-08-20: the renderer moved from `learn/bloub.tsx` to `components/bloub/`, and
+  // this test went red pointing at a file that no longer exists rather than at a missing notice.
+  // Derived from whoever actually imports the engine, so the next move cannot break it either —
+  // and so the check keeps meaning "the code using this says where it came from" rather than "this
+  // one path still exists".
+  const users = readdirSync(new URL("../../bloub/", import.meta.url)).filter((f) => f.endsWith(".tsx"));
+  assert.ok(users.length > 0, "nothing renders the vendored engine any more");
+  const attributed = users.some((f) => /MIT/.test(readFileSync(new URL(`../../bloub/${f}`, import.meta.url), "utf8")));
+  assert.ok(attributed, `none of ${users.join(", ")} says where the engine came from`);
 });

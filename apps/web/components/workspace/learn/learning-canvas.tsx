@@ -27,7 +27,6 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 import { projectAll } from "@/lib/learn/learner-evidence";
 import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
 import type { TurnSurroundings } from "./canvas-chat";
-import { offerLine } from "./offer-copy";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
