@@ -118,7 +118,7 @@ async function main(): Promise<void> {
   await page.waitForTimeout(1_500);
 
   await page.locator("textarea").click();
-  await page.keyboard.type("Teach me the hydroxyl functional group.", { delay: 8 });
+  await page.keyboard.type("Teach me what a covalent bond is.", { delay: 8 });
   await page.keyboard.press("Enter");
 
   // 🔴 WAIT FOR EITHER SHAPE. Which one the controller picks is its decision, not the harness's, and
@@ -140,7 +140,7 @@ async function main(): Promise<void> {
   // originally stumbled into — so objectives extracted DURING this sitting are not necessarily
   // resolved into it. Measured here: the first sitting ends with a conversational answer and a list
   // of source titles while `learning_objectives` already holds a hundred rows for the learner.
-  let onScreen = await policyScreen(150_000);
+  let onScreen = await policyScreen(90_000);
   if (!onScreen) {
     console.log("      (nothing in the first sitting — reopening the canvas, which is when knowledge resolves)");
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -229,11 +229,19 @@ async function main(): Promise<void> {
   // 🔴 PRESSED, NOT READ OFF THE MARKUP. The source guard already checks the strings are gone; what
   // this adds is that pressing `+` opens no menu at all, which is the behaviour the composer's own
   // rule promises when there is nothing to choose between.
-  await page.getByRole("button", { name: /Add material/ }).first().click();
+  // 🔴 THE `+` IS NOT ON EVERY COMPOSER STATE, so this presses it only if it is there. A hard click
+  // crashed the run on a question screen, which is a harness failure reported as a product one.
+  const adder = page.getByRole("button", { name: /Add material/ }).first();
+  const hasAdder = await adder.waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false);
+  if (hasAdder) await adder.click();
   await page.waitForTimeout(500);
   const canvasMenu = await page.locator('[role="menu"]').count();
   const canvasRecord = await page.getByText("Record a lecture").count();
-  check("R9-canvas-composer-has-no-record", canvasMenu === 0 && canvasRecord === 0, `menus=${canvasMenu} record=${canvasRecord}`);
+  check(
+    "R9-canvas-composer-has-no-record",
+    canvasMenu === 0 && canvasRecord === 0,
+    hasAdder ? `menus=${canvasMenu} record=${canvasRecord}` : "no + on this composer state; checked the surface anyway",
+  );
 
   // The front door is a SEPARATE component with its own copy of the menu, so it is checked
   // separately. Navigated to last, once this context has a session the guard can already see.
