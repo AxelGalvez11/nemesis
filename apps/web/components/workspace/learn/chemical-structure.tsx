@@ -152,9 +152,15 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           What it needs first is a stable way to name the group being hidden, which SMILES atom
           indices give and the library does not currently expose on the emitted nodes. Recorded so
           the next person starts from the actual obstacle rather than from the idea. */}
+      {/* 🔴 BOUNDED IN HEIGHT, MEASURED 2026-08-20. `h-auto w-full` lets the drawer's viewBox decide
+          the aspect, and a SMALL molecule has a nearly square one — so `CCO` painted a 650px-tall
+          frame for three atoms, pushing the sentence after it off the screen. The width is what
+          should be shared with the column; the height is the molecule's business and needs a
+          ceiling. `max-h` with `object-contain` keeps the geometry exact and simply stops it
+          filling the page. */}
       <svg
         aria-label={visual.learningGoal}
-        className="h-auto w-full"
+        className="mx-auto h-auto max-h-[240px] w-full object-contain"
         ref={target}
         role="img"
         style={{ display: failure ? "none" : "block" }}

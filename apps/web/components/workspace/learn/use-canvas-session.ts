@@ -455,7 +455,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
           const source: CanvasSource = {
             id: sourceId,
-            title: extracted.title ?? file.name,
+            // 🔴🔴 AN IMAGE IS TITLED BY ITS FILE, NOT BY WHAT A MODEL SAW IN IT. Reported
+            // 2026-08-20 as "nemesis does not accept any images" — and it accepts them perfectly.
+            // What the learner saw was a chip reading "[An illustration of three solid black
+            // horizontal bars of varying lengths stacked vertically against a light gray
+            // background." Their photo, described back at them in brackets, truncated. That reads
+            // as a failure, and it is the same shape as the drawing that was sent back to be
+            // proofread: the product answering a picture with prose about the picture.
+            //
+            // 🔴 THE DESCRIPTION IS NOT DISCARDED — it is the source's CONTENT, which is exactly
+            // what a vision read produces and what the canvas learns from. Only the NAME changes,
+            // to the one the learner recognises.
+            title: extracted.kind === "image" ? file.name : extracted.title ?? file.name,
             kind: extracted.kind ?? "text",
             // Three inputs, in order of how much is known about them, and the fallbacks are
             // fallbacks rather than dead code: an image has no structural pass at all, and a PDF

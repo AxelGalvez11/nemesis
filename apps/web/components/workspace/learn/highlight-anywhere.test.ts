@@ -43,8 +43,13 @@ test("🔴🔴 the conversational reply is a selectable region", () => {
   // and went red when the reply started rendering through `AssistantMarkdown`, so its `[n]` markers
   // could become inline favicon pills. The element changed; the property did not. What matters is
   // that the reply carries a marker and that the marker is on a wrapper holding only this prose.
-  assert.match(canvasCode, /\{\.\.\.selectableRegion\("reply"\)\}/);
-  assert.match(canvasCode, /<AssistantMarkdown[\s\S]{0,900}?text=\{session\.aside\.text\}/, "the reply no longer renders its own text");
+  // 🔴 REPOINTED 2026-08-20 (again). This pinned the literal id, and a reply is no longer ONE prose
+  // run: it splits around any drawing the model asked for, and each run needs its own region because
+  // offsets are measured per marked element. The property is that the reply's prose is markable and
+  // that the first run keeps the id other lanes probe by.
+  assert.match(canvasCode, /selectableRegion\(index === 0 \? "reply" : `reply-\$\{index\}`\)/);
+  assert.match(canvasCode, /<AssistantMarkdown[\s\S]{0,600}?text=\{segment\.text\}/, "the reply no longer renders its own text");
+  assert.match(canvasCode, /replySegments\(replyText\)/, "the reply is no longer split into prose and drawings");
 });
 
 test("🔴🔴 the claim being taught is too, both of its lines", () => {
@@ -67,7 +72,7 @@ test("🔴🔴 the marker goes on the element holding ONLY that text", () => {
   // pills, the offer line and two buttons, so marking the wrapper would make every selection in it
   // fail the integrity check — the feature would look exactly as broken as before, with a guard
   // saying it was fixed.
-  const replyAt = canvasCode.indexOf('selectableRegion("reply")');
+  const replyAt = canvasCode.indexOf('selectableRegion(index === 0 ? "reply"');
   assert.notEqual(replyAt, -1, "the reply is no longer marked");
   const marked = canvasCode.slice(replyAt - 60, replyAt + 80);
   assert.match(marked, /<div |<p /, "the marker is not on a dedicated element");
@@ -75,6 +80,11 @@ test("🔴🔴 the marker goes on the element holding ONLY that text", () => {
     !/className="canvas-swap[^"]*"\s*\{\.\.\.selectableRegion/.test(canvasCode),
     "the marker is on the wrapper that also holds the pills and buttons",
   );
+  // 🔴🔴 AND NOT AROUND A DRAWING EITHER. One marker wrapping prose AND an `<svg>` would fail
+  // `readCanvasSelection`'s integrity check on every selection inside it — the measured text would
+  // not match what the browser reports selected, and the toolbar would silently never appear. The
+  // split puts each prose run in its own marked div and the visual outside all of them.
+  assert.match(canvasCode, /segment\.kind === "visual" \? \(\s*<SemanticVisual/);
 });
 
 // ── What the toolbar may offer where there is nothing to rewrite ─────────────
@@ -92,7 +102,7 @@ test("🔴🔴 'Simpler' is NOT offered on a region with no block behind it", ()
     assert.ok(!offered.includes("simpler"), `${shape} still offers simpler when nothing is rewritable`);
     assert.ok(offered.length > 0, `${shape} offers nothing at all`);
   }
-  for (const site of ['selectableRegion("reply")', 'selectableRegion("claim-heading")', 'selectableRegion("claim-body")', 'selectableRegion("question")']) {
+  for (const site of ['selectableRegion(index === 0 ? "reply"', 'selectableRegion("claim-heading")', 'selectableRegion("claim-body")', 'selectableRegion("question")']) {
     const source = canvasCode.includes(site) ? canvasCode : policyCode;
     const at = source.indexOf(site);
     assert.notEqual(at, -1, `${site} is gone`);
@@ -123,9 +133,12 @@ test("🔴🔴🔴 an inline [n] resolves against the INDEX-ALIGNED list, never 
   // calls "the exact defect the whole two-locator design exists to make impossible".
   //
   // Calibration: pass `session.aside.sources` to the renderer and this reddens.
-  assert.match(canvasCode, /sources=\{session\.aside\.consulted\}/);
+  // 🔴 THE HOISTED VALUE, because a `.map` callback cannot carry the non-null narrowing and a `!`
+  // here would assert exactly the thing that has gone wrong on this surface before.
+  assert.match(canvasCode, /const replyConsulted = session\.aside\?\.blockId === null \? session\.aside\.consulted : undefined;/);
+  assert.match(canvasCode, /sources=\{replyConsulted\}/);
   assert.ok(
-    !/sources=\{session\.aside\.sources\}/.test(canvasCode),
+    !/sources=\{replySources\}|sources=\{session\.aside\.sources\}/.test(canvasCode),
     "inline citations resolve against the answer-ordered list and will attribute sentences to the wrong page",
   );
 });
