@@ -1,6 +1,6 @@
-import Image from "next/image";
 import type { ReactNode } from "react";
 import { landingUrl } from "@/lib/env";
+import { NemesisMark } from "./nemesis-mark";
 
 interface AuthFrameProps {
   /** Small uppercase label above the title. Omitted on pass-through pages, where
@@ -30,7 +30,7 @@ export function AuthFrame({ eyebrow, title, description, children, footer, minim
   return (
     <main className="nemesis-auth-shell">
       <a className="nemesis-auth-brand" href={landingUrl} aria-label="Nemesis home">
-        <Image src="/nemesis/logo.png" alt="" width={30} height={30} priority />
+        <NemesisMark size={30} />
         <span>NEMESIS</span>
       </a>
 
@@ -62,7 +62,7 @@ export function AuthFrame({ eyebrow, title, description, children, footer, minim
           <div className={minimal ? "nemesis-auth-card-in is-minimal" : "nemesis-auth-card-in"}>
             {minimal ? null : (
               <div className="nemesis-auth-mark" aria-hidden="true">
-                <Image src="/nemesis/logo.png" alt="" width={22} height={22} priority />
+                <NemesisMark size={22} />
               </div>
             )}
             {eyebrow ? <p className="nemesis-auth-eyebrow">{eyebrow}</p> : null}
