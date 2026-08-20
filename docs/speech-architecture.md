@@ -43,6 +43,41 @@ plus locales with a queryable list. That is the whole reason it is here.
 So: **two providers, two jobs, one router.** `speech-route.ts` sends a `target_language` moment to
 Azure and everything else to xAI.
 
+## Asking which variety
+
+When a learner says "teach me Spanish", Nemesis does not pick a Spanish.
+
+1. The knowledge prompt returns `{"needsVariety":"es"}` instead of pairs. The model reports the
+   language and stops — it cannot know which varieties the synthesiser has, and a model guessing at
+   that is how a learner gets offered an accent nobody can produce.
+2. `varietiesFor(catalogue, "es")` answers from the **live Azure catalogue**: `es-ES`, `es-MX`, and
+   whatever else Azure ships. Never a checked-in list — that would drift the first time Azure adds a
+   voice, and it would be a list somebody wrote from memory.
+3. `varietyChoiceExists` decides whether to ask at all. One variety is not a question.
+4. `regionClarificationRule` hands the model the real options and asks it to put the question **in
+   its own words**. There is no scripted sentence anywhere for it to recite, and a test asserts none
+   appears — a dropdown labelled Region turns the first moment of a language course into data entry.
+5. The model may not add to the list. Left to itself it will offer Andalusian Spanish or Quebec
+   French, because those are real things people say; a variety Azure cannot pronounce is a promise
+   broken in the first lesson.
+
+The learner's answer lands in the same field a document would have filled: the language tag on the
+side of a pair that is written in that language.
+
+## Hearing a phrase again
+
+`HearAgain` puts a play button on the phrase that is IN the language being learned. It is the
+primitive a drill actually needs — the same words, as many times as the learner wants, at natural
+pace.
+
+🔴 **It is not gated on voice mode, deliberately.** Voice mode means "do not narrate my questions".
+It does not mean "never let me hear how this word sounds". A foreign phrase is not a second channel
+for text that could be read instead — it is the material.
+
+🔴 **The side is looked up, never guessed.** `replayableLocale` matches the phrase against the
+recorded locale on the pair. No script detection: Spanish and English share an alphabet, so
+inferring "this looks foreign" would be wrong on exactly the language pair most learners study.
+
 ## Security
 
 - `AZURE_SPEECH_KEY` is read in exactly one file: `apps/web/lib/speech/azure/config.ts`. A test

@@ -210,3 +210,50 @@ export function supportedLocales(catalogue: readonly AzureVoice[]): readonly { l
     .map(([locale, value]) => ({ locale, ...value }))
     .sort((a, b) => a.locale.localeCompare(b.locale, "en"));
 }
+
+
+/** One variety a language is actually spoken in, as far as the synthesiser is concerned. */
+export interface LanguageVariety {
+  /** BCP-47 with a region, e.g. `es-MX`. */
+  readonly locale: string;
+  /** Azure's own English name for it, e.g. "Spanish (Mexico)". */
+  readonly localeName: string;
+  /** How many neural voices exist for it. A variety with more voices has more to choose from later. */
+  readonly voices: number;
+}
+
+/**
+ * Which varieties of one language can actually be spoken (§47).
+ *
+ * 🔴 THIS EXISTS SO NEMESIS NEVER OFFERS A CHOICE IT CANNOT HONOUR. Asking a learner "Mexican or
+ * Argentinian?" and then having no Argentinian voice is worse than not asking: they have told us
+ * something specific about what they want to learn, and we answer it in the wrong accent while
+ * looking as though we listened. The options come from the live catalogue or there are no options.
+ *
+ * 🔴 AND IT IS THE REASON THE ASK IS NOT HARD-CODED ANYWHERE. A checked-in list of "the Spanishes"
+ * would be a second source of truth that drifts the first time Azure ships a voice — and it would be
+ * a list somebody wrote from memory, which is precisely the kind of evidence §43 refuses.
+ *
+ * PURE. Give it a catalogue and a language subtag.
+ */
+export function varietiesFor(catalogue: readonly AzureVoice[], language: string): readonly LanguageVariety[] {
+  const base = language.trim().split("-")[0]?.toLowerCase() ?? "";
+  if (!base) return [];
+  return supportedLocales(catalogue)
+    .filter((entry) => languageOf(entry.locale) === base)
+    // 🔴 REGIONLESS TAGS ARE DROPPED. A bare `es` is not a variety anybody speaks; offering it beside
+    // `es-MX` and `es-ES` would be offering "Spanish, or Mexican Spanish, or Castilian" as three
+    // choices, which is not a question with an answer.
+    .filter((entry) => entry.locale.includes("-"))
+    .map((entry) => ({ locale: entry.locale, localeName: entry.localeName, voices: entry.voices }));
+}
+
+/**
+ * Is there a choice here worth putting to the learner?
+ *
+ * 🔴 ONE VARIETY IS NOT A QUESTION. Asking "which Finnish?" when Azure speaks exactly one is a form
+ * for its own sake, and it teaches the learner that Nemesis asks things it already knows.
+ */
+export function varietyChoiceExists(catalogue: readonly AzureVoice[], language: string): boolean {
+  return varietiesFor(catalogue, language).length > 1;
+}

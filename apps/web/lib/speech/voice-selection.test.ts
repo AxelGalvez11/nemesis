@@ -11,7 +11,7 @@ import test from "node:test";
 
 import { AZURE_VOICE_LIST } from "./__fixtures__/azure-voices";
 import { normaliseVoiceList } from "./azure/voice-catalog";
-import { selectVoice, supportedLocales } from "./voice-selection";
+import { selectVoice, supportedLocales, varietiesFor, varietyChoiceExists } from "./voice-selection";
 
 const CATALOGUE = normaliseVoiceList(AZURE_VOICE_LIST, "2026-08-19T00:00:00.000Z").voices;
 
@@ -115,4 +115,35 @@ test("the supported-locale list counts neural voices per locale", () => {
     locales.map((entry) => entry.locale),
     [...locales.map((entry) => entry.locale)].sort((a, b) => a.localeCompare(b, "en")),
   );
+});
+
+// ─────────────────────────────────────────────── which varieties to offer (§47)
+
+test("🔴 only varieties the synthesiser can actually speak are offered", () => {
+  // Offering a variety with no voice is worse than not asking: the learner has told us exactly what
+  // they want, and we answer in the wrong accent while appearing to have listened.
+  const spanish = varietiesFor(CATALOGUE, "es").map((variety) => variety.locale);
+  assert.deepEqual(spanish, ["es-ES", "es-MX"]);
+  for (const locale of spanish) {
+    assert.equal(selectVoice(CATALOGUE, { locale }).ok, true, `${locale} was offered with no voice behind it`);
+  }
+});
+
+test("the language may be given with or without a region, and the name comes from the catalogue", () => {
+  assert.deepEqual(varietiesFor(CATALOGUE, "es-MX"), varietiesFor(CATALOGUE, "es"));
+  assert.equal(varietiesFor(CATALOGUE, "ja")[0]?.localeName, "Japanese (Japan)");
+});
+
+test("🔴 one variety is not a question", () => {
+  // Asking "which Japanese?" when there is exactly one teaches the learner that Nemesis asks things
+  // it already knows.
+  assert.equal(varietyChoiceExists(CATALOGUE, "ja"), false);
+  assert.equal(varietyChoiceExists(CATALOGUE, "es"), true);
+  assert.equal(varietyChoiceExists(CATALOGUE, "kl"), false, "a language with no voices offered a choice");
+});
+
+test("a regionless tag is never offered as a variety", () => {
+  // "Spanish, or Mexican Spanish, or Castilian" is not a question with an answer.
+  const withBare = [...CATALOGUE, ...normaliseVoiceList([{ Locale: "es", LocaleName: "Spanish", ShortName: "es-Generic", VoiceType: "Neural" }], "t").voices];
+  assert.equal(varietiesFor(withBare, "es").some((variety) => variety.locale === "es"), false);
 });

@@ -437,6 +437,12 @@ export function territoryMessages(input: {
         //
         // 🔴 THE VARIETY IS ASKED FOR EXPLICITLY, because `es-MX` and `es-ES` differ in exactly what
         // a Spanish lesson teaches, and a synthesiser told only "Spanish" picks one nobody chose.
+        // 🔴 THE MODEL REPORTS THE LANGUAGE; NEMESIS RESOLVES THE VARIETIES. It cannot know which
+        // varieties the synthesiser has, and a model guessing at that is how a learner gets offered
+        // an accent nobody can produce. So it names the language and stops there.
+        'If this subject is a language and the learner has not said which regional variety they want, ' +
+        'do not choose one. Return {"needsVariety":"<the language subtag, such as es or pt>"} instead ' +
+        'of pairs, and nothing else.\n\n' +
         'If a side is written IN a language the learner is studying — the foreign word itself, not a ' +
         'description of it — add its language tag as "leftLocale" or "rightLocale", with the regional ' +
         'variety the material uses ("es-MX", "pt-BR", "ja-JP"). Give it for that side only. Most ' +
@@ -456,6 +462,47 @@ export function territoryMessages(input: {
       role: "user",
     },
   ];
+}
+
+/**
+ * Asking which variety of a language the learner means — in the model's own words, from Azure's
+ * real catalogue (§47).
+ *
+ * 🔴 THE MODEL ASKS, NOT A FORM, AND THAT IS THE OWNER'S INSTRUCTION RATHER THAN A STYLE CHOICE:
+ * *"make sure its natural, i dont want hard coded 'what region'"*. A dropdown labelled Region turns
+ * the first moment of a language course into data entry. A teacher would just say which ones there
+ * are and ask which you want — so that is what this asks the model to do, and there is no fixed
+ * sentence anywhere in this codebase for it to recite.
+ *
+ * 🔴 BUT THE OPTIONS ARE NOT THE MODEL'S TO INVENT. Left to itself a model will offer Andalusian
+ * Spanish or Quebec French because those are real things people say — and if the synthesiser has no
+ * voice for them, the learner has told us exactly what they want and we answer in the wrong accent
+ * while appearing to have listened. So the varieties are passed IN, from the live Azure catalogue,
+ * and the instruction is explicit that this list is the whole world.
+ *
+ * 🔴 AND IT ONLY ASKS WHEN THERE IS SOMETHING TO ASK. One variety is not a question. `varietiesFor`
+ * returning a single entry means the answer is already known, and `regionClarificationRule` is not
+ * built at all — see `varietyChoiceExists`.
+ */
+export function regionClarificationRule(input: {
+  /** What the learner called the language, in their words. */
+  language: string;
+  /** Every variety the synthesiser can actually speak. Two or more, or this rule is not used. */
+  varieties: readonly { locale: string; localeName: string }[];
+}): string {
+  const options = input.varieties.map((variety) => `${variety.localeName} (${variety.locale})`).join(", ");
+  return (
+    `The learner has asked to learn ${input.language} and has not said which variety. ` +
+    "Ask them, in one short sentence of your own, before producing anything else. " +
+    "Say briefly why it matters — the varieties differ in sounds and words they will be learning — " +
+    "and offer the choices plainly.\n\n" +
+    `The varieties available are exactly these, and you may not offer any other: ${options}. ` +
+    "Do not invent a variety that is not on that list, however commonly it is spoken: a variety " +
+    "Nemesis cannot pronounce is a promise it would break in the first lesson.\n\n" +
+    'Return JSON: {"clarify":{"question":"…","options":[{"locale":"…","label":"…"}]}}\n\n' +
+    "Each option's \"locale\" MUST be copied exactly from the list above. The \"label\" is what the " +
+    "learner reads, in your words rather than the tag."
+  );
 }
 
 // -------------------------------------------------------------------- causal

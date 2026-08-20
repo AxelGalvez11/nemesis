@@ -17,7 +17,7 @@ import {
   teachingMessages,
   territoryMessages,
   testMessages,
-} from "./canvas-prompts";
+  regionClarificationRule,} from "./canvas-prompts";
 import type { CanvasBlock } from "./canvas-model";
 
 /** The smallest real block a builder will accept. */
@@ -483,4 +483,57 @@ test("🔴 the stable prefix is stable, and big enough to be worth caching", () 
   assert.doesNotMatch(systemOf(first), /Pharmacology 2/);
   assert.doesNotMatch(systemOf(first), /the first objective/);
   assert.doesNotMatch(systemOf(first), /\bb1\b/);
+});
+
+// ─────────────────────────────────────── asking which variety (§47)
+
+test("🔴 the model asks in its own words — there is no scripted question to recite", () => {
+  // The owner's instruction: nothing hard-coded like "what region?". A dropdown labelled Region
+  // turns the first moment of a language course into data entry.
+  const rule = regionClarificationRule({
+    language: "Spanish",
+    varieties: [
+      { locale: "es-MX", localeName: "Spanish (Mexico)" },
+      { locale: "es-ES", localeName: "Spanish (Spain)" },
+    ],
+  });
+  assert.match(rule, /in one short sentence of your own/);
+  assert.equal(/what region/i.test(rule), false, "a scripted question crept into the instruction");
+  assert.equal(/which region\?/i.test(rule), false);
+});
+
+test("🔴 the options are Azure's, and the model is forbidden from adding to them", () => {
+  // Left to itself a model offers Andalusian Spanish or Quebec French. Those are real things people
+  // say, and a variety the synthesiser cannot pronounce is a promise broken in the first lesson.
+  const rule = regionClarificationRule({
+    language: "Portuguese",
+    varieties: [
+      { locale: "pt-BR", localeName: "Portuguese (Brazil)" },
+      { locale: "pt-PT", localeName: "Portuguese (Portugal)" },
+    ],
+  });
+  assert.match(rule, /Portuguese \(Brazil\) \(pt-BR\), Portuguese \(Portugal\) \(pt-PT\)/);
+  assert.match(rule, /may not offer any other/);
+  assert.match(rule, /Do not invent a variety/);
+  assert.match(rule, /copied exactly from the list above/);
+});
+
+test("the rule says WHY it matters, because a question with no reason reads as a form", () => {
+  const rule = regionClarificationRule({
+    language: "Spanish",
+    varieties: [
+      { locale: "es-MX", localeName: "Spanish (Mexico)" },
+      { locale: "es-ES", localeName: "Spanish (Spain)" },
+    ],
+  });
+  assert.match(rule, /differ in sounds and words they will be learning/);
+});
+
+test("🔴 the territory prompt refuses to pick a variety on the learner's behalf", () => {
+  const grounded = territoryMessages({ count: 8, topic: "Spanish" });
+  const text = grounded.map((message) => message.content).join("\n");
+  assert.match(text, /do not choose one/i);
+  assert.match(text, /"needsVariety"/);
+  // And it still asks for the tag on a side, which is what a variety choice eventually fills in.
+  assert.match(text, /"leftLocale"/);
 });
