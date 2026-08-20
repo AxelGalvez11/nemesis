@@ -428,6 +428,20 @@ export function territoryMessages(input: {
             "came from, leave the pair out.\n\n" +
             'Return JSON: {"pairs":[{"left":"…","leftRole":"…","right":"…","rightRole":"…","relationKind":"…","excerptId":"…"}]}\n\n'
           : 'Return JSON: {"pairs":[{"left":"…","leftRole":"…","right":"…","rightRole":"…","relationKind":"…"}]}\n\n') +
+        // 🔴 ONLY WHEN THE WORDS THEMSELVES ARE THE THING BEING LEARNED, WHICH IS WHY THIS ASKS FOR
+        // A PROPERTY OF A SIDE RATHER THAN OF THE SUBJECT. `el perro` / `the dog` has one side in
+        // Spanish and one in English, and that asymmetry is the fact: a canvas-level language would
+        // read the English gloss in a Mexican accent. `tort` / `a civil wrong` gets nothing, and so
+        // does almost everything else — which is what keeps this from turning every subject into a
+        // language subject.
+        //
+        // 🔴 THE VARIETY IS ASKED FOR EXPLICITLY, because `es-MX` and `es-ES` differ in exactly what
+        // a Spanish lesson teaches, and a synthesiser told only "Spanish" picks one nobody chose.
+        'If a side is written IN a language the learner is studying — the foreign word itself, not a ' +
+        'description of it — add its language tag as "leftLocale" or "rightLocale", with the regional ' +
+        'variety the material uses ("es-MX", "pt-BR", "ja-JP"). Give it for that side only. Most ' +
+        'subjects are not languages and most pairs need neither: leave both out unless the words ' +
+        'themselves are what is being learned.\n\n' +
         `Aim for about ${input.count}, but fewer is better than padded. ` +
         "OMIT ANYTHING YOU ARE NOT SURE OF. A short list you are confident in is worth more than a long " +
         "one containing guesses: everything here becomes a question a real learner is asked and graded on, " +
