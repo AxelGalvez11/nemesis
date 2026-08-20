@@ -25,6 +25,7 @@
 // PURE. No fetch, no audio element, no provider SDK. `use-canvas-speech.ts` still owns the I/O; this
 // owns the decision, which is what makes each rule below a test rather than a promise.
 
+import type { AssociationPair } from "./knowledge-types";
 import {
   speechFor,
   type SpeechRefusal,
@@ -304,4 +305,33 @@ export function routeSpeech(input: SpeechRouteInput): SpeechRoute {
     speed: TARGET_LANGUAGE_SPEED,
     utterance: choice.spoken,
   };
+}
+
+
+/**
+ * Which phrase on screen can be heard again, and in which variety (§47).
+ *
+ * 🔴 REPLAY IS THE PRIMITIVE A LANGUAGE LEARNER ACTUALLY NEEDS, and it is not the same thing as
+ * voice mode. Voice mode governs whether Nemesis speaks UNPROMPTED — a second channel for text the
+ * learner could also read. Hearing a foreign phrase is not a second channel: the sound IS the
+ * material, it has to be repeatable on demand, and someone who keeps voice mode off because they do
+ * not want their questions read aloud still needs to hear how `ありがとう` is said.
+ *
+ * 🔴 MATCHED AGAINST THE PAIR RATHER THAN GUESSED FROM THE TEXT. There is no script detection here
+ * and there must not be: a Spanish phrase is Latin script and so is its English gloss, so anything
+ * inferring "this looks foreign" would be wrong on exactly the language pair most learners study.
+ * The locale was recorded when the pair was read; this looks it up.
+ *
+ * PURE. Returns null for every subject that is not a language, which is almost all of them.
+ */
+export function replayableLocale(pair: AssociationPair | undefined, phrase: string): string | null {
+  if (!pair) return null;
+  const wanted = phrase.trim().toLocaleLowerCase();
+  if (!wanted) return null;
+  // Compared case-insensitively and trimmed, because the phrase reaching a surface has been through
+  // a heading, a claim builder and possibly a truncation — but never re-cased in a way that changes
+  // which side it is.
+  if (pair.leftLocale && pair.left.trim().toLocaleLowerCase() === wanted) return pair.leftLocale;
+  if (pair.rightLocale && pair.right.trim().toLocaleLowerCase() === wanted) return pair.rightLocale;
+  return null;
 }

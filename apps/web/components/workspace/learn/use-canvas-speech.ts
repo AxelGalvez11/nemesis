@@ -73,6 +73,20 @@ export interface CanvasSpeech {
    * tail of the question.
    */
   speak: (key: string, text: string, voice?: SpokenVoice) => Promise<void>;
+  /**
+   * Say something again because the learner asked for it.
+   *
+   * 🔴 A SEPARATE METHOD RATHER THAN A FLAG ON `speak`, BECAUSE IT DELIBERATELY BREAKS `speak`'S ONE
+   * RULE. `speak` refuses a key it has already said, which is what stops a re-render reading the
+   * question aloud a second time. A learner pressing "hear it again" is the opposite situation: the
+   * repeat IS the request, and the whole point of a pronunciation drill is hearing the same phrase
+   * five times. Putting that behind an argument to `speak` would leave one function whose central
+   * guarantee is conditional; a second name keeps the guarantee absolute and the exception visible.
+   *
+   * 🔴 AND IT IGNORES VOICE MODE, WHICH IS THE CALLER'S JOB TO GET RIGHT. Voice mode governs whether
+   * Nemesis speaks UNPROMPTED. Pressing a play button is a prompt.
+   */
+  replay: (text: string, voice?: SpokenVoice) => Promise<void>;
   /** Stop immediately and forget what was playing. Safe to call when nothing is. */
   stop: () => void;
 }
@@ -89,6 +103,8 @@ export function useCanvasSpeech(): CanvasSpeech {
   const spoken = useRef(new Set<string>());
   /** Set when the component is going away, so a request in flight cannot set state afterwards. */
   const alive = useRef(true);
+  /** How many deliberate repeats have been asked for, so each gets a key of its own. */
+  const replays = useRef(0);
 
   const releaseAudio = useCallback(() => {
     const element = playing.current;
@@ -231,5 +247,15 @@ export function useCanvasSpeech(): CanvasSpeech {
     };
   }, [releaseAudio]);
 
-  return { failure, speak, speaking, stop };
+  const replay = useCallback(
+    async (text: string, voice?: SpokenVoice) => {
+      // A key nothing else can hold, so `speak`'s already-said check never short-circuits a repeat
+      // the learner explicitly asked for. Counting rather than randomising keeps it deterministic.
+      replays.current += 1;
+      await speak(`replay:${replays.current}`, text, voice);
+    },
+    [speak],
+  );
+
+  return { failure, replay, speak, speaking, stop };
 }

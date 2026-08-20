@@ -278,7 +278,12 @@ test("🔴 the surface renders it, and renders NOTHING when there is nothing hon
   // print as "X → X" on all three at once. The join now happens once, in `<TaughtClaimLines>`, so
   // the thing to count is the shared component. The equality below is unchanged and is the part
   // that matters: as many trails as screens showing a claim.
-  const cueAndAnswer = (VIEW.match(/<TaughtClaimLines decision=\{decision\} \/>/g) ?? []).length;
+  // 🔴 MATCHED BY COMPONENT, NOT BY EXACT PROPS. This pinned the full call `<TaughtClaimLines
+  // decision={decision} />` and went red the day the component gained a second prop — for a change
+  // that added nothing and removed nothing from what it is counting. What this test is about is HOW
+  // MANY SCREENS SHOW A CLAIM, so that is what it counts; the props those screens pass are the
+  // component's business.
+  const cueAndAnswer = (VIEW.match(/<TaughtClaimLines[\s>]/g) ?? []).length;
   const workedSteps = (VIEW.match(/modelled\.modelled\.steps\.map/g) ?? []).length;
   const claimScreens = cueAndAnswer + workedSteps;
   const trails = (VIEW.match(/<SourceTrail citations=\{citations\} \/>/g) ?? []).length;

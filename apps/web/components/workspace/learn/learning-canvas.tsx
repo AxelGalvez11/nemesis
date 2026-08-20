@@ -1017,6 +1017,7 @@ export function LearningCanvas({
             neither is in a panel, a modal or a column of its own. */}
         {regions.policy && (
           <CanvasPolicyView
+            voice={{ replay: voice.replay, speaking: voice.speaking }}
             // 🔴 DISPATCHES `policy_continue` BEFORE ACKNOWLEDGING, NOT BECAUSE THIS CALL CHANGES
             // ANYTHING — `nextExplanationState` returns the state unchanged for this event — but
             // because the call site is what keeps that row real rather than theoretical. Contract

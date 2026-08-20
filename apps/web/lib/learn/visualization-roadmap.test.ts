@@ -603,3 +603,29 @@ test("🔴 §47 — the provider the router chose is the provider that is actual
   assert.match(speechHook, /nemesis-speak/, "the speech hook lost the xAI lane");
   assert.match(voiceHook, /provider: route\.provider/, "the router's provider is decided and then dropped");
 });
+
+test("🔴 §47 — hearing a phrase again is not gated on voice mode", () => {
+  // 🔴 THE TWO PREFERENCES ARE DIFFERENT AND CONFLATING THEM WOULD HIDE THE FEATURE. Voice mode
+  // means "do not narrate my questions". It does not mean "never let me hear how this word sounds" —
+  // and a foreign phrase is not a second channel for text, it IS the material. Someone with voice
+  // mode off must still be able to press play on `ありがとう`.
+  const control = readFileSync(new URL("../../components/workspace/learn/hear-again.tsx", import.meta.url), "utf8");
+  const voiceHook = readFileSync(new URL("../../components/workspace/learn/use-canvas-voice.ts", import.meta.url), "utf8");
+  assert.equal(/voiceMode|VoiceMode|mode === "on"/.test(control), false, "the replay control reads voice mode");
+  assert.match(voiceHook, /replay: speech\.replay/, "the canvas cannot offer a replay at all");
+  // It names Azure because the variety is the whole point of this lane.
+  assert.match(control, /provider: "azure"/);
+  assert.match(control, /TARGET_LANGUAGE_SPEED/, "a drilled phrase is slowed, which teaches a rhythm the language lacks");
+});
+
+test("🔴 §47 — the replayable phrase is looked up, never guessed from the characters", () => {
+  // Script detection would be wrong on exactly the pair most learners study: Spanish and English
+  // share an alphabet. The locale was recorded when the pair was read.
+  const router = readFileSync(new URL("./speech-route.ts", import.meta.url), "utf8");
+  const replay = router.slice(router.indexOf("export function replayableLocale"));
+  for (const guess of ["charCodeAt", "\\\\p{Script", "normalize(", "/[^\\\\x00-\\\\x7F]/"]) {
+    assert.equal(replay.includes(guess), false, `replayableLocale is inferring a language from the text (${guess})`);
+  }
+  assert.match(replay, /pair\.leftLocale/);
+  assert.match(replay, /pair\.rightLocale/);
+});

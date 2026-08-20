@@ -29,7 +29,7 @@ import {
 
 import { correctionLead } from "./correction-copy";
 import { speechRecognitionSupported } from "./use-canvas-dictation";
-import { useCanvasSpeech } from "./use-canvas-speech";
+import { useCanvasSpeech, type CanvasSpeech } from "./use-canvas-speech";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
 export interface CanvasVoice {
@@ -47,6 +47,18 @@ export interface CanvasVoice {
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
    *  talking while somebody is composing a reply to it. */
   stopSpeaking: () => void;
+  /**
+   * The learner asking to hear a phrase again (§47).
+   *
+   * 🔴 EXPOSED SEPARATELY FROM EVERYTHING ABOVE, BECAUSE IT OBEYS DIFFERENT RULES. Everything else
+   * here is governed by voice mode — whether Nemesis narrates unprompted. This is a press, on a
+   * phrase in a language being learned, and it works with voice mode off: "do not read my questions
+   * aloud" and "never let me hear how this word sounds" are different preferences, and conflating
+   * them would put the pronunciation of a foreign word behind a setting about narration.
+   */
+  replay: CanvasSpeech["replay"];
+  /** True while any audio is playing, so a replay control can disable itself rather than overlap. */
+  speaking: boolean;
 }
 
 /**
@@ -195,6 +207,8 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
       speaking: speech.speaking,
     },
     listenSignal,
+    replay: speech.replay,
+    speaking: speech.speaking,
     stopSpeaking: speech.stop,
   };
 }

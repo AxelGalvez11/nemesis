@@ -14,6 +14,7 @@ import {
   isWellFormedLocale,
   MEASURED_PROVIDERS,
   providerForLocale,
+  replayableLocale,
   routeSpeech,
   TARGET_LANGUAGE_SPEED,
 } from "./speech-route";
@@ -185,4 +186,35 @@ test("locale shapes accepted and refused", () => {
   for (const bad of ["", "Spanish", "es_MX", "es-mx", "ES-MX", "es-MEX", "a"]) {
     assert.equal(isWellFormedLocale(bad), false, `${bad} should not be a tag`);
   }
+});
+
+// ───────────────────────────────────────────────── replay (§47)
+
+test("🔴 the phrase in the language being learned is replayable, its gloss is not", () => {
+  // The asymmetry is the whole point: `el perro` is Spanish, `the dog` is English, and offering to
+  // say the English one in a Mexican voice would teach an accent nobody chose.
+  const pair = { id: "p1", left: "el perro", leftLocale: "es-MX", right: "the dog" };
+  assert.equal(replayableLocale(pair, "el perro"), "es-MX");
+  assert.equal(replayableLocale(pair, "the dog"), null);
+});
+
+test("🔴 nothing is replayable in a subject that is not a language", () => {
+  const pair = { id: "p2", left: "tort", right: "a civil wrong" };
+  assert.equal(replayableLocale(pair, "tort"), null);
+  assert.equal(replayableLocale(pair, "a civil wrong"), null);
+});
+
+test("the match survives casing and surrounding space, and fails on a different phrase", () => {
+  const pair = { id: "p3", left: "ありがとう", leftLocale: "ja-JP", right: "thank you" };
+  assert.equal(replayableLocale(pair, "  ありがとう "), "ja-JP");
+  assert.equal(replayableLocale(pair, "arigatou"), null);
+  assert.equal(replayableLocale(undefined, "ありがとう"), null);
+  assert.equal(replayableLocale(pair, "   "), null);
+});
+
+test("🔴 a locale is never inferred from the look of the words", () => {
+  // Script detection would be wrong on exactly the pair most learners study: Spanish and English are
+  // the same alphabet. The locale is looked up from what was recorded, never guessed.
+  const unmarked = { id: "p4", left: "el gato", right: "the cat" };
+  assert.equal(replayableLocale(unmarked, "el gato"), null);
 });
