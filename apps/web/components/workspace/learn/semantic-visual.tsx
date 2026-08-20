@@ -24,7 +24,22 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
     // A drawing is the content, not a card on the page, and Nemesis drew it in the theme's own
     // colours precisely so it would sit in the column rather than in a panel. The hairline stays:
     // a wide table with no boundary at all bleeds into the prose above it.
-    <figure className="my-4 overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-4">
+    <figure
+      className={
+        // 🔴 A MOLECULE SIZES ITS FRAME; EVERYTHING ELSE FILLS THE COLUMN. Owner, twice: *"can you
+        // make the size of it be smaller to fit with the canvas sizing?"* The drawing itself was
+        // already bounded — the FRAME was not, so ethanol sat in the middle of a 640px panel that
+        // was mostly empty, and the emptiness was the thing being complained about.
+        //
+        // 🔴 ONLY THE STRUCTURE, AND THAT IS DELIBERATE. A plot, a table and a timeline are drawn
+        // ACROSS the column on purpose — their whole job is to use that width, and a shrink-wrapped
+        // plot would be a smaller plot. A molecule has an intrinsic size and gains nothing from the
+        // extra room.
+        visual.kind === "structure"
+          ? "my-4 mx-auto w-fit max-w-full overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-4"
+          : "my-4 overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-4"
+      }
+    >
       {visual.kind === "equation" ? <Equation visual={visual} /> : null}
       {visual.kind === "relationship" ? <Relationship visual={visual} /> : null}
       {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
