@@ -119,13 +119,18 @@ export async function askCanvasChat(
    * comes back in the reply, but that arrives AFTER the search and the model call — several seconds
    * too late to be the thing that says "searching". This fires before the request goes out.
    */
-  onSearching?: () => void,
+  onSearching?: (found: number | null) => void,
 ): Promise<CanvasTurnReply> {
   let webContext = "";
   let sources: ChatWebResult[] = [];
   if (shouldSearchWeb(question)) {
-    onSearching?.();
+    // 🔴 TWO BEATS, BECAUSE THE COUNT DOES NOT EXIST YET AT THE FIRST ONE. ChatGPT says "Searching
+    // 54 websites" because it issues the queries and knows the number; ours comes back with the
+    // results. So the first call says a search is happening (`null`) and the second says how much
+    // came back — which is the honest version of the same information, and neither is a timer.
+    onSearching?.(null);
     const result = await searchWebContext(uid, buildFreshSearchQuery(question), signal);
+    onSearching?.(result.sources.length);
     webContext = result.context;
     sources = result.sources;
   }

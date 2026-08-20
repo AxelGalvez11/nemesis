@@ -33,6 +33,7 @@ import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
+import { CanvasSourceCards } from "./canvas-source-cards";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -1141,6 +1142,10 @@ export function LearningCanvas({
                   // answer citing [4] before [1] would open the wrong page for both and drop [6]
                   // and [7] entirely. A citation resolving to real text from the wrong place is the
                   // precise failure this repository's provenance rules exist to prevent.
+                  // 🔴 THE REFERENCE'S PILL, ON THIS SURFACE ONLY. Measured off ChatGPT
+                  // 2026-08-20: favicon + site name at 9px, with "+N" for a collapsed run. The chat
+                  // surface keeps its bare dot, which is what the owner asked for twice in August.
+                  namedCitations
                   sources={session.aside.consulted}
                   text={session.aside.text}
                 />
@@ -1148,66 +1153,24 @@ export function LearningCanvas({
               {/* Which live pages the answer actually used, each individually promotable. This is
                   the "distinct" half of temporary-versus-durable: seeing it here is USING it for
                   one answer; pressing the small `+` is the separate, explicit act of keeping it. */}
-              {/* 🔴🔴 THE PAGES THAT WERE READ, EVEN WHEN THE MODEL CITED NONE OF THEM. Measured in
-                  a browser 2026-08-20: "whats the latest news on ai?" produced an answer plainly
-                  built from live pages — a hack, an ECB warning, a phone launch — with not one `[n]`
-                  in it. `citedWebResults` therefore returned empty and the row vanished, so a
-                  searched answer presented itself as something the model simply knew. The search
-                  ran and was paid for; showing nothing is the dishonest option.
+              {/* 🔴🔴 CARDS, NOT DOMAIN PILLS — owner call after measuring ChatGPT, 2026-08-20.
+                  A broad question produced ten pills reading "Cnbc", "Cnbc", "Businessinsider",
+                  with nothing to tell them apart; the HEADLINE is what distinguishes them and it
+                  was the one thing not shown. See `canvas-source-cards.tsx` for why there is no
+                  thumbnail and no "Today": this search does not return either, and inventing them
+                  would be a claim about freshness the product cannot stand behind.
 
                   🔴 CITED FIRST WHEN THERE IS ONE, because it is the stronger claim: these pages
                   supported particular sentences. The fallback is the weaker and still-true one:
-                  these are the pages this answer was built from. */}
+                  these are the pages this answer was built from. Never nothing — a searched answer
+                  that shows no origin presents live research as the model's own recall. */}
               {replySources.length > 0 && (
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {replySources.map((source) => (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full bg-(--ui-bg-elevated) py-1 pl-1.5 pr-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary)"
-                      key={source.url}
-                    >
-                      {/* 🔴 THE FAVICON, SO THIS PILL AND THE ONE UNDER A TAUGHT CLAIM READ AS ONE
-                          THING — owner call, 2026-08-20: "sources should have small circle favicon
-                          thumbnails". Same 14px circle `canvas-source-pills.tsx` draws, and the
-                          same size the chat surface has used for citations since August. Two
-                          spellings of one idea is how a product ends up with two of everything. */}
-                      {/* 🔴 THE PAGE'S TITLE IN THE TOOLTIP, BECAUSE THE FACE OF THE PILL SAYS THE
-                          SITE. An answer that cited three CNBC articles drew three pills all
-                          reading "Cnbc" and nothing told them apart — measured in a browser on a
-                          real search. They ARE three different pages, so collapsing them would
-                          hide two real sources; naming them on hover is what distinguishes them
-                          without turning a row of pills into a row of headlines. */}
-                      <a
-                        className="inline-flex items-center gap-1.5 no-underline hover:text-(--ui-text-primary)"
-                        href={source.url}
-                        rel="noopener noreferrer"
-                        target="_blank"
-                        title={source.title || source.url}
-                      >
-                        {hostnameOf(source.url) && (
-                          // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
-                          <img
-                            alt=""
-                            className="rounded-full"
-                            height={14}
-                            src={faviconUrl(hostnameOf(source.url)!)}
-                            width={14}
-                          />
-                        )}
-                        {sourceLabel(source.url) ?? (hostnameOf(source.url) ?? source.url).replace(/^www\./, "")}
-                      </a>
-                      <button
-                        aria-label={`Add ${source.url} to sources`}
-                        className="flex h-[16px] w-[16px] items-center justify-center rounded-full text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                        onClick={() => void session.attachUrl(source.url)}
-                        title="Add to sources"
-                        type="button"
-                      >
-                        <Codicon name="add" size="0.625rem" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
+                <CanvasSourceCards
+                  cards={replySources.map((source) => ({ title: source.title || source.url, url: source.url }))}
+                  onAdd={(url) => void session.attachUrl(url)}
+                />
               )}
+
               {/* 🔴 A SUBJECT, NOT A QUESTION. This read `aside.question`, which every turn has, so
                   "Hello. What can I do for you?" came with a Learn this button that had nothing to
                   start. The model says whether the turn named something worth learning; a greeting
