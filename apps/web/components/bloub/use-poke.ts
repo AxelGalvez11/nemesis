@@ -17,7 +17,10 @@ import { STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 /** Reactions a poke can draw, in order. Repeated clicks walk the list rather than
  *  replaying one gesture, so leaning on the character is rewarded rather than flat. */
-const REACTIONS: StateId[] = ["wink", "wide", "notify", "exclaim", "play"];
+// 🔴 A SPIN FIRST (owner 2026-08-20: "it should have a little animation, like a spin"). `swirl`
+// turns the body and sends the eyes right around it, which is the most spin-like thing in the
+// catalogue; the rest follow so that leaning on the character is rewarded rather than flat.
+const REACTIONS: StateId[] = ["swirl", "wink", "wide", "exclaim", "play"];
 
 export function usePoke(base: StateId): { state: StateId; poke: () => void; poking: boolean } {
   const [reaction, setReaction] = useState<StateId | null>(null);

@@ -57,6 +57,18 @@ interface CanvasSelectionMenuProps {
    *  broken button: they asked what a word means and got a menu asking what they want. */
   forceOpen?: boolean;
   onAct: (action: SelectionAction) => void;
+  /**
+   * Read the highlighted passage aloud, and read it again on a second press.
+   *
+   * 🔴 IT LIVES ON THE SELECTION AND NOT IN THE MENU OF SETTINGS, because the thing a learner
+   * wants spoken is a thing they can point at. The routed voice reads questions and corrections
+   * and refuses explanations — deliberately, so nobody is read a paragraph of prose every turn —
+   * which left no way to hear a phrase, a foreign word, or a sentence again. Highlighting it is
+   * the ask; this is the answer to it.
+   */
+  onSpeak?: (text: string) => void;
+  /** True while something is being spoken, so the control can offer to stop instead. */
+  speaking?: boolean;
   onDismiss: () => void;
 }
 
@@ -68,6 +80,8 @@ export function CanvasSelectionMenu({
   error,
   forceOpen = false,
   onAct,
+  onSpeak,
+  speaking = false,
   onDismiss,
 }: CanvasSelectionMenuProps) {
   const open = Boolean(answer || busy || error || forceOpen);
@@ -166,6 +180,21 @@ export function CanvasSelectionMenu({
         </div>
       ) : (
         <div className="flex items-center gap-0.5 rounded-full bg-(--ui-bg-elevated) p-1 shadow-[0_4px_20px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
+          {onSpeak && (
+            <>
+              <button
+                className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
+                onClick={() => onSpeak(selection.selectedText)}
+                type="button"
+              >
+                {/* Pressing it while it is talking is a REPEAT, not a stop: the passage restarts.
+                    Somebody who did not catch a word presses again, and a control that went quiet
+                    instead would be answering a question nobody asked. */}
+                {speaking ? "Again" : "Speak"}
+              </button>
+              <span aria-hidden className="mx-0.5 h-4 w-px bg-(--ui-stroke-tertiary)" />
+            </>
+          )}
           {actions.map((option, index) => (
             <button
               className={cn(

@@ -799,7 +799,7 @@ export function OptionsControl({
                 <>
                   <ToggleItem
                     checked={voiceOn}
-                    label="Read questions out loud"
+                    label="Speak"
                     onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
                   />
                   {/* Offering to open a microphone that cannot listen is a promise the product
@@ -829,7 +829,7 @@ export function OptionsControl({
                     <ToggleItem
                       checked={voice.voiceId === option.id}
                       disabled={!voiceOn}
-                      hint={voiceOn ? undefined : "Turn reading out loud on first"}
+                      hint={voiceOn ? undefined : "Turn Speak on first"}
                       key={option.id}
                       label={option.label}
                       onClick={() => voice.onSetVoice(option.id)}
@@ -838,8 +838,11 @@ export function OptionsControl({
                   <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
                 </>
               )}
-              <MenuItem icon="list-tree" label="Objectives" onClick={() => setView("objectives")} />
-              <MenuItem icon="history" label="Session record" onClick={() => setView("record")} />
+              {/* 🔴 OBJECTIVES AND SESSION RECORD ARE GONE FROM THIS MENU (owner 2026-08-20:
+                  "the menu has a objectives tab, which I don't want... and assessment record,
+                  which I also don't want"). Both panels remain in the file and are still
+                  reachable by setting `view` — they are a developer's window into what the
+                  runtime thinks, not something a learner asked to be shown mid-lesson. */}
             </>
           )}
 

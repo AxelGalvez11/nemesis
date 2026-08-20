@@ -72,7 +72,12 @@ export function CanvasThinkingPreview({
         // `<div>` with no height of its own, so a percentage minimum has nothing to resolve
         // against and collapses to the content — measured in a browser: the mascot sat at the very
         // top of the column instead of the middle of the page. A viewport unit always resolves.
-        className="flex min-h-[70vh] flex-col items-center justify-center gap-6 px-6"
+        // 🔴 THE CAPTION SITS AT THE FOOT, NOT IN THE MIDDLE (owner 2026-08-20: "the thinking
+        // sentence and phrase overlap with the mascot"). It used to centre itself in this box,
+        // which is exactly where the character walks to — so the words printed straight through
+        // the dots. The character owns the middle of the surface; every thinking caption belongs
+        // near the composer, which is also where `CanvasThinking` has always put its own.
+        className="flex min-h-[70vh] flex-col items-center justify-end px-6 pb-[104px]"
         role="status"
       >
         {/* 🔴 THE CHARACTER IS NOT DRAWN HERE, AND THAT IS THE FIX FOR SIX DOTS.

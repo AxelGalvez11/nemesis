@@ -239,3 +239,76 @@ test("🔴 there is exactly ONE thing that turns the engine into pixels", async 
     `a second renderer exists — two characters will end up on one screen: ${offenders.join(", ")}`,
   );
 });
+
+test("🔴 the old raster logo is not drawn anywhere", async () => {
+  // 🔴 THE OWNER FOUND THESE, TWICE. The mark moved to the flat three-bead form on the marketing
+  // site, and this app kept serving `/nemesis/logo.png` — a raster of the older glossy-bead
+  // logo — from the auth header, the auth card and the account portal. A PNG cannot be wrong at
+  // compile time, so nothing said a word; it just looked like a different product on the page
+  // where people sign in.
+  //
+  // The files stay in public/ (other things may still link them); what is guarded is that no
+  // component DRAWS one. `components/nemesis-mark.tsx` is the single source, and it shares its
+  // geometry with app/icon.svg and app/apple-icon.tsx.
+  const { readdir, readFile } = await import("node:fs/promises");
+  const root = new URL("../../", import.meta.url);
+  const offenders: string[] = [];
+  const walk = async (dir: string) => {
+    for (const entry of await readdir(new URL(dir, root), { withFileTypes: true })) {
+      const rel = `${dir}${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === ".next") continue;
+        await walk(`${rel}/`);
+        continue;
+      }
+      if (!/\.tsx?$/.test(entry.name)) continue;
+      const source = await readFile(new URL(rel, root), "utf8");
+      const code = source
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("//"))
+        .join("\n");
+      if (/nemesis\/logo(-white)?\.png/.test(code)) offenders.push(rel);
+    }
+  };
+  for (const dir of ["components/", "app/"]) await walk(dir);
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `these still draw the old mark: ${offenders.join(", ")}`,
+  );
+});
+
+test("🔴 the character looks straight ahead when the pointer is centred", async () => {
+  // 🔴 IT STARED LEFT FOR HOURS AND NOTHING SAID SO. bloub's own `lookTarget` is
+  // `yaw: -TURN + nx * YAW_MAX` with TURN = 26, because upstream the character sits beside a
+  // settings panel and should face it. Ported unchanged, that meant a resting yaw of -26° with
+  // ±16° of tracking on top — the pointer could never bring it back past -10°, so it read as
+  // stuck facing the wall. Owner: "he seems stuck staring to the left".
+  const { aimFor, PITCH_REST } = await import("./look");
+  const centre = aimFor(0, 0, true);
+  assert.equal(centre.yaw, 0, `resting gaze is ${centre.yaw}° off centre`);
+  assert.equal(centre.pitch, PITCH_REST);
+  // And it still reaches both sides symmetrically.
+  assert.ok(aimFor(-1, 0, true).yaw < 0 && aimFor(1, 0, true).yaw > 0, "tracking is not symmetric");
+  assert.equal(aimFor(-1, 0, true).yaw, -aimFor(1, 0, true).yaw, "one side reaches further");
+  // No pointer: the head keeps drifting rather than freezing on a dead point.
+  assert.equal(aimFor(0, 0, false).wander, 1);
+});
+
+test("🔴 a click reaches the character", async () => {
+  // The pokeable rule lived ABOVE `.bloub` with the same specificity, so `pointer-events: none`
+  // won by source order and every click passed straight through. Nothing failed; the character
+  // was simply inert. Owner: "clicking on the mascot doesn't do anything".
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("../../components/bloub/bloub.css", import.meta.url), "utf8");
+  assert.match(
+    css,
+    /\.bloub\.bloub-pokeable\s*\{[^}]*pointer-events:\s*auto/,
+    "the pokeable rule no longer outranks .bloub, so clicks are being swallowed again",
+  );
+  const { readFile: rf } = await import("node:fs/promises");
+  const poke = await rf(new URL("../../components/bloub/use-poke.ts", import.meta.url), "utf8");
+  assert.match(poke, /REACTIONS[^=]*=\s*\[\s*"swirl"/, "a poke no longer leads with the spin");
+});
