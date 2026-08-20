@@ -28,6 +28,7 @@ import { StoredFigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 import { correctionLead } from "./correction-copy";
+import { selectableRegion } from "./use-canvas-selection";
 
 /**
  * The affordance that turns a recognition screen into "produce it if you can, pick it if you cannot".
@@ -261,6 +262,11 @@ function PolicyScreen({
           // screen, so true centre reads as low. `pb-40` above lifts the block into where the eye
           // expects the subject of the page to be.
           className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-question)] font-medium leading-[1.4] text-balance text-(--ui-text-primary)"
+          // 🔴 LOOKING A WORD UP IN THE QUESTION IS NOT ANSWERING IT, AND THIS WRITES NO EVIDENCE.
+          // `askAboutSelection` records an interaction event and nothing else — `recordEvent` and
+          // `recordEvidence` are different functions with different stores. A learner who does not
+          // know what a word in the question MEANS could otherwise only guess or leave.
+          {...selectableRegion("question")}
         >
           {prompt.prompt}
         </h2>
@@ -566,13 +572,27 @@ function TaughtClaimLines({ decision }: { decision: NonNullable<PolicyRuntime["d
     statement: decision.knowledge.statement,
   });
 
+  // 🔴 A CLAIM IS THE MOST LIKELY PLACE TO NEED A WORD DEFINED, AND IT WAS THE LEAST REACHABLE.
+  // The highlight toolbar requires a `[data-selectable-id]` ancestor, and until now only document
+  // blocks carried one — so a learner could look a term up inside their own lecture but not inside
+  // the sentence Nemesis had just chosen to teach them. Each line gets its OWN marker because
+  // offsets are measured against the marked element and nothing else.
+  //
+  // 🔴 NEITHER IS `rewritable`. "Simpler" rewrites the passage it is invoked on; these are the
+  // policy's own words for one screen, not a stored block, and there is nothing to write back to.
   return (
     <>
-      <h2 className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
+      <h2
+        className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)"
+        {...selectableRegion("claim-heading")}
+      >
         {claim.heading}
       </h2>
       {claim.body && (
-        <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
+        <p
+          className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)"
+          {...selectableRegion("claim-body")}
+        >
           {claim.body}
         </p>
       )}

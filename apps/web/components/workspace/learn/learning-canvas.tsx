@@ -46,7 +46,7 @@ import { CanvasSurface } from "./canvas-surface";
 import { continueBelongsTo, continueOwner, readingRequirementOf } from "@/lib/learn/canvas-continue";
 import { routeComposerText } from "@/lib/learn/canvas-phrases";
 import { unreadChunk } from "@/lib/learn/canvas-reading";
-import { useCanvasSelection } from "./use-canvas-selection";
+import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
@@ -1057,7 +1057,29 @@ export function LearningCanvas({
                 reference. See `canvas-document.tsx`, which keeps the rule for the genuinely
                 block-scoped case ("Explain this" on a passage), where the quotation is true. */}
             <div className="canvas-swap text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
-              {session.aside.text}
+              {/* 🔴🔴 THE HIGHLIGHT TOOLBAR ONLY EVER WORKED OVER DOCUMENT BLOCKS, AND THAT WAS
+                  INVISIBLE UNTIL SELECTION WENT ON EVERYWHERE. `readCanvasSelection` requires a
+                  `[data-selectable-id]` ancestor, and `selectableRegion()` was called from exactly
+                  one place in the app: `canvas-document.tsx`, on a block. So Define/Example/Why/
+                  Explain were unreachable on any canvas with no reading material — which is every
+                  topic-only canvas, where `canvas.blocks` is empty by design.
+
+                  🔴 AND #695 MADE IT LOOK BROKEN RATHER THAN ABSENT. Turning `user-select` on for
+                  the whole canvas meant the learner could finally drag across a reply — and get
+                  nothing. Highlighting that does nothing reads as a dead feature; before, the text
+                  simply refused to highlight.
+
+                  🔴 THE TEXT GETS ITS OWN ELEMENT, NOT THE WRAPPER. Offsets are measured against
+                  the element carrying the marker, and this div also holds the source pills, the
+                  offer and the buttons — measuring from here would count all of it, and
+                  `readCanvasSelection`'s integrity check would refuse every selection. One element,
+                  one string.
+
+                  🔴 NOT `rewritable`. "Simpler" REWRITES the passage it is invoked on, and there is
+                  no block behind a reply to rewrite. `selectionActions` already drops that option
+                  when the region does not claim it, so the toolbar offers exactly the four that
+                  work here. */}
+              <p {...selectableRegion("reply")}>{session.aside.text}</p>
               {/* Which live pages the answer actually used, each individually promotable. This is
                   the "distinct" half of temporary-versus-durable: seeing it here is USING it for
                   one answer; pressing the small `+` is the separate, explicit act of keeping it. */}
