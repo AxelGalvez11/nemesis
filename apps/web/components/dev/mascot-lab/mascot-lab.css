@@ -1,0 +1,174 @@
+/* The lab's chrome. Deliberately plain — everything here is scaffolding around the one
+   thing being judged, and a lab with opinions of its own competes with the mascot.
+   Colours come from the app's own tokens so the surfaces are the real surfaces. */
+
+.mlab {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.mlab-panel {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 20px 18px 40px;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.mlab-group { display: flex; flex-direction: column; gap: 10px; }
+.mlab-group h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.mlab-seg, .mlab-chips, .mlab-states { display: flex; flex-wrap: wrap; gap: 6px; }
+.mlab-seg { width: 100%; }
+.mlab-seg button { flex: 1; }
+
+.mlab-seg button,
+.mlab-chips button,
+.mlab-states button,
+.mlab-toggle {
+  appearance: none;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--text-2);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms, border-color 120ms;
+}
+.mlab-states button { font-size: 11.5px; padding: 5px 8px; }
+.mlab-seg button:hover,
+.mlab-chips button:hover,
+.mlab-states button:hover,
+.mlab-toggle:hover { background: var(--raised); color: var(--text); }
+.mlab-seg button.on,
+.mlab-chips button.on,
+.mlab-states button.on,
+.mlab-toggle.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+.mlab-toggle { display: inline-flex; align-items: center; gap: 7px; }
+.mlab-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor; opacity: 0.35;
+}
+.mlab-toggle.on .mlab-dot { opacity: 1; }
+.mlab-inline { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.mlab-row { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.mlab-row-head { display: flex; justify-content: space-between; color: var(--text-2); }
+.mlab-val { color: var(--text-3); font-size: 11px; }
+.mlab-row input[type="range"] { width: 100%; accent-color: var(--text); }
+
+.mlab-note { margin: 2px 0 0; font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.mlab-meta { margin: 0; font-size: 11px; color: var(--text-3); }
+.mlab-dim { color: var(--text-3); }
+
+.mlab-stage { padding: 34px 40px 80px; display: flex; flex-direction: column; gap: 40px; min-width: 0; }
+.mlab-head h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.mlab-head p { margin: 0; max-width: 62ch; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
+
+.mlab-hero {
+  display: grid;
+  place-items: center;
+  min-height: 460px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg-2);
+}
+
+.mlab-scales h2 {
+  margin: 0 0 14px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.mlab-scale-row { display: flex; align-items: flex-end; gap: 30px; flex-wrap: wrap; }
+.mlab-scale-row figure { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.mlab-scale-art { display: grid; place-items: center; min-height: 120px; }
+.mlab-scale-row figcaption { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--text-2); }
+
+.mlab-reading {
+  display: flex; gap: 18px; align-items: flex-start;
+  max-width: 68ch; padding: 20px 22px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+}
+.mlab-reading p { margin: 0; font-size: 15px; line-height: 1.7; color: var(--text); }
+
+/* ── The board ──────────────────────────────────────────────────────────────── */
+
+.mlab-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  gap: 10px;
+}
+.mlab-cell {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  overflow: hidden;
+  background: var(--bg-2);
+}
+.mlab-cell-art { display: flex; }
+.mlab-pane { flex: 1; display: grid; place-items: center; padding: 16px 8px; min-height: 132px; }
+.mlab-cell figcaption {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 7px 10px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--text-2); background: var(--surface);
+}
+.mlab-cell figcaption .mono { color: var(--text-3); }
+
+/* A pane can carry its own tone so the board shows both materials at once. Two
+   selectors of equal weight to the component's own, winning on source order — this
+   file is imported after mascot.css. */
+.mlab-pane[data-tone="light"] { background: #fafafa; }
+.mlab-pane[data-tone="light"] .nemesis-mascot {
+  --bead-lit: #6f6f6f; --bead-far: #050505; --bead-edge: #d1d1d1; --mascot-eye: #fbfbfb;
+}
+.mlab-pane[data-tone="dark"] { background: #000000; }
+.mlab-pane[data-tone="dark"] .nemesis-mascot {
+  --bead-lit: #ffffff; --bead-far: #8f8f8f; --bead-edge: #2b2b2b; --mascot-eye: #0a0a0c;
+}
+
+/* ── Transitions ────────────────────────────────────────────────────────────── */
+
+.mlab-strips { display: flex; flex-direction: column; gap: 26px; }
+.mlab-strip { border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2); overflow: hidden; }
+.mlab-strip header {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.mlab-strip header h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.mlab-strip header .mono { font-size: 11px; color: var(--text-3); flex: 1; min-width: 0; }
+.mlab-strip-frames {
+  display: flex; gap: 2px; overflow-x: auto; padding: 14px 12px;
+}
+.mlab-frame {
+  flex: 0 0 auto; display: grid; place-items: center;
+  min-width: 46px; padding: 6px 2px; border-radius: 6px;
+}
+.mlab-frame:nth-child(even) { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.mlab-strip-live { display: flex; align-items: center; gap: 18px; padding: 26px 20px; }
+.mlab-strip-live .mono { font-size: 12px; color: var(--text-2); }
+
+@media (max-width: 960px) {
+  .mlab { grid-template-columns: 1fr; }
+  .mlab-panel { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
+  .mlab-stage { padding: 24px 18px 60px; }
+}

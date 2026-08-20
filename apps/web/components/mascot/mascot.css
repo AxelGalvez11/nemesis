@@ -1,0 +1,41 @@
+/* The mascot's colours.
+ *
+ * TWO TOKENS AND NOTHING ELSE: the ink the body is drawn in, and the colour cut out of
+ * it for the eyes. The pulse states use the ink as well — see the halo in
+ * nemesis-mascot.tsx — so there is no third colour to keep in step. No gradient, no gloss, no shadow. The character has to sit beside a
+ * paragraph of teaching material without competing with it, and it has to survive being
+ * 18px tall, which nothing with modelling in it does.
+ *
+ * 🔴 DARK MODE HERE IS `[data-theme]` ONLY, NEVER `prefers-color-scheme`. The web app
+ * picks its theme in theme-provider.tsx and writes it onto <html>; the landing page
+ * follows the OS. Copying landing's media query in would turn the mascot dark for an
+ * OS-dark visitor who has the app set to light, and it would be the only element on the
+ * page that did.
+ *
+ * The ink INVERTS rather than tinting — near-black on paper, near-white on black — so
+ * the character is the same weight in both modes. The eye is always the ground it is
+ * standing on, which is what makes the eyes read as cut out of the form rather than
+ * painted onto it. */
+
+.nemesis-mascot {
+  --mascot-ink: #0b0b0d;
+  /* Not pure white: at 4px across, #fff against #0b0b0d fizzes on a sub-pixel
+     antialiased display. */
+  --mascot-eye: #fbfbfb;
+
+  display: block;
+  /* The box is padded for the widest excursion (geometry.ts). Nothing in that padding is
+     interactive, and the mascot must never eat a click meant for what is behind it. */
+  pointer-events: none;
+  overflow: visible;
+}
+
+:root[data-theme="dark"] .nemesis-mascot {
+  --mascot-ink: #f2f2f4;
+  --mascot-eye: #0a0a0c;
+}
+
+/* No `@media (prefers-reduced-motion)` rule here on purpose. The animation is driven by
+   requestAnimationFrame, which CSS cannot reach — and the correct behaviour is not to
+   stop, it is to HOLD each state's characteristic frame so the states stay
+   distinguishable. The component reads the preference itself; see states.ts, `STILL`. */
