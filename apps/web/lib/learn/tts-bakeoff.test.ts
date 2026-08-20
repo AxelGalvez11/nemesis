@@ -5,6 +5,7 @@
 // suddenly the table says the locale is decided.
 
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import type { ProviderPricing } from "./tts-bakeoff";
@@ -115,7 +116,7 @@ test("🔴 exactly one provider's rate is settled from our own records, and it i
   // dispute is recorded rather than resolved, because resolving it needs a statement nobody has.
   const settled = PROVIDER_CATALOGUE.filter((entry) => entry.pricing.evidence !== "recalled");
   assert.deepEqual(settled.map((entry) => entry.provider), ["xai"]);
-  assert.match(settled[0].pricing.caveat ?? "", /disputed/);
+  assert.match(at(settled).pricing.caveat ?? "", /disputed/);
   for (const entry of PROVIDER_CATALOGUE) {
     if (entry.provider === "xai") continue;
     assert.equal(entry.pricing.usdPerMillionChars, null, `${entry.provider} carries a price nobody read`);

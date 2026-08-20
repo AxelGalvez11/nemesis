@@ -6,6 +6,7 @@
 // is the kind of wrong that looks completely fine.
 
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import { curve, DEFAULT_SAMPLES, distributionCurve, sampledHistogram } from "./computed-series";
@@ -22,10 +23,10 @@ function segments(expression: string, from: number, to: number, samples?: number
 test("a parabola comes back as one smooth run of points", () => {
   const drawn = segments("x^2", -3, 3);
   assert.equal(drawn.length, 1);
-  assert.equal(drawn[0].points.length, DEFAULT_SAMPLES);
+  assert.equal(at(drawn).points.length, DEFAULT_SAMPLES);
   // The maths is the maths: f(-3) = 9 and f(0) = 0.
-  assert.ok(Math.abs(drawn[0].points[0].y - 9) < 1e-9);
-  const middle = drawn[0].points.find((point) => Math.abs(point.x) < 0.05);
+  assert.ok(Math.abs(at(at(drawn).points).y - 9) < 1e-9);
+  const middle = at(drawn).points.find((point) => Math.abs(point.x) < 0.05);
   assert.ok(middle && middle.y < 0.01);
 });
 
@@ -33,14 +34,14 @@ test("🔴 1/x comes back as two segments, so no line is drawn across the asympt
   const drawn = segments("1/x", -5, 5);
   assert.equal(drawn.length, 2, "the discontinuity did not split the curve");
   // Everything left of the gap is negative x, everything right is positive.
-  assert.ok(drawn[0].points.every((point) => point.x < 0));
-  assert.ok(drawn[1].points.every((point) => point.x > 0));
+  assert.ok(at(drawn).points.every((point) => point.x < 0));
+  assert.ok(at(drawn, 1).points.every((point) => point.x > 0));
 });
 
 test("a curve defined over only part of the range yields only that part", () => {
   const drawn = segments("sqrt(x)", -4, 4);
   assert.equal(drawn.length, 1);
-  assert.ok(drawn[0].points.every((point) => point.x >= 0));
+  assert.ok(at(drawn).points.every((point) => point.x >= 0));
 });
 
 test("🔴 a formula with no value anywhere is refused rather than drawn empty", () => {
@@ -75,8 +76,8 @@ test("a curve can use a variable that is not x", () => {
 test("a normal density curve is smooth and peaks at the mean", () => {
   const result = distributionCurve({ kind: "normal", mean: 5, sd: 1 }, 0, 10);
   assert.equal(result.ok, true);
-  const points = result.ok ? result.value[0].points : [];
-  const peak = points.reduce((best, point) => (point.y > best.y ? point : best), points[0]);
+  const points = result.ok ? at(result.value).points : [];
+  const peak = points.reduce((best, point) => (point.y > best.y ? point : best), at(points));
   assert.ok(Math.abs(peak.x - 5) < 0.2, `the peak landed at ${peak.x}`);
 });
 
@@ -84,7 +85,7 @@ test("🔴 a discrete distribution is sampled at whole numbers only", () => {
   // A binomial has no value at 3.5, and drawing one would invent a shape the mathematics lacks.
   const result = distributionCurve({ kind: "binomial", probability: 0.5, trials: 10 }, 0, 10);
   assert.equal(result.ok, true);
-  const points = result.ok ? result.value[0].points : [];
+  const points = result.ok ? at(result.value).points : [];
   assert.equal(points.length, 11);
   assert.ok(points.every((point) => Number.isInteger(point.x)));
 });

@@ -129,7 +129,7 @@ export async function POST(req: Request) {
       : { detail: structure.detail, ok: false, reason: structure.reason },
   };
 
-  if (route.decision === "render" && route.representation === "structure") {
+  if (route.decision === "render" && route.representation === "structure" && route.spec.kind === "structure") {
     report.rendered = { kind: "structure", notation: route.spec.notation, value: route.spec.value };
   } else if (route.decision === "render" && (route.representation === "reference_image" || route.representation === "generated_image")) {
     report.rendered = {

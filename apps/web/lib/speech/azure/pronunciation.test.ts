@@ -9,6 +9,7 @@
 // 🔴 THREE LANGUAGES BECAUSE THE SHAPE DIFFERS, not for coverage theatre. See the fixtures.
 
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import {
@@ -50,7 +51,7 @@ test("🔴 offsets arrive in milliseconds, not in Windows ticks", () => {
   const hello = evidence.words?.[0];
   assert.equal(hello?.startMs, 300);
   assert.equal(hello?.durationMs, 500);
-  assert.equal(hello?.phonemes?.[0].startMs, 300);
+  assert.equal(at(hello?.phonemes).startMs, 300);
 });
 
 // ───────────────────────────────────────────────────────────────── the load-bearing distinction
@@ -81,8 +82,8 @@ test("🔴 the alternative phoneme survives, because it is the only half a learn
   const w = world?.phonemes?.[0];
   assert.equal(w?.phoneme, "w");
   assert.equal(w?.accuracy, 0.41);
-  assert.equal(w?.likelyProduced?.[0].phoneme, "v");
-  assert.equal(w?.likelyProduced?.[0].score, 0.71);
+  assert.equal(at(w?.likelyProduced).phoneme, "v");
+  assert.equal(at(w?.likelyProduced).score, 0.71);
 });
 
 test("a correct sound does not report itself as an alternative", () => {
@@ -111,7 +112,7 @@ test("a correct sound does not report itself as an alternative", () => {
     target: "a",
   });
   assert.equal(result.ok, true);
-  assert.equal(result.ok && result.evidence.words?.[0].phonemes?.[0].likelyProduced, undefined);
+  assert.equal(result.ok && at(at(result.evidence.words).phonemes).likelyProduced, undefined);
 });
 
 // ───────────────────────────────────────────────────────────────── languages that are not English
@@ -120,8 +121,8 @@ test("Spanish keeps its syllables, so a correction can name one", () => {
   const evidence = evidenceOf(ES_ES_MIXED, "el perro corre rápido", "es-ES");
   const perro = evidence.words?.find((word) => word.word === "perro");
   assert.deepEqual(perro?.syllables?.map((syllable) => syllable.syllable), ["pe", "ro"]);
-  assert.equal(perro?.syllables?.[1].accuracy, 0.34);
-  assert.equal(perro?.syllables?.[1].grapheme, "rro");
+  assert.equal(at(perro?.syllables, 1).accuracy, 0.34);
+  assert.equal(at(perro?.syllables, 1).grapheme, "rro");
 });
 
 test("🔴 Japanese survives a parser that could have assumed Latin script", () => {
@@ -129,19 +130,19 @@ test("🔴 Japanese survives a parser that could have assumed Latin script", () 
   // the whole payload arrives in kana. Nothing here may index into a string.
   const evidence = evidenceOf(JA_JP_MIXED, "ありがとうございます", "ja-JP");
   assert.equal(evidence.words?.length, 2);
-  assert.equal(evidence.words?.[0].word, "ありがとう");
-  assert.equal(evidence.words?.[0].syllables?.[0].grapheme, "あり");
-  const longVowel = evidence.words?.[0].phonemes?.find((phoneme) => phoneme.phoneme === "toː");
-  assert.equal(longVowel?.likelyProduced?.[0].phoneme, "to");
-  assert.equal(evidence.words?.[1].errorType, "monotone");
+  assert.equal(at(evidence.words).word, "ありがとう");
+  assert.equal(at(at(evidence.words).syllables).grapheme, "あり");
+  const longVowel = at(evidence.words).phonemes?.find((phoneme) => phoneme.phoneme === "toː");
+  assert.equal(at(longVowel?.likelyProduced).phoneme, "to");
+  assert.equal(at(evidence.words, 1).errorType, "monotone");
 });
 
 test("a locale with no phonemes returns words and invents no sounds", () => {
   const evidence = evidenceOf(WORDS_ONLY, "kaks õlut palun", "et-EE");
   assert.equal(evidence.words?.length, 3);
-  assert.equal(evidence.words?.[1].accuracy, 0.44);
-  assert.equal(evidence.words?.[1].phonemes, undefined);
-  assert.equal(evidence.words?.[1].syllables, undefined);
+  assert.equal(at(evidence.words, 1).accuracy, 0.44);
+  assert.equal(at(evidence.words, 1).phonemes, undefined);
+  assert.equal(at(evidence.words, 1).syllables, undefined);
 });
 
 // ───────────────────────────────────────────────────────────────── the refusals

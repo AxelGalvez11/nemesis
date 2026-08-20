@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
@@ -196,7 +197,7 @@ test("🔴 an edge may state whether it means more or less", () => {
     nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }, { id: "c", label: "C" }],
   });
   assert.equal(result.ok, true);
-  assert.equal(result.ok && result.visual.kind === "relationship" && result.visual.edges[1].polarity, "decreases");
+  assert.equal(result.ok && result.visual.kind === "relationship" && at(result.visual.edges, 1).polarity, "decreases");
 });
 
 test("an edge with no polarity is unchanged from before polarity existed", () => {
@@ -207,7 +208,7 @@ test("an edge with no polarity is unchanged from before polarity existed", () =>
     nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }],
   });
   assert.equal(result.ok, true);
-  assert.equal(result.ok && result.visual.kind === "relationship" && "polarity" in result.visual.edges[0], false);
+  assert.equal(result.ok && result.visual.kind === "relationship" && "polarity" in at(result.visual.edges, 0), false);
 });
 
 test("a polarity no renderer draws is refused by name", () => {

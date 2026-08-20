@@ -7,6 +7,7 @@
 // catalogue would quietly shrink and every affected locale would start reporting "unsupported".
 
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import { AZURE_VOICE_LIST } from "../__fixtures__/azure-voices";
@@ -51,13 +52,13 @@ test("🔴 voice type is matched by substring, so the next tier name does not re
     ],
     "2026-08-19T00:00:00.000Z",
   );
-  assert.equal(catalogue.voices[0].neural, true);
-  assert.equal(catalogue.voices[1].neural, false);
+  assert.equal(at(catalogue.voices).neural, true);
+  assert.equal(at(catalogue.voices, 1).neural, false);
 });
 
 test("an unrecognised gender is neutral rather than guessed into one of two", () => {
   const catalogue = normaliseVoiceList([{ Gender: "Neutral", Locale: "en-US", ShortName: "x", VoiceType: "Neural" }], "t");
-  assert.equal(catalogue.voices[0].gender, "neutral");
+  assert.equal(at(catalogue.voices).gender, "neutral");
 });
 
 test("a payload that is not a list is an empty catalogue, not a crash", () => {

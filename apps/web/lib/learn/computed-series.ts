@@ -154,8 +154,10 @@ export function curve(request: CurveRequest): Computed<Segment[]> {
 /** The middle value of a list, used to judge what "large" means for one particular curve. */
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
   const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+  const high = sorted[middle] ?? 0;
+  return sorted.length % 2 === 0 ? ((sorted[middle - 1] ?? high) + high) / 2 : high;
 }
 
 /**

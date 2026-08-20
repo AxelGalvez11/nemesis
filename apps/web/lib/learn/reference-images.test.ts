@@ -6,6 +6,7 @@
 // is. That is a legal failure no other test in this repo would catch.
 
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import {
@@ -108,10 +109,10 @@ test("a file whose licence is reusable becomes a candidate carrying its credit",
     },
   ])));
   assert.equal(found.length, 1);
-  assert.equal(found[0].licence?.licence, "CC-BY-4.0");
-  assert.equal(found[0].licence?.attribution, "J. Author");
-  assert.equal(found[0].provenance, "reference_image");
-  assert.equal(found[0].providerId, "wikimedia-commons");
+  assert.equal(at(found).licence?.licence, "CC-BY-4.0");
+  assert.equal(at(found).licence?.attribution, "J. Author");
+  assert.equal(at(found).provenance, "reference_image");
+  assert.equal(at(found).providerId, "wikimedia-commons");
 });
 
 test("🔴 a file whose licence is not reusable is dropped here, not passed on unlicensed", async () => {
@@ -122,7 +123,7 @@ test("🔴 a file whose licence is not reusable is dropped here, not passed on u
     { Artist: { value: "Somebody else" }, LicenseShortName: { value: "CC BY 4.0" } },
   ])));
   assert.equal(found.length, 1);
-  assert.equal(found[0].licence?.licence, "CC-BY-4.0");
+  assert.equal(at(found).licence?.licence, "CC-BY-4.0");
 });
 
 test("a provider that errors returns nothing rather than throwing into the teaching path", async () => {
@@ -136,8 +137,8 @@ test("a provider that errors returns nothing rather than throwing into the teach
 test("a curated row matches on concept overlap and carries everything needed to show it", () => {
   const found = searchCurated({ concept: "nephron tubule" }, CURATED);
   assert.equal(found.length, 1);
-  assert.equal(found[0].licence?.attribution, "A. Author, An Open Textbook");
-  assert.equal(creditLineFor(found[0]), "A. Author, An Open Textbook · CC-BY-4.0");
+  assert.equal(at(found).licence?.attribution, "A. Author, An Open Textbook");
+  assert.equal(creditLineFor(at(found)), "A. Author, An Open Textbook · CC-BY-4.0");
 });
 
 test("🔴 the shipped registry is empty, because no licence could be verified where this was written", () => {
@@ -152,7 +153,7 @@ test("🔴 a curated row and a live row both reach the ladder, curated first", a
     registry: CURATED,
   });
   assert.equal(found.length, 2);
-  assert.equal(found[0].providerId, "curated");
+  assert.equal(at(found).providerId, "curated");
   const chosen = chooseAsset({ accuracyBearing: true, candidates: found });
   assert.equal(chosen.ok, true);
   assert.equal(chosen.ok && chosen.asset.assetPath, "registry/nephron.png");
@@ -168,7 +169,7 @@ test("a concept nothing matches returns no candidates, which the ladder reports 
 test("🔴 a candidate found here still passes through the ladder's own licence rules", async () => {
   // The provider is not trusted to have got it right; `chooseAsset` re-checks.
   const found = searchCurated({ concept: "lever" }, [
-    { ...CURATED[1], attribution: "", licence: "CC-BY-4.0" },
+    { ...at(CURATED, 1), attribution: "", licence: "CC-BY-4.0" },
   ]);
   const chosen = chooseAsset({ accuracyBearing: false, candidates: found });
   assert.equal(chosen.ok, false);

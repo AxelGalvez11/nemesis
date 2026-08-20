@@ -152,7 +152,13 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
           autoDictation: now.autoDictation,
           composerBusy: now.composerBusy,
           dictationSupported: now.dictationSupported,
-          moment: spokenMoment.moment.kind,
+          // 🔴 NARROWED RATHER THAN CAST. `shouldOpenDictation` only accepts the two moments a
+          // microphone may follow, and `target_language` is deliberately not one of them — opening a
+          // microphone after an example sentence would be listening for an answer to something that
+          // was not a question. Widening the parameter would have deleted that rule; this keeps it and
+          // makes the third kind unreachable here, which it already is (the route above refuses a
+          // target_language moment outside a language session, and no caller opens one).
+          moment: spokenMoment.moment.kind === "correction" ? "correction" : "question",
           voiceMode: now.mode,
         })
       ) {

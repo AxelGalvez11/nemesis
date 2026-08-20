@@ -177,7 +177,9 @@ export function validateReaction(raw: unknown): ChemValidation {
     };
   }
 
-  const [reactants, agents, products] = parts;
+  // Defaulted rather than asserted: `parts` was length-checked above, and a `!` here would be a
+  // claim the compiler cannot see and a crash if the check above ever moves.
+  const [reactants = "", agents = "", products = ""] = parts;
   if (!reactants.trim() || !products.trim()) {
     return {
       detail: !reactants.trim() ? "the reaction has no reactants" : "the reaction has no products",
@@ -237,7 +239,7 @@ function unclosedRing(value: string): string | null {
   const open = new Map<string, number>();
   let inBracket = false;
   for (let index = 0; index < value.length; index += 1) {
-    const character = value[index];
+    const character = value[index] ?? "";
     if (character === "[") { inBracket = true; continue; }
     if (character === "]") { inBracket = false; continue; }
     if (inBracket) continue;

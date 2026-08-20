@@ -6,6 +6,7 @@
 // it drops on an identical attempt they stop trusting any of it.
 
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import type { PronunciationEvidence } from "@/lib/learn/pronunciation-evidence";
@@ -35,7 +36,7 @@ test("🔴 a movement smaller than the noise floor is unchanged, not improvement
   const after = attempt([{ accuracy: 0.7 + MEANINGFUL_DELTA / 2, word: "perro" }], 0.72);
   const comparison = compareAttempts(before, after);
   assert.equal(comparison.overall.change, "unchanged");
-  assert.equal(comparison.words[0].change, "unchanged");
+  assert.equal(at(comparison.words).change, "unchanged");
   assert.equal(comparison.says, "About the same as before.");
 });
 
@@ -46,7 +47,7 @@ test("a real improvement clears it and is reported as one", () => {
   );
   assert.equal(comparison.overall.change, "improved");
   assert.equal(comparison.overall.delta, 0.4);
-  assert.equal(comparison.words[0].change, "improved");
+  assert.equal(at(comparison.words).change, "improved");
 });
 
 test("🔴 the headline is about the word the learner was told to fix, not the average", () => {
@@ -57,7 +58,7 @@ test("🔴 the headline is about the word the learner was told to fix, not the a
     { targetedWords: ["perro"] },
   );
   assert.equal(comparison.targeted.length, 1);
-  assert.equal(comparison.targeted[0].word, "perro");
+  assert.equal(at(comparison.targeted).word, "perro");
   assert.equal(comparison.says, '"perro" is fixed.');
   assert.equal(comparison.settled, true);
 });
@@ -91,8 +92,8 @@ test("🔴 an omission is never scored as a zero on either side", () => {
     attempt([{ errorType: "omission", word: "corre" }]),
     attempt([{ accuracy: 0.6, word: "corre" }]),
   );
-  assert.equal(comparison.words[0].before, undefined, "an omission was given a score it never had");
-  assert.equal(comparison.words[0].delta, undefined, "a delta was computed against an invented zero");
+  assert.equal(at(comparison.words).before, undefined, "an omission was given a score it never had");
+  assert.equal(at(comparison.words).delta, undefined, "a delta was computed against an invented zero");
 });
 
 test("repeated words match by occurrence", () => {
@@ -109,7 +110,7 @@ test("punctuation and case do not break the pairing", () => {
     attempt([{ accuracy: 0.9, word: "perro" }]),
   );
   assert.equal(comparison.words.length, 1);
-  assert.equal(comparison.words[0].change, "improved");
+  assert.equal(at(comparison.words).change, "improved");
 });
 
 test("a provider that reported no overall score does not fabricate one", () => {

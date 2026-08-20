@@ -277,15 +277,20 @@ export function winnerFor(locale: string, rated: readonly RatedSample[]): Winner
     }))
     .sort((a, b) => b.mean - a.mean);
 
-  if (scored.length > 1 && scored[0].mean === scored[1].mean) {
+  const [winner, runnerUp] = scored;
+  // Unreachable: `byProvider.size >= 2` above guarantees two entries. Handled rather than asserted
+  // with `!`, because a non-null assertion is a claim the compiler cannot check and the guard above
+  // is exactly the kind of thing that gets moved.
+  if (!winner) return { detail: `nobody has listened to a sample in ${locale}`, ok: false, reason: "nothing-rated" };
+  if (runnerUp && winner.mean === runnerUp.mean) {
     return {
-      detail: `${scored[0].provider} and ${scored[1].provider} scored identically in ${locale}`,
+      detail: `${winner.provider} and ${runnerUp.provider} scored identically in ${locale}`,
       ok: false,
       reason: "tied",
     };
   }
 
-  return { locale, mean: scored[0].mean, ok: true, provider: scored[0].provider, ratings: scored[0].ratings };
+  return { locale, mean: winner.mean, ok: true, provider: winner.provider, ratings: winner.ratings };
 }
 
 /**

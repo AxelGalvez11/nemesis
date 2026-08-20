@@ -9,6 +9,7 @@
 // overlap that label, is this mark inside the angle it marks, is anything outside the frame.
 
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import type { ConstructionVisual, FlowVisual, TimelineVisual } from "./canvas-visual";
@@ -101,7 +102,7 @@ test("🔴 an edge that skips a row is bowed around the boxes it would otherwise
   const skipping = layout.edges.find((edge) => edge.path.includes("C"));
   assert.ok(skipping, "the two-row edge was drawn straight");
   // The control points are what hold the curve clear of the middle row.
-  const controlX = Number(skipping.path.split("C ")[1].split(" ")[0]);
+  const controlX = Number(at(at(present(skipping, "the two-row edge").path.split("C "), 1).split(" ")));
   const middle = box(layout, "b");
   assert.ok(
     controlX < middle.cx - middle.width / 2 || controlX > middle.cx + middle.width / 2,
@@ -128,7 +129,7 @@ test("a node acting on itself is drawn as a loop rather than a line of no length
     learningGoal: "Self-reinforcing",
     nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }],
   });
-  const self = layout.edges[0];
+  const self = at(layout.edges);
   assert.match(self.path, /^M .* C /, "a self-edge was not drawn as a curve");
 });
 
@@ -210,12 +211,12 @@ test("two lanes stack, and each keeps its own axis", () => {
     learningGoal: "Two threads",
   });
   assert.equal(layout.lanes.length, 2);
-  assert.ok(layout.lanes[1].axisY > layout.lanes[0].axisY);
+  assert.ok(at(layout.lanes, 1).axisY > at(layout.lanes).axisY);
 });
 
 test("a covered event shows a question mark and no date", () => {
   const layout = layoutTimeline({ ...REPUBLIC, hidden: 1 });
-  const covered = layout.marks[1];
+  const covered = at(layout.marks, 1);
   assert.equal(covered.label, "?");
   assert.equal(covered.date, "");
   assert.equal(covered.covered, true);
@@ -230,7 +231,7 @@ test("an event at the far right is anchored back into the frame", () => {
     kind: "timeline",
     learningGoal: "Ends",
   });
-  const last = layout.marks[1];
+  const last = at(layout.marks, 1);
   assert.equal(last.anchor, "end");
   assert.ok(last.extent.to <= VISUAL_WIDTH);
 });
@@ -260,7 +261,7 @@ function apart(a: { x: number; y: number }, b: { x: number; y: number }): number
 test("🔴 the angle mark and the vertex label do not land on the same spot", () => {
   const layout = layoutConstruction(TRIANGLE);
   const vertex = layout.points.find((point) => point.id === "A")!;
-  const angle = layout.angles[0];
+  const angle = at(layout.angles);
   const centre = {
     x: layout.points.reduce((total, point) => total + point.cx, 0) / layout.points.length,
     y: layout.points.reduce((total, point) => total + point.cy, 0) / layout.points.length,
@@ -285,7 +286,7 @@ test("🔴 the angle mark and the vertex label do not land on the same spot", ()
 test("🔴 a right angle is marked with a square, and any other angle with an arc", () => {
   // The square is the convention everywhere a right angle is drawn, and it is the one angle a reader
   // recognises without reading the number.
-  assert.match(layoutConstruction(TRIANGLE).angles[0].markPath, /^M .* L .* L /);
+  assert.match(at(layoutConstruction(TRIANGLE).angles).markPath, /^M .* L .* L /);
   const oblique = layoutConstruction({
     ...TRIANGLE,
     angles: [{ at: "A", degrees: 37, from: "B", to: "C" }],
@@ -295,7 +296,7 @@ test("🔴 a right angle is marked with a square, and any other angle with an ar
       { id: "C", label: "C", x: 4, y: 3 },
     ],
   });
-  assert.match(oblique.angles[0].markPath, / A /);
+  assert.match(at(oblique.angles).markPath, / A /);
 });
 
 test("a side label sits off its line, on the outside of the figure", () => {
@@ -347,7 +348,7 @@ test("a circle keeps its radius through the same fitting as the points", () => {
       { id: "P", label: "P", x: 1, y: 0 },
     ],
   });
-  const [circle] = layout.circles;
+  const circle = at(layout.circles);
   const p = layout.points.find((point) => point.id === "P")!;
   assert.ok(Math.abs(circle.r - apart({ x: circle.cx, y: circle.cy }, { x: p.cx, y: p.cy })) < 1e-6);
 });
@@ -376,7 +377,7 @@ test("🔴 two edges into one node arrive at two different points", () => {
   const layout = layoutFlow(CASCADE);
   const arriving = layout.edges
     .filter((edge) => edge.path.includes(" L "))
-    .map((edge) => Number(edge.path.split(" L ")[1].split(" ")[0]));
+    .map((edge) => Number(at(at(edge.path.split(" L "), 1).split(" "))));
   assert.equal(new Set(arriving).size, arriving.length, "two edges landed on the same point");
 });
 
@@ -388,12 +389,12 @@ test("edges into a node keep the order of where they came from, so they do not c
       .filter((entry) => entry.edge.to === id)
       .map((entry) => ({
         source: box(layout, entry.edge.from).cx,
-        target: Number(entry.line.path.split(" L ")[1].split(" ")[0]),
+        target: Number(at(at(present(entry.line).path.split(" L "), 1).split(" "))),
       }))
       .sort((a, b) => a.source - b.source);
   const arrivals = into("kinase");
   assert.equal(arrivals.length, 2);
-  assert.ok(arrivals[0].target < arrivals[1].target, "the left-hand source arrived on the right");
+  assert.ok(at(arrivals).target < at(arrivals, 1).target, "the left-hand source arrived on the right");
 });
 
 test("🔴 no leader line is drawn through another event's label", () => {

@@ -6,6 +6,7 @@
 // that can. The completeness branch runs before any sound is looked at, and this proves it.
 
 import assert from "node:assert/strict";
+import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import { EN_US_GOOD, ES_ES_MIXED, JA_JP_MIXED, WORDS_ONLY } from "./__fixtures__/azure-assessments";
@@ -23,7 +24,7 @@ test("🔴 the sound, the word and what was produced instead all reach the findi
   // This is the whole integration in one assertion: "72%" is not a lesson, and these four fields are.
   const result = diagnose(evidence(EN_US_GOOD, "hello world", "en-US"));
   assert.equal(result.verdict, "close");
-  const [finding] = result.findings;
+  const finding = at(result.findings);
   assert.equal(finding.word, "world");
   assert.equal(finding.kind, "mispronounced");
   assert.equal(finding.sound?.target, "w");
@@ -48,8 +49,8 @@ test("🔴 a skipped sentence is not diagnosed as bad vowels", () => {
 test("🔴 a skipped word outranks a mangled one at the same score", () => {
   // The learner has to say it at all before how they say it matters.
   const result = diagnose(evidence(ES_ES_MIXED, "el perro corre rápido", "es-ES"));
-  assert.equal(result.findings[0].word, "corre");
-  assert.equal(result.findings[0].kind, "omitted");
+  assert.equal(at(result.findings).word, "corre");
+  assert.equal(at(result.findings).kind, "omitted");
   assert.equal(result.headline, '"corre" was skipped.');
   const trill = result.findings.find((finding) => finding.word === "perro");
   assert.equal(trill?.sound?.target, "r");
@@ -69,9 +70,9 @@ test("a non-Romance language diagnoses in its own script and phonemes", () => {
 
 test("🔴 a locale with no phonemes names the word and invents no sound", () => {
   const result = diagnose(evidence(WORDS_ONLY, "kaks õlut palun", "et-EE"));
-  assert.equal(result.findings[0].word, "õlut");
-  assert.equal(result.findings[0].sound, undefined);
-  assert.match(result.findings[0].says, /"õlut" is the word to work on/);
+  assert.equal(at(result.findings).word, "õlut");
+  assert.equal(at(result.findings).sound, undefined);
+  assert.match(at(result.findings).says, /"õlut" is the word to work on/);
 });
 
 test("a good attempt says so briefly and names nothing", () => {

@@ -76,6 +76,20 @@ const PLANNED_RENDERERS: readonly string[] = [
 
 const SECTION = CONTRACT.slice(CONTRACT.indexOf("# 41."));
 
+
+/**
+ * The element at an index, or a failed test.
+ *
+ * 🔴 A FUNCTION RATHER THAN `!`, BECAUSE THE TWO FAIL DIFFERENTLY. `list[0]!` silences the compiler
+ * and then throws "cannot read properties of undefined" a few lines later, naming neither the list
+ * nor the index. This says which index was empty, at the moment it was empty.
+ */
+function at<T>(list: readonly T[], index = 0): T {
+  const found = list[index];
+  assert.ok(found, `nothing at index ${index}`);
+  return found;
+}
+
 test("§41 distinguishes shipped trusted routes from advanced routes", () => {
   assert.ok(SECTION.length > 0, "§41 has gone missing from the contract");
   // 🔴 THE CLAIM IS ABOUT THE ROUTER, NOT ABOUT EVERY RENDERER. KaTeX is already installed, so a
@@ -327,7 +341,7 @@ test("🔴 no price stands without its provenance, and the disputed one still sa
   assert.match(SECTION_43, /THE COST COLUMN/);
   // Every rate carries where it came from. A bare number in this table is the failure.
   const sources = [...BAKEOFF.matchAll(/source: "([^"]*)"/g)].map((match) => match[1]);
-  const rates = [...BAKEOFF.matchAll(/usdPerMillionChars: ([^,\n}]+)/g)].map((match) => match[1].trim().replace(/;$/, ""));
+  const rates = [...BAKEOFF.matchAll(/usdPerMillionChars: ([^,\n}]+)/g)].map((match) => (match[1] ?? "").trim().replace(/;$/, ""));
   assert.ok(sources.length >= 4, "provider pricing has lost its source field");
   assert.ok(rates.length > 0, "the provider catalogue has lost its cost column");
   // A recalled figure may never become a cost — that rule lives in pricedFor.

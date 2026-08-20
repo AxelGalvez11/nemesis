@@ -69,7 +69,7 @@ const PANELS: Array<{ note: string; request: unknown; title: string }> = [
     title: "relationship",
   },
   {
-    note: `Computed from "x^2 - 2x - 3" by §45 — ${parabola.value[0].points.length} points, not typed out.`,
+    note: `Computed from "x^2 - 2x - 3" by §45 — ${parabola.value[0]?.points.length ?? 0} points, not typed out.`,
     request: {
       caption: "Where does this cross the x axis?",
       kind: "quantitative",
@@ -86,7 +86,7 @@ const PANELS: Array<{ note: string; request: unknown; title: string }> = [
       caption: "IQ-scaled scores, mean 100, sd 15",
       kind: "quantitative",
       learningGoal: "See where most of a normal distribution sits",
-      series: [{ label: "density", points: bell.value[0].points }],
+      series: [{ label: "density", points: bell.value[0]?.points ?? [] }],
       xLabel: "score",
       yLabel: "density",
     },

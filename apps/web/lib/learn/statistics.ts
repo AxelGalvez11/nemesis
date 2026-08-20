@@ -245,7 +245,8 @@ export function histogram(values: readonly number[], bins: number): Array<{ from
     // The last bin is closed at the top, so the maximum value lands somewhere rather than being
     // silently dropped — an off-by-one that loses exactly the extreme a lesson is pointing at.
     const index = Math.min(bins - 1, Math.floor((value - low) / width));
-    counts[index].count += 1;
+    const bin = counts[index];
+    if (bin) bin.count += 1;
   }
   return counts;
 }

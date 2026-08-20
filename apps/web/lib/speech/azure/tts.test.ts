@@ -6,6 +6,7 @@
 // Nemesis sends to a paid API under its own credential.
 
 import assert from "node:assert/strict";
+import { present } from "@/lib/test-support";
 import test from "node:test";
 
 import { AZURE_MAX_CHARS, buildSsml, escapeSsml, synthesise } from "./tts";
@@ -68,16 +69,19 @@ test("a missing credential refuses without a network call", async () => {
 
 test("🔴 the key travels in a header and never in the URL", async () => {
   // A key in a query string lands in every access log between here and Redmond.
-  let seen: { url: string; init: RequestInit } | null = null;
+  // A holder rather than a `let`: TypeScript cannot see that the callback ran, so a reassigned
+  // local narrows to `never` at every use and the assertions below would need casts to compile.
+  const seen: { request?: { url: string; init: RequestInit } } = {};
   const fetcher = (async (url: string, init: RequestInit) => {
-    seen = { init, url };
+    seen.request = { init, url };
     return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
   }) as unknown as typeof fetch;
   await synthesise({ env: AZURE_ENV, fetch: fetcher }, { collect: true, locale: "en-US", text: "hi", voice: "v" });
-  assert.ok(seen);
-  assert.ok(!seen!.url.includes("test-key"));
-  assert.equal((seen!.init.headers as Record<string, string>)["Ocp-Apim-Subscription-Key"], "test-key");
-  assert.match((seen!.init.headers as Record<string, string>)["X-Microsoft-OutputFormat"], /mp3/);
+  const request = present(seen.request, "the provider request");
+  assert.ok(!request.url.includes("test-key"));
+  const headers = request.init.headers as Record<string, string>;
+  assert.equal(headers["Ocp-Apim-Subscription-Key"], "test-key");
+  assert.match(headers["X-Microsoft-OutputFormat"] ?? "", /mp3/);
 });
 
 test("a zero-byte 200 is a failure, because it plays as silence", async () => {

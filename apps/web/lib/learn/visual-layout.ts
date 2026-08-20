@@ -123,7 +123,7 @@ export function layoutFlow(visual: FlowVisual): FlowPlacement {
   const rows: string[][] = Array.from({ length: rowCount }, () => []);
   // Declaration order inside a row, so the same request always draws the same picture and an author
   // who wants a different left-to-right order can get one by reordering their nodes.
-  for (const node of visual.nodes) rows[ranks.get(node.id)!].push(node.id);
+  for (const node of visual.nodes) rows[ranks.get(node.id) ?? 0]?.push(node.id);
 
   const boxes: FlowBox[] = [];
   for (const [rank, row] of rows.entries()) {
