@@ -79,11 +79,28 @@ function useDismiss(open: boolean, close: () => void) {
   return holder;
 }
 
-// 🔴 28×28, DOWN FROM 32 -- compact-UI pass, design judgement (owner spec, 2026-08-12; not
-// measured against anything external, just quieted to match the smaller composer and header
-// alongside it). The icon inside stays legible at 0.8125rem; only the surrounding box shrank.
+// 🔴🔴 36×36 WITH A 20px GLYPH — MEASURED OFF CHATGPT, 2026-08-20, AND THIS REVERSES THE 08-12
+// COMPACT PASS ON PURPOSE. The comment that stood here said the row went to 28×28 by "design
+// judgement", and ended with its own caveat: *"not measured against anything external, this row has
+// no ChatGPT equivalent to match."* There is one, and it has now been measured in the owner's own
+// browser:
+//
+//     ChatGPT header button   36×36, radius 8px, glyph 20×20
+//     Nemesis (before)        28×28, radius 13.5px (a full pill), glyph 14–15px
+//
+// So the box was 78% of the reference and the glyph 75% of it. Owner's instruction: *"make sure the
+// canvas icons in upper header also match sizing and colour of chatgpt."* A judgement made in the
+// absence of a reference is exactly the kind that a reference should overturn.
+//
+// 🔴 THE RADIUS MOVES FROM A PILL TO 8px, WHICH IS PART OF THE SAME MEASUREMENT. At 28px,
+// `rounded-lg` computed to 13.5px — half the box — so these read as circles. ChatGPT's are rounded
+// SQUARES at 8px, and at 36px `rounded-lg` is that. Pinned in px so it cannot drift with the box.
+//
+// 🔴 THE COLOUR WAS ALREADY RIGHT AND IS LEFT ALONE. `--ui-text-tertiary` composites to ≈#969696;
+// ChatGPT's secondary header glyph is #8f8f8f. Within a hair, and both go to full-strength text on
+// hover. Changing it to chase three units of grey would be a change nobody could see.
 const CONTROL =
-  "flex h-[28px] w-[28px] items-center justify-center rounded-lg text-(--ui-text-tertiary) " +
+  "flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
 const PANEL =
@@ -135,7 +152,7 @@ export function SourcesControl({
         title="Sources and outputs"
         type="button"
       >
-        <Codicon name="library" size="0.8125rem" />
+        <Codicon name="library" size="20px" />
         {/* §46: a dot, not a count. The number is not the point and a badge reading "3" on every
             screen is noise the eye stops seeing anyway. */}
         {/* Model knowledge counts here too. The dot means "there is something in this panel",
@@ -495,7 +512,7 @@ export function MinimapControl({
         title="Progress"
         type="button"
       >
-        <Codicon name="map" size="0.8125rem" />
+        <Codicon name="map" size="20px" />
         {/* §46 convention: a dot, not a count. It marks that a focus is narrowing the
             candidates — the one fact worth knowing without opening the panel. */}
         {isFocused(focus) && (
@@ -608,7 +625,7 @@ export function SessionControl({
         title="Session options"
         type="button"
       >
-        <Codicon name="kebab-vertical" size="0.8125rem" />
+        <Codicon name="kebab-vertical" size="20px" />
       </button>
 
       {open && (
@@ -760,7 +777,7 @@ export function OptionsControl({
             Everything else behind this button is something the learner goes and looks at; voice
             acts on its own, afterwards, and a learner who left it on deserves to see that from the
             closed menu rather than by being spoken to. */}
-        <Codicon name={voice?.speaking ? "unmute" : "kebab-vertical"} size="0.8125rem" />
+        <Codicon name={voice?.speaking ? "unmute" : "kebab-vertical"} size="20px" />
       </button>
 
       {open && (

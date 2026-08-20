@@ -113,6 +113,41 @@ async function main() {
       restingTop: col ? Math.round(parseFloat(getComputedStyle(col).paddingTop)) : null,
     };
   });
+  // ── The header, measured against ChatGPT (2026-08-20) ────────────────────
+  //
+  // 🔴 THE REFERENCE, MEASURED IN THE OWNER'S OWN BROWSER: 36×36 button, radius 8px, glyph 20×20.
+  // Source guards pin the class names; only a browser can say what those classes PAINT, and the
+  // whole reason this row was wrong is that `rounded-lg` computes to half the box at 28px.
+  const icons = await page.evaluate(() => {
+    const row = document.querySelector("main[data-selectable-text] header");
+    if (!row) return null;
+    return [...row.querySelectorAll("button")].map((b) => {
+      const r = b.getBoundingClientRect();
+      const g = b.querySelector("svg, i");
+      const gr = g?.getBoundingClientRect();
+      return {
+        box: `${Math.round(r.width)}x${Math.round(r.height)}`,
+        glyph: gr ? Math.round(Math.max(gr.width, gr.height)) : 0,
+        radius: Math.round(Number.parseFloat(getComputedStyle(b).borderRadius)),
+      };
+    });
+  });
+  check(
+    "I1-header-buttons-are-36x36",
+    !!icons && icons.length > 0 && icons.every((i) => i.box === "36x36"),
+    icons ? icons.map((i) => i.box).join(" ") : "no header",
+  );
+  check(
+    "I2-glyphs-are-20px",
+    !!icons && icons.every((i) => i.glyph >= 19 && i.glyph <= 21),
+    icons ? icons.map((i) => `${i.glyph}px`).join(" ") : "",
+  );
+  check(
+    "I3-radius-is-a-rounded-square-not-a-pill",
+    !!icons && icons.every((i) => i.radius === 8),
+    icons ? icons.map((i) => `${i.radius}px`).join(" ") : "",
+  );
+
   check("M1-masthead-is-solid", !!band && band.image === "none", band ? band.image.slice(0, 60) : "no band found");
   check("M2-clears-the-column", !!band && band.restingTop !== null && band.height < band.restingTop,
     band ? `band ${band.height}px vs column ${band.restingTop}px` : "");
