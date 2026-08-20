@@ -463,5 +463,49 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   if (read) return read;
   const prose = raw.trim();
   if (!prose) return null;
+
+  // 🔴🔴 AN ENVELOPE THAT DID NOT PARSE MUST NOT BE SHOWN AS THE ANSWER, AND IT WAS BEING. Measured
+  // in a browser 2026-08-20: a turn whose JSON was broken by literal newlines printed
+  // `{"say": "∫ 𝑥 2 …", "then": "reply", "topic": "integration"}` on screen, verbatim. The rule
+  // above — "the prose IS the answer" — is right for a model that IGNORED the envelope and simply
+  // answered. It is exactly wrong for one that ATTEMPTED it and mangled it: that text is
+  // machinery, and no learner should ever read the word "topic" in a reply.
+  //
+  // 🔴 THIS IS PROTOCOL PARSING, NOT LANGUAGE UNDERSTANDING — it reads our own output format after
+  // `JSON.parse` has already refused it, which is the one category where matching literal syntax
+  // is the right tool rather than a heuristic standing in for meaning.
+  if (looksLikeEnvelope(prose)) {
+    const salvaged = salvageSay(prose);
+    return salvaged ? { offer: null, say: salvaged, then: "reply", topic: null, visuals: [] } : null;
+  }
   return { offer: null, say: prose, then: "reply", topic: null, visuals: [] };
+}
+
+/** Did the model try to answer in our format and fail? Both marks are required, so ordinary prose
+ *  ABOUT JSON — a learner asking what an object literal is — is not mistaken for a broken turn. */
+function looksLikeEnvelope(prose: string): boolean {
+  return prose.startsWith("{") && /"(?:say|then)"\s*:/.test(prose);
+}
+
+/**
+ * The sentence out of a broken envelope, when one can be recovered without guessing.
+ *
+ * 🔴 IT RETURNS NULL RATHER THAN A BEST EFFORT. The reason the parse failed is that the string
+ * contents are untrustworthy; a partial recovery risks presenting half a sentence, or one ending
+ * mid-symbol, as the considered answer. `null` reaches the caller's ordinary "that turn did not
+ * work" path, which the learner can act on.
+ */
+function salvageSay(prose: string): string | null {
+  const opened = prose.indexOf('"say"');
+  if (opened < 0) return null;
+  const colon = prose.indexOf(":", opened + 5);
+  if (colon < 0) return null;
+  const quote = prose.indexOf('"', colon + 1);
+  if (quote < 0) return null;
+  // Up to the next quote followed by a comma or a closing brace — the shape a value ends with.
+  // Anything else means the string ran into the structure and is not recoverable.
+  const closing = /"\s*[,}]/.exec(prose.slice(quote + 1));
+  if (!closing) return null;
+  const value = prose.slice(quote + 1, quote + 1 + closing.index).replace(/\\n/g, " ").replace(/\s*\n\s*/g, " ").trim();
+  return value.length >= 12 ? value : null;
 }

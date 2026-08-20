@@ -194,3 +194,32 @@ test("🔴 a molecule still travels in the line itself, unchanged", () => {
   const segments = replySegments("Ethanol: [smiles: CCO]");
   assert.equal(segments.filter((s) => s.kind === "visual").length, 1);
 });
+
+test("🔴🔴 a figure with no marker is still shown, after the prose", () => {
+  // 🔴 FOUND BY MEASURING, NOT BY READING. Driven in a browser and asked to plot y = x², the model
+  // answered "Here's y = x² from x = 0 to 5." and nothing appeared. It had written the introducing
+  // sentence and supplied the figure, and simply omitted the [figure 1] marker — so the prose
+  // promised a picture that was silently discarded.
+  //
+  // Position is a preference, not a precondition. Calibration: drop the append loop and this
+  // reddens while every other test in this file stays green.
+  const visuals = replyVisuals([PLOT]);
+  const segments = replySegments("Here's y = x² from x = 0 to 5.", visuals);
+  assert.deepEqual(segments.map((s) => s.kind), ["prose", "visual"]);
+});
+
+test("🔴 and it is shown ONCE, not twice, when the marker was there all along", () => {
+  // The append must skip anything a marker already mounted, or every well-formed answer prints its
+  // figures inline and then again at the end.
+  const visuals = replyVisuals([PLOT]);
+  const segments = replySegments("Look: [figure 1] as you can see.", visuals);
+  assert.equal(segments.filter((s) => s.kind === "visual").length, 1);
+});
+
+test("🔴 a refused figure is not resurrected by the append", () => {
+  // It never reaches `visuals`, so there is nothing to append — the marker stays visible in the
+  // prose and no broken figure is mounted at the end either.
+  const visuals = replyVisuals([{ kind: "equation", latex: "\\href{http://x}{y}", learningGoal: "g" }]);
+  const segments = replySegments("See [figure 1].", visuals);
+  assert.deepEqual(segments.map((s) => s.kind), ["prose"]);
+});

@@ -156,6 +156,19 @@ export function replySegments(text: string, visuals: readonly CanvasVisualReques
 
   const rest = text.slice(cursor);
   if (rest.trim() || segments.length === 0) segments.push({ kind: "prose", text: rest });
+
+  // 🔴🔴 A FIGURE NOBODY POINTED AT IS STILL SHOWN, AND THIS WAS FOUND BY MEASURING. Asked to plot
+  // y = x², the model answered *"Here's y = x² from x = 0 to 5."* and then nothing appeared: it had
+  // written the introducing sentence and supplied the figure, but omitted the `[figure 1]` marker.
+  // The prose promised a picture and the picture was silently dropped.
+  //
+  // Position is a preference, not a precondition. A model that says where a figure goes gets it
+  // there; one that forgets still gets it on screen, after the prose, which is what a reader of
+  // that sentence expects anyway. Making the marker mandatory would mean punishing the learner for
+  // the model's formatting.
+  const mounted = new Set(segments.filter((s) => s.kind === "visual").map((s) => (s as { visual: CanvasVisualRequest }).visual));
+  for (const visual of visuals) if (!mounted.has(visual)) segments.push({ kind: "visual", visual });
+
   return segments;
 }
 

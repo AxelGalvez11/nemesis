@@ -197,6 +197,30 @@ This is the risk in the whole plan, and it has a precedent: adding one front-doo
 #689 produced a **blank screen for 25–59 seconds**. I will measure the p50 against the current path
 on the existing eight-case set, three runs, before any cutover.
 
+### Measured 2026-08-20: the single JSON turn cannot carry structured content
+
+This stopped being a prediction. Driven against the live model in a browser, repeatedly:
+
+- **Asked to plot y = x²**, the model writes the introducing sentence — *"Here's y = x² from x = 0
+  to 5."* — and leaves `visuals` empty. In one run it wrote `[figure 1]` correctly and still
+  supplied no payload, which says it understood the marker and not the object.
+- **Asked to integrate x²**, instructing it to delimit its LaTeX **broke the turn entirely**, both
+  with `\(` and with `$$`. It answered with Unicode math glyphs separated by literal newlines —
+  `∫ 𝑥 2 𝑑 𝑥`, and once `𝑓𝑟𝑎𝑐` where `\frac` belonged. A literal newline cannot exist inside a JSON
+  string, so the decision failed to parse and the raw `{"say": …}` envelope was printed on screen.
+- **Adding a worked example** of the `visuals` array to the prompt made **both** turns hang past
+  180 seconds. Two runs, systematic rather than sampling. Reverted.
+
+`say` is a string inside strict JSON, and every backslash and newline the model writes there has to
+survive its own escaping. It does not. **Mathematics and structured figures cannot travel in the
+same call as the routing decision** — which is the two-call design above, arriving from a second
+direction: the router decides and names what it wants, and a focused second call produces the
+validated payload, exactly as the teaching path already does.
+
+Fixed on the way through, and worth keeping regardless: a broken envelope no longer reaches the
+learner. `decisionOrReply`'s "the prose IS the answer" rule is right for a model that ignored the
+envelope and simply answered, and exactly wrong for one that attempted it and mangled it.
+
 **Not tool-calling.** Two reasons: `toolsAllowed` turns tools off for every reasoner turn, so a
 search tool would be available only on the turns least likely to need it; and a tool schema outranks
 the system prompt, which would relitigate the router prompt at the same time as this change.

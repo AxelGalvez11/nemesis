@@ -252,3 +252,48 @@ test("🔴 nothing in this module can produce a study turn the model did not ask
   }
   assert.equal(decisionOrReply('{"say":"alright.","then":"study"}')?.then, "study");
 });
+
+test("🔴🔴🔴 the model is NOT told to write mathematics, because telling it breaks the turn", () => {
+  // 🔴 THIS TEST IS THE INVERSE OF THE ONE IT REPLACED, AND THE INVERSION IS THE FINDING.
+  //
+  // Reported 2026-08-20: "i asked it to integrate x^2 but it only gave me the answer not a step by
+  // step solution". The first diagnosis was right — AssistantMarkdown runs rehype-katex and needs
+  // delimiters, and nothing told the model that — and both fixes for it FAILED IN A BROWSER.
+  //
+  // Asked for `\(`, and again asked for `$$`, the model answered by converting the LaTeX into
+  // Unicode math glyphs separated by LITERAL NEWLINES: `∫ 𝑥 2 𝑑 𝑥`, and `𝑓𝑟𝑎𝑐` where `\frac`
+  // belonged. A literal newline cannot appear inside a JSON string, so the decision did not parse
+  // and `decisionOrReply` printed the raw envelope on screen. Raw backslashes are ugly; a raw
+  // `{"say": ...}` is broken.
+  //
+  // So this guards the absence. Anyone re-adding a math instruction here must re-run
+  // scripts/reply-visuals-browser.ts and show three clean runs first.
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "integrate x^2 dx" }).map((m) => m.content).join("\n");
+  assert.ok(!/\$\$/.test(prompt), "a $$ math instruction is back; it produced unparseable turns when measured");
+  assert.ok(!/[Ww]rap every piece of mathematics/.test(prompt), "the backslash delimiter instruction is back");
+});
+
+test("🔴🔴 a BROKEN envelope is never shown to the learner as the answer", () => {
+  // 🔴 MEASURED, NOT IMAGINED. Driven in a browser, a turn whose JSON was broken by literal
+  // newlines printed this on screen verbatim. No learner should ever read the word "topic" in a
+  // reply. `decisionOrReply`'s "the prose IS the answer" rule is right for a model that IGNORED
+  // the envelope and simply answered; it is exactly wrong for one that attempted it and mangled it.
+  const broken = '{"say": "\n∫\n𝑥\n2\n,\n𝑑\n𝑥\n", "then": "reply", "topic": "integration", "visuals": []}';
+  const read = decisionOrReply(broken);
+  assert.ok(!read || !/"then"|"topic"/.test(read.say), `the envelope reached the learner: ${read?.say}`);
+});
+
+test("🔴 a recoverable sentence IS recovered rather than thrown away", () => {
+  const broken = '{"say": "A mole is a counting unit, like a dozen but much bigger.", "then": "reply", "topic": ';
+  assert.match(decisionOrReply(broken)?.say ?? "", /A mole is a counting unit/);
+});
+
+test("🔴🔴 plain prose is still passed straight through — that rule was right", () => {
+  // The model that ignores the envelope and simply answers has still answered, and throwing that
+  // away would be strictly worse for the learner. Only ATTEMPTED-and-mangled envelopes are caught.
+  const prose = "A mole is a counting unit, like a dozen but much bigger.";
+  assert.equal(decisionOrReply(prose)?.say, prose);
+  // ...including prose that happens to be ABOUT JSON.
+  const about = 'A JSON object looks like {"name": "value"} and is read by every language.';
+  assert.equal(decisionOrReply(about)?.say, about);
+});
