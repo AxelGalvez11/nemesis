@@ -32,7 +32,6 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   { id: "new-canvas", label: "New canvas", codicon: "add", route: "/learn" },
   { id: "library", label: "Library", codicon: "library", route: "/library" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
-  { id: "stats", label: "Stats", codicon: "graph", route: "/stats" },
 ];
 
 /** Dev-preview mounts the whole workspace under a prefix; a rail row must not navigate out of it. */
