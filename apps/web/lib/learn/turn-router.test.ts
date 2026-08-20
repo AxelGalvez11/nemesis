@@ -363,3 +363,22 @@ test("🔴🔴 LaTeX in the answer survives, because it is no longer inside a JS
   assert.equal(read?.then, "reply");
   assert.match(read?.say ?? "", /\\int x\^2 \\, dx = \\frac\{x\^3\}\{3\} \+ C/, "the LaTeX did not survive");
 });
+
+test("🔴🔴 the model is told never to draw a picture out of characters", () => {
+  // 🔴 MEASURED ON PRODUCTION, and the model's own closing line is the evidence. Asked to show the
+  // structure of ethanol it drew an ASCII diagram in a code block and finished with "if you want it
+  // as a proper structural diagram in the canvas, just say the word."
+  //
+  // It knew the real channel existed and picked characters anyway — so this was never a capability
+  // gap, and describing [smiles: …] more clearly would not have caught it. The missing instruction
+  // was the NEGATIVE one. Calibration: delete the clause and this reddens.
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "show me ethanol" }).map((m) => m.content).join("\n");
+  assert.match(prompt, /Never draw a picture out of text characters/);
+  assert.match(prompt, /ASCII diagrams/);
+  // ...and code fences are explicitly still allowed, or this instruction would cost the product
+  // every real snippet it prints.
+  assert.match(prompt, /A code fence is for code and notation/);
+  // 🔴 AND THE ONE CASE THAT MUST BE UNAMBIGUOUS. The first version aimed at the code FENCE and the
+  // model simply put the ASCII art in prose instead — where the characters sit was never the point.
+  assert.match(prompt, /MUST \n?answer with \[smiles/s, "the molecule case is only discouraged, not required");
+});

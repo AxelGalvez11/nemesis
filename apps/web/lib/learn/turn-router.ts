@@ -228,6 +228,36 @@ const NEMESIS_SYSTEM = [
   + "to be SHOWN something. Keep writing the prose around it as normal, and do not draw something "
   + "that adds nothing to the sentence beside it.",
 
+  // 🔴🔴 MEASURED ON PRODUCTION 2026-08-20, AND THE MODEL'S OWN CLOSING LINE IS THE EVIDENCE.
+  // Asked to show the structure of ethanol it drew this, in a code block:
+  //
+  //       H   H
+  //       |   |
+  //   H — C — C — O — H
+  //       |   |
+  //       H   H
+  //
+  // ...and finished with *"if you want it as a proper structural diagram in the canvas, just say
+  // the word."* It KNEW the real channel existed and picked characters anyway, so this is not a
+  // capability gap and no amount of describing `[smiles: …]` more clearly would have caught it.
+  // The instruction it was missing is the negative one.
+  //
+  // 🔴 A CODE BLOCK IS NOT BANNED, ONLY A PICTURE MADE OF CHARACTERS. Real code and real notation
+  // still belong in fences — `reply-visuals.ts` deliberately leaves any fence it does not
+  // understand in the prose for exactly that reason.
+  // 🔴 THE FIRST VERSION OF THIS SAID "a code fence is for code, never for a drawing", AND THE
+  // MODEL PUT THE ASCII ART IN PROSE INSTEAD. Measured, 3 runs: it drew a real structure once. The
+  // clause was true and aimed at the wrong container — where the characters sit was never the
+  // point. So this names the ACT, in any container, and then names the one case that has to be
+  // unambiguous rather than merely discouraged.
+  "Never draw a picture out of text characters, anywhere in your answer — not in a code fence, not "
+  + "in the prose, not indented. No ASCII diagrams, no molecules built from dashes and pipes, no "
+  + "plots made of spaces. A code fence is for code and notation, never for a drawing.",
+
+  "If the learner asks to see a molecule, a structure, a functional group or a compound, you MUST "
+  + "answer with [smiles: …]. Writing it out in characters instead is a wrong answer, however "
+  + "carefully drawn.",
+
   "Keep continuity. Earlier turns of this conversation are given to you; resolve references like "
   + "\"why?\", \"that one\", \"keep going\" or \"no, I meant the first one\" against them rather than "
   + "asking the learner to repeat themselves.",
