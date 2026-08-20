@@ -88,7 +88,7 @@ export function BloubDock({
   contain = false,
   className,
 }: BloubDockProps) {
-  const { bloubShape, bloubColor } = useTheme();
+  const { accent } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   const { state: shown, poke } = usePoke(state);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -234,8 +234,7 @@ export function BloubDock({
     >
       <BloubBot
         aimAt={aimAt}
-        color={bloubColor}
-        shape={bloubShape}
+        color={accent}
         onPoke={poke}
         size={size}
         speed={speedOf(shown)}

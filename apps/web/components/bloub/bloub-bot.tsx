@@ -30,7 +30,9 @@ import { EXPRESSION_BY_ID } from "@/lib/bloub/expressions";
 import { TURN_TIME, lookTarget } from "@/lib/bloub/gaze";
 import { clamp, easings } from "@/lib/bloub/math";
 import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
-import { COLOR_BY_ID, SHAPE_BY_ID, mixHex } from "@/lib/bloub/skins";
+import { mixHex } from "@/lib/bloub/skins";
+
+import { CHARACTER_SHAPE, inkFor } from "@/lib/character/look";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@/lib/character/pool";
@@ -60,9 +62,15 @@ export interface BloubBotProps {
   state?: StateId;
   /** Rendered size in px. The viewBox is square, so this is both width and height. */
   size?: number;
-  /** Customiser: silhouette used by the resting states. */
-  shape?: string;
-  /** Customiser: body colour. */
+  /**
+   * The body colour, as an ACCENT id (owner 2026-08-20: "the color affects the accent of the
+   * send button and also the blob").
+   *
+   * 🔴 ONE CONTROL, NOT TWO. The character used to carry its own twelve-colour palette beside
+   * the app's accent picker, so a learner could set them to disagree and nothing would tell
+   * them which one they had just changed. It reads the app's accent now; `"default"` means the
+   * character stays ink, which is what the rest of the chrome does with the same choice.
+   */
   color?: string;
   /** Customiser: resting expression. */
   expression?: string;
@@ -120,8 +128,7 @@ export interface BloubBotProps {
 export function BloubBot({
   state = "idle",
   size = 96,
-  shape = "cercle",
-  color = "encre",
+  color = "default",
   expression = "neutre",
   paper,
   track = false,
@@ -161,13 +168,13 @@ export function BloubBot({
     engineRef.current = new BotEngine(
       RAYON,
       state,
-      SHAPE_BY_ID.get(shape)?.radii ?? null,
+      CHARACTER_SHAPE,
       EXPRESSION_BY_ID.get(expression) ?? null,
     );
   }
 
   // Resolved once per render and read by the loop, so the loop never re-subscribes.
-  const ink = COLOR_BY_ID.get(color)?.hex ?? "#0a0a0c";
+  const ink = inkFor(color, typeof document !== "undefined" ? document.documentElement.dataset.theme : undefined);
   const live = useRef({ ink, paper: paper ?? "", speed, track, aimAt, entrance });
   live.current = { ink, paper: paper ?? "", speed, track, aimAt, entrance };
 
@@ -309,9 +316,6 @@ export function BloubBot({
   const stateRef = useRef(state);
   stateRef.current = state;
   useEffect(() => {
-    engineRef.current?.setShape(SHAPE_BY_ID.get(shape)?.radii ?? null, clockRef.current);
-  }, [shape]);
-  useEffect(() => {
     engineRef.current?.setExpression(EXPRESSION_BY_ID.get(expression) ?? null, clockRef.current);
   }, [expression]);
   useEffect(() => {
@@ -353,7 +357,7 @@ export function BloubBot({
     paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper());
     // Redrawn whenever the look changes, since nothing else will redraw it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [still, frozenAt, state, shape, color, expression, paper]);
+  }, [still, frozenAt, state, color, expression, paper]);
 
   useLayoutEffect(() => {
     if (still) return;

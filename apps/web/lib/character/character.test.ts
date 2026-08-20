@@ -153,6 +153,51 @@ test("🔴 both of the Canvas's waits move the character, not just the loud one"
   );
 });
 
+test("🔴 only ONE thing on the canvas draws a character", async () => {
+  // 🔴 THE PREVIOUS GUARD WAS HOLLOW AND THIS IS WHY. It asserted one RENDERER — that only one
+  // file constructs a BotEngine — and it passed while the owner was looking at six dots. The
+  // defect was never two renderers: `CanvasThinkingPreview` and `BloubDock` each MOUNTED the one
+  // renderer, both centred, both playing `thinking`, so two sets of three dots stacked up.
+  //
+  // A guard on the wrong noun is worse than no guard, because it is believed. The rule that
+  // actually holds: on the canvas, the dock owns the character. Nothing else there draws one.
+  // `canvas-home.tsx` is exempt because it IS a different route — the landing surface and a
+  // session cannot be on screen together.
+  const { readdir, readFile } = await import("node:fs/promises");
+  const dir = "components/workspace/learn/";
+  const root = new URL("../../", import.meta.url);
+  const offenders: string[] = [];
+  for (const entry of await readdir(new URL(dir, root), { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".tsx")) continue;
+    if (entry.name === "canvas-home.tsx") continue;
+    const source = await readFile(new URL(`${dir}${entry.name}`, root), "utf8");
+    if (source.includes("<BloubBot")) offenders.push(entry.name);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `these draw a second character beside the dock — the learner sees two: ${offenders.join(", ")}`,
+  );
+});
+
+test("the character rests as a circle, and its colour is the app's accent", async () => {
+  // Owner 2026-08-20: "can we just keep the circle blob shape?" and "the color affects the accent
+  // of the sand button and also the blob". Two controls that both changed "the colour" could
+  // disagree; one silhouette per device meant the product had no character of its own.
+  const { CHARACTER_SHAPE, inkFor } = await import("./look");
+  const { ACCENT_COLORS } = await import("../accent");
+  // Against the vendored constant, not a literal: bloub samples at 64 and my own earlier engine
+  // sampled at 48, so a hardcoded number here would encode which engine I was thinking about
+  // rather than which one is running.
+  const { PROFILE_SAMPLES } = await import("../bloub/profiles");
+  assert.equal(CHARACTER_SHAPE.length, PROFILE_SAMPLES, "the resting silhouette is not a full profile");
+  assert.ok(CHARACTER_SHAPE.every((r) => Math.abs(r - CHARACTER_SHAPE[0]!) < 1e-9), "not a circle");
+  assert.equal(inkFor("blue", "light"), ACCENT_COLORS.blue, "the character ignores the accent");
+  // Default REMOVES the override everywhere else, so the character must not invent a colour.
+  assert.equal(inkFor("default", "light"), "#0a0a0c");
+  assert.equal(inkFor("default", "dark"), "#f2f2f4");
+});
+
 test("🔴 there is exactly ONE thing that turns the engine into pixels", async () => {
   // 🔴 THIS GUARD EXISTS BECAUSE I BUILT A SECOND ONE. PR #700 had already vendored this engine
   // and shipped a React renderer at components/workspace/learn/bloub.tsx; PR #708 added another
