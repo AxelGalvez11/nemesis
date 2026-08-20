@@ -96,6 +96,7 @@ async function main(): Promise<void> {
   console.log("FIGURES>>>", JSON.stringify(figures));
   console.log("KATEX ELEMENTS>>>", katex);
 
+  await page.screenshot({ path: process.env.PROBE_SHOT ?? "/tmp/probe.png", fullPage: true });
   await browser.close();
   await fetch(`${SB}/auth/v1/admin/users/${userId}`, { headers: svc, method: "DELETE" });
   process.exit(0);
