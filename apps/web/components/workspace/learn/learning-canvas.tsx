@@ -170,7 +170,17 @@ export function LearningCanvas({
   // Voice mode. 🔴 `policy.judging` is the composer-busy signal: while an answer is being read the
   // learner is waiting on a verdict, and opening a microphone at them is asking for an answer to a
   // question they already gave.
-  const voice = useCanvasVoice(policy, policy.judging);
+  // 🔴 THE REPLY IS HOISTED ABOVE THIS FOR THE VOICE, and the key is the text's own length plus its
+  // first characters rather than a counter — a counter would re-read the same answer after any
+  // re-render, and `use-canvas-voice.ts` says an identity derived separately from the text is an
+  // identity that can drift from it.
+  const spokenReply = useMemo(() => {
+    const aside = session.aside;
+    if (!aside || aside.blockId !== null || aside.kind !== "reply") return null;
+    const text = aside.text.trim();
+    return text ? { key: `${text.length}:${text.slice(0, 24)}`, text } : null;
+  }, [session.aside]);
+  const voice = useCanvasVoice(policy, policy.judging, spokenReply);
 
   /**
    * The session record, read from the append-only evidence log.
@@ -1064,6 +1074,7 @@ export function LearningCanvas({
             neither is in a panel, a modal or a column of its own. */}
         {regions.policy && presence !== "preparing" && (
           <CanvasPolicyView
+            lookedUp={session.lookedUp}
             // 🔴 DISPATCHES `policy_continue` BEFORE ACKNOWLEDGING, NOT BECAUSE THIS CALL CHANGES
             // ANYTHING — `nextExplanationState` returns the state unchanged for this event — but
             // because the call site is what keeps that row real rather than theoretical. Contract

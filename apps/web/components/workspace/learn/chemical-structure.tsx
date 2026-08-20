@@ -152,15 +152,22 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           What it needs first is a stable way to name the group being hidden, which SMILES atom
           indices give and the library does not currently expose on the emitted nodes. Recorded so
           the next person starts from the actual obstacle rather than from the idea. */}
-      {/* 🔴 BOUNDED IN HEIGHT, MEASURED 2026-08-20. `h-auto w-full` lets the drawer's viewBox decide
-          the aspect, and a SMALL molecule has a nearly square one — so `CCO` painted a 650px-tall
-          frame for three atoms, pushing the sentence after it off the screen. The width is what
-          should be shared with the column; the height is the molecule's business and needs a
-          ceiling. `max-h` with `object-contain` keeps the geometry exact and simply stops it
-          filling the page. */}
+      {/* 🔴🔴 SIZED TO THE MOLECULE, NOT TO THE COLUMN, AND THE FIRST FIX GOT THIS HALF-RIGHT.
+          `h-auto w-full` let the drawer's viewBox decide the aspect, and a small molecule has a
+          nearly square one — so `CCO` painted a 650px-tall frame for three atoms. Capping the
+          HEIGHT stopped that and left the other half standing: `w-full` still stretched three atoms
+          across the full 640px column, and `object-contain` letterboxed the result into a large
+          panel that is mostly empty.
+
+          🔴 REPORTED 2026-08-20 WITH A SCREENSHOT: *"can you make the size of it be smaller to fit
+          with the canvas sizing?"* — a hydroxyl group inside a box the width of the page.
+
+          `w-auto` with a bound on both sides is the fix: the drawing renders at its own size,
+          centred, and only shrinks when it is genuinely bigger than the column. A reaction scheme
+          is wide and still fits; ethanol is small and now looks small. */}
       <svg
         aria-label={visual.learningGoal}
-        className="mx-auto h-auto max-h-[280px] w-full object-contain"
+        className="mx-auto block h-auto max-h-[220px] w-auto max-w-full"
         ref={target}
         role="img"
         style={{ display: failure ? "none" : "block" }}

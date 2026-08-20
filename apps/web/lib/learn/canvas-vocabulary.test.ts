@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { appendEvent } from "./canvas-events";
 import type { CanvasBlock, LearningCanvas } from "./canvas-model";
-import { markedTerms, splitByTerms, type VocabularyCanvas } from "./canvas-vocabulary";
+import { lookedUpMarks, markedTerms, splitByTerms, type VocabularyCanvas } from "./canvas-vocabulary";
 
 /** ~60 words, so the density rule allows the full budget of two. */
 const LONG = [
@@ -162,4 +162,48 @@ test("splitting reconstructs the text exactly", () => {
 test("splitting a block with no marks yields the text and nothing else", () => {
   const runs = splitByTerms(LONG, []);
   assert.deepEqual(runs, [{ text: LONG, mark: null }]);
+});
+
+// ── A word the learner already asked about ───────────────────────────────────────────────────
+
+test("🔴🔴 a term the learner looked up is marked wherever it appears", () => {
+  // 🔴 REPORTED 2026-08-20. Every piece of this existed and none of it was connected: `markedTerms`
+  // reads `block.terms`, which INGESTION attaches, so a word only wore an underline if a parser had
+  // nominated it. `learner_lookups` had been recording the learner's own stops for weeks with
+  // nothing reading the table back onto the screen.
+  const text = "What's the last thing you remember about retatrutide's approval status?";
+  const marks = lookedUpMarks(text, ["retatrutide"]);
+  assert.equal(marks.length, 1);
+  assert.equal(text.slice(marks[0]!.start, marks[0]!.end), "retatrutide");
+});
+
+test("🔴 whole words only — 'ion' must not underline the middle of 'action'", () => {
+  // Calibration: drop the WORD_CHAR boundary test and this reddens on its own. It is the same
+  // failure `markedTerms` documents, reached through a different door.
+  assert.deepEqual(lookedUpMarks("An action potential", ["ion"]), []);
+  assert.equal(lookedUpMarks("An ion channel", ["ion"]).length, 1);
+});
+
+test("🔴 case does not matter to the match, and the ORIGINAL casing survives it", () => {
+  const marks = lookedUpMarks("Clearance is the key idea.", ["clearance"]);
+  assert.equal(marks[0]?.term, "Clearance", "the mark carries the model's casing rather than the page's");
+});
+
+test("🔴🔴 overlapping terms cannot silently lose one, because splitByTerms walks forward", () => {
+  // "mole" inside "molecule". splitByTerms skips any mark starting behind its cursor, so an
+  // unsorted or overlapping list drops whichever was found second — at random, depending on the
+  // order the lookups happened to be stored in.
+  const text = "One molecule is not one mole.";
+  const marks = lookedUpMarks(text, ["mole", "molecule"]);
+  for (let i = 1; i < marks.length; i += 1) {
+    assert.ok(marks[i]!.start >= marks[i - 1]!.end, "the marks overlap and splitByTerms will drop one");
+  }
+  // ...and every run splitByTerms produces still reassembles the original text exactly.
+  assert.equal(splitByTerms(text, marks).map((run) => run.text).join(""), text);
+});
+
+test("🔴 no terms, or no text, marks nothing rather than everything", () => {
+  assert.deepEqual(lookedUpMarks("Some text", []), []);
+  assert.deepEqual(lookedUpMarks("", ["mole"]), []);
+  assert.deepEqual(lookedUpMarks("Some text", ["   "]), []);
 });

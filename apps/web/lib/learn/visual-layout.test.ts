@@ -453,7 +453,12 @@ test("🔴🔴 the Tailwind literal and the constant cannot drift apart", () => 
   // two a silent-drift pair — change the constant and every figure keeps the old floor while the
   // code reads as though it moved. This is the only thing standing between them.
   assert.match(VISUAL_FIGURE_CLASS, new RegExp(`min-h-\\[${VISUAL_HEIGHT}px\\]`));
-  assert.match(STRUCTURE_SOURCE, new RegExp(`max-h-\\[${VISUAL_HEIGHT}px\\]`));
+  // 🔴 A STRUCTURE IS BOUND TIGHTER THAN THE SHARED FIGURE HEIGHT, ON PURPOSE. It sizes itself to
+  // the MOLECULE rather than to the column (`w-auto`), so its bound is a ceiling on a drawing that
+  // is usually well under it — not a canvas it fills. Reported 2026-08-20: three atoms were being
+  // stretched across the full 640px column and letterboxed into a mostly-empty panel.
+  assert.match(STRUCTURE_SOURCE, /max-h-\[220px\] w-auto max-w-full/);
+  assert.ok(!/max-h-\[240px\]|h-auto max-h-\[280px\] w-full/.test(STRUCTURE_SOURCE), "the structure fills the column again");
 });
 
 test("🔴 every drawn figure wears the one class, rather than restating it", () => {

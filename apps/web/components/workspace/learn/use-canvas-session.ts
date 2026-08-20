@@ -109,6 +109,16 @@ export interface BusyState {
  *  `converse` (canvas-wide, `blockId: null`) so both write the same shape and contract rule 2's
  *  "clears on the next turn" rule only has one store to apply to. Named so the `useState` call and
  *  the `CanvasSession` field below cannot quietly drift into two different shapes. */
+/**
+ * The longest selection that becomes an underlined term.
+ *
+ * 🔴 A BOUND, BECAUSE "DEFINE" ACCEPTS A PHRASE AND UNDERLINING A SENTENCE IS NOT A VOCABULARY
+ * MARK. `selectionShape` already calls anything past eight words a passage; this is the same
+ * instinct expressed in characters, since what matters here is how much of the page wears a line
+ * under it.
+ */
+const LOOKUP_MARK_MAX_CHARS = 40;
+
 type CanvasAside = {
   text: string;
   blockId: string | null;
@@ -180,6 +190,8 @@ export interface CanvasSession {
    * `learning-canvas.tsx` renders that case at the top of the canvas rather than under a block.
    */
   aside: CanvasAside;
+  /** Words the learner has already asked the meaning of, for `lookedUpMarks`. Sitting-scoped. */
+  lookedUp: readonly string[];
   /** The id of the prompt whose answer is being read, or null. */
   judging: string | null;
   ready: boolean;
@@ -289,6 +301,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  from a file. Read by the teaching controller; see `TeachingContext.opening`. */
   const [opening, setOpening] = useState<string | null>(null);
   const [aside, setAside] = useState<CanvasAside>(null);
+  /**
+   * Words the learner has stopped and asked about in this sitting.
+   *
+   * 🔴 A SITTING, NOT A PROFILE. `learner_lookups` is the durable record and `learner-friction.ts`
+   * is emphatic that curiosity is not a claim about a person — this is the much smaller thing the
+   * screen needs: which words on the page in front of them they have already opened, so those
+   * words carry the dotted underline that says "you can open this again".
+   */
+  const [lookedUp, setLookedUp] = useState<readonly string[]>([]);
   /** The prompt whose answer is being read right now. Per-question rather than a page-wide busy
    *  flag, so judging one answer does not freeze the rest of the page. */
   const [judging, setJudging] = useState<string | null>(null);
@@ -1423,6 +1444,21 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setSelectionError(null);
       setSelectionBusy(true);
 
+      // 🔴 REMEMBERED HERE BECAUSE THIS IS THE ONE DOOR EVERY LOOKUP GOES THROUGH — the selection
+      // toolbar and a click on an already-marked term both arrive as the same call, which is what
+      // `lookUpTerm` in learning-canvas.tsx exists to guarantee. Recording it at either call site
+      // would have covered half the ways a learner asks what a word means.
+      //
+      // 🔴 A DEFINITION-SHAPED ACTION ONLY. "Simpler" rewrites a passage and "why" explains a
+      // mechanism; neither means "I did not know this word", and underlining a whole rewritten
+      // sentence is not what was asked for.
+      if (action === "define" || action === "explain") {
+        const word = selection.selectedText.trim();
+        if (word && word.length <= LOOKUP_MARK_MAX_CHARS) {
+          setLookedUp((known) => (known.some((k) => k.toLowerCase() === word.toLowerCase()) ? known : [...known, word]));
+        }
+      }
+
       recordEvent({
         type:
           action === "define"
@@ -1507,6 +1543,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     busy,
     error,
     aside,
+    lookedUp,
     judging,
     opening,
     ready,

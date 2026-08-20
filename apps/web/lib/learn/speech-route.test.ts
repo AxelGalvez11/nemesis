@@ -10,6 +10,7 @@ import test from "node:test";
 
 import type { SpokenMoment } from "./canvas-speech";
 import {
+  ANSWER_SPEED,
   CANVAS_SPEED,
   isWellFormedLocale,
   MEASURED_PROVIDERS,
@@ -185,4 +186,40 @@ test("locale shapes accepted and refused", () => {
   for (const bad of ["", "Spanish", "es_MX", "es-mx", "ES-MX", "es-MEX", "a"]) {
     assert.equal(isWellFormedLocale(bad), false, `${bad} should not be a tag`);
   }
+});
+
+// ── Reading a conversational answer ──────────────────────────────────────────────────────────
+//
+// Owner, 2026-08-20: *"why does it only read aloud during questions?"* Because every spoken moment
+// was derived from the POLICY runtime, and a conversational answer is not a policy decision. Voice
+// mode had a branch for a question and a branch for a correction and none at all for the thing a
+// learner looks at most — the same shape as every other defect on this surface this month: the
+// capability was whole, and the conversational path could not reach it.
+
+const ANSWER: SpokenMoment = { kind: "answer", text: "A mole is a counting unit, like a dozen but much bigger." };
+
+test("🔴🔴 a conversational answer is spoken at all", () => {
+  const route = routeSpeech({ key: "a1", moment: ANSWER, purpose: "canvas" });
+  assert.equal(route.decision, "speak");
+  assert.equal(route.decision === "speak" && route.utterance.text, ANSWER.kind === "answer" ? ANSWER.text : "");
+});
+
+test("🔴 and at NATURAL pace, which is why it is its own kind rather than a question", () => {
+  // 0.95 is a concession to working memory: a learner holding a QUESTION in mind while composing a
+  // reply gains from the extra beat. An answer is being explained TO them with the text in front of
+  // them. Reusing "question" would have quietly slowed every explanation the product gives.
+  // Calibration: route it as a question and this reddens while the test above stays green.
+  const answer = routeSpeech({ key: "a2", moment: ANSWER, purpose: "canvas" });
+  const question = routeSpeech({ key: "q9", moment: QUESTION, purpose: "canvas" });
+  assert.equal(answer.decision === "speak" && answer.speed, ANSWER_SPEED);
+  assert.equal(question.decision === "speak" && question.speed, CANVAS_SPEED);
+  assert.notEqual(ANSWER_SPEED, CANVAS_SPEED, "the two paces collapsed, so this test proves nothing");
+});
+
+test("🔴 an answer that is mostly notation is still refused, exactly like a question", () => {
+  // The letter-ratio guard is not relaxed for the new kind. A synthesiser reading "$$\\int x^2$$"
+  // aloud is worse than silence, and the whole point of the render work is that the LEARNER READS
+  // that, rather than hearing it spelled out.
+  const route = routeSpeech({ key: "a3", moment: { kind: "answer", text: "$$\\int x^2 \\, dx = \\frac{x^3}{3} + C$$" }, purpose: "canvas" });
+  assert.equal(route.decision, "silent");
 });

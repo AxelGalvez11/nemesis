@@ -30,7 +30,11 @@ import { StoredFigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 import { correctionLead } from "./correction-copy";
+import { LookedUpText } from "./looked-up-text";
 import { selectableRegion } from "./use-canvas-selection";
+
+/** Stable identity, so a default prop cannot re-render every question on every paint. */
+const EMPTY_LOOKUPS: readonly string[] = [];
 import { CanvasSourcePills } from "./canvas-source-pills";
 
 /**
@@ -83,10 +87,20 @@ export function screenKey(runtime: PolicyRuntime): string {
  * interaction — that is a surface for UI to design, and `runtime.task.tempo` is the signal for it.
  */
 export function CanvasPolicyView({
+  lookedUp = EMPTY_LOOKUPS,
   runtime,
   sharing = false,
   onContinue = null,
 }: {
+  /**
+   * Words the learner has already asked the meaning of, underlined wherever they appear here.
+   *
+   * 🔴 REPORTED 2026-08-20, ON A QUESTION. The screenshot was a retrieval prompt — "What's the last
+   * thing you remember about retatrutide's approval status?" — and `canvas-document.tsx`, the only
+   * place that has ever drawn this underline, renders document BLOCKS. The question was the one
+   * piece of text on screen that could never wear one.
+   */
+  lookedUp?: readonly string[];
   runtime: PolicyRuntime;
   sharing?: boolean;
   /** §38 — non-null when THIS region is the one carrying a reading requirement right now. Decided
@@ -102,7 +116,7 @@ export function CanvasPolicyView({
           surface and make retrieval feel like an interface being waited on rather than a question
           being answered. */}
       <div className={sharing ? "canvas-swap" : "canvas-swap min-h-full"} key={screenKey(runtime)}>
-        <PolicyScreen onContinue={onContinue} runtime={runtime} sharing={sharing} />
+        <PolicyScreen lookedUp={lookedUp} onContinue={onContinue} runtime={runtime} sharing={sharing} />
       </div>
     </>
   );
@@ -138,10 +152,14 @@ function ForcedNotice({ runtime }: { runtime: PolicyRuntime }) {
 }
 
 function PolicyScreen({
+  lookedUp,
   onContinue,
   runtime,
   sharing,
 }: {
+  /** Threaded down rather than read from a context: this file has one entry point and one screen,
+   *  and a context for a two-hop prop is a second way to be wrong about which canvas is on. */
+  lookedUp: readonly string[];
   onContinue: (() => void) | null;
   runtime: PolicyRuntime;
   sharing: boolean;
@@ -271,7 +289,7 @@ function PolicyScreen({
           // know what a word in the question MEANS could otherwise only guess or leave.
           {...selectableRegion("question")}
         >
-          {prompt.prompt}
+          <LookedUpText terms={lookedUp} text={prompt.prompt} />
         </h2>
       </div>
     );
@@ -306,7 +324,7 @@ function PolicyScreen({
     return (
       <div className={`flex ${regionHeight(sharing)} flex-col items-center justify-center gap-8 px-6`}>
         <h2 className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-question)] font-medium leading-[1.4] text-balance text-(--ui-text-primary)">
-          {prompt.prompt}
+          <LookedUpText terms={lookedUp} text={prompt.prompt} />
         </h2>
         {runtime.choicesRevealed ? (
         <ul className="flex w-full max-w-(--canvas-column) flex-col gap-2">
