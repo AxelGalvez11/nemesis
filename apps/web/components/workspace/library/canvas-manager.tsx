@@ -1157,7 +1157,17 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name: string }) {
     // menu button's right edge lands on the table's right edge rather than 8px inside it. Ours
     // sat at the LEFT of a 64px column, which put a floating 24px dot in the middle of nowhere
     // with 40px of blank after it — the single thing that most made the row look unfinished.
-    <div className="relative -mr-[var(--list-row-pad-r)] flex justify-end">
+    // 🔴 THE WRAPPER TAKES THE STACKING, NOT JUST THE PANEL (owner 2026-08-20: "there is overlap
+    // in the library page when clicking on the '...' button"). The panel already carried `z-40`,
+    // which lifted it within THIS row and nowhere else — every row below is a later sibling at the
+    // same level, so their Created dates painted straight over an opaque menu and appeared to show
+    // through it. Raising the wrapper puts the whole menu above the rows that follow it.
+    <div
+      className={cn(
+        "relative -mr-[var(--list-row-pad-r)] flex justify-end",
+        open && "z-50",
+      )}
+    >
       {/* 🔴 THE ONE MEASURED DEFECT §38.3 IS ABOUT. This carried `opacity-0` with
           `group-hover:opacity-100`, so EVERY row's rename, move, pin and delete lived behind a
           control that painted nothing until the pointer crossed it — 62 of 62 rows measured at

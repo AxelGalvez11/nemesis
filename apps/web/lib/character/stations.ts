@@ -63,7 +63,10 @@ export type NemesisActivity =
 
 export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   thinking: "thinking",
-  preparing: "orbit",
+  // 🔴 ALSO `thinking`, NOT `orbit` (owner 2026-08-20: "why is it only doing swirl?"). The rings
+  // are the loudest animation in the catalogue; playing them on every wait meant they stopped
+  // reading as anything. Both waits are one experience to a learner, so they get one animation.
+  preparing: "thinking",
   retrieving: "comet",
   ingesting: "burst",
   resting: "idle",

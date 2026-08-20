@@ -152,3 +152,45 @@ test("🔴 both of the Canvas's waits move the character, not just the loud one"
     `no call site passes both real signals: ${wired.join(" | ")}`,
   );
 });
+
+test("🔴 there is exactly ONE thing that turns the engine into pixels", async () => {
+  // 🔴 THIS GUARD EXISTS BECAUSE I BUILT A SECOND ONE. PR #700 had already vendored this engine
+  // and shipped a React renderer at components/workspace/learn/bloub.tsx; PR #708 added another
+  // at components/bloub/bloub-bot.tsx without checking. Both then rendered on the same screen —
+  // one from the busy state, one from the dock — and the owner saw two overlapping mascots and
+  // an animation nobody had chosen. Nothing failed. Two renderers is not a conflict, it is just
+  // two renderers.
+  //
+  // The rule: constructing a BotEngine is what makes something a renderer, so only the renderer
+  // and the pure Nemesis layer may do it.
+  const { readdir, readFile } = await import("node:fs/promises");
+  const root = new URL("../../", import.meta.url);
+  const allowed = [
+    "components/bloub/bloub-bot.tsx",
+    "lib/character/character.test.ts",
+    "scripts/bloub-board.mts",
+    "components/dev/bloub-lab/lab.tsx",
+  ];
+
+  const offenders: string[] = [];
+  const walk = async (dir: string) => {
+    for (const entry of await readdir(new URL(dir, root), { withFileTypes: true })) {
+      const rel = `${dir}${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === ".next" || entry.name === "bloub") continue;
+        await walk(`${rel}/`);
+        continue;
+      }
+      if (!/\.(ts|tsx|mts)$/.test(entry.name)) continue;
+      const source = await readFile(new URL(rel, root), "utf8");
+      if (source.includes("new BotEngine(") && !allowed.includes(rel)) offenders.push(rel);
+    }
+  };
+  for (const dir of ["components/", "lib/", "app/", "scripts/"]) await walk(dir);
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `a second renderer exists — two characters will end up on one screen: ${offenders.join(", ")}`,
+  );
+});
