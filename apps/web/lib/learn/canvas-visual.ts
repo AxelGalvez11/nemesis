@@ -12,6 +12,21 @@
 // did not say. `validateCanvasVisual` names the reason; `parseCanvasVisual` remains for the callers
 // that genuinely only need to know whether anything survived.
 
+import { validateStructure, type ChemNotation } from "./chem-notation";
+import {
+  SUBJECT_KINDS,
+  validateSubjectVisual,
+  type CodeVisual,
+  type ConstructionVisual,
+  type SubjectVisual,
+  type TableVisual,
+  type TimelineVisual,
+  type VectorsVisual,
+} from "./subject-visuals";
+
+/** Every polarity a trusted renderer draws. */
+const POLARITIES: readonly EdgePolarity[] = ["increases", "decreases", "plain"];
+
 export interface CanvasVisualBase {
   /** What the learner should understand after seeing this visual. */
   learningGoal: string;
@@ -23,10 +38,26 @@ export interface EquationVisual extends CanvasVisualBase {
   latex: string;
 }
 
+/**
+ * How one thing acts on the next.
+ *
+ * 🔴 POLARITY, NOT A PATHWAY VOCABULARY, AND THE DISTINCTION IS THE FIELD-AGNOSTIC RULE. The
+ * question a diagram of relations has to answer is whether the arrow means MORE or LESS, and that
+ * question is general: a signalling cascade inhibits, a control loop damps, a precedent is
+ * distinguished, a subsidy suppresses demand. What is NOT here — and must never be — is
+ * `phosphorylates`, `transcribes`, or any other domain verb. Those belong in the edge LABEL, which
+ * is free text and already exists.
+ *
+ * 🔴 IT EXISTS BECAUSE THE RENDERER COULD NOT SAY "LESS". Measured before adding it: every edge
+ * drew the same arrowhead, so an inhibition could only be expressed by writing the word on the
+ * line, and a learner scanning a mechanism reads shape long before they read edge labels.
+ */
+export type EdgePolarity = "increases" | "decreases" | "plain";
+
 export interface FlowVisual extends CanvasVisualBase {
   kind: "relationship";
   nodes: readonly { id: string; label: string }[];
-  edges: readonly { from: string; to: string; label?: string }[];
+  edges: readonly { from: string; to: string; label?: string; polarity?: EdgePolarity }[];
 }
 
 export interface PlotVisual extends CanvasVisualBase {
@@ -39,7 +70,77 @@ export interface PlotVisual extends CanvasVisualBase {
   }[];
 }
 
-export type CanvasVisualRequest = EquationVisual | FlowVisual | PlotVisual;
+/**
+ * A molecule, named by its canonical notation rather than drawn (§42).
+ *
+ * 🔴 THE SAME SHAPE AS `EquationVisual`, AND THAT IS THE POINT. `latex` in, KaTeX draws; `value`
+ * in, a chemical depiction library draws. The model supplies notation and never geometry, so a
+ * structure cannot arrive with atoms in the wrong places — the depiction is computed from the
+ * string, and the string is kept so anybody can check what was asked for.
+ */
+export interface StructureVisual extends CanvasVisualBase {
+  kind: "structure";
+  /** Which canonical form `value` is written in. A molecule, or a reaction scheme. */
+  notation: ChemNotation;
+  /** The canonical string itself. Shown beside the drawing, never hidden behind it. */
+  value: string;
+  /**
+   * Where the notation came from, when it was resolved rather than asserted.
+   *
+   * 🔴 OPTIONAL, AND ITS ABSENCE IS A REAL FACT ABOUT THE STRUCTURE. Present means a resolver was
+   * asked for this name and returned this string; absent means a model wrote it. Both may be
+   * correct and they are not equally trustworthy, and a surface that could not tell them apart
+   * would present a remembered SMILES exactly like a looked-up one.
+   */
+  resolvedFrom?: { name: string; provider: "pubchem"; id: string };
+  /**
+   * Atoms to pick out, by their position in the notation, counting heavy atoms from zero.
+   *
+   * 🔴 INDICES, NOT COLOURS OR SHAPES. The model says WHICH atoms matter; trusted code decides how
+   * "matters" looks, exactly as it decides where every bond goes. A `highlight` carrying a hex
+   * colour would be the model supplying rendering instructions, which is the one thing §41 forbids
+   * across every representation.
+   *
+   * 🔴 THIS IS WHAT MAKES A STRUCTURE ANSWERABLE-AGAINST. Without it a drawn molecule can only be
+   * looked at; with it a lesson can ask "which part of aspirin is the ester?" and mark the answer,
+   * which is the difference §41 draws between a learning object and decoration.
+   */
+  highlight?: readonly number[];
+  /**
+   * Whether carbon atoms are labelled.
+   *
+   * 🔴 A TEACHING CHOICE THAT CHANGES WHAT THE PICTURE TEACHES, WHICH IS WHY IT IS IN THE SPEC
+   * RATHER THAN IN A THEME. Skeletal notation — bare corners for carbon — is the convention every
+   * exam uses and is unreadable to somebody in their first week, who needs to see that the corners
+   * ARE carbons before the shorthand means anything. Defaults to `skeletal`, because that is what
+   * the learner will be shown everywhere else.
+   */
+  carbons?: "all" | "skeletal";
+  /**
+   * Text above and below the reaction arrow — conditions, reagents, a name.
+   *
+   * Ignored for a single molecule. Reaction conditions are prose ("H+, heat", "reflux 2h") rather
+   * than notation, which is why they are separate fields instead of being smuggled into the string.
+   */
+  conditions?: string;
+  reactionLabel?: string;
+}
+
+export type CanvasVisualRequest =
+  | EquationVisual
+  | FlowVisual
+  | PlotVisual
+  | StructureVisual
+  | SubjectVisual;
+
+export type {
+  CodeVisual,
+  ConstructionVisual,
+  SubjectVisual,
+  TableVisual,
+  TimelineVisual,
+  VectorsVisual,
+};
 
 /**
  * Why a request was refused. **A name, never a sentence** — the prose belongs in `detail`.
@@ -98,7 +199,37 @@ export type VisualRefusal =
   /** A coordinate that is not a finite number — NaN, Infinity, a string, a missing field. */
   | "non-finite-number"
   /** A series that is not an object, or carries no usable label. */
-  | "malformed-series";
+  | "malformed-series"
+  /**
+   * A chemical structure that is not usable notation. `detail` carries the specific reason.
+   *
+   * 🔴 ONE REASON RATHER THAN SIX, DELIBERATELY, AND THE SIX STILL EXIST. `ChemRefusal` in
+   * `chem-notation.ts` distinguishes prose-instead-of-notation from an unclosed ring from a
+   * runaway length, and `detail` carries that text verbatim. What this union must not become is a
+   * place where every notation Nemesis ever supports adds five members — the visual boundary cares
+   * that a structure was unusable, and the chemistry module owns why.
+   */
+  | "malformed-structure"
+  /** An edge polarity naming something no renderer draws. */
+  | "malformed-polarity"
+  /**
+   * A §44 subject representation that is not well formed. `detail` names which and why.
+   *
+   * 🔴 ONE MEMBER FOR FIVE SHAPES, THE SAME CHOICE `malformed-structure` MADE FOR CHEMISTRY. The
+   * specific reasons live in `subject-visuals.ts` and travel in `detail`; what this union must not
+   * become is a place where every representation the Canvas ever learns adds five members.
+   */
+  | "malformed-subject"
+  /**
+   * The structure was fine and the ARITHMETIC was not — a total that does not sum, a balance that
+   * does not balance, an angle that disagrees with its own coordinates, forces that do not cancel.
+   *
+   * 🔴 THE MOST IMPORTANT REFUSAL ADDED SINCE `unsafe-latex`, AND FOR THE SAME KIND OF REASON.
+   * `unsafe-latex` exists so a security probe has a name; this exists so a REASONING failure has
+   * one. A model that produces a plausible table with a wrong total is failing at the thing it is
+   * being trusted to do, and reporting that as "malformed" would make it invisible.
+   */
+  | "failed-verification";
 
 export type VisualValidation =
   | { ok: true; visual: CanvasVisualRequest }
@@ -198,7 +329,13 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
       if (item.label !== undefined && !label) {
         return refuse("text-out-of-bounds", "an edge label must be 1–80 characters when present");
       }
-      edges.push({ from, to, ...(label ? { label } : {}) });
+      // Absent means `plain`, and absent is what every request written before polarity existed
+      // sends. A missing polarity is not an unknown one.
+      if (item.polarity !== undefined && !POLARITIES.includes(item.polarity as EdgePolarity)) {
+        return refuse("malformed-polarity", `an edge polarity must be one of ${POLARITIES.join(", ")}`);
+      }
+      const polarity = (item.polarity as EdgePolarity | undefined) ?? undefined;
+      edges.push({ from, to, ...(label ? { label } : {}), ...(polarity && polarity !== "plain" ? { polarity } : {}) });
     }
     return { ok: true, visual: { ...common, edges, kind: "relationship", nodes } };
   }
@@ -213,8 +350,13 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
       if (!record(item)) return refuse("malformed-series", "a series is not an object");
       const label = boundedText(item.label, 80);
       if (!label) return refuse("malformed-series", "a series needs a label of 1–80 characters");
-      if (!Array.isArray(item.points) || item.points.length < 2 || item.points.length > 40) {
-        return refuse("point-count", `series "${label}" needs 2–40 points, received ${countOf(item.points)}`);
+      // 🔴 400, RAISED FROM 40 WHEN COMPUTED CURVES ARRIVED (§45). Forty was right for points a
+      // model lists by hand — past that it is a runaway — but a curve computed from an expression
+      // is generated by trusted code, and forty points across a sine wave draws a visible polygon.
+      // Raised for everyone rather than made conditional: a validator cannot tell a computed series
+      // from a claimed one, and the risk of a large point count is payload size, not correctness.
+      if (!Array.isArray(item.points) || item.points.length < 2 || item.points.length > 400) {
+        return refuse("point-count", `series "${label}" needs 2–400 points, received ${countOf(item.points)}`);
       }
       const points: Array<{ x: number; y: number }> = [];
       for (const point of item.points) {
@@ -226,7 +368,7 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
         points.push({ x, y });
       }
       totalPoints += points.length;
-      if (totalPoints > 80) return refuse("payload-too-large", "a plot carries at most 80 points across all series");
+      if (totalPoints > 1200) return refuse("payload-too-large", "a plot carries at most 1200 points across all series");
       series.push({ label, points });
     }
     const xLabel = value.xLabel === undefined ? null : boundedText(value.xLabel, 80);
@@ -246,7 +388,83 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
     };
   }
 
+  if (value.kind === "structure") {
+    // 🔴 THE NOTATION IS CHECKED BEFORE THE VALUE, so "we do not own InChI" is never reported as
+    // "that InChI is malformed" — one is a capability gap worth counting and the other is a typo.
+    const structure = validateStructure(value.notation, value.value);
+    if (!structure.ok) return refuse("malformed-structure", `${structure.reason}: ${structure.detail}`);
+    const notation = value.notation as ChemNotation;
+    const resolved = resolvedFrom(value.resolvedFrom);
+    if (resolved === "malformed") {
+      return refuse("malformed-structure", "resolvedFrom must carry a provider, an id and the name that was looked up");
+    }
+
+    // 🔴 BOUNDED AND INTEGER, because these indices are handed to a renderer that will look them
+    // up. A negative, fractional or absurd index is not a highlight that misses — it is an array
+    // access in somebody else's library on a number a model chose.
+    let highlight: number[] | null = null;
+    if (value.highlight !== undefined) {
+      if (!Array.isArray(value.highlight) || value.highlight.length === 0 || value.highlight.length > 40) {
+        return refuse("malformed-structure", "highlight must be 1–40 atom indices");
+      }
+      highlight = [];
+      for (const index of value.highlight) {
+        if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 300) {
+          return refuse("malformed-structure", "every highlight index must be a whole number from 0 to 300");
+        }
+        highlight.push(index);
+      }
+    }
+
+    const carbons = value.carbons === undefined ? null : value.carbons;
+    if (carbons !== null && carbons !== "all" && carbons !== "skeletal") {
+      return refuse("malformed-structure", 'carbons must be "skeletal" or "all"');
+    }
+
+    const conditions = value.conditions === undefined ? null : boundedText(value.conditions, 60);
+    const reactionLabel = value.reactionLabel === undefined ? null : boundedText(value.reactionLabel, 60);
+    if ((value.conditions !== undefined && !conditions) || (value.reactionLabel !== undefined && !reactionLabel)) {
+      return refuse("text-out-of-bounds", "reaction arrow text must be 1–60 characters when present");
+    }
+
+    return {
+      ok: true,
+      visual: {
+        ...common,
+        kind: "structure",
+        notation,
+        value: structure.value,
+        ...(resolved ? { resolvedFrom: resolved } : {}),
+        ...(highlight ? { highlight } : {}),
+        ...(carbons && carbons !== "skeletal" ? { carbons } : {}),
+        ...(conditions ? { conditions } : {}),
+        ...(reactionLabel ? { reactionLabel } : {}),
+      },
+    };
+  }
+
+  if (typeof value.kind === "string" && SUBJECT_KINDS.includes(value.kind)) {
+    // 🔴 DELEGATED, NOT REIMPLEMENTED, AND THE BOUNDARY STAYS HERE. `subject-visuals.ts` owns the
+    // five shapes' rules and their arithmetic; this switch stays the one place a model request is
+    // admitted, so there is never a second front door.
+    const result = validateSubjectVisual(value.kind, value, common);
+    if (result.ok) return { ok: true, visual: result.visual };
+    return result.reason === "failed-verification"
+      ? refuse("failed-verification", result.detail)
+      : refuse("malformed-subject", `${result.reason}: ${result.detail}`);
+  }
+
   return refuse("unknown-kind", `no trusted renderer owns ${JSON.stringify(value.kind)}`);
+}
+
+/** The provenance stamp on a resolved structure, or `malformed` when it is present and broken. */
+function resolvedFrom(value: unknown): StructureVisual["resolvedFrom"] | "malformed" | null {
+  if (value === undefined || value === null) return null;
+  if (!record(value)) return "malformed";
+  const name = boundedText(value.name, 120);
+  const id = boundedText(value.id, 40);
+  if (!name || !id || value.provider !== "pubchem") return "malformed";
+  return { id, name, provider: "pubchem" };
 }
 
 function countOf(value: unknown): string {

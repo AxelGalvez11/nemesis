@@ -13,7 +13,9 @@
     "STRIPE_PRO_PRICE_ID",
     "STRIPE_ALLOW_LIVE",
     "NCBI_API_KEY",
-    "UNPAYWALL_EMAIL"
+    "UNPAYWALL_EMAIL",
+    "AZURE_SPEECH_KEY",
+    "AZURE_SPEECH_REGION"
   ],
   "tasks": {
     "build": {

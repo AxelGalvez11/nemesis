@@ -150,7 +150,12 @@ Deno.serve(async (req) => {
   const userId = await verifyUser(token);
   if (!userId) return json({ error: "Sign in to use voice mode." }, 401, req);
 
-  const body = await req.json().catch(() => ({})) as { text?: unknown; language?: unknown };
+  const body = await req.json().catch(() => ({})) as {
+    text?: unknown;
+    language?: unknown;
+    locale?: unknown;
+    speed?: unknown;
+  };
   const text = typeof body.text === "string" ? body.text.trim() : "";
   if (!text) return json({ error: "Nothing to say.", reason: "empty-text" }, 400, req);
   if (text.length > MAX_CHARS) {
@@ -158,7 +163,34 @@ Deno.serve(async (req) => {
   }
   // `auto` rather than a hardcoded "en": Nemesis is field-agnostic and language-agnostic, and a
   // learner studying in Spanish should not hear their question read in an English accent.
-  const language = typeof body.language === "string" && body.language.trim() ? body.language.trim() : "auto";
+  //
+  // 🔴 `locale` IS THE NEW NAME AND `language` STILL WORKS. A deployed function cannot assume its
+  // callers have been redeployed: a served bundle from before §43 sends neither field, and any
+  // future caller sends `locale`. Dropping the old spelling would be a silent regression in exactly
+  // the window where two versions of the client are live at once.
+  //
+  // 🔴 SHAPE-CHECKED HERE TOO, NOT ONLY IN THE CLIENT — the same argument the character cap makes a
+  // few lines up. A caller is anybody with a bearer token, and an unchecked string goes straight
+  // into a provider request body. `speech-route.ts` holds the identical regex; if the two ever
+  // disagree, THIS one wins, because this is the process that talks to the provider.
+  const requestedLocale = typeof body.locale === "string" && body.locale.trim()
+    ? body.locale.trim()
+    : typeof body.language === "string" && body.language.trim()
+      ? body.language.trim()
+      : "auto";
+  if (requestedLocale !== "auto" && !/^[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|\d{3}))?$/.test(requestedLocale)) {
+    return json({ error: "Unsupported language.", reason: "locale-malformed" }, 400, req);
+  }
+  const language = requestedLocale;
+
+  // 🔴 CLAMPED, NOT VALIDATED-OR-REJECTED, BECAUSE THE FAILURE HERE IS COSMETIC RATHER THAN UNSAFE.
+  // A pace outside this window is unusable audio, not a security problem: 0.6 is a drawl and 1.4 is
+  // unintelligible in a language the learner is still learning. §43 wants natural pace (1) for a
+  // target-language utterance and slightly under (0.95) for a question read aloud, and both sit
+  // comfortably inside. A caller sending nonsense gets the default rather than a 400 that would
+  // silence voice mode entirely over a number.
+  const requestedSpeed = typeof body.speed === "number" && Number.isFinite(body.speed) ? body.speed : 0.95;
+  const speed = Math.min(1.2, Math.max(0.7, requestedSpeed));
 
   const charge = await chargeVoiceSeconds(userId, text.length);
   if (!charge.allowed) {
@@ -179,9 +211,10 @@ Deno.serve(async (req) => {
         language,
         output_format: { codec: "mp3" },
         text,
-        // Slightly under natural pace. This is a question the learner has to hold in working
-        // memory while composing an answer, not a podcast.
-        speed: 0.95,
+        // Defaults to slightly under natural pace — a question the learner has to hold in working
+        // memory while composing an answer is not a podcast. §43's target-language lane sends 1
+        // instead, because slowing an example teaches a rhythm the language does not have.
+        speed,
         voice_id: "eve",
       }),
       headers: { Authorization: `Bearer ${XAI_KEY}`, "Content-Type": "application/json" },
@@ -210,6 +243,11 @@ Deno.serve(async (req) => {
       bytes: audio.byteLength,
       chars: text.length,
       event: "tts_spoken",
+      // Counts and settings only, never the text. The locale is the field worth having: §43's whole
+      // argument is that `auto` is fine for a question and wrong for a language lesson, and without
+      // this nothing could report how often a locale was actually established.
+      locale: language,
+      speed,
       usd: Number((text.length * USD_PER_CHAR).toFixed(6)),
     }));
 

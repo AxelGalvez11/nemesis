@@ -12,6 +12,7 @@ import test from "node:test";
 
 import type { FigureLabel } from "./figure-labels";
 import type { KnowledgeObject, KnowledgeType } from "./knowledge-types";
+import type { CandidateAsset } from "./visual-provenance";
 import { MIN_DIAGRAM_NODES, routeVisual } from "./visual-route";
 
 function knowledge(type: KnowledgeType, over: Partial<KnowledgeObject> = {}): KnowledgeObject {
@@ -343,4 +344,100 @@ test("🔴 the router never executes model output and never hands it to a render
   // Every rendered spec came through the validator. A route that constructed one itself would be a
   // path around the only place bounds are enforced.
   assert.match(source, /validateCanvasVisual/);
+});
+
+// ─────────────────────────────────────────────── §42's lower rungs — retrieved, then generated
+
+const LICENSED: CandidateAsset = {
+  assetPath: "registry/ref-1.png",
+  licence: { attribution: "J. Author, 2019", licence: "CC-BY-4.0", source: "An open repository" },
+  provenance: "reference_image",
+};
+
+const GENERATED: CandidateAsset = { assetPath: "registry/gen-1.png", provenance: "generated_image" };
+
+test("🔴 omitting assets leaves the router behaving exactly as it did before §42", () => {
+  // The whole reason the new rungs are safe to add now: every caller in production omits `assets`,
+  // and with it omitted nothing about the old decisions moves.
+  const route = routeVisual({});
+  assert.equal(route.decision, "prose");
+  assert.equal(route.decision === "prose" && route.reason, "nothing-to-show");
+});
+
+test("a licensed picture answers a moment nothing higher on the ladder could", () => {
+  const route = routeVisual({ assets: [LICENSED] });
+  assert.equal(route.decision, "render");
+  assert.equal(route.decision === "render" && route.representation, "reference_image");
+});
+
+test("🔴 a valid request outranks a licensed image, because a render is trustworthy on arithmetic", () => {
+  // The rung order that is easiest to get backwards: a photograph looks more "real" than an SVG,
+  // and is trusted on somebody else's authority rather than on the encoding that produced it.
+  const route = routeVisual({ assets: [LICENSED], request: chain(["A", "B", "C"]) });
+  assert.equal(route.decision, "render");
+  assert.equal(route.decision === "render" && route.representation, "relationship");
+});
+
+test("🔴 the learner's own figure outranks both", () => {
+  const route = routeVisual({
+    assets: [LICENSED],
+    knowledge: withFigure(),
+    labelKey: "Alpha",
+    operation: "locate",
+  });
+  assert.equal(route.decision, "render");
+  assert.equal(route.decision === "render" && route.representation, "source_figure");
+});
+
+test("🔴 a generated picture is unreachable when the learner is being graded against it", () => {
+  // `locate` covers a part and asks what it was. An invented picture would be the answer key.
+  const route = routeVisual({ assets: [GENERATED], operation: "locate" });
+  assert.equal(route.decision, "prose");
+  assert.equal(route.decision === "prose" && route.reason, "no-trusted-asset");
+  assert.equal(route.decision === "prose" && route.assetRefusal, "generated-cannot-bear-accuracy");
+});
+
+test("the same generated picture is allowed beside teaching, where nothing is graded on it", () => {
+  const route = routeVisual({ assets: [GENERATED], operation: "explain" });
+  assert.equal(route.decision, "render");
+  assert.equal(route.decision === "render" && route.representation, "generated_image");
+});
+
+test("🔴 a source figure whose pixels were never kept drops to the next rung rather than stopping", () => {
+  // "Parsed before assets existed" means the source's picture is UNAVAILABLE, which is the exact
+  // condition the lower rungs exist for.
+  const noPixels = withFigure({
+    figure: { caption: "A diagram", imageRef: "media/image1.png", labels: LABELS },
+  });
+  const route = routeVisual({
+    assets: [LICENSED],
+    knowledge: noPixels,
+    labelKey: "Alpha",
+    operation: "locate",
+  });
+  assert.equal(route.decision, "render");
+  assert.equal(route.decision === "render" && route.representation, "reference_image");
+});
+
+test("🔴 a considered 'a picture would not help' is never reopened by the registry", () => {
+  // The router already decided a diagram loses to a sentence here. Reaching for a stock image
+  // afterwards would turn that into "no, so let us find one anyway".
+  const route = routeVisual({
+    assets: [LICENSED],
+    request: { ...chain(["A", "B", "C"]), edges: [{ from: "a", to: "b" }], nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }] },
+  });
+  assert.equal(route.decision, "prose");
+  assert.equal(route.decision === "prose" && route.reason, "too-few-relations");
+});
+
+test("🔴 a figure that exists but is not being located against does not fall through to an image", () => {
+  const route = routeVisual({ assets: [LICENSED], knowledge: withFigure(), operation: "explain" });
+  assert.equal(route.decision, "prose");
+  assert.equal(route.decision === "prose" && route.reason, "operation-is-not-spatial");
+});
+
+test("an unlicensed picture is refused with the reason that names the bookkeeping failure", () => {
+  const route = routeVisual({ assets: [{ ...LICENSED, licence: undefined }] });
+  assert.equal(route.decision, "prose");
+  assert.equal(route.decision === "prose" && route.assetRefusal, "licence-missing");
 });

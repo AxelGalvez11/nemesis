@@ -4,8 +4,12 @@ import katex from "katex";
 import { useId, useMemo } from "react";
 
 import type { CanvasVisualRequest, FlowVisual, PlotVisual } from "@/lib/learn/canvas-visual";
+import { layoutFlow, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
 
-const WIDTH = 640;
+import { ChemicalStructure } from "./chemical-structure";
+import { CodeTrace, Construction, DataTable, Timeline, VectorDiagram } from "./subject-visual";
+
+const WIDTH = VISUAL_WIDTH;
 const PLOT_HEIGHT = 280;
 const COLOURS = ["var(--ui-accent)", "var(--ui-text-primary)", "#d97706", "#7c3aed"];
 
@@ -15,6 +19,12 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
       {visual.kind === "equation" ? <Equation visual={visual} /> : null}
       {visual.kind === "relationship" ? <Relationship visual={visual} /> : null}
       {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
+      {visual.kind === "structure" ? <ChemicalStructure visual={visual} /> : null}
+      {visual.kind === "table" ? <DataTable visual={visual} /> : null}
+      {visual.kind === "timeline" ? <Timeline visual={visual} /> : null}
+      {visual.kind === "construction" ? <Construction visual={visual} /> : null}
+      {visual.kind === "vectors" ? <VectorDiagram visual={visual} /> : null}
+      {visual.kind === "code" ? <CodeTrace visual={visual} /> : null}
       {visual.caption && (
         <figcaption className="mt-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
           {visual.caption}
@@ -74,43 +84,62 @@ function Equation({ visual }: { visual: Extract<CanvasVisualRequest, { kind: "eq
 
 function Relationship({ visual }: { visual: FlowVisual }) {
   const rawId = useId();
-  const markerId = `canvas-arrow-${rawId.replace(/[^A-Za-z0-9_-]/g, "")}`;
-  const height = Math.max(180, visual.nodes.length * 82);
-  const positions = new Map(visual.nodes.map((node, index) => [node.id, { x: WIDTH / 2, y: 45 + index * 82 }]));
+  const safeId = rawId.replace(/[^A-Za-z0-9_-]/g, "");
+  const markerId = `canvas-arrow-${safeId}`;
+  // 🔴 A SECOND MARKER, AND IT IS WHAT MAKES A MECHANISM READABLE (§42). Every edge used to end in
+  // the same arrowhead, so "A inhibits B" could only be said by writing the word on the line — and
+  // a learner scanning a chain reads shape long before they read edge labels. A blunt bar is the
+  // conventional "stops this" in every field that draws influence, which is why the polarity is
+  // named `decreases` rather than `inhibits`: the shape is general, the verb is not.
+  const barId = `canvas-bar-${safeId}`;
+  // 🔴 POSITION COMES FROM `visual-layout.ts` AND NOT FROM HERE. Every node used to sit at the middle
+  // of the frame, one row per node, so a branch — an inhibitor acting on a step it is not part of —
+  // was drawn IN the chain and read as a step in it. Rows now hold everything that acts at the same
+  // stage, side by side, and the maths that decides which stage that is lives somewhere a test can
+  // reach it.
+  const layout = useMemo(() => layoutFlow(visual), [visual]);
   return (
-    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${height}`}>
+    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
       <defs>
         <marker id={markerId} markerHeight="8" markerWidth="8" orient="auto-start-reverse" refX="7" refY="4">
           <path d="M0,0 L8,4 L0,8 Z" fill="var(--ui-text-tertiary)" />
         </marker>
+        <marker id={barId} markerHeight="10" markerWidth="10" orient="auto-start-reverse" refX="2" refY="5">
+          <path d="M1,0 L1,10" stroke="var(--ui-text-tertiary)" strokeWidth="2" />
+        </marker>
       </defs>
-      {visual.edges.map((edge, index) => {
-        const from = positions.get(edge.from)!;
-        const to = positions.get(edge.to)!;
-        const y1 = from.y + 23;
-        const y2 = to.y - 23;
-        return (
-          <g key={`${edge.from}-${edge.to}-${index}`}>
-            <line markerEnd={`url(#${markerId})`} stroke="var(--ui-text-tertiary)" strokeWidth="1.5" x1={from.x} x2={to.x} y1={y1} y2={y2} />
-            {edge.label && (
-              <text fill="var(--ui-text-tertiary)" fontSize="12" textAnchor="start" x={from.x + 12} y={(y1 + y2) / 2}>
-                {edge.label}
-              </text>
-            )}
-          </g>
-        );
-      })}
-      {visual.nodes.map((node) => {
-        const point = positions.get(node.id)!;
-        return (
-          <g key={node.id}>
-            <rect fill="var(--ui-bg-elevated)" height="46" rx="10" stroke="var(--ui-stroke-primary)" width="360" x={point.x - 180} y={point.y - 23} />
-            <text dominantBaseline="middle" fill="var(--ui-text-primary)" fontSize="14" textAnchor="middle" x={point.x} y={point.y}>
-              {node.label.length > 54 ? `${node.label.slice(0, 53)}…` : node.label}
+      {layout.edges.map((edge, index) => (
+        <g key={index}>
+          <path
+            d={edge.path}
+            fill="none"
+            markerEnd={`url(#${edge.polarity === "decreases" ? barId : markerId})`}
+            stroke="var(--ui-text-tertiary)"
+            strokeWidth="1.5"
+          />
+          {edge.label && (
+            <text fill="var(--ui-text-tertiary)" fontSize="12" textAnchor={edge.labelAnchor} x={edge.labelX} y={edge.labelY}>
+              {edge.label}
             </text>
-          </g>
-        );
-      })}
+          )}
+        </g>
+      ))}
+      {layout.boxes.map((box) => (
+        <g key={box.id}>
+          <rect
+            fill="var(--ui-bg-elevated)"
+            height={box.height}
+            rx="10"
+            stroke="var(--ui-stroke-primary)"
+            width={box.width}
+            x={box.cx - box.width / 2}
+            y={box.cy - box.height / 2}
+          />
+          <text dominantBaseline="middle" fill="var(--ui-text-primary)" fontSize="14" textAnchor="middle" x={box.cx} y={box.cy}>
+            {box.label}
+          </text>
+        </g>
+      ))}
     </svg>
   );
 }
@@ -144,9 +173,15 @@ function Quantitative({ visual }: { visual: PlotVisual }) {
         ))}
       </svg>
       <div className="flex flex-wrap gap-x-4 gap-y-1 px-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-        {visual.series.map((series, index) => (
-          <span className="flex items-center gap-1.5" key={series.label}><span className="h-2 w-2 rounded-full" style={{ background: COLOURS[index] }} />{series.label}</span>
-        ))}
+        {/* 🔴 DEDUPED BY LABEL (§45). A curve computed from an expression comes back as one series
+            per continuous segment — `1/x` is two — and all of them carry the same name. Listing the
+            legend per series would print "1/x" twice for one curve and imply two functions. */}
+        {visual.series
+          .map((series, index) => ({ colour: COLOURS[index], label: series.label }))
+          .filter((entry, index, all) => all.findIndex((other) => other.label === entry.label) === index)
+          .map((entry) => (
+            <span className="flex items-center gap-1.5" key={entry.label}><span className="h-2 w-2 rounded-full" style={{ background: entry.colour }} />{entry.label}</span>
+          ))}
       </div>
     </div>
   );
