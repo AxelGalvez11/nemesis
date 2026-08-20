@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { MascotEngine, renderPose, sampleState } from "./engine";
 import { blinkLid } from "./face";
+import { EXPRESSION_ORDER } from "./expressions";
 import { PointerGaze } from "./gaze";
 import { REST } from "./pose";
 import { STATE_ORDER, STATES, stateDuration, stillTime } from "./states";
@@ -251,5 +252,71 @@ test("intensity 0 is the plain mark, whatever the state", () => {
     // Liveliness is deliberately NOT scaled by intensity, so allow the drift it adds
     // to the eyes; everything structural must be the mark itself.
     assert.ok(maxDelta(rest, frame) < 2.5, `${mode} at intensity 0 is not the resting blob`);
+  }
+});
+
+test("changing expression morphs the face instead of swapping it", () => {
+  const e = new MascotEngine("teaching", 0);
+  const before = e.sample(1 - 1e-6, { expression: undefined });
+  e.setExpression("bright", 1);
+  const at = e.sample(1);
+  assert.ok(maxDelta(before, at) < 0.02, `the face snapped by ${maxDelta(before, at).toFixed(3)}`);
+
+  const mid = e.sample(1 + MascotEngine.EXPRESSION_MORPH * 0.5);
+  const end = e.sample(1 + MascotEngine.EXPRESSION_MORPH * 2);
+  assert.ok(maxDelta(mid, before) > 0.05, "nothing happened");
+  assert.ok(maxDelta(mid, end) > 0.05, "the morph finished instantly");
+});
+
+test("clearing an expression fades back rather than snapping", () => {
+  const e = new MascotEngine("teaching", 0);
+  e.setExpression("wide", 0);
+  const held = e.sample(1);
+  e.setExpression(null, 1);
+  const at = e.sample(1 + 1e-6);
+  assert.ok(maxDelta(held, at) < 0.02, `the face snapped back by ${maxDelta(held, at).toFixed(3)}`);
+});
+
+test("a state change carries the expression across with it", () => {
+  // `incorrect` is concerned and the `thinking` it becomes is narrow. The face has to
+  // travel between them with the body, not flip when the mode does.
+  const EPS = 1e-6;
+  const e = new MascotEngine("incorrect", 0);
+  const before = e.sample(1 - EPS);
+  e.setState("thinking", 1);
+  const after = e.sample(1);
+  assert.ok(maxDelta(before, after) < 0.05, `the face jumped by ${maxDelta(before, after).toFixed(3)}`);
+});
+
+test("every expression reads differently on the same state", () => {
+  const frames = EXPRESSION_ORDER.map(
+    (id) => [id, sampleState("teaching", stillTime("teaching"), { expression: id, clock: 0 })] as const,
+  );
+  for (let i = 0; i < frames.length; i++) {
+    for (let j = i + 1; j < frames.length; j++) {
+      const d = maxDelta(frames[i]![1], frames[j]![1]);
+      assert.ok(d > 0.15, `${frames[i]![0]} and ${frames[j]![0]} differ by only ${d.toFixed(3)}`);
+    }
+  }
+});
+
+test("a shape morph stays smooth from end to end", () => {
+  // What this actually guards: that a change of silhouette is INTERPOLATED and not
+  // swapped. `slab` to `crystal` is the widest shape change in the catalogue, and the
+  // cheap implementation of shape-changing — hand over the new profile once the
+  // transition is past halfway — passes every other test in this file and fails here
+  // with a jump of about eight mark units in one frame. Calibrated against exactly
+  // that.
+  // A FIXED LIVENESS CLOCK, so this measures the morph and not a blink landing in the
+  // middle of it. That is not the test being lenient — a blink is a real 75ms movement
+  // and it belongs to the blink test, where its size is asserted on purpose.
+  const opts = { clock: 0 };
+  const e = new MascotEngine("waiting", 0); // slab
+  e.setState("insight", 1); // crystal
+  let prev = e.sample(1, opts);
+  for (let t = 1.02; t < 1 + STATES.insight.morph + 0.4; t += 0.02) {
+    const now = e.sample(t, opts);
+    assert.ok(maxDelta(prev, now) < 2, `shape morph jumped ${maxDelta(prev, now).toFixed(2)} at ${t.toFixed(2)}s`);
+    prev = now;
   }
 });

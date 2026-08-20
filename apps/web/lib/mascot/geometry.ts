@@ -6,33 +6,32 @@
 // different pictures.
 //
 // 🔴 AND IT IS NOT A BALL, AND NOT AN OVAL. A circle is the one silhouette with no
-// identity of its own, and an ellipse is the one every mascot already is. The profile
-// here is a SUPERELLIPSE — round-cornered but with real sides — so the form is
-// recognisably geometric at 18px and still soft enough to deform without looking like
-// a diagram. `round` is the exponent: 2 is exactly an ellipse, and the rest value sits
-// well above it.
+// identity of its own, and an ellipse is the one every mascot already is. The resting
+// profile is a SUPERELLIPSE — round-cornered but with real sides — so the form is
+// recognisably geometric at 18px and still soft enough to deform without looking like a
+// diagram.
 //
-// HOW MORPHING WORKS. Every silhouette is sampled at the SAME angles, so any two forms
-// have points that correspond one to one and a transition is a plain interpolation of
-// radii. That is why there is no path-morphing library here, and why any new shape has
-// to be expressible as r(theta).
+// THE CHARACTER CHANGES SHAPE. `shapes.ts` holds the catalogue and every state names
+// one; this file turns whichever profile is current into points and a path. Morphing is
+// a plain interpolation of radii, which is what the shared angular sampling buys.
 
 import { hashSigned } from "./noise";
+import { ANGLES, PROFILE_SAMPLES, SHAPES } from "./shapes";
 import type { BeadRender, BodyPose } from "./types";
+
+export { ANGLES, PROFILE_SAMPLES };
 
 /** The body's resting placement and size, in mark units. */
 export const BODY = { cx: 50, cy: 60, rx: 41, ry: 36 } as const;
 
 /**
- * Angles the profile is sampled at.
+ * The sampling lives in shapes.ts, because it is the catalogue's contract: every shape
+ * must be sampled at the same angles or none of them can morph into any other.
  *
- * 48 is enough that the Catmull-Rom smoothing below has nothing left to do at 400px
- * and cheap enough to rebuild every frame. Raising it costs a string allocation per
- * frame; lowering it shows facets on the flatter sides first, not on the corners.
+ * 48 is enough that the Catmull-Rom smoothing below has nothing left to do at 400px and
+ * cheap enough to rebuild every frame. Raising it costs a string allocation per frame;
+ * lowering it shows facets on the flatter sides first, not on the corners.
  */
-export const PROFILE_SAMPLES = 48;
-const TAU = Math.PI * 2;
-const ANGLES = Array.from({ length: PROFILE_SAMPLES }, (_, i) => (i / PROFILE_SAMPLES) * TAU);
 const COS = ANGLES.map(Math.cos);
 const SIN = ANGLES.map(Math.sin);
 
@@ -42,23 +41,21 @@ export const SATELLITES = 2;
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
 /**
- * The profile at one angle, in fractions of the body's rx / ry.
+ * The profile at sample `i`, in fractions of the body's rx / ry.
  *
- * Each term is one thing the character can do to its own outline, and they multiply so
- * they compose without fighting:
+ * The base is whichever silhouette the state is wearing; the three terms on top are what
+ * the character can do to any of them, and they multiply so they compose without
+ * fighting:
  *
- *   round   how square the sides are. 2 is an ellipse; the rest value is a squircle.
- *   taper   moves mass toward one end. A blob with no taper is a logo, not a creature.
+ *   taper   moves mass toward one side. A blob with no taper is a logo, not a creature.
  *   pinch   a waist across the middle — the form gathering itself in.
  *   ripple  a three-lobe wave that can travel round the outline. This is the one that
  *           reads as INTERNAL activity rather than as the whole body moving.
  */
-export function profileAt(theta: number, p: BodyPose): number {
-  const c = Math.abs(Math.cos(theta));
-  const s = Math.abs(Math.sin(theta));
-  const n = p.round;
-  let r = 1 / Math.pow(Math.pow(c, n) + Math.pow(s, n), 1 / n);
-  r *= 1 + p.taper * 0.16 * Math.cos(theta);
+export function profileAt(i: number, p: BodyPose): number {
+  const theta = ANGLES[i]!;
+  let r = p.radii[i] ?? 1;
+  r *= 1 + p.taper * 0.16 * COS[i]!;
   r *= 1 + p.pinch * 0.24 * Math.cos(2 * theta);
   r *= 1 + p.ripple * Math.cos(3 * theta + rad(p.ripplePhase));
   return r;
@@ -75,7 +72,7 @@ export function silhouette(p: BodyPose, out: Point[] = []): Point[] {
   const ry = BODY.ry * p.scale * p.squash;
   out.length = PROFILE_SAMPLES;
   for (let i = 0; i < PROFILE_SAMPLES; i++) {
-    const r = profileAt(ANGLES[i]!, p);
+    const r = profileAt(i, p);
     out[i] = { x: rx * r * COS[i]!, y: ry * r * SIN[i]! };
   }
   return out;
@@ -269,12 +266,22 @@ export function satellitePlacement(
  * it. Built once at import — a fragment only ever changes size, place and angle, so
  * rebuilding its path per frame would be pure waste.
  */
+/**
+ * A plain circle at radius 1.
+ *
+ * Used for the shape that bites into an eye to bow it, and ONLY for that. A circle's top
+ * is the most curved outline there is, and the curvature across the eye's width is
+ * exactly what turns the leftover sliver into an arch. Cutting with the body's own
+ * superellipse instead — which is what this was first — leaves an almost straight edge
+ * and the "pleased" face reads as a shorter eye rather than a smiling one.
+ */
+export const UNIT_ROUND = closedPath(
+  ANGLES.map((theta) => ({ x: Math.cos(theta), y: Math.sin(theta) })),
+);
+
 export const UNIT_BLOB = closedPath(
-  ANGLES.map((theta) => {
-    const c = Math.abs(Math.cos(theta));
-    const s = Math.abs(Math.sin(theta));
-    const n = 2.45;
-    const r = 1 / Math.pow(Math.pow(c, n) + Math.pow(s, n), 1 / n);
+  ANGLES.map((theta, i) => {
+    const r = SHAPES.blob[i] ?? 1;
     return { x: r * Math.cos(theta), y: r * Math.sin(theta) };
   }),
 );

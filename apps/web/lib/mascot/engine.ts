@@ -18,6 +18,13 @@
 // not animation.
 
 import { clamp01, EASINGS, lerp } from "./easing";
+import {
+  applyExpression,
+  blendExpression,
+  EXPRESSIONS,
+  type ExpressionDef,
+  type ExpressionId,
+} from "./expressions";
 import { liveliness } from "./face";
 import {
   BODY,
@@ -39,6 +46,16 @@ import type { BeadRender, EyeRender, MascotFrame, MascotMode, Pose } from "./typ
 export interface SampleOptions {
   readonly ctx?: StateCtx;
   readonly look?: Look;
+  /**
+   * Overrides the expression each state would wear by default. See expressions.ts on
+   * why emotion is a separate axis from mode.
+   */
+  readonly expression?: ExpressionId;
+  /**
+   * An already-blended expression, for when one is morphing into another. The engine
+   * fills this in; callers pass `expression` instead.
+   */
+  readonly expressionDef?: ExpressionDef;
   /** 0..1 — how far from `REST` the pose is allowed to travel. */
   readonly intensity?: number;
   /**
@@ -112,17 +129,40 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
   const u = offU * fit;
   const v = offV * fit;
 
+  // 🔴 THE BOW IS DRAWN BY COVERING THE EYE, NOT BY BENDING IT. An arched eye is
+  // concave, r(theta) cannot be concave, and cross-fading a tall slot into a wide arch
+  // passes through a plus sign on the way. So a shape in the body's own ink slides in
+  // from below (or above) and eats part of the eye, leaving a crescent. At curve zero it
+  // sits entirely clear, which is why a neutral face costs nothing and every blend into
+  // and out of an expression is continuous.
+  const curveMag = Math.min(1, Math.abs(eye.curve));
+  const curveDir = eye.curve >= 0 ? 1 : -1;
+
   const eyes = ([-1, 1] as const).map((side): EyeRender => {
     // The asymmetry is a tilt AND a small height difference. A tilt alone is invisible
     // at 3px; the pair being visibly uneven is what survives the size.
     const eh = Math.max(halfH * (1 + 0.02 * eye.asym * side) * ry, 0.35);
     const ew = eye.w * rx;
+    // 🔴 THE BOW IS SIZED OFF THE OPEN EYE, NOT THE BLINKING ONE. Tying it to `eh` meant
+    // a blink — which takes the eye's height to nothing in 75ms — flung the bow ten mark
+    // units and back every few seconds. Invisible, because the bow is clear of a shut
+    // eye either way, and a real defect: it is motion nobody asked for, and it buried a
+    // genuine shape-morph regression in the noise when the frames were measured.
+    const ehOpen = Math.max(eye.h * eye.open * (1 + 0.02 * eye.asym * side) * ry, 0.35);
+    // Circular, and sized off the eye's WIDTH rather than its height: what makes the
+    // leftover sliver read as an arch is the cutter's curvature across the eye, and a
+    // cutter much wider than the eye presents an almost flat edge to it.
+    const lidR = ew * 1.28;
     return {
       cx: (eye.split * side + u) * rx,
       cy: (eye.rise + v) * ry,
       rx: ew,
       ry: eh,
       tilt: eye.tilt + eye.asym * side,
+      // Offset along the eye's OWN axis, so a tilted eye keeps its bow square to itself.
+      lidCy: curveDir * (ehOpen + lidR - curveMag * (ehOpen * 1.18 + lidR * 0.42)),
+      lidRx: lidR,
+      lidRy: lidR,
     };
   }) as [EyeRender, EyeRender];
 
@@ -157,12 +197,30 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
   };
 }
 
-/** The pose of one state at its own local time, with intensity applied. */
+/**
+ * The pose of one state at its own local time, with intensity and expression applied.
+ *
+ * 🔴 THE EXPRESSION IS APPLIED HERE, PER STATE, NOT ONCE AT THE END. Two states in a
+ * transition usually wear different expressions — `incorrect` is concerned, the
+ * `thinking` it becomes is narrow — and applying the face after the bodies had already
+ * been blended would snap the eyes at the moment the mode flipped. Applied per state,
+ * the ordinary pose blend carries the expression across with everything else, free.
+ */
 export function poseOf(mode: MascotMode, localT: number, opts: SampleOptions = {}): Pose {
   const state = STATES[mode];
   const t = opts.reduced ? stillTime(mode) : Math.max(0, localT);
   const raw = state.pose(t, opts.ctx ?? DEFAULT_CTX);
-  return scalePose(raw, opts.intensity ?? 1);
+  const intensity = opts.intensity ?? 1;
+  const scaled = scalePose(raw, intensity);
+  // 🔴 INTENSITY DAMPS THE FACE AS WELL AS THE BODY. "Turn the character down" has to
+  // mean the whole character: a plain resting blob wearing a narrowed, sceptical face is
+  // not quieter, it is a different and slightly odd creature. At 0 the pose is `REST` and
+  // the expression is `neutral`, which is exactly the mark standing still.
+  const wanted = EXPRESSIONS[opts.expression ?? state.expression];
+  const expr =
+    opts.expressionDef ??
+    (intensity >= 1 ? wanted : blendExpression(EXPRESSIONS.neutral, wanted, clamp01(intensity)));
+  return { ...scaled, eye: applyExpression(scaled.eye, expr) };
 }
 
 /**
@@ -200,6 +258,17 @@ export class MascotEngine {
    */
   private frozen: Pose | null = null;
   private look: Look = NO_LOOK;
+  private expr: ExpressionId | null = null;
+  private exprFrom: ExpressionDef | null = null;
+  private exprAt = -10;
+
+  /**
+   * How long an expression takes to replace another.
+   *
+   * Shorter than most body morphs on purpose: a face that changes as slowly as a body
+   * reads as sedated, and a face that changes instantly reads as a swap of assets.
+   */
+  static readonly EXPRESSION_MORPH = 0.26;
 
   constructor(initial: MascotMode = "idle", at = 0) {
     this.mode = initial;
@@ -226,6 +295,34 @@ export class MascotEngine {
     this.modeAt = at;
   }
 
+  /**
+   * Overrides the expression the current state would wear. `null` hands it back.
+   *
+   * The morph starts from whatever face is on screen right now, so setting an override
+   * mid-transition does not jump — same rule, and same reason, as the frozen pose.
+   */
+  setExpression(expression: ExpressionId | null, at: number, opts: SampleOptions = {}): void {
+    if (expression === this.expr) return;
+    this.exprFrom = this.effectiveExpression(at, opts) ?? EXPRESSIONS[STATES[this.mode].expression];
+    this.expr = expression;
+    this.exprAt = at;
+  }
+
+  /** The blended expression at `t`, or null to let each state use its own default. */
+  private effectiveExpression(t: number, opts: SampleOptions): ExpressionDef | null {
+    if (!this.expr) {
+      // Returning to "no override" still has to fade, or the face snaps back.
+      if (!this.exprFrom) return null;
+      const k = clamp01((t - this.exprAt) / MascotEngine.EXPRESSION_MORPH);
+      if (k >= 1) return null;
+      return blendExpression(this.exprFrom, EXPRESSIONS[STATES[this.mode].expression], k);
+    }
+    const to = EXPRESSIONS[this.expr];
+    if (!this.exprFrom) return to;
+    const k = clamp01((t - this.exprAt) / MascotEngine.EXPRESSION_MORPH);
+    return k >= 1 ? to : blendExpression(this.exprFrom, to, k);
+  }
+
   setLook(look: Look): void {
     if (!Number.isFinite(look.x) || !Number.isFinite(look.y) || !Number.isFinite(look.mix)) return;
     this.look = look;
@@ -242,6 +339,9 @@ export class MascotEngine {
 
   /** The blended pose at `t`. Reads only; never mutates. */
   composePose(t: number, opts: SampleOptions = {}): Pose {
+    const expressionDef = opts.expressionDef ?? this.effectiveExpression(t, opts) ?? undefined;
+    const withExpr: SampleOptions = expressionDef ? { ...opts, expressionDef } : opts;
+    opts = withExpr;
     const to = poseOf(this.mode, t - this.modeAt, opts);
     if (!this.prev) return to;
     const state = STATES[this.mode];

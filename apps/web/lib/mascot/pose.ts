@@ -13,14 +13,16 @@
 
 import { clamp01, lerp, lerpAngle } from "./easing";
 import { EYE_H, EYE_RISE, EYE_SPLIT, EYE_W } from "./geometry";
+import { blendRadii, SHAPES, type ShapeId } from "./shapes";
 import type { BodyPose, EyePose, Pose, SatellitePose } from "./types";
 
 /**
  * The resting silhouette.
  *
- * `round: 2.45` is the identity. At 2 the body is exactly an ellipse — the shape every
- * mascot already is — and above about 3 it reads as a rounded rectangle rather than as a
- * creature. 2.45 has real sides and soft corners, and both survive 18px.
+ * `blob` is the identity — a superellipse of exponent 2.45. At 2 the body would be
+ * exactly an ellipse, the shape every mascot already is; above about 3 it reads as a
+ * rounded rectangle rather than as a creature. 2.45 has real sides and soft corners, and
+ * both survive 18px.
  *
  * `taper: 0.07` is small enough that nobody can name it and large enough that the form
  * is not symmetric. A perfectly symmetric blob reads as a logo.
@@ -32,7 +34,7 @@ const NEUTRAL_BODY: BodyPose = {
   stretch: 1,
   squash: 1,
   tilt: 0,
-  round: 2.45,
+  radii: SHAPES.blob,
   taper: 0.07,
   pinch: 0,
   ripple: 0,
@@ -57,6 +59,7 @@ const NEUTRAL_EYE: EyePose = {
   rise: EYE_RISE,
   tilt: 0,
   asym: 0,
+  curve: 0,
 };
 
 /** The blob, standing still, looking straight ahead. */
@@ -77,6 +80,13 @@ export const REST: Pose = {
 
 export type PosePatch = {
   readonly [K in keyof Pose]?: Pose[K] extends number ? number : Partial<Pose[K]>;
+} & {
+  /**
+   * Sugar so a state can say `body: { shape: "lens" }` instead of importing the
+   * catalogue and spelling out an array of forty-eight numbers. Resolved here, once, at
+   * module load.
+   */
+  readonly body?: Partial<BodyPose> & { shape?: ShapeId };
 };
 
 /**
@@ -86,8 +96,9 @@ export type PosePatch = {
  * would accept a patch with a misspelled key and silently drop it.
  */
 export function resolvePose(patch: PosePatch, base: Pose = REST): Pose {
+  const { shape, ...body } = patch.body ?? {};
   return {
-    body: { ...base.body, ...patch.body },
+    body: { ...base.body, ...(shape ? { radii: SHAPES[shape] } : null), ...body },
     eye: { ...base.eye, ...patch.eye },
     gazeX: patch.gazeX ?? base.gazeX,
     gazeY: patch.gazeY ?? base.gazeY,
@@ -110,7 +121,7 @@ function blendBody(a: BodyPose, b: BodyPose, t: number): BodyPose {
     stretch: lerp(a.stretch, b.stretch, t),
     squash: lerp(a.squash, b.squash, t),
     tilt: lerpAngle(a.tilt, b.tilt, t),
-    round: lerp(a.round, b.round, t),
+    radii: blendRadii(a.radii, b.radii, t),
     taper: lerp(a.taper, b.taper, t),
     pinch: lerp(a.pinch, b.pinch, t),
     ripple: lerp(a.ripple, b.ripple, t),
@@ -130,6 +141,7 @@ function blendEye(a: EyePose, b: EyePose, t: number): EyePose {
     rise: lerp(a.rise, b.rise, t),
     tilt: lerpAngle(a.tilt, b.tilt, t),
     asym: lerp(a.asym, b.asym, t),
+    curve: lerp(a.curve, b.curve, t),
   };
 }
 

@@ -16,11 +16,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  EXPRESSIONS,
+  EXPRESSION_ORDER,
   MascotEngine,
   STATES,
   STATE_ORDER,
   focusLook,
   stillTime,
+  type ExpressionId,
   type MascotFrame,
   type MascotMode,
 } from "@/lib/mascot";
@@ -41,6 +44,8 @@ export const CHAINS: { name: string; steps: MascotMode[] }[] = [
   { name: "Struggling, then the click", steps: ["teaching", "question", "evaluating", "partial", "confusion", "thinking", "insight", "teaching"] },
   { name: "Going and finding something", steps: ["teaching", "searching", "reading", "generating-visual", "teaching"] },
   { name: "Winding down", steps: ["teaching", "success", "complete", "idle", "inactive", "notice"] },
+  { name: "Arriving with a document", steps: ["greeting", "curious", "ingesting", "reading", "writing", "teaching"] },
+  { name: "Getting the learner's attention", steps: ["teaching", "question", "waiting", "alert", "nod", "teaching"] },
 ];
 
 /** How long each step is held: its own morph plus enough to see it resolve. */
@@ -101,6 +106,7 @@ export function StateBoard({ state }: { state: LabState }) {
                     confidence: state.confidence,
                     voiceActivity: state.voice,
                     focus: state.focus,
+                    expression: state.expression ?? undefined,
                   }}
                   size={92}
                   reducedMotion={state.reduced}
@@ -115,6 +121,40 @@ export function StateBoard({ state }: { state: LabState }) {
             <span className="mono">
               {(state.boardStill ? stillTime(mode) : state.boardT).toFixed(2)}s
             </span>
+          </figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Every expression, on one state, at one instant.
+ *
+ * The state board answers "are these different things"; this answers the other half —
+ * "does the face have a range" — and the two questions need different pictures. Held on
+ * `teaching`, because that is the state the character spends most of its life in and the
+ * one whose face people will actually read.
+ */
+export function FaceBoard({ state }: { state: LabState }) {
+  return (
+    <div className="mlab-board">
+      {EXPRESSION_ORDER.map((e: ExpressionId) => (
+        <figure key={e} className="mlab-cell">
+          <div className="mlab-cell-art">
+            <div className="mlab-pane" data-tone={state.theme}>
+              <NemesisMascot
+                state={{ mode: state.mode, intensity: state.intensity, expression: e, focus: state.focus }}
+                size={100}
+                reducedMotion={state.reduced}
+                frozenAt={stillTime(state.mode)}
+                look={state.manualGaze ? { x: state.gazeX, y: state.gazeY, mix: 1 } : null}
+              />
+            </div>
+          </div>
+          <figcaption>
+            <span>{EXPRESSIONS[e].label}</span>
+            <span className="mono">{state.expression === e ? "shown" : ""}</span>
           </figcaption>
         </figure>
       ))}

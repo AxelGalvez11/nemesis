@@ -25,8 +25,10 @@
 // "close, keep going" is said without a frame that could be mistaken for failure.
 
 import { clamp01, EASINGS, pulse, triangle, type EaseName } from "./easing";
+import type { ExpressionId } from "./expressions";
 import { EYE_H, EYE_RISE, EYE_SPLIT, EYE_W } from "./geometry";
 import { resolvePose, type PosePatch } from "./pose";
+import { blendRadii, SHAPES } from "./shapes";
 import type { MascotMode, Pose } from "./types";
 
 /** Extra shading the product can put on any state. */
@@ -52,6 +54,11 @@ export interface StateDef {
   readonly settle: number;
   /** Seconds per repetition, or null if the state settles and holds. */
   readonly loop: number | null;
+  /**
+   * How the character feels while doing this, unless the product says otherwise.
+   * See expressions.ts on why this is a separate axis rather than more states.
+   */
+  readonly expression: ExpressionId;
   /** Complete pose at local time `t`. Pure. */
   readonly pose: (t: number, ctx: StateCtx) => Pose;
 }
@@ -68,11 +75,18 @@ const E_W = EYE_W;
 const E_SPLIT = EYE_SPLIT;
 const E_RISE = EYE_RISE;
 
-/** The resting silhouette's geometry, so states can express a departure from it. */
-const R_ROUND = 2.45;
+/** The resting lean, so states can express a departure from it rather than a value. */
 const R_TAPER = 0.07;
-/** The most resolved the form ever gets. `insight` reaches it; nothing else does. */
-const RESOLVED_ROUND = 3.05;
+
+/**
+ * Partway to the resolved silhouette.
+ *
+ * `crystal` is the most decided the character ever looks. `insight` reaches it outright;
+ * `correct`, `partial`, `success` and `complete` travel a measured fraction of the way,
+ * which is how "yes", "close", "mastered" and "finished" get said in one visual language
+ * instead of four unrelated ones.
+ */
+const towardCrystal = (k: number) => blendRadii(SHAPES.blob, SHAPES.crystal, k);
 
 type Meta = Omit<StateDef, "id" | "pose">;
 
@@ -93,6 +107,7 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outSine",
       settle: 0.42,
       loop: 27,
+      expression: "neutral",
     },
     (t) => ({
       // Two hundredths of a taper over 27 seconds. This exists so the form is not
@@ -112,17 +127,17 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outQuint",
       settle: 0.55,
       loop: null,
+      expression: "keen",
     },
     (t) => {
       const k = pulse(t / 0.5, 0.26);
       return {
         body: {
-          scale: 1.02 + 0.03 * k,
-          squash: 1.025,
-          stretch: 0.99,
-          // Tightening the geometry is the whole gesture. Nothing travels; the form
-          // simply becomes more decided, which is what noticing looks like.
-          round: R_ROUND + 0.2 + 0.12 * k,
+          // SITTING UP IS THE WHOLE GESTURE. Nothing travels across the screen; the
+          // silhouette narrows and lifts, which is what noticing looks like from across
+          // a room.
+          shape: "column",
+          scale: 1.01 + 0.025 * k,
           taper: R_TAPER,
         },
         eye: { h: E_H * 1.15 },
@@ -142,6 +157,7 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outSine",
       settle: 0.4,
       loop: 3.6,
+      expression: "keen",
     },
     (t, ctx) => {
       // ONE SOFT SWELL, NOT AN EQUALISER. Voice energy moves the whole body a little; it
@@ -149,11 +165,11 @@ const CATALOGUE: readonly StateDef[] = [
       const v = clamp01(ctx.voice);
       return {
         body: {
+          shape: "pebble",
           tilt: -5,
           taper: 0.17,
           stretch: 1 + 0.022 * v + 0.006 * Math.sin(t * 1.745),
           squash: 1 + 0.014 * v,
-          round: R_ROUND + 0.1,
         },
         eye: { h: E_H * (1.06 - 0.06 * doubt(ctx)), asym: 3 },
         liveliness: 0.95,
@@ -171,6 +187,7 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "inOutSine",
       settle: 0.4,
       loop: 3.6,
+      expression: "narrow",
     },
     (t, ctx) => ({
       body: {
@@ -178,12 +195,12 @@ const CATALOGUE: readonly StateDef[] = [
         // read as work happening INSIDE a form that is otherwise holding still — which
         // is the one thing a spinner, a bouncing dot and an orbiting ring all fail to
         // say.
-        pinch: 0.55 + 0.12 * Math.sin(t * 1.745),
-        ripple: 0.055,
+        shape: "bloom",
+        pinch: 0.5 + 0.12 * Math.sin(t * 1.745),
+        ripple: 0.04,
         ripplePhase: t * 100,
         stretch: 0.94,
         squash: 1.05,
-        round: R_ROUND - 0.2,
         taper: 0.03,
       },
       eye: { h: E_H * 0.55, rise: E_RISE + 0.06, split: E_SPLIT * 0.94 },
@@ -206,11 +223,12 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outQuint",
       settle: 0.3,
       loop: 2.2,
+      expression: "keen",
     },
     (t) => {
       const phase = triangle(t / 2.2) * 2 - 1;
       return {
-        body: { stretch: 1.03, taper: R_TAPER + 0.17 * phase, round: R_ROUND + 0.05 },
+        body: { stretch: 1.03, taper: R_TAPER + 0.17 * phase },
         sat: {
           spread: 9,
           // Centred overhead and swinging through a limited arc. A full rotation would
@@ -239,6 +257,7 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outSine",
       settle: 0.32,
       loop: 3.45,
+      expression: "narrow",
     },
     (t) => {
       const LINE = 1.15;
@@ -248,7 +267,8 @@ const CATALOGUE: readonly StateDef[] = [
       const x = p < 0.82 ? -0.8 + 1.65 * (p / 0.82) : 0.85 - 1.65 * EASINGS.outQuint((p - 0.82) / 0.18);
       const line = Math.floor((t % (LINE * 3)) / LINE);
       return {
-        body: { dy: 1.2, stretch: 1.02, squash: 0.99, round: R_ROUND + 0.12 },
+        // A lens: flattened, pointed at both ends. A thing for looking THROUGH.
+        body: { shape: "lens", dy: 1.2, stretch: 1.02 },
         eye: { h: E_H * 0.78, w: E_W * 1.06 },
         gazeX: x,
         gazeY: -0.28 + line * 0.3,
@@ -267,11 +287,12 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outSine",
       settle: 0.35,
       loop: 6.47,
+      expression: "soft",
     },
     (t, ctx) => ({
       // A 6.5-second breath of six-tenths of one percent. The learner is reading;
       // anything they can consciously see here is competing with the words.
-      body: { scale: 1 + 0.006 * Math.sin(t * 0.971), round: R_ROUND + 0.08, taper: 0.09 },
+      body: { scale: 1 + 0.006 * Math.sin(t * 0.971), taper: 0.09 },
       eye: { h: E_H * (1 - 0.07 * doubt(ctx)) },
       lift: -1,
       liveliness: 0.85,
@@ -288,16 +309,17 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outQuint",
       settle: 0.6,
       loop: null,
+      expression: "wry",
     },
     (t) => {
       const k = pulse(t / 0.55, 0.3);
       return {
         body: {
+          // The drop is fuller at the bottom and narrower at the top, so tipping it puts
+          // the character's weight visibly on one foot.
+          shape: "drop",
           tilt: 7.5 + 2.5 * k,
           taper: -0.16,
-          stretch: 0.985,
-          squash: 1.025,
-          round: R_ROUND + 0.05,
         },
         // THE ASYMMETRY IS THE WHOLE DEVICE. No eyebrow, no punctuation mark, no
         // head-scratch: one eye tilted and lifted a little further than its partner is
@@ -319,9 +341,10 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outSine",
       settle: 0.9,
       loop: null,
+      expression: "neutral",
     },
     () => ({
-      body: { dy: 1.4, stretch: 1.035, squash: 0.965, taper: 0.04, round: R_ROUND - 0.05 },
+      body: { shape: "slab", dy: 1.4, taper: 0.04 },
       eye: { h: E_H * 0.9 },
       liveliness: 0.55,
       lookGain: 0.45,
@@ -337,9 +360,10 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outQuint",
       settle: 0.45,
       loop: null,
+      expression: "narrow",
     },
     (t) => ({
-      body: { stretch: 0.9, squash: 1.07, scale: 0.98, pinch: 0.2, round: R_ROUND + 0.25, taper: 0.02 },
+      body: { stretch: 0.9, squash: 1.07, scale: 0.98, pinch: 0.2, taper: 0.02 },
       eye: { h: E_H * 0.42, split: E_SPLIT * 0.86 },
       glow: 0.12 * pulse(t / 0.45, 0.4),
       liveliness: 0.25,
@@ -356,15 +380,16 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "snap",
       settle: 0.55,
       loop: null,
+      expression: "bright",
     },
     (t) => {
       const k = pulse(t / 0.55, 0.22);
       return {
         body: {
+          radii: towardCrystal(0.7 * k),
           scale: 1 + 0.075 * k,
           stretch: 1 + 0.02 * k,
           squash: 1 + 0.035 * k,
-          round: R_ROUND + 0.5 * k,
           taper: R_TAPER * (1 - k),
         },
         eye: { h: E_H * (1 + 0.3 * k) },
@@ -385,6 +410,7 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outQuint",
       settle: 1,
       loop: null,
+      expression: "soft",
     },
     (t) => {
       // THE MESSAGE IS THAT IT STOPS. Resolution in this character is `round` reaching
@@ -394,7 +420,7 @@ const CATALOGUE: readonly StateDef[] = [
       const k = EASINGS.outQuint(clamp01((t - 0.12) / 0.6)) * 0.45;
       return {
         body: {
-          round: R_ROUND + (RESOLVED_ROUND - R_ROUND) * k,
+          radii: towardCrystal(k),
           taper: 0.2 * (1 - k),
           ripple: 0.05 * (1 - k),
           ripplePhase: 30 * k,
@@ -417,6 +443,7 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "inOutSine",
       settle: 0.85,
       loop: null,
+      expression: "concerned",
     },
     (t) => {
       // NOT ANGER, NOT A SHAKE, NOT RED. The body goes soft — `round` falls, the sides
@@ -426,7 +453,9 @@ const CATALOGUE: readonly StateDef[] = [
       const s = pulse(t / 0.85, 0.3);
       return {
         body: {
-          round: R_ROUND - 0.55 * s,
+          // Toward `pebble`: the sides it had soften away and it becomes an unmade
+          // thing for a moment, then comes back.
+          radii: blendRadii(SHAPES.blob, SHAPES.pebble, s),
           ripple: 0.075 * s,
           ripplePhase: 55 * s,
           stretch: 1 + 0.05 * s,
@@ -449,9 +478,10 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "inOutSine",
       settle: 0.8,
       loop: null,
+      expression: "narrow",
     },
     () => ({
-      body: { scale: 0.985, stretch: 0.97, squash: 1.025, round: R_ROUND + 0.22, pinch: 0.12, taper: 0.03 },
+      body: { scale: 0.985, stretch: 0.97, squash: 1.025, pinch: 0.12, taper: 0.03 },
       eye: { h: E_H * 0.5, split: E_SPLIT * 0.87 },
       lift: -1.4,
       // THE STILLNESS IS THE SIGNAL. Everywhere else, less liveliness would be a bug.
@@ -471,13 +501,16 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "inOutQuart",
       settle: 1.5,
       loop: null,
+      expression: "bright",
     },
     (t) => {
       const k = EASINGS.inOutQuart(clamp01(t / 0.9));
       const p = pulse((t - 0.3) / 1.05, 0.32);
       return {
         body: {
-          round: R_ROUND + (RESOLVED_ROUND - R_ROUND) * k,
+          // The only state that reaches `crystal` outright. That is what makes arriving
+          // there mean something.
+          radii: towardCrystal(k),
           taper: R_TAPER * (1 - k),
           ripple: 0,
           scale: 1 + 0.11 * p,
@@ -505,9 +538,10 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outQuint",
       settle: 0.34,
       loop: 1.6,
+      expression: "keen",
     },
     (t) => ({
-      body: { taper: 0.24, tilt: -3, round: R_ROUND + 0.1 },
+      body: { shape: "bloom", taper: 0.24, tilt: -3 },
       sat: {
         spread: 5 + 3.4 * triangle(t / 1.6),
         spin: -20,
@@ -533,6 +567,7 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "outQuint",
       settle: 0.2,
       loop: 0.861,
+      expression: "soft",
     },
     (t, ctx) => {
       // A CARRIER PLUS THE VOICE. At zero energy the character still moves a little,
@@ -544,7 +579,6 @@ const CATALOGUE: readonly StateDef[] = [
         body: {
           stretch: 1 + 0.05 * a,
           squash: 1 - 0.035 * a,
-          round: R_ROUND + 0.18 * a,
           taper: R_TAPER + 0.05 * a,
         },
         eye: { h: E_H * 1.02 },
@@ -564,13 +598,14 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "snap",
       settle: 0.95,
       loop: null,
+      expression: "bright",
     },
     (t) => {
       const p = pulse(t / 0.95, 0.24);
       return {
         body: {
+          radii: towardCrystal(p),
           scale: 1 + 0.115 * p,
-          round: R_ROUND + (RESOLVED_ROUND - R_ROUND) * p,
           taper: R_TAPER * (1 - p),
           squash: 1 + 0.03 * p,
         },
@@ -592,12 +627,13 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "inOutQuart",
       settle: 1.4,
       loop: 8.72,
+      expression: "soft",
     },
     (t) => {
       const k = EASINGS.inOutQuart(clamp01(t / 1.1));
       return {
         body: {
-          round: R_ROUND + (RESOLVED_ROUND - R_ROUND) * 0.8 * k,
+          radii: towardCrystal(0.8 * k),
           taper: R_TAPER * (1 - k),
           dy: 0.8 * k,
           stretch: 1 + 0.01 * Math.sin(t * 0.72),
@@ -621,18 +657,201 @@ const CATALOGUE: readonly StateDef[] = [
       ease: "inOutSine",
       settle: 0.9,
       loop: 8.98,
+      expression: "weary",
     },
     (t) => ({
       body: {
+        shape: "slab",
         dy: 2.4,
-        stretch: 1.05,
-        squash: 0.93,
-        round: R_ROUND - 0.25,
         taper: 0.02 + 0.02 * Math.sin(t * 0.7),
       },
       eye: { open: 0.07 },
       liveliness: 0.12,
       lookGain: 0.15,
+    }),
+  ),
+
+  // ── Added after the first pass, once the shape catalogue existed ──────────────
+  //
+  // These six are not decoration. Each is a moment the product already has and the
+  // first twenty had no answer for: the character appearing for the first time,
+  // acknowledging something without interrupting, a document going in, an answer being
+  // written, something needing the learner's attention, and the character noticing a
+  // thing the learner is looking at.
+
+  def(
+    "greeting",
+    {
+      label: "Greeting",
+      note: "First appearance. It arrives, straightens, and looks pleased to see you. Used once.",
+      morph: 0.34,
+      ease: "snap",
+      settle: 1.1,
+      loop: null,
+      expression: "bright",
+    },
+    (t) => {
+      const k = pulse(t / 1.05, 0.28);
+      return {
+        body: {
+          radii: blendRadii(SHAPES.blob, SHAPES.column, 0.45 * k),
+          scale: 1 + 0.05 * k,
+          taper: R_TAPER + 0.06 * k,
+        },
+        lift: -5.5 * k,
+        eye: { h: E_H * (1 + 0.1 * k) },
+        liveliness: 1,
+        lookGain: 1,
+      };
+    },
+  ),
+
+  def(
+    "nod",
+    {
+      label: "Nod",
+      note: "Heard you. One dip, under half a second, and back — the smallest acknowledgement there is.",
+      morph: 0.1,
+      ease: "outQuint",
+      settle: 0.42,
+      loop: null,
+      expression: "soft",
+    },
+    (t) => {
+      // A DIP, NOT A BOUNCE. It goes down and comes back on an ease-out with no
+      // overshoot; a nod that springs reads as a toy agreeing with you.
+      const k = pulse(t / 0.42, 0.42);
+      return {
+        body: { squash: 1 + 0.05 * k, stretch: 1 - 0.025 * k, taper: R_TAPER },
+        lift: 3.2 * k,
+        eye: { h: E_H * (1 - 0.18 * k) },
+        liveliness: 0.9,
+        lookGain: 0.85,
+      };
+    },
+  ),
+
+  def(
+    "ingesting",
+    {
+      label: "Ingesting",
+      note: "A document going in. The form opens and fragments travel INWARD — the one state where they arrive rather than leave.",
+      morph: 0.36,
+      ease: "outSine",
+      settle: 0.36,
+      loop: 1.9,
+      expression: "keen",
+    },
+    (t) => {
+      // The fragments run from far out to nothing over each loop, so material is
+      // visibly being taken in. `searching` is the same primitive pointed the other way,
+      // which is exactly the contrast wanted: one reaches out, one draws in.
+      const phase = (t % 1.9) / 1.9;
+      return {
+        body: {
+          shape: "bloom",
+          stretch: 1 + 0.03 * Math.sin(t * 3.3),
+          squash: 1 + 0.02 * Math.sin(t * 3.3),
+          ripple: 0.05,
+          ripplePhase: -t * 70,
+        },
+        sat: {
+          spread: 12 * (1 - EASINGS.outQuint(phase)),
+          spin: -50 + phase * 40,
+          sweep: 0.7,
+          scatter: 0.45,
+          scale: 0.16 * (1 - phase * 0.6),
+          alpha: 1 - EASINGS.outQuint(phase) * 0.9,
+        },
+        gazeY: 0.2,
+        liveliness: 0.6,
+        lookGain: 0.3,
+      };
+    },
+  ),
+
+  def(
+    "writing",
+    {
+      label: "Writing",
+      note: "Composing an answer. A lens with a small, steady pulse — busy without being loud.",
+      morph: 0.26,
+      ease: "outSine",
+      settle: 0.26,
+      loop: 1.42,
+      expression: "narrow",
+    },
+    (t) => ({
+      body: {
+        shape: "lens",
+        stretch: 1 + 0.022 * Math.sin(t * 4.42),
+        squash: 1 - 0.015 * Math.sin(t * 4.42),
+        taper: R_TAPER + 0.05 * Math.sin(t * 2.21),
+      },
+      // The gaze tracks along as if following its own line, then returns. Smaller than
+      // `reading`'s traverse, because it is producing rather than consuming.
+      gazeX: -0.3 + 0.55 * triangle(t / 1.42),
+      gazeY: 0.22,
+      liveliness: 0.5,
+      lookGain: 0.12,
+    }),
+  ),
+
+  def(
+    "alert",
+    {
+      label: "Alert",
+      note: "Something needs the learner. One sharp rise, then it holds — no flashing, no colour, no repeat.",
+      morph: 0.11,
+      ease: "outQuint",
+      settle: 0.7,
+      loop: null,
+      expression: "wide",
+    },
+    (t) => {
+      // 🔴 IT RISES ONCE AND STOPS. A state that pulses forever to be noticed is a
+      // notification badge, and the brief rules the character out of that job: it can
+      // say "look at this" once, and then it is the interface's problem.
+      const k = pulse(t / 0.6, 0.18);
+      return {
+        body: {
+          shape: "column",
+          scale: 1 + 0.04 * k,
+          stretch: 1 - 0.02 * k,
+          taper: R_TAPER,
+        },
+        lift: -4.5 * k,
+        eye: { h: E_H * (1 + 0.12 * k), split: E_SPLIT * 0.96 },
+        liveliness: 0.7,
+        lookGain: 1,
+      };
+    },
+  ),
+
+  def(
+    "curious",
+    {
+      label: "Curious",
+      note: "Peering at something. Tips, leans, and holds — the state for following what the learner is looking at.",
+      morph: 0.22,
+      ease: "outQuint",
+      settle: 0.5,
+      loop: 5.3,
+      expression: "keen",
+    },
+    (t) => ({
+      body: {
+        shape: "drop",
+        // A slow shift of weight from one foot to the other while it looks. This is the
+        // only looping body movement in the catalogue that travels at all, and it takes
+        // five seconds to do it.
+        tilt: -6 + 3 * Math.sin(t * 1.185),
+        taper: -0.1 + 0.08 * Math.sin(t * 1.185),
+        stretch: 0.99,
+      },
+      eye: { h: E_H * 1.12 },
+      liveliness: 0.95,
+      lookGain: 1,
     }),
   ),
 ];
@@ -688,6 +907,12 @@ const STILL: Record<MascotMode, number> = {
   success: 0.23,
   complete: 1.4,
   inactive: 1.2,
+  greeting: 0.3,
+  nod: 0.18,
+  ingesting: 0.55,
+  writing: 0.36,
+  alert: 0.11,
+  curious: 0.9,
 };
 
 export const stillTime = (id: MascotMode): number => STILL[id];

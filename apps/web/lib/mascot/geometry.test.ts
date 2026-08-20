@@ -17,6 +17,7 @@ import {
   silhouette,
 } from "./geometry";
 import { REST } from "./pose";
+import { SHAPES, SHAPE_ORDER } from "./shapes";
 import { STATE_ORDER, stateDuration } from "./states";
 
 const LOOKS = [
@@ -74,12 +75,36 @@ test("the resting body is the size the size prop promises", () => {
   assert.equal(REST_INK.h, BODY.ry * 2);
 });
 
-test("the silhouette is a superellipse, not an ellipse", () => {
-  // At 45 degrees an ellipse's radius is exactly 1 in normalised terms. The whole
-  // identity is that this one is not — if that stops being true, the character has
-  // silently become the shape every other mascot already is.
-  const r45 = profileAt(Math.PI / 4, { ...REST.body, taper: 0 });
-  assert.ok(r45 > 1.05, `corner radius ${r45.toFixed(3)} — the body has gone elliptical`);
+test("the resting silhouette is a superellipse, not an ellipse", () => {
+  // Sample 6 of 48 is 45 degrees. An ellipse's radius there is exactly its mean; the
+  // whole identity is that this one's is larger. If that stops being true, the character
+  // has silently become the shape every other mascot already is.
+  const r45 = profileAt(6, { ...REST.body, taper: 0 });
+  assert.ok(r45 > 1.03, `corner radius ${r45.toFixed(3)} — the body has gone elliptical`);
+});
+
+test("every shape in the catalogue encloses the same area", () => {
+  // Without this, morphing from a fat form to a thin one reads as the character
+  // SHRINKING rather than changing shape, and two states that differ only in silhouette
+  // also appear to differ in importance.
+  for (const id of SHAPE_ORDER) {
+    const rms = Math.sqrt(SHAPES[id].reduce((sum, r) => sum + r * r, 0) / SHAPES[id].length);
+    assert.ok(Math.abs(rms - 1) < 1e-9, `${id} encloses ${rms.toFixed(4)} of the unit area`);
+  }
+});
+
+test("every shape is a single convex-enough outline, with no spikes", () => {
+  // r(theta) can express anything, including a star. Neighbouring radii jumping is what
+  // a spike looks like in this representation, and a spike is what stops a silhouette
+  // reading as one creature.
+  for (const id of SHAPE_ORDER) {
+    const r = SHAPES[id];
+    for (let i = 0; i < r.length; i++) {
+      const step = Math.abs(r[(i + 1) % r.length]! - r[i]!);
+      assert.ok(step < 0.16, `${id} jumps ${step.toFixed(3)} between samples ${i} and ${i + 1}`);
+      assert.ok(r[i]! > 0.3 && r[i]! < 2, `${id} sample ${i} is ${r[i]}`);
+    }
+  }
 });
 
 test("the silhouette is closed and evenly sampled in every state", () => {

@@ -1,4 +1,4 @@
-import type { MascotFocus, MascotMode } from "@/lib/mascot";
+import type { ExpressionId, MascotFocus, MascotMode } from "@/lib/mascot";
 
 /** Everything the lab can change. One flat record so the whole thing is one useState. */
 export interface LabState {
@@ -7,6 +7,8 @@ export interface LabState {
   confidence: number;
   voice: number;
   focus: MascotFocus;
+  /** null lets each state wear its own default. */
+  expression: ExpressionId | null;
   /** Aim the gaze by hand instead of by focus / pointer. */
   manualGaze: boolean;
   gazeX: number;
@@ -27,7 +29,7 @@ export interface LabState {
   boardBothThemes: boolean;
 }
 
-export type View = "stage" | "board" | "transitions";
+export type View = "stage" | "board" | "faces" | "dock" | "transitions";
 
 export const INITIAL: LabState = {
   mode: "idle",
@@ -35,6 +37,7 @@ export const INITIAL: LabState = {
   confidence: 1,
   voice: 0,
   focus: "none",
+  expression: null,
   manualGaze: false,
   gazeX: 0,
   gazeY: 0,

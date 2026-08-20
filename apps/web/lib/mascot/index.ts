@@ -3,16 +3,39 @@
 
 export { EASINGS, type EaseName } from "./easing";
 export {
+  EXPRESSION_ORDER,
+  EXPRESSIONS,
+  type ExpressionDef,
+  type ExpressionId,
+} from "./expressions";
+export {
+  PROFILE_SAMPLES,
+  SHAPE_LABEL,
+  SHAPE_ORDER,
+  SHAPES,
+  blendRadii,
+  type ShapeId,
+} from "./shapes";
+export {
   BODY,
   MARK_SCALE,
   REST_INK,
   SATELLITES,
   UNIT_BLOB,
+  UNIT_ROUND,
   VIEW,
   beadBounds,
   profileAt,
   silhouette,
 } from "./geometry";
+export {
+  ATTENTION_ATTR,
+  getAttention,
+  lookAt,
+  resolveAttention,
+  subscribeAttention,
+  type AttentionTarget,
+} from "./attention";
 export { focusLook, mergeLook, NO_LOOK, PointerGaze, type Look } from "./gaze";
 export { blinkLid, liveliness } from "./face";
 export { blendPose, REST, resolvePose, scalePose, type PosePatch } from "./pose";

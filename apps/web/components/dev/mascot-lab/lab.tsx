@@ -14,10 +14,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { NemesisMascot } from "@/components/mascot/nemesis-mascot";
+import { NemesisMascotDock } from "@/components/mascot/nemesis-mascot-dock";
+import { lookAt } from "@/lib/mascot";
 import { useTheme } from "@/components/theme-provider";
 import { STATES, stateDuration } from "@/lib/mascot";
 
-import { StateBoard, Transitions } from "./board";
+import { FaceBoard, StateBoard, Transitions } from "./board";
 import { Controls } from "./controls";
 import { INITIAL, type LabState } from "./types";
 
@@ -57,6 +59,7 @@ export function MascotLab() {
     confidence: state.confidence,
     voiceActivity: state.voice,
     focus: state.focus,
+    expression: state.expression ?? undefined,
   };
   const look = state.manualGaze ? { x: state.gazeX, y: state.gazeY, mix: 1 } : null;
   const frozenAt = state.paused ? state.progress * stateDuration(state.mode) : null;
@@ -145,8 +148,64 @@ export function MascotLab() {
         ) : null}
 
         {state.view === "board" ? <StateBoard state={state} /> : null}
+        {state.view === "faces" ? <FaceBoard state={state} /> : null}
+        {state.view === "dock" ? <DockPreview state={state} mascotState={mascotState} /> : null}
         {state.view === "transitions" ? <Transitions state={state} /> : null}
       </main>
     </div>
+  );
+}
+
+/**
+ * The mascot where it will actually live: lower left, above the composer.
+ *
+ * This is a real `NemesisMascotDock` over a mock of the Canvas surface, not a picture of
+ * one — the composer below grows as you type into it, and the point of the exercise is
+ * to watch the character hold its place while that happens and turn toward the field
+ * when it takes focus. A screenshot of a mascot in a corner proves neither.
+ */
+function DockPreview({
+  state,
+  mascotState,
+}: {
+  state: LabState;
+  mascotState: React.ComponentProps<typeof NemesisMascot>["state"];
+}) {
+  const [text, setText] = useState("");
+  return (
+    <section className="mlab-dock">
+      <div className="mlab-dock-page">
+        <h2>Competitive inhibition</h2>
+        <p
+          data-mascot-attention="true"
+          tabIndex={-1}
+          onMouseEnter={(e) => lookAt(e.currentTarget)}
+          onMouseLeave={() => lookAt(null)}
+        >
+          A competitive inhibitor raises the apparent K<sub>m</sub> without touching
+          V<sub>max</sub>, because the inhibitor and the substrate are contesting the same site.
+          Pile in enough substrate and the enzyme reaches the same ceiling it always did.
+          <em> Hover this paragraph — the character looks at it.</em>
+        </p>
+        <p>
+          That is the whole diagnostic: if the ceiling moves, whatever is binding is not
+          competing for the site, and you are looking at a different mechanism.
+        </p>
+        <div className="mlab-dock-composer" id="mlab-composer">
+          <textarea
+            rows={Math.min(6, 1 + text.split("\n").length)}
+            value={text}
+            placeholder="Answer here — the composer grows, and the mascot holds its place above it."
+            onChange={(e) => setText(e.target.value)}
+          />
+        </div>
+      </div>
+      <NemesisMascotDock
+        contain
+        state={mascotState}
+        size={state.size > 96 ? 46 : Math.max(24, state.size)}
+        anchor="#mlab-composer"
+      />
+    </section>
   );
 }

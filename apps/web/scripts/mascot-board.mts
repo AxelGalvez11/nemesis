@@ -13,7 +13,17 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { SATELLITES, UNIT_BLOB, VIEW, sampleState } from "../lib/mascot/index.ts";
+import {
+  EXPRESSIONS,
+  EXPRESSION_ORDER,
+  SATELLITES,
+  UNIT_BLOB,
+  UNIT_ROUND,
+  VIEW,
+  sampleState,
+  type ExpressionId,
+  type MascotMode,
+} from "../lib/mascot/index.ts";
 import { STATES, STATE_ORDER, stillTime } from "../lib/mascot/states.ts";
 
 const COLS = 5;
@@ -24,9 +34,14 @@ const THEMES = [
   { name: "dark", page: "#000000", ink: "#f2f2f4", eye: "#0a0a0c", text: "#9a9a9a" },
 ] as const;
 
-function cell(mode: (typeof STATE_ORDER)[number], theme: (typeof THEMES)[number]): string {
-  const f = sampleState(mode, stillTime(mode), { clock: 0 });
-  const uid = `${theme.name}-${mode}`;
+function cell(
+  mode: MascotMode,
+  theme: (typeof THEMES)[number],
+  expression?: ExpressionId,
+  size = CELL,
+): string {
+  const f = sampleState(mode, stillTime(mode), { clock: 0, expression });
+  const uid = `${theme.name}-${mode}-${expression ?? "default"}`;
   const place = `translate(${f.body.cx} ${f.body.cy}) rotate(${f.body.tilt})`;
   const sats = f.satellites
     .slice(0, SATELLITES)
@@ -41,16 +56,22 @@ function cell(mode: (typeof STATE_ORDER)[number], theme: (typeof THEMES)[number]
         `<path d="${UNIT_BLOB}" fill="${theme.eye}" transform="translate(${e.cx.toFixed(2)} ${e.cy.toFixed(2)}) rotate(${e.tilt.toFixed(2)}) scale(${e.rx.toFixed(2)} ${e.ry.toFixed(2)})"/>`,
     )
     .join("");
+  const lids = f.eyes
+    .map(
+      (e) =>
+        `<path d="${UNIT_ROUND}" fill="${theme.ink}" transform="translate(${e.cx.toFixed(2)} ${e.cy.toFixed(2)}) rotate(${e.tilt.toFixed(2)}) translate(0 ${e.lidCy.toFixed(2)}) scale(${e.lidRx.toFixed(2)} ${e.lidRy.toFixed(2)})"/>`,
+    )
+    .join("");
   // Mirrors nemesis-mascot.tsx exactly, including the clip living on an UNTRANSFORMED
   // group inside the body's frame — so what this sheet shows is what the browser draws,
   // not a second implementation that can drift from it.
-  return `<svg x="0" y="0" width="${CELL}" height="${CELL}" viewBox="${VIEW.box}">
+  return `<svg x="0" y="0" width="${size}" height="${size}" viewBox="${VIEW.box}">
   <defs><clipPath id="c-${uid}"><path d="${f.body.d}"/></clipPath></defs>
   ${sats}
   <g transform="${place}">
     <path d="${f.body.d}" fill="${theme.ink}" opacity="${(f.glow * 0.24).toFixed(3)}" transform="scale(${(1 + 0.17 * f.glow).toFixed(3)})"/>
     <path d="${f.body.d}" fill="${theme.ink}"/>
-    <g clip-path="url(#c-${uid})">${eyes}</g>
+    <g clip-path="url(#c-${uid})">${eyes}${lids}</g>
   </g>
 </svg>`;
 }
@@ -84,3 +105,34 @@ const dest = resolve(import.meta.dirname, "../tmp/mascot-board.svg");
 mkdirSync(dirname(dest), { recursive: true });
 writeFileSync(dest, out);
 console.log(`wrote ${dest} — ${STATE_ORDER.length} states x ${THEMES.length} themes`);
+
+// ── A second sheet: every expression, on one state ──────────────────────────────
+//
+// The state board answers "are these different things"; this answers the other half,
+// "does the face have a range". Held on `teaching`, the state the character spends most
+// of its life in and the one whose face people will actually read.
+
+const FACE_CELL = 190;
+const FACE_HELD: MascotMode = "teaching";
+
+function faceSheet(theme: (typeof THEMES)[number], originY: number): string {
+  const w = EXPRESSION_ORDER.length * FACE_CELL;
+  const cells = EXPRESSION_ORDER.map((id, i) => `<g transform="translate(${i * FACE_CELL} 0)">
+      ${cell(FACE_HELD, theme, id, FACE_CELL)}
+      <text x="${FACE_CELL / 2}" y="${FACE_CELL + 16}" fill="${theme.text}" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" text-anchor="middle">${EXPRESSIONS[id].label}</text>
+    </g>`).join("");
+  return `<g transform="translate(0 ${originY})">
+    <rect x="0" y="0" width="${w}" height="${FACE_CELL + LABEL}" fill="${theme.page}"/>
+    ${cells}
+  </g>`;
+}
+
+const faceW = EXPRESSION_ORDER.length * FACE_CELL;
+const faceH = FACE_CELL + LABEL;
+const faces = `<svg xmlns="http://www.w3.org/2000/svg" width="${faceW}" height="${faceH * 2}" viewBox="0 0 ${faceW} ${faceH * 2}">
+${THEMES.map((t, i) => faceSheet(t, i * faceH)).join("\n")}
+</svg>`;
+
+const faceDest = resolve(import.meta.dirname, "../tmp/mascot-faces.svg");
+writeFileSync(faceDest, faces);
+console.log(`wrote ${faceDest} — ${EXPRESSION_ORDER.length} expressions x ${THEMES.length} themes`);

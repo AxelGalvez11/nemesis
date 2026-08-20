@@ -3,7 +3,16 @@
 // The lab's instrument panel. Nothing here knows how the mascot works — it edits one
 // flat record and hands it back.
 
-import { STATES, STATE_ORDER, stateDuration, type MascotFocus, type MascotMode } from "@/lib/mascot";
+import {
+  EXPRESSIONS,
+  EXPRESSION_ORDER,
+  STATES,
+  STATE_ORDER,
+  stateDuration,
+  type ExpressionId,
+  type MascotFocus,
+  type MascotMode,
+} from "@/lib/mascot";
 
 import type { LabState, View } from "./types";
 
@@ -64,7 +73,9 @@ function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange:
 const FOCUSES: MascotFocus[] = ["none", "user", "composer", "canvas", "source", "response"];
 const VIEWS: { id: View; label: string }[] = [
   { id: "stage", label: "Stage" },
-  { id: "board", label: "State board" },
+  { id: "board", label: "States" },
+  { id: "faces", label: "Faces" },
+  { id: "dock", label: "Dock" },
   { id: "transitions", label: "Transitions" },
 ];
 
@@ -107,6 +118,29 @@ export function Controls({ state, set }: { state: LabState; set: (p: Patch) => v
         <p className="mlab-note">{def.note}</p>
         <p className="mlab-meta mono">
           morph {def.morph.toFixed(2)}s · {def.ease} · {def.loop ? `loop ${def.loop}s` : `settles ${def.settle.toFixed(2)}s`}
+        </p>
+      </div>
+
+      <div className="mlab-group">
+        <h3>Expression</h3>
+        <div className="mlab-chips">
+          <button type="button" className={state.expression === null ? "on" : undefined} onClick={() => set({ expression: null })}>
+            state default
+          </button>
+          {EXPRESSION_ORDER.map((e: ExpressionId) => (
+            <button
+              key={e}
+              type="button"
+              className={state.expression === e ? "on" : undefined}
+              onClick={() => set({ expression: e })}
+              title={EXPRESSIONS[e].note}
+            >
+              {EXPRESSIONS[e].label}
+            </button>
+          ))}
+        </div>
+        <p className="mlab-note">
+          {state.expression ? EXPRESSIONS[state.expression].note : `Default for this state: ${EXPRESSIONS[def.expression].label.toLowerCase()}.`}
         </p>
       </div>
 

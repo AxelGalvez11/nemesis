@@ -20,6 +20,8 @@
 // still most of the time. What makes it alive is that it blinks, its gaze drifts and
 // flicks, and it notices you.
 
+import type { ExpressionId } from "./expressions";
+
 /**
  * What Nemesis is doing. One entry per semantic state; the mascot never takes an
  * animation name, only a thing the system is actually doing.
@@ -44,7 +46,13 @@ export type MascotMode =
   | "speaking"
   | "success"
   | "complete"
-  | "inactive";
+  | "inactive"
+  | "greeting"
+  | "nod"
+  | "ingesting"
+  | "writing"
+  | "alert"
+  | "curious";
 
 /** Where the mascot's attention is pointed when nothing is tracking a pointer. */
 export type MascotFocus = "user" | "composer" | "canvas" | "source" | "response" | "none";
@@ -66,6 +74,11 @@ export interface MascotState {
    */
   readonly intensity?: number;
   readonly focus?: MascotFocus;
+  /**
+   * How the character feels about what it is doing. Each state has a default; this
+   * overrides it. See expressions.ts on why this is a separate axis from `mode`.
+   */
+  readonly expression?: ExpressionId;
   /**
    * 0..1. Low confidence narrows the eyes slightly and loosens the posture. Kept
    * deliberately small: this is a shading on the state, never a state of its own.
@@ -93,8 +106,15 @@ export interface BodyPose {
   readonly squash: number;
   /** Degrees. The resting body is upright; a tilt is always something the state means. */
   readonly tilt: number;
-  /** Superellipse exponent. 2 is exactly an ellipse; higher squares the sides off. */
-  readonly round: number;
+  /**
+   * The base silhouette, as radii sampled at `ANGLES`.
+   *
+   * States name a shape from the catalogue (`shapes.ts`) and it is resolved to this at
+   * module load. It is stored as the sampled array rather than as a name because a
+   * transition between two states has to interpolate BETWEEN two silhouettes, and a
+   * name cannot be halfway between `lens` and `crystal`.
+   */
+  readonly radii: readonly number[];
   /** -1..1. Moves mass toward one side. A blob with no taper is a logo, not a creature. */
   readonly taper: number;
   /** 0..1. A waist across the middle — the form gathering itself in. */
@@ -125,6 +145,15 @@ export interface EyePose {
   readonly rise: number;
   /** Degrees, applied to both eyes equally. */
   readonly tilt: number;
+  /**
+   * How much the eye bows, -1..1. Positive arches it upward — the shape a person's eyes
+   * make when they are pleased. Negative bows it down, which reads as concern.
+   *
+   * Drawn by covering part of the eye with the body's own ink rather than by bending the
+   * shape: a bow is concave, r(theta) cannot be concave, and cross-fading a tall slot
+   * into a wide arch passes through a plus sign on the way.
+   */
+  readonly curve: number;
   /**
    * Signed degrees added to one eye and subtracted from the other, plus a matching
    * height difference. This is the only asymmetry the face has, and it is what makes
@@ -203,6 +232,13 @@ export interface EyeRender {
   readonly ry: number;
   /** Degrees, relative to the body's own tilt. */
   readonly tilt: number;
+  /**
+   * The ink-coloured shape that bites into the eye to bow it. At rest it sits clear of
+   * the eye entirely, which is why a curve of zero costs nothing and blends cleanly.
+   */
+  readonly lidCy: number;
+  readonly lidRx: number;
+  readonly lidRy: number;
 }
 
 /**

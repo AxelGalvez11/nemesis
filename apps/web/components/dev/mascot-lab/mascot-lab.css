@@ -172,3 +172,44 @@
   .mlab-panel { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
   .mlab-stage { padding: 24px 18px 60px; }
 }
+
+/* ── The dock preview ───────────────────────────────────────────────────────── */
+
+.mlab-dock {
+  position: relative;
+  min-height: 560px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.mlab-dock-page {
+  max-width: 62ch;
+  margin: 0 auto;
+  padding: 40px 24px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 560px;
+}
+.mlab-dock-page h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.mlab-dock-page p { margin: 0; font-size: 15px; line-height: 1.7; color: var(--text); }
+.mlab-dock-page p em { color: var(--text-3); font-style: normal; }
+.mlab-dock-composer {
+  margin-top: auto;
+  border: 1px solid var(--composer-border, var(--line-2));
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 10px 12px;
+}
+.mlab-dock-composer textarea {
+  width: 100%;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  outline: none;
+}

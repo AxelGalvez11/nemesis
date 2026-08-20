@@ -39,3 +39,12 @@
    requestAnimationFrame, which CSS cannot reach — and the correct behaviour is not to
    stop, it is to HOLD each state's characteristic frame so the states stay
    distinguishable. The component reads the preference itself; see states.ts, `STILL`. */
+
+/* The dock. Fixed, inert, and never part of layout — see nemesis-mascot-dock.tsx. */
+.nemesis-mascot-dock {
+  position: fixed;
+  z-index: 30;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+}

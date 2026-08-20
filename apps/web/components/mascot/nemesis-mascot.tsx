@@ -33,6 +33,7 @@ import {
   PointerGaze,
   SATELLITES,
   UNIT_BLOB,
+  UNIT_ROUND,
   VIEW,
   focusLook,
   mergeLook,
@@ -117,6 +118,7 @@ export function NemesisMascot({
   const glowRef = useRef<SVGPathElement | null>(null);
   const satRefs = useRef<(SVGPathElement | null)[]>(Array(SATELLITES).fill(null));
   const eyeRefs = useRef<(SVGPathElement | null)[]>([null, null]);
+  const lidRefs = useRef<(SVGPathElement | null)[]>([null, null]);
 
   const clockRef = useRef(0);
   const latest = useRef({ state, speed, paused, track, reducedMotion, lookOverride });
@@ -144,15 +146,17 @@ export function NemesisMascot({
       el.setAttribute("opacity", n(s.alpha));
     }
     for (let i = 0; i < 2; i++) {
-      const el = eyeRefs.current[i];
       const e = f.eyes[i];
-      if (!el || !e) continue;
+      if (!e) continue;
       // The eye is the body's own unit silhouette, scaled to a tall narrow slot. One
       // transform per eye per frame, and the self-similarity is structural rather than
       // something a future edit has to remember to preserve.
-      el.setAttribute(
+      const seat = `translate(${n(e.cx)} ${n(e.cy)}) rotate(${n(e.tilt)})`;
+      eyeRefs.current[i]?.setAttribute("transform", `${seat} scale(${n(e.rx)} ${n(e.ry)})`);
+      // The bow. Sits clear of the eye at rest and slides in to eat part of it.
+      lidRefs.current[i]?.setAttribute(
         "transform",
-        `translate(${n(e.cx)} ${n(e.cy)}) rotate(${n(e.tilt)}) scale(${n(e.rx)} ${n(e.ry)})`,
+        `${seat} translate(0 ${n(e.lidCy)}) scale(${n(e.lidRx)} ${n(e.lidRy)})`,
       );
     }
     rootRef.current?.setAttribute("opacity", n(f.bodyAlpha * f.body.alpha));
@@ -171,6 +175,7 @@ export function NemesisMascot({
       sampleState(state.mode, frozenAt, {
         intensity: state.intensity,
         ctx: { confidence: state.confidence ?? 1, voice: state.voiceActivity ?? 0 },
+        expression: state.expression,
         look: lookOverride ?? focusLook(state.focus ?? "none"),
         reduced: reducedMotion,
         // 🔴 THE LIVENESS CLOCK IS ZERO, NOT `frozenAt`. Blinks are drawn from the
@@ -182,7 +187,7 @@ export function NemesisMascot({
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frame, frozenAt, frozenClock, state.mode, state.intensity, state.confidence, state.voiceActivity, state.focus, lookOverride, reducedMotion]);
+  }, [frame, frozenAt, frozenClock, state.mode, state.intensity, state.confidence, state.voiceActivity, state.focus, state.expression, lookOverride, reducedMotion]);
 
   // ── The live path ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -215,6 +220,9 @@ export function NemesisMascot({
 
       const s = cfg.state;
       if (engine.current !== s.mode) engine.setState(s.mode, clockRef.current);
+      // An override of null hands the face back to whatever the state wears by default,
+      // and that hand-back fades like any other change.
+      engine.setExpression(s.expression ?? null, clockRef.current);
 
       const pointer = cfg.track ? gaze.update(wall) : null;
       const aimed = cfg.lookOverride ?? focusLook(s.focus ?? "none");
