@@ -29,7 +29,7 @@ import type { ExpressionId } from "./expressions";
 import { EYE_H, EYE_RISE, EYE_SPLIT, EYE_W } from "./geometry";
 import { resolvePose, type PosePatch } from "./pose";
 import { blendRadii, SHAPES } from "./shapes";
-import type { MascotMode, Pose } from "./types";
+import type { MascotMode, MascotStation, Pose } from "./types";
 
 /** Extra shading the product can put on any state. */
 export interface StateCtx {
@@ -59,6 +59,19 @@ export interface StateDef {
    * See expressions.ts on why this is a separate axis rather than more states.
    */
   readonly expression: ExpressionId;
+  /**
+   * Where a docked mascot stands while doing this.
+   *
+   * `centre` is for the states where the character IS the thing happening — it is
+   * working and there is nothing else to look at yet. Everything else stays out of the
+   * way in the corner. See `nemesis-mascot-dock.tsx` for the travel.
+   */
+  readonly station: MascotStation;
+  /**
+   * Blink across the way in. Worth it for a state that changes silhouette a long way:
+   * the eye shutting over the change makes the new shape read as a decision.
+   */
+  readonly blinkIn: boolean;
   /** Complete pose at local time `t`. Pure. */
   readonly pose: (t: number, ctx: StateCtx) => Pose;
 }
@@ -108,6 +121,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.42,
       loop: 27,
       expression: "neutral",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => ({
       // Two hundredths of a taper over 27 seconds. This exists so the form is not
@@ -128,6 +143,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.55,
       loop: null,
       expression: "keen",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => {
       const k = pulse(t / 0.5, 0.26);
@@ -158,6 +175,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.4,
       loop: 3.6,
       expression: "keen",
+      station: "corner",
+      blinkIn: false,
     },
     (t, ctx) => {
       // ONE SOFT SWELL, NOT AN EQUALISER. Voice energy moves the whole body a little; it
@@ -188,6 +207,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.4,
       loop: 3.6,
       expression: "narrow",
+      station: "centre",
+      blinkIn: true,
     },
     (t, ctx) => ({
       body: {
@@ -224,6 +245,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.3,
       loop: 2.2,
       expression: "keen",
+      station: "centre",
+      blinkIn: false,
     },
     (t) => {
       const phase = triangle(t / 2.2) * 2 - 1;
@@ -258,6 +281,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.32,
       loop: 3.45,
       expression: "narrow",
+      station: "corner",
+      blinkIn: true,
     },
     (t) => {
       const LINE = 1.15;
@@ -288,6 +313,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.35,
       loop: 6.47,
       expression: "soft",
+      station: "corner",
+      blinkIn: false,
     },
     (t, ctx) => ({
       // A 6.5-second breath of six-tenths of one percent. The learner is reading;
@@ -310,6 +337,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.6,
       loop: null,
       expression: "wry",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => {
       const k = pulse(t / 0.55, 0.3);
@@ -342,6 +371,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.9,
       loop: null,
       expression: "neutral",
+      station: "corner",
+      blinkIn: true,
     },
     () => ({
       body: { shape: "slab", dy: 1.4, taper: 0.04 },
@@ -361,6 +392,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.45,
       loop: null,
       expression: "narrow",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => ({
       body: { stretch: 0.9, squash: 1.07, scale: 0.98, pinch: 0.2, taper: 0.02 },
@@ -381,6 +414,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.55,
       loop: null,
       expression: "bright",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => {
       const k = pulse(t / 0.55, 0.22);
@@ -411,6 +446,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 1,
       loop: null,
       expression: "soft",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => {
       // THE MESSAGE IS THAT IT STOPS. Resolution in this character is `round` reaching
@@ -444,6 +481,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.85,
       loop: null,
       expression: "concerned",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => {
       // NOT ANGER, NOT A SHAKE, NOT RED. The body goes soft — `round` falls, the sides
@@ -479,6 +518,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.8,
       loop: null,
       expression: "narrow",
+      station: "corner",
+      blinkIn: false,
     },
     () => ({
       body: { scale: 0.985, stretch: 0.97, squash: 1.025, pinch: 0.12, taper: 0.03 },
@@ -502,6 +543,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 1.5,
       loop: null,
       expression: "bright",
+      station: "corner",
+      blinkIn: true,
     },
     (t) => {
       const k = EASINGS.inOutQuart(clamp01(t / 0.9));
@@ -539,6 +582,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.34,
       loop: 1.6,
       expression: "keen",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => ({
       body: { shape: "bloom", taper: 0.24, tilt: -3 },
@@ -568,6 +613,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.2,
       loop: 0.861,
       expression: "soft",
+      station: "corner",
+      blinkIn: false,
     },
     (t, ctx) => {
       // A CARRIER PLUS THE VOICE. At zero energy the character still moves a little,
@@ -599,6 +646,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.95,
       loop: null,
       expression: "bright",
+      station: "corner",
+      blinkIn: true,
     },
     (t) => {
       const p = pulse(t / 0.95, 0.24);
@@ -628,6 +677,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 1.4,
       loop: 8.72,
       expression: "soft",
+      station: "corner",
+      blinkIn: true,
     },
     (t) => {
       const k = EASINGS.inOutQuart(clamp01(t / 1.1));
@@ -658,6 +709,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.9,
       loop: 8.98,
       expression: "weary",
+      station: "corner",
+      blinkIn: true,
     },
     (t) => ({
       body: {
@@ -689,6 +742,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 1.1,
       loop: null,
       expression: "bright",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => {
       const k = pulse(t / 1.05, 0.28);
@@ -716,6 +771,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.42,
       loop: null,
       expression: "soft",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => {
       // A DIP, NOT A BOUNCE. It goes down and comes back on an ease-out with no
@@ -741,6 +798,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.36,
       loop: 1.9,
       expression: "keen",
+      station: "centre",
+      blinkIn: true,
     },
     (t) => {
       // The fragments run from far out to nothing over each loop, so material is
@@ -780,6 +839,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.26,
       loop: 1.42,
       expression: "narrow",
+      station: "corner",
+      blinkIn: true,
     },
     (t) => ({
       body: {
@@ -807,6 +868,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.7,
       loop: null,
       expression: "wide",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => {
       // 🔴 IT RISES ONCE AND STOPS. A state that pulses forever to be noticed is a
@@ -838,6 +901,8 @@ const CATALOGUE: readonly StateDef[] = [
       settle: 0.5,
       loop: 5.3,
       expression: "keen",
+      station: "corner",
+      blinkIn: false,
     },
     (t) => ({
       body: {
@@ -853,6 +918,33 @@ const CATALOGUE: readonly StateDef[] = [
       liveliness: 0.95,
       lookGain: 1,
     }),
+  ),
+
+  def(
+    "wink",
+    {
+      label: "Wink",
+      note: "A beat of complicity — half a second, one eye, and it is over. Used rarely and never twice in a row.",
+      morph: 0.1,
+      ease: "outQuint",
+      settle: 0.5,
+      loop: null,
+      expression: "wry",
+      station: "corner",
+      blinkIn: false,
+    },
+    (t) => {
+      const k = pulse(t / 0.46, 0.3);
+      return {
+        // The body barely takes part: it tips two and a half degrees and leans. The
+        // whole gesture is in one eye, which is what keeps it from reading as mugging.
+        body: { tilt: 2.5 * k, taper: R_TAPER + 0.06 * k },
+        eye: { wink: k, h: E_H * (1 + 0.06 * k) },
+        lift: -1.2 * k,
+        liveliness: 0.9,
+        lookGain: 0.9,
+      };
+    },
   ),
 ];
 
@@ -913,6 +1005,7 @@ const STILL: Record<MascotMode, number> = {
   writing: 0.36,
   alert: 0.11,
   curious: 0.9,
+  wink: 0.15,
 };
 
 export const stillTime = (id: MascotMode): number => STILL[id];

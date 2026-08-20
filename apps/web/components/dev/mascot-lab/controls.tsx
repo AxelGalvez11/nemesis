@@ -75,6 +75,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: "stage", label: "Stage" },
   { id: "board", label: "States" },
   { id: "faces", label: "Faces" },
+  { id: "shapes", label: "Shapes" },
   { id: "dock", label: "Dock" },
   { id: "transitions", label: "Transitions" },
 ];
@@ -149,6 +150,7 @@ export function Controls({ state, set }: { state: LabState; set: (p: Patch) => v
         <div className="mlab-inline">
           <Toggle label={state.paused ? "Paused" : "Playing"} on={!state.paused} onChange={(v) => set({ paused: !v })} />
           <Toggle label="Reduced motion" on={state.reduced} onChange={(v) => set({ reduced: v })} />
+          <Toggle label="Present" on={state.present} onChange={(v) => set({ present: v })} />
         </div>
         <Slider
           label="Progress"

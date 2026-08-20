@@ -21,6 +21,8 @@ export interface LabState {
   size: number;
   theme: "light" | "dark";
   reduced: boolean;
+  /** Dock preview: whether the character is here at all. */
+  present: boolean;
   view: View;
   /** Board: catch each state at its characteristic frame, or all at one timestamp. */
   boardStill: boolean;
@@ -29,7 +31,7 @@ export interface LabState {
   boardBothThemes: boolean;
 }
 
-export type View = "stage" | "board" | "faces" | "dock" | "transitions";
+export type View = "stage" | "board" | "faces" | "shapes" | "dock" | "transitions";
 
 export const INITIAL: LabState = {
   mode: "idle",
@@ -48,6 +50,7 @@ export const INITIAL: LabState = {
   size: 260,
   theme: "dark",
   reduced: false,
+  present: true,
   view: "stage",
   boardStill: true,
   boardT: 0.8,

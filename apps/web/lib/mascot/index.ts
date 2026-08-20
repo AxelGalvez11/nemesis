@@ -1,7 +1,7 @@
 // The mascot engine's public surface. Nothing below this imports React or touches the
 // DOM, so the whole thing runs — and is tested — in plain Node.
 
-export { EASINGS, type EaseName } from "./easing";
+export { approach, EASINGS, type EaseName } from "./easing";
 export {
   EXPRESSION_ORDER,
   EXPRESSIONS,
@@ -37,7 +37,7 @@ export {
   type AttentionTarget,
 } from "./attention";
 export { focusLook, mergeLook, NO_LOOK, PointerGaze, type Look } from "./gaze";
-export { blinkLid, liveliness } from "./face";
+export { BLINK_HALF, blinkLid, liveliness, maskBlink } from "./face";
 export { blendPose, REST, resolvePose, scalePose, type PosePatch } from "./pose";
 export {
   DEFAULT_CTX,

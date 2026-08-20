@@ -25,7 +25,7 @@ import {
   type ExpressionDef,
   type ExpressionId,
 } from "./expressions";
-import { liveliness } from "./face";
+import { BLINK_HALF, liveliness, maskBlink } from "./face";
 import {
   BODY,
   EYE_TRAVEL_U,
@@ -68,6 +68,16 @@ export interface SampleOptions {
    * engine passes global time instead, so blinks do not restart on every state change.
    */
   readonly clock?: number;
+  /**
+   * 0..1, how present the character is. 0 scales it to nothing and fades it out.
+   * Arriving and leaving are a dimension over every state, not two more states.
+   */
+  readonly presence?: number;
+  /**
+   * Forces the lid shut regardless of the blink schedule. The engine uses it to blink
+   * across a state change that carries a big change of silhouette; see `blinkIn`.
+   */
+  readonly lidOverride?: number;
 }
 
 const DEG = Math.PI / 180;
@@ -88,11 +98,21 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
   const b = pose.body;
   const cx = BODY.cx + b.dx;
   const cy = BODY.cy + b.dy + pose.lift + live.shift;
-  const rx = BODY.rx * b.scale * b.stretch;
-  const ry = BODY.ry * b.scale * b.squash;
+  // 🔴 PRESENCE MULTIPLIES, IT DOES NOT REPLACE. Arriving has to work from any state
+  // and mid-transition, so it is a factor over whatever the pose already decided rather
+  // than a pose of its own that would fight the one being blended.
+  const presence = clamp01(opts.presence ?? 1);
+  // 🔴 LINEAR IN `presence`, AND THE EASING LIVES IN THE CALLER. Front-loading the curve
+  // here (an `outQuint`, which is right for almost everything else in this engine) puts
+  // two thirds of the growth into the first fifth of the ramp, and the character reads
+  // as POPPING in rather than arriving. The component eases presence over time; this
+  // only has to be continuous.
+  const grow = 0.06 + 0.94 * presence;
+  const rx = BODY.rx * b.scale * b.stretch * grow;
+  const ry = BODY.ry * b.scale * b.squash * grow * live.breath;
 
   // ── The silhouette ────────────────────────────────────────────────────────────
-  const pts: Point[] = silhouette(b);
+  const pts: Point[] = silhouette(b, undefined, rx, ry);
   const d = closedPath(pts);
 
   const cos = Math.cos(b.tilt * DEG);
@@ -119,7 +139,8 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
 
   // ── The face ──────────────────────────────────────────────────────────────────
   const eye = pose.eye;
-  const halfH = eye.h * eye.open * live.lid;
+  const lid = opts.lidOverride === undefined ? live.lid : Math.min(live.lid, opts.lidOverride);
+  const halfH = eye.h * eye.open * lid;
   const offU = gx * EYE_TRAVEL_U;
   const offV = gy * EYE_TRAVEL_V;
   // The waist takes room away exactly where the eyes live, so the fit has to know about
@@ -139,16 +160,19 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
   const curveDir = eye.curve >= 0 ? 1 : -1;
 
   const eyes = ([-1, 1] as const).map((side): EyeRender => {
+    // A wink shuts ONE eye. The right one, always — a wink that changed sides would read
+    // as a twitch rather than as a gesture.
+    const shut = side > 0 ? 1 - clamp01(eye.wink) : 1;
     // The asymmetry is a tilt AND a small height difference. A tilt alone is invisible
     // at 3px; the pair being visibly uneven is what survives the size.
-    const eh = Math.max(halfH * (1 + 0.02 * eye.asym * side) * ry, 0.35);
+    const eh = Math.max(halfH * shut * (1 + 0.02 * eye.asym * side) * ry, 0.35);
     const ew = eye.w * rx;
     // 🔴 THE BOW IS SIZED OFF THE OPEN EYE, NOT THE BLINKING ONE. Tying it to `eh` meant
     // a blink — which takes the eye's height to nothing in 75ms — flung the bow ten mark
     // units and back every few seconds. Invisible, because the bow is clear of a shut
     // eye either way, and a real defect: it is motion nobody asked for, and it buried a
     // genuine shape-morph regression in the noise when the frames were measured.
-    const ehOpen = Math.max(eye.h * eye.open * (1 + 0.02 * eye.asym * side) * ry, 0.35);
+    const ehOpen = Math.max(eye.h * eye.open * shut * (1 + 0.02 * eye.asym * side) * ry, 0.35);
     // Circular, and sized off the eye's WIDTH rather than its height: what makes the
     // leftover sliver read as an arch is the cutter's curvature across the eye, and a
     // cutter much wider than the eye presents an almost flat edge to it.
@@ -193,7 +217,7 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
     eyes,
     satellites,
     glow: pose.glow,
-    bodyAlpha: pose.bodyAlpha,
+    bodyAlpha: pose.bodyAlpha * presence,
   };
 }
 
@@ -258,6 +282,21 @@ export class MascotEngine {
    */
   private frozen: Pose | null = null;
   private look: Look = NO_LOOK;
+  /**
+   * Centres of blinks the character was told to make, in engine time.
+   *
+   * 🔴 A FORCED BLINK BELONGS TO THE MOMENT IT STARTED, NOT TO THE CURRENT STATE. The
+   * first version asked "does the state I am in now want a blink on the way in", which
+   * is fine until a second state change lands while that blink is still running: the
+   * question starts answering no, the override disappears, and the eye snaps from
+   * half-shut back to open in one frame. Chained changes are exactly when it happened.
+   *
+   * A list, because two changes close together are two blinks and the lid should take
+   * the lower of them. Pruned in `setState` only — entries outside their window return 1
+   * from `maskBlink`, so dropping them cannot change any sample, and `sample` itself
+   * stays a pure read.
+   */
+  private blinks: number[] = [];
   private expr: ExpressionId | null = null;
   private exprFrom: ExpressionDef | null = null;
   private exprAt = -10;
@@ -289,6 +328,14 @@ export class MascotEngine {
   setState(mode: MascotMode, at: number, opts: SampleOptions = {}): void {
     if (mode === this.mode) return;
     this.frozen = this.transitionAt(at) < 1 ? this.composePose(at, opts) : null;
+    const next = STATES[mode];
+    if (next.blinkIn && !opts.reduced) {
+      // The floor keeps the whole blink inside the change that asked for it: a short
+      // morph would otherwise put its opening frames BEFORE the state changed, where
+      // nothing was overriding the lid yet.
+      this.blinks.push(at + Math.max(BLINK_HALF, next.morph * 0.34));
+      this.blinks = this.blinks.filter((b) => b > at - BLINK_HALF * 2).slice(-4);
+    }
     this.prev = this.mode;
     this.prevAt = this.modeAt;
     this.mode = mode;
@@ -333,6 +380,7 @@ export class MascotEngine {
     this.mode = mode;
     this.prev = null;
     this.frozen = null;
+    this.blinks = [];
     this.modeAt = at;
     this.prevAt = at;
   }
@@ -356,7 +404,20 @@ export class MascotEngine {
   }
 
   sample(t: number, opts: SampleOptions = {}): MascotFrame {
-    const merged: SampleOptions = { ...opts, look: opts.look ?? this.look };
+    // Blink across a change of silhouette, so the eye is shut over the least readable
+    // part of it and opens on a form that has essentially arrived. Which changes ask for
+    // one is `blinkIn` in states.ts; when they were asked is `this.blinks`.
+    let lidOverride: number | undefined;
+    for (const centre of this.blinks) {
+      const lid = maskBlink(t - centre);
+      if (lidOverride === undefined || lid < lidOverride) lidOverride = lid;
+    }
+    if (lidOverride === 1) lidOverride = undefined;
+    const merged: SampleOptions = {
+      ...opts,
+      look: opts.look ?? this.look,
+      ...(lidOverride === undefined ? null : { lidOverride }),
+    };
     return renderPose(this.composePose(t, merged), merged, merged.clock ?? t);
   }
 }

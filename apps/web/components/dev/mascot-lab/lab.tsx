@@ -19,7 +19,7 @@ import { lookAt } from "@/lib/mascot";
 import { useTheme } from "@/components/theme-provider";
 import { STATES, stateDuration } from "@/lib/mascot";
 
-import { FaceBoard, StateBoard, Transitions } from "./board";
+import { FaceBoard, ShapeBoard, StateBoard, Transitions } from "./board";
 import { Controls } from "./controls";
 import { INITIAL, type LabState } from "./types";
 
@@ -149,6 +149,7 @@ export function MascotLab() {
 
         {state.view === "board" ? <StateBoard state={state} /> : null}
         {state.view === "faces" ? <FaceBoard state={state} /> : null}
+        {state.view === "shapes" ? <ShapeBoard state={state} /> : null}
         {state.view === "dock" ? <DockPreview state={state} mascotState={mascotState} /> : null}
         {state.view === "transitions" ? <Transitions state={state} /> : null}
       </main>
@@ -205,6 +206,7 @@ function DockPreview({
         state={mascotState}
         size={state.size > 96 ? 46 : Math.max(24, state.size)}
         anchor="#mlab-composer"
+        present={state.present}
       />
     </section>
   );

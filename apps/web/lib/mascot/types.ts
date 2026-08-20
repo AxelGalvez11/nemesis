@@ -52,7 +52,8 @@ export type MascotMode =
   | "ingesting"
   | "writing"
   | "alert"
-  | "curious";
+  | "curious"
+  | "wink";
 
 /** Where the mascot's attention is pointed when nothing is tracking a pointer. */
 export type MascotFocus = "user" | "composer" | "canvas" | "source" | "response" | "none";
@@ -86,6 +87,12 @@ export interface MascotState {
   readonly confidence?: number;
   /** 0..1 speech energy. Drives `speaking`'s deformation and `listening`'s swell. */
   readonly voiceActivity?: number;
+  /**
+   * 0..1, how present the character is. 0 is gone — scaled down to nothing and
+   * invisible. Arriving and leaving are not states: every state has to be able to do
+   * both, so this is a dimension over all of them rather than two more entries.
+   */
+  readonly presence?: number;
 }
 
 /**
@@ -146,6 +153,12 @@ export interface EyePose {
   /** Degrees, applied to both eyes equally. */
   readonly tilt: number;
   /**
+   * Closes ONE eye, 0..1. The only thing on the face that is not symmetric in kind —
+   * `asym` makes the pair uneven, this shuts one of them — and the reason `wink` can be
+   * a state rather than a second set of every eye field.
+   */
+  readonly wink: number;
+  /**
    * How much the eye bows, -1..1. Positive arches it upward — the shape a person's eyes
    * make when they are pleased. Negative bows it down, which reads as concern.
    *
@@ -184,6 +197,9 @@ export interface SatellitePose {
   readonly scale: number;
   readonly alpha: number;
 }
+
+/** Where a mascot in a dock stands while doing this. See `nemesis-mascot-dock.tsx`. */
+export type MascotStation = "corner" | "centre";
 
 /** A complete pose. Every field is always present — see `pose.ts` for why. */
 export interface Pose {

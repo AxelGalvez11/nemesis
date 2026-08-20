@@ -26,6 +26,9 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   ATTENTION_ATTR,
+  MARK_SCALE,
+  STATES,
+  VIEW,
   getAttention,
   resolveAttention,
   subscribeAttention,
@@ -51,6 +54,16 @@ export interface NemesisMascotDockProps {
   /** Gap left above the anchor, px. */
   gap?: number;
   /**
+   * How much bigger the character gets when it takes the middle of the surface.
+   *
+   * It has to grow, not just travel: at dock size it is a marker in the corner, and the
+   * point of the middle is that it is the thing happening while there is nothing else to
+   * look at yet.
+   */
+  centreScale?: number;
+  /** Whether the character is here at all. See NemesisMascot's `present`. */
+  present?: boolean;
+  /**
    * Sit inside the nearest positioned ancestor instead of the window.
    *
    * The product wants this on almost everywhere: a workspace has a rail down the left,
@@ -72,10 +85,13 @@ export function NemesisMascotDock({
   bottom = 24,
   gap = 14,
   contain = false,
+  centreScale = 1.85,
+  present = true,
   className,
 }: NemesisMascotDockProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState(bottom);
+  const [travel, setTravel] = useState({ dx: 0, dy: 0, k: 1 });
   const [look, setLook] = useState<{ x: number; y: number; mix: number } | null>(null);
   const targetRef = useRef<AttentionTarget>(getAttention());
   const focusedRef = useRef<Element | null>(null);
@@ -117,6 +133,50 @@ export function NemesisMascotDock({
       window.removeEventListener("resize", measure);
     };
   }, [anchor, bottom, gap, contain]);
+
+  // ── Where it stands ───────────────────────────────────────────────────────────
+  //
+  // 🔴 THE TRAVEL IS A `transform`, AND THAT IS NOT AN OPTIMISATION. The dock's own
+  // `left` / `bottom` stay exactly where they were; only a composited transform moves
+  // the character. Animating the offsets instead would lay the page out again on every
+  // frame of a 700ms journey across the screen, which is the single easiest way for a
+  // decorative element to make a real interface feel slow.
+  //
+  // The station comes from the STATE (`states.ts`), not from a prop: whether the
+  // character should be in the middle is a fact about what the system is doing —
+  // thinking, searching, taking a document in — and belongs with the rest of what those
+  // states mean.
+  const station = state ? STATES[state.mode].station : "corner";
+  useEffect(() => {
+    const measure = () => {
+      const host = hostRef.current;
+      if (!host) return;
+      if (station === "corner") {
+        setTravel({ dx: 0, dy: 0, k: 1 });
+        return;
+      }
+      const parent =
+        (contain && host.offsetParent instanceof HTMLElement ? host.offsetParent : null) ??
+        document.documentElement;
+      const pr = parent.getBoundingClientRect();
+      // The UNTRANSFORMED corner, computed rather than measured — reading the host's own
+      // rect would already include the transform and the two would chase each other.
+      const h = size * MARK_SCALE;
+      const w = h * VIEW.ratio;
+      const cornerX = pr.left + left + w / 2;
+      const cornerY = pr.bottom - offset - h / 2;
+      // Optically above the middle: a form parked on the exact centre of a page of text
+      // reads as low, because the eye weights the top of a column more heavily.
+      setTravel({ dx: pr.left + pr.width / 2 - cornerX, dy: pr.top + pr.height * 0.42 - cornerY, k: centreScale });
+    };
+    measure();
+    const timer = window.setInterval(measure, MEASURE_MS);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("resize", measure);
+    };
+  }, [station, contain, left, offset, size, centreScale]);
 
   // ── What it is looking at ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -175,7 +235,12 @@ export function NemesisMascotDock({
     <div
       ref={hostRef}
       className={["nemesis-mascot-dock", className].filter(Boolean).join(" ")}
-      style={{ position: contain ? "absolute" : "fixed", left, bottom: offset }}
+      style={{
+        position: contain ? "absolute" : "fixed",
+        left,
+        bottom: offset,
+        transform: `translate3d(${travel.dx}px, ${travel.dy}px, 0) scale(${travel.k})`,
+      }}
       aria-hidden="true"
     >
       {/* `track` stays on even when a target is set: the look override wins while it is

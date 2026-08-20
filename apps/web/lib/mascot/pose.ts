@@ -60,6 +60,7 @@ const NEUTRAL_EYE: EyePose = {
   tilt: 0,
   asym: 0,
   curve: 0,
+  wink: 0,
 };
 
 /** The blob, standing still, looking straight ahead. */
@@ -142,6 +143,7 @@ function blendEye(a: EyePose, b: EyePose, t: number): EyePose {
     tilt: lerpAngle(a.tilt, b.tilt, t),
     asym: lerp(a.asym, b.asym, t),
     curve: lerp(a.curve, b.curve, t),
+    wink: lerp(a.wink, b.wink, t),
   };
 }
 

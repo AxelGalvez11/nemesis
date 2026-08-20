@@ -102,5 +102,6 @@ export function applyExpression(eye: EyePose, e: ExpressionDef): EyePose {
     tilt: eye.tilt + e.tilt,
     asym: eye.asym + e.asym,
     curve: eye.curve + e.curve,
+    wink: eye.wink,
   };
 }

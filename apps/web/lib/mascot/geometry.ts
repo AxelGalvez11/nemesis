@@ -66,10 +66,19 @@ export interface Point {
   y: number;
 }
 
-/** The silhouette in the body's own frame — untilted, centred on the origin. */
-export function silhouette(p: BodyPose, out: Point[] = []): Point[] {
-  const rx = BODY.rx * p.scale * p.stretch;
-  const ry = BODY.ry * p.scale * p.squash;
+/**
+ * The silhouette in the body's own frame — untilted, centred on the origin.
+ *
+ * `rx` / `ry` are passed in rather than derived, because the engine applies factors the
+ * pose knows nothing about — presence, and the breath — and a silhouette computed from
+ * the pose alone would disagree with the eyes and the fragments placed against it.
+ */
+export function silhouette(
+  p: BodyPose,
+  out: Point[] = [],
+  rx = BODY.rx * p.scale * p.stretch,
+  ry = BODY.ry * p.scale * p.squash,
+): Point[] {
   out.length = PROFILE_SAMPLES;
   for (let i = 0; i < PROFILE_SAMPLES; i++) {
     const r = profileAt(i, p);

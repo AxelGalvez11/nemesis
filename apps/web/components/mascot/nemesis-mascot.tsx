@@ -35,6 +35,7 @@ import {
   UNIT_BLOB,
   UNIT_ROUND,
   VIEW,
+  approach,
   focusLook,
   mergeLook,
   sampleState,
@@ -77,6 +78,12 @@ export interface NemesisMascotProps {
    * blinks. Give it a value only to inspect a blink or a drift at a chosen instant.
    */
   frozenClock?: number | null;
+  /**
+   * Whether the character is here at all. Going false scales it down to nothing and
+   * fades it; going true brings it back. Arriving and leaving are a dimension over every
+   * state rather than two more states, so any state can do both.
+   */
+  present?: boolean;
   /** `undefined` follows the OS preference; the lab overrides it to compare. */
   reducedMotion?: boolean;
   /** Give this only when the mascot carries meaning on its own. */
@@ -99,6 +106,7 @@ export function NemesisMascot({
   frame = null,
   look: lookOverride = null,
   frozenClock = null,
+  present = true,
   reducedMotion,
   label,
   className,
@@ -121,8 +129,10 @@ export function NemesisMascot({
   const lidRefs = useRef<(SVGPathElement | null)[]>([null, null]);
 
   const clockRef = useRef(0);
-  const latest = useRef({ state, speed, paused, track, reducedMotion, lookOverride });
-  latest.current = { state, speed, paused, track, reducedMotion, lookOverride };
+  const latest = useRef({ state, speed, paused, track, reducedMotion, lookOverride, present });
+  latest.current = { state, speed, paused, track, reducedMotion, lookOverride, present };
+  /** Eased outside the engine, because arriving is a response to a prop, not to time. */
+  const presenceRef = useRef(present ? 1 : 0);
 
   /** Writes one frame onto the DOM. The only function that touches elements. */
   const paint = (f: MascotFrame) => {
@@ -176,6 +186,7 @@ export function NemesisMascot({
         intensity: state.intensity,
         ctx: { confidence: state.confidence ?? 1, voice: state.voiceActivity ?? 0 },
         expression: state.expression,
+        presence: state.presence ?? (present ? 1 : 0),
         look: lookOverride ?? focusLook(state.focus ?? "none"),
         reduced: reducedMotion,
         // 🔴 THE LIVENESS CLOCK IS ZERO, NOT `frozenAt`. Blinks are drawn from the
@@ -187,7 +198,7 @@ export function NemesisMascot({
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frame, frozenAt, frozenClock, state.mode, state.intensity, state.confidence, state.voiceActivity, state.focus, state.expression, lookOverride, reducedMotion]);
+  }, [frame, frozenAt, frozenClock, state.mode, state.intensity, state.confidence, state.voiceActivity, state.focus, state.expression, state.presence, present, lookOverride, reducedMotion]);
 
   // ── The live path ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -229,10 +240,15 @@ export function NemesisMascot({
       const look = pointer ? mergeLook(aimed, pointer) : aimed;
 
       const t = clockRef.current;
+      // Arriving is quicker than leaving: a character that appears slowly has already
+      // been missed, and one that vanishes instantly looks like a rendering fault.
+      const wanted = s.presence ?? (cfg.present ? 1 : 0);
+      presenceRef.current = approach(presenceRef.current, wanted, dt, wanted > presenceRef.current ? 0.11 : 0.16);
       paint(
         engine.sample(t, {
           intensity: s.intensity,
           ctx: { confidence: s.confidence ?? 1, voice: s.voiceActivity ?? 0 },
+          presence: presenceRef.current,
           look,
           reduced,
           clock: t,
@@ -242,7 +258,11 @@ export function NemesisMascot({
       // With reduced motion on, a settled state is a CONSTANT frame — so the loop stops
       // rather than re-drawing the same numbers sixty times a second. A state change or a
       // pointer restarts it (see `kick`).
-      const settled = reduced && engine.transitionAt(t) >= 1 && (!pointer || pointer.mix < 0.01);
+      const settled =
+        reduced &&
+        engine.transitionAt(t) >= 1 &&
+        Math.abs(presenceRef.current - wanted) < 0.002 &&
+        (!pointer || pointer.mix < 0.01);
       if (!stopped && !settled) raf = requestAnimationFrame(step);
     };
 

@@ -47,4 +47,18 @@
   pointer-events: none;
   display: flex;
   align-items: flex-end;
+  /* The journey between the corner and the middle. Long, and eased so almost all of the
+     travel happens early — the character should read as having DECIDED to come forward,
+     not as having been dragged. `transform` only: see the note in the component about
+     why the offsets must not animate. */
+  transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 🔴 IT STILL MOVES. Where the character is standing carries the information — it is
+     in the middle because it is working — so removing the travel would remove the
+     message, not just the motion. What the preference gets is a short, plain move
+     instead of a long expressive one. */
+  .nemesis-mascot-dock { transition-duration: 220ms; transition-timing-function: ease; }
 }

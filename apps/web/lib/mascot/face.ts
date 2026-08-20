@@ -71,11 +71,36 @@ export function blinkLid(t: number, rate = 1): number {
  * as swimming; saccades alone read as a machine ticking. Both together is what an
  * attentive animal does.
  */
+/**
+ * The lid, for a blink the engine forces rather than one the schedule produced.
+ *
+ * A big change of silhouette looks better if the character blinks across it — the eye
+ * shutting is what makes the new shape read as a decision rather than as a glitch. The
+ * trick is bloub's; the point is that the blink is CENTRED on the change, so the form is
+ * at its least readable exactly while the eyes are closed.
+ *
+ * `dt` is time relative to the middle of the blink. Returns 1 outside it.
+ */
+export function maskBlink(dt: number): number {
+  return lidOf(dt + BLINK_HALF, 0);
+}
+
+/** Half a blink. Callers need it to keep a forced blink inside its own state. */
+export const BLINK_HALF = (LID_CLOSE + LID_OPEN) / 2;
+
 export interface Liveliness {
   readonly dx: number;
   readonly dy: number;
-  /** Tiny weight shift on the base bead, in mark units. Sub-pixel at normal sizes. */
+  /** Tiny weight shift, in mark units. Sub-pixel at normal sizes. */
   readonly shift: number;
+  /**
+   * A breath, as a multiplier on the body's HEIGHT only.
+   *
+   * Half a percent, over three and a half seconds. Width deliberately does not move: a
+   * form that swells in both axes reads as pulsing, which is a loading indicator; one
+   * that only rises and falls reads as breathing.
+   */
+  readonly breath: number;
   readonly lid: number;
 }
 
@@ -100,13 +125,14 @@ function saccadeAt(t: number, axis: number): number {
  */
 export function liveliness(t: number, amount: number): Liveliness {
   const a = clamp01(amount);
-  if (a <= 0) return { dx: 0, dy: 0, shift: 0, lid: 1 };
+  if (a <= 0) return { dx: 0, dy: 0, shift: 0, breath: 1, lid: 1 };
   return {
     dx: (drift(t, 1) * 0.12 + saccadeAt(t, 0)) * a,
     dy: (drift(t, 2) * 0.09 + saccadeAt(t, 1) * 0.6) * a,
     // 0.22 mark units on a 116-unit figure — about a third of a pixel at 64px. It is
     // meant to be below the threshold of noticing and above the threshold of dead.
     shift: Math.sin(t * 0.61) * 0.22 * a,
+    breath: 1 + Math.sin((t / 3.4) * Math.PI * 2) * 0.005 * a,
     lid: blinkLid(t, 0.4 + a * 0.6),
   };
 }

@@ -19,6 +19,11 @@ import {
   EXPRESSIONS,
   EXPRESSION_ORDER,
   MascotEngine,
+  REST,
+  SHAPES,
+  SHAPE_LABEL,
+  SHAPE_ORDER,
+  renderPose,
   STATES,
   STATE_ORDER,
   focusLook,
@@ -26,6 +31,7 @@ import {
   type ExpressionId,
   type MascotFrame,
   type MascotMode,
+  type ShapeId,
 } from "@/lib/mascot";
 import { NemesisMascot } from "@/components/mascot/nemesis-mascot";
 
@@ -57,6 +63,9 @@ const dwell = (m: MascotMode): number => {
 export interface Strip {
   readonly frames: readonly { t: number; frame: MascotFrame; mode: MascotMode }[];
   readonly total: number;
+  /** Any instant in the chain, on demand. See the note in `sampleChain`. */
+  readonly sample: (t: number) => MascotFrame;
+  readonly modeAt: (t: number) => MascotMode;
 }
 
 /**
@@ -77,17 +86,19 @@ export function sampleChain(steps: MascotMode[], count: number, reduced: boolean
   }
   const total = t;
 
+  // 🔴 THE ENGINE IS HANDED BACK, ALREADY DRIVEN. Because `sample(t)` is a pure function
+  // of time, an engine that has been walked through the whole chain can answer ANY
+  // instant in it afterwards, in any order — which is what lets the scrubber below be a
+  // plain slider rather than a playback rig that has to be run from the start.
+  const modeAt = (time: number) => [...at].reverse().find((s) => time >= s.start)?.mode ?? steps[0]!;
+  const sample = (time: number) => engine.sample(time, { reduced, look: focusLook("none"), clock: time });
+
   const frames = Array.from({ length: count }, (_, i) => {
     const time = (i / (count - 1)) * total;
-    const mode = [...at].reverse().find((s) => time >= s.start)?.mode ?? steps[0]!;
-    return {
-      t: time,
-      mode,
-      frame: engine.sample(time, { reduced, look: focusLook("none"), clock: time }),
-    };
+    return { t: time, mode: modeAt(time), frame: sample(time) };
   });
 
-  return { frames, total };
+  return { frames, total, sample, modeAt };
 }
 
 export function StateBoard({ state }: { state: LabState }) {
@@ -162,6 +173,36 @@ export function FaceBoard({ state }: { state: LabState }) {
   );
 }
 
+/**
+ * The silhouette catalogue on its own, with nothing else moving.
+ *
+ * Shapes are the axis it is easiest to break without noticing: a new profile can look
+ * fine in the one state that uses it and be a spike, a different size, or indistinguishable
+ * from its neighbour. Side by side at rest is the only view that answers those.
+ */
+export function ShapeBoard({ state }: { state: LabState }) {
+  return (
+    <div className="mlab-board">
+      {SHAPE_ORDER.map((id: ShapeId) => (
+        <figure key={id} className="mlab-cell">
+          <div className="mlab-cell-art">
+            <div className="mlab-pane" data-tone={state.theme}>
+              <NemesisMascot
+                size={86}
+                frame={renderPose({ ...REST, body: { ...REST.body, radii: SHAPES[id] } }, { clock: 0 }, 0)}
+              />
+            </div>
+          </div>
+          <figcaption>
+            <span>{SHAPE_LABEL[id]}</span>
+            <span className="mono">{id}</span>
+          </figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
 export function Transitions({ state }: { state: LabState }) {
   const [playing, setPlaying] = useState<string | null>(null);
   return (
@@ -192,6 +233,7 @@ function ChainStrip({
 }) {
   const strip = useMemo(() => sampleChain(chain.steps, 28, state.reduced), [chain.steps, state.reduced]);
   const [live, setLive] = useState<MascotMode>(chain.steps[0]!);
+  const [scrub, setScrub] = useState<number | null>(null);
 
   // The live run walks the same schedule the strip was sampled from, so what plays and
   // what is laid out are the same sequence at two resolutions.
@@ -229,13 +271,38 @@ function ChainStrip({
           <span className="mono">{STATES[live].label}</span>
         </div>
       ) : (
-        <div className="mlab-strip-frames">
-          {strip.frames.map((f, i) => (
-            <div key={i} className="mlab-frame" title={`${STATES[f.mode].label} @ ${f.t.toFixed(2)}s`}>
-              <NemesisMascot frame={f.frame} size={54} />
+        <>
+          <div className="mlab-strip-frames">
+            {strip.frames.map((f, i) => (
+              <div
+                key={i}
+                className="mlab-frame"
+                title={`${STATES[f.mode].label} @ ${f.t.toFixed(2)}s`}
+                onMouseEnter={() => setScrub(f.t)}
+              >
+                <NemesisMascot frame={f.frame} size={54} />
+              </div>
+            ))}
+          </div>
+          {/* The scrubber. A transition is the thing a board cannot show, and 28 frames
+              in a row is a contact sheet of one — this is the between-frames. */}
+          <div className="mlab-scrub">
+            <NemesisMascot frame={strip.sample(scrub ?? 0)} size={132} />
+            <div className="mlab-scrub-controls">
+              <div className="mono">
+                {STATES[strip.modeAt(scrub ?? 0)].label} · {(scrub ?? 0).toFixed(2)}s
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={strip.total}
+                step={0.01}
+                value={scrub ?? 0}
+                onChange={(e) => setScrub(Number(e.target.value))}
+              />
             </div>
-          ))}
-        </div>
+          </div>
+        </>
       )}
     </section>
   );

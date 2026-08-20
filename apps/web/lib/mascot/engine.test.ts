@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { MascotEngine, renderPose, sampleState } from "./engine";
 import { blinkLid } from "./face";
 import { EXPRESSION_ORDER } from "./expressions";
+import { BLINK_HALF } from "./face";
 import { PointerGaze } from "./gaze";
 import { REST } from "./pose";
 import { STATE_ORDER, STATES, stateDuration, stillTime } from "./states";
@@ -28,6 +29,21 @@ function numbers(f: MascotFrame): number[] {
     ...f.eyes.flatMap((e) => [e.cx, e.cy, e.rx, e.ry, e.tilt]),
     f.glow, f.bodyAlpha,
   ];
+}
+
+/** The silhouette alone, for tests about the body that a blink would otherwise drown. */
+function bodyNumbers(f: MascotFrame): number[] {
+  const path = f.body.d.match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+  return [f.body.cx, f.body.cy, f.body.tilt, f.body.rx, f.body.ry, ...path];
+}
+
+function maxBodyDelta(a: MascotFrame, b: MascotFrame): number {
+  const x = bodyNumbers(a);
+  const y = bodyNumbers(b);
+  if (x.length !== y.length) return Infinity;
+  let m = 0;
+  for (let i = 0; i < x.length; i++) m = Math.max(m, Math.abs(x[i]! - y[i]!));
+  return m;
 }
 
 /** Largest single-number difference between two frames. */
@@ -307,16 +323,79 @@ test("a shape morph stays smooth from end to end", () => {
   // transition is past halfway — passes every other test in this file and fails here
   // with a jump of about eight mark units in one frame. Calibrated against exactly
   // that.
-  // A FIXED LIVENESS CLOCK, so this measures the morph and not a blink landing in the
-  // middle of it. That is not the test being lenient — a blink is a real 75ms movement
-  // and it belongs to the blink test, where its size is asserted on purpose.
+  // THE BODY ONLY, and a fixed liveness clock. Both states here carry `blinkIn`, so the
+  // character deliberately blinks across the change; that is a real 75ms movement of the
+  // eyes and it belongs to the blink tests, not to this one.
   const opts = { clock: 0 };
   const e = new MascotEngine("waiting", 0); // slab
   e.setState("insight", 1); // crystal
   let prev = e.sample(1, opts);
   for (let t = 1.02; t < 1 + STATES.insight.morph + 0.4; t += 0.02) {
     const now = e.sample(t, opts);
-    assert.ok(maxDelta(prev, now) < 2, `shape morph jumped ${maxDelta(prev, now).toFixed(2)} at ${t.toFixed(2)}s`);
+    assert.ok(
+      maxBodyDelta(prev, now) < 2,
+      `shape morph jumped ${maxBodyDelta(prev, now).toFixed(2)} at ${t.toFixed(2)}s`,
+    );
     prev = now;
   }
+});
+
+test("arriving and leaving work from any state, and are continuous", () => {
+  for (const mode of STATE_ORDER) {
+    const gone = sampleState(mode, stillTime(mode), { presence: 0, clock: 0 });
+    const here = sampleState(mode, stillTime(mode), { presence: 1, clock: 0 });
+    assert.ok(gone.bodyAlpha === 0, `${mode} is still visible at presence 0`);
+    assert.ok(gone.body.rx < here.body.rx * 0.45, `${mode} barely shrinks on the way out`);
+    // No step anywhere along the ramp — a character that pops in has not arrived.
+    let prev = gone;
+    for (let p = 0.02; p <= 1.0001; p += 0.02) {
+      const now = sampleState(mode, stillTime(mode), { presence: p, clock: 0 });
+      assert.ok(maxBodyDelta(prev, now) < 2.2, `${mode} popped at presence ${p.toFixed(2)}`);
+      prev = now;
+    }
+  }
+});
+
+test("a forced entry blink stays inside the change that asked for it", () => {
+  // The failure this guards: a short morph put the blink's own opening frames BEFORE
+  // the state changed, where nothing was overriding the lid — so the eye went from open
+  // to nearly shut in the single frame the mode flipped.
+  const EPS = 1e-6;
+  for (const mode of STATE_ORDER) {
+    if (!STATES[mode].blinkIn) continue;
+    const e = new MascotEngine("teaching", 0);
+    const before = e.sample(2 - EPS, { clock: 0 });
+    e.setState(mode, 2);
+    const after = e.sample(2, { clock: 0 });
+    assert.ok(maxDelta(before, after) < 0.05, `${mode} blinked before its own change`);
+  }
+});
+
+test("a second change mid-blink does not snap the lid open", () => {
+  // A forced blink belongs to the moment it started, not to whichever state happens to
+  // be current while it runs. Asking the current state instead makes the override vanish
+  // the instant a second change lands, and the eye jumps from half-shut to open.
+  const EPS = 1e-6;
+  const e = new MascotEngine("teaching", 0);
+  e.setState("thinking", 1); // blinkIn
+  const mid = 1 + BLINK_HALF * 1.2;
+  const before = e.sample(mid - EPS, { clock: 0 });
+  e.setState("searching", mid); // no blinkIn
+  const after = e.sample(mid, { clock: 0 });
+  assert.ok(maxDelta(before, after) < 0.05, `the lid snapped by ${maxDelta(before, after).toFixed(3)}`);
+});
+
+test("the wink shuts one eye and only one", () => {
+  const f = sampleState("wink", stillTime("wink"), { clock: 0 });
+  const shut = Math.min(f.eyes[0].ry, f.eyes[1].ry);
+  const open = Math.max(f.eyes[0].ry, f.eyes[1].ry);
+  assert.ok(shut < open * 0.3, `both eyes are ${shut.toFixed(2)} / ${open.toFixed(2)}`);
+  assert.ok(open > 3, "the open eye closed too");
+});
+
+test("only the states where the character IS the work take the middle", () => {
+  // Guarding the LIST, not the mechanism: a state quietly acquiring `centre` is how a
+  // mascot ends up walking into the middle of the page while the learner is reading.
+  const centre = STATE_ORDER.filter((m) => STATES[m].station === "centre");
+  assert.deepEqual([...centre].sort(), ["ingesting", "searching", "thinking"]);
 });
