@@ -91,16 +91,20 @@ export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) 
           half-erased. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[56px] bg-(--ui-bg-editor)" />
 
-      {/* 🔴 32px TALL, 12px FROM THE EDGE -- DOWN FROM 36/16 (compact-UI pass, design judgement,
-          owner spec 2026-08-12). Quieted alongside the composer and the two controls it carries;
-          not measured against anything external, this row has no ChatGPT equivalent to match.
+      {/* 🔴🔴 36px TALL — BACK UP FROM 32, AND THE SENTENCE THAT USED TO END THIS NOTE IS WHY. It
+          read: "not measured against anything external, this row has no ChatGPT equivalent to
+          match." It has one, it was measured in the owner's own browser on 2026-08-20 (36×36
+          buttons, 20×20 glyphs, radius 8px), and he asked for this row to match it. A judgement made
+          in the absence of a reference is the kind a reference should overturn.
+          🔴 THE GAP TIGHTENS FROM 6px TO 4px AS THE BOXES GROW, so the row's overall width barely
+          moves and the controls still read as one group rather than four separate marks.
           🔴 THE LEFT EDGE IS NOT A CONSTANT. When the nav rail is collapsed the shell floats a
           reopen toggle at the viewport's top-left, in exactly this corner, and the two printed on
           top of each other. `--nav-toggle-inset` is what the shell reserves for it — 0px whenever
           the toggle is not showing, which under §38.1 is every canvas — so the strip returns to a
           flush 12px on its own rather than carrying a permanent gap for a control that is gone. */}
       <header
-        className="pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[32px] items-center gap-1.5"
+        className="pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
         style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
       >
         <CanvasExit onExit={onExit} />
@@ -129,23 +133,26 @@ function CanvasExit({ onExit }: { onExit: () => void }) {
   return (
     <button
       aria-label="Leave the canvas"
-      className="pointer-events-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+      className="pointer-events-auto flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[8px] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
       onClick={onExit}
       title="Leave the canvas"
       type="button"
     >
-      {/* 14px, matching the 0.875rem the arrow rendered at (0.875 × 18px root = 15.75px painted;
-          the codicon glyph occupied 14px of it). Written in px because every rem in apps/web is
-          1.125× its number — `html{font-size:112.5%}` is deliberate and set three times. */}
+      {/* 🔴 20px, MEASURED OFF CHATGPT (2026-08-20): its header glyphs are 20×20 inside a 36×36
+          button, and every one of ours was 14–15px inside 28×28. Written in px because every rem in
+          apps/web is 1.125× its number — `html{font-size:112.5%}` is deliberate and set three times.
+          🔴 THE STROKE THINS TO 1.75 AS THE GLYPH GROWS. A 2px stroke that read as crisp at 14px
+          reads as heavy at 20px, and this `×` would then be the boldest mark on a surface whose
+          whole argument is quiet. */}
       <svg
         aria-hidden="true"
         fill="none"
-        height="14"
+        height="20"
         stroke="currentColor"
         strokeLinecap="round"
-        strokeWidth="2"
+        strokeWidth="1.75"
         viewBox="0 0 16 16"
-        width="14"
+        width="20"
       >
         <path d="M3.5 3.5 L12.5 12.5 M12.5 3.5 L3.5 12.5" />
       </svg>
