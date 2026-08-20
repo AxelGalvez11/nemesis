@@ -13,12 +13,6 @@
   --bloub-paper: #0b0b0d;
 }
 
-/* Only a character with somewhere for a click to go accepts one. */
-.bloub-pokeable {
-  pointer-events: auto;
-  cursor: pointer;
-}
-
 .bloub {
   /* The rings reach 1.4× the body radius; the viewBox already allows for them, but
      nothing may be clipped by an ancestor that happens to be smaller. */
@@ -27,6 +21,15 @@
      the composer behind it is worse than no character at all. */
   pointer-events: none;
   display: block;
+}
+
+/* 🔴 TWO CLASSES, AND THE SECOND ONE IS NOT DECORATION. This lived ABOVE `.bloub` with a single
+   class selector, so `.bloub`'s `pointer-events: none` — same specificity, later in the file —
+   won every time and the character silently ignored every click. Owner: "clicking on the mascot
+   doesn't do anything". Doubling the class outranks it regardless of order. */
+.bloub.bloub-pokeable {
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 /* The dock: fixed or absolute, never part of layout.

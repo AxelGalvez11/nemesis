@@ -27,12 +27,12 @@ import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { NOTIF_BLUE } from "@/lib/bloub/decor";
 import { BotEngine, type BotFrame } from "@/lib/bloub/engine";
 import { EXPRESSION_BY_ID } from "@/lib/bloub/expressions";
-import { TURN_TIME, lookTarget } from "@/lib/bloub/gaze";
+import { TURN_TIME } from "@/lib/bloub/gaze";
 import { clamp, easings } from "@/lib/bloub/math";
 import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
 import { mixHex } from "@/lib/bloub/skins";
 
-import { CHARACTER_SHAPE, inkFor } from "@/lib/character/look";
+import { CHARACTER_SHAPE, aimFor, inkFor } from "@/lib/character/look";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@/lib/character/pool";
@@ -404,15 +404,19 @@ export function BloubBot({
       if (!aimingRef.current) turnSinceRef.current = clockRef.current;
       const halfW = Math.max(1, window.innerWidth / 2);
       const halfH = Math.max(1, window.innerHeight / 2);
+      const aimed = aimFor(
+        at ? clamp((at.x - (box.left + box.width / 2)) / halfW, -1, 1) : 0,
+        at ? clamp((at.y - (box.top + box.height / 2)) / halfH, -1, 1) : 0,
+        at !== null,
+      );
       engine.setLook(
-        lookTarget({
-          nx: at ? clamp((at.x - (box.left + box.width / 2)) / halfW, -1, 1) : 0,
-          ny: at ? clamp((at.y - (box.top + box.height / 2)) / halfH, -1, 1) : 0,
-          tour: live.current.entrance
-            ? easings.easeOutQuint(clamp((clockRef.current - turnSinceRef.current) / TURN_TIME))
-            : 1,
-          pointer: at !== null,
-        }),
+        {
+          ...aimed,
+          // The entrance turn is the ONLY thing that still wants a spin, and it fades to zero.
+          spin: live.current.entrance
+            ? 360 * (1 - easings.easeOutQuint(clamp((clockRef.current - turnSinceRef.current) / TURN_TIME)))
+            : 0,
+        },
         clockRef.current,
       );
       aimingRef.current = true;
