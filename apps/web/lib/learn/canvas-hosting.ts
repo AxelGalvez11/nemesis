@@ -99,6 +99,21 @@ export interface CanvasRegions {
    */
   policy: boolean;
   /**
+   * Nemesis's answer to something the learner just asked, as its own occupant of the surface.
+   *
+   * 🔴🔴 IT IS A REGION NOW BECAUSE IT WAS AN UNCONDITIONAL SIBLING, AND THAT IS THE REPORTED BUG.
+   * `learning-canvas.tsx` rendered the reply after the policy's screen with no relationship between
+   * the two, so asking *"what can you do?"* mid-lesson left the teaching card and its Continue at
+   * the top of the page and stapled the answer below it — one screen holding two turns, the second
+   * of which had nothing to do with the first. The owner met it twice and read it, correctly, as
+   * Nemesis being unable to stop teaching.
+   *
+   * A region makes the relationship a decision this function makes once, with the same asymmetry it
+   * already enforces between the policy and the legacy stages: two things may be on the surface, two
+   * TURNS may not.
+   */
+  reply: boolean;
+  /**
    * The hosted task is sharing the surface with reading material that is genuinely there.
    *
    * 🔴 NOT THE SAME QUESTION AS `document`, AND CONFLATING THEM IS A REAL DEFECT. `document` is
@@ -263,8 +278,44 @@ export function composeSurface(input: {
    * Absent means "it is background", which is the suppressing direction and the honest default.
    */
   materialIsTheAction?: boolean;
+  /**
+   * The canvas-wide thing Nemesis has said, and which of the two kinds it is.
+   *
+   * 🔴🔴 ONE INPUT RATHER THAN TWO BOOLEANS, BECAUSE TWO COULD DISAGREE. "There is text on screen"
+   * and "that text displaces the lesson" are different facts, but they are not independent: a reply
+   * implies text. Passed as a pair of flags, `{ showing: false, displaces: true }` compiles, and the
+   * first edit that sets one without the other gets a surface with nothing on it and a hidden
+   * lesson. As one value the inconsistency is unrepresentable.
+   *
+   * 🔴 `opening` IS NOT A LESSER REPLY, IT IS A DIFFERENT THING, AND CONFLATING THEM COST A WHOLE
+   * SESSION. `converse` writes an aside on a `study` turn too — the sentence before the lesson
+   * starts, "Hydroxyl it is. Quick pass before we dig in:". It renders exactly like an answer and
+   * behaves oppositely: it introduces the teaching screen instead of standing in front of it.
+   * Treating it as a reply made it displace the lesson it was introducing, permanently. Found in a
+   * browser; no pure test could see it.
+   *
+   * Absent means `none`, which is the pre-existing reading and leaves every region where it was.
+   */
+  aside?: "none" | "opening" | "reply";
+  /**
+   * The policy is asking for something the learner has not produced yet.
+   *
+   * 🔴🔴 THIS IS THE ONE THING A REPLY MAY NOT PUSH OFF THE SURFACE, AND IT IS THE OWNER'S OWN
+   * INVARIANT ARRIVING FROM THE OTHER DIRECTION. *"If Nemesis is VISIBLY asking the learner a
+   * question, submitting through the primary composer is an answer to that question."* Hiding a
+   * question behind a reply and then reading the next submission as an answer to it would break the
+   * word "visibly"; hiding it and reading the submission as a question would silently discard an
+   * answer the learner meant. Neither is acceptable, so an owed question simply is not displaced —
+   * the reply appears with it, which is also what a teacher does: answer the aside, keep the ask.
+   *
+   * Everything else the policy can hold — a claim being taught, a correction, a contrast, a verdict
+   * already given — owes the learner nothing, and yields.
+   */
+  answerOwed?: boolean;
 }): CanvasRegions {
   const {
+    answerOwed = false,
+    aside = "none",
     canvasState,
     hasReadingMaterial = true,
     materialIsTheAction = false,
@@ -272,7 +323,14 @@ export function composeSurface(input: {
   } = input;
   const evidenceStage = isEvidenceStage(canvasState);
   const reading = READING_STATES.includes(canvasState);
-  const policy = policyPresenting;
+
+  // 🔴 THE DISPLACEMENT IS COMPUTED ONCE AND EVERY REGION READS THE RESULT. `answerSink` keys off
+  // `regions.policy`, and so does the Continue's `requiresReading` — so a displaced screen loses its
+  // answer routing and its button by the same act that takes it off the page, rather than by two
+  // more conditions somebody has to remember to write. That is the property: what is on screen, what
+  // can be answered, and what can be advanced are one answer.
+  const displacedByReply = aside === "reply" && !answerOwed;
+  const policy = policyPresenting && !displacedByReply;
 
   return {
     // 🔴🔴 A HOSTED TASK NOW *DOES* SUPPRESS READING, AND THIS REVERSES A DELIBERATE DECISION. The
@@ -313,6 +371,12 @@ export function composeSurface(input: {
     // matters (two answer surfaces on one composer means one of them silently loses the learner's
     // work), and it is still impossible to have neither: when the policy stands down,
     // `policyPresenting` is false and the stage paints.
+    // 🔴 AND THE LEGACY ARM IS DELIBERATELY *NOT* DISPLACED BY A REPLY. It hosts a task through
+    // `stageTask`, which this function never sees, so it cannot tell an idle stage from one holding
+    // an unanswered card — and displacing the second would hide a question the learner owes, which
+    // is the one outcome `answerOwed` exists to prevent. A stage cannot coexist with a policy screen
+    // anyway, so the reported defect is not reachable through here. Stated rather than left as an
+    // omission, so the asymmetry is a decision on record.
     stages: evidenceStage && !policyPresenting,
     // 🔴 THE COMMENT THAT USED TO SIT HERE WAS RIGHT WHEN WRITTEN AND IS KEPT AS A RECORD, BECAUSE
     // WHAT FALSIFIED IT IS THE WHOLE JUSTIFICATION FOR THIS CHANGE. It read:
@@ -341,6 +405,9 @@ export function composeSurface(input: {
     // to the arm that cannot learn anything about the learner, and kept it there. That is exactly
     // backwards, and it is why the owner met a fixed six-question quiz on their own canvas.
     policy,
+    // 🔴 BOTH KINDS PAINT. The kind decides what YIELDS, never what is rendered: an opening line
+    // still has to appear, it simply does not push the lesson it introduces off the page.
+    reply: aside !== "none",
     // 🔴 REAL READING MATERIAL ONLY. A task makes room for a document; it does not make room
     // for a placeholder that is itself waiting for one, and it does not make room for a reading
     // state that is empty because nothing was generated into it (§24).

@@ -45,24 +45,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   /** Record mode on the front door. A lecture recorded here has no canvas yet, so it starts one —
    *  the same thing dropping a file here does. */
   const [recording, setRecording] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const filePicker = useRef<HTMLInputElement>(null);
-  const addMenu = useRef<HTMLDivElement>(null);
 
-  // Closes on a press elsewhere and on Escape — without the second it is a trap for a keyboard.
-  useEffect(() => {
-    if (!addOpen) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!addMenu.current?.contains(event.target as Node)) setAddOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setAddOpen(false); };
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [addOpen]);
+  // 🔴 THE MENU'S STATE, ITS REF AND ITS DISMISS EFFECT WENT WITH THE MENU. Two document-level
+  // listeners kept alive for a control that no longer exists is the dead-lane shape this repo
+  // keeps finding; `+` now opens the file picker directly and there is nothing to dismiss.
 
   // Dictation writes into the same box typing does — the composer has one value, whatever produced
   // it. Keyed on both flags so the final transcript still lands after recognition stops.
@@ -201,49 +188,27 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             tabIndex={-1}
             type="file"
           />
-          {/* 🔴 UPLOAD AND RECORD SIT TOGETHER, BECAUSE A RECORDING IS MATERIAL. §L lists the front
-              door's five behaviours as "type a topic · ask a question · upload material · dictate ·
-              record", and the mic to the right of this box is DICTATION — speaking instead of
-              typing. Putting record beside it would give the learner two microphones and no way to
-              tell which one keeps their lecture. */}
-          <div className="relative shrink-0" ref={addMenu}>
-            <button
-              aria-expanded={addOpen}
-              aria-haspopup="menu"
-              aria-label="Add material"
-              className="flex size-[var(--composer-control)] items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)"
-              onClick={() => setAddOpen((open) => !open)}
-              title="Add material"
-              type="button"
-            >
-              <Codicon name="add" size="var(--composer-icon)" />
-            </button>
-            {addOpen && (
-              <div
-                className="absolute bottom-[40px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
-                role="menu"
-              >
-                <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-                  onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
-                  role="menuitem"
-                  type="button"
-                >
-                  <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
-                  Upload material
-                </button>
-                <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-                  onClick={() => { setAddOpen(false); setRecording(true); }}
-                  role="menuitem"
-                  type="button"
-                >
-                  <Codicon className="text-(--ui-text-tertiary)" name="record" size="16px" />
-                  Record a lecture
-                </button>
-              </div>
-            )}
-          </div>
+          {/* 🔴 THE MENU IS GONE BECAUSE IT HAD ONE ITEM LEFT. Owner call, 2026-08-20: "remove the
+              'record a lecture' option or just hide it." §L used to list the front door's five
+              behaviours as "type a topic · ask a question · upload material · dictate · record", and
+              upload and record shared this menu so a recording would not be confused with the
+              dictation mic on the right. With record withdrawn there is nothing to choose between,
+              and `canvas-composer.tsx` already states the rule for that case: "a one-item menu is a
+              second click charged for nothing." So `+` is the file picker, exactly as it is in the
+              canvas composer when it is given no `onRecord`.
+
+              🔴 THE RECORDER ITSELF IS UNTOUCHED. `CanvasRecorder` and its close handler are still
+              below; only the way in is withdrawn, so re-offering it is restoring a control rather
+              than rebuilding a feature. */}
+          <button
+            aria-label="Upload material"
+            className="flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)"
+            onClick={() => filePicker.current?.click()}
+            title="Upload material"
+            type="button"
+          >
+            <Codicon name="add" size="var(--composer-icon)" />
+          </button>
           {listening ? (
             <>
               <div className="ml-[12px] flex min-w-0 flex-1 items-center">

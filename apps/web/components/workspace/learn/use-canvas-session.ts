@@ -111,6 +111,27 @@ export interface BusyState {
 type CanvasAside = {
   text: string;
   blockId: string | null;
+  /**
+   * Which of the two things this text is. Nemesis ANSWERING something, or Nemesis introducing a
+   * lesson it is about to give.
+   *
+   * 🔴🔴 THEY LOOK IDENTICAL AND BEHAVE OPPOSITELY, WHICH IS WHY THE DIFFERENCE HAD TO BE STORED.
+   * Both are one short paragraph set by `converse`, and both used to be indistinguishable once
+   * written. But an ANSWER is a turn that replaced whatever was on screen, and an OPENING is the
+   * first sentence OF what is about to be on screen: "Hydroxyl it is. Quick pass before we dig
+   * in:" is followed by the lesson, not instead of it.
+   *
+   * 🔴 IT WAS FOUND IN A BROWSER, NOT IN REVIEW, AND NOTHING PURE COULD HAVE SEEN IT. Treating both
+   * as answers made an opening line displace the teaching screen it was introducing — so
+   * "Teach me the hydroxyl functional group" printed one sentence and then never showed the lesson,
+   * for the rest of the session. That is worse than the defect being fixed, and every unit test
+   * still passed.
+   *
+   * 🔴 THE MODEL ALREADY DECIDES THIS. `then: "reply" | "study"` is the turn router's own output and
+   * the two branches below are already separate; this records which one wrote the text rather than
+   * inventing a second classification of it.
+   */
+  kind: "reply" | "opening";
   sources?: readonly ChatWebResult[];
   /** Why Nemesis is offering to teach this, when it has a reason worth saying out loud. A plain
    *  answer carries none and the offer stays a bare button. */
@@ -766,7 +787,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       const result = await explainBlock(id, latest.current, block, question);
       setBusy({ kind: null });
       if (!result.value) setError(result.error);
-      else setAside({ text: result.value, blockId: block.id });
+      else setAside({ blockId: block.id, kind: "reply", text: result.value });
     },
     [requireUid],
   );
@@ -825,7 +846,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // a document command instead of starting one. One predicate, one meaning.
         if (isPreContent(latest.current.state)) {
           if (decision.say) {
-            setAside({ blockId: null, offer: decision.offer ?? undefined, question: said, sources: [], text: decision.say });
+            setAside({ blockId: null, kind: "opening", offer: decision.offer ?? undefined, question: said, sources: [], text: decision.say });
           }
           begin(decision.topic ?? said);
         } else {
@@ -847,6 +868,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       }
       setAside({
         blockId: null,
+        // 🔴 THE ONE THAT DISPLACES. This branch is reached only when the router said `reply`, which
+        // means the learner asked something rather than asking to be taught — so this text IS the
+        // turn, and whatever the policy was showing steps aside for it. The `study` branch above
+        // writes `opening` for the opposite reason.
+        kind: "reply",
         offer: decision.offer ?? undefined,
         question: said,
         sources: result.sources,
