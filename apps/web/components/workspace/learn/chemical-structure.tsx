@@ -160,7 +160,7 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           filling the page. */}
       <svg
         aria-label={visual.learningGoal}
-        className="mx-auto h-auto max-h-[240px] w-full object-contain"
+        className="mx-auto h-auto max-h-[280px] w-full object-contain"
         ref={target}
         role="img"
         style={{ display: failure ? "none" : "block" }}
