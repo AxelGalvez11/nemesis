@@ -837,8 +837,19 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
       // `thinking-phases.ts`'s rule holds: a caption is emitted by a step that is genuinely running,
       // never by a timer walking through plausible-sounding stages.
-      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, () => {
-        setBusy({ kind: "command", blockIds: [], label: "Searching the web" });
+      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, (found) => {
+        // 🔴 THE COUNT WHEN THERE IS ONE, AND NEVER A GUESS BEFORE. `thinking-phases.ts`'s rule is
+        // that a caption is emitted by a step genuinely running; a number invented before the
+        // results land would be the same theatre with more precision.
+        setBusy({
+          blockIds: [],
+          kind: "command",
+          label: found === null
+            ? "Searching the web"
+            : found === 1
+              ? "Reading 1 page"
+              : `Reading ${found} pages`,
+        });
       });
       setBusy({ kind: null });
       const decision = result.decision;

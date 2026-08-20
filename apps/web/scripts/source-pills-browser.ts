@@ -103,9 +103,18 @@ async function main(): Promise<void> {
   const inline = await page.evaluate(() => {
     const body = document.querySelector('[data-selectable-id="reply"]');
     const text = (body as HTMLElement | null)?.innerText ?? "";
+    const pills = [...(body?.querySelectorAll('a[href^="http"]') ?? [])] as HTMLAnchorElement[];
     const dots = [...(body?.querySelectorAll('a img[src*="favicons"]') ?? [])] as HTMLImageElement[];
     const drawn = dots.filter((i) => i.complete && i.naturalWidth > 0);
-    return { bare: /\[\d{1,2}\]/.test(text), dots: dots.length, drawn: drawn.length };
+    const first = pills[0];
+    const spec = first
+      ? (() => {
+          const r = first.getBoundingClientRect();
+          const st = getComputedStyle(first);
+          return { fontSize: st.fontSize, h: Math.round(r.height), named: (first.textContent ?? "").trim().length > 0, radius: st.borderRadius, w: Math.round(r.width) };
+        })()
+      : null;
+    return { bare: /\[\d{1,2}\]/.test(text), dots: dots.length, drawn: drawn.length, plus: /\+\d/.test(text), spec };
   });
   // 🔴 CONDITIONAL, BECAUSE WHETHER THE MODEL CITES AT ALL IS NOT THIS CHANGE'S TO GUARANTEE.
   // Measured across several runs: this model frequently answers from live search WITHOUT writing a
@@ -120,12 +129,42 @@ async function main(): Promise<void> {
       inline.drawn > 0,
       `${inline.drawn}/${inline.dots} inline favicons decoded`,
     );
+    // The reference: 62x18px, radius 12px, 9px name. Height and type are what matter; width is the
+    // site's name and varies.
+    check(
+      "P4b-and-they-carry-the-site-name-at-the-reference-size",
+      inline.spec !== null && inline.spec.named && inline.spec.h >= 16 && inline.spec.h <= 20,
+      inline.spec ? `${inline.spec.w}x${inline.spec.h}px, ${inline.spec.fontSize}, radius ${inline.spec.radius}, named=${inline.spec.named}` : "no pill",
+    );
   }
   check(
     "P5-and-no-bare-[n]-is-left-in-the-prose",
     !inline.bare,
     inline.bare ? "the answer still shows literal [1] markers" : "",
   );
+
+  // ── The cards, measured against the reference ────────────────────────────
+  const cards = await page.evaluate(() => {
+    const headlines = [...document.querySelectorAll("a.line-clamp-3")] as HTMLAnchorElement[];
+    if (headlines.length === 0) return null;
+    const card = headlines[0]!.closest("div")!;
+    const row = card.parentElement!;
+    const r = card.getBoundingClientRect();
+    return {
+      count: headlines.length,
+      distinctHeadlines: new Set(headlines.map((h) => (h.textContent ?? "").trim())).size,
+      scrolls: getComputedStyle(row).overflowX,
+      pageScrollsSideways: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      w: Math.round(r.width),
+    };
+  });
+  check("C1-sources-render-as-cards", cards !== null && cards.count > 0, cards ? `${cards.count} cards, ${cards.w}px wide` : "no cards");
+  check(
+    "C2-each-card-shows-a-DIFFERENT-headline",
+    cards !== null && cards.distinctHeadlines === cards.count,
+    cards ? `${cards.distinctHeadlines} distinct of ${cards.count}` : "",
+  );
+  check("C3-the-row-scrolls-not-the-page", cards !== null && cards.scrolls === "auto" && !cards.pageScrollsSideways, cards?.scrolls ?? "");
 
   // ── One control under the answer, never two ──────────────────────────────
   const controls = await page.evaluate(() =>
