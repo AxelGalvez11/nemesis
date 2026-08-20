@@ -61,8 +61,8 @@ export type ComposerIntent =
  * `start` costs the learner's answer, their canvas title and their question.
  *
  * 🔴 "HAS NOT BEGUN" IS THREE FACTS, NOT ONE STORED FIELD. A canvas has begun if anything is
- * awaiting an answer, if the policy is presenting ANYTHING (a lesson, a correction, a verdict just
- * given), or if a sink exists at all. Each of those is a live observation of the surface; the stored
+ * awaiting an answer, if the policy HOLDS anything (a lesson, a correction, a verdict just given —
+ * whether or not it is the thing currently on screen), or if a sink exists at all. Each of those is a live observation of the surface; the stored
  * state is the one input that can be stale, so it is necessary and never sufficient.
  *
  * 🔴 `awaitingAnswer` IS A SECOND, INDEPENDENT WITNESS AND IT IS DELIBERATELY REDUNDANT. Today it
@@ -76,12 +76,32 @@ export function composerIntent(input: {
   awaitingAnswer: boolean;
   /** The canvas's STORED lifecycle state — necessary for `start`, never sufficient. */
   canvasState: CanvasState;
-  /** The policy has something on the surface: a question, a correction, or a verdict. */
-  policyPresenting: boolean;
-  /** Who would receive an answer, from `answerSink`. */
+  /**
+   * The policy HOLDS something — a question, a correction, a contrast, a verdict just given.
+   *
+   * 🔴🔴 EXISTENCE, NOT OCCUPANCY, AND THE TWO CAME APART THE DAY A REPLY COULD DISPLACE A SCREEN.
+   * This input was `policyPresenting`, which meant both at once for as long as the policy's screen
+   * was the only thing that could be on the surface. It no longer is: `composeSurface` now lets a
+   * conversational answer take the page from a claim being taught, so "the policy has content" and
+   * "the policy is visible" are different facts and this function needs the FIRST one.
+   *
+   * 🔴 GETTING THAT BACKWARDS IS DESTRUCTIVE, WHICH IS WHY IT IS SPELLED OUT RATHER THAN INFERRED.
+   * Feed the visible value in and `begun` goes false the moment a reply lands — and `answerSink`
+   * reads the same region, so `sink` goes to `none` in the same instant. Two of `begun`'s three
+   * terms vanish together, `start` becomes reachable on a `sources_attached` canvas, and the
+   * learner's next sentence re-titles and regenerates the canvas they were talking to. That is the
+   * exact failure this whole file was written to end, arriving through the one input that was
+   * doing two jobs.
+   *
+   * The VISIBLE half is not thrown away: it lives in `sink`, which is derived from the region. So
+   * the invariant reads exactly as the owner wrote it — *visibly* asking makes a submission an
+   * answer — and its converse now holds too, which it could not before.
+   */
+  policyHasContent: boolean;
+  /** Who would receive an answer, from `answerSink`. Region-derived, and therefore VISIBLE. */
   sink: AnswerSink;
 }): ComposerIntent {
-  const { awaitingAnswer, canvasState, policyPresenting, sink } = input;
+  const { awaitingAnswer, canvasState, policyHasContent, sink } = input;
 
   // 🔴 `answered` AND `placeholder` ARE CHECKED HERE RATHER THAN IN THE COMPOSER, WHICH IS WHERE
   // THEY USED TO LIVE (`const answering = Boolean(task && !task.answered && task.placeholder)`).
@@ -92,7 +112,7 @@ export function composerIntent(input: {
 
   // A sink that exists but is spent — an answered stage task — is still a Canvas that has content.
   // Falling through to `start` there would restart a canvas mid-session.
-  const begun = sink.kind !== "none" || awaitingAnswer || policyPresenting;
+  const begun = sink.kind !== "none" || awaitingAnswer || policyHasContent;
   if (!begun && isPreContent(canvasState)) return { kind: "start" };
   return { kind: "ask" };
 }

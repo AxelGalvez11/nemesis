@@ -219,9 +219,14 @@ test("🔴 the composer has exactly ONE answer route, and it comes from the sink
   // now does so through `composerIntent`, which is the one place that also outranks the stored
   // canvas state — the predicate that used to route real answers into `begin()`.
   assert.match(source, /intent=\{intent\}/, "the composer is not told what a submission means");
+  // 🔴 THE WINDOW WAS 240 CHARACTERS AND IS NOW 900, WHICH IS A REPOINT AND NOT A WEAKENING. The
+  // property asserted is unchanged: `sink` is the last argument of THIS call, so the intent is
+  // derived from it. What changed is the call site — `policyHasContent` arrived with the note
+  // explaining why it must be the undisplaced value, and a comment is not a reason for a guard to
+  // fail. Calibrated by deleting the `sink,` line: this reddens, with or without the wider window.
   assert.match(
     source,
-    /const intent = composerIntent\(\{[\s\S]{0,240}?\bsink,\n\s*\}\);/,
+    /const intent = composerIntent\(\{[\s\S]{0,900}?\bsink,\n\s*\}\);/,
     "the intent is not derived from the sink",
   );
   // 🔴 RESHAPED FROM A TERNARY TO AN `if`/`else` INSIDE ONE `onAnswer` FUNCTION (contract rule 2,

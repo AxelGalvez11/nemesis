@@ -72,6 +72,16 @@ const CANVAS_EXIT_ROUTE = "/learn";
 const EXPLAIN_THIS = "Explain this.";
 
 /**
+ * The control that puts a displaced teaching screen back.
+ *
+ * 🔴 IT NAMES THE DESTINATION, NOT THE ACTION. "Dismiss" would describe what happens to the reply,
+ * which is not what the learner is deciding; they are choosing to go back to what they were being
+ * taught. It also avoids "Continue", which is the Canvas's ONE word for "I have finished processing
+ * this screen" and must not come to mean two things.
+ */
+const BACK_TO_LESSON = "Back to the lesson";
+
+/**
  * Command-Enter presses whatever Continue is on screen.
  *
  * 🔴 A COMPONENT RATHER THAN AN EFFECT IN THE CANVAS BODY, AND NOT FOR TIDINESS. `continueRegion`
@@ -669,6 +679,15 @@ export function LearningCanvas({
   const policyPresenting =
     policy.status === "ready" && (policy.feedback !== null || policy.decision !== null);
 
+  /**
+   * Nemesis has answered something the learner asked, and that answer is live.
+   *
+   * 🔴 `blockId === null` IS THE WHOLE TEST, AND IT IS THE SAME ONE THE RENDER SITE BELOW USES. A
+   * `blockId` means the answer belongs to a passage and is rendered under it by `CanvasDocument`;
+   * only the general case is a turn of conversation occupying the page.
+   */
+  const replyOnScreen = session.aside !== null && session.aside.blockId === null;
+
   // 🔴 A STEP IS RUNNING, ANSWERED HONESTLY AND IN ONE PLACE. `thinking-phases.ts` is explicit that
   // a caption on a timer "would look exactly like a system thinking and would be theatre", so this
   // reports work that is genuinely in flight and nothing else. It is what separates "Nemesis is
@@ -716,6 +735,10 @@ export function LearningCanvas({
   // further down, and they said no in a state that had no way back. A canvas that had begun with
   // nothing generated into it painted an empty page for ever.
   const { presence, regions } = canvasPresentation({
+    // 🔴 THE RUNTIME'S OWN ANSWER TO "IS SOMETHING OWED", NOT A READING OF THE ACTION TYPE. It is
+    // already derived from `presenting` inside `use-policy-runtime.ts`, which is the one place that
+    // knows a verdict can outlive the decision that produced it — see `awaitingAnswer` there.
+    answerOwed: policy.awaitingAnswer,
     blocks: canvas.blocks.length,
     canvasState: canvas.state,
     // 🔴 THE MATERIAL IS THE ACTION ONLY WHILE THAT ACTION IS STILL IN FLIGHT. Answering the
@@ -726,6 +749,7 @@ export function LearningCanvas({
       requestedDuring: materialRequestedDuring,
     }),
     policyPresenting,
+    replyOnScreen,
     working,
   });
 
@@ -791,7 +815,11 @@ export function LearningCanvas({
   const intent = composerIntent({
     awaitingAnswer: policy.awaitingAnswer,
     canvasState: canvas.state,
-    policyPresenting,
+    // 🔴🔴 THE UNDISPLACED VALUE, DELIBERATELY — see `policyHasContent` in composer-intent.ts. This
+    // is the fact that the canvas HAS a lesson, which does not stop being true because a reply is
+    // in front of it. Passing `regions.policy` here instead would make `start` reachable the moment
+    // Nemesis answered a question on a canvas that had attached material but never been begun.
+    policyHasContent: policyPresenting,
     sink,
   });
 
@@ -1006,7 +1034,11 @@ export function LearningCanvas({
             that exists on every presence, including `invitation`. It clears on `new_turn` through
             the same `applyExplanationEvent` every other route through `submit()` already calls, so
             nothing here has to remember to dismiss it. */}
-        {session.aside && session.aside.blockId === null && (
+        {/* 🔴 GATED ON THE REGION NOW, NOT ON THE STATE. The condition is the same one
+            `replyOnScreen` computes — that is the point: `composeSurface` decides the RELATIONSHIP
+            between this and the policy's screen (which of them yields, and to which), and reading
+            the raw state here would be a second opinion free to disagree with the first. */}
+        {regions.reply && session.aside && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
             {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
                 and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
@@ -1069,6 +1101,34 @@ export function LearningCanvas({
                     type="button"
                   >
                     Learn this
+                  </button>
+                </div>
+              )}
+              {/* 🔴🔴 THE WAY BACK, AND IT IS NOT OPTIONAL POLISH — IT IS THE EXIT.
+                  `no-screen-is-a-dead-end.test.ts` states the rule this obeys: a screen the learner
+                  cannot leave is the product's worst failure mode, and it has already shipped once.
+                  A `deliberate` teaching screen's ONLY exit is its Continue, and displacing that
+                  screen takes the Continue with it — `continueOwner` reads `regions.policy` for
+                  exactly the reasons that make displacement work everywhere else.
+
+                  🔴 AND TYPING CANNOT GET THE LEARNER BACK, WHICH IS WHY A CONTROL IS REQUIRED
+                  RATHER THAN NICE. Every route through `submit()` fires `new_turn`, which clears
+                  this reply — and then sets the NEXT one. So a learner who talked their way off a
+                  lesson could talk for ever and never see it again. This is the only thing that
+                  puts it back.
+
+                  🔴 IT APPEARS ONLY WHEN SOMETHING IS ACTUALLY BEING HELD. `policyPresenting &&
+                  !regions.policy` is precisely "the policy has a screen and this reply is standing
+                  in front of it" — on an ordinary conversational canvas with no lesson behind it
+                  there is nothing to go back to, and a button offering to would be a dead control. */}
+              {policyPresenting && !regions.policy && (
+                <div className="mt-6">
+                  <button
+                    className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                    onClick={() => applyExplanationEvent({ kind: "dismiss_aside" })}
+                    type="button"
+                  >
+                    {BACK_TO_LESSON}
                   </button>
                 </div>
               )}
@@ -1293,7 +1353,16 @@ export function LearningCanvas({
           onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}
-          onRecord={() => setRecording(true)}
+          // 🔴 "Record a lecture" IS HIDDEN, NOT DELETED. Owner call, 2026-08-20: "remove the
+          // 'record a lecture' option or just hide it." Withholding `onRecord` is the whole change:
+          // the composer's `+` already falls through to the file picker on the first press when
+          // there is nothing to choose between, so the menu disappears AND the one remaining action
+          // costs one click instead of two.
+          //
+          // 🔴 THE PANEL AND ITS ROUTE STAY. `CanvasRecorder`, the `recording` state and its close
+          // handler are untouched below, so re-offering this is putting one prop back rather than
+          // rebuilding a feature. The control is what was asked about; the capability behind it was
+          // not.
           // 🔴 SEND STARTS THE CANVAS; ATTACHING DOES NOT (§2). `onFiles` above only ingests, and
           // it deliberately does not begin — the learner may add a second file or type an
           // instruction first. This is the commit, and it is the same control they would press to

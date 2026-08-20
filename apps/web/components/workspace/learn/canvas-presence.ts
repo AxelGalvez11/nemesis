@@ -55,6 +55,17 @@ export type CanvasPresence =
   | "task"
   /** Reading material the learner can actually read — blocks that exist. */
   | "reading"
+  /**
+   * Nemesis answering something the learner asked. Ordinary conversation, and the whole page.
+   *
+   * 🔴 IT HAD TO BECOME A PRESENCE, NOT ONLY A REGION, BECAUSE OF WHAT THE SURFACE SAID WITHOUT IT.
+   * A canvas that has begun, holds no blocks and has no policy decision resolves to `quiet` — and
+   * `quiet` says *"Nemesis has your material but hasn't found anything to ask you about yet"* with a
+   * Try again beside it. That was being painted directly above a perfectly good answer Nemesis had
+   * just given, because "is there anything on this surface?" was asked without counting the reply as
+   * anything. An answer is content; a surface holding one is not quiet.
+   */
+  | "reply"
   /** A legacy evidence stage. Kept because the state union still admits one. */
   | "stage"
   /** A step is genuinely running. The surface names it; see `thinking-phases.ts`. */
@@ -104,7 +115,7 @@ export const STANDIN_PRESENCES = ["preparing", "invitation", "quiet"] as const;
  * So the property has to name the narrower thing: once a canvas has begun, whatever it reports has
  * to be something the learner can actually see.
  */
-export const PAINTING_PRESENCES = ["task", "reading", "stage", "preparing", "quiet"] as const;
+export const PAINTING_PRESENCES = ["task", "reading", "reply", "stage", "preparing", "quiet"] as const;
 
 /**
  * Whether this canvas has not begun — the one condition under which an empty body is correct.
@@ -120,6 +131,7 @@ export function hasNotBegun(canvasState: CanvasState): boolean {
 export const CANVAS_PRESENCES: readonly CanvasPresence[] = [
   "task",
   "reading",
+  "reply",
   "stage",
   "preparing",
   "invitation",
@@ -163,32 +175,53 @@ export function canvasPresentation(input: {
   working: boolean;
   /** The material IS the cognitive action in flight — see `materialOwnsAttention`. */
   materialIsTheAction?: boolean;
+  /** Nemesis has answered something the learner asked, and that answer is live. */
+  replyOnScreen?: boolean;
+  /** The policy is asking for something the learner has not produced yet — see `composeSurface`. */
+  answerOwed?: boolean;
 }): CanvasPresentation {
-  const { blocks, canvasState, materialIsTheAction = false, policyPresenting, working } = input;
+  const {
+    answerOwed = false,
+    blocks,
+    canvasState,
+    materialIsTheAction = false,
+    policyPresenting,
+    replyOnScreen = false,
+    working,
+  } = input;
 
   // 🔴 `hasReadingMaterial` IS PASSED, WHICH THE ONE PRODUCTION CALL SITE DID NOT DO. §24 made a
   // reading state with zero blocks ordinary, so "is this a reading state" and "is there something
   // to read" came apart — and `composeSurface` degrades to the pre-§24 reading when not told.
   const regions = composeSurface({
+    answerOwed,
     canvasState,
     hasReadingMaterial: blocks > 0,
     materialIsTheAction,
     policyPresenting,
+    replyOnScreen,
   });
 
   // Precedence is content first. A step running while a question is on screen is ambient — the
   // learner is not staring at nothing — and the surface reports that separately.
+  // 🔴 `reply` SITS BELOW `task` AND ABOVE EVERYTHING ELSE, AND THE ORDER IS NOT ARBITRARY. It can
+  // only reach `task` at all when a question is owed — `composeSurface` refuses to displace one —
+  // and in that case the ASK is what the learner is being held to, so it names the presence and the
+  // answer rides along beneath it. Everywhere else a reply is the newest thing Nemesis has said and
+  // the only thing on the surface, so it outranks a document, a running step, and `quiet`.
   const presence: CanvasPresence = regions.policy
     ? "task"
-    : regions.stages
-      ? "stage"
-      : regions.document && blocks > 0
-        ? "reading"
-        : working
-          ? "preparing"
-          : hasNotBegun(canvasState)
-            ? "invitation"
-            : "quiet";
+    : regions.reply
+      ? "reply"
+      : regions.stages
+        ? "stage"
+        : regions.document && blocks > 0
+          ? "reading"
+          : working
+            ? "preparing"
+            : hasNotBegun(canvasState)
+              ? "invitation"
+              : "quiet";
 
   return { presence, regions };
 }

@@ -45,7 +45,7 @@ test("🔴🔴 a staged question outranks EVERY stored state — a submission is
     const intent = composerIntent({
       awaitingAnswer: true,
       canvasState,
-      policyPresenting: true,
+      policyHasContent: true,
       sink: policySink,
     });
     assert.equal(intent.kind, "answer", `state ${canvasState} outranked a live question`);
@@ -59,7 +59,7 @@ test("🔴 the exact production shape: material attached, question on screen, ne
   const intent = composerIntent({
     awaitingAnswer: true,
     canvasState: "sources_attached",
-    policyPresenting: true,
+    policyHasContent: true,
     sink: policySink,
   });
   assert.equal(intent.kind, "answer");
@@ -69,7 +69,7 @@ test("🔴 a stage task is answered too, and names its own receiver", () => {
   const intent = composerIntent({
     awaitingAnswer: false,
     canvasState: "recall",
-    policyPresenting: false,
+    policyHasContent: false,
     sink: stageSink,
   });
   assert.equal(intent.kind, "answer");
@@ -84,7 +84,7 @@ test("material attached and nothing being asked still means START", () => {
     const intent = composerIntent({
       awaitingAnswer: false,
       canvasState,
-      policyPresenting: false,
+      policyHasContent: false,
       sink: noSink,
     });
     assert.equal(intent.kind, "start", `${canvasState} lost its ability to start`);
@@ -99,7 +99,7 @@ test("🔴 the policy presenting ANYTHING means the canvas has begun, whatever t
   const intent = composerIntent({
     awaitingAnswer: false,
     canvasState: "sources_attached",
-    policyPresenting: true,
+    policyHasContent: true,
     sink: noSink,
   });
   assert.equal(intent.kind, "ask", "a verdict on screen was treated as a canvas that had not begun");
@@ -113,7 +113,7 @@ test("🔴 awaiting an answer with nowhere to put it degrades to ASK, never to S
   const intent = composerIntent({
     awaitingAnswer: true,
     canvasState: "sources_attached",
-    policyPresenting: true,
+    policyHasContent: true,
     sink: noSink,
   });
   assert.equal(intent.kind, "ask");
@@ -123,7 +123,7 @@ test("🔴 a spent stage task does not fall through to START", () => {
   const intent = composerIntent({
     awaitingAnswer: false,
     canvasState: "sources_attached",
-    policyPresenting: false,
+    policyHasContent: false,
     sink: { kind: "stage", task: { ...QUESTION, answered: true } },
   });
   assert.equal(intent.kind, "ask");
@@ -133,7 +133,7 @@ test("a task with no placeholder is not an answer surface, and is still not a st
   const intent = composerIntent({
     awaitingAnswer: false,
     canvasState: "empty",
-    policyPresenting: false,
+    policyHasContent: false,
     sink: { kind: "policy", task: { ...QUESTION, placeholder: "" } },
   });
   assert.equal(intent.kind, "ask");
@@ -146,7 +146,7 @@ test("a canvas with content and nothing being asked is an ASK", () => {
     const intent = composerIntent({
       awaitingAnswer: false,
       canvasState,
-      policyPresenting: false,
+      policyHasContent: false,
       sink: noSink,
     });
     assert.equal(intent.kind, "ask");
@@ -175,7 +175,7 @@ test("🔴 CALIBRATION — the old predicate reddens the invariant above", () =>
     composerIntent({
       awaitingAnswer: true,
       canvasState: "sources_attached",
-      policyPresenting: true,
+      policyHasContent: true,
       sink: policySink,
     }).kind,
     "the new intent agrees with the broken one on the exact case that lost every typed answer",
