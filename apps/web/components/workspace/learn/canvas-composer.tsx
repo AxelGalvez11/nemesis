@@ -572,7 +572,11 @@ export function CanvasComposer({
           "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
         )}
       >
-        <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
+        {/* 🔴 THE ID IS LOAD-BEARING, NOT A HOOK FOR STYLING. `BloubDock` measures this box
+            and floats clear of its TOP edge, so the character holds its place while the
+            composer grows downward as an answer is typed. Renaming it fails quietly — the
+            dock falls back to a fixed offset and the character starts overlapping it. */}
+        <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]" id="canvas-composer">
         {/* 🔴 THE PAGE TAKES THE COMPOSER'S WHOLE PLACE, THE SAME AS DICTATION'S `listening` BRANCH
             DOES FURTHER DOWN — see written-work-sheet.tsx's file header. Nothing below this
             branches on `drawing`; the sheet is a full substitute for the chips-and-pill content,

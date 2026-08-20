@@ -30,7 +30,7 @@ import {
 import type { StateId } from "@/lib/bloub/states";
 
 import { BloubBot } from "./bloub-bot";
-import { speedOf, stationOf } from "./stations";
+import { speedOf, stationOf } from "@/lib/character/stations";
 
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;

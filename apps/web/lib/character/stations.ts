@@ -95,3 +95,34 @@ export const SPEED: Partial<Record<StateId, number>> = {
 export function speedOf(state: StateId): number {
   return SPEED[state] ?? 1;
 }
+
+/** What the Canvas is doing right now, as the surface already knows it. */
+export interface CanvasActivity {
+  /** The policy runtime is working on this turn (`policy.thinking`). */
+  thinking: boolean;
+  /** The session is being brought up, or material is being taken in (`presence === "preparing"`). */
+  preparing: boolean;
+  /** The learner is dictating. */
+  listening?: boolean;
+}
+
+/**
+ * The Canvas's activity → the animation that plays.
+ *
+ * 🔴 BOTH WAITS COME FORWARD, AND WIRING ONLY ONE IS THE MISTAKE TO AVOID. `thinking` and
+ * `preparing` are different events with different captions, but to a learner they are the
+ * same experience: they asked for something and it has not arrived. If only one took the
+ * middle, the character would sit in the corner through the first, then jump to the middle
+ * when the second began — and a jump with no cause a learner can name reads as a glitch,
+ * not as a change of activity.
+ *
+ * Precedence is deliberate rather than incidental: thinking outranks preparing because a
+ * turn in flight is the more specific fact, and both outrank dictation because what the
+ * system is doing matters more than what the learner is doing with their microphone.
+ */
+export function stateForCanvas(activity: CanvasActivity): StateId {
+  if (activity.thinking) return ACTIVITY_STATE.thinking;
+  if (activity.preparing) return ACTIVITY_STATE.preparing;
+  if (activity.listening) return ACTIVITY_STATE.listening;
+  return ACTIVITY_STATE.resting;
+}

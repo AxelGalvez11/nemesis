@@ -33,13 +33,13 @@ import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
 import { COLOR_BY_ID, SHAPE_BY_ID, mixHex } from "@/lib/bloub/skins";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
+import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@/lib/character/pool";
+
 import "./bloub.css";
 
-/** Pool sizes. Measured worst case is 5 dots and 10 arcs; see the header. */
-export const DOT_POOL = 8;
-export const ARC_POOL = 12;
-/** Every gradient the engine emits has exactly three stops. Asserted in the test. */
-const STOPS = 3;
+// Pool sizes live in `pool.ts` so the guard that keeps them honest can run without
+// React or a DOM. Re-exported because callers reach for them through the renderer.
+export { ARC_POOL, DOT_POOL } from "@/lib/character/pool";
 
 const VB = DEMI_VIEWBOX;
 

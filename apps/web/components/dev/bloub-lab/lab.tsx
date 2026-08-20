@@ -17,7 +17,7 @@ import { useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { BloubBot } from "@/components/bloub/bloub-bot";
 import { BloubDock } from "@/components/bloub/bloub-dock";
-import { speedOf, stationOf } from "@/components/bloub/stations";
+import { speedOf, stationOf } from "@/lib/character/stations";
 import { defaultCycle, totalDuration } from "@/lib/bloub/cycles";
 import { EXPRESSIONS } from "@/lib/bloub/expressions";
 import { COLORS, SHAPES } from "@/lib/bloub/skins";
