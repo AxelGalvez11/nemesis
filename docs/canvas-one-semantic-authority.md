@@ -197,29 +197,41 @@ This is the risk in the whole plan, and it has a precedent: adding one front-doo
 #689 produced a **blank screen for 25–59 seconds**. I will measure the p50 against the current path
 on the existing eight-case set, three runs, before any cutover.
 
-### Measured 2026-08-20: the single JSON turn cannot carry structured content
+### Measured 2026-08-20 — and the first reading of the measurement was wrong
 
-This stopped being a prediction. Driven against the live model in a browser, repeatedly:
+**Corrected.** An earlier version of this section claimed mathematics cannot travel in `say` and
+that maths answers needed the second call. That was a misreading of my own evidence.
 
-- **Asked to plot y = x²**, the model writes the introducing sentence — *"Here's y = x² from x = 0
-  to 5."* — and leaves `visuals` empty. In one run it wrote `[figure 1]` correctly and still
-  supplied no payload, which says it understood the marker and not the object.
-- **Asked to integrate x²**, instructing it to delimit its LaTeX **broke the turn entirely**, both
-  with `\(` and with `$$`. It answered with Unicode math glyphs separated by literal newlines —
-  `∫ 𝑥 2 𝑑 𝑥`, and once `𝑓𝑟𝑎𝑐` where `\frac` belonged. A literal newline cannot exist inside a JSON
-  string, so the decision failed to parse and the raw `{"say": …}` envelope was printed on screen.
-- **Adding a worked example** of the `visuals` array to the prompt made **both** turns hang past
-  180 seconds. Two runs, systematic rather than sampling. Reverted.
+What is actually true, read off the wire rather than off the screen:
 
-`say` is a string inside strict JSON, and every backslash and newline the model writes there has to
-survive its own escaping. It does not. **Mathematics and structured figures cannot travel in the
-same call as the routing decision** — which is the two-call design above, arriving from a second
-direction: the router decides and names what it wants, and a focused second call produces the
-validated payload, exactly as the teaching path already does.
+- **Markdown and KaTeX both work.** A reply renders through `AssistantMarkdown`, which runs
+  remark-math and rehype-katex. `$$…$$`, `\(…\)` and `\[…\]` all render. Only single-dollar
+  `$x$` is off, deliberately, so "$0.20 per million tokens" stays money.
+- **The model does not use them, and does not need to.** Told nothing about mathematics, it answers
+  "integrate x²" in Unicode — `∫x² dx = x³/3 + C` — with the working spelled out, and zero KaTeX
+  elements on the page. It reads correctly.
+- **The failure I saw was a leaked envelope, not bad maths.** Instructing LaTeX delimiters made the
+  model write `\int` and `\,` into a JSON string, where they are INVALID ESCAPES, so `JSON.parse`
+  refused the whole decision and the raw `{"say": …}` fell through to the screen. `AssistantMarkdown`
+  then rendered that leak, the `$$…$$` inside it became real KaTeX, and `innerText` read that DOM
+  back one glyph per line. The `𝑥` I reported as the model's output is U+1D465, which only KaTeX
+  emits; `𝑓𝑟𝑎𝑐` is `frac` with its backslash already consumed.
 
-Fixed on the way through, and worth keeping regardless: a broken envelope no longer reaches the
-learner. `decisionOrReply`'s "the prose IS the answer" rule is right for a model that ignored the
-envelope and simply answered, and exactly wrong for one that attempted it and mangled it.
+**A measurement can be right and its reading wrong.** The screen is three transformations away from
+what the model said, and I diagnosed from the screen twice before reading the wire.
+
+Two things were built and deleted on the strength of this: a JSON escape repair (it corrupts
+`\frac`, because `\f` is both a valid JSON escape and a LaTeX command start, and `\n` versus
+`\nabla` has no general answer), and a worked example in the prompt (it made both test turns hang
+past 180s, twice). Both absences are now guarded by tests carrying the evidence.
+
+**What genuinely still needs the second call is the FIGURE, and only the figure.** Asked to plot
+y = x², the model writes the introducing sentence and leaves `visuals` empty; in one run it wrote
+`[figure 1]` correctly and still supplied no payload, so it understood the marker and not the
+object. That, and the web-search decision, are the two real cases.
+
+Fixed on the way through and worth keeping regardless: a broken envelope no longer reaches the
+learner.
 
 **Not tool-calling.** Two reasons: `toolsAllowed` turns tools off for every reasoner turn, so a
 search tool would be available only on the turns least likely to need it; and a tool schema outranks

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  extractJson,
   parseFreeQuestions,
   parseLesson,
   parseRecallCards,
@@ -304,4 +305,31 @@ test("an unrecognised kind falls back to explain rather than dropping the prompt
     questions: [{ kind: "interpretive-dance", q: "Explain.", expected: ["a point"], why: "", conceptId: "k1" }],
   });
   assert.equal(parseFreeQuestions(raw, ["k1"], FREE_SOURCES)[0]?.task, "explain");
+});
+
+// ── LaTeX in a decision: considered, measured, and deliberately NOT repaired ──────────────────
+
+test("🔴🔴 a decision carrying raw LaTeX does NOT parse, and that is left alone on purpose", () => {
+  // 🔴 I BUILT THE REPAIR FOR THIS AND THEN DELETED IT. `\int` and `\,` are invalid JSON escapes,
+  // so a model writing `$$\int x^2\,dx$$` into `say` makes JSON.parse refuse the whole object.
+  // Doubling the invalid backslashes fixes that — and CORRUPTS `\frac`, because `\f` is a valid
+  // JSON escape (form feed) as well as the start of a LaTeX command. `\n` versus `\nabla` is the
+  // same ambiguity and has no general answer: "Line one\nLine two" is a real newline followed by a
+  // letter, and `\nabla` is not.
+  //
+  // 🔴 AND THE PREMISE WAS WRONG ANYWAY, WHICH IS THE REAL LESSON. Measured on the wire: told
+  // nothing about mathematics, this model writes UNICODE — "∫x² dx = x³/3 + C" — with the working
+  // spelled out, zero KaTeX elements on the page, and it reads perfectly. It only reaches for
+  // LaTeX when a prompt asks for it, and that instruction was removed for exactly this reason.
+  //
+  // So this guards the ABSENCE of a repair that would corrupt correct documents to salvage ones
+  // that do not occur. Anyone adding it back has to answer the `\frac` case first.
+  const latex = '{"say":"$$\\int x^2$$","then":"reply"}';
+  assert.throws(() => JSON.parse(latex.replace(/\\\\/g, "\\")), "the premise is wrong: raw LaTeX parses");
+  assert.equal(extractJson('{"say":"$$\\int x^2$$"}'.replace(/\\\\/g, "\\")), null);
+});
+
+test("🔴 a correctly escaped decision is read, LaTeX and all", () => {
+  // The path that DOES work: a model that escapes properly gets its notation through untouched.
+  assert.equal(String(extractJson('{"say":"$$\\\\int x^2$$","then":"reply"}')?.say), "$$\\int x^2$$");
 });
