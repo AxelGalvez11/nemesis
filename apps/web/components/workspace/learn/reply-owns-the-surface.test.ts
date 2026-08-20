@@ -228,7 +228,11 @@ test("🔴🔴 the reply renders from the REGION, not from the raw state", () =>
   // The defect was two places each answering "is a reply on screen?" with no relationship between
   // them. Reading `session.aside` directly here again would restore exactly that: the composition
   // would decide the policy yields while the render site decided something else.
-  assert.match(canvasCode, /\{regions\.reply && session\.aside && \(/);
+  // 🔴 THE REGION LEADS; FURTHER CONDITIONS MAY FOLLOW IT. Pinned as an exact expression this went
+  // red the moment the thinking screen was given precedence (`&& presence !== "preparing"`), which
+  // is a legitimate addition and not the defect this guards. What must stay true is that
+  // `regions.reply` is what opens the gate and that the raw state is not consulted here.
+  assert.match(canvasCode, /\{regions\.reply && session\.aside &&/);
   assert.ok(
     !/\{session\.aside && session\.aside\.blockId === null && \(/.test(canvasCode),
     "the render site is back to deciding for itself whether a reply is showing",
