@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { hostnameOf } from "@/lib/favicon";
+import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
@@ -1100,16 +1100,38 @@ export function LearningCanvas({
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
                   {session.aside.sources.map((source) => (
                     <span
-                      className="inline-flex items-center gap-1 rounded-full bg-(--ui-bg-elevated) py-0.5 pl-2.5 pr-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary) ring-1 ring-(--ui-stroke-tertiary)"
+                      className="inline-flex items-center gap-1 rounded-full bg-(--ui-bg-elevated) py-1 pl-1.5 pr-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary)"
                       key={source.url}
                     >
+                      {/* 🔴 THE FAVICON, SO THIS PILL AND THE ONE UNDER A TAUGHT CLAIM READ AS ONE
+                          THING — owner call, 2026-08-20: "sources should have small circle favicon
+                          thumbnails". Same 14px circle `canvas-source-pills.tsx` draws, and the
+                          same size the chat surface has used for citations since August. Two
+                          spellings of one idea is how a product ends up with two of everything. */}
+                      {/* 🔴 THE PAGE'S TITLE IN THE TOOLTIP, BECAUSE THE FACE OF THE PILL SAYS THE
+                          SITE. An answer that cited three CNBC articles drew three pills all
+                          reading "Cnbc" and nothing told them apart — measured in a browser on a
+                          real search. They ARE three different pages, so collapsing them would
+                          hide two real sources; naming them on hover is what distinguishes them
+                          without turning a row of pills into a row of headlines. */}
                       <a
-                        className="hover:text-(--ui-text-primary)"
+                        className="inline-flex items-center gap-1.5 no-underline hover:text-(--ui-text-primary)"
                         href={source.url}
                         rel="noopener noreferrer"
                         target="_blank"
+                        title={source.title || source.url}
                       >
-                        {(hostnameOf(source.url) ?? source.url).replace(/^www\./, "")}
+                        {hostnameOf(source.url) && (
+                          // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+                          <img
+                            alt=""
+                            className="rounded-full"
+                            height={14}
+                            src={faviconUrl(hostnameOf(source.url)!)}
+                            width={14}
+                          />
+                        )}
+                        {sourceLabel(source.url) ?? (hostnameOf(source.url) ?? source.url).replace(/^www\./, "")}
                       </a>
                       <button
                         aria-label={`Add ${source.url} to sources`}
