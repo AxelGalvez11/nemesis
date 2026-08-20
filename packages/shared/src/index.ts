@@ -21,6 +21,12 @@ export * from "./search.ts";
 // How the product writes, shared so the web prompt and the phone prompt cannot
 // drift apart. See writing-voice.ts for why this is not a chat skill.
 export * from "./writing-voice.ts";
+// What a student MEANT, read once for the whole product. The phone used to carry its own copy of
+// the classifier this replaced, with one of the thirteen regexes already drifted between them.
+export * from "./chat-intent.ts";
+// ...and what the product can DO about it, which is arithmetic over facts about our own stream
+// rather than a reading of anything.
+export * from "./chat-decision.ts";
 // The document-level half of the same source guide, for turns that SAVE
 // something. Separate from the voice because it costs nothing on the turns it
 // does not apply to — see ai-writing-tells.ts for the split.

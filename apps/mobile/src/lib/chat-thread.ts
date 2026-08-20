@@ -13,7 +13,7 @@ import {
   wrapUntrusted,
 } from "@nemesis/shared";
 
-import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
+import { DEFAULT_DECISION, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
 import { academicSkillInstruction } from "./academic-skills.ts";
 
 
@@ -233,14 +233,16 @@ export function buildWireMessages(
    *  conversation rather than to a search result. It still sits last, closest to the
    *  answer, which is where it earns its keep when the question IS about their notes. */
   groundingContext = "",
+  /** The skill ids the turn's decision asked for. Empty is the ordinary case. */
+  skills: readonly string[] = [],
 ): WireMsg[] {
   const priorAssistantText =
     [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
-  const resolvedDecision = decision ?? classifyChatRequest(userText, priorAssistantText);
+  const resolvedDecision = decision ?? DEFAULT_DECISION;
   const profile = learnerProfile.trim() ? `\n\n${learnerProfile.trim()}` : "";
   return [
     {
-      content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction(resolvedDecision.route)}\n\n${academicSkillInstruction(userText, hasMaterial, priorAssistantText)}${profile}`,
+      content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction(resolvedDecision.route)}\n\n${academicSkillInstruction(skills, hasMaterial, priorAssistantText)}${profile}`,
       role: "system",
     },
     // 🔴 expandArtifactContext BEFORE trimHistory, and that order is the point.
@@ -400,22 +402,20 @@ export function withAttachmentNote(text: string, title: string | null): string {
 }
 
 /** The route decision forced when the composer's "Deep research" toggle is on,
- *  bypassing classifyChatRequest's text-based inference entirely. IDENTICAL to
- *  chat-routing.ts's own RESEARCH_PATTERN branch — reused rather than invented,
- *  because web's own "Deep research" composer menu item
- *  (apps/web/components/workspace/sessions/composer.tsx's AddMenu) turned out to
- *  be an unwired stub with no onSelect handler and no valve-side flag to mirror.
- *  Forcing the SAME route the classifier already infers from research language
- *  is the closest fidelity available: fidelity to web's routing model over
- *  inventing a new one. */
+ *  bypassing the turn decision's reading of the message entirely. It is exactly what
+ *  `decisionFromIntent` produces for a research turn — reused rather than invented, because web's
+ *  own "Deep research" composer menu item (apps/web/components/workspace/sessions/composer.tsx's
+ *  AddMenu) turned out to be an unwired stub with no onSelect handler and no valve-side flag to
+ *  mirror. Forcing the same route the model would have chosen for a research request is the closest
+ *  fidelity available: fidelity to the shared routing model over inventing a new one. */
 export function forcedResearchDecision(): ChatRouteDecision {
   return { model: "deepseek-reasoner", reasoningEffort: "high", route: "research", searchWeb: true };
 }
 
 /** Format live web-search results into a context block the model is told to
  *  cite from — ported from apps/web/lib/workspace/chat-web-search.ts's
- *  formatWebSearchContext (that module's trigger heuristics are NOT ported;
- *  the phone's ONLY search trigger is chat-routing.ts's `searchWeb` decision). */
+ *  formatWebSearchContext. Both surfaces now decide WHETHER to search the same way, in the shared
+ *  turn decision — web's separate keyword heuristic layer is gone rather than unported. */
 export function formatWebSearchContext(results: ChatSource[]): string {
   const usable = results.filter((result) => result.url && (result.title || result.description)).slice(0, 10);
   if (usable.length === 0) return "";

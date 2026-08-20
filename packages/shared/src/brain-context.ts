@@ -196,16 +196,22 @@ export function brainContextFrom(value: unknown): BrainContext | null {
   };
 }
 
-const ACKNOWLEDGEMENTS = new Set([
-  "ok", "okay", "k", "kk", "yes", "yeah", "yep", "no", "nope", "sure",
-  "thanks", "thank you", "ty", "thx", "cheers", "got it", "cool", "nice",
-  "great", "perfect", "hi", "hey", "hello",
-]);
-
-export function shouldRecallBrain(userText: string): boolean {
-  const flat = userText.replace(/\s+/g, " ").trim().toLowerCase();
-  if (!flat || !/[a-z0-9]/.test(flat)) return false;
-  return !ACKNOWLEDGEMENTS.has(flat.replace(/[!.?,]+$/, ""));
+/**
+ * Is there anything here worth looking up?
+ *
+ * 🔴 A SUBJECT, NOT A WORD LIST. This used to hold a set of twenty-three English acknowledgements
+ * — ok, kk, ty, thx, cheers, got it, cool, nice, hi, hey — and skip the lookup when the whole
+ * message was one of them. It was the cheapest possible version of the defect: English-only, so
+ * "gracias" and "ありがとう" each bought a semantic search over the student's Library, and blind to
+ * anything not on the list, so "lol ok whatever" bought one too.
+ *
+ * The turn's own decision already says whether the message has a subject (`topic`) and whether it
+ * touches their workspace, and a message with neither has nothing to look up. Passing those in is
+ * strictly better information than the list was, and it costs nothing: the decision was read for
+ * this turn anyway.
+ */
+export function shouldRecallBrain(input: { topic: string | null; workspaceTurn: boolean }): boolean {
+  return Boolean(input.topic?.trim()) || input.workspaceTurn;
 }
 
 function displayName(title: string, path: string): string {
@@ -220,24 +226,6 @@ function deckName(card: BrainWeakCard): string {
     : card.study_decks;
   return deck?.name?.trim() || "Study";
 }
-
-// Whether the student is asking about their SCHEDULE or their PROGRESS at all.
-//
-// These match the shape of the request, not its subject — "when is it due" and
-// "what am I weak on" are the same sentences for a law student, a nursing
-// student and a machinist. No discipline's vocabulary appears here, and none
-// ever should.
-// ⚠️ THESE MATCH TIME AND DIFFICULTY, NEVER ARTIFACTS. The first draft listed
-// "exam", "test" and "quiz" here, which meant "make me a practice test" — the
-// single most common request in the app — read as a question about the
-// student's timetable and pulled the whole calendar back in. A noun that names
-// a THING THE CHAT CAN BUILD can never be the trigger; only words about WHEN
-// and about STRUGGLING belong. Naming a subject still works on its own through
-// vocabulary overlap below, so nothing is lost by keeping these narrow.
-const SCHEDULE_ASK =
-  /\b(due|overdue|deadlines?|schedules?|scheduled|reschedule[d]?|calendar|upcoming|today|tonight|tomorrow|this week|next week|this month|next month|semester|timetable|agenda)\b|\bwhen (is|are|was|were|do|does|did|should|will)\b/i;
-const PROGRESS_ASK =
-  /\b(weak|weakest|struggl\w+|behind|forget\w*|failing|lapses?|worst|trouble|revise|revising|cram\w*)\b|\b(what|which) should i (stud|review|work|focus|practi)/i;
 
 /**
  * A bounded, injection-fenced context packet shared by web and iOS chat.
@@ -258,11 +246,29 @@ const PROGRESS_ASK =
  * costs nothing now that the chat has list_calendar_events, list_study_decks
  * and read_study_deck to go and fetch on purpose.
  */
-export function formatBrainContext(context: BrainContext | null, query: string): string {
+export function formatBrainContext(
+  context: BrainContext | null,
+  query: string,
+  /**
+   * This turn needs the student's own workspace — their calendar, Library or Study state.
+   *
+   * 🔴 IT REPLACES TWO KEYWORD LISTS. `SCHEDULE_ASK` matched due|deadline|calendar|today|tomorrow|
+   * this week|semester and `PROGRESS_ASK` matched weak|struggling|behind|forgetting|cramming, and
+   * between them they decided whether Calendar rows and weak cards earned their place in the
+   * packet. Both were reading what the student meant, one word at a time, and the file's own
+   * comment records the fix they needed: "exam", "test" and "quiz" had to be REMOVED from the
+   * schedule list, because "make me a practice test" then read as a question about the timetable
+   * and pulled in the whole calendar as a decoy.
+   *
+   * The turn's own decision already answers this (`workspace !== "none"`, see chat-intent.ts), so
+   * it is passed in rather than re-derived. Defaults to false, which is the conservative reading:
+   * a caller that has not decided gets the vocabulary filter alone, exactly as an ordinary turn
+   * always did.
+   */
+  workspaceTurn = false,
+): string {
   if (!context) return "";
   const asked = contentWords(query);
-  const wantsSchedule = SCHEDULE_ASK.test(query);
-  const wantsProgress = PROGRESS_ASK.test(query);
   const notes = [...context.notes]
     .sort((a, b) => b.similarity - a.similarity)
     .filter((hit, index, rows) =>
@@ -278,7 +284,7 @@ export function formatBrainContext(context: BrainContext | null, query: string):
     .slice(0, 5);
   const events = context.events
     .filter((event) =>
-      wantsSchedule ||
+      workspaceTurn ||
       sharesVocabulary(
         asked,
         `${event.title} ${event.course ?? ""} ${event.kind ?? ""} ${event.note ?? ""}`,
@@ -287,7 +293,7 @@ export function formatBrainContext(context: BrainContext | null, query: string):
     .slice(0, 8);
   const weakCards = context.weakCards
     .filter((card) =>
-      wantsProgress ||
+      workspaceTurn ||
       sharesVocabulary(asked, `${card.front} ${card.back ?? ""} ${deckName(card)}`)
     )
     .slice(0, 6);

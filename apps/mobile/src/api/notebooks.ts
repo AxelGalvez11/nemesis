@@ -12,7 +12,7 @@
 import * as SecureStore from "expo-secure-store";
 import { fetch as expoFetch } from "expo/fetch";
 
-import { classifyChatRequest } from "@/lib/chat-routing";
+import { NOTEBOOK_DECISION } from "@/lib/notebook-model";
 import { chatErrorMessage, type WireMsg } from "@/lib/chat-thread";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import {
@@ -365,7 +365,7 @@ export interface SendNotebookMessageOpts {
  *  bumping the chat's updated_at) is the caller's job, same split as api/chat.ts's
  *  sendChat()/saveThreadMessages(). */
 export async function sendNotebookMessage(opts: SendNotebookMessageOpts): Promise<NotebookChatReply> {
-  const decision = classifyChatRequest(opts.userText);
+  const decision = NOTEBOOK_DECISION;
   const wire = buildNotebookWireMessages({
     decision,
     history: opts.history,

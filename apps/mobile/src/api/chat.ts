@@ -20,9 +20,17 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 import { fetch as expoFetch } from "expo/fetch";
 import {
+  DEFAULT_INTENT,
   formatBrainContext,
+  INTENT_TIMEOUT_MS,
+  intentMessages,
+  readChatIntent,
   shouldRecallBrain,
+  type ChatIntent,
+  type IntentContext,
+  type IntentExchange,
 } from "@nemesis/shared";
+import { ACADEMIC_SKILL_CATALOG } from "@/lib/academic-skills";
 import { supabase } from "./supabase";
 import { createNoteWithContent, renameNoteById, updateNoteContent } from "./cloudLibrary";
 import {
@@ -45,7 +53,7 @@ import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
 import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
-import { folderForNewItem, type PendingDelete } from "@nemesis/shared";
+import { folderForNewItem, studyCreationKindFromPreferencePrompt, type PendingDelete } from "@nemesis/shared";
 import { recallBrain } from "./brain";
 import { loadKnownCourses } from "./courses";
 import {
@@ -169,10 +177,12 @@ export function newMessageId(): string {
 
 // ── web search (§3: phone calls nemesis-search directly with the device key) ─
 
-/** Time-sensitive queries need an explicit date, or a search provider can rank
- *  an older result above today's. Kept minimal on purpose: the phone's ONLY
- *  search trigger is chat-routing.ts's `searchWeb` decision (web's separate
- *  shouldSearchWeb heuristic layer is not ported — see chat-thread.ts). */
+/** Time-sensitive queries need an explicit date, or a search provider can rank an older result
+ *  above today's.
+ *
+ *  🔴 THE FALLBACK, NOT THE RULE. The model writes the search query itself now and puts a date in
+ *  it when recency is what matters (`webQuery`, see @nemesis/shared/chat-intent.ts). This stamps one
+ *  on only when it did not — a current-events turn whose query came back empty. */
 function withFreshDateAnchor(query: string): string {
   return `${query.trim()} current as of ${new Date().toISOString().slice(0, 10)}`;
 }
@@ -334,7 +344,7 @@ export interface SendChatOptions {
    *  failure, and the phase line covers it. */
   onReasoning?: CompletionDeltaHandler;
   /** Set when the composer's "Deep research" toggle was on for this turn —
-   *  forces forcedResearchDecision() instead of classifyChatRequest's
+   *  forces forcedResearchDecision() instead of the turn decision's
    *  text-based inference. See that function's doc for why. */
   forceResearch?: boolean;
   /** A Library document attached via the composer's "+" menu for this turn —
@@ -379,6 +389,60 @@ const AGENT_MAX_TOOL_ROUNDS = 4;
  *  not retain (see toolsAllowed).
  *
  *  Never throws. */
+/**
+ * Pair a flat transcript into the exchanges the intent call reads. Nemesis's own turns go in as the
+ * sentence the student actually saw, since that is what "yeah do that" is answering.
+ */
+export function intentHistory(history: readonly ChatMsg[]): IntentContext["history"] {
+  const exchanges: IntentExchange[] = [];
+  for (const message of history) {
+    if (message.role === "user") {
+      exchanges.push({ replied: "", said: message.content });
+      continue;
+    }
+    const last = exchanges[exchanges.length - 1];
+    if (last && !last.replied) last.replied = message.content;
+  }
+  return exchanges;
+}
+
+/**
+ * Read what the student meant: one model call, one decision, for the whole turn.
+ *
+ * Bounded by a hard deadline, and every failure path — timeout, network, auth, a refusal, prose
+ * where JSON was asked for — resolves to DEFAULT_INTENT. The student gets an answer; they do not
+ * get a spinner, and they do not get "I can't see your calendar".
+ */
+async function readTurnIntent(
+  uid: string,
+  ask: string,
+  context: IntentContext,
+  signal?: AbortSignal,
+): Promise<ChatIntent> {
+  if (!ask.trim()) return DEFAULT_INTENT;
+  const timer = new AbortController();
+  const onAbort = () => timer.abort();
+  signal?.addEventListener("abort", onAbort);
+  const deadline = setTimeout(() => timer.abort(), INTENT_TIMEOUT_MS);
+  try {
+    const reply = await postChatCompletion(
+      uid,
+      intentMessages({ ask, catalog: ACADEMIC_SKILL_CATALOG, context }) as WireMsg[],
+      { model: "deepseek-chat", route: "conversation", searchWeb: false },
+      undefined,
+      undefined,
+      undefined,
+      timer.signal,
+    );
+    return readChatIntent(reply.text ?? "") ?? DEFAULT_INTENT;
+  } catch {
+    return DEFAULT_INTENT;
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function sendChat(
   uid: string,
   history: ChatMsg[],
@@ -389,18 +453,25 @@ export async function sendChat(
   onPhase?.({ kind: "routing" });
   const priorAssistantText =
     [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
-  // Route first (what KIND of question is this), then let the student's own
-  // dial override how hard to think about it — never the other way round. Both
-  // steps make one exception, for a request to SAVE something into the student's
-  // own workspace: that write happens through a tool call, and both the research
-  // toggle and the High dial would otherwise switch the tools off and turn the
-  // save into an essay. See routeForTurn and applyChatEffort.
+  // 🔴 ONE CALL READS THE TURN, AND IT IS THE SAME ONE THE BROWSER MAKES. This used to be thirteen
+  // regexes in `chat-routing.ts` — a second copy of the web classifier, with one of them already
+  // drifted, so the identical question could behave differently on the two surfaces. See
+  // @nemesis/shared/chat-intent.ts. A failed or timed-out read is DEFAULT_INTENT: an ordinary
+  // conversational turn on the tools-capable model, which is a working turn rather than an error.
+  const intent = await readTurnIntent(uid, userText, {
+    attachments: attachedDoc ? [attachedDoc.title] : [],
+    // Application state, not language: the prefix belongs to a question Nemesis itself wrote.
+    awaitingStudyPreference: studyCreationKindFromPreferencePrompt(priorAssistantText),
+    history: intentHistory(history),
+    today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
+  }, signal);
+  // Then let the student's own dial override how hard to think about it — never the other way
+  // round. Both steps make one exception, for a request to SAVE something into the student's own
+  // workspace: that write happens through a tool call, and both the research toggle and the High
+  // dial would otherwise switch the tools off and turn the save into an essay. See routeForTurn
+  // and applyChatEffort.
   const decision = applyChatEffort(
-    routeForTurn(
-      userText,
-      forceResearch ? forcedResearchDecision() : null,
-      priorAssistantText,
-    ),
+    routeForTurn(intent, forceResearch ? forcedResearchDecision() : null),
     effort,
   );
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
@@ -411,11 +482,13 @@ export async function sendChat(
   // The student's second brain: semantic notes + one-hop links + deadlines +
   // demonstrated weak cards. It starts beside web search so the independent
   // calls cost one wait, and returns null on any degraded backend path.
-  const brainLookup = shouldRecallBrain(userText)
+  const brainLookup = shouldRecallBrain({ topic: intent.topic, workspaceTurn: intent.workspace !== "none" })
     ? recallBrain(userText)
     : Promise.resolve(null);
   if (decision.searchWeb) {
-    const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
+    // The model wrote the query when it asked for the search, and puts a date in it itself when
+    // recency is the point — which is what `withFreshDateAnchor` was guessing at from a word list.
+    const query = intent.webQuery || (decision.route === "current" ? withFreshDateAnchor(userText) : userText);
     // The phase echoes the student's OWN words, not `query` — the "current"
     // route staples a freshness date onto the wire query, and showing that
     // back would read like the app invented part of the question.
@@ -436,7 +509,7 @@ export async function sendChat(
   // The question decides which parts of the packet survive: Calendar and Study
   // rows now have to be asked for or share vocabulary with it, instead of
   // riding along on every turn as a decoy. See brain-context.ts.
-  const brainContext = formatBrainContext(brain, userText);
+  const brainContext = formatBrainContext(brain, userText, intent.workspace !== "none");
   if (brainContext) {
     const noteCount = new Set(brain?.notes.map((hit) => hit.document_id) ?? []).size;
     onPhase?.({ kind: "recalling", notes: noteCount });
@@ -480,6 +553,7 @@ export async function sendChat(
     learnerProfile,
     Boolean(attachedDoc),
     brainContext,
+    intent.skills,
   );
   let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {

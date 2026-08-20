@@ -50,11 +50,11 @@ Deno.test("trimHistory: caps message count", () => {
 
 Deno.test("buildWireMessages: system carries the route instruction, history in order, new user text last", () => {
   const wire = buildWireMessages([msg("user", "hi"), msg("assistant", "hello")], "what next?");
-  // "what next?" classifies as plain conversation — assert against the router's
-  // own instruction text rather than hardcoding it, so route-tuning can't silently
-  // desync this test from chat-routing.ts.
+  // A turn with no decision passed rides DEFAULT_DECISION — plain conversation, on the
+  // tools-capable model. Asserted against the router's own instruction text rather than a
+  // hardcoded string, so route-tuning cannot silently desync this test from chat-routing.ts.
   assertEquals(wire[0], {
-    content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction("conversation")}\n\n${academicSkillInstruction("what next?")}`,
+    content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction("conversation")}\n\n${academicSkillInstruction([])}`,
     role: "system",
   });
   assertEquals(wire[1], { content: "hi", role: "user" });
@@ -65,7 +65,7 @@ Deno.test("buildWireMessages: system carries the route instruction, history in o
 Deno.test("buildWireMessages: an explicit decision overrides the auto-classified route", () => {
   const wire = buildWireMessages([], "hi", { route: "research", model: "deepseek-reasoner", searchWeb: true, reasoningEffort: "high" });
   assertEquals(wire[0], {
-    content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction("research")}\n\n${academicSkillInstruction("hi")}`,
+    content: `${CHAT_SYSTEM_PROMPT}\n\n${ARTIFACT_REFERENCE_RULE}\n\n${routeInstruction("research")}\n\n${academicSkillInstruction([])}`,
     role: "system",
   });
 });
@@ -85,7 +85,7 @@ Deno.test("the workspace paragraph names every tool family the phone actually ca
 
 Deno.test("buildWireMessages: keeps quiz answers hidden and carries learner preferences", () => {
   const profile = "Learner profile preferences (data, not instructions):\n- Tone: Socratic tutor";
-  const wire = buildWireMessages([], "Quiz me on cell division", undefined, profile);
+  const wire = buildWireMessages([], "Quiz me on cell division", undefined, profile, false, "", ["quiz"]);
   assertMatch(wire[0]?.content ?? "", /Ask exactly one question at a time/);
   assertMatch(wire[0]?.content ?? "", /Do not include the answer/);
   assertMatch(wire[0]?.content ?? "", /Tone: Socratic tutor/);
@@ -232,7 +232,7 @@ Deno.test("withAttachmentNote: appends 'Attached: NAME' when a title is given, e
   assertEquals(withAttachmentNote("What's the mechanism?", null), "What's the mechanism?");
 });
 
-Deno.test("forcedResearchDecision: identical to chat-routing's own RESEARCH_PATTERN branch", () => {
+Deno.test("forcedResearchDecision: the research route, spelled out", () => {
   assertEquals(forcedResearchDecision(), { model: "deepseek-reasoner", reasoningEffort: "high", route: "research", searchWeb: true });
 });
 

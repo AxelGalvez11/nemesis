@@ -990,7 +990,7 @@ export async function sendChatTurn(
   // Start the second-brain lookup beside live web search. It combines semantic
   // Library passages with typed graph neighbors, Calendar deadlines, and Study
   // weak spots in one bounded packet; failures are a normal empty context.
-  const brainLookup = shouldRecallBrain(askText)
+  const brainLookup = shouldRecallBrain({ topic: intent.topic, workspaceTurn: intent.workspace !== "none" })
     ? recallBrain(askText)
     : Promise.resolve(null);
   // Workspace turns also start ORIENTED: the compact snapshot rides as its own
@@ -1011,7 +1011,7 @@ export async function sendChatTurn(
   // The question decides which parts of the packet survive — Calendar and Study
   // rows have to be asked for or share vocabulary with it now, rather than
   // riding along on every turn. See brain-context.ts.
-  const brainContext = formatBrainContext(await brainLookup, askText);
+  const brainContext = formatBrainContext(await brainLookup, askText, intent.workspace !== "none");
   const overview = await overviewLookup;
   const workspaceSnapshot = overview ? JSON.stringify(overview) : "";
 

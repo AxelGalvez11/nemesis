@@ -77,18 +77,28 @@ test("unrelated deadlines and weak cards stay out of an unrelated request", () =
   assert.equal(text, "");
 });
 
-test("asking about the schedule brings the calendar back", () => {
-  const text = formatBrainContext(NOISY_CONTEXT, "What have I got due next week?");
+// 🔴 ONE FLAG WHERE THERE WERE TWO KEYWORD LISTS, AND THE TRADE IS DELIBERATE. SCHEDULE_ASK and
+// PROGRESS_ASK told the calendar rows and the weak cards apart, so "what's due" got deadlines and
+// "what am I weak on" got cards. That precision was real, and it is gone: a turn about the
+// student's own workspace now gets both. What it cost was everything the lists could not see —
+// they were English-only, and the file's own comment records having to REMOVE "exam", "test" and
+// "quiz" from the schedule list because "make me a practice test" then dragged in the whole
+// calendar as a decoy. Both sections are capped (8 events, 6 cards), so the worst case for a
+// workspace turn is a few extra lines of the student's own data; the worst case for the lists was
+// a question phrased in the wrong words getting nothing at all.
+test("a turn about their own workspace brings back both halves of it", () => {
+  const text = formatBrainContext(NOISY_CONTEXT, "What have I got due next week?", true);
   assert.match(text, /Upcoming Calendar events/);
   assert.match(text, /Biochem exam/);
-  // Still not the weak cards — that was a different question.
-  assert.doesNotMatch(text, /Study concepts with repeated misses/);
+  assert.match(text, /Study concepts with repeated misses/);
 });
 
-test("asking what to work on brings the weak cards back", () => {
-  const text = formatBrainContext(NOISY_CONTEXT, "What am I struggling with most?");
-  assert.match(text, /Study concepts with repeated misses/);
+test("a turn that is not about their workspace still brings back neither", () => {
+  // The decoy this filter exists for: "make flashcards from this recording" used to put a list of
+  // unrelated deadlines and someone's worst cards nearest to the request.
+  const text = formatBrainContext(NOISY_CONTEXT, "make flashcards from this recording", false);
   assert.doesNotMatch(text, /Upcoming Calendar events/);
+  assert.doesNotMatch(text, /Study concepts with repeated misses/);
 });
 
 test("naming the subject is enough on its own, with no schedule wording", () => {
@@ -121,8 +131,16 @@ test("a shared filler word is not a match", () => {
   assert.equal(formatBrainContext(context, "What about the weather"), "");
 });
 
-test("brain recall skips acknowledgements but searches substantive prompts", () => {
-  assert.equal(shouldRecallBrain("thanks!"), false);
-  assert.equal(shouldRecallBrain("What am I weakest on before Friday?"), true);
+// 🔴 A SUBJECT, NOT A WORD LIST. This used to be a set of twenty-three English acknowledgements,
+// which meant "gracias" and "lol ok whatever" each bought a semantic search over the student's
+// whole Library. A turn with no subject and nothing to do with their workspace has nothing to look
+// up, and the turn's own decision already says both.
+test("brain recall needs something to look up", () => {
+  assert.equal(shouldRecallBrain({ topic: null, workspaceTurn: false }), false);
+  assert.equal(shouldRecallBrain({ topic: "   ", workspaceTurn: false }), false);
+  assert.equal(shouldRecallBrain({ topic: "pharmacokinetics", workspaceTurn: false }), true);
+  // A workspace turn is worth a lookup even when the model named no subject: "what's due?" is
+  // about their data, and the subject is the data itself.
+  assert.equal(shouldRecallBrain({ topic: null, workspaceTurn: true }), true);
 });
 

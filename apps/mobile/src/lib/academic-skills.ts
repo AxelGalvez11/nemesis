@@ -6,8 +6,9 @@
  * what prevents "quiz me" from receiving a mini lecture with the answer in it,
  * while "teach me" still gets a complete explanation.
  *
- * This module is intentionally pure so its intent detection and teaching
- * contracts can be tested without React Native or Supabase.
+ * 🔴 WHICH SKILL A TURN GETS IS DECIDED BY THE MODEL (@nemesis/shared, chat-intent.ts), NOT BY
+ * `detectAcademicSkill`'s nine regexes. This module is still pure — it owns the teaching contracts
+ * and the one-skill-per-turn rule, both testable without React Native or Supabase.
  */
 
 // The same rules the web builders carry (apps/web/lib/workspace/chat-skills.ts).
@@ -32,28 +33,41 @@ export const GENERATED_NOTES_FOLDER = "Nemesis/Notes";
 export const GENERATED_SLIDES_FOLDER = "Nemesis/Slides";
 export const GENERATED_TESTS_GROUP = "Generated tests";
 
-const CREATE = /\b(?:create|make|build|generate|draft|prepare|save|turn .{0,30} into|put together|give me)\b/i;
-const REQUEST_ARTIFACT = /\b(?:i (?:need|want)|please (?:make|create|prepare)|can you (?:make|create|prepare))\b/i;
-const FLASHCARDS = /\b(?:flash\s*cards?|anki cards?|study deck)\b/i;
-const TEST_ARTIFACT = /\b(?:tests?|practice test|mock exam|question bank|practice exam|full test)\b/i;
-const SLIDES = /\b(?:slides?|slide deck|presentation)\b/i;
-const NOTES = /\b(?:study notes?|class notes?|lecture notes?|study guide|revision guide)\b/i;
-const QUIZ = /\b(?:quiz me|test me|ask me questions?|question me|oral exam|one question at a time)\b/i;
-const TEACH = /\b(?:teach me|explain|walk me through|help me understand|tutor me|give me a lesson|break down)\b/i;
-const BARE_ARTIFACT =
-  /^(?:please\s+)?(?:\d+\s+)?(?:flash\s*cards?|anki cards?|slides?|slide deck|presentation|practice test|mock exam|question bank|study notes?|lecture notes?|study guide)\b/i;
+/**
+ * When each skill applies, in one line, written for the model that chooses.
+ *
+ * 🔴 THIS REPLACED `detectAcademicSkill`, WHICH WAS NINE REGEXES AND A PRECEDENCE LADDER. CREATE,
+ * REQUEST_ARTIFACT, FLASHCARDS, TEST_ARTIFACT, SLIDES, NOTES, QUIZ, TEACH, BARE_ARTIFACT — and a
+ * comment explaining that "test me" had to be checked before the ambiguous noun "test", which is
+ * the sound a word list makes when it is losing. A student who wrote "I have no clue, bruh" got
+ * `general` and was answered as though they had asked a factual question.
+ *
+ * Written as CONDITIONS rather than trigger words, so they hold for a law student and a machinist
+ * alike. Consumed by the shared turn decision (`@nemesis/shared`, chat-intent.ts), which returns
+ * the ids it wants.
+ */
+export const ACADEMIC_SKILL_CATALOG: readonly { id: AcademicSkill; when: string }[] = [
+  { id: "slides-builder", when: "the student wants a slide deck or presentation made" },
+  { id: "flashcard-builder", when: "the student wants flashcards made and kept" },
+  { id: "quiz", when: "the student asked to be quizzed, drilled or tested interactively, meaning they want to be asked questions rather than told answers" },
+  { id: "test-builder", when: "the student wants a practice test or exam questions written and saved" },
+  { id: "notes-builder", when: "the student wants notes or a study guide written and kept" },
+  { id: "teach", when: "the student wants something explained, or has said in any words that they do not follow it, including frustration, giving up, or saying it makes no sense" },
+];
 
-export function detectAcademicSkill(text: string): AcademicSkill {
-  const compact = text.trim();
-  const requestsArtifact = CREATE.test(compact) || REQUEST_ARTIFACT.test(compact) || BARE_ARTIFACT.test(compact);
-  if (requestsArtifact && SLIDES.test(compact)) return "slides-builder";
-  if (requestsArtifact && FLASHCARDS.test(compact)) return "flashcard-builder";
-  // "Test me" is an interactive retrieval session, even in phrasings such as
-  // "I need you to test me." It must win over the ambiguous noun "test."
-  if (QUIZ.test(compact)) return "quiz";
-  if (requestsArtifact && TEST_ARTIFACT.test(compact)) return "test-builder";
-  if (requestsArtifact && NOTES.test(compact)) return "notes-builder";
-  if (TEACH.test(compact)) return "teach";
+/**
+ * The one the model asked for, or `general`.
+ *
+ * 🔴 THE MODEL PICKS, THIS FUNCTION ENFORCES. Exactly one skill rides a phone turn (unlike web,
+ * which allows two), so catalog order breaks ties — and an id that is not in the catalog is dropped
+ * rather than thrown, because a model naming a skill that does not exist should cost the turn some
+ * craft and not its answer.
+ */
+export function chooseAcademicSkill(requested: readonly string[]): AcademicSkill {
+  const wanted = new Set(requested);
+  for (const entry of ACADEMIC_SKILL_CATALOG) {
+    if (wanted.has(entry.id)) return entry.id;
+  }
   return "general";
 }
 
@@ -105,16 +119,20 @@ const MATERIAL_OFFER = [
 ].join(" ");
 
 export function academicSkillInstruction(
-  text: string,
+  /** The skill ids the turn's decision asked for. */
+  requested: readonly string[],
   hasMaterial = false,
   priorAssistantText = "",
 ): string {
+  // 🔴 STILL DETERMINISTIC, BECAUSE IT IS NOT A READING. This matches the exact prefix of a
+  // question NEMESIS ITSELF wrote, so it is the software remembering what it asked — the same
+  // category as an unanswered question on screen, and nothing a model should rediscover.
   const continuationKind = studyCreationKindFromPreferencePrompt(priorAssistantText);
   const skill = continuationKind === "test"
     ? "test-builder"
     : continuationKind === "flashcards"
       ? "flashcard-builder"
-      : detectAcademicSkill(text);
+      : chooseAcademicSkill(requested);
   // Only when they have NOT asked for something specific. "Make flashcards from
   // this" already names the artifact, and asking again would be a stall.
   if (hasMaterial && skill === "general") return `${SKILL_INSTRUCTIONS.general}\n\n${MATERIAL_OFFER}`;
