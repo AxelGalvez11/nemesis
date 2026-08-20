@@ -92,7 +92,16 @@ test("🔴 the canvas picks the mechanism for a study turn, not the model", () =
 });
 
 test("🔴 Learn this is offered for a subject, never for a greeting", () => {
-  assert.match(canvas, /\{session\.aside\.topic && \(/, "the offer is gated on something other than a subject");
+  // 🔴 REPOINTED 2026-08-20. This pinned the gate as exactly `{session.aside.topic && (`, and went
+  // red when the offer also learned to yield to a held lesson, so only ONE control shows under an
+  // answer. The property is unchanged and is about `topic` versus `question`: the offer keys on the
+  // SUBJECT the model read, never on the mere fact that a turn happened — which is what put a
+  // "Learn this" button under "Hello. What can I do for you?".
+  assert.match(canvas, /session\.aside\.topic && \(/, "the offer is gated on something other than a subject");
+  assert.ok(
+    !/\{session\.aside\.question && \(/.test(canvas),
+    "the offer is back on every turn that merely has a question",
+  );
   assert.ok(
     !/\{session\.aside\.question && \(/.test(canvas),
     "the offer is back on `question`, which every turn has — including a greeting",

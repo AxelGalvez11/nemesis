@@ -71,7 +71,7 @@ async function main(): Promise<void> {
 
   // A question that buys a web search, so the reply carries real citations.
   await page.locator("textarea").click();
-  await page.keyboard.type("what did the news say about semiconductors this week?", { delay: 8 });
+  await page.keyboard.type("whats the latest news on ai?", { delay: 8 });
   await page.keyboard.press("Enter");
 
   const pill = await page
@@ -98,6 +98,41 @@ async function main(): Promise<void> {
     pill ? `radius ${pill.radius} on a ${pill.w}px box` : "",
   );
   check("P3-and-it-is-small", pill !== null && pill.w <= 16 && pill.w >= 10, pill ? `${pill.w}px` : "");
+
+  // ── The inline [n] markers, which is what the owner actually asked for twice ──
+  const inline = await page.evaluate(() => {
+    const body = document.querySelector('[data-selectable-id="reply"]');
+    const text = (body as HTMLElement | null)?.innerText ?? "";
+    const dots = [...(body?.querySelectorAll('a img[src*="favicons"]') ?? [])] as HTMLImageElement[];
+    const drawn = dots.filter((i) => i.complete && i.naturalWidth > 0);
+    return { bare: /\[\d{1,2}\]/.test(text), dots: dots.length, drawn: drawn.length };
+  });
+  // 🔴 CONDITIONAL, BECAUSE WHETHER THE MODEL CITES AT ALL IS NOT THIS CHANGE'S TO GUARANTEE.
+  // Measured across several runs: this model frequently answers from live search WITHOUT writing a
+  // single [n], even though `formatWebSearchContext` asks it to. What is being checked here is the
+  // rendering contract — if markers exist they must become favicon pills and none may be left as
+  // literal text — not the model's citing habit, which is a separate and unfinished problem.
+  if (inline.dots === 0 && !inline.bare) {
+    console.log("SKIP  P4-inline-citations — the model wrote no [n] markers this run (see note)");
+  } else {
+    check(
+      "P4-inline-citations-are-favicon-pills",
+      inline.drawn > 0,
+      `${inline.drawn}/${inline.dots} inline favicons decoded`,
+    );
+  }
+  check(
+    "P5-and-no-bare-[n]-is-left-in-the-prose",
+    !inline.bare,
+    inline.bare ? "the answer still shows literal [1] markers" : "",
+  );
+
+  // ── One control under the answer, never two ──────────────────────────────
+  const controls = await page.evaluate(() =>
+    [...document.querySelectorAll("button")]
+      .map((b) => (b.textContent ?? "").trim())
+      .filter((t) => t === "Learn this" || t === "Back to the lesson"));
+  check("P6-one-control-under-an-answer", controls.length <= 1, controls.join(" + ") || "none");
 
   await page.screenshot({ path: "/tmp/source-pills.png" });
   await browser.close();

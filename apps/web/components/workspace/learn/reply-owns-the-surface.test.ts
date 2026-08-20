@@ -259,10 +259,19 @@ test("🔴🔴 a displaced teaching screen has a way back", () => {
   // Continue, and `continueOwner` withholds that the moment `regions.policy` is false. Every route
   // through `submit()` fires `new_turn`, which clears this reply and sets the next one, so typing
   // can never get the learner back. Without this control the lesson is gone for the session.
-  const back = canvasCode.slice(canvasCode.indexOf("policyPresenting && !regions.policy"));
+  // 🔴 REPOINTED 2026-08-20, AND THE CODE IMPROVED RATHER THAN THE GUARD LOOSENING. The condition
+  // was written out twice in the component — once negated, to keep "Learn this" from stacking under
+  // the same answer — and this slice landed on the wrong one. Two places deciding "is a lesson being
+  // held" is exactly the drift this file exists to prevent, so it is computed ONCE as `lessonHeld`
+  // and both readers ask that. The guard now checks the name, which is what makes the two agree.
+  assert.match(canvasCode, /const lessonHeld = policyPresenting && !regions\.policy;/);
+  const back = canvasCode.slice(canvasCode.indexOf("{lessonHeld && ("));
   assert.ok(back.length > 0, "the back-to-the-lesson control is gone, and nothing else restores a displaced screen");
   assert.match(back.slice(0, 700), /dismiss_aside/, "it does not actually clear the reply");
   assert.match(back.slice(0, 700), /BACK_TO_LESSON/);
+  // 🔴 AND ONLY ONE CONTROL SHOWS. The offer must stand down while a lesson is held, or the owner's
+  // report ("its showing 'back to lesson' pill and 'learn this'") comes straight back.
+  assert.match(canvasCode, /\{!lessonHeld && session\.aside\.topic && \(/, "Learn this can stack under a held lesson again");
 });
 
 test("🔴 the way back is offered ONLY when something is being held", () => {
