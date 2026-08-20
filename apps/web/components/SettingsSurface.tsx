@@ -9,7 +9,6 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { SecuritySettings } from "@/components/workspace/shell/security-settings";
 import { ACCENT_COLORS, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type DarkTone, type ThemePreference } from "@/components/theme-provider";
 import { BloubBot } from "@/components/bloub/bloub-bot";
-import { COLORS, SHAPES } from "@/lib/bloub/skins";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
 import { cn } from "@/lib/utils";
 
@@ -111,7 +110,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
   const [preferences, setPreferences] = useState<AssistantPreferences>(DEFAULT_PREFERENCES);
   const [usageBars, setUsageBars] = useState<UsageBar[] | null>(null);
   const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null);
-  const { preference, accent, scale, darkTone, libraryFullScreen, bloubShape, bloubColor, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setBloubShape, setBloubColor } = useTheme();
+  const { preference, accent, scale, darkTone, libraryFullScreen, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen } = useTheme();
   const router = useRouter();
 
   useEffect(() => {
@@ -225,62 +224,24 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
             <SettingsCard title="Dark tone"><div className="flex flex-wrap gap-2">{DARK_TONE_OPTIONS.map((item) => <button aria-pressed={darkTone === item.id} className={cn("flex items-center gap-2 rounded-xl border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-xs font-medium hover:bg-(--ui-control-hover-background)", darkTone === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)")} key={item.id} onClick={() => setDarkTone(item.id)} type="button"><span aria-hidden className="size-4 rounded-full border border-(--ui-stroke-secondary)" style={{ backgroundColor: item.color }} />{item.label}</button>)}</div><p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">How surfaces look while the theme is dark: Black is pure black, Charcoal is a softer dark gray.</p></SettingsCard>
             <SettingsCard title="Accent color"><div className="flex flex-wrap gap-2">{ACCENT_OPTIONS.map((item) => <button aria-label={item.label} aria-pressed={accent === item.id} className={cn("grid size-10 place-items-center rounded-full border border-(--ui-stroke-secondary)", accent === item.id && "ring-2 ring-offset-2 ring-offset-background")} key={item.id} onClick={() => setAccent(item.id)} style={{ color: item.color }} title={item.label} type="button"><span className="size-6 rounded-full" style={{ backgroundColor: item.color }} /></button>)}</div></SettingsCard>
             <SettingsCard title="Your character">
-              {/* 🔴 THE PREVIEW IS THE REAL THING, FROZEN — not a picture of it. The engine is a
-                  pure function of time, so a still costs one paint and no animation loop, and it
-                  cannot drift out of date with what the canvas actually renders. */}
-              <div className="flex items-center gap-5 max-sm:flex-col max-sm:items-start">
+              {/* 🔴 NO SECOND PALETTE, AND NO SHAPE PICKER (owner 2026-08-20). The character used
+                  to carry twelve colours and eight silhouettes of its own, right below the accent
+                  picker that also changes "the colour" — two controls that could disagree, and a
+                  per-device choice about what the product's character IS. It follows the accent
+                  above and rests as a circle; this card exists to SHOW that, not to re-ask it.
+
+                  The preview is the real engine frozen, not a picture of it. */}
+              <div className="flex items-center gap-4">
                 <div className="grid size-[92px] shrink-0 place-items-center rounded-2xl border border-(--ui-stroke-secondary)">
-                  <BloubBot color={bloubColor} frozenAt={1} shape={bloubShape} size={76} state="idle" />
+                  <BloubBot color={accent} frozenAt={1} size={76} state="idle" />
                 </div>
-                <div className="min-w-0 flex-1 space-y-3">
-                  <div>
-                    <p className="mb-1.5 text-[0.7rem] text-(--ui-text-tertiary)">Shape</p>
-                    <div className="flex flex-wrap gap-2">
-                      {SHAPES.map((item) => (
-                        <button
-                          aria-label={item.id}
-                          aria-pressed={bloubShape === item.id}
-                          className={cn(
-                            "grid size-11 place-items-center rounded-xl border border-(--ui-stroke-secondary) bg-background hover:bg-(--ui-control-hover-background)",
-                            bloubShape === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)",
-                          )}
-                          key={item.id}
-                          onClick={() => setBloubShape(item.id)}
-                          type="button"
-                        >
-                          {/* Shown in the chosen colour, so the two choices are read together. */}
-                          <BloubBot color={bloubColor} frozenAt={1} shape={item.id} size={28} state="idle" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="mb-1.5 text-[0.7rem] text-(--ui-text-tertiary)">Colour</p>
-                    <div className="flex flex-wrap gap-2">
-                      {COLORS.map((item) => (
-                        <button
-                          aria-label={item.id}
-                          aria-pressed={bloubColor === item.id}
-                          className={cn(
-                            "size-7 rounded-full border border-(--ui-stroke-secondary)",
-                            bloubColor === item.id && "ring-2 ring-(--theme-primary) ring-offset-2 ring-offset-background",
-                          )}
-                          key={item.id}
-                          onClick={() => setBloubColor(item.id)}
-                          style={{ backgroundColor: item.hex }}
-                          title={item.id}
-                          type="button"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <p className="text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">
+                  It sits above the composer while you work, comes forward to the middle of the page
+                  while Nemesis is thinking, and follows your cursor. Click it and it reacts.
+                  <br />
+                  Its colour is the accent colour above.
+                </p>
               </div>
-              <p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">
-                The character sits above the composer while you work, and comes forward to the
-                middle of the page while Nemesis is thinking. Some animations draw their own
-                body — the shape you pick is the one it returns to at rest.
-              </p>
             </SettingsCard>
             <SettingsCard title="Scaling"><div className="flex flex-wrap gap-2">{SCALE_PRESETS.map((preset) => <button aria-pressed={scale === preset} className={cn("min-w-16 rounded-xl border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-xs font-semibold tabular-nums hover:bg-(--ui-control-hover-background)", scale === preset && "border-(--theme-primary) text-(--theme-primary) ring-1 ring-(--theme-primary)")} key={preset} onClick={() => setScale(preset)} type="button">{preset}%</button>)}</div><p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">Everything in the app grows or shrinks together. Currently {scale}%.</p></SettingsCard>
           </SettingsPage>

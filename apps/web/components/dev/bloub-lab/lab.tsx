@@ -25,13 +25,11 @@ import { POSES, SEQUENCE, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 const ALL_STATES: StateId[] = [...SEQUENCE, "swirl"];
 
-type View = "stage" | "states" | "shapes" | "colors" | "faces" | "dock";
+type View = "stage" | "states" | "faces" | "dock";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "stage", label: "Stage" },
   { id: "states", label: "Animations" },
-  { id: "shapes", label: "Shapes" },
-  { id: "colors", label: "Colours" },
   { id: "faces", label: "Expressions" },
   { id: "dock", label: "Dock" },
 ];
@@ -54,7 +52,7 @@ function Cell({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export function BloubLab() {
-  const { theme, setTheme, bloubShape, bloubColor, setBloubShape, setBloubColor } = useTheme();
+  const { theme, setTheme, accent, setAccent } = useTheme();
   const [view, setView] = useState<View>("stage");
   const [state, setState] = useState<StateId>("idle");
   const [expression, setExpression] = useState("neutre");
@@ -98,43 +96,9 @@ export function BloubLab() {
           )}
         </section>
 
-        <section>
-          <h2 className="mb-1.5 text-[10px] tracking-widest text-(--ui-text-tertiary)">SHAPE</h2>
-          <div className="flex flex-wrap gap-1.5">
-            {SHAPES.map((s) => (
-              <button className={chip(bloubShape === s.id)} key={s.id} onClick={() => setBloubShape(s.id)} type="button">
-                {s.id}
-              </button>
-            ))}
-          </div>
-          {def && !def.baseBody && (
-            <p className="mt-2 text-[10px] text-(--ui-text-tertiary)">
-              This animation draws its own body — the shape is what it is, so your choice does
-              not apply until it returns to rest.
-            </p>
-          )}
-        </section>
+        
 
-        <section>
-          <h2 className="mb-1.5 text-[10px] tracking-widest text-(--ui-text-tertiary)">COLOUR</h2>
-          <div className="flex flex-wrap gap-1.5">
-            {COLORS.map((c) => (
-              <button
-                aria-label={c.id}
-                className={[
-                  "size-6 rounded-full border",
-                  bloubColor === c.id ? "ring-2 ring-(--theme-primary) ring-offset-2 ring-offset-(--background)" : "",
-                  "border-(--ui-stroke-secondary)",
-                ].join(" ")}
-                key={c.id}
-                onClick={() => setBloubColor(c.id)}
-                style={{ backgroundColor: c.hex }}
-                title={c.id}
-                type="button"
-              />
-            ))}
-          </div>
-        </section>
+        
 
         <section>
           <h2 className="mb-1.5 text-[10px] tracking-widest text-(--ui-text-tertiary)">PLAYBACK</h2>
@@ -189,10 +153,9 @@ export function BloubLab() {
         {view === "stage" && (
           <div className="mt-5 grid min-h-[420px] place-items-center rounded-2xl border border-(--ui-stroke-secondary)">
             <BloubBot
-              color={bloubColor}
+              color={accent}
               expression={expression}
               reducedMotion={reduced}
-              shape={bloubShape}
               size={size}
               speed={paused ? 0 : speed * speedOf(state)}
               state={state}
@@ -205,31 +168,15 @@ export function BloubLab() {
           <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-3">
             {ALL_STATES.map((id) => (
               <Cell key={id} label={`${id}  ${POSES[id].toFixed(2)}s`}>
-                <BloubBot color={bloubColor} frozenAt={POSES[id]} shape={bloubShape} size={130} state={id} />
+                <BloubBot color={accent} frozenAt={POSES[id]} size={130} state={id} />
               </Cell>
             ))}
           </div>
         )}
 
-        {view === "shapes" && (
-          <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-3">
-            {SHAPES.map((s) => (
-              <Cell key={s.id} label={s.id}>
-                <BloubBot color={bloubColor} frozenAt={1} shape={s.id} size={130} state="idle" />
-              </Cell>
-            ))}
-          </div>
-        )}
+        
 
-        {view === "colors" && (
-          <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-3">
-            {COLORS.map((c) => (
-              <Cell key={c.id} label={c.id}>
-                <BloubBot color={c.id} frozenAt={1} shape={bloubShape} size={130} state="idle" />
-              </Cell>
-            ))}
-          </div>
-        )}
+        
 
         {view === "faces" && (
           <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-3">
@@ -238,7 +185,7 @@ export function BloubLab() {
                 <Cell label={expression === e.id ? `${e.id} ✓` : e.id}>
                   {/* Expressions replace the RESTING face, so they are shown on `idle` —
                       every other state carries a measured gaze of its own. */}
-                  <BloubBot color={bloubColor} expression={e.id} frozenAt={1} shape={bloubShape} size={130} state="idle" />
+                  <BloubBot color={accent} expression={e.id} frozenAt={1} size={130} state="idle" />
                 </Cell>
               </button>
             ))}

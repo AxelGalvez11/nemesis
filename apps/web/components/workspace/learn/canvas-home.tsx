@@ -52,7 +52,7 @@ const CANVAS_COMPOSER_INSET = 16;
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const router = useRouter();
   // The character's look is a device preference, the same as the theme and the scale.
-  const { bloubShape, bloubColor } = useTheme();
+  const { accent } = useTheme();
   const [text, setText] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   /** The whole page is a drop target, not just the composer — the copy has always said "drop a
@@ -240,10 +240,9 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               else precisely because it would then happen on every appearance. */}
           <div className="mb-5">
             <BloubBot
-              color={bloubColor}
+              color={accent}
               entrance
               onPoke={greeter.poke}
-              shape={bloubShape}
               size={64}
               state={greeter.state}
               track
