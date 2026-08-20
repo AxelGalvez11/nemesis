@@ -23,9 +23,11 @@ import {
   noteReplacementBody,
   pendingDeleteResult,
   WEB_WORKSPACE_AGENT_TOOL_NAMES,
+  toolDescription,
   workspaceId,
   type PendingDelete,
 } from "@nemesis/shared";
+import { EXAM_ITEM_RULES_SHORT } from "./item-writing";
 import { supabase } from "@/lib/supabase";
 import { refreshStudyAfterExternalWrite } from "@/lib/workspace/study-cloud-store";
 import {
@@ -72,7 +74,7 @@ export const AGENT_TOOL_NAMES = WEB_WORKSPACE_AGENT_TOOL_NAMES;
 export const AGENT_TOOLS = [
   {
     function: {
-      description: "Search the student's Library notes by title and text. Returns matching notes' path, title, and a snippet.",
+      description: toolDescription("search_library", EXAM_ITEM_RULES_SHORT),
       name: "search_library",
       parameters: {
         properties: { query: { description: "Words to look for", type: "string" } },
@@ -84,7 +86,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Read one Library note's full text by its path (get the path from search_library).",
+      description: toolDescription("read_library_note", EXAM_ITEM_RULES_SHORT),
       name: "read_library_note",
       parameters: {
         properties: { path: { description: "The note's path, e.g. 'Contract law/Consideration.md'", type: "string" } },
@@ -96,7 +98,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: `Create a new Library note for the student. Use markdown. If no folder was requested, OMIT folder — it is then filed under the student's own course automatically. Only pass folder when they named one. When the note draws on web sources, cite inline: end the claim with a link whose text is just a number, like [1](https://the-source-url), numbering sources in order. When the note is drawn from an ATTACHED FILE stored as a Library source (the attachment header gives its id), cite it the same numbered way as [n](?source=<that id>) — every section that comes from the file should carry its pill. The Library renders these as small source pills and builds the note's Sources section from them automatically — never write a manual "Sources" list. When a student asks for notes on an uploaded lecture, write DETAILED notes: cover every section of the lecture in its own order — definitions, mechanisms, examples, anything it stresses — not a thin summary.`,
+      description: toolDescription("create_library_note", EXAM_ITEM_RULES_SHORT),
       name: "create_library_note",
       parameters: {
         properties: {
@@ -112,8 +114,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        `Create and save a structured slide deck in the student's Library. You MUST use this when slides or a presentation are requested. If no folder was requested, OMIT folder — it is then filed under the student's own course automatically. Only pass folder when they named one.`,
+      description: toolDescription("create_slide_deck", EXAM_ITEM_RULES_SHORT),
       name: "create_slide_deck",
       parameters: {
         properties: {
@@ -140,7 +141,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Append markdown to an existing Library note without replacing its current contents. Cite web sources inline as numbered links like [1](https://the-source-url); an attached file stored as a Library source cites as [n](?source=<its id from the attachment header>). The Library turns them into source pills and a Sources section.",
+      description: toolDescription("append_library_note", EXAM_ITEM_RULES_SHORT),
       name: "append_library_note",
       parameters: {
         properties: {
@@ -155,7 +156,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Create an empty folder in the student's Library.",
+      description: toolDescription("create_library_folder", EXAM_ITEM_RULES_SHORT),
       name: "create_library_folder",
       parameters: {
         properties: { path: { description: "Folder path such as 'Biology/Unit 3'", type: "string" } },
@@ -167,7 +168,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Rename one Library note while keeping it in its current folder.",
+      description: toolDescription("rename_library_note", EXAM_ITEM_RULES_SHORT),
       name: "rename_library_note",
       parameters: {
         properties: { path: { type: "string" }, title: { type: "string" } },
@@ -179,7 +180,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Move one Library note into another folder. Use an empty folder string for the top level.",
+      description: toolDescription("move_library_note", EXAM_ITEM_RULES_SHORT),
       name: "move_library_note",
       parameters: {
         properties: { folder: { type: "string" }, path: { type: "string" } },
@@ -191,7 +192,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "List the student's flashcard decks with card counts.",
+      description: toolDescription("list_study_decks", EXAM_ITEM_RULES_SHORT),
       name: "list_study_decks",
       parameters: { properties: {}, type: "object" },
     },
@@ -199,9 +200,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Read the cards in one Study deck — text plus real scheduling state (due_at, lapses, interval, repetitions) so you "
-        + "can tutor from, prioritize, or improve the student's actual material. Call list_study_decks first if the name is uncertain.",
+      description: toolDescription("read_study_deck", EXAM_ITEM_RULES_SHORT),
       name: "read_study_deck",
       parameters: {
         properties: {
@@ -217,8 +216,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "List saved Study tests and mind maps with their ids, titles, folders, and status. Use read_study_artifact for one item's content.",
+      description: toolDescription("list_study_artifacts", EXAM_ITEM_RULES_SHORT),
       name: "list_study_artifacts",
       parameters: {
         properties: { kind: { description: "Optional: test or mindmap", type: "string" } },
@@ -229,7 +227,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Read one saved Study test or mind map by the id returned from list_study_artifacts.",
+      description: toolDescription("read_study_artifact", EXAM_ITEM_RULES_SHORT),
       name: "read_study_artifact",
       parameters: {
         properties: { id: { description: "Study artifact id", type: "string" } },
@@ -241,9 +239,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Add flashcards to a deck (created if it doesn't exist). Give deck_name as a plain name — a NEW deck is filed under "
-        + "the student's own course automatically when the material clearly matches one. Tell the student how many cards you added.",
+      description: toolDescription("add_flashcards", EXAM_ITEM_RULES_SHORT),
       name: "add_flashcards",
       parameters: {
         properties: {
@@ -273,8 +269,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Save a multiple-choice practice test to the student's Study page. Write the questions yourself from the material — do not ask a second tool to generate them. Tell the student you saved it.",
+      description: toolDescription("add_practice_test", EXAM_ITEM_RULES_SHORT),
       name: "add_practice_test",
       parameters: {
         properties: {
@@ -302,8 +297,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Save a mind map to the student's Study page. Provide a markdown outline you write yourself. Tell the student you saved it.",
+      description: toolDescription("add_mindmap", EXAM_ITEM_RULES_SHORT),
       name: "add_mindmap",
       parameters: {
         properties: {
@@ -322,11 +316,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "List the student's calendar events — COMPLETE for the window it reports: every event in range, past or future, "
-        + "all of them, with recurring classes expanded into their real meeting dates (those rows carry recurring: true and "
-        + "share their series' one id). Default window is the next 30 days; pass start_date/end_date for any range — a whole "
-        + "semester, last month, a single day.",
+      description: toolDescription("list_calendar_events", EXAM_ITEM_RULES_SHORT),
       name: "list_calendar_events",
       parameters: {
         properties: {
@@ -341,15 +331,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Audit the calendar before reorganizing it. Reports, separately: exact_duplicates (same title, same date), "
-        + "probable_duplicates (near-identical titles on one date), conflicting_versions (the same exam or assignment on two "
-        + "different dates — the sources disagree about when it is), and overlaps (two different events at the same time — NOT "
-        + "duplicates). Repeating classes are expanded into the dates they actually meet first, so a one-off event landing on "
-        + "top of one meeting is found; a problem that repeats every week is reported once with a `repeats` count. Defaults to "
-        + "every record the student has, and `coverage` says exactly which dates that turned out to be — repeat that rather "
-        + "than implying years you have no records for came back clean. Never resolve a conflicting version without the "
-        + "student choosing which date wins.",
+      description: toolDescription("find_calendar_issues", EXAM_ITEM_RULES_SHORT),
       name: "find_calendar_issues",
       parameters: {
         properties: {
@@ -363,14 +345,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Work out how the student's OLD Library content would be filed under their courses, and CHANGE NOTHING. Covers "
-        + "the legacy Nemesis/… folders, anything loose at the Library root (their syllabi live there), and items still "
-        + "waiting in Inbox. Returns `moves` (each with where it is, where it would go, and why), `leave_alone` (nothing in "
-        + "it names a course clearly enough — leave these for the student to look at, do NOT guess), and `blocked` (a real "
-        + "match whose destination name is already taken). Show the student the plan and let them decide; carry out the "
-        + "moves with move_library_note and move_library_source. Safe to call again at any time — it reads where things are "
-        + "now, so anything already filed simply stops appearing.",
+      description: toolDescription("plan_library_migration", EXAM_ITEM_RULES_SHORT),
       name: "plan_library_migration",
       parameters: { properties: {}, type: "object" },
     },
@@ -378,9 +353,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Move an ORIGINAL uploaded file (a PDF, a slide deck, a syllabus) into a course folder. Use the source id from "
-        + "plan_library_migration. This moves the file, never its notes — move those with move_library_note.",
+      description: toolDescription("move_library_source", EXAM_ITEM_RULES_SHORT),
       name: "move_library_source",
       parameters: {
         properties: {
@@ -395,11 +368,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "One compact snapshot of this student's whole workspace for orientation: their courses, the next few weeks of "
-        + "deadlines, upcoming exams, the Library's folder shape, decks with cards due, and anything sitting in Inbox. Counts "
-        + "are real, but lists are SAMPLES — before acting on completeness (reorganizing, reconciling, anything about "
-        + "'everything'), read the full state with get_library_tree, list_calendar_events, or get_study_overview.",
+      description: toolDescription("get_workspace_overview", EXAM_ITEM_RULES_SHORT),
       name: "get_workspace_overview",
       parameters: { properties: {}, type: "object" },
     },
@@ -407,11 +376,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "See the Library's real structure without needing a search term. Omit folder: the whole tree — every folder with its "
-        + "note counts, plus every note sitting loose at the root, by name. With folder: that folder's subfolders and every "
-        + "note inside it (title and path). Pass folder as an empty string to expand the ROOT on its own. Use this before "
-        + "reorganizing, so moves are grounded in what actually exists.",
+      description: toolDescription("get_library_tree", EXAM_ITEM_RULES_SHORT),
       name: "get_library_tree",
       parameters: {
         properties: {
@@ -427,9 +392,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Rename a Library folder in place. Every note and stored file inside follows automatically, and the folder's own "
-        + "page keeps working. Give just the new name — use move_library_folder to change where it lives.",
+      description: toolDescription("rename_library_folder", EXAM_ITEM_RULES_SHORT),
       name: "rename_library_folder",
       parameters: {
         properties: {
@@ -444,9 +407,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Move a whole Library folder — notes, subfolders, and stored files — into another folder. Use an empty string for "
-        + "the top level.",
+      description: toolDescription("move_library_folder", EXAM_ITEM_RULES_SHORT),
       name: "move_library_folder",
       parameters: {
         properties: {
@@ -461,9 +422,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Move a Library folder AND everything inside it to the student's trash. Recoverable, but the largest single action "
-        + "here — the student has to confirm on a card first.",
+      description: toolDescription("delete_library_folder", EXAM_ITEM_RULES_SHORT),
       name: "delete_library_folder",
       parameters: {
         properties: { path: { description: "The folder to remove", type: "string" } },
@@ -475,9 +434,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "The whole Study picture with real counts: every deck with its cards, cards due right now, and struggling cards "
-        + "(missed twice or more), rolled up per folder too. Use it for 'what should I study' and before reorganizing decks.",
+      description: toolDescription("get_study_overview", EXAM_ITEM_RULES_SHORT),
       name: "get_study_overview",
       parameters: { properties: {}, type: "object" },
     },
@@ -485,9 +442,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Move a Study deck into a folder (empty string = top level). The deck, its cards, and their review history are "
-        + "untouched — only its place in the Study tree changes.",
+      description: toolDescription("move_study_deck", EXAM_ITEM_RULES_SHORT),
       name: "move_study_deck",
       parameters: {
         properties: {
@@ -502,7 +457,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Move a saved practice test or mind map into a different Study folder (empty string = top level).",
+      description: toolDescription("move_study_artifact", EXAM_ITEM_RULES_SHORT),
       name: "move_study_artifact",
       parameters: {
         properties: {
@@ -521,7 +476,7 @@ export const AGENT_TOOLS = [
       // it was the loudest voice in the room on a syllabus import: the schema
       // description rides every turn, so it outranked anything the reply-side
       // prompt asked for. Fifty-one calls, fifty-one dates read back.
-      description: "Add an event to the student's calendar. Do not read the event back to them afterwards; the calendar is where they will see it.",
+      description: toolDescription("add_calendar_event", EXAM_ITEM_RULES_SHORT),
       name: "add_calendar_event",
       parameters: {
         properties: {
@@ -548,9 +503,7 @@ export const AGENT_TOOLS = [
   // none of these say "always", "whenever", or "make sure to".
   {
     function: {
-      description:
-        "Change an existing calendar event. Pass only the fields that should change; anything omitted is left alone. "
-        + "Needs the event's id from list_calendar_events.",
+      description: toolDescription("update_calendar_event", EXAM_ITEM_RULES_SHORT),
       name: "update_calendar_event",
       parameters: {
         properties: {
@@ -577,7 +530,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Remove an event from the student's calendar. Needs the event's id from list_calendar_events.",
+      description: toolDescription("delete_calendar_event", EXAM_ITEM_RULES_SHORT),
       name: "delete_calendar_event",
       parameters: {
         properties: { event_id: { description: "The event's id from list_calendar_events", type: "string" } },
@@ -589,10 +542,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "List the student's recorded lectures — newest first — with each one's id, title, when it was recorded, how long it ran, whether its notes have been written, and where those notes were filed in the Library. "
-        + "A recording's TRANSCRIPT is never a Library note, so search_library will never find one: use this, then read_recording_transcript. "
-        + "Use this whenever the student refers to a lecture they recorded, asks for notes from a recording, or asks what happened to one.",
+      description: toolDescription("list_recordings", EXAM_ITEM_RULES_SHORT),
       name: "list_recordings",
       parameters: {
         properties: {
@@ -606,10 +556,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Read what was actually said in one recorded lecture, by its id from list_recordings. "
-        + "Long lectures are returned in CHUNKS: the reply says how many characters exist in total and whether more remain, so call again with a larger offset to keep reading. "
-        + "Prefer the finished notes when they exist (list_recordings gives their Library path) and use this when the student wants the exact words, a part the notes skipped, or notes rewritten from scratch.",
+      description: toolDescription("read_recording_transcript", EXAM_ITEM_RULES_SHORT),
       name: "read_recording_transcript",
       parameters: {
         properties: {
@@ -624,10 +571,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Replace a Library note's whole body with new text. Use append_library_note to add to the end instead. "
-        + "Needs the note's id from search_library or read_library_note. "
-        + "Cite web sources inline as numbered links like [1](https://the-source-url); an attached file stored as a Library source cites as [n](?source=<its id from the attachment header>). The Library turns them into source pills and a Sources section; never write a manual \"Sources\" list.",
+      description: toolDescription("replace_library_note", EXAM_ITEM_RULES_SHORT),
       name: "replace_library_note",
       parameters: {
         properties: {
@@ -642,9 +586,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Move a Library note to the student's trash. It stops appearing in their Library but is recoverable. "
-        + "Needs the note's id from search_library.",
+      description: toolDescription("delete_library_note", EXAM_ITEM_RULES_SHORT),
       name: "delete_library_note",
       parameters: {
         properties: { note_id: { description: "The note's id from search_library", type: "string" } },
@@ -656,9 +598,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Change the front or back of one flashcard. Pass only the side that changes. "
-        + "Needs the card's id from read_study_deck.",
+      description: toolDescription("edit_flashcard", EXAM_ITEM_RULES_SHORT),
       name: "edit_flashcard",
       parameters: {
         properties: {
@@ -674,7 +614,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Delete one flashcard. This cannot be undone. Needs the card's id from read_study_deck.",
+      description: toolDescription("delete_flashcard", EXAM_ITEM_RULES_SHORT),
       name: "delete_flashcard",
       parameters: {
         properties: { card_id: { description: "The card's id from read_study_deck", type: "string" } },
@@ -686,9 +626,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Rename a Study deck. Give just the new NAME — the deck stays in its current folder (use move_study_deck to change "
-        + "folders) and its cards are untouched.",
+      description: toolDescription("rename_study_deck", EXAM_ITEM_RULES_SHORT),
       name: "rename_study_deck",
       parameters: {
         properties: {
@@ -703,9 +641,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description:
-        "Delete a Study deck. Only works on a deck with no cards left in it — a deck that still holds cards has to "
-        + "be removed by the student from the Study page, because deleting it would destroy their review history.",
+      description: toolDescription("delete_study_deck", EXAM_ITEM_RULES_SHORT),
       name: "delete_study_deck",
       parameters: {
         properties: { deck_name: { description: "The deck's full name from list_study_decks", type: "string" } },
@@ -717,7 +653,7 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Delete a practice test or mind map. This cannot be undone. Needs the id from list_study_artifacts.",
+      description: toolDescription("delete_study_artifact", EXAM_ITEM_RULES_SHORT),
       name: "delete_study_artifact",
       parameters: {
         properties: { artifact_id: { description: "The artifact's id from list_study_artifacts", type: "string" } },
