@@ -3,7 +3,7 @@
  *
  * Interconnection here is dependency-free and graph-visible: we scan the extracted
  * text for the titles of notes that already exist and append a `## Related` section of
- * raw `[[Title]]` wiki-links. The knowledge graph (components/workspace/graph) reads
+ * raw `[[Title]]` wiki-links. Anything that walks those links reads
  * raw `[[...]]` from note content, so those links become edges on BOTH the new note and
  * the ones it references — and backlinks appear on the existing notes with no edit to
  * them (see library-links.ts backlinksFor).

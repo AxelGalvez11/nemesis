@@ -484,3 +484,26 @@ test("🔴 the stable prefix is stable, and big enough to be worth caching", () 
   assert.doesNotMatch(systemOf(first), /the first objective/);
   assert.doesNotMatch(systemOf(first), /\bb1\b/);
 });
+
+test("🔴🔴 Define looks through an inflected form to the term underneath", () => {
+  // 🔴 REPORTED 2026-08-20 with a screenshot: highlighting "retatrutide's" produced a lesson in the
+  // possessive apostrophe. The model obeyed a prompt that asked it to define the literal string.
+  //
+  // 🔴 AND THE GUARD IS ON THE PROMPT, NOT ON A STRIPPED STRING, because the fix deliberately is
+  // not a stripper. Trimming `'s` is an English rule guessing at intent inside a field-agnostic,
+  // language-agnostic product; a sentence in the prompt covers plurals, cases and conjugations
+  // that no strip list would reach. Calibration: delete the clause and this reddens.
+  const messages = selectionMessages({
+    action: "define",
+    canvasTitle: "Obesity pharmacotherapy",
+    selectedText: "retatrutide's",
+    sources: [],
+    surroundingText: "What's the last thing you remember about retatrutide's approval status?",
+  });
+  const prompt = messages.map((m) => m.content).join("\n");
+  assert.match(prompt, /inflected form/i, "Define no longer tells the model to look through inflection");
+  assert.match(prompt, /[Nn]ever explain the grammar/, "nothing stops it answering with the grammar");
+  // The selection still reaches the model verbatim — the learner's own highlight is the evidence,
+  // and quietly rewriting it is how a lookup ends up answering a question nobody asked.
+  assert.match(prompt, /retatrutide's/, "the learner's actual selection was rewritten before the lookup");
+});

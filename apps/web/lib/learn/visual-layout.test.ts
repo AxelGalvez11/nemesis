@@ -9,6 +9,7 @@
 // overlap that label, is this mark inside the angle it marks, is anything outside the frame.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
@@ -19,6 +20,8 @@ import {
   layoutTimeline,
   textWidth,
   truncateToWidth,
+  VISUAL_FIGURE_CLASS,
+  VISUAL_HEIGHT,
   VISUAL_WIDTH,
 } from "./visual-layout";
 
@@ -410,4 +413,111 @@ test("🔴 no leader line is drawn through another event's label", () => {
       );
     }
   }
+});
+
+// ── ONE HEIGHT, AND NO TINT ──────────────────────────────────────────────────────────────────
+//
+// Owner, 2026-08-20: *"why does it have a blue gray background instead of a transparent
+// background? are the plot size standardized?"*
+//
+// The width was standardized and had been since `VISUAL_WIDTH` was written. The height was not,
+// and the four figures that choose their own canvas had each picked a different one — 240, 280,
+// 320, 340 — so the column visibly changed size as you scrolled past them. The blue was not a
+// choice either: `--ui-bg-secondary` is `color-mix(srgb, var(--ui-accent) 11%, …)`, so figures
+// were wearing eleven percent of the theme accent because the card system's fill came along with
+// the card.
+
+const LAYOUT_SOURCE = readFileSync(new URL("./visual-layout.ts", import.meta.url), "utf8");
+const SEMANTIC_SOURCE = readFileSync(new URL("../../components/workspace/learn/semantic-visual.tsx", import.meta.url), "utf8");
+const SUBJECT_SOURCE = readFileSync(new URL("../../components/workspace/learn/subject-visual.tsx", import.meta.url), "utf8");
+const STRUCTURE_SOURCE = readFileSync(new URL("../../components/workspace/learn/chemical-structure.tsx", import.meta.url), "utf8");
+
+/** Comments stripped: the notes here quote every number they check for. */
+function withoutComments(source: string): string {
+  return source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+}
+
+test("🔴 a figure that chooses its own canvas uses the shared height — none picks its own", () => {
+  // Calibration: put `340` back in VectorDiagram, or `320` back in CONSTRUCTION_HEIGHT, and this
+  // reddens on that file alone.
+  assert.equal(layoutConstruction(TRIANGLE).height, VISUAL_HEIGHT);
+  assert.match(withoutComments(SUBJECT_SOURCE), /const height = VISUAL_HEIGHT;/);
+  for (const [name, source] of [["subject-visual", SUBJECT_SOURCE], ["semantic-visual", SEMANTIC_SOURCE]] as const) {
+    const orphans = withoutComments(source).match(/\b(?:height|HEIGHT)\s*=\s*(24|28|32|34)0\b/g);
+    assert.equal(orphans, null, `${name} has gone back to a height of its own: ${orphans?.join(", ")}`);
+  }
+});
+
+test("🔴🔴 the Tailwind literal and the constant cannot drift apart", () => {
+  // Tailwind scans source TEXT, so `min-h-[280px]` can never read `VISUAL_HEIGHT`. That makes the
+  // two a silent-drift pair — change the constant and every figure keeps the old floor while the
+  // code reads as though it moved. This is the only thing standing between them.
+  assert.match(VISUAL_FIGURE_CLASS, new RegExp(`min-h-\\[${VISUAL_HEIGHT}px\\]`));
+  // 🔴 A STRUCTURE IS BOUND TIGHTER THAN THE SHARED FIGURE HEIGHT, ON PURPOSE. It sizes itself to
+  // the MOLECULE rather than to the column (`w-auto`), so its bound is a ceiling on a drawing that
+  // is usually well under it — not a canvas it fills. Reported 2026-08-20: three atoms were being
+  // stretched across the full 640px column and letterboxed into a mostly-empty panel.
+  assert.match(STRUCTURE_SOURCE, /max-h-\[220px\] w-auto max-w-full/);
+  assert.ok(!/max-h-\[240px\]|h-auto max-h-\[280px\] w-full/.test(STRUCTURE_SOURCE), "the structure fills the column again");
+});
+
+test("🔴 every drawn figure wears the one class, rather than restating it", () => {
+  // A figure that spells `h-auto w-full` out by hand looks identical today and silently misses the
+  // floor. There were three such spellings in each file before this.
+  assert.ok(!/className="h-auto w-full" role="img"/.test(SEMANTIC_SOURCE + SUBJECT_SOURCE));
+  assert.equal((SEMANTIC_SOURCE.match(/className=\{VISUAL_FIGURE_CLASS\}/g) ?? []).length, 2);
+  assert.equal((SUBJECT_SOURCE.match(/className=\{VISUAL_FIGURE_CLASS\}/g) ?? []).length, 3);
+});
+
+test("🔴🔴 a figure that sizes itself is NEVER capped — the viewBox stays truthful", () => {
+  // The floor is CSS on purpose. Capping a viewBox does not crop an SVG, it scales the WHOLE
+  // drawing down uniformly, so a ceiling on a long timeline would shrink it to half width with
+  // unreadable labels. Growth past the shared height must survive.
+  const deep = layoutFlow({
+    edges: [
+      { from: "a", to: "b" }, { from: "b", to: "c" }, { from: "c", to: "d" },
+      { from: "d", to: "e" }, { from: "e", to: "f" }, { from: "f", to: "g" },
+    ],
+    kind: "relationship",
+    learningGoal: "A chain long enough to need the room",
+    nodes: "abcdefg".split("").map((id) => ({ id, label: id.toUpperCase() })),
+  });
+  assert.ok(deep.height > VISUAL_HEIGHT, `a seven-step chain collapsed to ${deep.height}`);
+  // ...and a short one keeps its own small viewBox, because the floor lives in CSS.
+  assert.ok(layoutTimeline(REPUBLIC).height < deep.height);
+});
+
+test("🔴🔴 the force diagram's reaches stay inside the box at the shared height", () => {
+  // THE ACTUAL BUG THIS CHANGE COULD HAVE SHIPPED. VectorDiagram drew its axes 160 from the centre,
+  // which exactly spanned the 340 box it used to own. At 280 the centre is 140, so a literal 160
+  // would have run 20px past both edges and clipped the axes off the drawing.
+  // 🔴 THE FIRST VERSION OF THIS TEST WAS HOLLOW AND THE CALIBRATION RUN CAUGHT IT. It asserted
+  // `cy + (cy - 10) <= VISUAL_HEIGHT`, which is arithmetic that is true for every possible height
+  // — it never read the component, so restoring the literal 160 left it green. A reach only stays
+  // inside the box if the COMPONENT derives it, so that is what this reads.
+  const source = withoutComments(SUBJECT_SOURCE);
+  const reach = source.match(/const axisReach = cy - (\d+);/);
+  assert.ok(reach, "VectorDiagram no longer derives its axis reach from the box");
+  assert.equal(source.match(/\* 160\b/), null, "a reach tuned to the old 340 box is back");
+
+  const cy = VISUAL_HEIGHT / 2;
+  const axisReach = cy - Number(reach[1]);
+  assert.ok(axisReach > 0 && cy + axisReach <= VISUAL_HEIGHT, `the axes leave the viewBox at ${VISUAL_HEIGHT}`);
+
+  // And the arms still fit inside the axes, which is what makes the diagram readable.
+  const arm = source.match(/const armFor = \(magnitude: number\) => cy \* \(([\d.]+) \+ ([\d.]+) \*/);
+  assert.ok(arm, "VectorDiagram no longer derives its arm length from the box");
+  assert.ok(cy * (Number(arm[1]) + Number(arm[2])) < axisReach, "an arrow is longer than the axis it is drawn against");
+
+  // Calibration for the box itself: the old literal, checked against the new height.
+  assert.ok(cy + 160 > VISUAL_HEIGHT, "160 would have run past the edge — that is what was fixed");
+});
+
+test("🔴 a figure has no fill — it is content in the column, not a card on the page", () => {
+  // Calibration: put `bg-(--ui-bg-secondary)` back on the <figure> and this reddens.
+  const figure = withoutComments(SEMANTIC_SOURCE).match(/<figure className="[^"]*"/)?.[0] ?? "";
+  assert.ok(figure, "the figure element moved");
+  assert.ok(!/\bbg-/.test(figure), `the figure is filled again: ${figure}`);
+  // The hairline stays: a wide table with no boundary bleeds into the prose above it.
+  assert.match(figure, /border-\(--ui-stroke-tertiary\)/);
 });

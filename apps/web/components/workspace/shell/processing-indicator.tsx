@@ -19,7 +19,6 @@ import { useMemo, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 import { jobDetail, stageLabel, type RecordingJob } from "@/lib/workspace/recording-job";
-import { sessionsStore } from "@/lib/workspace/sessions-store";
 import { useRecordingJobs } from "@/lib/workspace/use-recording-jobs";
 
 export function ProcessingIndicator() {
@@ -93,19 +92,9 @@ function JobRow({ job }: { job: RecordingJob }) {
   // A job with no conversation to go back to (the placeholder message never
   // made it up, say) still renders — it just is not clickable. Rendering nothing
   // would hide a failure the student needs to see.
-  if (!job.contextId) return <span className="block rounded-lg px-2 py-1">{body}</span>;
-  return (
-    <button
-      className="block w-full rounded-lg px-2 py-1 text-left hover:bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)]"
-      // Select then navigate, the same two steps the sidebar's own resume() uses
-      // — which conversation is open is store state, not a route parameter.
-      onClick={() => {
-        sessionsStore.select(job.contextId);
-        router.push("/sessions");
-      }}
-      type="button"
-    >
-      {body}
-    </button>
-  );
+  // 🔴 THE ROW NO LONGER NAVIGATES, BECAUSE THERE IS NOWHERE TO NAVIGATE TO. `job.contextId` was
+  // a Sessions thread id, and clicking selected it and pushed to /sessions. That product was
+  // deleted 2026-08-20. A button that looks pressable and does nothing is worse than a label, so
+  // this is a label — the progress it reports is unchanged.
+  return <span className="block rounded-lg px-2 py-1">{body}</span>;
 }

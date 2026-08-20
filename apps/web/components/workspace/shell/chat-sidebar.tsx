@@ -26,7 +26,6 @@ import { fetchEntitlements } from "@/lib/api";
 import { planLabel } from "@/lib/billing-contract";
 import { useAuth } from "@/components/AuthProvider";
 import type { SettingsSection } from "@/components/SettingsSurface";
-import { useSessions } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
 // SidebarBlankState is no longer imported: it existed to offer "New chat" when the rail had no
@@ -35,7 +34,6 @@ import { cn } from "@/lib/utils";
 // constant away from coming back.
 import { SidebarNoMatchState, SidebarSessionsEmptyState } from "./section-states";
 import { useSettingsModal } from "./settings-modal";
-import { SidebarSessionRow } from "./session-row";
 import {
   countLabel,
   GROUP_BODY,
@@ -110,59 +108,21 @@ interface ChatSidebarProps {
 }
 
 export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate }: ChatSidebarProps) {
-  const confirm = useConfirm();
   const router = useRouter();
   const { openSettings } = useSettingsModal();
   const pathname = usePathname();
   const navigationRoot = navigationRootFor(pathname);
-  const { pinned, recents, sessions, selectedId, working, select, rename, remove, togglePin } = useSessions();
-
-  const [query, setQuery] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [pinnedOpen, setPinnedOpen] = useState(true);
-  const [sessionsOpen, setSessionsOpen] = useState(true);
-
-  const trimmedQuery = query.trim();
-  const filtered = useMemo(() => {
-    if (!trimmedQuery) return null;
-    const q = trimmedQuery.toLowerCase();
-    return sessions.filter((s) => s.title.toLowerCase().includes(q));
-  }, [sessions, trimmedQuery]);
-
-  const startNewSession = () => {
-    select(null);
-    router.push(`${navigationRoot}/sessions`);
-    onNavigate?.();
-  };
-
-  const resume = (id: string) => {
-    select(id);
-    router.push(`${navigationRoot}/sessions`);
-    onNavigate?.();
-  };
 
   const navigate = (destination: string) => {
     router.push(destination);
     onNavigate?.();
   };
 
-  const confirmRemoveSession = async (id: string, title: string) => {
-    if (await confirm({ body: `“${title || "New chat"}” is deleted. This can't be undone.`, title: "Delete this chat?" })) remove(id);
-  };
-
-  // 🔴 THE SIDEBAR NO LONGER LISTS CHAT THREADS (owner 2026-08-10, §31/§32).
-  //
-  // A chat is not a first-class object any more — a Canvas session is — and a rail full of chat
-  // history says the opposite in the most visible place in the app. It also duplicated the
-  // Canvas home, which reveals the learner's sessions on scroll and is where organising them
-  // (pin, rename, folders, delete, search) actually lives.
-  //
-  // 🔴 NOTHING IS DELETED. `useSessions()` still loads, every thread still exists, and the
-  // chat surface at /sessions still renders them — this is the rail declining to advertise a
-  // retired object, not a migration. §26: historical data may still be needed.
-  //
-  // Turning this back on is changing this one constant.
-  const showSessionSections = false;
+  // 🔴 THE RAIL IS THE THREE SURFACES AND NOTHING ELSE. It used to carry a list of chat threads
+  // behind a `showSessionSections = false` constant — switched off 2026-08-10, kept in place
+  // because "historical data may still be needed". The Sessions product it listed was deleted on
+  // 2026-08-20, so the constant, the list, the search field that only ever searched chats, and the
+  // pin/rename/delete handlers went with it. Organising canvases lives on the Canvas home.
 
   return (
     <Sidebar
@@ -190,20 +150,6 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
           {/* Sits 10px in from the band, matching a nav row's text, so the wordmark and the labels
               below it share one left edge instead of nearly sharing one. */}
           <span className="min-w-0 flex-1 truncate px-[var(--nav-row-pad-x)] text-[length:var(--brand-wordmark-size)] font-semibold tracking-[0.13em] text-foreground">NEMESIS</span>
-          <Button
-            aria-label={searchOpen ? "Close chat search" : "Search chats"}
-            className="size-[var(--shell-icon-button)] rounded-[var(--shell-icon-button-radius)]"
-            onClick={() => {
-              setSearchOpen((value) => !value);
-              if (searchOpen) setQuery("");
-            }}
-            size="icon"
-            variant="ghost"
-          >
-            {searchOpen
-              ? <IconX className="size-[var(--nav-icon-size)]" />
-              : <IconSearch className="size-[var(--nav-icon-size)]" />}
-          </Button>
           {/* Same panel-left glyph as the reopen toggle (UX brief §27.1): one icon means "the
               sidebar", and the direction is carried by where the control is, not by the drawing. */}
           <Button
@@ -216,11 +162,6 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
             <PanelLeft className="size-[var(--nav-icon-size)]" strokeWidth={2} />
           </Button>
         </div>
-        {searchOpen && showSessionSections && (
-          <div className="shrink-0 px-2 pb-1">
-            <SearchField aria-label="Search chats" onChange={setQuery} placeholder="Search chats…" value={query} />
-          </div>
-        )}
 
         {/* Nav list — starts below the brand band. */}
         <SidebarGroup className="shrink-0 p-0 pb-2 pt-1">
@@ -231,7 +172,6 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
               {SIDEBAR_NAV.map((item) => {
                 const destination = item.route ? `${navigationRoot}${item.route}` : null;
                 const active = navItemActive(pathname, destination);
-                const isNewSession = item.action === "new-session";
 
                 return (
                   <SidebarMenuItem className="flex items-center gap-0" key={item.id}>
@@ -248,10 +188,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
                         active &&
                           "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!",
                       )}
-                      onClick={() => {
-                        if (isNewSession) startNewSession();
-                        else if (destination) navigate(destination);
-                      }}
+                      onClick={() => { if (destination) navigate(destination); }}
                     >
                       <Codicon
                         // Full strength, matching the label beside it (owner 2026-08-15: "icons need
@@ -270,94 +207,6 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {showSessionSections ? (
-          <>
-            <div className={cn("flex min-h-0 flex-1 flex-col pb-1.75", SCROLL_Y)}>
-              {trimmedQuery && filtered ? (
-                filtered.length === 0 ? (
-                  <SidebarNoMatchState query={trimmedQuery} />
-                ) : (
-                  <SidebarRowStack className={cn("flex min-h-0 flex-1 flex-col gap-px pb-1.75", SCROLL_Y)}>
-                    {filtered.map((session) => (
-                      <SidebarSessionRow
-                        isPinned={Boolean(session.pinned)}
-                        isSelected={session.id === selectedId}
-                        isWorking={Boolean(working[session.id])}
-                        key={session.id}
-                        onDelete={() => confirmRemoveSession(session.id, session.title)}
-                        onPin={() => togglePin(session.id)}
-                        onRename={(title) => rename(session.id, title)}
-                        onResume={() => resume(session.id)}
-                        session={session}
-                      />
-                    ))}
-                  </SidebarRowStack>
-                )
-              ) : (
-                <>
-                  {/* Pinned */}
-                  {pinned.length > 0 && <SidebarGroup className="shrink-0 p-0 pb-1">
-                    <SidebarSectionHeader
-                      label="Pinned"
-                      onToggle={() => setPinnedOpen((v) => !v)}
-                      open={pinnedOpen}
-                    />
-                    {pinnedOpen && (
-                      <SidebarGroupContent
-                        className={cn("flex max-h-44 flex-col gap-px rounded-lg pb-2 pt-1", GROUP_BODY)}
-                      >
-                        {pinned.map((session) => (
-                            <SidebarSessionRow
-                              isPinned
-                              isSelected={session.id === selectedId}
-                              isWorking={Boolean(working[session.id])}
-                              key={session.id}
-                              onDelete={() => confirmRemoveSession(session.id, session.title)}
-                              onPin={() => togglePin(session.id)}
-                              onRename={(title) => rename(session.id, title)}
-                              onResume={() => resume(session.id)}
-                              session={session}
-                            />
-                          ))}
-                      </SidebarGroupContent>
-                    )}
-                  </SidebarGroup>}
-
-                  {/* Sessions */}
-                  <SidebarGroup className="min-h-32 flex-1 overflow-hidden p-0">
-                    <SidebarSectionHeader
-                      label="Chats"
-                      meta={countLabel(recents.length, recents.length)}
-                      onToggle={() => setSessionsOpen((v) => !v)}
-                      open={sessionsOpen}
-                    />
-                    {sessionsOpen && (
-                      <SidebarGroupContent className={cn("flex min-h-0 flex-1 flex-col gap-px pb-1.75", SCROLL_Y)}>
-                        {recents.length === 0 ? (
-                          <SidebarSessionsEmptyState allPinned={pinned.length > 0} />
-                        ) : (
-                          recents.map((session) => (
-                            <SidebarSessionRow
-                              isPinned={false}
-                              isSelected={session.id === selectedId}
-                              isWorking={Boolean(working[session.id])}
-                              key={session.id}
-                              onDelete={() => confirmRemoveSession(session.id, session.title)}
-                              onPin={() => togglePin(session.id)}
-                              onRename={(title) => rename(session.id, title)}
-                              onResume={() => resume(session.id)}
-                              session={session}
-                            />
-                          ))
-                        )}
-                      </SidebarGroupContent>
-                    )}
-                  </SidebarGroup>
-                </>
-              )}
-            </div>
-          </>
-        ) : null}
       </SidebarContent>
 
       <StudentSidebarFooter accountEmail={accountEmail} onOpenSettings={openSettings} />

@@ -60,7 +60,15 @@ export interface CanvasVoice {
  * the identity is what stops a re-render reading the same question twice, and an identity derived
  * separately from the text is an identity that can drift from it.
  */
-function momentFor(runtime: PolicyRuntime): { key: string; moment: SpokenMoment } | null {
+function momentFor(runtime: PolicyRuntime, reply: SpokenReply | null): { key: string; moment: SpokenMoment } | null {
+  // 🔴🔴 THE REPLY IS READ FIRST, AND THE ORDER IS THE FIX. Reported 2026-08-20: *"why does it only
+  // read aloud during questions?"* Every branch below is derived from the POLICY runtime, and a
+  // conversational answer is not a policy decision — so voice mode was silent on the thing the
+  // learner looks at most. It goes first because a reply that is on screen has DISPLACED whatever
+  // the policy was showing (see `canvas-hosting.ts`), so speaking the policy's question underneath
+  // it would be reading a screen nobody is looking at.
+  if (reply) return { key: `reply:${reply.key}`, moment: { kind: "answer", text: reply.text } };
+
   const { decision, feedback, prompt } = runtime;
   // A verdict is on screen; the decision underneath has already moved on. Reading the next
   // question over the learner's own result is the loudest possible version of getting this wrong.
@@ -99,7 +107,13 @@ function momentFor(runtime: PolicyRuntime): { key: string; moment: SpokenMoment 
   };
 }
 
-export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): CanvasVoice {
+/** A conversational answer on screen, and a key that changes only when the answer does. */
+export interface SpokenReply {
+  key: string;
+  text: string;
+}
+
+export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, reply: SpokenReply | null = null): CanvasVoice {
   const [mode, setMode] = useState<VoiceMode>(DEFAULT_VOICE_MODE);
   const [autoDictation, setAutoDictation] = useState<AutoDictation>("unasked");
   const [dictationSupported, setDictationSupported] = useState(false);
@@ -146,7 +160,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean): C
     writeAutoDictation(typeof window === "undefined" ? null : window.localStorage, next);
   }, []);
 
-  const spokenMoment = mode === "on" ? momentFor(runtime) : null;
+  const spokenMoment = mode === "on" ? momentFor(runtime, reply) : null;
   const key = spokenMoment?.key ?? null;
 
   useEffect(() => {

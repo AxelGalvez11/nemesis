@@ -22,6 +22,41 @@ import type { ConstructionVisual, FlowVisual, TimelineVisual } from "./canvas-vi
 /** Every visual is drawn into the same box, so they line up down the Canvas. */
 export const VISUAL_WIDTH = 640;
 
+/**
+ * ...and into the same height, which until now it was not.
+ *
+ * 🔴 REPORTED 2026-08-20: *"are the plot size standardized?"* The width was — this constant, used
+ * by all nine kinds. The height was not, and nobody had ever looked: four figures that each choose
+ * their own canvas had independently picked **240** (a molecule), **280** (a plot), **320** (a
+ * geometric construction) and **340** (a force diagram). Scrolling past them, the column visibly
+ * breathes in and out, which is the opposite of what a shared width is for.
+ *
+ * 280 is the survivor because the plot is the most-tuned of the four and the most frequently drawn.
+ *
+ * 🔴 THE OTHER TWO SHAPES GROW, AND CAPPING THEM WOULD BE WORSE THAN LEAVING THEM ALONE. A flow
+ * diagram's height is a function of how many rows it has and a timeline's of how many events; an
+ * SVG whose viewBox is taller than its painted box does not crop, it scales the WHOLE drawing down
+ * uniformly — so a ceiling on a twelve-event timeline would shrink it to half-width with 5px
+ * labels. They get the same number as a FLOOR instead, so a two-node diagram is not a sliver
+ * sitting next to a full-height plot, and they grow past it honestly when they have to.
+ */
+export const VISUAL_HEIGHT = 280;
+
+/**
+ * The one class every drawn figure wears.
+ *
+ * 🔴 THE FLOOR IS CSS AND THE VIEWBOX IS LEFT TRUTHFUL, WHICH IS THE WHOLE TRICK. Padding a short
+ * diagram's viewBox up to 280 would anchor its drawing at the top with dead space beneath it, and
+ * re-centring it would mean shifting every coordinate in the layout. An SVG box taller than its
+ * viewBox instead centres the drawing for free — `preserveAspectRatio` defaults to `xMidYMid meet`
+ * — so the geometry below never learns that a floor exists.
+ *
+ * 🔴 THE PX IS A LITERAL BECAUSE TAILWIND READS SOURCE TEXT, NOT VALUES. `min-h-[280px]` cannot
+ * interpolate `VISUAL_HEIGHT`, so `visual-layout.test.ts` pins the two together instead — change
+ * the constant without this string and the suite reddens.
+ */
+export const VISUAL_FIGURE_CLASS = "h-auto w-full min-h-[280px]";
+
 export type TextAnchor = "start" | "middle" | "end";
 
 /**
@@ -453,7 +488,7 @@ export function layoutTimeline(visual: TimelineVisual): TimelinePlacement {
 
 // ─────────────────────────────────────────────────────────────────────── construction
 
-const CONSTRUCTION_HEIGHT = 320;
+const CONSTRUCTION_HEIGHT = VISUAL_HEIGHT;
 const CONSTRUCTION_PAD = 52;
 const ANGLE_ARC_RADIUS = 22;
 const ANGLE_SQUARE = 16;

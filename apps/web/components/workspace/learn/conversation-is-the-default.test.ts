@@ -91,17 +91,24 @@ test("🔴 the canvas picks the mechanism for a study turn, not the model", () =
   assert.match(body, /await command\(said, \[\]\)/);
 });
 
-test("🔴 Learn this is offered for a subject, never for a greeting", () => {
-  // 🔴 REPOINTED 2026-08-20. This pinned the gate as exactly `{session.aside.topic && (`, and went
-  // red when the offer also learned to yield to a held lesson, so only ONE control shows under an
-  // answer. The property is unchanged and is about `topic` versus `question`: the offer keys on the
-  // SUBJECT the model read, never on the mere fact that a turn happened — which is what put a
-  // "Learn this" button under "Hello. What can I do for you?".
-  assert.match(canvas, /session\.aside\.topic && \(/, "the offer is gated on something other than a subject");
+test("🔴 there is no Learn this offer under a reply at all", () => {
+  // 🔴 THIS TEST OUTLIVED ITS FEATURE, AND THE HONEST VERSION IS THE INVERSE OF WHAT IT WAS.
+  //
+  // It began as "the offer keys on the SUBJECT the model read, never on the mere fact that a turn
+  // happened", which put a stop to a "Learn this" button under "Hello. What can I do for you?".
+  // That was the right narrowing at the time and it was not enough: nearly every real question
+  // names a subject, so the button still sat under nearly every answer, and the owner asked about
+  // it twice. It was deleted on 2026-08-20.
+  //
+  // What survives is the rule underneath it, which was never about a button: a turn is worth
+  // teaching because of the SUBJECT it named, and `topic` — not `question` — is where that lives.
+  // So this now checks the offer is gone AND that `topic` is still what the session reads.
+  assert.ok(!/Learn this/.test(canvas), "the Learn this offer is back");
   assert.ok(
     !/\{session\.aside\.question && \(/.test(canvas),
-    "the offer is back on every turn that merely has a question",
+    "something is gated on a turn merely having happened",
   );
+  assert.match(session, /topic: decision\.topic \?\? undefined/, "the subject the model read is no longer kept");
   assert.ok(
     !/\{session\.aside\.question && \(/.test(canvas),
     "the offer is back on `question`, which every turn has — including a greeting",

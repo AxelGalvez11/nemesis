@@ -269,9 +269,14 @@ test("🔴🔴 a displaced teaching screen has a way back", () => {
   assert.ok(back.length > 0, "the back-to-the-lesson control is gone, and nothing else restores a displaced screen");
   assert.match(back.slice(0, 700), /dismiss_aside/, "it does not actually clear the reply");
   assert.match(back.slice(0, 700), /BACK_TO_LESSON/);
-  // 🔴 AND ONLY ONE CONTROL SHOWS. The offer must stand down while a lesson is held, or the owner's
-  // report ("its showing 'back to lesson' pill and 'learn this'") comes straight back.
-  assert.match(canvasCode, /\{!lessonHeld && session\.aside\.topic && \(/, "Learn this can stack under a held lesson again");
+  // 🔴 AND IT IS NOW THE ONLY CONTROL THERE IS. This used to check that "Learn this" stood down
+  // while a lesson was held. The offer was deleted outright on 2026-08-20 — owner, twice: *"why
+  // does nemesis still show 'learn this'?"* — because its gate was `aside.topic`, which nearly
+  // every real question satisfies, so it sat under nearly every answer.
+  //
+  // Checking for the absence is the stronger guard AND the cheaper one: nothing can stack under a
+  // held lesson if there is nothing to stack.
+  assert.ok(!/Learn this/.test(canvasCode), "the Learn this offer is back under the reply");
 });
 
 test("🔴 the way back is offered ONLY when something is being held", () => {

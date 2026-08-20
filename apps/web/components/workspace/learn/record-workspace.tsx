@@ -112,7 +112,7 @@ export function RecordWorkspace({
       data-slot="record-workspace"
     >
       <header className="flex shrink-0 items-center gap-3 border-b border-(--ui-stroke-tertiary) px-5 py-3.5">
-        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Recording</h2>
+        <h2 className="text-[length:var(--canvas-text-meta)] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Recording</h2>
         <div className={cn("ml-auto flex items-center gap-2.5 text-(--ui-text-quaternary)", (capturing || finishing) && "text-foreground")}>
           {/* The pulsing dot is the universal "live" sign, so it must stop
               pulsing when the recording is not live. */}
@@ -125,8 +125,8 @@ export function RecordWorkspace({
               )}
             />
           )}
-          <span className="text-[0.6875rem]">{recordingStatusCopy(recording.status)}</span>
-          <span className="min-w-10 text-right font-mono text-[0.6875rem] tabular-nums">{recording.elapsedLabel}</span>
+          <span className="text-[length:var(--canvas-text-meta)]">{recordingStatusCopy(recording.status)}</span>
+          <span className="min-w-10 text-right font-mono text-[length:var(--canvas-text-meta)] tabular-nums">{recording.elapsedLabel}</span>
         </div>
       </header>
 
@@ -137,9 +137,9 @@ export function RecordWorkspace({
         {recording.error ? (
           <div className="max-w-sm text-center">
             <Codicon className="mx-auto mb-3 text-(--ui-text-quaternary)" name="warning" size="1.25rem" />
-            <p className="text-sm leading-relaxed text-(--ui-text-secondary)">{recording.error}</p>
+            <p className="text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)">{recording.error}</p>
             {recording.status === "quota" && (
-              <a className="mt-3 inline-block text-xs text-[var(--theme-primary)] underline underline-offset-4" href="/pricing">View plans</a>
+              <a className="mt-3 inline-block text-[length:var(--canvas-text-meta)] text-[var(--theme-primary)] underline underline-offset-4" href="/pricing">View plans</a>
             )}
           </div>
         ) : finishing ? (
@@ -151,8 +151,8 @@ export function RecordWorkspace({
                 screen looked identical to a stall. The sweep is the only thing
                 telling a student the work is still happening. */}
             <div aria-hidden className="record-processing-track mx-auto mb-4 h-1 w-40" />
-            <p className="text-sm font-medium text-foreground">{recordingStatusCopy(recording.status)}</p>
-            <p className="mt-2 text-xs leading-relaxed text-(--ui-text-quaternary)">
+            <p className="text-[length:var(--canvas-text-small)] font-medium text-foreground">{recordingStatusCopy(recording.status)}</p>
+            <p className="mt-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">
               Nemesis is transcribing the whole recording in one pass, then writing your notes.
             </p>
           </div>
@@ -161,7 +161,7 @@ export function RecordWorkspace({
             <div className="mx-auto mb-5 h-20 w-full">
               <RecordingWaveform active={recording.gateOpen && !recording.paused} bars={recording.waveformRef} />
             </div>
-            <p className="font-mono text-2xl tabular-nums text-foreground">{recording.elapsedLabel}</p>
+            <p className="font-mono text-[length:var(--canvas-text-title)] tabular-nums text-foreground">{recording.elapsedLabel}</p>
             {/* The paragraph that used to sit under this explained the silence
                 gate and the one-pass transcription in four lines. Removed
                 (owner 2026-07-28) — the waveform and this one label already say
@@ -171,14 +171,14 @@ export function RecordWorkspace({
                 has to look different from the app skipping a quiet room by
                 itself, or pressing pause looks like it did nothing. */}
             <p className={cn(
-              "mt-2 text-[0.6875rem] font-medium transition-colors",
+              "mt-2 text-[length:var(--canvas-text-meta)] font-medium transition-colors",
               recording.paused
                 ? "text-(--ui-text-secondary)"
                 : recording.gateOpen
                   ? "text-[var(--theme-primary)]"
                   : "text-(--ui-text-quaternary)",
             )}>
-              {recording.paused ? "Paused" : recording.gateOpen ? "Picking up audio" : "Quiet — skipping"}
+              {recording.paused ? "Paused" : recording.gateOpen ? "Picking up audio" : "Quiet, skipping"}
             </p>
             {/* The Pause/Stop row that lived here moved to the COMPOSER (owner
                 2026-08-03: Start → Pause/Continue there, ✕ ends). The panel
@@ -187,7 +187,7 @@ export function RecordWorkspace({
         ) : (
           <div className="max-w-sm text-center">
             <Codicon className="mx-auto mb-3 text-(--ui-text-quaternary)" name="mic" size="1.25rem" />
-            <p className="text-xs leading-relaxed text-(--ui-text-quaternary)">Press record to begin.</p>
+            <p className="text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">Press record to begin.</p>
           </div>
         )}
       </div>
