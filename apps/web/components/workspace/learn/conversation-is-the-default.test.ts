@@ -49,30 +49,44 @@ test("🔴🔴 the front door hands the utterance to the model, and never starts
   );
 });
 
-test("🔴🔴 an ordinary mid-canvas message goes to the model too, not to a second reading", () => {
+test("🔴🔴 EVERY typed turn reaches the model before anything acts on it", () => {
   // Fixing one call site and not the other is how this bug half-survives: the front door and the
-  // running canvas used to consult the same classifier from two places.
+  // running canvas used to consult the same classifier from two places. The guarantee is now
+  // stronger than it was — there is no branch left that reads the learner's words before the model
+  // does. `submit` may act on its own only when there is nothing to read (an empty send) or nothing
+  // to decide (several passages staged and an instruction typed about exactly them).
   const submit = canvas.slice(canvas.indexOf("const submit = useCallback"));
-  const branch = submit.slice(submit.indexOf('routing.kind === "ordinary"'));
-  const upToReturn = branch.slice(0, branch.indexOf("return;") + "return;".length);
-  assert.match(upToReturn, /await converse\(text\)/, "the ordinary path no longer reaches the model");
+  const body = submit.slice(0, submit.indexOf("\n    [applyExplanationEvent"));
+  const beforeModel = body.slice(0, body.indexOf("await converse("));
+  assert.ok(beforeModel.length > 0, "the model call left `submit` entirely");
+  // The only two branches allowed to return before the model has spoken.
+  assert.match(beforeModel, /if \(!text\.trim\(\) && only\)/, "the empty-send-with-a-passage route was removed");
+  assert.match(beforeModel, /if \(selected\.length > 1\)/, "the multi-selection scoped edit was removed");
+  // 🔴 AND NOTHING IN THERE READS WHAT THEY TYPED. `text` may be tested for being EMPTY, which is a
+  // fact about the turn; the moment it is matched against words, the classifier is back.
   assert.ok(
-    !/session\.begin\(/.test(upToReturn),
-    "the ordinary path can start a lesson without a model deciding it should",
+    !/\/[^\n/]+\/[a-z]*\.test\(text\)/.test(beforeModel),
+    "a regex is reading the learner's words ahead of the model again",
+  );
+  assert.ok(
+    !/text\.(?:includes|startsWith|endsWith|match|search|toLowerCase)\(/.test(beforeModel),
+    "the learner's words are being inspected ahead of the model again",
   );
 });
 
-test("🔴 the deterministic routes ahead of the model are still there", () => {
-  // The model is asked what the learner MEANT. It is never asked things the canvas already knows.
+test("🔴 what the canvas still decides for itself, because it already knows it", () => {
+  // The model is asked what the learner MEANT. It is never asked things the canvas already knows —
+  // which passage is active, whether a demonstration is owed, whether there is material at all.
   const submit = canvas.slice(canvas.indexOf("const submit = useCallback"));
   const body = submit.slice(0, submit.indexOf("\n    [applyExplanationEvent"));
-  assert.match(body, /routeComposerText\(/, "the rewrite/refusal routing was removed");
+  assert.match(body, /decision\?\.then === "rewrite"/, "the model can no longer ask for a rewrite");
+  assert.match(body, /routeRewrite\(/, "the referent is being guessed rather than read");
   assert.match(body, /routing\.kind === "rewrite"/, "an explicit rewrite no longer rewrites");
   assert.match(body, /routing\.kind === "refused"/, "a refusal is silent again");
   assert.match(body, /session\.askAbout\(only, EXPLAIN_THIS\)/, "the staged-selection route was removed");
-  // The ordinary branch is scoped to NO selection: text typed with a passage staged is a scoped
-  // instruction about that passage, which is not an open turn of conversation.
-  assert.match(body, /routing\.kind === "ordinary" && selected\.length === 0/);
+  // The policy guard outranks the model: a rewrite asked for while a question is live would hand
+  // the learner the answer to it.
+  assert.match(body, /awaitingDemonstration: policy\.awaitingAnswer/);
 });
 
 test("🔴🔴 the invariant above all of this is untouched", () => {
@@ -88,7 +102,7 @@ test("🔴 the canvas picks the mechanism for a study turn, not the model", () =
   assert.match(body, /decision\.then === "study"/);
   assert.match(body, /isPreContent\(latest\.current\.state\)/, "the begin/command choice is not read off canvas state");
   assert.match(body, /begin\(decision\.topic \?\? said\)/);
-  assert.match(body, /await command\(said, \[\]\)/);
+  assert.match(body, /await command\(said, staged \? \[staged\] : \[\]\)/);
 });
 
 test("🔴 Learn this is offered for a subject, never for a greeting", () => {

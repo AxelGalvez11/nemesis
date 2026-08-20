@@ -888,7 +888,7 @@ export function intentHistory(history: readonly SessionMessage[]): IntentContext
  * turn works everywhere, and it has to happen before the turn anyway, because its answer is what
  * picks the model the turn runs on.
  */
-async function readIntent(
+export async function readTurnIntent(
   uid: string,
   ask: string,
   context: IntentContext,
@@ -932,6 +932,15 @@ export async function sendChatTurn(
    *  reasoner's streamed thoughts and the agent's tool rounds. null = back to
    *  the plain shimmer. */
   onActivity?: (label: string | null) => void,
+  /**
+   * A decision the caller already read for this turn.
+   *
+   * 🔴 SO IT IS NEVER PAID FOR TWICE. Sessions' own submit path has to know whether an attached
+   * pile of syllabi is a calendar import before it can decide whether this turn reaches the model
+   * at all, and that is the same question the intent call answers. Passing it in is what stops
+   * that becoming two calls, or worse, two different answers.
+   */
+  known?: ChatIntent,
 ): Promise<ChatReply> {
   // Route and search on what the student TYPED. Reading the attached deck too
   // meant one slide citing a recent year bought a paid web search on every
@@ -953,7 +962,7 @@ export async function sendChatTurn(
   const filesOnly = !askText && userText.trim().length > 0;
   const intent = filesOnly
     ? DEFAULT_INTENT
-    : await readIntent(uid, askText, {
+    : known ?? await readTurnIntent(uid, askText, {
       attachments: attachmentNames(userText),
       // Our own previous turn asking a preference question is application state, not language:
       // the prefix belongs to a question Nemesis itself wrote. Whether THIS message answers it is

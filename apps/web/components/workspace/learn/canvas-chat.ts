@@ -84,6 +84,8 @@ export async function askCanvasChat(
   question: string,
   surroundings: TurnSurroundings,
   signal?: AbortSignal,
+  /** The passage the learner staged, so "this" has something to resolve against. */
+  stagedPassage = "",
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
 
@@ -103,6 +105,7 @@ export async function askCanvasChat(
         // packet builder so `turnRouterMessages` stays pure and its tests stay deterministic.
         today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
         lessonInProgress: surroundings.lessonInProgress,
+        stagedPassage,
         webContext,
       },
       sourceRule: sourceDisagreementInstruction({

@@ -58,7 +58,24 @@ export type TurnAction =
    * that has, it steers the study document. Both destinations are the canvas's to pick from the
    * state it is in — see `learning-canvas.tsx`. The model chooses the INTENT, never the mechanism.
    */
-  | "study";
+  | "study"
+  /**
+   * The material on the page failed them, so fix the material rather than adding to it.
+   *
+   * 🔴 THIS REPLACES `canvas-phrases.ts`'s PHRASE LIST — `simpler|simplify|rephrase|reword|rewrite`,
+   * plus a confusion matcher and a question guard in front of it to stop the two colliding. That
+   * file argued its list was legitimate because it named INSTRUCTIONS rather than subject matter,
+   * and "make this simpler" does mean the same thing in a statute and a weld procedure. True, and
+   * beside the point: the list still had to enumerate every way a person says it, and the file's own
+   * comments record two phrasings it got wrong before anybody noticed. "Can you rephrase that" is an
+   * instruction wearing a question's clothes and the guard refused it; "how do I understand this"
+   * would have rewritten the page.
+   *
+   * 🔴 WHAT IS REWRITTEN IS STILL NOT THE MODEL'S TO CHOOSE. §11's referent rule is untouched:
+   * exactly one active reading region, derived from the learner's own Continue presses, or a
+   * visible refusal. See `routeRewrite` in canvas-phrases.ts.
+   */
+  | "rewrite";
 
 /**
  * Something worth saying out loud above the "Learn this" offer.
@@ -142,6 +159,17 @@ export interface TurnContext {
   demonstrated: number;
   /** Excerpts from the attached material. Empty when there is none. */
   materialContext: string;
+  /**
+   * The passage the learner has highlighted, or empty when they have highlighted nothing.
+   *
+   * 🔴 IT IS WHAT MAKES "this" RESOLVABLE. A staged passage plus a typed sentence used to be read
+   * by `/^(where|which source|what source)\b/i`: three openers answered beside the passage, and
+   * everything else was treated as an instruction to EDIT it. So "is this the same as what we did
+   * last week?" silently rewrote the paragraph the learner was asking about. The passage is a fact
+   * the canvas holds; what the learner wants done with it is a reading, and this is what lets the
+   * model make it.
+   */
+  stagedPassage: string;
   /** Formatted live web results, when a search ran. Empty when it did not. */
   webContext: string;
   /**
@@ -211,7 +239,7 @@ const NEMESIS_SYSTEM = [
 const DECISION_CONTRACT = [
   "Answer with a single JSON object and nothing else:",
   "",
-  '{"say": "...", "then": "reply" | "study", "topic": "..." | null, "offer": "returning" | "reasoning" | null, '
+  '{"say": "...", "then": "reply" | "study" | "rewrite", "topic": "..." | null, "offer": "returning" | "reasoning" | null, '
   + '"needsWeb": true | false, "webQuery": "..." | null}',
   "",
   '"say" is what Nemesis says out loud. Always write something, even when you also act.',
@@ -226,6 +254,13 @@ const DECISION_CONTRACT = [
   + "be written or changed. On a canvas that has already begun this steers the existing lesson "
   + "rather than starting a new one. Keep \"say\" to a few words here, since the canvas is about to "
   + "change underneath it.",
+  '  "rewrite" fixes the passage the learner is reading, in place. Choose it when they are telling '
+  + "you the MATERIAL failed: it is too dense, pitched wrong, or they do not follow it. They may say "
+  + "so as an instruction or as a complaint, and both mean the same thing. Do not choose it for a "
+  + "question about a term or an idea, however confused it sounds: that wants an answer beside the "
+  + "passage, and answering it changes nothing on the page. Nemesis keeps the old wording and offers "
+  + "to put it back, so rewriting is reversible; stacking another explanation underneath the passage "
+  + "they already could not read is not. Keep \"say\" to a few words here.",
   "",
   // 🔴 THE MODEL WAS REFUSING TO STUDY AN EMPTY CANVAS, AND IT WAS RIGHT TO FROM WHAT IT KNEW.
   // Measured 2026-08-18 against the real model: "teach me innate immunity" on a fresh canvas came
@@ -277,6 +312,10 @@ const DECISION_CONTRACT = [
   // consulted, so neither has to be softened to accommodate the other.
   "Decide in this order.",
   "",
+  "0. Is the learner saying the material in front of them failed, rather than asking a question "
+  + "about it? Then \"rewrite\". This is settled first because a confused learner and a curious one "
+  + "sound alike, and the difference is whether the PAGE is the problem or the SUBJECT is.",
+  "",
   "1. Did the learner, in this message, ask to be taught, tested, quizzed, drilled or walked "
   + "through something, ask for help understanding something, or ask for the study document itself "
   + "to be written or changed? Then \"study\". Go ahead with what they said: do not ask which part "
@@ -308,6 +347,12 @@ export function stateBlock(context: TurnContext): string {
       : "The study document is empty, so this canvas has not begun teaching.",
   );
   if (context.lessonInProgress) lines.push("A lesson is in progress on this canvas right now.");
+  if (context.stagedPassage.trim()) {
+    lines.push(
+      "The learner has highlighted this passage, so anything they say now is most likely about it:\n"
+      + context.stagedPassage.trim(),
+    );
+  }
   if (context.objectives > 0) {
     lines.push(`${context.demonstrated} of ${context.objectives} things to learn have been demonstrated.`);
   }
@@ -363,7 +408,7 @@ export function turnRouterMessages(input: {
 }
 
 function asAction(value: unknown): TurnAction | null {
-  return value === "reply" || value === "study" ? value : null;
+  return value === "reply" || value === "study" || value === "rewrite" ? value : null;
 }
 
 function asOffer(value: unknown): TurnOffer | null {

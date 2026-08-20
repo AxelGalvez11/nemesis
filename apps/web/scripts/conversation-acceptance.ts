@@ -48,6 +48,7 @@ const FRESH: TurnContext = {
   objectives: 0,
   passages: 0,
   sources: 0,
+  stagedPassage: "",
   today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
   webContext: "",
 };
@@ -113,6 +114,58 @@ const CATEGORIES: { name: string; note?: string; cases: Case[] }[] = [
         utterance,
       })),
     ],
+  },
+  {
+    // 🔴 THE PHRASINGS `asksForRewrite` USED TO OWN. That function was a list of instruction phrases
+    // (simpler, simplify, rephrase, reword, rewrite, plain english, break this down), a second list
+    // of confusion phrasings (don't understand, don't get, don't follow, lost, confused), and an
+    // interrogative guard wedged between them to stop the two colliding. Its own comments recorded
+    // two it got wrong: "can you rephrase that" is an instruction wearing a question's clothes and
+    // the guard refused it, and "how do I understand this" would have rewritten the page.
+    //
+    // A rewrite is only meaningful with material on screen, so every case here is asked on a canvas
+    // that has some. §11 keeps the old wording and offers to put it back, so a wrong rewrite costs
+    // the learner a click; stacking another explanation under a passage they already could not read
+    // is the behaviour §11 exists to forbid.
+    name: "The material failed them",
+    note: "these rewrite the passage in place, they do not add another explanation under it",
+    cases: [
+      "make this simpler",
+      "simplify this",
+      "can you rephrase that",
+      "explain this differently",
+      "put it in plain english",
+      "break this down",
+      "I still don't understand this",
+      "I'm lost",
+      "this is way too dense",
+      "you've lost me completely",
+      "this is written for someone who already knows it",
+    ].map((utterance) => ({
+      context: { canvasTitle: "Pharmacokinetics", passages: 12, sources: 1 },
+      expect: "rewrite" as const,
+      utterance,
+    })),
+  },
+  {
+    // 🔴 THE OTHER HALF, WHICH THE OLD GUARD GOT RIGHT AND MUST NOT BE LOST. A question with a
+    // subject is answered beside the passage and changes nothing on the page. Rewriting a paragraph
+    // because somebody asked what a word in it means is the silent-edit failure in the other
+    // direction.
+    name: "A question about the material",
+    note: "answered beside the passage; nothing on the page may change",
+    cases: [
+      "what does osmolarity mean",
+      "how do I understand this",
+      "where did this come from",
+      "which source is this from",
+      "is this the same as what we did last week?",
+      "why does that follow?",
+    ].map((utterance) => ({
+      context: { canvasTitle: "Pharmacokinetics", passages: 12, sources: 1 },
+      expect: "reply" as const,
+      utterance,
+    })),
   },
 ];
 

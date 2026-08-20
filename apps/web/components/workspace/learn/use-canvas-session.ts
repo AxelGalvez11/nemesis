@@ -215,6 +215,8 @@ export interface CanvasSession {
     /** Fired immediately before a `study` turn writes into an existing study document, so the
      *  caller can stamp the action that was in flight when the learner asked for material. */
     onStudyDocument?: () => void,
+    /** The one passage the learner staged, which scopes the turn without classifying it. */
+    staged?: CanvasBlock | null,
   ) => Promise<TurnDecision | null>;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
@@ -818,6 +820,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       question: string,
       surroundings: TurnSurroundings,
       onStudyDocument?: () => void,
+      /**
+       * The passage the learner staged, when they staged exactly one.
+       *
+       * 🔴 IT SCOPES THE TURN, IT DOES NOT CLASSIFY IT. The block's text goes into the packet so
+       * the model can resolve "this", and a `study` turn writes against that block rather than
+       * against the whole document. What the learner wants done with it is still the model's
+       * reading — which is the point: it used to be `/^(where|which source|what source)\b/i`, so
+       * three openers were answered beside the passage and every other sentence silently EDITED it.
+       */
+      staged?: CanvasBlock | null,
     ): Promise<TurnDecision | null> => {
       const id = requireUid();
       if (!id) return null;
@@ -825,13 +837,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!said) return null;
       setError(null);
       setBusy({ kind: "command", blockIds: [], label: "Thinking" });
-      const result = await askCanvasChat(id, latest.current, said, surroundings);
+      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "");
       setBusy({ kind: null });
       const decision = result.decision;
       if (!decision) {
         setError(result.error ?? "Nemesis had nothing to add.");
         return null;
       }
+
+      // 🔴 HANDED BACK, NOT ACTED ON. Which passage a rewrite lands on is §11's referent rule, and
+      // the runtime state it reads (unread chunk, awaiting demonstration) lives in the component.
+      // See `routeRewrite` in lib/learn/canvas-phrases.ts.
+      if (decision.then === "rewrite") return decision;
 
       if (decision.then === "study") {
         // 🔴 THE LEARNER'S OWN WORDS, KEPT FOR THIS SITTING ONLY. The teaching controller needs to
@@ -854,7 +871,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // that was in flight WHEN THE LEARNER ASKED against the one in flight now; reading it
           // after the round trip would record whichever action the policy had moved on to.
           onStudyDocument?.();
-          await command(said, []);
+          await command(said, staged ? [staged] : []);
         }
         return decision;
       }
@@ -867,7 +884,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return null;
       }
       setAside({
-        blockId: null,
+        // Under the passage when they staged one, at the top of the canvas when they did not.
+        blockId: staged?.id ?? null,
         // 🔴 THE ONE THAT DISPLACES. This branch is reached only when the router said `reply`, which
         // means the learner asked something rather than asking to be taught — so this text IS the
         // turn, and whatever the policy was showing steps aside for it. The `study` branch above

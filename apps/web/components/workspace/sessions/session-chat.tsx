@@ -19,7 +19,9 @@ import { chatDisplayText, draftAttachmentRecords, partitionImportables, prepareC
 import { sniffsAsSyllabus } from "@/lib/workspace/syllabus-sniff";
 import { consumeSeededChatIntent } from "@/lib/workspace/composer-seed";
 import { conflictSummary, splitCalendarConflicts } from "@/lib/workspace/calendar-conflicts";
-import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
+import { type ChatErrorKind, intentHistory, readTurnIntent, sendChatTurn } from "@/lib/workspace/chat-api";
+import { DEFAULT_INTENT, type ChatIntent } from "@/lib/workspace/chat-intent";
+import { attachmentNames, promptWithoutAttachments } from "@/lib/workspace/chat-routing";
 import { executeAgentTool } from "@/lib/workspace/agent-tools";
 import type { PendingDelete } from "@nemesis/shared";
 import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
@@ -95,16 +97,6 @@ function isDocumentFile(file: File): boolean {
 function looksLikeSyllabus(file: File): boolean {
   return isDocumentFile(file) &&
     /(syllabus|course[\s_-]*(schedule|outline)|class[\s_-]*schedule)/i.test(file.name);
-}
-
-/** The student's own words asking for a calendar import. This is what catches
- *  real syllabi whose filenames say nothing ("Fall-2026-PHCY-2105-01-….pdf")
- *  — the owner attached four of those with "here are my syllabuses, put them
- *  into the calendar" and the old name-only gate sent them all to the generic
- *  text path, where the model surfaced 3 dates out of four courses. Kept
- *  narrow on purpose: "what's the deadline in this paper?" must NOT trigger. */
-function asksForCalendarImport(text: string): boolean {
-  return /syllab/i.test(text) || (/\b(add|put|import|load)\b/i.test(text) && /calendar|schedule/i.test(text));
 }
 
 export function SessionChat() {
@@ -237,7 +229,14 @@ export function SessionChat() {
   const turns = useMemo(() => groupTurns(shownMessages), [shownMessages]);
   const turnError: TurnError | null = error && error.sessionId === selectedId ? { kind: error.kind, text: error.text } : null;
 
-  const runTurn = useCallback(async (targetUid: string, targetId: string, history: SessionMessage[], text: string) => {
+  const runTurn = useCallback(async (
+    targetUid: string,
+    targetId: string,
+    history: SessionMessage[],
+    text: string,
+    /** The decision the submit path already read, so this turn does not pay for it twice. */
+    intent?: ChatIntent,
+  ) => {
     const effort = effortRef.current;
     turnStartedAt.current.set(targetId, Date.now());
     sessionsStore.setWorking(targetId, true);
@@ -251,7 +250,7 @@ export function SessionChat() {
         sessionsStore.upsertAssistantMessage(targetId, assistantAt, accumulated, undefined, false);
       }, effort, (label) => {
         setLiveActivity(label ? { label, sessionId: targetId } : null);
-      });
+      }, intent);
       if (reply.text) {
         sessionsStore.upsertAssistantMessage(targetId, assistantAt, reply.text, reply.sources, true, reply.outputs);
       } else if (reply.outputs?.length) {
@@ -375,12 +374,17 @@ export function SessionChat() {
       // Route it through the same quote-verified review flow as Calendar's own
       // importer instead of asking the chat model to rediscover dates and call
       // add_calendar_event repeatedly (the path that mis-mapped this account).
-      // The gate: a filename that says syllabus, OR the student's own words
-      // asking for a calendar import while documents are attached. Only when
-      // EVERY attached file qualifies — a syllabus mixed in with lecture notes
-      // stays a normal question rather than being split into two flows.
-      const importIntent = asksForCalendarImport(text);
-      const syllabusFiles = files.filter((file) => looksLikeSyllabus(file) || (importIntent && isDocumentFile(file)));
+      // 🔴 THE GATE IS THE FILENAME, AND NOTHING ELSE. It used to also fire on the student's own
+      // words, via `/syllab/i` or an add|put|import|load verb near calendar|schedule — user-intent
+      // classification living in a UI component, which is the wrong place for it twice over.
+      // Nothing is lost by dropping it: this gate runs BEFORE extraction, so words were all it had,
+      // and the CONTENT gate further down reads the documents themselves, which is strictly better
+      // evidence about whether a file is a syllabus than any sentence about it.
+      //
+      // A filename is weak metadata about a file, not a reading of what somebody meant, so it stays.
+      // Only when EVERY attached file qualifies — a syllabus mixed in with lecture notes stays a
+      // normal question rather than being split into two flows.
+      const syllabusFiles = files.filter(looksLikeSyllabus);
       if (syllabusFiles.length > 0 && syllabusFiles.length === files.length && !preview) {
         const targetId = selectedId ?? sessionsStore.create().id;
         const history = sessionsStore.getState().sessions.find((s) => s.id === targetId)?.messages ?? [];
@@ -495,7 +499,24 @@ export function SessionChat() {
       // The all-or-nothing rule still governs the SILENT case (files dropped in
       // with nothing typed), because there the only evidence of what the
       // student wanted is the pile itself.
-      const askedToImport = asksForCalendarImport(text);
+      // 🔴 "DID THEY ASK FOR AN IMPORT" IS READ, NOT MATCHED. This was
+      // `/syllab/i || (add|put|import|load near calendar|schedule)`, which fired on "what's the
+      // syllabus for this course?" and missed "these need to go in my planner". It is the same
+      // question the turn's own decision already answers — did the student ask Nemesis to put
+      // something into their workspace — so it is asked once, here, and handed to `runTurn` so the
+      // turn that follows does not pay for it again.
+      //
+      // A failed or timed-out read comes back as `workspace: "none"`, which means no import: the
+      // student gets an ordinary chat turn about their documents rather than a review screen they
+      // did not ask for.
+      const askText = promptWithoutAttachments(prepared.wireText);
+      const intent = askText.trim() ? await readTurnIntent(uid, askText, {
+        attachments: attachmentNames(prepared.wireText),
+        awaitingStudyPreference: null,
+        history: intentHistory(history),
+        today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
+      }) : DEFAULT_INTENT;
+      const askedToImport = intent.workspace === "write";
       const everyDocumentIsSyllabus = syllabusDocs.length === attachedDocuments.length;
       if (
         syllabusDocs.length > 0 &&
@@ -506,7 +527,7 @@ export function SessionChat() {
         return;
       }
 
-      void runTurn(uid, targetId, history, prepared.wireText);
+      void runTurn(uid, targetId, history, prepared.wireText, intent);
     },
     [preview, projectId, runTurn, selectedId, submitIntoProject, uid],
   );

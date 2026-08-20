@@ -31,6 +31,7 @@ const EMPTY: TurnContext = {
   objectives: 0,
   passages: 0,
   sources: 0,
+  stagedPassage: "",
   today: "Tuesday, 18 August 2026",
   webContext: "",
 };
