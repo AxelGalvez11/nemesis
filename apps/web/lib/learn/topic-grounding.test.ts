@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  groundingQuery,
   groundingSources,
   needsGrounding,
   type WebHit,
@@ -10,36 +9,11 @@ import {
 
 const hit = (url: string, title = "A page"): WebHit => ({ title, url });
 
-test("🔴 the query is the subject, not the instruction aimed at Nemesis", () => {
-  // Searching "teach me innate immunity" verbatim spends the query on the word "teach" and returns
-  // tutoring services rather than immunology.
-  assert.equal(groundingQuery("Teach me innate immunity."), "innate immunity");
-  assert.equal(groundingQuery("Help me understand inflation"), "inflation");
-  assert.equal(groundingQuery("I want to learn about promissory estoppel"), "promissory estoppel");
-  assert.equal(groundingQuery("walk me through the Krebs cycle"), "the Krebs cycle");
-});
-
-test("a bare topic is left exactly as the learner wrote it", () => {
-  assert.equal(groundingQuery("innate immunity"), "innate immunity");
-  assert.equal(groundingQuery("shear stress in a fillet weld"), "shear stress in a fillet weld");
-});
-
-test("🔴 stripping never eats the whole subject", () => {
-  // A topic that happens to BE one of the stripped words must still search for something.
-  for (const topic of ["review", "study", "teach"]) {
-    assert.ok(groundingQuery(topic).length > 0, `"${topic}" produced an empty query`);
-  }
-});
-
-test("🔴 FIELD-AGNOSTIC: only instructions to the system are removed, never subject matter", () => {
-  // The stripped prefixes are all things said TO Nemesis. Nothing here knows what a discipline is.
-  const pairs: [string, string][] = [
-    ["Teach me the rule against perpetuities", "the rule against perpetuities"],
-    ["Teach me austenitic stainless steel", "austenitic stainless steel"],
-    ["Review mens rea", "mens rea"],
-  ];
-  for (const [asked, expected] of pairs) assert.equal(groundingQuery(asked), expected);
-});
+// 🔴 THE `groundingQuery` TESTS ARE GONE, ALONG WITH THE FUNCTION. They pinned that "Teach me
+// innate immunity." searched for "innate immunity" and "walk me through the Krebs cycle" for "the
+// Krebs cycle" — five layers of prefix-stripping, patching a canvas whose title was the learner's
+// whole sentence. The title is the model's `topic` now (lib/learn/turn-router.ts), so there is no
+// instruction left in it to strip.
 
 test("only pages with something to read are promoted", () => {
   const chosen = groundingSources([

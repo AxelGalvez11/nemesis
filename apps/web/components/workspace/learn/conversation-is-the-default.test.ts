@@ -101,7 +101,11 @@ test("🔴 the canvas picks the mechanism for a study turn, not the model", () =
   const body = converse.slice(0, converse.indexOf("\n    [begin, command"));
   assert.match(body, /decision\.then === "study"/);
   assert.match(body, /isPreContent\(latest\.current\.state\)/, "the begin/command choice is not read off canvas state");
-  assert.match(body, /begin\(decision\.topic \?\? said\)/);
+  // 🔴 THE MODEL'S SUBJECT OR NOTHING, NEVER THE RAW SENTENCE. Falling back to `said` titled the
+  // canvas with the learner's whole utterance ("teach me innate immunity") and then web-searched
+  // that phrase — which is what `groundingQuery`'s five layers of prefix-stripping existed to undo.
+  assert.match(body, /begin\(decision\.topic \?\? undefined\)/);
+  assert.ok(!/begin\(decision\.topic \?\? said\)/.test(body), "the raw utterance is a canvas title again");
   assert.match(body, /await command\(said, staged \? \[staged\] : \[\]\)/);
 });
 

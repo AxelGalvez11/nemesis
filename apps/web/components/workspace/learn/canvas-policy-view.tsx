@@ -224,8 +224,9 @@ function PolicyScreen({
     // An associative fact is answered in about a second, so anything else on the page is read
     // BEFORE the answer is produced and costs exactly the thing being measured. Gone: the "answer
     // below" instruction (the composer is the only control, blinking), and the "I don't know this
-    // one" button — a learner who does not know can say so, and `isAdmissionOfNotKnowing` sends it
-    // down the same no-demonstration path the button used, so the MEANING survives the control.
+    // one" button — a learner who does not know can say so, and the judge's `not_an_attempt`
+    // verdict sends it down the same no-demonstration path the button used, so the MEANING
+    // survives the control.
     //
     // 🔴 AND NOTHING TOOK THEIR PLACE. No card, no border, no hint, no progress count, no "1 of 4".
     // The empty space IS the design: question, silence, one place to answer.

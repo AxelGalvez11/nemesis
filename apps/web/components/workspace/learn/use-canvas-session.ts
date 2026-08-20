@@ -16,7 +16,7 @@ import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { TurnDecision, TurnOffer } from "@/lib/learn/turn-router";
-import { groundingQuery, groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
+import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
   explainBlock,
@@ -688,7 +688,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         if (id && needsGrounding({ attachedSources: latest.current.sources.length, topic: title })) {
           setBusy({ kind: "source", label: "Finding material on that" });
           try {
-            const found = await searchWebContext(id, groundingQuery(title));
+            // The title IS the subject: it came from the model, not from what the learner typed.
+            const found = await searchWebContext(id, title);
             const chosen = groundingSources(found.sources);
             // 🔴🔴 ONE PAGE PER `try`, NOT ONE `try` AROUND THE WHOLE LOOP. With a cap of three this
             // barely mattered; with the cap removed (owner call, 2026-08-19) a single unreachable
@@ -865,7 +866,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           if (decision.say) {
             setAside({ blockId: null, kind: "opening", offer: decision.offer ?? undefined, question: said, sources: [], text: decision.say });
           }
-          begin(decision.topic ?? said);
+          // 🔴 THE MODEL'S SUBJECT OR NOTHING, NEVER THE RAW SENTENCE. `begin` uses this as the
+          // canvas TITLE, and falling back to `said` is what produced canvases called "teach me
+          // innate immunity" — and then a web search for that phrase, which `groundingQuery`
+          // existed to strip back down. With no subject named, this starts from the attached
+          // material; with neither, `canStart` refuses and says why.
+          begin(decision.topic ?? undefined);
         } else {
           // 🔴 STAMPED BEFORE THE WRITE, NOT AFTER IT. `materialOwnsAttention` compares the action
           // that was in flight WHEN THE LEARNER ASKED against the one in flight now; reading it
@@ -913,9 +919,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const learnFromAside = useCallback(async () => {
     const current = aside;
     if (!current || current.blockId !== null) return;
-    // 🔴 THE SUBJECT THE MODEL READ, FALLING BACK TO WHAT THEY TYPED. `begin` takes this as the
-    // canvas TITLE, so starting from the raw question left canvases called "what is incretin?".
-    const topic = (current.topic ?? current.question ?? "").trim();
+    // 🔴 THE SUBJECT THE MODEL READ, AND ONLY THAT. `begin` takes this as the canvas TITLE, and
+    // falling back to the raw question is what left canvases called "what is incretin?". The Learn
+    // this button is already gated on `aside.topic` existing, so the fallback was never reachable
+    // for a good reason — only for a bad one.
+    const topic = (current.topic ?? "").trim();
     if (!topic) return;
     const sources = current.sources ?? [];
     setAside(null);

@@ -180,15 +180,13 @@ export * from "./evidence-map-points.ts";
 // PURE; reuses the computed-statistics engine (never LLM-guessed). Extraction + UI wiring are owner-gated.
 export * from "./gap-meta-test.ts";
 
-// Field-router (beyond-medicine prerequisite): PURE, deterministic classifier that maps a query to a
-// field (→ source-set + in-silico executability) and to the safety systems to engage. Safety is
-// signal-driven and additive — a health/drug signal keeps the medical floor on even inside a CS query.
-// Deterministic spine; an LLM classifier is the owner-gated refinement that feeds the same contract.
-export * from "./field-router.ts";
-
-// Auto-depth: PURE depth picker for the simplified "Auto" composer mode — fast vs thorough from the
-// query shape (length / multi-part / comparison markers). Deterministic; an LLM router refines later.
-export * from "./auto-depth.ts";
+// 🔴 field-router.ts AND auto-depth.ts WERE DELETED, NOT MOVED. Both were keyword classifiers over
+// what the student typed — field-router mapped a stem list (CRISIS, MENTAL_HEALTH, MEDICAL, LIFE_SCI,
+// CS_ML) to a source set, auto-depth mapped COMPLEX_MARKERS (" vs ", "mechanism", "pros and cons")
+// to fast-or-thorough. Each described itself as a "deterministic spine" awaiting an LLM refinement
+// that never arrived, and neither had ever had a single call site: they were exported from here,
+// tested, and read by nothing. Deleting an unused word list is cheaper than porting it, and if the
+// depth or the source set ever needs deciding, chat-intent.ts is where that decision already lives.
 
 // Real-World Signal (researcher-facing): PURE aggregation of patient-reported outcomes into descriptive
 // per-intervention COUNTS — never an effect estimate — graded at the lowest (anecdotal) tier and walled

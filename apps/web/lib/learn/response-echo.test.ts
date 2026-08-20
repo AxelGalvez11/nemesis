@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
-import { isAdmissionOfNotKnowing, isEchoOfTheCue } from "./response-admission";
+import { isEchoOfTheCue } from "./response-admission";
 
 // Giving the cue back is not a demonstration.
 //
@@ -74,24 +74,22 @@ test("the cue must be the WHOLE response, not merely present in it", () => {
 
 // ── 🔴 the rule it generalises must not have moved ──────────────────────────
 
-test("🔴 D4 still behaves exactly as it did — the admission rule was not widened in passing", () => {
-  // D4 passes in production. Adding a sibling rule beside it must not adjust it, and a shared
-  // filler list widened to suit the new caller would silently rewrite the old one.
-  assert.equal(isAdmissionOfNotKnowing("I don't know"), true);
-  assert.equal(isAdmissionOfNotKnowing("idk"), true);
-  assert.equal(isAdmissionOfNotKnowing("not sure"), true);
-  assert.equal(isAdmissionOfNotKnowing("Not sure, maybe Diovan?"), false, "a hedged attempt is an attempt");
-  assert.equal(isAdmissionOfNotKnowing("Cozaar"), false);
-  assert.equal(isAdmissionOfNotKnowing(""), false);
+test("🔴 the echo rule is the half that could not move to the judge", () => {
+  // 🔴 THE ADMISSION HALF OF THIS PAIR IS GONE. `isAdmissionOfNotKnowing` matched twenty-one
+  // English phrases before the judge saw the answer; the judge reads an admission itself now, in
+  // any language (canvas-prompts.ts). What could not move is this one: asked "what is the brand
+  // for losartan?" and answered `losartan`, every string, substring and embedding comparison
+  // scores that highly, because the token is literally inside the question.
+  assert.equal(isEchoOfTheCue({ cue: "losartan", expectedAnswer: "Cozaar", response: "losartan" }), true)
 });
 
 // ── 🔴 where it runs, which is the half a unit test cannot see ──────────────
 
-test("🔴 the echo is caught BEFORE the judge, like the admission beside it", async () => {
+test("🔴 the echo is caught BEFORE the judge", async () => {
   // The predicate being correct is worthless if the runtime consults it after the verdict is
   // already back — the row would be written from the judge's `partial` and the check would be
-  // decoration. `canvas-runtime-branch.test.ts` already pins this ordering for the admission; this
-  // is the same assertion for the rule that shares its path.
+  // decoration. This is the whole reason the rule survives at all: the judge measurably CANNOT
+  // make it, so asking it after the fact would be asking the wrong question twice.
   const runtime = await readFile(
     new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url),
     "utf8",

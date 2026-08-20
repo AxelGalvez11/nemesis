@@ -39,30 +39,17 @@ export interface WebHit {
   description?: string;
 }
 
-/**
- * The one query to run for a topic.
- *
- * 🔴 THE LEARNER'S OWN WORDS, MINUS THE INSTRUCTION TO US. "Teach me innate immunity" is a request
- * aimed at Nemesis; searching for it verbatim spends the query on the word "teach" and returns
- * lesson plans and tutoring services rather than the subject. What is wanted is the noun phrase
- * underneath. Everything stripped here is an instruction TO THE SYSTEM, which is why removing it is
- * field-agnostic — it never touches the subject, in any discipline.
- */
-export function groundingQuery(topic: string): string {
-  const stripped = topic
-    .trim()
-    .replace(/^(?:can you|could you|please|i(?:'| a)?m ready to|i want to|i(?:'| wou)?ld like to|help me)\s+/i, "")
-    .replace(/^(?:teach|tutor|coach|quiz|test|drill|train|walk me through|take me through|study|revise|review|learn)\s+/i, "")
-    .replace(/^(?:me|us)\s+/i, "")
-    // "Help me UNDERSTAND inflation" — the comprehension verb is part of the request, not the
-    // subject, and it survives the teaching-verb pass because "help me" was stripped first.
-    .replace(/^(?:understand|grasp|get|figure out|make sense of|wrap my head around)\s+/i, "")
-    .replace(/^(?:about|on|the basics of|through)\s+/i, "")
-    .replace(/[.?!]+$/, "")
-    .trim();
-  // If stripping ate everything, the original was the subject after all.
-  return stripped || topic.trim();
-}
+// 🔴 `groundingQuery` WAS DELETED, AND SO WAS THE REASON IT EXISTED. It stripped five layers of
+// prefix off the canvas title before searching — "can you|could you|please|i want to|help me", then
+// "teach|tutor|coach|quiz|test|drill|walk me through|study|revise|learn", then "me|us", then
+// "understand|grasp|figure out|wrap my head around", then "about|on|the basics of". All of it was
+// patching one thing: a canvas whose TITLE was the learner's whole sentence.
+//
+// That was always a bug in its own right, not just a bad search — `learnFromAside`'s own comment
+// records canvases called "what is incretin?". The title comes from the model's `topic` now (see
+// lib/learn/turn-router.ts), which is the subject and nothing else, so there is no instruction left
+// to strip. Where the model names no subject, `begin` starts from the attached material instead of
+// titling a canvas with a sentence and then searching for it.
 
 /**
  * Which results are worth reading, in answer order.

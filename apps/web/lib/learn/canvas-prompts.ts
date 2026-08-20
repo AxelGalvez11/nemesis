@@ -806,6 +806,18 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         "recorded: their words are answered as conversation and the question stays on screen. A confused, partial or " +
         "plainly wrong attempt at the question is NOT this — it is an attempt, and it gets one of the verdicts above. " +
         "If you can read it as an attempt at all, it is an attempt.\n\n" +
+        // 🔴 SAYING "I DON'T KNOW" IS NOT A WRONG ANSWER, AND UNTIL NOW A WORD LIST SAID SO INSTEAD
+        // OF YOU. `isAdmissionOfNotKnowing` held twenty-one English phrases — idk, dunno, no clue,
+        // can't remember, skip, pass, blank — and caught the admission before you ever saw it. It
+        // worked, in English. A learner practising Spanish who typed "no sé" was sent here and
+        // graded WRONG, which is exactly the harm that list existed to prevent, failing for anyone
+        // not answering in English. The list's own header said so and named this as the fix.
+        "An ADMISSION is also not an attempt: the learner aimed at the question and told you they " +
+        "have nothing — in any language, in any words, however brief. Nothing is recorded, because " +
+        "\"we still do not know\" must never be stored as \"they got it wrong\". But a HEDGED answer " +
+        "is an attempt, and the difference is whether anything was actually produced: if they named " +
+        "something, guessed, or described part of it, grade what they produced however unsure they " +
+        "sounded about it.\n\n" +
         `If the performance fell short, say WHY with errorType, one of: ${ERROR_TYPES.join(", ")}. ` +
         "This matters more than the verdict: a forgotten term and a backwards causal model both look wrong, and " +
         "they need opposite teaching.\n\n" +

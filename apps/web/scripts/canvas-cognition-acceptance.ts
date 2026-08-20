@@ -36,7 +36,6 @@ import { objectivesForKnowledge } from "@/lib/learn/learning-objective";
 import { decideNext } from "@/lib/learn/policy-runtime";
 import { runtimeCanStage } from "@/lib/learn/runtime-support";
 import { evaluateLearningResponse } from "@/lib/learn/canvas-api";
-import { isAdmissionOfNotKnowing } from "@/lib/learn/response-admission";
 import { loadEvidence, recordEvidence, saveKnowledge, type StoredObjective } from "@/lib/learn/learner-store";
 import { performancesIn, projectLearnerState, type LearnerEvidence } from "@/lib/learn/learner-evidence";
 import {
@@ -397,8 +396,13 @@ async function main(): Promise<void> {
   const first = assocObjectives[0]!;
   const admission = "I don't know";
   const admissionPrompt = retrievalPromptFor(first, randomUUID());
-  // 🔴 THE SAME STRUCTURAL TEST THE SURFACE RUNS BEFORE THE JUDGE IS EVER CALLED.
-  const recognisedAsAdmission = isAdmissionOfNotKnowing(admission);
+  // 🔴 WHAT THIS STILL PROVES, AND WHAT IT NO LONGER CAN. The surface used to run
+  // `isAdmissionOfNotKnowing` before the judge, and this script ran the identical predicate. That
+  // list is gone: the judge reports `not_an_attempt` for an admission in any language now, and a
+  // model call is not something this script can assert on. What it still proves is the half that
+  // matters and that lives in production — a submission that obtained no demonstration is STORED
+  // with no verdict, read back through RLS. "We still do not know" must never become "they got it
+  // wrong", and that is a property of the row, not of the reading that produced it.
   const admissionRows = evidenceForSubmission({
     canvasId: null,
     judgement: judgementOf([]),
@@ -413,8 +417,7 @@ async function main(): Promise<void> {
   const admissionRow = afterAdmission.find((e) => e.responseId === admissionPrompt.id);
   check(
     "D4",
-    recognisedAsAdmission &&
-      admissionRow != null &&
+    admissionRow != null &&
       admissionRow.demonstrationObtained === false &&
       admissionRow.verdict === null,
     admissionRow
