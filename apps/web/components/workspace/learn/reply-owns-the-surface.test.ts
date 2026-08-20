@@ -30,7 +30,7 @@ const TEACH_SCREEN = { canvasState: "learn", policyPresenting: true } as const;
 test("🔴🔴 a reply takes the surface from a claim being taught", () => {
   // Calibration: delete `&& !displacedByReply` from `policy` in composeSurface and this reddens
   // alone. It is the exact screenshot: a teach screen up, an answer arriving, both on the page.
-  const regions = composeSurface({ ...TEACH_SCREEN, replyOnScreen: true });
+  const regions = composeSurface({ ...TEACH_SCREEN, aside: "reply" });
   assert.equal(regions.reply, true, "the answer Nemesis just gave is not on the surface");
   assert.equal(regions.policy, false, "the teaching screen is still painting underneath the answer");
 });
@@ -38,7 +38,7 @@ test("🔴🔴 a reply takes the surface from a claim being taught", () => {
 test("the teaching screen is there the moment the reply is not", () => {
   // The other half, and it is what makes this a displacement rather than a deletion. Nothing about
   // the policy changed; it is standing behind the reply and comes straight back.
-  const regions = composeSurface({ ...TEACH_SCREEN, replyOnScreen: false });
+  const regions = composeSurface({ ...TEACH_SCREEN, aside: "none" });
   assert.equal(regions.policy, true);
   assert.equal(regions.reply, false);
 });
@@ -49,8 +49,45 @@ test("a canvas with no reply is composed exactly as it was", () => {
   // round this change would silently rewrite the surface for canvases that have never seen a reply.
   assert.deepEqual(
     composeSurface(TEACH_SCREEN),
-    composeSurface({ ...TEACH_SCREEN, answerOwed: false, replyOnScreen: false }),
+    composeSurface({ ...TEACH_SCREEN, answerOwed: false, aside: "none" }),
   );
+});
+
+// ── The regression a browser found and no pure test could have ───────────────
+
+test("🔴🔴🔴 an OPENING LINE does not displace the lesson it is introducing", () => {
+  // FOUND BY RUNNING IT. The first version of this change treated every canvas-wide aside as a
+  // reply — and `converse` writes one on a `study` turn too, immediately before `begin()`: the
+  // sentence "Hydroxyl it is. Quick pass before we dig in:". So "Teach me the hydroxyl functional
+  // group" printed that one line and then NEVER showed the lesson, for the rest of the session,
+  // because the preamble was permanently standing in front of the screen it was preambling.
+  //
+  // Worse than the defect being fixed, and every unit test passed. The browser harness is what
+  // caught it, which is the whole argument for having one.
+  //
+  // Calibration: change `aside === "reply"` to `aside !== "none"` in `displacedByReply` and this
+  // reddens alone.
+  const regions = composeSurface({ ...TEACH_SCREEN, aside: "opening" });
+  assert.equal(regions.policy, true, "the lesson is hidden behind its own opening line");
+  assert.equal(regions.reply, true, "and the opening line still has to be on screen");
+});
+
+test("🔴 both kinds of aside paint; only one of them displaces", () => {
+  // The rule is about what YIELDS, never about what renders. An opening that stopped rendering
+  // would be the opposite bug: Nemesis says "Hydroxyl it is" and the learner never sees it.
+  for (const aside of ["opening", "reply"] as const) {
+    assert.equal(composeSurface({ ...TEACH_SCREEN, aside }).reply, true, aside);
+  }
+  assert.equal(composeSurface({ ...TEACH_SCREEN, aside: "none" }).reply, false);
+});
+
+test("🔴🔴 the canvas reads the KIND off the aside, and the session records it", () => {
+  // The kind cannot be re-derived from the text, so it has to be written where the two branches
+  // already differ. `use-canvas-session.ts` sets `opening` on the `study` branch and `reply` on the
+  // conversational one; anything else here would be a third classification of the same text.
+  const session = readFileSync(new URL("./use-canvas-session.ts", import.meta.url), "utf8");
+  assert.match(session, /kind: "opening"/, "the study branch no longer marks its opening line");
+  assert.match(session, /kind: "reply"/, "the conversational branch no longer marks its answer");
 });
 
 // ── The one thing a reply may never push off the page ────────────────────────
@@ -62,7 +99,7 @@ test("🔴🔴 an OWED QUESTION is not displaced, and that is the owner's own in
   // silently discarded. So an owed question stays, and the reply appears with it.
   //
   // Calibration: drop `&& !answerOwed` from `displacedByReply` and this reddens alone.
-  const regions = composeSurface({ ...TEACH_SCREEN, answerOwed: true, replyOnScreen: true });
+  const regions = composeSurface({ ...TEACH_SCREEN, answerOwed: true, aside: "reply" });
   assert.equal(regions.policy, true, "a question the learner owes an answer to was taken off screen");
   assert.equal(regions.reply, true, "and the answer to what they asked has to be there too");
 });
@@ -70,7 +107,7 @@ test("🔴🔴 an OWED QUESTION is not displaced, and that is the owner's own in
 test("🔴 the answer still routes to the policy while both are up", () => {
   // `answerSink` reads `regions.policy`, so this follows from the line above rather than being a
   // second rule — which is the point of expressing displacement as a region.
-  const regions = composeSurface({ ...TEACH_SCREEN, answerOwed: true, replyOnScreen: true });
+  const regions = composeSurface({ ...TEACH_SCREEN, answerOwed: true, aside: "reply" });
   const task = { answered: false, placeholder: "Type your answer", promptId: "p1" };
   const sink = answerSink({ hosted: { task } as never, regions, stageTask: null });
   assert.equal(sink.kind, "policy");
@@ -80,7 +117,7 @@ test("🔴🔴 and nothing can be answered while the question is NOT on screen",
   // The converse, which could not even be stated before this change. A displaced screen loses its
   // answer routing by the same act that takes it off the page, so a submission cannot land on a
   // question the learner cannot see.
-  const regions = composeSurface({ ...TEACH_SCREEN, replyOnScreen: true });
+  const regions = composeSurface({ ...TEACH_SCREEN, aside: "reply" });
   const task = { answered: false, placeholder: "Type your answer", promptId: "p1" };
   assert.equal(answerSink({ hosted: { task } as never, regions, stageTask: null }).kind, "none");
 });
@@ -100,7 +137,7 @@ test("🔴🔴🔴 a reply on an un-begun canvas is an ASK, never a start", () =
   //
   // Calibration: pass `regions.policy` instead of `policyPresenting` at the call site in
   // `learning-canvas.tsx` and this reddens.
-  const regions = composeSurface({ canvasState: "sources_attached", policyPresenting: true, replyOnScreen: true });
+  const regions = composeSurface({ canvasState: "sources_attached", policyPresenting: true, aside: "reply" });
   const intent = composerIntent({
     awaitingAnswer: false,
     canvasState: "sources_attached",
@@ -134,7 +171,7 @@ test("🔴🔴 a canvas holding an answer is never reported as QUIET", () => {
     blocks: 0,
     canvasState: "learn",
     policyPresenting: false,
-    replyOnScreen: true,
+    aside: "reply",
     working: false,
   });
   assert.equal(presence, "reply");
@@ -145,7 +182,7 @@ test("a reply outranks a document, and yields to a question it may not displace"
     blocks: 4,
     canvasState: "learn",
     policyPresenting: false,
-    replyOnScreen: true,
+    aside: "reply",
     working: false,
   });
   assert.equal(overDocument.presence, "reply");
@@ -155,7 +192,7 @@ test("a reply outranks a document, and yields to a question it may not displace"
     blocks: 0,
     canvasState: "learn",
     policyPresenting: true,
-    replyOnScreen: true,
+    aside: "reply",
     working: false,
   });
   assert.equal(underOwedQuestion.presence, "task", "the ask is what the learner is being held to");
@@ -168,7 +205,7 @@ test("🔴 a reply is not reported as WORK IN FLIGHT", () => {
     blocks: 0,
     canvasState: "learn",
     policyPresenting: false,
-    replyOnScreen: true,
+    aside: "reply",
     working: true,
   });
   assert.equal(presence, "reply");
@@ -196,6 +233,14 @@ test("🔴🔴 the reply renders from the REGION, not from the raw state", () =>
     !/\{session\.aside && session\.aside\.blockId === null && \(/.test(canvasCode),
     "the render site is back to deciding for itself whether a reply is showing",
   );
+});
+
+test("🔴 the canvas passes the aside's KIND through, not a boolean", () => {
+  // A boolean here would have to be `kind === "reply"`, which is the displacement question — and
+  // then an opening line would stop rendering, because the region is also what paints it. The kind
+  // travels whole so one value answers both.
+  assert.match(canvasCode, /aside: asideOnScreen,/);
+  assert.match(canvasCode, /session\.aside\.blockId !== null \? "none" : session\.aside\.kind/);
 });
 
 test("🔴🔴 the intent is given the UNDISPLACED value", () => {

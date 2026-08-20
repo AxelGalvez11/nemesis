@@ -682,11 +682,18 @@ export function LearningCanvas({
   /**
    * Nemesis has answered something the learner asked, and that answer is live.
    *
-   * 🔴 `blockId === null` IS THE WHOLE TEST, AND IT IS THE SAME ONE THE RENDER SITE BELOW USES. A
-   * `blockId` means the answer belongs to a passage and is rendered under it by `CanvasDocument`;
-   * only the general case is a turn of conversation occupying the page.
+   * 🔴 `blockId === null` BECAUSE A `blockId` MEANS THE ANSWER BELONGS TO A PASSAGE and is rendered
+   * under it by `CanvasDocument`; only the general case is a turn of conversation occupying the page.
+   *
+   * 🔴🔴 AND `kind === "reply"`, WHICH IS THE HALF A BROWSER FOUND AND NO TEST COULD. A `study` turn
+   * on a canvas that has not begun ALSO writes an aside: the opening line, "Hydroxyl it is. Quick
+   * pass before we dig in:", set immediately before `begin()`. Counting that as a reply made it
+   * displace the very lesson it was introducing, so "Teach me the hydroxyl functional group"
+   * printed one sentence and then nothing, for the rest of the session. An opening is the first
+   * sentence OF what follows; an answer is a turn INSTEAD of it.
    */
-  const replyOnScreen = session.aside !== null && session.aside.blockId === null;
+  const asideOnScreen: "none" | "opening" | "reply" =
+    session.aside === null || session.aside.blockId !== null ? "none" : session.aside.kind;
 
   // 🔴 A STEP IS RUNNING, ANSWERED HONESTLY AND IN ONE PLACE. `thinking-phases.ts` is explicit that
   // a caption on a timer "would look exactly like a system thinking and would be theatre", so this
@@ -748,8 +755,8 @@ export function LearningCanvas({
       actionInFlight: actionKey(policy.decision?.action ?? null),
       requestedDuring: materialRequestedDuring,
     }),
+    aside: asideOnScreen,
     policyPresenting,
-    replyOnScreen,
     working,
   });
 

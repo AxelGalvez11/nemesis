@@ -279,12 +279,24 @@ export function composeSurface(input: {
    */
   materialIsTheAction?: boolean;
   /**
-   * Nemesis has just answered something the learner asked, and that answer is live.
+   * The canvas-wide thing Nemesis has said, and which of the two kinds it is.
    *
-   * Absent means "no reply", which is the pre-existing reading and leaves every other region exactly
-   * where it was.
+   * 🔴🔴 ONE INPUT RATHER THAN TWO BOOLEANS, BECAUSE TWO COULD DISAGREE. "There is text on screen"
+   * and "that text displaces the lesson" are different facts, but they are not independent: a reply
+   * implies text. Passed as a pair of flags, `{ showing: false, displaces: true }` compiles, and the
+   * first edit that sets one without the other gets a surface with nothing on it and a hidden
+   * lesson. As one value the inconsistency is unrepresentable.
+   *
+   * 🔴 `opening` IS NOT A LESSER REPLY, IT IS A DIFFERENT THING, AND CONFLATING THEM COST A WHOLE
+   * SESSION. `converse` writes an aside on a `study` turn too — the sentence before the lesson
+   * starts, "Hydroxyl it is. Quick pass before we dig in:". It renders exactly like an answer and
+   * behaves oppositely: it introduces the teaching screen instead of standing in front of it.
+   * Treating it as a reply made it displace the lesson it was introducing, permanently. Found in a
+   * browser; no pure test could see it.
+   *
+   * Absent means `none`, which is the pre-existing reading and leaves every region where it was.
    */
-  replyOnScreen?: boolean;
+  aside?: "none" | "opening" | "reply";
   /**
    * The policy is asking for something the learner has not produced yet.
    *
@@ -303,11 +315,11 @@ export function composeSurface(input: {
 }): CanvasRegions {
   const {
     answerOwed = false,
+    aside = "none",
     canvasState,
     hasReadingMaterial = true,
     materialIsTheAction = false,
     policyPresenting,
-    replyOnScreen = false,
   } = input;
   const evidenceStage = isEvidenceStage(canvasState);
   const reading = READING_STATES.includes(canvasState);
@@ -317,7 +329,7 @@ export function composeSurface(input: {
   // answer routing and its button by the same act that takes it off the page, rather than by two
   // more conditions somebody has to remember to write. That is the property: what is on screen, what
   // can be answered, and what can be advanced are one answer.
-  const displacedByReply = replyOnScreen && !answerOwed;
+  const displacedByReply = aside === "reply" && !answerOwed;
   const policy = policyPresenting && !displacedByReply;
 
   return {
@@ -393,7 +405,9 @@ export function composeSurface(input: {
     // to the arm that cannot learn anything about the learner, and kept it there. That is exactly
     // backwards, and it is why the owner met a fixed six-question quiz on their own canvas.
     policy,
-    reply: replyOnScreen,
+    // 🔴 BOTH KINDS PAINT. The kind decides what YIELDS, never what is rendered: an opening line
+    // still has to appear, it simply does not push the lesson it introduces off the page.
+    reply: aside !== "none",
     // 🔴 REAL READING MATERIAL ONLY. A task makes room for a document; it does not make room
     // for a placeholder that is itself waiting for one, and it does not make room for a reading
     // state that is empty because nothing was generated into it (§24).

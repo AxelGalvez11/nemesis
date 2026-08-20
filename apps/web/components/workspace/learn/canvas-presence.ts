@@ -175,18 +175,18 @@ export function canvasPresentation(input: {
   working: boolean;
   /** The material IS the cognitive action in flight — see `materialOwnsAttention`. */
   materialIsTheAction?: boolean;
-  /** Nemesis has answered something the learner asked, and that answer is live. */
-  replyOnScreen?: boolean;
+  /** What Nemesis has said canvas-wide, and which kind it is — see `composeSurface`. */
+  aside?: "none" | "opening" | "reply";
   /** The policy is asking for something the learner has not produced yet — see `composeSurface`. */
   answerOwed?: boolean;
 }): CanvasPresentation {
   const {
     answerOwed = false,
+    aside = "none",
     blocks,
     canvasState,
     materialIsTheAction = false,
     policyPresenting,
-    replyOnScreen = false,
     working,
   } = input;
 
@@ -195,11 +195,11 @@ export function canvasPresentation(input: {
   // to read" came apart — and `composeSurface` degrades to the pre-§24 reading when not told.
   const regions = composeSurface({
     answerOwed,
+    aside,
     canvasState,
     hasReadingMaterial: blocks > 0,
     materialIsTheAction,
     policyPresenting,
-    replyOnScreen,
   });
 
   // Precedence is content first. A step running while a question is on screen is ambient — the
