@@ -158,6 +158,29 @@ export function isWellFormedLocale(value: string): boolean {
   return LOCALE_SHAPE.test(value.trim());
 }
 
+/**
+ * The same tag written the way BCP-47 writes it, or null when it is not a tag at all.
+ *
+ * 🔴 CASE IS NOT A JUDGEMENT CALL, WHICH IS WHY THIS NORMALISES INSTEAD OF REFUSING. `es-mx` and
+ * `es-MX` are the same locale to every human and to Azure's catalogue; losing a learner's audio to
+ * a capital letter a model did not type would be the shape check punishing the wrong mistake.
+ * Language lowercase, script Titlecase, region upper — the registry's own casing rule, applied by
+ * SHAPE and never against a list of known tags, which is the same reason `LOCALE_SHAPE` is a shape.
+ */
+export function canonicalLocale(value: string): string | null {
+  const canonical = value
+    .trim()
+    .split("-")
+    .map((part, index) => {
+      if (index === 0) return part.toLowerCase();
+      // Four letters is a script subtag (`Hans`); anything else is a region (`MX`, `419`).
+      if (/^[A-Za-z]{4}$/.test(part)) return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      return part.toUpperCase();
+    })
+    .join("-");
+  return isWellFormedLocale(canonical) ? canonical : null;
+}
+
 /** Why nothing will be spoken. `SpeechRefusal`'s reasons, plus the two this lane adds. */
 export type SpeechRouteRefusal =
   | SpeechRefusal

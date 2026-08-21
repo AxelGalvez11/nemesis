@@ -23,6 +23,7 @@
 //
 // PURE. No React, no I/O.
 
+import { canonicalLocale } from "./speech-route";
 import { validateStructure, type ChemNotation } from "./chem-notation";
 import { parseCanvasVisual, type CanvasVisualRequest, type StructureVisual } from "./canvas-visual";
 
@@ -36,7 +37,17 @@ import { parseCanvasVisual, type CanvasVisualRequest, type StructureVisual } fro
  */
 export type ReplySegment =
   | { kind: "prose"; text: string }
-  | { kind: "visual"; visual: CanvasVisualRequest };
+  | { kind: "visual"; visual: CanvasVisualRequest }
+  /**
+   * A sentence the learner is meant to HEAR, and the variety it must be heard in.
+   *
+   * 🔴 THE LOCALE TRAVELS WITH THE SENTENCE BECAUSE §43 REFUSES TO GUESS IT. `es-MX` and `es-ES`
+   * differ in exactly the features a pronunciation drill is teaching, so the router will not speak
+   * a target-language utterance without being told which one — and the only participant that knows
+   * is the one that wrote the sentence. A session-level setting could not express a reply that
+   * contrasts two varieties in consecutive lines, which is an ordinary thing to teach.
+   */
+  | { kind: "target_language"; locale: string; text: string };
 
 /**
  * Fences this understands. The language tag is the notation.
@@ -91,6 +102,24 @@ const INLINE_RE = /\[(smiles|reaction|reaction-smiles)\s*:\s*([^\]\n]+)\]/gi;
 const FIGURE_RE = /\[figure\s+(\d{1,2})\]/gi;
 
 /**
+ * `[say: es-MX | Buenos días]` — "this much is in the language being taught, in this variety".
+ *
+ * 🔴🔴 THE MODEL STATES THE VARIETY; NOTHING INFERS IT. The alternative was a detector guessing the
+ * locale from the characters, and guessing is the single failure `speech-route.ts` exists to
+ * prevent: a learner drilled in the wrong accent, confidently delivered, with nothing on screen to
+ * say it happened. The participant that chose the sentence is the one that knows what it is.
+ *
+ * 🔴 ONE LINE, FOR THE REASON `[smiles: …]` IS ONE LINE — measured twice in a browser. `say` is a
+ * STRING INSIDE A JSON OBJECT and the contract demands strict JSON, so a form needing literal
+ * newlines is a form the model steers away from.
+ *
+ * 🔴 IT CANNOT COLLIDE WITH THE OTHERS: `[1]` is bare digits, `[smiles: …]` and `[figure n]` need
+ * their own words, and the pipe is required here so a stray `[say: something]` is left in the prose
+ * rather than half-parsed.
+ */
+const SAY_RE = /\[say\s*:\s*([A-Za-z][A-Za-z-]{1,14})\s*\|\s*([^\]\n]+)\]/gi;
+
+/**
  * Split a reply into prose and the drawings it asked for.
  *
  * `visuals` is the turn's own list, already validated. A `[figure n]` marker resolves into it by
@@ -108,11 +137,32 @@ export function replySegments(text: string, visuals: readonly CanvasVisualReques
   // 🔴 BOTH FORMS, IN THE ORDER THEY APPEAR IN THE TEXT. Matching one pattern and then the other
   // would emit the drawings out of order whenever a reply mixed them, and position is the whole
   // reason this is a split.
-  const matches = [...text.matchAll(FENCE_RE), ...text.matchAll(INLINE_RE), ...text.matchAll(FIGURE_RE)].sort(
+  const matches = [
+    ...text.matchAll(FENCE_RE),
+    ...text.matchAll(INLINE_RE),
+    ...text.matchAll(FIGURE_RE),
+    ...text.matchAll(SAY_RE),
+  ].sort(
     (a, b) => (a.index ?? 0) - (b.index ?? 0),
   );
 
   for (const match of matches) {
+    // A sentence to be heard, in a stated variety.
+    if (match[0].toLowerCase().startsWith("[say")) {
+      const locale = canonicalLocale(match[1] ?? "");
+      const said = (match[2] ?? "").trim();
+      // 🔴 A MALFORMED TAG LEAVES THE TOKEN IN THE PROSE RATHER THAN DROPPING THE SENTENCE, which
+      // is the same rule a refused SMILES follows below. The learner sees the words with a stray
+      // marker around them — visibly odd, and far better than a sentence that silently vanishes
+      // from an answer because a model wrote the tag wrong.
+      if (!locale || !said) continue;
+      const beforeSaid = text.slice(cursor, match.index);
+      if (beforeSaid.trim()) segments.push({ kind: "prose", text: beforeSaid });
+      segments.push({ kind: "target_language", locale, text: said });
+      cursor = match.index + match[0].length;
+      continue;
+    }
+
     // A `[figure n]` marker resolves against the turn's own validated list.
     if (match[0].toLowerCase().startsWith("[figure")) {
       const visual = visuals[Number(match[1]) - 1];

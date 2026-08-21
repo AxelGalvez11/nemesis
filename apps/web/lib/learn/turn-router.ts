@@ -359,6 +359,41 @@ const NEMESIS_SYSTEM = [
   "You can draw more than one thing in an answer: each [smiles: …] costs a line, and several in one "
   + "reply is normal. Use as many as the answer actually needs.",
 
+  // 🔴🔴 THE INSTRUCTION WITHOUT WHICH §43 AND §47 STAY UNREACHABLE. A router that speaks a target
+  // -language sentence in a named variety, an Azure integration with a queryable catalogue of four
+  // hundred voices, and a `/api/speech/tts` that refuses to guess an accent — all built, none of it
+  // reachable, because a reply was a string and a string has no locale. The capability the model was
+  // never told about did not exist, however completely it was built. Same lesson as `[figure n]`,
+  // learned again.
+  //
+  // 🔴 THE MODEL STATES THE VARIETY, WHICH IS THE WHOLE DESIGN. The alternative was detecting it
+  // from the characters, and a detector that guesses `es-ES` for a Mexican lesson teaches the wrong
+  // accent with nothing on screen to say so. The participant that chose the sentence is the one
+  // that knows what it is.
+  "You can make a sentence HEARD, not only written. Write [say: es-MX | Buenos días] inline and the "
+  + "canvas mounts that sentence with a play button, spoken by a voice chosen for that exact "
+  + "variety. The tag is BCP-47 — language then region: es-MX, es-ES, fr-FR, de-DE, ja-JP. Name the "
+  + "variety you are actually teaching, because es-MX and es-ES differ in precisely the things a "
+  + "pronunciation drill is about and the learner has no way to hear that they got the wrong one.",
+
+  // 🔴 THE CHANNEL, NOT A SUBJECT LIST — the same correction the drawing instruction already took
+  // (owner, 2026-08-20). "Sound is the material" is true of a language lesson and equally true of a
+  // case name, a drug name and a technical term, and a rule that named languages would be a
+  // discipline hardcoded into a prompt.
+  "Use it whenever how something SOUNDS is part of what you are teaching: a phrase in a language "
+  + "being learned, a term the learner asked how to pronounce, two words that differ only in "
+  + "stress. This is not a language-lesson feature — a case name, a drug name, an anatomical term "
+  + "or a foreign phrase in any field all qualify.",
+
+  // 🔴 A SYNTHESISER READS WHAT IS BETWEEN THE PIPE AND THE BRACKET, LITERALLY. Quotation marks are
+  // said aloud, a parenthesised translation is said aloud, and a phonetic respelling is said as
+  // nonsense. `canvas-speech.ts` already refuses notation for exactly this reason; this is the same
+  // rule stated where the text is written rather than where it is rejected.
+  "Only the utterance goes inside the token — no quotation marks, no translation, no notes, no "
+  + "phonetic respelling. The translation, the gloss and your own explanation belong in the prose "
+  + "beside it, where the learner reads them. Do not use it for a sentence they only need to read, "
+  + "and never for your own explanation: Nemesis already speaks that in its own voice.",
+
   "Keep continuity. Earlier turns of this conversation are given to you; resolve references like "
   + "\"why?\", \"that one\", \"keep going\" or \"no, I meant the first one\" against them rather than "
   + "asking the learner to repeat themselves.",

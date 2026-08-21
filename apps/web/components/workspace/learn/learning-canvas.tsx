@@ -36,6 +36,7 @@ import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
 import { ReplyActions } from "./reply-actions";
+import { SpokenExample } from "./spoken-example";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -1200,6 +1201,24 @@ export function LearningCanvas({
               {replySegments(replyText, replyVisualList).map((segment, index) =>
                 segment.kind === "visual" ? (
                   <SemanticVisual key={`v${index}`} visual={segment.visual} />
+                ) : segment.kind === "target_language" ? (
+                  /* 🔴🔴 THE ONE PLACE THE LANGUAGE LANE IS REACHED FROM. §43 built a router that
+                     speaks a target-language sentence in a named variety and §47 wired Azure to
+                     say it; neither could ever run, because nothing in a conversation could say
+                     "this much is Spanish". The model marks it, this mounts it, and `speakExample`
+                     is the only caller in the product that passes the language purpose.
+
+                     🔴 OUTSIDE THE MARKED DIV, for the same reason a drawing is: one marker
+                     wrapping prose AND a button would fail `readCanvasSelection`'s integrity
+                     check on every selection inside it. */
+                  <SpokenExample
+                    key={`s${index}`}
+                    locale={segment.locale}
+                    onSpeak={() => voice.speakExample(segment.locale, segment.text)}
+                    onStop={voice.stopSpeaking}
+                    speaking={voice.header.speaking}
+                    text={segment.text}
+                  />
                 ) : (
                   <div key={`p${index}`} {...selectableRegion(index === 0 ? "reply" : `reply-${index}`)}>
                     <AssistantMarkdown
@@ -1234,7 +1253,8 @@ export function LearningCanvas({
                   // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
                   // them, and a synthesiser reading it aloud is worse.
                   text={replySegments(replyText, replyVisualList)
-                    .filter((segment) => segment.kind === "prose")
+                    // 🔴 The spoken example is part of the answer: dropping it makes Copy lossy.
+                    .filter((segment) => segment.kind === "prose" || segment.kind === "target_language")
                     .map((segment) => (segment as { text: string }).text)
                     .join("\n\n")
                     .trim()}
