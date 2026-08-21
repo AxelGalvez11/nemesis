@@ -1365,7 +1365,15 @@ export function LearningCanvas({
             would NOT look again — the button would appear to work and change nothing. Re-mounting
             is the whole mechanism by which reopening from the Library recovered. */}
         {presence === "quiet" && (
-          <CanvasQuiet onRetry={() => window.location.assign(`/learn?c=${canvas.id}`)} />
+          <CanvasQuiet
+            onRetry={() => window.location.assign(`/learn?c=${canvas.id}`)}
+            // 🔴 THE REASON IS ALREADY ON THE CANVAS; IT WAS JUST NEVER ON THIS SCREEN. Every
+            // source carries the note the sources panel prints, so a document Nemesis could only
+            // partly read can say so here instead of leaving the learner with a dead end.
+            unread={canvas.sources
+              .filter((source) => source.coverageNote)
+              .map((source) => ({ note: source.coverageNote!, title: source.title }))}
+          />
         )}
 
         {regions.document && presence !== "preparing" && (

@@ -5,6 +5,9 @@ import { BotEngine } from "@/lib/bloub/engine";
 import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
 import { SEQUENCE, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
+import { ACCENT_COLORS } from "@/lib/accent";
+
+import { PULSE_CYCLE, arcStops, pulseTint } from "./look";
 import { ARC_POOL, ARC_STOPS, DOT_POOL } from "./pool";
 import { speedOf, stationOf } from "./stations";
 
@@ -354,4 +357,62 @@ test("🔴 pressing Speak twice actually speaks twice", async () => {
     `the utterance key is derived from the text (\`aloud:${call[1]}\`), so a second press is deduped into silence`,
   );
   assert.match(code, /aloudPress\.current \+= 1/, "nothing advances the per-press counter");
+});
+
+// ── colour: one meaning, one place ───────────────────────────────────────────
+//
+// 🔴 THESE GUARD A PRODUCT DECISION AGAINST A VENDORED DEFAULT, which is the fragile kind. The
+// hue wheel is still sitting in `lib/bloub/decor.ts` and every arc still arrives carrying one; what
+// keeps it off the screen is one line in the renderer choosing not to use it. A refactor that
+// "simplifies" that line back to `arc.grad.stops[s]` restores the rainbow and breaks nothing else.
+
+test("🔴 an orbit arc is drawn in ink, never in the seed's hue", () => {
+  const stops = arcStops("#0a0a0c", "#f9f9f9", ARC_STOPS);
+  for (const stop of stops) {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(stop.slice(i, i + 2), 16));
+    // A shade of one ink is grey when the ink is grey: the channels stay together. Any hue at all
+    // would spread them, which is exactly what the wheel does.
+    const spread = Math.max(r!, g!, b!) - Math.min(r!, g!, b!);
+    assert.ok(spread <= 4, `${stop} carries a hue — the wheel is back on the arcs`);
+  }
+});
+
+// 🔴 THE FADE IS NOT DECORATION AND MUST SURVIVE THE DE-COLOURING. An orbit is a stroke passing
+// behind the body and out in front; ends that dissolve read as going ROUND something, and a flat
+// band reads as a hoop laid on top. Removing the hue while flattening the gradient would have
+// traded one wrong picture for another.
+test("🔴 the arc still fades at its ends", () => {
+  const [start, middle, end] = arcStops("#0a0a0c", "#f9f9f9", 3);
+  const lum = (hex: string) => parseInt(hex.slice(1, 3), 16);
+  assert.ok(lum(start!) > lum(middle!), "the arc no longer fades in");
+  assert.ok(lum(end!) > lum(middle!), "the arc no longer fades out");
+});
+
+test("🔴 thinking is the only coloured state, and its three dots never match", () => {
+  for (const clock of [0, 0.7, 1.9, 4.2, 11.5]) {
+    const dots = [0, 1, 2].map((i) => pulseTint(clock, i, false));
+    assert.equal(new Set(dots).size, 3, `two dots share a colour at t=${clock}`);
+    for (const dot of dots) assert.match(dot, /^#[0-9a-f]{6}$/);
+  }
+});
+
+// 🔴 REDUCED MOTION HOLDS A COLOUR RATHER THAN LOSING ONE. Somebody who asked the system to stop
+// moving still has to be able to see that it is working — and with the dots' own motion already
+// held, the colour is the whole of what is left saying so.
+test("🔴 reduced motion keeps the colour and drops only the drift", () => {
+  const first = [0, 1, 2].map((i) => pulseTint(0, i, true));
+  const later = [0, 1, 2].map((i) => pulseTint(60, i, true));
+  assert.deepEqual(first, later, "a held pulse must not depend on the clock");
+  assert.equal(new Set(first).size, 3, "the dots collapsed to one colour");
+  for (const dot of first) assert.ok(PULSE_CYCLE.includes(dot), `${dot} is not one of the app's accents`);
+});
+
+// 🔴 THE PALETTE IS THE APP'S, AND THAT IS THE POINT OF THE WHOLE CHANGE. A hue wheel produces
+// colours nothing else in Nemesis uses, which is why the swirls read as belonging to some other
+// product. Every colour the character can show is one a learner can already pick for the send button.
+test("🔴 the pulse only ever uses colours the app itself offers", () => {
+  for (const colour of PULSE_CYCLE) {
+    assert.ok(Object.values(ACCENT_COLORS).includes(colour), `${colour} is not an app accent`);
+  }
+  assert.equal(PULSE_CYCLE.length, Object.keys(ACCENT_COLORS).length, "an accent is missing from the pulse");
 });
