@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useTheme } from "@/components/theme-provider";
+import { inkFor } from "@/lib/character/look";
 import {
   ATTENTION_ATTR,
   getAttention,
@@ -108,7 +109,7 @@ export function BloubDock({
   contain = false,
   className,
 }: BloubDockProps) {
-  const { accent } = useTheme();
+  const { accent, theme } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   const { state: shown, poke } = usePoke(state);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -275,7 +276,26 @@ export function BloubDock({
       {marker && (
         <span
           aria-hidden="true"
-          className="bloub-marker pointer-events-none absolute left-1/2 bottom-full mb-1 -translate-x-1/2 select-none text-[13px] font-semibold leading-none text-(--ui-text-tertiary)"
+          className="bloub-marker pointer-events-none absolute left-1/2 bottom-full flex items-center justify-center rounded-full font-semibold leading-none select-none"
+          style={{
+            // 🔴🔴 THE CHARACTER'S OWN COLOUR, FROM THE FUNCTION THE CHARACTER USES. Reported
+            // 2026-08-21: *"the mascot has a random question mark that isnt in purple like the
+            // mascot."* It was `--ui-text-tertiary` — page grey — so the one thing sitting on the
+            // mascot's head was the one thing that did not belong to it, and it read as a stray
+            // glyph on the page rather than as the character signalling. `inkFor` is what
+            // `BloubBot` paints its body with, so this cannot drift from it: not across themes,
+            // and not across the accents the learner can choose.
+            backgroundColor: inkFor(accent, theme),
+            // 🔴 COUNTER-SCALED, the same reason the caption is. The dock grows to `centreScale`
+            // when the character comes forward to think, and a badge that grew with it became a
+            // page-sized question mark floating above the middle of the screen.
+            color: "var(--ui-bg-elevated)",
+            fontSize: `${Math.round(size * 0.26) / travel.k}px`,
+            height: `${Math.round(size * 0.42) / travel.k}px`,
+            marginBottom: `${6 / travel.k}px`,
+            transform: "translateX(-50%)",
+            width: `${Math.round(size * 0.42) / travel.k}px`,
+          }}
         >
           {marker}
         </span>

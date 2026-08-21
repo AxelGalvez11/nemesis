@@ -271,7 +271,19 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
 
   // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
   // the question is already rendered in full, in words, in the middle of the page.
-  assert.match(canvasCode, /marker=\{session\.error \? "!" : awaitingDemonstration \? "\?" : null\}/);
+  assert.match(canvasCode, /session\.error \? "!" :/, "the error no longer outranks the question");
+  assert.match(canvasCode, /awaitingDemonstration && !turnInFlight && presence !== "preparing" \? "\?" : null/,
+    "the question mark is back on the mascot's head while Nemesis is working");
+
+  // 🔴 THE BADGE IS THE CHARACTER'S OWN COLOUR, NOT THE PAGE'S. Reported 2026-08-21: *"the mascot
+  // has a random question mark that isnt in purple like the mascot."* It was `--ui-text-tertiary`,
+  // so the one thing sitting ON the character was the one thing that did not belong to it.
+  // `inkFor` is what `BloubBot` paints its body with, so the badge cannot drift from the body it
+  // sits on — not across themes, and not across the accents a learner can choose.
+  assert.match(dock, /backgroundColor: inkFor\(accent, theme\)/, "the mark is painted in page grey again");
+  // 🔴 AND IT DOES NOT GROW WITH THE DOCK. The character scales to `centreScale` coming forward;
+  // a badge that scaled with it became a page-sized glyph over the middle of an empty screen.
+  assert.match(dock, /travel\.k/, "the badge is no longer counter-scaled");
 });
 
 test("🔴🔴 the mascot comes forward for a TURN, never for background work", () => {
