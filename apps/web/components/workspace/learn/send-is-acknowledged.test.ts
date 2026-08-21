@@ -201,3 +201,40 @@ test("🔴🔴 the canvas scrolls past the composer, which floats over it", () =
   // Calibration: drop the pb and this reddens.
   assert.match(canvasCode, /overflow-y-auto pb-\[160px\] pt-\[64px\]/, "the scroller does not clear the floating composer");
 });
+
+// ── Arriving at the canvas ───────────────────────────────────────────────────────────────────
+
+test("🔴🔴 the canvas's own half of the transition exists at all", () => {
+  // Owner, 2026-08-20: *"the transition from landing page to canvas needs to be smoother ... the
+  // upper header controls need to appear as a fade in."*
+  //
+  // The FRONT DOOR half was already built — the composer travels down, the greeting fades — and
+  // then the route changed and the canvas simply WAS there, header and all, hard-cut. Half a
+  // transition reads worse than none: the eye is following a moving composer and the destination
+  // arrives fully formed around it.
+  const surface = readFileSync(new URL("./canvas-surface.tsx", import.meta.url), "utf8");
+  assert.match(surface, /className="canvas-chrome-in /, "the header controls appear with no entrance");
+
+  const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /@keyframes canvas-chrome-in/, "the animation is named but not defined");
+  // 🔴 DELAYED, so the controls start after the composer has finished travelling and the two read
+  // as one movement in sequence rather than two things at once.
+  assert.match(css, /\.canvas-chrome-in \{ animation: canvas-chrome-in \d+ms \d+ms/, "the entrance has no delay, so it races the composer");
+  // 🔴 AND SILENCED UNDER REDUCED MOTION, because the front door's own travel already is. Someone
+  // who asked the system to stop moving must not get half of it anyway.
+  // 🔴 THE LAST BLOCK, NOT THE FIRST. globals.css has five separate `prefers-reduced-motion`
+  // blocks; `indexOf` finds one 49,000 characters away from the canvas rules, and slicing forward
+  // from it reads a completely unrelated stylesheet.
+  const reduced = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce) {\n  .canvas-swap,"));
+  assert.ok(reduced.length > 0, "the canvas reduced-motion block moved");
+  assert.match(reduced.slice(0, 400), /\.canvas-chrome-in,/, "the entrance ignores reduced motion");
+});
+
+test("🔴 the composer's drop is longer than it was, and lands softer", () => {
+  // At 260ms the composer covered most of a screen height in a quarter of a second, which reads as
+  // a jump with a blur rather than as a thing travelling.
+  const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
+  const dock = /const DOCK_MS = (\d+);/.exec(home);
+  assert.ok(dock && Number(dock[1]) >= 300, `the drop is back to ${dock?.[1]}ms`);
+  assert.match(home, /cubic-bezier\(0\.32, 0\.72, 0, 1\)/, "the drop is back on the brisker curve");
+});

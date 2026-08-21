@@ -38,11 +38,14 @@ import { useCanvasDictation } from "./use-canvas-dictation";
  * How long the composer takes to reach the bottom, and therefore how long the send waits.
  *
  * 🔴 SHORT ENOUGH TO READ AS A RESPONSE, NOT AS A DELAY. This sits in front of a navigation the
- * learner asked for, so every millisecond here is latency they did not ask for. 260ms is about the
- * length of the canvas cross-fade already in the product, so the two beats match rather than
- * compete.
+ * learner asked for, so every millisecond here is latency they did not ask for.
+ *
+ * 🔴 320, UP FROM 260 (owner 2026-08-20: *"The chat composer needs to drop smoother"*). At 260 the
+ * composer covered most of a screen height in a quarter of a second, which is quick enough to read
+ * as a JUMP with a blur rather than as a thing travelling. The extra 60ms is under the threshold
+ * where a transition starts to feel like waiting, and it is what the arriving header now waits for.
  */
-const DOCK_MS = 260;
+const DOCK_MS = 320;
 
 /** The clearance under the canvas composer: `bottom-0` plus `pb-4`. Written in px because every
  *  rem in this app is 1.125x its number (`html{font-size:112.5%}`), and this is measured against
@@ -265,7 +268,10 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               // Library list underneath on every frame of the move; a transform is composited and
               // touches nothing else on the page.
               transform: departing ? `translateY(${lift}px)` : undefined,
-              transition: departing ? `transform ${DOCK_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)` : undefined,
+              // 🔴 A LONGER TAIL THAN THE OLD CURVE. `0.22, 0.61, 0.36, 1` decelerates but still
+              // arrives briskly; this one spends more of its time slowing down, so the composer
+              // settles into place instead of stopping there. Same family the app's sheets use.
+              transition: departing ? `transform ${DOCK_MS}ms cubic-bezier(0.32, 0.72, 0, 1)` : undefined,
             }}
           >
         {/* 🔴 THE RECORDER REPLACES THE COMPOSER, IT DOES NOT SIT BESIDE IT. While a lecture is

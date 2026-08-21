@@ -380,7 +380,14 @@ test("🔴🔴 the model is told never to draw a picture out of characters", () 
   assert.match(prompt, /A code fence is for code and notation/);
   // 🔴 AND THE ONE CASE THAT MUST BE UNAMBIGUOUS. The first version aimed at the code FENCE and the
   // model simply put the ASCII art in prose instead — where the characters sit was never the point.
-  assert.match(prompt, /MUST \n?answer with \[smiles/s, "the molecule case is only discouraged, not required");
+  // 🔴 REPOINTED after the owner's correction, 2026-08-20: *"dont add hardcoded instructions, make
+  // sure prompt instructions drive behavior so deepseek handles the judgement."* The instruction
+  // used to name four nouns — molecule, structure, functional group, compound — which is a keyword
+  // list living in a prompt instead of in an `if`. It now names the CHANNEL and the intent and
+  // leaves "is this a request to see something" where judgements about language belong.
+  assert.match(prompt, /you MUST draw it with/, "the drawing instruction lost its force, which measured as a regression");
+  assert.ok(!/a molecule, a structure, a functional group or a compound/.test(prompt), "the hardcoded noun list is back");
+  assert.ok(!/half a dozen|most important half/.test(prompt), "a quota for how many drawings to make is back");
 });
 
 test("🔴🔴 a model that put its answer back INSIDE the object is not thrown away", () => {

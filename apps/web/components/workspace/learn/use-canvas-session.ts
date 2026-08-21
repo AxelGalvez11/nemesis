@@ -35,7 +35,7 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
-import { CANVAS_FILING_FOLDER, loadCanonicalSource } from "@/lib/learn/canvas-sources";
+import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
@@ -377,6 +377,32 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           setCanvas(found);
           latest.current = found;
           setReady(true);
+
+          // 🔴🔴 THE COVERAGE DISCLOSURE IS RE-DERIVED ON LOAD, BECAUSE IT WAS A SNAPSHOT AND
+          // COVERAGE NOW IMPROVES. `coverageNote` is computed once when a file is attached and
+          // written onto the canvas. That was harmless while a document could never be read more
+          // fully than it was on the day it arrived — and as of the automatic figure pass it is
+          // read more fully, in the background, minutes after the upload.
+          //
+          // Without this, an already-attached canvas keeps saying "8 pictures were not read" about
+          // a document whose pictures now have descriptions. The knowledge pipeline is unaffected
+          // (it reads `parsed_documents` fresh every time), which is exactly what makes this the
+          // failure this project calls DEGRADED, NOT COMPLETE: the data got better, the words on
+          // screen did not, and only the words are what the learner can see.
+          //
+          // 🔴 AFTER `setReady`, NOT BEFORE. This is a second round trip per attached source and
+          // the canvas must not wait on it — a stale sentence for one beat is a great deal better
+          // than a blank screen, which is what putting this in front of the paint would buy.
+          //
+          // 🔴 AND IT ONLY WRITES WHEN SOMETHING CHANGED. `refreshedCoverageNotes` returns the same
+          // array when every note is unchanged, so the common case costs one read and no write.
+          const refreshed = await refreshedCoverageNotes(found.sources);
+          if (alive && refreshed !== found.sources) {
+            const updated = { ...latest.current, sources: [...refreshed] };
+            setCanvas(updated);
+            latest.current = updated;
+            void saveCanvas(uid, updated);
+          }
           return;
         }
       }
@@ -1594,10 +1620,4 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   };
 }
 
-/** The extractor's own account of what it could not read, in the words the shared module
- *  already uses for exactly this — so a canvas built on a half-read lecture says so in the
- *  same terms chat does. Returns null when the file was read whole. */
-function coverageNote(coverage: unknown): string | null {
-  const parsed = readCoverage(coverage);
-  return parsed ? coverageNoticeForModel(parsed) : null;
-}
+

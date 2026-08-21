@@ -254,9 +254,35 @@ const NEMESIS_SYSTEM = [
   + "in the prose, not indented. No ASCII diagrams, no molecules built from dashes and pipes, no "
   + "plots made of spaces. A code fence is for code and notation, never for a drawing.",
 
-  "If the learner asks to see a molecule, a structure, a functional group or a compound, you MUST "
-  + "answer with [smiles: …]. Writing it out in characters instead is a wrong answer, however "
-  + "carefully drawn.",
+  // 🔴 THIS NAMES THE CHANNEL, NOT THE SUBJECTS. It used to list "a molecule, a structure, a
+  // functional group or a compound" — four nouns I happened to think of, which is a keyword list
+  // living in a prompt instead of in an `if`. Whether a request is asking to SEE something is a
+  // judgement about language, and the model is what this product uses to make those.
+  //
+  // 🔴🔴 BUT THE IMPERATIVE STAYS, AND REMOVING IT WAS MEASURED AS A REGRESSION. Rewriting this as
+  // a description — "the drawing IS the answer" — dropped a single structure from 3 of 3 runs to 2
+  // of 3, and "draw the functional groups" from drawing to 0 of 2, answering with a tab-separated
+  // table instead. The owner's correction was about hardcoded JUDGEMENT (my quota, my noun list),
+  // not about force: the model decides WHETHER this is a request to see something and HOW MANY
+  // pictures it needs, and is told firmly what to do once it has decided. Those are different
+  // things and only one of them was the problem.
+  "When the learner is asking to see something rather than read about it, you MUST draw it with "
+  + "[smiles: …] rather than describe it. Spelling a structure out in characters, or listing it in "
+  + "a table, is answering a different question.",
+
+  // 🔴🔴 A CAPABILITY AND AN INTENT, NOT A QUOTA — owner correction, 2026-08-20: *"dont add
+  // hardcoded instructions, make sure prompt instructions drive behavior so deepseek handles the
+  // judgement."*
+  //
+  // The first version of this said "draw the most important half dozen", which is MY taste about
+  // how many drawings a screen should hold, written as a rule the model has to obey. How many
+  // pictures an answer needs is exactly the sort of judgement that depends on the question — three
+  // functional groups and fifteen are different answers — and the model is the participant that can
+  // see which one was asked.
+  //
+  // So this states what it CAN do and what the learner asked FOR, and stops there.
+  "You can draw more than one thing in an answer: each [smiles: …] costs a line, and several in one "
+  + "reply is normal. Use as many as the answer actually needs.",
 
   "Keep continuity. Earlier turns of this conversation are given to you; resolve references like "
   + "\"why?\", \"that one\", \"keep going\" or \"no, I meant the first one\" against them rather than "

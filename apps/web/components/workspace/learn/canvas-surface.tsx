@@ -128,8 +128,24 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
           top of each other. `--nav-toggle-inset` is what the shell reserves for it — 0px whenever
           the toggle is not showing, which under §38.1 is every canvas — so the strip returns to a
           flush 12px on its own rather than carrying a permanent gap for a control that is gone. */}
+      {/* 🔴🔴 THE CONTROLS FADE IN, AND UNTIL NOW NOTHING ON THIS SIDE MOVED AT ALL. Owner,
+          2026-08-20: *"the transition from landing page to canvas needs to be smoother ... the
+          upper header controls need to appear as a fade in."*
+
+          The FRONT DOOR half of that transition was already built — the composer travels down and
+          the greeting fades — and then the route changed and the canvas simply WAS there, header
+          and all, hard-cut. Half a transition reads worse than none: the eye is following a moving
+          composer and the destination arrives fully formed around it.
+
+          🔴 A CSS ANIMATION RATHER THAN A MOUNT FLAG. A `useState(false)` flipped in an effect
+          needs a paint to land before it can transition, which is the shape that produces a visible
+          flash of the finished state on a slow client. `animation` runs from the first frame the
+          element exists.
+
+          🔴 AND IT IS BEHIND `prefers-reduced-motion`, because the front door's own travel already
+          is — someone who asked the system to stop moving must not get half of it anyway. */}
       <header
-        className="pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
+        className="canvas-chrome-in pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
         style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
       >
         <CanvasExit onExit={onExit} />

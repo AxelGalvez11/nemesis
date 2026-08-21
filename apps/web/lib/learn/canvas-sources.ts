@@ -16,9 +16,10 @@
 // say so, because "we could not read the table" and "the document had no table" are different
 // facts and only one of them is the document's.
 
-import { UNSORTED_FOLDER } from "@nemesis/shared";
+import { coverageNoticeForModel, readCoverage, UNSORTED_FOLDER } from "@nemesis/shared";
 
 import { supabase } from "@/lib/supabase";
+import type { CanvasSource } from "./canvas-model";
 import { buildSourceContext, type SourceContext } from "@/lib/sources/source-context";
 
 /**
@@ -164,4 +165,91 @@ export async function loadCanonicalSource(librarySourceId: string): Promise<Cano
   // 🔴 BUILT FROM THE RAW EMBED, NOT FROM `parsed`, SO ONE FUNCTION OWNS THE SHAPE HANDLING. Two
   // readers of a value that arrives in two shapes is two chances to pick the wrong one.
   return { context, ok: true, provenance: provenanceOf(librarySourceId, row.parsed_documents) };
+}
+
+/**
+ * Just the `coverage` column for one library source.
+ *
+ * 🔴 A SEPARATE, NARROWER READ THAN `loadCanonicalSource`, DELIBERATELY. That one builds a whole
+ * `SourceContext` — structure, capabilities, provenance, integrity — because its callers are about
+ * to extract knowledge from the document. This caller wants one JSON column to re-derive one
+ * sentence, on every canvas load, for every attached source. Paying for a full context to render a
+ * disclosure would make the cheapest thing on the page the most expensive.
+ */
+async function loadStoredCoverage(librarySourceId: string): Promise<unknown> {
+  const { data, error } = await supabase
+    .from("library_sources")
+    .select("parsed_documents(coverage)")
+    .eq("id", librarySourceId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const embed = (data as { parsed_documents?: unknown }).parsed_documents;
+  // 🔴 BOTH SHAPES, for the reason `ParsedEmbed` above already documents: supabase-js TYPES a
+  // to-one embed as a list and this one comes back as a bare object in production. Assuming either
+  // alone yields `undefined` silently, and every source then looks fully read.
+  const row = Array.isArray(embed) ? embed[0] : embed;
+  return (row as { coverage?: unknown } | null | undefined)?.coverage ?? null;
+}
+
+/** The extractor's own account of what it could not read, in the words the shared module already
+ *  uses for exactly this — so a canvas built on a half-read lecture says so in the same terms chat
+ *  does. Returns null when the file was read whole.
+ *
+ *  🔴 MOVED HERE FROM `use-canvas-session.ts` so the refresher below and the attach path share ONE
+ *  definition. Two spellings of "what could this document not read" is two answers to the question
+ *  the disclosure exists to answer. */
+export function coverageNote(coverage: unknown): string | null {
+  const parsed = readCoverage(coverage);
+  return parsed ? coverageNoticeForModel(parsed) : null;
+}
+
+/**
+ * Re-read the coverage note for a canvas's sources, so the disclosure stops lying about a document
+ * that has since been read more fully.
+ *
+ * 🔴🔴 THE NOTE WAS A SNAPSHOT TAKEN AT ATTACH, AND NOTHING EVER LOOKED AGAIN. `use-canvas-session`
+ * computes `coverageNote(extracted.coverage)` once, when the file lands, and writes the string onto
+ * the canvas. That was harmless while a document's coverage could never improve — and as of the
+ * automatic figure pass it improves routinely, in the background, minutes after the upload.
+ *
+ * So an already-attached canvas keeps telling the learner "8 pictures were not read" about a
+ * document whose pictures now have descriptions. The knowledge pipeline is unaffected — it reads
+ * `parsed_documents` fresh every time — which makes this precisely the failure this project calls
+ * DEGRADED, NOT COMPLETE: the data got better, the words on screen did not, and only the words are
+ * what the learner can see.
+ *
+ * 🔴 IT RETURNS A NEW LIST RATHER THAN MUTATING, and returns the SAME list when nothing changed, so
+ * a caller can skip a write. A canvas save on every load would be a write amplification on the one
+ * path every session takes.
+ *
+ * 🔴 A SOURCE WITH NO `librarySourceId` IS LEFT EXACTLY AS IT IS. Pasted text and model knowledge
+ * have no parsed document behind them; "no row found" means "nothing to refresh here", never
+ * "this source lost its coverage".
+ */
+export async function refreshedCoverageNotes(
+  sources: readonly CanvasSource[],
+  load: (id: string) => Promise<unknown> = loadStoredCoverage,
+): Promise<readonly CanvasSource[]> {
+  const withIds = sources.filter((source) => source.librarySourceId);
+  if (withIds.length === 0) return sources;
+
+  const fresh = new Map<string, string | undefined>();
+  await Promise.all(
+    withIds.map(async (source) => {
+      fresh.set(source.id, coverageNote(await load(source.librarySourceId!)) ?? undefined);
+    }),
+  );
+
+  let changed = false;
+  const next = sources.map((source) => {
+    if (!fresh.has(source.id)) return source;
+    const note = fresh.get(source.id);
+    if (note === source.coverageNote) return source;
+    changed = true;
+    // 🔴 AN ABSENT NOTE DELETES THE OLD ONE. A document that is now fully read must stop carrying
+    // the sentence saying it is not — leaving the stale string because the new value is empty is
+    // the exact bug this function exists to fix, one layer in.
+    return note ? { ...source, coverageNote: note } : (({ coverageNote: _drop, ...rest }) => rest)(source);
+  });
+  return changed ? next : sources;
 }
