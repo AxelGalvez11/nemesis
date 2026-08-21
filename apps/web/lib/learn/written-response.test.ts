@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 import type { WrittenMark, WrittenWork } from "@/lib/handwriting/written-work";
 
-import { isAdmissionOfNotKnowing, isEchoOfTheCue } from "./response-admission";
+import { isEchoOfTheCue } from "./response-admission";
 import {
   CONFIDENT_ENOUGH_TO_JUDGE,
   renderWriting,
@@ -261,15 +261,20 @@ test("🔴 one readable line renders as exactly that line and nothing else", () 
   assert.equal(rendered, "x = 4");
 });
 
-test("🔴 a handwritten 'I don't know' is still recognised as an admission, not judged as an attempt", () => {
-  // Without plain-when-plain this renders as "Their work, in the order it reads:\n1. idk", which
-  // leaves plenty substantive after the admission phrase is stripped, so isAdmissionOfNotKnowing
-  // returns false, so it goes to the judge, comes back `incorrect`, and a person who told us they
-  // did not know is recorded as having got it wrong. That is absence of evidence stored as
-  // negative evidence, through a door the rule was not watching.
-  for (const said of ["idk", "I don't know", "no idea"]) {
+// 🔴 THESE USED TO ASSERT `isAdmissionOfNotKnowing(rendered)`, AND THAT FUNCTION IS GONE. It held
+// twenty-one English phrases and caught an admission before the judge; the judge reads one itself
+// now, in any language (canvas-prompts.ts). What this door still owes is the RENDERING: an
+// admission dressed up under section headings is no longer an admission by the time anybody reads
+// it, whoever is reading. So these assert the shape of what gets handed over.
+
+test("🔴 a handwritten 'I don't know' is handed over as words, not as a structure", () => {
+  // Rendered structurally this becomes "Their work, in the order it reads:\n1. idk" — and the
+  // headings alone are enough substantive text that a person who told us they did not know gets
+  // read as having attempted something and recorded as having got it wrong. That is absence of
+  // evidence stored as negative evidence, through a door the rule was not watching.
+  for (const said of ["idk", "I don't know", "no idea", "no sé", "わからない"]) {
     const rendered = renderWriting(writingAsRead(work({ marks: [mark(said)] })));
-    assert.equal(isAdmissionOfNotKnowing(rendered), true, `"${said}" written by hand must still read as an admission`);
+    assert.equal(rendered, said, `"${said}" written by hand must reach the judge as itself`);
   }
 });
 
@@ -287,63 +292,30 @@ test("a plain single line survives the confirmation step as a plain single line"
     marks: ["idk"],
   });
   assert.equal(renderWriting(confirmed), "idk");
-  assert.equal(isAdmissionOfNotKnowing(renderWriting(confirmed)), true);
 });
 
-test("🔴🔴 an admission the model split across two marks is still an admission", () => {
-  // 🔴 THE SINGLE-LINE CASE ABOVE DOES NOT COVER THIS, AND THE GAP WAS LIVE. Someone writes "I
-  // don't know" across two lines on the page and vision reports two marks, exactly as it should:
-  // it is reporting layout. Rendered structurally the result carries section headings, so plenty
-  // is left over once the admission phrase is stripped, so `isAdmissionOfNotKnowing` returns
-  // false, so it goes to the judge, comes back `incorrect`, and a person who told us they did not
-  // know is recorded as having got it wrong. Same defect D4 exists to prevent, one mark wider.
-  //
-  // 🔴 THE RULE IS THE SAME ONE TYPING GETS, NOT A LOOSER ONE. "I don't know how to start this"
-  // has substance left after the phrase is stripped and IS an attempt, typed or written; the fix
-  // is that the two doors agree, never that handwriting gets a broader escape hatch.
+test("🔴🔴 a page the model split across marks is REPORTED, not guessed at", () => {
+  // 🔴 THIS ASSERTION REVERSED, AND THAT IS THE FINDING. It used to require that "I don't" / "know"
+  // was joined back into a sentence, so a word list downstream could recognise the admission. There
+  // is no structural rule that can do that job: two line marks reading "I don't" / "know" and two
+  // reading "2x = 8" / "x = 4" are the same shape and the same length, and only the WORDS separate
+  // them. So the rendering reports the page as it is and the judge reads it — a model can see
+  // "1. I don't 2. know" for what it is where a string matcher could not.
   const rendered = renderWriting(writingAsRead(work({ marks: [mark("I don't"), mark("know")] })));
-  assert.equal(isAdmissionOfNotKnowing(rendered), true, `"${rendered}" was not read as an admission`);
-  assert.doesNotMatch(rendered, /Working, in order/, "an admission must not be dressed up as working");
+  assert.match(rendered, /1\. I don't/);
+  assert.match(rendered, /2\. know/);
 });
 
-test("a written page is held to the SAME admission rule as a typed answer, not a looser one", () => {
-  // The pairs below are what typing produces today. Written work joins its standing marks and asks
-  // the identical question, so the two doors cannot diverge.
-  const splits: readonly (readonly [string, string])[] = [["I don't", "know"], ["no", "idea"], ["not", "sure"]];
-  for (const [first, second] of splits) {
-    const joined = `${first} ${second}`;
-    const rendered = renderWriting(writingAsRead(work({ marks: [mark(first), mark(second)] })));
-    assert.equal(
-      isAdmissionOfNotKnowing(rendered),
-      isAdmissionOfNotKnowing(joined),
-      `"${joined}" is read differently written than typed`,
-    );
-  }
-  const attempt = ["I don't know", "how to start this"];
-  assert.equal(
-    isAdmissionOfNotKnowing(renderWriting(writingAsRead(work({ marks: attempt.map((line) => mark(line)) })))),
-    isAdmissionOfNotKnowing(attempt.join(" ")),
-    "a hedged sentence must be an attempt in both doors, or handwriting becomes a way to avoid being judged",
-  );
-});
-
-test("an admission stays an admission even beside crossed-out or unread marks", () => {
-  // The direction of error is deliberate: an admission read as an attempt writes a WRONG verdict,
-  // while an attempt read as an admission writes no verdict at all.
+test("a page with history keeps it, even when the standing marks are brief", () => {
+  // The old admission branch hid this: once it decided a page was an admission it handed over the
+  // joined text alone, so the crossed-out attempt beside it never reached the judge. Somebody who
+  // tried, struck it out and wrote "no idea" has told us more than "no idea" does.
   const messy = work({
     marks: [mark("no idea"), mark("x = 2", { struckThrough: true }), mark("a smudge", { legible: false })],
   });
-  assert.equal(isAdmissionOfNotKnowing(renderWriting(writingAsRead(messy))), true);
-});
-
-test("a real multi-line performance is NOT mistaken for an admission", () => {
-  // The other direction: the admission check must not swallow work. Anything substantive left over
-  // after the phrase is stripped means a real attempt, which is `isAdmissionOfNotKnowing`'s own
-  // rule and the reason this is safe to apply to a whole page.
-  const hedged = work({ marks: [mark("not sure, but"), mark("2x = 8"), mark("x = 4")] });
-  const rendered = renderWriting(writingAsRead(hedged));
-  assert.equal(isAdmissionOfNotKnowing(rendered), false, "a hedged attempt is still an attempt");
-  assert.match(rendered, /Working, in order/);
+  const rendered = renderWriting(writingAsRead(messy));
+  assert.match(rendered, /no idea/);
+  assert.match(rendered, /\[crossed out\] x = 2/);
 });
 
 // ── the render is read BACK to the learner, so it cannot narrate them ─────────

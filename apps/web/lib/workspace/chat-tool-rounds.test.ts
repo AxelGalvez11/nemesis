@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { maxToolRounds, NO_TOOLS_LEFT_INSTRUCTION, planToolRound } from "@/lib/workspace/chat-api";
-import { classifyChatRequest } from "@/lib/workspace/chat-routing";
+import { DEFAULT_INTENT } from "@/lib/workspace/chat-intent";
+import { decisionFromIntent } from "@/lib/workspace/chat-routing";
 import { serializeToolResult, TOOL_RESULT_CHAR_BUDGET } from "@/lib/workspace/chat-tool-result";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 
@@ -46,7 +47,9 @@ test("a cross-page workspace turn gets more than four tool rounds", () => {
   // four note reads — before it could act on any of it.
   assert.ok(maxToolRounds(workspace) > 4, "workspace turns need room to read AND then act");
   assert.equal(maxToolRounds(plain), 4, "ordinary chat keeps the tighter budget");
-  const decision = classifyChatRequest("Organize everything for Pharmacology, make sure my calendar is accurate, and tell me what I should study next.");
+  // "Organize everything for Pharmacology, make sure my calendar is accurate, and tell me what I
+  // should study next." — a turn that reads and then writes.
+  const decision = decisionFromIntent({ ...DEFAULT_INTENT, workspace: "write" });
   assert.ok(maxToolRounds(decision) > 4);
 });
 

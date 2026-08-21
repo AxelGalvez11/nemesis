@@ -411,7 +411,20 @@ export function composeSurface(input: {
     // 🔴 REAL READING MATERIAL ONLY. A task makes room for a document; it does not make room
     // for a placeholder that is itself waiting for one, and it does not make room for a reading
     // state that is empty because nothing was generated into it (§24).
-    sharing: policy && reading && hasReadingMaterial,
+    //
+    // 🔴🔴 AND FOR AN ASIDE, WHICH IS THE OTHER THING THAT CAN BE ON THIS SURFACE AT ONCE. Reported
+    // 2026-08-21 with a screenshot: a task and a reply were both up, the task took `min-h-full`
+    // because nothing had told it otherwise, and the reply was pushed a full viewport below it with
+    // a screen of nothing in between. The learner saw one thing, scrolled, and found the other —
+    // which reads as two screens rather than as one surface holding two things.
+    //
+    // 🔴 IT IS THE SAME QUESTION THE FIELD ALREADY ANSWERS, WIDENED HONESTLY. `sharing` decides
+    // whether the task claims the whole viewport or sizes to its content, and "am I alone here" is
+    // what it has always meant; "a document is the only other tenant" was true when it was written
+    // and is not any more. Both co-tenants only ever coexist deliberately — an owed question is not
+    // displaced by a reply, and an `opening` introduces the very screen it sits beside — so there
+    // is no case where this shrinks for something that is not on screen.
+    sharing: policy && ((reading && hasReadingMaterial) || aside !== "none"),
   };
 }
 

@@ -445,6 +445,31 @@ a { color: inherit; text-decoration: none; }
 .fade { animation: fade 0.4s both; }
 @media (prefers-reduced-motion: reduce) { .fade { animation: none; } }
 
+/* The nav column widening and narrowing — components/workspace/shell/workspace-shell.tsx.
+ *
+ * Owner 2026-08-21: "add a collapse microanimation to the sidebar so it smoothly collapses instead
+ * of abrupt collapse."
+ *
+ * WHY THE TRACK AND NOT THE PANE. The grid is `<column> minmax(0,1fr)`, so animating the track
+ * moves the sidebar's edge and the surface's edge on the SAME frames. A pane that slid out over
+ * the surface would leave the surface jumping to fill the gap when the slide ended, which is the
+ * abruptness moved rather than removed.
+ *
+ * WHY 240ms AND THIS CURVE. It is the distance that sets the duration: 260px to 52px is a short
+ * trip, and past about 300ms a control the learner pressed starts to feel like it is thinking.
+ * The curve is the one `bloub.css` already uses for the mascot's walk, so the two pieces of
+ * chrome that move on their own move alike.
+ *
+ * 🔴 THE ATTRIBUTE IS THE GATE, NOT THE SELECTOR. `[data-pane-shell]` alone would also animate the
+ * first paint, where the width changes because a stored preference arrived rather than because
+ * anyone pressed anything. The shell adds `data-pane-shell-animate` two frames after mount. */
+[data-pane-shell][data-pane-shell-animate="true"] {
+  transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-pane-shell][data-pane-shell-animate="true"] { transition: none; }
+}
+
 /* A list row's highlight: a pill that overhangs the table on both sides.
  *
  * 🔴 WRITTEN HERE RATHER THAN AS `hover:after:bg-(--list-hover-fill)` UTILITIES, and that is not

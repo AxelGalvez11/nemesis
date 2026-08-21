@@ -5,7 +5,13 @@ import {
   BRAVE_QUERY_MAX_CHARS,
   braveCanAnswer,
   braveContextParams,
+  BRAVE_MAX_TOKENS_PER_URL,
+  BRAVE_MAX_TOTAL_TOKENS,
+  BRAVE_MAX_URLS,
+  BRAVE_MIN_TOTAL_TOKENS,
   braveContextToWeb,
+  BRAVE_THRESHOLD_MODE,
+  readFreshness,
 } from "./brave.ts";
 
 // A real llm/context payload, trimmed to the fields we read. Shape from
@@ -115,11 +121,71 @@ Deno.test("braveContextParams: asks for what we intend to keep, clamped to the e
 
   assertEquals(params.get("q"), "photosynthesis");
   assertEquals(params.get("maximum_number_of_urls"), "5");
-  assertEquals(params.get("count"), "5");
   assertEquals(params.get("maximum_number_of_snippets"), String(BRAVE_MAX_SNIPPETS));
+});
+
+// 🔴 `count` IS NOT THE URL COUNT, AND TYING THEM TOGETHER MADE SMALL ASKS WORSE. Brave's own
+// parameter table (github.com/brave/brave-search-skills, skills/llm-context/SKILL.md) has `count` as
+// "Max search results to CONSIDER" and `maximum_number_of_urls` as "Max URLs IN RESPONSE". Both used
+// to carry the ask, so a request for 3 pages told Brave to look at 3 results and return all 3,
+// instead of weighing fifty and returning its best three. Selection is what the endpoint is for.
+Deno.test("braveContextParams: considers the most Brave allows, however few are wanted back", () => {
+  assertEquals(braveContextParams("q", 3).get("count"), String(BRAVE_MAX_URLS));
+  assertEquals(braveContextParams("q", 3).get("maximum_number_of_urls"), "3");
+  assertEquals(braveContextParams("q", 50).get("count"), String(BRAVE_MAX_URLS));
+});
+
+// 🔴 THE TOTAL BUDGET IS FOR THE WHOLE RESPONSE, AND LEAVING IT UNSET UNDID THE UNCAPPING. Its
+// default is 8192 — not per page — so 50 URLs at 1024 tokens each silently became about 160 tokens
+// apiece. The pages arrived and there was nothing in them.
+Deno.test("braveContextParams: the total token budget scales with the pages asked for", () => {
+  assertEquals(braveContextParams("q", 4).get("maximum_number_of_tokens"), String(4 * BRAVE_MAX_TOKENS_PER_URL));
+  // Clamped to the range Brave documents: 1024 to 32768.
+  assertEquals(braveContextParams("q", 1).get("maximum_number_of_tokens"), String(BRAVE_MIN_TOTAL_TOKENS));
+  assertEquals(braveContextParams("q", 50).get("maximum_number_of_tokens"), String(BRAVE_MAX_TOTAL_TOKENS));
 });
 
 Deno.test("braveContextParams: clamps a limit outside Brave's 1-50 range", () => {
   assertEquals(braveContextParams("q", 0).get("maximum_number_of_urls"), "1");
   assertEquals(braveContextParams("q", 999).get("maximum_number_of_urls"), "50");
+});
+
+// ── The two levers we had never touched ──────────────────────────────────────────────────────
+//
+// Owner, 2026-08-21, after asking what Brave can be told about source quality: *"set threshold to
+// balanced and let the model pick freshness."*
+
+Deno.test("braveContextParams: the relevance threshold is set, and is not Brave's loose default", () => {
+  // 🔴 LEAVING IT UNSET RESOLVES TO `lenient`, THE LOOSEST SETTING THE ENDPOINT OFFERS, and that is
+  // what every search this product has ever run was using. Reported the same day: a search came
+  // back with two marketing pages, which were then ingested as a learner's study material.
+  const params = braveContextParams("photosynthesis", 5);
+  assertEquals(params.get("context_threshold_mode"), "balanced");
+  // Calibration: `strict` would be the wrong direction. An empty search reads to a learner as
+  // "Nemesis could not find out", which is worse than one weak page among ten good ones.
+  assert(BRAVE_THRESHOLD_MODE !== "strict");
+});
+
+Deno.test("readFreshness: only Brave's own vocabulary survives", () => {
+  for (const code of ["pd", "pw", "pm", "py"]) assertEquals(readFreshness(code), code);
+  assertEquals(readFreshness("2022-04-01to2022-07-30"), "2022-04-01to2022-07-30");
+  assertEquals(readFreshness("  PW  "), "pw");
+});
+
+Deno.test("readFreshness: a model's invented window becomes no filter, never a dead parameter", () => {
+  // 🔴🔴 THIS IS THE FAILURE WORTH PREVENTING, AND IT IS SILENT. A model that writes `last_week`
+  // or `7d` would have it forwarded straight into the query string, where Brave ignores it — the
+  // answer still arrives, it is simply built from pages of any age, and nothing anywhere says so.
+  for (const bad of ["last_week", "7d", "week", "recent", "p", "pdd", "", "   ", "2022-04-01", null, 7, {}]) {
+    assertEquals(readFreshness(bad), null, JSON.stringify(bad));
+  }
+});
+
+Deno.test("braveContextParams: a window is sent when there is one and omitted when there is not", () => {
+  assertEquals(braveContextParams("q", 5, "pw").get("freshness"), "pw");
+  // 🔴 OMITTED, NOT EMPTY. Brave's default for `freshness` IS the empty string, so sending it
+  // explicitly is the same request with an extra parameter — a difference nobody can see and
+  // everybody has to reason about.
+  assertEquals(braveContextParams("q", 5).has("freshness"), false);
+  assertEquals(braveContextParams("q", 5, "last_week").has("freshness"), false);
 });

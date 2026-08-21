@@ -47,7 +47,9 @@ const FRESH: TurnContext = {
   materialContext: "",
   objectives: 0,
   passages: 0,
+  searchesLeft: 0,
   sources: 0,
+  stagedPassage: "",
   today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
   webContext: "",
 };
@@ -139,6 +141,98 @@ const CATEGORIES: { name: string; note?: string; cases: Case[] }[] = [
         expect: "reply" as const,
         utterance,
       })),
+    ],
+  },
+  {
+    // 🔴 THE PHRASINGS `asksForRewrite` USED TO OWN. That function was a list of instruction phrases
+    // (simpler, simplify, rephrase, reword, rewrite, plain english, break this down), a second list
+    // of confusion phrasings (don't understand, don't get, don't follow, lost, confused), and an
+    // interrogative guard wedged between them to stop the two colliding. Its own comments recorded
+    // two it got wrong: "can you rephrase that" is an instruction wearing a question's clothes and
+    // the guard refused it, and "how do I understand this" would have rewritten the page.
+    //
+    // A rewrite is only meaningful with material on screen, so every case here is asked on a canvas
+    // that has some. §11 keeps the old wording and offers to put it back, so a wrong rewrite costs
+    // the learner a click; stacking another explanation under a passage they already could not read
+    // is the behaviour §11 exists to forbid.
+    name: "The material failed them",
+    note: "these rewrite the passage in place, they do not add another explanation under it",
+    cases: [
+      "make this simpler",
+      "simplify this",
+      "can you rephrase that",
+      "explain this differently",
+      "put it in plain english",
+      "break this down",
+      "I still don't understand this",
+      "I'm lost",
+      "this is way too dense",
+      "you've lost me completely",
+      "this is written for someone who already knows it",
+    ].map((utterance) => ({
+      context: { canvasTitle: "Pharmacokinetics", passages: 12, sources: 1 },
+      expect: "rewrite" as const,
+      utterance,
+    })),
+  },
+  {
+    // 🔴 THE OTHER HALF, WHICH THE OLD GUARD GOT RIGHT AND MUST NOT BE LOST. A question with a
+    // subject is answered beside the passage and changes nothing on the page. Rewriting a paragraph
+    // because somebody asked what a word in it means is the silent-edit failure in the other
+    // direction.
+    name: "A question about the material",
+    note: "answered beside the passage; nothing on the page may change",
+    cases: [
+      "what does osmolarity mean",
+      "how do I understand this",
+      "where did this come from",
+      "which source is this from",
+      "is this the same as what we did last week?",
+      "why does that follow?",
+    ].map((utterance) => ({
+      context: { canvasTitle: "Pharmacokinetics", passages: 12, sources: 1 },
+      expect: "reply" as const,
+      utterance,
+    })),
+  },
+  {
+    // 🔴🔴 REPORTED 2026-08-21, WITH TWO SCREENSHOTS, AND ONE ROUTING MISTAKE CAUSED ALL OF IT.
+    // *"i asked it can you teach me a new language and it did an unneccesary web search and then it
+    // started fadeing between the two screens i attached."*
+    //
+    // The model chose "study" with the topic "new language learning". So the canvas was retitled,
+    // `needsGrounding` searched the web for that phrase, and what a search for that phrase returns
+    // is advertising — two marketing pages for a language app were ingested as the learner's study
+    // material and the lesson built from them was a pricing page's list of languages. It also asked
+    // WHICH language, so the learner ended up with a lesson it had started and a question it had
+    // asked on one surface, with one composer pointing at both.
+    //
+    // 🔴 THE SECOND COLUMN IS THE FINDING, NOT THE FIRST. "Teach me a language" and "teach me
+    // Spanish" are one word apart. A fix that made the first column pass by making the model timid
+    // about teaching would break the second, and would be strictly worse than the bug.
+    //
+    // 🔴 AND THE CATEGORIES SPAN FIELDS ON PURPOSE. If this only held for languages it would be a
+    // keyword list with extra steps.
+    name: "A category is not a subject",
+    note: "naming a category means asking which one; naming a subject means teaching it",
+    cases: [
+      ...[
+        "can you teach me a new language",
+        "teach me a language",
+        "I want to learn a programming language",
+        "help me learn a musical instrument",
+        "teach me about a supreme court case",
+        "walk me through a manufacturing process",
+        "quiz me on a period of history",
+      ].map((utterance) => ({ expect: "reply" as const, utterance })),
+      ...[
+        "can you teach me Spanish",
+        "teach me Rust",
+        "help me learn the cello",
+        "teach me about Brown v. Board of Education",
+        "walk me through injection moulding",
+        "quiz me on the Meiji Restoration",
+      ].map((utterance) => ({ expect: "study" as const, utterance })),
     ],
   },
 ];

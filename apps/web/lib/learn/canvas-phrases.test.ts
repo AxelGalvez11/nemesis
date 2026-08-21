@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { applyOps, applyRewrite } from "./canvas-ops";
-import { asksForRewrite, routeComposerText } from "./canvas-phrases";
+import { routeRewrite } from "./canvas-phrases";
 import { finishReading, unreadChunk } from "./canvas-reading";
 import type { LearningCanvas } from "./canvas-model";
 
@@ -17,64 +17,25 @@ const BASE = {
   unreadBlockIds: ["b1"],
 };
 
-test("an explicit request to change the wording is recognised", () => {
-  for (const text of [
-    "make this simpler",
-    "Simplify this please",
-    "explain this differently",
-    "can you rephrase that",
-    "in plain english",
-    "break this down",
-  ]) {
-    assert.equal(asksForRewrite(text), true, `${text} should ask for a rewrite`);
-  }
-});
-
-test("🔴 REVERSED: the owner's confusion phrasings DO fire — my narrowing was wrong", () => {
-  // 🔴 I ARGUED THE OPPOSITE AND SHIPPED IT NARROW. The reasoning was an asymmetry: a false
-  // positive silently rewrites material the learner may have been relying on. Two things defeat
-  // it, and the second is the one I missed.
-  //
-  //   1. The wording is NOT destroyed — §11 keeps `previousContent` and offers restore, so the
-  //      cost is "it changed and I can put it back".
-  //   2. 🔴 THE SAFE FALLBACK WAS THE PROHIBITED BEHAVIOUR. §11 says "do not append another
-  //      explanation underneath". Checked rather than assumed: the ordinary path's prompt permits
-  //      insert_before, insert_after and annotate_block — so a confused learner falling through
-  //      gets an explanation STACKED BELOW the passage, the exact shape §11 forbids.
-  for (const text of ["I still don't understand this", "I don't get this", "im lost", "I am confused"]) {
-    assert.equal(asksForRewrite(text), true, `${text} is on the owner's list and must rewrite in place`);
-  }
-});
-
-test("a question with a subject is still not a rewrite request", () => {
-  // The line that survives: "what does osmolarity mean" asks about a TERM and is answered beside
-  // the passage, disturbing nothing. "I don't understand this" reports that the material failed.
-  for (const text of [
-    "why does that happen",
-    "what does osmolarity mean",
-    "is this the same as the last one",
-    "",
-    // 🔴 THESE FOUR ARE THE ONES THE OPENER GUARD ACTUALLY CARRIES, and I only know that because
-    // deleting the guard did NOT fail my first set. Those cases passed for an unrelated reason —
-    // the confusion pattern needs a negation directly before "understand", which they lack. A
-    // calibration that does not go red is telling you the assertion is not testing what its name
-    // claims, which is the same lesson as a guard measuring text instead of a property.
-    "why am I confused",
-    "what am I not understanding",
-    "how is this confusing",
-    "why do I not get this",
-  ]) {
-    assert.equal(asksForRewrite(text), false, `${text} must not silently edit the page`);
-  }
-});
+// 🔴 THE PHRASE TESTS ARE GONE, AND SO IS WHAT THEY TESTED. Three of them pinned `asksForRewrite`:
+// that "make this simpler" and "can you rephrase that" fired, that the owner's confusion phrasings
+// ("I don't understand this", "I'm lost") fired too, and that a question with a subject ("what does
+// osmolarity mean") did not. That function was a list of instruction phrases, a list of confusion
+// phrasings, and an interrogative guard wedged between them to stop the two colliding — and its own
+// comments record two phrasings it got wrong before anybody noticed.
+//
+// The model reads the turn now and returns `then: "rewrite"` (lib/learn/turn-router.ts), and those
+// phrasings are exercised against it by `scripts/conversation-acceptance.ts`. What is tested here is
+// the half that was never a reading of language: WHICH passage a rewrite lands on, and when it must
+// not land at all.
 
 test("the referent is the active reading region, derived from the learner's own Continue presses", () => {
-  assert.deepEqual(routeComposerText("make this simpler", BASE), { blockId: "b1", kind: "rewrite" });
+  assert.deepEqual(routeRewrite(BASE), { blockId: "b1", kind: "rewrite" });
 });
 
 test("a highlighted block outranks inference — they pointed at it", () => {
   assert.deepEqual(
-    routeComposerText("simpler", { ...BASE, selectedBlockId: "b7", unreadBlockIds: ["b1", "b2"] }),
+    routeRewrite({ ...BASE, selectedBlockId: "b7", unreadBlockIds: ["b1", "b2"] }),
     { blockId: "b7", kind: "rewrite" },
   );
 });
@@ -83,11 +44,11 @@ test("🔴 REFUSES rather than guessing, and the refusal is something the learne
   // Several unread passages: "this" names none of them. The two tempting answers — the most recent
   // block, and the one nearest the viewport — are guesses about time and gaze respectively, and
   // neither is anything the learner told us.
-  const many = routeComposerText("make this simpler", { ...BASE, unreadBlockIds: ["b1", "b2", "b3"] });
+  const many = routeRewrite({ ...BASE, unreadBlockIds: ["b1", "b2", "b3"] });
   assert.equal(many.kind, "refused");
   assert.match(many.kind === "refused" ? many.message : "", /highlight/i, "the refusal must name the action that resolves it");
 
-  const none = routeComposerText("make this simpler", { ...BASE, hasReadingMaterial: false, unreadBlockIds: [] });
+  const none = routeRewrite({ ...BASE, hasReadingMaterial: false, unreadBlockIds: [] });
   assert.equal(none.kind, "refused");
 
   // 🔴 AND A REFUSAL IS NEVER SILENT. Silence is indistinguishable from the feature being broken.
@@ -104,21 +65,18 @@ test("🔴 while a demonstration is owed this is a SCAFFOLDING request, and not 
   // "Make this simpler" under a live question is the learner asking to move down §33's ladder —
   // the policy's decision. Rewriting the material there would also hand them the answer.
   assert.deepEqual(
-    routeComposerText("make this simpler", { ...BASE, awaitingDemonstration: true }),
+    routeRewrite({ ...BASE, awaitingDemonstration: true }),
     { kind: "defer-to-policy" },
   );
   // Even with an explicit selection: the demonstration outranks it.
   assert.deepEqual(
-    routeComposerText("simpler", { ...BASE, awaitingDemonstration: true, selectedBlockId: "b7" }),
+    routeRewrite({ ...BASE, awaitingDemonstration: true, selectedBlockId: "b7" }),
     { kind: "defer-to-policy" },
   );
 });
 
-test("anything else takes the ordinary path", () => {
-  assert.deepEqual(routeComposerText("why does that happen", BASE), { kind: "ordinary" });
-});
-
-// ── §39: a rewrite is a reading requirement ──────────────────────────────────
+// There is no "ordinary" outcome any more: this function is called only once the model has already
+// read the turn as a rewrite, so its whole job is where the rewrite lands.
 
 test("🔴 a rewritten passage becomes unread again — the defect §12 shipped", () => {
   // Measured before fixing: press Continue, then ask for a simpler version, and the learner gets

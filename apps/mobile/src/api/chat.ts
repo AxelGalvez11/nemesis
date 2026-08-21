@@ -20,9 +20,17 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 import { fetch as expoFetch } from "expo/fetch";
 import {
+  DEFAULT_INTENT,
   formatBrainContext,
+  INTENT_TIMEOUT_MS,
+  intentMessages,
+  readChatIntent,
   shouldRecallBrain,
+  type ChatIntent,
+  type IntentContext,
+  type IntentExchange,
 } from "@nemesis/shared";
+import { ACADEMIC_SKILL_CATALOG } from "@/lib/academic-skills";
 import { supabase } from "./supabase";
 import { createNoteWithContent, renameNoteById, updateNoteContent } from "./cloudLibrary";
 import {
@@ -45,7 +53,7 @@ import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
 import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
-import { folderForNewItem, type PendingDelete } from "@nemesis/shared";
+import { folderForNewItem, studyCreationKindFromPreferencePrompt, type PendingDelete } from "@nemesis/shared";
 import { recallBrain } from "./brain";
 import { loadKnownCourses } from "./courses";
 import {
@@ -169,31 +177,43 @@ export function newMessageId(): string {
 
 // ── web search (§3: phone calls nemesis-search directly with the device key) ─
 
-/** Time-sensitive queries need an explicit date, or a search provider can rank
- *  an older result above today's. Kept minimal on purpose: the phone's ONLY
- *  search trigger is chat-routing.ts's `searchWeb` decision (web's separate
- *  shouldSearchWeb heuristic layer is not ported — see chat-thread.ts). */
+/** Time-sensitive queries need an explicit date, or a search provider can rank an older result
+ *  above today's.
+ *
+ *  🔴 THE FALLBACK, NOT THE RULE. The model writes the search query itself now and puts a date in
+ *  it when recency is what matters (`webQuery`, see @nemesis/shared/chat-intent.ts). This stamps one
+ *  on only when it did not — a current-events turn whose query came back empty. */
 function withFreshDateAnchor(query: string): string {
   return `${query.trim()} current as of ${new Date().toISOString().slice(0, 10)}`;
 }
 
 /** Prompt-feeding copied from web's chat-api.ts::searchWebContext: fetch live
  *  results and format them into a context block the model is told to cite. */
-async function searchWebContext(uid: string, query: string): Promise<{ context: string; sources: ChatSource[] }> {
+async function searchWebContext(
+  uid: string,
+  query: string,
+  /** How many pages the model asked to read. Null means it did not choose. */
+  wanted: number | null = null,
+  /** How recent they have to be, when the model asked for a window. Null means any age.
+   *  Forwarded, not validated: which windows Brave accepts is the search function's fact. */
+  freshness: string | null = null,
+): Promise<{ context: string; sources: ChatSource[] }> {
   const key = await deviceKey(uid);
   if (!key) return { context: "", sources: [] };
   try {
     const res = await fetch(SEARCH_URL, {
-      // Ten results, not five (owner 2026-08-04) — depth fields (medicine,
-      // law, engineering) rarely settle in five hits, and a search costs one
-      // unit however many results come back. Mirrors web's MAX_WEB_RESULTS.
-      body: JSON.stringify({ limit: 10, query }),
+      // 🔴 NO CAP OF OURS. This asked for ten and then threw away anything past ten — after the
+      // search had been paid for and the pages fetched. One search bills one unit however many
+      // come back, so the number saved nothing and cost evidence. How many to read is the model's
+      // call (`webResults`); omitting the limit lets the search function fall back to the
+      // provider's own ceiling rather than to a number either side invented.
+      body: JSON.stringify({ query, ...(wanted ? { limit: wanted } : {}), ...(freshness ? { freshness } : {}) }),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
     if (!res.ok) return { context: "", sources: [] };
     const body = (await res.json()) as { data?: { web?: ChatSource[] } };
-    const sources = (body.data?.web ?? []).filter((source) => source.url).slice(0, 10);
+    const sources = (body.data?.web ?? []).filter((source) => source.url);
     return { context: formatWebSearchContext(sources), sources };
   } catch {
     return { context: "", sources: [] };
@@ -334,7 +354,7 @@ export interface SendChatOptions {
    *  failure, and the phase line covers it. */
   onReasoning?: CompletionDeltaHandler;
   /** Set when the composer's "Deep research" toggle was on for this turn —
-   *  forces forcedResearchDecision() instead of classifyChatRequest's
+   *  forces forcedResearchDecision() instead of the turn decision's
    *  text-based inference. See that function's doc for why. */
   forceResearch?: boolean;
   /** A Library document attached via the composer's "+" menu for this turn —
@@ -379,6 +399,70 @@ const AGENT_MAX_TOOL_ROUNDS = 4;
  *  not retain (see toolsAllowed).
  *
  *  Never throws. */
+/**
+ * Pair a flat transcript into the exchanges the intent call reads. Nemesis's own turns go in as the
+ * sentence the student actually saw, since that is what "yeah do that" is answering.
+ */
+export function intentHistory(history: readonly ChatMsg[]): IntentContext["history"] {
+  const exchanges: IntentExchange[] = [];
+  for (const message of history) {
+    if (message.role === "user") {
+      exchanges.push({ replied: "", said: message.content });
+      continue;
+    }
+    const last = exchanges[exchanges.length - 1];
+    if (last && !last.replied) last.replied = message.content;
+  }
+  return exchanges;
+}
+
+/**
+ * Read what the student meant: one model call, one decision, for the whole turn.
+ *
+ * Bounded by a hard deadline, and every failure path — timeout, network, auth, a refusal, prose
+ * where JSON was asked for — resolves to DEFAULT_INTENT. The student gets an answer; they do not
+ * get a spinner, and they do not get "I can't see your calendar".
+ */
+/**
+ * The most searches one turn may run.
+ *
+ * 🔴 A BACKSTOP, NOT THE DECISION. The model stops when it says it has enough; this exists so a
+ * turn cannot run away, and the number is STATED to the model rather than enforced behind its back
+ * (`searchesLeft` in `IntentContext`). Same value the Canvas uses, deliberately: one product, one
+ * answer to "how hard will Nemesis look".
+ */
+export const MAX_SEARCH_ROUNDS = 4;
+
+async function readTurnIntent(
+  uid: string,
+  ask: string,
+  context: IntentContext,
+  signal?: AbortSignal,
+): Promise<ChatIntent> {
+  if (!ask.trim()) return DEFAULT_INTENT;
+  const timer = new AbortController();
+  const onAbort = () => timer.abort();
+  signal?.addEventListener("abort", onAbort);
+  const deadline = setTimeout(() => timer.abort(), INTENT_TIMEOUT_MS);
+  try {
+    const reply = await postChatCompletion(
+      uid,
+      intentMessages({ ask, catalog: ACADEMIC_SKILL_CATALOG, context }) as WireMsg[],
+      { model: "deepseek-chat", route: "conversation", searchWeb: false },
+      undefined,
+      undefined,
+      undefined,
+      timer.signal,
+    );
+    return readChatIntent(reply.text ?? "") ?? DEFAULT_INTENT;
+  } catch {
+    return DEFAULT_INTENT;
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function sendChat(
   uid: string,
   history: ChatMsg[],
@@ -389,18 +473,29 @@ export async function sendChat(
   onPhase?.({ kind: "routing" });
   const priorAssistantText =
     [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
-  // Route first (what KIND of question is this), then let the student's own
-  // dial override how hard to think about it — never the other way round. Both
-  // steps make one exception, for a request to SAVE something into the student's
-  // own workspace: that write happens through a tool call, and both the research
-  // toggle and the High dial would otherwise switch the tools off and turn the
-  // save into an essay. See routeForTurn and applyChatEffort.
+  // 🔴 ONE CALL READS THE TURN, AND IT IS THE SAME ONE THE BROWSER MAKES. This used to be thirteen
+  // regexes in `chat-routing.ts` — a second copy of the web classifier, with one of them already
+  // drifted, so the identical question could behave differently on the two surfaces. See
+  // @nemesis/shared/chat-intent.ts. A failed or timed-out read is DEFAULT_INTENT: an ordinary
+  // conversational turn on the tools-capable model, which is a working turn rather than an error.
+  /** One pass of the decision. `webContext` carries everything found so far; empty on the first. */
+  const readIntent = (webContext: string, searchesLeft: number) => readTurnIntent(uid, userText, {
+    attachments: attachedDoc ? [attachedDoc.title] : [],
+    // Application state, not language: the prefix belongs to a question Nemesis itself wrote.
+    awaitingStudyPreference: studyCreationKindFromPreferencePrompt(priorAssistantText),
+    history: intentHistory(history),
+    searchesLeft,
+    today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
+    webContext,
+  }, signal);
+  const intent = await readIntent("", MAX_SEARCH_ROUNDS);
+  // Then let the student's own dial override how hard to think about it — never the other way
+  // round. Both steps make one exception, for a request to SAVE something into the student's own
+  // workspace: that write happens through a tool call, and both the research toggle and the High
+  // dial would otherwise switch the tools off and turn the save into an essay. See routeForTurn
+  // and applyChatEffort.
   const decision = applyChatEffort(
-    routeForTurn(
-      userText,
-      forceResearch ? forcedResearchDecision() : null,
-      priorAssistantText,
-    ),
+    routeForTurn(intent, forceResearch ? forcedResearchDecision() : null),
     effort,
   );
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
@@ -411,20 +506,56 @@ export async function sendChat(
   // The student's second brain: semantic notes + one-hop links + deadlines +
   // demonstrated weak cards. It starts beside web search so the independent
   // calls cost one wait, and returns null on any degraded backend path.
-  const brainLookup = shouldRecallBrain(userText)
+  const brainLookup = shouldRecallBrain({ topic: intent.topic, workspaceTurn: intent.workspace !== "none" })
     ? recallBrain(userText)
     : Promise.resolve(null);
-  if (decision.searchWeb) {
-    const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
-    // The phase echoes the student's OWN words, not `query` — the "current"
-    // route staples a freshness date onto the wire query, and showing that
-    // back would read like the app invented part of the question.
-    onPhase?.({ kind: "searching", query: userText });
-    const result = await searchWebContext(uid, query);
-    sources = result.sources;
-    onPhase?.({ kind: "reading", sources: sources.length });
-    groundedText = result.context
-      ? `${groundedText}\n\n${result.context}`
+  // 🔴🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH — the same loop the Canvas has run since
+  // `MAX_SEARCH_ROUNDS`, brought here so one product does not look twice as hard on one screen.
+  // This used to be a single `if`: one search, and a first query aimed slightly wrong ended the
+  // turn, because the model then had to answer from pages it may already have judged useless with
+  // no way to say so. Owner: *"deepseek should decide itself when it has enough information to
+  // answer"*, and *"the phone should also follow the same as webapp canvas"*.
+  //
+  // 🔴 WHAT COMES BACK ACCUMULATES RATHER THAN REPLACING. A later search narrows or corrects an
+  // earlier one; dropping the earlier pages would make the model re-find them, and would make an
+  // inline [3] in the answer point at whatever happened to be third in the last batch.
+  //
+  // 🔴 THE LOOP ENDS ON `searchWeb`, WHICH IS THE MODEL'S OWN ANSWER re-read each round from a
+  // packet that now contains what it found. The round count is only a backstop.
+  let searched = decision.searchWeb;
+  let webIntent = intent;
+  if (searched) {
+    const seen = new Set<string>();
+    const found: ChatSource[] = [];
+    let context = "";
+    for (let round = 0; round < MAX_SEARCH_ROUNDS && searched; round += 1) {
+      // The model wrote the query when it asked for the search, and puts a date in it itself when
+      // recency is the point — which is what `withFreshDateAnchor` was guessing at from a word list.
+      const query = webIntent.webQuery || (decision.route === "current" ? withFreshDateAnchor(userText) : userText);
+      // The phase echoes the student's OWN words, not `query` — the "current"
+      // route staples a freshness date onto the wire query, and showing that
+      // back would read like the app invented part of the question.
+      onPhase?.({ kind: "searching", query: userText });
+      const result = await searchWebContext(uid, query, webIntent.webResults, webIntent.webFreshness);
+      for (const source of result.sources) {
+        if (seen.has(source.url)) continue;
+        seen.add(source.url);
+        found.push(source);
+      }
+      // 🔴 THE RUNNING TOTAL, NOT THIS ROUND'S HAUL. The student is watching one turn, and a
+      // counter that went 12, then 9, then 14 would be describing our loop rather than their search.
+      onPhase?.({ kind: "reading", sources: found.length });
+      // Re-numbered over everything gathered, so an inline [n] resolves against what was shown.
+      context = formatWebSearchContext(found);
+      const again = await readIntent(context, MAX_SEARCH_ROUNDS - round - 1);
+      // A round that came back unreadable leaves the previous decision standing and stops: a
+      // DEFAULT_INTENT cannot ask for another search, so a failing provider cannot spin the loop.
+      webIntent = again;
+      searched = again.needsWeb;
+    }
+    sources = found;
+    groundedText = context
+      ? `${groundedText}\n\n${context}`
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
   // Personal context goes LAST so it is closest to the answer and the student's
@@ -436,7 +567,7 @@ export async function sendChat(
   // The question decides which parts of the packet survive: Calendar and Study
   // rows now have to be asked for or share vocabulary with it, instead of
   // riding along on every turn as a decoy. See brain-context.ts.
-  const brainContext = formatBrainContext(brain, userText);
+  const brainContext = formatBrainContext(brain, userText, intent.workspace !== "none");
   if (brainContext) {
     const noteCount = new Set(brain?.notes.map((hit) => hit.document_id) ?? []).size;
     onPhase?.({ kind: "recalling", notes: noteCount });
@@ -480,6 +611,7 @@ export async function sendChat(
     learnerProfile,
     Boolean(attachedDoc),
     brainContext,
+    intent.skills,
   );
   let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {

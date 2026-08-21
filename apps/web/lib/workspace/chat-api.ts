@@ -22,16 +22,17 @@ import { AGENT_TOOLS, executeAgentTool, loadAttachedSourceFolder, loadWorkspaceO
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
 import {
-  readWebNeedReply,
-  shouldAskModelAboutWeb,
-  WEB_NEED_PROMPT,
-  WEB_NEED_TIMEOUT_MS,
-  type WebNeedContext,
-} from "@/lib/workspace/chat-web-need";
-import { buildFreshSearchQuery, formatWebSearchContext, MAX_WEB_RESULTS, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+  DEFAULT_INTENT,
+  INTENT_TIMEOUT_MS,
+  intentMessages,
+  readChatIntent,
+  type ChatIntent,
+  type IntentContext,
+} from "@/lib/workspace/chat-intent";
+import { carriesUrl, formatWebSearchContext, PROVIDER_MAX_WEB_RESULTS, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
-import { ATTACHMENT_BLOCK_MARKER, ATTACHMENT_ONLY_DECISION, classifyChatRequest, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { ATTACHMENT_BLOCK_MARKER, ATTACHMENT_ONLY_DECISION, attachmentNames, DEFAULT_DECISION, decisionFromIntent, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
@@ -226,7 +227,7 @@ export function buildContinuityAnchor(history: ChatMessage[], kept: ChatMessage[
 export function buildWireMessages(
   history: ChatMessage[],
   userText: string,
-  decision = classifyChatRequest(userText),
+  decision = DEFAULT_DECISION,
   // Derived from the decision by default so a caller cannot accidentally
   // describe tools that will not be sent.
   toolsEnabled = toolsAllowed(decision),
@@ -239,6 +240,9 @@ export function buildWireMessages(
   /** Live search evidence, kept separate from what the learner typed and from retrieved workspace
    *  context. Search snippets are provisional evidence, never durable learner knowledge. */
   webContext = "",
+  /** Which expertise packets the turn's decision asked for, by id. Empty is the
+   *  ordinary case: most turns need none. */
+  skillIds: readonly string[] = [],
 ): WireMsg[] {
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -259,17 +263,16 @@ export function buildWireMessages(
   const expanded = expandArtifactContext(history);
   const kept = trimHistory(expanded);
   const continuityAnchor = buildContinuityAnchor(expanded, kept);
-  const priorAssistantText =
-    [...history].reverse().find((message) => message.role === "assistant")?.content ?? "";
-  const continuationKind = studyCreationKindFromPreferencePrompt(priorAssistantText);
-  const skillText = continuationKind === "test"
-    ? `${userText}\ncreate a practice test`
-    : continuationKind === "flashcards"
-      ? `${userText}\ncreate flashcards`
-      : userText;
   // Skills go last among the system messages so their procedure is the most
   // recent instruction the model reads before the conversation itself.
-  const skills = buildSkillMessage(selectChatSkills(skillText));
+  //
+  // 🔴 THE IDS COME FROM THE TURN'S DECISION, NOT FROM A SWEEP OVER THIS TEXT. This used to run
+  // selectChatSkills over the wire text with a regex per skill, and to paper over the worst
+  // consequence by APPENDING "create a practice test" to the student's own message whenever our
+  // previous turn had asked a preference question, purely so a regex downstream would match. That
+  // is gone: the intent call is told, as a fact, that Nemesis asked a question and is waiting, and
+  // it reads the reply itself.
+  const skills = buildSkillMessage(selectChatSkills(skillIds));
   const sourceRule = sourceDisagreementInstruction({
     hasAttachedMaterial: userText.includes(ATTACHMENT_BLOCK_MARKER),
     hasExternalEvidence: webContext.trim().length > 0,
@@ -852,31 +855,65 @@ function startWaitingStrip(onActivity?: (label: string | null) => void): Waiting
 }
 
 /**
- * Ask the model whether this turn needs the live web.
+ * Pair a flat transcript into the exchanges the intent call reads.
  *
- * Bounded twice over: it is only called when the cheap checks could not decide
- * (shouldAskModelAboutWeb), and it gives up after WEB_NEED_TIMEOUT_MS. Every
- * failure path — timeout, network, auth, a reply that is not the one word it
- * was asked for — resolves to false, so the worst case is the behaviour we had
- * before this existed rather than a stalled turn.
+ * Bounded by the caller. Nemesis's own turns go in as the sentence the student actually saw, since
+ * that is what "yeah do that" is answering.
  */
-async function modelWantsWeb(uid: string, context: WebNeedContext, signal?: AbortSignal): Promise<boolean> {
-  if (!shouldAskModelAboutWeb(context)) return false;
+export function intentHistory(history: readonly ChatMessage[]): IntentContext["history"] {
+  const exchanges: { said: string; replied: string }[] = [];
+  for (const message of history) {
+    if (message.role === "user") {
+      exchanges.push({ replied: "", said: message.content });
+      continue;
+    }
+    const last = exchanges[exchanges.length - 1];
+    if (last && !last.replied) last.replied = message.content;
+  }
+  return exchanges;
+}
+
+/**
+ * Read what the student meant: one model call, one decision, for the whole turn.
+ *
+ * 🔴 THIS REPLACED `modelWantsWeb`, WHICH ASKED ONE YES/NO QUESTION AND LEFT FOUR REGEX PILES TO
+ * GUESS THE REST. The bounds are inherited from it unchanged, because they were right: a hard
+ * deadline, and every failure path resolving to a usable default rather than to an error. A
+ * timeout, a network failure, an auth failure, a refusal, or prose where JSON was asked for all
+ * come back as DEFAULT_INTENT, and the student gets an ordinary answer on the tools-capable model.
+ *
+ * 🔴 IT IS NOT A TOOL ROUND, for the same reason the web pre-flight was not: `toolsAllowed()` turns
+ * tools OFF for every reasoner and high-effort turn, which are exactly the turns carrying the
+ * hardest questions. A tool would be available only where it is least needed. Asking BEFORE the
+ * turn works everywhere, and it has to happen before the turn anyway, because its answer is what
+ * picks the model the turn runs on.
+ */
+export async function readTurnIntent(
+  uid: string,
+  ask: string,
+  context: IntentContext,
+  signal?: AbortSignal,
+): Promise<ChatIntent> {
+  if (!ask.trim()) return DEFAULT_INTENT;
   const timer = new AbortController();
   // Linked to the caller's signal so pressing Stop kills the pre-flight too,
   // rather than leaving a request running against a turn nobody wants.
   const onAbort = () => timer.abort();
   signal?.addEventListener("abort", onAbort, { once: true });
-  const deadline = setTimeout(() => timer.abort(), WEB_NEED_TIMEOUT_MS);
+  const deadline = setTimeout(() => timer.abort(), INTENT_TIMEOUT_MS);
   try {
     const reply = await postChatCompletion(
       uid,
-      [{ content: WEB_NEED_PROMPT, role: "system" }, { content: context.ask, role: "user" }],
-      { background: true, decision: { model: "deepseek-chat", route: "conversation", searchWeb: false }, signal: timer.signal },
+      intentMessages({ ask, context }),
+      {
+        background: true,
+        decision: { model: "deepseek-chat", route: "conversation", searchWeb: false },
+        signal: timer.signal,
+      },
     );
-    return readWebNeedReply(reply.text);
+    return readChatIntent(reply.text ?? "") ?? DEFAULT_INTENT;
   } catch {
-    return false;
+    return DEFAULT_INTENT;
   } finally {
     clearTimeout(deadline);
     signal?.removeEventListener("abort", onAbort);
@@ -895,52 +932,63 @@ export async function sendChatTurn(
    *  reasoner's streamed thoughts and the agent's tool rounds. null = back to
    *  the plain shimmer. */
   onActivity?: (label: string | null) => void,
+  /**
+   * A decision the caller already read for this turn.
+   *
+   * 🔴 SO IT IS NEVER PAID FOR TWICE. Sessions' own submit path has to know whether an attached
+   * pile of syllabi is a calendar import before it can decide whether this turn reaches the model
+   * at all, and that is the same question the intent call answers. Passing it in is what stops
+   * that becoming two calls, or worse, two different answers.
+   */
+  known?: ChatIntent,
 ): Promise<ChatReply> {
   // Route and search on what the student TYPED. Reading the attached deck too
   // meant one slide citing a recent year bought a paid web search on every
   // upload. Skills below still see the full text, deliberately.
   const askText = promptWithoutAttachments(userText);
-  // The previous assistant turn is what makes a one-word "flashcards" or "all
-  // three" legible as a save: our own lecture-intake skill ends by offering to
-  // build them, and the reply that accepts the offer carries no save verb.
-  // (copied before reversing — findLast is ES2023 and this project targets ES2022)
-  const priorAssistant = [...history].reverse().find((message) => message.role === "assistant" && message.content.trim())?.content ?? "";
-  // An empty ask alongside a non-empty wire text means files and nothing typed.
-  const classified = !askText && userText.trim()
-    ? ATTACHMENT_ONLY_DECISION
-    : classifyChatRequest(askText, priorAssistant);
   // 🔴 THE STRIP STARTS HERE, NOT AT THE MODEL CALL. Everything between this
-  // line and the answer is time the student spends waiting — the web-need
-  // pre-flight, the search itself, the brain lookup — and a strip that only
-  // woke up for the final call would leave a silent gap in front of it and
-  // then restart its clock at zero, which is the exact staleness this is
-  // meant to fix. One strip, one clock, for the whole turn.
+  // line and the answer is time the student spends waiting — the intent call,
+  // the search itself, the brain lookup — and a strip that only woke up for the
+  // final call would leave a silent gap in front of it and then restart its
+  // clock at zero, which is the exact staleness this is meant to fix. One
+  // strip, one clock, for the whole turn.
   let strip = startWaitingStrip(onActivity);
-  // The keyword lists are a fast path, not the whole decision: when they miss,
-  // the model itself is asked whether this question needs live sources. See
-  // chat-web-need.ts for why this is a pre-flight and not a tool.
+  // 🔴 ONE CALL DECIDES THE WHOLE TURN. Route, web, workspace and expertise used to be four
+  // separate guesses: three regex piles and one yes/no pre-flight, which could and did contradict
+  // each other. See chat-intent.ts for what each field costs and why failure is a working turn.
   //
-  // A WORKSPACE turn opts out of the whole web apparatus unless the student
-  // explicitly asked for the web (classifyChatRequest already set searchWeb
-  // then): "what's my schedule tomorrow" is a database read, and it used to
-  // buy a paid search off the word "tomorrow" AND get promoted onto the
-  // tool-less reasoner below — the two halves of the calendar incident.
-  const regexSaidYes = classified.casual
-    ? false
-    : classified.workspaceIntent
-      ? classified.searchWeb
-      : classified.searchWeb || shouldSearchWeb(askText);
-  // A deliberate casual turn is already classified. Sending "who are you" through a second model
-  // to decide whether it needs the web would let that second decision undo the first and spend a
-  // search on a question only Nemesis itself can answer.
-  const needsWeb = regexSaidYes || (!classified.casual && !classified.workspaceIntent && await modelWantsWeb(uid, {
-    ask: askText,
-    hasAttachments: userText.trim() !== askText.trim(),
-    regexSaidYes,
-    savesToWorkspace: classified.savesToWorkspace === true,
-  }, signal));
-  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !classified.workspaceIntent
-    ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
+  // An empty ask alongside a non-empty wire text means files and nothing typed — there is no
+  // message to read, so nothing is asked and the deck goes to the model that reads a lecture well.
+  const filesOnly = !askText && userText.trim().length > 0;
+  const intent = filesOnly
+    ? DEFAULT_INTENT
+    : known ?? await readTurnIntent(uid, askText, {
+      attachments: attachmentNames(userText),
+      // Our own previous turn asking a preference question is application state, not language:
+      // the prefix belongs to a question Nemesis itself wrote. Whether THIS message answers it is
+      // the model's reading, and it is told the fact rather than having an answer assumed for it.
+      awaitingStudyPreference: studyCreationKindFromPreferencePrompt(
+        // (copied before reversing — findLast is ES2023 and this project targets ES2022)
+        [...history].reverse().find((message) => message.role === "assistant" && message.content.trim())?.content ?? "",
+      ),
+      history: intentHistory(history),
+      // 🔴 THIS PATH SEARCHES ONCE AND HAS NO LOOP, SO IT SAYS SO RATHER THAN LYING BY OMISSION.
+      // `searchesLeft: 0` on a first pass with no results is truthful — there is no second round
+      // here — and `intentStateBlock` only speaks about searches once results exist, so nothing
+      // reaches the model on a turn that has not searched. See the file header: this whole turn
+      // path has no live caller in the web app any more.
+      searchesLeft: 0,
+      today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
+      webContext: "",
+    }, signal);
+  const classified = filesOnly ? ATTACHMENT_ONLY_DECISION : decisionFromIntent(intent);
+  // 🔴 A URL IN THE MESSAGE OVERRIDES A "no". The address is literally in the text, so this is not
+  // a second opinion about what the student meant — it is the one web fact that does not need
+  // reading. Deliberately not applied to a workspace turn: "file the notes from
+  // https://… under my Immunology folder" is a filing request whose tools we must not lose.
+  const needsWeb = classified.searchWeb || (intent.workspace === "none" && carriesUrl(askText));
+  const routed: ChatRouteDecision = needsWeb && !classified.searchWeb
+    ? { ...classified, route: classified.route === "conversation" ? "current" : classified.route, searchWeb: true }
     : classified;
   // The student's dial wins over the route's own guess at how hard to think.
   const decision = applyChatEffort(routed, effort);
@@ -949,18 +997,19 @@ export async function sendChatTurn(
   // Start the second-brain lookup beside live web search. It combines semantic
   // Library passages with typed graph neighbors, Calendar deadlines, and Study
   // weak spots in one bounded packet; failures are a normal empty context.
-  const brainLookup = shouldRecallBrain(askText)
+  const brainLookup = shouldRecallBrain({ topic: intent.topic, workspaceTurn: intent.workspace !== "none" })
     ? recallBrain(askText)
     : Promise.resolve(null);
   // Workspace turns also start ORIENTED: the compact snapshot rides as its own
   // system message (buildWireMessages labels it orientation-only). Fetched in
   // parallel with everything else; a failure just means no snapshot.
-  const overviewLookup: Promise<unknown> = classified.workspaceIntent
+  const overviewLookup: Promise<unknown> = decision.workspaceIntent
     ? loadWorkspaceOverview().catch(() => null)
     : Promise.resolve(null);
   if (needsWeb) {
     strip.pin("Searching the web");
-    const result = await searchWebContext(uid, buildFreshSearchQuery(askText), signal);
+    // The model wrote the query when it asked for the search; otherwise search what they typed.
+    const result = await searchWebContext(uid, decision.webQuery || askText, signal, intent.webResults, intent.webFreshness);
     strip.resume();
     sources = result.sources;
     webContext = result.context
@@ -969,7 +1018,7 @@ export async function sendChatTurn(
   // The question decides which parts of the packet survive — Calendar and Study
   // rows have to be asked for or share vocabulary with it now, rather than
   // riding along on every turn. See brain-context.ts.
-  const brainContext = formatBrainContext(await brainLookup, askText);
+  const brainContext = formatBrainContext(await brainLookup, askText, intent.workspace !== "none");
   const overview = await overviewLookup;
   const workspaceSnapshot = overview ? JSON.stringify(overview) : "";
 
@@ -987,7 +1036,7 @@ export async function sendChatTurn(
   // "not sorted yet", which the topic matcher must not overrule with a guess.
   const attachedIds = toolsEnabled ? attachedSourceIds(userText) : [];
   const sourceFolder = attachedIds.length ? await loadAttachedSourceFolder(attachedIds) : "";
-  let messages: WireMsg[] = buildWireMessages(history, userText, decision, toolsEnabled, brainContext, workspaceSnapshot, webContext);
+  let messages: WireMsg[] = buildWireMessages(history, userText, decision, toolsEnabled, brainContext, workspaceSnapshot, webContext, intent.skills);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
   const outputs: ChatOutput[] = [];
   let pendingDelete: PendingDelete | undefined;
@@ -1079,12 +1128,35 @@ export async function sendChatTurn(
   };
 }
 
-export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {
+export async function searchWebContext(
+  uid: string,
+  query: string,
+  signal?: AbortSignal,
+  /**
+   * How many pages the model asked to read. Null means it did not choose, and the provider's own
+   * ceiling stands — never a smaller number of ours.
+   */
+  wanted: number | null = null,
+  /**
+   * How recent the pages have to be, when the model asked for a window. Null means any age.
+   *
+   * 🔴 FORWARDED, NOT VALIDATED HERE. Which windows Brave accepts is a fact the search function
+   * owns (`readFreshness`); a second copy of that vocabulary in the browser would be a second
+   * thing to update, and the browser is not the place a provider's grammar should be enforced.
+   */
+  freshness: string | null = null,
+): Promise<{ context: string; sources: ChatWebResult[] }> {
   const key = await deviceKey(uid);
   if (!key) return { context: "", sources: [] };
   try {
     const response = await fetch("/api/workspace/search", {
-      body: JSON.stringify({ query, limit: MAX_WEB_RESULTS }),
+      body: JSON.stringify({
+        limit: Math.min(wanted ?? PROVIDER_MAX_WEB_RESULTS, PROVIDER_MAX_WEB_RESULTS),
+        query,
+        // Omitted when there is none, so a turn that wants any-age pages sends the request it
+        // always sent rather than one carrying an empty filter.
+        ...(freshness ? { freshness } : {}),
+      }),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       method: "POST",
       signal,

@@ -7,7 +7,22 @@
 // api/notebooks.ts.
 
 import { trimHistory, type WireMsg } from "./chat-thread.ts";
-import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
+import { routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
+
+/**
+ * Every notebook turn, before the student's effort dial is applied.
+ *
+ * 🔴 FIXED RATHER THAN CLASSIFIED, AND THAT IS NOT A SHORTCUT. A notebook answers ONLY from the
+ * sources attached to it, and it carries no tools — so the two things a route decides on the chat
+ * surface, whether to search and whether tools ride, are already settled here by the surface
+ * itself. What is left is how hard to think about the student's own material, and the answer to
+ * that is always "properly". Matches apps/web/lib/notebooks/chat.ts.
+ */
+export const NOTEBOOK_DECISION: ChatRouteDecision = {
+  model: "deepseek-reasoner",
+  route: "learning",
+  searchWeb: false,
+};
 
 // ── Types (mirrors apps/web/lib/notebooks/parse.ts) ─────────────────────────
 
@@ -274,7 +289,7 @@ export function buildSourceContext(sources: NotebookWireSource[], budget = SOURC
  *  route classifier here only picks the model (deepseek-chat vs -reasoner + effort), it does
  *  NOT trigger a search. PURE. */
 export function buildNotebookWireMessages(opts: BuildNotebookWireOpts): WireMsg[] {
-  const decision = opts.decision ?? classifyChatRequest(opts.userText);
+  const decision = opts.decision ?? NOTEBOOK_DECISION;
   const parts = [NOTEBOOK_SYSTEM_PROMPT, routeInstruction(decision.route)];
   const instructions = opts.instructions?.trim();
   if (instructions) {

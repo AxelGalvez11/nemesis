@@ -50,7 +50,7 @@ import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";
 import { continueBelongsTo, continueOwner, readingRequirementOf } from "@/lib/learn/canvas-continue";
-import { routeComposerText } from "@/lib/learn/canvas-phrases";
+import { routeRewrite } from "@/lib/learn/canvas-phrases";
 import { unreadChunk } from "@/lib/learn/canvas-reading";
 import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
@@ -163,7 +163,7 @@ export function LearningCanvas({
   // needs `policy` (it reads the learner model to build the turn's surroundings); `policy` needs
   // this callback. A ref is the seam: this closes over nothing, and whatever `converse` is by the
   // time the judge answers is what runs.
-  const converseRef = useRef<((said: string) => Promise<void>) | null>(null);
+  const converseRef = useRef<((said: string) => Promise<unknown>) | null>(null);
   const notAnAttempt = useCallback((said: string) => {
     void converseRef.current?.(said);
   }, []);
@@ -427,16 +427,17 @@ export function LearningCanvas({
    * says both what to say and what to do. See lib/learn/turn-router.ts.
    */
   const converse = useCallback(
-    async (asked: string) => {
+    async (asked: string, staged: CanvasBlock | null = null) => {
       const trimmed = asked.trim();
-      if (!trimmed) return;
+      if (!trimmed) return null;
       const decision = await session.converse(trimmed, surroundings(), () => {
         // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
         // moves on. The action in flight is stamped rather than a bare `true`, which is what makes
         // attention return by itself; see `materialOwnsAttention`.
         setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
-      });
+      }, staged);
       remember({ replied: decision?.say ?? "", said: trimmed });
+      return decision;
     },
     [policy.decision, remember, session, surroundings],
   );
@@ -511,14 +512,12 @@ export function LearningCanvas({
   const submit = useCallback(
     async (text: string) => {
       // 🔴 CONTRACT RULE 2 — "normal chat responses may remain only until the next turn." Fired
-      // ONCE, before any branch below, so every route out of this function (explain-this, where-
-      // from, rewrite, refused, ordinary) gets it for free rather than five branches each needing
+      // ONCE, before any branch below, so every route out of this function (explain-this, scoped
+      // edit, rewrite, refused, ordinary) gets it for free rather than five branches each needing
       // to remember. Safe ahead of `only` below: it touches `aside`/the selection popover only,
       // never `selected` — see canvas-explanation-turn.ts.
       applyExplanationEvent({ kind: "new_turn" });
 
-      // "Where did this come from?" is answered about the highlighted passage rather than by
-      // rewriting it — asking about a claim should never silently change the claim.
       const only = selected.length === 1 ? selected[0] : null;
       // 🔴 SEND WITH A PASSAGE STAGED AND NOTHING TYPED MEANS "EXPLAIN THIS". The composer now
       // offers send whenever a selection is staged, because the placeholder asks "What should
@@ -529,93 +528,99 @@ export function LearningCanvas({
         await session.askAbout(only, EXPLAIN_THIS);
         return;
       }
-      if (only && /^(where|which source|what source)\b/i.test(text)) {
-        canvasCapture("canvas_source_asked", canvas, {});
-        await session.askAbout(only, text);
+      // 🔴 SEVERAL PASSAGES STAGED IS NOT A QUESTION. The learner pointed at exactly this text and
+      // typed an instruction about it, so there is no "did they mean to ask or to edit" to read:
+      // they picked the passages by hand. Short-circuited above the model call so a scoped edit
+      // costs nothing extra, and so `converse` is never asked to reason about a "this" that means
+      // four different paragraphs at once.
+      if (selected.length > 1) {
+        setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
+        await session.command(text, selected);
+        clearSelection();
         return;
       }
-      // §11 + brief §15 — *"Make this simpler"* typed into the composer rewrites the passage IN
-      // PLACE, exactly as the selection toolbar's "Simpler" does. Until now only a selection could
-      // do it and typing the phrase appended another explanation underneath, which is the precise
-      // behaviour §11 exists to prevent.
-      //
-      // 🔴 THE REFERENT IS READ, NEVER GUESSED — see canvas-phrases.ts. "Most recent block" and
-      // "nearest the viewport" are inventions about time and gaze; the active reading region is
-      // derived from Continue presses the learner made themselves.
-      const routing = routeComposerText(text, {
-        // 🔴 THE RUNTIME'S OWN ANSWER, NOT A THIRD COPY OF THE TEST. This read
-        // `action.type === "retrieve"` and would have gone stale the moment a second kind of ask
-        // existed: a learner sitting in front of an unanswered recognition task would have had their
-        // typing routed as a question about the material. See `PolicyRuntime.awaitingAnswer`.
-        awaitingDemonstration: policy.awaitingAnswer,
-        hasReadingMaterial: canvas.blocks.length > 0,
-        selectedBlockId: only?.id ?? null,
-        unreadBlockIds: unreadChunk(canvas.blocks).map((block) => block.id),
-      });
 
-      if (routing.kind === "rewrite") {
-        const block = canvas.blocks.find((candidate) => candidate.id === routing.blockId);
-        if (block) {
-          // The same path the toolbar takes, so there is one rewrite implementation rather than
-          // two that drift. `rewritable` is true because a document block is exactly where a
-          // rewrite has somewhere to land.
-          await session.askAboutSelection(
-            {
-              anchor: { exact: block.content.slice(0, 64), prefix: "", suffix: "" },
-              blockId: block.id,
-              endOffset: block.content.length,
-              regionId: block.id,
-              rewritable: true,
-              selectedText: block.content,
-              startOffset: 0,
-              surroundingText: block.content,
-            },
-            "simpler",
-          );
-          clearSelection();
+      // 🔴 ONE READING OF THE TURN, WHETHER OR NOT A PASSAGE IS STAGED. This used to be three
+      // separate decisions made before any model saw the sentence:
+      //
+      //   · `/^(where|which source|what source)\b/i` with a passage staged — three openers were
+      //     answered beside the passage, and every other sentence was treated as an instruction to
+      //     EDIT it. "is this the same as what we did last week?" silently rewrote the paragraph
+      //     the learner was asking about.
+      //   · `asksForRewrite`, a list of instruction phrases plus a list of confusion phrasings with
+      //     an interrogative guard wedged between them to stop the two colliding.
+      //   · everything left over, which went to `converse`.
+      //
+      // All three asked the same question — what does the learner want done with what is on screen
+      // — and answered it three different ways. Now the model answers it once, with the staged
+      // passage in the packet so "this" has something to resolve against, and the canvas decides
+      // what each answer is allowed to do. See lib/learn/turn-router.ts.
+      const decision = await converse(text, only);
+
+      if (decision?.then === "rewrite") {
+        // 🔴 THE REFERENT IS READ, NEVER GUESSED — see canvas-phrases.ts. "Most recent block" and
+        // "nearest the viewport" are inventions about time and gaze; the active reading region is
+        // derived from Continue presses the learner made themselves. And a demonstration owed
+        // outranks the model's answer outright: rewriting the material under a live question would
+        // hand the learner the answer to it.
+        const routing = routeRewrite({
+          // 🔴 THE RUNTIME'S OWN ANSWER, NOT A THIRD COPY OF THE TEST. This read
+          // `action.type === "retrieve"` and would have gone stale the moment a second kind of ask
+          // existed: a learner sitting in front of an unanswered recognition task would have had
+          // their typing routed as a question about the material. See `PolicyRuntime.awaitingAnswer`.
+          awaitingDemonstration: policy.awaitingAnswer,
+          hasReadingMaterial: canvas.blocks.length > 0,
+          selectedBlockId: only?.id ?? null,
+          unreadBlockIds: unreadChunk(canvas.blocks).map((block) => block.id),
+        });
+
+        if (routing.kind === "rewrite") {
+          const block = canvas.blocks.find((candidate) => candidate.id === routing.blockId);
+          if (block) {
+            // The same path the toolbar takes, so there is one rewrite implementation rather than
+            // two that drift. `rewritable` is true because a document block is exactly where a
+            // rewrite has somewhere to land.
+            await session.askAboutSelection(
+              {
+                anchor: { exact: block.content.slice(0, 64), prefix: "", suffix: "" },
+                blockId: block.id,
+                endOffset: block.content.length,
+                regionId: block.id,
+                rewritable: true,
+                selectedText: block.content,
+                startOffset: 0,
+                surroundingText: block.content,
+              },
+              "simpler",
+            );
+            clearSelection();
+            return;
+          }
+        }
+
+        // 🔴 A REFUSAL IS SAID OUT LOUD. Silence here is indistinguishable from the feature being
+        // broken — the learner typed an instruction and would be left wondering whether Nemesis
+        // heard it. The message names the action that resolves the ambiguity rather than reporting
+        // an internal state.
+        if (routing.kind === "refused") {
+          session.showNotice(routing.message);
           return;
         }
+        // `defer-to-policy` falls through to the scaffolding path below.
       }
 
-      // 🔴 A REFUSAL IS SAID OUT LOUD. Silence here is indistinguishable from the feature being
-      // broken — the learner typed an instruction and would be left wondering whether Nemesis
-      // heard it. The message names the action that resolves the ambiguity rather than reporting
-      // an internal state.
-      if (routing.kind === "refused") {
-        session.showNotice(routing.message);
-        return;
-      }
-
-      // 🔴 PRODUCT MANDATE RULE 1 (owner, 2026-08-15) — "the learner must be able to ask ordinary
-      // questions about their sources WITHOUT being forced into tutoring behaviour." Everything
-      // below this point writes into the document (`session.command`), through a system prompt
-      // that says outright "you are not chatting". "What does osmolarity mean" typed with nothing
-      // selected used to take that same path and come back as a paragraph permanently inserted
-      // into the study document. See canvas-chat.ts for the one call that decides which of those
-      // a typed message is, and lib/learn/turn-router.ts for the contract it decides under.
-      //
-      // 🔴 `selected.length === 0` ONLY. A single block selected already has its own, more specific
-      // routes above (empty send = "explain this", "where/which source" = ask about it) — anything
-      // else with a selection is a scoped edit instruction about that exact passage, which is a
-      // different thing from an open-ended question and must keep mutating the document as it
-      // does today.
-      // 🔴 AND THE SAME READING MID-CANVAS, NOT A SECOND RULE. The model sees the attached sources,
-      // the conversation so far and whether a lesson is running, so "what does osmolarity mean" is
-      // still answered (rule 1) and "summarize this" still writes into the document — the same one
-      // call decides which, here and on the front door. There is no second reading of the learner.
-      if (routing.kind === "ordinary" && selected.length === 0) {
-        await converse(text);
-        return;
-      }
-
-      // `defer-to-policy` takes the normal path: it is a scaffolding request (§33), which is the
-      // policy's to answer, not a rewrite. So is anything typed with a passage staged, which is a
-      // scoped instruction about that exact text rather than an open turn of conversation.
+      // The only case still standing is `defer-to-policy`: a rewrite asked for while a
+      // demonstration is owed, which is a scaffolding request (§33) and the policy's to answer.
+      // Everything else has already been carried out by `converse` — a `reply` set the aside, under
+      // the staged passage when there was one, and a `study` either began a session or wrote into
+      // the study document scoped to that passage.
       // 🔴 THE LEARNER ASKED, SO WHAT COMES BACK IS THE ACTION — until the policy moves on. The
       // action in flight is stamped here rather than a bare `true`, which is what makes attention
       // return by itself; see `materialOwnsAttention`.
-      setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
-      await session.command(text, selected);
+      if (decision?.then === "rewrite") {
+        setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
+        await session.command(text, selected);
+      }
       clearSelection();
     },
     [applyExplanationEvent, canvas, clearSelection, converse, policy.decision, policy.feedback, policy.prompt, selected, session],
@@ -1068,9 +1073,9 @@ export function LearningCanvas({
           Scrolling could not reach it because there was nothing below it to scroll to.
 
           🔴 SIZED FROM THE OVERLAY, NOT GUESSED: 56px of gradient (`pt-14`) + a 52px composer +
-          16px (`pb-4`) is 124, and the composer now GROWS when it carries attachments. 160 clears a
-          composer with a row of chips in it and leaves the gradient doing its job rather than
-          hiding text behind it. */}
+          16px (`pb-4`) is 124, and the composer GROWS with what is typed into it, to
+          `MAX_COMPOSER_HEIGHT`. 160 clears a composer several lines tall and leaves the gradient
+          doing its job rather than hiding text behind it. */}
       <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
@@ -1094,6 +1099,7 @@ export function LearningCanvas({
         {regions.policy && presence !== "preparing" && (
           <CanvasPolicyView
             lookedUp={session.lookedUp}
+            voice={{ replay: voice.replay, speaking: voice.speaking }}
             // 🔴 DISPATCHES `policy_continue` BEFORE ACKNOWLEDGING, NOT BECAUSE THIS CALL CHANGES
             // ANYTHING — `nextExplanationState` returns the state unchanged for this event — but
             // because the call site is what keeps that row real rather than theoretical. Contract
@@ -1593,16 +1599,11 @@ export function LearningCanvas({
           // given a function. Presence is not meaning: `intent` says whether starting is what this
           // submission IS, and this handler is simply how starting is done when it is.
           onStart={beginOrAnswer}
-          // Unconditional too — the composer shows the chips only while `intent.kind === "start"`,
-          // which is the same question asked once instead of twice.
-          pendingSources={canvas.sources.map((source) => ({
-            id: source.id,
-            title: source.title,
-            // 🔴 SPREAD CONDITIONALLY, NOT PASSED AS `?? undefined`. An explicit `sourceUrl:
-            // undefined` and an absent key read the same to the component but not to a reader:
-            // absent means "this is not a link", which is the field's documented meaning.
-            ...(source.sourceUrl ? { sourceUrl: source.sourceUrl } : {}),
-          }))}
+          // 🔴 A COUNT, NOT THE SOURCES. The composer used to draw them as chips and stopped
+          // (owner 2026-08-21: *"the sources should appear in the sources"*). All it still needs to
+          // know is whether pressing send with an empty box means anything, and passing the list
+          // for that would be handing it everything it needs to start drawing them again.
+          attachedCount={canvas.sources.length}
           selected={selected}
         />
       )}

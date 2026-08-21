@@ -35,7 +35,7 @@ import {
 import { correctionLead } from "./correction-copy";
 import { speechRecognitionSupported } from "./use-canvas-dictation";
 import { DEFAULT_VOICE, readVoice, VOICE_STORAGE_KEY } from "@/lib/learn/canvas-voices";
-import { useCanvasSpeech } from "./use-canvas-speech";
+import { useCanvasSpeech, type CanvasSpeech } from "./use-canvas-speech";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
 /**
@@ -74,6 +74,18 @@ export interface CanvasVoice {
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
    *  talking while somebody is composing a reply to it. */
   stopSpeaking: () => void;
+  /**
+   * The learner asking to hear a phrase again (§47).
+   *
+   * 🔴 EXPOSED SEPARATELY FROM EVERYTHING ABOVE, BECAUSE IT OBEYS DIFFERENT RULES. Everything else
+   * here is governed by voice mode — whether Nemesis narrates unprompted. This is a press, on a
+   * phrase in a language being learned, and it works with voice mode off: "do not read my questions
+   * aloud" and "never let me hear how this word sounds" are different preferences, and conflating
+   * them would put the pronunciation of a foreign word behind a setting about narration.
+   */
+  replay: CanvasSpeech["replay"];
+  /** True while any audio is playing, so a replay control can disable itself rather than overlap. */
+  speaking: boolean;
 }
 
 /**
@@ -218,7 +230,16 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     if (route.decision !== "speak") return;
 
     let cancelled = false;
-    void speech.speak(route.utterance.key, route.utterance.text, { locale: route.locale, speed: route.speed, voiceId }).then(() => {
+    void speech
+      .speak(route.utterance.key, route.utterance.text, {
+        locale: route.locale,
+        // 🔴 THE ROUTER'S CHOICE, CARRIED RATHER THAN RECOMPUTED. Until §47 this was decided and
+        // dropped, so every utterance went to xAI whatever the router said.
+        provider: route.provider,
+        speed: route.speed,
+        voiceId,
+      })
+      .then(() => {
       if (cancelled) return;
       const now = live.current;
       if (
@@ -265,6 +286,8 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       voiceId,
     },
     listenSignal,
+    replay: speech.replay,
+    speaking: speech.speaking,
     /**
      * Speak an arbitrary passage on demand.
      *

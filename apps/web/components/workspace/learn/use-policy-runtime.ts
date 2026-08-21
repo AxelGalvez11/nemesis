@@ -66,7 +66,7 @@ import {
   type TeachingStrategyId,
 } from "@/lib/learn/teaching-strategy";
 import { performanceOf, type TeachingAction } from "@/lib/learn/teaching-policy";
-import { isAdmissionOfNotKnowing, isEchoOfTheCue } from "@/lib/learn/response-admission";
+import { isEchoOfTheCue } from "@/lib/learn/response-admission";
 import {
   KNOWLEDGE_DEADLINE_MS,
   THINKING_VISIBLE_AFTER_MS,
@@ -277,8 +277,8 @@ export interface PolicyRuntime {
    * The learner tapped one of the options on a recognition task.
    *
    * 🔴 A SEPARATE ENTRY POINT FROM `submit`, AND NOT FOR TIDINESS. `submit` runs
-   * `isAdmissionOfNotKnowing` and `isEchoOfTheCue` before anything else, because a typed answer can
-   * fail to be an attempt at all. A tap is ALWAYS an attempt: the learner picked something that was
+   * `isEchoOfTheCue` before anything else, because a typed answer can fail to be an attempt at all.
+   * A tap is ALWAYS an attempt: the learner picked something that was
    * put in front of them. Routed through `submit`, an option whose text overlapped the cue would be
    * filed as "an opportunity passed and nothing was produced" over a real discrimination — a durable
    * false claim, written by a guard doing exactly its job on the wrong kind of input.
@@ -1289,16 +1289,14 @@ export function usePolicyRuntime(
       if (!said || !active || !decision || !uid || judging) return;
       setError(null);
 
-      // 🔴 SAYING "I DON'T KNOW" IS NOT A WRONG ANSWER, AND THE JUDGE HAS NO WAY TO SAY SO. The
-      // dedicated control for this was removed from the recall surface — it competed with the
-      // question, and someone who does not know can simply type it. But the evaluator's verdicts
-      // are all judgements of an ATTEMPT, so an admission would come back `incorrect` and the
-      // learner would be recorded as having got it wrong when they told us they had nothing. Same
-      // path as the old button: an opportunity given, no demonstration obtained, no verdict.
-      if (isAdmissionOfNotKnowing(said)) {
-        await admitNothing(said, tookMs, via);
-        return;
-      }
+      // 🔴 SAYING "I DON'T KNOW" IS NOT A WRONG ANSWER, AND THE JUDGE SAYS SO ITSELF NOW. This used
+      // to be `isAdmissionOfNotKnowing(said)` in front of the judge — twenty-one English phrases,
+      // idk through blank — because the evaluator's verdicts were all judgements of an ATTEMPT and
+      // an admission would come back `incorrect`. It worked, in English: a learner practising
+      // Spanish who typed "no sé" was graded WRONG and had it written to their durable record,
+      // which is precisely the harm that list existed to prevent. The judge's `not_an_attempt`
+      // verdict covers an admission in any language now (canvas-prompts.ts), and it lands on the
+      // same path a few lines below: an opportunity given, no demonstration obtained, no verdict.
 
       // 🔴 GIVING BACK THE CUE IS NOT AN ATTEMPT EITHER, AND THE JUDGE CANNOT SEE IT. Asked "what is
       // the brand for losartan?" and answered `losartan`, the learner produced the side they were
@@ -1491,7 +1489,7 @@ export function usePolicyRuntime(
    * was picked was decided before the question was shown. Sending this to a model would spend a call
    * to re-derive a fact already on the prompt, and could disagree with it.
    *
-   * 🔴 IT NEVER PASSES THROUGH `isAdmissionOfNotKnowing` OR `isEchoOfTheCue`. Both exist because a
+   * 🔴 IT NEVER PASSES THROUGH `isEchoOfTheCue`. That rule exists because a
    * typed answer can fail to be an attempt; a tap cannot. See `choose` on `PolicyRuntime`.
    */
   const choose = useCallback(

@@ -373,3 +373,49 @@ test("🔴 an unstated reading question reads as the PRE-§24 layout, never as a
   // IS there — a regression that looks like nothing and is invisible in a screenshot.
   assert.equal(composeSurface({ canvasState: "learn", policyPresenting: true }).sharing, true);
 });
+
+// ── A task and a reply on one surface ────────────────────────────────────────────────────────
+//
+// Reported 2026-08-21 with two screenshots: *"it started fadeing between the two screens i
+// attached."* A task was up and a reply was up, and the task had claimed `min-h-full` because
+// nothing had told it it was not alone — so the reply sat a full viewport below it with a screen
+// of nothing in between. Two things on one surface are fine; a screen of emptiness between them
+// makes them read as two screens.
+
+test("🔴🔴 a task that shares the surface with a reply knows it is not alone", () => {
+  // An owed question is the one thing a reply may not displace, so this pair is reachable and
+  // deliberate rather than an accident to be prevented.
+  const both = composeSurface({
+    answerOwed: true,
+    aside: "reply",
+    canvasState: "learn",
+    hasReadingMaterial: false,
+    policyPresenting: true,
+  });
+  assert.equal(both.policy, true, "the owed question was displaced, so this test proves nothing");
+  assert.equal(both.reply, true);
+  assert.equal(both.sharing, true, "the task still thinks it has the viewport to itself");
+});
+
+test("🔴 an opening shares too — it introduces the screen beside it", () => {
+  const opening = composeSurface({
+    aside: "opening",
+    canvasState: "learn",
+    hasReadingMaterial: false,
+    policyPresenting: true,
+  });
+  assert.equal(opening.policy, true);
+  assert.equal(opening.sharing, true);
+});
+
+test("🔴 and a task genuinely alone still takes the whole surface", () => {
+  // Calibration for the two above: without this, `sharing: true` everywhere would pass them both
+  // and would shrink every task on every canvas.
+  const alone = composeSurface({
+    aside: "none",
+    canvasState: "learn",
+    hasReadingMaterial: false,
+    policyPresenting: true,
+  });
+  assert.equal(alone.sharing, false, "a task with nothing beside it is being told to make room");
+});

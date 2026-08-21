@@ -7,7 +7,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import type * as React from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useTheme } from "@/components/theme-provider";
@@ -55,7 +55,6 @@ const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
 /** Width the floating nav toggle occupies, for surfaces that also paint in the top-left corner. */
 const NAV_TOGGLE_INSET_PX = 30;
 const SHELL_VARS: React.CSSProperties = {
-  ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",
   // 🔴 THE ICON SIZE CROSSES FROM TS INTO CSS HERE, and only here. `NAV_ICON_PX` sizes the glyphs
   // the rail renders through props; the open sidebar needs the same number as a CSS length, to opt
   // its icons out of the Button base's `[&_svg:not([class*='size-'])]:size-4` override. Publishing
@@ -142,6 +141,23 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
     sidebarOpen,
   });
 
+  // 🔴🔴 THE TRANSITION IS OFF UNTIL AFTER THE FIRST PAINT, AND THAT IS NOT BELT AND BRACES.
+  // `useResponsiveSidebar` seeds its state from a default and reads the learner's stored preference
+  // in an EFFECT, so a learner who keeps the sidebar open renders collapsed for one frame and then
+  // corrects. Transition that unconditionally and every page load starts with the rail sliding open
+  // — a load-time animation nobody asked for, announcing an internal restore step. Same for
+  // `useMediaQuery`, which reports the wide default before it has consulted the viewport.
+  //
+  // 🔴 TWO FRAMES, NOT ONE. A single `requestAnimationFrame` fires BEFORE the browser has painted
+  // the restored width, so the transition would still be live for it. The second callback runs after
+  // that paint, which is the first moment a width change is genuinely something the learner did.
+  const [animateNav, setAnimateNav] = useState(false);
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => { inner = requestAnimationFrame(() => setAnimateNav(true)); });
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
+  }, []);
+
   useEffect(() => {
     const addHoverDescriptions = (root: ParentNode) => {
       root.querySelectorAll<HTMLElement>("button[aria-label], a[aria-label], [role='button'][aria-label]").forEach((control) => {
@@ -168,6 +184,17 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
       data-workspace=""
       style={{
         ...SHELL_VARS,
+        // 🔴🔴 THE SIDEBAR'S OWN WIDTH IS ITS DESTINATION, NOT THE COLUMN IT SITS IN. This read
+        // `var(--pane-chat-sidebar-width)` — the same value as the grid column — which was fine
+        // while the column snapped between two numbers and is the whole problem once it slides.
+        // `Sidebar` is `w-(--sidebar-width)`, so a following width would have made every label
+        // re-wrap and every row re-measure on each frame of a 260px→52px slide: a reflow storm
+        // rather than a movement, and visibly so at the point where the labels are 30px wide.
+        //
+        // Fixed at its natural width, the pane is simply CLIPPED by the column it is in (that
+        // wrapper is `overflow-hidden`), so the content stands still and the edge travels — which
+        // is what a sidebar opening looks like.
+        ["--sidebar-width" as string]: narrowViewport ? "min(84vw, 18rem)" : "var(--nav-sidebar-width)",
         // 🔴 COLLAPSED IS THE RAIL'S WIDTH, NOT `0px`. The column keeps real width and draws an
         // icon rail; only a canvas (focus mode) and a phone still go to zero. See nav-rail.tsx.
         // 🔴 THE WIDTH IS A TOKEN NOW, NOT A LITERAL. `256px` here was the value that actually
@@ -196,7 +223,18 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
       <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
         <div
           className="relative grid h-full min-h-0"
+          // 🔴 THE MOVEMENT IS ONE `grid-template-columns` TRANSITION, DECLARED IN `globals.css`.
+          // Owner, 2026-08-21: *"add a collapse microanimation to the sidebar so it smoothly
+          // collapses instead of abrupt collapse."* Animating the TRACK rather than the pane is
+          // what keeps the surface beside it honest: the content column is `minmax(0,1fr)`, so it
+          // grows by exactly what the rail gives up, on the same frames. A pane that slid over the
+          // surface instead would leave the surface jumping at the end.
+          //
+          // 🔴 ON A NARROW VIEWPORT THERE IS NOTHING TO ANIMATE. The sidebar is an overlay there,
+          // over a single full-width column, so this track never changes and the attribute would
+          // only be a promise nothing keeps.
           data-pane-shell=""
+          data-pane-shell-animate={animateNav && !narrowViewport ? "true" : undefined}
           style={{ gridTemplateColumns: narrowViewport ? "minmax(0,1fr)" : "var(--pane-chat-sidebar-width) minmax(0,1fr)" }}
         >
           {narrowViewport && sidebarVisible && (

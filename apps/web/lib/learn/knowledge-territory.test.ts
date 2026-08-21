@@ -305,3 +305,35 @@ test("🔴 an EMPTY source list is the topic lane, not a grounded lane with noth
   assert.equal(objects.length, 1);
   assert.deepEqual(objects[0]?.unanchoredProvenance, ["model"]);
 });
+
+// ─────────────────────────────────────────────────── the language of a side (§43, §47)
+
+test("🔴 a locale attaches to the side that is IN the language, not to the pair", () => {
+  // The asymmetry is the fact. `el perro` is Spanish and `the dog` is not, and a canvas-level
+  // language would read the English gloss in a Mexican accent.
+  const built = run([
+    { left: "el perro", leftLocale: "es-MX", leftRole: "Spanish", relationKind: "translation", right: "the dog", rightRole: "English" },
+  ]);
+  const pair = built.objects[0]?.pair;
+  assert.equal(pair?.leftLocale, "es-MX");
+  assert.equal(pair?.rightLocale, undefined, "the English side was given a language it is not in");
+});
+
+test("🔴 a subject that is not a language carries no locale, and that is correct rather than missing", () => {
+  const built = run([
+    { left: "tort", leftRole: "term", relationKind: "definition", right: "a civil wrong", rightRole: "definition" },
+  ]);
+  const pair = built.objects[0]?.pair;
+  assert.equal(pair?.leftLocale, undefined);
+  assert.equal(pair?.rightLocale, undefined);
+});
+
+test("🔴 a malformed tag is dropped and the pair survives", () => {
+  // A bad locale costs an accent; a refused pair costs the learner a fact from their own lecture.
+  // Those are not the same size of loss.
+  const built = run([
+    { left: "\u72ac", leftLocale: "Japanese", leftRole: "kanji", relationKind: "reading", right: "inu", rightRole: "reading" },
+  ]);
+  assert.equal(built.objects.length, 1, "a bad language tag cost the learner the whole pair");
+  assert.equal(built.objects[0]?.pair?.leftLocale, undefined);
+});

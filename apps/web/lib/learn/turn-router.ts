@@ -61,7 +61,24 @@ export type TurnAction =
    * that has, it steers the study document. Both destinations are the canvas's to pick from the
    * state it is in — see `learning-canvas.tsx`. The model chooses the INTENT, never the mechanism.
    */
-  | "study";
+  | "study"
+  /**
+   * The material on the page failed them, so fix the material rather than adding to it.
+   *
+   * 🔴 THIS REPLACES `canvas-phrases.ts`'s PHRASE LIST — `simpler|simplify|rephrase|reword|rewrite`,
+   * plus a confusion matcher and a question guard in front of it to stop the two colliding. That
+   * file argued its list was legitimate because it named INSTRUCTIONS rather than subject matter,
+   * and "make this simpler" does mean the same thing in a statute and a weld procedure. True, and
+   * beside the point: the list still had to enumerate every way a person says it, and the file's own
+   * comments record two phrasings it got wrong before anybody noticed. "Can you rephrase that" is an
+   * instruction wearing a question's clothes and the guard refused it; "how do I understand this"
+   * would have rewritten the page.
+   *
+   * 🔴 WHAT IS REWRITTEN IS STILL NOT THE MODEL'S TO CHOOSE. §11's referent rule is untouched:
+   * exactly one active reading region, derived from the learner's own Continue presses, or a
+   * visible refusal. See `routeRewrite` in canvas-phrases.ts.
+   */
+  | "rewrite";
 
 /**
  * 🔴 `TurnOffer` WAS DELETED HERE ON 2026-08-20, AND IT HAD BEEN DEAD FOR HOURS BEFORE ANYONE
@@ -77,6 +94,43 @@ export type TurnAction =
  *
  */
 export interface TurnDecision {
+  /**
+   * Does answering this need live sources off the web.
+   *
+   * 🔴 THE MODEL ANSWERS THIS NOW, WHERE A WORD LIST USED TO. `askCanvasChat` imported Sessions'
+   * `shouldSearchWeb` — `latest|current|today|price|weather|score|version|…` — and the header of
+   * that import argued the rule should stay deterministic because searching spends money. The
+   * spending is real; the word list was never what made it careful. It bought a search for any
+   * sentence containing "update" and refused one for "has the guideline been revised", and it
+   * could not read a question asked in Spanish at all.
+   *
+   * A canvas turn that asks for the web costs one extra round: the search runs, and this same
+   * packet is asked again with the results in it. Only web turns pay it, and on those the search
+   * itself dominates the wait.
+   */
+  needsWeb: boolean;
+  /** What to type into a search engine, when `needsWeb`. Null otherwise. */
+  webQuery: string | null;
+  /**
+   * How many pages to read, when `needsWeb`. Null when the model did not choose.
+   *
+   * 🔴 THE LEARNER'S QUESTION DECIDES, NOT A CONSTANT. Every cap between the provider and the
+   * answer was ours: the provider returns up to 50 and bills the same unit whatever the count.
+   */
+  webResults: number | null;
+  /**
+   * How recent the pages have to be, when `needsWeb`. Null means any age will do.
+   *
+   * 🔴 RECENCY IS A PROPERTY OF THE QUESTION, NOT OF THE WORDS IN IT. "What is the current
+   * inflation rate" and "what did inflation do in 2019" both name inflation and want opposite
+   * things from the archive. Brave has had a `freshness` filter the whole time and nothing in this
+   * product had ever set it, so a question about this week was answered from pages of any age.
+   *
+   * 🔴 NOT THE SAME AS PUTTING A YEAR IN `webQuery`. A year is a hint the ranker may overrule; a
+   * freshness window is applied by the index before ranking. The vocabulary is validated in the
+   * search function, which is the only place that knows what Brave accepts.
+   */
+  webFreshness: string | null;
   /**
    * What Nemesis says. Present even when it also acts: acting silently reads as a bug, and the
    * owner's example ("alright.") is a turn that speaks and acts at once.
@@ -143,8 +197,29 @@ export interface TurnContext {
   demonstrated: number;
   /** Excerpts from the attached material. Empty when there is none. */
   materialContext: string;
+  /**
+   * The passage the learner has highlighted, or empty when they have highlighted nothing.
+   *
+   * 🔴 IT IS WHAT MAKES "this" RESOLVABLE. A staged passage plus a typed sentence used to be read
+   * by `/^(where|which source|what source)\b/i`: three openers answered beside the passage, and
+   * everything else was treated as an instruction to EDIT it. So "is this the same as what we did
+   * last week?" silently rewrote the paragraph the learner was asking about. The passage is a fact
+   * the canvas holds; what the learner wants done with it is a reading, and this is what lets the
+   * model make it.
+   */
+  stagedPassage: string;
   /** Formatted live web results, when a search ran. Empty when it did not. */
   webContext: string;
+  /**
+   * How many more searches this turn may still run.
+   *
+   * 🔴 STATED TO THE MODEL RATHER THAN ENFORCED BEHIND ITS BACK. Deciding it has enough to answer
+   * is the model's judgement (owner: "deepseek should decide itself when it has enough information
+   * to answer"), and the loop stops when it stops asking. This number exists only so a turn cannot
+   * run away — and a model that is TOLD the budget can spend its last search on the best query it
+   * has, where one that is silently cut off has already wasted it.
+   */
+  searchesLeft: number;
   /**
    * The conversation so far, oldest first, learner and Nemesis alternating.
    *
@@ -334,7 +409,9 @@ const DECISION_CONTRACT = [
   "Answer with a fenced JSON block for the decision, then your answer as ordinary text after it:",
   "",
   "```json",
-  '{"then": "reply" | "study", "topic": "..." | null,',
+  '{"then": "reply" | "study" | "rewrite", "topic": "..." | null,'
+  + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
+  + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null,',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -362,6 +439,13 @@ const DECISION_CONTRACT = [
   + "be written or changed. On a canvas that has already begun this steers the existing lesson "
   + "rather than starting a new one. Keep your answer to a few words here, since the canvas is "
   + "about to change underneath it.",
+  '  "rewrite" fixes the passage the learner is reading, in place. Choose it when they are telling '
+  + "you the MATERIAL failed: it is too dense, pitched wrong, or they do not follow it. They may say "
+  + "so as an instruction or as a complaint, and both mean the same thing. Do not choose it for a "
+  + "question about a term or an idea, however confused it sounds: that wants an answer beside the "
+  + "passage, and answering it changes nothing on the page. Nemesis keeps the old wording and offers "
+  + "to put it back, so rewriting is reversible; stacking another explanation underneath the passage "
+  + "they already could not read is not. Keep your answer to a few words here.",
   "",
   // 🔴 THE MODEL WAS REFUSING TO STUDY AN EMPTY CANVAS, AND IT WAS RIGHT TO FROM WHAT IT KNEW.
   // Measured 2026-08-18 against the real model: "teach me innate immunity" on a fresh canvas came
@@ -390,6 +474,44 @@ const DECISION_CONTRACT = [
   + "learn it. Give it for a real question about a subject and leave it null for a greeting, a "
   + "remark or anything with no subject in it.",
   "",
+  '"needsWeb" is true when answering well depends on something that changes or that you could not '
+  + "have memorised: recent or ongoing events, current prices, standings, releases, versions, laws, "
+  + "guidelines, schedules, anything the learner says is new or has changed, or a specific source "
+  + "they want read. It is false for settled knowledge, explanations, definitions, calculations, "
+  + "translations, and anything answerable from the attached material. Searching costs money and "
+  + "time, so when it is genuinely borderline, say false.",
+  "",
+  // 🔴 THE MODEL DECIDES WHEN IT HAS ENOUGH, WHICH MEANS IT HAS TO BE ABLE TO SAY "NOT YET". A
+  // single upfront count was still a guess made blind: nothing has been read at the moment it is
+  // chosen. This is the half that makes it a judgement rather than a bet.
+  "When results are already in this packet, you have searched once. Say false if they answer the "
+  + "question. Say true AGAIN, with a different webQuery, if they did not: because the first search "
+  + "was aimed wrong, because they disagree and you want to see which is right, or because they "
+  + "opened something you now need to look up. Everything you have found so far stays in front of "
+  + "you, so a second search adds to it rather than replacing it. Stop as soon as you can answer "
+  + "properly; do not keep searching to be thorough.",
+  "",
+  '"webQuery" is what to type into a search engine, when needsWeb is true. Write it as a search '
+  + "rather than as a sentence, and put a date or year in it yourself when recency is the point. "
+  + "Null when needsWeb is false.",
+  "",
+  // 🔴 NO CEILING IS QUOTED. Naming one makes it the answer to every question — a model told "up
+  // to 50" asks for 50 every time. What it needs is the trade, not a number.
+  '"webResults" is how many pages to read, when needsWeb is true. Ask for what the question '
+  + "actually needs: a definition or a single current fact settles in a handful of pages, while a "
+  + "comparison across sources, a contested question, or anything where you want to see whether "
+  + "sources agree needs many more. Reading more costs no extra search, only the room they take up "
+  + "in your context. Null when needsWeb is false.",
+  "",
+  // 🔴 A FILTER, NOT A HINT. Putting a year in the query asks the ranker nicely; this is applied
+  // by the index before ranking, so it is the only one of the two that can actually exclude a page.
+  '"webFreshness" is how recent the pages have to be, when needsWeb is true: "pd" for the last day, '
+  + '"pw" the last week, "pm" the last month, "py" the last year. Use it when an older page would be '
+  + "WRONG rather than merely less interesting: a price, a standing, a score, a version, a rule that "
+  + "was amended, anything still unfolding. Leave it null everywhere else, including for most "
+  + "questions about the past, where a narrow window would hide the source that actually explains "
+  + "it. When in doubt, null: an old page you can judge beats no page at all.",
+  "",
   // 🔴🔴 AN ORDERED PROCEDURE, NOT A PILE OF MAXIMS, AND THE ORDER IS MEASURED. Three earlier
   // drafts each fixed one direction and broke the other, because the two rules genuinely conflict
   // for a broad request:
@@ -405,11 +527,43 @@ const DECISION_CONTRACT = [
   // consulted, so neither has to be softened to accommodate the other.
   "Decide in this order.",
   "",
+  "0. Is the learner saying the material in front of them failed, rather than asking a question "
+  + "about it? Then \"rewrite\". This is settled first because a confused learner and a curious one "
+  + "sound alike, and the difference is whether the PAGE is the problem or the SUBJECT is.",
+  "",
   "1. Did the learner, in this message, ask to be taught, tested, quizzed, drilled or walked "
   + "through something, ask for help understanding something, or ask for the study document itself "
   + "to be written or changed? Then \"study\". Go ahead with what they said: do not ask which part "
   + "first and do not ask them to narrow it down, because the learning system asks better questions "
   + "than you can from here. Keep \"say\" to a few words.",
+  "",
+  // 🔴🔴 MEASURED IN A BROWSER 2026-08-21, AND IT IS THE ONLY GAP LEFT IN STEP 1. Owner typed "can
+  // you teach me a new language". Step 1 fired, correctly — that is a request to be taught — and
+  // "do not ask them to narrow it down" is stated without exception, so the model chose "study"
+  // with the topic "new language learning". Everything after that followed:
+  //
+  //   · the canvas was retitled "new language learning";
+  //   · `needsGrounding` saw a topic and no material, so it searched the web for that phrase;
+  //   · what a search for that phrase returns is advertising, so two marketing pages for a
+  //     language app were ingested as the learner's study material;
+  //   · the lesson built from them was "Korean, Japanese, French, Spanish, Italian, English,
+  //     Chinese → Speak", which is a pricing page's language list, not a thing anyone can learn.
+  //
+  // 🔴 THE DISTINCTION IS "WHICH PART OF A SUBJECT" versus "WHICH SUBJECT". Step 1's rule is right
+  // and stays: asked to teach the Krebs cycle, the model must not ask which enzyme first, because
+  // the learning system reads the material and asks better. But "a new language" names a CATEGORY
+  // with no member chosen, and there is nothing to read, ground or teach until the learner picks
+  // one. Starting anyway does not begin a lesson early; it begins the wrong lesson.
+  //
+  // 🔴 STATED STRUCTURALLY SO IT HOLDS IN EVERY FIELD. A law student asking to be taught "a case",
+  // an engineer "a material", a historian "a period", a nurse "a drug class" are the same shape,
+  // and a list of category words would only ever cover the ones I happened to think of.
+  "   One exception, and it is about WHICH SUBJECT rather than which part of one. If the learner "
+  + "has named a CATEGORY but not a member of it, so that you would have to choose the subject for "
+  + "them, that is \"reply\": ask which one, in a sentence. Nemesis goes and finds material on the "
+  + "subject you name, so naming it yourself does not start their lesson early, it starts a "
+  + "different lesson. Everything else in step 1 is unchanged: a real subject, however broad, is "
+  + "still \"study\" and you must not ask them to narrow it.",
   "",
   // 🔴🔴 MEASURED 2026-08-20, BASELINE 6/8 ON THIS EXACT SET. "show me functional groups" started a
   // LESSON: the canvas was retitled, four web pages were searched and ingested, and the owner
@@ -430,10 +584,22 @@ const DECISION_CONTRACT = [
   "2. Otherwise \"reply\". A greeting, a remark, a complaint, an acknowledgement, or a question "
   + "they simply want answered all change nothing on the page. \"then\" is not about whether the "
   + "message mentions a subject, which nearly everything said to Nemesis does; it is about whether "
-  + "the canvas should change right now. If you get here and find yourself asking the learner a "
-  + "question back, that settles it: you cannot ask someone what they want and take the screen over "
-  + "in the same turn. Starting a lesson for someone who said hello is the most annoying thing this "
-  + "product can do.",
+  + "the canvas should change right now. Starting a lesson for someone who said hello is the most "
+  + "annoying thing this product can do.",
+  "",
+  // 🔴🔴 THIS SENTENCE WAS THE TAIL OF STEP 2 AND IT BELONGS TO EVERY STEP. As a step-2 tiebreaker
+  // it was unreachable exactly when it mattered: step 1 settles the explicit asks first and never
+  // consults step 2, so the one turn that most needed it — "can you teach me a new language",
+  // measured 2026-08-21 — chose "study" AND asked "Which language, and do you have any starting
+  // level or goal in mind?" in the same breath.
+  //
+  // 🔴 AND THE LEARNER SEES BOTH, WHICH IS WHY IT IS NOT MERELY UNTIDY. An owed question is the one
+  // thing a reply may not push off the canvas (see `composeSurface`), so the lesson screen and the
+  // question stack on one surface and the composer now points at two different things at once.
+  "This holds whatever you chose above: if you are asking the learner a question back, \"then\" is "
+  + "\"reply\". You cannot ask someone what they want and take the screen over in the same turn — "
+  + "they would be looking at a lesson you started and a question you asked, with one box to answer "
+  + "both.",
 ].join("\n");
 
 /** The canvas's own state, written as facts rather than as instructions. */
@@ -452,6 +618,21 @@ export function stateBlock(context: TurnContext): string {
       : "The study document is empty, so this canvas has not begun teaching.",
   );
   if (context.lessonInProgress) lines.push("A lesson is in progress on this canvas right now.");
+  if (context.webContext.trim()) {
+    lines.push(
+      context.searchesLeft > 0
+        ? `Web results from your earlier searches are below. You may run ${context.searchesLeft} more `
+          + `${context.searchesLeft === 1 ? "search" : "searches"} this turn if they did not settle the question.`
+        : "Web results from your earlier searches are below, and no further search is available this "
+          + "turn. Answer from what you have, and say plainly what it did not settle.",
+    );
+  }
+  if (context.stagedPassage.trim()) {
+    lines.push(
+      "The learner has highlighted this passage, so anything they say now is most likely about it:\n"
+      + context.stagedPassage.trim(),
+    );
+  }
   if (context.objectives > 0) {
     lines.push(`${context.demonstrated} of ${context.objectives} things to learn have been demonstrated.`);
   }
@@ -507,7 +688,7 @@ export function turnRouterMessages(input: {
 }
 
 function asAction(value: unknown): TurnAction | null {
-  return value === "reply" || value === "study" ? value : null;
+  return value === "reply" || value === "study" || value === "rewrite" ? value : null;
 }
 
 
@@ -563,6 +744,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   // something JSON-shaped that says nothing, and treating it as a turn would blank the screen.
   if (!then && !say) return null;
   return {
+    needsWeb: parsed.needsWeb === true,
     say,
     // 🔴 THE FALLBACK IS "reply", NOT "study". The expensive mistake is teaching somebody who did
     // not ask to be taught, and a model that skipped the field has told us nothing about which
@@ -571,6 +753,15 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     topic: asText(parsed.topic) || null,
     // Refused figures are dropped here, never repaired — see `replyVisuals`.
     visuals: replyVisuals(parsed.visuals),
+    // A query without a search is dropped: the half that spends money loses the contradiction.
+    webQuery: parsed.needsWeb === true ? asText(parsed.webQuery) || null : null,
+    webResults: parsed.needsWeb === true && typeof parsed.webResults === "number"
+      && Number.isFinite(parsed.webResults) && parsed.webResults >= 1
+      ? Math.floor(parsed.webResults)
+      : null,
+    // Passed through as text; which windows exist belongs to the search function, which is the one
+    // place that talks to the provider. Same contradiction rule: no search, no window.
+    webFreshness: parsed.needsWeb === true ? asText(parsed.webFreshness) || null : null,
   };
 }
 
@@ -599,9 +790,11 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   // `JSON.parse` has already refused it.
   if (looksLikeEnvelope(prose)) {
     const salvaged = salvageSay(prose);
-    return salvaged ? { say: salvaged, then: "reply", topic: null, visuals: [] } : null;
+    return salvaged
+      ? { needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
+      : null;
   }
-  return { say: prose, then: "reply", topic: null, visuals: [] };
+  return { needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

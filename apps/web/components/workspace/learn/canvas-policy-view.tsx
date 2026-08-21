@@ -23,9 +23,11 @@ import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
 import { normalizeForIdentity } from "@/lib/learn/knowledge-identity";
 import type { FigureKnowledge } from "@/lib/learn/knowledge-types";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
+import { replayableLocale } from "@/lib/learn/speech-route";
 import { routeVisual } from "@/lib/learn/visual-route";
 import { workedExampleFor } from "@/lib/learn/worked-example";
 
+import { HearAgain, type ReplayVoice } from "./hear-again";
 import { StoredFigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
@@ -91,6 +93,7 @@ export function CanvasPolicyView({
   runtime,
   sharing = false,
   onContinue = null,
+  voice,
 }: {
   /**
    * Words the learner has already asked the meaning of, underlined wherever they appear here.
@@ -103,6 +106,14 @@ export function CanvasPolicyView({
   lookedUp?: readonly string[];
   runtime: PolicyRuntime;
   sharing?: boolean;
+  /**
+   * How to say a phrase again, when there is a phrase worth hearing (§47).
+   *
+   * 🔴 OPTIONAL, AND ITS ABSENCE IS A REAL STATE RATHER THAN A DEFAULT. The shared view of a canvas
+   * renders the same screens with no voice at all, and a required prop would have forced a stub
+   * whose only job is to do nothing — which is how a control ends up on screen that cannot work.
+   */
+  voice?: ReplayVoice;
   /** §38 — non-null when THIS region is the one carrying a reading requirement right now. Decided
    *  by `continueOwner` for the whole surface, never here: a correction and an unread passage can
    *  legitimately be on screen together, and only one of them may offer a way on. */
@@ -116,7 +127,7 @@ export function CanvasPolicyView({
           surface and make retrieval feel like an interface being waited on rather than a question
           being answered. */}
       <div className={sharing ? "canvas-swap" : "canvas-swap min-h-full"} key={screenKey(runtime)}>
-        <PolicyScreen lookedUp={lookedUp} onContinue={onContinue} runtime={runtime} sharing={sharing} />
+        <PolicyScreen lookedUp={lookedUp} onContinue={onContinue} runtime={runtime} sharing={sharing} voice={voice} />
       </div>
     </>
   );
@@ -156,6 +167,7 @@ function PolicyScreen({
   onContinue,
   runtime,
   sharing,
+  voice,
 }: {
   /** Threaded down rather than read from a context: this file has one entry point and one screen,
    *  and a context for a two-hop prop is a second way to be wrong about which canvas is on. */
@@ -163,6 +175,7 @@ function PolicyScreen({
   onContinue: (() => void) | null;
   runtime: PolicyRuntime;
   sharing: boolean;
+  voice?: ReplayVoice;
 }) {
   const { citations, decision, feedback, prompt, sources } = runtime;
 
@@ -233,8 +246,9 @@ function PolicyScreen({
     // An associative fact is answered in about a second, so anything else on the page is read
     // BEFORE the answer is produced and costs exactly the thing being measured. Gone: the "answer
     // below" instruction (the composer is the only control, blinking), and the "I don't know this
-    // one" button — a learner who does not know can say so, and `isAdmissionOfNotKnowing` sends it
-    // down the same no-demonstration path the button used, so the MEANING survives the control.
+    // one" button — a learner who does not know can say so, and the judge's `not_an_attempt`
+    // verdict sends it down the same no-demonstration path the button used, so the MEANING
+    // survives the control.
     //
     // 🔴 AND NOTHING TOOK THEIR PLACE. No card, no border, no hint, no progress count, no "1 of 4".
     // The empty space IS the design: question, silence, one place to answer.
@@ -427,7 +441,7 @@ function PolicyScreen({
         <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
           {correctionLead(said)}
         </p>
-        <TaughtClaimLines decision={decision} />
+        <TaughtClaimLines decision={decision} voice={voice} />
         <SourceTrail citations={citations} sources={sources} />
         {/* 🔴 THE "Got it" BUTTON IS GONE — §I. Moving on is the composer's `✓` now, so the Canvas
             introduces no separate Next, Continue or Done reading. The behaviour it used to carry is
@@ -463,7 +477,7 @@ function PolicyScreen({
             learner nothing they could not already see. The correction and contrast screens keep
             theirs, because those say something the screen does not: what you answered, and that two
             things are being confused. `simplifying` is still read by `Frame` below. */}
-        <TaughtClaimLines decision={decision} />
+        <TaughtClaimLines decision={decision} voice={voice} />
         {/* Same rule as the two screens below: a claim shown here keeps the origin it would have
             anywhere else, or the Canvas reads as having lost the source. */}
         <SourceTrail citations={citations} sources={sources} />
@@ -482,7 +496,7 @@ function PolicyScreen({
         sharing={sharing}
       >
         <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Two of these are getting mixed up.</p>
-        <TaughtClaimLines decision={decision} />
+        <TaughtClaimLines decision={decision} voice={voice} />
         {/* The list has a real marker now. Each row used to open with an em dash, which was the
             list's ONLY marker because the <ul> had none of its own — so the punctuation was doing
             structural work. That is a reason the design was wrong, not a reason to keep the em
@@ -607,12 +621,24 @@ function SourceTrail({
  * two doing it. What varies between those screens is the line ABOVE this (what the move is), which
  * stays where it is; what does not vary is the claim, which is this.
  */
-function TaughtClaimLines({ decision }: { decision: NonNullable<PolicyRuntime["decision"]> }) {
+function TaughtClaimLines({
+  decision,
+  voice,
+}: {
+  decision: NonNullable<PolicyRuntime["decision"]>;
+  voice?: ReplayVoice;
+}) {
   const claim = taughtClaim({
     answer: decision.objective.answer,
     cue: decision.objective.cue,
     statement: decision.knowledge.statement,
   });
+
+  // 🔴 THE ANSWER SIDE, BECAUSE THAT IS THE ONE WORTH HEARING. A translation pair is `el perro` /
+  // `the dog`, and the learner is being asked to produce the Spanish — so the Spanish is what a
+  // replay button belongs on. `replayableLocale` returns null for every subject that is not a
+  // language, which is almost all of them, so this control simply never appears for a law student.
+  const spokenLocale = voice ? replayableLocale(decision.knowledge.pair, decision.objective.answer) : null;
 
   // 🔴 A CLAIM IS THE MOST LIKELY PLACE TO NEED A WORD DEFINED, AND IT WAS THE LEAST REACHABLE.
   // The highlight toolbar requires a `[data-selectable-id]` ancestor, and until now only document
@@ -622,13 +648,21 @@ function TaughtClaimLines({ decision }: { decision: NonNullable<PolicyRuntime["d
   //
   // 🔴 NEITHER IS `rewritable`. "Simpler" rewrites the passage it is invoked on; these are the
   // policy's own words for one screen, not a stored block, and there is nothing to write back to.
+  //
+  // 🔴 THE MARKER GOES ON THE HEADING, THE SPAN GOES INSIDE IT, AND THAT ORDER MATTERS. Selection
+  // offsets are measured against the marked element, so wrapping the words in a span for the
+  // replay button's layout has to happen INSIDE the marker or every looked-up offset shifts by
+  // the button's text.
   return (
     <>
       <h2
-        className="mt-3 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)"
+        className="mt-3 flex flex-wrap items-center gap-2 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)"
         {...selectableRegion("claim-heading")}
       >
-        {claim.heading}
+        <span>{claim.heading}</span>
+        {spokenLocale && voice && (
+          <HearAgain locale={spokenLocale} phrase={decision.objective.answer} voice={voice} />
+        )}
       </h2>
       {claim.body && (
         <p

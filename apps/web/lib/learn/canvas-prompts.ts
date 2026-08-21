@@ -147,7 +147,25 @@ const VISUAL_RULE =
   '"hidden" covers one cell or one event so the learner has something to retrieve rather than only read; use it when the visual is being taught rather than merely shown. ' +
   "A code trace is your account of what the code would do — nothing here executes it, and the learner is told so on screen. " +
   "Leave it absent when text is clearer. Never emit HTML, SVG, Mermaid, JavaScript, React, renderer names, styling, or arbitrary code. " +
-  "The prose must still explain the idea; the visual is a representation of it, not a replacement for teaching.";
+  "The prose must still explain the idea; the visual is a representation of it, not a replacement for teaching.\n\n" +
+  // 🔴 THIS PARAGRAPH REPLACED TWO CODE RULES, AND THE SWAP IS THE POINT. `visual-route.ts` used to
+  // refuse a relationship diagram with fewer than three nodes, and refuse every visual on an
+  // association outright. Both were deciding whether a picture was WORTH IT — a judgement about the
+  // idea being taught — from facts that never touched the idea: a node count, and a knowledge type.
+  // So "load applied → beam deflects" could not be drawn though an arrow is exactly how a person
+  // would draw it, and a molecule paired with its name was refused a structure because the pairing
+  // was arbitrary, which is precisely why the picture was the thing that would make it stick.
+  //
+  // The router still refuses what cannot be DRAWN — a one-cell table, points joined by nothing, a
+  // plot with no range. Those are facts about the request. Whether a picture helps is this:
+  "WHETHER A PICTURE IS WORTH IT IS YOUR JUDGEMENT, and it belongs to the idea rather than to how " +
+  "much of it there is. Two things with an arrow between them is a real diagram when the arrow is " +
+  "the point — that one drives, blocks or converts into the other — and is noise when the sentence " +
+  "already said it as plainly. An arbitrary pairing with nothing to explain is usually prose, but " +
+  "not when one side of it is a shape: a molecule beside its name, a term beside where it sits in " +
+  "a figure, a character beside the part it is built from. There the picture IS what makes the " +
+  "link stick. Ask what the learner has to be able to see, and answer for this idea rather than " +
+  "from a rule about its kind.";
 
 const BLOCK_SHAPE =
   'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…],"visual":{…}}. ' +
@@ -428,6 +446,26 @@ export function territoryMessages(input: {
             "came from, leave the pair out.\n\n" +
             'Return JSON: {"pairs":[{"left":"…","leftRole":"…","right":"…","rightRole":"…","relationKind":"…","excerptId":"…"}]}\n\n'
           : 'Return JSON: {"pairs":[{"left":"…","leftRole":"…","right":"…","rightRole":"…","relationKind":"…"}]}\n\n') +
+        // 🔴 ONLY WHEN THE WORDS THEMSELVES ARE THE THING BEING LEARNED, WHICH IS WHY THIS ASKS FOR
+        // A PROPERTY OF A SIDE RATHER THAN OF THE SUBJECT. `el perro` / `the dog` has one side in
+        // Spanish and one in English, and that asymmetry is the fact: a canvas-level language would
+        // read the English gloss in a Mexican accent. `tort` / `a civil wrong` gets nothing, and so
+        // does almost everything else — which is what keeps this from turning every subject into a
+        // language subject.
+        //
+        // 🔴 THE VARIETY IS ASKED FOR EXPLICITLY, because `es-MX` and `es-ES` differ in exactly what
+        // a Spanish lesson teaches, and a synthesiser told only "Spanish" picks one nobody chose.
+        // 🔴 THE MODEL REPORTS THE LANGUAGE; NEMESIS RESOLVES THE VARIETIES. It cannot know which
+        // varieties the synthesiser has, and a model guessing at that is how a learner gets offered
+        // an accent nobody can produce. So it names the language and stops there.
+        'If this subject is a language and the learner has not said which regional variety they want, ' +
+        'do not choose one. Return {"needsVariety":"<the language subtag, such as es or pt>"} instead ' +
+        'of pairs, and nothing else.\n\n' +
+        'If a side is written IN a language the learner is studying — the foreign word itself, not a ' +
+        'description of it — add its language tag as "leftLocale" or "rightLocale", with the regional ' +
+        'variety the material uses ("es-MX", "pt-BR", "ja-JP"). Give it for that side only. Most ' +
+        'subjects are not languages and most pairs need neither: leave both out unless the words ' +
+        'themselves are what is being learned.\n\n' +
         `Aim for about ${input.count}, but fewer is better than padded. ` +
         "OMIT ANYTHING YOU ARE NOT SURE OF. A short list you are confident in is worth more than a long " +
         "one containing guesses: everything here becomes a question a real learner is asked and graded on, " +
@@ -442,6 +480,47 @@ export function territoryMessages(input: {
       role: "user",
     },
   ];
+}
+
+/**
+ * Asking which variety of a language the learner means — in the model's own words, from Azure's
+ * real catalogue (§47).
+ *
+ * 🔴 THE MODEL ASKS, NOT A FORM, AND THAT IS THE OWNER'S INSTRUCTION RATHER THAN A STYLE CHOICE:
+ * *"make sure its natural, i dont want hard coded 'what region'"*. A dropdown labelled Region turns
+ * the first moment of a language course into data entry. A teacher would just say which ones there
+ * are and ask which you want — so that is what this asks the model to do, and there is no fixed
+ * sentence anywhere in this codebase for it to recite.
+ *
+ * 🔴 BUT THE OPTIONS ARE NOT THE MODEL'S TO INVENT. Left to itself a model will offer Andalusian
+ * Spanish or Quebec French because those are real things people say — and if the synthesiser has no
+ * voice for them, the learner has told us exactly what they want and we answer in the wrong accent
+ * while appearing to have listened. So the varieties are passed IN, from the live Azure catalogue,
+ * and the instruction is explicit that this list is the whole world.
+ *
+ * 🔴 AND IT ONLY ASKS WHEN THERE IS SOMETHING TO ASK. One variety is not a question. `varietiesFor`
+ * returning a single entry means the answer is already known, and `regionClarificationRule` is not
+ * built at all — see `varietyChoiceExists`.
+ */
+export function regionClarificationRule(input: {
+  /** What the learner called the language, in their words. */
+  language: string;
+  /** Every variety the synthesiser can actually speak. Two or more, or this rule is not used. */
+  varieties: readonly { locale: string; localeName: string }[];
+}): string {
+  const options = input.varieties.map((variety) => `${variety.localeName} (${variety.locale})`).join(", ");
+  return (
+    `The learner has asked to learn ${input.language} and has not said which variety. ` +
+    "Ask them, in one short sentence of your own, before producing anything else. " +
+    "Say briefly why it matters — the varieties differ in sounds and words they will be learning — " +
+    "and offer the choices plainly.\n\n" +
+    `The varieties available are exactly these, and you may not offer any other: ${options}. ` +
+    "Do not invent a variety that is not on that list, however commonly it is spoken: a variety " +
+    "Nemesis cannot pronounce is a promise it would break in the first lesson.\n\n" +
+    'Return JSON: {"clarify":{"question":"…","options":[{"locale":"…","label":"…"}]}}\n\n' +
+    "Each option's \"locale\" MUST be copied exactly from the list above. The \"label\" is what the " +
+    "learner reads, in your words rather than the tag."
+  );
 }
 
 // -------------------------------------------------------------------- causal
@@ -745,6 +824,18 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         "recorded: their words are answered as conversation and the question stays on screen. A confused, partial or " +
         "plainly wrong attempt at the question is NOT this — it is an attempt, and it gets one of the verdicts above. " +
         "If you can read it as an attempt at all, it is an attempt.\n\n" +
+        // 🔴 SAYING "I DON'T KNOW" IS NOT A WRONG ANSWER, AND UNTIL NOW A WORD LIST SAID SO INSTEAD
+        // OF YOU. `isAdmissionOfNotKnowing` held twenty-one English phrases — idk, dunno, no clue,
+        // can't remember, skip, pass, blank — and caught the admission before you ever saw it. It
+        // worked, in English. A learner practising Spanish who typed "no sé" was sent here and
+        // graded WRONG, which is exactly the harm that list existed to prevent, failing for anyone
+        // not answering in English. The list's own header said so and named this as the fix.
+        "An ADMISSION is also not an attempt: the learner aimed at the question and told you they " +
+        "have nothing — in any language, in any words, however brief. Nothing is recorded, because " +
+        "\"we still do not know\" must never be stored as \"they got it wrong\". But a HEDGED answer " +
+        "is an attempt, and the difference is whether anything was actually produced: if they named " +
+        "something, guessed, or described part of it, grade what they produced however unsure they " +
+        "sounded about it.\n\n" +
         `If the performance fell short, say WHY with errorType, one of: ${ERROR_TYPES.join(", ")}. ` +
         "This matters more than the verdict: a forgotten term and a backwards causal model both look wrong, and " +
         "they need opposite teaching.\n\n" +

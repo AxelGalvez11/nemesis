@@ -131,6 +131,24 @@ export interface AssociationPair {
    *  initial learning happens, because grouping is a scaffold — leaving it in place lets the
    *  learner answer from the heading rather than from memory. */
   groupLabel?: string;
+  /**
+   * The language a side is WRITTEN IN, when that side is in a language the learner is studying.
+   *
+   * 🔴 A PROPERTY OF THE SIDE, NOT OF THE CANVAS, WHICH IS §43'S RULE IN THE DATA MODEL. A Spanish
+   * pair is `el perro` / `the dog`: one side has a locale and the other does not, and that asymmetry
+   * is the whole fact. A canvas-level "this canvas is Spanish" could not express it, and would end
+   * up reading the English gloss in a Mexican accent.
+   *
+   * 🔴 ABSENT FOR ALMOST EVERYTHING, AND THAT IS CORRECT RATHER THAN INCOMPLETE. `tort` / `a civil
+   * wrong` carries no locale; neither does `M8 bolt` / `13mm spanner`. The field exists for the case
+   * where the WORDS THEMSELVES are what is being learned, and it stays empty everywhere else — which
+   * is what keeps this field-agnostic instead of quietly making every subject a language subject.
+   *
+   * BCP-47, and the variety matters: `es-MX` and `es-ES` differ in exactly what a Spanish lesson
+   * teaches, so a bare `es` is accepted but says less than it could.
+   */
+  leftLocale?: string;
+  rightLocale?: string;
 }
 
 /**

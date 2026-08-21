@@ -11,43 +11,51 @@ import {
   type ChatSkill,
 } from "./chat-skills";
 
-const idsFor = (text: string) => selectChatSkills(text).map((skill) => skill.id);
+// 🔴 WHAT MOVED OUT OF THIS FILE. It used to assert that "make me flashcards on beta blockers"
+// selected flashcard-craft, that "i'm confused about the sodium channel" selected teaching, and
+// about forty more phrasings. Those were testing a regex per skill, and the regex is gone: the
+// model picks now (chat-intent.ts), because a word list could never see "I have no clue, bruh" as
+// a student who needs teaching. The phrasings live in `scripts/chat-intent-acceptance.mts`, which
+// runs them against the real model.
+//
+// What is left here is what this module still decides on its own: the limits. Those are facts about
+// our prompt budget and about which packets contradict each other — not readings of a message — and
+// every one of them was a real bug at some point.
 
-test("flashcard requests get the flashcard skill", () => {
-  assert.deepEqual(idsFor("make me flashcards on beta blockers"), ["flashcard-craft"]);
-  assert.deepEqual(idsFor("add these to my deck"), ["flashcard-craft"]);
-  assert.deepEqual(idsFor("write a cloze for this sentence"), ["flashcard-craft"]);
+const idsFor = (requested: string[]) => selectChatSkills(requested).map((skill) => skill.id);
+
+test("the model's choice is honoured, in catalog order", () => {
+  assert.deepEqual(idsFor(["teaching"]), ["teaching"]);
+  assert.deepEqual(idsFor(["evidence-honesty", "quantitative-check"]), ["quantitative-check", "evidence-honesty"]);
 });
 
-test("calculations get the quantitative skill", () => {
-  assert.deepEqual(idsFor("calculate the infusion rate"), ["quantitative-check"]);
-  assert.deepEqual(idsFor("how much vancomycin for a 70 kg patient?"), ["quantitative-check"]);
-});
-
-test("source questions get the evidence skill", () => {
-  assert.deepEqual(idsFor("what does the evidence say about statins?"), ["evidence-honesty"]);
-  assert.deepEqual(idsFor("cite your sources"), ["evidence-honesty"]);
-});
-
-test("ordinary chat gets no skill, so ordinary turns cost nothing extra", () => {
-  assert.deepEqual(idsFor("hey"), []);
-  assert.deepEqual(idsFor("thanks, that helped"), []);
-  assert.deepEqual(idsFor("who was the first president?"), []);
+test("no skills asked for means no skills ride, so an ordinary turn costs nothing extra", () => {
+  assert.deepEqual(idsFor([]), []);
   assert.deepEqual(buildSkillMessage([]), "");
 });
 
-test("a message hitting several skills is capped", () => {
-  const ids = idsFor("calculate the dose, cite the guideline, and make flashcards");
+// A model naming a skill that does not exist costs the turn some craft. Failing the turn over it
+// would cost the answer, which is strictly worse.
+test("an id that is not in the catalog is dropped, never thrown", () => {
+  assert.deepEqual(idsFor(["teaching", "telepathy"]), ["teaching"]);
+  assert.deepEqual(idsFor(["nothing-real"]), []);
+  // The four artifact builders went with the tools they called. A model still asking for one is
+  // asking for something the product cannot do, and it must cost the turn nothing.
+  assert.deepEqual(idsFor(["flashcard-craft", "test-craft", "slides-builder", "notes-builder"]), []);
+});
+
+test("more skills than the cap are trimmed to the cap", () => {
+  const ids = idsFor(["teaching", "quantitative-check", "evidence-honesty"]);
   assert.equal(ids.length, MAX_ACTIVE_SKILLS);
-  assert.deepEqual(ids, ["flashcard-craft", "quantitative-check"]);
+  assert.deepEqual(ids, ["teaching", "quantitative-check"]);
 });
 
 test("the char budget is never exceeded", () => {
   const fat: ChatSkill[] = [
-    { id: "a", instructions: "x".repeat(SKILL_CHAR_BUDGET - 10), match: /go/, name: "A" },
-    { id: "b", instructions: "y".repeat(100), match: /go/, name: "B" },
+    { id: "a", instructions: "x".repeat(SKILL_CHAR_BUDGET - 10), name: "A", when: "a" },
+    { id: "b", instructions: "y".repeat(100), name: "B", when: "b" },
   ];
-  const chosen = selectChatSkills("go", fat);
+  const chosen = selectChatSkills(["a", "b"], fat);
   assert.deepEqual(chosen.map((skill) => skill.id), ["a"]);
   assert.ok(buildSkillMessage(chosen).length <= SKILL_CHAR_BUDGET);
 });
@@ -57,13 +65,18 @@ test("every catalog skill fits the budget on its own and is well formed", () => 
     assert.ok(skill.instructions.length <= SKILL_CHAR_BUDGET, `${skill.id} exceeds the budget alone`);
     assert.ok(skill.instructions.startsWith("SKILL — "), `${skill.id} is missing its header`);
     assert.ok(skill.name.length > 0);
-    assert.ok(!skill.match.global, `${skill.id} uses a global regex — .test() would be stateful`);
+    assert.ok(skill.when.length > 0, `${skill.id} must say when it applies, or the model cannot pick it`);
   }
 });
 
-// The budget check in selectChatSkills is a silent `continue`, so a packet
-// written past its share does not error — it just stops appearing whenever
-// another skill matched first, which reads as "the model ignored it".
+test("ids are unique, or the model cannot address one of them", () => {
+  const ids = CHAT_SKILLS.map((skill) => skill.id);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+// The budget check in selectChatSkills is a silent `continue`, so a packet written past its share
+// does not error — it just stops appearing whenever another skill was chosen first, which reads as
+// "the model ignored the instruction".
 test("no skill is big enough to be silently dropped when paired with another", () => {
   for (const skill of CHAT_SKILLS) {
     assert.ok(
@@ -77,170 +90,66 @@ test("no skill is big enough to be silently dropped when paired with another", (
   assert.ok(total <= SKILL_CHAR_BUDGET, `the two widest skills total ${total}, over the ${SKILL_CHAR_BUDGET} budget`);
 });
 
-test("test requests get the test-writing skill", () => {
-  assert.deepEqual(idsFor("make me a practice test on the renal unit"), ["test-craft"]);
-  assert.deepEqual(idsFor("write some practice questions for my exam"), ["test-craft"]);
-  assert.deepEqual(idsFor("can I get board-style mcqs on this"), ["test-craft"]);
-  // "quiz me" asks for two different things at once — questions worth answering
-  // AND being asked them one at a time — so it takes both slots. Updated
-  // 2026-07-24 when socratic-tutoring landed; it used to be test-craft alone.
-  assert.deepEqual(idsFor("quiz me on antibiotics"), ["test-craft", "socratic-tutoring"]);
-});
-
-test("slide and note deliverables select persistence skills", () => {
-  assert.deepEqual(idsFor("create a slide deck on mitosis"), ["slides-builder"]);
-  assert.deepEqual(idsFor("make me lecture notes for organic chemistry"), ["notes-builder"]);
-});
-
-test("teaching requests get the teaching skill", () => {
-  assert.deepEqual(idsFor("explain beta blockers"), ["teaching"]);
-  assert.deepEqual(idsFor("teach me the coagulation cascade"), ["teaching"]);
-  assert.deepEqual(idsFor("i don't understand first-pass metabolism"), ["teaching"]);
-  assert.deepEqual(idsFor("what's the difference between heparin and warfarin"), ["teaching"]);
-  assert.deepEqual(idsFor("why does this cause hyperkalemia"), ["teaching"]);
-  assert.deepEqual(idsFor("i'm confused about the sodium channel"), ["teaching"]);
-});
-
-// A teaching request about a quantitative topic should get BOTH — the method
-// for explaining it and the discipline for the arithmetic in it.
-test("teaching pairs with the quantitative skill on a numeric topic", () => {
-  assert.deepEqual(idsFor("i'm confused about renal clearance"), ["teaching", "quantitative-check"]);
-});
-
-// The reason TEST_CRAFT and TEACHING sit ahead of EVIDENCE_HONESTY in the
-// catalog: `study`/`studies` is near-universal vocabulary in a studying app,
-// so from behind these two would lose their slot on their own core phrasings.
-test("the greedy evidence matcher cannot starve the new skills", () => {
-  assert.equal(idsFor("quiz me on what I need to study")[0], "test-craft");
-  assert.equal(idsFor("explain what this study found")[0], "teaching");
-  // ...and evidence-honesty still rides along in the second slot.
-  assert.ok(idsFor("explain what this study found").includes("evidence-honesty"));
-});
-
-test("teaching and calculation pair up on a worked-example request", () => {
-  assert.deepEqual(idsFor("teach me how to calculate creatinine clearance"), ["teaching", "quantitative-check"]);
-});
-
-// Ordinary phrasings that must NOT burn a slot — `explain`-adjacent wording is
-// common, and a false match displaces a skill the turn genuinely needed.
-test("the new matchers stay off unrelated messages", () => {
-  assert.deepEqual(idsFor("thanks, that explanation helped"), []);
-  assert.deepEqual(idsFor("what time is my next class"), []);
-  assert.deepEqual(idsFor("rename this note"), []);
-});
-
 test("skills join into one message in catalog order", () => {
-  const chosen = selectChatSkills("make flashcards and calculate the dose");
-  const message = buildSkillMessage(chosen);
-  assert.ok(message.indexOf("writing flashcards") < message.indexOf("quantitative work"));
+  const message = buildSkillMessage(selectChatSkills(["evidence-honesty", "quantitative-check"]));
+  assert.ok(message.indexOf("quantitative work") < message.indexOf("sourcing you can defend"));
 });
 
-// ---------------------------------------------------------------------------
-// Socratic tutoring (owner 2026-07-24: teach better by "asking one question at a
-// time and not showing the answer").
-// ---------------------------------------------------------------------------
-
-test("an ask to be quizzed or tutored picks up the tutoring protocol", () => {
-  for (const message of [
-    "quiz me on beta blockers",
-    "test me on the renal chapter",
-    "tutor me through this",
-    "ask me questions about the Krebs cycle",
-    "help me study pharmacokinetics",
-    "check my understanding of first-pass metabolism",
-    "drill me on antibiotic classes",
-    "one question at a time please",
-  ]) {
-    assert.ok(idsFor(message).includes("socratic-tutoring"), `no tutoring skill for: ${message}`);
-  }
-});
-
-// The whole reason `excludes` exists. "Explain it clearly" and "do not reveal the
-// answer" in one prompt is the same as having neither rule, so the tutoring
-// packet bars the teaching one outright rather than trusting the model to
-// reconcile them.
+// The whole reason `excludes` exists. "Explain it clearly" and "do not reveal the answer" in one
+// prompt is the same as having neither rule, so the tutoring packet bars the teaching one outright
+// rather than trusting the model to reconcile them. A model that asks for both gets the tutoring
+// reading, which is the right one for a turn that is genuinely both.
 test("tutoring and teaching never ride the same turn", () => {
-  const ids = idsFor("tutor me — explain the difference between these two drugs");
+  const ids = idsFor(["socratic-tutoring", "teaching"]);
   assert.ok(ids.includes("socratic-tutoring"));
   assert.ok(!ids.includes("teaching"), "contradictory packets both fired");
 });
 
-// ...and the exclusion is one-directional: a plain request to explain still gets
-// an explanation. A model that answered "explain how ACE inhibitors work" with a
-// question instead of an answer would be useless.
-test("asking for an explanation still gets the explaining skill", () => {
-  const ids = idsFor("explain how ACE inhibitors work");
-  assert.ok(ids.includes("teaching"));
-  assert.ok(!ids.includes("socratic-tutoring"));
-});
-
-test("quiz me gets BOTH how to write the questions and how to deliver them", () => {
-  const ids = idsFor("quiz me on beta blockers");
-  assert.ok(ids.includes("test-craft"), "no item-writing rules");
-  assert.ok(ids.includes("socratic-tutoring"), "no delivery protocol");
-});
-
-// The landmine from the skills batch: selectChatSkills SKIPS an oversized packet
-// with a silent `continue`, so a skill written past its share simply vanishes
-// whenever it pairs with another — which reads as the model ignoring it.
-test("every packet fits its share of the budget", () => {
-  for (const skill of CHAT_SKILLS) {
-    assert.ok(
-      skill.instructions.length <= SKILL_CHAR_SHARE,
-      `${skill.id} is ${skill.instructions.length} chars, over the ${SKILL_CHAR_SHARE} share`,
-    );
-  }
+// ...and the exclusion is one-directional: asking only for teaching still gets an explanation.
+test("asking only for teaching gets teaching", () => {
+  assert.deepEqual(idsFor(["teaching"]), ["teaching"]);
 });
 
 test("an exclusion cannot bar a skill that was chosen earlier", () => {
-  // Order in the catalog is what decides; only the earlier skill excludes.
   const ids = CHAT_SKILLS.map((skill) => skill.id);
   assert.ok(ids.indexOf("socratic-tutoring") < ids.indexOf("teaching"));
+  assert.ok(ids.indexOf("syllabus-intake") < ids.indexOf("lecture-intake"));
 });
 
-// A student usually attaches a deck with NO message at all. The matcher sees
-// prepareChatAttachments' wireText, headers included, so the upload itself is
-// what has to fire the skill — nothing typed can be relied on.
-test("a bare deck upload fires the intake skill with no typed message", () => {
-  const wireText = "### Attachment: week-3-pharmacokinetics.pptx\nType: application/pptx\n\nSlide 1: Objectives";
-  assert.ok(idsFor(wireText).includes("lecture-intake"));
+test("a syllabus excludes the lecture miner", () => {
+  const ids = idsFor(["syllabus-intake", "lecture-intake"]);
+  assert.ok(ids.includes("syllabus-intake"));
+  assert.ok(!ids.includes("lecture-intake"), "one packet would mine concepts while the other offered a calendar import");
 });
 
-test("a student who already said what they want is not asked again", () => {
-  const wireText = "make flashcards from this\n\n### Attachment: lecture.pdf\nType: application/pdf\n\nContent";
-  const ids = idsFor(wireText);
-  // Both may ride along, but the explicit request must take the first slot —
-  // that ordering is what stops the intake packet from re-asking the question.
-  assert.equal(ids[0], "flashcard-craft", `expected flashcard-craft first, got ${ids.join(", ")}`);
-});
-
-test("an ordinary message with no attachment does not fire intake", () => {
-  assert.ok(!idsFor("explain first-pass metabolism").includes("lecture-intake"));
-});
-
-// Owner 2026-07-28: "syllabus and calendar events should not be outputted into
-// chat, the chat should just say 'ive put the events into the calendar'". The
-// skill used to ask for a compact TABLE of every date and a quoted source line
-// per row, which is exactly the dump being complained about.
+// Owner 2026-07-28: "syllabus and calendar events should not be outputted into chat, the chat
+// should just say 'ive put the events into the calendar'". The skill used to ask for a compact
+// TABLE of every date and a quoted source line per row, which is exactly the dump complained about.
 test("the syllabus skill reports a COUNT, never a list of the dates", () => {
   const skill = CHAT_SKILLS.find((entry) => entry.id === "syllabus-intake");
   assert.ok(skill, "syllabus-intake must exist");
   assert.match(skill.instructions, /Do NOT list the dates in your reply/);
   assert.match(skill.instructions, /how many dated items you found and the range/);
   assert.match(skill.instructions, /I've put the events into your calendar/);
-  // The consent gate stays: asking first is what stops thirty events landing
-  // unannounced, and a count is still something a student can approve.
+  // The consent gate stays: asking first is what stops thirty events landing unannounced, and a
+  // count is still something a student can approve.
   assert.match(skill.instructions, /Want me to add these to your calendar\?/);
   // The source line is not lost — it moves into the event's own note.
   assert.match(skill.instructions, /in that event's note/);
 });
 
-test("a syllabus upload routes to the calendar offer, not the lecture miner", () => {
-  const wireText = "### Attachment: PHAR501-syllabus.pdf\nType: application/pdf\n\nCourse syllabus. Grading policy. Midterm Oct 14.";
-  const ids = idsFor(wireText);
-  assert.ok(ids.includes("syllabus-intake"), `got ${ids.join(", ")}`);
-  // Both match the same upload; the exclusion is what stops one packet saying
-  // "mine the concepts" while the other says "offer a calendar import".
-  assert.ok(!ids.includes("lecture-intake"), "syllabus intake must exclude lecture intake");
+// A student who already said what they want must not be asked again. The intake packet's own last
+// line carries that rule, since ordering can no longer be relied on to enforce it: the model may
+// ask for lecture-intake and flashcard-craft in either order.
+// 🔴 THE CLOSING OFFER WENT WITH THE TOOLS THAT SERVED IT. Intake used to end every upload with
+// "Want me to turn this into notes, flashcards, a practice test, or all three?" — three things the
+// chat can no longer make. An offer the model cannot keep is worse than no offer: the student says
+// "all three" and gets an apology, or a claim that something was saved.
+test("the lecture intake packet no longer offers what it cannot build", () => {
+  const skill = CHAT_SKILLS.find((entry) => entry.id === "lecture-intake");
+  assert.ok(skill, "lecture-intake must exist");
+  assert.doesNotMatch(skill.instructions, /or all three/);
+  assert.match(skill.instructions, /Do NOT end by offering/);
 });
 
+console.log("chat-skills.test.ts OK");

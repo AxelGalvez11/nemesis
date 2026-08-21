@@ -30,7 +30,9 @@ const EMPTY: TurnContext = {
   materialContext: "",
   objectives: 0,
   passages: 0,
+  searchesLeft: 0,
   sources: 0,
+  stagedPassage: "",
   today: "Tuesday, 18 August 2026",
   webContext: "",
 };
@@ -188,7 +190,20 @@ test("a plain decision is read", () => {
   // turn that draws nothing must still produce a list, so every downstream reader can index into
   // it without a null check — the alternative is an optional field that is absent on the ordinary
   // path and therefore untested on it.
-  assert.deepEqual(read, { say: "hey. what are you working on?", then: "reply", topic: null, visuals: [] });
+  //
+  // 🔴 THE SAME ARGUMENT COVERS THE FOUR WEB FIELDS. A turn that did not ask for the web must say
+  // so in the object rather than by omission, because the search loop reads `needsWeb` as its
+  // condition and `undefined` there would end the loop for the wrong reason.
+  assert.deepEqual(read, {
+    needsWeb: false,
+    say: "hey. what are you working on?",
+    then: "reply",
+    topic: null,
+    visuals: [],
+    webFreshness: null,
+    webQuery: null,
+    webResults: null,
+  });
 });
 
 test("a study decision is read, and its answer comes from outside the block", () => {
@@ -202,9 +217,16 @@ test("🔴🔴 the contract says what `then` actually decides, and gives the che
   // Measured in the browser: "I'm studying pharmacology" came back as a friendly clarifying
   // question AND `then: "study"`, which took the canvas over on turn 2 of the owner's own example.
   // The model was reading `then` as "is this about studying". Both sentences below are the fix.
+  //
+  // 🔴 THE SECOND ONE MOVED OUT OF STEP 2 ON 2026-08-21 AND THIS ASSERTION MOVED WITH IT. It read
+  // "if you get here and find yourself asking the learner a question back" — and "if you get here"
+  // was the defect: step 1 settles the explicit asks and never gets here, so the rule was absent
+  // from exactly the turn that reproduced this same bug ("can you teach me a new language").
+  // Matching on the checkable half of the sentence rather than on its old preamble is what lets
+  // this guard keep proving the rule exists wherever it is stated.
   const last = turnRouterMessages({ context: EMPTY, utterance: "I'm studying pharmacology" }).at(-1)?.content ?? "";
   assert.match(last, /whether the canvas should change right now/);
-  assert.match(last, /find yourself asking the learner a question back, that settles it/);
+  assert.match(last, /asking the learner a question back, "then" is "reply"/);
 });
 
 test("🔴 a topic is asked for on a plain reply too, because it gates the Learn this offer", () => {
@@ -415,3 +437,141 @@ test("🔴 a decision with no answer anywhere is still refused", () => {
   // Otherwise this fallback would turn "the model said nothing" into a blank reply on screen.
   assert.equal(readTurnDecision('```json\n{"topic":"x"}\n```'), null);
 });
+
+// ── 🔴 searching until it has enough, rather than once with a guess ──────────
+//
+// Owner: *"deepseek should decide itself when it has enough information to answer."* A single
+// upfront count was still a bet made blind — nothing has been read at the moment it is chosen. So
+// the packet has to let the model say "not yet", and has to tell it how much rope is left.
+
+test("with results in hand, the model is told it may search again", () => {
+  const packet = turnRouterMessages({
+    context: { ...EMPTY, searchesLeft: 3, webContext: "1. A page\nURL: https://a.test" },
+    utterance: "has that guideline been revised?",
+  });
+  const state = packet.map((message) => message.content).join("\n");
+  assert.match(state, /You may run 3 more searches/);
+  // And the contract says what "again" is FOR, so a second search is aimed rather than reflexive.
+  assert.match(state, /Say true AGAIN, with a different webQuery/);
+  assert.match(state, /Stop as soon as you can answer properly/);
+});
+
+test("one search left is not phrased as 'searches'", () => {
+  const packet = turnRouterMessages({
+    context: { ...EMPTY, searchesLeft: 1, webContext: "1. A page" },
+    utterance: "why?",
+  });
+  assert.match(packet.map((message) => message.content).join("\n"), /run 1 more search this turn/);
+});
+
+// 🔴 THE LAST ROUND MUST SAY SO, NOT GO QUIET. A model cut off without warning has already spent
+// its final search on a query it thought was one of several; a model that knows says what it could
+// not settle instead of implying it looked everywhere.
+test("with no searches left the packet says so and asks for the gap to be named", () => {
+  const packet = turnRouterMessages({
+    context: { ...EMPTY, searchesLeft: 0, webContext: "1. A page" },
+    utterance: "why?",
+  });
+  const state = packet.map((message) => message.content).join("\n");
+  assert.match(state, /no further search is available this turn/);
+  assert.match(state, /say plainly what it did not settle/);
+});
+
+// Before any search has run there is nothing to report, and the packet must not talk about
+// results that do not exist.
+test("a first pass says nothing about earlier searches", () => {
+  const packet = turnRouterMessages({ context: { ...EMPTY, searchesLeft: 4 }, utterance: "hello" });
+  assert.doesNotMatch(packet.map((message) => message.content).join("\n"), /earlier searches/);
+});
+
+/** The contract as the model receives it: the tail of the last user message. */
+const DECISION_CONTRACT_TEXT = (() => {
+  const messages = turnRouterMessages({ context: EMPTY, utterance: "x" });
+  return messages.at(-1)?.content ?? "";
+})();
+
+// ── "teach me a new language" — measured in a browser, 2026-08-21 ────────────────────────────
+//
+// Owner: *"i asked it can you teach me a new language and it did an unneccesary web search and
+// then it started fadeing between the two screens i attached."* One routing mistake produced all
+// of it: the model chose "study" with the topic "new language learning", so the canvas was
+// retitled, `needsGrounding` searched the web for that phrase, two marketing pages for a language
+// app were ingested as study material, and the lesson built from them was a pricing page's list of
+// languages. The model ALSO asked which language — so the learner ended up looking at a lesson it
+// had started and a question it had asked, stacked, with one composer pointing at both.
+//
+// These are guards on the CONTRACT rather than on the model, which is the only half that is pure.
+// What the model actually does with them is `scripts/conversation-acceptance.ts`'s job.
+
+test("🔴🔴 step 1 exempts a category with no member chosen, and only that", () => {
+  // The rule it carves out of is right and must survive: asked to teach a real subject, however
+  // broad, the model must not ask the learner to narrow it down.
+  assert.match(DECISION_CONTRACT_TEXT, /do not ask which part first and do not ask them to narrow it down/);
+  assert.match(DECISION_CONTRACT_TEXT, /named a CATEGORY but not a member of it/);
+  assert.match(DECISION_CONTRACT_TEXT, /a real subject, however broad, is still "study"/);
+  // 🔴 IT SAYS WHY, IN TERMS OF WHAT HAPPENS. "Nemesis goes and finds material on the subject you
+  // name" is the fact that makes choosing one for them expensive rather than merely premature.
+  assert.match(DECISION_CONTRACT_TEXT, /starts a different lesson/);
+});
+
+test("🔴 and it names no field, no discipline and no example category", () => {
+  // A list of category words would only ever cover the ones I thought of, and would make the rule
+  // false for a trade, a language, a statute and a metallurgy course in different ways.
+  const exception = DECISION_CONTRACT_TEXT.slice(DECISION_CONTRACT_TEXT.indexOf("One exception"));
+  const clause = exception.slice(0, exception.indexOf("2. Otherwise"));
+  assert.doesNotMatch(clause, /\b(?:language|law|case|drug|history|nursing|engineering|pharmacolog)\w*\b/i);
+});
+
+test("🔴🔴 the never-both rule applies to every step, not just the last one", () => {
+  // As the tail of step 2 it was unreachable exactly when it mattered: step 1 settles the explicit
+  // asks and never consults step 2. This is the whole reason one turn did both.
+  const both = DECISION_CONTRACT_TEXT.indexOf("cannot ask someone what they want and take the screen over");
+  assert.ok(both > -1, "the rule is gone entirely");
+  assert.ok(
+    both > DECISION_CONTRACT_TEXT.indexOf("2. Otherwise"),
+    "the rule sits inside a numbered step again, so an earlier step will skip it",
+  );
+  assert.match(DECISION_CONTRACT_TEXT, /This holds whatever you chose above/);
+});
+
+// ── How recent the pages have to be ─────────────────────────────────────────────────────────
+//
+// Owner, 2026-08-21: *"let the model pick freshness."* Brave has had this filter the whole time
+// and nothing in this product had ever set it, so a question about this week was answered from
+// pages of any age. The vocabulary is validated in the search function — these guard the half that
+// is ours: that the model is told the field exists, told when it is WRONG to use, and that a
+// window without a search is dropped like the query and the count already are.
+
+test("🔴 the freshness window is offered to the model, with its real vocabulary", () => {
+  assert.match(DECISION_CONTRACT_TEXT, /"webFreshness"/);
+  for (const code of ["pd", "pw", "pm", "py"]) {
+    assert.ok(DECISION_CONTRACT_TEXT.includes(`"${code}"`), `${code} is not offered`);
+  }
+});
+
+test("🔴🔴 and it is told when NOT to use one, which is the expensive half", () => {
+  // A model given a filter and no reason to withhold it will filter everything, and a narrow
+  // window on a settled question hides the source that actually explains it. The instruction that
+  // matters is the negative one.
+  assert.match(DECISION_CONTRACT_TEXT, /would be WRONG rather than merely less interesting/);
+  assert.match(DECISION_CONTRACT_TEXT, /When in doubt, null/);
+});
+
+test("🔴 a window without a search is dropped, like the query and the count", () => {
+  assert.equal(readTurnDecision(turn({ needsWeb: true, then: "reply", webFreshness: "pw" }, "x"))?.webFreshness, "pw");
+  assert.equal(readTurnDecision(turn({ needsWeb: false, then: "reply", webFreshness: "pw" }, "x"))?.webFreshness, null);
+  assert.equal(readTurnDecision(turn({ then: "reply" }, "x"))?.webFreshness, null);
+});
+
+test("🔴 nothing here checks the window against a list — that fact belongs to the provider", () => {
+  // Deliberate: a second copy of Brave's vocabulary in this file is a second thing to update the
+  // day Brave adds a value, and the two would drift. `readFreshness` in the search function drops
+  // what Brave will not take, so an invented window becomes no filter rather than a live parameter
+  // that quietly does nothing.
+  assert.equal(
+    readTurnDecision(turn({ needsWeb: true, then: "reply", webFreshness: "last_week" }, "x"))?.webFreshness,
+    "last_week",
+  );
+});
+
+console.log("turn-router.test.ts OK");

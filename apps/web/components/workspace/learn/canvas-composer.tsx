@@ -51,7 +51,6 @@ import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model
 import { endsPushToTalk, isTypingTarget, startsPushToTalk } from "@/lib/learn/canvas-hotkeys";
 import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
-import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
 
 import { composerControl } from "./canvas-progression";
@@ -151,17 +150,18 @@ interface CanvasComposerProps {
    * not auto-launch a workflow. Send is what creates and enters the Canvas session."* Before this,
    * a canvas with material sat on a dedicated screen reading "1 source attached" above a *"Help me
    * learn this"* button — a whole page to say what a chip says in a line, and a second control
-   * where §15 allows exactly one.
+   * where §15 allows exactly one. What confirms the ingest now is the Sources panel, which lists
+   * every source with its host and a link that opens it.
    */
   /**
-   * The material this canvas holds, as chips above the composer.
+   * How many sources this canvas holds. A COUNT, because that is the only thing left to ask.
    *
-   * 🔴🔴 `sourceUrl` IS NEW AND IT IS THE WHOLE FIX. Owner, twice: *"any sources still dont have the
-   * favicon thumbnail bubbles and are not clickable."* These chips took `{id, title}` and nothing
-   * else, so a web page Nemesis had gone and read was drawn with a FILE icon and no way to open it
-   * — the surface asserting that a page on the internet was an uploaded document.
+   * 🔴 IT USED TO BE THE SOURCES THEMSELVES — `{id, title, sourceUrl}` — because this component
+   * drew them as chips. It does not any more (owner 2026-08-21, see the render), and a list passed
+   * to something that only measures its length is an invitation to start drawing it again. What
+   * this decides is whether SEND means something with an empty box; nothing here needs a title.
    */
-  pendingSources?: readonly { readonly id: string; readonly title: string; readonly sourceUrl?: string }[];
+  attachedCount?: number;
   /**
    * This canvas has not begun. Submitting starts it; `null` once it has.
    *
@@ -169,12 +169,10 @@ interface CanvasComposerProps {
    * separate route rather than something `attachFiles` does on arrival. The learner may add a
    * second file, type an instruction, and only then commit.
    *
-   * 🔴 THE CHIP CONFIRMS AN INGEST; IT DOES NOT STAGE ONE, and the difference is worth being
-   * exact about. `pendingSources` is `canvas.sources` — the file has already been read by
-   * `attachFiles` by the time a chip appears — so the chips carry no remove control, unlike the
-   * shared chat composer's, whose files really are staged in component state until submit. What
-   * has not happened yet is the canvas BEGINNING. Saying otherwise here would promise an undo
-   * this surface does not offer.
+   * 🔴 ATTACHING HAS ALREADY HAPPENED BY THE TIME `attachedCount` IS NON-ZERO — `attachFiles` has
+   * read the file and it is in `canvas.sources`. What has not happened is the canvas BEGINNING.
+   * This surface offers no undo of the ingest, which is why nothing here draws a remove control
+   * (and why the chips that used to imply one are gone).
    *
    * 🔴 AND IT ACCEPTS AN EMPTY STRING (§3). Sending with material and nothing typed means *"learn
    * this material with me"*; the caller infers it rather than making the learner say it. The
@@ -198,7 +196,7 @@ export function CanvasComposer({
   busy,
   busyLabel,
   advanceBusy = false,
-  pendingSources = [],
+  attachedCount = 0,
   onStart,
   listenSignal = null,
 }: CanvasComposerProps) {
@@ -337,7 +335,7 @@ export function CanvasComposer({
    *  🔴 `intent.kind === "start"`, NOT `Boolean(onStart)`. The handler is always passed now; whether
    *  it is the RIGHT one is the intent's decision, and asking "were we given a function?" is exactly
    *  the reasoning that routed answers into `begin()`. */
-  const canStartFromAttachment = intent.kind === "start" && pendingSources.length > 0;
+  const canStartFromAttachment = intent.kind === "start" && attachedCount > 0;
 
   const submit = () => {
     const value = text.trim();
@@ -392,15 +390,6 @@ export function CanvasComposer({
   const acceptDictation = () => dictation.stop();
 
   const listening = dictation.listening;
-  /**
-   * Whether the composer is carrying attachments, and therefore taller.
-   *
-   * 🔴 THE SAME QUESTION `canStartFromAttachment` ASKS, MINUS THE DICTATION CASE, and named
-   * separately because it drives GEOMETRY rather than behaviour: the box grows, the radius relaxes,
-   * and the input row keeps its own padding. Deriving that from the behavioural flag at three call
-   * sites is how the two drift.
-   */
-  const chipsInside = canStartFromAttachment && !listening;
 
   // ── Voice mode's hands-free loop: Nemesis stopped speaking, so start listening ──────────────
   //
@@ -596,19 +585,29 @@ export function CanvasComposer({
             work is not a second route into the evidence log; it is a third way of producing the
             one answer the one send path already carries. */}
         <>
-        {/* 🔴 THE ATTACHMENT PREVIEW (§2, §26) — IMMEDIATELY ABOVE THE INPUT, WHICH IS WHERE THE
-            BRIEF DRAWS IT. This is the whole replacement for a dedicated "1 source attached →
-            Help me learn this" page: the material is visible, it is obviously not gone, and the
-            learner may still type an instruction before committing. Nothing has started.
+        {/* 🔴🔴 THE SOURCE CHIPS ARE GONE FROM HERE. THE SOURCES PANEL IS WHERE SOURCES LIVE.
+            Owner, 2026-08-21: *"sources are still appearing on the chat composer which i dont want.
+            the sources should appear in the sources."* This is the second time the composer has had
+            to give them up: on 2026-08-20 the same chips moved from a row ABOVE the composer to a
+            row INSIDE it, which was the wrong reading of *"i dont want the attachments to be above
+            the chat composer at all"*.
 
-            🔴 NOT SHOWN WHILE DICTATING, like the selection chip below it — the composer becomes a
-            waveform in that state and a stack of chips over it is exactly the second card the
-            file header says dictation must never grow. */}
-        {/* 🔴 GATED ON THE INTENT, NOT ON THE LIST BEING NON-EMPTY. The caller used to withhold the
-            sources (`pendingSources={preContent ? … : []}`), which was a SECOND reading of the same
-            stale predicate that swallowed typed answers — and with the predicate fixed in one place
-            and not the other, a canvas asking a question still displayed "nothing has started yet"
-            chips underneath it. `canStartFromAttachment` is the one question, asked once. */}
+            🔴 AND WHAT MADE IT WRONG IS WHAT THE CHIPS CAME TO MEAN. They were authored as an
+            attachment PREVIEW — the file you just picked, still visible, not yet committed — and
+            they were fed `canvas.sources`, which is every source the canvas holds. Once a topic
+            with no material grounds itself by searching the web (`ground()` in use-canvas-session),
+            the machine's own reading list appeared over the learner's composer as though they had
+            attached it. Measured by the owner, on the turn that produced this note: asking to learn
+            a language put two marketing pages for a language app in the box.
+
+            A source panel that lists everything is honest about what it is. A composer chip claims
+            "this is what your next message is carrying", which for a page nobody chose is a lie.
+            `canvas-controls.tsx` already draws every source, with its host, its excerpt count and a
+            link that opens it, which is strictly more than these chips ever showed.
+
+            🔴 THE BEHAVIOUR STAYS. `canStartFromAttachment` still makes an empty box submittable
+            when material is waiting, because that is about what SEND means, not about what is
+            drawn. Only the display went. */}
 
         {/* The chip needs its own surface. It sits inside the composer's fade, where the
             gradient is nearly transparent, so without a background it was printed straight
@@ -641,64 +640,18 @@ export function CanvasComposer({
           </div>
         )}
 
-        {/* 🔴🔴 THE ATTACHMENTS ARE INSIDE THE COMPOSER NOW. Owner, 2026-08-20: *"i dont want
-            the attachments to be above the chat composer at all."* They sat in their own row
-            ABOVE the pill, so a file read as a separate object hovering over the box rather than
-            as something the next message is carrying. Every product that does this well puts them
-            in the box, and the box grows.
-        
-            🔴 THE RADIUS RELAXES WHEN IT GROWS. A 26px radius on a 52px pill is a capsule; the same
-            radius on a 100px box is a lozenge with visibly round ends. 20px reads as the same
-            object having got taller. */}
+        {/* 🔴 THE BOX IS ONE CAPSULE AGAIN. It grew a second radius (20px) on 2026-08-20 for the
+            row of source chips it carried inside it; the chips are gone (see above), so the only
+            thing that changes its height now is the text the learner is typing, and a growing
+            textarea does not want a different corner. */}
         <div
           className={cn(
             "flex flex-col bg-(--ui-bg-elevated)",
-            chipsInside ? "rounded-[20px]" : "rounded-[26px]",
+            "rounded-[26px]",
             "shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)",
             selected.length > 0 && !listening && "ring-(--ui-action)/50",
           )}
         >
-          {chipsInside && (
-            <div className="flex flex-wrap items-center gap-1.5 px-[8px] pb-1 pt-[10px]">
-              {pendingSources.map((source) => {
-                // 🔴 THE HOST DECIDES THE CHIP, NOT A FLAG. `sourceUrl` is documented as absent for
-                // every file upload and present only for a page, so its presence IS the question
-                // "can this be opened?" — the same rule `lib/learn/source-pill.ts` states for the
-                // pills under a claim. One idea, spelled once.
-                const host = hostnameOf(source.sourceUrl);
-                const body = (
-                  <>
-                    {host ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
-                      <img alt="" className="shrink-0 rounded-full" height={14} src={faviconUrl(host)} width={14} />
-                    ) : (
-                      <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
-                    )}
-                    <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-                      {source.title}
-                    </span>
-                  </>
-                );
-                const shell = "flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)";
-                return host && source.sourceUrl ? (
-                  <a
-                    className={cn(shell, "no-underline transition-colors hover:bg-(--ui-bg-tertiary)")}
-                    href={source.sourceUrl}
-                    key={source.id}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                    title={source.title}
-                  >
-                    {body}
-                  </a>
-                ) : (
-                  <span className={shell} key={source.id} title={source.title}>
-                    {body}
-                  </span>
-                );
-              })}
-            </div>
-          )}
           {/* The input row. 52px tall and 12px of side padding, measured off the reference. */}
           <div className="flex min-h-[52px] items-center gap-0 px-[12px]">
             {/* Stays put through every state, including dictation: spatial continuity is the

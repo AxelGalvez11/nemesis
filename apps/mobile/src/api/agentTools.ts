@@ -749,32 +749,10 @@ async function deleteStudyArtifactTool({ args, uid }: ToolContext) {
 }
 
 const HANDLERS: Record<AgentToolName, ToolHandler> = {
-  add_flashcards: addFlashcards,
-  add_calendar_event: addCalendarEvent,
-  add_mindmap: addMindmap,
-  add_practice_test: addPracticeTest,
-  append_library_note: appendLibraryNote,
-  create_library_folder: createLibraryFolder,
-  create_library_note: createLibraryNote,
-  create_slide_deck: createSlideDeck,
-  list_calendar_events: listCalendarEvents,
-  list_study_artifacts: listStudyArtifacts,
-  list_study_decks: listStudyDecks,
-  move_library_note: moveLibraryNote,
-  read_study_deck: readStudyDeck,
-  read_study_artifact: readStudyArtifact,
-  read_library_note: readLibraryNote,
-  rename_library_note: renameLibraryNote,
-  search_library: searchLibrary,
-  update_calendar_event: updateCalendarEventTool,
-  delete_calendar_event: deleteCalendarEventTool,
-  replace_library_note: replaceLibraryNote,
-  delete_library_note: deleteLibraryNoteTool,
-  edit_flashcard: editFlashcard,
-  delete_flashcard: deleteFlashcard,
-  rename_study_deck: renameStudyDeckTool,
-  delete_study_deck: deleteStudyDeckTool,
-  delete_study_artifact: deleteStudyArtifactTool,
+add_calendar_event: addCalendarEvent,
+list_calendar_events: listCalendarEvents,
+update_calendar_event: updateCalendarEventTool,
+delete_calendar_event: deleteCalendarEventTool,
 };
 
 /** Handed back with every result that created something, because the model

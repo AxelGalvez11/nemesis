@@ -23,8 +23,22 @@ export const EYE_SPLIT = 15.46
 export const EYE_W = 0.186
 export const EYE_H = 0.412
 
-/** Orientation de tete au repos, ajustee sur les frames de reference. */
-export const REST_GAZE: HeadGaze = { yaw: 28.49, pitch: 28.62, roll: -13 }
+/**
+ * Orientation de tete au repos, ajustee sur les frames de reference.
+ *
+ * 🔴 `roll` IS 0 HERE AND IT WAS -13 IN THE REFERENCE. Owner, 2026-08-21: *"can you make the
+ * mascot not be tilted? because that reads too much like xai grok bot."* Two dark capsules leaning
+ * off-axis on a pale disc is close enough to a competitor's mark that the resemblance is the first
+ * thing a learner sees, and a mascot that reminds people of another product is not doing its job
+ * whatever it is measured against.
+ *
+ * 🔴 ONLY THE ROLL CHANGES. `yaw` and `pitch` are what put the eyes off-centre on the sphere, and
+ * they are the whole reason the face reads as a HEAD rather than as two shapes painted flat on a
+ * circle — the near eye is 0.69 the width of the far one because of them. Zeroing those too would
+ * make it a logo. The head still leans a little as it breathes (`dRoll`, +-2.2deg in `liveliness`),
+ * so level at rest is not frozen.
+ */
+export const REST_GAZE: HeadGaze = { yaw: 28.49, pitch: 28.62, roll: 0 }
 
 export interface EyePose {
   x: number

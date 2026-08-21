@@ -34,7 +34,6 @@ import {
   type WrittenWork,
 } from "@/lib/handwriting/written-work";
 
-import { isAdmissionOfNotKnowing } from "./response-admission";
 
 /**
  * How sure the reading has to be, per mark and overall, before written work may be judged without
@@ -276,39 +275,34 @@ const KIND_PREFIX: Record<WrittenMark["kind"], string> = {
  * The page handed over as plain text, exactly as if it had been typed, or null when it genuinely
  * needs structure.
  *
- * 🔴 THIS IS NOT A COSMETIC SHORTCUT — IT KEEPS TWO NON-ATTEMPT RULES ALIVE THROUGH THE WRITTEN
- * DOOR. `isAdmissionOfNotKnowing` and `isEchoOfTheCue` (response-admission.ts) both run on the
- * submitted text before the judge sees it, and both require that NOTHING substantive is left over
- * once the admission or the cue is removed. A learner who writes "idk" by hand and gets it
- * rendered under a heading has just had their admission turned into an attempt, judged
- * `incorrect`, and stored as negative evidence — the precise defect those two rules exist to
- * prevent, arriving through a door neither was watching.
+ * 🔴 THE JOINED-MARKS BRANCH IS GONE, AND SO IS THE WORD LIST IT SERVED. It used to join every
+ * standing mark and ask `isAdmissionOfNotKnowing` — twenty-one English phrases, idk through blank —
+ * so that "I don't" / "know" written across two lines still reached the judge as a sentence rather
+ * than as "Their work, in the order it reads: 1. I don't 2. know". That mattered because the judge
+ * had no way to say "not an attempt" about an admission, so the headings alone were enough
+ * substantive text to get somebody recorded as having got it wrong.
  *
- * 🔴 AND THE ADMISSION CHECK IS NOT COVERED BY THE SINGLE-LINE CASE. "I don't know how to start
- * this" is one sentence to a person and frequently two marks to a vision model, because it was
- * written across two lines. One mark renders plain and is caught; two render structured and are
- * not, and the section headings alone are enough substantive text to defeat the rule. So the
- * standing marks are also joined and tested as a whole, which is what closes the gap for a
- * multi-line admission.
+ * 🔴 I TRIED TO REPLACE IT WITH A STRUCTURAL RULE AND THE STRUCTURE IS NOT THERE. Two line marks
+ * reading "I don't" / "know" and two reading "2x = 8" / "x = 4" are the same shape and the same
+ * length. Nothing about the page separates a sentence that wrapped from two steps of working —
+ * only the words do, which is exactly what this file is no longer allowed to read.
  *
- * 🔴 STRUCTURAL, NOT SUBJECT MATTER. `isAdmissionOfNotKnowing` recognises a learner reporting
- * their own state, which reads identically for a law student and a machinist. Nothing here knows
- * what any page is about.
+ * So it does not guess. The rendering reports the page as it is, and the JUDGE reads it: its
+ * `not_an_attempt` verdict now covers an admission in any language (canvas-prompts.ts), and a model
+ * can see "1. I don't 2. know" for what it is where a string matcher could not. That is strictly
+ * better than the old branch, which also hid crossed-out work from the judge whenever it decided a
+ * page was an admission.
+ *
+ * What survives is the case with no structure to report at all: ONE readable mark, standing alone.
+ * Handing that over under headings adds more text than the learner wrote, and it is what keeps
+ * `isEchoOfTheCue` able to see a one-word answer that gives the cue back.
  */
 function plainRendering(writing: ConfirmedWriting): string | null {
-  const standing = writing.marks.filter((mark) => mark.legible && !mark.struckThrough);
-
   const only = writing.marks.length === 1 ? writing.marks[0] : null;
   if (only && only.legible && !only.struckThrough && only.kind === "line" && writing.relations.length === 0) {
     return only.text;
   }
-
-  // 🔴 THE JOINED TEXT, REGARDLESS OF WHAT ELSE IS ON THE PAGE. If everything readable amounts to
-  // "I do not know", that is the answer however many marks it took and whatever was crossed out or
-  // unread beside it. The direction of error is deliberate: an admission read as an attempt writes
-  // a wrong verdict, while an attempt read as an admission writes no verdict at all.
-  const said = standing.map((mark) => mark.text).join(" ").trim();
-  return said && isAdmissionOfNotKnowing(said) ? said : null;
+  return null;
 }
 
 /**

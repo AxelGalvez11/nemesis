@@ -30,7 +30,7 @@
 
 import { EXAM_ITEM_RULES_SHORT } from "./item-writing.ts";
 import { GENERATED_NOTES_FOLDER, GENERATED_SLIDES_FOLDER, GENERATED_TESTS_GROUP } from "./academic-skills.ts";
-import { WORKSPACE_AGENT_TOOL_NAMES, type WorkspaceAgentToolName } from "@nemesis/shared";
+import { toolDescription, WORKSPACE_AGENT_TOOL_NAMES, type WorkspaceAgentToolName } from "@nemesis/shared";
 
 /** Every tool the phone offers, as a literal tuple. api/agentTools.ts keys its
  *  handler map by this union, so tsc refuses to compile a tool that is advertised
@@ -199,291 +199,7 @@ export function matchDeckName(wanted: string, existing: readonly string[]): stri
 export const AGENT_TOOLS = [
   {
     function: {
-      description:
-        // 🔴 THIS DESCRIPTION USED TO END "Use this before answering anything about
-        // their own notes", and a tool's schema description outranks the system
-        // prompt. Asked to build flashcards "from this" — meaning a recording made
-        // moments earlier in the same conversation — the model dutifully swept the
-        // Library first and built the cards from whatever it found there instead
-        // (owner 2026-07-30). "Before answering" made retrieval the first move on
-        // every turn, including the turns whose subject was already on screen.
-        "Search the student's Library notes by title and text. Returns each match's path, title, and a snippet. Use it when the student refers to material that is NOT already in this conversation, or names a note to find, and to get the path other Library tools need. When they point at something this conversation already produced or discussed, work from that instead of searching.",
-      name: "search_library",
-      parameters: {
-        properties: { query: { description: "Words to look for", type: "string" } },
-        required: ["query"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description: "Read one Library note's full text by its path (get the path from search_library).",
-      name: "read_library_note",
-      parameters: {
-        properties: { path: { description: "The note's path, e.g. 'Biology/Cell division.md'", type: "string" } },
-        required: ["path"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        `Create a new Library note. Write the body yourself in markdown. If the student did not name a folder, OMIT folder — it is then filed under their own course automatically. Only pass folder when they named one. When the note draws on web sources, cite inline: end the claim with a link whose text is just a number, like [1](https://the-source-url), numbering sources in order. The Library renders these as small source pills and builds the note's Sources section from them automatically — never write a manual "Sources" list. Tell the student you created it and where it is.`,
-      name: "create_library_note",
-      parameters: {
-        properties: {
-          content: { description: "Markdown body of the note", type: "string" },
-          folder: { description: "Optional folder path, only when the student named one. Omit to file by course.", type: "string" },
-          title: { description: "Note title", type: "string" },
-        },
-        required: ["title", "content"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        `Create and save a slide deck as a structured Library artifact. You MUST use this when the student asks for slides or a presentation. If the student did not name a folder, OMIT folder — it is then filed under their own course automatically. Only pass folder when they named one. Tell the student the saved path.`,
-      name: "create_slide_deck",
-      parameters: {
-        properties: {
-          folder: {
-            description: "Optional folder path, only when the student named one. Omit to file by course.",
-            type: "string",
-          },
-          slides: {
-            items: {
-              properties: {
-                bullets: {
-                  description: "Up to 8 concise teaching bullets; one idea per bullet",
-                  items: { type: "string" },
-                  type: "array",
-                },
-                speaker_notes: {
-                  description: "Optional explanation, example, or teaching cue not shown as a bullet",
-                  type: "string",
-                },
-                title: { description: "The slide heading", type: "string" },
-              },
-              required: ["title", "bullets"],
-              type: "object",
-            },
-            type: "array",
-          },
-          title: { description: "Deck title", type: "string" },
-        },
-        required: ["title", "slides"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Add text to the END of an existing Library note, keeping everything already in it. Use this to add to a note rather than rewriting one. Get the path from search_library. Cite web sources inline as numbered links like [1](https://the-source-url) — the Library turns them into source pills and a Sources section.",
-      name: "append_library_note",
-      parameters: {
-        properties: {
-          content: { description: "Markdown to add at the end of the note", type: "string" },
-          path: { description: "The note's path", type: "string" },
-        },
-        required: ["path", "content"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description: "Create an empty folder in the student's Library.",
-      name: "create_library_folder",
-      parameters: {
-        properties: { path: { description: "Folder path like 'Biology/Unit 3'", type: "string" } },
-        required: ["path"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description: "Rename one Library note. Get its path from search_library. The note stays in its current folder.",
-      name: "rename_library_note",
-      parameters: {
-        properties: {
-          path: { description: "The note's current path", type: "string" },
-          title: { description: "The new title", type: "string" },
-        },
-        required: ["path", "title"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description: "Move one Library note into a folder. Get its path from search_library.",
-      name: "move_library_note",
-      parameters: {
-        properties: {
-          folder: { description: "Destination folder path, or \"\" for the top level", type: "string" },
-          path: { description: "The note's current path", type: "string" },
-        },
-        required: ["path", "folder"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "List the student's flashcard decks with card counts. Each deck gives `name`, its `folder` if it is in one, and `full_name`. Pass `full_name` to other tools; when writing to the student say the name and the folder in words (\"your Cardiology deck in Pharmacology\") and NEVER show the 'Folder::Deck' form — that is storage, not something they typed.",
-      name: "list_study_decks",
-      parameters: { properties: {}, type: "object" },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Read the cards in one Study deck so you can tutor from, compare, summarize, or improve the student's actual study material. Call list_study_decks first when the deck name is uncertain.",
-      name: "read_study_deck",
-      parameters: {
-        properties: {
-          deck_name: { description: "Full deck name or its unique leaf name", type: "string" },
-          limit: { description: "Cards to read, default 12 and maximum 20", type: "number" },
-          offset: { description: "How many cards to skip for the next page", type: "number" },
-        },
-        required: ["deck_name"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "List the student's saved Study tests and mind maps with their ids, titles, folders, and status. Use read_study_artifact for one item's content.",
-      name: "list_study_artifacts",
-      parameters: {
-        properties: {
-          kind: { description: "Optional: 'test' or 'mindmap'", type: "string" },
-        },
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description: "Read one saved Study test or mind map by the id returned from list_study_artifacts.",
-      name: "read_study_artifact",
-      parameters: {
-        properties: { id: { description: "Study artifact id", type: "string" } },
-        required: ["id"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Add flashcards to a deck, creating the deck if it does not exist. Every requested flashcard must be saved with this tool rather than printed only in chat. Apply the minimum-information principle: one retrievable fact or relationship per card, precise prompt, concise self-contained answer, no duplicates, and no answer leakage. Tell the student how many you added and to which deck.",
-      name: "add_flashcards",
-      parameters: {
-        properties: {
-          cards: {
-            items: {
-              properties: {
-                back: { type: "string" },
-                card_type: {
-                  description: "The learner's selected format for this card.",
-                  enum: ["basic", "cloze", "reversed"],
-                  type: "string",
-                },
-                front: { type: "string" },
-              },
-              required: ["front", "back", "card_type"],
-              type: "object",
-            },
-            type: "array",
-          },
-          deck_name: {
-            description:
-              "Deck name. To put it inside a folder, use 'Folder::Deck' — that encoding is for THIS field only; never write it in your reply to the student. Check list_study_decks first so you add to a deck they already have instead of making a near-duplicate.",
-            type: "string",
-          },
-        },
-        required: ["deck_name", "cards"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        `Save a multiple-choice practice test to the student's Study page. Every requested test must be saved with this tool rather than printed only in chat. Write the questions yourself from the material — do not ask another tool to generate them. Use '${GENERATED_TESTS_GROUP}' when the student did not name a group. Tell the student you saved it. ` +
-        `How to write them: ${EXAM_ITEM_RULES_SHORT} That last rule matters here specifically: the app re-seats the options after saving, so 'option B' in an explanation would become wrong.`,
-      name: "add_practice_test",
-      parameters: {
-        properties: {
-          group_name: { description: `Optional folder on the Study page. Omit it to use '${GENERATED_TESTS_GROUP}'.`, type: "string" },
-          questions: {
-            items: {
-              properties: {
-                answer: { description: "0-based index into options of the correct answer", type: "number" },
-                options: { items: { type: "string" }, type: "array" },
-                q: { description: "The question", type: "string" },
-                why: { description: "One-sentence explanation of the correct answer", type: "string" },
-              },
-              required: ["q", "options", "answer", "why"],
-              type: "object",
-            },
-            type: "array",
-          },
-          title: { description: "Test title, e.g. 'Limits and continuity practice test'", type: "string" },
-        },
-        required: ["title", "questions"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Save a mind map to the student's Study page. Provide a markdown outline you write yourself. Tell the student you saved it.",
-      name: "add_mindmap",
-      parameters: {
-        properties: {
-          group_name: { description: "Optional folder on the Study page", type: "string" },
-          outline: {
-            description:
-              "Markdown outline: one '# Topic' root heading, then nested '- ' bullets (2-space indents, at most 3 levels, at most ~35 nodes)",
-            type: "string",
-          },
-          title: { description: "Mind map title, e.g. 'Cellular respiration'", type: "string" },
-        },
-        required: ["title", "outline"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "List the student's upcoming Calendar events. Use this whenever the answer depends on their schedule, deadlines, exams, classes, or available study time.",
+      description: toolDescription("list_calendar_events", EXAM_ITEM_RULES_SHORT),
       name: "list_calendar_events",
       parameters: {
         properties: {
@@ -501,7 +217,7 @@ export const AGENT_TOOLS = [
       // rides EVERY turn, so it outranked anything the system prompt or the tool
       // result asked for. Fifty-one calls, fifty-one dates read back (web hit
       // this first — same wording, same outcome).
-      description: "Add an event to the student's Calendar. Do not read the event back to them afterwards; the Calendar tab is where they will see it.",
+      description: toolDescription("add_calendar_event", EXAM_ITEM_RULES_SHORT),
       name: "add_calendar_event",
       parameters: {
         properties: {
@@ -528,9 +244,7 @@ export const AGENT_TOOLS = [
   // "whenever", or "make sure to".
   {
     function: {
-      description:
-        "Change an existing Calendar event. Pass only the fields that should change; anything omitted is left alone. "
-        + "Needs the event's id from list_calendar_events.",
+      description: toolDescription("update_calendar_event", EXAM_ITEM_RULES_SHORT),
       name: "update_calendar_event",
       parameters: {
         properties: {
@@ -550,115 +264,11 @@ export const AGENT_TOOLS = [
   },
   {
     function: {
-      description: "Remove an event from the student's Calendar. Needs the event's id from list_calendar_events.",
+      description: toolDescription("delete_calendar_event", EXAM_ITEM_RULES_SHORT),
       name: "delete_calendar_event",
       parameters: {
         properties: { event_id: { description: "The event's id from list_calendar_events", type: "string" } },
         required: ["event_id"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Replace a Library note's whole body with new text. Use append_library_note to add to the end instead. "
-        + "Needs the note's id from search_library or read_library_note. "
-        + "Cite web sources inline as numbered links like [1](https://the-source-url) — the Library turns them into source pills and a Sources section; never write a manual \"Sources\" list.",
-      name: "replace_library_note",
-      parameters: {
-        properties: {
-          content: { description: "The note's new full markdown body", type: "string" },
-          note_id: { description: "The note's id from search_library", type: "string" },
-        },
-        required: ["note_id", "content"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Move a Library note to the student's trash. It stops appearing in their Library but is recoverable. "
-        + "Needs the note's id from search_library.",
-      name: "delete_library_note",
-      parameters: {
-        properties: { note_id: { description: "The note's id from search_library", type: "string" } },
-        required: ["note_id"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Change the front or back of one flashcard. Pass only the side that changes. "
-        + "Needs the card's id from read_study_deck.",
-      name: "edit_flashcard",
-      parameters: {
-        properties: {
-          back: { description: "New back/answer text", type: "string" },
-          card_id: { description: "The card's id from read_study_deck", type: "string" },
-          front: { description: "New front/question text", type: "string" },
-        },
-        required: ["card_id"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description: "Delete one flashcard. This cannot be undone. Needs the card's id from read_study_deck.",
-      name: "delete_flashcard",
-      parameters: {
-        properties: { card_id: { description: "The card's id from read_study_deck", type: "string" } },
-        required: ["card_id"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Rename a Study deck. Give the deck's current full name and the new name; its folder and cards stay where they are.",
-      name: "rename_study_deck",
-      parameters: {
-        properties: {
-          deck_name: { description: "The deck's current full name from list_study_decks", type: "string" },
-          new_name: { description: "The new deck name", type: "string" },
-        },
-        required: ["deck_name", "new_name"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description:
-        "Delete a Study deck. Only works on a deck with no cards left in it — a deck that still holds cards has to "
-        + "be removed by the student from the Study screen, because deleting it would destroy their review history.",
-      name: "delete_study_deck",
-      parameters: {
-        properties: { deck_name: { description: "The deck's full name from list_study_decks", type: "string" } },
-        required: ["deck_name"],
-        type: "object",
-      },
-    },
-    type: "function",
-  },
-  {
-    function: {
-      description: "Delete a practice test or mind map. This cannot be undone. Needs the id from list_study_artifacts.",
-      name: "delete_study_artifact",
-      parameters: {
-        properties: { artifact_id: { description: "The artifact's id from list_study_artifacts", type: "string" } },
-        required: ["artifact_id"],
         type: "object",
       },
     },

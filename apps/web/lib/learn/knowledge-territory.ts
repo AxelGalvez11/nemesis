@@ -25,6 +25,7 @@ import { quoteAnchor, type CanonicalSourceAnchor } from "@/lib/sources/source-co
 
 import type { CanvasSource, SourceExcerpt } from "./canvas-model";
 import { knowledgeIdentityKey } from "./knowledge-identity";
+import { isWellFormedLocale } from "./speech-route";
 import type { KnowledgeObject } from "./knowledge-types";
 
 /** Bumped when the rules below change, so a territory built under old rules can be found. */
@@ -85,7 +86,24 @@ interface Candidate {
   relationKind?: unknown;
   /** Grounded mode only: which excerpt of the learner's material this was read from. */
   excerptId?: unknown;
+  /** BCP-47, when a side is written in a language the learner is studying. */
+  leftLocale?: unknown;
+  rightLocale?: unknown;
 }
+
+/**
+ * A language tag, or nothing.
+ *
+ * 🔴 DROPPED RATHER THAN REFUSED, AND THE PAIR SURVIVES EITHER WAY. A malformed locale is a lost
+ * chance to say a word in the right accent; a refused pair is a lost fact. Those are not the same
+ * size of loss, and treating them the same would let one bad tag cost a learner a piece of their own
+ * lecture. The same shape check `speech-route.ts` holds — the synthesiser refuses anything else, so
+ * a tag that fails here would have been silently ignored downstream while looking configured.
+ */
+const localeOrNone = (value: unknown): string | undefined => {
+  const tag = typeof value === "string" ? value.trim() : "";
+  return tag && isWellFormedLocale(tag) ? tag : undefined;
+};
 
 const str = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
@@ -187,6 +205,8 @@ export function parseTerritory(input: {
     const leftRole = str(candidate.leftRole);
     const rightRole = str(candidate.rightRole);
     const relationKind = str(candidate.relationKind);
+    const leftLocale = localeOrNone(candidate.leftLocale);
+    const rightLocale = localeOrNone(candidate.rightLocale);
 
     if (!left || !right) {
       refusals.push({ detail: `Candidate ${index + 1} was missing one side of the pair.`, reason: "missing-side" });
@@ -264,7 +284,7 @@ export function parseTerritory(input: {
       ...(located ? { derivation: "model-prose" as const } : {}),
       extractionVersion: TERRITORY_VERSION,
       id,
-      pair: { id, left, leftRole, right, rightRole },
+      pair: { id, left, ...(leftLocale ? { leftLocale } : {}), leftRole, right, ...(rightLocale ? { rightLocale } : {}), rightRole },
       ...(located
         ? { provenance: { extractor: TERRITORY_VERSION, lane: "model-prose" as const } }
         : {}),

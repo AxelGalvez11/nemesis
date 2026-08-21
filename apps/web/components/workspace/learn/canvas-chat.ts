@@ -21,19 +21,25 @@
 // the exact hole the unit-economics audit already found once (see lib/learn/canvas-api.ts's own
 // header comment) and this file exists specifically not to repeat it.
 //
-// 🔴 WEB SEARCH RIDES THE SAME REGEX-FIRST GATE SESSIONS CHAT ALREADY USES (`shouldSearchWeb`,
-// lib/workspace/chat-web-search.ts). That stays a deterministic decision on purpose: it spends
-// money and adds latency, and it is a RETRIEVAL choice rather than a reading of what the learner
-// meant. Nothing here reimplements it; it is imported and reused so a canvas question about "the
-// current inflation rate" and a Sessions question about the same thing are judged by the identical
-// rule rather than by two rules that can quietly diverge.
+// 🔴 WEB SEARCH IS PART OF THE SAME DECISION NOW. It used to ride Sessions' `shouldSearchWeb` — a
+// list of English words: latest, current, today, price, weather, score, version — and the comment
+// here defended that as "a RETRIEVAL choice rather than a reading of what the learner meant".
+// That was wrong, and the two halves of the sentence are the reason: deciding whether a question
+// turns on something that changes IS a reading of what the learner meant, and no word list has
+// ever done it. It bought a search for any sentence containing "update" and refused one for "has
+// that guideline been revised", and it could not read a question asked in Spanish at all.
+//
+// So the model says whether it needs the web, in the same envelope as everything else. A turn that
+// asks for one costs an extra round: search, then ask the identical packet again with the results
+// in it — and it may ask again, until it says it has enough. Only web turns pay, and on those the
+// search is most of the wait anyway.
 
 import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import {
-  buildFreshSearchQuery,
   citedWebResults,
-  shouldSearchWeb,
+  formatWebSearchContext,
   usableWebResults,
+  webContextThatFits,
   type ChatWebResult,
 } from "@/lib/workspace/chat-web-search";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
@@ -52,6 +58,16 @@ import {
  *  descriptive only (the actual search runs beforehand, in `askCanvasChat`, and its result is
  *  folded into the packet before this decision object ever reaches the wire). */
 const CHAT_DECISION: ChatRouteDecision = { route: "conversation", model: "deepseek-chat", searchWeb: false };
+
+/**
+ * The most searches one turn may run.
+ *
+ * 🔴 A BACKSTOP, NOT THE DECISION. The model stops when it says it has enough; this exists so a
+ * turn cannot run away, and the number is stated to the model rather than enforced behind its back
+ * (see `searchesLeft` in `TurnContext`). Small enough that the worst case is a wait a learner will
+ * sit through.
+ */
+export const MAX_SEARCH_ROUNDS = 4;
 
 /** What only the canvas's runtime knows, which the session cannot read for itself. */
 export interface TurnSurroundings {
@@ -105,6 +121,8 @@ export async function askCanvasChat(
   question: string,
   surroundings: TurnSurroundings,
   signal?: AbortSignal,
+  /** The passage the learner staged, so "this" has something to resolve against. */
+  stagedPassage = "",
   /**
    * Called the moment this turn decides to buy a web search, so the surface can say so.
    *
@@ -121,22 +139,10 @@ export async function askCanvasChat(
    */
   onSearching?: (found: number | null) => void,
 ): Promise<CanvasTurnReply> {
-  let webContext = "";
-  let sources: ChatWebResult[] = [];
-  if (shouldSearchWeb(question)) {
-    // 🔴 TWO BEATS, BECAUSE THE COUNT DOES NOT EXIST YET AT THE FIRST ONE. ChatGPT says "Searching
-    // 54 websites" because it issues the queries and knows the number; ours comes back with the
-    // results. So the first call says a search is happening (`null`) and the second says how much
-    // came back — which is the honest version of the same information, and neither is a timer.
-    onSearching?.(null);
-    const result = await searchWebContext(uid, buildFreshSearchQuery(question), signal);
-    onSearching?.(result.sources.length);
-    webContext = result.context;
-    sources = result.sources;
-  }
-
   const materialContext = groundingBlock(canvas.sources);
-  const reply = await postChatCompletion(
+
+  /** One round of the envelope. `webContext` carries everything found so far; empty on the first. */
+  const ask = (webContext: string, searchesLeft: number) => postChatCompletion(
     uid,
     turnRouterMessages({
       context: {
@@ -151,6 +157,8 @@ export async function askCanvasChat(
         // packet builder so `turnRouterMessages` stays pure and its tests stay deterministic.
         today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
         lessonInProgress: surroundings.lessonInProgress,
+        searchesLeft,
+        stagedPassage,
         webContext,
       },
       sourceRule: sourceDisagreementInstruction({
@@ -162,16 +170,71 @@ export async function askCanvasChat(
     { decision: CHAT_DECISION, signal },
   );
 
-  if (reply.errorText) return { consulted: [], decision: null, error: reply.errorText, sources: [] };
-  const decision = reply.text ? decisionOrReply(reply.text) : null;
+  const first = await ask("", MAX_SEARCH_ROUNDS);
+  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [] };
+  let decision = first.text ? decisionOrReply(first.text) : null;
+
+  // 🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH. It used to get exactly one search: the
+  // packet told it "the search has happened, answer from them", so a first query aimed slightly
+  // wrong ended the turn — the model had to answer from pages it had already judged unhelpful, and
+  // could not say so. Owner: *"deepseek should decide itself when it has enough information to
+  // answer."* So the loop ends when `needsWeb` comes back false, not when a counter says so.
+  //
+  // 🔴 WHAT COMES BACK ACCUMULATES RATHER THAN REPLACING. A later search narrows or corrects an
+  // earlier one; throwing the earlier pages away would make the model re-find them, and would make
+  // an inline [3] in the answer point at whatever happened to be third in the last batch.
+  const seen = new Set<string>();
+  const sources: ChatWebResult[] = [];
+  for (let round = 0; round < MAX_SEARCH_ROUNDS && decision?.needsWeb; round += 1) {
+    // 🔴 TWO BEATS, BECAUSE THE COUNT DOES NOT EXIST YET AT THE FIRST ONE. ChatGPT says "Searching
+    // 54 websites" because it issues the queries and knows the number; ours comes back with the
+    // results. So the first call says a search is happening (`null`) and the second says how much
+    // came back — which is the honest version of the same information, and neither is a timer.
+    //
+    // 🔴 THE SECOND BEAT REPORTS THE RUNNING TOTAL, NOT THIS ROUND'S HAUL. The learner is watching
+    // one turn, and a counter that went 12, then 9, then 14 would describe our loop rather than
+    // their search. What they are being told is how many pages this answer stands on.
+    onSearching?.(null);
+    const found = await searchWebContext(
+      uid,
+      decision.webQuery || question,
+      signal,
+      decision.webResults,
+      decision.webFreshness,
+    );
+    for (const source of found.sources) {
+      if (seen.has(source.url)) continue;
+      seen.add(source.url);
+      sources.push(source);
+    }
+    onSearching?.(sources.length);
+    // Re-numbered over everything gathered, so the numbers the model reads are the numbers
+    // `citedWebResults` resolves against.
+    const next = await ask(formatWebSearchContext(sources), MAX_SEARCH_ROUNDS - round - 1);
+    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, sources: [] };
+    // A failed round leaves the previous answer standing, which is better for the learner than an
+    // error — and stops the loop, since a null decision cannot ask for another search.
+    decision = (next.text ? decisionOrReply(next.text) : null) ?? decision;
+    if (!next.text) break;
+  }
+
+  // 🔴🔴 THE LIST THE MODEL WAS NUMBERED AGAINST, COMPUTED THE SAME WAY `formatWebSearchContext`
+  // COMPUTES IT. An `[n]` is an index into what the model was SHOWN, and what it was shown is the
+  // usable results that fitted the context budget — not the raw haul. Resolving a marker against
+  // the raw list would attribute a sentence to the wrong page as soon as one result was unusable
+  // or one was evicted, and a citation that resolves to real text from the wrong place is the
+  // exact defect this repository's provenance rules exist to make impossible.
+  const numbered = webContextThatFits(usableWebResults([...sources])).kept;
   return {
     decision,
     error: null,
+    // 🔴 AND IT IS ALSO THE HONEST FALLBACK WHEN THE MODEL CITES NOTHING. Measured in a browser on
+    // 2026-08-20: "whats the latest news on ai?" returned an answer plainly built from live pages
+    // with NOT ONE `[n]` in it — so `citedWebResults` returned empty, and the learner saw an answer
+    // about this week's news with no indication that anything had been searched at all.
+    consulted: numbered,
     // Only the pages the answer cited become promotion candidates. Search rank is retrieval
     // evidence, not permission to turn every hit into durable learning material.
-    // 🔴 THE SAME LIST THE MODEL WAS NUMBERED AGAINST. `formatWebSearchContext` numbers
-    // `usableWebResults(sources)`, so that is what an `[n]` counts into — not the raw results.
-    consulted: usableWebResults([...sources]),
-    sources: decision?.say ? citedWebResults(decision.say, sources) : [],
+    sources: decision?.say ? citedWebResults(decision.say, numbered) : [],
   };
 }

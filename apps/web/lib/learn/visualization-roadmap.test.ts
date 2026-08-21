@@ -581,3 +581,51 @@ test("🔴 §47 — the Azure key has exactly one reader, and it is not a client
   assert.ok(!config.includes("use client"));
   assert.match(CONTRACT, /THE KEY IS READ IN ONE FILE, AND A TEST ENFORCES IT/);
 });
+
+test("🔴 §47 — the provider the router chose is the provider that is actually called", () => {
+  // 🔴 THIS IS THE DEFECT THE GUARD EXISTS FOR, AND IT SHIPPED. `routeSpeech` has returned a
+  // `provider` since §43 and grew a second value in §47 — and `use-canvas-speech` posted every
+  // utterance to `nemesis-speak` regardless. Every router test passed, the contract described two
+  // synthesisers, and one of them could never speak a word.
+  //
+  // A decision that is computed, logged, tested and then discarded at the call site is worse than no
+  // decision, because everything upstream of the call site looks correct.
+  const speechHook = readFileSync(
+    new URL("../../components/workspace/learn/use-canvas-speech.ts", import.meta.url),
+    "utf8",
+  );
+  const voiceHook = readFileSync(
+    new URL("../../components/workspace/learn/use-canvas-voice.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(speechHook, /provider\?:\s*"xai"\s*\|\s*"azure"/, "the speech hook cannot be told which provider to use");
+  assert.match(speechHook, /\/api\/speech\/tts/, "the speech hook has no way to reach Azure");
+  assert.match(speechHook, /nemesis-speak/, "the speech hook lost the xAI lane");
+  assert.match(voiceHook, /provider: route\.provider/, "the router's provider is decided and then dropped");
+});
+
+test("🔴 §47 — hearing a phrase again is not gated on voice mode", () => {
+  // 🔴 THE TWO PREFERENCES ARE DIFFERENT AND CONFLATING THEM WOULD HIDE THE FEATURE. Voice mode
+  // means "do not narrate my questions". It does not mean "never let me hear how this word sounds" —
+  // and a foreign phrase is not a second channel for text, it IS the material. Someone with voice
+  // mode off must still be able to press play on `ありがとう`.
+  const control = readFileSync(new URL("../../components/workspace/learn/hear-again.tsx", import.meta.url), "utf8");
+  const voiceHook = readFileSync(new URL("../../components/workspace/learn/use-canvas-voice.ts", import.meta.url), "utf8");
+  assert.equal(/voiceMode|VoiceMode|mode === "on"/.test(control), false, "the replay control reads voice mode");
+  assert.match(voiceHook, /replay: speech\.replay/, "the canvas cannot offer a replay at all");
+  // It names Azure because the variety is the whole point of this lane.
+  assert.match(control, /provider: "azure"/);
+  assert.match(control, /TARGET_LANGUAGE_SPEED/, "a drilled phrase is slowed, which teaches a rhythm the language lacks");
+});
+
+test("🔴 §47 — the replayable phrase is looked up, never guessed from the characters", () => {
+  // Script detection would be wrong on exactly the pair most learners study: Spanish and English
+  // share an alphabet. The locale was recorded when the pair was read.
+  const router = readFileSync(new URL("./speech-route.ts", import.meta.url), "utf8");
+  const replay = router.slice(router.indexOf("export function replayableLocale"));
+  for (const guess of ["charCodeAt", "\\\\p{Script", "normalize(", "/[^\\\\x00-\\\\x7F]/"]) {
+    assert.equal(replay.includes(guess), false, `replayableLocale is inferring a language from the text (${guess})`);
+  }
+  assert.match(replay, /pair\.leftLocale/);
+  assert.match(replay, /pair\.rightLocale/);
+});

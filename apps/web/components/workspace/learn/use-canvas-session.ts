@@ -17,7 +17,7 @@ import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { TurnDecision } from "@/lib/learn/turn-router";
-import { groundingQuery, groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
+import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
   explainBlock,
@@ -236,6 +236,8 @@ export interface CanvasSession {
     /** Fired immediately before a `study` turn writes into an existing study document, so the
      *  caller can stamp the action that was in flight when the learner asked for material. */
     onStudyDocument?: () => void,
+    /** The one passage the learner staged, which scopes the turn without classifying it. */
+    staged?: CanvasBlock | null,
   ) => Promise<TurnDecision | null>;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
@@ -753,7 +755,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         if (id && needsGrounding({ attachedSources: latest.current.sources.length, topic: title })) {
           setBusy({ kind: "source", label: "Finding material on that" });
           try {
-            const found = await searchWebContext(id, groundingQuery(title));
+            // The title IS the subject: it came from the model, not from what the learner typed.
+            const found = await searchWebContext(id, title);
             const chosen = groundingSources(found.sources);
             // 🔴🔴 ONE PAGE PER `try`, NOT ONE `try` AROUND THE WHOLE LOOP. With a cap of three this
             // barely mattered; with the cap removed (owner call, 2026-08-19) a single unreachable
@@ -885,6 +888,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       question: string,
       surroundings: TurnSurroundings,
       onStudyDocument?: () => void,
+      /**
+       * The passage the learner staged, when they staged exactly one.
+       *
+       * 🔴 IT SCOPES THE TURN, IT DOES NOT CLASSIFY IT. The block's text goes into the packet so
+       * the model can resolve "this", and a `study` turn writes against that block rather than
+       * against the whole document. What the learner wants done with it is still the model's
+       * reading — which is the point: it used to be `/^(where|which source|what source)\b/i`, so
+       * three openers were answered beside the passage and every other sentence silently EDITED it.
+       */
+      staged?: CanvasBlock | null,
     ): Promise<TurnDecision | null> => {
       const id = requireUid();
       if (!id) return null;
@@ -895,7 +908,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
       // `thinking-phases.ts`'s rule holds: a caption is emitted by a step that is genuinely running,
       // never by a timer walking through plausible-sounding stages.
-      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, (found) => {
+      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "", (found) => {
         // 🔴 THE COUNT WHEN THERE IS ONE, AND NEVER A GUESS BEFORE. `thinking-phases.ts`'s rule is
         // that a caption is emitted by a step genuinely running; a number invented before the
         // results land would be the same theatre with more precision.
@@ -916,6 +929,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return null;
       }
 
+      // 🔴 HANDED BACK, NOT ACTED ON. Which passage a rewrite lands on is §11's referent rule, and
+      // the runtime state it reads (unread chunk, awaiting demonstration) lives in the component.
+      // See `routeRewrite` in lib/learn/canvas-phrases.ts.
+      if (decision.then === "rewrite") return decision;
+
       if (decision.then === "study") {
         // 🔴 THE LEARNER'S OWN WORDS, KEPT FOR THIS SITTING ONLY. The teaching controller needs to
         // know the difference between "teach me glycolysis" and "quiz me on glycolysis", which the
@@ -931,13 +949,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           if (decision.say) {
             setAside({ blockId: null, kind: "opening", question: said, sources: [], text: decision.say });
           }
-          begin(decision.topic ?? said);
+          // 🔴 THE MODEL'S SUBJECT OR NOTHING, NEVER THE RAW SENTENCE. `begin` uses this as the
+          // canvas TITLE, and falling back to `said` is what produced canvases called "teach me
+          // innate immunity" — and then a web search for that phrase, which `groundingQuery`
+          // existed to strip back down. With no subject named, this starts from the attached
+          // material; with neither, `canStart` refuses and says why.
+          begin(decision.topic ?? undefined);
         } else {
           // 🔴 STAMPED BEFORE THE WRITE, NOT AFTER IT. `materialOwnsAttention` compares the action
           // that was in flight WHEN THE LEARNER ASKED against the one in flight now; reading it
           // after the round trip would record whichever action the policy had moved on to.
           onStudyDocument?.();
-          await command(said, []);
+          await command(said, staged ? [staged] : []);
         }
         return decision;
       }
@@ -950,7 +973,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return null;
       }
       setAside({
-        blockId: null,
+        // Under the passage when they staged one, at the top of the canvas when they did not.
+        blockId: staged?.id ?? null,
         // 🔴 THE ONE THAT DISPLACES. This branch is reached only when the router said `reply`, which
         // means the learner asked something rather than asking to be taught — so this text IS the
         // turn, and whatever the policy was showing steps aside for it. The `study` branch above
@@ -979,9 +1003,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const learnFromAside = useCallback(async () => {
     const current = aside;
     if (!current || current.blockId !== null) return;
-    // 🔴 THE SUBJECT THE MODEL READ, FALLING BACK TO WHAT THEY TYPED. `begin` takes this as the
-    // canvas TITLE, so starting from the raw question left canvases called "what is incretin?".
-    const topic = (current.topic ?? current.question ?? "").trim();
+    // 🔴 THE SUBJECT THE MODEL READ, AND ONLY THAT. `begin` takes this as the canvas TITLE, and
+    // falling back to the raw question is what left canvases called "what is incretin?". The Learn
+    // this button is already gated on `aside.topic` existing, so the fallback was never reachable
+    // for a good reason — only for a bad one.
+    const topic = (current.topic ?? "").trim();
     if (!topic) return;
     const sources = current.sources ?? [];
     setAside(null);
