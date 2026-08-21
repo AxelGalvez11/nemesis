@@ -17,14 +17,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { shouldSpeakAction, type SpokenMoment } from "@/lib/learn/canvas-speech";
 import { LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
 import {
+  type AutoDictation,
   DEFAULT_VOICE_MODE,
+  DEFAULT_VOICE_SPEED,
+  nextVoiceSpeed,
   readAutoDictation,
   readVoiceMode,
+  readVoiceSpeed,
   shouldOpenDictation,
+  type VoiceMode,
+  type VoiceSpeed,
   writeAutoDictation,
   writeVoiceMode,
-  type AutoDictation,
-  type VoiceMode,
+  writeVoiceSpeed,
 } from "@/lib/learn/voice-preferences";
 
 import { correctionLead } from "./correction-copy";
@@ -48,6 +53,11 @@ export interface CanvasVoice {
   };
   /** Speak an arbitrary passage on demand; pressing again repeats it. */
   speakAloud: (text: string) => void;
+  /** How fast Nemesis reads, and the control that cycles it. Shown twice by design (owner
+   *  2026-08-20, "both"): a default in the voice picker, and a per-answer control in the icon row
+   *  under a reply — the same value, reachable where each decision is actually made. */
+  speed: VoiceSpeed;
+  onCycleSpeed: () => void;
   /** Straight onto `<CanvasComposer listenSignal={…}>`. Changes when the microphone should open. */
   listenSignal: number | null;
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
@@ -124,6 +134,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
    *  Reading `localStorage` during render is a hydration mismatch; this file already solved that
    *  once and the answer is the effect below, not a second pattern. */
   const [voiceId, setVoiceId] = useState<string>(DEFAULT_VOICE);
+  const [speed, setSpeed] = useState<VoiceSpeed>(DEFAULT_VOICE_SPEED);
   const speech = useCanvasSpeech();
 
   // Browser-only facts, corrected after the first paint. See the file header.
@@ -133,6 +144,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     setAutoDictation(readAutoDictation(storage));
     setDictationSupported(speechRecognitionSupported());
     setVoiceId(readVoice(storage?.getItem(VOICE_STORAGE_KEY) ?? null));
+    setSpeed(readVoiceSpeed(storage));
   }, []);
 
   /** The latest values, for the post-speech decision. 🔴 READ AT THE MOMENT OF USE, NEVER LATCHED
@@ -238,11 +250,17 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
      * refuses notation and bounds the length — because those protect the learner from an
      * unlistenable noise, not from hearing a paragraph they chose.
      */
+    onCycleSpeed: () => {
+      const next = nextVoiceSpeed(speed);
+      setSpeed(next);
+      writeVoiceSpeed(typeof window === "undefined" ? null : window.localStorage, next);
+    },
     speakAloud: (text: string) => {
       // Restarting mid-sentence is what "repeat" means when it is already talking.
       speech.stop();
-      void speech.speak(`aloud:${text.slice(0, 48)}`, text, { locale: LOCALE_UNSPECIFIED, speed: 1, voiceId });
+      void speech.speak(`aloud:${text.slice(0, 48)}`, text, { locale: LOCALE_UNSPECIFIED, speed, voiceId });
     },
+    speed,
     stopSpeaking: speech.stop,
   };
 }

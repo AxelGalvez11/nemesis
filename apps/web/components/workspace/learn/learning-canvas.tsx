@@ -35,6 +35,7 @@ import { CanvasFade } from "./canvas-fade";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
+import { ReplyActions } from "./reply-actions";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -1201,6 +1202,27 @@ export function LearningCanvas({
                     />
                   </div>
                 ),
+              )}
+
+              {/* 🔴 AFTER THE ANSWER, AND ONLY ONCE IT HAS ARRIVED. Copying half an answer copies
+                  half an answer, and a play button on a sentence about to be replaced reads as
+                  broken. `turnInFlight` is the same signal the thinking screen keys on. */}
+              {!turnInFlight && replyText.trim() && (
+                <ReplyActions
+                  onCycleSpeed={voice.onCycleSpeed}
+                  onSpeak={voice.speakAloud}
+                  onStop={voice.stopSpeaking}
+                  speaking={voice.header.speaking}
+                  speed={voice.speed}
+                  // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
+                  // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
+                  // them, and a synthesiser reading it aloud is worse.
+                  text={replySegments(replyText, replyVisualList)
+                    .filter((segment) => segment.kind === "prose")
+                    .map((segment) => (segment as { text: string }).text)
+                    .join("\n\n")
+                    .trim()}
+                />
               )}
 
               {/* Which live pages the answer actually used, each individually promotable. This is
