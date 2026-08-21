@@ -30,6 +30,7 @@ const EMPTY: TurnContext = {
   materialContext: "",
   objectives: 0,
   passages: 0,
+  searchesLeft: 0,
   sources: 0,
   stagedPassage: "",
   today: "Tuesday, 18 August 2026",
@@ -256,4 +257,50 @@ test("🔴 nothing in this module can produce a study turn the model did not ask
     assert.notEqual(read?.then, "study", `"${raw}" was turned into a lesson`);
   }
   assert.equal(decisionOrReply('{"say":"alright.","then":"study"}')?.then, "study");
+});
+
+// ── 🔴 searching until it has enough, rather than once with a guess ──────────
+//
+// Owner: *"deepseek should decide itself when it has enough information to answer."* A single
+// upfront count was still a bet made blind — nothing has been read at the moment it is chosen. So
+// the packet has to let the model say "not yet", and has to tell it how much rope is left.
+
+test("with results in hand, the model is told it may search again", () => {
+  const packet = turnRouterMessages({
+    context: { ...EMPTY, searchesLeft: 3, webContext: "1. A page\nURL: https://a.test" },
+    utterance: "has that guideline been revised?",
+  });
+  const state = packet.map((message) => message.content).join("\n");
+  assert.match(state, /You may run 3 more searches/);
+  // And the contract says what "again" is FOR, so a second search is aimed rather than reflexive.
+  assert.match(state, /Say true AGAIN, with a different webQuery/);
+  assert.match(state, /Stop as soon as you can answer properly/);
+});
+
+test("one search left is not phrased as 'searches'", () => {
+  const packet = turnRouterMessages({
+    context: { ...EMPTY, searchesLeft: 1, webContext: "1. A page" },
+    utterance: "why?",
+  });
+  assert.match(packet.map((message) => message.content).join("\n"), /run 1 more search this turn/);
+});
+
+// 🔴 THE LAST ROUND MUST SAY SO, NOT GO QUIET. A model cut off without warning has already spent
+// its final search on a query it thought was one of several; a model that knows says what it could
+// not settle instead of implying it looked everywhere.
+test("with no searches left the packet says so and asks for the gap to be named", () => {
+  const packet = turnRouterMessages({
+    context: { ...EMPTY, searchesLeft: 0, webContext: "1. A page" },
+    utterance: "why?",
+  });
+  const state = packet.map((message) => message.content).join("\n");
+  assert.match(state, /no further search is available this turn/);
+  assert.match(state, /say plainly what it did not settle/);
+});
+
+// Before any search has run there is nothing to report, and the packet must not talk about
+// results that do not exist.
+test("a first pass says nothing about earlier searches", () => {
+  const packet = turnRouterMessages({ context: { ...EMPTY, searchesLeft: 4 }, utterance: "hello" });
+  assert.doesNotMatch(packet.map((message) => message.content).join("\n"), /earlier searches/);
 });

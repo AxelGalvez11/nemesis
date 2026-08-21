@@ -47,6 +47,7 @@ const FRESH: TurnContext = {
   materialContext: "",
   objectives: 0,
   passages: 0,
+  searchesLeft: 0,
   sources: 0,
   stagedPassage: "",
   today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),

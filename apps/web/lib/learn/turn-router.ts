@@ -180,6 +180,16 @@ export interface TurnContext {
   /** Formatted live web results, when a search ran. Empty when it did not. */
   webContext: string;
   /**
+   * How many more searches this turn may still run.
+   *
+   * 🔴 STATED TO THE MODEL RATHER THAN ENFORCED BEHIND ITS BACK. Deciding it has enough to answer
+   * is the model's judgement (owner: "deepseek should decide itself when it has enough information
+   * to answer"), and the loop stops when it stops asking. This number exists only so a turn cannot
+   * run away — and a model that is TOLD the budget can spend its last search on the best query it
+   * has, where one that is silently cut off has already wasted it.
+   */
+  searchesLeft: number;
+  /**
    * The conversation so far, oldest first, learner and Nemesis alternating.
    *
    * 🔴 BOUNDED, AND BOTH SIDES. The canvas used to keep the learner's last six utterances in a ref
@@ -292,8 +302,17 @@ const DECISION_CONTRACT = [
   + "guidelines, schedules, anything the learner says is new or has changed, or a specific source "
   + "they want read. It is false for settled knowledge, explanations, definitions, calculations, "
   + "translations, and anything answerable from the attached material. Searching costs money and "
-  + "time, so when it is genuinely borderline, say false. If live web results are already in this "
-  + "packet, the search has happened: answer from them and say false.",
+  + "time, so when it is genuinely borderline, say false.",
+  "",
+  // 🔴 THE MODEL DECIDES WHEN IT HAS ENOUGH, WHICH MEANS IT HAS TO BE ABLE TO SAY "NOT YET". A
+  // single upfront count was still a guess made blind: nothing has been read at the moment it is
+  // chosen. This is the half that makes it a judgement rather than a bet.
+  "When results are already in this packet, you have searched once. Say false if they answer the "
+  + "question. Say true AGAIN, with a different webQuery, if they did not: because the first search "
+  + "was aimed wrong, because they disagree and you want to see which is right, or because they "
+  + "opened something you now need to look up. Everything you have found so far stays in front of "
+  + "you, so a second search adds to it rather than replacing it. Stop as soon as you can answer "
+  + "properly; do not keep searching to be thorough.",
   "",
   '"webQuery" is what to type into a search engine, when needsWeb is true. Write it as a search '
   + "rather than as a sentence, and put a date or year in it yourself when recency is the point. "
@@ -362,6 +381,15 @@ export function stateBlock(context: TurnContext): string {
       : "The study document is empty, so this canvas has not begun teaching.",
   );
   if (context.lessonInProgress) lines.push("A lesson is in progress on this canvas right now.");
+  if (context.webContext.trim()) {
+    lines.push(
+      context.searchesLeft > 0
+        ? `Web results from your earlier searches are below. You may run ${context.searchesLeft} more `
+          + `${context.searchesLeft === 1 ? "search" : "searches"} this turn if they did not settle the question.`
+        : "Web results from your earlier searches are below, and no further search is available this "
+          + "turn. Answer from what you have, and say plainly what it did not settle.",
+    );
+  }
   if (context.stagedPassage.trim()) {
     lines.push(
       "The learner has highlighted this passage, so anything they say now is most likely about it:\n"

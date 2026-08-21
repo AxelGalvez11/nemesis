@@ -36,6 +36,7 @@
 import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import {
   citedWebResults,
+  formatWebSearchContext,
   type ChatWebResult,
 } from "@/lib/workspace/chat-web-search";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
@@ -54,6 +55,21 @@ import {
  *  descriptive only (the actual search runs beforehand, in `askCanvasChat`, and its result is
  *  folded into the packet before this decision object ever reaches the wire). */
 const CHAT_DECISION: ChatRouteDecision = { route: "conversation", model: "deepseek-chat", searchWeb: false };
+
+/**
+ * How many searches one turn may run before it must answer.
+ *
+ * 🔴 A BACKSTOP AGAINST A RUNAWAY TURN, NOT A JUDGEMENT ABOUT SUFFICIENCY. Whether the evidence
+ * settles the question is the model's call and the loop ends when it stops asking; this only stops
+ * a turn that never stops. It is stated to the model in the packet (`searchesLeft`) rather than
+ * enforced silently, because a model that knows it has one search left spends it on its best query,
+ * where one that is cut off mid-thought has already wasted it.
+ *
+ * Four, because the shapes that need more than one are real and bounded: a first query aimed wrong,
+ * sources that disagree and need a tiebreak, and an answer that opens one more thing worth looking
+ * up. A fifth round has not been a thing anyone could name.
+ */
+export const MAX_SEARCH_ROUNDS = 4;
 
 /** What only the canvas's runtime knows, which the session cannot read for itself. */
 export interface TurnSurroundings {
@@ -89,8 +105,8 @@ export async function askCanvasChat(
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
 
-  /** One round of the envelope. `webContext` is empty on the first pass and full on the second. */
-  const ask = (webContext: string) => postChatCompletion(
+  /** One round of the envelope. `webContext` carries everything found so far; empty on the first. */
+  const ask = (webContext: string, searchesLeft: number) => postChatCompletion(
     uid,
     turnRouterMessages({
       context: {
@@ -105,6 +121,7 @@ export async function askCanvasChat(
         // packet builder so `turnRouterMessages` stays pure and its tests stay deterministic.
         today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
         lessonInProgress: surroundings.lessonInProgress,
+        searchesLeft,
         stagedPassage,
         webContext,
       },
@@ -117,21 +134,36 @@ export async function askCanvasChat(
     { decision: CHAT_DECISION, signal },
   );
 
-  const first = await ask("");
+  const first = await ask("", MAX_SEARCH_ROUNDS);
   if (first.errorText) return { decision: null, error: first.errorText, sources: [] };
   let decision = first.text ? decisionOrReply(first.text) : null;
-  let sources: ChatWebResult[] = [];
 
-  // 🔴 THE SECOND ROUND HAPPENS ONLY WHEN THE MODEL ASKED FOR IT, and only once — the packet it
-  // gets back says the search has already run, so a model that asks again is answered from what it
-  // was given rather than sent round a third time.
-  if (decision?.needsWeb) {
+  // 🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH. It used to get exactly one search: the
+  // packet told it "the search has happened, answer from them", so a first query aimed slightly
+  // wrong ended the turn — the model had to answer from pages it had already judged unhelpful, and
+  // could not say so. Owner: *"deepseek should decide itself when it has enough information to
+  // answer."* So the loop ends when `needsWeb` comes back false, not when a counter says so.
+  //
+  // 🔴 WHAT COMES BACK ACCUMULATES RATHER THAN REPLACING. A later search narrows or corrects an
+  // earlier one; throwing the earlier pages away would make the model re-find them, and would make
+  // an inline [3] in the answer point at whatever happened to be third in the last batch.
+  const seen = new Set<string>();
+  const sources: ChatWebResult[] = [];
+  for (let round = 0; round < MAX_SEARCH_ROUNDS && decision?.needsWeb; round += 1) {
     const found = await searchWebContext(uid, decision.webQuery || question, signal, decision.webResults);
-    sources = found.sources;
-    const second = await ask(found.context);
-    if (second.errorText) return { decision: null, error: second.errorText, sources: [] };
-    // A failed second round still leaves the first answer standing, which is better than an error.
-    decision = (second.text ? decisionOrReply(second.text) : null) ?? decision;
+    for (const source of found.sources) {
+      if (seen.has(source.url)) continue;
+      seen.add(source.url);
+      sources.push(source);
+    }
+    // Re-numbered over everything gathered, so the numbers the model reads are the numbers
+    // `citedWebResults` resolves against.
+    const next = await ask(formatWebSearchContext(sources), MAX_SEARCH_ROUNDS - round - 1);
+    if (next.errorText) return { decision: null, error: next.errorText, sources: [] };
+    // A failed round leaves the previous answer standing, which is better for the learner than an
+    // error — and stops the loop, since a null decision cannot ask for another search.
+    decision = (next.text ? decisionOrReply(next.text) : null) ?? decision;
+    if (!next.text) break;
   }
 
   return {
