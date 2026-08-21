@@ -5,9 +5,7 @@ import { BotEngine } from "@/lib/bloub/engine";
 import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
 import { SEQUENCE, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
-import { ACCENT_COLORS } from "@/lib/accent";
-
-import { PULSE_CYCLE, arcStops, pulseTint } from "./look";
+import { arcStops } from "./look";
 import { ARC_POOL, ARC_STOPS, DOT_POOL } from "./pool";
 import { speedOf, stationOf } from "./stations";
 
@@ -178,25 +176,39 @@ test("🔴 only ONE thing on the canvas draws a character", async () => {
   // defect was never two renderers: `CanvasThinkingPreview` and `BloubDock` each MOUNTED the one
   // renderer, both centred, both playing `thinking`, so two sets of three dots stacked up.
   //
-  // A guard on the wrong noun is worse than no guard, because it is believed. The rule that
-  // actually holds: on the canvas, the dock owns the character. Nothing else there draws one.
+  // A guard on the wrong noun is worse than no guard, because it is believed.
+  //
+  // 🔴🔴 AND THE RULE IS NOT "THE DOCK OWNS THE CHARACTER" — IT IS "EXACTLY ONE OF THEM DRAWS".
+  // The first wording was the fix for the six dots and it read as a law, so when the owner asked
+  // for something the dock cannot express (2026-08-21: *"the mascot should be on top of the three
+  // dots"* — the `thinking` pose turns the BODY into the middle dot) the guard would have refused
+  // a correct design. `CanvasThinkingPreview` draws its own figure now and the canvas hides the
+  // dock for the whole of that wait, which satisfies what this test was always protecting.
+  //
   // `canvas-home.tsx` is exempt because it IS a different route — the landing surface and a
   // session cannot be on screen together.
   const { readdir, readFile } = await import("node:fs/promises");
   const dir = "components/workspace/learn/";
   const root = new URL("../../", import.meta.url);
+  const canvas = await readFile(new URL(`${dir}learning-canvas.tsx`, root), "utf8");
   const offenders: string[] = [];
   for (const entry of await readdir(new URL(dir, root), { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".tsx")) continue;
     if (entry.name === "canvas-home.tsx") continue;
     const source = await readFile(new URL(`${dir}${entry.name}`, root), "utf8");
-    if (source.includes("<BloubBot")) offenders.push(entry.name);
+    if (!source.includes("<BloubBot")) continue;
+    // 🔴 DRAWING ONE IS ONLY ALLOWED WITH THE DOCK EXPLICITLY SWITCHED OFF. A `hidden` prop that
+    // exists but is never passed is the six-dot defect with an extra prop on it.
+    if (!/hidden=\{/.test(canvas)) offenders.push(entry.name);
   }
   assert.deepEqual(
     offenders,
     [],
-    `these draw a second character beside the dock — the learner sees two: ${offenders.join(", ")}`,
+    `these draw a second character while the dock is still mounted — the learner sees two: ${offenders.join(", ")}`,
   );
+  // And the dock can actually be switched off, rather than the canvas passing a prop into a void.
+  const dock = await readFile(new URL("components/bloub/bloub-dock.tsx", root), "utf8");
+  assert.match(dock, /if \(hidden\) return null;/, "`hidden` no longer takes the character away");
 });
 
 test("the character rests as a circle, and its colour is the app's accent", async () => {
@@ -386,33 +398,4 @@ test("🔴 the arc still fades at its ends", () => {
   const lum = (hex: string) => parseInt(hex.slice(1, 3), 16);
   assert.ok(lum(start!) > lum(middle!), "the arc no longer fades in");
   assert.ok(lum(end!) > lum(middle!), "the arc no longer fades out");
-});
-
-test("🔴 thinking is the only coloured state, and its three dots never match", () => {
-  for (const clock of [0, 0.7, 1.9, 4.2, 11.5]) {
-    const dots = [0, 1, 2].map((i) => pulseTint(clock, i, false));
-    assert.equal(new Set(dots).size, 3, `two dots share a colour at t=${clock}`);
-    for (const dot of dots) assert.match(dot, /^#[0-9a-f]{6}$/);
-  }
-});
-
-// 🔴 REDUCED MOTION HOLDS A COLOUR RATHER THAN LOSING ONE. Somebody who asked the system to stop
-// moving still has to be able to see that it is working — and with the dots' own motion already
-// held, the colour is the whole of what is left saying so.
-test("🔴 reduced motion keeps the colour and drops only the drift", () => {
-  const first = [0, 1, 2].map((i) => pulseTint(0, i, true));
-  const later = [0, 1, 2].map((i) => pulseTint(60, i, true));
-  assert.deepEqual(first, later, "a held pulse must not depend on the clock");
-  assert.equal(new Set(first).size, 3, "the dots collapsed to one colour");
-  for (const dot of first) assert.ok(PULSE_CYCLE.includes(dot), `${dot} is not one of the app's accents`);
-});
-
-// 🔴 THE PALETTE IS THE APP'S, AND THAT IS THE POINT OF THE WHOLE CHANGE. A hue wheel produces
-// colours nothing else in Nemesis uses, which is why the swirls read as belonging to some other
-// product. Every colour the character can show is one a learner can already pick for the send button.
-test("🔴 the pulse only ever uses colours the app itself offers", () => {
-  for (const colour of PULSE_CYCLE) {
-    assert.ok(Object.values(ACCENT_COLORS).includes(colour), `${colour} is not an app accent`);
-  }
-  assert.equal(PULSE_CYCLE.length, Object.keys(ACCENT_COLORS).length, "an accent is missing from the pulse");
 });

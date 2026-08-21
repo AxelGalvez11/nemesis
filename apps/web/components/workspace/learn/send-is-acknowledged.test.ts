@@ -93,13 +93,25 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption sits 
   assert.ok(!/canvas-forming/.test(previewCode), "the skeleton bars are back");
   assert.ok(!/LINES\.map/.test(previewCode), "something is still drawing placeholder bars");
 
-  // Both waits now render the same thing: a caption in a ROW, so it sits beside the character the
-  // dock draws rather than a long way beneath it.
-  assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 2, "one of the two waits is still a column");
+  // 🔴 THE "BESIDE" HALF SURVIVES, THE "WHAT IT IS BESIDE" HALF MOVED. Owner, 2026-08-21: *"when
+  // thinking, the mascot should be on top of the three dots. the thinking words should be on the
+  // right of the three dots."* So the figure is now a COLUMN — character over dots — with the
+  // caption in a row beside the DOTS. The thing this test has always been protecting is that the
+  // caption never ends up a long way under the character, printing through it or reading as two
+  // separate events; that is still exactly what is checked, one element lower down.
+  assert.match(previewCode, /flex items-center gap-3/, "the dots and the caption are no longer a row");
+  const mark = previewCode.slice(previewCode.indexOf("function ThinkingMark"));
+  assert.ok(
+    mark.indexOf('className="canvas-thinking-dot') < mark.indexOf('className="canvas-thinking-word'),
+    "the caption is no longer to the right of the dots",
+  );
   assert.match(canvasCode, /mascot=\{turnInFlight\}/);
-  // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
-  // of three dots on one screen; the dock owns the character, this owns the caption.
-  assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");
+  // 🔴 AND THE PREVIEW NOW DRAWS THE CHARACTER, WHICH IS ONLY SAFE BECAUSE THE DOCK STANDS DOWN.
+  // Two mounts of one renderer put two sets of three dots on one screen. The rule was never "the
+  // dock owns the character" for its own sake — it was "exactly one of them draws" — and the
+  // canvas enforces it by hiding the dock for the whole of this wait.
+  assert.match(previewCode, /<BloubBot/, "the figure lost its character");
+  assert.match(canvasCode, /hidden=\{presence === "preparing"\}/, "two characters can share the surface again");
 });
 
 // ── The composer travels to where it is about to be ─────────────────────────

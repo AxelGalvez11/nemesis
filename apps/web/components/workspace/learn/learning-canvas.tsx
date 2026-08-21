@@ -674,6 +674,8 @@ export function LearningCanvas({
           {/* Nothing is docked yet — there is no composer to stand above — so the character
               simply holds the middle, which is where it would have walked to anyway. */}
           <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
+          {/* This branch is one database read long and shows no caption, so the dock's own
+              animation is the whole of what says "working" here. Nothing draws a second one. */}
           {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
               database read long. It was not fine while it also covered knowledge resolution, which
               is a model call and an ingestion and can run for a minute. */}
@@ -1500,6 +1502,13 @@ export function LearningCanvas({
         // 🔴 THE ANIMATION IS UNCHANGED. `ACTIVITY_STATE` maps `thinking` and `preparing` onto the
         // same state, so this alters WHERE the character stands and WHEN, never what it plays.
         state={stateForCanvas({ thinking: turnInFlight, preparing: presence === "preparing" })}
+        // 🔴🔴 EXACTLY ONE CHARACTER ON THE SURFACE, WHICH IS THE SIX-DOT RULE. `CanvasThinkingPreview`
+        // now draws its own — a resting blob standing over three dots of its own, because the
+        // engine's `thinking` pose turns the body INTO the middle dot and cannot express a blob
+        // above a row. Two mounts of one renderer on one surface is what produced six dots before;
+        // the fix then was "the dock owns the character", so a surface that draws its own has to
+        // take the dock away rather than hope the two never overlap.
+        hidden={presence === "preparing"}
       />
 
       {/* 🔴 ALONGSIDE THE QUESTION, NOT OVER IT. A judgement that runs long leaves the stimulus

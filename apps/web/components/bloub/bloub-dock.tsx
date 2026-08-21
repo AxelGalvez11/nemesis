@@ -78,6 +78,21 @@ export interface BloubDockProps {
    * and a character pinned to the WINDOW's lower-left corner lands inside it.
    */
   contain?: boolean;
+  /**
+   * Take the character off this surface entirely.
+   *
+   * 🔴🔴 IT EXISTS BECAUSE ONE SURFACE NOW DRAWS ITS OWN (owner 2026-08-21: *"when thinking, the
+   * mascot should be on top of the three dots"*). The dock's `thinking` animation IS the three dots
+   * — the body morphs into the middle one — so a blob standing above a row of dots is a composition
+   * the animation cannot express, and `CanvasThinkingPreview` builds it out of a resting character
+   * and three dots of its own.
+   *
+   * 🔴 WHICH MAKES THIS THE GUARD AGAINST SIX DOTS, AGAIN. That defect was two MOUNTS of one
+   * renderer on one surface, both centred, both playing `thinking`. The rule "the dock owns the
+   * character" is what fixed it, so a surface that draws its own has to switch the dock off rather
+   * than hope the two never overlap.
+   */
+  hidden?: boolean;
   className?: string;
 }
 
@@ -91,6 +106,7 @@ export function BloubDock({
   gap = 14,
   centreScale = 2.1,
   contain = false,
+  hidden = false,
   className,
 }: BloubDockProps) {
   const { accent } = useTheme();
@@ -224,6 +240,10 @@ export function BloubDock({
       window.clearInterval(timer);
     };
   }, []);
+
+  // 🔴 AFTER EVERY HOOK, NEVER BEFORE ONE. An early return above the effects would change the hook
+  // count between renders the moment `hidden` flips, which React treats as a different component.
+  if (hidden) return null;
 
   return (
     <div

@@ -32,9 +32,68 @@
 // the lines stay, the sweep stops. Someone who asked the system to stop moving still has to be
 // able to see that the region is busy, so they hold their resting contrast rather than vanishing.
 
+import { BloubBot } from "@/components/bloub/bloub-bot";
+import { useTheme } from "@/components/theme-provider";
+
 
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
 
+
+/**
+ * The whole thinking figure: the character, the three dots, and the words.
+ *
+ * 🔴🔴 THE MASCOT SITS ON TOP OF THE DOTS, AND THE ENGINE CANNOT DRAW THAT. Owner, 2026-08-21:
+ * *"when thinking, the mascot should be on top of the three dots. the thinking words should be on
+ * the right of the three dots."* `lib/bloub/states.ts`'s `thinking` pose is explicit that the ball
+ * BECOMES the middle dot — *"la boule DEVIENT le point du milieu"* — and it fades the eyes to zero
+ * while it does. So there is no blob standing over anything: for the last week the character
+ * WAS the three dots, which is why the screen showed dots and no face.
+ *
+ * A blob above a row of three is therefore a composition rather than an animation, and it is built
+ * here out of a RESTING character and three dots of this component's own. That also means the
+ * character keeps its eyes and keeps looking around while it waits, which the thinking pose had
+ * taken away.
+ *
+ * 🔴 AND THE DOCK IS SWITCHED OFF WHILE THIS IS ON SCREEN. The six-dot defect was never two
+ * renderers — it was two MOUNTS of one, both centred, both playing `thinking`. `BloubDock`'s
+ * `hidden` prop exists for exactly this, because a surface that draws its own character must take
+ * the other one away rather than hope they do not overlap.
+ */
+function ThinkingMark({ label }: { label: string | null }) {
+  const { accent } = useTheme();
+  return (
+    <div className="flex flex-col items-center gap-1">
+      {/* 🔴 `idle`, NOT `thinking`. The state that means "working" is the one that dissolves the
+          body into the dots; the dots below are now saying that, so the character is free to be a
+          character. `track` keeps its gaze following the pointer through the wait. */}
+      <BloubBot color={accent} size={44} state="idle" track />
+      <div className="flex items-center gap-3">
+        {/* 🔴 THREE DOTS OF OUR OWN, DRAWN AS SPANS. They used to be the character's body, which is
+            what made the two impossible to stack. As plain marks they can sit under it, and they
+            keep the same staggered rhythm the pose had — a third of a cycle apart, so the row reads
+            as a sequence travelling rather than three things blinking together. */}
+        <span aria-hidden="true" className="flex items-center gap-[5px]">
+          {[0, 1, 2].map((i) => (
+            <span
+              className="canvas-thinking-dot size-[6px] rounded-full bg-(--ui-text-quaternary)"
+              key={i}
+              style={{ animation: `canvas-thinking-dot 1900ms ease-in-out ${i * 633}ms infinite` }}
+            />
+          ))}
+        </span>
+        {/* 🔴 TO THE RIGHT OF THE DOTS, AND LIT LEFT TO RIGHT (owner 2026-08-21). The band crossing
+            the words is `.canvas-thinking-word` — the same 1900ms and the same gradient as
+            `.canvas-forming`, because §20 asks for ONE motion system and three speeds would read as
+            three unrelated things happening at once. */}
+        {label && (
+          <span className="canvas-thinking-word text-[length:var(--canvas-text-meta)]">
+            {label.replace(/…$/, "")}…
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function CanvasThinkingPreview({
   label = null,
@@ -68,30 +127,10 @@ export function CanvasThinkingPreview({
         // `<div>` with no height of its own, so a percentage minimum has nothing to resolve
         // against and collapses to the content — measured in a browser: the mascot sat at the very
         // top of the column instead of the middle of the page. A viewport unit always resolves.
-        // 🔴 THE CAPTION SITS AT THE FOOT, NOT IN THE MIDDLE (owner 2026-08-20: "the thinking
-        // sentence and phrase overlap with the mascot"). It used to centre itself in this box,
-        // which is exactly where the character walks to — so the words printed straight through
-        // the dots. The character owns the middle of the surface; every thinking caption belongs
-        // near the composer, which is also where `CanvasThinking` has always put its own.
-        // 🔴 A ROW. Owner, 2026-08-20: *"the mascot three dot should have the thinking preview to
-        // the right of it."* Stacked, the caption sat well below the character and the two read as
-        // two separate things happening. The `justify-end` and the 104px of bottom padding stay:
-        // they are what puts this on the same line as the docked character rather than in the
-        // middle of the page.
-        className="flex min-h-[70vh] flex-row items-center justify-end px-6 pb-[104px] gap-3"
+        className="flex min-h-[70vh] flex-col items-center justify-end px-6 pb-[104px]"
         role="status"
       >
-        {/* 🔴 THE CHARACTER IS NOT DRAWN HERE, AND THAT IS THE FIX FOR SIX DOTS.
-            This used to render its own mascot while `BloubDock` rendered another on the same
-            surface — both centred, both playing `thinking`, so the learner saw two sets of three
-            dots stacked. Deleting the duplicate RENDERER did not fix it, because the defect was
-            never two renderers: it was two MOUNTS of one renderer. The dock owns the character on
-            this surface; this component owns the caption beside it and nothing else. */}
-        {label && (
-          <span className="canvas-phrase text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-            {label.replace(/…$/, "")}…
-          </span>
-        )}
+        <ThinkingMark label={label} />
       </div>
     );
   }
