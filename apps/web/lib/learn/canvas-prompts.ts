@@ -147,7 +147,25 @@ const VISUAL_RULE =
   '"hidden" covers one cell or one event so the learner has something to retrieve rather than only read; use it when the visual is being taught rather than merely shown. ' +
   "A code trace is your account of what the code would do — nothing here executes it, and the learner is told so on screen. " +
   "Leave it absent when text is clearer. Never emit HTML, SVG, Mermaid, JavaScript, React, renderer names, styling, or arbitrary code. " +
-  "The prose must still explain the idea; the visual is a representation of it, not a replacement for teaching.";
+  "The prose must still explain the idea; the visual is a representation of it, not a replacement for teaching.\n\n" +
+  // 🔴 THIS PARAGRAPH REPLACED TWO CODE RULES, AND THE SWAP IS THE POINT. `visual-route.ts` used to
+  // refuse a relationship diagram with fewer than three nodes, and refuse every visual on an
+  // association outright. Both were deciding whether a picture was WORTH IT — a judgement about the
+  // idea being taught — from facts that never touched the idea: a node count, and a knowledge type.
+  // So "load applied → beam deflects" could not be drawn though an arrow is exactly how a person
+  // would draw it, and a molecule paired with its name was refused a structure because the pairing
+  // was arbitrary, which is precisely why the picture was the thing that would make it stick.
+  //
+  // The router still refuses what cannot be DRAWN — a one-cell table, points joined by nothing, a
+  // plot with no range. Those are facts about the request. Whether a picture helps is this:
+  "WHETHER A PICTURE IS WORTH IT IS YOUR JUDGEMENT, and it belongs to the idea rather than to how " +
+  "much of it there is. Two things with an arrow between them is a real diagram when the arrow is " +
+  "the point — that one drives, blocks or converts into the other — and is noise when the sentence " +
+  "already said it as plainly. An arbitrary pairing with nothing to explain is usually prose, but " +
+  "not when one side of it is a shape: a molecule beside its name, a term beside where it sits in " +
+  "a figure, a character beside the part it is built from. There the picture IS what makes the " +
+  "link stick. Ask what the learner has to be able to see, and answer for this idea rather than " +
+  "from a rule about its kind.";
 
 const BLOCK_SHAPE =
   'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…],"visual":{…}}. ' +

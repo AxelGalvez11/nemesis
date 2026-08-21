@@ -126,24 +126,11 @@ export type VisualRepresentation =
 export type ProseReason =
   /** Nothing was requested and the knowledge carries no picture of its own. */
   | "nothing-to-show"
-  /**
-   * The knowledge is an arbitrary mapping, so there is no structure to draw.
-   *
-   * 🔴 STRAIGHT OUT OF `knowledge-types.ts`, NOT INVENTED HERE: an association is *"arbitrary or
-   * semi-arbitrary mappings. There is usually nothing to explain — the work is making the link
-   * retrievable."* A picture of a two-sided mapping is the mapping with a box drawn round it.
-   */
-  | "association-has-no-structure"
-  /**
-   * Too few things stand in relation for a diagram to beat a sentence.
-   *
-   * 🔴 TWO BOXES AND AN ARROW IS A SENTENCE WITH EXTRA STEPS. "A causes B" is already the clearest
-   * possible rendering of "A causes B"; drawing it costs the learner a context switch and returns
-   * nothing. This is also why a single `causal` knowledge object — one edge, by construction —
-   * never gets a diagram: the mechanism becomes worth drawing when edges JOIN, which is the whole
-   * reason `CausalRelation` stores one edge at a time.
-   */
-  | "too-few-relations"
+  // 🔴 `association-has-no-structure` AND `too-few-relations` WERE REMOVED FROM THIS UNION, and the
+  // reason is worth keeping: they were the only two reasons in it that were an opinion about
+  // whether a picture HELPS, rather than a fact about whether one can be drawn. Deciding that is a
+  // judgement about the idea, and the model is the only thing here that has read the idea. See the
+  // note in `routeVisual` and the rule it moved to in canvas-prompts.ts.
   /** A figure exists but ingestion kept no pixels, so there is nothing to show. */
   | "figure-has-no-asset"
   /** A figure exists but names too few parts to be occluded — see `MIN_LABELS_FOR_SPATIAL`. */
@@ -157,9 +144,10 @@ export type ProseReason =
   /**
    * A table with one row and one column, or a figure with nothing drawn on it.
    *
-   * 🔴 THE SAME RULE `too-few-relations` HOLDS, APPLIED TO THE NEW SHAPES. A one-cell table is a
-   * sentence with a border, and a construction with points and no segments, circles or angles is a
-   * scatter of dots. Both pass every bound in the validator and both are decoration.
+   * 🔴 A FACT ABOUT THE REQUEST, NOT AN OPINION ABOUT THE IDEA — which is why this one stayed when
+   * the two above it went. A one-cell table is a sentence with a border, and a construction with
+   * points and no segments, circles or angles is a scatter of dots. Both pass every bound in the
+   * validator, and no amount of reading the subject makes either of them drawable.
    */
   | "too-little-to-draw"
   /**
@@ -256,9 +244,8 @@ export interface VisualRouteInput {
    * this is stated as a gap rather than counted as a working route: `canvas-policy-view` and
    * `canvas-document` both omit it, and with it omitted the router behaves exactly as it did
    * before §42. The rules below are the right rules and they are tested, but nothing in production
-   * reaches them, which is the same honesty the `association` branch keeps a few lines further
-   * down. This repo's most repeated failure is *implemented, merged, deployed, dead* — the
-   * defence is saying so, not pretending the branch runs.
+   * reaches them, and saying so is the point. This repo's most repeated failure is *implemented,
+   * merged, deployed, dead* — the defence is stating it, not pretending the branch runs.
    *
    * 🔴 CANDIDATES, NOT A CHOICE. The caller supplies what it found; which one may actually be
    * shown — and whether any may — is `visual-provenance.ts`'s decision, so a caller cannot
@@ -267,14 +254,6 @@ export interface VisualRouteInput {
   readonly assets?: readonly CandidateAsset[];
 }
 
-/**
- * How many things must stand in relation before a diagram beats a sentence.
- *
- * 🔴 THREE, AND THE THRESHOLD IS THE RULE. At two, a graph draws one arrow and the learner reads a
- * sentence rendered as furniture. At three the reader has to hold a shape — a chain, a fork, a
- * cycle — and that is the first point at which the picture is doing work prose was doing badly.
- */
-export const MIN_DIAGRAM_NODES = 3;
 
 /**
  * Choose a representation, or choose none.
@@ -358,22 +337,26 @@ export function routeVisual(input: VisualRouteInput): VisualRoute {
   // report as a routing rule that runs. `teaching-policy.ts` marks its provisional branch the same
   // way — "UNREACHABLE ON TODAY'S DATA, AND SAID SO RATHER THAN COUNTED AS COVERAGE" — and the
   // failure it guards against is this repo's most repeated one: implemented, merged, deployed, dead.
-  if (input.knowledge?.type === "association") {
-    return {
-      because: `this is an arbitrary mapping, so there is no structure a picture could show — the work is making the link retrievable, not illustrating it`,
-      decision: "prose",
-      reason: "association-has-no-structure",
-    };
-  }
-
-  if (spec.kind === "relationship" && spec.nodes.length < MIN_DIAGRAM_NODES) {
-    return {
-      because: `only ${spec.nodes.length} things stand in relation here, which a sentence states more directly than a diagram of it`,
-      decision: "prose",
-      reason: "too-few-relations",
-    };
-  }
-
+  // 🔴 TWO RULES WERE DELETED HERE, AND THEY WERE THE ONLY TWO IN THIS FILE THAT WERE OPINIONS.
+  //
+  //   · `association-has-no-structure` — every association routed to prose, on the reasoning that an
+  //     arbitrary mapping has no structure to show. True for a vocabulary pair. False for a molecule
+  //     and its name, a term and where it sits in an anatomical figure, a kanji and its radical: the
+  //     mapping is arbitrary and the picture is still the thing that makes it stick. The rule could
+  //     not tell those apart, because it never saw the content — only the knowledge TYPE.
+  //   · `too-few-relations` — a relationship diagram needed three nodes. So "load applied →
+  //     beam deflects", two nodes and a polarity, could never be drawn, though polarity is exactly
+  //     what that shape exists to show and an arrow is exactly how a person would draw it.
+  //
+  // Both were the same mistake in different clothes: code deciding whether a picture was WORTH IT.
+  // That is a judgement about the idea being taught, and the only thing that has read the idea is
+  // the model. It is asked in VISUAL_RULE (canvas-prompts.ts) instead, where it can weigh the actual
+  // content rather than count nodes.
+  //
+  // What is left below stays, and is a different kind of rule entirely: whether the thing asked for
+  // can be DRAWN AT ALL. A one-cell table, points joined by nothing, a plot with no range — those
+  // are facts about the request, true whatever it is about, and no amount of reading the idea
+  // changes them.
   // 🔴 THE EARNING RULES FOR THE NEW SHAPES, AND EACH ONE IS A PICTURE THAT PASSES VALIDATION AND
   // TEACHES NOTHING. A single cell, a figure with no lines: valid, drawable, and worse than the
   // sentence they replace. The timeline's own version of this rule lives in the validator instead,
@@ -493,9 +476,9 @@ function sourceFigureRoute(input: VisualRouteInput): VisualRoute | null {
  * helped" — the only ones §42's lower rungs may answer.
  *
  * 🔴 THE LIST IS SHORT ON PURPOSE, AND EVERY REASON LEFT OUT IS LEFT OUT FOR A STATED REASON.
- * `too-few-relations`, `plot-has-no-range` and `association-has-no-structure` are the router
- * deciding a picture does not help HERE; reaching for a stock image after concluding that would
- * turn a considered "no" into "no, so let us find one anyway", which is the dashboard §41 forbids.
+ * `too-little-to-draw` and `plot-has-no-range` mean the request cannot be rendered as asked;
+ * reaching for a stock image after concluding that would turn a considered "no" into "no, so let
+ * us find one anyway", which is the dashboard §41 forbids.
  * `label-not-in-figure` and `figure-not-occludable` are about a specific interaction failing on a
  * specific figure, and substituting a different picture would ask the question against material the
  * evidence will attribute elsewhere.

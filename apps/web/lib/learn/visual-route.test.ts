@@ -13,7 +13,7 @@ import test from "node:test";
 import type { FigureLabel } from "./figure-labels";
 import type { KnowledgeObject, KnowledgeType } from "./knowledge-types";
 import type { CandidateAsset } from "./visual-provenance";
-import { MIN_DIAGRAM_NODES, routeVisual } from "./visual-route";
+import { routeVisual } from "./visual-route";
 
 function knowledge(type: KnowledgeType, over: Partial<KnowledgeObject> = {}): KnowledgeObject {
   return {
@@ -130,9 +130,13 @@ test("🔴 two things in relation is a sentence, not a diagram", () => {
       nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }],
     },
   });
-  assert.equal(route.decision, "prose");
-  assert.equal(route.decision === "prose" && route.reason, "too-few-relations");
-  assert.equal(MIN_DIAGRAM_NODES, 3);
+  // 🔴 THIS ASSERTION REVERSED, AND THAT IS THE CHANGE. A relationship needed three nodes, so
+  // "load applied → beam deflects" — two nodes and a polarity — could never be drawn, though
+  // polarity is exactly what the shape exists to show and an arrow is exactly how a person would
+  // draw it. Counting nodes was never a way to tell whether a picture helps; that judgement belongs
+  // to the thing that read the idea, and it is asked for in VISUAL_RULE now.
+  assert.equal(route.decision, "render");
+  assert.equal(route.representation, "relationship");
 });
 
 test("three things in relation earns the diagram", () => {
@@ -141,10 +145,13 @@ test("three things in relation earns the diagram", () => {
   assert.equal(route.representation, "relationship");
 });
 
-test("🔴 an association is an arbitrary mapping, so a valid request for it is still prose", () => {
+test("🔴 an association may still earn a picture — the model decides, not the knowledge type", () => {
+  // This used to route every association to prose on the reasoning that an arbitrary mapping has
+  // no structure to show. True of a vocabulary pair; false of a molecule beside its name, a term
+  // beside where it sits in a figure, a character beside the radical it is built from. The rule
+  // could not tell those apart because it never saw the content — only the TYPE.
   const route = routeVisual({ knowledge: knowledge("association"), request: chain(["A", "B", "C"]) });
-  assert.equal(route.decision, "prose");
-  assert.equal(route.decision === "prose" && route.reason, "association-has-no-structure");
+  assert.equal(route.decision, "render");
 });
 
 test("🔴🔴 the association rule is UNREACHABLE with today's callers, and the code says so", () => {
@@ -279,8 +286,8 @@ test("a caller that holds no knowledge object still gets the structural refusals
       nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }],
     },
   });
-  assert.equal(route.decision, "prose");
-  assert.equal(route.decision === "prose" && route.reason, "too-few-relations");
+  assert.equal(route.decision, "render");
+  assert.equal(route.representation, "relationship");
 });
 
 // ─────────────────────────────────────────────────────────── field-agnostic
@@ -304,7 +311,7 @@ test("🔴🔴 a law concept and a chemistry concept with the same structure rou
   assert.equal(law.decision, "render");
 });
 
-test("🔴🔴 the same two subjects are refused identically when the structure is too thin", () => {
+test("🔴🔴 the same two subjects route identically on a two-node relation", () => {
   const pair = (a: string, b: string) => routeVisual({
     knowledge: knowledge("causal"),
     request: {
@@ -316,9 +323,14 @@ test("🔴🔴 the same two subjects are refused identically when the structure 
   });
   const law = pair("Offer accepted", "Contract formed");
   const engineering = pair("Load applied", "Beam deflects");
-  assert.equal(law.decision, "prose");
-  assert.deepEqual(law, engineering.decision === "prose" ? { ...engineering, because: law.because } : engineering);
-  assert.equal(law.decision === "prose" && law.reason, "too-few-relations");
+  // The owner's rule is what this test is for: same structure, same route, whatever the words are
+  // about. What changed is that the shared route is now `render` rather than a refusal — the specs
+  // themselves differ only in the labels, which is the subject matter and is meant to.
+  assert.equal(law.decision, "render");
+  assert.deepEqual(
+    { d: law.decision, r: law.decision === "render" ? law.representation : null },
+    { d: engineering.decision, r: engineering.decision === "render" ? engineering.representation : null },
+  );
 });
 
 test("🔴 no subject-matter vocabulary has crept into the router", () => {
@@ -426,8 +438,8 @@ test("🔴 a considered 'a picture would not help' is never reopened by the regi
     assets: [LICENSED],
     request: { ...chain(["A", "B", "C"]), edges: [{ from: "a", to: "b" }], nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }] },
   });
-  assert.equal(route.decision, "prose");
-  assert.equal(route.decision === "prose" && route.reason, "too-few-relations");
+  assert.equal(route.decision, "render");
+  assert.equal(route.representation, "relationship");
 });
 
 test("🔴 a figure that exists but is not being located against does not fall through to an image", () => {
