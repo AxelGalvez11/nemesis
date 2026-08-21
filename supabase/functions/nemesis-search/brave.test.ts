@@ -153,17 +153,24 @@ Deno.test("braveContextParams: clamps a limit outside Brave's 1-50 range", () =>
 // ── The two levers we had never touched ──────────────────────────────────────────────────────
 //
 // Owner, 2026-08-21, after asking what Brave can be told about source quality: *"set threshold to
-// balanced and let the model pick freshness."*
+// balanced and let the model pick freshness."* Then, having seen it: *"I need web search to return
+// only the most relevant ones."* — so the threshold is `strict`, one step tighter than either of us
+// first landed on.
 
 Deno.test("braveContextParams: the relevance threshold is set, and is not Brave's loose default", () => {
   // 🔴 LEAVING IT UNSET RESOLVES TO `lenient`, THE LOOSEST SETTING THE ENDPOINT OFFERS, and that is
   // what every search this product has ever run was using. Reported the same day: a search came
   // back with two marketing pages, which were then ingested as a learner's study material.
   const params = braveContextParams("photosynthesis", 5);
-  assertEquals(params.get("context_threshold_mode"), "balanced");
-  // Calibration: `strict` would be the wrong direction. An empty search reads to a learner as
-  // "Nemesis could not find out", which is worse than one weak page among ten good ones.
-  assert(BRAVE_THRESHOLD_MODE !== "strict");
+  // 🔴 `strict`, THE HIGHEST BRAVE OFFERS — owner call, *"I need web search to return only the most
+  // relevant ones."* It replaced `balanced`, which I had chosen. See the constant for the trade: a
+  // strict search that returns little is a signal the model can act on and search again, where a
+  // lenient one that returns ten weak pages looks like an answer and gets used as one.
+  assertEquals(params.get("context_threshold_mode"), "strict");
+  assertEquals(BRAVE_THRESHOLD_MODE, "strict");
+  // Calibration: unset is the failure this pins. Brave's default resolves to `lenient`, so a
+  // deleted line here is not a neutral change — it is the loosest setting, silently.
+  assert(params.has("context_threshold_mode"));
 });
 
 Deno.test("readFreshness: only Brave's own vocabulary survives", () => {
