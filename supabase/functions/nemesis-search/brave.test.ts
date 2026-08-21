@@ -5,6 +5,10 @@ import {
   BRAVE_QUERY_MAX_CHARS,
   braveCanAnswer,
   braveContextParams,
+  BRAVE_MAX_TOKENS_PER_URL,
+  BRAVE_MAX_TOTAL_TOKENS,
+  BRAVE_MAX_URLS,
+  BRAVE_MIN_TOTAL_TOKENS,
   braveContextToWeb,
 } from "./brave.ts";
 
@@ -115,8 +119,28 @@ Deno.test("braveContextParams: asks for what we intend to keep, clamped to the e
 
   assertEquals(params.get("q"), "photosynthesis");
   assertEquals(params.get("maximum_number_of_urls"), "5");
-  assertEquals(params.get("count"), "5");
   assertEquals(params.get("maximum_number_of_snippets"), String(BRAVE_MAX_SNIPPETS));
+});
+
+// 🔴 `count` IS NOT THE URL COUNT, AND TYING THEM TOGETHER MADE SMALL ASKS WORSE. Brave's own
+// parameter table (github.com/brave/brave-search-skills, skills/llm-context/SKILL.md) has `count` as
+// "Max search results to CONSIDER" and `maximum_number_of_urls` as "Max URLs IN RESPONSE". Both used
+// to carry the ask, so a request for 3 pages told Brave to look at 3 results and return all 3,
+// instead of weighing fifty and returning its best three. Selection is what the endpoint is for.
+Deno.test("braveContextParams: considers the most Brave allows, however few are wanted back", () => {
+  assertEquals(braveContextParams("q", 3).get("count"), String(BRAVE_MAX_URLS));
+  assertEquals(braveContextParams("q", 3).get("maximum_number_of_urls"), "3");
+  assertEquals(braveContextParams("q", 50).get("count"), String(BRAVE_MAX_URLS));
+});
+
+// 🔴 THE TOTAL BUDGET IS FOR THE WHOLE RESPONSE, AND LEAVING IT UNSET UNDID THE UNCAPPING. Its
+// default is 8192 — not per page — so 50 URLs at 1024 tokens each silently became about 160 tokens
+// apiece. The pages arrived and there was nothing in them.
+Deno.test("braveContextParams: the total token budget scales with the pages asked for", () => {
+  assertEquals(braveContextParams("q", 4).get("maximum_number_of_tokens"), String(4 * BRAVE_MAX_TOKENS_PER_URL));
+  // Clamped to the range Brave documents: 1024 to 32768.
+  assertEquals(braveContextParams("q", 1).get("maximum_number_of_tokens"), String(BRAVE_MIN_TOTAL_TOKENS));
+  assertEquals(braveContextParams("q", 50).get("maximum_number_of_tokens"), String(BRAVE_MAX_TOTAL_TOKENS));
 });
 
 Deno.test("braveContextParams: clamps a limit outside Brave's 1-50 range", () => {

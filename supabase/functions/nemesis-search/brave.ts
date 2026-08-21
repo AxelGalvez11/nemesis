@@ -51,6 +51,27 @@ export const BRAVE_DESCRIPTION_MAX_CHARS = 1_200
 export const BRAVE_MAX_SNIPPETS = 4
 export const BRAVE_MAX_TOKENS_PER_URL = 1_024
 
+/**
+ * The ceiling on the WHOLE response, which we were not setting at all.
+ *
+ * 🔴 THE DEFAULT IS 8192 FOR THE ENTIRE CONTEXT, NOT PER PAGE, AND THAT QUIETLY UNDID THE UNCAPPING.
+ * Asking for 50 URLs at `maximum_number_of_tokens_per_url = 1024` is a request for ~51k tokens, and
+ * an unset total silently held it to 8192 — about 160 tokens a page. The pages arrived; there was
+ * almost nothing in them. Brave's own parameter table gives the range as 1024–32768
+ * (github.com/brave/brave-search-skills, skills/llm-context/SKILL.md).
+ *
+ * So it scales with what was actually asked for, and clamps to what Brave will accept.
+ *
+ * 🔴 THE CEILING IS NOT A NEW STARVATION IN DISGUISE, AND THAT IS WORTH CHECKING RATHER THAN
+ * ASSUMING. At the 50-URL maximum the total works out at 32768/50 ≈ 655 tokens a page, less than
+ * the 1024 asked for per URL. But `BRAVE_DESCRIPTION_MAX_CHARS` keeps only 1,200 characters of each
+ * page — roughly 300 tokens — so what arrives is still about twice what survives the mapping. The
+ * budget would have to fall below ~300 tokens a page to cost anything, which needs more than a
+ * hundred URLs, and Brave stops at fifty.
+ */
+export const BRAVE_MIN_TOTAL_TOKENS = 1_024
+export const BRAVE_MAX_TOTAL_TOKENS = 32_768
+
 /** Joins the chunks Brave extracted for one page. Visible on purpose: a reader
  *  should be able to tell these are separate extracts, not running prose. */
 const SNIPPET_JOIN = ' … '
@@ -85,8 +106,20 @@ export function braveContextParams(query: string, limit: number): URLSearchParam
   const urls = Math.min(BRAVE_MAX_URLS, Math.max(1, Math.round(limit)))
 
   return new URLSearchParams({
-    count: String(urls),
+    // 🔴 `count` AND `maximum_number_of_urls` ARE NOT THE SAME NUMBER, AND SETTING THEM TO THE SAME
+    // ONE MADE SMALL ASKS WORSE. Brave's table: `count` is "Max search results to CONSIDER",
+    // `maximum_number_of_urls` is "Max URLs IN RESPONSE" — consider 50, return the best 10. Both
+    // used to carry the model's ask, so a request for 3 pages told Brave to look at only 3 results
+    // and hand back all 3, rather than weighing fifty and returning its three best. Selection is
+    // the whole value of the endpoint and we were switching it off exactly when it mattered most.
+    // One request is billed the same however many are considered.
+    count: String(BRAVE_MAX_URLS),
     maximum_number_of_snippets: String(BRAVE_MAX_SNIPPETS),
+    // Scales with the ask. Left unset it defaults to 8192 for the WHOLE response, which starved
+    // every page whenever more than a handful were requested — see BRAVE_MAX_TOTAL_TOKENS.
+    maximum_number_of_tokens: String(
+      Math.min(BRAVE_MAX_TOTAL_TOKENS, Math.max(BRAVE_MIN_TOTAL_TOKENS, urls * BRAVE_MAX_TOKENS_PER_URL))
+    ),
     maximum_number_of_tokens_per_url: String(BRAVE_MAX_TOKENS_PER_URL),
     maximum_number_of_urls: String(urls),
     q: query.trim()
