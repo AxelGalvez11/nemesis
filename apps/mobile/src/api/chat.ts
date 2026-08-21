@@ -194,6 +194,9 @@ async function searchWebContext(
   query: string,
   /** How many pages the model asked to read. Null means it did not choose. */
   wanted: number | null = null,
+  /** How recent they have to be, when the model asked for a window. Null means any age.
+   *  Forwarded, not validated: which windows Brave accepts is the search function's fact. */
+  freshness: string | null = null,
 ): Promise<{ context: string; sources: ChatSource[] }> {
   const key = await deviceKey(uid);
   if (!key) return { context: "", sources: [] };
@@ -204,7 +207,7 @@ async function searchWebContext(
       // come back, so the number saved nothing and cost evidence. How many to read is the model's
       // call (`webResults`); omitting the limit lets the search function fall back to the
       // provider's own ceiling rather than to a number either side invented.
-      body: JSON.stringify({ query, ...(wanted ? { limit: wanted } : {}) }),
+      body: JSON.stringify({ query, ...(wanted ? { limit: wanted } : {}), ...(freshness ? { freshness } : {}) }),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
@@ -500,7 +503,7 @@ export async function sendChat(
     // route staples a freshness date onto the wire query, and showing that
     // back would read like the app invented part of the question.
     onPhase?.({ kind: "searching", query: userText });
-    const result = await searchWebContext(uid, query, intent.webResults);
+    const result = await searchWebContext(uid, query, intent.webResults, intent.webFreshness);
     sources = result.sources;
     onPhase?.({ kind: "reading", sources: sources.length });
     groundedText = result.context

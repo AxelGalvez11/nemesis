@@ -102,8 +102,57 @@ export function braveCanAnswer(query: string): boolean {
  */
 export const BRAVE_MAX_URLS = 50
 
-export function braveContextParams(query: string, limit: number): URLSearchParams {
+/**
+ * How relevant a page must be to be worth putting in front of the model.
+ *
+ * 🔴🔴 BRAVE'S OWN DEFAULT IS THE LOOSEST SETTING, AND WE WERE TAKING IT. Its parameter table gives
+ * `context_threshold_mode` as `strict | balanced | lenient | disabled`, and records that leaving it
+ * unset "resolves to `lenient` on the current API version" — the setting that returns the most and
+ * filters the least. Nothing here had ever named a value, so every search this product has run has
+ * been at the loosest threshold the endpoint offers.
+ *
+ * That is visible in the product, not just on paper. Reported 2026-08-21: a search whose query was
+ * a category rather than a subject came back with two marketing pages for a language app, and those
+ * pages were then ingested as a learner's study material. The query was the root cause and is fixed
+ * elsewhere; the threshold is why a bad query produced advertising rather than nothing.
+ *
+ * 🔴 `balanced` RATHER THAN `strict`, AND THE ASYMMETRY IS THE ARGUMENT. This endpoint's job is to
+ * ground an answer, and a page that is dropped is a page the model cannot cite — for a genuinely
+ * obscure question, `strict` risks returning nothing at all, and an empty search reads to a learner
+ * as "Nemesis could not find out", which is a worse failure than one weak page among ten good ones.
+ * Brave's own guideline names `balanced` as "good balance between coverage and relevance".
+ */
+export const BRAVE_THRESHOLD_MODE = 'balanced'
+
+/**
+ * How recent a page has to be, when the caller asks.
+ *
+ * 🔴 A PROVIDER VOCABULARY, VALIDATED HERE RATHER THAN TRUSTED. The model chooses whether a
+ * question turns on recency (see `webFreshness` in the turn contract), and that is a reading of
+ * language, which is the model's to make. Whether `pw` is a thing Brave accepts is a FACT, and a
+ * model guessing `last_week` or `7d` would be forwarded straight into a query string and silently
+ * change nothing — the worst kind of failure, because the answer still arrives and is simply stale.
+ *
+ * Brave's values (parameter table, docs read 2026-08-21): `pd` 24h, `pw` 7 days, `pm` 31 days,
+ * `py` 365 days, or an explicit `YYYY-MM-DDtoYYYY-MM-DD` range.
+ */
+const FRESHNESS_CODES = new Set(['pd', 'pw', 'pm', 'py'])
+const FRESHNESS_RANGE = /^\d{4}-\d{2}-\d{2}to\d{4}-\d{2}-\d{2}$/
+
+/** The freshness Brave will accept, or null. Null means "no filter", never a guess at one. */
+export function readFreshness(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim().toLowerCase()
+  if (FRESHNESS_CODES.has(trimmed)) return trimmed
+  // 🔴 THE RANGE IS CHECKED FOR SHAPE, NOT FOR SENSE. Whether 2026-02-30 exists is Brave's problem
+  // and it answers for it; what matters here is that nothing outside the documented grammar is
+  // forwarded, so an unrecognised value can never reach the wire as a filter that does nothing.
+  return FRESHNESS_RANGE.test(trimmed) ? trimmed : null
+}
+
+export function braveContextParams(query: string, limit: number, freshness: unknown = null): URLSearchParams {
   const urls = Math.min(BRAVE_MAX_URLS, Math.max(1, Math.round(limit)))
+  const recency = readFreshness(freshness)
 
   return new URLSearchParams({
     // 🔴 `count` AND `maximum_number_of_urls` ARE NOT THE SAME NUMBER, AND SETTING THEM TO THE SAME
@@ -122,7 +171,12 @@ export function braveContextParams(query: string, limit: number): URLSearchParam
     ),
     maximum_number_of_tokens_per_url: String(BRAVE_MAX_TOKENS_PER_URL),
     maximum_number_of_urls: String(urls),
-    q: query.trim()
+    q: query.trim(),
+    context_threshold_mode: BRAVE_THRESHOLD_MODE,
+    // 🔴 OMITTED WHEN THERE IS NONE, NEVER SENT EMPTY. Brave's default for `freshness` is the empty
+    // string and means "no filter"; sending `freshness=` explicitly would be the same request with
+    // a parameter in it, which is a difference nobody can see and everybody has to reason about.
+    ...(recency ? { freshness: recency } : {})
   })
 }
 

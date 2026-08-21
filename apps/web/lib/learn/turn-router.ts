@@ -119,6 +119,19 @@ export interface TurnDecision {
    */
   webResults: number | null;
   /**
+   * How recent the pages have to be, when `needsWeb`. Null means any age will do.
+   *
+   * 🔴 RECENCY IS A PROPERTY OF THE QUESTION, NOT OF THE WORDS IN IT. "What is the current
+   * inflation rate" and "what did inflation do in 2019" both name inflation and want opposite
+   * things from the archive. Brave has had a `freshness` filter the whole time and nothing in this
+   * product had ever set it, so a question about this week was answered from pages of any age.
+   *
+   * 🔴 NOT THE SAME AS PUTTING A YEAR IN `webQuery`. A year is a hint the ranker may overrule; a
+   * freshness window is applied by the index before ranking. The vocabulary is validated in the
+   * search function, which is the only place that knows what Brave accepts.
+   */
+  webFreshness: string | null;
+  /**
    * What Nemesis says. Present even when it also acts: acting silently reads as a bug, and the
    * owner's example ("alright.") is a turn that speaks and acts at once.
    */
@@ -397,7 +410,8 @@ const DECISION_CONTRACT = [
   "",
   "```json",
   '{"then": "reply" | "study" | "rewrite", "topic": "..." | null,'
-  + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,',
+  + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
+  + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null,',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -488,6 +502,15 @@ const DECISION_CONTRACT = [
   + "comparison across sources, a contested question, or anything where you want to see whether "
   + "sources agree needs many more. Reading more costs no extra search, only the room they take up "
   + "in your context. Null when needsWeb is false.",
+  "",
+  // 🔴 A FILTER, NOT A HINT. Putting a year in the query asks the ranker nicely; this is applied
+  // by the index before ranking, so it is the only one of the two that can actually exclude a page.
+  '"webFreshness" is how recent the pages have to be, when needsWeb is true: "pd" for the last day, '
+  + '"pw" the last week, "pm" the last month, "py" the last year. Use it when an older page would be '
+  + "WRONG rather than merely less interesting: a price, a standing, a score, a version, a rule that "
+  + "was amended, anything still unfolding. Leave it null everywhere else, including for most "
+  + "questions about the past, where a narrow window would hide the source that actually explains "
+  + "it. When in doubt, null: an old page you can judge beats no page at all.",
   "",
   // 🔴🔴 AN ORDERED PROCEDURE, NOT A PILE OF MAXIMS, AND THE ORDER IS MEASURED. Three earlier
   // drafts each fixed one direction and broke the other, because the two rules genuinely conflict
@@ -736,6 +759,9 @@ export function readTurnDecision(raw: string): TurnDecision | null {
       && Number.isFinite(parsed.webResults) && parsed.webResults >= 1
       ? Math.floor(parsed.webResults)
       : null,
+    // Passed through as text; which windows exist belongs to the search function, which is the one
+    // place that talks to the provider. Same contradiction rule: no search, no window.
+    webFreshness: parsed.needsWeb === true ? asText(parsed.webFreshness) || null : null,
   };
 }
 
@@ -765,10 +791,10 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   if (looksLikeEnvelope(prose)) {
     const salvaged = salvageSay(prose);
     return salvaged
-      ? { needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webQuery: null, webResults: null }
+      ? { needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
-  return { needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webQuery: null, webResults: null };
+  return { needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

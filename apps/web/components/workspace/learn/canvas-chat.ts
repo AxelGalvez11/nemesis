@@ -195,7 +195,13 @@ export async function askCanvasChat(
     // one turn, and a counter that went 12, then 9, then 14 would describe our loop rather than
     // their search. What they are being told is how many pages this answer stands on.
     onSearching?.(null);
-    const found = await searchWebContext(uid, decision.webQuery || question, signal, decision.webResults);
+    const found = await searchWebContext(
+      uid,
+      decision.webQuery || question,
+      signal,
+      decision.webResults,
+      decision.webFreshness,
+    );
     for (const source of found.sources) {
       if (seen.has(source.url)) continue;
       seen.add(source.url);

@@ -312,7 +312,11 @@ async function braveSearch(body: Record<string, unknown>): Promise<Response | nu
   // search bills one metered unit whatever comes back, so the small number saved nothing. How many
   // to read is the model's call now; a caller that does not say gets everything Brave will give.
   const limit = typeof body.limit === 'number' ? body.limit : BRAVE_MAX_URLS
-  const upstream = await fetch(`${BRAVE_CONTEXT_BASE}?${braveContextParams(query, limit)}`, {
+  // 🔴 FORWARDED RAW, VALIDATED IN `braveContextParams`. Whether a question turns on recency is the
+  // model's reading; whether `pw` is a value Brave accepts is a fact, and the one place that talks
+  // to Brave is the honest place to check it. Anything unrecognised becomes no filter at all rather
+  // than a parameter that silently does nothing.
+  const upstream = await fetch(`${BRAVE_CONTEXT_BASE}?${braveContextParams(query, limit, body.freshness)}`, {
     headers: { Accept: 'application/json', 'X-Subscription-Token': BRAVE_KEY },
     method: 'GET'
   }).catch(() => null)

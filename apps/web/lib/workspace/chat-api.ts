@@ -1002,7 +1002,7 @@ export async function sendChatTurn(
   if (needsWeb) {
     strip.pin("Searching the web");
     // The model wrote the query when it asked for the search; otherwise search what they typed.
-    const result = await searchWebContext(uid, decision.webQuery || askText, signal, intent.webResults);
+    const result = await searchWebContext(uid, decision.webQuery || askText, signal, intent.webResults, intent.webFreshness);
     strip.resume();
     sources = result.sources;
     webContext = result.context
@@ -1130,12 +1130,26 @@ export async function searchWebContext(
    * ceiling stands — never a smaller number of ours.
    */
   wanted: number | null = null,
+  /**
+   * How recent the pages have to be, when the model asked for a window. Null means any age.
+   *
+   * 🔴 FORWARDED, NOT VALIDATED HERE. Which windows Brave accepts is a fact the search function
+   * owns (`readFreshness`); a second copy of that vocabulary in the browser would be a second
+   * thing to update, and the browser is not the place a provider's grammar should be enforced.
+   */
+  freshness: string | null = null,
 ): Promise<{ context: string; sources: ChatWebResult[] }> {
   const key = await deviceKey(uid);
   if (!key) return { context: "", sources: [] };
   try {
     const response = await fetch("/api/workspace/search", {
-      body: JSON.stringify({ query, limit: Math.min(wanted ?? PROVIDER_MAX_WEB_RESULTS, PROVIDER_MAX_WEB_RESULTS) }),
+      body: JSON.stringify({
+        limit: Math.min(wanted ?? PROVIDER_MAX_WEB_RESULTS, PROVIDER_MAX_WEB_RESULTS),
+        query,
+        // Omitted when there is none, so a turn that wants any-age pages sends the request it
+        // always sent rather than one carrying an empty filter.
+        ...(freshness ? { freshness } : {}),
+      }),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       method: "POST",
       signal,

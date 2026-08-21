@@ -191,7 +191,7 @@ test("a plain decision is read", () => {
   // it without a null check — the alternative is an optional field that is absent on the ordinary
   // path and therefore untested on it.
   //
-  // 🔴 THE SAME ARGUMENT COVERS THE THREE WEB FIELDS. A turn that did not ask for the web must say
+  // 🔴 THE SAME ARGUMENT COVERS THE FOUR WEB FIELDS. A turn that did not ask for the web must say
   // so in the object rather than by omission, because the search loop reads `needsWeb` as its
   // condition and `undefined` there would end the loop for the wrong reason.
   assert.deepEqual(read, {
@@ -200,6 +200,7 @@ test("a plain decision is read", () => {
     then: "reply",
     topic: null,
     visuals: [],
+    webFreshness: null,
     webQuery: null,
     webResults: null,
   });
@@ -533,3 +534,44 @@ test("🔴🔴 the never-both rule applies to every step, not just the last one"
   assert.match(DECISION_CONTRACT_TEXT, /This holds whatever you chose above/);
 });
 
+// ── How recent the pages have to be ─────────────────────────────────────────────────────────
+//
+// Owner, 2026-08-21: *"let the model pick freshness."* Brave has had this filter the whole time
+// and nothing in this product had ever set it, so a question about this week was answered from
+// pages of any age. The vocabulary is validated in the search function — these guard the half that
+// is ours: that the model is told the field exists, told when it is WRONG to use, and that a
+// window without a search is dropped like the query and the count already are.
+
+test("🔴 the freshness window is offered to the model, with its real vocabulary", () => {
+  assert.match(DECISION_CONTRACT_TEXT, /"webFreshness"/);
+  for (const code of ["pd", "pw", "pm", "py"]) {
+    assert.ok(DECISION_CONTRACT_TEXT.includes(`"${code}"`), `${code} is not offered`);
+  }
+});
+
+test("🔴🔴 and it is told when NOT to use one, which is the expensive half", () => {
+  // A model given a filter and no reason to withhold it will filter everything, and a narrow
+  // window on a settled question hides the source that actually explains it. The instruction that
+  // matters is the negative one.
+  assert.match(DECISION_CONTRACT_TEXT, /would be WRONG rather than merely less interesting/);
+  assert.match(DECISION_CONTRACT_TEXT, /When in doubt, null/);
+});
+
+test("🔴 a window without a search is dropped, like the query and the count", () => {
+  assert.equal(readTurnDecision(turn({ needsWeb: true, then: "reply", webFreshness: "pw" }, "x"))?.webFreshness, "pw");
+  assert.equal(readTurnDecision(turn({ needsWeb: false, then: "reply", webFreshness: "pw" }, "x"))?.webFreshness, null);
+  assert.equal(readTurnDecision(turn({ then: "reply" }, "x"))?.webFreshness, null);
+});
+
+test("🔴 nothing here checks the window against a list — that fact belongs to the provider", () => {
+  // Deliberate: a second copy of Brave's vocabulary in this file is a second thing to update the
+  // day Brave adds a value, and the two would drift. `readFreshness` in the search function drops
+  // what Brave will not take, so an invented window becomes no filter rather than a live parameter
+  // that quietly does nothing.
+  assert.equal(
+    readTurnDecision(turn({ needsWeb: true, then: "reply", webFreshness: "last_week" }, "x"))?.webFreshness,
+    "last_week",
+  );
+});
+
+console.log("turn-router.test.ts OK");

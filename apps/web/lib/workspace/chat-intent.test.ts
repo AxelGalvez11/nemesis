@@ -43,7 +43,7 @@ for (const skill of CHAT_SKILLS) {
 // ── the contract describes consequences, not labels ──────────────────────────
 {
   const contract = intentContract();
-  for (const field of ["mode", "workspace", "needsWeb", "webQuery", "webResults", "skills", "topic"]) {
+  for (const field of ["mode", "workspace", "needsWeb", "webQuery", "webResults", "webFreshness", "skills", "topic"]) {
     assert.ok(contract.includes(`"${field}"`), `the contract defines ${field}`);
   }
   // The one consequence the model cannot infer and the most expensive mistake available: a turn
@@ -121,6 +121,7 @@ assert.match(
     needsWeb: false,
     skills: ["test-craft"],
     topic: "Krebs cycle",
+    webFreshness: null,
     webQuery: null,
     webResults: null,
     workspace: "write",
@@ -167,5 +168,31 @@ assert.equal(DEFAULT_INTENT.mode, "conversation");
 assert.equal(DEFAULT_INTENT.workspace, "none");
 assert.equal(DEFAULT_INTENT.needsWeb, false);
 assert.equal(DEFAULT_INTENT.webResults, null);
+assert.equal(DEFAULT_INTENT.webFreshness, null);
+
+// ── how recent the pages have to be ──────────────────────────────────────────
+// Owner, 2026-08-21: *"let the model pick freshness."* Brave has had this filter the whole time
+// and nothing in this product had ever set it, so a question about this week was answered from
+// pages of any age. Which windows exist is the provider's fact and is validated there; what is
+// asserted here is the half that is ours.
+{
+  const contract = intentContract();
+  for (const code of ["pd", "pw", "pm", "py"]) {
+    assert.ok(contract.includes(`"${code}"`), `${code} is not offered to the model`);
+  }
+  // 🔴 THE NEGATIVE INSTRUCTION IS THE ONE THAT MATTERS. A model given a filter and no reason to
+  // withhold it filters everything, and a narrow window on a settled question hides the source
+  // that actually explains it.
+  assert.match(contract, /would be WRONG rather than merely less interesting/);
+  assert.match(contract, /When in doubt, null/);
+}
+// A window without a search is the same contradiction as a query or a count without one.
+assert.equal(readChatIntent('{"needsWeb":true,"webFreshness":"pw"}')?.webFreshness, "pw");
+assert.equal(readChatIntent('{"needsWeb":false,"webFreshness":"pw"}')?.webFreshness, null);
+// 🔴 AND NOTHING HERE CHECKS IT AGAINST A LIST. A second copy of Brave's vocabulary in this file
+// is a second thing to update the day Brave adds a value. `readFreshness` in the search function
+// drops what Brave will not take, so an invented window becomes no filter rather than a live
+// parameter that quietly does nothing.
+assert.equal(readChatIntent('{"needsWeb":true,"webFreshness":"last_week"}')?.webFreshness, "last_week");
 
 console.log("chat-intent.test.ts OK");

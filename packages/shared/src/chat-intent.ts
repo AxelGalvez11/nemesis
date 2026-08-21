@@ -158,6 +158,26 @@ export interface ChatIntent {
    * invented.
    */
   webResults: number | null;
+  /**
+   * How recent the pages have to be, when `needsWeb`. Null means any age will do.
+   *
+   * 🔴 THE MODEL DECIDES BECAUSE RECENCY IS A PROPERTY OF THE QUESTION, NOT OF THE WORDS IN IT.
+   * "What is the current inflation rate" and "what did inflation do in 2019" both name inflation
+   * and want opposite things from the archive, and no keyword tells them apart. The provider has
+   * had a `freshness` filter the whole time (Brave: `pd` 24h, `pw` 7 days, `pm` 31 days, `py` 365
+   * days, or an explicit date range) and nothing in this product had ever set it — so a question
+   * about this week's news was answered from whatever ranked highest, of any age.
+   *
+   * 🔴 IT IS NOT THE SAME THING AS PUTTING A YEAR IN THE QUERY, which is what `webQuery` already
+   * asks for. A year in the query is a hint to the ranker and pages can and do outrank it; a
+   * freshness window is a filter the index applies before ranking begins.
+   *
+   * 🔴 THE VALUE IS VALIDATED WHERE IT IS USED, NEVER HERE. Which window a question needs is a
+   * reading; which windows exist is a fact about Brave, and `readFreshness` in the search function
+   * is the one place that knows it. A model that invents `last_week` gets no filter rather than a
+   * parameter that silently does nothing.
+   */
+  webFreshness: string | null;
   workspace: WorkspaceUse;
   /**
    * Which expertise packets to attach, by id.
@@ -186,6 +206,7 @@ export const DEFAULT_INTENT: ChatIntent = {
   needsWeb: false,
   skills: [],
   topic: null,
+  webFreshness: null,
   webQuery: null,
   webResults: null,
   workspace: "none",
@@ -265,7 +286,8 @@ export function intentContract(catalog: readonly IntentSkill[]): string {
     "Answer with a single JSON object and nothing else:",
     "",
     '{"mode": "...", "workspace": "...", "needsWeb": true|false, "webQuery": "..."|null, '
-    + '"skills": ["..."], "topic": "..."|null, "webResults": <number>|null}',
+    + '"skills": ["..."], "topic": "..."|null, "webResults": <number>|null, '
+    + '"webFreshness": "pd"|"pw"|"pm"|"py"|null}',
     "",
     '"mode" is what kind of answer this turn wants:',
     '  "conversation" — small talk, a remark, a complaint, a question about Nemesis itself, or a '
@@ -318,6 +340,15 @@ export function intentContract(catalog: readonly IntentSkill[]): string {
     + "whether sources agree needs many more. Reading more costs no extra search, only the time to "
     + "read them and the room they take up in your context, so do not ask for a hundred pages to "
     + "answer something one page settles. Null when needsWeb is false.",
+    "",
+    // 🔴 A FILTER, NOT A HINT, AND THAT IS WHY IT IS WORTH A FIELD OF ITS OWN. Putting a year in
+    // the query only asks the ranker nicely; this one is applied by the index before ranking.
+    '"webFreshness" is how recent the pages have to be, when needsWeb is true: "pd" for the last '
+    + 'day, "pw" the last week, "pm" the last month, "py" the last year. Use it when an older page '
+    + "would be WRONG rather than merely less interesting: a price, a standing, a score, a version, "
+    + "a rule that was amended, anything still unfolding. Leave it null everywhere else, including "
+    + "for most questions about the past, where a narrow window would hide the source that actually "
+    + "explains it. When in doubt, null: an old page you can judge beats no page at all.",
     "",
     '"skills" names the expertise Nemesis should be given for this turn, by id. Pick only what this '
     + "message actually calls for. Most turns need none, and an unnecessary packet makes the answer "
@@ -432,6 +463,10 @@ export function readChatIntent(raw: string): ChatIntent | null {
       && Number.isFinite(parsed.webResults) && parsed.webResults >= 1
       ? Math.floor(parsed.webResults)
       : null,
+    // 🔴 PASSED THROUGH AS TEXT, NOT CHECKED AGAINST A LIST HERE. Which windows exist belongs to
+    // the provider, and a second copy of that vocabulary in this file is a second thing to update
+    // the day Brave adds one. Same contradiction rule as the two above: no search, no window.
+    webFreshness: needsWeb === true ? asText(parsed.webFreshness) || null : null,
     workspace: workspace ?? DEFAULT_INTENT.workspace,
   };
 }

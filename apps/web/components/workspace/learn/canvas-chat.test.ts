@@ -53,3 +53,23 @@ test("the bound is a real number and small enough to be honest about", () => {
   assert.ok(MAX_SEARCH_ROUNDS >= 2, "one round is the single-search behaviour this replaced");
   assert.ok(MAX_SEARCH_ROUNDS <= 6, `${MAX_SEARCH_ROUNDS} rounds is a turn nobody is waiting through`);
 });
+
+// ── The freshness window reaches the provider ────────────────────────────────────────────────
+//
+// Owner, 2026-08-21: *"let the model pick freshness."* This is a five-file chain — the contract
+// offers the field, the reader keeps it, the loop passes it, `searchWebContext` puts it in the
+// body, and the edge function hands it to Brave — and a break anywhere in it is SILENT: the answer
+// still arrives, it is simply built from pages of any age, with nothing on screen to say so. Each
+// link is checked at its own end; this one guards the two in this file's reach.
+
+test("🔴 the model's chosen window is passed to the search, not dropped at the call site", () => {
+  const call = chat.slice(chat.indexOf("searchWebContext("));
+  assert.match(call.slice(0, 220), /decision\.webFreshness/, "the window is decided and then thrown away");
+});
+
+test("🔴 and `searchWebContext` puts it on the wire", () => {
+  const api = code(readFileSync(new URL("../../../lib/workspace/chat-api.ts", import.meta.url), "utf8"));
+  const fn = api.slice(api.indexOf("export async function searchWebContext"));
+  const body = fn.slice(0, fn.indexOf("if (!response.ok)"));
+  assert.match(body, /\.\.\.\(freshness \? \{ freshness \} : \{\}\)/, "the window never reaches the request body");
+});
