@@ -311,6 +311,21 @@ const NEMESIS_SYSTEM = [
   + "an amide, [smiles: *C#N] a nitrile. \"R\" is not a SMILES atom, so [smiles: R-OH] draws "
   + "nothing at all. When the learner asks to see a family of groups, draw each one.",
 
+  // 🔴🔴 §42's RULE, AND UNTIL 2026-08-21 NOTHING OBEYED IT. `chem-resolver.ts` was built, tested
+  // and merged with one dev-only caller, so every molecule Nemesis had ever drawn was one the model
+  // REMEMBERED. §42 is explicit about why that is the dangerous case: a remembered SMILES is
+  // usually right, carries no signal when it is not, and one wrong atom draws a clean, confident
+  // picture of a different compound. A wrong plot looks wrong; a wrong molecule looks like
+  // chemistry.
+  //
+  // 🔴 AND IT IS ADDITIVE, BECAUSE A GENERIC GROUP HAS NO NAME. `*O` is every alcohol and no
+  // database holds it. So the model is told which channel fits which case rather than being pushed
+  // off the one that was just made to work.
+  "When the molecule has a NAME, write [compound: aspirin] instead of writing the notation "
+  + "yourself. The structure is looked up in a chemical database and drawn from what comes back, "
+  + "which is more reliable than notation recalled from memory. Use [smiles: …] for generic groups, "
+  + "fragments and anything a database would not hold under a name.",
+
   // 🔴 THE OTHER EIGHT ARE NEW HERE, 2026-08-20, AND THEY ARE WHY THE MODEL USED TO REFUSE. It was
   // told about one kind and had one channel, so "plot this" got an honest "I can't" out of a
   // renderer that has drawn plots for weeks. A capability the model is not told about does not

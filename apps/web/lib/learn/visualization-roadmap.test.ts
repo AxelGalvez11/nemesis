@@ -39,6 +39,8 @@ const VOICE_FUNCTION = readFileSync(
 
 const CHEM = readFileSync(new URL("./chem-notation.ts", import.meta.url), "utf8");
 const RESOLVER = readFileSync(new URL("./chem-resolver.ts", import.meta.url), "utf8");
+const RESOLVER_WIRING = readFileSync(new URL("./structure-resolve.ts", import.meta.url), "utf8");
+const RESOLVER_ROUTE = readFileSync(new URL("../../app/api/learn/structure/route.ts", import.meta.url), "utf8");
 const REGISTRY = readFileSync(new URL("./reference-registry.ts", import.meta.url), "utf8");
 const PRONUNCIATION = readFileSync(new URL("./pronunciation-evidence.ts", import.meta.url), "utf8");
 const BAKEOFF = readFileSync(new URL("./tts-bakeoff.ts", import.meta.url), "utf8");
@@ -185,7 +187,12 @@ test("§42's status line matches whether a registry or a generation wiring exist
   assert.ok(SECTION_42.length > 0, "§42 has gone missing from the contract");
   assert.match(
     SECTION_42,
-    /STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, NOW INCLUDING CHEMICAL STRUCTURES\. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY\. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT\./,
+    // 🔴 THE STATUS LINE MOVED ON 2026-08-21 AND THE GUARD MOVED WITH IT. It used to say rungs one
+    // and two were "shipped and serving", which was true of the CODE and false of the product: the
+    // resolver had one dev-only caller, so every molecule a learner had seen was recalled rather
+    // than looked up. The rungs that are still unreached are named in the same breath, which is the
+    // property this test protects.
+    /STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, AND A LESSON OR A REPLY NOW RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT\. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY\. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT\./,
     "§42 must say plainly which rungs are reached",
   );
   // 🔴 THE EMPTY REGISTRY IS THE CLAIM MOST LIKELY TO GO STALE, because seeding it is the obvious
@@ -652,4 +659,44 @@ test("🔴 §47 — the replayable phrase is looked up, never guessed from the c
   }
   assert.match(replay, /pair\.leftLocale/);
   assert.match(replay, /pair\.rightLocale/);
+});
+
+// 🔴🔴 §42's RESOLVER SPENT THREE DAYS BUILT AND UNREACHABLE, which is the failure this whole file
+// exists to make loud. A guard on the RULE is not enough when the rule has no caller: `chem-resolver`
+// was correct, tested, and asked for nothing by any teaching path, so §42 described a ladder the
+// product never climbed. These check the wiring, not the chemistry.
+test("🔴 §42's resolver is reachable from a lesson and a reply, not only from the Lab", () => {
+  assert.match(SECTION_42, /A LESSON OR A REPLY NOW RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT/);
+  assert.match(RESOLVER_ROUTE, /import \{ resolveStructure \}/, "the route stopped asking the resolver");
+  // PubChem is reached from the server. A page must not query a third party on a learner's behalf:
+  // that would hand out their IP and a referrer carrying a canvas URL.
+  assert.match(RESOLVER_ROUTE, /export const runtime = "nodejs"/);
+  // The pure layer must not IMPORT the resolver: it says what to look up, the route does the looking.
+  assert.equal(
+    /^import\b.*chem-resolver/m.test(RESOLVER_WIRING),
+    false,
+    "the pure layer reached for the resolver directly — PubChem is now in the learner's bundle",
+  );
+  assert.equal(RESOLVER_WIRING.includes("import"), false, "the pure layer grew a dependency");
+});
+
+// 🔴 THE PROVENANCE STAMP IS WRITTEN, NEVER READ — the same rule §44 keeps for `traceOrigin`, and
+// for the same reason. A model that could set `resolvedFrom` beside a remembered SMILES would make
+// its own memory indistinguishable from a database lookup, which is worse than no provenance at all.
+test("🔴 a model cannot claim a resolver's provenance", () => {
+  assert.match(SECTION_42, /stamped by the resolver and stripped from anything a model sent/);
+  assert.match(RESOLVER_WIRING, /resolvedFrom: \{ id: result\.structure\.id/);
+  assert.equal(
+    /resolvedFrom:\s*(value|item|rest)\.resolvedFrom/.test(RESOLVER_WIRING),
+    false,
+    "the stamp is being copied from the request — a model can now launder recall into provenance",
+  );
+});
+
+// 🔴 AND THE WILDCARD CHANNEL SURVIVES THE ADDITION. `*O` is every alcohol; no database holds it,
+// so routing generic notation through a resolver would silently undo the fix that made functional
+// groups drawable at all.
+test("🔴 model-written notation still draws, because a generic group has no name", () => {
+  assert.match(SECTION_42, /A generic group has no name and must not be resolved/);
+  assert.match(RESOLVER_WIRING, /Notation the model wrote directly\. It keeps working/);
 });

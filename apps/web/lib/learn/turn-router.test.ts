@@ -613,3 +613,17 @@ test("🔴 the reply prompt offers the computed-plot channel, or nothing can rea
   // which is exactly how chemistry lost three reports to `R-OH`.
   for (const fn of ["sqrt", "ln", "tanh"]) assert.ok(prompt.includes(fn), `${fn} left the stated allow list`);
 });
+
+// 🔴🔴 §42's RULE — "where a name exists, the name is resolved" — HAD NO OBEDIENT CALLER UNTIL THE
+// model was told the channel existed. A wrong plot looks wrong; a wrong molecule looks like
+// chemistry, which is why this one is worth a guard of its own.
+test("🔴 the reply prompt prefers a lookup over recall for a named compound", () => {
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "show me aspirin" })
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(prompt, /\[compound: aspirin\]/, "the model cannot reach the resolver");
+  assert.match(prompt, /more reliable than notation recalled from memory/, "the reason went missing");
+  // 🔴 AND THE OTHER CHANNEL SURVIVES, because a generic group has no name to look up. Losing this
+  // would undo the fix that made functional groups drawable in the first place.
+  assert.match(prompt, /Use \[smiles: …\] for generic groups/, "the wildcard channel was pushed aside");
+});

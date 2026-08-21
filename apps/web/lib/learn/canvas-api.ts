@@ -19,7 +19,7 @@ import {
   type CanvasEscalationReason,
 } from "./canvas-escalation";
 import { parseEvaluation, verdictIsTrustworthy } from "./canvas-judge";
-import { computePlots } from "./plot-compute";
+import { prepareAnswer } from "./answer-prepare";
 import type { CognitiveAction } from "./canvas-policy";
 import {
   conceptLabel,
@@ -158,8 +158,8 @@ async function askValidated<T>(
   // 🔴 EVERY CANVAS CALL PASSES THROUGH HERE, WHICH IS WHY §45'S COMPUTATION HOOKS IN AT THIS ONE
   // LINE. A lesson, a command, a relearn and a selection explanation can all carry a plot, and
   // wiring each of the fourteen entry points separately would mean fourteen chances to forget one.
-  // `computePlots` returns its input untouched unless the answer actually contains a formula, so
-  // the turns that never draw a curve pay a substring test and no round trip.
+  // `prepareAnswer` returns its input untouched unless the answer actually names a compound or
+  // carries a formula, so turns that draw neither pay two substring tests and no round trip.
   const first = await ask(uid, messages, signal);
   if (first.error) return { error: first.error, escalated: null, value: null };
   const value = first.text ? read(await computed(first.text, signal)) : null;
@@ -188,9 +188,9 @@ async function askValidated<T>(
   return { error: null, escalated: choice.reason, value: second.text ? read(await computed(second.text, signal)) : null };
 }
 
-/** §45's formulas, turned into points on the server. See lib/learn/plot-compute.ts. */
+/** §42's compound names and §45's formulas, resolved on the server. See lib/learn/answer-prepare.ts. */
 function computed(text: string, signal?: AbortSignal): Promise<string> {
-  return computePlots(text, undefined, signal);
+  return prepareAnswer(text, undefined, signal);
 }
 
 // -------------------------------------------------------------------- lesson

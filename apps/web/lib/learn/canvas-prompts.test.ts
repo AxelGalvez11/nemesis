@@ -587,3 +587,16 @@ test("🔴 the lesson prompt offers the computed-plot channel", () => {
   assert.match(system, /"shape":"normal"/, "distributions are built and would be unreachable");
   assert.match(system, /Nothing else runs, and anything else draws no curve/, "the allow list is what stops silent failure");
 });
+
+// 🔴 THE TEACHING PATH RESOLVES NAMES TOO (§42). A lesson drawing a remembered molecule beside a
+// reply drawing a looked-up one is the worst of both: same product, two trust levels, no way for a
+// learner to tell which they are reading.
+test("🔴 the lesson prompt prefers a lookup over recall for a named compound", () => {
+  const system = lessonMessages({ level: null, sources: [], topic: "esters" })
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(system, /"compound":"aspirin"/, "a lesson cannot reach the resolver");
+  assert.match(system, /looked up from a chemical database/);
+  assert.match(system, /Use "value" only for a generic group/, "the wildcard channel was pushed aside");
+});

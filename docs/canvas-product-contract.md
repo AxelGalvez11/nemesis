@@ -1314,7 +1314,29 @@ enjoyable engineering should read this line as the answer.
 
 # 42. 🔴 SCIENTIFIC REPRESENTATION IS A TRUST LADDER — generation is the last rung, not the first (owner, 2026-08-18)
 
-## STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, NOW INCLUDING CHEMICAL STRUCTURES. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
+## STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, AND A LESSON OR A REPLY NOW RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
+
+🔴 **The resolver was wired on 2026-08-21, and until then this section described something no
+learner had ever seen.** `chem-resolver.ts` was built, tested and merged, and `grep -r
+resolveStructure` returned one dev-only route. So every molecule Nemesis had drawn was one the model
+remembered — the exact case the rule below was written about. The teaching path did not disagree with
+the ladder; it simply never climbed it.
+
+The model now names the compound and stops there: `{"kind":"structure","compound":"aspirin"}` in a
+lesson, `[compound: aspirin]` in a reply. `app/api/learn/structure/route.ts` asks PubChem from the
+**server** — the learner's browser never touches a third party — and `structure-resolve.ts` puts the
+answer back before any parser runs.
+
+🔴 **`resolvedFrom` is stamped by the resolver and stripped from anything a model sent.** The field
+means "a resolver was asked for this name and returned this string". A model can write those words,
+and one that wrote them beside a remembered SMILES would be laundering its own memory into
+provenance. The validator still accepts the field because trusted callers set it; nothing arriving
+from a model keeps it.
+
+🔴 **A generic group has no name and must not be resolved.** `*O` is every alcohol and PubChem holds
+no such compound, so model-written notation still works exactly as it did. What changed is that a
+named compound now has a better path, and the prompt says which case is which. A name that does not
+resolve loses its picture and never the prose.
 
 🔴 **"SERVING" WAS HALF TRUE UNTIL 2026-08-19 AND THE HALF IT WAS MISSING IS WORTH NAMING.** The structure lane was built, routed, dark-mode-correct and covered by six browser checks — and the teaching prompt never mentioned it, so no lesson could ask for a molecule. Rungs one and two were serving for figures and equations, and merely *reachable* for chemistry. The prompt vocabulary now names `structure`, so a lesson on functional groups can draw one. Rungs three and four are unchanged: the registry is still empty and nothing generates.
 
