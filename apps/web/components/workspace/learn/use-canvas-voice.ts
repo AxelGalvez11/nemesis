@@ -38,6 +38,16 @@ import { DEFAULT_VOICE, readVoice, VOICE_STORAGE_KEY } from "@/lib/learn/canvas-
 import { useCanvasSpeech } from "./use-canvas-speech";
 import type { PolicyRuntime } from "./use-policy-runtime";
 
+/**
+ * What a voice says when you pick it.
+ *
+ * 🔴 ONE SENTENCE, AND IT IS ABOUT THE VOICE RATHER THAN ABOUT NEMESIS. A preview is a sample of a
+ * SOUND; a line of product copy makes the learner read instead of listen, and a long one makes them
+ * wait to hear the end of a thing they are only sampling. Short enough that pressing four options
+ * in a row is four sounds rather than four sentences.
+ */
+const VOICE_PREVIEW_LINE = "This is how I sound.";
+
 export interface CanvasVoice {
   /** Straight onto `<CanvasHeader voice={…}>`. */
   header: {
@@ -50,14 +60,15 @@ export interface CanvasVoice {
     /** Which speaker the learner chose. See `lib/learn/canvas-voices.ts`. */
     voiceId: string;
     onSetVoice: (next: string) => void;
+    /** How fast Nemesis reads, and the control that cycles it. Shown twice by design (owner
+     *  2026-08-20, "both"): here for "how should it read from now on", and in the row under an
+     *  answer for "read THIS faster". One value behind both, which is what makes showing it twice
+     *  honest rather than confusing. */
+    speed: VoiceSpeed;
+    onCycleSpeed: () => void;
   };
   /** Speak an arbitrary passage on demand; pressing again repeats it. */
   speakAloud: (text: string) => void;
-  /** How fast Nemesis reads, and the control that cycles it. Shown twice by design (owner
-   *  2026-08-20, "both"): a default in the voice picker, and a per-answer control in the icon row
-   *  under a reply — the same value, reachable where each decision is actually made. */
-  speed: VoiceSpeed;
-  onCycleSpeed: () => void;
   /** Straight onto `<CanvasComposer listenSignal={…}>`. Changes when the microphone should open. */
   listenSignal: number | null;
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
@@ -160,6 +171,12 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     if (next === "off") speech.stop();
   }, [speech]);
 
+  const onCycleSpeed = useCallback(() => {
+    const next = nextVoiceSpeed(speed);
+    setSpeed(next);
+    writeVoiceSpeed(typeof window === "undefined" ? null : window.localStorage, next);
+  }, [speed]);
+
   const onSetVoice = useCallback((next: string) => {
     const chosen = readVoice(next);
     setVoiceId(chosen);
@@ -167,7 +184,16 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     // 🔴 SILENCE WHAT IS PLAYING. Changing the speaker mid-sentence and hearing the old one finish
     // reads as the setting not having worked; the next utterance is where the choice takes effect.
     speech.stop();
-  }, [speech]);
+    // 🔴🔴 AND SAY SOMETHING IN IT. Owner, 2026-08-20: *"selecting voices should give a small
+    // preview."* Six ids — eve, ara, rex, gork, sal, leo — are six words that mean nothing about
+    // how a voice sounds, and xAI publishes no catalogue to describe them from. Choosing blind and
+    // finding out on the next question is not choosing.
+    //
+    // 🔴 IT SPEAKS AS THE VOICE BEING CHOSEN, AT THE SPEED BEING USED, so the preview is the thing
+    // itself rather than a demonstration of a neighbouring setting. And it is keyed on the id, so
+    // pressing the same option twice replays rather than being deduplicated as "already said".
+    void speech.speak(`preview:${chosen}`, VOICE_PREVIEW_LINE, { locale: LOCALE_UNSPECIFIED, speed, voiceId: chosen });
+  }, [speech, speed]);
 
   const onSetAutoDictation = useCallback((next: AutoDictation) => {
     setAutoDictation(next);
@@ -228,10 +254,12 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       autoDictation,
       dictationSupported,
       mode,
+      onCycleSpeed,
       onSetAutoDictation,
       onSetVoice,
       onToggle,
       speaking: speech.speaking,
+      speed,
       voiceId,
     },
     listenSignal,
@@ -250,17 +278,11 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
      * refuses notation and bounds the length — because those protect the learner from an
      * unlistenable noise, not from hearing a paragraph they chose.
      */
-    onCycleSpeed: () => {
-      const next = nextVoiceSpeed(speed);
-      setSpeed(next);
-      writeVoiceSpeed(typeof window === "undefined" ? null : window.localStorage, next);
-    },
     speakAloud: (text: string) => {
       // Restarting mid-sentence is what "repeat" means when it is already talking.
       speech.stop();
       void speech.speak(`aloud:${text.slice(0, 48)}`, text, { locale: LOCALE_UNSPECIFIED, speed, voiceId });
     },
-    speed,
     stopSpeaking: speech.stop,
   };
 }

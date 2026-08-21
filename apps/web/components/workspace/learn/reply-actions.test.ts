@@ -51,3 +51,32 @@ test("🔴 the speed control shows its VALUE, so it needs no menu", () => {
   // worth knowing at a glance.
   assert.match(ACTIONS, /\{speed\}×/);
 });
+
+// ── Choosing a voice, and how fast it reads ──────────────────────────────────────────────────
+
+const VOICE_HOOK = readFileSync(new URL("./use-canvas-voice.ts", import.meta.url), "utf8");
+const CONTROLS = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
+
+test("🔴🔴 picking a voice plays a sample of THAT voice", () => {
+  // Owner, 2026-08-20: *"selecting voices should give a small preview."* Six ids — eve, ara, rex,
+  // gork, sal, leo — are six words that say nothing about how a voice sounds, and xAI publishes no
+  // catalogue to describe them from. Choosing blind and finding out on the next question is not
+  // choosing. Calibration: drop the speak call from onSetVoice and this reddens.
+  const set = VOICE_HOOK.slice(VOICE_HOOK.indexOf("const onSetVoice"), VOICE_HOOK.indexOf("const onSetVoice") + 1600);
+  assert.match(set, /speech\.speak\(`preview:\$\{chosen\}`/, "choosing a voice says nothing");
+  // 🔴 AS THE VOICE BEING CHOSEN, AT THE SPEED IN USE — otherwise the preview demonstrates a
+  // neighbouring setting rather than the thing being picked.
+  assert.match(set, /voiceId: chosen/, "the preview plays in the OLD voice");
+  assert.match(set, /speed,/, "the preview ignores the chosen speed");
+  // ...and keyed on the id, so pressing the same option twice replays rather than deduplicating.
+  assert.match(VOICE_HOOK, /const VOICE_PREVIEW_LINE = /);
+});
+
+test("🔴 the speed is offered in BOTH places, from one value", () => {
+  // Owner asked for both. They are two moments asking the same question: the picker is "how should
+  // Nemesis read from now on", the row under an answer is "read THIS faster". One value behind
+  // both is what makes showing it twice honest rather than confusing.
+  assert.match(CONTROLS, /onClick=\{voice\.onCycleSpeed\}/, "the picker has no speed control");
+  assert.match(CONTROLS, /\{voice\.speed\}×/, "the picker does not show the current speed");
+  assert.match(CANVAS, /speed=\{voice\.header\.speed\}/, "the row under an answer reads a different value");
+});

@@ -870,6 +870,21 @@ export function OptionsControl({
                       onClick={() => voice.onSetVoice(option.id)}
                     />
                   ))}
+                  {/* 🔴 THE SPEED LIVES HERE TOO, AND THE DUPLICATION IS THE OWNER'S CALL ("both",
+                      2026-08-20). They are two different moments asking the same question: this one
+                      is "how should Nemesis read to me from now on", and the control under an
+                      answer is "read THIS faster". One value behind both, so setting either is
+                      setting the same thing — which is what makes showing it twice honest rather
+                      than confusing. */}
+                  <button
+                    className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary) disabled:opacity-40"
+                    disabled={!voiceOn}
+                    onClick={voice.onCycleSpeed}
+                    type="button"
+                  >
+                    <span>Reading speed</span>
+                    <span className="tabular-nums text-(--ui-text-tertiary)">{voice.speed}×</span>
+                  </button>
                   <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
                 </>
               )}

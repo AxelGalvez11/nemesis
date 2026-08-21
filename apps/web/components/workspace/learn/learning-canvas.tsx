@@ -1061,7 +1061,17 @@ export function LearningCanvas({
       {/* Command-Enter presses whatever Continue is on screen. Renders nothing. */}
       <ContinueHotkey onContinue={advance} />
 
-      <div className="relative h-full overflow-y-auto pt-[64px]">
+      {/* 🔴🔴 BOTTOM PADDING, AND ITS ABSENCE WAS A REAL BUG. Owner, 2026-08-20: *"also i cant
+          scroll all the way down."* This had `pt-[64px]` to clear the header and nothing at all for
+          the composer — which is an ABSOLUTELY POSITIONED overlay at `bottom-0`, so it takes no
+          space in this scroller and the last stretch of every answer sat permanently underneath it.
+          Scrolling could not reach it because there was nothing below it to scroll to.
+
+          🔴 SIZED FROM THE OVERLAY, NOT GUESSED: 56px of gradient (`pt-14`) + a 52px composer +
+          16px (`pb-4`) is 124, and the composer now GROWS when it carries attachments. 160 clears a
+          composer with a row of chips in it and leaves the gradient doing its job rather than
+          hiding text behind it. */}
+      <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
             below what anyone notices; the owner's reading ("there are also no fade in or fade out
@@ -1209,11 +1219,11 @@ export function LearningCanvas({
                   broken. `turnInFlight` is the same signal the thinking screen keys on. */}
               {!turnInFlight && replyText.trim() && (
                 <ReplyActions
-                  onCycleSpeed={voice.onCycleSpeed}
+                  onCycleSpeed={voice.header.onCycleSpeed}
                   onSpeak={voice.speakAloud}
                   onStop={voice.stopSpeaking}
                   speaking={voice.header.speaking}
-                  speed={voice.speed}
+                  speed={voice.header.speed}
                   // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
                   // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
                   // them, and a synthesiser reading it aloud is worse.

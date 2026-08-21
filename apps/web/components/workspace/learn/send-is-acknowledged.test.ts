@@ -191,3 +191,13 @@ test("🔴🔴 attachment chips are INSIDE the composer, not stacked above it", 
   // ...and the old floating row is gone, not merely duplicated.
   assert.ok(!/mb-1\.5 ml-1 flex flex-wrap items-center gap-1\.5/.test(composer), "the floating chip row is back");
 });
+
+test("🔴🔴 the canvas scrolls past the composer, which floats over it", () => {
+  // Owner, 2026-08-20: *"also i cant scroll all the way down."* The scroller had top padding to
+  // clear the header and NOTHING for the composer — which is absolutely positioned at bottom-0, so
+  // it occupies no space in the scroll flow and the end of every answer sat permanently beneath it.
+  // There was nothing below to scroll to.
+  //
+  // Calibration: drop the pb and this reddens.
+  assert.match(canvasCode, /overflow-y-auto pb-\[160px\] pt-\[64px\]/, "the scroller does not clear the floating composer");
+});
