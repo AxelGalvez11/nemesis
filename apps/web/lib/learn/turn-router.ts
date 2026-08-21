@@ -323,6 +323,25 @@ const NEMESIS_SYSTEM = [
   + "construction (points, segments), vectors (vectors, bodyLabel), equation (latex), code "
   + "(language, source, trace). At most " + String(MAX_REPLY_VISUALS) + " per answer.",
 
+  // 🔴🔴 §45 SHIPPED THIS AND NOTHING COULD REACH IT. The expression evaluator, the distribution
+  // maths and the curve builder were built, hardened against a real sandbox-escape probe, tested
+  // and merged — and §45's status line said so plainly for two days: "NO LESSON EMITS ONE YET."
+  // The plot renderer even carried a comment about colouring a curve split by a pole, for curves
+  // nothing could produce. The missing piece was never maths: it was somewhere for the model to
+  // write `x^2` instead of a hundred and sixty coordinate pairs, and being told it may.
+  //
+  // 🔴 AND THE FUNCTION LIST IS `expression.ts`'s OWN ALLOW LIST, stated rather than left to be
+  // discovered. A model that reaches for `integrate(...)`, gets no curve and is told nothing learns
+  // that plotting does not work — which is exactly how chemistry lost three reports to `R-OH`.
+  "A plotted series may give a FORMULA instead of points: {\"label\":\"sin x\",\"expression\":\"sin(x)\","
+  + "\"from\":0,\"to\":6.28} is evaluated by trusted code and drawn as a smooth curve, and "
+  + "{\"label\":\"IQ\",\"distribution\":{\"shape\":\"normal\",\"mean\":100,\"sd\":15},\"from\":55,\"to\":145} "
+  + "draws a density curve. Write the formula rather than listing points whenever the shape comes "
+  + "from one. A formula may use + - * / ^ ( ), pi and e, and these functions: abs acos asin atan "
+  + "cbrt ceil cos cosh exp floor ln log log2 max min round sign sin sinh sqrt tan tanh. "
+  + "Distributions are normal (mean, sd), uniform (from, to), binomial (trials, probability) and "
+  + "poisson (rate). Nothing else runs, and anything else draws no curve.",
+
   "Draw when the shape, the trend or the arrangement is the point, and whenever the learner asks "
   + "to be SHOWN something. Keep writing the prose around it as normal, and do not draw something "
   + "that adds nothing to the sentence beside it.",

@@ -151,7 +151,7 @@ const VISUAL_RULE =
   '"visual" is optional and is a SEMANTIC REQUEST, never rendering code. Use it only when a visual makes a relationship materially easier to understand than the prose. ' +
   'Allowed shapes are: {"kind":"equation","latex":"…"}; ' +
   '{"kind":"relationship","nodes":[{"id":"n1","label":"…"}],"edges":[{"from":"n1","to":"n2","label":"…","polarity":"increases"|"decreases"}]} — use polarity when one thing drives or blocks another; ' +
-  '{"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}]}; ' +
+  '{"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}]} — and a series may give a FORMULA instead of points, as {"label":"…","expression":"sin(x)","from":0,"to":6.28} or {"label":"…","distribution":{"shape":"normal","mean":100,"sd":15},"from":55,"to":145}, which trusted code evaluates and draws; write the formula rather than listing points whenever the shape comes from one; ' +
   '{"kind":"structure","notation":"smiles"|"reaction-smiles","value":"CC(=O)Oc1ccccc1C(=O)O","highlight":[0,1],"carbons":"skeletal"|"all","conditions":"…"} — a molecule or a reaction, given ONLY as canonical notation; never coordinates, never a drawing; an open attachment point is "*", so a generic alcohol is "*O", a carboxylic acid "*C(=O)O" and an amide "*C(=O)N" — "R" is not a SMILES atom and a value containing one draws nothing at all; ' +
   '{"kind":"table","columns":[{"key":"c1","label":"…","numeric":true}],"rows":[{"cells":{"c1":100}}],"totals":[{"column":"c1","value":100}],"balance":{"left":"c1","right":"c2"},"hidden":{"column":"c1","row":0}}; ' +
   '{"kind":"timeline","unit":"years","events":[{"at":-49,"atLabel":"49 BCE","label":"…","until":-44,"lane":"…","uncertain":true}],"hidden":0} — "at" is a plain number on any scale you choose and "atLabel" is what a human reads, so eras, geological time and seconds all work without a date format; ' +
@@ -160,6 +160,11 @@ const VISUAL_RULE =
   'or {"kind":"code","language":"python","source":"…","trace":[{"line":1,"note":"…","variables":[{"name":"total","value":"0"}]}]}. ' +
   'Every shape also takes "learningGoal" and "caption". ' +
   "A stated total, balance, angle or equilibrium is RECOMPUTED from the data you supply, and a claim that does not hold produces no visual at all — so state one only when you have worked it out. " +
+  // 🔴 THE FUNCTION LIST IS THE PARSER'S OWN ALLOW LIST (`expression.ts`), NOT A SELECTION. Naming
+  // them stops the model reaching for `gamma(x)` or `integrate(...)`, discovering nothing was
+  // drawn, and concluding the channel does not work — the same silent-failure shape that cost
+  // chemistry three reports before `*` was written down.
+  "A formula may use + - * / ^ ( ), the constants pi and e, and these functions: abs acos asin atan cbrt ceil cos cosh exp floor ln log log2 max min round sign sin sinh sqrt tan tanh. Distributions are normal (mean, sd), uniform (from, to), binomial (trials, probability) and poisson (rate). Nothing else runs, and anything else draws no curve. " +
   '"hidden" covers one cell or one event so the learner has something to retrieve rather than only read; use it when the visual is being taught rather than merely shown. ' +
   "A code trace is your account of what the code would do — nothing here executes it, and the learner is told so on screen. " +
   "Leave it absent when text is clearer. Never emit HTML, SVG, Mermaid, JavaScript, React, renderer names, styling, or arbitrary code. " +

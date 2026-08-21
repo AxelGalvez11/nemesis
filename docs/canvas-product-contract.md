@@ -1817,7 +1817,30 @@ to the right one.
 
 # 45. 🔴 THE MODEL MAY WRITE A CALCULATION, NEVER A DRAWING (owner, 2026-08-19)
 
-## STATUS: EXPRESSIONS, DISTRIBUTIONS AND SEEDED SIMULATION SHIPPED AND TESTED. NO LESSON EMITS ONE YET. NOTHING MODEL-WRITTEN REACHES THE DOM.
+## STATUS: EXPRESSIONS AND DISTRIBUTIONS ARE REACHABLE FROM A LESSON AND A REPLY. SEEDED SIMULATION IS NOT. NOTHING MODEL-WRITTEN REACHES THE DOM.
+
+🔴 **The wiring, 2026-08-21, and why it took a route.** This layer sat finished and unreachable for
+two days — the status line above used to read *"no lesson emits one yet"*, and `grep -r
+computed-series` returned a dev gallery and a test. The plot renderer even carried a comment about
+colouring a curve split by a pole, for curves nothing could produce. What was missing was never
+maths: it was a CHANNEL, somewhere for the model to write `x^2` instead of a hundred and sixty
+coordinate pairs, and a model that had been told it may.
+
+The canvas talks to the model from the **browser**, so there was no server already in that path to
+hang the arithmetic on, and a lazy `import()` would still have shipped a maths parser to a page whose
+only job is to draw a polyline. So `app/api/learn/plot/route.ts` does the evaluating, `plot-compute.ts`
+rewrites the model's JSON before the synchronous parsers ever see it, and `computed-plot.ts` decides
+what goes where. One round trip, taken only when an answer actually contains a formula — the check is
+a substring test that runs before any parse.
+
+🔴 **A plot that cannot be computed costs the picture, never the explanation.** `sqrt(x)` from −10 to
+−1 is a real formula asked over the wrong range. The series is dropped, a plot left with nothing
+loses its visual entirely rather than drawing empty axes — which read to a learner as a broken app —
+and the prose the model wrote around it survives untouched.
+
+🔴 **Simulation is still unreached, and this says so rather than counting it.** `sampledHistogram`
+and seeded sampling are built and tested; nothing emits one. A histogram wants bars, and the plot
+renderer draws polylines, so reaching it is a renderer question rather than a wiring one.
 
 The owner asked whether Nemesis could *"just code them as needed"*. This section is the answer, and
 it draws one line:

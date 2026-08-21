@@ -595,3 +595,21 @@ test("🔴 the reply prompt teaches the attachment point, so a functional group 
   assert.match(prompt, /\[smiles: \*O\]/, "the worked example went missing");
   assert.match(prompt, /"R" is not a SMILES atom/, "the negative half is what stops R-OH being written");
 });
+
+// 🔴🔴 §45's COMPUTATION LAYER WAS BUILT, HARDENED, TESTED, MERGED — AND UNREACHABLE FOR TWO DAYS,
+// because nothing told the model it could write a formula. This is the same failure as the visual
+// vocabulary naming three renderers out of nine, and the same failure as chemistry never being told
+// about `*`: a capability nobody is told about is indistinguishable from one that was never built.
+// Calibration: delete the clause and this reddens.
+test("🔴 the reply prompt offers the computed-plot channel, or nothing can reach it", () => {
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "plot sin x from 0 to 2 pi" })
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(prompt, /may give a FORMULA instead of points/, "the model cannot reach the curve builder");
+  assert.match(prompt, /"expression":"sin\(x\)"/, "the worked example went missing");
+  assert.match(prompt, /"distribution"/, "distributions are built and would be unreachable");
+  // 🔴 AND THE ALLOW LIST IS STATED RATHER THAN LEFT TO BE DISCOVERED. A model that reaches for
+  // `integrate(...)`, gets no curve and is told nothing concludes that plotting does not work —
+  // which is exactly how chemistry lost three reports to `R-OH`.
+  for (const fn of ["sqrt", "ln", "tanh"]) assert.ok(prompt.includes(fn), `${fn} left the stated allow list`);
+});

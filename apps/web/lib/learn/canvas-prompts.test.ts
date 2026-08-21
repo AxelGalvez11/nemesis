@@ -573,3 +573,17 @@ test("🔴 the lesson prompt teaches the attachment point too", () => {
   assert.match(system, /an open attachment point is "\*"/, "a lesson cannot draw a generic group");
   assert.match(system, /"R" is not a SMILES atom/, "the negative half went missing");
 });
+
+// 🔴 THE TEACHING PATH GETS THE SAME CHANNEL AS THE REPLY PATH (§45). One having it and the other
+// not is worse than neither: a curve when the learner asks a question and a table of coordinates
+// when the same idea appears in a lesson, with nothing in the product explaining the difference.
+test("🔴 the lesson prompt offers the computed-plot channel", () => {
+  const system = lessonMessages({ level: null, sources: [], topic: "exponential decay" })
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(system, /a series may give a FORMULA instead of points/);
+  assert.match(system, /"expression":"sin\(x\)"/);
+  assert.match(system, /"shape":"normal"/, "distributions are built and would be unreachable");
+  assert.match(system, /Nothing else runs, and anything else draws no curve/, "the allow list is what stops silent failure");
+});

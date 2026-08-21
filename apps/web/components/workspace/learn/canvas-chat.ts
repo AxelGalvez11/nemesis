@@ -46,6 +46,7 @@ import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
+import { computePlots } from "@/lib/learn/plot-compute";
 import {
   decisionOrReply,
   turnRouterMessages,
@@ -170,9 +171,16 @@ export async function askCanvasChat(
     { decision: CHAT_DECISION, signal },
   );
 
+  // 🔴 A FORMULA BECOMES POINTS BEFORE THE DECISION IS READ (§45). `computePlots` is a no-op — one
+  // `String.includes` — unless the answer actually contains an expression or a distribution, so the
+  // ordinary turn pays nothing for this. When it does contain one, the round trip has to happen
+  // HERE rather than inside the parser: `decisionOrReply` is synchronous, and the maths layer may
+  // not reach the learner's bundle (see lib/learn/plot-compute.ts for why that forces a route).
+  const readDecision = async (text: string) => decisionOrReply(await computePlots(text, undefined, signal));
+
   const first = await ask("", MAX_SEARCH_ROUNDS);
   if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [] };
-  let decision = first.text ? decisionOrReply(first.text) : null;
+  let decision = first.text ? await readDecision(first.text) : null;
 
   // 🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH. It used to get exactly one search: the
   // packet told it "the search has happened, answer from them", so a first query aimed slightly
@@ -214,7 +222,7 @@ export async function askCanvasChat(
     if (next.errorText) return { consulted: [], decision: null, error: next.errorText, sources: [] };
     // A failed round leaves the previous answer standing, which is better for the learner than an
     // error — and stops the loop, since a null decision cannot ask for another search.
-    decision = (next.text ? decisionOrReply(next.text) : null) ?? decision;
+    decision = (next.text ? await readDecision(next.text) : null) ?? decision;
     if (!next.text) break;
   }
 

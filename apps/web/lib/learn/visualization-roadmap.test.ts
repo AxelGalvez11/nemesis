@@ -57,6 +57,8 @@ const SECTION_45 = CONTRACT.slice(CONTRACT.indexOf("# 45."));
 const EXPRESSION = readFileSync(new URL("./expression.ts", import.meta.url), "utf8");
 const STATISTICS = readFileSync(new URL("./statistics.ts", import.meta.url), "utf8");
 const COMPUTED = readFileSync(new URL("./computed-series.ts", import.meta.url), "utf8");
+const COMPUTED_WIRING = readFileSync(new URL("./plot-compute.ts", import.meta.url), "utf8");
+const ROUTE = readFileSync(new URL("../../app/api/learn/plot/route.ts", import.meta.url), "utf8");
 
 /** The stack §41 names, by the package that would appear if one were adopted. */
 //
@@ -463,12 +465,34 @@ test("🔴 nothing executes code", () => {
 
 test("§45's status line matches whether a lesson emits one and where the parser runs", () => {
   assert.ok(SECTION_45.length > 0, "§45 has gone missing from the contract");
+  // 🔴 THE STATUS LINE MOVED ON 2026-08-21 AND THE GUARD MOVED WITH IT. It used to say "NO LESSON
+  // EMITS ONE YET", which was true for two days and was the whole defect: a computation layer that
+  // was built, hardened, tested, merged — and unreachable. Now expressions and distributions are
+  // wired through `plot-compute.ts` and a lesson or a reply can produce one.
   assert.match(
     SECTION_45,
-    /STATUS: EXPRESSIONS, DISTRIBUTIONS AND SEEDED SIMULATION SHIPPED AND TESTED\. NO LESSON EMITS ONE YET\. NOTHING MODEL-WRITTEN REACHES THE DOM\./,
+    /STATUS: EXPRESSIONS AND DISTRIBUTIONS ARE REACHABLE FROM A LESSON AND A REPLY\. SEEDED SIMULATION IS NOT\. NOTHING MODEL-WRITTEN REACHES THE DOM\./,
   );
+  // 🔴 AND THE HALF THAT IS STILL UNREACHED IS NAMED, rather than quietly counted as coverage —
+  // the same honesty §42 keeps about its own lower rungs. A histogram wants bars and the plot
+  // renderer draws polylines, so simulation is a renderer question, not a wiring one.
+  assert.match(SECTION_45, /Simulation is still unreached/);
+  // 🔴 THE WIRING ITSELF IS PINNED. A route is what keeps mathjs off the learner's bundle, and
+  // deleting it in favour of a direct import is exactly the "harmless simplification" the header
+  // of this block warns about.
+  assert.match(COMPUTED_WIRING, /PLOT_ROUTE = "\/api\/learn\/plot"/);
+  assert.match(ROUTE, /import \{ curve, distributionCurve/);
   // The expression layer must not reach the browser: no client component may import it.
   const clientFiles = ["subject-visual.tsx", "semantic-visual.tsx", "chemical-structure.tsx", "canvas-document.tsx"];
+  // 🔴 AND THE WIRING MODULE IS ITSELF ON A CLIENT PATH — `canvas-chat.ts` imports it — so it is
+  // held to the same rule as the components. It may name the ROUTE; it may not name the maths.
+  for (const heavy of ["computed-series", "mathjs", "simple-statistics", "./expression"]) {
+    assert.equal(
+      COMPUTED_WIRING.includes(`"${heavy}"`),
+      false,
+      `plot-compute.ts imports ${heavy} — the maths layer has reached the learner's bundle`,
+    );
+  }
   for (const file of clientFiles) {
     const source = readFileSync(new URL(`../../components/workspace/learn/${file}`, import.meta.url), "utf8");
     for (const heavy of ["expression", "computed-series", "mathjs", "simple-statistics"]) {
