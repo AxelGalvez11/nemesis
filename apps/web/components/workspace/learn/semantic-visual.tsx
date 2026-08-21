@@ -35,8 +35,13 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
         // ACROSS the column on purpose — their whole job is to use that width, and a shrink-wrapped
         // plot would be a smaller plot. A molecule has an intrinsic size and gains nothing from the
         // extra room.
+        // 🔴 AND A TIGHTER INSET. `p-4` is 18px here, not 16 — every rem in this app is 1.125x its
+        // number (`html{font-size:112.5%}`) — so a shrink-wrapped molecule was carrying 36px of
+        // frame around a drawing about 100px tall. `p-3` is 13.5px, which reads as a frame rather
+        // than as a margin. The full-width kinds keep the larger inset: a plot's axis labels sit
+        // near the edge and want the room.
         visual.kind === "structure"
-          ? "my-4 mx-auto w-fit max-w-full overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-4"
+          ? "my-4 mx-auto w-fit max-w-full overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-3"
           : "my-4 overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-4"
       }
     >

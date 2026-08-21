@@ -463,7 +463,18 @@ test("🔴🔴 the Tailwind literal and the constant cannot drift apart", () => 
   // QUOTE the old `h-auto w-full` while explaining why it was wrong, so a raw-source check reads a
   // history lesson as a live class name.
   const structure = withoutComments(STRUCTURE_SOURCE);
-  assert.match(structure, /h-\[150px\] w-auto max-w-full/);
+  // 🔴 NO HEIGHT IN THE CLASS AT ALL, AND ITS ABSENCE IS THE FIX. A constant here made ethanol —
+  // two carbons — exactly as tall as a steroid: measured on production at figure 420x217 with the
+  // viewBox aspect matching the box exactly, so nothing was letterboxed and nothing was wasted. The
+  // box was big because `h-[150px]` said so. The size now comes from the drawing's own units at a
+  // fixed px-per-unit, written onto the element by `fitViewBoxToInk`, so scale is what stays
+  // constant rather than size.
+  assert.match(structure, /className="mx-auto block max-w-full"/);
+  assert.ok(!/h-\[\d+px\]/.test(structure), "a constant height is back on the structure");
+  const chem = withoutComments(STRUCTURE_SOURCE);
+  assert.match(chem, /const PX_PER_UNIT = [\d.]+;/, "the drawn scale is no longer stated");
+  assert.match(chem, /element\.style\.height = /, "the element has no intrinsic size, so w-auto has nothing to resolve");
+  assert.match(chem, /MAX_DRAWN_HEIGHT/, "a molecule with many rings has no ceiling");
   // 🔴 THE LOOKBEHIND IS LOAD-BEARING: `max-w-full` CONTAINS `w-full`, and without it this guard
   // fails on the very class that makes a wide reaction scheme safe.
   assert.ok(!/max-h-\[240px\]|(?<!max-)\bw-full/.test(structure), "the structure fills the column again");

@@ -168,14 +168,11 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           is wide and still fits; ethanol is small and now looks small. */}
       <svg
         aria-label={visual.learningGoal}
-        // 🔴 AN EXPLICIT HEIGHT, BECAUSE FITTING THE VIEWBOX REMOVED THE INTRINSIC ONE. With the
-        // library's padded viewBox, `w-auto` resolved to something column-sized; once the box was
-        // refitted to the ink it resolved to the ink's own units and ethanol rendered about 60px
-        // across — legible only in the sense that it was on screen. Measured both ways.
-        //
-        // Height fixed, width follows the aspect, and `max-w-full` still catches a wide reaction
-        // scheme (which letterboxes rather than distorting: SVG scales uniformly).
-        className="mx-auto block h-[150px] w-auto max-w-full"
+        // 🔴 THE SIZE IS SET BY `fitViewBoxToInk`, IN PIXELS, FROM THE DRAWING'S OWN UNITS. This
+        // class deliberately states no height: a constant here is what made ethanol as tall as a
+        // steroid. `max-w-full` still catches a wide reaction scheme, which scales uniformly rather
+        // than distorting.
+        className="mx-auto block max-w-full"
         ref={target}
         role="img"
         style={{ display: failure ? "none" : "block" }}
@@ -216,7 +213,28 @@ const WIDTH = 480;
 const HEIGHT = 320;
 
 /** Breathing room around the drawing, in the SVG's own units. */
-const INK_MARGIN = 3;
+const INK_MARGIN = 2;
+
+/**
+ * How many screen pixels one of the drawing's own units is worth.
+ *
+ * 🔴🔴 THIS REPLACES A HARDCODED HEIGHT, AND THE HEIGHT WAS THE BUG. Owner, twice, then a third
+ * time: *"why is the figure still too big?"* Measured on production — figure 420x217, svg 382x150,
+ * viewBox aspect matching the box exactly. Nothing was letterboxed and nothing was wasted: the box
+ * was big because `h-[150px]` said so.
+ *
+ * A fixed height is the wrong instrument. It makes ethanol — two carbons — exactly as tall as a
+ * steroid, so the simplest molecules look enormous and the most complex ones look cramped. Scale is
+ * the thing that should be constant, not size: at a fixed px-per-unit a small molecule draws small,
+ * a big one draws big, and a bond is the same length in both.
+ *
+ * 3.2 is measured off the drawer's own geometry — its bond length is ~26 units, which lands at
+ * ~83px here, close to the 90px ChatGPT's inline chemistry uses and comfortably legible.
+ */
+const PX_PER_UNIT = 3.2;
+
+/** Nothing draws taller than this, however many rings it has. */
+const MAX_DRAWN_HEIGHT = 200;
 
 /**
  * Refit the emitted viewBox to what was actually drawn.
@@ -248,7 +266,17 @@ function fitViewBoxToInk(element: SVGSVGElement): void {
     const ink = element.getBBox();
     if (!(ink.width > 0) || !(ink.height > 0)) return;
     const m = INK_MARGIN;
-    element.setAttribute("viewBox", `${ink.x - m} ${ink.y - m} ${ink.width + m * 2} ${ink.height + m * 2}`);
+    const w = ink.width + m * 2;
+    const h = ink.height + m * 2;
+    element.setAttribute("viewBox", `${ink.x - m} ${ink.y - m} ${w} ${h}`);
+
+    // 🔴 THE DRAWN SIZE COMES FROM THE DRAWING, NOT FROM A CONSTANT. See `PX_PER_UNIT`: a fixed
+    // height made a two-carbon molecule as tall as a steroid. Written as inline width/height so the
+    // element has an intrinsic size again — refitting the viewBox is what took its old one away,
+    // and `w-auto` with nothing to resolve against is how ethanol once rendered 60px across.
+    const scale = Math.min(PX_PER_UNIT, MAX_DRAWN_HEIGHT / h);
+    element.style.width = `${Math.round(w * scale)}px`;
+    element.style.height = `${Math.round(h * scale)}px`;
   } catch {
     // A node that is not laid out has no box to fit. Leaving the library's own viewBox is correct.
   }
