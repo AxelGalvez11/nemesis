@@ -41,7 +41,23 @@ export type SpokenMoment =
    * the voice disagree about which variety is being taught — the learner reading Mexican Spanish
    * and hearing Castilian.
    */
-  | { kind: "target_language"; text: string };
+  | { kind: "target_language"; text: string }
+  /**
+   * A conversational answer.
+   *
+   * 🔴 REPORTED 2026-08-20: *"why does it only read aloud during questions?"* Because every moment
+   * above is produced from the POLICY runtime, and a reply is not a policy decision — so voice mode
+   * had branches for a question and a correction and none at all for the thing the learner is most
+   * often looking at. Turning voice on and hearing nothing while an answer sat on screen reads as a
+   * broken feature, and it is the same shape as every other defect on this surface this month: the
+   * capability was whole, and the conversational path could not reach it.
+   *
+   * 🔴 IT IS ITS OWN KIND RATHER THAN A `question`, BECAUSE THE ROUTER READS THE KIND. §43 speaks a
+   * question slightly under natural pace, on the reasoning that a learner is being asked to think.
+   * An answer is being explained TO them, and calling it a question would have quietly slowed every
+   * explanation down.
+   */
+  | { kind: "answer"; text: string };
 
 /** Why nothing will be spoken. Named so a silent canvas is diagnosable. */
 export type SpeechRefusal =

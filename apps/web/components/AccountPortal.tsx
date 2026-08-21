@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -10,6 +9,7 @@ import { fetchEntitlements } from "@/lib/api";
 import { DEFAULT_LANDING_PATH, signInRedirect } from "@/lib/auth-redirect";
 import { landingUrl } from "@/lib/env";
 import { planLabel } from "@/lib/billing-contract";
+import { NemesisMark } from "./nemesis-mark";
 
 /**
  * The signed-in account page. It had a second "billing" section behind
@@ -65,7 +65,7 @@ export function AccountPortal() {
       <div className="nemesis-account-scanlines" aria-hidden="true" />
       <header className="nemesis-account-header">
         <Link className="nemesis-account-brand" href="/account" aria-label="Nemesis account home">
-          <Image src="/nemesis/logo-white.png" alt="" width={34} height={34} priority />
+          <NemesisMark size={34} />
           <span>NEMESIS</span>
         </Link>
         <a className="nemesis-account-site-link" href={landingUrl}>enternemesis.com</a>

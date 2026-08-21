@@ -20,7 +20,7 @@ import { deviceKey } from "@/lib/workspace/chat-api";
 import { loadKnownCourses } from "@/lib/workspace/agent-tools";
 import { findOrCreateLibrarySourceRow } from "@/lib/workspace/library-sources";
 import { isSlimmableOfficeName } from "@/lib/workspace/office-slim";
-import type { SessionAttachment } from "@/lib/workspace/sessions-store";
+import type { ChatAttachment } from "@/lib/workspace/chat-message";
 
 // Sized for a real lecture deck, which is the main thing students attach.
 // The old 12k/22k pair silently discarded the back half of any substantial
@@ -134,7 +134,7 @@ export function isImage(file: File) {
   return /^image\/(png|jpe?g|webp|heic|heif)$/.test(file.type.toLowerCase());
 }
 
-function attachmentRecord(file: File): SessionAttachment {
+function attachmentRecord(file: File): ChatAttachment {
   return {
     name: relativePath(file) || file.name,
     kind: isImage(file) ? "image" : "file",
@@ -177,7 +177,7 @@ export const DOCUMENT_MIME: Record<string, string> = {
 /** Which storage bucket a persisted attachment lives in — images have their
  *  own bucket; documents share the Library's sources bucket (same cap,
  *  same owner-only policies). The preview dialog re-signs through this. */
-export function attachmentBucket(attachment: Pick<SessionAttachment, "mime">): string {
+export function attachmentBucket(attachment: Pick<ChatAttachment, "mime">): string {
   return attachment.mime?.startsWith("image/") ? "library-images" : "library-sources";
 }
 
@@ -194,7 +194,7 @@ function attachmentId(): string {
  * Word / PowerPoint originals stored since 2026-08-04 (owner: "does the webapp
  * save documents and are they readable?") up to the bucket's ceiling —
  * an oversized original is skipped, its text still reaches the model. */
-async function persistChatAttachment(file: File, uid: string | null): Promise<SessionAttachment> {
+async function persistChatAttachment(file: File, uid: string | null): Promise<ChatAttachment> {
   const base = attachmentRecord(file);
   if (!uid) return base;
 
@@ -809,13 +809,13 @@ export async function refileChatSource(sourceId: string, text: string): Promise<
 /** Chip metadata alone — names and kinds, no storage round-trip. This is what
  *  the optimistic message carries while prepareChatAttachments is still
  *  running; the durable records (images gain signed URLs) replace it after. */
-export function draftAttachmentRecords(files: readonly File[]): SessionAttachment[] {
+export function draftAttachmentRecords(files: readonly File[]): ChatAttachment[] {
   return files.map((file) => attachmentRecord(file));
 }
 
 export async function prepareChatAttachments(text: string, files: readonly File[], uid: string | null) {
   const displayText = chatDisplayText(text, files);
-  if (!files.length) return { attachments: [] as SessionAttachment[], displayText, sources: [] as AttachmentSource[], wireText: text.trim() };
+  if (!files.length) return { attachments: [] as ChatAttachment[], displayText, sources: [] as AttachmentSource[], wireText: text.trim() };
 
   const attachments = await Promise.all(files.map((file) => persistChatAttachment(file, uid)));
   // All files extract AT ONCE. This used to be one await per file, which for

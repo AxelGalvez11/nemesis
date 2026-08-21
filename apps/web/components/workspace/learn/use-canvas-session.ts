@@ -13,9 +13,10 @@ import { coverageNoticeForModel, readCoverage } from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
 import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
+import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
-import type { TurnDecision, TurnOffer } from "@/lib/learn/turn-router";
+import type { TurnDecision } from "@/lib/learn/turn-router";
 import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
@@ -34,7 +35,7 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
-import { CANVAS_FILING_FOLDER, loadCanonicalSource } from "@/lib/learn/canvas-sources";
+import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
@@ -108,6 +109,16 @@ export interface BusyState {
  *  `converse` (canvas-wide, `blockId: null`) so both write the same shape and contract rule 2's
  *  "clears on the next turn" rule only has one store to apply to. Named so the `useState` call and
  *  the `CanvasSession` field below cannot quietly drift into two different shapes. */
+/**
+ * The longest selection that becomes an underlined term.
+ *
+ * 🔴 A BOUND, BECAUSE "DEFINE" ACCEPTS A PHRASE AND UNDERLINING A SENTENCE IS NOT A VOCABULARY
+ * MARK. `selectionShape` already calls anything past eight words a passage; this is the same
+ * instinct expressed in characters, since what matters here is how much of the page wears a line
+ * under it.
+ */
+const LOOKUP_MARK_MAX_CHARS = 40;
+
 type CanvasAside = {
   text: string;
   blockId: string | null;
@@ -132,16 +143,24 @@ type CanvasAside = {
    * inventing a second classification of it.
    */
   kind: "reply" | "opening";
+  /** Pages that earned a place: what the promote control and `learnFromAside` act on. */
   sources?: readonly ChatWebResult[];
-  /** Why Nemesis is offering to teach this, when it has a reason worth saying out loud. A plain
-   *  answer carries none and the offer stays a bare button. */
-  offer?: TurnOffer;
+  /**
+   * Every page the search returned, in the order the model was numbered against.
+   *
+   * 🔴 `[n]` RESOLVES INTO THIS AND NEVER INTO `sources`, which is in ANSWER order — see
+   * `CanvasTurnReply`. It is also what the pill row falls back to when the model cited nothing, so
+   * a searched answer never presents itself as something the model simply knew.
+   */
+  consulted?: readonly ChatWebResult[];
   /** The learner's own question, retained only for the transient general-answer aside. Never
    *  mistaken for their goal: the answer text is not what they asked for. */
   question?: string;
-  /** The subject the model read out of the turn, or absent when it had none. What "Learn this"
-   *  starts, and whether that button is shown at all. */
+  /** The subject the model read out of the turn, or absent when it had none. What `learnFromAside`
+   *  starts when the learner asks to be taught it. */
   topic?: string;
+  /** Figures this reply draws, validated, in the order its `[figure n]` markers count into. */
+  visuals?: readonly CanvasVisualRequest[];
 } | null;
 
 export interface CanvasSession {
@@ -168,6 +187,8 @@ export interface CanvasSession {
    * `learning-canvas.tsx` renders that case at the top of the canvas rather than under a block.
    */
   aside: CanvasAside;
+  /** Words the learner has already asked the meaning of, for `lookedUpMarks`. Sitting-scoped. */
+  lookedUp: readonly string[];
   /** The id of the prompt whose answer is being read, or null. */
   judging: string | null;
   ready: boolean;
@@ -279,6 +300,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  from a file. Read by the teaching controller; see `TeachingContext.opening`. */
   const [opening, setOpening] = useState<string | null>(null);
   const [aside, setAside] = useState<CanvasAside>(null);
+  /**
+   * Words the learner has stopped and asked about in this sitting.
+   *
+   * 🔴 A SITTING, NOT A PROFILE. `learner_lookups` is the durable record and `learner-friction.ts`
+   * is emphatic that curiosity is not a claim about a person — this is the much smaller thing the
+   * screen needs: which words on the page in front of them they have already opened, so those
+   * words carry the dotted underline that says "you can open this again".
+   */
+  const [lookedUp, setLookedUp] = useState<readonly string[]>([]);
   /** The prompt whose answer is being read right now. Per-question rather than a page-wide busy
    *  flag, so judging one answer does not freeze the rest of the page. */
   const [judging, setJudging] = useState<string | null>(null);
@@ -349,6 +379,32 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           setCanvas(found);
           latest.current = found;
           setReady(true);
+
+          // 🔴🔴 THE COVERAGE DISCLOSURE IS RE-DERIVED ON LOAD, BECAUSE IT WAS A SNAPSHOT AND
+          // COVERAGE NOW IMPROVES. `coverageNote` is computed once when a file is attached and
+          // written onto the canvas. That was harmless while a document could never be read more
+          // fully than it was on the day it arrived — and as of the automatic figure pass it is
+          // read more fully, in the background, minutes after the upload.
+          //
+          // Without this, an already-attached canvas keeps saying "8 pictures were not read" about
+          // a document whose pictures now have descriptions. The knowledge pipeline is unaffected
+          // (it reads `parsed_documents` fresh every time), which is exactly what makes this the
+          // failure this project calls DEGRADED, NOT COMPLETE: the data got better, the words on
+          // screen did not, and only the words are what the learner can see.
+          //
+          // 🔴 AFTER `setReady`, NOT BEFORE. This is a second round trip per attached source and
+          // the canvas must not wait on it — a stale sentence for one beat is a great deal better
+          // than a blank screen, which is what putting this in front of the paint would buy.
+          //
+          // 🔴 AND IT ONLY WRITES WHEN SOMETHING CHANGED. `refreshedCoverageNotes` returns the same
+          // array when every note is unchanged, so the common case costs one read and no write.
+          const refreshed = await refreshedCoverageNotes(found.sources);
+          if (alive && refreshed !== found.sources) {
+            const updated = { ...latest.current, sources: [...refreshed] };
+            setCanvas(updated);
+            latest.current = updated;
+            void saveCanvas(uid, updated);
+          }
           return;
         }
       }
@@ -448,7 +504,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
           const source: CanvasSource = {
             id: sourceId,
-            title: extracted.title ?? file.name,
+            // 🔴🔴 AN IMAGE IS TITLED BY ITS FILE, NOT BY WHAT A MODEL SAW IN IT. Reported
+            // 2026-08-20 as "nemesis does not accept any images" — and it accepts them perfectly.
+            // What the learner saw was a chip reading "[An illustration of three solid black
+            // horizontal bars of varying lengths stacked vertically against a light gray
+            // background." Their photo, described back at them in brackets, truncated. That reads
+            // as a failure, and it is the same shape as the drawing that was sent back to be
+            // proofread: the product answering a picture with prose about the picture.
+            //
+            // 🔴 THE DESCRIPTION IS NOT DISCARDED — it is the source's CONTENT, which is exactly
+            // what a vision read produces and what the canvas learns from. Only the NAME changes,
+            // to the one the learner recognises.
+            title: extracted.kind === "image" ? file.name : extracted.title ?? file.name,
             kind: extracted.kind ?? "text",
             // Three inputs, in order of how much is known about them, and the fallbacks are
             // fallbacks rather than dead code: an image has no structural pass at all, and a PDF
@@ -838,7 +905,23 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!said) return null;
       setError(null);
       setBusy({ kind: "command", blockIds: [], label: "Thinking" });
-      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "");
+      // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
+      // `thinking-phases.ts`'s rule holds: a caption is emitted by a step that is genuinely running,
+      // never by a timer walking through plausible-sounding stages.
+      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "", (found) => {
+        // 🔴 THE COUNT WHEN THERE IS ONE, AND NEVER A GUESS BEFORE. `thinking-phases.ts`'s rule is
+        // that a caption is emitted by a step genuinely running; a number invented before the
+        // results land would be the same theatre with more precision.
+        setBusy({
+          blockIds: [],
+          kind: "command",
+          label: found === null
+            ? "Searching the web"
+            : found === 1
+              ? "Reading 1 page"
+              : `Reading ${found} pages`,
+        });
+      });
       setBusy({ kind: null });
       const decision = result.decision;
       if (!decision) {
@@ -864,7 +947,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // a document command instead of starting one. One predicate, one meaning.
         if (isPreContent(latest.current.state)) {
           if (decision.say) {
-            setAside({ blockId: null, kind: "opening", offer: decision.offer ?? undefined, question: said, sources: [], text: decision.say });
+            setAside({ blockId: null, kind: "opening", question: said, sources: [], text: decision.say });
           }
           // 🔴 THE MODEL'S SUBJECT OR NOTHING, NEVER THE RAW SENTENCE. `begin` uses this as the
           // canvas TITLE, and falling back to `said` is what produced canvases called "teach me
@@ -897,11 +980,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // turn, and whatever the policy was showing steps aside for it. The `study` branch above
         // writes `opening` for the opposite reason.
         kind: "reply",
-        offer: decision.offer ?? undefined,
         question: said,
+        consulted: result.consulted,
         sources: result.sources,
         text: decision.say,
         topic: decision.topic ?? undefined,
+        visuals: decision.visuals,
       });
       return decision;
     },
@@ -1408,6 +1492,21 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setSelectionError(null);
       setSelectionBusy(true);
 
+      // 🔴 REMEMBERED HERE BECAUSE THIS IS THE ONE DOOR EVERY LOOKUP GOES THROUGH — the selection
+      // toolbar and a click on an already-marked term both arrive as the same call, which is what
+      // `lookUpTerm` in learning-canvas.tsx exists to guarantee. Recording it at either call site
+      // would have covered half the ways a learner asks what a word means.
+      //
+      // 🔴 A DEFINITION-SHAPED ACTION ONLY. "Simpler" rewrites a passage and "why" explains a
+      // mechanism; neither means "I did not know this word", and underlining a whole rewritten
+      // sentence is not what was asked for.
+      if (action === "define" || action === "explain") {
+        const word = selection.selectedText.trim();
+        if (word && word.length <= LOOKUP_MARK_MAX_CHARS) {
+          setLookedUp((known) => (known.some((k) => k.toLowerCase() === word.toLowerCase()) ? known : [...known, word]));
+        }
+      }
+
       recordEvent({
         type:
           action === "define"
@@ -1492,6 +1591,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     busy,
     error,
     aside,
+    lookedUp,
     judging,
     opening,
     ready,
@@ -1546,10 +1646,4 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   };
 }
 
-/** The extractor's own account of what it could not read, in the words the shared module
- *  already uses for exactly this — so a canvas built on a half-read lecture says so in the
- *  same terms chat does. Returns null when the file was read whole. */
-function coverageNote(coverage: unknown): string | null {
-  const parsed = readCoverage(coverage);
-  return parsed ? coverageNoticeForModel(parsed) : null;
-}
+

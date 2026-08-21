@@ -16,7 +16,10 @@
     "chat-intent": "tsx scripts/chat-intent-acceptance.mts",
     "test": "tsx --test components/workspace/*/*.test.ts lib/*.test.ts lib/*/*.test.ts lib/*/*/*.test.ts",
     "lint": "next lint",
-    "parse-thread": "node scripts/build-parse-thread.mjs"
+    "parse-thread": "node scripts/build-parse-thread.mjs",
+    "mascot:board": "tsx scripts/mascot-board.mts",
+    "character:board": "tsx scripts/bloub-board.mts",
+    "brand:raster": "tsx scripts/brand-raster.mts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

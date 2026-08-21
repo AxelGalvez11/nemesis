@@ -1,0 +1,54 @@
+/* The character's two colour tokens, and the shell it travels in.
+ *
+ * 🔴 `--bloub-paper` IS NOT DECORATION. The eyes are holes cut through the body and the
+ * orbit rings pass behind it, so the body is backed by an opaque shape in exactly the
+ * page's colour. If this token does not match what is actually behind the character, a
+ * ring shows through its eyes and the backing reads as a plate it is standing on. */
+
+:root {
+  --bloub-paper: #f9f9f9;
+}
+
+:root[data-theme="dark"] {
+  --bloub-paper: #0b0b0d;
+}
+
+.bloub {
+  /* The rings reach 1.4× the body radius; the viewBox already allows for them, but
+     nothing may be clipped by an ancestor that happens to be smaller. */
+  overflow: visible;
+  /* 🔴 IT NEVER TAKES A CLICK. A decorative character that swallows a press meant for
+     the composer behind it is worse than no character at all. */
+  pointer-events: none;
+  display: block;
+}
+
+/* 🔴 TWO CLASSES, AND THE SECOND ONE IS NOT DECORATION. This lived ABOVE `.bloub` with a single
+   class selector, so `.bloub`'s `pointer-events: none` — same specificity, later in the file —
+   won every time and the character silently ignored every click. Owner: "clicking on the mascot
+   doesn't do anything". Doubling the class outranks it regardless of order. */
+.bloub.bloub-pokeable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* The dock: fixed or absolute, never part of layout.
+ *
+ * 🔴 THE JOURNEY IS A `transform`, NOT A CHANGE OF OFFSETS. The corner→centre walk
+ * animates only a composited property, so a 680ms trip across the surface costs no
+ * layout. Animating `left`/`bottom` instead would lay the page out on every frame of it. */
+.bloub-dock {
+  pointer-events: none;
+  z-index: 30;
+  will-change: transform;
+  transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bloub-dock {
+    /* 🔴 SHORTER, NOT CANCELLED. Where the character is standing IS the message — that
+       the system has taken the floor to think. Removing the travel would remove the
+       information, not just the motion. */
+    transition: transform 220ms ease;
+  }
+}

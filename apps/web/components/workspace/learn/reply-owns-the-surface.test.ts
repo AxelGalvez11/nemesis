@@ -228,7 +228,11 @@ test("🔴🔴 the reply renders from the REGION, not from the raw state", () =>
   // The defect was two places each answering "is a reply on screen?" with no relationship between
   // them. Reading `session.aside` directly here again would restore exactly that: the composition
   // would decide the policy yields while the render site decided something else.
-  assert.match(canvasCode, /\{regions\.reply && session\.aside && \(/);
+  // 🔴 THE REGION LEADS; FURTHER CONDITIONS MAY FOLLOW IT. Pinned as an exact expression this went
+  // red the moment the thinking screen was given precedence (`&& presence !== "preparing"`), which
+  // is a legitimate addition and not the defect this guards. What must stay true is that
+  // `regions.reply` is what opens the gate and that the raw state is not consulted here.
+  assert.match(canvasCode, /\{regions\.reply && session\.aside &&/);
   assert.ok(
     !/\{session\.aside && session\.aside\.blockId === null && \(/.test(canvasCode),
     "the render site is back to deciding for itself whether a reply is showing",
@@ -255,10 +259,24 @@ test("🔴🔴 a displaced teaching screen has a way back", () => {
   // Continue, and `continueOwner` withholds that the moment `regions.policy` is false. Every route
   // through `submit()` fires `new_turn`, which clears this reply and sets the next one, so typing
   // can never get the learner back. Without this control the lesson is gone for the session.
-  const back = canvasCode.slice(canvasCode.indexOf("policyPresenting && !regions.policy"));
+  // 🔴 REPOINTED 2026-08-20, AND THE CODE IMPROVED RATHER THAN THE GUARD LOOSENING. The condition
+  // was written out twice in the component — once negated, to keep "Learn this" from stacking under
+  // the same answer — and this slice landed on the wrong one. Two places deciding "is a lesson being
+  // held" is exactly the drift this file exists to prevent, so it is computed ONCE as `lessonHeld`
+  // and both readers ask that. The guard now checks the name, which is what makes the two agree.
+  assert.match(canvasCode, /const lessonHeld = policyPresenting && !regions\.policy;/);
+  const back = canvasCode.slice(canvasCode.indexOf("{lessonHeld && ("));
   assert.ok(back.length > 0, "the back-to-the-lesson control is gone, and nothing else restores a displaced screen");
   assert.match(back.slice(0, 700), /dismiss_aside/, "it does not actually clear the reply");
   assert.match(back.slice(0, 700), /BACK_TO_LESSON/);
+  // 🔴 AND IT IS NOW THE ONLY CONTROL THERE IS. This used to check that "Learn this" stood down
+  // while a lesson was held. The offer was deleted outright on 2026-08-20 — owner, twice: *"why
+  // does nemesis still show 'learn this'?"* — because its gate was `aside.topic`, which nearly
+  // every real question satisfies, so it sat under nearly every answer.
+  //
+  // Checking for the absence is the stronger guard AND the cheaper one: nothing can stack under a
+  // held lesson if there is nothing to stack.
+  assert.ok(!/Learn this/.test(canvasCode), "the Learn this offer is back under the reply");
 });
 
 test("🔴 the way back is offered ONLY when something is being held", () => {

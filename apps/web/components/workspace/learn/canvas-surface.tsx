@@ -46,9 +46,12 @@ interface CanvasSurfaceProps {
    *  used to render no exit either. */
   chrome?: React.ReactNode;
   children: React.ReactNode;
+  /** Files dropped anywhere on the canvas. Absent while the session is still loading, because
+   *  there is nothing yet to attach them to. */
+  onDropFiles?: (files: FileList) => void;
 }
 
-export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) {
+export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasSurfaceProps) {
   // §38.1 — "Side bar should also not be visible when inside canvas." The whole rail, not the
   // toggle. This is what makes the exit below load-bearing rather than decorative, which is why
   // the two live in the same component: you cannot take the claim without taking the `×` with it.
@@ -57,6 +60,28 @@ export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) 
   return (
     <main
       className="relative h-full min-h-0 bg-(--ui-bg-editor)"
+      // 🔴🔴 DROPPING A FILE ON THE CANVAS DID NOTHING AT ALL UNTIL NOW. Owner, 2026-08-20: *"the
+      // composer doesnt allow me to drop in multiple attachments before sending."* The FRONT DOOR
+      // has had a drop handler since it was built (`canvas-home.tsx`); the canvas never did, so the
+      // browser took the drop, navigated away from the session, and opened the PDF in the tab.
+      //
+      // 🔴 ON THE SURFACE, NOT ON THE COMPOSER. A drop target the size of a 52px pill is a target
+      // you have to aim at, and nobody aims at a text box — they drop the file on the page. The
+      // whole canvas accepts it, which is also what the front door does.
+      //
+      // 🔴 `preventDefault` ON DRAGOVER IS THE LOAD-BEARING HALF. Without it the drop event never
+      // fires at all: the browser's default is to navigate, and it wins unless the dragover is
+      // cancelled first. That is why both handlers are here rather than only the one that acts.
+      onDragOver={onDropFiles ? (event) => { event.preventDefault(); } : undefined}
+      onDrop={
+        onDropFiles
+          ? (event) => {
+              if (!event.dataTransfer?.files?.length) return;
+              event.preventDefault();
+              onDropFiles(event.dataTransfer.files);
+            }
+          : undefined
+      }
       // 🔴🔴 SELECTION ON, EVERYWHERE ON THE CANVAS — owner call, 2026-08-19: "selection on
       // everywhere". `[data-workspace]` sets `user-select: none` for the whole app and individual
       // components opted back in one at a time, so whether you could highlight a sentence depended
@@ -91,16 +116,36 @@ export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) 
           half-erased. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[56px] bg-(--ui-bg-editor)" />
 
-      {/* 🔴 32px TALL, 12px FROM THE EDGE -- DOWN FROM 36/16 (compact-UI pass, design judgement,
-          owner spec 2026-08-12). Quieted alongside the composer and the two controls it carries;
-          not measured against anything external, this row has no ChatGPT equivalent to match.
+      {/* 🔴🔴 36px TALL — BACK UP FROM 32, AND THE SENTENCE THAT USED TO END THIS NOTE IS WHY. It
+          read: "not measured against anything external, this row has no ChatGPT equivalent to
+          match." It has one, it was measured in the owner's own browser on 2026-08-20 (36×36
+          buttons, 20×20 glyphs, radius 8px), and he asked for this row to match it. A judgement made
+          in the absence of a reference is the kind a reference should overturn.
+          🔴 THE GAP TIGHTENS FROM 6px TO 4px AS THE BOXES GROW, so the row's overall width barely
+          moves and the controls still read as one group rather than four separate marks.
           🔴 THE LEFT EDGE IS NOT A CONSTANT. When the nav rail is collapsed the shell floats a
           reopen toggle at the viewport's top-left, in exactly this corner, and the two printed on
           top of each other. `--nav-toggle-inset` is what the shell reserves for it — 0px whenever
           the toggle is not showing, which under §38.1 is every canvas — so the strip returns to a
           flush 12px on its own rather than carrying a permanent gap for a control that is gone. */}
+      {/* 🔴🔴 THE CONTROLS FADE IN, AND UNTIL NOW NOTHING ON THIS SIDE MOVED AT ALL. Owner,
+          2026-08-20: *"the transition from landing page to canvas needs to be smoother ... the
+          upper header controls need to appear as a fade in."*
+
+          The FRONT DOOR half of that transition was already built — the composer travels down and
+          the greeting fades — and then the route changed and the canvas simply WAS there, header
+          and all, hard-cut. Half a transition reads worse than none: the eye is following a moving
+          composer and the destination arrives fully formed around it.
+
+          🔴 A CSS ANIMATION RATHER THAN A MOUNT FLAG. A `useState(false)` flipped in an effect
+          needs a paint to land before it can transition, which is the shape that produces a visible
+          flash of the finished state on a slow client. `animation` runs from the first frame the
+          element exists.
+
+          🔴 AND IT IS BEHIND `prefers-reduced-motion`, because the front door's own travel already
+          is — someone who asked the system to stop moving must not get half of it anyway. */}
       <header
-        className="pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[32px] items-center gap-1.5"
+        className="canvas-chrome-in pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
         style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
       >
         <CanvasExit onExit={onExit} />
@@ -129,23 +174,26 @@ function CanvasExit({ onExit }: { onExit: () => void }) {
   return (
     <button
       aria-label="Leave the canvas"
-      className="pointer-events-auto flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+      className="pointer-events-auto flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[8px] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
       onClick={onExit}
       title="Leave the canvas"
       type="button"
     >
-      {/* 14px, matching the 0.875rem the arrow rendered at (0.875 × 18px root = 15.75px painted;
-          the codicon glyph occupied 14px of it). Written in px because every rem in apps/web is
-          1.125× its number — `html{font-size:112.5%}` is deliberate and set three times. */}
+      {/* 🔴 20px, MEASURED OFF CHATGPT (2026-08-20): its header glyphs are 20×20 inside a 36×36
+          button, and every one of ours was 14–15px inside 28×28. Written in px because every rem in
+          apps/web is 1.125× its number — `html{font-size:112.5%}` is deliberate and set three times.
+          🔴 THE STROKE THINS TO 1.75 AS THE GLYPH GROWS. A 2px stroke that read as crisp at 14px
+          reads as heavy at 20px, and this `×` would then be the boldest mark on a surface whose
+          whole argument is quiet. */}
       <svg
         aria-hidden="true"
         fill="none"
-        height="14"
+        height="20"
         stroke="currentColor"
         strokeLinecap="round"
-        strokeWidth="2"
+        strokeWidth="1.75"
         viewBox="0 0 16 16"
-        width="14"
+        width="20"
       >
         <path d="M3.5 3.5 L12.5 12.5 M12.5 3.5 L3.5 12.5" />
       </svg>

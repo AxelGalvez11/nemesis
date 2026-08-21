@@ -173,22 +173,40 @@ test("🔴 no internal action name leaks into the prompt", () => {
 });
 
 // ── Reading the decision ────────────────────────────────────────────────────
+//
+// 🔴🔴 THE FORMAT CHANGED ON 2026-08-20 AND THESE TESTS CHANGED WITH IT. The answer used to be a
+// `say` STRING INSIDE the JSON object, where every backslash the model wrote had to be doubled —
+// so `\frac` made JSON.parse refuse the entire decision and the raw envelope leaked onto the
+// learner's screen. The decision is now a fenced block and the answer is everything outside it,
+// which is what lets a reply contain real LaTeX and real SMILES.
+
+/** A turn in the wire format: the decision block, then the answer. */
+const turn = (decision: Record<string, unknown>, answer: string) =>
+  "```json\n" + JSON.stringify(decision) + "\n```\n" + answer;
 
 test("a plain decision is read", () => {
-  const read = readTurnDecision('{"say":"hey. what are you working on?","then":"reply","topic":null,"offer":null}');
+  const read = readTurnDecision(turn({ offer: null, then: "reply", topic: null }, "hey. what are you working on?"));
+  // 🔴 `visuals` IS ALWAYS PRESENT AND USUALLY EMPTY, WHICH IS THE POINT OF A DEEP EQUAL HERE. A
+  // turn that draws nothing must still produce a list, so every downstream reader can index into
+  // it without a null check — the alternative is an optional field that is absent on the ordinary
+  // path and therefore untested on it.
+  //
+  // 🔴 THE SAME ARGUMENT COVERS THE THREE WEB FIELDS. A turn that did not ask for the web must say
+  // so in the object rather than by omission, because the search loop reads `needsWeb` as its
+  // condition and `undefined` there would end the loop for the wrong reason.
   assert.deepEqual(read, {
     needsWeb: false,
-    offer: null,
     say: "hey. what are you working on?",
     then: "reply",
     topic: null,
+    visuals: [],
     webQuery: null,
     webResults: null,
   });
 });
 
-test("a fenced decision is read", () => {
-  const read = readTurnDecision('```json\n{"say":"alright.","then":"study","topic":"pharmacokinetics"}\n```');
+test("a study decision is read, and its answer comes from outside the block", () => {
+  const read = readTurnDecision(turn({ then: "study", topic: "pharmacokinetics" }, "alright."));
   assert.equal(read?.then, "study");
   assert.equal(read?.topic, "pharmacokinetics");
   assert.equal(read?.say, "alright.");
@@ -208,21 +226,36 @@ test("🔴 a topic is asked for on a plain reply too, because it gates the Learn
   // has — so a greeting came with an offer to learn "hello". Whether the turn NAMED something is a
   // different question, and it is the model's to answer.
   const last = turnRouterMessages({ context: EMPTY, utterance: "hello" }).at(-1)?.content ?? "";
-  assert.match(last, /on a "reply" it is what a Learn this button beside the answer would start/);
+  // 🔴 THE PHRASE MOVED WITH THE FEATURE. This pinned "what a Learn this button beside the answer
+  // would start" — the offer was deleted on 2026-08-20 and the prompt kept describing it, which
+  // only surfaced by grepping the LIVE bundle for "Learn this" after a deploy. A prompt is shipped
+  // text that nothing renders, so nothing else could have caught it.
+  assert.match(last, /it is what Nemesis would teach if the learner then asked to learn it/);
+  assert.ok(!/Learn this/.test(last), "the prompt describes a button this product no longer has");
   assert.match(last, /leave it null for a greeting/);
 });
 
-test("an offer is read only when it is one of the two things it can be", () => {
-  assert.equal(readTurnDecision('{"say":"x","then":"reply","offer":"returning"}')?.offer, "returning");
-  assert.equal(readTurnDecision('{"say":"x","then":"reply","offer":"confused"}')?.offer, null);
+test("🔴🔴 there is no `offer` field, and its removal is the finding", () => {
+  // It named why a learner might be shown a "Learn this" button and rendered as one line above it.
+  // That offer was deleted on 2026-08-20 and the whole chain behind it kept running for hours: the
+  // model was still asked to compute `offer` every turn, this module still parsed it, the session
+  // still stored it, and `offerLine` was still IMPORTED by learning-canvas.tsx and never called.
+  //
+  // 🔴 FOUND BY GREPPING THE LIVE BUNDLE, which is the only instrument that sees this. A prompt is
+  // shipped text that nothing renders — no screenshot and no unit test looks at it — so a contract
+  // describing a deleted button survives every check the product has.
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "hello" }).map((m) => m.content).join("\n");
+  assert.ok(!/"offer"/.test(prompt), "the model is still being asked to compute a dead field");
+  assert.ok(!/Learn this/.test(prompt), "the prompt still describes a button this product does not have");
+  assert.ok(!("offer" in (readTurnDecision(turn({ then: "reply" }, "x")) ?? {})), "the decision still carries it");
 });
 
 test("🔴🔴 an unrecognised action falls back to conversation, never to teaching", () => {
   // Calibration: change `then ?? "reply"` in turn-router.ts to `then ?? "study"` and this reddens
   // on its own. It is the same asymmetry the deleted classifier stated and then got backwards —
   // answering someone who wanted a lesson costs one turn; teaching someone who said hello does not.
-  assert.equal(readTurnDecision('{"say":"hey","then":"teach"}')?.then, "reply");
-  assert.equal(readTurnDecision('{"say":"hey"}')?.then, "reply");
+  assert.equal(readTurnDecision(turn({ then: "teach" }, "hey"))?.then, "reply");
+  assert.equal(readTurnDecision(turn({}, "hey"))?.then, "reply");
 });
 
 test("🔴 text that is not a decision is not a decision", () => {
@@ -247,16 +280,154 @@ test("🔴 nothing in this module can produce a study turn the model did not ask
     "hello",
     "innate immunity",
     "this sucks",
-    '{"say":"ok"}',
-    '{"say":"ok","then":"reply"}',
-    '{"say":"ok","then":"START_LEARNING"}',
-    '{"then":"studying"}',
+    turn({}, "ok"),
+    turn({ then: "reply" }, "ok"),
+    turn({ then: "START_LEARNING" }, "ok"),
+    turn({ then: "studying" }, "ok"),
+    // 🔴 AND THE OLD FORMAT TOO. A model reaching for the retired shape must not be able to teach
+    // by accident: `{"say":…,"then":"study"}` with no fence around it is not a decision any more.
+    '{"say":"ok","then":"study"}',
   ];
   for (const raw of notStudy) {
     const read = decisionOrReply(raw);
     assert.notEqual(read?.then, "study", `"${raw}" was turned into a lesson`);
   }
-  assert.equal(decisionOrReply('{"say":"alright.","then":"study"}')?.then, "study");
+  // ...and the positive case, so this cannot pass by refusing everything.
+  assert.equal(decisionOrReply(turn({ then: "study" }, "alright."))?.then, "study");
+});
+
+test("🔴🔴🔴 the model IS told to write real LaTeX now, because the prose left the JSON", () => {
+  // 🔴 THIS TEST HAS BEEN INVERTED TWICE AND BOTH INVERSIONS WERE EARNED, so the history stays.
+  //
+  // Reported: "i asked it to integrate x^2 but it only gave me the answer not a step by step
+  // solution", then "what i need is for the math and any other things like chemistry to able to
+  // render in the canvas".
+  //
+  // Round 1 — instruct `\(` delimiters. The model wrote `\int` and `\,` into the `say` STRING,
+  // where they are invalid JSON escapes, so JSON.parse refused the whole decision and the raw
+  // envelope leaked onto the screen. Round 2 — instruct `$$`. Same failure. Both were reverted and
+  // a guard was written protecting the ABSENCE of any maths instruction.
+  //
+  // Round 3 is this one, and it removes the CAUSE rather than the symptom: the answer is no longer
+  // inside the JSON object at all. Outside it there is no escaping to get wrong, so asking for
+  // LaTeX is finally safe — and necessary, because told nothing the model substitutes Unicode
+  // (∫x² dx), which reads correctly and is not typeset.
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "integrate x^2 dx" }).map((m) => m.content).join("\n");
+  assert.match(prompt, /\$\$/, "the model is not told which math delimiter to use");
+  assert.match(prompt, /outside the JSON/, "it is not told WHY the delimiter is safe, which is the part that changed");
+  assert.ok(!/"say": "\.\.\."/.test(prompt), "the retired all-in-one-object format is back in the contract");
+});
+
+
+test("🔴🔴 a BROKEN envelope is never shown to the learner as the answer", () => {
+  // 🔴 MEASURED, NOT IMAGINED. Driven in a browser, a turn whose JSON was broken by literal
+  // newlines printed this on screen verbatim. No learner should ever read the word "topic" in a
+  // reply. `decisionOrReply`'s "the prose IS the answer" rule is right for a model that IGNORED
+  // the envelope and simply answered; it is exactly wrong for one that attempted it and mangled it.
+  const broken = '{"say": "\n∫\n𝑥\n2\n,\n𝑑\n𝑥\n", "then": "reply", "topic": "integration", "visuals": []}';
+  const read = decisionOrReply(broken);
+  assert.ok(!read || !/"then"|"topic"/.test(read.say), `the envelope reached the learner: ${read?.say}`);
+});
+
+test("🔴 a recoverable sentence IS recovered rather than thrown away", () => {
+  const broken = '{"say": "A mole is a counting unit, like a dozen but much bigger.", "then": "reply", "topic": ';
+  assert.match(decisionOrReply(broken)?.say ?? "", /A mole is a counting unit/);
+});
+
+test("🔴🔴 plain prose is still passed straight through — that rule was right", () => {
+  // The model that ignores the envelope and simply answers has still answered, and throwing that
+  // away would be strictly worse for the learner. Only ATTEMPTED-and-mangled envelopes are caught.
+  const prose = "A mole is a counting unit, like a dozen but much bigger.";
+  assert.equal(decisionOrReply(prose)?.say, prose);
+  // ...including prose that happens to be ABOUT JSON.
+  const about = 'A JSON object looks like {"name": "value"} and is read by every language.';
+  assert.equal(decisionOrReply(about)?.say, about);
+});
+
+test("🔴🔴 the contract shows the visuals field FILLED IN, never as an empty array", () => {
+  // 🔴 THE EMPTY ARRAY WAS THE BUG, AND IT LOOKED LIKE DOCUMENTATION. The contract read
+  // `"visuals": []` — in the highest-signal position in the whole prompt — and the model obliged on
+  // every turn. Measured: asked to plot y = x², it wrote the answer, typeset the coordinates, put
+  // `[figure 1]` in exactly the right place, and sent `visuals: []`. It had understood the marker
+  // perfectly and been shown that the payload is empty.
+  //
+  // With one filled example in the same block: 1 figure, 14 painted marks.
+  //
+  // Calibration: put `"visuals": []` back and this reddens.
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "plot y = x squared" }).map((m) => m.content).join("\n");
+  assert.ok(!/"visuals": \[\]/.test(prompt), "the visuals example is empty again; the model will copy it");
+  assert.match(prompt, /"kind": "quantitative"/, "the contract no longer shows a figure being filled in");
+  assert.match(prompt, /"points": \[\{"x":0,"y":0\}/, "the example does not show real points");
+});
+
+test("🔴 the answer is taken from OUTSIDE the block, on both sides of it", () => {
+  // A model that writes a sentence, then the block, then the rest is describing one answer in two
+  // halves. Dropping either loses part of it.
+  const read = readTurnDecision('Here it is.\n```json\n{"then":"reply"}\n```\nAnd the working follows.');
+  assert.match(read?.say ?? "", /Here it is\./);
+  assert.match(read?.say ?? "", /And the working follows\./);
+});
+
+test("🔴🔴 LaTeX in the answer survives, because it is no longer inside a JSON string", () => {
+  // The whole point of the format. `\int` and `\,` are invalid JSON escapes; out here they are just
+  // characters, and AssistantMarkdown's rehype-katex typesets them.
+  // Calibration: this is the exact string a model produced in a browser on 2026-08-20.
+  const raw = '```json\n{"then":"reply","topic":"integration"}\n```\n$$\\int x^2 \\, dx = \\frac{x^3}{3} + C$$';
+  const read = readTurnDecision(raw);
+  assert.equal(read?.then, "reply");
+  assert.match(read?.say ?? "", /\\int x\^2 \\, dx = \\frac\{x\^3\}\{3\} \+ C/, "the LaTeX did not survive");
+});
+
+test("🔴🔴 the model is told never to draw a picture out of characters", () => {
+  // 🔴 MEASURED ON PRODUCTION, and the model's own closing line is the evidence. Asked to show the
+  // structure of ethanol it drew an ASCII diagram in a code block and finished with "if you want it
+  // as a proper structural diagram in the canvas, just say the word."
+  //
+  // It knew the real channel existed and picked characters anyway — so this was never a capability
+  // gap, and describing [smiles: …] more clearly would not have caught it. The missing instruction
+  // was the NEGATIVE one. Calibration: delete the clause and this reddens.
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "show me ethanol" }).map((m) => m.content).join("\n");
+  assert.match(prompt, /Never draw a picture out of text characters/);
+  assert.match(prompt, /ASCII diagrams/);
+  // ...and code fences are explicitly still allowed, or this instruction would cost the product
+  // every real snippet it prints.
+  assert.match(prompt, /A code fence is for code and notation/);
+  // 🔴 AND THE ONE CASE THAT MUST BE UNAMBIGUOUS. The first version aimed at the code FENCE and the
+  // model simply put the ASCII art in prose instead — where the characters sit was never the point.
+  // 🔴 REPOINTED after the owner's correction, 2026-08-20: *"dont add hardcoded instructions, make
+  // sure prompt instructions drive behavior so deepseek handles the judgement."* The instruction
+  // used to name four nouns — molecule, structure, functional group, compound — which is a keyword
+  // list living in a prompt instead of in an `if`. It now names the CHANNEL and the intent and
+  // leaves "is this a request to see something" where judgements about language belong.
+  assert.match(prompt, /you MUST draw it with/, "the drawing instruction lost its force, which measured as a regression");
+  assert.ok(!/a molecule, a structure, a functional group or a compound/.test(prompt), "the hardcoded noun list is back");
+  assert.ok(!/half a dozen|most important half/.test(prompt), "a quota for how many drawings to make is back");
+});
+
+test("🔴🔴 a model that put its answer back INSIDE the object is not thrown away", () => {
+  // 🔴 REPRODUCED ON PRODUCTION, 2026-08-20: "draw the functional groups" returned "Nemesis had
+  // nothing to add." on one run out of two, with an empty canvas behind it.
+  //
+  // A regression from the format change of the same day. `say` used to live inside this object and
+  // the model has years of habit saying so; when it writes the block with a `say` field and nothing
+  // after it, the prose outside is empty and the reply branch reports having nothing to add — while
+  // the answer sits in the field right there.
+  const read = readTurnDecision('```json\n{"say":"Alcohols carry a hydroxyl group.","then":"reply","topic":"functional groups"}\n```');
+  assert.equal(read?.say, "Alcohols carry a hydroxyl group.");
+  assert.equal(read?.topic, "functional groups");
+});
+
+test("🔴 but prose OUTSIDE the block still wins, because that is the contract", () => {
+  // The fallback recovers a turn that would be discarded; it does not make the old shape a second
+  // supported format. LaTeX inside `say` is still mangled by JSON escaping, which is the whole
+  // reason the contract moved.
+  const read = readTurnDecision('```json\n{"say":"the old field","then":"reply"}\n```\nthe real answer');
+  assert.equal(read?.say, "the real answer");
+});
+
+test("🔴 a decision with no answer anywhere is still refused", () => {
+  // Otherwise this fallback would turn "the model said nothing" into a blank reply on screen.
+  assert.equal(readTurnDecision('```json\n{"topic":"x"}\n```'), null);
 });
 
 // ── 🔴 searching until it has enough, rather than once with a guess ──────────

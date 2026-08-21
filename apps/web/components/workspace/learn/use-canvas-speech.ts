@@ -57,6 +57,19 @@ export interface SpokenVoice {
    * Defaults to xAI, so the Canvas lane is byte-identical to what shipped.
    */
   provider?: "xai" | "azure";
+  /**
+   * WHICH SPEAKER. The learner's own choice, from `canvas-voices.ts`.
+   *
+   * 🔴 IT RIDES HERE RATHER THAN ON THE HOOK FOR THE SAME REASON `locale` DOES, AND THE PRODUCT
+   * CONTRACT ALREADY ANTICIPATED IT: §43 records that "the voice identity is still fixed … for a
+   * language lesson the speaker is part of the material, not a skin". A per-utterance field is what
+   * lets a target-language example keep its own speaker later while the learner's chosen voice
+   * reads everything else.
+   *
+   * Omitted when unset, so a request from a canvas that has never opened the picker is byte-
+   * identical to what shipped before this existed.
+   */
+  voiceId?: string;
 }
 
 export interface CanvasSpeech {
@@ -175,6 +188,7 @@ export function useCanvasSpeech(): CanvasSpeech {
                 text,
                 ...(voice?.locale && voice.locale !== "auto" ? { locale: voice.locale } : {}),
                 ...(typeof voice?.speed === "number" ? { speed: voice.speed } : {}),
+                ...(voice?.voiceId ? { voice: voice.voiceId } : {}),
               }),
               headers: {
                 apikey: supabaseAnonKey,

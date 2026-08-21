@@ -82,7 +82,10 @@
    dark ground. Inverting is safe precisely because it has no hue to damage —
    the same trick the landing nav uses. If the logo ever gains colour this has
    to become a second asset instead. */
-[data-theme="dark"] .nemesis-auth-brand img { filter: invert(1); }
+/* 🔴 THE INVERT IS GONE BECAUSE THE MARK IS NO LONGER AN IMAGE. It used to be a PNG of a dark
+   glyph, so dark mode flipped it with a filter — which works exactly as long as the mark has no
+   colour and no material, and stops working the moment either exists. It is an inline SVG filled
+   with `currentColor` now, so it simply takes the colour of the text beside it in both themes. */
 .nemesis-auth-brand span { font-size: 11px; font-weight: 700; letter-spacing: 0.3em; }
 
 /* HIDDEN, not deleted. The marketing copy and its three-step strip are intact in
@@ -251,7 +254,7 @@
   width: 34px;
 }
 .nemesis-auth-mark img { height: 30px; width: 30px; }
-[data-theme="dark"] .nemesis-auth-mark img { filter: invert(1); }
+/* Same as the brand lockup above: `currentColor`, so no filter is needed in either theme. */
 /* HIDDEN. The tracked-caps eyebrow above the headline is not a thing their page
    does, and with a 32px headline it was saying the same thing twice. Left in the
    markup so the pages do not have to change shape to bring it back. */

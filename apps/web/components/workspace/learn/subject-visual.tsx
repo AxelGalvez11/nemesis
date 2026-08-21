@@ -24,7 +24,7 @@ import type {
   TimelineVisual,
   VectorsVisual,
 } from "@/lib/learn/canvas-visual";
-import { layoutConstruction, layoutTimeline, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
+import { layoutConstruction, layoutTimeline, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
 
 const WIDTH = VISUAL_WIDTH;
 
@@ -119,7 +119,7 @@ export function Timeline({ visual }: { visual: TimelineVisual }) {
   const layout = layoutTimeline(visual);
 
   return (
-    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
+    <svg aria-label={visual.learningGoal} className={VISUAL_FIGURE_CLASS} role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
       {layout.lanes.map((lane) => (
         <g key={lane.name || "default"}>
           <line stroke="var(--ui-stroke-primary)" strokeWidth="1" x1={layout.left} x2={layout.right} y1={lane.axisY} y2={lane.axisY} />
@@ -201,7 +201,7 @@ export function Construction({ visual }: { visual: ConstructionVisual }) {
   const layout = layoutConstruction(visual);
 
   return (
-    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
+    <svg aria-label={visual.learningGoal} className={VISUAL_FIGURE_CLASS} role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
       {layout.circles.map((circle, index) => (
         <circle cx={circle.cx} cy={circle.cy} fill="none" key={index} r={circle.r} stroke="var(--ui-stroke-primary)" strokeWidth="1.5" />
       ))}
@@ -240,16 +240,21 @@ export function Construction({ visual }: { visual: ConstructionVisual }) {
 export function VectorDiagram({ visual }: { visual: VectorsVisual }) {
   const rawId = useId();
   const markerId = `canvas-vector-${rawId.replace(/[^A-Za-z0-9_-]/g, "")}`;
-  const height = 340;
+  const height = VISUAL_HEIGHT;
   const cx = WIDTH / 2;
   const cy = height / 2;
   const longest = Math.max(...visual.vectors.map((vector) => vector.magnitude), 1);
-  // Every arrow is scaled against the largest, so relative magnitude is readable at a glance — which
-  // is most of what a force diagram is for.
-  const armFor = (magnitude: number) => 24 + (magnitude / longest) * 108;
+  // 🔴 BOTH REACHES ARE DERIVED FROM THE BOX NOW, AND THEY HAD TO BE. This diagram alone chose a
+  // height of 340 and then hardcoded two lengths tuned to it: axes that ran 160 from the centre
+  // (cy was 170, so they spanned the full box) and arms of 24–132. Dropping the box to the shared
+  // 280 without touching them would have pushed the axes 20px past both edges and CLIPPED them.
+  // Written as fractions of the half-height, they reproduce the old drawing exactly at 340 and
+  // scale correctly at any height — so the next change to VISUAL_HEIGHT cannot silently crop this.
+  const axisReach = cy - 10;
+  const armFor = (magnitude: number) => cy * (0.14 + 0.64 * (magnitude / longest));
 
   return (
-    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${height}`}>
+    <svg aria-label={visual.learningGoal} className={VISUAL_FIGURE_CLASS} role="img" viewBox={`0 0 ${WIDTH} ${height}`}>
       <defs>
         <marker id={markerId} markerHeight="8" markerWidth="8" orient="auto-start-reverse" refX="7" refY="4">
           <path d="M0,0 L8,4 L0,8 Z" fill="var(--ui-accent)" />
@@ -264,10 +269,10 @@ export function VectorDiagram({ visual }: { visual: VectorsVisual }) {
                 key={degrees}
                 stroke="var(--ui-stroke-primary)"
                 strokeDasharray="4 4"
-                x1={cx - Math.cos(radians) * 160}
-                x2={cx + Math.cos(radians) * 160}
-                y1={cy + Math.sin(radians) * 160}
-                y2={cy - Math.sin(radians) * 160}
+                x1={cx - Math.cos(radians) * axisReach}
+                x2={cx + Math.cos(radians) * axisReach}
+                y1={cy + Math.sin(radians) * axisReach}
+                y2={cy - Math.sin(radians) * axisReach}
               />
             );
           })}

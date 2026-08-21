@@ -100,6 +100,33 @@ const CATEGORIES: { name: string; note?: string; cases: Case[] }[] = [
     ],
   },
   {
+    // 🔴🔴 REPORTED 2026-08-20, AND IT IS THE MOST EXPENSIVE WRONG ANSWER THIS ROUTER CAN GIVE.
+    // "show me functional groups" started a LESSON: the canvas was retitled "foundational
+    // functional groups", searched the web, ingested four pages, and sat on "Reading that page…"
+    // while the owner waited for a list he could have read in ten seconds. Choosing "reply" wrongly
+    // costs one sentence; choosing "study" wrongly costs minutes and takes the screen.
+    //
+    // 🔴 THE PAIR IS THE FINDING. "show me X" and "teach me X" are one word apart and mean opposite
+    // things to the page, so the second column has to keep passing or the fix is just a thumb on
+    // the scale.
+    name: "Show me, versus teach me",
+    note: "one word apart, opposite effects on the page",
+    cases: [
+      ...[
+        "show me functional groups",
+        "what are the functional groups",
+        "list the functional groups",
+        "give me the common functional groups",
+        "show me the structures for alcohols and ketones",
+      ].map((utterance) => ({ expect: "reply" as const, utterance })),
+      ...[
+        "teach me the functional groups",
+        "walk me through the functional groups",
+        "quiz me on functional groups",
+      ].map((utterance) => ({ expect: "study" as const, utterance })),
+    ],
+  },
+  {
     // 🔴 THE DISCRIMINATING TEST IN THIS FILE. The deleted classifier's last rule was "not a
     // question, so teach it", which made these four unconditional lessons. Read semantically the
     // SAME four words mean something else when Nemesis just asked what the learner is studying. If

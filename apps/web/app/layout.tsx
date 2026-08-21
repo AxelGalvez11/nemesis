@@ -17,7 +17,11 @@ import { PostHogProvider } from "@/components/PostHogProvider";
 export const metadata: Metadata = {
   title: "Nemesis",
   description: "A contained academic agent that turns a semester into order.",
-  icons: { icon: "/nemesis/logo.png" },
+  // 🔴 NO `icons` HERE ANY MORE, AND THAT IS THE FIX. This pointed at /nemesis/logo.png — the
+  // OLD mark, a raster of the glossy-bead logo — while the marketing site had already moved to
+  // app/icon.svg, the flat three-bead mark. Two products, two different icons in the tab strip.
+  // Next serves app/icon.svg and app/apple-icon.tsx automatically on every route, so the two
+  // apps now share one mark by sharing one source rather than by both remembering to declare it.
 };
 
 // Resolve the theme before first paint to avoid a flash. Two themes ship (light, dark); the DEFAULT

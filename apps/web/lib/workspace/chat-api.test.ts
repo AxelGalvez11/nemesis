@@ -6,10 +6,10 @@ import { WRITING_VOICE } from "@nemesis/shared";
 import { toolsAllowed } from "@/lib/workspace/chat-effort";
 import { DEFAULT_INTENT, type ChatIntent } from "@/lib/workspace/chat-intent";
 import { decisionFromIntent } from "@/lib/workspace/chat-routing";
-import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { ChatMessage } from "@/lib/workspace/chat-message";
 
-const message = (role: SessionMessage["role"], content: string): SessionMessage =>
-  ({ content, id: `${role}-${content.slice(0, 8)}`, role } as SessionMessage);
+const message = (role: ChatMessage["role"], content: string): ChatMessage =>
+  ({ content, id: `${role}-${content.slice(0, 8)}`, role } as ChatMessage);
 
 const decide = (over: Partial<ChatIntent>) => decisionFromIntent({ ...DEFAULT_INTENT, ...over });
 

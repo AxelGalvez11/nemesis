@@ -1,0 +1,131 @@
+// What Nemesis is doing → which animation plays, and where the character stands.
+//
+// 🔴 THIS FILE IS THE ONLY NEMESIS OPINION ABOUT BLOUB. `lib/bloub/*` is vendored
+// upstream code and is not edited, so that re-vendoring a newer version stays a plain
+// copy. Everything this product decides — which of its own states map onto which
+// animation, and which of them are worth walking to the middle of the screen for —
+// lives here.
+//
+// 🔴 THE STATION IS A PROPERTY OF WHAT THE SYSTEM IS DOING, NOT A PROP SOMEBODY PASSES.
+// If "come to the middle" were an argument, two call sites would eventually disagree
+// about whether searching counts, and the character would behave differently on two
+// screens for no reason a learner could explain.
+
+import type { StateId } from "@/lib/bloub/states";
+
+/** Where the character stands while an animation plays. */
+export type Station = "corner" | "centre";
+
+/**
+ * The busy animations — the ones that mean *the system has the floor*.
+ *
+ * These are the only states that take the middle of the surface. The rule is not
+ * "anything eye-catching": it is that the learner has handed something over and is
+ * waiting for it. Coming forward is how the character says the wait is real work, and
+ * it is worth nothing if a wink does it too.
+ */
+const CENTRE: ReadonlySet<StateId> = new Set<StateId>(["thinking", "orbit", "comet"]);
+
+export function stationOf(state: StateId): Station {
+  return CENTRE.has(state) ? "centre" : "corner";
+}
+
+/**
+ * Nemesis's own busy vocabulary, mapped onto the catalogue.
+ *
+ * Two distinct waits exist in the Canvas and they are NOT the same event:
+ *
+ * - `thinking` is the policy runtime working on a turn, and it publishes the name of the
+ *   step that is actually running. Three dots, because that is what a pause for thought
+ *   looks like and it makes no claim about progress.
+ * - `preparing` is the session being brought up before anything can be asked of it.
+ *   The rings, because something is being assembled rather than considered.
+ *
+ * Wiring only the first is the mistake worth naming: the character would sit in the
+ * corner through `preparing`, then jump to the middle when `thinking` began, and the jump
+ * would read as a glitch rather than as a change of activity.
+ */
+export type NemesisActivity =
+  /** The policy runtime is working on this turn. */
+  | "thinking"
+  /** The session is being brought up. */
+  | "preparing"
+  /** Sources are being fetched or searched. */
+  | "retrieving"
+  /** A document is being taken in. */
+  | "ingesting"
+  /** Nothing is running; the learner has the floor. */
+  | "resting"
+  /** The learner is talking to it. */
+  | "listening"
+  /** Something landed and it is worth a beat of acknowledgement. */
+  | "arrived";
+
+export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
+  thinking: "thinking",
+  // 🔴 ALSO `thinking`, NOT `orbit` (owner 2026-08-20: "why is it only doing swirl?"). The rings
+  // are the loudest animation in the catalogue; playing them on every wait meant they stopped
+  // reading as anything. Both waits are one experience to a learner, so they get one animation.
+  preparing: "thinking",
+  retrieving: "comet",
+  ingesting: "burst",
+  resting: "idle",
+  listening: "wide",
+  arrived: "notify",
+};
+
+export function stateFor(activity: NemesisActivity): StateId {
+  return ACTIVITY_STATE[activity];
+}
+
+/**
+ * Per-animation playback rate. 1 is the measured speed; below 1 is slower.
+ *
+ * 🔴 IT LIVES HERE AND NOT IN THE STATE TABLE. The vendored timings are measured off a
+ * reference recording and re-vendoring must stay a plain copy, so a taste decision about
+ * pace cannot be an edit to `lib/bloub/states.ts`. The engine's clock is scaled instead,
+ * which slows the whole animation coherently — rings, gaze sweep and body morph together
+ * — rather than stretching one term and leaving the others behind.
+ *
+ * `swirl` at 0.55 (owner 2026-08-20: "i want the swirl animation to not be so fast").
+ * Its full-tilt sibling `orbit` keeps the measured 1.25 turns per second, because that
+ * one is the flourish; if it wants slowing too, it is the number below.
+ */
+export const SPEED: Partial<Record<StateId, number>> = {
+  swirl: 0.55,
+};
+
+export function speedOf(state: StateId): number {
+  return SPEED[state] ?? 1;
+}
+
+/** What the Canvas is doing right now, as the surface already knows it. */
+export interface CanvasActivity {
+  /** The policy runtime is working on this turn (`policy.thinking`). */
+  thinking: boolean;
+  /** The session is being brought up, or material is being taken in (`presence === "preparing"`). */
+  preparing: boolean;
+  /** The learner is dictating. */
+  listening?: boolean;
+}
+
+/**
+ * The Canvas's activity → the animation that plays.
+ *
+ * 🔴 BOTH WAITS COME FORWARD, AND WIRING ONLY ONE IS THE MISTAKE TO AVOID. `thinking` and
+ * `preparing` are different events with different captions, but to a learner they are the
+ * same experience: they asked for something and it has not arrived. If only one took the
+ * middle, the character would sit in the corner through the first, then jump to the middle
+ * when the second began — and a jump with no cause a learner can name reads as a glitch,
+ * not as a change of activity.
+ *
+ * Precedence is deliberate rather than incidental: thinking outranks preparing because a
+ * turn in flight is the more specific fact, and both outrank dictation because what the
+ * system is doing matters more than what the learner is doing with their microphone.
+ */
+export function stateForCanvas(activity: CanvasActivity): StateId {
+  if (activity.thinking) return ACTIVITY_STATE.thinking;
+  if (activity.preparing) return ACTIVITY_STATE.preparing;
+  if (activity.listening) return ACTIVITY_STATE.listening;
+  return ACTIVITY_STATE.resting;
+}

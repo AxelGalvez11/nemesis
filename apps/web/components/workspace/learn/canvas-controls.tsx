@@ -31,6 +31,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
@@ -43,6 +44,8 @@ import {
   type AutoDictation,
   type VoiceMode,
 } from "@/lib/learn/voice-preferences";
+import { CANVAS_VOICES } from "@/lib/learn/canvas-voices";
+import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 import { cn } from "@/lib/utils";
 
 import {
@@ -77,15 +80,32 @@ function useDismiss(open: boolean, close: () => void) {
   return holder;
 }
 
-// 🔴 28×28, DOWN FROM 32 -- compact-UI pass, design judgement (owner spec, 2026-08-12; not
-// measured against anything external, just quieted to match the smaller composer and header
-// alongside it). The icon inside stays legible at 0.8125rem; only the surrounding box shrank.
+// 🔴🔴 36×36 WITH A 20px GLYPH — MEASURED OFF CHATGPT, 2026-08-20, AND THIS REVERSES THE 08-12
+// COMPACT PASS ON PURPOSE. The comment that stood here said the row went to 28×28 by "design
+// judgement", and ended with its own caveat: *"not measured against anything external, this row has
+// no ChatGPT equivalent to match."* There is one, and it has now been measured in the owner's own
+// browser:
+//
+//     ChatGPT header button   36×36, radius 8px, glyph 20×20
+//     Nemesis (before)        28×28, radius 13.5px (a full pill), glyph 14–15px
+//
+// So the box was 78% of the reference and the glyph 75% of it. Owner's instruction: *"make sure the
+// canvas icons in upper header also match sizing and colour of chatgpt."* A judgement made in the
+// absence of a reference is exactly the kind that a reference should overturn.
+//
+// 🔴 THE RADIUS MOVES FROM A PILL TO 8px, WHICH IS PART OF THE SAME MEASUREMENT. At 28px,
+// `rounded-lg` computed to 13.5px — half the box — so these read as circles. ChatGPT's are rounded
+// SQUARES at 8px, and at 36px `rounded-lg` is that. Pinned in px so it cannot drift with the box.
+//
+// 🔴 THE COLOUR WAS ALREADY RIGHT AND IS LEFT ALONE. `--ui-text-tertiary` composites to ≈#969696;
+// ChatGPT's secondary header glyph is #8f8f8f. Within a hair, and both go to full-strength text on
+// hover. Changing it to chase three units of grey would be a change nobody could see.
 const CONTROL =
-  "flex h-[28px] w-[28px] items-center justify-center rounded-lg text-(--ui-text-tertiary) " +
+  "flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
 const PANEL =
-  "absolute right-0 top-full z-40 mt-1.5 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
+  "absolute -right-2 top-full z-40 mt-1.5 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
   "p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)";
 
 // ---------------------------------------------------------------- sources + outputs
@@ -133,7 +153,7 @@ export function SourcesControl({
         title="Sources and outputs"
         type="button"
       >
-        <Codicon name="library" size="0.8125rem" />
+        <Codicon name="library" size="20px" />
         {/* §46: a dot, not a count. The number is not the point and a badge reading "3" on every
             screen is noise the eye stops seeing anyway. */}
         {/* Model knowledge counts here too. The dot means "there is something in this panel",
@@ -191,20 +211,54 @@ export function SourcesControl({
                   <p className="px-2 py-3 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Nothing attached yet.</p>
                 )
               ) : (
-                canvas.sources.map((source) => (
-                  <div className="px-2 py-1.5" key={source.id}>
-                    <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{source.title}</p>
-                    <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                      {source.kind} · {source.excerpts.length} excerpt{source.excerpts.length === 1 ? "" : "s"}
-                    </p>
-                    {/* A source Nemesis could only half read says so here, not silently. */}
-                    {source.coverageNote && (
-                      <p className="mt-1 text-[length:var(--canvas-text-meta)] leading-relaxed text-amber-500">
-                        {source.coverageNote.replace(/^\[|\]$/g, "")}
-                      </p>
-                    )}
-                  </div>
-                ))
+                canvas.sources.map((source) => {
+                  // 🔴🔴 THE ROWS OPEN NOW. Owner, 2026-08-20: *"the sources box should be more the
+                  // right and have the actual sources clickable in there."* This panel is the one
+                  // place a learner goes to ask "where did that come from", and it answered with
+                  // text they could not follow — a list of things that look like links and are not
+                  // is worse than a list that plainly is not one.
+                  //
+                  // 🔴 THE HOST DECIDES THE ROW, NOT A FLAG — the same rule `source-pill.ts` states
+                  // and the composer chips follow. `sourceUrl` is documented as absent for every
+                  // file upload and present only for a page, so its presence IS the question "can
+                  // this be opened, and where?". One idea, spelled once, in three places.
+                  const host = hostnameOf(source.sourceUrl);
+                  const body = (
+                    <>
+                      <span className="flex items-center gap-1.5">
+                        {host ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+                          <img alt="" className="shrink-0 rounded-full" height={14} src={faviconUrl(host)} width={14} />
+                        ) : (
+                          <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+                        )}
+                        <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{source.title}</span>
+                      </span>
+                      <span className="mt-0.5 block pl-[22px] text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                        {host ?? source.kind} · {source.excerpts.length} excerpt{source.excerpts.length === 1 ? "" : "s"}
+                      </span>
+                      {/* A source Nemesis could only half read says so here, not silently. */}
+                      {source.coverageNote && (
+                        <span className="mt-1 block pl-[22px] text-[length:var(--canvas-text-meta)] leading-relaxed text-amber-500">
+                          {source.coverageNote.replace(/^\[|\]$/g, "")}
+                        </span>
+                      )}
+                    </>
+                  );
+                  const row = "block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)";
+                  return host && source.sourceUrl ? (
+                    <a className={cn(row, "no-underline")} href={source.sourceUrl} key={source.id} rel="noopener noreferrer" target="_blank" title={source.title}>
+                      {body}
+                    </a>
+                  ) : (
+                    // 🔴 A DOCUMENT OPENS ITS READER, WHICH ALREADY EXISTS AND IS ALREADY DEEP-
+                    // LINKABLE (`/library/source/<id>` — see `reader-anchor.ts`). Building a second
+                    // preview here would be a second answer to "show me this document".
+                    <a className={cn(row, "no-underline")} href={`/library/source/${source.id}`} key={source.id} rel="noopener noreferrer" target="_blank" title={source.title}>
+                      {body}
+                    </a>
+                  );
+                })
               )}
 
               <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
@@ -493,7 +547,7 @@ export function MinimapControl({
         title="Progress"
         type="button"
       >
-        <Codicon name="map" size="0.8125rem" />
+        <Codicon name="map" size="20px" />
         {/* §46 convention: a dot, not a count. It marks that a focus is narrowing the
             candidates — the one fact worth knowing without opening the panel. */}
         {isFocused(focus) && (
@@ -606,7 +660,7 @@ export function SessionControl({
         title="Session options"
         type="button"
       >
-        <Codicon name="kebab-vertical" size="0.8125rem" />
+        <Codicon name="kebab-vertical" size="20px" />
       </button>
 
       {open && (
@@ -720,14 +774,14 @@ export function OptionsControl({
   activeTaskId?: string | null;
   entries: readonly TranscriptEntry[];
   locale?: string;
-  voice?: {
-    mode: VoiceMode;
-    autoDictation: AutoDictation;
-    dictationSupported: boolean;
-    speaking: boolean;
-    onToggle: (next: VoiceMode) => void;
-    onSetAutoDictation: (next: AutoDictation) => void;
-  };
+  /**
+   * 🔴 THE HOOK'S OWN TYPE, NOT A THIRD COPY OF IT. This shape was written out by hand here AND in
+   * the sibling that passes it through, so `useCanvasVoice` gaining a field left two declarations
+   * behind and the compiler pointed at the consumer rather than at the omission. Referencing the
+   * source means adding a control to the voice hook can never again require remembering two other
+   * files.
+   */
+  voice?: CanvasVoiceState["header"];
 }) {
   const [open, setOpen] = useState(false);
   // Which face the menu is showing. Sub-views render IN PLACE rather than as a second floating
@@ -758,7 +812,7 @@ export function OptionsControl({
             Everything else behind this button is something the learner goes and looks at; voice
             acts on its own, afterwards, and a learner who left it on deserves to see that from the
             closed menu rather than by being spoken to. */}
-        <Codicon name={voice?.speaking ? "unmute" : "kebab-vertical"} size="0.8125rem" />
+        <Codicon name={voice?.speaking ? "unmute" : "kebab-vertical"} size="20px" />
       </button>
 
       {open && (
@@ -780,7 +834,7 @@ export function OptionsControl({
                 <>
                   <ToggleItem
                     checked={voiceOn}
-                    label="Read questions out loud"
+                    label="Speak"
                     onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
                   />
                   {/* Offering to open a microphone that cannot listen is a promise the product
@@ -792,11 +846,53 @@ export function OptionsControl({
                     label="Open the mic after each question"
                     onClick={() => voice.onSetAutoDictation(listenOn ? "off" : "on")}
                   />
+                  {/* 🔴🔴 THE VOICE PICKER SITS UNDER THE TOGGLE THAT TURNS VOICE ON, because it is
+                      meaningless above it: choosing a speaker for something that never speaks is a
+                      setting with no effect. Owner call, 2026-08-20: "read out loud works but i want
+                      nemesis users to be able to choose the voice too."
+
+                      🔴 SIX NAMES AND NO DESCRIPTIONS. Nobody here has listened to all six, and
+                      writing "warm" or "authoritative" beside one on that basis would be inventing a
+                      claim the learner can check in one press and find false. The list itself is a
+                      MEASUREMENT — see `lib/learn/canvas-voices.ts` for why an invented id is a 502
+                      rather than a typo. */}
+                  <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
+                  <p className="px-2.5 pb-1 pt-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                    Voice
+                  </p>
+                  {CANVAS_VOICES.map((option) => (
+                    <ToggleItem
+                      checked={voice.voiceId === option.id}
+                      disabled={!voiceOn}
+                      hint={voiceOn ? undefined : "Turn Speak on first"}
+                      key={option.id}
+                      label={option.label}
+                      onClick={() => voice.onSetVoice(option.id)}
+                    />
+                  ))}
+                  {/* 🔴 THE SPEED LIVES HERE TOO, AND THE DUPLICATION IS THE OWNER'S CALL ("both",
+                      2026-08-20). They are two different moments asking the same question: this one
+                      is "how should Nemesis read to me from now on", and the control under an
+                      answer is "read THIS faster". One value behind both, so setting either is
+                      setting the same thing — which is what makes showing it twice honest rather
+                      than confusing. */}
+                  <button
+                    className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary) disabled:opacity-40"
+                    disabled={!voiceOn}
+                    onClick={voice.onCycleSpeed}
+                    type="button"
+                  >
+                    <span>Reading speed</span>
+                    <span className="tabular-nums text-(--ui-text-tertiary)">{voice.speed}×</span>
+                  </button>
                   <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
                 </>
               )}
-              <MenuItem icon="list-tree" label="Objectives" onClick={() => setView("objectives")} />
-              <MenuItem icon="history" label="Session record" onClick={() => setView("record")} />
+              {/* 🔴 OBJECTIVES AND SESSION RECORD ARE GONE FROM THIS MENU (owner 2026-08-20:
+                  "the menu has a objectives tab, which I don't want... and assessment record,
+                  which I also don't want"). Both panels remain in the file and are still
+                  reachable by setting `view` — they are a developer's window into what the
+                  runtime thinks, not something a learner asked to be shown mid-lesson. */}
             </>
           )}
 

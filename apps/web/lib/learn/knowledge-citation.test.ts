@@ -252,9 +252,15 @@ test("🔴 the surface renders it, and renders NOTHING when there is nothing hon
   // `citationLine`, which returns null for an empty list AND for a list of blank titles — strictly
   // more cases than the old line caught — and this went red for a change that improved exactly what
   // it exists to protect. What matters is that the early return happens before any markup.
-  const trail = /function SourceTrail\(\{ citations \}[\s\S]{0,400}?\n\}/.exec(VIEW);
+  // 🔴 REPOINTED AGAIN 2026-08-20, AND FOR THE SAME REASON AS LAST TIME. This pinned the exact
+  // parameter list `({ citations })`, and went red when the trail gained `sources` so a citation
+  // could become a pressable pill instead of a line of grey text. The signature is not the property;
+  // the property is that an unresolvable citation renders NOTHING rather than an apology for one.
+  // Matched on the function's name with any parameter list, and the window widened to cover a body
+  // that now has two ways of rendering and one way of refusing.
+  const trail = /function SourceTrail\([\s\S]{0,200}?\)[\s\S]{0,1600}?\n\}/.exec(VIEW);
   assert.ok(trail, "SourceTrail is gone");
-  const markupAt = trail[0].indexOf("return <");
+  const markupAt = trail[0].search(/return <|return \(/);
   const beforeMarkup = markupAt === -1 ? trail[0] : trail[0].slice(0, markupAt);
   assert.match(beforeMarkup, /return null;/, "an empty list must render nothing at all, by returning null before any markup");
   // 🔴 EVERY SCREEN THAT SHOWS A CLAIM, NOT JUST THE CORRECTION. Disclosing the origin on one screen
@@ -286,7 +292,11 @@ test("🔴 the surface renders it, and renders NOTHING when there is nothing hon
   const cueAndAnswer = (VIEW.match(/<TaughtClaimLines[\s>]/g) ?? []).length;
   const workedSteps = (VIEW.match(/modelled\.modelled\.steps\.map/g) ?? []).length;
   const claimScreens = cueAndAnswer + workedSteps;
-  const trails = (VIEW.match(/<SourceTrail citations=\{citations\} \/>/g) ?? []).length;
+  // 🔴 COUNTED BY THE COMPONENT, NOT BY ITS PROP LIST — repointed 2026-08-20, when the trail gained
+  // `sources` so a citation could become a pressable pill. The equality below is the property; the
+  // exact props are not, and pinning them made this go red for a change that improved precisely
+  // what it exists to protect. Same lesson as the 2026-08-19 repoint two comments up.
+  const trails = (VIEW.match(/<SourceTrail\s/g) ?? []).length;
   assert.ok(cueAndAnswer >= 2, `expected the claim-bearing screens to still exist, found ${cueAndAnswer}`);
   assert.equal(workedSteps, 1, "the worked example must still render the grounded steps it was built from");
   assert.equal(trails, claimScreens, "every screen that shows a claim must disclose where it came from");

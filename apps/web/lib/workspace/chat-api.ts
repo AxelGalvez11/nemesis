@@ -17,7 +17,7 @@ import {
 
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
-import type { SessionMessage, SessionOutput } from "@/lib/workspace/sessions-store";
+import type { ChatMessage, ChatOutput } from "@/lib/workspace/chat-message";
 import { AGENT_TOOLS, executeAgentTool, loadAttachedSourceFolder, loadWorkspaceOverview, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
@@ -195,12 +195,12 @@ export const HISTORY_CHAR_BUDGET = 60_000;
 export const HISTORY_MAX_MESSAGES = 40;
 
 export function trimHistory(
-  history: SessionMessage[],
+  history: ChatMessage[],
   charBudget = HISTORY_CHAR_BUDGET,
   maxMessages = HISTORY_MAX_MESSAGES,
-): SessionMessage[] {
+): ChatMessage[] {
   const recent = history.slice(-maxMessages);
-  const out: SessionMessage[] = [];
+  const out: ChatMessage[] = [];
   let used = 0;
   for (let i = recent.length - 1; i >= 0; i--) {
     const msg = recent[i];
@@ -216,7 +216,7 @@ export function trimHistory(
 /** Preserve the conversation's originating goal when a long transcript has to
  * drop older turns. This is deterministic and bounded, so continuity does not
  * require another paid model call. */
-export function buildContinuityAnchor(history: SessionMessage[], kept: SessionMessage[]): string {
+export function buildContinuityAnchor(history: ChatMessage[], kept: ChatMessage[]): string {
   if (history.length === 0 || kept.length === history.length) return "";
   const firstUser = history.find((message) => message.role === "user" && message.content.trim());
   if (!firstUser || kept.includes(firstUser)) return "";
@@ -225,7 +225,7 @@ export function buildContinuityAnchor(history: SessionMessage[], kept: SessionMe
 
 /** The chat/completions message array for one turn. */
 export function buildWireMessages(
-  history: SessionMessage[],
+  history: ChatMessage[],
   userText: string,
   decision = DEFAULT_DECISION,
   // Derived from the decision by default so a caller cannot accidentally
@@ -527,7 +527,7 @@ export interface ChatReply {
   sources: ChatWebResult[];
   /** Workspace artifacts created during tool rounds. Rendered as destination
    *  cards instead of dumping the deliverable body into chat. */
-  outputs?: SessionOutput[];
+  outputs?: ChatOutput[];
   /** Present when the model asked to run tools instead of (or before) answering. */
   toolCalls?: AgentToolCall[];
   /** A delete the model asked for and the gate held. NOTHING has been deleted;
@@ -747,17 +747,17 @@ export function planToolRound(
   return { messages: exhausted ? [...messages, NO_TOOLS_LEFT_INSTRUCTION] : [...messages], offerTools };
 }
 
-function outputFromToolResult(result: unknown): SessionOutput | null {
+function outputFromToolResult(result: unknown): ChatOutput | null {
   if (!result || typeof result !== "object") return null;
   const artifact = (result as Record<string, unknown>).artifact;
   if (!artifact || typeof artifact !== "object") return null;
   const row = artifact as Record<string, unknown>;
-  const kinds = new Set<SessionOutput["kind"]>(["flashcards", "slides", "test", "mindmap", "note", "event", "report", "recording", "other"]);
+  const kinds = new Set<ChatOutput["kind"]>(["flashcards", "slides", "test", "mindmap", "note", "event", "report", "recording", "other"]);
   if (typeof row.id !== "string" || typeof row.title !== "string" || typeof row.kind !== "string") return null;
-  if (!kinds.has(row.kind as SessionOutput["kind"])) return null;
+  if (!kinds.has(row.kind as ChatOutput["kind"])) return null;
   return {
     id: row.id,
-    kind: row.kind as SessionOutput["kind"],
+    kind: row.kind as ChatOutput["kind"],
     title: row.title,
     ...(typeof row.url === "string" ? { url: row.url } : {}),
   };
@@ -776,7 +776,7 @@ export const OUTPUT_COLLAPSE_THRESHOLD = 3;
  * unreachable from the transcript. Better a short list of real links than one
  * tidy card that hides them.
  */
-const COLLAPSED_NOUN: Partial<Record<SessionOutput["kind"], string>> = {
+const COLLAPSED_NOUN: Partial<Record<ChatOutput["kind"], string>> = {
   event: "calendar events",
 };
 
@@ -791,12 +791,12 @@ const COLLAPSED_NOUN: Partial<Record<SessionOutput["kind"], string>> = {
  * The survivor keeps the FIRST item's url, which for a syllabus lands on the
  * first date of term — where you would want to start reading anyway.
  */
-export function collapseOutputs(outputs: readonly SessionOutput[], threshold = OUTPUT_COLLAPSE_THRESHOLD): SessionOutput[] {
-  const counts = new Map<SessionOutput["kind"], number>();
+export function collapseOutputs(outputs: readonly ChatOutput[], threshold = OUTPUT_COLLAPSE_THRESHOLD): ChatOutput[] {
+  const counts = new Map<ChatOutput["kind"], number>();
   for (const output of outputs) counts.set(output.kind, (counts.get(output.kind) ?? 0) + 1);
 
-  const collapsed: SessionOutput[] = [];
-  const done = new Set<SessionOutput["kind"]>();
+  const collapsed: ChatOutput[] = [];
+  const done = new Set<ChatOutput["kind"]>();
   for (const output of outputs) {
     const total = counts.get(output.kind) ?? 0;
     if (total <= threshold || !COLLAPSED_NOUN[output.kind]) {
@@ -860,7 +860,7 @@ function startWaitingStrip(onActivity?: (label: string | null) => void): Waiting
  * Bounded by the caller. Nemesis's own turns go in as the sentence the student actually saw, since
  * that is what "yeah do that" is answering.
  */
-export function intentHistory(history: readonly SessionMessage[]): IntentContext["history"] {
+export function intentHistory(history: readonly ChatMessage[]): IntentContext["history"] {
   const exchanges: { said: string; replied: string }[] = [];
   for (const message of history) {
     if (message.role === "user") {
@@ -922,7 +922,7 @@ export async function readTurnIntent(
 
 export async function sendChatTurn(
   uid: string,
-  history: SessionMessage[],
+  history: ChatMessage[],
   userText: string,
   signal?: AbortSignal,
   onDelta?: CompletionDeltaHandler,
@@ -1031,7 +1031,7 @@ export async function sendChatTurn(
   const sourceFolder = attachedIds.length ? await loadAttachedSourceFolder(attachedIds) : "";
   let messages: WireMsg[] = buildWireMessages(history, userText, decision, toolsEnabled, brainContext, workspaceSnapshot, webContext, intent.skills);
   let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
-  const outputs: SessionOutput[] = [];
+  const outputs: ChatOutput[] = [];
   let pendingDelete: PendingDelete | undefined;
   // The strip shows curated verbs only ("Searching the web", "Making
   // flashcards") — never the reasoner's own running text, which echoes raw

@@ -155,3 +155,52 @@ export function splitByTerms(
   if (cursor < content.length) runs.push({ text: content.slice(cursor), mark: null });
   return runs;
 }
+
+/**
+ * Where terms the learner has already looked up appear in an arbitrary piece of text.
+ *
+ * 🔴 REPORTED 2026-08-20: *"the word that was highlighted to explain should have an dotted
+ * underlined like if its a new vocab term."* Everything needed for that existed and none of it was
+ * connected. `markedTerms` above reads `block.terms`, which the INGESTION attaches — so a word only
+ * ever wore an underline if a parser had nominated it, and a word the learner personally stopped on
+ * wore nothing. `learner_lookups` has recorded every one of those stops for weeks and nothing read
+ * the table back onto the screen.
+ *
+ * 🔴 THIS IS A DIFFERENT QUESTION FROM `markedTerms` AND DELIBERATELY NOT FOLDED INTO IT. That one
+ * decides which words are WORTH offering, and every rule in it exists to mark FEWER things —
+ * budgets, ceilings, one mark per 25 words — because a paragraph wearing six dotted underlines is
+ * noise the eye learns to skip. This one marks what the learner has already ASKED about, which is
+ * not a guess and needs no budget: they are the evidence.
+ *
+ * 🔴 WHOLE WORDS ONLY, and the boundary test is the same `WORD_CHAR` the rest of this file uses —
+ * without it "ion" underlines the middle of "action" and the mark lands on a fragment.
+ *
+ * PURE. Offsets into the string exactly as given, for `splitByTerms`.
+ */
+export function lookedUpMarks(text: string, terms: readonly string[]): MarkedTerm[] {
+  if (!text || terms.length === 0) return [];
+  const found: MarkedTerm[] = [];
+  const haystack = text.toLowerCase();
+
+  for (const term of new Set(terms.map((t) => t.trim().toLowerCase()).filter(Boolean))) {
+    let from = 0;
+    for (;;) {
+      const at = haystack.indexOf(term, from);
+      if (at < 0) break;
+      from = at + term.length;
+      const before = text[at - 1];
+      const after = text[at + term.length];
+      if (before && WORD_CHAR.test(before)) continue;
+      if (after && WORD_CHAR.test(after)) continue;
+      found.push({ end: at + term.length, start: at, term: text.slice(at, at + term.length) });
+    }
+  }
+
+  // 🔴 SORTED, AND OVERLAPS DROPPED, BECAUSE `splitByTerms` WALKS FORWARD AND SILENTLY SKIPS
+  // ANYTHING THAT STARTS BEHIND ITS CURSOR. Two looked-up terms where one contains the other
+  // ("mole" inside "molecule") would otherwise lose whichever was found second, at random.
+  found.sort((a, b) => a.start - b.start || b.end - a.end);
+  const kept: MarkedTerm[] = [];
+  for (const mark of found) if (!kept.length || mark.start >= kept[kept.length - 1]!.end) kept.push(mark);
+  return kept;
+}

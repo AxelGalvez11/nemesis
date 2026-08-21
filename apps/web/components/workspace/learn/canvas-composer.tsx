@@ -51,6 +51,7 @@ import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model
 import { endsPushToTalk, isTypingTarget, startsPushToTalk } from "@/lib/learn/canvas-hotkeys";
 import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
+import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
 
 import { composerControl } from "./canvas-progression";
@@ -152,7 +153,15 @@ interface CanvasComposerProps {
    * learn this"* button — a whole page to say what a chip says in a line, and a second control
    * where §15 allows exactly one.
    */
-  pendingSources?: readonly { readonly id: string; readonly title: string }[];
+  /**
+   * The material this canvas holds, as chips above the composer.
+   *
+   * 🔴🔴 `sourceUrl` IS NEW AND IT IS THE WHOLE FIX. Owner, twice: *"any sources still dont have the
+   * favicon thumbnail bubbles and are not clickable."* These chips took `{id, title}` and nothing
+   * else, so a web page Nemesis had gone and read was drawn with a FILE icon and no way to open it
+   * — the surface asserting that a page on the internet was an uploaded document.
+   */
+  pendingSources?: readonly { readonly id: string; readonly title: string; readonly sourceUrl?: string }[];
   /**
    * This canvas has not begun. Submitting starts it; `null` once it has.
    *
@@ -383,6 +392,15 @@ export function CanvasComposer({
   const acceptDictation = () => dictation.stop();
 
   const listening = dictation.listening;
+  /**
+   * Whether the composer is carrying attachments, and therefore taller.
+   *
+   * 🔴 THE SAME QUESTION `canStartFromAttachment` ASKS, MINUS THE DICTATION CASE, and named
+   * separately because it drives GEOMETRY rather than behaviour: the box grows, the radius relaxes,
+   * and the input row keeps its own padding. Deriving that from the behavioural flag at three call
+   * sites is how the two drift.
+   */
+  const chipsInside = canStartFromAttachment && !listening;
 
   // ── Voice mode's hands-free loop: Nemesis stopped speaking, so start listening ──────────────
   //
@@ -563,7 +581,11 @@ export function CanvasComposer({
           "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
         )}
       >
-        <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
+        {/* 🔴 THE ID IS LOAD-BEARING, NOT A HOOK FOR STYLING. `BloubDock` measures this box
+            and floats clear of its TOP edge, so the character holds its place while the
+            composer grows downward as an answer is typed. Renaming it fails quietly — the
+            dock falls back to a fixed offset and the character starts overlapping it. */}
+        <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]" id="canvas-composer">
         {/* 🔴 THE PAGE TAKES THE COMPOSER'S WHOLE PLACE, THE SAME AS DICTATION'S `listening` BRANCH
             DOES FURTHER DOWN — see written-work-sheet.tsx's file header. Nothing below this
             branches on `drawing`; the sheet is a full substitute for the chips-and-pill content,
@@ -587,20 +609,6 @@ export function CanvasComposer({
             stale predicate that swallowed typed answers — and with the predicate fixed in one place
             and not the other, a canvas asking a question still displayed "nothing has started yet"
             chips underneath it. `canStartFromAttachment` is the one question, asked once. */}
-        {canStartFromAttachment && !listening && (
-          <div className="mb-1.5 ml-1 flex flex-wrap items-center gap-1.5">
-            {pendingSources.map((source) => (
-              <span
-                className="flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2.5 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)"
-                key={source.id}
-                title={source.title}
-              >
-                <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
-                <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{source.title}</span>
-              </span>
-            ))}
-          </div>
-        )}
 
         {/* The chip needs its own surface. It sits inside the composer's fade, where the
             gradient is nearly transparent, so without a background it was printed straight
@@ -633,241 +641,292 @@ export function CanvasComposer({
           </div>
         )}
 
+        {/* 🔴🔴 THE ATTACHMENTS ARE INSIDE THE COMPOSER NOW. Owner, 2026-08-20: *"i dont want
+            the attachments to be above the chat composer at all."* They sat in their own row
+            ABOVE the pill, so a file read as a separate object hovering over the box rather than
+            as something the next message is carrying. Every product that does this well puts them
+            in the box, and the box grows.
+        
+            🔴 THE RADIUS RELAXES WHEN IT GROWS. A 26px radius on a 52px pill is a capsule; the same
+            radius on a 100px box is a lozenge with visibly round ends. 20px reads as the same
+            object having got taller. */}
         <div
           className={cn(
-            // 52px tall, 26px radius -- MEASURED off ChatGPT's live composer (was 54/27, close
-            // already). One pill; does NOT grow when dictation starts -- the component
-            // transforms, it does not become a bigger thing.
-            "flex min-h-[52px] items-center gap-0 rounded-[26px] bg-(--ui-bg-elevated) px-[12px]",
+            "flex flex-col bg-(--ui-bg-elevated)",
+            chipsInside ? "rounded-[20px]" : "rounded-[26px]",
             "shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)",
             selected.length > 0 && !listening && "ring-(--ui-action)/50",
           )}
         >
-          {/* Stays put through every state, including dictation: spatial continuity is the
-              reason there is one composer at all. Subdued, not moved, while listening.
-              🔴 Absent once a session is underway — see `inSession`. */}
-          {/* 🔴 ONE INPUT, TRIGGERED FROM TWO PLACES. `sr-only`, NOT `hidden` — a hidden input is
-              out of the tab order and out of the accessibility tree. It sits outside the
-              conditional below so that a menu closing mid-pick cannot unmount the element the
-              browser is holding a file dialog open against. */}
-          {/* 🔴 `.xlsx,.csv` ADDED — THE COMPOSER WAS THE ONLY DOOR REFUSING SPREADSHEETS. The
-              Sources panel (`canvas-controls.tsx`) and the front door (`canvas-home.tsx`) both
-              accepted them; this list did not, so a learner was told by one control that their
-              spreadsheet was unsupported and by another that it was fine. §2 names a spreadsheet
-              explicitly among what the composer must take, and §15's one-component rule makes a
-              per-door capability list exactly the kind of drift it exists to prevent.
-              `canvas-shell.test.ts` now pins the three lists equal. */}
-          <input
-            accept={ACCEPTED_MATERIAL}
-            className="sr-only"
-            multiple
-            onChange={(event) => {
-              if (event.target.files?.length) onFiles(event.target.files);
-              event.target.value = "";
-            }}
-            ref={filePicker}
-            tabIndex={-1}
-            type="file"
-          />
+          {chipsInside && (
+            <div className="flex flex-wrap items-center gap-1.5 px-[8px] pb-1 pt-[10px]">
+              {pendingSources.map((source) => {
+                // 🔴 THE HOST DECIDES THE CHIP, NOT A FLAG. `sourceUrl` is documented as absent for
+                // every file upload and present only for a page, so its presence IS the question
+                // "can this be opened?" — the same rule `lib/learn/source-pill.ts` states for the
+                // pills under a claim. One idea, spelled once.
+                const host = hostnameOf(source.sourceUrl);
+                const body = (
+                  <>
+                    {host ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+                      <img alt="" className="shrink-0 rounded-full" height={14} src={faviconUrl(host)} width={14} />
+                    ) : (
+                      <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+                    )}
+                    <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                      {source.title}
+                    </span>
+                  </>
+                );
+                const shell = "flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)";
+                return host && source.sourceUrl ? (
+                  <a
+                    className={cn(shell, "no-underline transition-colors hover:bg-(--ui-bg-tertiary)")}
+                    href={source.sourceUrl}
+                    key={source.id}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                    title={source.title}
+                  >
+                    {body}
+                  </a>
+                ) : (
+                  <span className={shell} key={source.id} title={source.title}>
+                    {body}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {/* The input row. 52px tall and 12px of side padding, measured off the reference. */}
+          <div className="flex min-h-[52px] items-center gap-0 px-[12px]">
+            {/* Stays put through every state, including dictation: spatial continuity is the
+                reason there is one composer at all. Subdued, not moved, while listening.
+                🔴 Absent once a session is underway — see `inSession`. */}
+            {/* 🔴 ONE INPUT, TRIGGERED FROM TWO PLACES. `sr-only`, NOT `hidden` — a hidden input is
+                out of the tab order and out of the accessibility tree. It sits outside the
+                conditional below so that a menu closing mid-pick cannot unmount the element the
+                browser is holding a file dialog open against. */}
+            {/* 🔴 `.xlsx,.csv` ADDED — THE COMPOSER WAS THE ONLY DOOR REFUSING SPREADSHEETS. The
+                Sources panel (`canvas-controls.tsx`) and the front door (`canvas-home.tsx`) both
+                accepted them; this list did not, so a learner was told by one control that their
+                spreadsheet was unsupported and by another that it was fine. §2 names a spreadsheet
+                explicitly among what the composer must take, and §15's one-component rule makes a
+                per-door capability list exactly the kind of drift it exists to prevent.
+                `canvas-shell.test.ts` now pins the three lists equal. */}
+            <input
+              accept={ACCEPTED_MATERIAL}
+              className="sr-only"
+              multiple
+              onChange={(event) => {
+                if (event.target.files?.length) onFiles(event.target.files);
+                event.target.value = "";
+              }}
+              ref={filePicker}
+              tabIndex={-1}
+              type="file"
+            />
 
-          {!inSession && (
-          <div className="relative shrink-0" ref={addMenu}>
-            <button
-              aria-expanded={onRecord ? addOpen : undefined}
-              aria-haspopup={onRecord ? "menu" : undefined}
-              aria-label="Add material"
-              className={cn(
-                // 36×36, MEASURED -- ChatGPT's "Add files and more" button is the same box size
-                // every icon button on their composer uses, ours included now.
-                "flex h-[36px] w-[36px] items-center justify-center rounded-full transition-colors",
-                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)",
-                listening
-                  ? "text-(--ui-text-quaternary)"
-                  : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
-              )}
-              // 🔴 WITH NOTHING TO CHOOSE BETWEEN, THERE IS NO MENU. A surface that cannot record
-              // opens the file picker on the first press, exactly as it always did — a one-item
-              // menu is a second click charged for nothing.
-              onClick={() => (onRecord ? setAddOpen((open) => !open) : filePicker.current?.click())}
-              title="Add material"
-              type="button"
-            >
-              <Codicon name="add" size="20px" />
-            </button>
-
-            {onRecord && addOpen && (
-              <div
-                className="absolute bottom-[46px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
-                role="menu"
+            {!inSession && (
+            <div className="relative shrink-0" ref={addMenu}>
+              <button
+                aria-expanded={onRecord ? addOpen : undefined}
+                aria-haspopup={onRecord ? "menu" : undefined}
+                aria-label="Add material"
+                className={cn(
+                  // 36×36, MEASURED -- ChatGPT's "Add files and more" button is the same box size
+                  // every icon button on their composer uses, ours included now.
+                  "flex h-[36px] w-[36px] items-center justify-center rounded-full transition-colors",
+                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)",
+                  listening
+                    ? "text-(--ui-text-quaternary)"
+                    : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
+                )}
+                // 🔴 WITH NOTHING TO CHOOSE BETWEEN, THERE IS NO MENU. A surface that cannot record
+                // opens the file picker on the first press, exactly as it always did — a one-item
+                // menu is a second click charged for nothing.
+                onClick={() => (onRecord ? setAddOpen((open) => !open) : filePicker.current?.click())}
+                title="Add material"
+                type="button"
               >
+                <Codicon name="add" size="20px" />
+              </button>
+
+              {onRecord && addOpen && (
+                <div
+                  className="absolute bottom-[46px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
+                  role="menu"
+                >
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                    onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
+                    Upload material
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                    onClick={() => { setAddOpen(false); onRecord(); }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    {/* A filled circle, not a microphone. The mic on the right of this composer is
+                        dictation; these two must never look like the same offer. */}
+                    <Codicon className="text-(--ui-text-tertiary)" name="record" size="16px" />
+                    Record a lecture
+                  </button>
+                </div>
+              )}
+            </div>
+            )}
+
+            {listening ? (
+              <>
+                <div className="ml-[12px] flex min-w-0 flex-1 items-center">
+                  <CanvasVoiceBars live />
+                </div>
                 <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-                  onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
-                  role="menuitem"
+                  aria-label="Cancel dictation"
+                  className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  onClick={cancelDictation}
+                  title="Cancel dictation"
                   type="button"
                 >
-                  <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
-                  Upload material
+                  <Codicon name="close" size="18px" />
                 </button>
+                {/* Filled and coloured -- MEASURED, not chosen. ChatGPT's own idle-composer action
+                    (Start Voice, since nothing is typed) is a solid coloured circle, never a grey
+                    glyph; ours picks up the same principle with the product's own accent instead of
+                    copying their exact hue. See the send button below for the other half. */}
                 <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-                  onClick={() => { setAddOpen(false); onRecord(); }}
-                  role="menuitem"
+                  aria-label="Finish dictation"
+                  className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
+                  onClick={acceptDictation}
+                  title="Finish dictation"
                   type="button"
                 >
-                  {/* A filled circle, not a microphone. The mic on the right of this composer is
-                      dictation; these two must never look like the same offer. */}
-                  <Codicon className="text-(--ui-text-tertiary)" name="record" size="16px" />
-                  Record a lecture
+                  <Codicon name="check" size="20px" />
                 </button>
-              </div>
+              </>
+            ) : (
+              <>
+                <textarea
+                  // 🔴 `overflow-hidden` HERE AND HEIGHT IN THE EFFECT ABOVE. Without it the browser
+                  // reserves and paints a scrollbar track inside a one-line control that has nothing
+                  // to scroll. The effect promotes it to `auto` if the answer ever exceeds the cap.
+                  className={cn(
+                    "min-h-[1.75rem] w-full min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1",
+                    // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
+                    // 16px, not a scale token -- see the file header. The value is a platform
+                    // threshold, not a typographic choice, so it must not move when the scale does.
+                    // MEASURED: ChatGPT's own input is also exactly 16px/26px line-height.
+                    "text-[16px] leading-[26px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
+                    // 🔴 HEIGHT ONLY, AND SHORT ENOUGH TO BE INVISIBLE AS A DELAY. `transition-all`
+                    // here would animate colour and opacity on every keystroke and make typing feel
+                    // syrupy; a long duration would let the caret outrun the box on the wrap. 90ms is
+                    // below the threshold where a size change reads as motion, so the growth looks
+                    // like the box was always that size rather than like an animation the learner has
+                    // to wait out. `motion-reduce` drops it entirely.
+                    "transition-[height] duration-90 ease-out motion-reduce:transition-none",
+                    // The attach control used to supply this gap. Without it the text would start
+                    // hard against the pill's edge.
+                    inSession ? "ml-[4px]" : "ml-[12px]",
+                  )}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setText(event.target.value);
+                    typedBefore.current = event.target.value;
+                    // Emptying the box by hand throws the capture away as surely as ✕ does. 🔴 THIS
+                    // ALONE NEVER FIXED THE LEAK: `onChange` does not fire when `cancelDictation`
+                    // calls `setText`, so cancelling and then typing never passed through here.
+                    if (!event.target.value) modalityEvent({ kind: "capture_discarded" });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      submit();
+                    }
+                    if (event.key === "Escape" && selected.length > 0) onClearSelection();
+                  }}
+                  placeholder={
+                    busy
+                      ? // Strip any trailing ellipsis the label already carries before adding one --
+                        // THINKING_COPY's captions are Runtime's copy and may or may not end in "…"
+                        // (see thinking-phases.ts); doubling it up reads as a typo, not as emphasis.
+                        `${(busyLabel ?? "Working").replace(/…$/, "")}…`
+                      : selected.length > 0
+                        ? "What should Nemesis do with this?"
+                        : // Material is staged and nothing has started — say that sending with
+                          // nothing typed is a real option, because §3 makes it one.
+                          canStartFromAttachment
+                          ? START_WITH_MATERIAL_PLACEHOLDER
+                          : intent.kind === "answer"
+                            ? (intent.task.placeholder || ASK_PLACEHOLDER)
+                            : ASK_PLACEHOLDER
+                  }
+                  ref={input}
+                  rows={1}
+                  value={text}
+                />
+
+                {dictation.supported && (
+                  <button
+                    aria-label={answering ? "Answer out loud" : "Dictate"}
+                    className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                    disabled={busy}
+                    onClick={startDictation}
+                    title={answering ? "Answer out loud" : "Dictate"}
+                    type="button"
+                  >
+                    <Codicon name="mic" size="20px" />
+                  </button>
+                )}
+
+                {/* 🔴 WHENEVER A SESSION IS UNDERWAY, NOT ONLY WHILE A QUESTION IS OPEN — the owner's
+                    own framing, and a change from the pad this replaced. You reach for paper BEFORE
+                    you have an answer; a writing surface that only appears once a question is on
+                    screen is not somewhere to think, it is a second answer box with a pencil on it.
+                    What the sheet does with the page still depends entirely on whether anything is
+                    being asked, which is `promptId` above and not this button.
+
+                    🔴 STILL NOT A WAY TO ASK NEMESIS SOMETHING. Speaking a free-form question is
+                    ordinary; drawing one is not a case this product has, so nothing on the sheet
+                    reaches `onAsk`. */}
+                {inSession && (
+                  <button
+                    aria-label="Open a page to work on"
+                    className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                    disabled={busy}
+                    onClick={() => setDrawing(true)}
+                    title="Open a page to work on"
+                    type="button"
+                  >
+                    <Codicon name="edit" size="20px" />
+                  </button>
+                )}
+
+                {/* 🔴 FILLED AND COLOURED, NOT A GREY GLYPH -- MEASURED, not chosen. A grey arrow
+                    reads as disabled even when it isn't; ChatGPT's own idle-composer action button
+                    is never grey, it's a solid coloured circle (theirs is Start Voice, since ours
+                    has no equivalent, but the principle -- the primary action always looks live --
+                    carries over with the product's own accent). `disabled:opacity-40` still dims it
+                    when there is truly nothing to send, so the two real states (nothing typed vs.
+                    ready to send) stay visibly different without a colour swap between them. */}
+                {/* 🔴 ALWAYS PRESENT, DIMMED WHEN EMPTY. `showSend` used to remove it from the DOM, so the
+                    pill changed shape on the first keystroke. See `ComposerSend`. */}
+                <ComposerSend
+                  busy={busy}
+                  disabled={!showSend}
+                  label={answering ? "Submit answer" : "Send"}
+                  onClick={submit}
+                />
+
+              </>
             )}
           </div>
-          )}
-
-          {listening ? (
-            <>
-              <div className="ml-[12px] flex min-w-0 flex-1 items-center">
-                <CanvasVoiceBars live />
-              </div>
-              <button
-                aria-label="Cancel dictation"
-                className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                onClick={cancelDictation}
-                title="Cancel dictation"
-                type="button"
-              >
-                <Codicon name="close" size="18px" />
-              </button>
-              {/* Filled and coloured -- MEASURED, not chosen. ChatGPT's own idle-composer action
-                  (Start Voice, since nothing is typed) is a solid coloured circle, never a grey
-                  glyph; ours picks up the same principle with the product's own accent instead of
-                  copying their exact hue. See the send button below for the other half. */}
-              <button
-                aria-label="Finish dictation"
-                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
-                onClick={acceptDictation}
-                title="Finish dictation"
-                type="button"
-              >
-                <Codicon name="check" size="20px" />
-              </button>
-            </>
-          ) : (
-            <>
-              <textarea
-                // 🔴 `overflow-hidden` HERE AND HEIGHT IN THE EFFECT ABOVE. Without it the browser
-                // reserves and paints a scrollbar track inside a one-line control that has nothing
-                // to scroll. The effect promotes it to `auto` if the answer ever exceeds the cap.
-                className={cn(
-                  "min-h-[1.75rem] w-full min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1",
-                  // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
-                  // 16px, not a scale token -- see the file header. The value is a platform
-                  // threshold, not a typographic choice, so it must not move when the scale does.
-                  // MEASURED: ChatGPT's own input is also exactly 16px/26px line-height.
-                  "text-[16px] leading-[26px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
-                  // 🔴 HEIGHT ONLY, AND SHORT ENOUGH TO BE INVISIBLE AS A DELAY. `transition-all`
-                  // here would animate colour and opacity on every keystroke and make typing feel
-                  // syrupy; a long duration would let the caret outrun the box on the wrap. 90ms is
-                  // below the threshold where a size change reads as motion, so the growth looks
-                  // like the box was always that size rather than like an animation the learner has
-                  // to wait out. `motion-reduce` drops it entirely.
-                  "transition-[height] duration-90 ease-out motion-reduce:transition-none",
-                  // The attach control used to supply this gap. Without it the text would start
-                  // hard against the pill's edge.
-                  inSession ? "ml-[4px]" : "ml-[12px]",
-                )}
-                disabled={busy}
-                onChange={(event) => {
-                  setText(event.target.value);
-                  typedBefore.current = event.target.value;
-                  // Emptying the box by hand throws the capture away as surely as ✕ does. 🔴 THIS
-                  // ALONE NEVER FIXED THE LEAK: `onChange` does not fire when `cancelDictation`
-                  // calls `setText`, so cancelling and then typing never passed through here.
-                  if (!event.target.value) modalityEvent({ kind: "capture_discarded" });
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    submit();
-                  }
-                  if (event.key === "Escape" && selected.length > 0) onClearSelection();
-                }}
-                placeholder={
-                  busy
-                    ? // Strip any trailing ellipsis the label already carries before adding one --
-                      // THINKING_COPY's captions are Runtime's copy and may or may not end in "…"
-                      // (see thinking-phases.ts); doubling it up reads as a typo, not as emphasis.
-                      `${(busyLabel ?? "Working").replace(/…$/, "")}…`
-                    : selected.length > 0
-                      ? "What should Nemesis do with this?"
-                      : // Material is staged and nothing has started — say that sending with
-                        // nothing typed is a real option, because §3 makes it one.
-                        canStartFromAttachment
-                        ? START_WITH_MATERIAL_PLACEHOLDER
-                        : intent.kind === "answer"
-                          ? (intent.task.placeholder || ASK_PLACEHOLDER)
-                          : ASK_PLACEHOLDER
-                }
-                ref={input}
-                rows={1}
-                value={text}
-              />
-
-              {dictation.supported && (
-                <button
-                  aria-label={answering ? "Answer out loud" : "Dictate"}
-                  className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                  disabled={busy}
-                  onClick={startDictation}
-                  title={answering ? "Answer out loud" : "Dictate"}
-                  type="button"
-                >
-                  <Codicon name="mic" size="20px" />
-                </button>
-              )}
-
-              {/* 🔴 WHENEVER A SESSION IS UNDERWAY, NOT ONLY WHILE A QUESTION IS OPEN — the owner's
-                  own framing, and a change from the pad this replaced. You reach for paper BEFORE
-                  you have an answer; a writing surface that only appears once a question is on
-                  screen is not somewhere to think, it is a second answer box with a pencil on it.
-                  What the sheet does with the page still depends entirely on whether anything is
-                  being asked, which is `promptId` above and not this button.
-
-                  🔴 STILL NOT A WAY TO ASK NEMESIS SOMETHING. Speaking a free-form question is
-                  ordinary; drawing one is not a case this product has, so nothing on the sheet
-                  reaches `onAsk`. */}
-              {inSession && (
-                <button
-                  aria-label="Open a page to work on"
-                  className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                  disabled={busy}
-                  onClick={() => setDrawing(true)}
-                  title="Open a page to work on"
-                  type="button"
-                >
-                  <Codicon name="edit" size="20px" />
-                </button>
-              )}
-
-              {/* 🔴 FILLED AND COLOURED, NOT A GREY GLYPH -- MEASURED, not chosen. A grey arrow
-                  reads as disabled even when it isn't; ChatGPT's own idle-composer action button
-                  is never grey, it's a solid coloured circle (theirs is Start Voice, since ours
-                  has no equivalent, but the principle -- the primary action always looks live --
-                  carries over with the product's own accent). `disabled:opacity-40` still dims it
-                  when there is truly nothing to send, so the two real states (nothing typed vs.
-                  ready to send) stay visibly different without a colour swap between them. */}
-              {/* 🔴 ALWAYS PRESENT, DIMMED WHEN EMPTY. `showSend` used to remove it from the DOM, so the
-                  pill changed shape on the first keystroke. See `ComposerSend`. */}
-              <ComposerSend
-                busy={busy}
-                disabled={!showSend}
-                label={answering ? "Submit answer" : "Send"}
-                onClick={submit}
-              />
-
-            </>
-          )}
         </div>
 
         {dictation.error && !listening && (

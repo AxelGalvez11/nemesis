@@ -67,7 +67,12 @@ test("the shell reserves clearance with padding rather than a header element", (
   // Padding on the scroller, not a sized box above it.
   // 64px, down from 72 -- compact-UI pass, tightened alongside the header this padding clears
   // (12px inset + 28px control + 24px breathing room, was 16+32+24).
-  assert.match(shell, /overflow-y-auto pt-\[64px\]/);
+  // 🔴 REPOINTED 2026-08-20: the scroller gained `pb-[160px]` between these two classes, so a regex
+  // pinning them ADJACENT went red on a change that altered neither. Both properties are still
+  // pinned — and the bottom clearance is pinned too, because its ABSENCE was the bug: the composer
+  // floats over this column and took no space in it, so the end of every answer was unreachable.
+  assert.match(shell, /overflow-y-auto[^"]*pt-\[64px\]/, "the scrolling column lost its header offset");
+  assert.match(shell, /overflow-y-auto[^"]*pb-\[160px\]/, "the scrolling column cannot scroll past the composer");
   // Two measurements of two different things, both taken off the references: the reading
   // column is 680, the composer pill is 768. Neither is a rounding of the other.
   //
@@ -96,7 +101,15 @@ test("the shell reserves clearance with padding rather than a header element", (
   );
   // 52/26, MEASURED off ChatGPT's live composer for the compact-UI pass (was 54/27, close
   // already) -- see the sizing note at the top of canvas-composer.tsx.
-  assert.match(read("canvas-composer.tsx"), /min-h-\[52px\][^"]*rounded-\[26px\]/);
+  //
+  // 🔴 REPOINTED 2026-08-20: these two were ONE class string until attachments moved inside the
+  // composer, which made it a column — the radius belongs to the growing box and the 52px to the
+  // input row within it. A regex spanning both went red on a change that altered neither number.
+  // Both properties are still pinned, just separately, and the RELAXED radius is pinned too so the
+  // grown state cannot quietly become a lozenge.
+  const composer = read("canvas-composer.tsx");
+  assert.match(composer, /min-h-\[52px\] items-center/, "the input row is no longer 52px tall");
+  assert.match(composer, /chipsInside \? "rounded-\[20px\]" : "rounded-\[26px\]"/, "the composer radius is no longer measured");
 });
 
 test("there is exactly one answer surface on the canvas", () => {
@@ -189,7 +202,7 @@ test("🔴🔴 the masthead is solid and never overlaps the resting content", ()
   // file from the band. Read rather than hard-coded: the two numbers are only meaningful against
   // each other, they are declared apart, and pinning one while the other moves is exactly how this
   // came back the first time.
-  const resting = /overflow-y-auto pt-\[(\d+)px\]/.exec(read("learning-canvas.tsx"));
+  const resting = /overflow-y-auto[^"]*pt-\[(\d+)px\]/.exec(read("learning-canvas.tsx"));
   assert.ok(resting, "expected the scrolling column to declare its top offset");
   assert.ok(
     height < Number(resting[1]!),

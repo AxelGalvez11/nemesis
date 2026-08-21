@@ -10,7 +10,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { hostnameOf } from "@/lib/favicon";
+import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
+import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
@@ -26,12 +27,15 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 import { projectAll } from "@/lib/learn/learner-evidence";
 import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
 import type { TurnSurroundings } from "./canvas-chat";
-import { offerLine } from "./offer-copy";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
+import { CanvasSourceCards } from "./canvas-source-cards";
+import { SemanticVisual } from "./semantic-visual";
+import { replySegments } from "@/lib/learn/reply-visuals";
+import { ReplyActions } from "./reply-actions";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -40,13 +44,15 @@ import { CanvasHeader } from "./canvas-header";
 import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
+import { BloubDock } from "@/components/bloub/bloub-dock";
+import { stateForCanvas } from "@/lib/character/stations";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";
 import { continueBelongsTo, continueOwner, readingRequirementOf } from "@/lib/learn/canvas-continue";
 import { routeRewrite } from "@/lib/learn/canvas-phrases";
 import { unreadChunk } from "@/lib/learn/canvas-reading";
-import { useCanvasSelection } from "./use-canvas-selection";
+import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
@@ -166,7 +172,17 @@ export function LearningCanvas({
   // Voice mode. 🔴 `policy.judging` is the composer-busy signal: while an answer is being read the
   // learner is waiting on a verdict, and opening a microphone at them is asking for an answer to a
   // question they already gave.
-  const voice = useCanvasVoice(policy, policy.judging);
+  // 🔴 THE REPLY IS HOISTED ABOVE THIS FOR THE VOICE, and the key is the text's own length plus its
+  // first characters rather than a counter — a counter would re-read the same answer after any
+  // re-render, and `use-canvas-voice.ts` says an identity derived separately from the text is an
+  // identity that can drift from it.
+  const spokenReply = useMemo(() => {
+    const aside = session.aside;
+    if (!aside || aside.blockId !== null || aside.kind !== "reply") return null;
+    const text = aside.text.trim();
+    return text ? { key: `${text.length}:${text.slice(0, 24)}`, text } : null;
+  }, [session.aside]);
+  const voice = useCanvasVoice(policy, policy.judging, spokenReply);
 
   /**
    * The session record, read from the append-only evidence log.
@@ -655,6 +671,9 @@ export function LearningCanvas({
     return (
       <CanvasSurface onExit={leave}>
         <div className="flex h-full items-center justify-center">
+          {/* Nothing is docked yet — there is no composer to stand above — so the character
+              simply holds the middle, which is where it would have walked to anyway. */}
+          <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
           {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
               database read long. It was not fine while it also covered knowledge resolution, which
               is a model call and an ingestion and can run for a minute. */}
@@ -738,6 +757,18 @@ export function LearningCanvas({
   const working =
     busy.kind !== null || policy.phase !== null || policy.status === "loading" || policy.deciding;
 
+  /**
+   * The learner just sent something and Nemesis is making the answer to it.
+   *
+   * 🔴🔴 `busy` ONLY, AND DELIBERATELY NOT THE THREE POLICY FLAGS `working` ALSO CARRIES. `busy` is
+   * the SESSION's — it is set by `converse`, `command` and `attachFiles`, which is to say by things
+   * the learner just did. The policy flags cover knowledge resolution, which this session MEASURED
+   * running for minutes on a topic-only canvas; keying the thinking screen on those would take a
+   * lesson off the screen of someone reading it, for minutes, which is #690's blank screen with a
+   * drawing on top.
+   */
+  const turnInFlight = busy.kind !== null;
+
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
   // This line used to call `composeSurface` directly, and it did so WITHOUT `hasReadingMaterial`,
@@ -762,6 +793,7 @@ export function LearningCanvas({
     }),
     aside: asideOnScreen,
     policyPresenting,
+    turnInFlight,
     working,
   });
 
@@ -779,6 +811,36 @@ export function LearningCanvas({
    * key that moved with them would fade the canvas out and back in while the learner was reading —
    * which is the flicker this exists to remove, arriving as the fix for it.
    */
+  /**
+   * A teaching screen exists and this reply is standing in front of it.
+   *
+   * 🔴 COMPUTED ONCE BECAUSE TWO PLACES READ IT AND THEY MUST NEVER DISAGREE. The reply decides
+   * which single control it offers from this, and the control itself is gated on it; written out
+   * twice — once negated — a future edit changes one and the learner gets either two pills or none.
+   * "None" is the dangerous half: the way back to a displaced lesson would simply not be drawn.
+   */
+/** The pages to show under a reply: what it CITED, or failing that what it READ.
+   *
+   * 🔴 CITED FIRST BECAUSE IT IS THE STRONGER CLAIM — these pages supported particular sentences.
+   * The fallback is weaker and still true: this answer was built from these. Never nothing, which
+   * is what a searched answer showed before and which presents live research as the model's own
+   * recall. Derived once so the row's condition and its contents cannot disagree. */
+  const replySources =
+    session.aside?.sources?.length ? session.aside.sources : session.aside?.consulted ?? [];
+
+  /** The reply's own text and its index-aligned pages, hoisted out of the JSX.
+   *
+   * 🔴 HOISTED BECAUSE A CLOSURE LOSES THE NARROWING. `session.aside` is checked non-null by the
+   * gate around the block below, but the `.map` callback is a function and TypeScript cannot carry
+   * a narrowing across it — and the honest fix is a value, not a `!`. A non-null assertion here
+   * would be asserting exactly the thing that has gone wrong on this surface before. */
+  const replyText = session.aside?.blockId === null ? session.aside.text : "";
+  const replyConsulted = session.aside?.blockId === null ? session.aside.consulted : undefined;
+  /** Hoisted for the same narrowing reason as the two above: `session.aside` is re-read per line. */
+  const replyVisualList = session.aside?.blockId === null ? session.aside.visuals ?? [] : [];
+
+    const lessonHeld = policyPresenting && !regions.policy;
+
   const surfaceKey = [
     presence,
     regions.policy ? screenKey(policy) : "-",
@@ -940,6 +1002,10 @@ export function LearningCanvas({
     // the sheet, its scrim, the floating strip and the `×` all come from `CanvasSurface`, which
     // owns them so that no render branch can omit the exit. See the note at the top of that file.
     <CanvasSurface
+      // 🔴 THE WHOLE CANVAS IS THE DROP TARGET, not the composer. A 52px pill is a target you have
+      // to aim at, and nobody aims at a text box when they are dragging a PDF — they drop it on the
+      // page. Same door a picked file takes, so a dropped lecture and a chosen one are one path.
+      onDropFiles={(files) => void session.attachFiles(files)}
       onExit={leave}
       chrome={
       <CanvasHeader
@@ -1000,7 +1066,17 @@ export function LearningCanvas({
       {/* Command-Enter presses whatever Continue is on screen. Renders nothing. */}
       <ContinueHotkey onContinue={advance} />
 
-      <div className="relative h-full overflow-y-auto pt-[64px]">
+      {/* 🔴🔴 BOTTOM PADDING, AND ITS ABSENCE WAS A REAL BUG. Owner, 2026-08-20: *"also i cant
+          scroll all the way down."* This had `pt-[64px]` to clear the header and nothing at all for
+          the composer — which is an ABSOLUTELY POSITIONED overlay at `bottom-0`, so it takes no
+          space in this scroller and the last stretch of every answer sat permanently underneath it.
+          Scrolling could not reach it because there was nothing below it to scroll to.
+
+          🔴 SIZED FROM THE OVERLAY, NOT GUESSED: 56px of gradient (`pt-14`) + a 52px composer +
+          16px (`pb-4`) is 124, and the composer now GROWS when it carries attachments. 160 clears a
+          composer with a row of chips in it and leaves the gradient doing its job rather than
+          hiding text behind it. */}
+      <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
             below what anyone notices; the owner's reading ("there are also no fade in or fade out
@@ -1020,8 +1096,9 @@ export function LearningCanvas({
             wanted to look something up would have to dismiss the question to do it. It sits above
             the reading and the reading continues beneath it — one continuous surface, which is why
             neither is in a panel, a modal or a column of its own. */}
-        {regions.policy && (
+        {regions.policy && presence !== "preparing" && (
           <CanvasPolicyView
+            lookedUp={session.lookedUp}
             voice={{ replay: voice.replay, speaking: voice.speaking }}
             // 🔴 DISPATCHES `policy_continue` BEFORE ACKNOWLEDGING, NOT BECAUSE THIS CALL CHANGES
             // ANYTHING — `nextExplanationState` returns the state unchanged for this event — but
@@ -1051,7 +1128,7 @@ export function LearningCanvas({
             `replyOnScreen` computes — that is the point: `composeSurface` decides the RELATIONSHIP
             between this and the policy's screen (which of them yields, and to which), and reading
             the raw state here would be a second opinion free to disagree with the first. */}
-        {regions.reply && session.aside && (
+        {regions.reply && session.aside && presence !== "preparing" && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
             {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
                 and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
@@ -1063,60 +1140,143 @@ export function LearningCanvas({
                 reference. See `canvas-document.tsx`, which keeps the rule for the genuinely
                 block-scoped case ("Explain this" on a passage), where the quotation is true. */}
             <div className="canvas-swap text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
-              {session.aside.text}
+              {/* 🔴🔴 THE HIGHLIGHT TOOLBAR ONLY EVER WORKED OVER DOCUMENT BLOCKS, AND THAT WAS
+                  INVISIBLE UNTIL SELECTION WENT ON EVERYWHERE. `readCanvasSelection` requires a
+                  `[data-selectable-id]` ancestor, and `selectableRegion()` was called from exactly
+                  one place in the app: `canvas-document.tsx`, on a block. So Define/Example/Why/
+                  Explain were unreachable on any canvas with no reading material — which is every
+                  topic-only canvas, where `canvas.blocks` is empty by design.
+
+                  🔴 AND #695 MADE IT LOOK BROKEN RATHER THAN ABSENT. Turning `user-select` on for
+                  the whole canvas meant the learner could finally drag across a reply — and get
+                  nothing. Highlighting that does nothing reads as a dead feature; before, the text
+                  simply refused to highlight.
+
+                  🔴 THE TEXT GETS ITS OWN ELEMENT, NOT THE WRAPPER. Offsets are measured against
+                  the element carrying the marker, and this div also holds the source pills, the
+                  offer and the buttons — measuring from here would count all of it, and
+                  `readCanvasSelection`'s integrity check would refuse every selection. One element,
+                  one string.
+
+                  🔴 NOT `rewritable`. "Simpler" REWRITES the passage it is invoked on, and there is
+                  no block behind a reply to rewrite. `selectionActions` already drops that option
+                  when the region does not claim it, so the toolbar offers exactly the four that
+                  work here. */}
+              {/* 🔴🔴 THE SAME RENDERER THE CHAT SURFACE USES, AND SUPPLYING `sources` IS THE WHOLE
+                  FIX. Owner, 2026-08-20: *"nemesis still doesnt have inline text source pills or
+                  bubbles with the favicon for thumbnail."* The answer came back with `[1]`, `[4]`,
+                  `[6]` sitting in the prose as literal characters, because this rendered
+                  `{session.aside.text}` as a raw string.
+
+                  `AssistantMarkdown`'s own documentation states the behaviour that was missing:
+                  supplying `sources` "turns the answer's [n] markers into inline source pills;
+                  omitting them leaves the text as-is". `citationsToMarkdown` rewrites each marker
+                  into a link and the renderer draws it as a favicon dot the height of the
+                  surrounding text. It has been built and tested on the chat surface since August;
+                  the Canvas simply never called it.
+
+                  🔴 THE CANVAS'S OWN TYPE WINS. `MARKDOWN_CONTAINER_CLASS_NAME` sets
+                  `--conversation-text-font-size`, which is the sessions surface's scale, not the
+                  16px/26px this canvas was measured to. The overrides below are last in the string
+                  so they take precedence, and the reading measure stays the canvas column's.
+
+                  🔴 THE SELECTABLE MARKER MOVES TO THE WRAPPER, WHICH IS STILL AN ELEMENT HOLDING
+                  ONLY THIS PROSE. Offsets are measured against the marked element; the pills, the
+                  offer line and the buttons are siblings of this div, not children of it. */}
+              {/* 🔴🔴 A REPLY CAN DRAW NOW. Reported 2026-08-20: "i asked it to create the chemical
+                  structures using the new tools we gave it" — and it answered in prose, because a
+                  reply was a string and nothing on this path could produce a picture.
+                  `SemanticVisual` has rendered nine kinds including `structure` for weeks; every one
+                  was reachable only from the TEACHING path. The capability existed and the
+                  conversation had no way to reach it.
+
+                  🔴 THE SEGMENTS KEEP THEIR ORDER, which is the whole reason this is a split rather
+                  than a `visuals` array. A drawing lands exactly where the model put it, between the
+                  sentence that introduces it and the one that follows.
+
+                  🔴 EACH PROSE RUN KEEPS ITS OWN SELECTABLE MARKER. Offsets are measured against the
+                  marked element, so one marker wrapping prose AND an SVG would fail
+                  `readCanvasSelection`'s integrity check on every selection. */}
+              {replySegments(replyText, replyVisualList).map((segment, index) =>
+                segment.kind === "visual" ? (
+                  <SemanticVisual key={`v${index}`} visual={segment.visual} />
+                ) : (
+                  <div key={`p${index}`} {...selectableRegion(index === 0 ? "reply" : `reply-${index}`)}>
+                    <AssistantMarkdown
+                      className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
+                      namedCitations
+                      // 🔴 INLINE `$x$` IS MATHS ON THIS SURFACE, WHICH IS THE OPPOSITE OF THE
+                      // CHAT DEFAULT AND DELIBERATE. The flag is off globally because of an owner
+                      // screenshot: "$0.20 per million input tokens and $1.20" turned into
+                      // italics. That reasoning is about a surface where prices come up and
+                      // notation does not. This one is the reverse — a learner working through
+                      // kinetics or a proof meets `$k$` far more often than a dollar sign — and
+                      // `$$…$$` display maths already rendered here regardless.
+                      singleDollarMath
+                      sources={replyConsulted}
+                      text={segment.text}
+                    />
+                  </div>
+                ),
+              )}
+
+              {/* 🔴 AFTER THE ANSWER, AND ONLY ONCE IT HAS ARRIVED. Copying half an answer copies
+                  half an answer, and a play button on a sentence about to be replaced reads as
+                  broken. `turnInFlight` is the same signal the thinking screen keys on. */}
+              {!turnInFlight && replyText.trim() && (
+                <ReplyActions
+                  onCycleSpeed={voice.header.onCycleSpeed}
+                  onSpeak={voice.speakAloud}
+                  onStop={voice.stopSpeaking}
+                  speaking={voice.header.speaking}
+                  speed={voice.header.speed}
+                  // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
+                  // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
+                  // them, and a synthesiser reading it aloud is worse.
+                  text={replySegments(replyText, replyVisualList)
+                    .filter((segment) => segment.kind === "prose")
+                    .map((segment) => (segment as { text: string }).text)
+                    .join("\n\n")
+                    .trim()}
+                />
+              )}
+
               {/* Which live pages the answer actually used, each individually promotable. This is
                   the "distinct" half of temporary-versus-durable: seeing it here is USING it for
                   one answer; pressing the small `+` is the separate, explicit act of keeping it. */}
-              {session.aside.sources && session.aside.sources.length > 0 && (
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {session.aside.sources.map((source) => (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full bg-(--ui-bg-elevated) py-0.5 pl-2.5 pr-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary) ring-1 ring-(--ui-stroke-tertiary)"
-                      key={source.url}
-                    >
-                      <a
-                        className="hover:text-(--ui-text-primary)"
-                        href={source.url}
-                        rel="noopener noreferrer"
-                        target="_blank"
-                      >
-                        {(hostnameOf(source.url) ?? source.url).replace(/^www\./, "")}
-                      </a>
-                      <button
-                        aria-label={`Add ${source.url} to sources`}
-                        className="flex h-[16px] w-[16px] items-center justify-center rounded-full text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                        onClick={() => void session.attachUrl(source.url)}
-                        title="Add to sources"
-                        type="button"
-                      >
-                        <Codicon name="add" size="0.625rem" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
+              {/* 🔴🔴 CARDS, NOT DOMAIN PILLS — owner call after measuring ChatGPT, 2026-08-20.
+                  A broad question produced ten pills reading "Cnbc", "Cnbc", "Businessinsider",
+                  with nothing to tell them apart; the HEADLINE is what distinguishes them and it
+                  was the one thing not shown. See `canvas-source-cards.tsx` for why there is no
+                  thumbnail and no "Today": this search does not return either, and inventing them
+                  would be a claim about freshness the product cannot stand behind.
+
+                  🔴 CITED FIRST WHEN THERE IS ONE, because it is the stronger claim: these pages
+                  supported particular sentences. The fallback is the weaker and still-true one:
+                  these are the pages this answer was built from. Never nothing — a searched answer
+                  that shows no origin presents live research as the model's own recall. */}
+              {replySources.length > 0 && (
+                <CanvasSourceCards
+                  cards={replySources.map((source) => ({ title: source.title || source.url, url: source.url }))}
+                  onAdd={(url) => void session.attachUrl(url)}
+                />
               )}
-              {/* 🔴 A SUBJECT, NOT A QUESTION. This read `aside.question`, which every turn has, so
-                  "Hello. What can I do for you?" came with a Learn this button that had nothing to
-                  start. The model says whether the turn named something worth learning; a greeting
-                  does not. See `topic` in lib/learn/turn-router.ts. */}
-              {session.aside.topic && (
-                <div className="mt-3">
-                  {/* Only when Nemesis actually noticed something. A nudge on every reply is not a
-                      nudge, it is nagging, and the learner stops seeing it. */}
-                  {offerLine(session.aside.offer) && (
-                    <p className="mb-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                      {offerLine(session.aside.offer)}
-                    </p>
-                  )}
-                  <button
-                    className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                    onClick={() => void session.learnFromAside()}
-                    type="button"
-                  >
-                    Learn this
-                  </button>
-                </div>
-              )}
+
+              {/* 🔴🔴 "LEARN THIS" IS GONE, 2026-08-20. Owner: *"why does nemesis still show
+                  'learn this'?"*, having already said once before that it was clutter they had not
+                  asked for.
+
+                  🔴 THE GATE WAS THE PROBLEM, AND NARROWING IT WOULD NOT HAVE BEEN ENOUGH. It hung
+                  on `aside.topic` — "did this turn name a subject?" — which nearly every real
+                  question does, so a button offering to start a lesson sat under nearly every
+                  answer. The line ABOVE it was properly rare; the button was not, and a nudge that
+                  appears every time is not a nudge.
+
+                  🔴 THE CAPABILITY IS UNTOUCHED, WHICH IS THE STANDING RULE HERE — remove the
+                  control, not the feature. `learnFromAside` still exists and the router still reads
+                  `topic` off every turn; asking to be taught in words is the door now, and it is
+                  the one the semantic front door was built to open. §46's "Teach me X" acceptance
+                  cases go through that door, not this button. */}
               {/* 🔴🔴 THE WAY BACK, AND IT IS NOT OPTIONAL POLISH — IT IS THE EXIT.
                   `no-screen-is-a-dead-end.test.ts` states the rule this obeys: a screen the learner
                   cannot leave is the product's worst failure mode, and it has already shipped once.
@@ -1134,7 +1294,7 @@ export function LearningCanvas({
                   !regions.policy` is precisely "the policy has a screen and this reply is standing
                   in front of it" — on an ordinary conversational canvas with no lesson behind it
                   there is nothing to go back to, and a button offering to would be a dead control. */}
-              {policyPresenting && !regions.policy && (
+              {lessonHeld && (
                 <div className="mt-6">
                   <button
                     className="rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
@@ -1174,7 +1334,7 @@ export function LearningCanvas({
             case, so what followed was an empty page with nothing running to explain it, on the
             first thing a student ever does. The trigger is now "there is no content to show",
             which is the question that was actually being asked. */}
-        {presence === "preparing" && <CanvasThinkingPreview label={preparingLabel} />}
+        {presence === "preparing" && <CanvasThinkingPreview label={preparingLabel} mascot={turnInFlight} />}
 
         {/* 🔴 A CANVAS WITH NOTHING TO PRESENT AND NOTHING RUNNING SAYS SO. This is the other half
             of the same defect, and it must NOT be a caption: `thinking-phases.ts` rules that a
@@ -1208,7 +1368,7 @@ export function LearningCanvas({
           <CanvasQuiet onRetry={() => window.location.assign(`/learn?c=${canvas.id}`)} />
         )}
 
-        {regions.document && (
+        {regions.document && presence !== "preparing" && (
           <>
 
         {["learn", "targeted_relearn"].includes(canvas.state) && (
@@ -1294,6 +1454,46 @@ export function LearningCanvas({
         </div>
       )}
 
+      {/* 🔴 THE CHARACTER, AND IT IS NOT A LOADING INDICATOR. It lives above the composer for
+          the whole session, not only while something is running, because a companion that only
+          appears when you are waiting IS a spinner with a face. What changes while Nemesis works
+          is where it stands and what it does: it walks to the middle of the surface and comes
+          back, and `canvas-motion.test.ts`'s rule still holds — the CAPTION beside it is still
+          the name of a step that is genuinely executing, and nothing here narrates progress.
+
+          🔴 IT TAKES NO SPACE AND NO CLICKS. Absolutely positioned, `pointer-events: none`,
+          outside the flow — it cannot reflow the lesson it is sitting on, and it cannot swallow
+          a press meant for the composer behind it. */}
+      <BloubDock
+        anchor="#canvas-composer"
+        contain
+        // 🔴 "!" WHEN SOMETHING WENT WRONG, "?" WHEN NEMESIS IS WAITING ON THE LEARNER, and null on
+        // nearly every render — a mascot that is always signalling is a mascot nobody looks at.
+        //
+        // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once (a question on screen and a
+        // turn that just failed), and of the two only the failure is news: the question is already
+        // rendered in full, in words, in the middle of the page.
+        marker={session.error ? "!" : awaitingDemonstration ? "?" : null}
+        // 🔴🔴 `turnInFlight`, NOT `policy.thinking` — AND THIS IS THE SAME MISTAKE THE THINKING
+        // SCREEN ALREADY FIXED, MADE AGAIN ONE COMPONENT OVER.
+        //
+        // Reported 2026-08-20 as the mascot "painting over answers". Measured on production: the
+        // dock's resting position was correct (bottom 84px, left 336px, right at the composer) and
+        // a TRANSFORM was lifting it 412px up and scaling it 2.1x — the deliberate "come forward to
+        // think" station, still applied minutes after the answer had landed.
+        //
+        // The cause is what `policy.thinking` MEANS. It is `phase !== null`, and the phases include
+        // `mapping_knowledge` — background knowledge resolution measured in MINUTES. So a learner
+        // reading a finished answer had a character standing over it at double size because
+        // something unrelated was still running behind the page. `use-canvas-session` records this
+        // exact distinction for the thinking SCREEN ("never `working`, which includes knowledge
+        // resolution"); the dock was wired to the other signal and nobody had looked.
+        //
+        // 🔴 THE ANIMATION IS UNCHANGED. `ACTIVITY_STATE` maps `thinking` and `preparing` onto the
+        // same state, so this alters WHERE the character stands and WHEN, never what it plays.
+        state={stateForCanvas({ thinking: turnInFlight, preparing: presence === "preparing" })}
+      />
+
       {/* 🔴 ALONGSIDE THE QUESTION, NOT OVER IT. A judgement that runs long leaves the stimulus
           exactly where it was — the learner keeps the thing they just answered in view, so nothing
           has to be reconstructed when the verdict lands. This is the replacement for the 70% scrim,
@@ -1307,6 +1507,8 @@ export function LearningCanvas({
           error={session.selectionError}
           forceOpen={!text.selection && Boolean(term)}
           onAct={(action) => void act(action)}
+          onSpeak={(text) => voice.speakAloud(text)}
+          speaking={voice.header.speaking}
           onDismiss={dismissSelection}
           rect={pointed.rect}
           selection={pointed.selection}
@@ -1399,7 +1601,14 @@ export function LearningCanvas({
           onStart={beginOrAnswer}
           // Unconditional too — the composer shows the chips only while `intent.kind === "start"`,
           // which is the same question asked once instead of twice.
-          pendingSources={canvas.sources.map((source) => ({ id: source.id, title: source.title }))}
+          pendingSources={canvas.sources.map((source) => ({
+            id: source.id,
+            title: source.title,
+            // 🔴 SPREAD CONDITIONALLY, NOT PASSED AS `?? undefined`. An explicit `sourceUrl:
+            // undefined` and an absent key read the same to the component but not to a reader:
+            // absent means "this is not a link", which is the field's documented meaning.
+            ...(source.sourceUrl ? { sourceUrl: source.sourceUrl } : {}),
+          }))}
           selected={selected}
         />
       )}

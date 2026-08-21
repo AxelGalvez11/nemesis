@@ -4,18 +4,42 @@ import katex from "katex";
 import { useId, useMemo } from "react";
 
 import type { CanvasVisualRequest, FlowVisual, PlotVisual } from "@/lib/learn/canvas-visual";
-import { layoutFlow, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
+import { layoutFlow, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
 
 import { ChemicalStructure } from "./chemical-structure";
 import { CodeTrace, Construction, DataTable, Timeline, VectorDiagram } from "./subject-visual";
 
 const WIDTH = VISUAL_WIDTH;
-const PLOT_HEIGHT = 280;
+const PLOT_HEIGHT = VISUAL_HEIGHT;
 const COLOURS = ["var(--ui-accent)", "var(--ui-text-primary)", "#d97706", "#7c3aed"];
 
 export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
   return (
-    <figure className="my-4 overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) p-4">
+    // 🔴 NO FILL, REPORTED 2026-08-20: *"why does it have a blue gray background instead of a
+    // transparent background?"* It was `bg-(--ui-bg-secondary)`, which resolves to
+    // `color-mix(srgb, var(--ui-accent) 11%, …)` — eleven percent of the THEME ACCENT, which is
+    // exactly the blue the owner was seeing. Nobody chose a tint for figures; the card system's
+    // default fill came along with the card.
+    //
+    // A drawing is the content, not a card on the page, and Nemesis drew it in the theme's own
+    // colours precisely so it would sit in the column rather than in a panel. The hairline stays:
+    // a wide table with no boundary at all bleeds into the prose above it.
+    <figure
+      className={
+        // 🔴 A MOLECULE SIZES ITS FRAME; EVERYTHING ELSE FILLS THE COLUMN. Owner, twice: *"can you
+        // make the size of it be smaller to fit with the canvas sizing?"* The drawing itself was
+        // already bounded — the FRAME was not, so ethanol sat in the middle of a 640px panel that
+        // was mostly empty, and the emptiness was the thing being complained about.
+        //
+        // 🔴 ONLY THE STRUCTURE, AND THAT IS DELIBERATE. A plot, a table and a timeline are drawn
+        // ACROSS the column on purpose — their whole job is to use that width, and a shrink-wrapped
+        // plot would be a smaller plot. A molecule has an intrinsic size and gains nothing from the
+        // extra room.
+        visual.kind === "structure"
+          ? "my-4 mx-auto w-fit max-w-full overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-4"
+          : "my-4 overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-4"
+      }
+    >
       {visual.kind === "equation" ? <Equation visual={visual} /> : null}
       {visual.kind === "relationship" ? <Relationship visual={visual} /> : null}
       {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
@@ -99,7 +123,7 @@ function Relationship({ visual }: { visual: FlowVisual }) {
   // reach it.
   const layout = useMemo(() => layoutFlow(visual), [visual]);
   return (
-    <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
+    <svg aria-label={visual.learningGoal} className={VISUAL_FIGURE_CLASS} role="img" viewBox={`0 0 ${WIDTH} ${layout.height}`}>
       <defs>
         <marker id={markerId} markerHeight="8" markerWidth="8" orient="auto-start-reverse" refX="7" refY="4">
           <path d="M0,0 L8,4 L0,8 Z" fill="var(--ui-text-tertiary)" />
@@ -160,7 +184,7 @@ function Quantitative({ visual }: { visual: PlotVisual }) {
   const y = (value: number) => PLOT_HEIGHT - bottom - ((value - yMin) / (yMax - yMin || 1)) * (PLOT_HEIGHT - top - bottom);
   return (
     <div>
-      <svg aria-label={visual.learningGoal} className="h-auto w-full" role="img" viewBox={`0 0 ${WIDTH} ${PLOT_HEIGHT}`}>
+      <svg aria-label={visual.learningGoal} className={VISUAL_FIGURE_CLASS} role="img" viewBox={`0 0 ${WIDTH} ${PLOT_HEIGHT}`}>
         <line stroke="var(--ui-stroke-primary)" x1={left} x2={WIDTH - right} y1={PLOT_HEIGHT - bottom} y2={PLOT_HEIGHT - bottom} />
         <line stroke="var(--ui-stroke-primary)" x1={left} x2={left} y1={top} y2={PLOT_HEIGHT - bottom} />
         <text fill="var(--ui-text-tertiary)" fontSize="11" textAnchor="middle" x={(left + WIDTH - right) / 2} y={PLOT_HEIGHT - 10}>{visual.xLabel ?? "x"}</text>

@@ -179,6 +179,22 @@ export function canvasPresentation(input: {
   aside?: "none" | "opening" | "reply";
   /** The policy is asking for something the learner has not produced yet — see `composeSurface`. */
   answerOwed?: boolean;
+  /**
+   * The learner has just sent something and Nemesis is producing the answer to it.
+   *
+   * 🔴🔴 NARROWER THAN `working`, AND THE DIFFERENCE IS THE WHOLE SAFETY OF THIS. Owner call,
+   * 2026-08-20: since their own words never appear on the canvas, the thinking state is the only
+   * acknowledgement that a send happened, and they chose for it to REPLACE what was on screen.
+   *
+   * `working` is true for background knowledge resolution too, which this session measured running
+   * for MINUTES on a topic-only canvas. Letting that replace the surface would take a perfectly
+   * readable lesson away from someone who was reading it, for minutes, with no way to get it back
+   * — the blank-screen defect of #690 returning with a mascot painted over it.
+   *
+   * So this is a TURN in flight: the learner asked, and the answer is being made. Ambient work
+   * stays ambient and reports itself the way it always did.
+   */
+  turnInFlight?: boolean;
 }): CanvasPresentation {
   const {
     answerOwed = false,
@@ -187,6 +203,7 @@ export function canvasPresentation(input: {
     canvasState,
     materialIsTheAction = false,
     policyPresenting,
+    turnInFlight = false,
     working,
   } = input;
 
@@ -209,7 +226,16 @@ export function canvasPresentation(input: {
   // and in that case the ASK is what the learner is being held to, so it names the presence and the
   // answer rides along beneath it. Everywhere else a reply is the newest thing Nemesis has said and
   // the only thing on the surface, so it outranks a document, a running step, and `quiet`.
-  const presence: CanvasPresence = regions.policy
+  const presence: CanvasPresence = turnInFlight
+    ? // 🔴🔴 THE ONE THING THAT OUTRANKS CONTENT, AND ONLY BECAUSE THE LEARNER JUST ASKED FOR IT.
+      // Their own words are never rendered, so without this a send produces no visible change at
+      // all until the answer lands. Owner's call: the thinking state replaces what was there.
+      //
+      // 🔴 IT IS SAFE ONLY BECAUSE `turnInFlight` IS NARROW. Keyed on `working` instead, a
+      // knowledge resolution measured at MINUTES would take a readable lesson off the screen of
+      // someone who was reading it. See the field's own note.
+      "preparing"
+    : regions.policy
     ? "task"
     : regions.reply
       ? "reply"

@@ -30,13 +30,16 @@
 // that guideline been revised", and it could not read a question asked in Spanish at all.
 //
 // So the model says whether it needs the web, in the same envelope as everything else. A turn that
-// asks for one costs a second round: search, then ask the identical packet again with the results
-// in it. Only web turns pay, and on those the search is most of the wait anyway.
+// asks for one costs an extra round: search, then ask the identical packet again with the results
+// in it — and it may ask again, until it says it has enough. Only web turns pay, and on those the
+// search is most of the wait anyway.
 
 import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import {
   citedWebResults,
   formatWebSearchContext,
+  usableWebResults,
+  webContextThatFits,
   type ChatWebResult,
 } from "@/lib/workspace/chat-web-search";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
@@ -57,17 +60,12 @@ import {
 const CHAT_DECISION: ChatRouteDecision = { route: "conversation", model: "deepseek-chat", searchWeb: false };
 
 /**
- * How many searches one turn may run before it must answer.
+ * The most searches one turn may run.
  *
- * 🔴 A BACKSTOP AGAINST A RUNAWAY TURN, NOT A JUDGEMENT ABOUT SUFFICIENCY. Whether the evidence
- * settles the question is the model's call and the loop ends when it stops asking; this only stops
- * a turn that never stops. It is stated to the model in the packet (`searchesLeft`) rather than
- * enforced silently, because a model that knows it has one search left spends it on its best query,
- * where one that is cut off mid-thought has already wasted it.
- *
- * Four, because the shapes that need more than one are real and bounded: a first query aimed wrong,
- * sources that disagree and need a tiebreak, and an answer that opens one more thing worth looking
- * up. A fifth round has not been a thing anyone could name.
+ * 🔴 A BACKSTOP, NOT THE DECISION. The model stops when it says it has enough; this exists so a
+ * turn cannot run away, and the number is stated to the model rather than enforced behind its back
+ * (see `searchesLeft` in `TurnContext`). Small enough that the worst case is a wait a learner will
+ * sit through.
  */
 export const MAX_SEARCH_ROUNDS = 4;
 
@@ -82,8 +80,31 @@ export interface TurnSurroundings {
 
 export interface CanvasTurnReply {
   decision: TurnDecision | null;
-  /** Live web results actually used, in the order cited. Empty when no search ran. */
+  /**
+   * Live web results actually used, in the order CITED. Empty when no search ran.
+   *
+   * 🔴 ANSWER ORDER, WHICH IS WHY IT MUST NEVER BE USED TO RESOLVE AN `[n]` MARKER. `citedWebResults`
+   * walks the answer and pushes each first-seen result, so an answer citing [4] then [1] returns
+   * `[fourth, first]` — index 0 is the page the model called 4. This list answers "which pages
+   * earned a place in the canvas", which is what the promote control and `learnFromAside` need.
+   */
   sources: readonly ChatWebResult[];
+  /**
+   * Every result the search returned, in the order the MODEL was shown them.
+   *
+   * 🔴🔴 THIS EXISTS BECAUSE `[n]` IS AN INDEX INTO THIS LIST AND NOTHING ELSE. Resolving a marker
+   * against `sources` above would attribute a sentence to the wrong page — `[4]` would open
+   * whichever page happened to be cited fourth — and a citation that resolves to real text from the
+   * wrong place is the exact defect this repository's provenance rules exist to make impossible.
+   *
+   * 🔴 AND IT IS ALSO THE HONEST FALLBACK WHEN THE MODEL CITES NOTHING. Measured in a browser on
+   * 2026-08-20: "whats the latest news on ai?" returned an answer plainly built from live pages
+   * (a hack, an ECB warning, a phone launch) with NOT ONE `[n]` in it — so `citedWebResults`
+   * returned empty, and the learner saw an answer about this week's news with no indication that
+   * anything had been searched at all. The search ran, it was paid for, it shaped the answer; a
+   * surface that shows nothing is claiming the model knew this by itself.
+   */
+  consulted: readonly ChatWebResult[];
   error: string | null;
 }
 
@@ -102,6 +123,21 @@ export async function askCanvasChat(
   signal?: AbortSignal,
   /** The passage the learner staged, so "this" has something to resolve against. */
   stagedPassage = "",
+  /**
+   * Called the moment this turn decides to buy a web search, so the surface can say so.
+   *
+   * 🔴🔴 THE SEARCH WAS INVISIBLE, AND THE OWNER NOTICED BEFORE ANY OF US: *"i believe its doing a
+   * websearch but there isnt any indication for that."* `converse` sets one label, "Thinking", for
+   * the whole turn — so a question that quietly went and read four pages looked exactly like one
+   * answered from the model's own head. That matters beyond politeness: a learner who cannot tell
+   * whether an answer came from the live web has no way to judge how much to trust it, and this
+   * product's whole evidence argument is that provenance is visible.
+   *
+   * 🔴 A CALLBACK RATHER THAN A RETURN FIELD, BECAUSE THE POINT IS THE TIMING. `sources` already
+   * comes back in the reply, but that arrives AFTER the search and the model call — several seconds
+   * too late to be the thing that says "searching". This fires before the request goes out.
+   */
+  onSearching?: (found: number | null) => void,
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
 
@@ -135,7 +171,7 @@ export async function askCanvasChat(
   );
 
   const first = await ask("", MAX_SEARCH_ROUNDS);
-  if (first.errorText) return { decision: null, error: first.errorText, sources: [] };
+  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [] };
   let decision = first.text ? decisionOrReply(first.text) : null;
 
   // 🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH. It used to get exactly one search: the
@@ -150,27 +186,49 @@ export async function askCanvasChat(
   const seen = new Set<string>();
   const sources: ChatWebResult[] = [];
   for (let round = 0; round < MAX_SEARCH_ROUNDS && decision?.needsWeb; round += 1) {
+    // 🔴 TWO BEATS, BECAUSE THE COUNT DOES NOT EXIST YET AT THE FIRST ONE. ChatGPT says "Searching
+    // 54 websites" because it issues the queries and knows the number; ours comes back with the
+    // results. So the first call says a search is happening (`null`) and the second says how much
+    // came back — which is the honest version of the same information, and neither is a timer.
+    //
+    // 🔴 THE SECOND BEAT REPORTS THE RUNNING TOTAL, NOT THIS ROUND'S HAUL. The learner is watching
+    // one turn, and a counter that went 12, then 9, then 14 would describe our loop rather than
+    // their search. What they are being told is how many pages this answer stands on.
+    onSearching?.(null);
     const found = await searchWebContext(uid, decision.webQuery || question, signal, decision.webResults);
     for (const source of found.sources) {
       if (seen.has(source.url)) continue;
       seen.add(source.url);
       sources.push(source);
     }
+    onSearching?.(sources.length);
     // Re-numbered over everything gathered, so the numbers the model reads are the numbers
     // `citedWebResults` resolves against.
     const next = await ask(formatWebSearchContext(sources), MAX_SEARCH_ROUNDS - round - 1);
-    if (next.errorText) return { decision: null, error: next.errorText, sources: [] };
+    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, sources: [] };
     // A failed round leaves the previous answer standing, which is better for the learner than an
     // error — and stops the loop, since a null decision cannot ask for another search.
     decision = (next.text ? decisionOrReply(next.text) : null) ?? decision;
     if (!next.text) break;
   }
 
+  // 🔴🔴 THE LIST THE MODEL WAS NUMBERED AGAINST, COMPUTED THE SAME WAY `formatWebSearchContext`
+  // COMPUTES IT. An `[n]` is an index into what the model was SHOWN, and what it was shown is the
+  // usable results that fitted the context budget — not the raw haul. Resolving a marker against
+  // the raw list would attribute a sentence to the wrong page as soon as one result was unusable
+  // or one was evicted, and a citation that resolves to real text from the wrong place is the
+  // exact defect this repository's provenance rules exist to make impossible.
+  const numbered = webContextThatFits(usableWebResults([...sources])).kept;
   return {
     decision,
     error: null,
+    // 🔴 AND IT IS ALSO THE HONEST FALLBACK WHEN THE MODEL CITES NOTHING. Measured in a browser on
+    // 2026-08-20: "whats the latest news on ai?" returned an answer plainly built from live pages
+    // with NOT ONE `[n]` in it — so `citedWebResults` returned empty, and the learner saw an answer
+    // about this week's news with no indication that anything had been searched at all.
+    consulted: numbered,
     // Only the pages the answer cited become promotion candidates. Search rank is retrieval
     // evidence, not permission to turn every hit into durable learning material.
-    sources: decision?.say ? citedWebResults(decision.say, sources) : [],
+    sources: decision?.say ? citedWebResults(decision.say, numbered) : [],
   };
 }

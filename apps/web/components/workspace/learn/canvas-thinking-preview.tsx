@@ -32,34 +32,89 @@
 // the lines stay, the sweep stops. Someone who asked the system to stop moving still has to be
 // able to see that the region is busy, so they hold their resting contrast rather than vanishing.
 
+
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
-const LINE_HEIGHT = "12px";
 
-/** Three, and the third is short. A block of equal-length bars reads as a table or a placeholder
- *  image; an uneven last line is what a paragraph of prose actually looks like from a distance. */
-const LINES: readonly string[] = ["100%", "92%", "64%"];
 
-export function CanvasThinkingPreview({ label = null }: { label?: string | null }) {
+export function CanvasThinkingPreview({
+  label = null,
+  mascot = false,
+}: {
+  label?: string | null;
+  /**
+   * The learner just sent something and is waiting for the answer to it.
+   *
+   * 🔴🔴 TWO WAITS, TWO SHAPES, AND THE §21 ARGUMENT ABOVE IS WHY BOTH EXIST RATHER THAN ONE
+   * REPLACING THE OTHER. The forming lines are set to the column, the position and the leading a
+   * QUESTION occupies, so the first question lands where the placeholder already was — "the
+   * structure resolves into the content rather than being swapped for it". That reasoning holds
+   * exactly where it was written: a canvas generating its first question.
+   *
+   * It does not hold for a conversational turn. What lands there is a paragraph of unknown length,
+   * so lines pretending to be its shape would be a guess, and the wait is usually seconds rather
+   * than a minute. What that moment needs is different: the learner's own words are never rendered,
+   * so this is the ONLY acknowledgement that their send happened at all.
+   *
+   * Owner's call, 2026-08-20, both halves: a mascot for the thinking state, and it replaces what
+   * was on screen rather than sitting under it.
+   */
+  mascot?: boolean;
+}) {
+  if (mascot) {
+    return (
+      <div
+        aria-live="polite"
+        // 🔴 `min-h-[70vh]`, NOT `min-h-full`. This renders inside `CanvasFade`, which is a plain
+        // `<div>` with no height of its own, so a percentage minimum has nothing to resolve
+        // against and collapses to the content — measured in a browser: the mascot sat at the very
+        // top of the column instead of the middle of the page. A viewport unit always resolves.
+        // 🔴 THE CAPTION SITS AT THE FOOT, NOT IN THE MIDDLE (owner 2026-08-20: "the thinking
+        // sentence and phrase overlap with the mascot"). It used to centre itself in this box,
+        // which is exactly where the character walks to — so the words printed straight through
+        // the dots. The character owns the middle of the surface; every thinking caption belongs
+        // near the composer, which is also where `CanvasThinking` has always put its own.
+        // 🔴 A ROW. Owner, 2026-08-20: *"the mascot three dot should have the thinking preview to
+        // the right of it."* Stacked, the caption sat well below the character and the two read as
+        // two separate things happening. The `justify-end` and the 104px of bottom padding stay:
+        // they are what puts this on the same line as the docked character rather than in the
+        // middle of the page.
+        className="flex min-h-[70vh] flex-row items-center justify-end px-6 pb-[104px] gap-3"
+        role="status"
+      >
+        {/* 🔴 THE CHARACTER IS NOT DRAWN HERE, AND THAT IS THE FIX FOR SIX DOTS.
+            This used to render its own mascot while `BloubDock` rendered another on the same
+            surface — both centred, both playing `thinking`, so the learner saw two sets of three
+            dots stacked. Deleting the duplicate RENDERER did not fix it, because the defect was
+            never two renderers: it was two MOUNTS of one renderer. The dock owns the character on
+            this surface; this component owns the caption beside it and nothing else. */}
+        {label && (
+          <span className="canvas-phrase text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+            {label.replace(/…$/, "")}…
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  // 🔴🔴 THE SKELETON IS GONE. Owner, 2026-08-20: *"i dont want skeleton loader."*
+  //
+  // 🔴 AND ITS ORIGINAL ARGUMENT WAS GOOD, WHICH IS WHY IT LASTED. Three staggered bars occupied
+  // the shape a QUESTION occupies, so the first question landed where the placeholder already was:
+  // the structure resolved into the content instead of replacing it. That is a real effect and it
+  // is why this was not simply deleted earlier.
+  //
+  // It is also a guess about what is coming, drawn as though it were already there — three grey
+  // bars promising a paragraph that may turn out to be a molecule, a plot, or one sentence. The
+  // mascot says the same thing ("something is happening") without pretending to know the shape of
+  // it, and the owner has now asked for the mascot twice.
   return (
     <div
       aria-live="polite"
-      className="mx-auto flex w-full max-w-(--canvas-column) flex-col gap-[14px] px-6 pt-[18vh]"
+      className="flex min-h-[70vh] flex-row items-center justify-center gap-3 px-6"
       role="status"
     >
-      {LINES.map((width, index) => (
-        <span
-          // 🔴 STAGGERED, NOT SYNCHRONISED. Three bars pulsing in lockstep read as one flashing
-          // block — a single object blinking rather than several things being written. The offset
-          // is what makes the highlight read as travelling DOWN the paragraph as well as across it.
-          className="canvas-forming block rounded-full"
-          key={width}
-          style={{ animationDelay: `${index * 140}ms`, height: LINE_HEIGHT, width }}
-        />
-      ))}
-      {/* Understated and ephemeral, and there is no second line and no counter. §23 bans "Step 1
-          of 4"; §22 bans explaining the machinery at all. */}
       {label && (
-        <span className="canvas-phrase mt-[10px] text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+        <span className="canvas-phrase text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
           {label.replace(/…$/, "")}…
         </span>
       )}

@@ -12,7 +12,7 @@ import remarkMath from "remark-math";
 
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
-import { citationsToMarkdown } from "@/lib/workspace/chat-citations";
+import { citationsToMarkdown, groupCitationRuns } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 
@@ -57,6 +57,8 @@ function markdownComponents(
   isWikiLinkAvailable?: (target: string) => boolean,
   externalLinksInNewTab = true,
   sources?: ReadonlyArray<CitationSource>,
+  /** Draw citations as ChatGPT does: favicon + site name + "+N". See the branch that reads it. */
+  namedCitations = false,
 ): Components {
   return {
     a: ({ children, href }) => {
@@ -88,6 +90,12 @@ function markdownComponents(
       const citeIndex = href?.startsWith("#nemesis-cite=")
         ? Number.parseInt(href.slice("#nemesis-cite=".length), 10)
         : null;
+      // 🔴 `n.extra` — HOW MANY MORE SOURCES THIS ONE PILL STANDS FOR. `groupCitationRuns` collapses
+      // a run of adjacent markers into one, and `Number.parseInt` above stops at the dot, so a
+      // renderer that never learned about this still resolves the leading source correctly.
+      const citeExtra = href?.startsWith("#nemesis-cite=")
+        ? Number.parseInt(href.slice("#nemesis-cite=".length).split(".")[1] ?? "0", 10) || 0
+        : 0;
       if (citeIndex !== null) {
         const source = sources?.[citeIndex - 1];
         // Pre-processing only emits in-range markers, so a miss means stale
@@ -101,17 +109,51 @@ function markdownComponents(
         // dropped the site-name text entirely: a citation is now a favicon
         // dot the height of the surrounding text — the name lives in the
         // tooltip and in alt text, not in the prose.
+        const label = sourceLabel(source.url) ?? host;
+        const tooltip = source.title ? `${source.title} — ${label ?? source.url}` : source.url;
+
+        // 🔴🔴 THE NAMED PILL IS OPT-IN, AND BOTH SHAPES ARE THE OWNER'S OWN INSTRUCTION AT
+        // DIFFERENT TIMES. On 2026-08-03 and again on 08-04 he asked for these smaller, twice, and
+        // the second pass dropped the site name entirely — a citation on the CHAT surface has been
+        // a bare favicon dot ever since, and nothing about that has been withdrawn.
+        //
+        // On 2026-08-20, after measuring ChatGPT side by side, he asked for the Canvas to match it:
+        // 62x18px, radius 12px, a 12px favicon and the site name at 9px on a flat grey fill with no
+        // border. That is SMALLER in height than what he complained about and carries the name.
+        //
+        // 🔴 SO IT IS A PROP RATHER THAN A REWRITE. Defaulting to the dot leaves every existing
+        // caller exactly as it was; the Canvas passes `namedCitations` and gets the reference. One
+        // renderer, two measured treatments, and no surface changes shape because another one did.
+        if (namedCitations && label) {
+          return (
+            <a
+              className="mx-[2px] inline-flex h-[18px] translate-y-[4px] items-center gap-[3px] rounded-[12px] bg-(--ui-bg-tertiary) pl-[3px] pr-[6px] align-baseline text-[9px] font-medium leading-none text-(--ui-text-secondary) no-underline hover:bg-(--ui-control-hover-background)"
+              href={source.url}
+              rel="noopener noreferrer"
+              target="_blank"
+              title={tooltip}
+            >
+              {host && (
+                // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+                <img alt="" className="size-[12px] shrink-0 rounded-full" src={faviconUrl(host)} />
+              )}
+              {label}
+              {citeExtra > 0 && <span className="text-(--ui-text-quaternary)">+{citeExtra}</span>}
+            </a>
+          );
+        }
+
         return (
           <a
             className="mx-[2px] inline-flex size-[16px] translate-y-[3px] items-center justify-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) align-baseline no-underline hover:bg-(--ui-control-hover-background)"
             href={source.url}
             rel="noopener noreferrer"
             target="_blank"
-            title={source.title ? `${source.title} — ${sourceLabel(source.url) ?? host ?? source.url}` : source.url}
+            title={tooltip}
           >
             {host ? (
               // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
-              <img alt={sourceLabel(source.url) ?? host} className="size-[12px] rounded-full" src={faviconUrl(host)} />
+              <img alt={label ?? host} className="size-[12px] rounded-full" src={faviconUrl(host)} />
             ) : (
               <span className="text-[9px] leading-none font-medium text-(--ui-text-tertiary)">{citeIndex}</span>
             )}
@@ -250,6 +292,7 @@ export function AssistantMarkdown({
   obsidianUnderline = false,
   htmlSubSup = false,
   singleDollarMath = false,
+  namedCitations = false,
 }: {
   className?: string;
   text: string;
@@ -276,6 +319,16 @@ export function AssistantMarkdown({
    *  users write `$x$` on purpose. `$$x$$`, `\(x\)` and `\[x\]` render as
    *  math in BOTH modes (normalizeMathDelimiters emits the $$ forms). */
   singleDollarMath?: boolean;
+  /**
+   * Render each citation as a favicon + site name pill with a "+N" for a collapsed run, measured
+   * off ChatGPT on 2026-08-20 (62x18px, radius 12px, 12px favicon, 9px name, flat grey, no border).
+   *
+   * 🔴 OFF BY DEFAULT, WHICH KEEPS THE CHAT SURFACE EXACTLY AS THE OWNER ASKED FOR IT TWICE IN
+   * AUGUST — a bare dot, name in the tooltip. The Canvas turns it on because he asked for that
+   * surface to match the reference. Two measured treatments, one renderer, neither imposed on the
+   * other.
+   */
+  namedCitations?: boolean;
 }) {
   const taggedMarkdown = obsidianTags ? obsidianTagsToMarkdown(text) : text;
   const highlighted = obsidianHighlights
@@ -289,11 +342,17 @@ export function AssistantMarkdown({
         .replace(/<sub>([^<\n]+)<\/sub>/gi, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-sub)`)
         .replace(/<sup>([^<\n]+)<\/sup>/gi, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-sup)`)
     : underlined;
-  const cited = citationsToMarkdown(markdown, sources?.length ?? 0);
+  // 🔴 GROUPED ONLY WHERE THE PILL CAN SAY "+N". A collapsed run rendered as a bare dot would
+  // silently DROP the other sources from the prose — the reader would see one dot where two pages
+  // were cited and have no way to know. The named pill can say so; the dot cannot, so it does not
+  // collapse.
+  const cited = namedCitations
+    ? groupCitationRuns(citationsToMarkdown(markdown, sources?.length ?? 0))
+    : citationsToMarkdown(markdown, sources?.length ?? 0);
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown
-        components={markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources)}
+        components={markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations)}
         rehypePlugins={[rehypeKatex]}
         remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: singleDollarMath }]]}
       >

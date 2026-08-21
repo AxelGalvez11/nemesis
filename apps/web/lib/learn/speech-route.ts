@@ -125,6 +125,17 @@ export const CANVAS_SPEED = 0.95;
 export const TARGET_LANGUAGE_SPEED = 1;
 
 /**
+ * The pace for a conversational answer.
+ *
+ * 🔴 NATURAL, AND THE DIFFERENCE FROM `CANVAS_SPEED` IS THE WHOLE REASON AN ANSWER IS ITS OWN
+ * MOMENT KIND. 0.95 is a concession to working memory: a learner holding a QUESTION in mind while
+ * composing a reply benefits from the extra beat. An answer is being explained TO them, with the
+ * text in front of them and nothing to hold — slowing it down there is not care, it is a drag on
+ * every explanation the product gives.
+ */
+export const ANSWER_SPEED = 1;
+
+/**
  * The locale sent when nobody has said which one.
  *
  * Fine for the canvas lane — the provider identifies the language from the text and nothing depends
@@ -269,12 +280,14 @@ export function routeSpeech(input: SpeechRouteInput): SpeechRoute {
       because:
         input.purpose === "language_learning"
           ? "this is instruction about the target language rather than an example of it, so it is spoken in the language of instruction"
-          : "voice is a second channel for text the learner could also read, so it runs slightly under natural pace",
+          : input.moment.kind === "answer"
+            ? "an answer is being explained to the learner rather than held in mind, so it runs at natural pace"
+            : "voice is a second channel for text the learner could also read, so it runs slightly under natural pace",
       decision: "speak",
       locale,
       provider,
       providerEvidence: evidence,
-      speed: CANVAS_SPEED,
+      speed: input.moment.kind === "answer" ? ANSWER_SPEED : CANVAS_SPEED,
       utterance: choice.spoken,
     };
   }

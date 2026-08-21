@@ -888,6 +888,19 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-phrase-in { from { opacity: 0; } to { opacity: 1; } }
 .canvas-phrase { animation: canvas-phrase-in 260ms ease-out both; }
 
+/* The canvas arriving from the front door.
+ *
+ * 🔴 THE FRONT DOOR'S HALF OF THIS TRANSITION WAS ALREADY BUILT and the destination's was not: the
+ * composer travelled down, the greeting faded, and then the canvas simply WAS there, hard-cut,
+ * header and all. Half a transition reads worse than none — the eye is following a moving composer
+ * and the destination arrives fully formed around it.
+ *
+ * 🔴 DELAYED, NOT MERELY SLOW. The controls start AFTER the composer has finished travelling
+ * (DOCK_MS is 260 in canvas-home.tsx), so the two read as one movement in sequence rather than two
+ * things happening at once. A 1px lift is enough to say "arrived" without being a slide. */
+@keyframes canvas-chrome-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.canvas-chrome-in { animation: canvas-chrome-in 320ms 120ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+
 /* Material being read, concepts being mapped, a first question being chosen —
    shown as content FORMING rather than as a wait (UX brief §5, §20, §21).
    🔴 LEFT TO RIGHT, AND THAT DIRECTION IS THE PRODUCT'S ONE MOTION SYSTEM. §20:
@@ -952,6 +965,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .canvas-swap,
   .canvas-passage-enter,
   .canvas-phrase,
+  .canvas-chrome-in,
   .canvas-forming,
   .canvas-rewriting,
   [data-workspace] .animate-pulse {

@@ -129,6 +129,7 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           return;
         }
         setFailure(null);
+        fitViewBoxToInk(element);
       } catch {
         if (!cancelled) setFailure("structure-unparsable");
       }
@@ -152,9 +153,29 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           What it needs first is a stable way to name the group being hidden, which SMILES atom
           indices give and the library does not currently expose on the emitted nodes. Recorded so
           the next person starts from the actual obstacle rather than from the idea. */}
+      {/* 🔴🔴 SIZED TO THE MOLECULE, NOT TO THE COLUMN, AND THE FIRST FIX GOT THIS HALF-RIGHT.
+          `h-auto w-full` let the drawer's viewBox decide the aspect, and a small molecule has a
+          nearly square one — so `CCO` painted a 650px-tall frame for three atoms. Capping the
+          HEIGHT stopped that and left the other half standing: `w-full` still stretched three atoms
+          across the full 640px column, and `object-contain` letterboxed the result into a large
+          panel that is mostly empty.
+
+          🔴 REPORTED 2026-08-20 WITH A SCREENSHOT: *"can you make the size of it be smaller to fit
+          with the canvas sizing?"* — a hydroxyl group inside a box the width of the page.
+
+          `w-auto` with a bound on both sides is the fix: the drawing renders at its own size,
+          centred, and only shrinks when it is genuinely bigger than the column. A reaction scheme
+          is wide and still fits; ethanol is small and now looks small. */}
       <svg
         aria-label={visual.learningGoal}
-        className="h-auto w-full"
+        // 🔴 AN EXPLICIT HEIGHT, BECAUSE FITTING THE VIEWBOX REMOVED THE INTRINSIC ONE. With the
+        // library's padded viewBox, `w-auto` resolved to something column-sized; once the box was
+        // refitted to the ink it resolved to the ink's own units and ethanol rendered about 60px
+        // across — legible only in the sense that it was on screen. Measured both ways.
+        //
+        // Height fixed, width follows the aspect, and `max-w-full` still catches a wide reaction
+        // scheme (which letterboxes rather than distorting: SVG scales uniformly).
+        className="mx-auto block h-[150px] w-auto max-w-full"
         ref={target}
         role="img"
         style={{ display: failure ? "none" : "block" }}
@@ -162,17 +183,29 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
       {failure ? (
         <p className="font-mono text-[length:var(--canvas-text-body)] text-(--ui-text-secondary)">{visual.value}</p>
       ) : null}
-      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+      {/* 🔴🔴 THE PROVENANCE MOVED INTO A TOOLTIP, AND THE ARGUMENT FOR PRINTING IT STILL HOLDS.
+          Owner circled this line, 2026-08-20: *"why does it show that thing that is circled?"* It
+          read `CCO   not resolved: this notation was asserted, not looked up` under every drawing.
+
+          🔴 IT WAS RIGHT ABOUT THE FACT AND WRONG ABOUT THE AUDIENCE. A structure a model wrote and
+          one a resolver returned look identical on screen and only one can be checked — that is
+          real and it is why this is not simply deleted. But "not resolved: this notation was
+          asserted" is a sentence written for whoever built the pipeline, printed under a molecule
+          for someone learning chemistry, in a product whose own rule is plain English.
+
+          A LOOKED-UP structure still says so in the open, because that is the stronger claim and it
+          names a source. An ASSERTED one carries it on hover: still checkable, no longer shouted.
+          Silence would be the one wrong answer — it is what makes the two indistinguishable. */}
+      <p
+        className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)"
+        title={visual.resolvedFrom ? undefined : `${visual.value}: written from the model's own knowledge, not looked up in a database`}
+      >
         <span>{visual.value}</span>
         {visual.resolvedFrom ? (
           <span className="font-sans">
             {visual.resolvedFrom.provider} · {visual.resolvedFrom.name} · CID {visual.resolvedFrom.id}
           </span>
-        ) : (
-          // 🔴 SAID OUT LOUD RATHER THAN LEFT BLANK. A structure a model wrote and one a resolver
-          // returned look identical on screen, and only one of them can be checked.
-          <span className="font-sans">not resolved: this notation was asserted, not looked up</span>
-        )}
+        ) : null}
         {statesStereochemistry(visual.value) ? <span className="font-sans">states stereochemistry</span> : null}
       </p>
     </div>
@@ -181,6 +214,45 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
 
 const WIDTH = 480;
 const HEIGHT = 320;
+
+/** Breathing room around the drawing, in the SVG's own units. */
+const INK_MARGIN = 3;
+
+/**
+ * Refit the emitted viewBox to what was actually drawn.
+ *
+ * 🔴🔴 TWO REPORTED DEFECTS, ONE CAUSE, AND I WOULD NOT HAVE GUESSED THEY WERE THE SAME. Owner,
+ * 2026-08-20: *"ethanol did not render the 'H' in '-OH'"* and *"why are the figures unneccesarily
+ * big?"*
+ *
+ * The library computes its viewBox from ATOM COORDINATES and then draws terminal labels — "HO",
+ * "NH2", "COOH" — anchored OUTSIDE the last atom, with `text-anchor="end"`. Read off the live page:
+ * viewBox x started at 62.99 while the "HO" label was anchored ending at 77.67, so the H hung off
+ * the left edge and was clipped to the sliver of a vertical stem the owner circled. The same
+ * mismatch leaves dead space on the other sides, which is the panel that reads as too big.
+ *
+ * `getBBox()` is the geometry the browser actually laid out, labels included, so fitting the box to
+ * it fixes both at once: nothing can hang outside the frame, and the frame stops being mostly
+ * empty.
+ *
+ * 🔴 IT RUNS AFTER THE DRAW AND NEVER TOUCHES THE DRAWING. No atom moves, no bond is rescaled, no
+ * colour changes — only the window onto them. The library stays vendored and unedited, which is the
+ * standing rule for it.
+ *
+ * 🔴 AND IT REFUSES ON AN EMPTY BOX. `getBBox()` throws on a detached node and returns zeroes for
+ * an empty one; either would write `viewBox="0 0 0 0"` and blank a structure that had drawn
+ * perfectly well.
+ */
+function fitViewBoxToInk(element: SVGSVGElement): void {
+  try {
+    const ink = element.getBBox();
+    if (!(ink.width > 0) || !(ink.height > 0)) return;
+    const m = INK_MARGIN;
+    element.setAttribute("viewBox", `${ink.x - m} ${ink.y - m} ${ink.width + m * 2} ${ink.height + m * 2}`);
+  } catch {
+    // A node that is not laid out has no box to fit. Leaving the library's own viewBox is correct.
+  }
+}
 
 /**
  * How much self-overlap makes a drawing worse than its notation.

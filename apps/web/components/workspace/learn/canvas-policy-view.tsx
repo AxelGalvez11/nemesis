@@ -14,6 +14,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { citationLine, taughtClaim } from "@/lib/learn/taught-claim";
+import { sourcePills } from "@/lib/learn/source-pill";
+import type { CanvasSource } from "@/lib/learn/canvas-model";
 import { CONTINUE_LABEL } from "@/lib/learn/canvas-continue";
 import { VERDICT_HEADLINE, verdictIsPass } from "@/lib/learn/canvas-judge";
 import { advancesItself, type Exposition } from "@/lib/learn/cognitive-mode";
@@ -30,6 +32,12 @@ import { StoredFigureOcclusion } from "./figure-occlusion";
 import { LearnerUtterance } from "./learner-utterance";
 import type { PolicyRuntime } from "./use-policy-runtime";
 import { correctionLead } from "./correction-copy";
+import { LookedUpText } from "./looked-up-text";
+import { selectableRegion } from "./use-canvas-selection";
+
+/** Stable identity, so a default prop cannot re-render every question on every paint. */
+const EMPTY_LOOKUPS: readonly string[] = [];
+import { CanvasSourcePills } from "./canvas-source-pills";
 
 /**
  * The affordance that turns a recognition screen into "produce it if you can, pick it if you cannot".
@@ -81,11 +89,21 @@ export function screenKey(runtime: PolicyRuntime): string {
  * interaction — that is a surface for UI to design, and `runtime.task.tempo` is the signal for it.
  */
 export function CanvasPolicyView({
+  lookedUp = EMPTY_LOOKUPS,
   runtime,
   sharing = false,
   onContinue = null,
   voice,
 }: {
+  /**
+   * Words the learner has already asked the meaning of, underlined wherever they appear here.
+   *
+   * 🔴 REPORTED 2026-08-20, ON A QUESTION. The screenshot was a retrieval prompt — "What's the last
+   * thing you remember about retatrutide's approval status?" — and `canvas-document.tsx`, the only
+   * place that has ever drawn this underline, renders document BLOCKS. The question was the one
+   * piece of text on screen that could never wear one.
+   */
+  lookedUp?: readonly string[];
   runtime: PolicyRuntime;
   sharing?: boolean;
   /**
@@ -109,7 +127,7 @@ export function CanvasPolicyView({
           surface and make retrieval feel like an interface being waited on rather than a question
           being answered. */}
       <div className={sharing ? "canvas-swap" : "canvas-swap min-h-full"} key={screenKey(runtime)}>
-        <PolicyScreen onContinue={onContinue} runtime={runtime} sharing={sharing} voice={voice} />
+        <PolicyScreen lookedUp={lookedUp} onContinue={onContinue} runtime={runtime} sharing={sharing} voice={voice} />
       </div>
     </>
   );
@@ -145,17 +163,21 @@ function ForcedNotice({ runtime }: { runtime: PolicyRuntime }) {
 }
 
 function PolicyScreen({
+  lookedUp,
   onContinue,
   runtime,
   sharing,
   voice,
 }: {
+  /** Threaded down rather than read from a context: this file has one entry point and one screen,
+   *  and a context for a two-hop prop is a second way to be wrong about which canvas is on. */
+  lookedUp: readonly string[];
   onContinue: (() => void) | null;
   runtime: PolicyRuntime;
   sharing: boolean;
   voice?: ReplayVoice;
 }) {
-  const { citations, decision, feedback, prompt } = runtime;
+  const { citations, decision, feedback, prompt, sources } = runtime;
 
   // Feedback outranks the next prompt: someone who has just answered should read what it showed
   // before being asked the next thing, even though the policy has already moved on underneath.
@@ -275,8 +297,13 @@ function PolicyScreen({
           // screen, so true centre reads as low. `pb-40` above lifts the block into where the eye
           // expects the subject of the page to be.
           className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-question)] font-medium leading-[1.4] text-balance text-(--ui-text-primary)"
+          // 🔴 LOOKING A WORD UP IN THE QUESTION IS NOT ANSWERING IT, AND THIS WRITES NO EVIDENCE.
+          // `askAboutSelection` records an interaction event and nothing else — `recordEvent` and
+          // `recordEvidence` are different functions with different stores. A learner who does not
+          // know what a word in the question MEANS could otherwise only guess or leave.
+          {...selectableRegion("question")}
         >
-          {prompt.prompt}
+          <LookedUpText terms={lookedUp} text={prompt.prompt} />
         </h2>
       </div>
     );
@@ -311,7 +338,7 @@ function PolicyScreen({
     return (
       <div className={`flex ${regionHeight(sharing)} flex-col items-center justify-center gap-8 px-6`}>
         <h2 className="w-full max-w-(--canvas-column) text-center text-[length:var(--canvas-text-question)] font-medium leading-[1.4] text-balance text-(--ui-text-primary)">
-          {prompt.prompt}
+          <LookedUpText terms={lookedUp} text={prompt.prompt} />
         </h2>
         {runtime.choicesRevealed ? (
         <ul className="flex w-full max-w-(--canvas-column) flex-col gap-2">
@@ -381,7 +408,7 @@ function PolicyScreen({
               </li>
             ))}
           </ol>
-          <SourceTrail citations={citations} />
+          <SourceTrail citations={citations} sources={sources} />
         </Frame>
       );
     }
@@ -415,7 +442,7 @@ function PolicyScreen({
           {correctionLead(said)}
         </p>
         <TaughtClaimLines decision={decision} voice={voice} />
-        <SourceTrail citations={citations} />
+        <SourceTrail citations={citations} sources={sources} />
         {/* 🔴 THE "Got it" BUTTON IS GONE — §I. Moving on is the composer's `✓` now, so the Canvas
             introduces no separate Next, Continue or Done reading. The behaviour it used to carry is
             not lost: this screen wrote no evidence, and something still has to say the learner has
@@ -453,7 +480,7 @@ function PolicyScreen({
         <TaughtClaimLines decision={decision} voice={voice} />
         {/* Same rule as the two screens below: a claim shown here keeps the origin it would have
             anywhere else, or the Canvas reads as having lost the source. */}
-        <SourceTrail citations={citations} />
+        <SourceTrail citations={citations} sources={sources} />
       </Frame>
     );
   }
@@ -486,7 +513,7 @@ function PolicyScreen({
             out of `decision` exactly as `show_correction` does, so a citation there and silence here
             would read as "we lost the source" — the disclosure failure canvas-provenance.ts exists
             to argue against. One component, both screens, one rule. */}
-        <SourceTrail citations={citations} />
+        <SourceTrail citations={citations} sources={sources} />
         {/* Its "Got it" is gone for the same reason as `show_correction`'s — see there. */}
       </Frame>
     );
@@ -553,11 +580,32 @@ function PolicyScreen({
  * 🔴 ONE COMPONENT BECAUSE THE RULE IS ONE RULE. Two screens show a claim; both must disclose its
  * origin the same way, or the same fact appears sourced on one and unsourced on the other.
  */
-function SourceTrail({ citations }: { citations: PolicyRuntime["citations"] }) {
-  // 🔴 THE DE-DUPLICATION LIVES IN `citationLine`, NOT HERE. It printed `sourceTitle, label`
-  // unconditionally, and a web extractor routinely names the section what it named the page — so
-  // the owner was shown "From 3.1Functional Groups, 3.1Functional Groups" and the provenance line
-  // read as a bug rather than as a source.
+function SourceTrail({
+  citations,
+  sources,
+}: {
+  citations: PolicyRuntime["citations"];
+  sources: readonly CanvasSource[];
+}) {
+  // 🔴🔴 PILLS, NOT A LINE OF GREY TEXT — owner call, 2026-08-20. The line said "From 3.1Functional
+  // Groups" at `--ui-text-quaternary`, which is what this app uses for things nobody is meant to act
+  // on, and it was part of the "unnecessary wordy gray text" he asked about. The answer is not to
+  // remove the provenance — a claim that loses its origin is the thing the evidence rules exist to
+  // prevent — but to make it worth its space: a site you recognise by its icon, or a document you
+  // can look inside.
+  // 🔴 THE REFUSAL COMES FIRST, BEFORE ANY MARKUP EXISTS IN THIS FUNCTION. `knowledge-citation.ts`
+  // insists an empty list means "this canvas cannot honestly point at anything" and must reach the
+  // surface as silence — never a greyed-out pill, never "source unknown". Writing it as the first
+  // statement makes that unmissable to a reader, and it is what `knowledge-citation.test.ts` reads.
+  if (citations.length === 0) return null;
+
+  const pills = sourcePills(sources, citations);
+  if (pills.length > 0) return <CanvasSourcePills pills={pills} />;
+
+  // 🔴 THE TEXT LINE SURVIVES AS THE FALLBACK, AND THAT IS NOT TIDINESS. `sourcePill` refuses any
+  // citation whose source this canvas no longer holds, and a canvas written before `sourceUrl`
+  // existed has citations that resolve to a title and nothing else. Dropping to silence there would
+  // trade a working provenance line for a missing one; `citationLine` still says where it came from.
   const line = citationLine(citations);
   if (!line) return null;
 
@@ -592,16 +640,35 @@ function TaughtClaimLines({
   // language, which is almost all of them, so this control simply never appears for a law student.
   const spokenLocale = voice ? replayableLocale(decision.knowledge.pair, decision.objective.answer) : null;
 
+  // 🔴 A CLAIM IS THE MOST LIKELY PLACE TO NEED A WORD DEFINED, AND IT WAS THE LEAST REACHABLE.
+  // The highlight toolbar requires a `[data-selectable-id]` ancestor, and until now only document
+  // blocks carried one — so a learner could look a term up inside their own lecture but not inside
+  // the sentence Nemesis had just chosen to teach them. Each line gets its OWN marker because
+  // offsets are measured against the marked element and nothing else.
+  //
+  // 🔴 NEITHER IS `rewritable`. "Simpler" rewrites the passage it is invoked on; these are the
+  // policy's own words for one screen, not a stored block, and there is nothing to write back to.
+  //
+  // 🔴 THE MARKER GOES ON THE HEADING, THE SPAN GOES INSIDE IT, AND THAT ORDER MATTERS. Selection
+  // offsets are measured against the marked element, so wrapping the words in a span for the
+  // replay button's layout has to happen INSIDE the marker or every looked-up offset shifts by
+  // the button's text.
   return (
     <>
-      <h2 className="mt-3 flex flex-wrap items-center gap-2 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)">
+      <h2
+        className="mt-3 flex flex-wrap items-center gap-2 text-[length:var(--canvas-text-lead)] font-medium leading-snug text-(--ui-text-primary)"
+        {...selectableRegion("claim-heading")}
+      >
         <span>{claim.heading}</span>
         {spokenLocale && voice && (
           <HearAgain locale={spokenLocale} phrase={decision.objective.answer} voice={voice} />
         )}
       </h2>
       {claim.body && (
-        <p className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)">
+        <p
+          className="mt-3 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-secondary)"
+          {...selectableRegion("claim-body")}
+        >
           {claim.body}
         </p>
       )}

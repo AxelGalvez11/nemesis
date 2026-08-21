@@ -40,6 +40,9 @@
 // unrecognised case to TEACH. Here an unparseable or empty decision falls back to conversation.
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
+
+import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
+import type { CanvasVisualRequest } from "./canvas-visual";
 import { extractJson } from "./canvas-parse";
 
 /**
@@ -78,14 +81,18 @@ export type TurnAction =
   | "rewrite";
 
 /**
- * Something worth saying out loud above the "Learn this" offer.
+ * 🔴 `TurnOffer` WAS DELETED HERE ON 2026-08-20, AND IT HAD BEEN DEAD FOR HOURS BEFORE ANYONE
+ * NOTICED. It named why a learner might be shown a "Learn this" button, and rendered as one line of
+ * copy above it. That offer was removed the same day — the owner asked about it twice — and the
+ * whole chain behind it kept running: the model was still asked to compute `offer` on every turn,
+ * `readTurnDecision` still parsed it, `use-canvas-session` still stored it on the aside, and
+ * `offerLine` was still IMPORTED by `learning-canvas.tsx` and never called.
  *
- * 🔴 AN OBSERVATION ABOUT THE CONVERSATION, NEVER A VERDICT ABOUT THE LEARNER — the rule
- * `offer-copy.ts` already holds and the reason this list is two values and not a mood detector.
- * Absent on nearly every reply, because a nudge on every single answer is nagging.
+ * Found by grepping the LIVE bundle for "Learn this" after the deploy, which is the only instrument
+ * that sees this class of drift: a prompt is shipped text that nothing renders, so no screenshot
+ * and no unit test looks at it.
+ *
  */
-export type TurnOffer = "returning" | "reasoning";
-
 export interface TurnDecision {
   /**
    * Does answering this need live sources off the web.
@@ -126,7 +133,18 @@ export interface TurnDecision {
    * a null topic is the answer to the second question.
    */
   topic: string | null;
-  offer: TurnOffer | null;
+  /**
+   * Figures this turn wants to draw, already validated, in the order `[figure n]` counts into.
+   *
+   * 🔴 REPORTED 2026-08-20: *"i thought we integrated the new chem draw and math plot abilities but
+   * it says it still cant."* It could not, and it was right to say so. `SemanticVisual` renders
+   * nine kinds, and until now a REPLY could reach exactly one of them — a molecule, through
+   * `[smiles: …]`. Asked for a plot, the model correctly reported a capability it did not have.
+   *
+   * A model cannot fit a plot in a bracketed token, so structure rides here and only POSITION
+   * rides in `say`. Empty on nearly every turn.
+   */
+  visuals: readonly CanvasVisualRequest[];
 }
 
 /** Everything the canvas already knows, stated as facts for the model to reason over. */
@@ -238,13 +256,117 @@ const NEMESIS_SYSTEM = [
   + "material, and a question outside it should still get a real answer. When live web results are "
   + "supplied, use them for anything time-sensitive and cite the numbered result inline like this: [1].",
 
+  // 🔴🔴 THE CANVAS CAN DRAW A MOLECULE, AND UNTIL THIS LINE EXISTED THE MODEL HAD NO WAY TO KNOW.
+  // Reported 2026-08-20: "i asked it to create the chemical structures using the new tools we gave
+  // it", and it answered "Alcohol: R-OH (hydroxyl group)" in prose. `ChemicalStructure` had been
+  // rendering SMILES for weeks — from the TEACHING path only — so the capability was real, reachable
+  // by code, and invisible to the one participant who decides whether to use it.
+  //
+  // 🔴 IT SAYS WHEN NOT TO, TOO. A drawing of `CCO` beside the words "ethanol is CCO" teaches
+  // nothing that the words did not; the picture earns its place when the SHAPE is the lesson.
+  // Without that clause the cheapest way to look helpful is to draw everything.
+  // 🔴 THE ONE-LINE FORM IS THE ONE IT IS TOLD ABOUT, AND THAT IS A MEASURED CHOICE. The first
+  // version described a fenced block; driven twice in a browser, the model answered in prose both
+  // times. `say` is a STRING INSIDE A JSON OBJECT and the contract demands strict JSON, so a fence
+  // needs literal newlines and backticks inside that string and the model steers away. A bracketed
+  // token costs it nothing. The parser accepts both.
+  "You can DRAW, not only describe. A molecule fits in the line itself: write [smiles: CCO] inline "
+  + "and the canvas replaces it with a real structural diagram exactly where you put it, or "
+  + "[reaction: A>>B] for a reaction.",
+
+  // 🔴 THE OTHER EIGHT ARE NEW HERE, 2026-08-20, AND THEY ARE WHY THE MODEL USED TO REFUSE. It was
+  // told about one kind and had one channel, so "plot this" got an honest "I can't" out of a
+  // renderer that has drawn plots for weeks. A capability the model is not told about does not
+  // exist, however completely it is built.
+  "For anything with structure — a plot, a diagram, a table, a timeline, a geometric construction, "
+  + "a force diagram, an equation, a traced snippet of code — put the figure in the \"visuals\" "
+  + "array and write [figure 1], [figure 2] inline where each one belongs. Every kind takes "
+  + "\"kind\" and \"learningGoal\", plus its own fields: quantitative (series of {x,y} points, "
+  + "xLabel, yLabel), relationship (nodes, edges), table (columns, rows), timeline (events), "
+  + "construction (points, segments), vectors (vectors, bodyLabel), equation (latex), code "
+  + "(language, source, trace). At most " + String(MAX_REPLY_VISUALS) + " per answer.",
+
+  "Draw when the shape, the trend or the arrangement is the point, and whenever the learner asks "
+  + "to be SHOWN something. Keep writing the prose around it as normal, and do not draw something "
+  + "that adds nothing to the sentence beside it.",
+
+  // 🔴🔴 MEASURED ON PRODUCTION 2026-08-20, AND THE MODEL'S OWN CLOSING LINE IS THE EVIDENCE.
+  // Asked to show the structure of ethanol it drew this, in a code block:
+  //
+  //       H   H
+  //       |   |
+  //   H — C — C — O — H
+  //       |   |
+  //       H   H
+  //
+  // ...and finished with *"if you want it as a proper structural diagram in the canvas, just say
+  // the word."* It KNEW the real channel existed and picked characters anyway, so this is not a
+  // capability gap and no amount of describing `[smiles: …]` more clearly would have caught it.
+  // The instruction it was missing is the negative one.
+  //
+  // 🔴 A CODE BLOCK IS NOT BANNED, ONLY A PICTURE MADE OF CHARACTERS. Real code and real notation
+  // still belong in fences — `reply-visuals.ts` deliberately leaves any fence it does not
+  // understand in the prose for exactly that reason.
+  // 🔴 THE FIRST VERSION OF THIS SAID "a code fence is for code, never for a drawing", AND THE
+  // MODEL PUT THE ASCII ART IN PROSE INSTEAD. Measured, 3 runs: it drew a real structure once. The
+  // clause was true and aimed at the wrong container — where the characters sit was never the
+  // point. So this names the ACT, in any container, and then names the one case that has to be
+  // unambiguous rather than merely discouraged.
+  "Never draw a picture out of text characters, anywhere in your answer — not in a code fence, not "
+  + "in the prose, not indented. No ASCII diagrams, no molecules built from dashes and pipes, no "
+  + "plots made of spaces. A code fence is for code and notation, never for a drawing.",
+
+  // 🔴 THIS NAMES THE CHANNEL, NOT THE SUBJECTS. It used to list "a molecule, a structure, a
+  // functional group or a compound" — four nouns I happened to think of, which is a keyword list
+  // living in a prompt instead of in an `if`. Whether a request is asking to SEE something is a
+  // judgement about language, and the model is what this product uses to make those.
+  //
+  // 🔴🔴 BUT THE IMPERATIVE STAYS, AND REMOVING IT WAS MEASURED AS A REGRESSION. Rewriting this as
+  // a description — "the drawing IS the answer" — dropped a single structure from 3 of 3 runs to 2
+  // of 3, and "draw the functional groups" from drawing to 0 of 2, answering with a tab-separated
+  // table instead. The owner's correction was about hardcoded JUDGEMENT (my quota, my noun list),
+  // not about force: the model decides WHETHER this is a request to see something and HOW MANY
+  // pictures it needs, and is told firmly what to do once it has decided. Those are different
+  // things and only one of them was the problem.
+  "When the learner is asking to see something rather than read about it, you MUST draw it with "
+  + "[smiles: …] rather than describe it. Spelling a structure out in characters, or listing it in "
+  + "a table, is answering a different question.",
+
+  // 🔴🔴 A CAPABILITY AND AN INTENT, NOT A QUOTA — owner correction, 2026-08-20: *"dont add
+  // hardcoded instructions, make sure prompt instructions drive behavior so deepseek handles the
+  // judgement."*
+  //
+  // The first version of this said "draw the most important half dozen", which is MY taste about
+  // how many drawings a screen should hold, written as a rule the model has to obey. How many
+  // pictures an answer needs is exactly the sort of judgement that depends on the question — three
+  // functional groups and fifteen are different answers — and the model is the participant that can
+  // see which one was asked.
+  //
+  // So this states what it CAN do and what the learner asked FOR, and stops there.
+  "You can draw more than one thing in an answer: each [smiles: …] costs a line, and several in one "
+  + "reply is normal. Use as many as the answer actually needs.",
+
   "Keep continuity. Earlier turns of this conversation are given to you; resolve references like "
   + "\"why?\", \"that one\", \"keep going\" or \"no, I meant the first one\" against them rather than "
   + "asking the learner to repeat themselves.",
 
-  "Write plainly and as short as the turn allows. No heading, no bullet list of learning points, no "
-  + "closing offer to help further, no unearned enthusiasm. Never use an em dash character; use a "
-  + "comma, a colon, or a new sentence instead.",
+  // 🔴 REPORTED 2026-08-20: *"why are nemesis's responses so short, is there a prompt telling it to
+  // give short answers?"* There was, and this is it. It read "write plainly and as short as the
+  // turn allows", which was written to stop cheerful padding and did — along with the working.
+  //
+  // 🔴 THE OLD RULE MADE BREVITY THE GOAL, WHICH IS THE WRONG TARGET. Asked to integrate x², the
+  // model returned the answer and no derivation, because the shortest true response to "integrate
+  // x²" is "x³/3 + C" and it had been told to be short. The learner wanted the steps. Length is
+  // not a virtue or a vice; it is a function of what the question needs, and that is what this now
+  // says. The padding clauses survive verbatim, because they were never the problem.
+  "Give the question the length it needs, the way a good explanation does. Work through a "
+  + "derivation, a proof, a calculation or a procedure step by step, showing the intermediate "
+  + "steps rather than only the result. Use headings, short lists or a table when the material "
+  + "genuinely has that shape. Answer a small question in a sentence.",
+
+  "No closing offer to help further, no restating the question back, no unearned enthusiasm, no "
+  + "summary of what you are about to say. Never use an em dash character; use a comma, a colon, "
+  + "or a new sentence instead.",
 ].join("\n\n");
 
 /**
@@ -254,12 +376,44 @@ const NEMESIS_SYSTEM = [
  * choosing between "reply" and "study" needs to know that one of them takes over the screen.
  */
 const DECISION_CONTRACT = [
-  "Answer with a single JSON object and nothing else:",
+  // 🔴🔴🔴 THE PROSE LEFT THE JSON, 2026-08-20, AND THIS IS THE WHOLE REASON MATHS AND CHEMISTRY
+  // CAN RENDER AT ALL.
+  //
+  // `say` used to be a STRING INSIDE THIS OBJECT. A model answering "integrate x²" writes
+  // `\int x^2\,dx = \frac{x^3}{3} + C`, and inside a JSON string every one of those backslashes
+  // has to be doubled. `\i` and `\,` are not valid JSON escapes, so a single missed doubling made
+  // `JSON.parse` refuse the ENTIRE decision — the routing, the topic, everything — and the raw
+  // envelope fell through onto the learner's screen. Measured twice.
+  //
+  // The model's own workaround was to stop writing notation: told nothing, it answered in Unicode
+  // (`∫x² dx = x³/3 + C`), which is readable and is NOT typeset. The owner asked for rendering, and
+  // no amount of prompting gets reliable backslash-doubling out of a language model.
+  //
+  // So the envelope now carries only the DECISION — short enums and a topic, none of which ever
+  // contains a backslash — and the answer is written after it as ordinary text. `$$…$$` and
+  // `[smiles: …]` cost the model nothing there, and KaTeX and the structure drawer have been
+  // waiting on the other side of `AssistantMarkdown` the whole time.
+  "Answer with a fenced JSON block for the decision, then your answer as ordinary text after it:",
   "",
-  '{"say": "...", "then": "reply" | "study" | "rewrite", "topic": "..." | null, "offer": "returning" | "reasoning" | null, '
-  + '"needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null}',
+  "```json",
+  '{"then": "reply" | "study" | "rewrite", "topic": "..." | null,'
+  + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,',
+  // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
+  // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
+  // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
+  // typeset the coordinates, wrote `[figure 1]` in the right place, and sent `visuals: []`. It had
+  // understood the marker and been shown that the payload is empty.
+  ' "visuals": [{"kind": "quantitative", "learningGoal": "…", "xLabel": "x", "yLabel": "y",',
+  '   "series": [{"label": "y = x²", "points": [{"x":0,"y":0},{"x":1,"y":1},{"x":2,"y":4}]}]}]}',
+  "```",
+  "Then the answer itself, in plain markdown. Everything outside the block is what Nemesis says out "
+  + "loud, so always write something, even when you also act.",
   "",
-  '"say" is what Nemesis says out loud. Always write something, even when you also act.',
+  // 🔴 THE PAYOFF, STATED WHERE THE MODEL WILL SEE IT. Outside the JSON there is no escaping to get
+  // wrong, so this instruction is finally safe — it was removed twice for breaking whole turns.
+  "Because your answer is outside the JSON, write mathematics as real LaTeX: $$ … $$ on its own "
+  + "line for a displayed equation, $ … $ inline. Do not substitute Unicode symbols for it. The "
+  + "canvas typesets it.",
   "",
   '"then" is what happens to the canvas:',
   '  "reply" changes nothing on the page. The learner gets your sentence and the canvas stays as it '
@@ -269,15 +423,15 @@ const DECISION_CONTRACT = [
   + "learner has asked to be taught, tested, quizzed, drilled or walked through something, when they "
   + "have named material to work through, or when they have asked for the study document itself to "
   + "be written or changed. On a canvas that has already begun this steers the existing lesson "
-  + "rather than starting a new one. Keep \"say\" to a few words here, since the canvas is about to "
-  + "change underneath it.",
+  + "rather than starting a new one. Keep your answer to a few words here, since the canvas is "
+  + "about to change underneath it.",
   '  "rewrite" fixes the passage the learner is reading, in place. Choose it when they are telling '
   + "you the MATERIAL failed: it is too dense, pitched wrong, or they do not follow it. They may say "
   + "so as an instruction or as a complaint, and both mean the same thing. Do not choose it for a "
   + "question about a term or an idea, however confused it sounds: that wants an answer beside the "
   + "passage, and answering it changes nothing on the page. Nemesis keeps the old wording and offers "
   + "to put it back, so rewriting is reversible; stacking another explanation underneath the passage "
-  + "they already could not read is not. Keep \"say\" to a few words here.",
+  + "they already could not read is not. Keep your answer to a few words here.",
   "",
   // 🔴 THE MODEL WAS REFUSING TO STUDY AN EMPTY CANVAS, AND IT WAS RIGHT TO FROM WHAT IT KNEW.
   // Measured 2026-08-18 against the real model: "teach me innate immunity" on a fresh canvas came
@@ -292,10 +446,19 @@ const DECISION_CONTRACT = [
   // 🔴 ON EVERY TURN THAT HAS ONE, NOT ONLY ON A STUDY TURN. It is also what the "Learn this"
   // button under a plain answer would start, and whether a turn HAS a nameable subject is the
   // honest test for whether that button belongs there at all. Under "hello" it does not.
+  // 🔴 THIS NO LONGER DESCRIBES A BUTTON, BECAUSE THE BUTTON IS GONE. It read "what a Learn this
+  // button beside the answer would start" — accurate when written, and stale the moment that offer
+  // was deleted on 2026-08-20. Found by grepping the LIVE bundle for "Learn this" after the deploy,
+  // which is the only way this kind of drift ever surfaces: the prompt is shipped text that nothing
+  // renders, so no screenshot and no unit test can catch it describing a product that changed.
+  //
+  // The field itself is unchanged and still earns its place: whether a turn NAMED a subject is what
+  // `learnFromAside` starts when the learner asks to be taught it, and it is the honest test that
+  // kept "hello" from being treated as a topic.
   '"topic" is the subject this turn is about, whenever the learner named one. On a "study" turn it '
-  + 'is what gets taught; on a "reply" it is what a Learn this button beside the answer would start, '
-  + "so give it for a real question about a subject and leave it null for a greeting, a remark or "
-  + "anything with no subject in it.",
+  + "is what gets taught; on a \"reply\" it is what Nemesis would teach if the learner then asked to "
+  + "learn it. Give it for a real question about a subject and leave it null for a greeting, a "
+  + "remark or anything with no subject in it.",
   "",
   '"needsWeb" is true when answering well depends on something that changes or that you could not '
   + "have memorised: recent or ongoing events, current prices, standings, releases, versions, laws, "
@@ -326,11 +489,6 @@ const DECISION_CONTRACT = [
   + "sources agree needs many more. Reading more costs no extra search, only the room they take up "
   + "in your context. Null when needsWeb is false.",
   "",
-  '"offer" says why a learner reading a plain answer might be shown a Learn this button. Use '
-  + '"returning" when they keep circling the same subject across turns, "reasoning" when they are '
-  + "working something out rather than asking for a fact. Use null on nearly every turn; it is a "
-  + "remark about the conversation, never a judgement about the learner.",
-  "",
   // 🔴🔴 AN ORDERED PROCEDURE, NOT A PILE OF MAXIMS, AND THE ORDER IS MEASURED. Three earlier
   // drafts each fixed one direction and broke the other, because the two rules genuinely conflict
   // for a broad request:
@@ -355,6 +513,22 @@ const DECISION_CONTRACT = [
   + "to be written or changed? Then \"study\". Go ahead with what they said: do not ask which part "
   + "first and do not ask them to narrow it down, because the learning system asks better questions "
   + "than you can from here. Keep \"say\" to a few words.",
+  "",
+  // 🔴🔴 MEASURED 2026-08-20, BASELINE 6/8 ON THIS EXACT SET. "show me functional groups" started a
+  // LESSON: the canvas was retitled, four web pages were searched and ingested, and the owner
+  // watched "Reading that page…" while waiting for a list he could have read in ten seconds.
+  //
+  // 🔴 THE ASYMMETRY IS THE ARGUMENT, AND IT IS WHY THIS SITS INSIDE STEP 1 RATHER THAN AFTER IT.
+  // Choosing "reply" wrongly costs one sentence and the learner asks again. Choosing "study"
+  // wrongly costs minutes, retitles their canvas and takes the screen. Where the two readings are
+  // close, the cheap mistake is the right one to make.
+  "   Two phrasings do NOT belong in step 1, and they are the only exceptions to it. \"show me X\", "
+  + "\"what are the X\", \"list the X\", \"give me the X\" and \"which X are there\" ask for the "
+  + "information itself, in your answer, right now. Those are \"reply\", and the answer must "
+  + "actually contain the thing rather than asking which part they meant. Everything else in step 1 "
+  + "is unchanged: \"teach me\", \"walk me through\", \"help me understand\", \"quiz me\" and \"test "
+  + "me\" are all still \"study\", including when they name the same subject a \"show me\" would "
+  + "have.",
   "",
   "2. Otherwise \"reply\". A greeting, a remark, a complaint, an acknowledgement, or a question "
   + "they simply want answered all change nothing on the page. \"then\" is not about whether the "
@@ -454,9 +628,6 @@ function asAction(value: unknown): TurnAction | null {
   return value === "reply" || value === "study" || value === "rewrite" ? value : null;
 }
 
-function asOffer(value: unknown): TurnOffer | null {
-  return value === "returning" || value === "reasoning" ? value : null;
-}
 
 function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -470,22 +641,55 @@ function asText(value: unknown): string {
  * which is the cheap failure. A decision that says "study" but is otherwise empty is still a
  * decision, so `say` is allowed to be blank there and the canvas simply transitions.
  */
+/** ```json { … } ``` — the decision block, and everything outside it is the answer. */
+const DECISION_BLOCK = /```json\s*\n?([\s\S]*?)```/;
+
+/**
+ * Read a turn: the decision out of the fenced block, the answer out of everything else.
+ *
+ * 🔴🔴 THE ANSWER IS TAKEN FROM OUTSIDE THE JSON, WHICH IS THE POINT OF THE FORMAT. It used to be a
+ * `say` string INSIDE the object, where every backslash the model wrote had to be doubled — so
+ * `\frac` made `JSON.parse` refuse the whole decision and the envelope leaked onto the screen.
+ * Out here, `$$\frac{x^3}{3}$$` is just text, and KaTeX renders it.
+ *
+ * 🔴 PROSE ON BOTH SIDES IS KEPT. A model that writes a sentence, then the block, then the rest is
+ * describing the same answer in two halves; dropping either would lose part of it.
+ */
 export function readTurnDecision(raw: string): TurnDecision | null {
-  const parsed = extractJson(raw);
+  const block = DECISION_BLOCK.exec(raw);
+  if (!block) return null;
+  const parsed = extractJson(block[1] ?? "");
   if (!parsed) return null;
+
+  const outside = (raw.slice(0, block.index) + "\n" + raw.slice(block.index + block[0].length)).trim();
+  // 🔴🔴 A MODEL THAT PUT ITS ANSWER BACK INSIDE THE OBJECT IS STILL ANSWERING, AND THIS COSTS THE
+  // LEARNER NOTHING TO ACCEPT. Reproduced on production 2026-08-20: "draw the functional groups"
+  // returned "Nemesis had nothing to add." on one run out of two, with an empty canvas behind it.
+  //
+  // The cause is the format change of the same day. `say` used to live INSIDE this object and the
+  // model has years of habit saying so; when it writes the block with a `say` field and puts
+  // nothing after it, the prose outside is empty, `decision.say` is empty, and the reply branch
+  // reports having nothing to add — while the answer sits in the field right there.
+  //
+  // 🔴 THE OUTSIDE STILL WINS WHEN BOTH EXIST. Prose outside the block is the contract; this is a
+  // fallback for a turn that would otherwise be thrown away, not a second supported shape. LaTeX
+  // written into `say` will still be mangled by JSON escaping — which is exactly why the contract
+  // moved — so this recovers the turn without making the old shape safe.
+  const say = outside || asText(parsed.say);
   const then = asAction(parsed.then);
-  const say = asText(parsed.say);
-  // Neither field survived, so there is no decision here — only text that happened to be JSON.
+  // 🔴 A BLOCK WITH NO `then` AND NO ANSWER IS NOT A DECISION. Both empty means the model emitted
+  // something JSON-shaped that says nothing, and treating it as a turn would blank the screen.
   if (!then && !say) return null;
   return {
     needsWeb: parsed.needsWeb === true,
-    offer: asOffer(parsed.offer),
-    // 🔴 THE FALLBACK IS "reply", NOT "study". See the header: the expensive mistake is teaching
-    // somebody who did not ask to be taught, and a model that answered in prose instead of JSON
-    // has told us nothing about which one this is.
     say,
+    // 🔴 THE FALLBACK IS "reply", NOT "study". The expensive mistake is teaching somebody who did
+    // not ask to be taught, and a model that skipped the field has told us nothing about which
+    // this is.
     then: then ?? "reply",
     topic: asText(parsed.topic) || null,
+    // Refused figures are dropped here, never repaired — see `replyVisuals`.
+    visuals: replyVisuals(parsed.visuals),
     // A query without a search is dropped: the half that spends money loses the contradiction.
     webQuery: parsed.needsWeb === true ? asText(parsed.webQuery) || null : null,
     webResults: parsed.needsWeb === true && typeof parsed.webResults === "number"
@@ -499,13 +703,57 @@ export function readTurnDecision(raw: string): TurnDecision | null {
  * What the learner is shown when the model produced prose instead of a decision.
  *
  * 🔴 THE PROSE IS THE ANSWER. A model that ignored the envelope and simply answered the question
- * has still answered the question, and throwing that away to show an error would be strictly worse
- * for the learner than showing it. Only genuinely empty text has nothing to fall back to.
+ * has still answered it, and throwing that away to show an error would be strictly worse for the
+ * learner. Only genuinely empty text has nothing to fall back to.
  */
 export function decisionOrReply(raw: string): TurnDecision | null {
   const read = readTurnDecision(raw);
   if (read) return read;
   const prose = raw.trim();
   if (!prose) return null;
-  return { needsWeb: false, offer: null, say: prose, then: "reply", topic: null, webQuery: null, webResults: null };
+
+  // 🔴🔴 AN ENVELOPE THAT DID NOT PARSE MUST NOT BE SHOWN AS THE ANSWER, AND IT WAS BEING. Measured
+  // 2026-08-20, under the old all-in-one-object format: a turn whose JSON broke printed
+  // `{"say": "…", "then": "reply", "topic": "integration"}` on screen, verbatim. The rule above is
+  // right for a model that IGNORED the envelope and simply answered, and exactly wrong for one
+  // that ATTEMPTED it and mangled it — that text is machinery, and no learner should read the word
+  // "topic" in a reply. Kept after the format change, because a model can still reach for the old
+  // shape, and because a leak is silent when it does.
+  //
+  // 🔴 THIS IS PROTOCOL PARSING, NOT LANGUAGE UNDERSTANDING — it reads our own output format after
+  // `JSON.parse` has already refused it.
+  if (looksLikeEnvelope(prose)) {
+    const salvaged = salvageSay(prose);
+    return salvaged
+      ? { needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webQuery: null, webResults: null }
+      : null;
+  }
+  return { needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webQuery: null, webResults: null };
+}
+
+function looksLikeEnvelope(prose: string): boolean {
+  return prose.startsWith("{") && /"(?:say|then)"\s*:/.test(prose);
+}
+
+/**
+ * The sentence out of a broken envelope, when one can be recovered without guessing.
+ *
+ * 🔴 IT RETURNS NULL RATHER THAN A BEST EFFORT. The reason the parse failed is that the string
+ * contents are untrustworthy; a partial recovery risks presenting half a sentence, or one ending
+ * mid-symbol, as the considered answer. `null` reaches the caller's ordinary "that turn did not
+ * work" path, which the learner can act on.
+ */
+function salvageSay(prose: string): string | null {
+  const opened = prose.indexOf('"say"');
+  if (opened < 0) return null;
+  const colon = prose.indexOf(":", opened + 5);
+  if (colon < 0) return null;
+  const quote = prose.indexOf('"', colon + 1);
+  if (quote < 0) return null;
+  // Up to the next quote followed by a comma or a closing brace — the shape a value ends with.
+  // Anything else means the string ran into the structure and is not recoverable.
+  const closing = /"\s*[,}]/.exec(prose.slice(quote + 1));
+  if (!closing) return null;
+  const value = prose.slice(quote + 1, quote + 1 + closing.index).replace(/\\n/g, " ").replace(/\s*\n\s*/g, " ").trim();
+  return value.length >= 12 ? value : null;
 }

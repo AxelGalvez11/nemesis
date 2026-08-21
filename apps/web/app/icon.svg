@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-66 -10 232 232">
+  <!--
+    The favicon.
+
+    FLAT. This carried a radial-gradient body, a specular streak and a bounce
+    pass along the underside. At 16 pixels those three layers merge into a grey
+    smear and the silhouette — the only thing that identifies a mark at that size
+    — gets weaker rather than stronger. Solid fill, nothing else.
+
+    GEOMETRY IS MEASURED FROM THE SUPPLIED MARK and is IDENTICAL to
+    components/NemesisMark.tsx: rx 62, ry 20, tilt -36, centres 66 apart at
+    x = 50. Duplicated on purpose — that one is React and this has to be a
+    standalone file Next serves as an icon. If the geometry changes, change both.
+
+    NO STAGGER, AND THAT IS A REVERSAL. The previous favicon drifted the three
+    beads apart horizontally so the cluster filled the square, on the reasoning
+    that a mark half as wide as it is tall wastes half of a square icon. That
+    optimises the wrong thing: it made the favicon a different silhouette from
+    the mark in the header, which is the one property a logo cannot trade away.
+    The supplied reference is itself a tall mark centred in a square with wide
+    margins. So this is the same three ovals, centred, filling about 91% of the
+    square vertically.
+
+    The viewBox is centred on the ink rather than on the coordinate origin: the
+    ovals span x -1.6..101.6 and y 0.2..211.8, so the centre is (50, 106) and a
+    232-unit square about that point is "-66 -10 232 232".
+  -->
+  <style>
+    /* One fill, inverted. The brand rule is that dark mode changes the colour
+       and nothing else — same geometry, same silhouette, opposite ink.
+
+       A favicon is drawn against the BROWSER's chrome rather than the page, so
+       it cannot inherit anything and has to carry this itself. Support for
+       prefers-color-scheme inside an SVG favicon is now broad; where it is not
+       honoured the mark falls back to the black fill below, which is the
+       correct default for a light tab strip. */
+    .mark { fill: #000; }
+    @media (prefers-color-scheme: dark) {
+      .mark { fill: #fff; }
+    }
+  </style>
+
+  <g class="mark">
+    <ellipse cx="50" cy="40" rx="62" ry="20" transform="rotate(-36 50 40)" />
+    <ellipse cx="50" cy="106" rx="62" ry="20" transform="rotate(-36 50 106)" />
+    <ellipse cx="50" cy="172" rx="62" ry="20" transform="rotate(-36 50 172)" />
+  </g>
+</svg>

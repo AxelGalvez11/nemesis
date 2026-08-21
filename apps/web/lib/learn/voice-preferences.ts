@@ -127,3 +127,41 @@ export function shouldOpenDictation(input: {
   if (!input.dictationSupported || input.composerBusy) return false;
   return input.moment === "question";
 }
+
+/**
+ * How fast Nemesis reads, as a multiplier.
+ *
+ * 🔴 THREE STEPS, NOT A SLIDER. Owner, 2026-08-20: *"there should also be a control for controlling
+ * the voice speaking speed."* A slider invites fine-tuning a thing nobody wants to fine-tune, and
+ * every product that gets this right — podcast players, audiobooks — ships a cycle button. Three
+ * values fit in one control the width of a word.
+ *
+ * 🔴 NOTHING BELOW 1. Voice already runs a QUESTION at 0.95 as a concession to working memory
+ * (`speech-route.ts`), and that decision belongs to the moment rather than to a preference: a
+ * learner who slows every utterance down is training on a rhythm nobody speaks. The dial goes up.
+ */
+export const VOICE_SPEEDS = [1, 1.5, 2] as const;
+
+export type VoiceSpeed = (typeof VOICE_SPEEDS)[number];
+
+export const DEFAULT_VOICE_SPEED: VoiceSpeed = 1;
+
+const SPEED_KEY = "nemesis.canvas.voice-speed.v1";
+
+/** The next step, wrapping. What the cycle button does. */
+export function nextVoiceSpeed(current: VoiceSpeed): VoiceSpeed {
+  const at = VOICE_SPEEDS.indexOf(current);
+  return VOICE_SPEEDS[(at + 1) % VOICE_SPEEDS.length]!;
+}
+
+/** 🔴 AN UNRECOGNISED STORED VALUE FALLS BACK RATHER THAN BEING TRUSTED — the same rule
+ *  `readVoice()` follows for a speaker id. A hand-edited `4` would otherwise read every answer at
+ *  quadruple speed with no way to tell why. */
+export function readVoiceSpeed(storage: Pick<Storage, "getItem"> | null): VoiceSpeed {
+  const raw = Number(storage?.getItem(SPEED_KEY));
+  return (VOICE_SPEEDS as readonly number[]).includes(raw) ? (raw as VoiceSpeed) : DEFAULT_VOICE_SPEED;
+}
+
+export function writeVoiceSpeed(storage: Pick<Storage, "setItem"> | null, value: VoiceSpeed): void {
+  storage?.setItem(SPEED_KEY, String(value));
+}
