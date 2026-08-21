@@ -116,23 +116,13 @@ export const BRAVE_MAX_URLS = 50
  * pages were then ingested as a learner's study material. The query was the root cause and is fixed
  * elsewhere; the threshold is why a bad query produced advertising rather than nothing.
  *
- * 🔴 `strict` — OWNER CALL, 2026-08-21: *"I need web search to return only the most relevant
- * ones."* This overrides my own first choice of `balanced`, which I argued for on the grounds that
- * a dropped page is a page the model cannot cite, and that on an obscure question `strict` might
- * return nothing at all.
- *
- * That risk is real and is worth naming rather than burying: `strict` is the highest threshold
- * Brave offers, so a narrow question can come back with fewer pages, or none. What makes it the
- * right trade here is the SECOND search. The model decides when it has enough and may search again
- * with a different query (see MAX_SEARCH_ROUNDS in canvas-chat.ts), so a strict search that returns
- * little is a signal the model can act on — where a lenient search that returns ten weak pages
- * looks like an answer and gets used as one. Precision is recoverable; a confident answer built on
- * advertising is not.
- *
- * The failure to watch for is an empty search reading to a learner as "Nemesis could not find out".
- * If that starts happening on real questions, this is the line to move.
+ * 🔴 `balanced` RATHER THAN `strict`, AND THE ASYMMETRY IS THE ARGUMENT. This endpoint's job is to
+ * ground an answer, and a page that is dropped is a page the model cannot cite — for a genuinely
+ * obscure question, `strict` risks returning nothing at all, and an empty search reads to a learner
+ * as "Nemesis could not find out", which is a worse failure than one weak page among ten good ones.
+ * Brave's own guideline names `balanced` as "good balance between coverage and relevance".
  */
-export const BRAVE_THRESHOLD_MODE = 'strict'
+export const BRAVE_THRESHOLD_MODE = 'balanced'
 
 /**
  * How recent a page has to be, when the caller asks.
