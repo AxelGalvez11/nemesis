@@ -1389,7 +1389,13 @@ export function LearningCanvas({
             would NOT look again — the button would appear to work and change nothing. Re-mounting
             is the whole mechanism by which reopening from the Library recovered. */}
         {presence === "quiet" && (
-          <CanvasQuiet onRetry={() => window.location.assign(`/learn?c=${canvas.id}`)} />
+          <CanvasQuiet
+            // 🔴 `relook=1` IS WHAT MAKES THIS BUTTON DO ANYTHING. Without it the reload re-resolves
+            // and a remembered empty answer short-circuits before a lane runs — the identical screen,
+            // every press. See `takeRelook` in `use-policy-runtime.ts`.
+            onRetry={() => window.location.assign(`/learn?c=${canvas.id}&relook=1`)}
+            unread={canvas.sources.find((source) => source.coverageNote)?.coverageNote ?? null}
+          />
         )}
 
         {regions.document && presence !== "preparing" && (

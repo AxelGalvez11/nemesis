@@ -374,3 +374,35 @@ test("🔴 the mechanism marker and the empty marker expire on exactly the same 
   assert.equal(asMechanisms.reason, "parser-version-changed");
   assert.equal(asEmpty.reuse === false ? asEmpty.reason : null, asMechanisms.reason);
 });
+
+// ── "Try again" has to actually try ──────────────────────────────────────────
+//
+// 🔴🔴 REPORTED 2026-08-21, WITH A SCREENSHOT. A 276-excerpt lecture read "Nemesis hasn't found
+// anything to ask you about yet", and the retry beneath that sentence reloads the page — so the
+// reload re-resolved, `known-empty` short-circuited before a single lane ran, and the control
+// returned the identical screen every press. A control that does nothing, on the one surface whose
+// whole job is to offer a way out.
+
+test("🔴 a pressed retry is not a passive reopen — the remembered empty answer does not silence it", () => {
+  const over = { contentHash: "s1:sha-abc", parserVersion: "s1:extract-2026-08-13" };
+  const stored = readTerritory({ emptyOver: over, emptyUnder: "causal/1", identityVersion: 2, objects: [], topic: "t" });
+  const input = { identityVersion: 2, material: over, rules: "causal/1", stored };
+
+  // Unforced, this is the saving working as designed and must not change.
+  assert.equal(territoryReuse(input).reuse, "known-empty");
+
+  const forced = territoryReuse({ ...input, force: true });
+  assert.equal(forced.reuse, false, "the learner asked for another look and was handed the cache");
+  assert.equal(forced.reuse === false ? forced.miss : null, "empty-answer-superseded");
+});
+
+test("🔴 forcing does not resurrect a territory that FOUND something — that is still a hit", () => {
+  // The force is about a remembered EMPTY answer. A territory with objects in it is not a dead end,
+  // and re-buying one on every press would be paying to rebuild something already on screen.
+  const stored = readTerritory({
+    identityVersion: 2,
+    objects: [{ id: "k1", statement: "s", type: "association", unanchoredProvenance: [] } as unknown as KnowledgeObject],
+    topic: "t",
+  });
+  assert.equal(territoryReuse({ force: true, identityVersion: 2, rules: "causal/1", stored }).reuse, true);
+});

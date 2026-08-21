@@ -28,7 +28,23 @@
  *  Matches `CanvasThinkingPreview`, which is the state this most often follows. */
 const TOP_INSET = "18vh";
 
-export function CanvasQuiet({ onRetry }: { onRetry: () => void }) {
+export function CanvasQuiet({
+  onRetry,
+  unread = null,
+}: {
+  onRetry: () => void;
+  /**
+   * What the parse could not read, in the reader's own words, when it could not read all of it.
+   *
+   * 🔴🔴 THE DIFFERENCE BETWEEN "NOTHING HERE" AND "I COULD NOT SEE THE PART THAT MATTERS".
+   * Reported 2026-08-21 with a 276-page-excerpt lecture that produced no questions: the text read
+   * perfectly and 28 pictures did not, and on a slide deck the pictures are the tables. The
+   * sentence above is true either way and useless in the second case, which is the one that
+   * actually happened — the learner is left believing their document holds nothing worth asking
+   * about, when what happened is that we could not open the part that does.
+   */
+  unread?: string | null;
+}) {
   return (
     <div
       aria-live="polite"
@@ -58,6 +74,12 @@ export function CanvasQuiet({ onRetry }: { onRetry: () => void }) {
       {/* Typing is the move the composer below already offers — said out loud because a learner
           looking at an empty canvas has no reason to believe the box at the bottom will do
           anything. */}
+      {unread && (
+        <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+          It read the text of this document, but not all of it: {unread.replace(/\.$/, "")}. Questions come
+          mostly from tables and diagrams, which is often what a picture holds.
+        </p>
+      )}
       <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
         Tell it what you want to work on, or try again.
       </p>
