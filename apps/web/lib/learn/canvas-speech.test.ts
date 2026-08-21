@@ -5,6 +5,7 @@ import {
   isMostlyNotation,
   isSpokenAction,
   shouldSpeakAction,
+  speechChunks,
   speechFor,
   SPEECH_CHAR_LIMIT,
   SPOKEN_EXPLANATION_LIMIT,
@@ -111,4 +112,45 @@ test("🔴 a refusal is a named reason, never silent", () => {
     assert.equal(choice.spoken, undefined);
     assert.equal(typeof choice.refused, "string");
   }
+});
+
+
+// ───────────────────────────────────── a long answer is several requests, not silence
+//
+// 🔴🔴 REPORTED 2026-08-21: *"it wouldn't play the whole passage."* Both synthesisers answer 413
+// above SPEECH_CHAR_LIMIT and "Read aloud" sent the whole answer as one request, so every answer
+// over 600 characters was a control that looked fine and did nothing.
+
+const LONG = Array.from({ length: 40 }, (_, i) => `This is sentence number ${i} in a long answer.`).join(" ");
+
+test("🔴 a passage over the limit comes back as several pieces, none of them over it", () => {
+  const parts = speechChunks(LONG);
+  assert.ok(parts.length > 1, "a long passage still went out as one request");
+  for (const part of parts) assert.ok(part.length <= SPEECH_CHAR_LIMIT, `${part.length} > ${SPEECH_CHAR_LIMIT}`);
+});
+
+test("🔴 nothing is dropped — every word of the answer is still spoken", () => {
+  assert.equal(speechChunks(LONG).join(" ").replace(/\s+/g, " "), LONG.replace(/\s+/g, " "));
+});
+
+test("a passage that already fits is one piece, so the ordinary case sends one request", () => {
+  assert.deepEqual(speechChunks("Short enough to say."), ["Short enough to say."]);
+});
+
+test("empty text asks for nothing at all", () => {
+  assert.deepEqual(speechChunks("   "), []);
+});
+
+test("the seam lands at a sentence end, where a reader would pause anyway", () => {
+  const parts = speechChunks("One. Two. Three.", 10);
+  assert.deepEqual(parts, ["One. Two.", "Three."]);
+});
+
+test("a single token longer than the whole limit is broken up rather than lost", () => {
+  const parts = speechChunks("x".repeat(25), 10);
+  assert.deepEqual(parts, ["x".repeat(10), "x".repeat(10), "x".repeat(5)]);
+});
+
+test("line breaks are seams too, so a list does not run together", () => {
+  assert.deepEqual(speechChunks("alpha\nbeta\ngamma", 12), ["alpha beta", "gamma"]);
 });

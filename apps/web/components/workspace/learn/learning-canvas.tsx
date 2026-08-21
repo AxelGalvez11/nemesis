@@ -1214,9 +1214,12 @@ export function LearningCanvas({
                   <SpokenExample
                     key={`s${index}`}
                     locale={segment.locale}
-                    onSpeak={() => voice.speakExample(segment.locale, segment.text)}
+                    onSpeak={() => voice.speakExample(`s${index}`, segment.locale, segment.text)}
                     onStop={voice.stopSpeaking}
-                    speaking={voice.header.speaking}
+                    // 🔴 THIS ROW, NOT ANY ROW. `voice.header.speaking` is one boolean for the whole
+                    // surface, and handing it to every example turned all of them into stop buttons
+                    // the moment one played (owner, 2026-08-21).
+                    speaking={voice.speakingExample === `s${index}`}
                     text={segment.text}
                   />
                 ) : (
@@ -1247,7 +1250,8 @@ export function LearningCanvas({
                   onCycleSpeed={voice.header.onCycleSpeed}
                   onSpeak={voice.speakAloud}
                   onStop={voice.stopSpeaking}
-                  speaking={voice.header.speaking}
+                  // 🔴 Not "something is playing": while an example row speaks, this is not its button.
+                  speaking={voice.header.speaking && voice.speakingExample === null}
                   speed={voice.header.speed}
                   // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
                   // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
@@ -1486,6 +1490,11 @@ export function LearningCanvas({
           a press meant for the composer behind it. */}
       <BloubDock
         anchor="#canvas-composer"
+        // 🔴 THE CAPTION RIDES THE CHARACTER. It used to be its own box on the page and ended up
+        // against the right edge of the window, hundreds of pixels from the mascot it was meant to
+        // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
+        // beside something whose position is a live transform, so it moved onto the dock itself.
+        caption={turnInFlight || presence === "preparing" ? preparingLabel : null}
         contain
         // 🔴 "!" WHEN SOMETHING WENT WRONG, "?" WHEN NEMESIS IS WAITING ON THE LEARNER, and null on
         // nearly every render — a mascot that is always signalling is a mascot nobody looks at.
