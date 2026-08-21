@@ -255,3 +255,25 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
   // the question is already rendered in full, in words, in the middle of the page.
   assert.match(canvasCode, /marker=\{session\.error \? "!" : awaitingDemonstration \? "\?" : null\}/);
 });
+
+test("🔴🔴 the mascot comes forward for a TURN, never for background work", () => {
+  // 🔴 REPORTED AS THE MASCOT PAINTING OVER ANSWERS, AND MEASURED ON PRODUCTION. The dock's resting
+  // position was correct — bottom 84px, left 336px, right at the composer — and a transform was
+  // lifting it 412px and scaling it 2.1x, the deliberate "come forward to think" station, still
+  // applied minutes after the answer had landed.
+  //
+  // The cause is what `policy.thinking` MEANS: `phase !== null`, and the phases include
+  // `mapping_knowledge`, which is background knowledge resolution measured in MINUTES. A learner
+  // reading a finished answer had a character standing over it at double size because something
+  // unrelated was still running behind the page.
+  //
+  // 🔴 THE THINKING SCREEN ALREADY LEARNED THIS. `use-canvas-session` records the same distinction
+  // in as many words — key on the turn, never on `working`, which includes knowledge resolution.
+  // The dock was wired to the other signal and nobody had looked. Calibration: put
+  // `policy.thinking` back and this reddens.
+  assert.match(canvasCode, /stateForCanvas\(\{ thinking: turnInFlight, preparing: presence === "preparing" \}\)/);
+  assert.ok(
+    !/stateForCanvas\(\{ thinking: policy\.thinking/.test(canvasCode),
+    "the dock is back on the policy's phase flag, which stays true through background work",
+  );
+});

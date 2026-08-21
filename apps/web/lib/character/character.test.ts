@@ -147,9 +147,25 @@ test("🔴 both of the Canvas's waits move the character, not just the loud one"
   // call contained "thinking" and "preparing" — which `preparing: false` satisfies
   // perfectly, so unwiring the second wait left the guard green. A guard that passes
   // while the thing it guards is broken is worse than no guard, because it is believed.
+  //
+  // 🔴 REPOINTED 2026-08-20, AND THE SIGNAL IT USED TO DEMAND IS NOW THE BUG. This required
+  // `thinking: policy.thinking`. That flag is `phase !== null`, and the phases include
+  // `mapping_knowledge` — background knowledge resolution measured in MINUTES — so the character
+  // walked to the middle of the screen, scaled 2.1x, and STAYED there over an answer the learner
+  // was reading, because something unrelated was still running behind the page. Measured on
+  // production: resting position correct, transform translate(358, -412) scale(2.1) still applied
+  // long after the turn ended.
+  //
+  // The rule this test protects is unchanged: BOTH waits move the character, and neither is
+  // stubbed out with a literal. Only the signal for the first one changed, to the one the thinking
+  // SCREEN already uses — the turn the learner is actually waiting on.
   assert.ok(
-    wired.some((c) => /thinking:\s*policy\.thinking/.test(c) && /preparing:\s*presence\s*===/.test(c)),
+    wired.some((c) => /thinking:\s*turnInFlight/.test(c) && /preparing:\s*presence\s*===/.test(c)),
     `no call site passes both real signals: ${wired.join(" | ")}`,
+  );
+  assert.ok(
+    !wired.some((c) => /thinking:\s*policy\.thinking/.test(c)),
+    "the dock is back on the policy's phase flag, which stays true through minutes of background work",
   );
 });
 
