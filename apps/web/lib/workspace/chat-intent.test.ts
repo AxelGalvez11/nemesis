@@ -15,7 +15,9 @@ const context = {
   attachments: [] as string[],
   awaitingStudyPreference: null,
   history: [],
+  searchesLeft: 0,
   today: "Thursday, 20 August 2026",
+  webContext: "",
 };
 
 // ── the menu is generated, never hand-written ────────────────────────────────
@@ -194,5 +196,48 @@ assert.equal(readChatIntent('{"needsWeb":false,"webFreshness":"pw"}')?.webFreshn
 // drops what Brave will not take, so an invented window becomes no filter rather than a live
 // parameter that quietly does nothing.
 assert.equal(readChatIntent('{"needsWeb":true,"webFreshness":"last_week"}')?.webFreshness, "last_week");
+
+// ── searching more than once ─────────────────────────────────────────────────
+// Owner, 2026-08-21: *"the phone should also follow the same as webapp canvas."* The Canvas has
+// searched until the model says it has enough since `MAX_SEARCH_ROUNDS`; this packet could only
+// ever be asked once, because it was identical every round. These are the two halves that make
+// asking again mean something: the results reach the model, and it is told what it may still do.
+{
+  const withResults = { ...context, searchesLeft: 2, webContext: "1. Some page\nURL: https://example.edu" };
+  const block = intentStateBlock(withResults);
+  assert.match(block, /You may run 2 more searches/);
+  // A first pass has searched nothing, so it must say nothing about searches at all — otherwise
+  // every ordinary turn carries a sentence about a search that never happened.
+  assert.doesNotMatch(intentStateBlock(context), /search/i);
+  // One left is not "searches".
+  assert.match(intentStateBlock({ ...withResults, searchesLeft: 1 }), /1 more search\b/);
+  // 🔴 AND THE LAST ROUND SAYS SO RATHER THAN GOING QUIET. A model that is silently cut off
+  // answers as though it had looked everywhere.
+  const spent = intentStateBlock({ ...withResults, searchesLeft: 0 });
+  assert.match(spent, /no further search is available/);
+  assert.match(spent, /say plainly what it did not settle/);
+}
+// The pages themselves ride as their own fenced system message, labelled as source context — the
+// same treatment the Canvas gives them, because a page nobody chose to open is the most exposed
+// text in the packet.
+{
+  const messages = intentMessages({
+    ask: "what happened today",
+    context: { ...context, searchesLeft: 3, webContext: "1. Some page" },
+  });
+  const evidence = messages.find((message) => message.content.includes("PROVISIONAL EXTERNAL EVIDENCE"));
+  assert.ok(evidence, "what the search found never reaches the model");
+  assert.equal(evidence.role, "system");
+  assert.match(evidence.content, /not something the student said/i);
+  // A turn that searched nothing carries no such message at all.
+  assert.ok(!intentMessages({ ask: "hi", context }).some((m) => m.content.includes("PROVISIONAL")));
+}
+// And the contract tells the model it MAY say true again, which is what ends the loop honestly.
+{
+  const contract = intentContract();
+  assert.match(contract, /you have searched once/i);
+  assert.match(contract, /Say true AGAIN, with a different webQuery/);
+  assert.match(contract, /Stop as soon as you can answer properly/);
+}
 
 console.log("chat-intent.test.ts OK");

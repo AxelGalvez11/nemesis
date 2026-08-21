@@ -972,7 +972,14 @@ export async function sendChatTurn(
         [...history].reverse().find((message) => message.role === "assistant" && message.content.trim())?.content ?? "",
       ),
       history: intentHistory(history),
+      // 🔴 THIS PATH SEARCHES ONCE AND HAS NO LOOP, SO IT SAYS SO RATHER THAN LYING BY OMISSION.
+      // `searchesLeft: 0` on a first pass with no results is truthful — there is no second round
+      // here — and `intentStateBlock` only speaks about searches once results exist, so nothing
+      // reaches the model on a turn that has not searched. See the file header: this whole turn
+      // path has no live caller in the web app any more.
+      searchesLeft: 0,
       today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
+      webContext: "",
     }, signal);
   const classified = filesOnly ? ATTACHMENT_ONLY_DECISION : decisionFromIntent(intent);
   // 🔴 A URL IN THE MESSAGE OVERRIDES A "no". The address is literally in the text, so this is not

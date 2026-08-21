@@ -423,6 +423,16 @@ export function intentHistory(history: readonly ChatMsg[]): IntentContext["histo
  * where JSON was asked for — resolves to DEFAULT_INTENT. The student gets an answer; they do not
  * get a spinner, and they do not get "I can't see your calendar".
  */
+/**
+ * The most searches one turn may run.
+ *
+ * 🔴 A BACKSTOP, NOT THE DECISION. The model stops when it says it has enough; this exists so a
+ * turn cannot run away, and the number is STATED to the model rather than enforced behind its back
+ * (`searchesLeft` in `IntentContext`). Same value the Canvas uses, deliberately: one product, one
+ * answer to "how hard will Nemesis look".
+ */
+export const MAX_SEARCH_ROUNDS = 4;
+
 async function readTurnIntent(
   uid: string,
   ask: string,
@@ -468,13 +478,17 @@ export async function sendChat(
   // drifted, so the identical question could behave differently on the two surfaces. See
   // @nemesis/shared/chat-intent.ts. A failed or timed-out read is DEFAULT_INTENT: an ordinary
   // conversational turn on the tools-capable model, which is a working turn rather than an error.
-  const intent = await readTurnIntent(uid, userText, {
+  /** One pass of the decision. `webContext` carries everything found so far; empty on the first. */
+  const readIntent = (webContext: string, searchesLeft: number) => readTurnIntent(uid, userText, {
     attachments: attachedDoc ? [attachedDoc.title] : [],
     // Application state, not language: the prefix belongs to a question Nemesis itself wrote.
     awaitingStudyPreference: studyCreationKindFromPreferencePrompt(priorAssistantText),
     history: intentHistory(history),
+    searchesLeft,
     today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
+    webContext,
   }, signal);
+  const intent = await readIntent("", MAX_SEARCH_ROUNDS);
   // Then let the student's own dial override how hard to think about it — never the other way
   // round. Both steps make one exception, for a request to SAVE something into the student's own
   // workspace: that write happens through a tool call, and both the research toggle and the High
@@ -495,19 +509,53 @@ export async function sendChat(
   const brainLookup = shouldRecallBrain({ topic: intent.topic, workspaceTurn: intent.workspace !== "none" })
     ? recallBrain(userText)
     : Promise.resolve(null);
-  if (decision.searchWeb) {
-    // The model wrote the query when it asked for the search, and puts a date in it itself when
-    // recency is the point — which is what `withFreshDateAnchor` was guessing at from a word list.
-    const query = intent.webQuery || (decision.route === "current" ? withFreshDateAnchor(userText) : userText);
-    // The phase echoes the student's OWN words, not `query` — the "current"
-    // route staples a freshness date onto the wire query, and showing that
-    // back would read like the app invented part of the question.
-    onPhase?.({ kind: "searching", query: userText });
-    const result = await searchWebContext(uid, query, intent.webResults, intent.webFreshness);
-    sources = result.sources;
-    onPhase?.({ kind: "reading", sources: sources.length });
-    groundedText = result.context
-      ? `${groundedText}\n\n${result.context}`
+  // 🔴🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH — the same loop the Canvas has run since
+  // `MAX_SEARCH_ROUNDS`, brought here so one product does not look twice as hard on one screen.
+  // This used to be a single `if`: one search, and a first query aimed slightly wrong ended the
+  // turn, because the model then had to answer from pages it may already have judged useless with
+  // no way to say so. Owner: *"deepseek should decide itself when it has enough information to
+  // answer"*, and *"the phone should also follow the same as webapp canvas"*.
+  //
+  // 🔴 WHAT COMES BACK ACCUMULATES RATHER THAN REPLACING. A later search narrows or corrects an
+  // earlier one; dropping the earlier pages would make the model re-find them, and would make an
+  // inline [3] in the answer point at whatever happened to be third in the last batch.
+  //
+  // 🔴 THE LOOP ENDS ON `searchWeb`, WHICH IS THE MODEL'S OWN ANSWER re-read each round from a
+  // packet that now contains what it found. The round count is only a backstop.
+  let searched = decision.searchWeb;
+  let webIntent = intent;
+  if (searched) {
+    const seen = new Set<string>();
+    const found: ChatSource[] = [];
+    let context = "";
+    for (let round = 0; round < MAX_SEARCH_ROUNDS && searched; round += 1) {
+      // The model wrote the query when it asked for the search, and puts a date in it itself when
+      // recency is the point — which is what `withFreshDateAnchor` was guessing at from a word list.
+      const query = webIntent.webQuery || (decision.route === "current" ? withFreshDateAnchor(userText) : userText);
+      // The phase echoes the student's OWN words, not `query` — the "current"
+      // route staples a freshness date onto the wire query, and showing that
+      // back would read like the app invented part of the question.
+      onPhase?.({ kind: "searching", query: userText });
+      const result = await searchWebContext(uid, query, webIntent.webResults, webIntent.webFreshness);
+      for (const source of result.sources) {
+        if (seen.has(source.url)) continue;
+        seen.add(source.url);
+        found.push(source);
+      }
+      // 🔴 THE RUNNING TOTAL, NOT THIS ROUND'S HAUL. The student is watching one turn, and a
+      // counter that went 12, then 9, then 14 would be describing our loop rather than their search.
+      onPhase?.({ kind: "reading", sources: found.length });
+      // Re-numbered over everything gathered, so an inline [n] resolves against what was shown.
+      context = formatWebSearchContext(found);
+      const again = await readIntent(context, MAX_SEARCH_ROUNDS - round - 1);
+      // A round that came back unreadable leaves the previous decision standing and stops: a
+      // DEFAULT_INTENT cannot ask for another search, so a failing provider cannot spin the loop.
+      webIntent = again;
+      searched = again.needsWeb;
+    }
+    sources = found;
+    groundedText = context
+      ? `${groundedText}\n\n${context}`
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
   // Personal context goes LAST so it is closest to the answer and the student's

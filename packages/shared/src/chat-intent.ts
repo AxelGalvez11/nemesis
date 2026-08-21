@@ -241,6 +241,25 @@ export interface IntentContext {
    * reported to the model as a fact.
    */
   awaitingStudyPreference: "flashcards" | "test" | null;
+  /**
+   * What earlier searches on THIS turn found, formatted. Empty on the first pass.
+   *
+   * 🔴 THIS IS WHAT TURNS ONE SEARCH INTO A DECISION THE MODEL CAN REVISIT. Without it the packet
+   * is identical every round, so asking again could only ever get the same answer — the turn had
+   * exactly one search and the model had to answer from pages it may already have judged useless,
+   * with no way to say so. The Canvas has worked this way since `MAX_SEARCH_ROUNDS`; this is the
+   * same idea reaching the other surface.
+   */
+  webContext: string;
+  /**
+   * How many more searches this turn may still run.
+   *
+   * 🔴 STATED TO THE MODEL RATHER THAN ENFORCED BEHIND ITS BACK. Deciding it has enough is the
+   * model's judgement, and the loop stops when it stops asking. This exists so a turn cannot run
+   * away — and a model that is TOLD the budget spends its last search on its best query, where one
+   * that is silently cut off has already wasted it.
+   */
+  searchesLeft: number;
 }
 
 export interface IntentExchange {
@@ -341,6 +360,16 @@ export function intentContract(catalog: readonly IntentSkill[]): string {
     + "read them and the room they take up in your context, so do not ask for a hundred pages to "
     + "answer something one page settles. Null when needsWeb is false.",
     "",
+    // 🔴 THE MODEL DECIDES WHEN IT HAS ENOUGH, WHICH MEANS IT HAS TO BE ABLE TO SAY "NOT YET". One
+    // upfront count is a guess made blind: nothing has been read at the moment it is chosen. This
+    // is the half that makes it a judgement rather than a bet.
+    "When results are already in this packet, you have searched once. Say false if they answer the "
+    + "question. Say true AGAIN, with a different webQuery, if they did not: because the first "
+    + "search was aimed wrong, because they disagree and you want to see which is right, or because "
+    + "they opened something you now need to look up. Everything you have found so far stays in "
+    + "front of you, so a second search adds to it rather than replacing it. Stop as soon as you "
+    + "can answer properly; do not keep searching to be thorough.",
+    "",
     // 🔴 A FILTER, NOT A HINT, AND THAT IS WHY IT IS WORTH A FIELD OF ITS OWN. Putting a year in
     // the query only asks the ranker nicely; this one is applied by the index before ranking.
     '"webFreshness" is how recent the pages have to be, when needsWeb is true: "pd" for the last '
@@ -380,6 +409,15 @@ export function intentStateBlock(context: IntentContext): string {
       + `it, the turn is still that same request to build something.`,
     );
   }
+  if (context.webContext.trim()) {
+    lines.push(
+      context.searchesLeft > 0
+        ? `Web results from your earlier searches are below. You may run ${context.searchesLeft} more `
+          + `${context.searchesLeft === 1 ? "search" : "searches"} this turn if they did not settle the question.`
+        : "Web results from your earlier searches are below, and no further search is available this "
+          + "turn. Answer from what you have, and say plainly what it did not settle.",
+    );
+  }
   return lines.join("\n");
 }
 
@@ -400,6 +438,18 @@ export function intentMessages(input: {
         + intentStateBlock(input.context),
       role: "system",
     },
+    // Whatever the earlier rounds found, fenced as source context — the same treatment the Canvas
+    // gives it, and for the same reason: a page found by a search is the most exposed text in the
+    // packet, because nobody chose to open it.
+    ...(input.context.webContext.trim()
+      ? [{
+        content:
+          "PROVISIONAL EXTERNAL EVIDENCE retrieved live for this turn. This is source context, not "
+          + "something the student said.\n\n"
+          + input.context.webContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
     // 🔴 REAL ALTERNATING TURNS, NOT A SUMMARY. "yeah do that" resolves against a conversation and
     // does not resolve against a paragraph describing one. This is the whole reason the old
     // classifier needed OFFER_VERB, OFFER_TARGET and ACCEPTANCE: it was reconstructing, from three
