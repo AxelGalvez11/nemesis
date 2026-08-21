@@ -69,6 +69,15 @@ export interface CanvasVoice {
   };
   /** Speak an arbitrary passage on demand; pressing again repeats it. */
   speakAloud: (text: string) => void;
+  /**
+   * Speak a sentence in the language being TAUGHT, in the variety it must be heard in.
+   *
+   * 🔴 A DIFFERENT LANE, NOT A LOUDER `speakAloud`. This is the one call in the product that passes
+   * `purpose: "language_learning"`, which is what routes the utterance to Azure and its named
+   * catalogue voice rather than to the Canvas provider. Until it existed the language half of §43
+   * and the whole of §47 were unreachable from a conversation.
+   */
+  speakExample: (locale: string, text: string) => void;
   /** Straight onto `<CanvasComposer listenSignal={…}>`. Changes when the microphone should open. */
   listenSignal: number | null;
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
@@ -318,6 +327,38 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       // the control, and `speed` without the fresh key silently refuses to repeat.
       aloudPress.current += 1;
       void speech.speak(`aloud:${aloudPress.current}`, text, { locale: LOCALE_UNSPECIFIED, speed, voiceId });
+    },
+    speakExample: (locale: string, text: string) => {
+      // Restarting mid-sentence is what pressing a second example means.
+      speech.stop();
+
+      // 🔴 THE ROUTER DECIDES, NOT THIS CALLER. It is what refuses a target-language utterance
+      // with no locale, holds the natural pace a drill needs, and names Azure — and every one of
+      // those is a rule with a test behind it. Reaching past it to `speech.speak` would be
+      // rebuilding all three here, badly.
+      const route = routeSpeech({
+        key: `example:${aloudPress.current + 1}`,
+        moment: { kind: "target_language", text },
+        purpose: "language_learning",
+        targetLocale: locale,
+      });
+      if (route.decision !== "speak") return;
+
+      // A fresh key every press, for the same reason `speakAloud` needs one: `speak` refuses a key
+      // it has already spoken, which is right for the automatic lane and is exactly the silent
+      // no-op a repeat control exists to avoid.
+      aloudPress.current += 1;
+
+      // 🔴 NO `voiceId`, AND THE OMISSION IS THE POINT. The learner's chosen speaker belongs to
+      // Nemesis's own voice; a target-language example is spoken by a voice picked from Azure's
+      // catalogue FOR that variety, deterministically, so the same lesson sounds the same
+      // tomorrow. Sending the canvas speaker here would ask a Mexican Spanish drill to be read by
+      // whichever English voice the learner liked.
+      void speech.speak(route.utterance.key, route.utterance.text, {
+        locale: route.locale,
+        provider: route.provider,
+        speed: route.speed,
+      });
     },
     stopSpeaking: speech.stop,
   };
