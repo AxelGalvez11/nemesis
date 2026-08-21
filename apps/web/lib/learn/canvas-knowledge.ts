@@ -167,9 +167,17 @@ export async function ensureKnowledgeForCanvas(
      * interruptible at all.
      */
     signal?: AbortSignal;
+    /**
+     * The learner pressed "Try again" — look again even at material already read as empty.
+     *
+     * 🔴 A PRESSED BUTTON IS NOT A PASSIVE REOPEN. The empty marker exists so an unwatched canvas
+     * cannot re-buy the same empty answer forever, and it was silencing the one path a learner
+     * asks for by name. See `territoryReuse`'s `force`.
+     */
+    relook?: boolean;
   } = {},
 ): Promise<CanvasKnowledge> {
-  const { bypassOwnership = false, onPhase, signal } = options;
+  const { bypassOwnership = false, onPhase, relook = false, signal } = options;
   // 🔴 DURABLE SOURCES ONLY. An ephemeral source has no library row, so anchors minted from it
   // point at something no later canvas can resolve — knowledge that cannot outlive its session is
   // exactly what this layer exists to stop producing.
@@ -405,6 +413,7 @@ export async function ensureKnowledgeForCanvas(
       outcome,
       ownership,
       signal,
+      relook,
       sourceIds,
       userId,
     });
@@ -795,10 +804,12 @@ async function groundedTerritory(input: {
   outcome: ExtractionOutcome;
   ownership: OwnershipDecision;
   signal?: AbortSignal;
+  /** The learner asked for another look. See `territoryReuse`'s `force`. */
+  relook?: boolean;
   sourceIds: readonly string[];
   userId: string;
 }): Promise<CanvasKnowledge | null> {
-  const { canvas, contexts, coverage, material, onPhase, outcome, ownership, signal, sourceIds, userId } = input;
+  const { canvas, contexts, coverage, material, onPhase, outcome, ownership, relook, signal, sourceIds, userId } = input;
   const answer = (objectives: ResolvedObjective[]): CanvasKnowledge => ({ coverage, objectives, outcome, ownership });
 
   // 🔴 A LABEL ON THE MARKER, NOT A KEY ANYTHING COMPARES. `CanvasTerritory.topic` must be a
@@ -824,6 +835,7 @@ async function groundedTerritory(input: {
   // exactly the kind of silent ceiling this codebase keeps having to dig back out of.
   const previous = await loadCanvasTerritory(userId, canvas.id);
   const reuse = territoryReuse({
+    ...(relook ? { force: true } : {}),
     identityVersion: KNOWLEDGE_IDENTITY_VERSION,
     ...(material ? { material } : {}),
     rules: RULESET_VERSION,

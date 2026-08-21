@@ -386,6 +386,23 @@ export function knowledgeSignature(canvas: LearningCanvas): string {
  * nobody is watching. Three looks eight seconds apart covers the window measured in production
  * between a source attaching and its knowledge becoming readable, and gives up honestly after that.
  */
+/**
+ * Did the learner press "Try again"? Reads the marker and consumes it.
+ *
+ * 🔴 READ ONCE AND CLEARED, WHICH IS WHY IT IS A FUNCTION AND NOT A PROP. The marker travels in the
+ * URL because the control that sets it reloads the page — no React state survives that. Leaving it
+ * in the address bar would mean every later refresh re-bought the same look, which is exactly the
+ * spend the empty marker exists to prevent, reintroduced through the fix for it.
+ */
+function takeRelook(): boolean {
+  if (typeof window === "undefined") return false;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("relook") !== "1") return false;
+  url.searchParams.delete("relook");
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  return true;
+}
+
 const KNOWLEDGE_RETRY_LIMIT = 3;
 const KNOWLEDGE_RETRY_DELAY_MS = 8_000;
 
@@ -622,6 +639,13 @@ export function usePolicyRuntime(
       try {
         resolved = await ensureKnowledgeForCanvas(uid, canvas, {
           bypassOwnership: forced,
+          // 🔴🔴 THE RETRY UNDER "Nemesis hasn't found anything to ask you about yet" HAD NO EFFECT
+          // AT ALL. It reloads the page; the reload re-resolves; and a remembered empty answer
+          // short-circuits before a single lane runs — so the button returned the identical screen
+          // every time, on the one surface whose whole job is to offer a way out (owner, 2026-08-21,
+          // with a screenshot of a 276-excerpt lecture). `takeRelook` reads the marker that button
+          // leaves and CLEARS it, so an ordinary refresh afterwards does not buy the look again.
+          relook: takeRelook(),
           onPhase: (step) => {
             if (live) setPhase(step);
           },
