@@ -141,6 +141,8 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
   const [autoDictation, setAutoDictation] = useState<AutoDictation>("unasked");
   const [dictationSupported, setDictationSupported] = useState(false);
   const [listenSignal, setListenSignal] = useState<number | null>(null);
+  /** Counts presses of the on-demand Speak control, so each one is a new utterance key. */
+  const aloudPress = useRef(0);
   /** 🔴 STARTS AT THE DEFAULT AND IS CORRECTED AFTER THE FIRST PAINT, exactly like `mode` above.
    *  Reading `localStorage` during render is a hydration mismatch; this file already solved that
    *  once and the answer is the effect below, not a second pattern. */
@@ -281,7 +283,18 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     speakAloud: (text: string) => {
       // Restarting mid-sentence is what "repeat" means when it is already talking.
       speech.stop();
-      void speech.speak(`aloud:${text.slice(0, 48)}`, text, { locale: LOCALE_UNSPECIFIED, speed, voiceId });
+      // 🔴 A FRESH KEY EVERY PRESS, AND THIS IS THE WHOLE OF "AGAIN". `speak` keeps a set of keys
+      // it has already spoken and returns silently on a repeat — correct for the routed lane,
+      // where a question must not be read (or paid for) twice because a render ran again. Derive
+      // the key from the TEXT and the second press of a repeat button hits that guard and does
+      // nothing at all: the precise silent no-op this control exists to fix, rebuilt inside it.
+      //
+      // 🔴 AND IT READS AT THE CHOSEN SPEED. This was `speed: 1` — a literal, written before there
+      // was a speed to choose. Both halves of this line arrived on the same day from different
+      // branches, and taking either alone loses the other: the fresh key without `speed` ignores
+      // the control, and `speed` without the fresh key silently refuses to repeat.
+      aloudPress.current += 1;
+      void speech.speak(`aloud:${aloudPress.current}`, text, { locale: LOCALE_UNSPECIFIED, speed, voiceId });
     },
     stopSpeaking: speech.stop,
   };
