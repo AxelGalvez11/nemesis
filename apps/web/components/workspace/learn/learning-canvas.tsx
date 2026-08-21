@@ -1468,7 +1468,24 @@ export function LearningCanvas({
         // turn that just failed), and of the two only the failure is news: the question is already
         // rendered in full, in words, in the middle of the page.
         marker={session.error ? "!" : awaitingDemonstration ? "?" : null}
-        state={stateForCanvas({ thinking: policy.thinking, preparing: presence === "preparing" })}
+        // 🔴🔴 `turnInFlight`, NOT `policy.thinking` — AND THIS IS THE SAME MISTAKE THE THINKING
+        // SCREEN ALREADY FIXED, MADE AGAIN ONE COMPONENT OVER.
+        //
+        // Reported 2026-08-20 as the mascot "painting over answers". Measured on production: the
+        // dock's resting position was correct (bottom 84px, left 336px, right at the composer) and
+        // a TRANSFORM was lifting it 412px up and scaling it 2.1x — the deliberate "come forward to
+        // think" station, still applied minutes after the answer had landed.
+        //
+        // The cause is what `policy.thinking` MEANS. It is `phase !== null`, and the phases include
+        // `mapping_knowledge` — background knowledge resolution measured in MINUTES. So a learner
+        // reading a finished answer had a character standing over it at double size because
+        // something unrelated was still running behind the page. `use-canvas-session` records this
+        // exact distinction for the thinking SCREEN ("never `working`, which includes knowledge
+        // resolution"); the dock was wired to the other signal and nobody had looked.
+        //
+        // 🔴 THE ANIMATION IS UNCHANGED. `ACTIVITY_STATE` maps `thinking` and `preparing` onto the
+        // same state, so this alters WHERE the character stands and WHEN, never what it plays.
+        state={stateForCanvas({ thinking: turnInFlight, preparing: presence === "preparing" })}
       />
 
       {/* 🔴 ALONGSIDE THE QUESTION, NOT OVER IT. A judgement that runs long leaves the stimulus
