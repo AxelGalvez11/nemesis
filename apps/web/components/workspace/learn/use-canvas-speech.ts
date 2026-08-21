@@ -20,6 +20,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
+import { AZURE_TTS_PATH, planSpeech, withoutAzure, XAI_SPEAK_FUNCTION, type SpeechPlan } from "@/lib/learn/speech-request";
+import type { TtsProvider } from "@/lib/learn/speech-route";
 
 /** Why nothing was heard. Distinct from `SpeechRefusal`, which is why nothing was SENT. */
 export type SpeechFailure =
@@ -44,6 +46,15 @@ export type SpeechFailure =
 export interface SpokenVoice {
   /** BCP-47, or `auto`. Omitted entirely when `auto`, so the request body is unchanged from before §43. */
   locale?: string;
+  /**
+   * WHICH SYNTHESISER, as `speech-route.ts` decided it.
+   *
+   * 🔴 THE FIELD WHOSE ABSENCE MADE THE ROUTER DECORATIVE. Azure was chosen for the language lane
+   * in §47 and no utterance ever reached it, because this hook had nowhere to put the answer and
+   * posted everything to `nemesis-speak`. Omitted means the Canvas lane, which is every caller that
+   * existed before this field did.
+   */
+  provider?: TtsProvider;
   speed?: number;
   /**
    * WHICH SPEAKER. The learner's own choice, from `canvas-voices.ts`.
@@ -130,23 +141,43 @@ export function useCanvasSpeech(): CanvasSpeech {
           return;
         }
 
-        const res = await fetch(`${supabaseUrl}/functions/v1/nemesis-speak`, {
-          // 🔴 OMITTED WHEN UNSET RATHER THAN SENT AS A DEFAULT. `nemesis-speak` already has
-          // defaults for both, and sending `locale: "auto"` explicitly would make the function
-          // unable to tell "the caller chose auto" from "the caller is old and sends neither".
-          body: JSON.stringify({
-            text,
-            ...(voice?.locale && voice.locale !== "auto" ? { locale: voice.locale } : {}),
-            ...(typeof voice?.speed === "number" ? { speed: voice.speed } : {}),
-            ...(voice?.voiceId ? { voice: voice.voiceId } : {}),
-          }),
-          headers: {
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          method: "POST",
-        });
+        // 🔴 THE BODY IS DECIDED IN `speech-request.ts`, NOT HERE. Which fields are sent, and
+        // which are omitted when unset, is a rule with tests behind it; inlining it again is how
+        // the two lanes would drift.
+        const send = (plan: SpeechPlan): Promise<Response> =>
+          plan.endpoint === "azure"
+            ? fetch(AZURE_TTS_PATH, {
+                // Same origin, so no `apikey` — `verifyBearer` reads the Supabase token straight
+                // off the Authorization header, exactly as `/api/speech/pronunciation` does.
+                body: JSON.stringify(plan.body),
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                method: "POST",
+              })
+            : fetch(`${supabaseUrl}/functions/v1/${XAI_SPEAK_FUNCTION}`, {
+                body: JSON.stringify(plan.body),
+                headers: {
+                  apikey: supabaseAnonKey,
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                method: "POST",
+              });
+
+        const planned = planSpeech({ ...voice, text });
+        let res = await send(planned).catch(() => null);
+
+        // 🔴 AZURE FAILING IS NOT SILENCE, WHICH IS `capabilities.ts`'S ORDERING FINALLY REACHABLE.
+        // A deployment with no Azure key answers 503 and a locale with no catalogue voice answers
+        // 404; both should still teach. The learner hears a worse accent rather than nothing, and
+        // the locale rides along so Spanish stays Spanish.
+        if (planned.endpoint === "azure" && !res?.ok) {
+          res = await send(withoutAzure({ ...voice, text })).catch(() => null);
+        }
+
+        if (!res) {
+          if (alive.current) { setFailure("provider-error"); setSpeaking(false); }
+          return;
+        }
 
         if (!res.ok) {
           if (alive.current) {
