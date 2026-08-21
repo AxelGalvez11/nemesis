@@ -22,7 +22,7 @@
  * Collapsing those into one "just set the columns" write is how backoff dies.
  */
 
-import { PARSER_VERSION } from "@nemesis/shared";
+import { PARSER_VERSION, type ExtractionCoverage } from "@nemesis/shared";
 
 import { needsReprocess, type ReprocessReason } from "@/lib/learn/reprocess";
 import { adminClient } from "@/lib/server";
@@ -340,4 +340,59 @@ export async function enqueueParse(
   } catch {
     return { ok: false, reason: "unavailable" };
   }
+}
+
+// ── Automatic figure enrichment ─────────────────────────────────────────────
+//
+// Asking for a document to be read AGAIN, automatically, the one time it is safe to: right after
+// its own first, synchronous parse located pictures nobody has looked at yet.
+//
+// 🔴 THE OWNER'S DECISION, NOT A DEFAULT THAT CREPT IN. The synchronous upload lane deliberately
+// never sets `lookAtFigures` — up to 40 vision calls is latency a student should not wait through
+// on a request they are watching. That left every figure `not-examined` on every upload, with no
+// path back to it except a person finding and clicking a "read this document again" control that,
+// measured, nothing in the product actually renders for a `partially_parsed` source. The owner's
+// answer (2026-08-20): "the whole point of uploading is that it will read and parse everything."
+// This is that decision, reached the smallest way available — the background worker already
+// describes figures on every reprocess (`parse-thread.ts` sets `lookAtFigures: true`); this only
+// asks for one, automatically, instead of requiring someone to find a button that does not exist.
+
+/**
+ * Does this coverage record still owe the student a figure nobody has looked at?
+ *
+ * 🔴 `reasons["not-examined"]`, NOT `lostFigures(figures) > 0`. The wider helper also counts
+ * `over-cap`, `vision-unavailable`, `unreadable-format` and `examined-empty` — real losses, but
+ * losses from an ATTEMPT that already happened. On the PDF sync lane `not-examined` is the only
+ * reason that can appear at all, because no attempt happens there — so the two are identical for
+ * the one caller this exists for today. They stop agreeing the moment a format that DOES attempt
+ * vision synchronously reaches this gate (PPTX does, on the very same lane): a deck that already
+ * hit its per-document figure cap should not be asked again, because asking again hits the same
+ * cap and spends for nothing. `not-examined` is the one reason that unambiguously means "nobody
+ * looked, and nobody decided not to" — see `mistralCoverage`'s own doc comment in
+ * `extract-coverage.ts` for the same distinction made from the other format.
+ *
+ * PURE.
+ */
+export function needsFigureEnrichment(coverage: ExtractionCoverage): boolean {
+  return (coverage.figures.reasons["not-examined"] ?? 0) > 0;
+}
+
+/**
+ * Ask for this source's figures to be looked at, in the background.
+ *
+ * 🔴 NO NUDGE, DELIBERATELY. The manual "read this document again" route nudges the worker because
+ * a person is watching for the result. Nobody is watching for this one — `pg_cron` picks up an
+ * enqueued row within a minute regardless, per the worker route's own header — so nudging here
+ * would spend the nudge's own bounded wait (up to 1.5s, and the worker route parses BEFORE it
+ * responds, so that is the ordinary case, not the worst one) on every synchronous upload that has
+ * a figure, for a saving nobody is positioned to notice. Skipping it keeps this call to one
+ * awaited read and one awaited write — the same round trip `enqueueParse` always costs — and adds
+ * no other network call to the request the student is waiting on.
+ *
+ * Never throws — `enqueueParse` already catches everything and reports failure as `{ok: false}`,
+ * which is what makes it safe to call from a request a student is waiting on: a failure here must
+ * not turn a successful upload into a failed one.
+ */
+export async function requestFigureEnrichment(sourceId: string, userId: string): Promise<EnqueueResult> {
+  return enqueueParse(sourceId, userId, { intent: "reprocess" });
 }

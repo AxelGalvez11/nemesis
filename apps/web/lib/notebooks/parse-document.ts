@@ -1118,6 +1118,31 @@ async function parsePdf(
 }> {
   const structural = prepared ? prepared.structural : await readPdfNatively(bytes, options);
   let model: DocumentModel | undefined = prepared?.model ?? structural?.model;
+  // 🔴 CAPTURED BEFORE THE FIGURE PASS CAN TOUCH THE MODEL, AND THAT ORDERING IS THE WHOLE FIX.
+  // `lookAtFigures` below writes each figure's description INTO its page's own text — that is how
+  // the description reaches the student at all. But every page-routing decision downstream (whole
+  // vs pages vs text, which pages are "thin" and get a full page-vision read, which pages
+  // `pdfCoverage` calls `native`) used to run on `unitTexts(model)` taken AFTER that write. A page
+  // that is mostly one picture has almost no text of its own — that is exactly the page a full
+  // page-vision read exists for — but a generated caption pasted onto it can push its text past
+  // `THIN_PAGE_CHARS`, so the page reads as "has enough text" and never gets that fuller read.
+  //
+  // Measured on a real 31-page lecture with `lookAtFigures: true`: 3 of 4 thin pages stopped being
+  // sent for page-vision once their figures were described first, page text length dropped by
+  // roughly 2,500 characters, and the parse still validly reported `state: "complete"` — because a
+  // figure description is not the same content as a full transcription of everything on that page,
+  // but nothing here could tell the two apart. And `record_parsed_document`'s own guard
+  // (`pd.complete = false or excluded.complete = true`) means a parse that reaches `complete` this
+  // way can never again be replaced by a more thorough one — the shortfall would have been sealed,
+  // not just present. See `extract-coverage.ts`'s own words: `native` means "the page had usable
+  // text of its own", and a caption a vision model wrote for a caller is not that.
+  //
+  // So every reader of `unitTexts(model)` that decides WHAT TO READ NEXT reads this snapshot
+  // instead. The figure descriptions still reach the student: `figureCoverageOf` and the returned
+  // `text` both read the model AFTER the mutation, a few lines down. Only the decision of which
+  // pages still need a full page-vision read is made from what the page held before anything was
+  // written onto it on the model's behalf.
+  const preFigurePageTexts = model ? unitTexts(model) : null;
   // Units the FILE declares. Beyond the cap they are unread, never absent.
   let unreadBeyondCap = 0;
   // Content located and not delivered, smaller than a page: today, table regions
@@ -1158,7 +1183,12 @@ async function parsePdf(
   const r = model
     ? {
         meta: { pages: model.units.length, title: model.title, truncated: false },
-        pageTexts: unitTexts(model),
+        // 🔴 THE PRE-FIGURE SNAPSHOT, NOT `unitTexts(model)` TAKEN HERE. See the comment above
+        // `preFigurePageTexts`. Every page-routing decision below reads `r.pageTexts`, so this one
+        // line is what keeps them all reading the page's own text rather than a caption appended
+        // to it. The `?? unitTexts(model)` is defensive, not expected to fire: `preFigurePageTexts`
+        // is set whenever `model` is, by construction, above.
+        pageTexts: preFigurePageTexts ?? unitTexts(model),
         text: capText(documentToText(model), TEXT_CAP).text,
       }
     : await extractPdfText(bytes).catch(() => ({
