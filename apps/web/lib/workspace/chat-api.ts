@@ -572,6 +572,19 @@ export interface ChatCompletionOptions {
   signal?: AbortSignal;
   decision?: ChatRouteDecision;
   onDelta?: CompletionDeltaHandler;
+  /**
+   * The reasoner's own thoughts, as they arrive.
+   *
+   * 🔴🔴 SEPARATE FROM `onDelta`, AND THE SEPARATION IS THE WHOLE FEATURE. `chat-stream.ts` has
+   * always split DeepSeek's `reasoning_content` from its `content` — the thoughts were parsed,
+   * accumulated, and then dropped on the floor because nothing here asked for them. So the product
+   * could not show its working even though the working was arriving down the wire.
+   *
+   * 🔴 IT IS NEVER PART OF THE ANSWER. Merging the two would put a model's half-formed guesses into
+   * the text a learner reads as fact, which is the opposite of what disclosing them is for: the
+   * thoughts are shown as thoughts, behind a control, labelled, or they are not shown at all.
+   */
+  onReasoning?: CompletionDeltaHandler;
   /** OpenAI-format tool schemas; the valve forwards them verbatim. */
   tools?: readonly unknown[];
   /**
@@ -606,7 +619,10 @@ export async function postChatCompletion(
     messages: wireMessages,
     model: decision.model,
     ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
-    ...(options.onDelta ? { stream: true } : {}),
+    // 🔴 STREAMING IS WHAT MAKES THE THOUGHTS REACHABLE AT ALL. `reasoning_content` arrives as
+    // deltas and is not echoed on the non-streaming body, so a caller that wants the working has
+    // to stream even when it does not want the answer token by token.
+    ...(options.onDelta || options.onReasoning ? { stream: true } : {}),
     ...(options.tools?.length ? { tools: options.tools } : {}),
   });
   const call = (bearer: string) =>
@@ -650,8 +666,8 @@ export async function postChatCompletion(
     let toolCalls: AgentToolCall[] = [];
     let answeringModel: string | undefined;
     let usage: ChatReply["usage"];
-    if (options.onDelta) {
-      const streamed = await readCompletionStreamFull(res.body, options.onDelta);
+    if (options.onDelta || options.onReasoning) {
+      const streamed = await readCompletionStreamFull(res.body, options.onDelta, options.onReasoning);
       text = streamed.text.trim() ? streamed.text : null;
       toolCalls = streamed.toolCalls;
     } else {
@@ -676,7 +692,7 @@ export async function postChatCompletion(
           messages: wireMessages,
           response: text,
           route: decision.route,
-          streamed: Boolean(options.onDelta),
+          streamed: Boolean(options.onDelta || options.onReasoning),
           toolCalls: toolCalls.length ? toolCalls : undefined,
           usage: usage ?? null,
         }),

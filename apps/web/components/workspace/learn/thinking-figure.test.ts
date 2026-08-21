@@ -25,31 +25,31 @@ const DOCK = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url)
 const BOT = readFileSync(new URL("../../bloub/bloub-bot.tsx", import.meta.url), "utf8");
 const CSS = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 
-test("🔴 the character rests, so there is a blob to stand over the dots", () => {
-  assert.match(FIGURE, /<BloubBot[^>]*state="idle"/s, "the figure plays `thinking` again, which IS the dots");
+test("🔴 the character rests, so there is a character at all", () => {
+  assert.match(FIGURE, /<BloubBot[^>]*state="idle"/s, "the figure plays `thinking` again, which IS three dots");
   assert.ok(!/state="thinking"/.test(FIGURE), "the pose that dissolves the body is back");
 });
 
-test("🔴 the dots belong to the figure, and sit under the character", () => {
-  assert.match(FIGURE, /canvas-thinking-dot/, "the figure draws no dots of its own");
-  // The character, then a row. A column with the row second is the whole of "on top of".
-  const stack = FIGURE.slice(FIGURE.indexOf("function ThinkingMark"));
-  assert.ok(
-    stack.indexOf("<BloubBot") < stack.indexOf("canvas-thinking-dot"),
-    "the dots are drawn before the character — the mascot is no longer on top",
-  );
+// 🔴🔴 THE DOTS ARE GONE, AND THAT IS THE SECOND HALF OF THE SAME DECISION. Owner, 2026-08-21:
+// *"remove the three dots animation, i just want the mascot and the words lit left to right."* The
+// figure had briefly been character-over-dots-with-caption; what survives is the character and the
+// words, and the words carry all of the motion. A guard that still demanded dots would refuse the
+// design that replaced them.
+test("🔴 nothing draws three dots any more", () => {
+  assert.ok(!FIGURE.includes("canvas-thinking-dot"), "the dots are back in the figure");
+  assert.ok(!CSS.includes("canvas-thinking-dot"), "the dots are back in the stylesheet");
 });
 
-test("🔴 the words sit to the RIGHT of the dots, in one row", () => {
+test("🔴 the words sit to the RIGHT of the character, in one row", () => {
   const mark = FIGURE.slice(FIGURE.indexOf("function ThinkingMark"));
-  assert.match(mark, /flex items-center gap-3/, "the dots and the words are no longer a row");
-  // 🔴 THE CLASS ATTRIBUTES, NOT THE NAMES. Both names also appear in the comments explaining them,
-  // and a comment moving would fail this test for a layout that never changed.
-  const dots = mark.indexOf('className="canvas-thinking-dot');
+  assert.match(mark, /flex items-center gap-3/, "the character and the words are no longer a row");
+  // 🔴 THE CLASS ATTRIBUTE, NOT THE NAME. The name also appears in the comment explaining it, and a
+  // comment moving would fail this test for a layout that never changed.
+  const character = mark.indexOf("<BloubBot");
   const words = mark.indexOf('className="canvas-thinking-word');
-  assert.notEqual(dots, -1, "the dots lost their class");
+  assert.notEqual(character, -1, "the figure lost its character");
   assert.notEqual(words, -1, "the caption lost its class");
-  assert.ok(dots < words, "the caption is drawn before the dots — it is no longer to their right");
+  assert.ok(character < words, "the caption is drawn before the character — it is no longer to its right");
 });
 
 // 🔴 THE SWEEP IS THE HOUSE ONE. §20 asks for a single motion system — information forming from
@@ -70,8 +70,6 @@ test("🔴 reduced motion leaves the caption readable, not transparent", () => {
   const reduced = CSS.slice(CSS.indexOf("@media (prefers-reduced-motion: reduce)"));
   assert.match(reduced, /\.canvas-thinking-word \{[\s\S]*?color: var\(--ui-text-tertiary\)/);
   assert.match(reduced, /\.canvas-thinking-word \{[\s\S]*?background-image: none/);
-  // And the dots hold their LIT frame; held dim they read as disabled.
-  assert.match(reduced, /\.canvas-thinking-dot \{[^}]*opacity: 0\.85/);
 });
 
 // 🔴🔴 THE SIX-DOT RULE. That defect was never two renderers — it was two MOUNTS of one, both

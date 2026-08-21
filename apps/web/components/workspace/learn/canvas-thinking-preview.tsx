@@ -62,35 +62,22 @@ import { useTheme } from "@/components/theme-provider";
 function ThinkingMark({ label }: { label: string | null }) {
   const { accent } = useTheme();
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex items-center gap-3">
       {/* 🔴 `idle`, NOT `thinking`. The state that means "working" is the one that dissolves the
-          body into the dots; the dots below are now saying that, so the character is free to be a
-          character. `track` keeps its gaze following the pointer through the wait. */}
+          body into three dots — `lib/bloub/states.ts` says so outright, "la boule DEVIENT le point
+          du milieu" — and it fades the eyes to zero while it does. The character stays a character;
+          the words carry the motion. `track` keeps its gaze following the pointer through the wait. */}
       <BloubBot color={accent} size={44} state="idle" track />
-      <div className="flex items-center gap-3">
-        {/* 🔴 THREE DOTS OF OUR OWN, DRAWN AS SPANS. They used to be the character's body, which is
-            what made the two impossible to stack. As plain marks they can sit under it, and they
-            keep the same staggered rhythm the pose had — a third of a cycle apart, so the row reads
-            as a sequence travelling rather than three things blinking together. */}
-        <span aria-hidden="true" className="flex items-center gap-[5px]">
-          {[0, 1, 2].map((i) => (
-            <span
-              className="canvas-thinking-dot size-[6px] rounded-full bg-(--ui-text-quaternary)"
-              key={i}
-              style={{ animation: `canvas-thinking-dot 1900ms ease-in-out ${i * 633}ms infinite` }}
-            />
-          ))}
+      {/* 🔴 THE WORDS ARE THE WHOLE ANIMATION NOW (owner 2026-08-21: *"remove the three dots
+          animation, i just want the mascot and the words lit left to right"*). The band crossing
+          them is `.canvas-thinking-word` — the same 1900ms and the same gradient as
+          `.canvas-forming`, because §20 asks for ONE motion system and a second speed beside it
+          would read as two unrelated things happening at once. */}
+      {label && (
+        <span className="canvas-thinking-word text-[length:var(--canvas-text-meta)]">
+          {label.replace(/…$/, "")}…
         </span>
-        {/* 🔴 TO THE RIGHT OF THE DOTS, AND LIT LEFT TO RIGHT (owner 2026-08-21). The band crossing
-            the words is `.canvas-thinking-word` — the same 1900ms and the same gradient as
-            `.canvas-forming`, because §20 asks for ONE motion system and three speeds would read as
-            three unrelated things happening at once. */}
-        {label && (
-          <span className="canvas-thinking-word text-[length:var(--canvas-text-meta)]">
-            {label.replace(/…$/, "")}…
-          </span>
-        )}
-      </div>
+      )}
     </div>
   );
 }
@@ -127,7 +114,7 @@ export function CanvasThinkingPreview({
         // `<div>` with no height of its own, so a percentage minimum has nothing to resolve
         // against and collapses to the content — measured in a browser: the mascot sat at the very
         // top of the column instead of the middle of the page. A viewport unit always resolves.
-        className="flex min-h-[70vh] flex-col items-center justify-end px-6 pb-[104px]"
+        className="flex min-h-[70vh] flex-row items-center justify-center px-6 pb-[104px]"
         role="status"
       >
         <ThinkingMark label={label} />

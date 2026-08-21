@@ -147,6 +147,27 @@ export interface TurnDecision {
    */
   topic: string | null;
   /**
+   * What Nemesis is about to do, in one line, before it does it.
+   *
+   * 🔴🔴 A COMMITMENT, NOT A DESCRIPTION OF THOUGHTS. Owner, 2026-08-21: *"show the plan and hide
+   * internal thoughts."* Those are two different things and only one of them can be trusted on a
+   * screen. The reasoner's `reasoning_content` is a stream of half-formed guesses, contradictions
+   * and abandoned branches; shown as prose it reads as fact, so it goes behind a control, labelled.
+   * The plan is the model stating its intention for THIS turn, which is a claim it can be held to.
+   *
+   * 🔴 AND IT IS CHECKED AGAINST WHAT RUNS, WHICH IS THE ONLY THING THAT KEEPS IT OUT OF THEATRE.
+   * `thinking-phases.ts` rules that nothing on screen may imply work that is not happening — "a
+   * caption that walked 'Mapping what you know → Finding the next gap' on a 900ms interval would
+   * look exactly like a system thinking". A plan is that risk in a more persuasive form: a model
+   * announcing "I'll search for the current guidance" on a turn where `needsWeb` is false has
+   * described a system that does not exist. So a plan that claims a search survives only on a turn
+   * that asked for one — see `readTurnDecision`.
+   *
+   * 🔴 NULL ON MOST TURNS, AND THAT IS CORRECT RATHER THAN A GAP. "What day is it" needs no plan,
+   * and a product that announces one for every greeting has taught its learners to stop reading.
+   */
+  plan: string | null;
+  /**
    * Figures this turn wants to draw, already validated, in the order `[figure n]` counts into.
    *
    * 🔴 REPORTED 2026-08-20: *"i thought we integrated the new chem draw and math plot abilities but
@@ -467,7 +488,7 @@ const DECISION_CONTRACT = [
   "Answer with a fenced JSON block for the decision, then your answer as ordinary text after it:",
   "",
   "```json",
-  '{"then": "reply" | "study" | "rewrite", "topic": "..." | null,'
+  '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "plan": "..." | null,'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null,',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
@@ -527,6 +548,19 @@ const DECISION_CONTRACT = [
   // The field itself is unchanged and still earns its place: whether a turn NAMED a subject is what
   // `learnFromAside` starts when the learner asks to be taught it, and it is the honest test that
   // kept "hello" from being treated as a topic.
+  // 🔴🔴 THE PLAN IS SHOWN WHILE THE TURN RUNS, WHICH IS WHY IT IS BOUNDED SO HARD. It is the one
+  // string in this contract the learner reads BEFORE the answer, so it is the one place a model
+  // can most easily describe a system that is not there. The rules below are the difference
+  // between a commitment and a narration: name the WORK, not the thinking; one line; and never
+  // claim a step this turn did not ask for. `readTurnDecision` drops a plan that claims a search
+  // on a turn with `needsWeb: false`, because a claim nothing checks is theatre with better copy.
+  '"plan" is one short line saying what you are ABOUT to do, written for the learner and shown to '
+  + "them while they wait. Use it only when this turn has real work in it — a search, several "
+  + "steps, building or changing the study document. Leave it null for anything you can simply "
+  + "answer, which is most turns. Say what you will DO (\"Checking the current guidance, then "
+  + "comparing it with your notes\"), never what you are thinking or how you feel about the "
+  + "question, and never promise a step this turn has not asked for.",
+  "",
   '"topic" is the subject this turn is about, whenever the learner named one. On a "study" turn it '
   + "is what gets taught; on a \"reply\" it is what Nemesis would teach if the learner then asked to "
   + "learn it. Give it for a real question about a subject and leave it null for a greeting, a "
@@ -776,6 +810,49 @@ const DECISION_BLOCK = /```json\s*\n?([\s\S]*?)```/;
  * 🔴 PROSE ON BOTH SIDES IS KEPT. A model that writes a sentence, then the block, then the rest is
  * describing the same answer in two halves; dropping either would lose part of it.
  */
+/** The longest plan. One line, read in the second before an answer lands. */
+export const MAX_PLAN_LENGTH = 140;
+
+/**
+ * The plan, or null when it cannot be trusted.
+ *
+ * 🔴🔴 THE CHECK IS THE FEATURE. Anything can print a sentence a model wrote about itself; what
+ * makes this not theatre is that a plan claiming work is only shown on a turn that actually does
+ * that work. `thinking-phases.ts` refuses a caption that is not the name of a running step, and a
+ * plan is the same claim in more persuasive words — more persuasive, because it is a promise rather
+ * than a label, and a learner who is told "I'll check the current guidance" and gets an answer from
+ * memory has been misled about where it came from.
+ *
+ * 🔴 SEARCH IS THE ONE CLAIM THIS FILE CAN CHECK, AND IT IS CHECKED. `needsWeb` is decided in the
+ * same object, so a plan that mentions looking something up on a turn that asked for no search is
+ * dropped whole rather than trimmed. Other claims ("I'll build the lesson") are checkable further
+ * down — `then` is right here — and the same rule applies.
+ *
+ * 🔴 AND A PLAN IS NOT ALLOWED TO BE THE ANSWER. A model that writes its whole reply into this
+ * field would get it printed twice, once as a promise and once as prose; the length bound is what
+ * keeps it a line rather than a paragraph.
+ */
+function planFrom(parsed: Record<string, unknown>, then: TurnAction): string | null {
+  const plan = asText(parsed.plan).trim();
+  if (!plan || plan.length > MAX_PLAN_LENGTH) return null;
+
+  // 🔴 A WORD LIST, AND THIS ONE IS DEFENSIBLE WHERE MOST ARE NOT. Everywhere else in this product
+  // a keyword list is the wrong instrument — it reads the LEARNER's language, which is infinite.
+  // This reads OUR OWN model's output in a field we told it how to write, and it fails safe: a
+  // phrasing the list misses shows a plan that may overclaim, which is the same as today; a
+  // phrasing it catches wrongly costs one line of copy on a turn that had one anyway.
+  const claimsSearch =
+    /\b(search(es|ing)?|look(ing|s)? (it )?up|web|online|brows(e|ing)|check(ing)? (the )?(current|latest))\b/i
+      .test(plan);
+  if (claimsSearch && parsed.needsWeb !== true) return null;
+
+  // 🔴 A PLAN ON A TURN THAT CHANGES NOTHING IS A PLAN ABOUT NOTHING. `reply` is the action that
+  // leaves the page exactly as it was; announcing an intention for it is the greeting case the
+  // field's own doc warns about, and it is the shape that would train learners to ignore the line.
+  if (then === "reply" && parsed.needsWeb !== true) return null;
+  return plan;
+}
+
 export function readTurnDecision(raw: string): TurnDecision | null {
   const block = DECISION_BLOCK.exec(raw);
   if (!block) return null;
@@ -808,6 +885,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // not ask to be taught, and a model that skipped the field has told us nothing about which
     // this is.
     then: then ?? "reply",
+    plan: planFrom(parsed, then ?? "reply"),
     topic: asText(parsed.topic) || null,
     // Refused figures are dropped here, never repaired — see `replyVisuals`.
     visuals: replyVisuals(parsed.visuals),
@@ -849,10 +927,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   if (looksLikeEnvelope(prose)) {
     const salvaged = salvageSay(prose);
     return salvaged
-      ? { needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
+      // 🔴 `plan: null` ON BOTH, AND NOT AS A FILLER. These are the paths where the model ignored
+      // the envelope and simply answered; nothing announced an intention, so there is nothing to
+      // show. Inventing a plan here would be the product narrating on the model's behalf.
+      ? { needsWeb: false, plan: null, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
-  return { needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
+  return { needsWeb: false, plan: null, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

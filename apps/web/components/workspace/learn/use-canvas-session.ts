@@ -161,6 +161,16 @@ type CanvasAside = {
   topic?: string;
   /** Figures this reply draws, validated, in the order its `[figure n]` markers count into. */
   visuals?: readonly CanvasVisualRequest[];
+  /**
+   * The reasoner's own working for this turn, kept beside the answer it produced.
+   *
+   * 🔴 ON THE ASIDE RATHER THAN IN A SEPARATE PIECE OF STATE, so it cannot outlive the answer it
+   * belongs to. Working shown beside a LATER reply would attribute one turn's reasoning to another,
+   * which is the same class of mistake as resolving a citation against the wrong list.
+   *
+   * Empty on every turn the cheap model answered — only the reasoner produces it.
+   */
+  thinking?: string;
 } | null;
 
 export interface CanvasSession {
@@ -187,6 +197,14 @@ export interface CanvasSession {
    * `learning-canvas.tsx` renders that case at the top of the canvas rather than under a block.
    */
   aside: CanvasAside;
+  /**
+   * The model's stated intention for the turn in flight, or null.
+   *
+   * 🔴 TRANSIENT BY CONSTRUCTION. It is cleared when the turn ends, because once the answer is on
+   * screen a promise about it is noise — the learner can see what was done. Only the WORKING
+   * outlives the turn, and it does so on the aside, beside the answer it produced.
+   */
+  plan: string | null;
   /** Words the learner has already asked the meaning of, for `lookedUpMarks`. Sitting-scoped. */
   lookedUp: readonly string[];
   /** The id of the prompt whose answer is being read, or null. */
@@ -295,6 +313,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
   const [canvas, setCanvas] = useState<LearningCanvas>(() => newCanvas());
   const [busy, setBusy] = useState<BusyState>({ kind: null });
+  /**
+   * What Nemesis said it was about to do on the turn in flight, or null.
+   *
+   * 🔴 SEPARATE FROM `busy`, BECAUSE THEY ARE DIFFERENT CLAIMS. `busy.label` is the name of a step
+   * that is genuinely executing — `thinking-phases.ts` allows nothing else in that slot. A plan is
+   * a claim about work still to come, written by the model. Merging them would let a model's
+   * promise be read by every consumer that trusts `busy` to mean "this is running now".
+   */
+  const [plan, setPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** What the learner said to open this sitting, when a canvas began from an utterance rather than
    *  from a file. Read by the teaching controller; see `TeachingContext.opening`. */
@@ -921,8 +948,20 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
               ? "Reading 1 page"
               : `Reading ${found} pages`,
         });
-      });
+      },
+      // 🔴🔴 THE PLAN BECOMES THE CAPTION, RATHER THAN SITTING BESIDE ONE. A stated intention and a
+      // phase name are the same slot on screen — one line, beside the character, lit left to right
+      // — and showing both would print two descriptions of one wait. When the model has said what
+      // it is about to do, that is strictly better than "Thinking": it is specific, it is in the
+      // learner's own subject, and `readTurnDecision` has already refused it if it claimed a step
+      // this turn did not ask for.
+      //
+      // 🔴 IT DOES NOT OVERWRITE A NAMED STEP THAT IS GENUINELY RUNNING. `onSearching` fires while
+      // pages are being fetched and says how many; that is a fact about work in flight, and a plan
+      // is a claim about work to come. The search caption wins for as long as it is true.
+      (plan) => setPlan(plan));
       setBusy({ kind: null });
+      setPlan(null);
       const decision = result.decision;
       if (!decision) {
         setError(result.error ?? "Nemesis had nothing to add.");
@@ -984,6 +1023,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         consulted: result.consulted,
         sources: result.sources,
         text: decision.say,
+        thinking: result.thinking,
         topic: decision.topic ?? undefined,
         visuals: decision.visuals,
       });
@@ -1591,6 +1631,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     busy,
     error,
     aside,
+    plan,
     lookedUp,
     judging,
     opening,

@@ -37,6 +37,7 @@ import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
 import { ReplyActions } from "./reply-actions";
 import { CanvasQuiet } from "./canvas-quiet";
+import { CanvasReasoning } from "./canvas-reasoning";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
@@ -854,8 +855,14 @@ export function LearningCanvas({
   // none and the lines carry the state alone"), so there is nothing to invent here. The session's
   // own label wins because it is the more specific of the two: "Reading" names the file being
   // ingested, where the policy phase names the canvas-wide step behind it.
+  // 🔴🔴 THE PLAN IS LAST, AND LAST MEANS LOWEST PRIORITY. Owner, 2026-08-21: *"show the plan."*
+  // It is the best caption this product can produce — specific, in the learner's own subject, and
+  // written by the participant that knows what it is about to do — but it is a claim about work TO
+  // COME, and the two above it name work genuinely RUNNING. `thinking-phases.ts` is explicit that
+  // the caption slot belongs to a step that is executing; a promise may fill it only when nothing
+  // truer is available, which is most of a turn's wait and none of its search.
   const preparingLabel =
-    busy.kind !== null ? busy.label : policy.phase ? THINKING_COPY[policy.phase] : null;
+    busy.kind !== null ? busy.label : policy.phase ? THINKING_COPY[policy.phase] : session.plan;
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
   // with `policyOwns ? … : …`, which was safe only while ownership was all-or-nothing. Now that a
@@ -1221,6 +1228,13 @@ export function LearningCanvas({
                   </div>
                 ),
               )}
+
+              {/* 🔴 THE WORKING, BEHIND A CONTROL, UNDER THE ANSWER IT BELONGS TO. Owner, 2026-08-21:
+                  *"hiding internal thoughts vs showing what you will do."* The reasoner's own
+                  output is useful to somebody checking how an answer was reached and misleading
+                  printed beside it — a branch the model talked itself out of reads exactly like a
+                  conclusion. It sits collapsed, labelled, and only after the answer has landed. */}
+              <CanvasReasoning thinking={session.aside?.thinking ?? ""} working={turnInFlight} />
 
               {/* 🔴 AFTER THE ANSWER, AND ONLY ONCE IT HAS ARRIVED. Copying half an answer copies
                   half an answer, and a play button on a sentence about to be replaced reads as

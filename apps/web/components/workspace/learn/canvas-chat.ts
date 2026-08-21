@@ -82,6 +82,31 @@ export interface TurnSurroundings {
 export interface CanvasTurnReply {
   decision: TurnDecision | null;
   /**
+   * The reasoner's own thoughts for this turn, raw, in the order they arrived.
+   *
+   * 🔴🔴 SHOWN ONLY BEHIND A CONTROL, AND NEVER MERGED INTO THE ANSWER. Owner, 2026-08-21: *"hiding
+   * internal thoughts vs showing what you will do."* `reasoning_content` is a stream of half-formed
+   * guesses, contradictions and abandoned branches — it is genuinely useful to a learner who wants
+   * to check the working, and genuinely misleading printed as prose beside the answer, because the
+   * two look identical and only one of them is what Nemesis actually concluded.
+   *
+   * 🔴 IT WAS ALWAYS ARRIVING AND WAS ALWAYS DROPPED. `chat-stream.ts` has split the two channels
+   * since it was written; nothing above it asked for the second one, so the product could not show
+   * its working even though the working was coming down the wire.
+   *
+   * 🔴🔴 EMPTY TODAY ON THIS PATH, AND THAT IS STATED RATHER THAN DISCOVERED. `CHAT_DECISION` below
+   * routes the conversational turn to `deepseek-chat`, which does not emit `reasoning_content` at
+   * all; the reasoner runs only on `canvas-api.ts`'s RESCUE call, after a parse fails. So the
+   * capture here is correct, costs nothing, and produces an empty string on every ordinary reply —
+   * the "Show thinking" control renders only when there is working to show, so what a learner sees
+   * today is no control rather than an empty one.
+   *
+   * 🔴 SWITCHING IT ON IS A COST DECISION, NOT A WIRING ONE. Routing replies through the reasoner
+   * is slower and dearer per turn, and it is the owner's call rather than something to slip in
+   * behind a feature that was asked for. What is built is the half that does not need it.
+   */
+  thinking: string;
+  /**
    * Live web results actually used, in the order CITED. Empty when no search ran.
    *
    * 🔴 ANSWER ORDER, WHICH IS WHY IT MUST NEVER BE USED TO RESOLVE AN `[n]` MARKER. `citedWebResults`
@@ -139,6 +164,21 @@ export async function askCanvasChat(
    * too late to be the thing that says "searching". This fires before the request goes out.
    */
   onSearching?: (found: number | null) => void,
+  /**
+   * The model's stated intention for this turn, the moment it states one.
+   *
+   * 🔴🔴 A CALLBACK, FOR THE SAME REASON `onSearching` IS ONE: THE POINT IS THE TIMING. `plan` also
+   * comes back on the decision, and that arrives WITH the answer — which is exactly too late for a
+   * line whose whole job is to be read during the wait. This fires as soon as the first decision is
+   * parsed, which on a searching turn is before any page has been fetched and before the second
+   * model call, so the learner is told what is about to happen while it is still about to happen.
+   *
+   * 🔴 AND IT FIRES AGAIN ON EVERY LATER ROUND. A turn that searches twice may revise what it is
+   * doing, and a stale first-round plan sitting over a second-round search would be describing work
+   * that finished. Null is a real value here: a round that named no plan clears the last one rather
+   * than leaving it standing.
+   */
+  onPlan?: (plan: string | null) => void,
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
 
@@ -168,8 +208,20 @@ export async function askCanvasChat(
       }),
       utterance: question,
     }),
-    { decision: CHAT_DECISION, signal },
+    {
+      decision: CHAT_DECISION,
+      // 🔴 THE THOUGHTS ARE KEPT PER ROUND AND THE LAST ROUND WINS. A turn that searches asks twice,
+      // and the second pass reasons over the pages it just read; the first pass's thoughts are about
+      // whether to search at all, which is not the working a learner is asking to see.
+      onReasoning: (_delta, accumulated) => {
+        thinking = accumulated;
+      },
+      signal,
+    },
   );
+
+  /** Filled by the stream while the model works. See `CanvasTurnReply.thinking`. */
+  let thinking = "";
 
   // 🔴 A NAMED COMPOUND IS LOOKED UP AND A FORMULA BECOMES POINTS BEFORE THE DECISION IS READ
   // (§42, §45). `prepareAnswer` is a no-op — two
@@ -177,10 +229,15 @@ export async function askCanvasChat(
   // ordinary turn pays nothing for this. When it does contain one, the round trip has to happen
   // HERE rather than inside the parser: `decisionOrReply` is synchronous, and the maths layer may
   // not reach the learner's bundle (see lib/learn/plot-compute.ts for why that forces a route).
-  const readDecision = async (text: string) => decisionOrReply(await prepareAnswer(text, undefined, signal));
+  const readDecision = async (text: string) => {
+    const read = decisionOrReply(await prepareAnswer(text, undefined, signal));
+    // 🔴 REPORTED AS SOON AS IT IS READ, NOT WHEN THE TURN RETURNS. See `onPlan`.
+    onPlan?.(read?.plan ?? null);
+    return read;
+  };
 
   const first = await ask("", MAX_SEARCH_ROUNDS);
-  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [] };
+  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [], thinking };
   let decision = first.text ? await readDecision(first.text) : null;
 
   // 🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH. It used to get exactly one search: the
@@ -220,7 +277,7 @@ export async function askCanvasChat(
     // Re-numbered over everything gathered, so the numbers the model reads are the numbers
     // `citedWebResults` resolves against.
     const next = await ask(formatWebSearchContext(sources), MAX_SEARCH_ROUNDS - round - 1);
-    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, sources: [] };
+    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, sources: [], thinking };
     // A failed round leaves the previous answer standing, which is better for the learner than an
     // error — and stops the loop, since a null decision cannot ask for another search.
     decision = (next.text ? await readDecision(next.text) : null) ?? decision;
@@ -245,5 +302,6 @@ export async function askCanvasChat(
     // Only the pages the answer cited become promotion candidates. Search rank is retrieval
     // evidence, not permission to turn every hit into durable learning material.
     sources: decision?.say ? citedWebResults(decision.say, numbered) : [],
+    thinking,
   };
 }

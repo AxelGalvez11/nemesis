@@ -194,8 +194,13 @@ test("a plain decision is read", () => {
   // 🔴 THE SAME ARGUMENT COVERS THE FOUR WEB FIELDS. A turn that did not ask for the web must say
   // so in the object rather than by omission, because the search loop reads `needsWeb` as its
   // condition and `undefined` there would end the loop for the wrong reason.
+  //
+  // 🔴 AND `plan` JOINS THEM FOR THE SAME REASON, 2026-08-21. A turn that announced nothing must
+  // say so in the object: `undefined` would be indistinguishable from "the field has not shipped
+  // yet" to every reader, and the caption falls back to it when no named step is running.
   assert.deepEqual(read, {
     needsWeb: false,
+    plan: null,
     say: "hey. what are you working on?",
     then: "reply",
     topic: null,

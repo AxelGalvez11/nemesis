@@ -93,17 +93,16 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption sits 
   assert.ok(!/canvas-forming/.test(previewCode), "the skeleton bars are back");
   assert.ok(!/LINES\.map/.test(previewCode), "something is still drawing placeholder bars");
 
-  // 🔴 THE "BESIDE" HALF SURVIVES, THE "WHAT IT IS BESIDE" HALF MOVED. Owner, 2026-08-21: *"when
-  // thinking, the mascot should be on top of the three dots. the thinking words should be on the
-  // right of the three dots."* So the figure is now a COLUMN — character over dots — with the
-  // caption in a row beside the DOTS. The thing this test has always been protecting is that the
-  // caption never ends up a long way under the character, printing through it or reading as two
-  // separate events; that is still exactly what is checked, one element lower down.
-  assert.match(previewCode, /flex items-center gap-3/, "the dots and the caption are no longer a row");
+  // 🔴 THE "BESIDE" HALF SURVIVES AND IS NOW THE WHOLE OF IT. Owner, 2026-08-21, in two steps:
+  // first the character was to stand over the three dots, then *"remove the three dots animation, i
+  // just want the mascot and the words lit left to right."* What is left is a character and a
+  // caption in one row, which is what this test has always been protecting — the caption never ends
+  // up a long way under the character, printing through it or reading as two separate events.
+  assert.match(previewCode, /flex items-center gap-3/, "the character and the caption are no longer a row");
   const mark = previewCode.slice(previewCode.indexOf("function ThinkingMark"));
   assert.ok(
-    mark.indexOf('className="canvas-thinking-dot') < mark.indexOf('className="canvas-thinking-word'),
-    "the caption is no longer to the right of the dots",
+    mark.indexOf("<BloubBot") < mark.indexOf('className="canvas-thinking-word'),
+    "the caption is no longer to the right of the character",
   );
   assert.match(canvasCode, /mascot=\{turnInFlight\}/);
   // 🔴 AND THE PREVIEW NOW DRAWS THE CHARACTER, WHICH IS ONLY SAFE BECAUSE THE DOCK STANDS DOWN.

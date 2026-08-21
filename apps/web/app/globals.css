@@ -982,15 +982,6 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
    rather than a highlighter drawn behind it. The resting colour is the first stop,
    which is why the words stay legible at every point in the cycle instead of
    disappearing when the bright part is elsewhere. */
-/* The three dots under the character. Staggered a third of a cycle apart, which is
-   the rhythm the engine's own `thinking` pose used before the dots became spans —
-   they read as a sequence travelling along the row rather than three marks blinking
-   together. Same 1900ms as everything else in this block. */
-@keyframes canvas-thinking-dot {
-  0%, 100% { opacity: 0.45; transform: scale(1); }
-  40% { opacity: 1; transform: scale(1.25); }
-}
-
 @keyframes canvas-thinking-word { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .canvas-thinking-word {
   background-image: linear-gradient(
@@ -1040,9 +1031,6 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   [data-workspace] .animate-pulse {
     animation: none;
   }
-  /* 🔴 THE DOTS HOLD THEIR LIT FRAME RATHER THAN THEIR DIM ONE. Stopped at 45% opacity
-     they read as disabled; the point of the figure is that something is running. */
-  .canvas-thinking-dot { animation: none !important; opacity: 0.85; transform: none; }
   /* 🔴 THE CAPTION STOPS SWEEPING AND GOES BACK TO BEING TEXT. Held mid-animation it
      would keep whatever slice of the gradient it stopped on, and `color: transparent`
      means a badly-timed stop is an invisible sentence. */
