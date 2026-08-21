@@ -35,33 +35,25 @@ test("every advertised tool has steering, and it says something", () => {
   }
 });
 
-test("no description is left holding an unsubstituted placeholder", () => {
-  // `toolDescription` is the only way to read one, and it substitutes. A caller that reached into
-  // the record directly would ship the literal token to the model.
-  const filled = toolDescription("add_practice_test", "WRITE GOOD ITEMS.");
-  assert.ok(!filled.includes(EXAM_RULES_PLACEHOLDER), "the exam rules were never substituted");
-  assert.match(filled, /WRITE GOOD ITEMS\./);
-  // A tool with no placeholder comes back untouched.
+// 🔴 THE EXAM-RULES PLACEHOLDER AND ITS TESTS ARE GONE WITH `add_practice_test`. That tool wrote
+// to the Study page, which the product no longer has. `toolDescription` stays because it is the
+// only way a catalog reads a description, and a future tool may need substitution again.
+test("toolDescription returns a description untouched when there is nothing to substitute", () => {
   assert.equal(
-    toolDescription("search_library", "IGNORED"),
-    WORKSPACE_TOOL_DESCRIPTIONS.search_library,
+    toolDescription("list_calendar_events", "IGNORED"),
+    WORKSPACE_TOOL_DESCRIPTIONS.list_calendar_events,
   );
+  assert.ok(!WORKSPACE_TOOL_DESCRIPTIONS.list_calendar_events.includes(EXAM_RULES_PLACEHOLDER));
 });
 
-// 🔴 THE RULES EACH SIDE USED TO BE MISSING. Named individually rather than diffed, because a diff
-// test goes green the moment somebody deletes the rule from both files.
-test("the merged descriptions kept what each surface alone had lost", () => {
-  // The phone's, which the web lacked: the app re-seats options after saving, so "option B" in an
-  // explanation becomes wrong.
-  assert.match(WORKSPACE_TOOL_DESCRIPTIONS.add_practice_test, /re-seats the options/);
-  assert.ok(WORKSPACE_TOOL_DESCRIPTIONS.add_practice_test.includes(EXAM_RULES_PLACEHOLDER));
-  assert.match(WORKSPACE_TOOL_DESCRIPTIONS.add_flashcards, /minimum-information principle/);
-  assert.match(WORKSPACE_TOOL_DESCRIPTIONS.list_study_decks, /NEVER show the 'Folder::Deck' form/);
-  // The web's, which the phone lacked.
+// 🔴 WHAT THE MERGE SAVED, ON THE TOOLS THAT SURVIVED. The web and the phone each carried their own
+// copy of every description and 17 of 25 had drifted. Only the calendar ones are left, and this is
+// the rule the phone was missing on the one that matters most.
+test("the merged calendar descriptions kept what each surface alone had lost", () => {
   assert.match(WORKSPACE_TOOL_DESCRIPTIONS.list_calendar_events, /start_date\/end_date/);
   assert.match(WORKSPACE_TOOL_DESCRIPTIONS.list_calendar_events, /recurring/);
-  assert.match(WORKSPACE_TOOL_DESCRIPTIONS.create_library_note, /\?source=/);
-  assert.match(WORKSPACE_TOOL_DESCRIPTIONS.create_library_note, /DETAILED notes/);
+  // The phone said "upcoming", so it never knew it could ask for last month or a whole semester.
+  assert.match(WORKSPACE_TOOL_DESCRIPTIONS.list_calendar_events, /past or future/);
 });
 
 // A surface noun is the one difference that is genuinely per-platform. Baking one in here would

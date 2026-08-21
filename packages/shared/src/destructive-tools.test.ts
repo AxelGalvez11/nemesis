@@ -36,15 +36,17 @@ test("nothing that only reads or edits is gated", () => {
   }
 });
 
-test("only the Library's soft deletes are described as recoverable", () => {
-  // Everything else is a hard row delete. Saying "you can get it back" about a
-  // flashcard would be a lie told at the exact moment it matters most. Notes
-  // and folders both trash via the `deleted` flag, so both honestly recover.
+// 🔴 THE SOFT-DELETE PAIR IS GONE WITH THE LIBRARY-AS-FILES TOOLS, and what it protected is worth
+// restating: `recoverable` must be TRUE only where the row really can come back. Saying "you can
+// get it back" about a hard delete is a lie told at the exact moment it matters most. The one tool
+// left is a hard row delete and says so.
+test("nothing claims to be recoverable unless it is", () => {
   const recoverable = Object.entries(DESTRUCTIVE_TOOLS)
     .filter(([, spec]) => spec.recoverable)
     .map(([name]) => name)
     .sort();
-  assert.deepEqual(recoverable, ["delete_library_folder", "delete_library_note"]);
+  assert.deepEqual(recoverable, []);
+  assert.equal(DESTRUCTIVE_TOOLS.delete_calendar_event?.recoverable, false);
 });
 
 test("every spec names an argument the card can be built from", () => {
@@ -92,8 +94,11 @@ test("a recoverable delete says so instead of warning", () => {
 });
 
 test("a spec lookup is null for anything not gated", () => {
-  assert.equal(destructiveSpec("search_library"), null);
-  assert.ok(destructiveSpec("delete_flashcard"));
+  assert.equal(destructiveSpec("list_calendar_events"), null);
+  assert.ok(destructiveSpec("delete_calendar_event"));
+  // The tools this gate used to cover are gone, so a lookup for one is a lookup for nothing —
+  // which must read as "not gated", never as an unguarded delete.
+  assert.equal(destructiveSpec("delete_flashcard"), null);
 });
 
 // ── Check 12 of the accepted twelve, made permanent ─────────────────────────
@@ -104,14 +109,15 @@ test("a spec lookup is null for anything not gated", () => {
 // rows were still `deleted:false` afterwards. These pin the decision and the
 // payload; the card's appearance stays a production check.
 
-test("🔴 an unconfirmed folder delete is HELD — the handler is never reached", () => {
-  // The handler is where the database write lives, so "held" and "nothing was
-  // mutated" are the same fact. That is what makes this checkable in CI.
-  assert.equal(heldForConfirmation("delete_library_folder", false), true);
+test("🔴 an unconfirmed delete is HELD — the handler is never reached", () => {
+  // The handler is where the database write lives, so "held" and "nothing was mutated" are the
+  // same fact. That is what makes this checkable in CI. Asserted on the calendar delete now; the
+  // folder delete it used to name went with the Library-as-files tools.
+  assert.equal(heldForConfirmation("delete_calendar_event", false), true);
 });
 
 test("the same call runs once the student has approved it", () => {
-  assert.equal(heldForConfirmation("delete_library_folder", true), false);
+  assert.equal(heldForConfirmation("delete_calendar_event", true), false);
 });
 
 test("every gated tool is held, and nothing else is", () => {
@@ -125,16 +131,15 @@ test("every gated tool is held, and nothing else is", () => {
 
 test("a held delete tells the model plainly that nothing has gone", () => {
   const held = pendingDeleteResult({
-    args: { path: "Scratch" },
-    recoverable: true,
-    target: describeTarget(DESTRUCTIVE_TOOLS.delete_library_folder!.noun, "Scratch"),
-    tool: "delete_library_folder",
+    args: { event_id: "e1" },
+    recoverable: false,
+    target: describeTarget(DESTRUCTIVE_TOOLS.delete_calendar_event!.noun, "Pharmacology exam"),
+    tool: "delete_calendar_event",
   });
   assert.equal(held.confirm_required, true);
   assert.match(held.instruction, /NOTHING HAS BEEN DELETED/);
-  assert.match(held.instruction, /trash/);
   // The student's approval re-invokes this verbatim, so the arguments have to
   // survive the pause intact.
-  assert.deepEqual(held.pending_delete.args, { path: "Scratch" });
-  assert.equal(held.pending_delete.tool, "delete_library_folder");
+  assert.deepEqual(held.pending_delete.args, { event_id: "e1" });
+  assert.equal(held.pending_delete.tool, "delete_calendar_event");
 });

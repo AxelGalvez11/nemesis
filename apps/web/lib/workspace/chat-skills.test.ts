@@ -25,8 +25,8 @@ import {
 const idsFor = (requested: string[]) => selectChatSkills(requested).map((skill) => skill.id);
 
 test("the model's choice is honoured, in catalog order", () => {
-  assert.deepEqual(idsFor(["flashcard-craft"]), ["flashcard-craft"]);
-  assert.deepEqual(idsFor(["quantitative-check", "flashcard-craft"]), ["flashcard-craft", "quantitative-check"]);
+  assert.deepEqual(idsFor(["teaching"]), ["teaching"]);
+  assert.deepEqual(idsFor(["evidence-honesty", "quantitative-check"]), ["quantitative-check", "evidence-honesty"]);
 });
 
 test("no skills asked for means no skills ride, so an ordinary turn costs nothing extra", () => {
@@ -39,12 +39,15 @@ test("no skills asked for means no skills ride, so an ordinary turn costs nothin
 test("an id that is not in the catalog is dropped, never thrown", () => {
   assert.deepEqual(idsFor(["teaching", "telepathy"]), ["teaching"]);
   assert.deepEqual(idsFor(["nothing-real"]), []);
+  // The four artifact builders went with the tools they called. A model still asking for one is
+  // asking for something the product cannot do, and it must cost the turn nothing.
+  assert.deepEqual(idsFor(["flashcard-craft", "test-craft", "slides-builder", "notes-builder"]), []);
 });
 
 test("more skills than the cap are trimmed to the cap", () => {
-  const ids = idsFor(["flashcard-craft", "quantitative-check", "evidence-honesty"]);
+  const ids = idsFor(["teaching", "quantitative-check", "evidence-honesty"]);
   assert.equal(ids.length, MAX_ACTIVE_SKILLS);
-  assert.deepEqual(ids, ["flashcard-craft", "quantitative-check"]);
+  assert.deepEqual(ids, ["teaching", "quantitative-check"]);
 });
 
 test("the char budget is never exceeded", () => {
@@ -88,8 +91,8 @@ test("no skill is big enough to be silently dropped when paired with another", (
 });
 
 test("skills join into one message in catalog order", () => {
-  const message = buildSkillMessage(selectChatSkills(["quantitative-check", "flashcard-craft"]));
-  assert.ok(message.indexOf("writing flashcards") < message.indexOf("quantitative work"));
+  const message = buildSkillMessage(selectChatSkills(["evidence-honesty", "quantitative-check"]));
+  assert.ok(message.indexOf("quantitative work") < message.indexOf("sourcing you can defend"));
 });
 
 // The whole reason `excludes` exists. "Explain it clearly" and "do not reveal the answer" in one
@@ -138,10 +141,15 @@ test("the syllabus skill reports a COUNT, never a list of the dates", () => {
 // A student who already said what they want must not be asked again. The intake packet's own last
 // line carries that rule, since ordering can no longer be relied on to enforce it: the model may
 // ask for lecture-intake and flashcard-craft in either order.
-test("the lecture intake packet stands down when the student already said what they want", () => {
+// 🔴 THE CLOSING OFFER WENT WITH THE TOOLS THAT SERVED IT. Intake used to end every upload with
+// "Want me to turn this into notes, flashcards, a practice test, or all three?" — three things the
+// chat can no longer make. An offer the model cannot keep is worse than no offer: the student says
+// "all three" and gets an apology, or a claim that something was saved.
+test("the lecture intake packet no longer offers what it cannot build", () => {
   const skill = CHAT_SKILLS.find((entry) => entry.id === "lecture-intake");
   assert.ok(skill, "lecture-intake must exist");
-  assert.match(skill.instructions, /If the student ALREADY said what they want/);
+  assert.doesNotMatch(skill.instructions, /or all three/);
+  assert.match(skill.instructions, /Do NOT end by offering/);
 });
 
 console.log("chat-skills.test.ts OK");

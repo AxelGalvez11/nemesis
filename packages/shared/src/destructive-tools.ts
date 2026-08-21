@@ -57,52 +57,16 @@ interface DestructiveSpec {
  * without the other.
  */
 export const DESTRUCTIVE_TOOLS: Readonly<Record<string, DestructiveSpec>> = {
-  delete_calendar_event: {
+  // 🔴 ONE ENTRY, BECAUSE THERE IS ONE DESTRUCTIVE TOOL LEFT. This held six: the flashcard, deck,
+  // artifact, note and folder deletes went when their tools did — Study and Library-as-files are
+  // surfaces the product no longer has, so nothing can reach them from a chat turn to destroy.
+  // The gate itself is untouched and still the only thing standing between a misread sentence and
+  // a delete the student cannot undo.
+delete_calendar_event: {
     handle: "event_id",
     table: "calendar_events",
     labelColumn: "title",
     noun: "the calendar event",
-    recoverable: false,
-  },
-  delete_flashcard: {
-    handle: "card_id",
-    table: "study_cards",
-    labelColumn: "front",
-    noun: "the flashcard",
-    recoverable: false,
-  },
-  delete_library_folder: {
-    // A folder is addressed by PATH; the argument is already the label. The
-    // executor soft-deletes the folder row and everything beneath it, so the
-    // whole subtree is recoverable — but the blast radius is the largest of
-    // any tool here, which is exactly why it sits behind the gate.
-    handle: "path",
-    table: null,
-    labelColumn: "",
-    noun: "the folder (and everything inside it)",
-    recoverable: true,
-  },
-  delete_library_note: {
-    handle: "note_id",
-    table: "readable_library_documents",
-    labelColumn: "title",
-    noun: "the note",
-    // `deleted` is a flag, so it goes to trash rather than away.
-    recoverable: true,
-  },
-  delete_study_artifact: {
-    handle: "artifact_id",
-    table: "study_artifacts",
-    labelColumn: "title",
-    noun: "the study material",
-    recoverable: false,
-  },
-  delete_study_deck: {
-    // A deck is addressed by NAME, so the argument is already the label.
-    handle: "deck_name",
-    table: null,
-    labelColumn: "",
-    noun: "the deck",
     recoverable: false,
   },
 } as const;

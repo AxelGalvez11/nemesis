@@ -1,16 +1,16 @@
+// 🔴 THREE TESTS WERE REMOVED HERE, AND WHAT THEY PINNED WENT WITH THEM. One asserted that web
+// advertised the canonical cross-client set — 39 tools spanning Library-as-files and Study, both
+// surfaces the product no longer has. One pinned the two study-creation lanes. One pinned that the
+// recording tools explained why `search_library` could not find a transcript, which mattered when a
+// student was told their transcript "appears to have been lost"; a Canvas recording becomes a
+// canvas source directly now and never reaches the table those tools read.
+
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { mergeLibraryHits } from "./library-search-merge";
 import { AGENT_TOOL_NAMES, AGENT_TOOLS } from "./agent-tools";
-
-test("web advertises the canonical cross-client workspace tool set", () => {
-  assert.deepEqual(
-    AGENT_TOOLS.map((tool) => tool.function.name).sort(),
-    [...AGENT_TOOL_NAMES].sort(),
-  );
-});
 
 // 🔴 AN ADVERTISED TOOL WITH NO EXECUTOR IS WORSE THAN NO TOOL. The model does
 // not experience a missing capability as a missing capability — it experiences
@@ -38,33 +38,9 @@ test("every advertised tool has a case in the dispatch", () => {
 // Read from the source in the same way the dispatch-coverage test above does,
 // because these two lines are plumbing: there is no behaviour to observe, only
 // a value that is either passed or silently lost.
-test("the two study creation lanes are handed the turn's filing signals", () => {
-  const source = readFileSync(new URL("./agent-tools.ts", import.meta.url), "utf8");
-  for (const name of ["add_flashcards", "add_practice_test"]) {
-    const line = source.split("\n").find((row) => row.includes(`case "${name}":`)) ?? "";
-    assert.match(line, /\boptions\b/, `${name} no longer receives the turn's filing signals`);
-  }
-  // And each lane actually READS all three. Passing the object through while
-  // quietly dropping one field is the same silent failure by another door:
-  // without askText nothing can be vouched, without sourceAttached an unsorted
-  // attachment looks like no attachment, without sourceFolder there is nothing
-  // to inherit.
-  for (const field of ["askText", "modelFolder", "sourceAttached", "sourceFolder"]) {
-    const uses = source.split(`${field}:`).length - 1;
-    assert.ok(uses >= 2, `only ${uses} of the two study lanes build signals with ${field}`);
-  }
-});
-
 // A recording's transcript is not, and has never been, a Library note. Whenever
 // that stops being obvious from the schema text, the model goes back to
 // searching the Library for one and concluding it is gone.
-test("the recording tools say plainly that search_library cannot find a transcript", () => {
-  const list = AGENT_TOOLS.find((tool) => tool.function.name === "list_recordings");
-  assert.ok(list, "list_recordings is missing from AGENT_TOOLS");
-  assert.match(list.function.description, /never a Library note/i);
-  assert.match(list.function.description, /search_library will never find one/i);
-});
-
 // A tool's schema description rides EVERY turn, so it outranks anything the
 // reply-side prompt asks for. This one closed with "Tell the student what you
 // added and when", and a 51-date syllabus import duly read all 51 dates back

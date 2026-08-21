@@ -19,12 +19,16 @@ export {
 } from "@nemesis/shared";
 
 /** The extra line a WORKSPACE turn carries when its tools are attached. The
- *  snapshot message (buildWireMessages) holds the data; this holds the rule. */
+ *  snapshot message (buildWireMessages) holds the data; this holds the rule.
+ *
+ *  🔴 IT NAMED `get_library_tree` AND `get_study_overview` UNTIL THOSE TOOLS WENT. A prompt that
+ *  tells the model to read the complete state with a tool it was not given is an instruction to
+ *  invent the reading — the same defect CHAT_NO_TOOLS_PROMPT exists to prevent one layer up. */
 export const WORKSPACE_INSTRUCTION =
-  "This turn is about the student's own workspace. Ground every claim in what the tools return THIS turn — start from the " +
+  "This turn is about the student's own calendar. Ground every claim in what the tools return THIS turn — start from the " +
   "attached snapshot for orientation, then read deeper before stating contents, counts, or dates. The snapshot's lists are " +
-  "samples: for anything about 'everything', a full semester, or a reorganization, read the complete state first " +
-  "(get_library_tree, list_calendar_events with the real range, get_study_overview). When you change things, say plainly what " +
+  "samples: for anything about 'everything' or a full semester, read the complete range first with list_calendar_events " +
+  "rather than answering from the sample. When you change things, say plainly what " +
   "changed and what you left alone; when something is ambiguous or risky, ask before acting.";
 
 /**
@@ -40,9 +44,10 @@ export const WORKSPACE_INSTRUCTION =
  * and cannot is worse than one that never offered (see CHAT_NO_TOOLS_PROMPT).
  */
 export const SAVE_INSTRUCTION =
-  "This turn asks you to CREATE something in the student's workspace. The app has already collected any required deck format or test settings in the conversation; follow those exact choices. Do it with the tools — add_practice_test for a test or quiz, add_flashcards for cards, create_library_note for notes — and do it in this turn, not after asking permission. For flashcards, set each card_type to basic, cloze, or reversed as requested. " +
-  "Never write the flashcards or the test questions out in your reply as a substitute for saving them: the student is looking for it on their Study page, and a copy in the chat is not there. " +
-  "Once it is saved, say in one short line what you made and where it went.";
+  "This turn asks you to PUT SOMETHING on the student's calendar. Do it with the tools, in this turn, rather than after asking permission — " +
+  "and take every date from what the student or their material actually said, never from a guess about what a term usually looks like. " +
+  "Never write the events out in your reply as a substitute for saving them: the student is looking at their calendar, and a list in the chat is not there. " +
+  "Once it is saved, say in one short line what you added and when it falls.";
 
 /** The header prepareChatAttachments puts above each attached file's text.
  *  Defined here rather than beside the builder because chat-attachments imports

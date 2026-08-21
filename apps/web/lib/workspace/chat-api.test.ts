@@ -22,10 +22,10 @@ test("the base prompt always carries the self-check rule", () => {
 });
 
 test("a matched skill reaches the wire as its own system message", () => {
-  const wire = buildWireMessages([], "make me flashcards on ACE inhibitors", decide({ workspace: "write" }), true, "", "", "", ["flashcard-craft"]);
+  const wire = buildWireMessages([], "explain first-pass metabolism", decide({ mode: "learning" }), true, "", "", "", ["teaching"]);
   const skill = wire.find((entry) => entry.role === "system" && entry.content.startsWith("SKILL — "));
   assert.ok(skill, "expected a skill system message");
-  assert.match(skill.content, /Every card tests ONE fact/);
+  assert.match(skill.content, /teaching, not lecturing/);
 });
 
 test("skills sit after the base prompt and before the conversation", () => {

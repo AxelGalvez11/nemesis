@@ -20,9 +20,6 @@
 // per turn and bounded by SKILL_CHAR_BUDGET, so a matched turn adds roughly a
 // thousand tokens — never an open-ended prompt.
 
-import { CONSISTENT_NAMING_RULE, SAVED_WRITING_TELLS } from "@nemesis/shared";
-
-import { EXAM_ITEM_RULES } from "./item-writing";
 
 export interface ChatSkill {
   id: string;
@@ -69,28 +66,6 @@ export const SKILL_CHAR_BUDGET = 5_000;
  *  like "the model ignored the instruction". Held by a test over the catalog. */
 export const SKILL_CHAR_SHARE = SKILL_CHAR_BUDGET / MAX_ACTIVE_SKILLS;
 
-const FLASHCARD_CRAFT: ChatSkill = {
-  id: "flashcard-craft",
-  when: "the student wants flashcards made, or is asking how to write good ones",
-  instructions: [
-    "SKILL — writing flashcards that actually work:",
-    "Every card tests ONE fact. If a card needs the word 'and', it is probably two cards.",
-    "The front must be answerable exactly one way. Never write a prompt like 'Tell me about X' or a yes/no question, and never write a front whose answer could be several different things.",
-    "Include the detail that distinguishes this item from its neighbours — the reason a student confuses two drugs, two enzymes, or two dates is the thing the card must isolate.",
-    "Never put a list of more than about four items on one card. Split the list into separate cards, or write it as a cloze per item.",
-    "Card types are AUTO — never ask the learner to configure them. Choose per card from the content: basic for one-way facts, reversed when both directions matter (term/definition), cloze ({{c1::hidden text}}) when the fact lives inside its sentence. Set card_type on every card. If the learner stated a format themselves, follow it exactly.",
-    "When the student asks you to CREATE flashcards, you MUST call list_study_decks and then add_flashcards. Do not print the requested deck as a prose list in chat; the saved tool result is the deliverable.",
-    "For anything with a mechanism: separate cards for what it does, what it is used for, what goes wrong with it, and what the patient or user must be told. Do not merge those into one card.",
-    "Write in the student's own vocabulary — reuse the wording from their notes when you have read them, so the card matches how they will be examined.",
-    "Keep answers short enough to recall in one breath. A back longer than a sentence or two is a sign the card should be split.",
-    // Was "state ... what each one covers", which contradicted the line above
-    // and produced exactly the prose dump it forbids.
-    CONSISTENT_NAMING_RULE,
-    "Say how many cards you saved and which deck they went to. One line. The card the app shows opens the deck; the cards themselves do not belong in chat.",
-  ].join("\n"),
-  name: "Flashcard craft",
-};
-
 const QUANTITATIVE_CHECK: ChatSkill = {
   id: "quantitative-check",
   when: "the turn contains a calculation, a conversion, a dose, a rate, or any number that has to come out right",
@@ -119,42 +94,6 @@ const EVIDENCE_HONESTY: ChatSkill = {
     "Attribute guideline or consensus claims to the body that issued them, or say plainly that you cannot confirm which body says it.",
   ].join("\n"),
   name: "Evidence honesty",
-};
-
-const TEST_CRAFT: ChatSkill = {
-  id: "test-craft",
-  when: "the student wants a practice test, quiz or exam questions written",
-  instructions: [
-    "SKILL — writing exam questions that measure understanding:",
-    "When the student asks you to CREATE a test, you MUST call add_practice_test. Do not print the requested test and answer key in chat; the saved tool result is the deliverable.",
-    "Count, difficulty, and format are AUTO — never ask the learner to configure them. Size the test to the material: roughly one question per distinct testable concept, no fewer than 5 and no more than 15, multiple-choice, at mixed difficulty. If the learner stated preferences (a count, a difficulty, a focus) in this request or earlier in the conversation, follow those exactly.",
-    EXAM_ITEM_RULES,
-  ].join("\n"),
-  name: "Test craft",
-};
-
-const SLIDES_BUILDER: ChatSkill = {
-  id: "slides-builder",
-  when: "the student wants a slide deck or presentation made",
-  instructions: [
-    "SKILL — saving a requested slide deliverable:",
-    "The student asked you to CREATE slides. You MUST call create_slide_deck. Do not print the slides as headings and bullets in chat.",
-    "Give every slide one purpose, concise teaching bullets, and useful speaker notes. The tool result becomes a fullscreen preview link and the deck is also filed in Library.",
-    SAVED_WRITING_TELLS,
-  ].join("\n"),
-  name: "Slides builder",
-};
-
-const NOTES_BUILDER: ChatSkill = {
-  id: "notes-builder",
-  when: "the student wants notes or a study guide written and kept",
-  instructions: [
-    "SKILL — saving a requested note deliverable:",
-    "The student asked you to CREATE notes. You MUST call create_library_note. Do not leave the requested note only inside chat.",
-    "Write skimmable markdown with a clear title, concise sections, worked examples where useful, misconceptions, and a recap. The tool result becomes the clickable Library link.",
-    SAVED_WRITING_TELLS,
-  ].join("\n"),
-  name: "Notes builder",
 };
 
 const TEACHING: ChatSkill = {
@@ -246,7 +185,7 @@ const SYLLABUS_INTAKE: ChatSkill = {
  *  this packet must not ask them again — hence the last line. */
 const LECTURE_INTAKE: ChatSkill = {
   id: "lecture-intake",
-  when: "the student attached course material such as slides, a lecture or a reading, and wants something done with it",
+  when: "the student attached course material such as slides, a lecture or a reading, and wants it read and mined for what matters",
   instructions: [
     "SKILL — reading uploaded course material, and what to do next:",
     "The student attached course material. Do NOT summarise it slide by slide and do not narrate what each page contains. Mine it for what is worth learning.",
@@ -255,8 +194,12 @@ const LECTURE_INTAKE: ChatSkill = {
     "Drop the fluff: title and outline pages, 'any questions', acknowledgements, course admin, reference lists, and any page that only restates another.",
     "Call out the figures, diagrams, and tables the student must be able to read, and say what each one is FOR. If a figure was described to you rather than shown, say so rather than inventing its contents.",
     "If a truncation notice says part of the file did not reach you, say so plainly. Never imply you read all of it.",
-    "END your reply by offering the deliverables in exactly these words: 'Want me to turn this into notes, flashcards, a practice test, or all three?' Then stop and wait — create nothing until they answer.",
-    "If the student ALREADY said what they want in this same message, skip that question entirely and build what they asked for.",
+    // 🔴 THE CLOSING OFFER IS GONE, AND ITS ABSENCE IS THE FIX. It ended every upload with "Want me
+    // to turn this into notes, flashcards, a practice test, or all three?" — three things the chat
+    // can no longer make, because Study and Library-as-files are surfaces the product does not have.
+    // An offer the model cannot keep is worse than no offer: the student says "all three" and gets
+    // an apology, or worse, a claim that something was saved.
+    "Do NOT end by offering to turn this into notes, flashcards or a practice test. Finish on the material itself: what it is for, and what is worth doing with it next.",
   ].join("\n"),
   name: "Lecture intake",
 };
@@ -269,10 +212,6 @@ const LECTURE_INTAKE: ChatSkill = {
  *  EVIDENCE_HONESTY sits last because it is the widest packet here: it improves almost any answer
  *  slightly, and from the front it would crowd out the skill a turn is actually about. */
 export const CHAT_SKILLS: ChatSkill[] = [
-  SLIDES_BUILDER,
-  NOTES_BUILDER,
-  FLASHCARD_CRAFT,
-  TEST_CRAFT,
   SYLLABUS_INTAKE,
   LECTURE_INTAKE,
   SOCRATIC_TUTORING,
