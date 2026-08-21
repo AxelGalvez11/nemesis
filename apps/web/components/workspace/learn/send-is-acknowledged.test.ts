@@ -93,10 +93,25 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption sits 
   assert.ok(!/canvas-forming/.test(previewCode), "the skeleton bars are back");
   assert.ok(!/LINES\.map/.test(previewCode), "something is still drawing placeholder bars");
 
-  // Both waits now render the same thing: a caption in a ROW, so it sits beside the character the
-  // dock draws rather than a long way beneath it.
-  assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 2, "one of the two waits is still a column");
+  // 🔴🔴 AND THIS HALF HAS BEEN REVERSED AGAIN, FOR THE REASON THE FIRST VERSION COULD NOT SEE.
+  //
+  // It used to assert BOTH waits laid the caption out as a row, which was the mechanism chosen to
+  // put it beside the character. A row is the right shape and it was still the wrong mechanism:
+  // the mascot's position is a live transform (it walks, and it scales 2.1x to come forward), so
+  // no static box on the page can be beside it. The `justify-end` that had meant "push to the
+  // bottom" as a column silently became "push to the right" as a row, and the caption ended up
+  // against the right edge of the window — owner, 2026-08-21: *"why is the 'thinking' so far
+  // off"*, with a screenshot of the word alone in the far corner.
+  //
+  // So the caption moved onto the dock, as a sibling of its own transform, where being beside the
+  // character is structural rather than a coincidence of two layouts agreeing.
+  //
+  // The wait with NO mascot still centres its own caption — there is no character to sit beside.
+  assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 1, "the mascot wait is laying out a caption again");
+  assert.match(previewCode, /className="sr-only"/, "the mascot wait is painting a caption instead of announcing one");
+  assert.ok(!/justify-end/.test(previewCode), "justify-end is back — in a row that means the right edge, not the foot");
   assert.match(canvasCode, /mascot=\{turnInFlight\}/);
+  assert.match(canvasCode, /caption=\{turnInFlight \|\| presence === "preparing" \? preparingLabel : null\}/, "the dock is no longer given the caption");
   // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
   // of three dots on one screen; the dock owns the character, this owns the caption.
   assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");

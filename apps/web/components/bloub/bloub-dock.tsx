@@ -43,6 +43,20 @@ export interface BloubDockProps {
    *  from the learner. Absent on nearly every render — a mascot that is always signalling is a
    *  mascot nobody looks at. */
   marker?: "!" | "?" | null;
+  /**
+   * The step that is running, printed beside the character.
+   *
+   * 🔴🔴 IT RIDES THE DOCK BECAUSE THE CHARACTER MOVES. Owner, 2026-08-20: *"the mascot three dot
+   * should have the thinking preview to the right of it."* That was tried as a separate flexbox
+   * on the page, and the caption ended up pinned to the right EDGE of the window — `justify-end`
+   * had meant "push to the bottom" while the container was a column, and silently became "push to
+   * the right" when it became a row (owner, 2026-08-21: *"why is the 'thinking' so far off"*).
+   *
+   * No static box can sit beside a character whose position is a live transform. This is a sibling
+   * of the marker, so it inherits that transform and is beside the character by construction —
+   * there is no alignment left to get wrong.
+   */
+  caption?: string | null;
   /** Rendered size in px. The viewBox is square. */
   size?: number;
   /**
@@ -82,6 +96,7 @@ export interface BloubDockProps {
 }
 
 export function BloubDock({
+  caption = null,
   marker = null,
   state = "idle",
   size = 52,
@@ -263,6 +278,24 @@ export function BloubDock({
           className="bloub-marker pointer-events-none absolute left-1/2 bottom-full mb-1 -translate-x-1/2 select-none text-[13px] font-semibold leading-none text-(--ui-text-tertiary)"
         >
           {marker}
+        </span>
+      )}
+
+      {/* 🔴 COUNTER-SCALED, because the dock grows to `centreScale` when the character comes
+          forward to think and a caption that grew with it would be enormous type on the page. The
+          gap is divided too: a margin here is measured in the parent's scaled space, so a constant
+          8px on screen has to be 8/k in it. Origin pinned left so it grows away from the
+          character rather than into it. */}
+      {caption && (
+        <span
+          className="bloub-caption pointer-events-none absolute left-full top-1/2 select-none whitespace-nowrap rounded-full bg-(--ui-bg-tertiary) px-2.5 py-1 text-[length:var(--canvas-text-meta)] leading-none text-(--ui-text-tertiary)"
+          style={{
+            marginLeft: `${8 / travel.k}px`,
+            transform: `translateY(-50%) scale(${1 / travel.k})`,
+            transformOrigin: "left center",
+          }}
+        >
+          {caption}
         </span>
       )}
     </div>

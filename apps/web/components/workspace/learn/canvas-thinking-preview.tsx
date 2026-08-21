@@ -62,36 +62,20 @@ export function CanvasThinkingPreview({
 }) {
   if (mascot) {
     return (
-      <div
-        aria-live="polite"
-        // 🔴 `min-h-[70vh]`, NOT `min-h-full`. This renders inside `CanvasFade`, which is a plain
-        // `<div>` with no height of its own, so a percentage minimum has nothing to resolve
-        // against and collapses to the content — measured in a browser: the mascot sat at the very
-        // top of the column instead of the middle of the page. A viewport unit always resolves.
-        // 🔴 THE CAPTION SITS AT THE FOOT, NOT IN THE MIDDLE (owner 2026-08-20: "the thinking
-        // sentence and phrase overlap with the mascot"). It used to centre itself in this box,
-        // which is exactly where the character walks to — so the words printed straight through
-        // the dots. The character owns the middle of the surface; every thinking caption belongs
-        // near the composer, which is also where `CanvasThinking` has always put its own.
-        // 🔴 A ROW. Owner, 2026-08-20: *"the mascot three dot should have the thinking preview to
-        // the right of it."* Stacked, the caption sat well below the character and the two read as
-        // two separate things happening. The `justify-end` and the 104px of bottom padding stay:
-        // they are what puts this on the same line as the docked character rather than in the
-        // middle of the page.
-        className="flex min-h-[70vh] flex-row items-center justify-end px-6 pb-[104px] gap-3"
-        role="status"
-      >
-        {/* 🔴 THE CHARACTER IS NOT DRAWN HERE, AND THAT IS THE FIX FOR SIX DOTS.
-            This used to render its own mascot while `BloubDock` rendered another on the same
-            surface — both centred, both playing `thinking`, so the learner saw two sets of three
-            dots stacked. Deleting the duplicate RENDERER did not fix it, because the defect was
-            never two renderers: it was two MOUNTS of one renderer. The dock owns the character on
-            this surface; this component owns the caption beside it and nothing else. */}
-        {label && (
-          <span className="canvas-phrase text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-            {label.replace(/…$/, "")}…
-          </span>
-        )}
+      // 🔴🔴 NOTHING VISIBLE HERE, AND THAT IS THE FIX. This box used to print the caption itself,
+      // laid out with `justify-end`. That meant "push to the bottom" while it was a column, and
+      // silently became "push to the RIGHT" when the owner asked for the caption to sit beside the
+      // mascot and it became a row — so the word ended up pinned to the right edge of the window,
+      // hundreds of pixels from the character it labelled (owner, 2026-08-21: *"why is the
+      // 'thinking' so far off"*). No static box can sit beside something whose position is a live
+      // transform; `BloubDock` prints the caption now, as a sibling of its own transform, and is
+      // beside the character by construction.
+      //
+      // 🔴 THE ANNOUNCEMENT STAYS. The dock is `aria-hidden` — it is decoration — so deleting this
+      // outright would take the name of the running step away from a screen reader, which is the
+      // one audience that cannot see the character at all.
+      <div aria-live="polite" className="sr-only" role="status">
+        {label ? `${label.replace(/…$/, "")}…` : null}
       </div>
     );
   }
