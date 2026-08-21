@@ -1502,7 +1502,15 @@ export function LearningCanvas({
         // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once (a question on screen and a
         // turn that just failed), and of the two only the failure is news: the question is already
         // rendered in full, in words, in the middle of the page.
-        marker={session.error ? "!" : awaitingDemonstration ? "?" : null}
+        // 🔴 AND NOT WHILE NEMESIS IS WORKING. `awaitingAnswer` stays true across a turn, so the
+        // "?" sat on the mascot's head THROUGH its own thinking — scaled up with it, in the middle
+        // of an otherwise empty page (owner, 2026-08-21: "a random question mark"). The mark means
+        // "Nemesis needs something from you", and while it is thinking it does not: it needs to
+        // finish. This is the same distinction the dock's own `state` already draws, applied to
+        // the badge that sits on top of it.
+        marker={
+          session.error ? "!" : awaitingDemonstration && !turnInFlight && presence !== "preparing" ? "?" : null
+        }
         // 🔴🔴 `turnInFlight`, NOT `policy.thinking` — AND THIS IS THE SAME MISTAKE THE THINKING
         // SCREEN ALREADY FIXED, MADE AGAIN ONE COMPONENT OVER.
         //
