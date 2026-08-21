@@ -380,5 +380,38 @@ test("🔴🔴 the model is told never to draw a picture out of characters", () 
   assert.match(prompt, /A code fence is for code and notation/);
   // 🔴 AND THE ONE CASE THAT MUST BE UNAMBIGUOUS. The first version aimed at the code FENCE and the
   // model simply put the ASCII art in prose instead — where the characters sit was never the point.
-  assert.match(prompt, /MUST \n?answer with \[smiles/s, "the molecule case is only discouraged, not required");
+  // 🔴 REPOINTED after the owner's correction, 2026-08-20: *"dont add hardcoded instructions, make
+  // sure prompt instructions drive behavior so deepseek handles the judgement."* The instruction
+  // used to name four nouns — molecule, structure, functional group, compound — which is a keyword
+  // list living in a prompt instead of in an `if`. It now names the CHANNEL and the intent and
+  // leaves "is this a request to see something" where judgements about language belong.
+  assert.match(prompt, /you MUST draw it with/, "the drawing instruction lost its force, which measured as a regression");
+  assert.ok(!/a molecule, a structure, a functional group or a compound/.test(prompt), "the hardcoded noun list is back");
+  assert.ok(!/half a dozen|most important half/.test(prompt), "a quota for how many drawings to make is back");
+});
+
+test("🔴🔴 a model that put its answer back INSIDE the object is not thrown away", () => {
+  // 🔴 REPRODUCED ON PRODUCTION, 2026-08-20: "draw the functional groups" returned "Nemesis had
+  // nothing to add." on one run out of two, with an empty canvas behind it.
+  //
+  // A regression from the format change of the same day. `say` used to live inside this object and
+  // the model has years of habit saying so; when it writes the block with a `say` field and nothing
+  // after it, the prose outside is empty and the reply branch reports having nothing to add — while
+  // the answer sits in the field right there.
+  const read = readTurnDecision('```json\n{"say":"Alcohols carry a hydroxyl group.","then":"reply","topic":"functional groups"}\n```');
+  assert.equal(read?.say, "Alcohols carry a hydroxyl group.");
+  assert.equal(read?.topic, "functional groups");
+});
+
+test("🔴 but prose OUTSIDE the block still wins, because that is the contract", () => {
+  // The fallback recovers a turn that would be discarded; it does not make the old shape a second
+  // supported format. LaTeX inside `say` is still mangled by JSON escaping, which is the whole
+  // reason the contract moved.
+  const read = readTurnDecision('```json\n{"say":"the old field","then":"reply"}\n```\nthe real answer');
+  assert.equal(read?.say, "the real answer");
+});
+
+test("🔴 a decision with no answer anywhere is still refused", () => {
+  // Otherwise this fallback would turn "the model said nothing" into a blank reply on screen.
+  assert.equal(readTurnDecision('```json\n{"topic":"x"}\n```'), null);
 });

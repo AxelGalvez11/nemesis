@@ -31,6 +31,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
@@ -104,7 +105,7 @@ const CONTROL =
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
 const PANEL =
-  "absolute right-0 top-full z-40 mt-1.5 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
+  "absolute -right-2 top-full z-40 mt-1.5 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
   "p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)";
 
 // ---------------------------------------------------------------- sources + outputs
@@ -210,20 +211,54 @@ export function SourcesControl({
                   <p className="px-2 py-3 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Nothing attached yet.</p>
                 )
               ) : (
-                canvas.sources.map((source) => (
-                  <div className="px-2 py-1.5" key={source.id}>
-                    <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{source.title}</p>
-                    <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                      {source.kind} · {source.excerpts.length} excerpt{source.excerpts.length === 1 ? "" : "s"}
-                    </p>
-                    {/* A source Nemesis could only half read says so here, not silently. */}
-                    {source.coverageNote && (
-                      <p className="mt-1 text-[length:var(--canvas-text-meta)] leading-relaxed text-amber-500">
-                        {source.coverageNote.replace(/^\[|\]$/g, "")}
-                      </p>
-                    )}
-                  </div>
-                ))
+                canvas.sources.map((source) => {
+                  // 🔴🔴 THE ROWS OPEN NOW. Owner, 2026-08-20: *"the sources box should be more the
+                  // right and have the actual sources clickable in there."* This panel is the one
+                  // place a learner goes to ask "where did that come from", and it answered with
+                  // text they could not follow — a list of things that look like links and are not
+                  // is worse than a list that plainly is not one.
+                  //
+                  // 🔴 THE HOST DECIDES THE ROW, NOT A FLAG — the same rule `source-pill.ts` states
+                  // and the composer chips follow. `sourceUrl` is documented as absent for every
+                  // file upload and present only for a page, so its presence IS the question "can
+                  // this be opened, and where?". One idea, spelled once, in three places.
+                  const host = hostnameOf(source.sourceUrl);
+                  const body = (
+                    <>
+                      <span className="flex items-center gap-1.5">
+                        {host ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+                          <img alt="" className="shrink-0 rounded-full" height={14} src={faviconUrl(host)} width={14} />
+                        ) : (
+                          <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+                        )}
+                        <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{source.title}</span>
+                      </span>
+                      <span className="mt-0.5 block pl-[22px] text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                        {host ?? source.kind} · {source.excerpts.length} excerpt{source.excerpts.length === 1 ? "" : "s"}
+                      </span>
+                      {/* A source Nemesis could only half read says so here, not silently. */}
+                      {source.coverageNote && (
+                        <span className="mt-1 block pl-[22px] text-[length:var(--canvas-text-meta)] leading-relaxed text-amber-500">
+                          {source.coverageNote.replace(/^\[|\]$/g, "")}
+                        </span>
+                      )}
+                    </>
+                  );
+                  const row = "block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)";
+                  return host && source.sourceUrl ? (
+                    <a className={cn(row, "no-underline")} href={source.sourceUrl} key={source.id} rel="noopener noreferrer" target="_blank" title={source.title}>
+                      {body}
+                    </a>
+                  ) : (
+                    // 🔴 A DOCUMENT OPENS ITS READER, WHICH ALREADY EXISTS AND IS ALREADY DEEP-
+                    // LINKABLE (`/library/source/<id>` — see `reader-anchor.ts`). Building a second
+                    // preview here would be a second answer to "show me this document".
+                    <a className={cn(row, "no-underline")} href={`/library/source/${source.id}`} key={source.id} rel="noopener noreferrer" target="_blank" title={source.title}>
+                      {body}
+                    </a>
+                  );
+                })
               )}
 
               <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
@@ -835,6 +870,21 @@ export function OptionsControl({
                       onClick={() => voice.onSetVoice(option.id)}
                     />
                   ))}
+                  {/* 🔴 THE SPEED LIVES HERE TOO, AND THE DUPLICATION IS THE OWNER'S CALL ("both",
+                      2026-08-20). They are two different moments asking the same question: this one
+                      is "how should Nemesis read to me from now on", and the control under an
+                      answer is "read THIS faster". One value behind both, so setting either is
+                      setting the same thing — which is what makes showing it twice honest rather
+                      than confusing. */}
+                  <button
+                    className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary) disabled:opacity-40"
+                    disabled={!voiceOn}
+                    onClick={voice.onCycleSpeed}
+                    type="button"
+                  >
+                    <span>Reading speed</span>
+                    <span className="tabular-nums text-(--ui-text-tertiary)">{voice.speed}×</span>
+                  </button>
                   <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
                 </>
               )}

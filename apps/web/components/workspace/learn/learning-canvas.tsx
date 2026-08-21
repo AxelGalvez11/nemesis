@@ -35,6 +35,7 @@ import { CanvasFade } from "./canvas-fade";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
+import { ReplyActions } from "./reply-actions";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -996,6 +997,10 @@ export function LearningCanvas({
     // the sheet, its scrim, the floating strip and the `×` all come from `CanvasSurface`, which
     // owns them so that no render branch can omit the exit. See the note at the top of that file.
     <CanvasSurface
+      // 🔴 THE WHOLE CANVAS IS THE DROP TARGET, not the composer. A 52px pill is a target you have
+      // to aim at, and nobody aims at a text box when they are dragging a PDF — they drop it on the
+      // page. Same door a picked file takes, so a dropped lecture and a chosen one are one path.
+      onDropFiles={(files) => void session.attachFiles(files)}
       onExit={leave}
       chrome={
       <CanvasHeader
@@ -1056,7 +1061,17 @@ export function LearningCanvas({
       {/* Command-Enter presses whatever Continue is on screen. Renders nothing. */}
       <ContinueHotkey onContinue={advance} />
 
-      <div className="relative h-full overflow-y-auto pt-[64px]">
+      {/* 🔴🔴 BOTTOM PADDING, AND ITS ABSENCE WAS A REAL BUG. Owner, 2026-08-20: *"also i cant
+          scroll all the way down."* This had `pt-[64px]` to clear the header and nothing at all for
+          the composer — which is an ABSOLUTELY POSITIONED overlay at `bottom-0`, so it takes no
+          space in this scroller and the last stretch of every answer sat permanently underneath it.
+          Scrolling could not reach it because there was nothing below it to scroll to.
+
+          🔴 SIZED FROM THE OVERLAY, NOT GUESSED: 56px of gradient (`pt-14`) + a 52px composer +
+          16px (`pb-4`) is 124, and the composer now GROWS when it carries attachments. 160 clears a
+          composer with a row of chips in it and leaves the gradient doing its job rather than
+          hiding text behind it. */}
+      <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
             below what anyone notices; the owner's reading ("there are also no fade in or fade out
@@ -1197,6 +1212,27 @@ export function LearningCanvas({
                     />
                   </div>
                 ),
+              )}
+
+              {/* 🔴 AFTER THE ANSWER, AND ONLY ONCE IT HAS ARRIVED. Copying half an answer copies
+                  half an answer, and a play button on a sentence about to be replaced reads as
+                  broken. `turnInFlight` is the same signal the thinking screen keys on. */}
+              {!turnInFlight && replyText.trim() && (
+                <ReplyActions
+                  onCycleSpeed={voice.header.onCycleSpeed}
+                  onSpeak={voice.speakAloud}
+                  onStop={voice.stopSpeaking}
+                  speaking={voice.header.speaking}
+                  speed={voice.header.speed}
+                  // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
+                  // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
+                  // them, and a synthesiser reading it aloud is worse.
+                  text={replySegments(replyText, replyVisualList)
+                    .filter((segment) => segment.kind === "prose")
+                    .map((segment) => (segment as { text: string }).text)
+                    .join("\n\n")
+                    .trim()}
+                />
               )}
 
               {/* Which live pages the answer actually used, each individually promotable. This is
@@ -1425,6 +1461,13 @@ export function LearningCanvas({
       <BloubDock
         anchor="#canvas-composer"
         contain
+        // 🔴 "!" WHEN SOMETHING WENT WRONG, "?" WHEN NEMESIS IS WAITING ON THE LEARNER, and null on
+        // nearly every render — a mascot that is always signalling is a mascot nobody looks at.
+        //
+        // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once (a question on screen and a
+        // turn that just failed), and of the two only the failure is news: the question is already
+        // rendered in full, in words, in the middle of the page.
+        marker={session.error ? "!" : awaitingDemonstration ? "?" : null}
         state={stateForCanvas({ thinking: policy.thinking, preparing: presence === "preparing" })}
       />
 

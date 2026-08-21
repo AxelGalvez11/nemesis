@@ -46,9 +46,12 @@ interface CanvasSurfaceProps {
    *  used to render no exit either. */
   chrome?: React.ReactNode;
   children: React.ReactNode;
+  /** Files dropped anywhere on the canvas. Absent while the session is still loading, because
+   *  there is nothing yet to attach them to. */
+  onDropFiles?: (files: FileList) => void;
 }
 
-export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) {
+export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasSurfaceProps) {
   // §38.1 — "Side bar should also not be visible when inside canvas." The whole rail, not the
   // toggle. This is what makes the exit below load-bearing rather than decorative, which is why
   // the two live in the same component: you cannot take the claim without taking the `×` with it.
@@ -57,6 +60,28 @@ export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) 
   return (
     <main
       className="relative h-full min-h-0 bg-(--ui-bg-editor)"
+      // 🔴🔴 DROPPING A FILE ON THE CANVAS DID NOTHING AT ALL UNTIL NOW. Owner, 2026-08-20: *"the
+      // composer doesnt allow me to drop in multiple attachments before sending."* The FRONT DOOR
+      // has had a drop handler since it was built (`canvas-home.tsx`); the canvas never did, so the
+      // browser took the drop, navigated away from the session, and opened the PDF in the tab.
+      //
+      // 🔴 ON THE SURFACE, NOT ON THE COMPOSER. A drop target the size of a 52px pill is a target
+      // you have to aim at, and nobody aims at a text box — they drop the file on the page. The
+      // whole canvas accepts it, which is also what the front door does.
+      //
+      // 🔴 `preventDefault` ON DRAGOVER IS THE LOAD-BEARING HALF. Without it the drop event never
+      // fires at all: the browser's default is to navigate, and it wins unless the dragover is
+      // cancelled first. That is why both handlers are here rather than only the one that acts.
+      onDragOver={onDropFiles ? (event) => { event.preventDefault(); } : undefined}
+      onDrop={
+        onDropFiles
+          ? (event) => {
+              if (!event.dataTransfer?.files?.length) return;
+              event.preventDefault();
+              onDropFiles(event.dataTransfer.files);
+            }
+          : undefined
+      }
       // 🔴🔴 SELECTION ON, EVERYWHERE ON THE CANVAS — owner call, 2026-08-19: "selection on
       // everywhere". `[data-workspace]` sets `user-select: none` for the whole app and individual
       // components opted back in one at a time, so whether you could highlight a sentence depended
@@ -103,8 +128,24 @@ export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) 
           top of each other. `--nav-toggle-inset` is what the shell reserves for it — 0px whenever
           the toggle is not showing, which under §38.1 is every canvas — so the strip returns to a
           flush 12px on its own rather than carrying a permanent gap for a control that is gone. */}
+      {/* 🔴🔴 THE CONTROLS FADE IN, AND UNTIL NOW NOTHING ON THIS SIDE MOVED AT ALL. Owner,
+          2026-08-20: *"the transition from landing page to canvas needs to be smoother ... the
+          upper header controls need to appear as a fade in."*
+
+          The FRONT DOOR half of that transition was already built — the composer travels down and
+          the greeting fades — and then the route changed and the canvas simply WAS there, header
+          and all, hard-cut. Half a transition reads worse than none: the eye is following a moving
+          composer and the destination arrives fully formed around it.
+
+          🔴 A CSS ANIMATION RATHER THAN A MOUNT FLAG. A `useState(false)` flipped in an effect
+          needs a paint to land before it can transition, which is the shape that produces a visible
+          flash of the finished state on a slow client. `animation` runs from the first frame the
+          element exists.
+
+          🔴 AND IT IS BEHIND `prefers-reduced-motion`, because the front door's own travel already
+          is — someone who asked the system to stop moving must not get half of it anyway. */}
       <header
-        className="pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
+        className="canvas-chrome-in pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
         style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
       >
         <CanvasExit onExit={onExit} />

@@ -79,20 +79,27 @@ test("🔴🔴 and the content regions stand down while it owns the surface", ()
   }
 });
 
-test("🔴 the mascot is for a turn, and the forming lines are kept for the other wait", () => {
-  // §21's argument — the lines are the SHAPE of the question that replaces them — holds exactly
-  // where it was written and nowhere else. Deleting them to make room for the mascot would throw
-  // away a measured design for a case it is still right about.
-  assert.match(previewCode, /if \(mascot\) \{/);
-  assert.match(previewCode, /canvas-forming/, "the forming lines were deleted rather than kept");
+test("🔴🔴 there is no skeleton loader on either wait, and the caption sits BESIDE the mascot", () => {
+  // 🔴 THIS TEST HAS BEEN REVERSED, AND THE REVERSAL IS AN OWNER DECISION RATHER THAN A REGRESSION.
+  //
+  // It used to assert the forming lines SURVIVED — three staggered bars occupying the shape a
+  // question occupies, so the first question landed where the placeholder already was. That
+  // argument was good and is why they lasted this long.
+  //
+  // Owner, 2026-08-20: *"i dont want skeleton loader, also when nemesis is thinking or loading, the
+  // mascot three dot should have the thinking preview to the right of it."* A skeleton is a guess
+  // about what is coming drawn as though it were already there — three grey bars promising a
+  // paragraph that may turn out to be a molecule, a plot, or one sentence.
+  assert.ok(!/canvas-forming/.test(previewCode), "the skeleton bars are back");
+  assert.ok(!/LINES\.map/.test(previewCode), "something is still drawing placeholder bars");
+
+  // Both waits now render the same thing: a caption in a ROW, so it sits beside the character the
+  // dock draws rather than a long way beneath it.
+  assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 2, "one of the two waits is still a column");
   assert.match(canvasCode, /mascot=\{turnInFlight\}/);
-  // 🔴 REPOINTED 2026-08-20. This pinned `<Bloub ` INSIDE this component, and went red when the
-  // character moved to `BloubDock` — which was a fix, not a regression: two mounts of one renderer
-  // were putting two sets of three dots on the same screen. The property was never "this file draws
-  // the mascot", it is "a turn in flight shows the mascot somewhere, and the forming lines survive
-  // for the other wait". So this asserts the branch exists and the dock owns the drawing.
-  assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again, which is the two-mounts defect");
-  assert.match(previewCode, /role="status"/, "the mascot branch no longer announces itself as busy");
+  // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
+  // of three dots on one screen; the dock owns the character, this owns the caption.
+  assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");
 });
 
 // ── The composer travels to where it is about to be ─────────────────────────
@@ -143,4 +150,108 @@ test("🔴🔴 bloub's MIT licence travels with the code that needs it", () => {
   assert.ok(users.length > 0, "nothing renders the vendored engine any more");
   const attributed = users.some((f) => /MIT/.test(readFileSync(new URL(`../../bloub/${f}`, import.meta.url), "utf8")));
   assert.ok(attributed, `none of ${users.join(", ")} says where the engine came from`);
+});
+
+// ── Attachments: dropped anywhere, carried inside the composer ────────────────────────────────
+
+test("🔴🔴 a file dropped anywhere on the canvas is attached", () => {
+  // 🔴 REPORTED 2026-08-20: *"the composer doesnt allow me to drop in multiple attachments before
+  // sending."* There was no drop handler on the canvas AT ALL. The front door has had one since it
+  // was built; the canvas never did, so the browser took the drop, navigated away from the session
+  // and opened the PDF in the tab.
+  //
+  // Calibration: remove `onDropFiles` from the CanvasSurface mount and this reddens.
+  const surface = readFileSync(new URL("./canvas-surface.tsx", import.meta.url), "utf8");
+  assert.match(surface, /onDrop=\{/, "the canvas surface does not accept a drop");
+  // 🔴 THE DRAGOVER IS THE LOAD-BEARING HALF: without preventDefault there the drop event never
+  // fires, because the browser's navigate-to-file default wins. A guard that only checked onDrop
+  // would pass against a handler that can never run.
+  assert.match(surface, /onDragOver=\{[\s\S]{0,120}?preventDefault/, "dragover is not cancelled, so onDrop can never fire");
+  assert.match(canvasCode, /onDropFiles=\{\(files\) => void session\.attachFiles\(files\)\}/, "the canvas does not hand dropped files to the session");
+});
+
+test("🔴 the loading branch does NOT accept drops, because there is nothing to attach to", () => {
+  // `session.attachFiles` needs a canvas. Accepting a file a beat before one exists is a silent
+  // discard, which is worse than the browser's own refusal.
+  const loading = canvasCode.slice(canvasCode.indexOf("if (!session.ready)"), canvasCode.indexOf("if (!session.ready)") + 900);
+  assert.ok(!/onDropFiles/.test(loading), "the not-ready branch accepts drops it cannot honour");
+});
+
+test("🔴🔴 attachment chips are INSIDE the composer, not stacked above it", () => {
+  // Owner, 2026-08-20: *"i dont want the attachments to be above the chat composer at all."* They
+  // sat in their own row above the pill, so a file read as a separate object hovering over the box
+  // rather than as something the next message is carrying.
+  const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
+  const box = composer.slice(composer.indexOf('"flex flex-col bg-(--ui-bg-elevated)"'));
+  assert.ok(box.length > 0, "the composer is no longer a column and cannot hold chips");
+  const chipsAt = box.indexOf("{chipsInside && (");
+  const rowAt = box.indexOf('min-h-[52px] items-center');
+  assert.ok(chipsAt > 0 && rowAt > 0, "the chips or the input row moved out of the box");
+  assert.ok(chipsAt < rowAt, "the chips render below the input row rather than above it");
+  // ...and the old floating row is gone, not merely duplicated.
+  assert.ok(!/mb-1\.5 ml-1 flex flex-wrap items-center gap-1\.5/.test(composer), "the floating chip row is back");
+});
+
+test("🔴🔴 the canvas scrolls past the composer, which floats over it", () => {
+  // Owner, 2026-08-20: *"also i cant scroll all the way down."* The scroller had top padding to
+  // clear the header and NOTHING for the composer — which is absolutely positioned at bottom-0, so
+  // it occupies no space in the scroll flow and the end of every answer sat permanently beneath it.
+  // There was nothing below to scroll to.
+  //
+  // Calibration: drop the pb and this reddens.
+  assert.match(canvasCode, /overflow-y-auto pb-\[160px\] pt-\[64px\]/, "the scroller does not clear the floating composer");
+});
+
+// ── Arriving at the canvas ───────────────────────────────────────────────────────────────────
+
+test("🔴🔴 the canvas's own half of the transition exists at all", () => {
+  // Owner, 2026-08-20: *"the transition from landing page to canvas needs to be smoother ... the
+  // upper header controls need to appear as a fade in."*
+  //
+  // The FRONT DOOR half was already built — the composer travels down, the greeting fades — and
+  // then the route changed and the canvas simply WAS there, header and all, hard-cut. Half a
+  // transition reads worse than none: the eye is following a moving composer and the destination
+  // arrives fully formed around it.
+  const surface = readFileSync(new URL("./canvas-surface.tsx", import.meta.url), "utf8");
+  assert.match(surface, /className="canvas-chrome-in /, "the header controls appear with no entrance");
+
+  const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /@keyframes canvas-chrome-in/, "the animation is named but not defined");
+  // 🔴 DELAYED, so the controls start after the composer has finished travelling and the two read
+  // as one movement in sequence rather than two things at once.
+  assert.match(css, /\.canvas-chrome-in \{ animation: canvas-chrome-in \d+ms \d+ms/, "the entrance has no delay, so it races the composer");
+  // 🔴 AND SILENCED UNDER REDUCED MOTION, because the front door's own travel already is. Someone
+  // who asked the system to stop moving must not get half of it anyway.
+  // 🔴 THE LAST BLOCK, NOT THE FIRST. globals.css has five separate `prefers-reduced-motion`
+  // blocks; `indexOf` finds one 49,000 characters away from the canvas rules, and slicing forward
+  // from it reads a completely unrelated stylesheet.
+  const reduced = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce) {\n  .canvas-swap,"));
+  assert.ok(reduced.length > 0, "the canvas reduced-motion block moved");
+  assert.match(reduced.slice(0, 400), /\.canvas-chrome-in,/, "the entrance ignores reduced motion");
+});
+
+test("🔴 the composer's drop is longer than it was, and lands softer", () => {
+  // At 260ms the composer covered most of a screen height in a quarter of a second, which reads as
+  // a jump with a blur rather than as a thing travelling.
+  const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
+  const dock = /const DOCK_MS = (\d+);/.exec(home);
+  assert.ok(dock && Number(dock[1]) >= 300, `the drop is back to ${dock?.[1]}ms`);
+  assert.match(home, /cubic-bezier\(0\.32, 0\.72, 0, 1\)/, "the drop is back on the brisker curve");
+});
+
+test("🔴🔴 the mascot wears a mark above its head, and does not deform into one", () => {
+  // Owner, 2026-08-20, asked directly and chose this over the engine's own poses: *"do not fire at
+  // all, the mascot should have an exclamation mark or question mark appear above its head for
+  // those kinds of things."* `lib/bloub` ships `exclaim` and `alert` states that deform the
+  // character itself; the character stays itself and something appears near it instead.
+  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.match(dock, /marker \?: "!" \| "\?" \| null;|marker\?: "!" \| "\?" \| null;/, "the dock takes no marker");
+  assert.match(dock, /\{marker && \(/, "the marker is accepted and never drawn");
+  // 🔴 OUTSIDE THE ENGINE. lib/bloub is vendored whole and not edited, and its loop writes SVG
+  // attributes every frame — a glyph pushed through it would be a fourth thing to keep in sync.
+  assert.match(dock, /bloub-marker/, "the marker is not a sibling of the character");
+
+  // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
+  // the question is already rendered in full, in words, in the middle of the page.
+  assert.match(canvasCode, /marker=\{session\.error \? "!" : awaitingDemonstration \? "\?" : null\}/);
 });

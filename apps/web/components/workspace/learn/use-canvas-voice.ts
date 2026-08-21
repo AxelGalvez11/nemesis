@@ -17,14 +17,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { shouldSpeakAction, type SpokenMoment } from "@/lib/learn/canvas-speech";
 import { LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
 import {
+  type AutoDictation,
   DEFAULT_VOICE_MODE,
+  DEFAULT_VOICE_SPEED,
+  nextVoiceSpeed,
   readAutoDictation,
   readVoiceMode,
+  readVoiceSpeed,
   shouldOpenDictation,
+  type VoiceMode,
+  type VoiceSpeed,
   writeAutoDictation,
   writeVoiceMode,
-  type AutoDictation,
-  type VoiceMode,
+  writeVoiceSpeed,
 } from "@/lib/learn/voice-preferences";
 
 import { correctionLead } from "./correction-copy";
@@ -32,6 +37,16 @@ import { speechRecognitionSupported } from "./use-canvas-dictation";
 import { DEFAULT_VOICE, readVoice, VOICE_STORAGE_KEY } from "@/lib/learn/canvas-voices";
 import { useCanvasSpeech } from "./use-canvas-speech";
 import type { PolicyRuntime } from "./use-policy-runtime";
+
+/**
+ * What a voice says when you pick it.
+ *
+ * 🔴 ONE SENTENCE, AND IT IS ABOUT THE VOICE RATHER THAN ABOUT NEMESIS. A preview is a sample of a
+ * SOUND; a line of product copy makes the learner read instead of listen, and a long one makes them
+ * wait to hear the end of a thing they are only sampling. Short enough that pressing four options
+ * in a row is four sounds rather than four sentences.
+ */
+const VOICE_PREVIEW_LINE = "This is how I sound.";
 
 export interface CanvasVoice {
   /** Straight onto `<CanvasHeader voice={…}>`. */
@@ -45,6 +60,12 @@ export interface CanvasVoice {
     /** Which speaker the learner chose. See `lib/learn/canvas-voices.ts`. */
     voiceId: string;
     onSetVoice: (next: string) => void;
+    /** How fast Nemesis reads, and the control that cycles it. Shown twice by design (owner
+     *  2026-08-20, "both"): here for "how should it read from now on", and in the row under an
+     *  answer for "read THIS faster". One value behind both, which is what makes showing it twice
+     *  honest rather than confusing. */
+    speed: VoiceSpeed;
+    onCycleSpeed: () => void;
   };
   /** Speak an arbitrary passage on demand; pressing again repeats it. */
   speakAloud: (text: string) => void;
@@ -126,6 +147,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
    *  Reading `localStorage` during render is a hydration mismatch; this file already solved that
    *  once and the answer is the effect below, not a second pattern. */
   const [voiceId, setVoiceId] = useState<string>(DEFAULT_VOICE);
+  const [speed, setSpeed] = useState<VoiceSpeed>(DEFAULT_VOICE_SPEED);
   const speech = useCanvasSpeech();
 
   // Browser-only facts, corrected after the first paint. See the file header.
@@ -135,6 +157,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     setAutoDictation(readAutoDictation(storage));
     setDictationSupported(speechRecognitionSupported());
     setVoiceId(readVoice(storage?.getItem(VOICE_STORAGE_KEY) ?? null));
+    setSpeed(readVoiceSpeed(storage));
   }, []);
 
   /** The latest values, for the post-speech decision. 🔴 READ AT THE MOMENT OF USE, NEVER LATCHED
@@ -150,6 +173,12 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     if (next === "off") speech.stop();
   }, [speech]);
 
+  const onCycleSpeed = useCallback(() => {
+    const next = nextVoiceSpeed(speed);
+    setSpeed(next);
+    writeVoiceSpeed(typeof window === "undefined" ? null : window.localStorage, next);
+  }, [speed]);
+
   const onSetVoice = useCallback((next: string) => {
     const chosen = readVoice(next);
     setVoiceId(chosen);
@@ -157,7 +186,16 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     // 🔴 SILENCE WHAT IS PLAYING. Changing the speaker mid-sentence and hearing the old one finish
     // reads as the setting not having worked; the next utterance is where the choice takes effect.
     speech.stop();
-  }, [speech]);
+    // 🔴🔴 AND SAY SOMETHING IN IT. Owner, 2026-08-20: *"selecting voices should give a small
+    // preview."* Six ids — eve, ara, rex, gork, sal, leo — are six words that mean nothing about
+    // how a voice sounds, and xAI publishes no catalogue to describe them from. Choosing blind and
+    // finding out on the next question is not choosing.
+    //
+    // 🔴 IT SPEAKS AS THE VOICE BEING CHOSEN, AT THE SPEED BEING USED, so the preview is the thing
+    // itself rather than a demonstration of a neighbouring setting. And it is keyed on the id, so
+    // pressing the same option twice replays rather than being deduplicated as "already said".
+    void speech.speak(`preview:${chosen}`, VOICE_PREVIEW_LINE, { locale: LOCALE_UNSPECIFIED, speed, voiceId: chosen });
+  }, [speech, speed]);
 
   const onSetAutoDictation = useCallback((next: AutoDictation) => {
     setAutoDictation(next);
@@ -218,10 +256,12 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       autoDictation,
       dictationSupported,
       mode,
+      onCycleSpeed,
       onSetAutoDictation,
       onSetVoice,
       onToggle,
       speaking: speech.speaking,
+      speed,
       voiceId,
     },
     listenSignal,
@@ -248,8 +288,13 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       // where a question must not be read (or paid for) twice because a render ran again. Derive
       // the key from the TEXT and the second press of a repeat button hits that guard and does
       // nothing at all: the precise silent no-op this control exists to fix, rebuilt inside it.
+      //
+      // 🔴 AND IT READS AT THE CHOSEN SPEED. This was `speed: 1` — a literal, written before there
+      // was a speed to choose. Both halves of this line arrived on the same day from different
+      // branches, and taking either alone loses the other: the fresh key without `speed` ignores
+      // the control, and `speed` without the fresh key silently refuses to repeat.
       aloudPress.current += 1;
-      void speech.speak(`aloud:${aloudPress.current}`, text, { locale: LOCALE_UNSPECIFIED, speed: 1, voiceId });
+      void speech.speak(`aloud:${aloudPress.current}`, text, { locale: LOCALE_UNSPECIFIED, speed, voiceId });
     },
     stopSpeaking: speech.stop,
   };

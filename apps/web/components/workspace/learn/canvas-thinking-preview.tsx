@@ -34,11 +34,7 @@
 
 
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
-const LINE_HEIGHT = "12px";
 
-/** Three, and the third is short. A block of equal-length bars reads as a table or a placeholder
- *  image; an uneven last line is what a paragraph of prose actually looks like from a distance. */
-const LINES: readonly string[] = ["100%", "92%", "64%"];
 
 export function CanvasThinkingPreview({
   label = null,
@@ -77,7 +73,12 @@ export function CanvasThinkingPreview({
         // which is exactly where the character walks to — so the words printed straight through
         // the dots. The character owns the middle of the surface; every thinking caption belongs
         // near the composer, which is also where `CanvasThinking` has always put its own.
-        className="flex min-h-[70vh] flex-col items-center justify-end px-6 pb-[104px]"
+        // 🔴 A ROW. Owner, 2026-08-20: *"the mascot three dot should have the thinking preview to
+        // the right of it."* Stacked, the caption sat well below the character and the two read as
+        // two separate things happening. The `justify-end` and the 104px of bottom padding stay:
+        // they are what puts this on the same line as the docked character rather than in the
+        // middle of the page.
+        className="flex min-h-[70vh] flex-row items-center justify-end px-6 pb-[104px] gap-3"
         role="status"
       >
         {/* 🔴 THE CHARACTER IS NOT DRAWN HERE, AND THAT IS THE FIX FOR SIX DOTS.
@@ -95,26 +96,25 @@ export function CanvasThinkingPreview({
     );
   }
 
+  // 🔴🔴 THE SKELETON IS GONE. Owner, 2026-08-20: *"i dont want skeleton loader."*
+  //
+  // 🔴 AND ITS ORIGINAL ARGUMENT WAS GOOD, WHICH IS WHY IT LASTED. Three staggered bars occupied
+  // the shape a QUESTION occupies, so the first question landed where the placeholder already was:
+  // the structure resolved into the content instead of replacing it. That is a real effect and it
+  // is why this was not simply deleted earlier.
+  //
+  // It is also a guess about what is coming, drawn as though it were already there — three grey
+  // bars promising a paragraph that may turn out to be a molecule, a plot, or one sentence. The
+  // mascot says the same thing ("something is happening") without pretending to know the shape of
+  // it, and the owner has now asked for the mascot twice.
   return (
     <div
       aria-live="polite"
-      className="mx-auto flex w-full max-w-(--canvas-column) flex-col gap-[14px] px-6 pt-[18vh]"
+      className="flex min-h-[70vh] flex-row items-center justify-center gap-3 px-6"
       role="status"
     >
-      {LINES.map((width, index) => (
-        <span
-          // 🔴 STAGGERED, NOT SYNCHRONISED. Three bars pulsing in lockstep read as one flashing
-          // block — a single object blinking rather than several things being written. The offset
-          // is what makes the highlight read as travelling DOWN the paragraph as well as across it.
-          className="canvas-forming block rounded-full"
-          key={width}
-          style={{ animationDelay: `${index * 140}ms`, height: LINE_HEIGHT, width }}
-        />
-      ))}
-      {/* Understated and ephemeral, and there is no second line and no counter. §23 bans "Step 1
-          of 4"; §22 bans explaining the machinery at all. */}
       {label && (
-        <span className="canvas-phrase mt-[10px] text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+        <span className="canvas-phrase text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
           {label.replace(/…$/, "")}…
         </span>
       )}

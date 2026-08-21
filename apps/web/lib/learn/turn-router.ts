@@ -254,9 +254,35 @@ const NEMESIS_SYSTEM = [
   + "in the prose, not indented. No ASCII diagrams, no molecules built from dashes and pipes, no "
   + "plots made of spaces. A code fence is for code and notation, never for a drawing.",
 
-  "If the learner asks to see a molecule, a structure, a functional group or a compound, you MUST "
-  + "answer with [smiles: …]. Writing it out in characters instead is a wrong answer, however "
-  + "carefully drawn.",
+  // 🔴 THIS NAMES THE CHANNEL, NOT THE SUBJECTS. It used to list "a molecule, a structure, a
+  // functional group or a compound" — four nouns I happened to think of, which is a keyword list
+  // living in a prompt instead of in an `if`. Whether a request is asking to SEE something is a
+  // judgement about language, and the model is what this product uses to make those.
+  //
+  // 🔴🔴 BUT THE IMPERATIVE STAYS, AND REMOVING IT WAS MEASURED AS A REGRESSION. Rewriting this as
+  // a description — "the drawing IS the answer" — dropped a single structure from 3 of 3 runs to 2
+  // of 3, and "draw the functional groups" from drawing to 0 of 2, answering with a tab-separated
+  // table instead. The owner's correction was about hardcoded JUDGEMENT (my quota, my noun list),
+  // not about force: the model decides WHETHER this is a request to see something and HOW MANY
+  // pictures it needs, and is told firmly what to do once it has decided. Those are different
+  // things and only one of them was the problem.
+  "When the learner is asking to see something rather than read about it, you MUST draw it with "
+  + "[smiles: …] rather than describe it. Spelling a structure out in characters, or listing it in "
+  + "a table, is answering a different question.",
+
+  // 🔴🔴 A CAPABILITY AND AN INTENT, NOT A QUOTA — owner correction, 2026-08-20: *"dont add
+  // hardcoded instructions, make sure prompt instructions drive behavior so deepseek handles the
+  // judgement."*
+  //
+  // The first version of this said "draw the most important half dozen", which is MY taste about
+  // how many drawings a screen should hold, written as a rule the model has to obey. How many
+  // pictures an answer needs is exactly the sort of judgement that depends on the question — three
+  // functional groups and fifteen are different answers — and the model is the participant that can
+  // see which one was asked.
+  //
+  // So this states what it CAN do and what the learner asked FOR, and stops there.
+  "You can draw more than one thing in an answer: each [smiles: …] costs a line, and several in one "
+  + "reply is normal. Use as many as the answer actually needs.",
 
   "Keep continuity. Earlier turns of this conversation are given to you; resolve references like "
   + "\"why?\", \"that one\", \"keep going\" or \"no, I meant the first one\" against them rather than "
@@ -517,7 +543,21 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   const parsed = extractJson(block[1] ?? "");
   if (!parsed) return null;
 
-  const say = (raw.slice(0, block.index) + "\n" + raw.slice(block.index + block[0].length)).trim();
+  const outside = (raw.slice(0, block.index) + "\n" + raw.slice(block.index + block[0].length)).trim();
+  // 🔴🔴 A MODEL THAT PUT ITS ANSWER BACK INSIDE THE OBJECT IS STILL ANSWERING, AND THIS COSTS THE
+  // LEARNER NOTHING TO ACCEPT. Reproduced on production 2026-08-20: "draw the functional groups"
+  // returned "Nemesis had nothing to add." on one run out of two, with an empty canvas behind it.
+  //
+  // The cause is the format change of the same day. `say` used to live INSIDE this object and the
+  // model has years of habit saying so; when it writes the block with a `say` field and puts
+  // nothing after it, the prose outside is empty, `decision.say` is empty, and the reply branch
+  // reports having nothing to add — while the answer sits in the field right there.
+  //
+  // 🔴 THE OUTSIDE STILL WINS WHEN BOTH EXIST. Prose outside the block is the contract; this is a
+  // fallback for a turn that would otherwise be thrown away, not a second supported shape. LaTeX
+  // written into `say` will still be mangled by JSON escaping — which is exactly why the contract
+  // moved — so this recovers the turn without making the old shape safe.
+  const say = outside || asText(parsed.say);
   const then = asAction(parsed.then);
   // 🔴 A BLOCK WITH NO `then` AND NO ANSWER IS NOT A DECISION. Both empty means the model emitted
   // something JSON-shaped that says nothing, and treating it as a turn would blank the screen.
