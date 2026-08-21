@@ -453,12 +453,20 @@ test("🔴🔴 the Tailwind literal and the constant cannot drift apart", () => 
   // two a silent-drift pair — change the constant and every figure keeps the old floor while the
   // code reads as though it moved. This is the only thing standing between them.
   assert.match(VISUAL_FIGURE_CLASS, new RegExp(`min-h-\\[${VISUAL_HEIGHT}px\\]`));
-  // 🔴 A STRUCTURE IS BOUND TIGHTER THAN THE SHARED FIGURE HEIGHT, ON PURPOSE. It sizes itself to
-  // the MOLECULE rather than to the column (`w-auto`), so its bound is a ceiling on a drawing that
-  // is usually well under it — not a canvas it fills. Reported 2026-08-20: three atoms were being
-  // stretched across the full 640px column and letterboxed into a mostly-empty panel.
-  assert.match(STRUCTURE_SOURCE, /max-h-\[220px\] w-auto max-w-full/);
-  assert.ok(!/max-h-\[240px\]|h-auto max-h-\[280px\] w-full/.test(STRUCTURE_SOURCE), "the structure fills the column again");
+  // 🔴 A STRUCTURE IS THE ONE KIND THAT DOES NOT SHARE THE FIGURE HEIGHT, AND THAT IS THE POINT.
+  // It sizes itself to the MOLECULE rather than to the column: the viewBox is refitted to the ink
+  // after the draw (see `fitViewBoxToInk`), which removed both the clipped "H" and the dead space,
+  // and also removed the intrinsic size — so the rendered height is stated here instead. Reported
+  // 2026-08-20: three atoms stretched across the full 640px column, then 60px across when the fit
+  // landed without a height. Measured both ways.
+  // 🔴 COMMENTS STRIPPED, AND THIS TEST FAILED WITHOUT IT — the notes in `chemical-structure.tsx`
+  // QUOTE the old `h-auto w-full` while explaining why it was wrong, so a raw-source check reads a
+  // history lesson as a live class name.
+  const structure = withoutComments(STRUCTURE_SOURCE);
+  assert.match(structure, /h-\[150px\] w-auto max-w-full/);
+  // 🔴 THE LOOKBEHIND IS LOAD-BEARING: `max-w-full` CONTAINS `w-full`, and without it this guard
+  // fails on the very class that makes a wide reaction scheme safe.
+  assert.ok(!/max-h-\[240px\]|(?<!max-)\bw-full/.test(structure), "the structure fills the column again");
 });
 
 test("🔴 every drawn figure wears the one class, rather than restating it", () => {
