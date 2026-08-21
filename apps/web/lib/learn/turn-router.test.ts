@@ -216,9 +216,16 @@ test("🔴🔴 the contract says what `then` actually decides, and gives the che
   // Measured in the browser: "I'm studying pharmacology" came back as a friendly clarifying
   // question AND `then: "study"`, which took the canvas over on turn 2 of the owner's own example.
   // The model was reading `then` as "is this about studying". Both sentences below are the fix.
+  //
+  // 🔴 THE SECOND ONE MOVED OUT OF STEP 2 ON 2026-08-21 AND THIS ASSERTION MOVED WITH IT. It read
+  // "if you get here and find yourself asking the learner a question back" — and "if you get here"
+  // was the defect: step 1 settles the explicit asks and never gets here, so the rule was absent
+  // from exactly the turn that reproduced this same bug ("can you teach me a new language").
+  // Matching on the checkable half of the sentence rather than on its old preamble is what lets
+  // this guard keep proving the rule exists wherever it is stated.
   const last = turnRouterMessages({ context: EMPTY, utterance: "I'm studying pharmacology" }).at(-1)?.content ?? "";
   assert.match(last, /whether the canvas should change right now/);
-  assert.match(last, /find yourself asking the learner a question back, that settles it/);
+  assert.match(last, /asking the learner a question back, "then" is "reply"/);
 });
 
 test("🔴 a topic is asked for on a plain reply too, because it gates the Learn this offer", () => {
@@ -475,3 +482,54 @@ test("a first pass says nothing about earlier searches", () => {
   const packet = turnRouterMessages({ context: { ...EMPTY, searchesLeft: 4 }, utterance: "hello" });
   assert.doesNotMatch(packet.map((message) => message.content).join("\n"), /earlier searches/);
 });
+
+/** The contract as the model receives it: the tail of the last user message. */
+const DECISION_CONTRACT_TEXT = (() => {
+  const messages = turnRouterMessages({ context: EMPTY, utterance: "x" });
+  return messages.at(-1)?.content ?? "";
+})();
+
+// ── "teach me a new language" — measured in a browser, 2026-08-21 ────────────────────────────
+//
+// Owner: *"i asked it can you teach me a new language and it did an unneccesary web search and
+// then it started fadeing between the two screens i attached."* One routing mistake produced all
+// of it: the model chose "study" with the topic "new language learning", so the canvas was
+// retitled, `needsGrounding` searched the web for that phrase, two marketing pages for a language
+// app were ingested as study material, and the lesson built from them was a pricing page's list of
+// languages. The model ALSO asked which language — so the learner ended up looking at a lesson it
+// had started and a question it had asked, stacked, with one composer pointing at both.
+//
+// These are guards on the CONTRACT rather than on the model, which is the only half that is pure.
+// What the model actually does with them is `scripts/conversation-acceptance.ts`'s job.
+
+test("🔴🔴 step 1 exempts a category with no member chosen, and only that", () => {
+  // The rule it carves out of is right and must survive: asked to teach a real subject, however
+  // broad, the model must not ask the learner to narrow it down.
+  assert.match(DECISION_CONTRACT_TEXT, /do not ask which part first and do not ask them to narrow it down/);
+  assert.match(DECISION_CONTRACT_TEXT, /named a CATEGORY but not a member of it/);
+  assert.match(DECISION_CONTRACT_TEXT, /a real subject, however broad, is still "study"/);
+  // 🔴 IT SAYS WHY, IN TERMS OF WHAT HAPPENS. "Nemesis goes and finds material on the subject you
+  // name" is the fact that makes choosing one for them expensive rather than merely premature.
+  assert.match(DECISION_CONTRACT_TEXT, /starts a different lesson/);
+});
+
+test("🔴 and it names no field, no discipline and no example category", () => {
+  // A list of category words would only ever cover the ones I thought of, and would make the rule
+  // false for a trade, a language, a statute and a metallurgy course in different ways.
+  const exception = DECISION_CONTRACT_TEXT.slice(DECISION_CONTRACT_TEXT.indexOf("One exception"));
+  const clause = exception.slice(0, exception.indexOf("2. Otherwise"));
+  assert.doesNotMatch(clause, /\b(?:language|law|case|drug|history|nursing|engineering|pharmacolog)\w*\b/i);
+});
+
+test("🔴🔴 the never-both rule applies to every step, not just the last one", () => {
+  // As the tail of step 2 it was unreachable exactly when it mattered: step 1 settles the explicit
+  // asks and never consults step 2. This is the whole reason one turn did both.
+  const both = DECISION_CONTRACT_TEXT.indexOf("cannot ask someone what they want and take the screen over");
+  assert.ok(both > -1, "the rule is gone entirely");
+  assert.ok(
+    both > DECISION_CONTRACT_TEXT.indexOf("2. Otherwise"),
+    "the rule sits inside a numbered step again, so an earlier step will skip it",
+  );
+  assert.match(DECISION_CONTRACT_TEXT, /This holds whatever you chose above/);
+});
+

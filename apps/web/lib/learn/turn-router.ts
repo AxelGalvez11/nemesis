@@ -514,6 +514,34 @@ const DECISION_CONTRACT = [
   + "first and do not ask them to narrow it down, because the learning system asks better questions "
   + "than you can from here. Keep \"say\" to a few words.",
   "",
+  // 🔴🔴 MEASURED IN A BROWSER 2026-08-21, AND IT IS THE ONLY GAP LEFT IN STEP 1. Owner typed "can
+  // you teach me a new language". Step 1 fired, correctly — that is a request to be taught — and
+  // "do not ask them to narrow it down" is stated without exception, so the model chose "study"
+  // with the topic "new language learning". Everything after that followed:
+  //
+  //   · the canvas was retitled "new language learning";
+  //   · `needsGrounding` saw a topic and no material, so it searched the web for that phrase;
+  //   · what a search for that phrase returns is advertising, so two marketing pages for a
+  //     language app were ingested as the learner's study material;
+  //   · the lesson built from them was "Korean, Japanese, French, Spanish, Italian, English,
+  //     Chinese → Speak", which is a pricing page's language list, not a thing anyone can learn.
+  //
+  // 🔴 THE DISTINCTION IS "WHICH PART OF A SUBJECT" versus "WHICH SUBJECT". Step 1's rule is right
+  // and stays: asked to teach the Krebs cycle, the model must not ask which enzyme first, because
+  // the learning system reads the material and asks better. But "a new language" names a CATEGORY
+  // with no member chosen, and there is nothing to read, ground or teach until the learner picks
+  // one. Starting anyway does not begin a lesson early; it begins the wrong lesson.
+  //
+  // 🔴 STATED STRUCTURALLY SO IT HOLDS IN EVERY FIELD. A law student asking to be taught "a case",
+  // an engineer "a material", a historian "a period", a nurse "a drug class" are the same shape,
+  // and a list of category words would only ever cover the ones I happened to think of.
+  "   One exception, and it is about WHICH SUBJECT rather than which part of one. If the learner "
+  + "has named a CATEGORY but not a member of it, so that you would have to choose the subject for "
+  + "them, that is \"reply\": ask which one, in a sentence. Nemesis goes and finds material on the "
+  + "subject you name, so naming it yourself does not start their lesson early, it starts a "
+  + "different lesson. Everything else in step 1 is unchanged: a real subject, however broad, is "
+  + "still \"study\" and you must not ask them to narrow it.",
+  "",
   // 🔴🔴 MEASURED 2026-08-20, BASELINE 6/8 ON THIS EXACT SET. "show me functional groups" started a
   // LESSON: the canvas was retitled, four web pages were searched and ingested, and the owner
   // watched "Reading that page…" while waiting for a list he could have read in ten seconds.
@@ -533,10 +561,22 @@ const DECISION_CONTRACT = [
   "2. Otherwise \"reply\". A greeting, a remark, a complaint, an acknowledgement, or a question "
   + "they simply want answered all change nothing on the page. \"then\" is not about whether the "
   + "message mentions a subject, which nearly everything said to Nemesis does; it is about whether "
-  + "the canvas should change right now. If you get here and find yourself asking the learner a "
-  + "question back, that settles it: you cannot ask someone what they want and take the screen over "
-  + "in the same turn. Starting a lesson for someone who said hello is the most annoying thing this "
-  + "product can do.",
+  + "the canvas should change right now. Starting a lesson for someone who said hello is the most "
+  + "annoying thing this product can do.",
+  "",
+  // 🔴🔴 THIS SENTENCE WAS THE TAIL OF STEP 2 AND IT BELONGS TO EVERY STEP. As a step-2 tiebreaker
+  // it was unreachable exactly when it mattered: step 1 settles the explicit asks first and never
+  // consults step 2, so the one turn that most needed it — "can you teach me a new language",
+  // measured 2026-08-21 — chose "study" AND asked "Which language, and do you have any starting
+  // level or goal in mind?" in the same breath.
+  //
+  // 🔴 AND THE LEARNER SEES BOTH, WHICH IS WHY IT IS NOT MERELY UNTIDY. An owed question is the one
+  // thing a reply may not push off the canvas (see `composeSurface`), so the lesson screen and the
+  // question stack on one surface and the composer now points at two different things at once.
+  "This holds whatever you chose above: if you are asking the learner a question back, \"then\" is "
+  + "\"reply\". You cannot ask someone what they want and take the screen over in the same turn — "
+  + "they would be looking at a lesson you started and a question you asked, with one box to answer "
+  + "both.",
 ].join("\n");
 
 /** The canvas's own state, written as facts rather than as instructions. */

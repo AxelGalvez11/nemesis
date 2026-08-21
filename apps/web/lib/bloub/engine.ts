@@ -469,8 +469,10 @@ export class BotEngine {
       // doit survivre a une tete tournee sans pointeur.
       yaw: lerp(pose.gaze.yaw, look.yaw, look.mix) + life.dYaw - look.spin,
       pitch: lerp(pose.gaze.pitch, look.pitch, look.mix) + life.dPitch,
-      // le roulis, lui, ne suit rien : la tete du bot est penchee de -13deg dans
-      // la video, et la faire rouler avec le curseur casse cette signature
+      // le roulis, lui, ne suit rien : le faire rouler avec le curseur ferait
+      // pencher la tete a chaque mouvement de souris.
+      // (La video de reference penche la tete de -13deg au repos ; on garde 0,
+      //  voir REST_GAZE dans face.ts.)
       roll: pose.gaze.roll + life.dRoll
     }
 

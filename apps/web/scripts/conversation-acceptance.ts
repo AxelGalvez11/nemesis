@@ -195,6 +195,46 @@ const CATEGORIES: { name: string; note?: string; cases: Case[] }[] = [
       utterance,
     })),
   },
+  {
+    // 🔴🔴 REPORTED 2026-08-21, WITH TWO SCREENSHOTS, AND ONE ROUTING MISTAKE CAUSED ALL OF IT.
+    // *"i asked it can you teach me a new language and it did an unneccesary web search and then it
+    // started fadeing between the two screens i attached."*
+    //
+    // The model chose "study" with the topic "new language learning". So the canvas was retitled,
+    // `needsGrounding` searched the web for that phrase, and what a search for that phrase returns
+    // is advertising — two marketing pages for a language app were ingested as the learner's study
+    // material and the lesson built from them was a pricing page's list of languages. It also asked
+    // WHICH language, so the learner ended up with a lesson it had started and a question it had
+    // asked on one surface, with one composer pointing at both.
+    //
+    // 🔴 THE SECOND COLUMN IS THE FINDING, NOT THE FIRST. "Teach me a language" and "teach me
+    // Spanish" are one word apart. A fix that made the first column pass by making the model timid
+    // about teaching would break the second, and would be strictly worse than the bug.
+    //
+    // 🔴 AND THE CATEGORIES SPAN FIELDS ON PURPOSE. If this only held for languages it would be a
+    // keyword list with extra steps.
+    name: "A category is not a subject",
+    note: "naming a category means asking which one; naming a subject means teaching it",
+    cases: [
+      ...[
+        "can you teach me a new language",
+        "teach me a language",
+        "I want to learn a programming language",
+        "help me learn a musical instrument",
+        "teach me about a supreme court case",
+        "walk me through a manufacturing process",
+        "quiz me on a period of history",
+      ].map((utterance) => ({ expect: "reply" as const, utterance })),
+      ...[
+        "can you teach me Spanish",
+        "teach me Rust",
+        "help me learn the cello",
+        "teach me about Brown v. Board of Education",
+        "walk me through injection moulding",
+        "quiz me on the Meiji Restoration",
+      ].map((utterance) => ({ expect: "study" as const, utterance })),
+    ],
+  },
 ];
 
 /** A conversation run turn by turn, each turn seeing the ones before it. */

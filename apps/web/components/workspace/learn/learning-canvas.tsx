@@ -1073,9 +1073,9 @@ export function LearningCanvas({
           Scrolling could not reach it because there was nothing below it to scroll to.
 
           🔴 SIZED FROM THE OVERLAY, NOT GUESSED: 56px of gradient (`pt-14`) + a 52px composer +
-          16px (`pb-4`) is 124, and the composer now GROWS when it carries attachments. 160 clears a
-          composer with a row of chips in it and leaves the gradient doing its job rather than
-          hiding text behind it. */}
+          16px (`pb-4`) is 124, and the composer GROWS with what is typed into it, to
+          `MAX_COMPOSER_HEIGHT`. 160 clears a composer several lines tall and leaves the gradient
+          doing its job rather than hiding text behind it. */}
       <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
@@ -1599,16 +1599,11 @@ export function LearningCanvas({
           // given a function. Presence is not meaning: `intent` says whether starting is what this
           // submission IS, and this handler is simply how starting is done when it is.
           onStart={beginOrAnswer}
-          // Unconditional too — the composer shows the chips only while `intent.kind === "start"`,
-          // which is the same question asked once instead of twice.
-          pendingSources={canvas.sources.map((source) => ({
-            id: source.id,
-            title: source.title,
-            // 🔴 SPREAD CONDITIONALLY, NOT PASSED AS `?? undefined`. An explicit `sourceUrl:
-            // undefined` and an absent key read the same to the component but not to a reader:
-            // absent means "this is not a link", which is the field's documented meaning.
-            ...(source.sourceUrl ? { sourceUrl: source.sourceUrl } : {}),
-          }))}
+          // 🔴 A COUNT, NOT THE SOURCES. The composer used to draw them as chips and stopped
+          // (owner 2026-08-21: *"the sources should appear in the sources"*). All it still needs to
+          // know is whether pressing send with an empty box means anything, and passing the list
+          // for that would be handing it everything it needs to start drawing them again.
+          attachedCount={canvas.sources.length}
           selected={selected}
         />
       )}

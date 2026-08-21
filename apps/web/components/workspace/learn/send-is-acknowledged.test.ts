@@ -177,19 +177,22 @@ test("🔴 the loading branch does NOT accept drops, because there is nothing to
   assert.ok(!/onDropFiles/.test(loading), "the not-ready branch accepts drops it cannot honour");
 });
 
-test("🔴🔴 attachment chips are INSIDE the composer, not stacked above it", () => {
-  // Owner, 2026-08-20: *"i dont want the attachments to be above the chat composer at all."* They
-  // sat in their own row above the pill, so a file read as a separate object hovering over the box
-  // rather than as something the next message is carrying.
+// 🔴🔴 THIS TEST USED TO ASSERT THE CHIPS WERE INSIDE THE COMPOSER. It read: *"attachment chips are
+// INSIDE the composer, not stacked above it"*, from owner 2026-08-20, *"i dont want the attachments
+// to be above the chat composer at all."* Moving them inside was the wrong reading of that.
+//
+// Owner, 2026-08-21: *"sources are still appearing on the chat composer which i dont want. the
+// sources should appear in the sources."* They are gone from the composer entirely now, so the
+// assertion is inverted rather than deleted: what has to hold is that no future edit puts them
+// back, above OR inside. `answer-is-not-a-start.test.ts` carries the rest — that the composer is
+// not even GIVEN the list, and that the Sources panel still draws it.
+test("🔴🔴 the composer draws no source chips at all, above or inside", () => {
   const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
-  const box = composer.slice(composer.indexOf('"flex flex-col bg-(--ui-bg-elevated)"'));
-  assert.ok(box.length > 0, "the composer is no longer a column and cannot hold chips");
-  const chipsAt = box.indexOf("{chipsInside && (");
-  const rowAt = box.indexOf('min-h-[52px] items-center');
-  assert.ok(chipsAt > 0 && rowAt > 0, "the chips or the input row moved out of the box");
-  assert.ok(chipsAt < rowAt, "the chips render below the input row rather than above it");
-  // ...and the old floating row is gone, not merely duplicated.
+  assert.ok(!/\{chipsInside && \(/.test(composer), "the chips are back inside the composer box");
   assert.ok(!/mb-1\.5 ml-1 flex flex-wrap items-center gap-1\.5/.test(composer), "the floating chip row is back");
+  assert.ok(!/faviconUrl/.test(composer), "the composer is drawing source favicons again");
+  // The box itself is still a column, because the textarea grows inside it.
+  assert.ok(composer.includes('"flex flex-col bg-(--ui-bg-elevated)"'), "the composer stopped being a column");
 });
 
 test("🔴🔴 the canvas scrolls past the composer, which floats over it", () => {

@@ -105,11 +105,16 @@ test("the shell reserves clearance with padding rather than a header element", (
   // 🔴 REPOINTED 2026-08-20: these two were ONE class string until attachments moved inside the
   // composer, which made it a column — the radius belongs to the growing box and the 52px to the
   // input row within it. A regex spanning both went red on a change that altered neither number.
-  // Both properties are still pinned, just separately, and the RELAXED radius is pinned too so the
-  // grown state cannot quietly become a lozenge.
+  // Both properties are still pinned, just separately.
+  //
+  // 🔴 REPOINTED AGAIN 2026-08-21, AND THIS TIME A NUMBER GENUINELY WENT. The second radius (20px)
+  // existed for the grown state the source chips produced; the chips are gone from the composer
+  // (owner: *"the sources should appear in the sources"*), so the box has one radius again. The
+  // MEASURED number, 26px, is what this test exists to pin and it is unchanged — what is dropped is
+  // the assertion that a second, now-unreachable one is still spelled out beside it.
   const composer = read("canvas-composer.tsx");
   assert.match(composer, /min-h-\[52px\] items-center/, "the input row is no longer 52px tall");
-  assert.match(composer, /chipsInside \? "rounded-\[20px\]" : "rounded-\[26px\]"/, "the composer radius is no longer measured");
+  assert.match(composer, /"rounded-\[26px\]"/, "the composer radius is no longer measured");
 });
 
 test("there is exactly one answer surface on the canvas", () => {

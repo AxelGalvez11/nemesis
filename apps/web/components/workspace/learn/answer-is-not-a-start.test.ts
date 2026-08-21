@@ -42,10 +42,11 @@ const TASK = {
 
 const noop = () => undefined;
 
-async function render(intent: ComposerIntent, pendingSources: readonly { id: string; title: string }[] = []) {
+async function render(intent: ComposerIntent, attachedCount = 0) {
   const { CanvasComposer } = await import("./canvas-composer");
   return renderToStaticMarkup(
     createElement(CanvasComposer, {
+      attachedCount,
       busy: false,
       intent,
       onAnswer: noop,
@@ -53,7 +54,6 @@ async function render(intent: ComposerIntent, pendingSources: readonly { id: str
       onClearSelection: noop,
       onFiles: noop,
       onStart: noop,
-      pendingSources,
       selected: [],
     }),
   );
@@ -67,24 +67,42 @@ test("🔴 an ANSWER intent puts the task's own placeholder in the composer", as
   assert.ok(!html.includes(ASK_PLACEHOLDER), "it still reads as a place to ask questions");
 });
 
-test("🔴🔴 attached material does NOT show start chips while a question is being asked", async () => {
-  // This is the whole defect at the level the learner could have seen it. `pendingSources` used to
-  // be gated by the caller (`preContent ? canvas.sources… : []`) — a SECOND reading of the same
-  // stale predicate — so the surface said "nothing has started yet" while asking a question.
-  const html = await render({ kind: "answer", sink: "policy", task: TASK }, [{ id: "s1", title: "Pharmacokinetics.pdf" }]);
-  assert.ok(!html.includes("Pharmacokinetics.pdf"), "a started canvas is still advertising itself as unstarted");
-});
-
-test("a START intent shows the material and says sending is enough", async () => {
-  const html = await render({ kind: "start" }, [{ id: "s1", title: "Pharmacokinetics.pdf" }]);
-  assert.ok(html.includes("Pharmacokinetics.pdf"), "§2/§26: the attachment preview must be visible before send");
+test("a START intent with material says that sending is enough on its own", async () => {
+  const html = await render({ kind: "start" }, 1);
   assert.ok(html.includes(START_WITH_MATERIAL_PLACEHOLDER.slice(0, 20)), "§3: sending with nothing typed must read as an option");
 });
 
-test("an ASK intent is an ordinary composer, chips or no chips", async () => {
-  const html = await render({ kind: "ask" }, [{ id: "s1", title: "Pharmacokinetics.pdf" }]);
-  assert.ok(!html.includes("Pharmacokinetics.pdf"));
+test("an ASK intent is an ordinary composer, material or no material", async () => {
+  const html = await render({ kind: "ask" }, 1);
   assert.ok(html.includes("Ask Nemesis"), "the ask placeholder is missing");
+});
+
+// 🔴🔴 THE COMPOSER DOES NOT DRAW SOURCES, AT ANY INTENT. Owner, 2026-08-21: *"sources are still
+// appearing on the chat composer which i dont want. the sources should appear in the sources."*
+//
+// The chips were authored as an attachment preview and fed `canvas.sources`, so once a topic with
+// no material grounded itself by searching the web, the machine's own reading list appeared over
+// the learner's composer as though they had attached it. Measured by the owner: asking to learn a
+// language put two marketing pages for a language app in the box.
+//
+// This asserts on the PROP as well as the markup, because the markup test would go green just as
+// well if a future edit passed the list and drew it somewhere the string match happened to miss.
+test("🔴🔴 the composer is not given the sources at all, so it cannot draw them", () => {
+  assert.ok(
+    !/pendingSources/.test(composerSource),
+    "the composer takes the source list again, which is all it needs to start drawing chips",
+  );
+  assert.match(composerSource, /attachedCount\??:? ?(number|=)/, "the composer no longer knows whether material is waiting");
+  assert.match(canvasSource, /attachedCount=\{canvas\.sources\.length\}/, "the caller is passing more than a count again");
+  assert.ok(!/pendingSources=/.test(canvasSource), "the caller is handing the sources back to the composer");
+});
+
+test("🔴 and the Sources panel is still where they are drawn", () => {
+  // Removing them from the composer is only correct because there is somewhere honest they DO
+  // appear. If this ever stops being true, the fix above becomes a disappearance.
+  const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
+  assert.match(controls, /canvas\.sources\.map/, "the Sources panel no longer lists the sources");
+  assert.match(controls, /faviconUrl\(host\)/, "the panel stopped showing where a source came from");
 });
 
 // ── The precedence has not been reordered back ──────────────────────────────
