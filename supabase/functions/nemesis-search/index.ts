@@ -29,7 +29,7 @@
 // Firecrawl). Every provider key is read HERE, server-side — none of them exists on
 // the Vercel side, which only forwards to this function.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { braveCanAnswer, braveContextParams, braveContextToWeb } from './brave.ts'
+import { braveCanAnswer, braveContextParams, braveContextToWeb, BRAVE_MAX_URLS } from './brave.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -307,7 +307,11 @@ async function braveSearch(body: Record<string, unknown>): Promise<Response | nu
     return null
   }
 
-  const limit = typeof body.limit === 'number' ? body.limit : 5
+  // 🔴 THE FALLBACK IS THE PROVIDER'S CEILING, NOT A NUMBER OF OURS. This used to default to 5,
+  // so any caller that did not name a limit got the narrowest possible read of the web — and one
+  // search bills one metered unit whatever comes back, so the small number saved nothing. How many
+  // to read is the model's call now; a caller that does not say gets everything Brave will give.
+  const limit = typeof body.limit === 'number' ? body.limit : BRAVE_MAX_URLS
   const upstream = await fetch(`${BRAVE_CONTEXT_BASE}?${braveContextParams(query, limit)}`, {
     headers: { Accept: 'application/json', 'X-Subscription-Token': BRAVE_KEY },
     method: 'GET'
@@ -338,7 +342,7 @@ async function tavilySearch(body: Record<string, unknown>): Promise<Response | n
 
   const upstream = await fetch(`${TAVILY_BASE}/search`, {
     body: JSON.stringify({
-      max_results: typeof body.limit === 'number' ? body.limit : 5,
+      max_results: typeof body.limit === 'number' ? body.limit : BRAVE_MAX_URLS,
       query: String(body.query ?? ''),
       // Advanced depth re-ranks and reads deeper into pages — the better
       // snippets are the point of putting Tavily first. Costs 2 credits.

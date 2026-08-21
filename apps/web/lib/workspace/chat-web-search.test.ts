@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { carriesUrl, citedWebResults, formatWebSearchContext } from "./chat-web-search";
+import { carriesUrl, citedWebResults, formatWebSearchContext, PROVIDER_MAX_WEB_RESULTS, usableWebResults } from "./chat-web-search";
 
 // 🔴 shouldSearchWeb AND buildFreshSearchQuery ARE GONE, and so are the assertions that pinned
 // them: "Who won the World Cup?" true, "What is a beta blocker?" false, and so on. They were
@@ -22,6 +22,32 @@ assert.equal(carriesUrl("what does example.com do"), false);
 assert.match(
   formatWebSearchContext([{ title: "Example", url: "https://example.com", description: "A result." }]),
   /URL: https:\/\/example\.com/,
+);
+
+// 🔴 NOTHING IS TRUNCATED ANY MORE. Four caps used to sit between the provider and the model — a
+// constant of 10, the limit the app sent, the search function's default of 5, and this filter's own
+// slice, which discarded pages AFTER they had been fetched and paid for. One search bills one
+// metered unit whatever comes back, so every one of them threw away evidence that cost the same
+// either way. How many to read is the model's call now (`webResults`); the only ceiling left is the
+// provider's, and it is 50.
+{
+  const many = Array.from({ length: 47 }, (_, index) => ({
+    description: `result ${index}`,
+    title: `Result ${index}`,
+    url: `https://example.com/${index}`,
+  }));
+  assert.equal(usableWebResults(many).length, 47, "results were silently truncated again");
+  assert.equal(PROVIDER_MAX_WEB_RESULTS, 50);
+}
+
+// What it still filters is a row that is not a result: no address, or nothing to read.
+assert.deepEqual(
+  usableWebResults([
+    { description: "", title: "", url: "https://nothing-to-read.test" },
+    { description: "readable", title: "", url: "https://fine.test" },
+    { description: "no address", title: "Orphan", url: "" },
+  ]),
+  [{ description: "readable", title: "", url: "https://fine.test" }],
 );
 
 const sources = [

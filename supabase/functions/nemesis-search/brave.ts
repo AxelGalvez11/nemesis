@@ -69,8 +69,20 @@ export function braveCanAnswer(query: string): boolean {
 
 /** Query string for GET /res/v1/llm/context. `limit` is the caller's requested
  *  result count, clamped to what the endpoint accepts (1-50). */
+/**
+ * The most URLs Brave's llm/context endpoint will return for one call.
+ *
+ * 🔴 A PROVIDER FACT, AND NOW THE ONLY CEILING IN THE PATH. It used to be an unnamed 50 inside the
+ * clamp below, while four smaller caps of our own sat above it and never let a request near it: a
+ * client constant of 10, the limit the web app sent, this function's caller defaulting to 5, and a
+ * final slice that discarded anything past 10 after it had been fetched. One search bills one
+ * metered unit whatever the count, so all four were discarding evidence that cost the same either
+ * way. How many to read is the model's decision now; this is what the provider will actually give.
+ */
+export const BRAVE_MAX_URLS = 50
+
 export function braveContextParams(query: string, limit: number): URLSearchParams {
-  const urls = Math.min(50, Math.max(1, Math.round(limit)))
+  const urls = Math.min(BRAVE_MAX_URLS, Math.max(1, Math.round(limit)))
 
   return new URLSearchParams({
     count: String(urls),

@@ -29,7 +29,7 @@ import {
   type ChatIntent,
   type IntentContext,
 } from "@/lib/workspace/chat-intent";
-import { carriesUrl, formatWebSearchContext, MAX_WEB_RESULTS, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+import { carriesUrl, formatWebSearchContext, PROVIDER_MAX_WEB_RESULTS, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { recallBrain } from "@/lib/workspace/brain-api";
 import { ATTACHMENT_BLOCK_MARKER, ATTACHMENT_ONLY_DECISION, attachmentNames, DEFAULT_DECISION, decisionFromIntent, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
@@ -1002,7 +1002,7 @@ export async function sendChatTurn(
   if (needsWeb) {
     strip.pin("Searching the web");
     // The model wrote the query when it asked for the search; otherwise search what they typed.
-    const result = await searchWebContext(uid, decision.webQuery || askText, signal);
+    const result = await searchWebContext(uid, decision.webQuery || askText, signal, intent.webResults);
     strip.resume();
     sources = result.sources;
     webContext = result.context
@@ -1121,12 +1121,21 @@ export async function sendChatTurn(
   };
 }
 
-export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {
+export async function searchWebContext(
+  uid: string,
+  query: string,
+  signal?: AbortSignal,
+  /**
+   * How many pages the model asked to read. Null means it did not choose, and the provider's own
+   * ceiling stands — never a smaller number of ours.
+   */
+  wanted: number | null = null,
+): Promise<{ context: string; sources: ChatWebResult[] }> {
   const key = await deviceKey(uid);
   if (!key) return { context: "", sources: [] };
   try {
     const response = await fetch("/api/workspace/search", {
-      body: JSON.stringify({ query, limit: MAX_WEB_RESULTS }),
+      body: JSON.stringify({ query, limit: Math.min(wanted ?? PROVIDER_MAX_WEB_RESULTS, PROVIDER_MAX_WEB_RESULTS) }),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       method: "POST",
       signal,

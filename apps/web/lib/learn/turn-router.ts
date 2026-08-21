@@ -105,6 +105,13 @@ export interface TurnDecision {
   /** What to type into a search engine, when `needsWeb`. Null otherwise. */
   webQuery: string | null;
   /**
+   * How many pages to read, when `needsWeb`. Null when the model did not choose.
+   *
+   * 🔴 THE LEARNER'S QUESTION DECIDES, NOT A CONSTANT. Every cap between the provider and the
+   * answer was ours: the provider returns up to 50 and bills the same unit whatever the count.
+   */
+  webResults: number | null;
+  /**
    * What Nemesis says. Present even when it also acts: acting silently reads as a bug, and the
    * owner's example ("alright.") is a turn that speaks and acts at once.
    */
@@ -240,7 +247,7 @@ const DECISION_CONTRACT = [
   "Answer with a single JSON object and nothing else:",
   "",
   '{"say": "...", "then": "reply" | "study" | "rewrite", "topic": "..." | null, "offer": "returning" | "reasoning" | null, '
-  + '"needsWeb": true | false, "webQuery": "..." | null}',
+  + '"needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null}',
   "",
   '"say" is what Nemesis says out loud. Always write something, even when you also act.',
   "",
@@ -291,6 +298,14 @@ const DECISION_CONTRACT = [
   '"webQuery" is what to type into a search engine, when needsWeb is true. Write it as a search '
   + "rather than as a sentence, and put a date or year in it yourself when recency is the point. "
   + "Null when needsWeb is false.",
+  "",
+  // 🔴 NO CEILING IS QUOTED. Naming one makes it the answer to every question — a model told "up
+  // to 50" asks for 50 every time. What it needs is the trade, not a number.
+  '"webResults" is how many pages to read, when needsWeb is true. Ask for what the question '
+  + "actually needs: a definition or a single current fact settles in a handful of pages, while a "
+  + "comparison across sources, a contested question, or anything where you want to see whether "
+  + "sources agree needs many more. Reading more costs no extra search, only the room they take up "
+  + "in your context. Null when needsWeb is false.",
   "",
   '"offer" says why a learner reading a plain answer might be shown a Learn this button. Use '
   + '"returning" when they keep circling the same subject across turns, "reasoning" when they are '
@@ -445,6 +460,10 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     topic: asText(parsed.topic) || null,
     // A query without a search is dropped: the half that spends money loses the contradiction.
     webQuery: parsed.needsWeb === true ? asText(parsed.webQuery) || null : null,
+    webResults: parsed.needsWeb === true && typeof parsed.webResults === "number"
+      && Number.isFinite(parsed.webResults) && parsed.webResults >= 1
+      ? Math.floor(parsed.webResults)
+      : null,
   };
 }
 
@@ -460,5 +479,5 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   if (read) return read;
   const prose = raw.trim();
   if (!prose) return null;
-  return { needsWeb: false, offer: null, say: prose, then: "reply", topic: null, webQuery: null };
+  return { needsWeb: false, offer: null, say: prose, then: "reply", topic: null, webQuery: null, webResults: null };
 }

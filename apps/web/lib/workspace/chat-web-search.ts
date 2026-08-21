@@ -25,17 +25,34 @@ export function carriesUrl(text: string): boolean {
   return /https?:\/\//i.test(text);
 }
 
-/** How many web results reach the model. Ten, not five (owner 2026-08-04):
- *  a medicine, law, or engineering question rarely settles inside the first
- *  five hits, a search costs one metered unit regardless of how many results
- *  it returns, and five more snippets are only a few hundred extra tokens. */
-export const MAX_WEB_RESULTS = 10;
+/**
+ * The ceiling the SEARCH PROVIDER imposes, which is the only one left.
+ *
+ * 🔴 IT IS A FACT ABOUT BRAVE, NOT A POLICY OF OURS. `braveContextParams` clamps to this, so asking
+ * for more is asking for something that cannot arrive. Every cap that used to sit under it was ours
+ * and is gone: a client constant of ten, the limit this app sent, the search function's own default
+ * of five, and a final slice that discarded anything past ten even when it had already been fetched
+ * and paid for. One search bills one metered unit whatever the count comes back, so each of those
+ * was throwing away evidence that had cost the same either way.
+ *
+ * How many to read is now the model's call (`webResults`, see @nemesis/shared chat-intent.ts): a
+ * definition settles in three pages and a four-way comparison does not, and only the thing reading
+ * the question knows which it is.
+ */
+export const PROVIDER_MAX_WEB_RESULTS = 50;
 
-/** The results that actually reach the model, in the exact order they are numbered in the prompt.
- *  The sources stored on the message MUST come from this same list: the answer's inline [n] markers
- *  are resolved positionally, so a list filtered differently would point a pill at the wrong source. */
+/**
+ * The results that actually reach the model, in the exact order they are numbered in the prompt.
+ *
+ * The sources stored on the message MUST come from this same list: the answer's inline [n] markers
+ * are resolved positionally, so a list filtered differently would point a pill at the wrong source.
+ *
+ * 🔴 IT NO LONGER TRUNCATES. Filtering out a row with no url and nothing to read is a judgement
+ * about whether a result IS one; deciding that the eleventh good page is not worth showing was a
+ * judgement about the question, made by a constant that never saw it.
+ */
 export function usableWebResults(results: ChatWebResult[]): ChatWebResult[] {
-  return results.filter((result) => result.url && (result.title || result.description)).slice(0, MAX_WEB_RESULTS);
+  return results.filter((result) => result.url && (result.title || result.description));
 }
 
 /**

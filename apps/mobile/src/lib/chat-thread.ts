@@ -417,7 +417,10 @@ export function forcedResearchDecision(): ChatRouteDecision {
  *  formatWebSearchContext. Both surfaces now decide WHETHER to search the same way, in the shared
  *  turn decision — web's separate keyword heuristic layer is gone rather than unported. */
 export function formatWebSearchContext(results: ChatSource[]): string {
-  const usable = results.filter((result) => result.url && (result.title || result.description)).slice(0, 10);
+  // 🔴 NO TRUNCATION. This used to drop everything past the tenth result — after the search had
+  // already been paid for and the pages fetched. How many to read is the model's call now
+  // (`webResults`); filtering a row with nothing to read is still ours.
+  const usable = results.filter((result) => result.url && (result.title || result.description));
   if (usable.length === 0) return "";
   return [
     "Live web search results (use these for current facts and cite the relevant URL in the answer):",

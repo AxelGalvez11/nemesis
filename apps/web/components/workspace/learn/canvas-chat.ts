@@ -126,7 +126,7 @@ export async function askCanvasChat(
   // gets back says the search has already run, so a model that asks again is answered from what it
   // was given rather than sent round a third time.
   if (decision?.needsWeb) {
-    const found = await searchWebContext(uid, decision.webQuery || question, signal);
+    const found = await searchWebContext(uid, decision.webQuery || question, signal, decision.webResults);
     sources = found.sources;
     const second = await ask(found.context);
     if (second.errorText) return { decision: null, error: second.errorText, sources: [] };

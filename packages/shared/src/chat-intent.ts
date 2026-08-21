@@ -142,6 +142,22 @@ export interface ChatIntent {
    * free, and it can put the year in when the year matters instead of when a word matched.
    */
   webQuery: string | null;
+  /**
+   * How many pages to read, when `needsWeb`.
+   *
+   * 🔴 THE MODEL SETS THIS BECAUSE ONLY THE MODEL KNOWS WHAT THE QUESTION NEEDS. Four separate caps
+   * used to sit between the provider and the answer — a client constant of 10, the limit sent to the
+   * search function, that function's own default of 5, and a final slice that discarded anything
+   * past 10 even when more had already been paid for and fetched. Brave returns up to 50 and bills
+   * one metered unit whatever the count, so every one of those caps was throwing away evidence that
+   * had cost the same either way.
+   *
+   * A definition settles in three pages. "Compare how four jurisdictions treat this" does not, and
+   * a model told it may only have ten will answer thinly rather than say so. Null means it did not
+   * choose, and the caller falls back to the provider's own ceiling rather than to a number we
+   * invented.
+   */
+  webResults: number | null;
   workspace: WorkspaceUse;
   /**
    * Which expertise packets to attach, by id.
@@ -171,6 +187,7 @@ export const DEFAULT_INTENT: ChatIntent = {
   skills: [],
   topic: null,
   webQuery: null,
+  webResults: null,
   workspace: "none",
 };
 
@@ -248,7 +265,7 @@ export function intentContract(catalog: readonly IntentSkill[]): string {
     "Answer with a single JSON object and nothing else:",
     "",
     '{"mode": "...", "workspace": "...", "needsWeb": true|false, "webQuery": "..."|null, '
-    + '"skills": ["..."], "topic": "..."|null}',
+    + '"skills": ["..."], "topic": "..."|null, "webResults": <number>|null}',
     "",
     '"mode" is what kind of answer this turn wants:',
     '  "conversation" — small talk, a remark, a complaint, a question about Nemesis itself, or a '
@@ -290,6 +307,17 @@ export function intentContract(catalog: readonly IntentSkill[]): string {
     '"webQuery" is what to type into a search engine, when needsWeb is true. Write it as a search, '
     + "not as a sentence, and put a date or year in it yourself when recency is the point. Null "
     + "when needsWeb is false.",
+    "",
+    // 🔴 NO CEILING IS QUOTED HERE ON PURPOSE. Naming one would make it the answer to every
+    // question: a model told "up to 50" asks for 50, and a model told "up to 10" never asks for
+    // more even when the question plainly needs it. What it needs to know is the trade, which is
+    // the sentence below.
+    '"webResults" is how many pages to read, when needsWeb is true. Ask for what the question '
+    + "actually needs: a definition or a single current fact settles in a handful of pages, while "
+    + "a comparison across several sources, a contested question, or anything where you want to see "
+    + "whether sources agree needs many more. Reading more costs no extra search, only the time to "
+    + "read them and the room they take up in your context, so do not ask for a hundred pages to "
+    + "answer something one page settles. Null when needsWeb is false.",
     "",
     '"skills" names the expertise Nemesis should be given for this turn, by id. Pick only what this '
     + "message actually calls for. Most turns need none, and an unnecessary packet makes the answer "
@@ -398,6 +426,12 @@ export function readChatIntent(raw: string): ChatIntent | null {
     // "no search needed" and then filling in a query is a contradiction, and the half that costs
     // money is the half that loses.
     webQuery: needsWeb === true ? asText(parsed.webQuery) || null : null,
+    // Same rule as the query: a count without a search is a contradiction, and the half that
+    // spends the turn's time loses. A count that is not a positive number is no count at all.
+    webResults: needsWeb === true && typeof parsed.webResults === "number"
+      && Number.isFinite(parsed.webResults) && parsed.webResults >= 1
+      ? Math.floor(parsed.webResults)
+      : null,
     workspace: workspace ?? DEFAULT_INTENT.workspace,
   };
 }

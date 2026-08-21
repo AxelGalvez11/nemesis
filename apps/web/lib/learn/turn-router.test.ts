@@ -182,6 +182,7 @@ test("a plain decision is read", () => {
     then: "reply",
     topic: null,
     webQuery: null,
+    webResults: null,
   });
 });
 

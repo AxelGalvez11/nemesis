@@ -189,21 +189,28 @@ function withFreshDateAnchor(query: string): string {
 
 /** Prompt-feeding copied from web's chat-api.ts::searchWebContext: fetch live
  *  results and format them into a context block the model is told to cite. */
-async function searchWebContext(uid: string, query: string): Promise<{ context: string; sources: ChatSource[] }> {
+async function searchWebContext(
+  uid: string,
+  query: string,
+  /** How many pages the model asked to read. Null means it did not choose. */
+  wanted: number | null = null,
+): Promise<{ context: string; sources: ChatSource[] }> {
   const key = await deviceKey(uid);
   if (!key) return { context: "", sources: [] };
   try {
     const res = await fetch(SEARCH_URL, {
-      // Ten results, not five (owner 2026-08-04) — depth fields (medicine,
-      // law, engineering) rarely settle in five hits, and a search costs one
-      // unit however many results come back. Mirrors web's MAX_WEB_RESULTS.
-      body: JSON.stringify({ limit: 10, query }),
+      // 🔴 NO CAP OF OURS. This asked for ten and then threw away anything past ten — after the
+      // search had been paid for and the pages fetched. One search bills one unit however many
+      // come back, so the number saved nothing and cost evidence. How many to read is the model's
+      // call (`webResults`); omitting the limit lets the search function fall back to the
+      // provider's own ceiling rather than to a number either side invented.
+      body: JSON.stringify({ query, ...(wanted ? { limit: wanted } : {}) }),
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...CLIENT_HEADER },
       method: "POST",
     });
     if (!res.ok) return { context: "", sources: [] };
     const body = (await res.json()) as { data?: { web?: ChatSource[] } };
-    const sources = (body.data?.web ?? []).filter((source) => source.url).slice(0, 10);
+    const sources = (body.data?.web ?? []).filter((source) => source.url);
     return { context: formatWebSearchContext(sources), sources };
   } catch {
     return { context: "", sources: [] };
@@ -493,7 +500,7 @@ export async function sendChat(
     // route staples a freshness date onto the wire query, and showing that
     // back would read like the app invented part of the question.
     onPhase?.({ kind: "searching", query: userText });
-    const result = await searchWebContext(uid, query);
+    const result = await searchWebContext(uid, query, intent.webResults);
     sources = result.sources;
     onPhase?.({ kind: "reading", sources: sources.length });
     groundedText = result.context

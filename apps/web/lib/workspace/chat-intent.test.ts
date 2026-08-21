@@ -43,7 +43,7 @@ for (const skill of CHAT_SKILLS) {
 // ── the contract describes consequences, not labels ──────────────────────────
 {
   const contract = intentContract();
-  for (const field of ["mode", "workspace", "needsWeb", "webQuery", "skills", "topic"]) {
+  for (const field of ["mode", "workspace", "needsWeb", "webQuery", "webResults", "skills", "topic"]) {
     assert.ok(contract.includes(`"${field}"`), `the contract defines ${field}`);
   }
   // The one consequence the model cannot infer and the most expensive mistake available: a turn
@@ -53,6 +53,11 @@ for (const skill of CHAT_SKILLS) {
   assert.match(contract, /cannot save|cannot see/i);
   // Cost discipline survives the move off the keyword list: searching still spends real money.
   assert.match(contract, /costs money/i);
+  // 🔴 NO CEILING IS QUOTED TO THE MODEL. Naming one makes it the answer to every question: told
+  // "up to 50" it asks for 50 every time, told "up to 10" it never asks for more even when the
+  // question plainly needs it. What it is given is the trade-off, not a number.
+  assert.doesNotMatch(contract, /\bup to \d+ (?:pages|results|sources)\b/i);
+  assert.match(contract, /how many pages to read/i);
   // And the field-agnostic rule: nothing in the contract may name a discipline as a trigger.
   assert.doesNotMatch(contract, /\b(?:pharmacolog|nursing|medicine|drug)\w*\b/i);
 }
@@ -117,6 +122,7 @@ assert.match(
     skills: ["test-craft"],
     topic: "Krebs cycle",
     webQuery: null,
+    webResults: null,
     workspace: "write",
   });
 }
@@ -130,6 +136,19 @@ assert.match(
 // A query without a search is dropped: the half that spends money loses the contradiction.
 assert.equal(readChatIntent('{"needsWeb":false,"webQuery":"nvidia stock"}')?.webQuery, null);
 assert.equal(readChatIntent('{"needsWeb":true,"webQuery":"nvidia stock"}')?.webQuery, "nvidia stock");
+// How many to read is the model's, and nothing here narrows it — 40 pages is a real answer to a
+// question that needs 40 pages, and the only ceiling left belongs to the search provider.
+assert.equal(readChatIntent('{"needsWeb":true,"webResults":40}')?.webResults, 40);
+assert.equal(readChatIntent('{"needsWeb":true,"webResults":3}')?.webResults, 3);
+// A count without a search is the same contradiction as a query without one.
+assert.equal(readChatIntent('{"needsWeb":false,"webResults":40}')?.webResults, null);
+// Nonsense is no count at all, and falls back to the provider's ceiling rather than to a guess.
+for (const bad of ["0", "-5", '"many"', "null", "1.5e400"]) {
+  const read = readChatIntent(`{"needsWeb":true,"webResults":${bad}}`);
+  assert.equal(read?.webResults ?? null, bad === "1.5e400" ? null : null, bad);
+}
+// A fractional count is floored rather than refused: 7.9 pages plainly means seven.
+assert.equal(readChatIntent('{"needsWeb":true,"webResults":7.9}')?.webResults, 7);
 // Unknown values fall back rather than failing the turn.
 assert.equal(readChatIntent('{"mode":"banana","workspace":"everything"}'), null);
 assert.equal(readChatIntent('{"mode":"learning","workspace":"everything"}')?.workspace, "none");
@@ -147,5 +166,6 @@ assert.equal(readChatIntent('```json\n{"mode":"research"}\n```')?.mode, "researc
 assert.equal(DEFAULT_INTENT.mode, "conversation");
 assert.equal(DEFAULT_INTENT.workspace, "none");
 assert.equal(DEFAULT_INTENT.needsWeb, false);
+assert.equal(DEFAULT_INTENT.webResults, null);
 
 console.log("chat-intent.test.ts OK");
