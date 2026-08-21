@@ -369,7 +369,7 @@ export function WrittenWorkSheet({
             <button
               className={cn(
                 "flex h-[36px] items-center justify-center gap-1.5 rounded-full px-4",
-                "bg-(--ui-action) text-[length:var(--canvas-text-small)] font-medium text-(--ui-bg-editor)",
+                "bg-(--ui-action) text-[length:var(--canvas-text-small)] font-medium text-(--ui-action-glyph)",
                 "transition-opacity hover:opacity-90 disabled:opacity-40",
               )}
               disabled={!restored || !hasInk || capture.busy || busy}

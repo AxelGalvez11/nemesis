@@ -9,12 +9,15 @@ import { deleteThread, listThreads, newThreadId, pinThread, renameThread } from 
 import type { ThreadSummary } from "@/lib/chat-threads";
 // The hold haptic now fires inside useRowDrag, with the gesture that earns it.
 import { hapticDrawerOpened } from "@/lib/haptics";
-import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
+import { CHAT_RETIRED } from "@/lib/retired-surfaces";
+import { NAV_DESTINATIONS } from "@/lib/nav-destinations";
 import Svg, { Path } from "react-native-svg";
 import { MiniMenu, type MenuAnchor } from "./MiniMenu";
 import { useRowDrag } from "./useRowDrag";
 import { TextPromptSheet, type RowAction } from "./RowActionSheets";
-import { CalendarIcon, ChevronIcon, LibraryIcon, NotebookIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+// The destination glyphs moved to `lib/nav-destinations.ts` with the rows they label; what is
+// left here is the drawer's own chrome (its chevrons, its search, its gear).
+import { ChevronIcon, SearchIcon, SettingsIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -24,14 +27,20 @@ import { control, radius, space, type } from "@/theme/tokens";
 // always mounted UNDERNEATH the page; opening PUSHES the whole page (Slot + StatusBarBlur + TopBar) to
 // the right by the panel width to reveal it, instead of sliding an overlay on top — see DrawerShell.
 //
-// The drawer IS the desktop sidebar on the phone: a compact nav (Chat · Study ·
-// Library · Calendar), then the live CHATS history (owner: "chats should
-// save to the sidebar") — each conversation persisted as its own thread — then a
-// solid "New chat" button and a settings gear. Tapping a chat reopens it (via the
-// /chat?c=<id> route param). Mac-dispatch "sessions" (the missions feature) are
-// removed from the phone entirely (owner call 2026-07-20; see
-// docs/design/nemesis-cloud-first-phone-2026-07.md §10) — this drawer no longer
-// lists them.
+// The drawer IS the desktop sidebar on the phone, and it now lists exactly what that sidebar
+// lists: New canvas · Library · Calendar · Stats, drawn from `lib/nav-destinations.ts`, plus a
+// settings gear. See that file for why the two lists are kept literally aligned.
+//
+// 🔴 THE CHATS HISTORY IS CLOSED, NOT DELETED (`lib/retired-surfaces.ts`). The drawer used to
+// carry the live list of threads under the nav ("chats should save to the sidebar"), each
+// reopened through the `/chat?c=<id>` param, plus a solid "New chat" pill in the footer. The web
+// sidebar carries no such list and says why (owner 2026-08-13, §L): students are managing bodies
+// of knowledge, not recovering a conversation from three weeks ago. All of that code — the rows,
+// the search, the drag-to-reorder, the rename/delete menus — is still below and still works if
+// `CHAT_RETIRED` is flipped back.
+//
+// Mac-dispatch "sessions" (the missions feature) were removed from the phone entirely (owner call
+// 2026-07-20; see docs/design/nemesis-cloud-first-phone-2026-07.md §10).
 //
 // Owner call 2026-07-18: the drawer opens on a rightward swipe from ANYWHERE (plus
 // tapping TopBar's menu button); on /graph and /calendar — which own their own
@@ -527,16 +536,24 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         contentContainerStyle={{ paddingBottom: insets.bottom + space(2.5) + 46 + space(4) }}
         keyboardShouldPersistTaps="handled"
       >
+        {/* 🔴 DRAWN FROM `NAV_DESTINATIONS`, NOT WRITTEN OUT HERE. These four rows are the same
+            product decision as the web app's `SIDEBAR_NAV`, and the list lives in
+            `lib/nav-destinations.ts` so the two can be compared side by side. Rows written inline
+            here is how the phone drifted from the web in the first place. */}
         <View style={styles.navGroup}>
-          <NavRow Icon={StudyIcon} label="Study" onPress={() => go("/study")} />
-          <NavRow Icon={LibraryIcon} label="Library" onPress={() => go("/library")} />
-          {/* Notebooks retired — see lib/notebooks-retired.ts. */}
-          {NOTEBOOKS_RETIRED ? null : (
-            <NavRow Icon={NotebookIcon} label="Notebooks" onPress={() => go("/notebooks")} />
-          )}
-          <NavRow Icon={CalendarIcon} label="Calendar" onPress={() => go("/calendar")} />
+          {NAV_DESTINATIONS.map((dest) => (
+            <NavRow Icon={dest.Icon} key={dest.id} label={dest.label} onPress={() => go(dest.route)} />
+          ))}
         </View>
 
+        {/* 🔴 THE CHAT LIST IS CLOSED, NOT DELETED — see `lib/retired-surfaces.ts`.
+            The web sidebar carries no conversation list and says why (owner 2026-08-13, §L):
+            "eventually the sidebar becomes a giant chronological dump. Nemesis users aren't
+            primarily trying to recover a conversation from three weeks ago. They're managing
+            BODIES OF KNOWLEDGE." The rows, their search, their drag-to-reorder and their
+            rename/delete menus all still work if this flag is flipped back. */}
+        {CHAT_RETIRED ? null : (
+        <>
         {searchOpen ? (
           <View style={styles.searchField}>
             <SearchIcon size={16} color={c.text3} />
@@ -594,6 +611,8 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         ) : (
           otherChats.map(renderChatRow)
         )}
+        </>
+        )}
 
       </ScrollView>
 
@@ -604,20 +623,32 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           gear. Close the drawer before presenting Settings: otherwise the pushed
           page shadow intersects the floating gear and makes its right edge look
           clipped beneath the modal. */}
-      <View style={[styles.footerFloat, { bottom: insets.bottom + space(2.5) }]} pointerEvents="box-none">
-        <Pressable
-          style={({ pressed }) => [styles.chatPill, pressed && styles.chatPillPressed]}
-          onPress={() => {
-            onNewChat();
-            onClose();
-          }}
-          testID="drawer-new-chat"
-          accessibilityRole="button"
-          accessibilityLabel="New chat"
-        >
-          <ComposeIcon size={18} color={c.onAccent} strokeWidth={1.9} />
-          <Text style={styles.chatPillText}>Chat</Text>
-        </Pressable>
+      {/* With the Chat pill withdrawn the gear is the only child left, and `space-between` would
+          park it on the LEFT — the one edge it has never sat on. Pushed to the end instead, so it
+          holds exactly the position it held before. */}
+      <View
+        style={[styles.footerFloat, CHAT_RETIRED && styles.footerFloatEnd, { bottom: insets.bottom + space(2.5) }]}
+        pointerEvents="box-none"
+      >
+        {/* 🔴 THE "CHAT" PILL IS WITHDRAWN WITH THE SURFACE IT STARTED. Starting something new is
+            now the FIRST ROW of the nav — "New canvas" — so a second, differently-shaped control
+            for the same intent would offer two front doors to one product. The gear keeps the
+            footer, and keeps its position, so nothing else in this corner moves. */}
+        {CHAT_RETIRED ? null : (
+          <Pressable
+            style={({ pressed }) => [styles.chatPill, pressed && styles.chatPillPressed]}
+            onPress={() => {
+              onNewChat();
+              onClose();
+            }}
+            testID="drawer-new-chat"
+            accessibilityRole="button"
+            accessibilityLabel="New chat"
+          >
+            <ComposeIcon size={18} color={c.onAccent} strokeWidth={1.9} />
+            <Text style={styles.chatPillText}>Chat</Text>
+          </Pressable>
+        )}
 
         <Pressable
           style={({ pressed }) => [styles.gearFloat, pressed && styles.gearFloatPressed]}
@@ -867,6 +898,7 @@ const createStyles = (c: ThemeColors) =>
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
       paddingLeft: space(3.5), paddingRight: space(4),
     },
+    footerFloatEnd: { justifyContent: "flex-end" },
     // The Chat pill: solid ACCENT fill (the appearance setting's swatch drives
     // it), onAccent content, soft drop shadow (c.pageShadow bakes the alpha).
     chatPill: {

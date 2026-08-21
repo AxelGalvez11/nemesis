@@ -183,6 +183,20 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
   return (isObj(data) ? data : { plan: "free", counters: {} }) as unknown as UsageSnapshot;
 }
 
+/**
+ * 🔴 RETIRED — THIS CALLS A PIPELINE THAT CANNOT ANSWER (owner 2026-08-20). The `ask` edge
+ * function searches the PharmaOrb corpus, which `20260807015340_drop_pharmaorb_rpcs` moved into
+ * the `archive` schema; its retrieval RPC went with it, so every real call 500s. The full
+ * reasoning, and why a rename cannot fix it, is at the top of `supabase/functions/ask/index.ts`.
+ *
+ * Left in place rather than deleted because nothing reaches it: the only importer is
+ * `components/WatchCurrentEvidence.tsx`, whose only importer is `components/WatchDetail.tsx`,
+ * which has no importers and no route. Deleting an unreachable function would be tidying, not
+ * fixing — and it would take the preview-mode branch below (still useful, still honest) with it.
+ *
+ * The live answering lane is `nemesis-llm` (see `lib/workspace/chat-api.ts`). Anything new that
+ * needs an answer should go there, NOT here.
+ */
 export async function askQuestion(question: string, mode?: AskMode): Promise<AskResponse> {
   if (isPreviewMode) {
     // Keep local demos honest: preview answers are static, but the UI should still exercise the

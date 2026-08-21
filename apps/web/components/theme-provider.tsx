@@ -2,8 +2,8 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
-import { ACCENT_COLORS, isAccent, normalizeStoredAccent, type AccentPreference } from "@/lib/accent";
-import { COLOR_BY_ID, DEFAULT_COLOR, DEFAULT_SHAPE, SHAPE_BY_ID } from "@/lib/bloub/skins";
+import { ACCENT_COLORS, accentGlyph, isAccent, normalizeStoredAccent, type AccentPreference } from "@/lib/accent";
+import { COLOR_BY_ID, DEFAULT_COLOR, DEFAULT_SHAPE, SHAPE_BY_ID } from "@nemesis/shared/bloub/skins";
 
 // Re-exported so every existing `from "@/components/theme-provider"` import
 // keeps working; lib/accent.ts is the definition.
@@ -147,12 +147,29 @@ function applyAccent(accent: AccentPreference) {
     root.style.removeProperty("--theme-primary");
     root.style.removeProperty("--theme-midground");
     root.style.removeProperty("--theme-warm");
+    // Removing these two is what makes "Default" mean the restrained green in
+    // app/styles/desktop-ui.css, rather than a seventh colour listed here.
+    root.style.removeProperty("--ui-action");
+    root.style.removeProperty("--ui-action-glyph");
     return;
   }
   const color = ACCENT_COLORS[accent];
   root.style.setProperty("--theme-primary", color);
   root.style.setProperty("--theme-midground", color);
   root.style.setProperty("--theme-warm", color);
+  // 🔴 THE ACCENT NOW GOVERNS THE SEND BUTTON, WHICH IT DELIBERATELY DID NOT (owner
+  // 2026-08-20: "the send button is hardcoded green and does not change with the other
+  // color changes"). desktop-ui.css kept --ui-action separate from --ui-accent on the
+  // reasoning that anything branded there "is erased the moment someone picks Blue" —
+  // correct about --theme-midground, which feeds the whole chrome tint, but it left the
+  // product's single most prominent control as the one thing the picker could not
+  // reach. Setting --ui-action HERE, as its own property, keeps both: the chrome tint
+  // stays a tint, and the primary action follows the choice.
+  root.style.setProperty("--ui-action", color);
+  // The glyph on that fill is no longer --ui-bg-editor, because a fill that moves needs
+  // a foreground that moves with it. See accentGlyph — five of the six accents want a
+  // near-black arrow, not a white one.
+  root.style.setProperty("--ui-action-glyph", accentGlyph(color));
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

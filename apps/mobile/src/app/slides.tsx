@@ -48,7 +48,7 @@ export default function SlidesScreen() {
   }, [uid, id]);
 
   const slides = useMemo(() => parseSlideDeck(content), [content]);
-  const close = () => (router.canGoBack() ? router.back() : router.replace("/library"));
+  const close = () => (router.canGoBack() ? router.back() : router.replace("/library?classic=1"));
 
   return (
     <View style={styles.root} testID="slides-preview">

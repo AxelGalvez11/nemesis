@@ -107,6 +107,12 @@ const THINKING_ID = "__thinking__";
  *  far enough that it shows up as soon as there is genuinely something below. */
 const JUMP_TO_BOTTOM_AT = 160;
 
+/** The empty source list an ungrounded assistant turn is rendered with. Module-level so it is the
+ *  SAME array on every render: `MessageBody` memoises its markdown rules on `sources`, and a fresh
+ *  `[]` inline in JSX would be a new identity each frame and rebuild those rules for every message
+ *  in the transcript on every keystroke. See the call site for what the value means. */
+const NO_SOURCES: ChatSource[] = [];
+
 
 // 🔴 THE TWO BACKGROUND REFRESHES BELOW MERGE, THEY DO NOT REPLACE, AND THAT
 // IS WHY THE SCREEN NO LONGER GOES BLANK. loadThreadMessages snapshots the
@@ -1560,7 +1566,14 @@ export default function ChatScreen() {
                     {item.msg!.content.trim() ? (
                       <MessageBody
                         content={item.msg!.content}
-                        sources={item.msg!.sources}
+                        // 🔴 `?? NO_SOURCES`, NOT A BARE `item.msg!.sources` (owner 2026-08-21).
+                        // `ChatMsg.sources` is optional and is absent on every turn the router did
+                        // not ground with a web search — which is most of them. `MessageBody`
+                        // reads `sources !== undefined` as "this is an assistant answer", so
+                        // handing it `undefined` told it this was a student's own prose and
+                        // switched OFF the bare-URL demotion for exactly the turns most likely to
+                        // print one: an ungrounded answer quoting an address from memory.
+                        sources={item.msg!.sources ?? NO_SOURCES}
                         styles={markdownStyles}
                       />
                     ) : null}

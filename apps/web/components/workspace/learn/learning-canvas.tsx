@@ -45,7 +45,7 @@ import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
 import { BloubDock } from "@/components/bloub/bloub-dock";
-import { stateForCanvas } from "@/lib/character/stations";
+import { stateForCanvas } from "@nemesis/shared/character/stations";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
 import { CanvasSurface } from "./canvas-surface";

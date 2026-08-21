@@ -1,11 +1,25 @@
 import { useMemo, type ReactNode } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Image, Linking, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 import type { ASTNode } from "react-native-markdown-display";
 import MarkdownIt from "markdown-it";
 import { MathJaxSvg } from "react-native-mathjax-html-to-svg";
 
 import { MarkdownImage } from "./MarkdownImage";
+import {
+  faviconSource,
+  hostOf,
+  noteFaviconFailed,
+  siteInitial,
+  siteName,
+  useFaviconFailed,
+} from "@/components/canvas/canvas-sources";
+import {
+  citationTarget,
+  citationsToMarkdown,
+  groupCitationRuns,
+  isBareUrlLink,
+} from "@/components/canvas/citation-markers";
 import type { ChatSource } from "@/lib/chat-thread";
 import { obsidianInline } from "@/lib/markdown-obsidian";
 import { createMarkdownStyles } from "@/theme/markdown";
@@ -77,48 +91,190 @@ type Segment =
 interface MessageBodyProps {
   content: string;
   styles: MarkdownStyles;
-  /** The note reader routes [[wikilinks]] and external URLs through its own
-   *  handler; chat and review leave this off and get default link handling. */
+  /**
+   * The note reader routes [[wikilinks]] and external URLs through its own
+   * handler; chat and review leave this off and get default link handling.
+   *
+   * 🔴 THE RETURN VALUE IS react-native-markdown-display'S, AND IT IS THE OPPOSITE OF "HANDLED"
+   * (owner 2026-08-21). Returning `true` means "I did something AND you should ALSO open this
+   * address externally"; returning `false` — or `undefined`, or anything non-boolean — means
+   * "leave it to me, do not open it". That is the library's own `openUrl`, verbatim from
+   * `node_modules/react-native-markdown-display/src/lib/util/openUrl.js`:
+   *
+   *     export default function openUrl(url, customCallback) {
+   *       if (customCallback) {
+   *         const result = customCallback(url);
+   *         if (url && result && typeof result === 'boolean') {
+   *           Linking.openURL(url);
+   *         }
+   *       } else if (url) {
+   *         Linking.openURL(url);
+   *       }
+   *     }
+   *
+   * `InlineLink` below implements exactly that, because every caller of this prop was written
+   * against the library and returns `false` from every branch — see `app/note.tsx`
+   * ("return false = we handled it; don't let the default open") and
+   * `components/NoteBlockEditor.tsx`'s `linkPressToActivate`. Read `false` as "not handled" and a
+   * tapped [[wikilink]] both jumps to the note AND hands `wikilink:Some%20Note` to Safari.
+   */
   onLinkPress?: (url: string) => boolean;
-  /** Known answer sources. Matching markdown links become compact inline
-   * citation chips, like the iOS ChatGPT source treatment. */
+  /** Known answer sources, in the order the model was given them. Two things
+   * depend on this list: a markdown link whose href is one of them becomes a
+   * compact citation chip carrying the site's favicon, and a numbered citation
+   * marker — `[1]` — is resolved through it into the same chip. See
+   * `citationsToMarkdown` and `InlineLink`. */
   sources?: ChatSource[];
 }
 
 export function MessageBody({ content, styles, onLinkPress, sources }: MessageBodyProps) {
   const { colors: c } = useTheme();
-  const segments = useMemo(() => buildSegments(content), [content]);
+  // Numbered markers become links BEFORE the parser sees the text; everything
+  // after this point is ordinary markdown. See `citationsToMarkdown`.
+  //
+  // 🔴 GROUPING IS HANDED THE SAME RESOLVABILITY TEST THE `link` RULE USES, AND THAT IS WHAT KEEPS
+  // A CITATION FROM BEING DELETED (owner 2026-08-21). `groupCitationRuns` collapses `[1][2]` into
+  // ONE link whose href carries the first number and a count — the second number is not in it
+  // anywhere. That is fine for a chip reading "Reuters +1" and fatal for the fallback below, which
+  // has only the href to rebuild from: the run would come back as `[1]` and source 2 would be gone
+  // from the sentence. Passing `citationSite` means a run is only ever collapsed when every source
+  // in it can actually be drawn as a named chip, so the fallback only ever meets lone markers.
+  const prepared = useMemo(
+    () =>
+      groupCitationRuns(
+        citationsToMarkdown(content, sources?.length ?? 0),
+        (index) => citationSite(sources, index) !== null,
+      ),
+    [content, sources],
+  );
+  const segments = useMemo(() => buildSegments(prepared), [prepared]);
+  // 🔴 EVERY SURFACE GOES THROUGH OUR `link` RULE NOW, AND THE EARLY-OUT THAT USED TO SPARE THEM IS
+  // GONE ON PURPOSE (owner 2026-08-21). This function opened with
+  // `if (!sources?.length) return MARKDOWN_RULES`, so notes, the note editor, review, flashcards
+  // and notebooks kept react-native-markdown-display's OWN `link` rule and never met `InlineLink`.
+  // TRIED AND REJECTED: keeping it. It cannot survive the bare-URL demotion — an answer with NO
+  // search results is still an answer, `sources` is `[]` there, and `!sources?.length` is true for
+  // it, so the very case the owner reported (a model quoting an address from memory, printed raw
+  // mid-paragraph) took the early-out and stayed a raw URL. `sources !== undefined` is the test
+  // that tells an answer from a student's own prose; length cannot do that job.
+  // THE PRICE: `InlineLink` now owns link presses on the note screens too, which is why its `open`
+  // must speak the library's contract exactly rather than an inverted one of our own. See the
+  // `onLinkPress` JSDoc above.
+  // 🔴 AND THE INVERSION WAS REAL, BUT IT NEVER REACHED ANYONE — CHECKED, NOT ASSUMED (owner
+  // 2026-08-21, correcting an earlier version of this very comment that said it "shipped"). The
+  // released file (`git show HEAD:…/MessageBody.tsx`, commit 23f9c0f2, 2026-07-29) does contain
+  // `const handled = onLinkPress?.(href) ?? false; if (!handled) …` — but it also opens with the
+  // `if (!sources?.length) return MARKDOWN_RULES` early-out, and the only two screens that pass
+  // `onLinkPress` (`app/note.tsx`, `components/NoteBlockEditor.tsx`) pass NO `sources`. So on every
+  // released build they took the early-out and got the library's own correct `openUrl`; the
+  // inverted branch was unreachable for them. Removing the early-out above is what made it
+  // reachable, and it was corrected the same day, in this working tree, before any commit. Recorded
+  // because the trap is real and the next reader will meet it — not because it was ever a
+  // production incident. Saying otherwise sends someone hunting a release that does not exist.
   const rules = useMemo(() => {
-    if (!sources?.length) return MARKDOWN_RULES;
-    const sourceUrls = new Set(sources.map((source) => normalizedUrl(source.url)));
+    const sourceUrls = new Set((sources ?? []).map((source) => normalizedUrl(source.url)));
+    // 🔴 THE `sources` PROP IS WHAT SAYS "THIS IS AN ASSISTANT ANSWER" (owner 2026-08-20). Only the
+    // two answer surfaces pass it — Chat and the Learn canvas — and they pass it even when the turn
+    // searched nothing, so an empty list still means an answer. Notes, review and flashcards never
+    // pass it. That distinction is load-bearing for rule 2 below: rewriting an address into a chip
+    // is right in a machine's prose and wrong in the student's own, where a URL they typed into a
+    // note is their content and must render as they wrote it.
+    const isAssistantAnswer = sources !== undefined;
     return {
       ...MARKDOWN_RULES,
       link: (node: ASTNode, children: ReactNode) => {
         const href = String(node.attributes?.href ?? "");
+
+        // 1. A numbered citation marker, already rewritten into a link by
+        //    `citationsToMarkdown` before the parser ever saw the text. The
+        //    number is an index into `sources`, resolved HERE rather than in
+        //    the text, so the chip can carry the publication's name instead of
+        //    a digit the reader has nowhere to look up.
+        const citation = citationTarget(href);
+        if (citation !== null) {
+          const site = citationSite(sources, citation.index);
+          // 🔴 THE FALLBACK REBUILDS THE BRACKETS, BECAUSE `children` IS NOT WHAT THE MODEL WROTE
+          // (owner 2026-08-21). Not resolving is an ordinary, DOCUMENTED outcome now, not a
+          // replay accident: a canvas source that was an upload has no address anywhere — see the
+          // `sources` comment in `CanvasDocument.tsx` — and `hostOf` also refuses a `javascript:`
+          // address, so a chip is never built over something that should not be opened. In every
+          // one of those cases the marker has to go back to being a marker.
+          //   TRIED AND REJECTED: `<Text>{children}</Text>`, which is what stood here.
+          // `citationsToMarkdown` rewrote `[3]` into `[3](#nemesis-cite=3)`, and a markdown link's
+          // visible text is the part inside the brackets — just `3`. Parsed through the phone's
+          // real markdown-it config under node, "Revenue showed a 40% drop [3]." came out of the
+          // renderer as "Revenue showed a 40% drop 3.": a stray digit welded to the prose, with
+          // the reader given no hint that it was ever a citation. `[${citation.index}]` is the
+          // text the model actually typed, and the two brackets are the whole cost of saying so.
+          //   `extra` is 0 here by construction — `prepared` above refuses to collapse a run it
+          // cannot name — so there are no further numbers to restore at this point.
+          if (!site) return <Text key={node.key}>{`[${citation.index}]`}</Text>;
+          const { url, host: citedHost } = site;
+          return (
+            <InlineLink
+              key={node.key}
+              url={url}
+              chip
+              host={citedHost}
+              label={siteName(citedHost)}
+              extra={citation.extra}
+              linkStyle={styles.link}
+              onLinkPress={onLinkPress}
+            >
+              {children}
+            </InlineLink>
+          );
+        }
+
+        const host = hostOf(href);
+
+        // 2. A bare URL the model typed into the sentence — the reported bug:
+        //    "(https://api-docs.deepseek.com/updates, https://releasebot.io/…)"
+        //    sitting underlined mid-paragraph. `linkify` turns it into a link
+        //    whose text IS its address, so there is no author wording to
+        //    protect and the chip is named for the site instead. Note this does
+        //    NOT require the URL to be one of `sources`: a model quoting an
+        //    address from memory produces exactly the same eyesore, and the
+        //    screen has to cope with it whatever the prompt asks for.
+        if (isAssistantAnswer && host && isBareUrlLink(href, nodeText(node))) {
+          return (
+            <InlineLink
+              key={node.key}
+              url={href}
+              chip
+              host={host}
+              label={siteName(host)}
+              linkStyle={styles.link}
+              onLinkPress={onLinkPress}
+            >
+              {children}
+            </InlineLink>
+          );
+        }
+
+        // 3. An ordinary written link. A chip only when it points at one of this
+        //    answer's own sources, and it keeps the words the model wrote.
         const isSource = sourceUrls.has(normalizedUrl(href));
         return (
-          <Text
-            accessibilityRole="link"
+          <InlineLink
             key={node.key}
-            onPress={() => {
-              const handled = onLinkPress?.(href) ?? false;
-              if (!handled) void Linking.openURL(href).catch(() => {});
-            }}
-            style={isSource
-              ? [inlineCitation.chip, { backgroundColor: c.surface2, color: c.textHint }]
-              : styles.link}
+            url={href}
+            chip={isSource}
+            host={isSource ? host : null}
+            linkStyle={styles.link}
+            onLinkPress={onLinkPress}
           >
             {children}
-          </Text>
+          </InlineLink>
         );
       },
     };
-  }, [c.surface2, c.textHint, onLinkPress, sources, styles]);
+  }, [onLinkPress, sources, styles]);
 
   // No real math (or unbalanced delimiters → fallback): render the message as a
   // single plain Markdown block with NO wrapper, byte-identical to before.
   if (!segments) {
-    return <Markdown style={styles} rules={rules} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>{content}</Markdown>;
+    return <Markdown style={styles} rules={rules} markdownit={MARKDOWN_PARSER} onLinkPress={onLinkPress}>{prepared}</Markdown>;
   }
 
   return (
@@ -154,6 +310,172 @@ function normalizedUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
+/**
+ * Where a `[n]` marker points, or null when this answer has nothing openable at that position.
+ *
+ * 🔴 ONE FUNCTION, TWO CALLERS, AND THEY MUST NOT DISAGREE (owner 2026-08-21). The `link` rule asks
+ * it "can I draw a chip for this marker"; `prepared` asks `groupCitationRuns` the same question
+ * before collapsing a run. If those two answers ever diverged, a run could be collapsed into a chip
+ * the renderer then refused to draw — and the fallback, which has only the first number, would drop
+ * the rest of the run out of the sentence. Sharing the test is what makes that impossible rather
+ * than merely unlikely.
+ *
+ * `hostOf` is the second half of the check and not a formality: it is what refuses a `javascript:`
+ * or otherwise non-http address, so nothing that should not be opened ever reaches a chip.
+ */
+function citationSite(sources: ChatSource[] | undefined, index: number): { url: string; host: string } | null {
+  const url = sources?.[index - 1]?.url?.trim() ?? "";
+  if (!url) return null;
+  const host = hostOf(url);
+  return host ? { url, host } : null;
+}
+
+/**
+ * One markdown link, in one of two shapes.
+ *
+ * `chip` off — an ordinary link: a <Text> with a press handler, styled exactly as it always was.
+ * `chip` on — the compact citation pill, the phone's version of the web's "named inline pill" from
+ * `chat-markdown.tsx`: a 12pt round favicon, a hair of space, then a short label, on a flat fill
+ * with no border.
+ *
+ * 🔴 IT CARRIES THE SITE'S FAVICON (owner asked twice, 2026-08-20). The pill UNDER an answer has
+ * had icons since it was built; the chips inside the prose were bare text, so the same source
+ * looked like two different things on one screen.
+ *
+ * 🔴 <Image> NESTED INSIDE <Text>, AND IT HAS TO BE. This is returned from a markdown-display
+ * `link` rule, which means it lands inside a paragraph's textgroup; returning a <View> there
+ * breaks the paragraph into blocks — the same trap the `mark`/`tag`/`u` rules note above. React
+ * Native draws an inline image inside <Text> on both platforms provided width and height are
+ * explicit, which is why they are literals here and not derived from the font.
+ *
+ * 🔴 WHOSE WORDS THE CHIP SHOWS IS DECIDED BY THE CALLER, AND THE RULE HAS TWO HALVES (owner
+ * 2026-08-20). The original half stands and is not withdrawn: A CHIP BUILT OVER AN AUTHORED LINK
+ * KEEPS THE MODEL'S OWN LINK TEXT and does NOT get replaced with the site name — this rule fires
+ * for any markdown link that matches one of the answer's sources, including a prose link written
+ * mid-sentence, and "according to [the 2019 trial](…)" becoming "according to Nature" mangles the
+ * sentence to gain nothing. The icon adds provenance; it does not need to overwrite the words.
+ * The second half is the case that half never covered: a BARE URL the model typed as an address,
+ * and a resolved `[1]` marker, have no author words at all — the visible text is the address
+ * itself, or a digit. There the caller passes `label` and the site's name replaces it, because
+ * forty characters of URL mid-paragraph is exactly what the owner reported seeing and a digit
+ * names nothing. `isBareUrlLink` in `citation-markers.ts` is what tells the two apart.
+ *
+ * `extra` is how many further sources a grouped run of markers stands for — drawn as "+2" after
+ * the label, because a chip that swallowed them silently would be claiming one source where the
+ * sentence cited three. See `groupCitationRuns`.
+ *
+ * The letter fallback is the module's, and it is real — see `canvas-sources.ts` for the probe that
+ * settles a host's icon once per session under either of the two readings of the resolver's
+ * behaviour. No disc behind the letter here: this chip already has its own fill, and a badge inside
+ * a badge reads as a rendering accident.
+ */
+function InlineLink({
+  children,
+  url,
+  chip,
+  host,
+  label,
+  extra = 0,
+  linkStyle,
+  onLinkPress,
+}: {
+  children: ReactNode;
+  url: string;
+  /** Draw the compact citation pill instead of an ordinary underlined link. */
+  chip: boolean;
+  /** The site whose icon the chip shows. Null when there is nothing openable to name. */
+  host: string | null;
+  /** Replaces the link's own text. Only ever passed where there is no authored text to keep. */
+  label?: string;
+  /** Further sources collapsed into this one chip; 0 for a lone citation. */
+  extra?: number;
+  linkStyle: object;
+  /** Same contract as `MessageBodyProps.onLinkPress`: `true` = "also open it externally",
+   *  anything else = "I handled it, do not open it". Implemented in `open` below. */
+  onLinkPress?: (url: string) => boolean;
+}) {
+  const { colors: c } = useTheme();
+  // Unconditional: hooks cannot hide behind `host`, and the memo answers false for "".
+  const iconFailed = useFaviconFailed(host ?? "");
+  // 🔴 A TRANSCRIPTION OF react-native-markdown-display'S `openUrl`, NOT AN INTERPRETATION OF IT
+  // (owner 2026-08-21). The library source is quoted in full on the `onLinkPress` prop above; the
+  // shape below is that function with our `url` already in hand. Two facts it encodes and that a
+  // shorter spelling loses:
+  //   • NO callback at all still opens the address — that is how chat, review and flashcards get
+  //     ordinary link behaviour without passing a handler.
+  //   • `=== true` is the library's `result && typeof result === 'boolean'`. A handler that
+  //     returns nothing must NOT open the browser, which is precisely what a void-returning
+  //     callback written by a caller who thought `false` meant "handled" looks like.
+  // TRIED AND REJECTED: `const handled = onLinkPress?.(url) ?? false; if (!handled) open()`. It
+  // reads naturally and is exactly backwards. Every caller returns `false` from every branch, so
+  // with this rule now applying to the note screens it opens Safari after every in-app navigation:
+  // a [[wikilink]] both jumps to the note and hands `wikilink:Some%20Note` to the browser, an
+  // external link in a note opens twice, and a tap on any line containing a link in the note EDITOR
+  // throws the writer out to Safari instead of placing a caret.
+  //   Present tense on purpose: that spelling sat in this working tree for part of 2026-08-21 and
+  // was corrected before it was committed. It is NOT what any released build did — the shipped
+  // version of this file never ran this rule on a screen that passes `onLinkPress`, for the reason
+  // set out beside the early-out in `MessageBody` above.
+  const open = () => {
+    if (onLinkPress) {
+      if (url && onLinkPress(url) === true) void Linking.openURL(url).catch(() => {});
+      return;
+    }
+    if (url) void Linking.openURL(url).catch(() => {});
+  };
+
+  if (!chip) {
+    return (
+      <Text accessibilityRole="link" onPress={open} style={linkStyle}>
+        {children}
+      </Text>
+    );
+  }
+
+  return (
+    <Text
+      accessibilityRole="link"
+      // The chip shows a site name; the reader of a screen reader gets the page it opens.
+      accessibilityLabel={label ? (extra > 0 ? `${label}, and ${extra} more sources` : label) : undefined}
+      accessibilityHint={label ? url : undefined}
+      onPress={open}
+      style={[
+        inlineCitation.chip,
+        { backgroundColor: c.surface2, color: c.textHint },
+        host ? inlineCitation.chipWithMark : null,
+      ]}
+    >
+      {host ? (
+        iconFailed ? (
+          <Text style={[inlineCitation.initial, { color: c.text2 }]}>{siteInitial(host)}</Text>
+        ) : (
+          <Image
+            source={faviconSource(host)}
+            style={inlineCitation.icon}
+            onError={() => noteFaviconFailed(host)}
+            accessibilityIgnoresInvertColors
+          />
+        )
+      ) : null}
+      {host ? " " : null}
+      {label ?? children}
+      {extra > 0 ? <Text style={[inlineCitation.extra, { color: c.text3 }]}>{` +${extra}`}</Text> : null}
+    </Text>
+  );
+}
+
+/**
+ * The visible text of a link node, flattened.
+ *
+ * The only thing it is used for is telling an autolinked address apart from an authored link — see
+ * `isBareUrlLink`. Recurses because the parser groups a paragraph's inline runs under `textgroup`
+ * nodes, so a link's words are usually one level down rather than directly on it.
+ */
+function nodeText(node: ASTNode): string {
+  if (node.type === "text") return typeof node.content === "string" ? node.content : "";
+  return (node.children ?? []).map(nodeText).join("");
+}
+
 const inlineCitation = StyleSheet.create({
   chip: {
     borderRadius: 999,
@@ -163,6 +485,16 @@ const inlineCitation = StyleSheet.create({
     paddingVertical: 2,
     textDecorationLine: "none",
   },
+  // The web's named pill is `pl-[3px] pr-[6px]`: tight on the icon side, open on the text side, so
+  // the round icon is not double-padded by its own whitespace. Listed after the shorthand above so
+  // the flattener takes these.
+  chipWithMark: { paddingLeft: 3, paddingRight: 6 },
+  // 12pt against 12/18 text — the web's named pill draws a 12px `rounded-full` icon at the same
+  // ratio. Exempt from the text scale for the reason `canvas-metrics.ts` gives: it is a glyph.
+  icon: { width: 12, height: 12, borderRadius: 6 },
+  initial: { fontSize: 9, lineHeight: 18, fontWeight: "700" },
+  // Quieter than the label it trails: "+2" is a count, not the name of anything.
+  extra: { fontSize: 10, lineHeight: 18, fontWeight: "600" },
 });
 
 // Returns the ordered segments, or null when the message should render as one

@@ -143,7 +143,11 @@ export const CHAT_SYSTEM_PROMPT =
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
   "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
   "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
-  "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
+  // 🔴 NUMBERS, NOT ADDRESSES. This said "cite the relevant URLs", which contradicted the per-turn
+  // evidence block below it and is half of why raw links reached the screen. The web carries the
+  // same generic line harmlessly because its evidence block overrides it every turn; the phone's
+  // did not, so this one was the operative instruction.
+  "When live web results are supplied, use them for current facts and cite them by their bracketed number, like [1]. Never write a raw URL in the prose. " +
   "Never use emojis. " +
   "You can see and change this student's own Nemesis workspace through your tools: search and read their Library notes, create a note, " +
   "add to an existing note, create slide decks, make folders, rename and move notes, list their flashcard decks, add cards to a deck, save practice tests " +
@@ -416,11 +420,32 @@ export function forcedResearchDecision(): ChatRouteDecision {
  *  cite from — ported from apps/web/lib/workspace/chat-web-search.ts's
  *  formatWebSearchContext (that module's trigger heuristics are NOT ported;
  *  the phone's ONLY search trigger is chat-routing.ts's `searchWeb` decision). */
+/**
+ * The results that are worth showing the model AND the learner — ONE list, exported, because two
+ * lists is a citation pointing at the wrong page.
+ *
+ * 🔴 THE NUMBERING THE MODEL IS GIVEN AND THE ARRAY THE SCREEN INDEXES MUST BE THE SAME LIST. They
+ * were not: `api/chat.ts` kept every result that had a `url`, while the block below numbered only
+ * those that also had a title or a description. One result with a bare URL and no snippet was
+ * enough to shift every number after it, so `[2]` in the prose opened result 3 — a wrong citation,
+ * rendered confidently, which is worse than no citation at all. Both callers now filter here.
+ */
+export function usableWebResults(results: ChatSource[]): ChatSource[] {
+  return results.filter((result) => result.url && (result.title || result.description)).slice(0, 10);
+}
+
 export function formatWebSearchContext(results: ChatSource[]): string {
-  const usable = results.filter((result) => result.url && (result.title || result.description)).slice(0, 10);
+  const usable = usableWebResults(results);
   if (usable.length === 0) return "";
   return [
-    "Live web search results (use these for current facts and cite the relevant URL in the answer):",
+    // 🔴 THE WEB'S SENTENCE, CHARACTER FOR CHARACTER, AND THE PORT DROPPING IT WAS THE BUG. This
+    // line used to read "Live web search results (use these for current facts and cite the relevant
+    // URL in the answer)" — it ASKED the model for raw addresses, and got them: answers arrived with
+    // "(https://api-docs.deepseek.com/updates, https://releasebot.io/updates/deepseek)" sitting in
+    // the middle of a paragraph (owner 2026-08-20, from a screenshot). The web has never had that
+    // problem because its block ends with the opposite instruction. Copied rather than paraphrased:
+    // a second wording is how these two files drifted apart in the first place.
+    "PROVISIONAL EXTERNAL EVIDENCE from live web search. Search snippets are evidence leads, not automatically settled facts and not learner knowledge. Use them for current claims only to the degree they support those claims. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. Only cite a number for a fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
     UNTRUSTED_CONTENT_RULE,
     ...usable.map((result, index) =>
       wrapUntrusted(

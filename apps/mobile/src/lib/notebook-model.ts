@@ -272,10 +272,27 @@ export function buildSourceContext(sources: NotebookWireSource[], budget = SOURC
  *  the route framing, the student's instructions (if any), the source text (budgeted), then
  *  trimmed history + the new user message. Grounded mode never adds live web results — the
  *  route classifier here only picks the model (deepseek-chat vs -reasoner + effort), it does
- *  NOT trigger a search. PURE. */
+ *  NOT trigger a search. PURE.
+ *
+ *  🔴 "named-sources" IS NOT BOILERPLATE — IT IS THE ONLY CITATION FORM A NOTEBOOK ANSWER CAN
+ *  HONOUR (owner 2026-08-21). routeInstruction's default is chat's form, which asks the model to
+ *  cite by bracketed number, like [1]. Three separate facts about THIS surface make that
+ *  unanswerable here:
+ *    1. buildSourceContext above heads each source "### Source: <name>" and never numbers them,
+ *       so there is no number in the request for a "[1]" to refer back to;
+ *    2. grounded mode attaches no live web results at all (that is what the paragraph above
+ *       promises), so the numbered list chat's form assumes never exists on this path;
+ *    3. app/notebook.tsx renders every notebook message through <MessageBody> with NO `sources`
+ *       prop (app/notebook.tsx:789 and :797), so citationsToMarkdown runs with a source count of
+ *       0, every marker is out of range, and MessageBody leaves it as plain text — a literal
+ *       "[1]" stranded in the answer, pointing at nothing the student can tap or look up.
+ *  Passing the form explicitly, rather than letting the default ride, is also what makes the
+ *  breakage visible the next time chat's default changes: this call site names what notebooks
+ *  carry, so it stops tracking a decision made for a different surface. See the 🔴 block on
+ *  routeInstruction in chat-routing.ts for the whole reasoning. */
 export function buildNotebookWireMessages(opts: BuildNotebookWireOpts): WireMsg[] {
   const decision = opts.decision ?? classifyChatRequest(opts.userText);
-  const parts = [NOTEBOOK_SYSTEM_PROMPT, routeInstruction(decision.route)];
+  const parts = [NOTEBOOK_SYSTEM_PROMPT, routeInstruction(decision.route, "named-sources")];
   const instructions = opts.instructions?.trim();
   if (instructions) {
     parts.push(`This notebook's instructions from the student (follow them):\n${instructions}`);

@@ -17,11 +17,11 @@ import { useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { BloubBot } from "@/components/bloub/bloub-bot";
 import { BloubDock } from "@/components/bloub/bloub-dock";
-import { speedOf, stationOf } from "@/lib/character/stations";
-import { defaultCycle, totalDuration } from "@/lib/bloub/cycles";
-import { EXPRESSIONS } from "@/lib/bloub/expressions";
-import { COLORS, SHAPES } from "@/lib/bloub/skins";
-import { POSES, SEQUENCE, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
+import { speedOf, stationOf } from "@nemesis/shared/character/stations";
+import { defaultCycle, totalDuration } from "@nemesis/shared/bloub/cycles";
+import { EXPRESSIONS } from "@nemesis/shared/bloub/expressions";
+import { COLORS, SHAPES } from "@nemesis/shared/bloub/skins";
+import { POSES, SEQUENCE, STATE_BY_ID, type StateId } from "@nemesis/shared/bloub/states";
 
 const ALL_STATES: StateId[] = [...SEQUENCE, "swirl"];
 

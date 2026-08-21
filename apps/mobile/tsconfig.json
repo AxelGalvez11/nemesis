@@ -6,7 +6,9 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@nemesis/shared/bloub/*": ["../../packages/shared/src/bloub/*.ts"],
+      "@nemesis/shared/character/*": ["../../packages/shared/src/character/*.ts"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],

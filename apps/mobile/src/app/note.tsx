@@ -471,7 +471,7 @@ export default function NoteScreen() {
               void deleteNote(userId, doc.id)
                 .then(() => {
                   if (router.canGoBack()) router.back();
-                  else router.replace("/library");
+                  else router.replace("/library?classic=1");
                 })
                 .catch((err) => flashNotice(err instanceof Error ? err.message : "Couldn't delete the note."));
             },

@@ -51,3 +51,43 @@ export function isAccent(value: string | null): value is AccentPreference {
 export function normalizeStoredAccent(value: string | null): string | null {
   return value === "crimson" ? "default" : value;
 }
+
+/**
+ * The glyph colour that sits ON an accent fill — the send button's arrow, the
+ * "finish dictation" check, the recorder's label.
+ *
+ * 🔴 COMPUTED, NOT PICKED, BECAUSE THE OBVIOUS ANSWER IS WRONG FOR FIVE OF THE SIX.
+ * The palette comment above says these hues were pulled darker "so white button text
+ * stays legible", which is true and is also not the same claim as "white is the BEST
+ * glyph". Measured against #1a1a1a: blue 4.63 vs white's 3.76, green 5.04 vs 3.46,
+ * orange 4.77 vs 3.65, pink 4.96 vs 3.51, yellow 5.02 vs 3.47. Only purple prefers
+ * white (5.95 vs 2.93). Hard-coding either one puts four or five accents below AA on a
+ * control that is the primary action of the whole product.
+ *
+ * Deciding per-accent by luminance also means a SEVENTH accent cannot silently ship a
+ * failing button: whatever hue is added, the glyph follows it.
+ */
+export function accentGlyph(hex: string): string {
+  return contrastRatio(hex, "#ffffff") >= contrastRatio(hex, GLYPH_DARK) ? "#ffffff" : GLYPH_DARK;
+}
+
+/** Near-black rather than pure black: matches --dt-primary-foreground, the glyph
+ *  colour every other filled control in the workspace already uses. */
+const GLYPH_DARK = "#1a1a1a";
+
+function contrastRatio(a: string, b: string): number {
+  const first = relativeLuminance(a);
+  const second = relativeLuminance(b);
+  const lighter = Math.max(first, second);
+  const darker = Math.min(first, second);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** WCAG 2.1 relative luminance. Expects `#rrggbb`. */
+function relativeLuminance(hex: string): number {
+  const channel = (offset: number): number => {
+    const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+}

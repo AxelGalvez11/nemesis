@@ -27,11 +27,11 @@ import {
   subscribeAttention,
   type AttentionTarget,
 } from "@/lib/mascot/attention";
-import type { StateId } from "@/lib/bloub/states";
+import type { StateId } from "@nemesis/shared/bloub/states";
 
 import { BloubBot } from "./bloub-bot";
 import { usePoke } from "./use-poke";
-import { speedOf, stationOf } from "@/lib/character/stations";
+import { speedOf, stationOf } from "@nemesis/shared/character/stations";
 
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;
@@ -89,8 +89,9 @@ export function BloubDock({
   className,
 }: BloubDockProps) {
   const { bloubShape, bloubColor } = useTheme();
-  // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
-  const { state: shown, poke } = usePoke(state);
+  // Clicking it draws a reaction, and a busy state cancels one mid-gesture. `motion` is the
+  // half the engine has no pose for — the hop and the brow waggle. See `use-poke.ts`.
+  const { state: shown, motion, poke } = usePoke(state);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState(bottom);
   const [inset, setInset] = useState(left);
@@ -232,16 +233,33 @@ export function BloubDock({
       }}
       aria-hidden="true"
     >
-      <BloubBot
-        aimAt={aimAt}
-        color={bloubColor}
-        shape={bloubShape}
-        onPoke={poke}
-        size={size}
-        speed={speedOf(shown)}
-        state={shown}
-        track
-      />
+      {/* 🔴 THE HOP IS ITS OWN ELEMENT, INSIDE THE ONE THAT TRAVELS. The host already carries
+          `translate3d(...) scale(...)` for the corner→centre walk and re-writes it whenever the
+          composer moves, so a jump written onto the SAME element would either be overwritten by
+          the next measurement or have to be spliced into that string every frame. Nested
+          transforms multiply, so a child that only ever hops composes with a parent that only
+          ever travels, and neither has to know about the other.
+
+          🔴 NOT KEYED, AND IT MUST NOT BE. Re-mounting to restart the animation is the obvious
+          trick and it would take `BloubBot` down with it — the engine, its clock and the gaze's
+          entry turn all live in that subtree, so every second poke would restart the character
+          rather than move it. It does not need the trick: `usePoke` never plays the same motion
+          twice in a row (the cycle is jump → wink → waggle) and always returns to null between
+          reactions, so the class really is removed and re-added, which restarts the animation
+          on its own. */}
+      <div className={motion === "jump" ? "bloub-jump" : undefined}>
+        <BloubBot
+          aimAt={aimAt}
+          color={bloubColor}
+          shape={bloubShape}
+          onPoke={poke}
+          size={size}
+          speed={speedOf(shown)}
+          state={shown}
+          track
+          waggle={motion === "waggle"}
+        />
+      </div>
     </div>
   );
 }

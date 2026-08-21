@@ -10,7 +10,9 @@
     "noEmit": true,
     "paths": {
       "@/*": ["./*"],
-      "@nemesis/shared": ["../../packages/shared/src/index.ts"]
+      "@nemesis/shared": ["../../packages/shared/src/index.ts"],
+      "@nemesis/shared/bloub/*": ["../../packages/shared/src/bloub/*.ts"],
+      "@nemesis/shared/character/*": ["../../packages/shared/src/character/*.ts"]
     },
     "plugins": [{ "name": "next" }]
   },

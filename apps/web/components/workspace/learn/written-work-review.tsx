@@ -141,7 +141,7 @@ export function WrittenWorkReview({ work, reason, onConfirm, onCancel, busy }: W
               control of its own while a review is open, so there is no path from an uncertain
               reading to a durable verdict that does not pass through a person reading it back. */}
           <button
-            className="flex h-[36px] items-center justify-center gap-1.5 rounded-full bg-(--ui-action) px-4 text-[length:var(--canvas-text-small)] font-medium text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="flex h-[36px] items-center justify-center gap-1.5 rounded-full bg-(--ui-action) px-4 text-[length:var(--canvas-text-small)] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-90 disabled:opacity-40"
             disabled={busy || values.every((value) => !value.trim())}
             onClick={() => onConfirm({ finalAnswerIndex, marks: values })}
             type="button"

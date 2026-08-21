@@ -52,3 +52,55 @@ assert.equal(
 );
 
 console.log("chat-citations: all assertions passed");
+
+// 🔴 MARKDOWN REFERENCE LINKS ARE NOT CITATIONS (owner 2026-08-21). `[the trial][1]` with a
+// `[1]: https://…` definition further down is ordinary markdown, and rewriting either half breaks
+// it. Reproduced against the phone's real parser before fixing: converting first turned
+// "[the Lancet paper][1]" into literal bracketed text plus a pill pointing at nothing, and dragged
+// the definition lines up into the body as visible prose with the URLs naked on the page. Both real
+// link targets were lost. The whole answer must therefore come back byte-identical.
+const referenceAnswer = [
+  "The trial was published in [the Lancet paper][1] last spring, and the",
+  "registry entry [is here][2].",
+  "",
+  "[1]: https://www.thelancet.com/article/S0140",
+  "[2]: https://clinicaltrials.gov/study/NCT01",
+].join("\n");
+assert.equal(
+  citationsToMarkdown(referenceAnswer, 3),
+  referenceAnswer,
+  "a reference link and its definition lines are left exactly as written",
+);
+
+// An indented definition is still a definition — markdown allows up to three leading spaces.
+assert.equal(
+  citationsToMarkdown("text [x][1]\n\n   [1]: https://example.com", 2),
+  "text [x][1]\n\n   [1]: https://example.com",
+  "an indented reference definition is left alone",
+);
+
+// 🔴 THE TIE-BREAK. `[1][2]` is syntactically a reference link whose text is "1" — and it is also
+// the commonest way a model stacks two citations. What decides it is the character before the run:
+// prose here, so these are citations and both convert.
+assert.equal(
+  citationsToMarkdown("Confirmed by both [1][2].", 3),
+  "Confirmed by both [1](#nemesis-cite=1)[2](#nemesis-cite=2).",
+  "a run of bare markers after prose is citations, not a reference link",
+);
+
+// ...and the same run hanging off a bracketed PHRASE is a reference link all the way down, so
+// neither marker is touched.
+assert.equal(
+  citationsToMarkdown("See [the summary][1][2] below.", 3),
+  "See [the summary][1][2] below.",
+  "a run hanging off bracketed words stays a reference link",
+);
+
+// A colon mid-sentence is not a definition line, so an ordinary marker before one still converts.
+assert.equal(
+  citationsToMarkdown("The finding [1]: striking.", 2),
+  "The finding [1](#nemesis-cite=1): striking.",
+  "a marker followed by a colon mid-line is still a citation",
+);
+
+console.log("chat-citations: reference-link assertions passed");

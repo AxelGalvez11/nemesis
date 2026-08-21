@@ -152,7 +152,7 @@ export function CanvasRecorder({ attach, onClose }: Props) {
               Cancel
             </button>
             <button
-              className="shrink-0 rounded-full bg-(--ui-action) px-4 py-1.5 text-[length:var(--canvas-text-small)] font-medium text-(--ui-bg-editor) hover:opacity-90"
+              className="shrink-0 rounded-full bg-(--ui-action) px-4 py-1.5 text-[length:var(--canvas-text-small)] font-medium text-(--ui-action-glyph) hover:opacity-90"
               // Stop, not "save": clearing `active` without `discard` is what runs the finish path.
               onClick={() => setActive(false)}
               type="button"

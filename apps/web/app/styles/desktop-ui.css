@@ -252,12 +252,26 @@
           picker, which beats @layer base. Anything branded put there is erased
           the moment someone picks Blue.
 
-       So --ui-action is a separate, un-tinted, un-overridden token used only
-       where Nemesis invites or registers an action: the filled send button, the
-       focus outline, the ring on a selected passage. It carries a GLYPH, so its
-       contrast against --ui-bg-editor is a hard requirement, and because the
-       glyph colour IS the editor background the light and dark values sit on
-       opposite sides of the lightness midpoint.
+       So --ui-action is a separate, un-tinted token used only where Nemesis
+       invites or registers an action: the filled send button, the focus outline,
+       the ring on a selected passage. It carries a GLYPH, so glyph contrast is a
+       hard requirement, and the light and dark values sit on opposite sides of
+       the lightness midpoint.
+
+       🔴 IT IS NO LONGER UN-OVERRIDDEN, AND THE VALUE BELOW IS NOW THE "DEFAULT"
+       ACCENT RATHER THAN THE ONLY ONE (owner 2026-08-20: "the send button is
+       hardcoded green and does not change with the other color changes").
+       Reasons 1 and 2 above are still exactly right about --ui-accent — that is
+       the chrome tint and it must stay one — but keeping --ui-action out of the
+       picker's reach for that reason left the product's most prominent control
+       as the single thing the picker could not change, which read as a bug
+       rather than as restraint. applyAccent() now sets --ui-action as its OWN
+       inline property, so the tint stays a tint and the action follows the
+       choice. Picking Default removes the override and lands back here.
+
+       WHICH ALSO MOVED THE GLYPH. It used to be --ui-bg-editor at every call
+       site, which only worked because the fill never moved. See
+       --ui-action-glyph below and accentGlyph() in lib/accent.ts.
 
        THE VALUE: a restrained muted green (owner 2026-08-13). The owner ruled
        against a distinctive SaaS accent entirely — Nemesis's identity comes
@@ -273,6 +287,13 @@
        9.54:1 dark. Both clear WCAG AA, and both fix the graphite dark button,
        which measured 3.58:1 and did not. */
     --ui-action: #37614a;
+    /* The foreground ON --ui-action: the send arrow, the finish-dictation check,
+       the recorder's label. It was written inline as --ui-bg-editor at all seven
+       call sites, which was correct while --ui-action was a constant and became
+       wrong the moment the accent picker started moving it (see applyAccent in
+       components/theme-provider.tsx). A fill that moves needs a foreground that
+       moves with it, so both are tokens now and only ever change together. */
+    --ui-action-glyph: var(--ui-bg-editor);
     --ui-warm: var(--theme-warm);
     --ui-red: #cf2d56;
     --ui-orange: #db704b;

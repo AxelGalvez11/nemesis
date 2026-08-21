@@ -1,25 +1,20 @@
 import { Redirect } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 
-import { newThreadId } from "@/api/chat";
 import { listCalendarEvents } from "@/api/cloudCalendar";
 import { fetchLibrary } from "@/api/cloudLibrary";
 import { useAuth } from "@/auth/AuthProvider";
 import { readOnboarding } from "@/lib/onboarding";
 import { decideOnboardingGate, type GateDecision } from "@/lib/onboarding-gate";
 
-// Home ("/") — cloud-first phone (owner call 2026-07-20): Mac-dispatch "sessions"
-// are removed from the phone entirely; chat is the app's home screen, matching
-// the web app. See docs/design/nemesis-cloud-first-phone-2026-07.md §10.
+// Home ("/") — the launch gate. It decides between onboarding and the app, and then hands off.
 //
-// Cold launch lands on a FRESH chat (owner ask 2026-07-21), not the resumed
-// last thread — so we hand Chat a brand-new thread id the same way the
-// drawer's "New chat" button does. The id was never saved, so ChatScreen
-// loads zero messages and shows the welcome state; prior threads stay one
-// drawer-tap away. Leaving the id off would trip chat.tsx's no-param fallback,
-// which deliberately resumes the most-recent thread (delete-active-thread
-// relies on that), so the id must be supplied here.
+// 🔴 IT HANDS OFF TO THE CANVAS NOW, NOT TO CHAT. This screen used to mint a fresh chat thread id
+// and redirect into `/chat`, because chat was the phone's home screen (owner call 2026-07-20).
+// The product is built around the Canvas on both apps now, so the destination changed — and the
+// thread-id machinery went with it, since a canvas is created by beginning rather than by
+// arriving. Chat itself is retired, not deleted: see `lib/retired-surfaces.ts`.
 //
 // This screen is ALSO the first-run gate. See lib/onboarding-gate.ts for why the
 // wait below is a keychain read on nearly every launch rather than a network
@@ -31,7 +26,6 @@ import { decideOnboardingGate, type GateDecision } from "@/lib/onboarding-gate";
 const PROBE_YEARS = 3;
 
 export default function Home() {
-  const freshId = useMemo(() => newThreadId(), []);
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
   const [decision, setDecision] = useState<GateDecision | null>(null);
@@ -69,5 +63,8 @@ export default function Home() {
   // thing anybody would notice about it.
   if (decision === null) return null;
   if (decision === "onboarding") return <Redirect href={"/onboarding" as never} />;
-  return <Redirect href={`/chat?c=${freshId}` as never} />;
+  // 🔴 THE COLD LAUNCH LANDS ON THE CANVAS. It used to hand Chat a brand-new thread id, back when
+  // chat was the home screen. The Canvas is the product's only entry path now (and the web app's
+  // front door), and it needs no id: a canvas is minted by BEGINNING, not by arriving.
+  return <Redirect href={"/learn" as never} />;
 }

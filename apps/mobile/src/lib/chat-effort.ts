@@ -52,7 +52,13 @@ export function applyChatEffort(decision: ChatRouteDecision, effort: ChatEffort)
     // the save is what they typed a second ago. The specific, fresher instruction
     // wins. Deliberately silent: there is nothing for the student to fix, and the
     // answer they asked for still arrives.
-    if (decision.savesToWorkspace) return { ...decision, reasoningEffort: undefined };
+    //
+    // 🔴 SAME RULE FOR A WORKSPACE READ (owner 2026-08-20, parity with web's
+    // chat-effort.ts:57). "What's due this week" on the High dial used to lose
+    // every tool and answer blind — the 2026-08-05 calendar incident, reached
+    // through the dial instead of through the router. Both flags mean the
+    // answer comes THROUGH tools, so both outrank the stored preference.
+    if (decision.savesToWorkspace || decision.workspaceIntent) return { ...decision, reasoningEffort: undefined };
     return { ...decision, reasoningEffort: "high" };
   }
   return { ...decision, reasoningEffort: undefined };

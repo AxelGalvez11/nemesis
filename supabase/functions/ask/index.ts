@@ -1,5 +1,31 @@
 // Supabase Edge Function: ask  (IMPLEMENTATION_PLAN.md §7)
 //
+// 🔴🔴 RETIRED, AND NOT REPAIRABLE AS WRITTEN (owner 2026-08-20). THE CORPUS IT SEARCHES NO
+// LONGER EXISTS IN `public`. This function is the PharmaOrb-era answer engine, and the migration
+// `20260807015340_drop_pharmaorb_rpcs` moved its whole world into the `archive` schema:
+// `archive.core_sources`, `archive.core_source_chunks`, `archive.drug_entities` and the rest.
+// `retrieve.ts` still calls the RPC `match_core_source_chunks`, which was dropped with them, so
+// EVERY authenticated call fails with PGRST202 and this function returns its generic 500. Measured
+// on 2026-08-21: 36 calls in 24 hours — 35 rejected as unauthenticated, one authenticated, which
+// failed. Zero successes.
+//
+// 🔴 IT CANNOT BE FIXED BY RENAMING THE RPC. The surviving `public.match_source_chunks` searches a
+// DIFFERENT corpus (a student's own parsed library documents) and returns a different row shape —
+// no drug entity, no provider, no section. Pointing this pipeline at it would not repair a bug; it
+// would silently change what the feature MEANS. And reviving the archived corpus would contradict
+// the standing rule in CLAUDE.md: Nemesis is a field-agnostic academic OS, not a drug product.
+//
+// 🔴 NOTHING REACHES IT, WHICH IS WHY THE BREAKAGE WENT UNSEEN. The phone has had zero callers
+// since the Canvas was pointed at the `nemesis-llm` valve. On the web the only importer is
+// `components/WatchCurrentEvidence.tsx`, which is rendered only by `components/WatchDetail.tsx`,
+// which has NO importers at all and no route — the whole chain is unreachable.
+//
+// RETIRED MEANS UNLINKED, NOT DELETED, exactly as on the phone (`apps/mobile/src/lib/
+// retired-surfaces.ts`). This file, `retrieve.ts` and their tests stay where they are and would
+// work again the moment a corpus and a matching RPC exist. If answering from a student's own
+// material is wanted, that is a NEW pipeline on `match_source_chunks` and a product decision —
+// not a rename in this file.
+//
 // The /ask answer engine: intent classify -> entity resolve -> safety classify
 // -> retrieve -> generate -> citation enforce -> trace store -> respond (§8).
 //

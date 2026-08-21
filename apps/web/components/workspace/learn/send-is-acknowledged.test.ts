@@ -84,7 +84,10 @@ test("🔴 the mascot is for a turn, and the forming lines are kept for the othe
   // where it was written and nowhere else. Deleting them to make room for the mascot would throw
   // away a measured design for a case it is still right about.
   assert.match(previewCode, /if \(mascot\) \{/);
-  assert.match(previewCode, /<Bloub /);
+  // 🔴 THE COMPONENT IS `<BloubBot`, NOT `<Bloub`. This read `/<Bloub /` and had been red since
+  // the second renderer (`components/workspace/learn/bloub.tsx`) was deleted — a guard that fails
+  // for a reason nobody is looking at is a guard nobody reads.
+  assert.match(previewCode, /<BloubBot /);
   assert.match(previewCode, /canvas-forming/, "the forming lines were deleted rather than kept");
   assert.match(canvasCode, /mascot=\{turnInFlight\}/);
 });
@@ -122,12 +125,29 @@ test("🔴 it moves with a transform, so nothing under it reflows", () => {
 // ── The vendored engine keeps its licence ───────────────────────────────────
 
 test("🔴🔴 bloub's MIT licence travels with the code that needs it", () => {
-  // The engine in `lib/bloub/` is Jérémy Perret's, copied verbatim. MIT permits that and requires
-  // the notice; a vendored copy with the licence left behind is the one way this goes wrong
-  // quietly.
-  const licence = readFileSync(new URL("../../../lib/bloub/LICENSE", import.meta.url), "utf8");
+  // The engine is Jérémy Perret's, copied verbatim. MIT permits that and requires the notice; a
+  // vendored copy with the licence left behind is the one way this goes wrong quietly.
+  //
+  // 🔴 IT FOLLOWED THE ENGINE TO `packages/shared/src/bloub/`, WHICH IS THE POINT OF THE GUARD.
+  // The engine moved out of `apps/web/lib/bloub/` so the phone could render the same character;
+  // a move is exactly the moment a LICENSE gets left behind in the directory nobody deleted.
+  const licence = readFileSync(
+    new URL("../../../../../packages/shared/src/bloub/LICENSE", import.meta.url),
+    "utf8",
+  );
   assert.match(licence, /MIT License/);
   assert.match(licence, /Jérémy Perret/);
-  const renderer = readFileSync(new URL("./bloub.tsx", import.meta.url), "utf8");
-  assert.match(renderer, /MIT/, "the renderer does not say where the engine came from");
+  // 🔴 AND IT READS THE RENDERER THAT EXISTS. This pointed at `./bloub.tsx` — the second renderer
+  // PR #708 replaced and which has not existed since — so it threw ENOENT rather than checking
+  // anything. Attribution is a property of every renderer, so both are read.
+  for (const renderer of [
+    new URL("../../bloub/bloub-bot.tsx", import.meta.url),
+    new URL("../../../../mobile/src/components/bloub/BloubBot.tsx", import.meta.url),
+  ]) {
+    assert.match(
+      readFileSync(renderer, "utf8"),
+      /MIT/,
+      `${renderer.pathname} does not say where the engine came from`,
+    );
+  }
 });

@@ -82,11 +82,12 @@ function GlassButton({
 }
 
 const MARK = require("../../assets/images/nemesis-mark.png");
-// 1.240 = the trimmed mark's native width/height (the bolder 1254px flat master,
-// owner-supplied 2026-07-17); keeps the wings from squashing.
-const MARK_ASPECT = 1.24;
+// 0.398 = the trimmed mark's native width/height (the 1254px flat master,
+// owner-supplied 2026-08-20); the mark is now taller than it is wide, so this
+// keeps it from stretching.
+const MARK_ASPECT = 0.398;
 
-// The Nemesis mark — the winged logo, flat white on transparent, from the brand master.
+// The Nemesis mark — three diagonal strokes, flat white on transparent, from the brand master.
 // `size` is the rendered HEIGHT in points; width follows the mark's own aspect ratio.
 // Width and height are BOTH explicit on purpose: static require()'d images carry their
 // intrinsic pixel size as a default style, and on-device that default beat the

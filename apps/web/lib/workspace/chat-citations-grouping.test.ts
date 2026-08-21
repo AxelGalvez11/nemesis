@@ -59,3 +59,29 @@ test("out-of-range markers are left as text and cannot be grouped", () => {
   const converted = citationsToMarkdown("a [1] b [9]", 3);
   assert.equal(groupCitationRuns(converted), "a [1](#nemesis-cite=1) b [9]");
 });
+
+test("🔴🔴 a PARAGRAPH BREAK between two markers is not 'adjacent'", () => {
+  // THE BUG THIS GUARDS, reproduced 2026-08-21 before it was fixed. The run separator was `\s*`,
+  // and `\s` matches a newline — so the two markers below were welded into one chip, the blank line
+  // between the paragraphs was deleted, and source 2's marker was destroyed outright. One answer
+  // lost a paragraph and a citation in the same pass, and the surviving chip claimed to stand for a
+  // page the OTHER sentence had cited.
+  //
+  // Calibration: change `[^\\S\\r\\n]*` back to `\\s*` in the run pattern and this reddens.
+  const answer = `Stripe acquired OpenRouter this week.${link(1)}\n\n${link(2)} The second point is its own paragraph.`;
+  assert.equal(groupCitationRuns(answer), answer);
+});
+
+test("🔴 a single newline between markers is not 'adjacent' either", () => {
+  // A markdown list stacks one cited claim per line. Two lines are two citation events, and folding
+  // them would move a source onto a bullet that never cited it — the same lie as the prose case,
+  // just harder to see because both markers survive the eye at a glance.
+  const bullets = `- The ECB warned of a correction.${link(4)}\n- Anthropic reported profit.${link(6)}`;
+  assert.equal(groupCitationRuns(bullets), bullets);
+});
+
+test("🔴 same-line whitespace beyond a plain space still groups", () => {
+  // "Same line", not "space or tab": a tab is what a model emits when it is mid-table, and it means
+  // the two markers are still one citation event.
+  assert.equal(groupCitationRuns(`x${link(2)}\t${link(3)}`), "x[2](#nemesis-cite=2.1)");
+});

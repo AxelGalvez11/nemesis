@@ -1,13 +1,21 @@
 "use client";
 
-// The character itself. A React client for the vendored engine in `lib/bloub`.
+// The character itself. A React client for the vendored engine in `@nemesis/shared/bloub`.
 //
-// 🔴 THE ENGINE IS NOT MINE AND IS NOT EDITED. `lib/bloub/*.ts` is vendored whole from
-// jeremy-prt/bloub (MIT, see lib/bloub/LICENSE) because its pose model is spherical —
-// eyes live on a sphere and are placed through a tangent frame, with every state's gaze
+// 🔴 THE ENGINE IS NOT MINE AND IS NOT EDITED. `packages/shared/src/bloub/*.ts` is vendored
+// whole from jeremy-prt/bloub (MIT, see that folder's LICENSE) because its pose model is
+// spherical — eyes live on a sphere and are placed through a tangent frame, with every state's gaze
 // written as measured yaw/pitch/roll. Translating that state table into a flat 2D
 // system produces something that is not the same character. So the engine stays intact
 // and this file is a renderer, nothing more.
+//
+// 🔴 IT MOVED OUT OF `apps/web/lib/` WHEN THE PHONE GOT A CHARACTER. Nothing about the
+// engine or about this file's behaviour changed — same modules, same module identity, only
+// the specifier moved — but there are now TWO renderers of it: this one, which writes SVG
+// attributes on DOM nodes, and `apps/mobile/src/components/bloub/BloubBot.tsx`, which
+// writes native props on react-native-svg nodes. That is not the duplication the
+// "exactly ONE thing that turns the engine into pixels" guard forbids; it is one renderer
+// per kind of node, and the guard now names both by path so a third still fails.
 //
 // 🔴 REACT RENDERS THE SKELETON ONCE; THE LOOP WRITES ATTRIBUTES. Sixty reconciliations
 // a second for a decorative element is the kind of cost that shows up as jank in
@@ -24,22 +32,24 @@
 
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 
-import { NOTIF_BLUE } from "@/lib/bloub/decor";
-import { BotEngine, type BotFrame } from "@/lib/bloub/engine";
-import { EXPRESSION_BY_ID } from "@/lib/bloub/expressions";
-import { TURN_TIME, lookTarget } from "@/lib/bloub/gaze";
-import { clamp, easings } from "@/lib/bloub/math";
-import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
-import { COLOR_BY_ID, SHAPE_BY_ID, mixHex } from "@/lib/bloub/skins";
-import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
+import { NOTIF_BLUE } from "@nemesis/shared/bloub/decor";
+import { BotEngine, type BotFrame } from "@nemesis/shared/bloub/engine";
+import { TURN_TIME, lookTarget } from "@nemesis/shared/bloub/gaze";
+import { clamp, easings } from "@nemesis/shared/bloub/math";
+import { DEMI_VIEWBOX, RAYON } from "@nemesis/shared/bloub/repere";
+import { COLOR_BY_ID, SHAPE_BY_ID, mixHex } from "@nemesis/shared/bloub/skins";
+import { capsulePath } from "@nemesis/shared/bloub/shape";
+import { POSES, STATE_BY_ID, type StateId } from "@nemesis/shared/bloub/states";
 
-import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@/lib/character/pool";
+import { browFrame } from "@nemesis/shared/character/brow";
+import { restingFace } from "@nemesis/shared/character/face";
+import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@nemesis/shared/character/pool";
 
 import "./bloub.css";
 
 // Pool sizes live in `pool.ts` so the guard that keeps them honest can run without
 // React or a DOM. Re-exported because callers reach for them through the renderer.
-export { ARC_POOL, DOT_POOL } from "@/lib/character/pool";
+export { ARC_POOL, DOT_POOL } from "@nemesis/shared/character/pool";
 
 const VB = DEMI_VIEWBOX;
 
@@ -64,7 +74,19 @@ export interface BloubBotProps {
   shape?: string;
   /** Customiser: body colour. */
   color?: string;
-  /** Customiser: resting expression. */
+  /**
+   * Which resting face to wear — an id from the vendored expression table.
+   *
+   * 🔴 RESOLVED THROUGH `restingFace`, AND THAT SOFTENS THE HEAD LEAN HERE TOO (owner 2026-08-20:
+   * "change the mascot to be not so 'tilted'"). This IS a visible web change and it is intended
+   * rather than collateral: `stations.ts` and `pool.ts` both argue that one opinion about the
+   * character must not be forked per app, and the resting tilt is exactly such an opinion —
+   * leaving web on the old -13 would be the second copy those headers exist to prevent. What
+   * moves is the resting lean in `idle` and `swirl` (the two `baseFace` states) and in every
+   * frozen board that renders the default `neutre`, from about 13° of visible eye-line tilt to
+   * about 5°. Nothing else: no timing, no state pose, no other mood — `curieux` keeps its
+   * deliberate -15 — no cursor tracking, and no edit to any vendored file.
+   */
   expression?: string;
   /**
    * The page colour behind the character.
@@ -106,6 +128,18 @@ export interface BloubBotProps {
    * click to GO may switch that off, and it does so by having somewhere for it to go.
    */
   onPoke?: () => void;
+  /**
+   * Raise the eyebrows, twice, then take them away.
+   *
+   * 🔴 A BOOLEAN, NOT A DURATION OR A PHASE. The gesture's clock is the SCENE clock, so it
+   * slows with `speed` and stops with it — a waggle driven by its own wall-clock timer would
+   * keep going on a paused character and would run at full speed on a slowed one. The caller
+   * says only whether the gesture is wanted; when it stops being wanted the brows are already
+   * gone, because `browFrame` closes them before the window ends.
+   *
+   * Ignored on a still (`frozenAt`, or reduced motion): there is no loop to animate it.
+   */
+  waggle?: boolean;
   /** Freeze at this many seconds into the state. Reproducible; no loop is started. */
   frozenAt?: number;
   /** Playback rate. 0 pauses the scene clock. */
@@ -128,6 +162,7 @@ export function BloubBot({
   aimAt = null,
   entrance = false,
   onPoke,
+  waggle = false,
   frozenAt,
   speed = 1,
   reducedMotion,
@@ -143,6 +178,9 @@ export function BloubBot({
   const inkRectRef = useRef<SVGRectElement | null>(null);
   const bodyGroupRef = useRef<SVGGElement | null>(null);
   const eyeRefs = useRef<(SVGPathElement | null)[]>([]);
+  // One per eye, and they live in the MASK beside them — see `character/brow.ts` for why a
+  // brow is a hole rather than a stroke laid on the face.
+  const browRefs = useRef<(SVGPathElement | null)[]>([]);
   const notchRef = useRef<SVGCircleElement | null>(null);
   const notifRef = useRef<SVGCircleElement | null>(null);
   // 🔴 TWO DOT POOLS, NOT ONE MOVED BETWEEN LAYERS. The burst's particles pass BEHIND
@@ -162,7 +200,7 @@ export function BloubBot({
       RAYON,
       state,
       SHAPE_BY_ID.get(shape)?.radii ?? null,
-      EXPRESSION_BY_ID.get(expression) ?? null,
+      restingFace(expression),
     );
   }
 
@@ -178,16 +216,40 @@ export function BloubBot({
    * members are parked at `display: none` rather than removed, so the node count is
    * constant for the lifetime of the component.
    */
-  const paint = (frame: BotFrame, inkHex: string, paperHex: string) => {
+  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null) => {
     maskBodyRef.current?.setAttribute("d", frame.bodyPath);
     paperBodyRef.current?.setAttribute("d", frame.bodyPath);
     paperBodyRef.current?.setAttribute("fill", paperHex);
     inkRectRef.current?.setAttribute("fill", inkHex);
     bodyGroupRef.current?.setAttribute("opacity", String(frame.bodyAlpha));
 
+    // 🔴 THE BROW IS RESOLVED ONCE, NOT PER EYE. Both brows are the same shape at the same
+    // height — a waggle raises them together — so building the path twice would be two calls
+    // to `capsulePath` a frame for one string.
+    const brow = browAt === null ? null : browFrame(browAt);
+    const browPath = brow ? capsulePath(brow.w * RAYON, brow.h * RAYON) : "";
+
     for (let i = 0; i < 2; i += 1) {
       const node = eyeRefs.current[i];
+      const browNode = browRefs.current[i];
       const eye = frame.eyes[i];
+      if (browNode) {
+        // 🔴 NO EYE MEANS NO BROW, AND THAT FALLS OUT OF THE SAME TEST. An eye is dropped from
+        // the frame once it has gone round the back of the sphere (`depth <= 0.02`); a brow
+        // that outlived it would hang unattached over the body's edge. It also covers every
+        // faceless state — the "!" and the burst set `eyeAlpha` to 0 — without naming any.
+        if (!eye || !brow) {
+          browNode.style.display = "none";
+        } else {
+          browNode.style.display = "";
+          browNode.setAttribute("d", browPath);
+          // Placed THROUGH the eye's own matrix, then lifted in the eye's local frame. That is
+          // the whole trick: the tangent frame, the head's roll and the foreshortening are all
+          // already in that matrix, so the brow inherits them instead of re-deriving them.
+          browNode.setAttribute("transform", `${eye.matrix} translate(0,${(brow.dy * RAYON).toFixed(2)})`);
+          browNode.setAttribute("opacity", String(eye.alpha));
+        }
+      }
       if (!node) continue;
       if (!eye) {
         node.style.display = "none";
@@ -292,6 +354,21 @@ export function BloubBot({
   // pausing and the frozen boards all at once. Both setters morph rather than jump.
   const clockRef = useRef(0);
   /**
+   * Scene-clock instant the current waggle was asked for, or null when none is running.
+   *
+   * 🔴 A REF SET DURING RENDER, NOT AN EFFECT, BECAUSE THE FIRST FRAME MATTERS. An effect runs
+   * after the browser has already had a chance to paint, so the frame between the click and the
+   * effect would draw `elapsed = 0` — full-height brows at zero width — one frame late and, on a
+   * slow commit, visibly so. Reading the previous value in the same expression keeps this a pure
+   * derivation rather than a second source of truth.
+   */
+  const waggleFromRef = useRef<number | null>(null);
+  const waggledRef = useRef(false);
+  if (waggle !== waggledRef.current) {
+    waggledRef.current = waggle;
+    waggleFromRef.current = waggle ? clockRef.current : null;
+  }
+  /**
    * 🔴 THE GAZE'S BOOKKEEPING OUTLIVES THE LOOP, AND THAT IS THE WHOLE POINT.
    *
    * Aiming opens with a full turn around the sphere — the eyes pass behind the body and
@@ -312,7 +389,7 @@ export function BloubBot({
     engineRef.current?.setShape(SHAPE_BY_ID.get(shape)?.radii ?? null, clockRef.current);
   }, [shape]);
   useEffect(() => {
-    engineRef.current?.setExpression(EXPRESSION_BY_ID.get(expression) ?? null, clockRef.current);
+    engineRef.current?.setExpression(restingFace(expression), clockRef.current);
   }, [expression]);
   useEffect(() => {
     engineRef.current?.setState(state, clockRef.current);
@@ -350,7 +427,7 @@ export function BloubBot({
     // 🔴 HELD AT ITS CHARACTERISTIC INSTANT, NOT FROZEN AT ZERO. Every animation
     // publishes the moment it reads best (`POSES`), and holding that is what keeps
     // `thinking` legible as three dots rather than as a ball caught before it split.
-    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper());
+    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null);
     // Redrawn whenever the look changes, since nothing else will redraw it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [still, frozenAt, state, shape, color, expression, paper]);
@@ -390,7 +467,19 @@ export function BloubBot({
       // An explicit target outranks the cursor; with neither, `pointer` stays null and
       // the head keeps its resting drift, which is what keeps it alive on a touch
       // device where no pointer exists at all.
-      const at = live.current.aimAt ?? pointerRef.current;
+      //
+      // 🔴 A BROW WAGGLE OUTRANKS BOTH, BECAUSE IT IS AIMED AT SOMEBODY. You do not waggle
+      // your eyebrows at the far corner of the room, and this is the one gesture where the
+      // face itself is the message — so the character turns to front while it runs, which is
+      // what `at = null` means here.
+      //
+      // 🔴 AND THE GEOMETRY NEEDS IT, WHICH IS THE HALF THAT WOULD BE EASY TO DELETE AS
+      // FLOURISH. Measured against the engine across the full range of steered gazes: with
+      // the head front the brows reach 0.94 of the body radius, comfortably inside it, and
+      // with the head turned hard they reach 1.07 — outside, where a brow stops being a brow
+      // and becomes a notch bitten out of the silhouette. There is simply no room above the
+      // outer eye once it has slid toward the edge. Facing front is what makes the room.
+      const at = waggleFromRef.current !== null ? null : (live.current.aimAt ?? pointerRef.current);
       const box = svgRef.current?.getBoundingClientRect();
       // 🔴 A ZERO-SIZED BOX IS REFUSED, and this is not defensive noise. The
       // normalisation below would be 0/0, and the engine KEEPS its last target: a
@@ -423,7 +512,16 @@ export function BloubBot({
       clockRef.current += dt * live.current.speed;
       if (live.current.track) aim();
       else release();
-      paint(engine.sample(clockRef.current), live.current.ink, resolvedPaper());
+      // 🔴 THE WAGGLE'S CLOCK IS THE SCENE'S, MEASURED FROM WHEN IT WAS ASKED FOR. Stamping the
+      // start in the effect that watches the prop would put it on a different timebase from the
+      // one the gesture is drawn against, and the two drift apart the moment `speed` is not 1.
+      const from = waggleFromRef.current;
+      paint(
+        engine.sample(clockRef.current),
+        live.current.ink,
+        resolvedPaper(),
+        from === null ? null : clockRef.current - from,
+      );
     };
 
     window.addEventListener("pointermove", onPointerMove, { passive: true });
@@ -462,6 +560,18 @@ export function BloubBot({
               }}
               d=""
               fill="#000"
+            />
+          ))}
+          {/* The brows, cut the same way and parked until a waggle asks for them. */}
+          {[0, 1].map((i) => (
+            <path
+              key={`brow-${i}`}
+              ref={(el) => {
+                browRefs.current[i] = el;
+              }}
+              d=""
+              fill="#000"
+              style={{ display: "none" }}
             />
           ))}
           <circle ref={notchRef} cx={0} cy={0} r={0} fill="#000" style={{ display: "none" }} />

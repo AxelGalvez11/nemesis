@@ -16,11 +16,11 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { NOTIF_BLUE } from "../lib/bloub/decor";
-import { BotEngine, type BotFrame } from "../lib/bloub/engine";
-import { DEMI_VIEWBOX, RAYON } from "../lib/bloub/repere";
-import { COLORS, SHAPES, SHAPE_BY_ID, mixHex } from "../lib/bloub/skins";
-import { POSES, SEQUENCE, type StateId } from "../lib/bloub/states";
+import { NOTIF_BLUE } from "@nemesis/shared/bloub/decor";
+import { BotEngine, type BotFrame } from "@nemesis/shared/bloub/engine";
+import { DEMI_VIEWBOX, RAYON } from "@nemesis/shared/bloub/repere";
+import { COLORS, SHAPES, SHAPE_BY_ID, mixHex } from "@nemesis/shared/bloub/skins";
+import { POSES, SEQUENCE, type StateId } from "@nemesis/shared/bloub/states";
 
 const VB = DEMI_VIEWBOX;
 const BOX = `${-VB} ${-VB} ${VB * 2} ${VB * 2}`;

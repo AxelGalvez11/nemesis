@@ -785,7 +785,7 @@ export function CanvasComposer({
                   copying their exact hue. See the send button below for the other half. */}
               <button
                 aria-label="Finish dictation"
-                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
+                className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-action-glyph) transition-opacity hover:opacity-90"
                 onClick={acceptDictation}
                 title="Finish dictation"
                 type="button"

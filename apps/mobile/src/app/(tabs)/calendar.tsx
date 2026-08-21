@@ -790,14 +790,15 @@ function AppleCalendarHeader({
   const backLabel = view === "daily" ? monthName : String(year);
   return (
     <View style={[styles.appleHeader, { paddingTop: top + space(1.5) }]} testID="calendar-apple-header">
-      {view === "yearly" ? <View style={styles.headerLeftSpacer} /> : (
-        <GlassSurface style={styles.headerBackGlass} fallbackColor={c.glassPanel} shadow>
-          <Pressable style={styles.headerBack} onPress={onBack} accessibilityLabel={`Back to ${backLabel}`}>
-            <BackChevronIcon color={c.text} />
-            <Text style={styles.headerBackText}>{backLabel}</Text>
-          </Pressable>
-        </GlassSurface>
-      )}
+      {/* 🔴 NO BREADCRUMB CHIP (owner 2026-08-20, circling it on a screenshot). The top-left used
+          to carry a `‹ 2026` / `‹ August` glass pill that zoomed out one level. It is gone in
+          every view, not just Yearly: the bottom dock's view button already moves between
+          Daily / Monthly / Yearly and NAMES the view you are in, so the chip was a second control
+          for a subset of the same job — the same reasoning that removed the two-squares button
+          from the right side on 2026-08-01. The spacer stays so the right-hand actions keep the
+          exact position they hold today; without it they would slide left into the gap.
+          THE CONTROL GOES, NOT THE FEATURE: `onBack` and its zoom-out logic are untouched below. */}
+      <View style={styles.headerLeftSpacer} />
       <GlassSurface style={styles.headerActionsGlass} fallbackColor={c.glassPanel} shadow>
         <View style={styles.headerActions}>
           {/* No day/month toggle here (owner 2026-08-01: "remove the upper right

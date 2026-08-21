@@ -49,7 +49,7 @@ export function ComposerSend({
       aria-label={label}
       className={cn(
         "ml-[8px] flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full",
-        "bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40",
+        "bg-(--ui-action) text-(--ui-action-glyph) transition-opacity hover:opacity-90 disabled:opacity-40",
       )}
       disabled={busy || disabled}
       onClick={onClick}
@@ -84,7 +84,7 @@ export function ComposerControl({
       className={cn(
         "flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full transition-opacity",
         tone === "accent"
-          ? "ml-[10px] bg-(--ui-action) text-(--ui-bg-editor) hover:opacity-90"
+          ? "ml-[10px] bg-(--ui-action) text-(--ui-action-glyph) hover:opacity-90"
           : "text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)",
         "disabled:opacity-40",
       )}

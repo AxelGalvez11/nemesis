@@ -33,6 +33,7 @@ import {
   chatErrorMessage,
   forcedResearchDecision,
   formatWebSearchContext,
+  usableWebResults,
   type AttachedLibraryDoc,
   type BudgetResetKind,
   type ChatErrorKind,
@@ -41,7 +42,14 @@ import {
   type ChatSource,
   type WireMsg,
 } from "@/lib/chat-thread";
-import { routeForTurn, type ChatRouteDecision } from "@/lib/chat-routing";
+import {
+  ATTACHMENT_ONLY_DECISION,
+  buildFreshSearchQuery,
+  routeForTurn,
+  SAVE_INSTRUCTION,
+  WORKSPACE_INSTRUCTION,
+  type ChatRouteDecision,
+} from "@/lib/chat-routing";
 import { applyChatEffort, DEFAULT_CHAT_EFFORT, toolsAllowed, type ChatEffort } from "@/lib/chat-effort";
 import { AGENT_TOOLS } from "@/lib/agent-tools";
 import { executeAgentTool, type AgentToolCall } from "./agentTools";
@@ -169,13 +177,16 @@ export function newMessageId(): string {
 
 // ── web search (§3: phone calls nemesis-search directly with the device key) ─
 
-/** Time-sensitive queries need an explicit date, or a search provider can rank
- *  an older result above today's. Kept minimal on purpose: the phone's ONLY
- *  search trigger is chat-routing.ts's `searchWeb` decision (web's separate
- *  shouldSearchWeb heuristic layer is not ported — see chat-thread.ts). */
-function withFreshDateAnchor(query: string): string {
-  return `${query.trim()} current as of ${new Date().toISOString().slice(0, 10)}`;
-}
+// Time-sensitive queries need an explicit date, or a search provider can rank an
+// older result above today's. That rule now lives in chat-routing.ts as
+// buildFreshSearchQuery, under web's name and web's gate — see the 🔴 note there
+// for why the phone's own route-based version was wrong.
+//
+// The sentence that used to close this comment — "the phone's ONLY search
+// trigger is chat-routing.ts's `searchWeb` decision" — stopped being true on
+// 2026-08-20. There are now TWO triggers, the same two web has: the keyword
+// fast path in chat-routing.ts, and, when it misses, the model itself (see
+// modelWantsWeb below).
 
 /** Prompt-feeding copied from web's chat-api.ts::searchWebContext: fetch live
  *  results and format them into a context block the model is told to cite. */
@@ -193,10 +204,155 @@ async function searchWebContext(uid: string, query: string): Promise<{ context: 
     });
     if (!res.ok) return { context: "", sources: [] };
     const body = (await res.json()) as { data?: { web?: ChatSource[] } };
-    const sources = (body.data?.web ?? []).filter((source) => source.url).slice(0, 10);
+    // 🔴 THE SAME FILTER THE PROMPT USES — see `usableWebResults`. This kept everything with a
+    // `url` while the evidence block numbered a narrower list, so the two disagreed and a [n] in
+    // the answer could point at the wrong page.
+    const sources = usableWebResults(body.data?.web ?? []);
     return { context: formatWebSearchContext(sources), sources };
   } catch {
     return { context: "", sources: [] };
+  }
+}
+
+// ── letting the MODEL decide when a turn needs the live web ─────────────────
+//
+// 🔴 PORTED FROM WEB 2026-08-20 (owner: "the deepseek brain should be instructed
+// through prompt instructions on when to search or use its tools like in the
+// webapp"). Web keeps these five pieces in lib/workspace/chat-web-need.ts and
+// calls them from chat-api.ts; the phone keeps them here, beside the search
+// call they gate, because this pass could not add a module. Names and wording
+// are web's so a later move is a move, not a rewrite.
+//
+// WHY IT EXISTS. Until now the phone decided entirely by keyword regex
+// (chat-routing.ts) — a fixed list like "latest", "current", "news", "price".
+// Two problems, and the owner named the second (2026-08-04: "it should know
+// when to lookup the internet"):
+//
+//  1. A WORD LIST NEVER GENERALISES. It is English-only, so a student asking in
+//     Spanish or Mandarin never gets a search; and it is blind to the shape of
+//     the question, so "has the EU signed off on that rule yet" contains no
+//     listed word and silently answers from stale training data.
+//  2. The model already knows. A frontier model can tell that a question turns
+//     on something that changes, or on a source it cannot have memorised. It
+//     was simply never asked.
+//
+// So the regexes stay as a FAST PATH — when they fire, the answer is obviously
+// yes and we skip straight to searching, costing nothing. When they do not
+// fire, one very small model call gets asked, and its answer decides.
+//
+// 🔴 WHY THIS IS NOT A TOOL. The obvious design is to hand the model a
+// `search_web` tool and let it call it. It cannot: toolsAllowed() in
+// chat-effort.ts turns tools OFF for every reasoner and high-effort turn,
+// because our stream does not retain the reasoning content those turns must
+// echo back on a tool round. Those are exactly the turns that carry hard
+// questions. A tool would therefore be available only on the turns least
+// likely to need it. Asking before the turn works everywhere.
+//
+// FAILURE IS "NO SEARCH", NEVER "NO ANSWER". A slow, refused, or unparseable
+// pre-flight resolves to false and the turn proceeds unsearched — the student
+// gets a normal answer rather than a spinner.
+
+/** How long the pre-flight gets before the turn goes ahead without it. A
+ *  question the student is waiting on must not be held up by an optimisation:
+ *  the whole call is a handful of tokens and normally lands well inside this. */
+export const WEB_NEED_TIMEOUT_MS = 2_500;
+
+/**
+ * Below this many characters, do not spend a call asking.
+ *
+ * By LENGTH rather than by matching greetings, because a greeting list is the
+ * same mistake one layer down — "gracias", "ありがとう" and "ok thanks" all have
+ * to be free. Anything genuinely answerable from the web is longer than this.
+ */
+const MIN_ASK_CHARS = 12;
+
+export interface WebNeedContext {
+  /** What the student typed. On the phone that is already the bare message:
+   *  an attached Library document is folded in AFTER routing, so there is no
+   *  attachment text to strip (web needs promptWithoutAttachments here). */
+  ask: string;
+  /** The keyword fast path already said yes — nothing left to decide. */
+  regexSaidYes: boolean;
+  /** This turn carries a file. The document IS the context; a syllabus that
+   *  mentions a recent year is not a request for today's news. */
+  hasAttachments: boolean;
+  /** A save request ("put this on my calendar"). Its route already settled the
+   *  web question, and a date in a save is a date, not current events. */
+  savesToWorkspace: boolean;
+}
+
+/**
+ * Whether it is worth asking the model at all.
+ *
+ * Pure and exported so the skip rules can be tested without a network — the
+ * expensive half is the call, and the cheap half is the one with the edge
+ * cases in it.
+ */
+export function shouldAskModelAboutWeb(context: WebNeedContext): boolean {
+  if (context.regexSaidYes) return false;
+  if (context.hasAttachments) return false;
+  if (context.savesToWorkspace) return false;
+  return context.ask.trim().length >= MIN_ASK_CHARS;
+}
+
+/**
+ * The pre-flight prompt. VERBATIM from web's chat-web-need.ts — two copies of
+ * this sentence drifting apart is exactly how the phone and the browser start
+ * disagreeing about what deserves a search.
+ *
+ * Written around WHAT MAKES AN ANSWER GO STALE rather than around topics, so it
+ * reads the same for a law student asking about a ruling and an engineering
+ * student asking about a standard. It asks for one word so the reply is cheap
+ * and unambiguous.
+ */
+export const WEB_NEED_PROMPT =
+  "You decide whether answering the student's message needs a live web search. " +
+  "Answer YES when a correct answer depends on something that changes over time or that you could not have memorised: recent or ongoing events, " +
+  "current prices, standings, releases, versions, laws, guidelines or schedules, anything the student says is new or has changed, a specific named " +
+  "source they want you to read, or any URL. " +
+  "Answer NO when the answer is settled knowledge, an explanation, a definition, a calculation, a translation, help with their own text, or ordinary " +
+  "conversation. When it is genuinely borderline, answer NO — a stale answer the student can question beats a slow one. " +
+  "Reply with exactly one word: YES or NO.";
+
+/**
+ * Read the pre-flight's reply.
+ *
+ * Deliberately strict about YES and lenient about everything else: a model that
+ * ignores the format and writes a sentence must not accidentally buy a search,
+ * so only a reply that STARTS with yes counts. Anything else — a refusal, an
+ * explanation, an empty body, a timeout — is no.
+ */
+export function readWebNeedReply(text: string | null): boolean {
+  if (!text) return false;
+  return /^\s*(?:\*\*)?yes\b/i.test(text.trim());
+}
+
+/** Ask the cheap model whether this turn needs live sources. Never throws, and
+ *  never blocks the turn for longer than WEB_NEED_TIMEOUT_MS. */
+async function modelWantsWeb(uid: string, context: WebNeedContext, signal?: AbortSignal): Promise<boolean> {
+  if (!shouldAskModelAboutWeb(context)) return false;
+  const timer = new AbortController();
+  // Linked to the caller's signal so pressing Stop kills the pre-flight too,
+  // rather than leaving a request running against a turn nobody wants.
+  const onAbort = () => timer.abort();
+  signal?.addEventListener("abort", onAbort);
+  const deadline = setTimeout(() => timer.abort(), WEB_NEED_TIMEOUT_MS);
+  try {
+    const reply = await postChatCompletion(
+      uid,
+      [{ content: WEB_NEED_PROMPT, role: "system" }, { content: context.ask, role: "user" }],
+      { model: "deepseek-chat", route: "conversation", searchWeb: false },
+      undefined,
+      undefined,
+      undefined,
+      timer.signal,
+    );
+    return readWebNeedReply(reply.text);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -395,14 +551,47 @@ export async function sendChat(
   // own workspace: that write happens through a tool call, and both the research
   // toggle and the High dial would otherwise switch the tools off and turn the
   // save into an essay. See routeForTurn and applyChatEffort.
-  const decision = applyChatEffort(
-    routeForTurn(
-      userText,
-      forceResearch ? forcedResearchDecision() : null,
-      priorAssistantText,
-    ),
-    effort,
-  );
+  //
+  // 🔴 A TURN THAT IS NOTHING BUT AN ATTACHMENT HAS NOTHING TO CLASSIFY. Web has
+  // carried ATTACHMENT_ONLY_DECISION for this since chat-routing.ts:176; the
+  // phone did not, so a silent upload fell all the way through to the
+  // `conversation` fallback and a lecture deck was read by the cheapest lane
+  // instead of the thinking one. Never a search turn either: the only text that
+  // could have asked for one is the file itself.
+  const classified = !userText.trim() && attachedDoc
+    ? ATTACHMENT_ONLY_DECISION
+    : routeForTurn(userText, forceResearch ? forcedResearchDecision() : null, priorAssistantText);
+  // ── when to search: fast path first, then ASK THE MODEL ────────────────────
+  // The keyword lists are a fast path, not the whole decision: when they miss,
+  // the model itself is asked whether this question needs live sources (see
+  // modelWantsWeb above for why this is a pre-flight and not a tool).
+  //
+  // A WORKSPACE turn opts out of the whole web apparatus unless the student
+  // explicitly asked for the web (classifyChatRequest already set searchWeb
+  // then): "what's my schedule tomorrow" is a database read, and it used to buy
+  // a paid search off the word "tomorrow" AND get promoted onto the tool-less
+  // reasoner below — the two halves of the calendar incident.
+  //
+  // A deliberate casual turn is already classified. Sending "who are you"
+  // through a second model to decide whether it needs the web would let that
+  // second decision undo the first and spend a search on a question only
+  // Nemesis itself can answer.
+  const regexSaidYes = classified.searchWeb;
+  const needsWeb = regexSaidYes
+    || (!classified.casual && !classified.workspaceIntent && await modelWantsWeb(uid, {
+      ask: userText,
+      hasAttachments: Boolean(attachedDoc),
+      regexSaidYes,
+      savesToWorkspace: classified.savesToWorkspace === true,
+    }, signal));
+  // Re-promotion, same rule as web: a turn the regexes read as ordinary chatter
+  // but the model says needs live sources becomes a current-events turn. Only
+  // "conversation" is promoted — every other route already knows what it is —
+  // and never a workspace turn, whose answer comes from the student's own rows.
+  const routed: ChatRouteDecision = needsWeb && classified.route === "conversation" && !classified.workspaceIntent
+    ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
+    : classified;
+  const decision = applyChatEffort(routed, effort);
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
@@ -414,11 +603,21 @@ export async function sendChat(
   const brainLookup = shouldRecallBrain(userText)
     ? recallBrain(userText)
     : Promise.resolve(null);
-  if (decision.searchWeb) {
-    const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
-    // The phase echoes the student's OWN words, not `query` — the "current"
-    // route staples a freshness date onto the wire query, and showing that
-    // back would read like the app invented part of the question.
+  // 🔴 `needsWeb`, NOT `decision.searchWeb` — THE MODEL'S ANSWER HAS TO COUNT
+  // (owner 2026-08-20). This line read `if (decision.searchWeb)`, and
+  // `decision.searchWeb` is only ever true when the KEYWORDS said so, because
+  // the re-promotion above rewrites the route for a "conversation" turn and
+  // nothing else. So the pre-flight was asked on every learning turn, paid for,
+  // and then thrown away: "explain the obligations that took effect under the
+  // new rules" is a learning turn, the model answered YES, and no search ran.
+  // Web gates the search on needsWeb (chat-api.ts:961) for exactly this reason —
+  // the ROUTE says what kind of answer to write, `needsWeb` says whether to go
+  // and look, and they are two different questions.
+  if (needsWeb) {
+    const query = buildFreshSearchQuery(userText);
+    // The phase echoes the student's OWN words, not `query` — a time-sensitive
+    // question gets a freshness date stapled onto the wire query, and showing
+    // that back would read like the app invented part of the question.
     onPhase?.({ kind: "searching", query: userText });
     const result = await searchWebContext(uid, query);
     sources = result.sources;
@@ -473,7 +672,35 @@ export async function sendChat(
 
   const toolsEnabled = toolsAllowed(decision);
   const learnerProfile = await learnerProfileForChat(uid);
-  let messages: WireMsg[] = buildWireMessages(
+  // ── what THIS turn is for, said in words ────────────────────────────────────
+  //
+  // 🔴 THE ROUTER'S FLAGS ONLY BUY THE TOOLS; THEY DO NOT MAKE THE MODEL REACH
+  // FOR THEM (owner 2026-08-20: "the deepseek brain should be instructed through
+  // prompt instructions on when to search or use its tools like in the webapp").
+  // Until this block existed the phone computed `savesToWorkspace` and
+  // `workspaceIntent`, used them to keep the tools attached, and then told the
+  // model nothing — so the decision lived entirely in code and the model was
+  // left to guess. Web attaches both sentences per turn (chat-api.ts:284-285);
+  // this is that, on the phone.
+  //
+  // ONLY WHEN THE TOOLS ARE REALLY RIDING. `toolsEnabled` is false on every
+  // reasoner and high-effort turn (chat-effort.ts:toolsAllowed), and a turn that
+  // is instructed to save but carries no tool is worse than one that was never
+  // asked: the model narrates a save that never happened. Same guard as web's.
+  //
+  // WHY A SEPARATE SYSTEM MESSAGE RATHER THAN THE FIRST ONE. Web joins these
+  // into its head system message because web's buildWireMessages assembles that
+  // string itself. The phone's buildWireMessages lives in lib/chat-thread.ts and
+  // takes no per-turn instruction parameter; adding one would change a module
+  // another job holds open right now. A distinct system message immediately
+  // after the head is the same content in the same position — the model reads
+  // system messages in order — so the two surfaces still say the same thing in
+  // the same place. Fold it into buildWireMessages when that file is free.
+  const turnInstructions = [
+    ...(decision.savesToWorkspace && toolsEnabled ? [SAVE_INSTRUCTION] : []),
+    ...(decision.workspaceIntent && toolsEnabled ? [WORKSPACE_INSTRUCTION] : []),
+  ];
+  const wire = buildWireMessages(
     history,
     groundedText,
     decision,
@@ -481,6 +708,9 @@ export async function sendChat(
     Boolean(attachedDoc),
     brainContext,
   );
+  let messages: WireMsg[] = turnInstructions.length
+    ? [wire[0], { content: turnInstructions.join("\n\n"), role: "system" }, ...wire.slice(1)]
+    : wire;
   let reply: ChatReply = { budgetReset: null, errorKind: null, errorText: null, sources: [], text: null };
   for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
     // The last permitted round goes out WITHOUT tools, so the model has no choice

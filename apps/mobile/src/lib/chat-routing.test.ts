@@ -2,11 +2,29 @@
 // apps/web/lib/workspace/chat-routing.test.ts (translated to Deno's assert style
 // to match this package's test convention).
 // Run: deno test --no-check apps/mobile/src/lib/chat-routing.test.ts
-import { assertEquals, assertMatch, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { classifyChatRequest, detectsSaveRequest, routeForTurn, routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
+import { assertEquals, assertMatch, assertNotEquals, assertNotMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  classifyChatRequest,
+  detectsSaveRequest,
+  routeForTurn,
+  routeInstruction,
+  WORKSPACE_INSTRUCTION,
+  type ChatRouteDecision,
+} from "./chat-routing.ts";
 
+// `casual: true` is part of the answer for "hello" and this assertion had gone
+// stale without it (found 2026-08-21 while running this suite under node — Deno
+// is not installed on this machine, so the file had not actually executed in a
+// while). The flag is not decoration: api/chat.ts:581 reads it to skip the paid
+// web-need pre-flight, so a greeting must carry it. Asserting the WHOLE object
+// rather than a field at a time is what caught the drift; keep it that way.
 Deno.test("classifyChatRequest: ordinary conversation stays on the least expensive lane", () => {
-  assertEquals(classifyChatRequest("hello"), { route: "conversation", model: "deepseek-chat", searchWeb: false });
+  assertEquals(classifyChatRequest("hello"), {
+    casual: true,
+    model: "deepseek-chat",
+    route: "conversation",
+    searchWeb: false,
+  });
 });
 
 Deno.test("classifyChatRequest: learning is discipline-neutral and gets Flash thinking, not a premium model request", () => {
@@ -49,6 +67,123 @@ Deno.test("routeInstruction: one line per route, mentioning its own framing", ()
   assertMatch(routeInstruction("research"), /limitations/);
   assertMatch(routeInstruction("current"), /time-sensitive/);
   assertMatch(routeInstruction("conversation"), /directly/);
+});
+
+// ── The prompt must never ask for a raw address ──────────────────────────────
+// 🔴 THIS IS THE REGRESSION TEST FOR THE OWNER'S "the responses still return url
+// strings" (owner 2026-08-21). The base prompt and the evidence block had
+// already been fixed to demand bracketed numbers, but routeInstruction still
+// said "cite URLs beside supported claims" (research) and "cite relevant URLs"
+// (current) — the two routes every searching turn actually takes — so the model
+// received both rules in one request and followed the more concrete one.
+// The assertion is deliberately about the WHOLE function, not the two lines that
+// were wrong: the next raw-address instruction will be added to whichever route
+// nobody is watching. `assertNotMatch` on /cite .*URLs?/i is what makes a
+// re-sync from web (which still carries the contradictory wording) fail here
+// instead of on a student's screen.
+// Every route AND every evidence form: notebooks pass no `sources` prop either,
+// so MessageBody's bare-URL demotion is off there too and an address written into
+// a notebook answer stays a raw underlined address on screen.
+Deno.test("routeInstruction: no route ever asks for a raw URL in the prose", () => {
+  for (const evidence of ["numbered-web-results", "named-sources"] as const) {
+    for (const route of ["research", "current", "learning", "conversation"] as const) {
+      assertNotMatch(routeInstruction(route, evidence), /cite\s+(?:the\s+|relevant\s+)?URLs?/i, `${route}/${evidence}`);
+    }
+  }
+});
+
+// The two searching routes must actively teach the bracket form, in the SAME
+// words chat-thread.ts uses, so the request never carries two citation styles.
+// Explicit about the evidence form: the default IS chat's form, but a test that
+// relies on a default cannot tell "chat is right" from "the default drifted".
+Deno.test("routeInstruction: the searching routes ask for bracketed numbers, not addresses", () => {
+  for (const route of ["research", "current"] as const) {
+    assertMatch(routeInstruction(route, "numbered-web-results"), /cite them by their bracketed number, like \[1\]/, route);
+    assertMatch(routeInstruction(route, "numbered-web-results"), /Never write a raw URL in the prose\./, route);
+  }
+});
+
+// ── A turn whose evidence has no numbers must not be asked for numbers ───────
+// 🔴 REGRESSION TEST FOR THE NOTEBOOK LEAK (owner 2026-08-21). The bracket fix
+// above was right for chat and wrong for notebooks, which share this function:
+// notebook sources are headed "### Source: <name>" and never numbered
+// (notebook-model.ts:buildSourceContext), notebooks attach no live web results,
+// and app/notebook.tsx renders through <MessageBody> with no `sources` prop —
+// so citationsToMarkdown sees a source count of 0, every marker is out of range,
+// and a "[1]" is left on screen as literal text pointing at nothing.
+Deno.test("routeInstruction: named-sources evidence is never asked for a bracketed number", () => {
+  for (const route of ["research", "current", "learning", "conversation"] as const) {
+    assertNotMatch(routeInstruction(route, "named-sources"), /\[1\]/, route);
+    assertNotMatch(routeInstruction(route, "named-sources"), /bracketed number/, route);
+  }
+  // …and it must still ask for attribution, or the grounded surface reads the
+  // silence as permission not to attribute at all.
+  for (const route of ["research", "current"] as const) {
+    assertMatch(routeInstruction(route, "named-sources"), /name the source/, route);
+    assertMatch(routeInstruction(route, "named-sources"), /Never write a raw URL in the prose\./, route);
+  }
+});
+
+// The routes that carry no evidence say the same thing either way — the form is
+// a property of the evidence, and those two turns have none to address.
+Deno.test("routeInstruction: the evidence-free routes are identical under both forms", () => {
+  for (const route of ["learning", "conversation"] as const) {
+    assertEquals(
+      routeInstruction(route, "named-sources"),
+      routeInstruction(route, "numbered-web-results"),
+      route,
+    );
+  }
+});
+
+// chat-thread.ts:buildWireMessages calls routeInstruction with one argument and
+// is not this lane's file to edit, so the default has to BE chat's form. If the
+// default is ever changed, chat silently starts asking for the wrong citation
+// style — this is the test that catches it.
+Deno.test("routeInstruction: the default form is chat's, for the one-argument caller", () => {
+  for (const route of ["research", "current", "learning", "conversation"] as const) {
+    assertEquals(routeInstruction(route), routeInstruction(route, "numbered-web-results"), route);
+  }
+});
+
+// ── The workspace line must describe what this surface really sends ──────────
+// 🔴 THIS TEST PINNED A FALSE SENTENCE ONCE ALREADY (owner 2026-08-21). It used
+// to assert that WORKSPACE_INSTRUCTION says nothing about their workspace is
+// attached up front, on the strength of a grep of the phone for the word
+// "snapshot" coming back empty. The phone does not use web's word; it does send
+// the thing. api/chat.ts:603 recalls the second-brain packet, :638 formats it,
+// and chat-thread.ts:258 ships it as its own system message headed "Background
+// retrieved automatically from this student's workspace" — the student's
+// matching Library notes, linked notes, Calendar events and weak Study cards.
+// What the phone lacks is web's structured LISTING, whose counts are complete;
+// what it sends is a semantic recall of whatever matched the question. Both
+// assertions below are about that distinction, not about the missing word.
+Deno.test("WORKSPACE_INSTRUCTION: describes the semantic recall the phone really attaches", () => {
+  // It must NOT deny the attachment — the exact false claim that shipped.
+  assertNotMatch(WORKSPACE_INSTRUCTION, /nothing about their workspace is attached/i);
+  // It must say what IS attached, and that it is a recall rather than a listing.
+  assertMatch(WORKSPACE_INSTRUCTION, /semantic recall/);
+  assertMatch(WORKSPACE_INSTRUCTION, /matched this question/);
+  assertMatch(WORKSPACE_INSTRUCTION, /what the tools return THIS turn/);
+  // Web's snapshot wording stays out: the phone builds no such document, and
+  // "the counts are complete" (web chat-api.ts:313) is untrue of a recall.
+  assertNotMatch(WORKSPACE_INSTRUCTION, /snapshot/i);
+  // The "do not mistake a partial view for the whole picture" warning survived
+  // BOTH rewrites, and now covers the recall as well as the tool results.
+  assertMatch(WORKSPACE_INSTRUCTION, /may be empty/);
+  assertMatch(WORKSPACE_INSTRUCTION, /partial by default/);
+  assertMatch(WORKSPACE_INSTRUCTION, /read the complete state first/);
+});
+
+// Every tool the workspace line names must really be advertised by the phone —
+// the same rule that made the bracket diverge from web's in the first place.
+Deno.test("WORKSPACE_INSTRUCTION: names only tools the phone actually carries", () => {
+  for (const tool of ["search_library", "list_calendar_events", "list_study_decks", "list_study_artifacts"]) {
+    assertMatch(WORKSPACE_INSTRUCTION, new RegExp(tool), tool);
+  }
+  for (const webOnly of ["get_library_tree", "get_study_overview"]) {
+    assertNotMatch(WORKSPACE_INSTRUCTION, new RegExp(webOnly), webOnly);
+  }
 });
 
 // ── Save requests keep the tools-capable model ───────────────────────────────

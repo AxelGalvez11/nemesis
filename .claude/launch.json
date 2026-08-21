@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "nemesis-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "export PATH=\"$HOME/.local/bin:$PATH\"; cd /Users/axelgalvez/Desktop/nemesis/apps/web && npx next dev -p 3202"
+      ],
+      "port": 3202
+    },
+    {
       "name": "panel-preview",
       "runtimeExecutable": "bash",
       "runtimeArgs": [

@@ -147,7 +147,7 @@ Deno.test("buildNotebookWireMessages: system carries the grounded prompt + route
   const wire = buildNotebookWireMessages({ history: [], instructions: null, sources: [], userText: "hi there" });
   assertEquals(wire[0].role, "system");
   assertEquals(wire[0].content.startsWith(NOTEBOOK_SYSTEM_PROMPT), true);
-  assertEquals(wire[0].content.includes(routeInstruction("conversation")), true);
+  assertEquals(wire[0].content.includes(routeInstruction("conversation", "named-sources")), true);
   assertEquals(wire[0].content.includes("This notebook's instructions"), false);
   assertEquals(wire[0].content.includes("Sources the student added"), false);
   assertEquals(wire[wire.length - 1], { content: "hi there", role: "user" });
@@ -186,7 +186,45 @@ Deno.test("buildNotebookWireMessages: an explicit decision overrides auto-classi
     sources: [],
     userText: "hey",
   });
-  assertEquals(wire[0].content.includes(routeInstruction("research")), true);
+  assertEquals(wire[0].content.includes(routeInstruction("research", "named-sources")), true);
+});
+
+// ── The citation form a notebook can actually honour ────────────────────────
+// 🔴 REGRESSION TEST (owner 2026-08-21). routeInstruction's default asks for
+// bracketed numbers, which is right for chat and unanswerable here: sources are
+// headed "### Source: <name>" and never numbered, no live web results are ever
+// attached, and app/notebook.tsx renders through <MessageBody> with NO `sources`
+// prop, so a "[1]" is out of range for citationsToMarkdown and survives to the
+// screen as literal dangling text. This asserts on the WHOLE assembled system
+// message, not on routeInstruction, so it also catches a number arriving from
+// NOTEBOOK_SYSTEM_PROMPT or from any part added later.
+Deno.test("buildNotebookWireMessages: never asks for a bracketed citation number, on any route", () => {
+  for (const route of ["research", "current", "learning", "conversation"] as const) {
+    const wire = buildNotebookWireMessages({
+      decision: { model: "deepseek-chat", route, searchWeb: false },
+      history: [],
+      instructions: null,
+      sources: [{ content: "Loop diuretics act on the thick ascending limb.", name: "Diuretics" }],
+      userText: "what do loop diuretics do?",
+    });
+    assertEquals(wire[0].content.includes("[1]"), false, route);
+    assertEquals(wire[0].content.includes("bracketed number"), false, route);
+  }
+});
+
+// The evidence-bearing routes must still ask for attribution by NAME — the form
+// the "### Source: <name>" headings above can actually resolve.
+Deno.test("buildNotebookWireMessages: the evidence routes ask for the source by name", () => {
+  for (const route of ["research", "current"] as const) {
+    const wire = buildNotebookWireMessages({
+      decision: { model: "deepseek-chat", route, searchWeb: false },
+      history: [],
+      instructions: null,
+      sources: [{ content: "Loop diuretics act on the thick ascending limb.", name: "Diuretics" }],
+      userText: "what do loop diuretics do?",
+    });
+    assertMatch(wire[0].content, /name the source/, route);
+  }
 });
 
 // ── titleFromPrompt ──────────────────────────────────────────────────────────
