@@ -1461,6 +1461,13 @@ export function LearningCanvas({
       <BloubDock
         anchor="#canvas-composer"
         contain
+        // 🔴 "!" WHEN SOMETHING WENT WRONG, "?" WHEN NEMESIS IS WAITING ON THE LEARNER, and null on
+        // nearly every render — a mascot that is always signalling is a mascot nobody looks at.
+        //
+        // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once (a question on screen and a
+        // turn that just failed), and of the two only the failure is news: the question is already
+        // rendered in full, in words, in the middle of the page.
+        marker={session.error ? "!" : awaitingDemonstration ? "?" : null}
         state={stateForCanvas({ thinking: policy.thinking, preparing: presence === "preparing" })}
       />
 

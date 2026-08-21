@@ -39,6 +39,10 @@ const MEASURE_MS = 120;
 export interface BloubDockProps {
   /** Which animation is playing. Its station decides corner or centre. */
   state?: StateId;
+  /** A mark above the character's head: "!" when something went wrong, "?" when it needs something
+   *  from the learner. Absent on nearly every render — a mascot that is always signalling is a
+   *  mascot nobody looks at. */
+  marker?: "!" | "?" | null;
   /** Rendered size in px. The viewBox is square. */
   size?: number;
   /**
@@ -78,6 +82,7 @@ export interface BloubDockProps {
 }
 
 export function BloubDock({
+  marker = null,
   state = "idle",
   size = 52,
   anchor,
@@ -241,6 +246,25 @@ export function BloubDock({
         state={shown}
         track
       />
+      {/* 🔴 A MARK ABOVE THE HEAD, NOT A BODY STATE — owner's own wording, 2026-08-20: *"the mascot
+          should have an exclamation mark or question mark appear above its head for those kinds of
+          things."* The engine ships `exclaim` and `alert` poses that deform the character itself,
+          and the owner was asked and chose neither: the character stays itself and something
+          appears near it, which is how a mascot has always signalled.
+
+          🔴 ADDITIVE, AND DELIBERATELY OUTSIDE THE ENGINE. `lib/bloub/*` is vendored whole and not
+          edited (see bloub-bot.tsx), and the animation loop writes SVG attributes every frame — a
+          glyph pushed through it would be a fourth thing to keep in sync at 60fps for no gain.
+          This is a sibling that inherits the dock's own transform, so it travels with the character
+          without the character knowing about it. */}
+      {marker && (
+        <span
+          aria-hidden="true"
+          className="bloub-marker pointer-events-none absolute left-1/2 bottom-full mb-1 -translate-x-1/2 select-none text-[13px] font-semibold leading-none text-(--ui-text-tertiary)"
+        >
+          {marker}
+        </span>
+      )}
     </div>
   );
 }

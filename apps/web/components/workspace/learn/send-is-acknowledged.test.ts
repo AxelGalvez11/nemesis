@@ -238,3 +238,20 @@ test("🔴 the composer's drop is longer than it was, and lands softer", () => {
   assert.ok(dock && Number(dock[1]) >= 300, `the drop is back to ${dock?.[1]}ms`);
   assert.match(home, /cubic-bezier\(0\.32, 0\.72, 0, 1\)/, "the drop is back on the brisker curve");
 });
+
+test("🔴🔴 the mascot wears a mark above its head, and does not deform into one", () => {
+  // Owner, 2026-08-20, asked directly and chose this over the engine's own poses: *"do not fire at
+  // all, the mascot should have an exclamation mark or question mark appear above its head for
+  // those kinds of things."* `lib/bloub` ships `exclaim` and `alert` states that deform the
+  // character itself; the character stays itself and something appears near it instead.
+  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.match(dock, /marker \?: "!" \| "\?" \| null;|marker\?: "!" \| "\?" \| null;/, "the dock takes no marker");
+  assert.match(dock, /\{marker && \(/, "the marker is accepted and never drawn");
+  // 🔴 OUTSIDE THE ENGINE. lib/bloub is vendored whole and not edited, and its loop writes SVG
+  // attributes every frame — a glyph pushed through it would be a fourth thing to keep in sync.
+  assert.match(dock, /bloub-marker/, "the marker is not a sibling of the character");
+
+  // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
+  // the question is already rendered in full, in words, in the middle of the page.
+  assert.match(canvasCode, /marker=\{session\.error \? "!" : awaitingDemonstration \? "\?" : null\}/);
+});
