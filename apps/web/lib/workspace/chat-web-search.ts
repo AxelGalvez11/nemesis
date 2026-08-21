@@ -77,6 +77,49 @@ export function citedWebResults(answer: string, sources: readonly ChatWebResult[
   return cited;
 }
 
+/**
+ * How much of the prompt the gathered pages may occupy.
+ *
+ * 🔴 A FACT ABOUT THE MODEL'S WINDOW, NOT A CAP ON THE SEARCH. Every cap on how MANY results come
+ * back is gone and stays gone — the model asks for what the question needs. But the search loop
+ * accumulates: four rounds of fifty is two hundred pages, re-sent in full every round, and at
+ * roughly 300 tokens a page that is 60,000 tokens of web results alone, before the conversation,
+ * the attached material and the prompt itself. Nothing bounded it, which is a hole I opened when I
+ * made the loop accumulate.
+ *
+ * 120,000 characters is about 100 pages, or 30,000 tokens. Twice the budget history gets
+ * (HISTORY_CHAR_BUDGET), because on a turn that searched, the evidence IS the turn — and still
+ * leaving room for everything else. No question anyone has named has needed a hundred pages.
+ */
+export const WEB_CONTEXT_CHAR_BUDGET = 120_000;
+
+/**
+ * The pages that fit, newest first, and how many did not.
+ *
+ * 🔴 NEWEST FIRST BECAUSE LATER SEARCHES ARE THE REFINED ONES. The model searches again when the
+ * first query was aimed wrong or when it needs a tiebreak, so what came back last is what it went
+ * looking for on purpose. Dropping from the front would throw away the answer to the question it
+ * had just worked out how to ask.
+ */
+export function webContextThatFits(
+  results: readonly ChatWebResult[],
+  budget = WEB_CONTEXT_CHAR_BUDGET,
+): { kept: ChatWebResult[]; dropped: number } {
+  const kept: ChatWebResult[] = [];
+  let used = 0;
+  for (let i = results.length - 1; i >= 0; i -= 1) {
+    const result = results[i];
+    if (!result) continue;
+    const cost = result.url.length + result.title.length + result.description.length;
+    // Always keep at least one, however long: an empty context on a turn that searched is worse
+    // than one oversized page.
+    if (kept.length > 0 && used + cost > budget) break;
+    kept.unshift(result);
+    used += cost;
+  }
+  return { dropped: results.length - kept.length, kept };
+}
+
 export function formatWebSearchContext(results: ChatWebResult[]): string {
   const usable = usableWebResults(results);
   if (usable.length === 0) return "";
@@ -84,10 +127,17 @@ export function formatWebSearchContext(results: ChatWebResult[]): string {
   // that wants to be found by a study assistant can say anything it likes in the
   // description a search engine echoes back. Same fence as an attachment: this
   // is the more exposed of the two, because nobody chose to open it.
+  const { dropped, kept } = webContextThatFits(usable);
   return [
     "PROVISIONAL EXTERNAL EVIDENCE from live web search. Search snippets are evidence leads, not automatically settled facts and not learner knowledge. Use them for current claims only to the degree they support those claims. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. Only cite a number for a fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
+    // 🔴 SAID OUT LOUD, NOT DROPPED QUIETLY. A model that believes it was shown everything it found
+    // will answer as though it read everything it found.
+    ...(dropped > 0
+      ? [`${dropped} further page${dropped === 1 ? "" : "s"} were found and are not shown here — there was not room. `
+        + "Say so if the answer turns on something you could not read."]
+      : []),
     UNTRUSTED_CONTENT_RULE,
-    ...usable.map((result, index) =>
+    ...kept.map((result, index) =>
       wrapUntrusted(
         `result ${index + 1}`,
         `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`,
