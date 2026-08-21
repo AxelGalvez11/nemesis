@@ -46,9 +46,12 @@ interface CanvasSurfaceProps {
    *  used to render no exit either. */
   chrome?: React.ReactNode;
   children: React.ReactNode;
+  /** Files dropped anywhere on the canvas. Absent while the session is still loading, because
+   *  there is nothing yet to attach them to. */
+  onDropFiles?: (files: FileList) => void;
 }
 
-export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) {
+export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasSurfaceProps) {
   // §38.1 — "Side bar should also not be visible when inside canvas." The whole rail, not the
   // toggle. This is what makes the exit below load-bearing rather than decorative, which is why
   // the two live in the same component: you cannot take the claim without taking the `×` with it.
@@ -57,6 +60,28 @@ export function CanvasSurface({ chrome, children, onExit }: CanvasSurfaceProps) 
   return (
     <main
       className="relative h-full min-h-0 bg-(--ui-bg-editor)"
+      // 🔴🔴 DROPPING A FILE ON THE CANVAS DID NOTHING AT ALL UNTIL NOW. Owner, 2026-08-20: *"the
+      // composer doesnt allow me to drop in multiple attachments before sending."* The FRONT DOOR
+      // has had a drop handler since it was built (`canvas-home.tsx`); the canvas never did, so the
+      // browser took the drop, navigated away from the session, and opened the PDF in the tab.
+      //
+      // 🔴 ON THE SURFACE, NOT ON THE COMPOSER. A drop target the size of a 52px pill is a target
+      // you have to aim at, and nobody aims at a text box — they drop the file on the page. The
+      // whole canvas accepts it, which is also what the front door does.
+      //
+      // 🔴 `preventDefault` ON DRAGOVER IS THE LOAD-BEARING HALF. Without it the drop event never
+      // fires at all: the browser's default is to navigate, and it wins unless the dragover is
+      // cancelled first. That is why both handlers are here rather than only the one that acts.
+      onDragOver={onDropFiles ? (event) => { event.preventDefault(); } : undefined}
+      onDrop={
+        onDropFiles
+          ? (event) => {
+              if (!event.dataTransfer?.files?.length) return;
+              event.preventDefault();
+              onDropFiles(event.dataTransfer.files);
+            }
+          : undefined
+      }
       // 🔴🔴 SELECTION ON, EVERYWHERE ON THE CANVAS — owner call, 2026-08-19: "selection on
       // everywhere". `[data-workspace]` sets `user-select: none` for the whole app and individual
       // components opted back in one at a time, so whether you could highlight a sentence depended

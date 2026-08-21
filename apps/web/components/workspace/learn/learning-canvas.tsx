@@ -996,6 +996,10 @@ export function LearningCanvas({
     // the sheet, its scrim, the floating strip and the `×` all come from `CanvasSurface`, which
     // owns them so that no render branch can omit the exit. See the note at the top of that file.
     <CanvasSurface
+      // 🔴 THE WHOLE CANVAS IS THE DROP TARGET, not the composer. A 52px pill is a target you have
+      // to aim at, and nobody aims at a text box when they are dragging a PDF — they drop it on the
+      // page. Same door a picked file takes, so a dropped lecture and a chosen one are one path.
+      onDropFiles={(files) => void session.attachFiles(files)}
       onExit={leave}
       chrome={
       <CanvasHeader

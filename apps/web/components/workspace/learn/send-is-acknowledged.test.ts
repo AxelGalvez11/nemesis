@@ -79,20 +79,27 @@ test("🔴🔴 and the content regions stand down while it owns the surface", ()
   }
 });
 
-test("🔴 the mascot is for a turn, and the forming lines are kept for the other wait", () => {
-  // §21's argument — the lines are the SHAPE of the question that replaces them — holds exactly
-  // where it was written and nowhere else. Deleting them to make room for the mascot would throw
-  // away a measured design for a case it is still right about.
-  assert.match(previewCode, /if \(mascot\) \{/);
-  assert.match(previewCode, /canvas-forming/, "the forming lines were deleted rather than kept");
+test("🔴🔴 there is no skeleton loader on either wait, and the caption sits BESIDE the mascot", () => {
+  // 🔴 THIS TEST HAS BEEN REVERSED, AND THE REVERSAL IS AN OWNER DECISION RATHER THAN A REGRESSION.
+  //
+  // It used to assert the forming lines SURVIVED — three staggered bars occupying the shape a
+  // question occupies, so the first question landed where the placeholder already was. That
+  // argument was good and is why they lasted this long.
+  //
+  // Owner, 2026-08-20: *"i dont want skeleton loader, also when nemesis is thinking or loading, the
+  // mascot three dot should have the thinking preview to the right of it."* A skeleton is a guess
+  // about what is coming drawn as though it were already there — three grey bars promising a
+  // paragraph that may turn out to be a molecule, a plot, or one sentence.
+  assert.ok(!/canvas-forming/.test(previewCode), "the skeleton bars are back");
+  assert.ok(!/LINES\.map/.test(previewCode), "something is still drawing placeholder bars");
+
+  // Both waits now render the same thing: a caption in a ROW, so it sits beside the character the
+  // dock draws rather than a long way beneath it.
+  assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 2, "one of the two waits is still a column");
   assert.match(canvasCode, /mascot=\{turnInFlight\}/);
-  // 🔴 REPOINTED 2026-08-20. This pinned `<Bloub ` INSIDE this component, and went red when the
-  // character moved to `BloubDock` — which was a fix, not a regression: two mounts of one renderer
-  // were putting two sets of three dots on the same screen. The property was never "this file draws
-  // the mascot", it is "a turn in flight shows the mascot somewhere, and the forming lines survive
-  // for the other wait". So this asserts the branch exists and the dock owns the drawing.
-  assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again, which is the two-mounts defect");
-  assert.match(previewCode, /role="status"/, "the mascot branch no longer announces itself as busy");
+  // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
+  // of three dots on one screen; the dock owns the character, this owns the caption.
+  assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");
 });
 
 // ── The composer travels to where it is about to be ─────────────────────────
@@ -143,4 +150,44 @@ test("🔴🔴 bloub's MIT licence travels with the code that needs it", () => {
   assert.ok(users.length > 0, "nothing renders the vendored engine any more");
   const attributed = users.some((f) => /MIT/.test(readFileSync(new URL(`../../bloub/${f}`, import.meta.url), "utf8")));
   assert.ok(attributed, `none of ${users.join(", ")} says where the engine came from`);
+});
+
+// ── Attachments: dropped anywhere, carried inside the composer ────────────────────────────────
+
+test("🔴🔴 a file dropped anywhere on the canvas is attached", () => {
+  // 🔴 REPORTED 2026-08-20: *"the composer doesnt allow me to drop in multiple attachments before
+  // sending."* There was no drop handler on the canvas AT ALL. The front door has had one since it
+  // was built; the canvas never did, so the browser took the drop, navigated away from the session
+  // and opened the PDF in the tab.
+  //
+  // Calibration: remove `onDropFiles` from the CanvasSurface mount and this reddens.
+  const surface = readFileSync(new URL("./canvas-surface.tsx", import.meta.url), "utf8");
+  assert.match(surface, /onDrop=\{/, "the canvas surface does not accept a drop");
+  // 🔴 THE DRAGOVER IS THE LOAD-BEARING HALF: without preventDefault there the drop event never
+  // fires, because the browser's navigate-to-file default wins. A guard that only checked onDrop
+  // would pass against a handler that can never run.
+  assert.match(surface, /onDragOver=\{[\s\S]{0,120}?preventDefault/, "dragover is not cancelled, so onDrop can never fire");
+  assert.match(canvasCode, /onDropFiles=\{\(files\) => void session\.attachFiles\(files\)\}/, "the canvas does not hand dropped files to the session");
+});
+
+test("🔴 the loading branch does NOT accept drops, because there is nothing to attach to", () => {
+  // `session.attachFiles` needs a canvas. Accepting a file a beat before one exists is a silent
+  // discard, which is worse than the browser's own refusal.
+  const loading = canvasCode.slice(canvasCode.indexOf("if (!session.ready)"), canvasCode.indexOf("if (!session.ready)") + 900);
+  assert.ok(!/onDropFiles/.test(loading), "the not-ready branch accepts drops it cannot honour");
+});
+
+test("🔴🔴 attachment chips are INSIDE the composer, not stacked above it", () => {
+  // Owner, 2026-08-20: *"i dont want the attachments to be above the chat composer at all."* They
+  // sat in their own row above the pill, so a file read as a separate object hovering over the box
+  // rather than as something the next message is carrying.
+  const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
+  const box = composer.slice(composer.indexOf('"flex flex-col bg-(--ui-bg-elevated)"'));
+  assert.ok(box.length > 0, "the composer is no longer a column and cannot hold chips");
+  const chipsAt = box.indexOf("{chipsInside && (");
+  const rowAt = box.indexOf('min-h-[52px] items-center');
+  assert.ok(chipsAt > 0 && rowAt > 0, "the chips or the input row moved out of the box");
+  assert.ok(chipsAt < rowAt, "the chips render below the input row rather than above it");
+  // ...and the old floating row is gone, not merely duplicated.
+  assert.ok(!/mb-1\.5 ml-1 flex flex-wrap items-center gap-1\.5/.test(composer), "the floating chip row is back");
 });

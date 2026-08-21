@@ -96,7 +96,15 @@ test("the shell reserves clearance with padding rather than a header element", (
   );
   // 52/26, MEASURED off ChatGPT's live composer for the compact-UI pass (was 54/27, close
   // already) -- see the sizing note at the top of canvas-composer.tsx.
-  assert.match(read("canvas-composer.tsx"), /min-h-\[52px\][^"]*rounded-\[26px\]/);
+  //
+  // 🔴 REPOINTED 2026-08-20: these two were ONE class string until attachments moved inside the
+  // composer, which made it a column — the radius belongs to the growing box and the 52px to the
+  // input row within it. A regex spanning both went red on a change that altered neither number.
+  // Both properties are still pinned, just separately, and the RELAXED radius is pinned too so the
+  // grown state cannot quietly become a lozenge.
+  const composer = read("canvas-composer.tsx");
+  assert.match(composer, /min-h-\[52px\] items-center/, "the input row is no longer 52px tall");
+  assert.match(composer, /chipsInside \? "rounded-\[20px\]" : "rounded-\[26px\]"/, "the composer radius is no longer measured");
 });
 
 test("there is exactly one answer surface on the canvas", () => {

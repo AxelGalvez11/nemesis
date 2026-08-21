@@ -382,3 +382,29 @@ test("🔴🔴 the model is told never to draw a picture out of characters", () 
   // model simply put the ASCII art in prose instead — where the characters sit was never the point.
   assert.match(prompt, /MUST \n?answer with \[smiles/s, "the molecule case is only discouraged, not required");
 });
+
+test("🔴🔴 a model that put its answer back INSIDE the object is not thrown away", () => {
+  // 🔴 REPRODUCED ON PRODUCTION, 2026-08-20: "draw the functional groups" returned "Nemesis had
+  // nothing to add." on one run out of two, with an empty canvas behind it.
+  //
+  // A regression from the format change of the same day. `say` used to live inside this object and
+  // the model has years of habit saying so; when it writes the block with a `say` field and nothing
+  // after it, the prose outside is empty and the reply branch reports having nothing to add — while
+  // the answer sits in the field right there.
+  const read = readTurnDecision('```json\n{"say":"Alcohols carry a hydroxyl group.","then":"reply","topic":"functional groups"}\n```');
+  assert.equal(read?.say, "Alcohols carry a hydroxyl group.");
+  assert.equal(read?.topic, "functional groups");
+});
+
+test("🔴 but prose OUTSIDE the block still wins, because that is the contract", () => {
+  // The fallback recovers a turn that would be discarded; it does not make the old shape a second
+  // supported format. LaTeX inside `say` is still mangled by JSON escaping, which is the whole
+  // reason the contract moved.
+  const read = readTurnDecision('```json\n{"say":"the old field","then":"reply"}\n```\nthe real answer');
+  assert.equal(read?.say, "the real answer");
+});
+
+test("🔴 a decision with no answer anywhere is still refused", () => {
+  // Otherwise this fallback would turn "the model said nothing" into a blank reply on screen.
+  assert.equal(readTurnDecision('```json\n{"topic":"x"}\n```'), null);
+});

@@ -517,7 +517,21 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   const parsed = extractJson(block[1] ?? "");
   if (!parsed) return null;
 
-  const say = (raw.slice(0, block.index) + "\n" + raw.slice(block.index + block[0].length)).trim();
+  const outside = (raw.slice(0, block.index) + "\n" + raw.slice(block.index + block[0].length)).trim();
+  // 🔴🔴 A MODEL THAT PUT ITS ANSWER BACK INSIDE THE OBJECT IS STILL ANSWERING, AND THIS COSTS THE
+  // LEARNER NOTHING TO ACCEPT. Reproduced on production 2026-08-20: "draw the functional groups"
+  // returned "Nemesis had nothing to add." on one run out of two, with an empty canvas behind it.
+  //
+  // The cause is the format change of the same day. `say` used to live INSIDE this object and the
+  // model has years of habit saying so; when it writes the block with a `say` field and puts
+  // nothing after it, the prose outside is empty, `decision.say` is empty, and the reply branch
+  // reports having nothing to add — while the answer sits in the field right there.
+  //
+  // 🔴 THE OUTSIDE STILL WINS WHEN BOTH EXIST. Prose outside the block is the contract; this is a
+  // fallback for a turn that would otherwise be thrown away, not a second supported shape. LaTeX
+  // written into `say` will still be mangled by JSON escaping — which is exactly why the contract
+  // moved — so this recovers the turn without making the old shape safe.
+  const say = outside || asText(parsed.say);
   const then = asAction(parsed.then);
   // 🔴 A BLOCK WITH NO `then` AND NO ANSWER IS NOT A DECISION. Both empty means the model emitted
   // something JSON-shaped that says nothing, and treating it as a turn would blank the screen.
