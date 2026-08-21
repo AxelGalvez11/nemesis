@@ -287,6 +287,30 @@ const NEMESIS_SYSTEM = [
   + "and the canvas replaces it with a real structural diagram exactly where you put it, or "
   + "[reaction: A>>B] for a reaction.",
 
+  // 🔴🔴 REPORTED 2026-08-21: *"nemesis is still not using smiles to represent orgo chemical
+  // structures … asking 'show me basic functional groups' should indicate that user wants to see
+  // the structure."* It does not, and the reason is not reluctance — it is that the answer to that
+  // question has no specific molecule in it. A functional group is a FRAGMENT with an open bond,
+  // chemistry writes the open end as `R`, and `R-OH` is the worst input this pipeline can receive:
+  //
+  //     validateStructure("smiles", "R-OH")  → ok       (R, O and H are all alphabet letters)
+  //     SmilesDrawer.Parser.parse("R-OH")    → SyntaxError: Expected "*", "B", "C", … but "R" found
+  //     SmilesDrawer.Parser.parse("*O")      → parses, and draws
+  //
+  // It passes every check this codebase makes and then dies at the depiction library, so the model
+  // gets no signal, learns nothing from the attempt, and answers "Alcohol: R-OH (hydroxyl group)"
+  // in prose the next time — which is the exact string that was reported a second time.
+  //
+  // 🔴 SO THIS IS A NOTATION FACT, NOT A SUBJECT RULE (§41). `*` is how SMILES spells an attachment
+  // point, the same kind of fact as `\frac` being how LaTeX spells a fraction. Nothing here names
+  // chemistry as a discipline Nemesis favours; it tells the model how to write the thing it is
+  // already allowed to draw.
+  "A group with an open attachment point — a functional group, a side chain, a monomer, any "
+  + "fragment a chemist would write with an R — uses \"*\" where the rest of the molecule would "
+  + "continue: [smiles: *O] is an alcohol, [smiles: *C(=O)O] a carboxylic acid, [smiles: *C(=O)N] "
+  + "an amide, [smiles: *C#N] a nitrile. \"R\" is not a SMILES atom, so [smiles: R-OH] draws "
+  + "nothing at all. When the learner asks to see a family of groups, draw each one.",
+
   // 🔴 THE OTHER EIGHT ARE NEW HERE, 2026-08-20, AND THEY ARE WHY THE MODEL USED TO REFUSE. It was
   // told about one kind and had one channel, so "plot this" got an honest "I can't" out of a
   // renderer that has drawn plots for weeks. A capability the model is not told about does not

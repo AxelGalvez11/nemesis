@@ -560,3 +560,16 @@ test("🔴🔴 Define looks through an inflected form to the term underneath", (
   // and quietly rewriting it is how a lookup ends up answering a question nobody asked.
   assert.match(prompt, /retatrutide's/, "the learner's actual selection was rewritten before the lookup");
 });
+
+// 🔴 THE TEACHING PATH NEEDS THE SAME NOTATION FACT AS THE REPLY PATH, and letting one have it
+// would be worse than neither having it: a learner would get drawn functional groups when they
+// asked a question and prose when the same groups appeared in a lesson, with nothing in the product
+// explaining why. See `turn-router.test.ts` for the measurement behind the clause.
+test("🔴 the lesson prompt teaches the attachment point too", () => {
+  const system = lessonMessages({ level: null, sources: [], topic: "functional groups" })
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(system, /an open attachment point is "\*"/, "a lesson cannot draw a generic group");
+  assert.match(system, /"R" is not a SMILES atom/, "the negative half went missing");
+});

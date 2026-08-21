@@ -130,13 +130,29 @@ const EXPLAIN_BLOCK_RULE =
  * 🔴 AND IT STAYS A SEMANTIC REQUEST. Nothing in this vocabulary accepts geometry, markup, colour,
  * layout or code that runs. `structure` takes a canonical SMILES string and a depiction library draws
  * it; `equation` takes LaTeX and KaTeX draws it. The model says WHAT, never HOW.
+ *
+ * 🔴🔴 THE WILDCARD CLAUSE IS THE DIFFERENCE BETWEEN "SHOW ME THE FUNCTIONAL GROUPS" DRAWING AND NOT
+ * DRAWING, AND IT WAS MEASURED. A whole class of teaching request has no specific molecule in it: a
+ * functional group, a monomer unit, a side chain, a substituent — the answer is a fragment with an
+ * open bond where the rest of the molecule would continue. Chemistry writes that as `R`, so a model
+ * reaches for `R-OH`, and `R-OH` is the worst possible input here because it passes every check this
+ * codebase makes and then dies at the depiction library:
+ *
+ *     validateStructure("smiles", "R-OH")  → ok       (R, O and H are all SMILES alphabet letters)
+ *     SmilesDrawer.Parser.parse("R-OH")    → SyntaxError: Expected "*", "B", "C", … but "R" found
+ *     SmilesDrawer.Parser.parse("*O")      → parses, and draws
+ *
+ * So the capability was never missing and the notation was never wrong — the model was reaching for
+ * the convention a chemist writes on a whiteboard, which SMILES spells `*`. One sentence of notation
+ * makes an entire category of request drawable, and no keyword list is involved (§41): `*` is a fact
+ * about the notation, exactly as `\frac` is a fact about LaTeX.
  */
 const VISUAL_RULE =
   '"visual" is optional and is a SEMANTIC REQUEST, never rendering code. Use it only when a visual makes a relationship materially easier to understand than the prose. ' +
   'Allowed shapes are: {"kind":"equation","latex":"…"}; ' +
   '{"kind":"relationship","nodes":[{"id":"n1","label":"…"}],"edges":[{"from":"n1","to":"n2","label":"…","polarity":"increases"|"decreases"}]} — use polarity when one thing drives or blocks another; ' +
   '{"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}]}; ' +
-  '{"kind":"structure","notation":"smiles"|"reaction-smiles","value":"CC(=O)Oc1ccccc1C(=O)O","highlight":[0,1],"carbons":"skeletal"|"all","conditions":"…"} — a molecule or a reaction, given ONLY as canonical notation; never coordinates, never a drawing; ' +
+  '{"kind":"structure","notation":"smiles"|"reaction-smiles","value":"CC(=O)Oc1ccccc1C(=O)O","highlight":[0,1],"carbons":"skeletal"|"all","conditions":"…"} — a molecule or a reaction, given ONLY as canonical notation; never coordinates, never a drawing; an open attachment point is "*", so a generic alcohol is "*O", a carboxylic acid "*C(=O)O" and an amide "*C(=O)N" — "R" is not a SMILES atom and a value containing one draws nothing at all; ' +
   '{"kind":"table","columns":[{"key":"c1","label":"…","numeric":true}],"rows":[{"cells":{"c1":100}}],"totals":[{"column":"c1","value":100}],"balance":{"left":"c1","right":"c2"},"hidden":{"column":"c1","row":0}}; ' +
   '{"kind":"timeline","unit":"years","events":[{"at":-49,"atLabel":"49 BCE","label":"…","until":-44,"lane":"…","uncertain":true}],"hidden":0} — "at" is a plain number on any scale you choose and "atLabel" is what a human reads, so eras, geological time and seconds all work without a date format; ' +
   '{"kind":"construction","points":[{"id":"A","x":0,"y":0,"label":"A"}],"segments":[{"from":"A","to":"B","label":"4"}],"circles":[{"centre":"A","through":"B"}],"angles":[{"at":"A","from":"B","to":"C","degrees":90}]}; ' +

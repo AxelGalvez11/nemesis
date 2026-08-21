@@ -138,3 +138,37 @@ test("a runaway scheme is bounded", () => {
   const result = validateReaction(`${"C".repeat(300)}>>${"C".repeat(301)}`);
   assert.equal(result.ok === false && result.reason, "structure-too-long");
 });
+
+// 🔴🔴 THE WILDCARD IS WHAT MAKES A WHOLE CLASS OF TEACHING REQUEST DRAWABLE, AND IT WAS INVISIBLE.
+// Reported twice — "draw the functional groups" (2026-08-20) and "nemesis is still not using smiles
+// to represent orgo chemical structures" (2026-08-21) — and read both times as reluctance to use a
+// channel the model had been told about in the strongest terms available. It was not reluctance.
+//
+// The answer to "show me basic functional groups" has NO SPECIFIC MOLECULE IN IT. Every item is a
+// fragment with an open bond, chemistry writes that open end as `R`, and `R-OH` is the single worst
+// input this pipeline can be handed: it passes every check made here, because `R`, `O` and `H` are
+// all letters in the SMILES alphabet, and then dies inside the depiction library where nothing can
+// report it. The model gets no signal, so the next answer is prose or a table.
+//
+// These cases pin the notation that actually draws. They are the reason `canvas-prompts.ts` and
+// `turn-router.ts` now both state that `*` is the attachment point.
+test("🔴 a generic group is `*`, and that is what the prompts teach", () => {
+  // Measured against smiles-drawer 2.4.1's own parser, which is the thing that ultimately refuses:
+  //   Parser.parse("*O")   → parses, and draws
+  //   Parser.parse("R-OH") → SyntaxError: Expected "*", "B", "C", … but "R" found
+  for (const fragment of ["*O", "*C(=O)O", "*C(=O)N", "*C#N", "*C=O", "*N", "*S", "*[N+](=O)[O-]"]) {
+    const result = validateStructure("smiles", fragment);
+    assert.equal(result.ok, true, `${fragment} is a functional group and must reach the renderer`);
+  }
+  // Both ends open — an ether, a monomer unit, anything drawn mid-chain.
+  assert.equal(validateStructure("smiles", "*C(=O)*").ok, true);
+});
+
+// 🔴 AND THE HONEST LIMIT, RECORDED RATHER THAN FIXED. `R-OH` still passes this module, because a
+// shape check cannot know which letters are elements without carrying a periodic table — and this
+// file is deliberately a shape check, not a chemistry engine (see the header). What stops `R-OH`
+// reaching a learner is the depiction library refusing it and `ChemicalStructure` falling back to
+// showing the notation. What stops the MODEL WRITING IT is the prompt, which is where the fix went.
+test("`R-OH` passes the shape check — the prompt is the defence, not this file", () => {
+  assert.equal(validateStructure("smiles", "R-OH").ok, true);
+});

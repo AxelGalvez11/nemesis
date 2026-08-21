@@ -575,3 +575,23 @@ test("🔴 nothing here checks the window against a list — that fact belongs t
 });
 
 console.log("turn-router.test.ts OK");
+
+// 🔴🔴 THE THIRD REPORT OF THE SAME SYMPTOM HAD A DIFFERENT CAUSE FROM THE FIRST TWO, AND THAT IS
+// why this test exists beside the ASCII-art one rather than inside it. Twice the fix was about
+// FORCE — the model knew the channel and chose characters, so the prompt gained a negative rule and
+// then an imperative. Reported a third time on 2026-08-21 ("nemesis is still not using smiles …
+// asking 'show me basic functional groups' should indicate that user wants to see the structure"),
+// force was no longer the missing thing: the model cannot draw what it cannot write, and nothing
+// had ever told it how to write a group with an open bond.
+//
+// `R-OH` is what a chemist writes and what a model reaches for. It clears every check this codebase
+// makes and then throws inside smiles-drawer, where no instruction can learn from it. `*O` draws.
+// Calibration: delete the clause and this reddens.
+test("🔴 the reply prompt teaches the attachment point, so a functional group is drawable at all", () => {
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "show me basic functional groups" })
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(prompt, /open attachment point/, "the model is not told how to write a generic group");
+  assert.match(prompt, /\[smiles: \*O\]/, "the worked example went missing");
+  assert.match(prompt, /"R" is not a SMILES atom/, "the negative half is what stops R-OH being written");
+});
