@@ -94,3 +94,42 @@ test("🔴 the migration does not deduplicate across users", () => {
   // predicate, this is the test that should go red.
   assert.doesNotMatch(migration, /select .* from public\.parsed_documents[^;]*where content_hash = p_content_hash\s*;/is);
 });
+
+// ── the refusal that existed and could never fire ────────────────────────────
+//
+// 🔴🔴 MEASURED ON PRODUCTION 2026-08-21 BY ASKING FOR A REPROCESS AND WATCHING IT NOT HAPPEN.
+// `decideReuse` has taken `reprocessRequested` since it was written, and the worker called it as
+// `decideReuse(existing)` — no options. So `parse_reprocess_target` was write-only: the app's
+// button set it, the SQL claim predicate read it to claim the row, and the worker then reused the
+// very parse the learner had asked to replace. The logs show `parse_reused` once a minute, 0ms
+// each, the target never cleared, until the row burned all five attempts.
+//
+// This file's own header already named the hazard — "a reuse that fires when it should not is a
+// document permanently frozen at a worse answer, and it is silent". It was pinned for the two
+// refusals that could fire, and not for the one that could not.
+
+test("🔴 an explicit reprocess refuses reuse — the whole point of asking", () => {
+  const decision = decideReuse(
+    { content_hash: "h", id: "p1", parser_version: "extract-2026-08-16", state: "partially_parsed" },
+    { reprocessRequested: true },
+  );
+  assert.equal(decision.reuse, false);
+  assert.equal(decision.reuse === false ? decision.reason : null, "reprocess-requested");
+});
+
+test("🔴 and the WORKER passes it, which is the half that was missing", () => {
+  const worker = readFileSync(
+    new URL("../../app/api/documents/parse/worker/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    worker,
+    /decideReuse\(existing, [^)]*reprocessRequested/,
+    "the worker calls decideReuse without the request — `parse_reprocess_target` is write-only again",
+  );
+  assert.match(
+    worker,
+    /job\.parse_reprocess_target/,
+    "the request is not read off the claimed row, so it can drift from the predicate that claimed it",
+  );
+});
