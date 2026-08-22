@@ -53,8 +53,13 @@ for (const skill of CHAT_SKILLS) {
   // A model that is not told this has no way to know that "learning" loses the student's deck.
   assert.match(contract, /tools/i);
   assert.match(contract, /cannot save|cannot see/i);
-  // Cost discipline survives the move off the keyword list: searching still spends real money.
-  assert.match(contract, /costs money/i);
+  // 🔴 THE BORDERLINE CASE SEARCHES (owner 2026-08-21: *"make it search when unsure, remove the
+  // 'costs money and time' it should be able to search web"*). This asserted the opposite — that
+  // the contract still told the model searching costs money, which it used as the reason to say
+  // false on a coin flip. Answering a current question from undated memory is the failure that
+  // matters here, and it is the one the student cannot see.
+  assert.match(contract, /genuinely borderline, say true/i);
+  assert.doesNotMatch(contract, /costs money and time/i);
   // 🔴 NO CEILING IS QUOTED TO THE MODEL. Naming one makes it the answer to every question: told
   // "up to 50" it asks for 50 every time, told "up to 10" it never asks for more even when the
   // question plainly needs it. What it is given is the trade-off, not a number.

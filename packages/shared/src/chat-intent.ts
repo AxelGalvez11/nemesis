@@ -338,12 +338,24 @@ export function intentContract(catalog: readonly IntentSkill[]): string {
     + 'needs their own data, say so: "read" costs almost nothing and being wrong the other way '
     + "costs the whole turn.",
     "",
+    // 🔴 THE BORDERLINE CASE SEARCHES, AND THAT IS AN OWNER DECISION (2026-08-21: *"make it search
+    // when unsure, remove the 'costs money and time' it should be able to search web"*). This
+    // sentence used to read *"Searching costs money and time, so when it is genuinely borderline, say
+    // false"* — so a coin-flip question was answered from training data, and the whole point of
+    // letting the model decide was to stop answering current questions from stale memory.
+    //
+    // 🔴 IT IS ONLY THE TIE-BREAK THAT MOVED. The false list above is untouched and is what actually
+    // does the work: an explanation, a definition, a calculation, a translation and anything the
+    // attached material answers are all still false, and none of those are borderline. What flipped
+    // is the residue — the questions where the model genuinely cannot tell — and on those a wrong
+    // "false" is invisible to the learner while a wrong "true" costs a search.
     '"needsWeb" is true when a correct answer depends on something that changes or that you could '
     + "not have memorised: recent or ongoing events, current prices, standings, releases, versions, "
     + "laws, guidelines, schedules, anything the student says is new or has changed, or a specific "
     + "source they want read. It is false for settled knowledge, explanations, definitions, "
     + "calculations, translations, help with their own text, and anything answerable from material "
-    + "they attached. Searching costs money and time, so when it is genuinely borderline, say false.",
+    + "they attached. When it is genuinely borderline, say true. An answer built on pages that "
+    + "exist beats one built on a memory nobody can date, and the student cannot tell the two apart.",
     "",
     '"webQuery" is what to type into a search engine, when needsWeb is true. Write it as a search, '
     + "not as a sentence, and put a date or year in it yourself when recency is the point. Null "
