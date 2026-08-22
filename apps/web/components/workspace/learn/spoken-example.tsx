@@ -20,6 +20,16 @@
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
+import { usePronunciationAttempt } from "./use-pronunciation-attempt";
+
+/** How each verdict reads on the page. The words are the diagnosis's, not ours. */
+const VERDICT_TONE: Record<string, string> = {
+  "close": "text-(--ui-text-secondary)",
+  good: "text-(--ui-text-secondary)",
+  "needs-work": "text-(--ui-text-primary)",
+  "not-assessable": "text-(--ui-text-quaternary)",
+  "off-target": "text-(--ui-text-primary)",
+};
 
 export function SpokenExample({
   locale,
@@ -35,6 +45,20 @@ export function SpokenExample({
   speaking: boolean;
   text: string;
 }) {
+  /**
+   * 🔴🔴 THE DOOR ONTO A SCORER THAT HAD NONE. §47 shipped Azure pronunciation assessment — word,
+   * syllable and phoneme level, with the alternative the recogniser considered — and
+   * `usePronunciationAttempt` had ZERO callers anywhere in the product. Built, tested, paid for in
+   * review, and unreachable from every screen a learner can open.
+   *
+   * 🔴 IT BELONGS HERE AND NOWHERE ELSE, which is why this is the fix rather than a new page. The
+   * scorer needs exactly two things — a sentence and the variety it should be said in — and this
+   * component is the only place in the product that has both. A separate practice screen would
+   * have had to invent them.
+   */
+  const attempt = usePronunciationAttempt();
+  const scored = attempt.result;
+
   return (
     <div className="my-2 flex items-start gap-2.5 rounded-[8px] border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary) px-3 py-2.5">
       {/* 🔴 ONE BUTTON, TWO STATES, the same rule `ReplyActions` holds: a separate stop control
@@ -64,7 +88,58 @@ export function SpokenExample({
         <p className="mt-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) tabular-nums">
           {locale}
         </p>
+
+        {/* 🔴 THE VERDICT IS THE DIAGNOSIS'S OWN SENTENCE. `pronunciation-diagnosis.ts` already
+            bounds it to a few words and already refuses to speak when it has nothing to say; a
+            second opinion written here would be this file guessing at a score it cannot see. */}
+        {attempt.assessing && (
+          <p className="mt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Listening back…</p>
+        )}
+        {!attempt.assessing && scored?.diagnosis.headline && (
+          <p className={cn("mt-2 text-[length:var(--canvas-text-meta)]", VERDICT_TONE[scored.diagnosis.verdict] ?? "text-(--ui-text-secondary)")}>
+            {scored.diagnosis.headline}
+            {typeof scored.diagnosis.overall === "number" && (
+              <span className="ml-1.5 text-(--ui-text-quaternary) tabular-nums">{Math.round(scored.diagnosis.overall)}%</span>
+            )}
+          </p>
+        )}
+        {/* 🔴 A REFUSED MICROPHONE IS SAID PLAINLY. The hook names four different failures and a
+            silent button would make every one of them look like the same broken control. */}
+        {attempt.failure && !attempt.recording && (
+          <p className="mt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+            {attempt.failure === "not-signed-in"
+              ? "Sign in to have this scored."
+              : attempt.failure === "microphone-unavailable"
+                ? "Nemesis could not reach a microphone. It may need permission."
+                : attempt.failure === "recording-unsupported"
+                  ? "This browser cannot record in a format the scorer accepts."
+                  : "That attempt could not be scored."}
+          </p>
+        )}
       </div>
+
+      {/* 🔴 ONLY WHERE IT CAN WORK. Safari records in a format Azure's endpoint refuses, so
+          `supported` is false there and no button appears — rather than one that always fails. */}
+      {attempt.supported && (
+        <button
+          aria-label={attempt.recording ? "Stop and score" : `Say it back in ${locale}`}
+          className={cn(
+            "mt-0.5 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full transition-colors",
+            attempt.recording
+              ? "bg-(--ui-bg-elevated) text-(--ui-text-primary)"
+              : "text-(--ui-text-secondary) hover:bg-(--ui-bg-elevated) hover:text-(--ui-text-primary)",
+          )}
+          disabled={attempt.assessing}
+          onClick={() => {
+            if (attempt.recording) void attempt.stop();
+            else void attempt.start({ locale, text });
+          }}
+          title={attempt.recording ? "Stop and score" : `Say it back in ${locale}`}
+          type="button"
+        >
+          <Codicon name={attempt.recording ? "debug-stop" : "mic"} size="15px" />
+        </button>
+      )}
     </div>
   );
 }
