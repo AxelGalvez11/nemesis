@@ -15,38 +15,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { shouldSpeakAction, speechChunks, SPEECH_CHAR_LIMIT, type SpokenMoment } from "@/lib/learn/canvas-speech";
-import { LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
+import { ANSWER_SPEED, LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
 import {
   type AutoDictation,
   DEFAULT_VOICE_MODE,
-  DEFAULT_VOICE_SPEED,
-  nextVoiceSpeed,
   readAutoDictation,
   readVoiceMode,
-  readVoiceSpeed,
   shouldOpenDictation,
   type VoiceMode,
-  type VoiceSpeed,
   writeAutoDictation,
   writeVoiceMode,
-  writeVoiceSpeed,
 } from "@/lib/learn/voice-preferences";
 
 import { correctionLead } from "./correction-copy";
 import { speechRecognitionSupported } from "./use-canvas-dictation";
-import { DEFAULT_VOICE, readVoice, VOICE_STORAGE_KEY } from "@/lib/learn/canvas-voices";
-import { useCanvasSpeech, type CanvasSpeech } from "./use-canvas-speech";
+import {
+  DEFAULT_READING_VOICE,
+  READING_VOICE_KEY,
+  readReadingVoice,
+  type ReadingVoice,
+} from "@/lib/speech/reading-voice";
+import { useCanvasSpeech, type CanvasSpeech, type SpokenVoice } from "./use-canvas-speech";
+import { useResponseAudio, type ResponseAudio } from "./use-response-audio";
 import type { PolicyRuntime } from "./use-policy-runtime";
-
-/**
- * What a voice says when you pick it.
- *
- * 🔴 ONE SENTENCE, AND IT IS ABOUT THE VOICE RATHER THAN ABOUT NEMESIS. A preview is a sample of a
- * SOUND; a line of product copy makes the learner read instead of listen, and a long one makes them
- * wait to hear the end of a thing they are only sampling. Short enough that pressing four options
- * in a row is four sounds rather than four sentences.
- */
-const VOICE_PREVIEW_LINE = "This is how I sound.";
 
 export interface CanvasVoice {
   /** Straight onto `<CanvasHeader voice={…}>`. */
@@ -57,16 +48,16 @@ export interface CanvasVoice {
     speaking: boolean;
     onToggle: (next: VoiceMode) => void;
     onSetAutoDictation: (next: AutoDictation) => void;
-    /** Which speaker the learner chose. See `lib/learn/canvas-voices.ts`. */
-    voiceId: string;
-    onSetVoice: (next: string) => void;
-    /** How fast Nemesis reads, and the control that cycles it. Shown twice by design (owner
-     *  2026-08-20, "both"): here for "how should it read from now on", and in the row under an
-     *  answer for "read THIS faster". One value behind both, which is what makes showing it twice
-     *  honest rather than confusing. */
-    speed: VoiceSpeed;
-    onCycleSpeed: () => void;
   };
+  /**
+   * The audio of the answer on screen: fetch, playback, and every control over it.
+   *
+   * 🔴 A CONTROLLER RATHER THAN A `speak()` CALL, AND THAT IS THE ARCHITECTURAL POINT OF §48. Voice
+   * used to be fire-and-forget — ask the provider for a file, play it, and afterwards have no idea
+   * where in it you were. That is why speed regenerated, why there was no progress bar, and why the
+   * only possible control was play/stop. See `use-response-audio.ts`.
+   */
+  replyAudio: ResponseAudio;
   /** Speak an arbitrary passage on demand; pressing again repeats it. */
   speakAloud: (text: string) => void;
   /**
@@ -107,13 +98,12 @@ export interface CanvasVoice {
  * separately from the text is an identity that can drift from it.
  */
 function momentFor(runtime: PolicyRuntime, reply: SpokenReply | null): { key: string; moment: SpokenMoment } | null {
-  // 🔴🔴 THE REPLY IS READ FIRST, AND THE ORDER IS THE FIX. Reported 2026-08-20: *"why does it only
-  // read aloud during questions?"* Every branch below is derived from the POLICY runtime, and a
-  // conversational answer is not a policy decision — so voice mode was silent on the thing the
-  // learner looks at most. It goes first because a reply that is on screen has DISPLACED whatever
-  // the policy was showing (see `canvas-hosting.ts`), so speaking the policy's question underneath
-  // it would be reading a screen nobody is looking at.
-  if (reply) return { key: `reply:${reply.key}`, moment: { kind: "answer", text: reply.text } };
+  // 🔴🔴 A REPLY SILENCES THIS LANE RATHER THAN BEING READ BY IT (§48). An answer on screen has
+  // DISPLACED whatever the policy was showing (see `canvas-hosting.ts`), so narrating the question
+  // underneath it would be reading a screen nobody is looking at. What it does NOT do any more is
+  // borrow this lane to speak itself: an answer is the one utterance a learner wants to pause,
+  // rewind and scrub, and this lane is fire-and-forget by design. `replyAudio` owns it instead.
+  if (reply) return null;
 
   const { decision, feedback, prompt } = runtime;
   // A verdict is on screen; the decision underneath has already moved on. Reading the next
@@ -153,6 +143,32 @@ function momentFor(runtime: PolicyRuntime, reply: SpokenReply | null): { key: st
   };
 }
 
+/**
+ * The learner's chosen voice, as the fields an utterance travels with.
+ *
+ * 🔴 THE PROVIDER COMES FROM THE VOICE AND FROM NOTHING ELSE (§48). Owner, 2026-08-22: *"If the user
+ * has selected an xAI voice, only the xAI path should be involved."* One field decides the
+ * synthesiser, the speaker id and — for Azure — the locale, so there is no second setting that can
+ * disagree with the first and no way for one utterance to reach both providers.
+ *
+ * 🔴 AZURE GETS THE VOICE'S OWN LOCALE WHEN THE MOMENT DOES NOT NAME ONE. `/api/speech/tts` refuses
+ * without a locale, deliberately, and the Canvas lane legitimately has none to give — it sends
+ * `auto`, because the provider identifies the language from the text. An Azure voice was catalogued
+ * under a locale; that is the one to send, and it is why a stored Azure voice without one resolves
+ * back to the default rather than being used.
+ */
+function utteranceVoice(voice: ReadingVoice, routeLocale: string, speed: number): SpokenVoice {
+  if (voice.provider === "azure") {
+    return {
+      locale: routeLocale && routeLocale !== LOCALE_UNSPECIFIED ? routeLocale : (voice.locale ?? LOCALE_UNSPECIFIED),
+      provider: "azure",
+      speed,
+      voiceId: voice.id,
+    };
+  }
+  return { locale: routeLocale || LOCALE_UNSPECIFIED, provider: "xai", speed, voiceId: voice.id };
+}
+
 /** A conversational answer on screen, and a key that changes only when the answer does. */
 export interface SpokenReply {
   key: string;
@@ -176,12 +192,21 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
    * several it has to.
    */
   const [speakingExample, setSpeakingExample] = useState<string | null>(null);
-  /** 🔴 STARTS AT THE DEFAULT AND IS CORRECTED AFTER THE FIRST PAINT, exactly like `mode` above.
-   *  Reading `localStorage` during render is a hydration mismatch; this file already solved that
-   *  once and the answer is the effect below, not a second pattern. */
-  const [voiceId, setVoiceId] = useState<string>(DEFAULT_VOICE);
-  const [speed, setSpeed] = useState<VoiceSpeed>(DEFAULT_VOICE_SPEED);
+  /**
+   * WHICH VOICE, from Settings.
+   *
+   * 🔴 READ HERE, NEVER CHOSEN HERE (§48). Owner, 2026-08-22: *"Canvas should not make the user
+   * repeatedly choose a voice."* The picker lives in Settings; this is a subscriber. Everything the
+   * Canvas speaks — the automatic lane, the read-aloud row, a highlighted passage — uses this one
+   * value, which is what "used everywhere Nemesis reads content aloud" means in code.
+   *
+   * 🔴 STARTS AT THE DEFAULT AND IS CORRECTED AFTER THE FIRST PAINT, exactly like `mode` above.
+   * Reading `localStorage` during render is a hydration mismatch; this file already solved that once
+   * and the answer is the effect below, not a second pattern.
+   */
+  const [readingVoice, setReadingVoice] = useState<ReadingVoice>(DEFAULT_READING_VOICE);
   const speech = useCanvasSpeech();
+  const replyAudio = useResponseAudio(readingVoice);
 
   // Browser-only facts, corrected after the first paint. See the file header.
   useEffect(() => {
@@ -189,8 +214,26 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     setMode(readVoiceMode(storage));
     setAutoDictation(readAutoDictation(storage));
     setDictationSupported(speechRecognitionSupported());
-    setVoiceId(readVoice(storage?.getItem(VOICE_STORAGE_KEY) ?? null));
-    setSpeed(readVoiceSpeed(storage));
+    setReadingVoice(readReadingVoice(storage));
+  }, []);
+
+  // 🔴 THE VOICE FOLLOWS SETTINGS WITHOUT A RELOAD, IN THIS TAB AND IN OTHERS. `storage` fires only
+  // in the OTHER tabs, which is a browser rule and not an oversight — so Settings also dispatches
+  // its own event, and this listens for both. Without the second one, changing your voice in the
+  // Settings pane and coming back to an open canvas would leave the old voice reading until a
+  // refresh, which reads exactly like the setting not having worked.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const reread = (event?: Event) => {
+      if (event instanceof StorageEvent && event.key && event.key !== READING_VOICE_KEY) return;
+      setReadingVoice(readReadingVoice(window.localStorage));
+    };
+    window.addEventListener("storage", reread);
+    window.addEventListener(READING_VOICE_KEY, reread);
+    return () => {
+      window.removeEventListener("storage", reread);
+      window.removeEventListener(READING_VOICE_KEY, reread);
+    };
   }, []);
 
   /** The latest values, for the post-speech decision. 🔴 READ AT THE MOMENT OF USE, NEVER LATCHED
@@ -203,37 +246,42 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     setMode(next);
     writeVoiceMode(typeof window === "undefined" ? null : window.localStorage, next);
     // Turning it off must silence what is already playing, not merely stop the next one.
-    if (next === "off") speech.stop();
-  }, [speech]);
-
-  const onCycleSpeed = useCallback(() => {
-    const next = nextVoiceSpeed(speed);
-    setSpeed(next);
-    writeVoiceSpeed(typeof window === "undefined" ? null : window.localStorage, next);
-  }, [speed]);
-
-  const onSetVoice = useCallback((next: string) => {
-    const chosen = readVoice(next);
-    setVoiceId(chosen);
-    if (typeof window !== "undefined") window.localStorage.setItem(VOICE_STORAGE_KEY, chosen);
-    // 🔴 SILENCE WHAT IS PLAYING. Changing the speaker mid-sentence and hearing the old one finish
-    // reads as the setting not having worked; the next utterance is where the choice takes effect.
-    speech.stop();
-    // 🔴🔴 AND SAY SOMETHING IN IT. Owner, 2026-08-20: *"selecting voices should give a small
-    // preview."* Six ids — eve, ara, rex, gork, sal, leo — are six words that mean nothing about
-    // how a voice sounds, and xAI publishes no catalogue to describe them from. Choosing blind and
-    // finding out on the next question is not choosing.
-    //
-    // 🔴 IT SPEAKS AS THE VOICE BEING CHOSEN, AT THE SPEED BEING USED, so the preview is the thing
-    // itself rather than a demonstration of a neighbouring setting. And it is keyed on the id, so
-    // pressing the same option twice replays rather than being deduplicated as "already said".
-    void speech.speak(`preview:${chosen}`, VOICE_PREVIEW_LINE, { locale: LOCALE_UNSPECIFIED, speed, voiceId: chosen });
-  }, [speech, speed]);
+    // 🔴 BOTH LANES. Autoplay off with an answer still reading itself aloud is the setting visibly
+    // not working; the player is dismissed with the narration.
+    if (next === "off") { speech.stop(); replyAudio.stop(); }
+  }, [replyAudio, speech]);
 
   const onSetAutoDictation = useCallback((next: AutoDictation) => {
     setAutoDictation(next);
     writeAutoDictation(typeof window === "undefined" ? null : window.localStorage, next);
   }, []);
+
+  /**
+   * The answer that has already been started, so it is never started twice.
+   *
+   * 🔴 KEYED ON THE ANSWER'S OWN IDENTITY RATHER THAN ON A COUNTER. `spokenReply.key` is derived
+   * from the text, so a re-render cannot re-read a paid utterance and a genuinely new answer always
+   * gets one.
+   */
+  const autoplayed = useRef<string | null>(null);
+  const replyKey = reply?.key ?? null;
+
+  useEffect(() => {
+    // A new answer replaces the old one on screen; its audio must go with it, whether or not the
+    // next one will play. Leaving the previous player open under a different answer is the
+    // "controls that do not belong to what you are looking at" failure.
+    if (autoplayed.current !== replyKey) replyAudio.stop();
+    autoplayed.current = replyKey;
+    if (!replyKey || !reply) return;
+    // 🔴 THE ONLY THING AUTOPLAY DECIDES IS WHETHER TO PRESS PLAY. Everything after this point —
+    // which provider, which voice, how it streams, how it is controlled — is identical to what a
+    // learner gets by pressing the button themselves. One path, two ways in.
+    if (mode !== "on") return;
+    replyAudio.start(reply.text);
+    // Keyed on the answer and the preference, never on `replyAudio`: the controller's identity
+    // changes as its own state does, and depending on it would restart the audio on every tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replyKey, mode]);
 
   const spokenMoment = mode === "on" ? momentFor(runtime, reply) : null;
   const key = spokenMoment?.key ?? null;
@@ -252,14 +300,12 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
 
     let cancelled = false;
     void speech
-      .speak(route.utterance.key, route.utterance.text, {
-        locale: route.locale,
-        // 🔴 THE ROUTER'S CHOICE, CARRIED RATHER THAN RECOMPUTED. Until §47 this was decided and
-        // dropped, so every utterance went to xAI whatever the router said.
-        provider: route.provider,
-        speed: route.speed,
-        voiceId,
-      })
+      // 🔴 THE ROUTER STILL DECIDES THE TEXT, THE LOCALE AND THE PACE; THE LEARNER DECIDES WHO SAYS
+      // IT (§48). `route.provider` is the right answer for the target-language lane, where the
+      // variety is the material and Azure's catalogue is the only thing that can name it. It is the
+      // wrong answer here: the Canvas lane reads instruction aloud, and which voice reads it is a
+      // preference the learner set in Settings.
+      .speak(route.utterance.key, route.utterance.text, utteranceVoice(readingVoice, route.locale, route.speed))
       .then(() => {
       if (cancelled) return;
       const now = live.current;
@@ -298,15 +344,12 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       autoDictation,
       dictationSupported,
       mode,
-      onCycleSpeed,
       onSetAutoDictation,
-      onSetVoice,
       onToggle,
       speaking: speech.speaking,
-      speed,
-      voiceId,
     },
     listenSignal,
+    replyAudio,
     replay: speech.replay,
     speaking: speech.speaking,
     /**
@@ -333,10 +376,9 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       // the key from the TEXT and the second press of a repeat button hits that guard and does
       // nothing at all: the precise silent no-op this control exists to fix, rebuilt inside it.
       //
-      // 🔴 AND IT READS AT THE CHOSEN SPEED. This was `speed: 1` — a literal, written before there
-      // was a speed to choose. Both halves of this line arrived on the same day from different
-      // branches, and taking either alone loses the other: the fresh key without `speed` ignores
-      // the control, and `speed` without the fresh key silently refuses to repeat.
+      // 🔴 AND IT READS IN THE CHOSEN VOICE. The speed that used to ride here was a SYNTHESIS
+      // argument, so pressing the speed control threw away a paid MP3 and bought another one; it is
+      // now `playbackRate` on the element and belongs to the player, not to the request.
       aloudPress.current += 1;
       const press = aloudPress.current;
 
@@ -353,7 +395,11 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
           // make a future fix to `stop()` restart a passage the learner silenced. The press
           // counter is the real guard and holds either way.
           if (aloudPress.current !== press) return;
-          await speech.speak(`aloud:${press}:${index}`, parts[index] ?? "", { locale: LOCALE_UNSPECIFIED, speed, voiceId });
+          await speech.speak(
+            `aloud:${press}:${index}`,
+            parts[index] ?? "",
+            utteranceVoice(readingVoice, LOCALE_UNSPECIFIED, ANSWER_SPEED),
+          );
         }
       })();
     },
@@ -401,6 +447,10 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       aloudPress.current += 1;
       setSpeakingExample(null);
       speech.stop();
+      // 🔴 THE ANSWER'S AUDIO TOO. This is called when the learner starts typing, and Nemesis must
+      // not still be talking while somebody composes a reply to it — that rule does not care which
+      // of the two lanes is making the noise.
+      replyAudio.stop();
     },
   };
 }

@@ -23,6 +23,25 @@ import { json, verifyBearer } from "@/lib/server";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+/**
+ * An Azure voice id, by shape. `es-MX-DaliaNeural`, `en-US-AvaMultilingualNeural`.
+ *
+ * See the note beside its use: a shape check rather than a list, because the real set lives at the
+ * provider and a compiled-in allow-list starts refusing voices that work the day Azure ships one.
+ */
+const AZURE_VOICE_SHAPE = /^[A-Za-z0-9-]{3,64}Neural$/;
+
+/**
+ * The pace, bounded.
+ *
+ * 🔴 CLAMPED RATHER THAN REJECTED, because a number outside this window is unusable audio and not a
+ * security problem. A caller sending nonsense gets a normal reading rather than a 400 that would
+ * silence the lesson over a decimal.
+ */
+function clampRate(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(1.2, Math.max(0.7, value)) : 1;
+}
+
 export async function POST(request: Request) {
   const user = await verifyBearer(request);
   if (!user) return json({ error: "Sign in to use speech." }, 401);
@@ -54,6 +73,48 @@ export async function POST(request: Request) {
     return json({ error: "A locale is required.", reason: "locale-unknown" }, 400);
   }
 
+  // 🔴🔴 A NAMED VOICE SKIPS THE CATALOGUE ENTIRELY, AND THAT IS THE AZURE HALF OF THE LATENCY THE
+  // OWNER REPORTED (§48). `fetchVoiceCatalogue` is a ~700KB round trip to Azure that has to finish
+  // before the round trip that makes the sound can start. It is cached for six hours PER SERVER
+  // INSTANCE — which on serverless means every cold instance pays it, in front of the first
+  // utterance a learner hears. The catalogue exists to CHOOSE a voice; a request that already names
+  // one does not need to choose, so it does not wait.
+  //
+  // 🔴 SHAPE-CHECKED AND THEN TRUSTED, WITH THE PROVIDER AS THE VALIDATOR — the identical rule
+  // `nemesis-speak` states at length for xAI's ids. The real set lives at Azure and changes without
+  // telling us; what must be checked is that the value cannot be anything but an identifier, since
+  // it goes into a request body under our own credential. A retired id gets a 502 from Azure rather
+  // than a 404 from us, and the id in question came from this same catalogue via Settings.
+  const named = typeof body.voice === "string" ? body.voice.trim() : "";
+  if (named && AZURE_VOICE_SHAPE.test(named)) {
+    const direct = await synthesise(
+      { fetch },
+      { locale, rate: clampRate(body.rate), text, voice: named },
+    );
+    if (!direct.ok) {
+      const status = direct.reason === "azure-rate-limited" ? 429 : direct.reason.startsWith("azure-key") ? 503 : 502;
+      console.error(JSON.stringify({ event: "azure_tts_failed", latencyMs: direct.latencyMs, named: true, reason: direct.reason }));
+      return json({ error: "Speech is unavailable right now.", reason: direct.reason }, status);
+    }
+    console.log(JSON.stringify({
+      chars: direct.characters,
+      event: "azure_tts_spoken",
+      latencyMs: direct.latencyMs,
+      locale,
+      match: "named",
+      voice: direct.voice,
+    }));
+    return new Response(direct.audio, {
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "audio/mpeg",
+        "X-Nemesis-Voice": direct.voice,
+        "X-Nemesis-Voice-Match": "named",
+        "X-Nemesis-Tts-Latency-Ms": String(direct.latencyMs),
+      },
+    });
+  }
+
   const catalogue = await fetchVoiceCatalogue({ fetch });
   if (!catalogue.ok) {
     const status = catalogue.reason.startsWith("azure-key") || catalogue.reason.startsWith("azure-region") ? 503 : 502;
@@ -70,9 +131,7 @@ export async function POST(request: Request) {
     return json({ error: "No voice for that language yet.", detail: chosen.detail, reason: chosen.reason }, 404);
   }
 
-  const rate = typeof body.rate === "number" && Number.isFinite(body.rate)
-    ? Math.min(1.2, Math.max(0.7, body.rate))
-    : 1;
+  const rate = clampRate(body.rate);
 
   const spoken = await synthesise(
     { fetch },

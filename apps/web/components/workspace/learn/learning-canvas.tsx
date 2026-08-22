@@ -184,7 +184,6 @@ export function LearningCanvas({
     const text = aside.text.trim();
     return text ? { key: `${text.length}:${text.slice(0, 24)}`, text } : null;
   }, [session.aside]);
-  const voice = useCanvasVoice(policy, policy.judging, spokenReply);
 
   /**
    * The session record, read from the append-only evidence log.
@@ -779,6 +778,16 @@ export function LearningCanvas({
    * drawing on top.
    */
   const turnInFlight = busy.kind !== null;
+  /**
+   * Voice, once the answer has actually finished arriving.
+   *
+   * 🔴🔴 `turnInFlight` IS THE GATE, AND WITHOUT IT AUTOPLAY IS A COST BUG (§48). `spokenReply`'s key
+   * is derived from the text, and the text GROWS as the answer streams — so an ungated autoplay
+   * would fire a fresh paid synthesis on every chunk of every answer, each one cancelling the last,
+   * and the learner would hear the beginning of the answer over and over. It is the same signal the
+   * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
+   */
+  const voice = useCanvasVoice(policy, policy.judging, turnInFlight ? null : spokenReply);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -1276,12 +1285,10 @@ export function LearningCanvas({
                   broken. `turnInFlight` is the same signal the thinking screen keys on. */}
               {!turnInFlight && replyText.trim() && (
                 <ReplyActions
-                  onCycleSpeed={voice.header.onCycleSpeed}
-                  onSpeak={voice.speakAloud}
-                  onStop={voice.stopSpeaking}
-                  // 🔴 Not "something is playing": while an example row speaks, this is not its button.
-                  speaking={voice.header.speaking && voice.speakingExample === null}
-                  speed={voice.header.speed}
+                  // 🔴 THE CONTROLLER FOR *THIS ANSWER'S* AUDIO (§48), not a shared "something is
+                  // playing" boolean. Play, pause, seek, speed and progress all read from one state,
+                  // so an example row speaking elsewhere can never turn this into a stop button.
+                  audio={voice.replyAudio}
                   // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
                   // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
                   // them, and a synthesiser reading it aloud is worse.

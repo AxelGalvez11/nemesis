@@ -267,20 +267,46 @@ Deno.serve(async (req) => {
       return json({ error: "Voice is unavailable right now.", reason: "provider-error" }, 502, req);
     }
 
-    const audio = await res.arrayBuffer();
-    // 🔴 AN EMPTY 200 IS A FAILURE, AND IT HAS TO BE NAMED AS ONE. The STT lane on this same
-    // provider returned HTTP 200 with an empty transcript for weeks before anyone noticed; a
-    // zero-byte audio body would play as silence and read exactly like a canvas choosing not to
-    // speak. See the vad_threshold comment in nemesis-transcribe for that story.
-    if (audio.byteLength === 0) {
+    // 🔴🔴 STREAMED THROUGH RATHER THAN BUFFERED, AND THAT IS THE xAI HALF OF THE LATENCY THE OWNER
+    // REPORTED (2026-08-22: *"noticeable lag around voice generation"*). This was
+    // `await res.arrayBuffer()`, which waits for xAI's LAST byte before this function emits its
+    // FIRST — and then the browser waited for this function's last byte before it played anything.
+    // Two full buffers stacked on a response that arrives progressively. Handing the body onward
+    // means the learner hears the opening words while the rest is still being synthesised.
+    //
+    // 🔴 THE EMPTY-BODY GUARD SURVIVES THE CHANGE, WHICH IS THE ONLY REASON THIS IS NOT A ONE-LINER.
+    // The STT lane on this same provider returned HTTP 200 with an empty transcript for weeks
+    // before anyone noticed, and a zero-byte audio body plays as silence — indistinguishable from a
+    // canvas choosing not to speak. So the FIRST chunk is read here, before any status is committed:
+    // nothing at all is still a named 502, and one chunk in hand is enough to know there is audio.
+    // Everything after it flows straight through without being held.
+    const upstream = res.body;
+    if (!upstream) {
       console.error(JSON.stringify({ event: "tts_empty", chars: text.length }));
+      return json({ error: "Voice returned nothing.", reason: "empty-audio" }, 502, req);
+    }
+
+    const reader = upstream.getReader();
+    let first: Uint8Array | null = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value && value.byteLength > 0) { first = value; break; }
+    }
+    if (!first) {
+      console.error(JSON.stringify({ event: "tts_empty", chars: text.length }));
+      await reader.cancel().catch(() => {});
       return json({ error: "Voice returned nothing.", reason: "empty-audio" }, 502, req);
     }
 
     // Counts only, never the text — that is the learner's own material, exactly as
     // canvas-analytics.ts holds for every other event.
+    //
+    // 🔴 LOGGED WHEN THE AUDIO STARTS, NOT WHEN IT FINISHES, AND `bytes` IS GONE WITH THE BUFFER. A
+    // byte count that can only be known at the end would mean holding the whole response to produce
+    // a log line, which is the thing this change exists to stop doing. The character count is what
+    // the bill is based on anyway.
     console.log(JSON.stringify({
-      bytes: audio.byteLength,
       chars: text.length,
       event: "tts_spoken",
       // Counts and settings only, never the text. The locale is the field worth having: §43's whole
@@ -290,6 +316,28 @@ Deno.serve(async (req) => {
       speed,
       usd: Number((text.length * USD_PER_CHAR).toFixed(6)),
     }));
+
+    const audio = new ReadableStream<Uint8Array>({
+      cancel(reason) {
+        void reader.cancel(reason).catch(() => {});
+      },
+      async pull(controller) {
+        if (first) {
+          const opening = first;
+          first = null;
+          controller.enqueue(opening);
+          return;
+        }
+        try {
+          const { done, value } = await reader.read();
+          if (done) { controller.close(); return; }
+          if (value && value.byteLength > 0) controller.enqueue(value);
+        } catch (error) {
+          console.error(JSON.stringify({ event: "tts_stream_broke", message: (error as Error)?.message ?? "unknown" }));
+          controller.error(error);
+        }
+      },
+    });
 
     return new Response(audio, {
       headers: {
