@@ -48,6 +48,11 @@ export {
   type StateCtx,
   type StateDef,
 } from "./states";
+export {
+  SEMANTIC_MASCOT,
+  mascotStateFor,
+  type MascotSemanticState,
+} from "./semantic";
 export { MascotEngine, poseOf, renderPose, sampleState, type SampleOptions } from "./engine";
 export type {
   BeadRender,
