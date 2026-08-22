@@ -110,7 +110,7 @@ test("🔴 the migration does not deduplicate across users", () => {
 
 test("🔴 an explicit reprocess refuses reuse — the whole point of asking", () => {
   const decision = decideReuse(
-    { content_hash: "h", id: "p1", parser_version: "extract-2026-08-16", state: "partially_parsed" },
+    { complete: false, docKind: "pdf", id: "p1", parserVersion: "extract-2026-08-16", state: "partially_parsed", unitCount: 47 },
     { reprocessRequested: true },
   );
   assert.equal(decision.reuse, false);
