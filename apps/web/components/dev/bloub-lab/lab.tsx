@@ -54,7 +54,13 @@ function Cell({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export function BloubLab() {
-  const { theme, setTheme, bloubShape, bloubColor, setBloubShape, setBloubColor } = useTheme();
+  const { theme, setTheme, bloubShape, setBloubShape } = useTheme();
+  // 🔴 A LOCAL OVERRIDE, NOT A PREFERENCE. The character's colour is the app's accent now
+  // (owner 2026-08-21) and there is no stored second opinion about it any more — but this lab
+  // exists precisely to look at the character in colours nobody has chosen, so the swatches
+  // stay and hold an explicit hex for this session only. `undefined` means "the accent",
+  // which is what every real surface renders.
+  const [ink, setInk] = useState<string | undefined>(undefined);
   const [view, setView] = useState<View>("stage");
   const [state, setState] = useState<StateId>("idle");
   const [expression, setExpression] = useState("neutre");
@@ -118,18 +124,18 @@ export function BloubLab() {
         <section>
           <h2 className="mb-1.5 text-[10px] tracking-widest text-(--ui-text-tertiary)">COLOUR</h2>
           <div className="flex flex-wrap gap-1.5">
-            {COLORS.map((c) => (
+            {[{ id: "accent", hex: undefined }, ...COLORS].map((c) => (
               <button
                 aria-label={c.id}
                 className={[
                   "size-6 rounded-full border",
-                  bloubColor === c.id ? "ring-2 ring-(--theme-primary) ring-offset-2 ring-offset-(--background)" : "",
+                  ink === c.hex ? "ring-2 ring-(--theme-primary) ring-offset-2 ring-offset-(--background)" : "",
                   "border-(--ui-stroke-secondary)",
                 ].join(" ")}
                 key={c.id}
-                onClick={() => setBloubColor(c.id)}
-                style={{ backgroundColor: c.hex }}
-                title={c.id}
+                onClick={() => setInk(c.hex)}
+                style={{ backgroundColor: c.hex ?? "var(--bloub-ink)" }}
+                title={c.id === "accent" ? "accent (what the app renders)" : c.id}
                 type="button"
               />
             ))}
@@ -189,7 +195,7 @@ export function BloubLab() {
         {view === "stage" && (
           <div className="mt-5 grid min-h-[420px] place-items-center rounded-2xl border border-(--ui-stroke-secondary)">
             <BloubBot
-              color={bloubColor}
+              color={ink}
               expression={expression}
               reducedMotion={reduced}
               shape={bloubShape}
@@ -205,7 +211,7 @@ export function BloubLab() {
           <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-3">
             {ALL_STATES.map((id) => (
               <Cell key={id} label={`${id}  ${POSES[id].toFixed(2)}s`}>
-                <BloubBot color={bloubColor} frozenAt={POSES[id]} shape={bloubShape} size={130} state={id} />
+                <BloubBot color={ink} frozenAt={POSES[id]} shape={bloubShape} size={130} state={id} />
               </Cell>
             ))}
           </div>
@@ -215,7 +221,7 @@ export function BloubLab() {
           <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-3">
             {SHAPES.map((s) => (
               <Cell key={s.id} label={s.id}>
-                <BloubBot color={bloubColor} frozenAt={1} shape={s.id} size={130} state="idle" />
+                <BloubBot color={ink} frozenAt={1} shape={s.id} size={130} state="idle" />
               </Cell>
             ))}
           </div>
@@ -225,7 +231,7 @@ export function BloubLab() {
           <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(178px,1fr))] gap-3">
             {COLORS.map((c) => (
               <Cell key={c.id} label={c.id}>
-                <BloubBot color={c.id} frozenAt={1} shape={bloubShape} size={130} state="idle" />
+                <BloubBot color={c.hex} frozenAt={1} shape={bloubShape} size={130} state="idle" />
               </Cell>
             ))}
           </div>
@@ -238,7 +244,7 @@ export function BloubLab() {
                 <Cell label={expression === e.id ? `${e.id} ✓` : e.id}>
                   {/* Expressions replace the RESTING face, so they are shown on `idle` —
                       every other state carries a measured gaze of its own. */}
-                  <BloubBot color={bloubColor} expression={e.id} frozenAt={1} shape={bloubShape} size={130} state="idle" />
+                  <BloubBot color={ink} expression={e.id} frozenAt={1} shape={bloubShape} size={130} state="idle" />
                 </Cell>
               </button>
             ))}

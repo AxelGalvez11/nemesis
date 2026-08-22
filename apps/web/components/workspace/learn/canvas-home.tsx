@@ -70,7 +70,7 @@ const GREETER_SIZE = 64;
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const router = useRouter();
   // The character's look is a device preference, the same as the theme and the scale.
-  const { bloubShape, bloubColor } = useTheme();
+  const { bloubShape } = useTheme();
   const [text, setText] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   /** The whole page is a drop target, not just the composer — the copy has always said "drop a
@@ -329,7 +329,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           >
             <div className={greeter.motion === "jump" ? "bloub-jump" : undefined}>
               <BloubBot
-                color={bloubColor}
                 entrance
                 onPoke={greeter.poke}
                 shape={bloubShape}

@@ -154,7 +154,7 @@ export function BloubDock({
   contain = false,
   className,
 }: BloubDockProps) {
-  const { bloubShape, bloubColor } = useTheme();
+  const { bloubShape } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture. `motion` is the
   // half the engine has no pose for — the hop and the brow waggle. See `use-poke.ts`.
   const { state: shown, motion, poke } = usePoke(state);
@@ -336,7 +336,6 @@ export function BloubDock({
       <div className={motion === "jump" ? "bloub-jump" : undefined}>
         <BloubBot
           aimAt={aimAt}
-          color={bloubColor}
           shape={bloubShape}
           onPoke={poke}
           size={size}

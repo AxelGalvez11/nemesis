@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { ACCENT_PROPERTIES, ACCENT_STORAGE_KEY, accentProperties, isAccent, normalizeStoredAccent, type AccentPreference } from "@/lib/accent";
-import { COLOR_BY_ID, DEFAULT_COLOR, DEFAULT_SHAPE, SHAPE_BY_ID } from "@nemesis/shared/bloub/skins";
+import { DEFAULT_SHAPE, SHAPE_BY_ID } from "@nemesis/shared/bloub/skins";
 
 // Re-exported so every existing `from "@/components/theme-provider"` import
 // keeps working; lib/accent.ts is the definition.
@@ -38,7 +38,13 @@ const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
 // otherwise resolve to `undefined` and render a shapeless body. `resolveShape` and
 // `resolveColor` fall back rather than throw.
 const BLOUB_SHAPE_STORAGE_KEY = "nemesis.web.bloub.shape";
-const BLOUB_COLOR_STORAGE_KEY = "nemesis.web.bloub.color";
+// 🔴 THE CHARACTER'S COLOUR IS NOT STORED ANY MORE, AND THAT IS THE FIX (owner 2026-08-21:
+// "make the character follow the accent color"). `nemesis.web.bloub.color` held an id into a
+// twelve-swatch palette that had nothing to do with the accent, so the app carried two colour
+// preferences that could disagree — and whose defaults did: the character's was `encre`
+// (#0a0a0c), a near-invisible smudge on the black theme. The colour is `--bloub-ink` now, which
+// is the accent (see bloub.css), so there is nothing left here to remember. Any stored value is
+// simply never read again; nothing has to migrate, because the setting it fed is gone.
 // Dark mode ships in two tones (owner 2026-08-05: "keep charcoal as an option
 // in settings, bring back the 100% black background"): "black" is the default
 // pure-black skin, "charcoal" the ChatGPT-parity gray ladder. CSS keys off
@@ -101,10 +107,7 @@ const normalizeStoredPreference = (v: string | null): string | null => (v === "g
 interface ThemeContextValue {
   /** Silhouette the character rests in. An id from `lib/bloub/skins`. */
   bloubShape: string;
-  /** Body colour. An id from `lib/bloub/skins`. */
-  bloubColor: string;
   setBloubShape: (id: string) => void;
-  setBloubColor: (id: string) => void;
   preference: ThemePreference;
   theme: Theme;
   accent: AccentPreference;
@@ -123,9 +126,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue>({
   bloubShape: DEFAULT_SHAPE,
-  bloubColor: DEFAULT_COLOR,
   setBloubShape: () => {},
-  setBloubColor: () => {},
   preference: "system",
   theme: "light",
   accent: "default",
@@ -177,7 +178,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [darkTone, setDarkToneState] = useState<DarkTone>("black");
   const [libraryFullScreen, setLibraryFullScreenState] = useState(false);
   const [bloubShape, setBloubShapeState] = useState<string>(DEFAULT_SHAPE);
-  const [bloubColor, setBloubColorState] = useState<string>(DEFAULT_COLOR);
 
   useEffect(() => {
     // Resolve the stored preference (stored → OS → dark) and make it AUTHORITATIVE on the DOM.
@@ -214,9 +214,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setLibraryFullScreenState(localStorage.getItem(LIBRARY_FULL_SCREEN_STORAGE_KEY) === "true");
     // Unknown ids fall back to the defaults rather than reaching the renderer.
     const storedShape = localStorage.getItem(BLOUB_SHAPE_STORAGE_KEY);
-    const storedColor = localStorage.getItem(BLOUB_COLOR_STORAGE_KEY);
     if (storedShape && SHAPE_BY_ID.has(storedShape)) setBloubShapeState(storedShape);
-    if (storedColor && COLOR_BY_ID.has(storedColor)) setBloubColorState(storedColor);
   }, []);
 
   useEffect(() => {
@@ -268,12 +266,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem(BLOUB_SHAPE_STORAGE_KEY, id); } catch { /* best effort */ }
   };
 
-  const setBloubColor = (id: string) => {
-    if (!COLOR_BY_ID.has(id)) return;
-    setBloubColorState(id);
-    try { localStorage.setItem(BLOUB_COLOR_STORAGE_KEY, id); } catch { /* best effort */ }
-  };
-
   const setLibraryFullScreen = (next: boolean) => {
     setLibraryFullScreenState(next);
     try { localStorage.setItem(LIBRARY_FULL_SCREEN_STORAGE_KEY, String(next)); } catch { /* best effort */ }
@@ -282,7 +274,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // The topbar button toggles light ↔ dark; Settings offers System/Light/Dark explicitly.
   const toggle = () => setTheme(theme === "light" ? "dark" : "light");
 
-  return <ThemeContext.Provider value={{ preference, theme, accent, scale, darkTone, libraryFullScreen, bloubShape, bloubColor, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setBloubShape, setBloubColor, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ preference, theme, accent, scale, darkTone, libraryFullScreen, bloubShape, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setBloubShape, toggle }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {

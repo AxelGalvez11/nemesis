@@ -7,6 +7,26 @@
 
 :root {
   --bloub-paper: #f9f9f9;
+  /* 🔴🔴 THE CHARACTER IS THE ACCENT (owner 2026-08-21: "make the character follow the
+     accent color"). It used to carry its OWN colour — a twelve-swatch palette with its own
+     picker in Settings and its own stored preference — which meant the app had two colour
+     settings that did not agree, and whose defaults actively fought: the character's default
+     was `encre` (#0a0a0c), which on the black theme is a near-invisible smudge on a
+     near-black page.
+
+     🔴 `--ui-action`, NOT `--theme-primary`, AND THE DIFFERENCE ONLY SHOWS ON "DEFAULT".
+     Both are set to the chosen hex by `applyAccent`, so the six colours are identical either
+     way. They part on Default, where `--theme-primary` is a neutral graphite and `--ui-action`
+     is the product's own restrained green — and `--ui-action` is what the send button carries.
+     Since the whole complaint this answers was the character and the send button showing
+     different colours, they read the same token.
+
+     🔴 IT COSTS NO JAVASCRIPT, WHICH IS THE POINT OF DOING IT HERE. `--ui-action` is already
+     resolved before first paint (see `accentPrePaintScript`), already a light/dark pair for
+     Default, and already re-written inline the moment someone picks a new accent. A token
+     pointing at it inherits all three for free; a prop threaded down from the provider would
+     have had to re-derive each one. */
+  --bloub-ink: var(--ui-action);
 }
 
 :root[data-theme="dark"] {
