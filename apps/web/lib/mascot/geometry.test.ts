@@ -28,16 +28,6 @@ const LOOKS = [
   { x: -1, y: 1, mix: 1 },
 ];
 
-/**
- * 🔴 THE ONE TEST THAT PROTECTS THE LAYOUT.
- *
- * The viewBox is a module constant because a per-frame box would resize the element
- * sixty times a second. That is only safe if nothing ever leaves it — and eyeballing
- * twenty states will not find the one frame, at one gaze, at one instant, that pokes
- * out. So: every state, across its whole duration, at five extreme gazes, at two
- * intensities, at both ends of the voice range. If this fails, `EXCURSION` goes up;
- * nothing else moves.
- */
 test("no state, at any time or gaze, leaves the viewBox", () => {
   const x1 = VIEW.x + VIEW.w;
   const y1 = VIEW.y + VIEW.h;
@@ -75,28 +65,21 @@ test("the resting body is the size the size prop promises", () => {
   assert.equal(REST_INK.h, BODY.ry * 2);
 });
 
-test("the resting silhouette is a superellipse, not an ellipse", () => {
-  // Sample 6 of 48 is 45 degrees. An ellipse's radius there is exactly its mean; the
-  // whole identity is that this one's is larger. If that stops being true, the character
-  // has silently become the shape every other mascot already is.
-  const r45 = profileAt(6, { ...REST.body, taper: 0 });
-  assert.ok(r45 > 1.03, `corner radius ${r45.toFixed(3)} — the body has gone elliptical`);
+test("the resting silhouette is the canonical circle", () => {
+  for (let i = 0; i < PROFILE_SAMPLES; i++) {
+    const r = profileAt(i, REST.body);
+    assert.ok(Math.abs(r - 1) < 1e-12, `sample ${i} radius ${r} is not circular`);
+  }
 });
 
-test("every shape in the catalogue encloses the same area", () => {
-  // Without this, morphing from a fat form to a thin one reads as the character
-  // SHRINKING rather than changing shape, and two states that differ only in silhouette
-  // also appear to differ in importance.
+test("every shape in the legacy/dev catalogue encloses the same area", () => {
   for (const id of SHAPE_ORDER) {
     const rms = Math.sqrt(SHAPES[id].reduce((sum, r) => sum + r * r, 0) / SHAPES[id].length);
     assert.ok(Math.abs(rms - 1) < 1e-9, `${id} encloses ${rms.toFixed(4)} of the unit area`);
   }
 });
 
-test("every shape is a single convex-enough outline, with no spikes", () => {
-  // r(theta) can express anything, including a star. Neighbouring radii jumping is what
-  // a spike looks like in this representation, and a spike is what stops a silhouette
-  // reading as one creature.
+test("every legacy/dev shape remains a single convex-enough outline, with no spikes", () => {
   for (const id of SHAPE_ORDER) {
     const r = SHAPES[id];
     for (let i = 0; i < r.length; i++) {
@@ -120,7 +103,6 @@ test("the silhouette is closed and evenly sampled in every state", () => {
 });
 
 function sampleStatePose(mode: (typeof STATE_ORDER)[number], t: number) {
-  // Reaches through the public sampler so the test cannot drift from what is rendered.
   const frame = sampleState(mode, t);
   assert.ok(frame.body.d.startsWith("M"), "path did not start with a move");
   assert.ok(frame.body.d.endsWith("Z"), "path was not closed");
@@ -150,8 +132,6 @@ test("fitGaze never lets an eye's corner leave the body", () => {
 });
 
 test("fitGaze scales the travel, never the separation", () => {
-  // The eyes must not converge as the character looks away — the fit trims how far the
-  // gaze carries them, and leaves the face's own geometry alone.
   const wide = sampleState("idle", 0, { look: { x: 1, y: 1, mix: 1 } });
   const centre = sampleState("idle", 0, { look: { x: 0, y: 0, mix: 1 } });
   const sepWide = Math.abs(wide.eyes[1].cx - wide.eyes[0].cx);
