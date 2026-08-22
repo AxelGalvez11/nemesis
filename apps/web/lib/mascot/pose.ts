@@ -5,22 +5,22 @@
 // never accidentally inherits movement from the state that happened to precede it.
 
 import { clamp01, lerp, lerpAngle } from "./easing";
-import { EYE_H, EYE_RISE, EYE_SPLIT, EYE_W } from "./geometry";
+import { BODY, EYE_H, EYE_RISE, EYE_SPLIT, EYE_W } from "./geometry";
 import { blendRadii, SHAPES, type ShapeId } from "./shapes";
 import type { BodyPose, EyePose, Pose, SatellitePose } from "./types";
 
 /**
- * The resting silhouette is deliberately symmetric and circular.
- *
- * Personality now lives in the eyes, gaze and authored motion. A permanent taper made
- * the resting character a different silhouette, which conflicts with the product rule
- * that Nemesis is always recognisably the same round blob.
+ * BODY's historical view geometry is slightly wider than tall. `stretch` compensates
+ * for that once at rest, so SHAPES.blob's unit radial circle is also a circle on screen.
+ * State-authored stretch/squash values are multipliers around this base, not replacements.
  */
+const ROUND_X = BODY.ry / BODY.rx;
+
 const NEUTRAL_BODY: BodyPose = {
   dx: 0,
   dy: 0,
   scale: 1,
-  stretch: 1,
+  stretch: ROUND_X,
   squash: 1,
   tilt: 0,
   radii: SHAPES.blob,
@@ -66,8 +66,6 @@ export const REST: Pose = {
   lookGain: 0.55,
 };
 
-// ── Patches ─────────────────────────────────────────────────────────────────────
-
 export type PosePatch = {
   readonly [K in keyof Pose]?: Pose[K] extends number ? number : Partial<Pose[K]>;
 } & {
@@ -75,11 +73,19 @@ export type PosePatch = {
   readonly body?: Partial<BodyPose> & { shape?: ShapeId };
 };
 
-/** Fills a patch out to a complete pose. */
+/** Fills a patch out to a complete pose. Body width/height fields are relative factors. */
 export function resolvePose(patch: PosePatch, base: Pose = REST): Pose {
   const { shape, ...body } = patch.body ?? {};
+  const mergedBody: BodyPose = {
+    ...base.body,
+    ...(shape ? { radii: SHAPES[shape] } : null),
+    ...body,
+    // State definitions read naturally as 1 = round/resting, >1 = expand that axis.
+    stretch: base.body.stretch * (body.stretch ?? 1),
+    squash: base.body.squash * (body.squash ?? 1),
+  };
   return {
-    body: { ...base.body, ...(shape ? { radii: SHAPES[shape] } : null), ...body },
+    body: mergedBody,
     eye: { ...base.eye, ...patch.eye },
     gazeX: patch.gazeX ?? base.gazeX,
     gazeY: patch.gazeY ?? base.gazeY,
@@ -91,8 +97,6 @@ export function resolvePose(patch: PosePatch, base: Pose = REST): Pose {
     lookGain: patch.lookGain ?? base.lookGain,
   };
 }
-
-// ── Blending ────────────────────────────────────────────────────────────────────
 
 function blendBody(a: BodyPose, b: BodyPose, t: number): BodyPose {
   return {
