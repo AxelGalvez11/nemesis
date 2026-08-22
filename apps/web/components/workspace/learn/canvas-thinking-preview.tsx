@@ -59,10 +59,10 @@ import { useTheme } from "@/components/theme-provider";
  * `hidden` prop exists for exactly this, because a surface that draws its own character must take
  * the other one away rather than hope they do not overlap.
  */
-function ThinkingMark({ label }: { label: string | null }) {
+function ThinkingMark({ label, leaving = false }: { label: string | null; leaving?: boolean }) {
   const { accent } = useTheme();
   return (
-    <div className="flex items-center gap-3">
+    <div className={`flex items-center gap-3${leaving ? " canvas-preview-out" : ""}`}>
       {/* 🔴 `idle`, NOT `thinking`. The state that means "working" is the one that dissolves the
           body into three dots — `lib/bloub/states.ts` says so outright, "la boule DEVIENT le point
           du milieu" — and it fades the eyes to zero while it does. The character stays a character;
@@ -84,9 +84,18 @@ function ThinkingMark({ label }: { label: string | null }) {
 
 export function CanvasThinkingPreview({
   label = null,
+  leaving = false,
   mascot = false,
 }: {
   label?: string | null;
+  /**
+   * The answer has begun arriving.
+   *
+   * 🔴 THE PREVIEW MAKES WAY RATHER THAN VANISHING. Owner, 2026-08-21: *"When the final answer
+   * begins, smoothly fade the thinking preview away and transition into the answer."* Both occupy
+   * the same region, so an instant swap reads as a flicker between two states.
+   */
+  leaving?: boolean;
   /**
    * The learner just sent something and is waiting for the answer to it.
    *
@@ -117,7 +126,7 @@ export function CanvasThinkingPreview({
         className="flex min-h-[70vh] flex-row items-center justify-center px-6 pb-[104px]"
         role="status"
       >
-        <ThinkingMark label={label} />
+        <ThinkingMark label={label} leaving={leaving} />
       </div>
     );
   }

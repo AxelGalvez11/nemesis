@@ -21,6 +21,7 @@ import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/le
 import type { PolicyOverride } from "@/lib/learn/policy-override";
 import type { TeachingStrategyId } from "@/lib/learn/teaching-strategy";
 import { THINKING_COPY } from "@/lib/learn/thinking-phases";
+import { previewLine, previewWorthShowing } from "@/lib/learn/turn-preview";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
@@ -37,7 +38,6 @@ import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
 import { ReplyActions } from "./reply-actions";
 import { CanvasQuiet } from "./canvas-quiet";
-import { CanvasReasoning } from "./canvas-reasoning";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
@@ -855,14 +855,27 @@ export function LearningCanvas({
   // none and the lines carry the state alone"), so there is nothing to invent here. The session's
   // own label wins because it is the more specific of the two: "Reading" names the file being
   // ingested, where the policy phase names the canvas-wide step behind it.
-  // 🔴🔴 THE PLAN IS LAST, AND LAST MEANS LOWEST PRIORITY. Owner, 2026-08-21: *"show the plan."*
-  // It is the best caption this product can produce — specific, in the learner's own subject, and
-  // written by the participant that knows what it is about to do — but it is a claim about work TO
-  // COME, and the two above it name work genuinely RUNNING. `thinking-phases.ts` is explicit that
-  // the caption slot belongs to a step that is executing; a promise may fill it only when nothing
-  // truer is available, which is most of a turn's wait and none of its search.
-  const preparingLabel =
-    busy.kind !== null ? busy.label : policy.phase ? THINKING_COPY[policy.phase] : session.plan;
+  // 🔴🔴 THE LIVE THINKING PREVIEW, RESOLVED IN ONE PLACE. Owner, 2026-08-21: a short natural-language
+  // line beside the character saying what Nemesis is working on, updated as real stages change, gone
+  // when the answer starts.
+  //
+  // 🔴 THE MODEL'S WORDS WHEN IT HAS THEM FOR THIS STAGE, THE SYSTEM'S WHEN IT DOES NOT. A milestone
+  // is conversational and about the learner's subject — only the model can write that. The system
+  // label is the honest fallback for a step the model could not have anticipated: pages coming back,
+  // a structure being looked up, a curve being computed.
+  //
+  // 🔴 AND NOTHING AT ALL ON A TURN THAT SIMPLY ANSWERS. `previewWorthShowing` is the owner's first
+  // rule — *"for a simple conversational response, do not show a thinking preview"* — because a
+  // greeting that flashes a line about planning teaches the learner to stop reading the slot.
+  // 🔴 IN ORDER OF HOW SPECIFIC THE FACT IS. `busy` names an ingestion or a search that owns the
+  // whole surface; `work` names a step inside a turn (a lookup, a curve); the policy phase names the
+  // canvas-wide step behind everything. All three are work that is genuinely running, which is the
+  // only thing this slot is allowed to hold.
+  const systemLabel =
+    busy.kind !== null ? busy.label : session.work ?? (policy.phase ? THINKING_COPY[policy.phase] : null);
+  const preparingLabel = previewWorthShowing({ milestones: session.milestones, systemLabel })
+    ? previewLine({ milestones: session.milestones, stage: session.stage, systemLabel })
+    : null;
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
   // with `policyOwns ? … : …`, which was safe only while ownership was all-or-nothing. Now that a
@@ -1229,13 +1242,6 @@ export function LearningCanvas({
                 ),
               )}
 
-              {/* 🔴 THE WORKING, BEHIND A CONTROL, UNDER THE ANSWER IT BELONGS TO. Owner, 2026-08-21:
-                  *"hiding internal thoughts vs showing what you will do."* The reasoner's own
-                  output is useful to somebody checking how an answer was reached and misleading
-                  printed beside it — a branch the model talked itself out of reads exactly like a
-                  conclusion. It sits collapsed, labelled, and only after the answer has landed. */}
-              <CanvasReasoning thinking={session.aside?.thinking ?? ""} working={turnInFlight} />
-
               {/* 🔴 AFTER THE ANSWER, AND ONLY ONCE IT HAS ARRIVED. Copying half an answer copies
                   half an answer, and a play button on a sentence about to be replaced reads as
                   broken. `turnInFlight` is the same signal the thinking screen keys on. */}
@@ -1350,7 +1356,16 @@ export function LearningCanvas({
             case, so what followed was an empty page with nothing running to explain it, on the
             first thing a student ever does. The trigger is now "there is no content to show",
             which is the question that was actually being asked. */}
-        {presence === "preparing" && <CanvasThinkingPreview label={preparingLabel} mascot={turnInFlight} />}
+        {presence === "preparing" && (
+          <CanvasThinkingPreview
+            label={preparingLabel}
+            // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE PREVIEW MAKES WAY. `replyText` is the text
+            // as it streams, and the first character of it is the honest end of the wait — not a
+            // timer, and not the turn formally finishing.
+            leaving={Boolean(replyText.trim())}
+            mascot={turnInFlight}
+          />
+        )}
 
         {/* 🔴 A CANVAS WITH NOTHING TO PRESENT AND NOTHING RUNNING SAYS SO. This is the other half
             of the same defect, and it must NOT be a caption: `thinking-phases.ts` rules that a

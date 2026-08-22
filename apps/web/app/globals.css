@@ -982,6 +982,24 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
    rather than a highlighter drawn behind it. The resting colour is the first stop,
    which is why the words stay legible at every point in the cycle instead of
    disappearing when the bright part is elsewhere. */
+/* The preview leaving. Owner, 2026-08-21: *"When the final answer begins, smoothly fade
+   the thinking preview away and transition into the answer."*
+
+   🔴 A FADE AND A SHORT RISE, NOT A DISAPPEARANCE. The line is replaced by the answer in
+   the same region, so cutting it reads as a flicker between two states; letting it lift
+   slightly as it goes reads as one thing making way for another.
+
+   🔴 SHORTER THAN THE SWEEP THAT PRECEDES IT. 1900ms is the rhythm of waiting; this is
+   the end of the wait, and a leisurely exit in front of an answer the learner is now
+   trying to read is the interface asking for attention it no longer deserves. */
+@keyframes canvas-preview-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
+.canvas-preview-out {
+  animation: canvas-preview-out 220ms ease-out forwards;
+}
+
 @keyframes canvas-thinking-word { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .canvas-thinking-word {
   background-image: linear-gradient(
@@ -1031,6 +1049,10 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   [data-workspace] .animate-pulse {
     animation: none;
   }
+  /* 🔴 IT STILL LEAVES, IT JUST DOES NOT TRAVEL. `forwards` is what holds the end state, so
+     removing the animation entirely would leave the preview on screen over the answer for
+     ever — the one case where "animation: none" is not the safe reading of the preference. */
+  .canvas-preview-out { animation-duration: 1ms; }
   /* 🔴 THE CAPTION STOPS SWEEPING AND GOES BACK TO BEING TEXT. Held mid-animation it
      would keep whatever slice of the gradient it stopped on, and `color: transparent`
      means a badly-timed stop is an invisible sentence. */

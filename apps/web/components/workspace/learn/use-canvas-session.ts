@@ -17,6 +17,7 @@ import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { TurnDecision } from "@/lib/learn/turn-router";
+import type { TurnStage } from "@/lib/learn/turn-preview";
 import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
@@ -161,16 +162,6 @@ type CanvasAside = {
   topic?: string;
   /** Figures this reply draws, validated, in the order its `[figure n]` markers count into. */
   visuals?: readonly CanvasVisualRequest[];
-  /**
-   * The reasoner's own working for this turn, kept beside the answer it produced.
-   *
-   * 🔴 ON THE ASIDE RATHER THAN IN A SEPARATE PIECE OF STATE, so it cannot outlive the answer it
-   * belongs to. Working shown beside a LATER reply would attribute one turn's reasoning to another,
-   * which is the same class of mistake as resolving a citation against the wrong list.
-   *
-   * Empty on every turn the cheap model answered — only the reasoner produces it.
-   */
-  thinking?: string;
 } | null;
 
 export interface CanvasSession {
@@ -198,13 +189,16 @@ export interface CanvasSession {
    */
   aside: CanvasAside;
   /**
-   * The model's stated intention for the turn in flight, or null.
+   * The live thinking preview for the turn in flight.
    *
-   * 🔴 TRANSIENT BY CONSTRUCTION. It is cleared when the turn ends, because once the answer is on
-   * screen a promise about it is noise — the learner can see what was done. Only the WORKING
-   * outlives the turn, and it does so on the aside, beside the answer it produced.
+   * 🔴 TRANSIENT BY CONSTRUCTION. Cleared when the turn ends: once the answer is on screen a line
+   * about what was going to happen is noise, and the owner asked for it to fade rather than
+   * persist — *"it should not remain as a separate reasoning transcript below the answer"*.
    */
-  plan: string | null;
+  milestones: readonly string[];
+  stage: TurnStage;
+  /** A real step running inside the turn — the caption's fallback when no milestone covers it. */
+  work: string | null;
   /** Words the learner has already asked the meaning of, for `lookedUpMarks`. Sitting-scoped. */
   lookedUp: readonly string[];
   /** The id of the prompt whose answer is being read, or null. */
@@ -314,14 +308,29 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const [canvas, setCanvas] = useState<LearningCanvas>(() => newCanvas());
   const [busy, setBusy] = useState<BusyState>({ kind: null });
   /**
-   * What Nemesis said it was about to do on the turn in flight, or null.
+   * The live thinking preview: what the model said it would be doing, and how far the work has got.
    *
-   * 🔴 SEPARATE FROM `busy`, BECAUSE THEY ARE DIFFERENT CLAIMS. `busy.label` is the name of a step
-   * that is genuinely executing — `thinking-phases.ts` allows nothing else in that slot. A plan is
-   * a claim about work still to come, written by the model. Merging them would let a model's
-   * promise be read by every consumer that trusts `busy` to mean "this is running now".
+   * 🔴 TWO PIECES OF STATE, NOT A RESOLVED STRING, because the line to show is a function of BOTH
+   * and of what is running — `turn-preview.ts` does that resolution and stays pure. Keeping a
+   * resolved string here would put the one decision that must be testable inside a React hook.
+   *
+   * 🔴 SEPARATE FROM `busy`. `busy.label` is the name of a step genuinely executing —
+   * `thinking-phases.ts` allows nothing else in that slot. Milestones are the model's words for
+   * stages that have opened. Merging them would let a model's sentence be read by every consumer
+   * that trusts `busy` to mean "this is running now".
    */
-  const [plan, setPlan] = useState<string | null>(null);
+  const [milestones, setMilestones] = useState<readonly string[]>([]);
+  const [stage, setStage] = useState<TurnStage>("decided");
+  /**
+   * A real step running inside the turn, named, for the caption slot.
+   *
+   * 🔴🔴 DELIBERATELY NOT `busy`, AND THE REASON IS THE COMPOSER. `busy.kind !== null` is what
+   * DISABLES the text box — so routing a PubChem lookup through it would lock the learner out of
+   * their own composer for the length of a third-party round trip, which is precisely the *"inert
+   * loading screen"* the owner asked this feature not to become. The caption and the lockout are
+   * two different questions and had been sharing one answer.
+   */
+  const [work, setWork] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** What the learner said to open this sitting, when a canvas began from an utterance rather than
    *  from a file. Read by the teaching controller; see `TeachingContext.opening`. */
@@ -959,9 +968,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 IT DOES NOT OVERWRITE A NAMED STEP THAT IS GENUINELY RUNNING. `onSearching` fires while
       // pages are being fetched and says how many; that is a fact about work in flight, and a plan
       // is a claim about work to come. The search caption wins for as long as it is true.
-      (plan) => setPlan(plan));
+      (next) => setMilestones(next),
+      (next) => setStage(next),
+      // 🔴 A REAL STEP, REPORTED WHILE IT RUNS, AND IT DOES NOT LOCK THE COMPOSER. The preview
+      // prefers a milestone over it, so this shows only where the model had nothing to say about
+      // the stage the turn is in.
+      (label) => setWork(label));
       setBusy({ kind: null });
-      setPlan(null);
+      setMilestones([]);
+      setStage("decided");
+      setWork(null);
       const decision = result.decision;
       if (!decision) {
         setError(result.error ?? "Nemesis had nothing to add.");
@@ -1023,7 +1039,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         consulted: result.consulted,
         sources: result.sources,
         text: decision.say,
-        thinking: result.thinking,
         topic: decision.topic ?? undefined,
         visuals: decision.visuals,
       });
@@ -1631,7 +1646,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     busy,
     error,
     aside,
-    plan,
+    milestones,
+    stage,
+    work,
     lookedUp,
     judging,
     opening,
