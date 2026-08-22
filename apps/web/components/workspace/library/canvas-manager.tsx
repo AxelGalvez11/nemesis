@@ -237,6 +237,27 @@ export function CanvasManager({
    */
   const [dragging, setDragging] = useState<{ id: string; kind: "canvas" | "folder"; name: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  /**
+   * Which row's overflow menu is open, if any.
+   *
+   * 🔴🔴 THIS LIVES OUT HERE BECAUSE `ROW_BASE` CARRIES `isolate`, AND THAT IS THE WHOLE BUG.
+   * `isolation: isolate` makes every row its own stacking context, which is load-bearing — the
+   * hover pill is an `::after` at `z-index: -10`, and without the isolate it sinks behind the page
+   * instead of sitting behind the row's own text. But a stacking context is a ceiling as well as a
+   * floor: NOTHING inside a row can outrank anything outside it, however large its z-index.
+   *
+   * So #710's fix — raising the menu's wrapper to `z-50` — was reasoning correctly about sibling
+   * order and then applying it one level too deep. The wrapper won its race inside its own row and
+   * lost the only race that mattered, and the rows below carried on painting their Created dates
+   * straight through an opaque menu (owner, twice: "there is overlap in the library page when
+   * clicking on the '...' button", then "the library still has clashing here").
+   *
+   * The ROW is the element that has to move, because the row is what the later rows are siblings
+   * of. One id rather than a boolean per row: only one menu is ever open, and the rows are built in
+   * a `.map` where a hook cannot go.
+   */
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   /** A filing write that did not land. Stated rather than swallowed — see `fileAndVerify`. */
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -607,6 +628,8 @@ export function CanvasManager({
               ROW_BASE,
               // The source stays in place, faded, so the list does not reflow under the pointer.
               dragging?.id === folder.id && "opacity-40",
+              // 🔴 THE ROW OUTRANKS THE ROWS BELOW IT, so its open menu can too. See `openMenu`.
+              openMenu === folder.id && "z-50",
             )}
             data-drop-target={dropTarget === folder.id ? "true" : undefined}
             draggable={!editing}
@@ -663,6 +686,8 @@ export function CanvasManager({
                 { danger: true, icon: Trash2, label: "Delete folder", run: () => setConfirming(folder) },
               ]}
               name={folder.name}
+              onOpenChange={(next) => setOpenMenu(next ? folder.id : null)}
+              open={openMenu === folder.id}
             />
           </div>
         ))}
@@ -670,7 +695,12 @@ export function CanvasManager({
         {rows.map((canvas) => (
           // A canvas is a source only — there is nothing to drop INTO a canvas.
           <div
-            className={cn(ROW_BASE, dragging?.id === canvas.id && "opacity-40")}
+            className={cn(
+              ROW_BASE,
+              dragging?.id === canvas.id && "opacity-40",
+              // 🔴 THE ROW OUTRANKS THE ROWS BELOW IT, so its open menu can too. See `openMenu`.
+              openMenu === canvas.id && "z-50",
+            )}
             draggable={!editing}
             key={canvas.id}
             onDragEnd={() => { setDragging(null); setDropTarget(null); }}
@@ -765,6 +795,8 @@ export function CanvasManager({
                 },
               ]}
               name={canvas.title || "Untitled canvas"}
+              onOpenChange={(next) => setOpenMenu(next ? canvas.id : null)}
+              open={openMenu === canvas.id}
             />
           </div>
         ))}
@@ -1141,15 +1173,26 @@ interface RowAction {
 }
 
 /** The per-row overflow. Small, and only ever filing actions — never a learning action (§48). */
-function RowMenu({ actions, name }: { actions: RowAction[]; name: string }) {
-  const [open, setOpen] = useState(false);
+function RowMenu({
+  actions,
+  name,
+  onOpenChange,
+  open,
+}: {
+  actions: RowAction[];
+  name: string;
+  /** Told to the row, which is the only element that can lift this menu clear of the rows below. */
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+}) {
+  const setOpen = onOpenChange;
 
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
-  }, [open]);
+  }, [open, setOpen]);
 
   return (
     // 🔴 RIGHT-ALIGNED, AND IT REACHES THE FRAME'S EDGE. Measured on the reference: the actions
@@ -1157,17 +1200,12 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name: string }) {
     // menu button's right edge lands on the table's right edge rather than 8px inside it. Ours
     // sat at the LEFT of a 64px column, which put a floating 24px dot in the middle of nowhere
     // with 40px of blank after it — the single thing that most made the row look unfinished.
-    // 🔴 THE WRAPPER TAKES THE STACKING, NOT JUST THE PANEL (owner 2026-08-20: "there is overlap
-    // in the library page when clicking on the '...' button"). The panel already carried `z-40`,
-    // which lifted it within THIS row and nowhere else — every row below is a later sibling at the
-    // same level, so their Created dates painted straight over an opaque menu and appeared to show
-    // through it. Raising the wrapper puts the whole menu above the rows that follow it.
-    <div
-      className={cn(
-        "relative -mr-[var(--list-row-pad-r)] flex justify-end",
-        open && "z-50",
-      )}
-    >
+    // 🔴 THE STACKING IS NOT SOLVED HERE, AND IT CANNOT BE. Two attempts were made at this level —
+    // `z-40` on the panel, then `z-50` on this wrapper — and both failed for the same reason: the
+    // row above us carries `isolate`, so every z-index inside it is ranked only against its own
+    // siblings and never against the next row. The row lifts itself instead; see `openMenu`.
+    // `relative` stays because the panel is positioned against this box.
+    <div className="relative -mr-[var(--list-row-pad-r)] flex justify-end">
       {/* 🔴 THE ONE MEASURED DEFECT §38.3 IS ABOUT. This carried `opacity-0` with
           `group-hover:opacity-100`, so EVERY row's rename, move, pin and delete lived behind a
           control that painted nothing until the pointer crossed it — 62 of 62 rows measured at
@@ -1187,7 +1225,7 @@ function RowMenu({ actions, name }: { actions: RowAction[]; name: string }) {
         className="flex size-[var(--shell-icon-button)] shrink-0 items-center justify-center rounded-[var(--shell-icon-button-radius)] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:bg-(--ui-bg-tertiary) focus-visible:text-(--ui-text-primary)"
         onClick={(event) => {
           event.stopPropagation();
-          setOpen((value) => !value);
+          setOpen(!open);
         }}
         type="button"
       >

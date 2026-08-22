@@ -176,3 +176,38 @@ test("going back up out of a folder is a control, not a word", () => {
   assert.match(parent[0], /<FolderIcon/, "and draw a glyph rather than relying on a hover colour");
   assert.match(parent[0], /hover:bg-\(--ui-bg-tertiary\)/, "it uses the same hover fill as every other control here");
 });
+
+// 🔴🔴 THE MENU MUST OUTRANK THE ROWS BELOW IT, AND THIS IS THE THIRD ATTEMPT AT SAYING SO.
+// Reported by the owner twice — "there is overlap in the library page when clicking on the '...'
+// button" (2026-08-20), then "the library still has clashing here" (2026-08-22) against a
+// screenshot where the Rename/Pin/Delete panel had two later rows' Created dates and kebabs
+// painted straight through it.
+//
+// Both earlier fixes raised something INSIDE the row: `z-40` on the panel, then `z-50` on the
+// panel's wrapper. Neither could ever work. `ROW_BASE` carries `isolate`, which makes each row its
+// own stacking context, and a stacking context is a ceiling — a child's z-index is ranked against
+// its own siblings and never against the next row. The isolate cannot simply go, because the hover
+// pill is an `::after` at `z-index: -10` that would sink behind the page without it.
+//
+// So the rule is structural, not cosmetic: the element that moves must be the ROW, because the row
+// is what the rows below are siblings of. This test pins that, since the two failed attempts are
+// exactly what someone reaches for when they see a menu behind a row.
+test("🔴 an open row menu is lifted by the row, not from inside it", () => {
+  assert.match(
+    source,
+    /isolate/,
+    "the hover pill needs the row's stacking context — if this goes, re-read why the lift moved to the row",
+  );
+
+  // Both row kinds — a folder and a canvas — raise themselves, keyed by which menu is open.
+  const lifts = source.match(/openMenu === (?:folder|canvas)\.id && "z-50"/g) ?? [];
+  assert.equal(lifts.length, 2, "every row that owns a menu must be able to outrank the rows after it");
+
+  // And the menu reports its state outward rather than keeping it where the row cannot see it.
+  assert.match(source, /onOpenChange:\s*\(open: boolean\) => void/, "RowMenu tells the row when it opens");
+  assert.equal(
+    /const \[open, setOpen\] = useState\(false\)/.test(source),
+    false,
+    "a menu holding its own open state cannot lift the row, which is the whole defect",
+  );
+});
