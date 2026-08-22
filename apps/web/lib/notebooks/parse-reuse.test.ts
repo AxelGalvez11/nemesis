@@ -109,10 +109,12 @@ test("🔴 the migration does not deduplicate across users", () => {
 // refusals that could fire, and not for the one that could not.
 
 test("🔴 an explicit reprocess refuses reuse — the whole point of asking", () => {
-  const decision = decideReuse(
-    { content_hash: "h", id: "p1", parser_version: "extract-2026-08-16", state: "partially_parsed" },
-    { reprocessRequested: true },
-  );
+  // 🔴 THE FIXTURE BUILDER, LIKE EVERY OTHER TEST IN THIS FILE. This one was written as a raw
+  // database row — `content_hash`, `parser_version`, snake_case — and `decideReuse` takes
+  // `ExistingParse`, which is the camelCase shape the client maps a row INTO. It did not typecheck,
+  // and `web-units` runs `tsc` as a separate step after the tests, so the suite went green and the
+  // job went red on main.
+  const decision = decideReuse(parse({ complete: false, state: "partially_parsed" }), { reprocessRequested: true });
   assert.equal(decision.reuse, false);
   assert.equal(decision.reuse === false ? decision.reason : null, "reprocess-requested");
 });
