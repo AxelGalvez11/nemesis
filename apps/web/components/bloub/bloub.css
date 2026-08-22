@@ -46,7 +46,17 @@
   pointer-events: none;
   z-index: 30;
   will-change: transform;
-  transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* How long a CHANGE OF STATION takes — the walk to the middle and the walk back. It is a
+     variable rather than a literal so `prefers-reduced-motion` below can shorten the journey
+     without JavaScript having to ask about it. */
+  --bloub-travel: 680ms;
+  /* 🔴 `--bloub-travel-ms` IS AN OVERRIDE THE DOCK SETS PER MOVE, and it is unset most of the
+     time. Not every move is a journey: following the composer as it grows under the character
+     wants ~140ms, and the very first placement wants none at all so a canvas that opens
+     already thinking does not slide in from a corner it was never standing in. Falling back
+     to `--bloub-travel` keeps the reduced-motion rule below authoritative over the one move
+     that carries meaning. See bloub-dock.tsx. */
+  transition: transform var(--bloub-travel-ms, var(--bloub-travel)) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -54,7 +64,7 @@
     /* 🔴 SHORTER, NOT CANCELLED. Where the character is standing IS the message — that
        the system has taken the floor to think. Removing the travel would remove the
        information, not just the motion. */
-    transition: transform 220ms ease;
+    --bloub-travel: 220ms;
   }
 }
 

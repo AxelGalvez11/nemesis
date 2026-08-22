@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { BloubBot } from "@/components/bloub/bloub-bot";
+import { DOCK_CENTRE_SCALE, DOCK_SIZE, centreStation } from "@/components/bloub/bloub-dock";
 import { stateForCanvas } from "@nemesis/shared/character/stations";
 import { usePoke } from "@/components/bloub/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -44,10 +45,27 @@ import { useCanvasDictation } from "./use-canvas-dictation";
  */
 const DOCK_MS = 260;
 
-/** The clearance under the canvas composer: `bottom-0` plus `pb-4`. Written in px because every
- *  rem in this app is 1.125x its number (`html{font-size:112.5%}`), and this is measured against
- *  a real rectangle. */
-const CANVAS_COMPOSER_INSET = 16;
+/**
+ * The clearance under the canvas composer: `bottom-0` plus `pb-4`.
+ *
+ * 🔴 RESOLVED, NOT WRITTEN DOWN, AND THE OLD LITERAL WAS BOTH WRONG AND UNFIXABLE. It said 16,
+ * with a comment correctly explaining that "every rem in this app is 1.125x its number" — and
+ * then not applying it: `pb-4` is 1rem, which at the app's 112.5% root is 18px, so the composer
+ * landed 2px above where the canvas actually draws it and the route swap corrected the last two
+ * pixels in one frame.
+ *
+ * 🔴 AND NO OTHER LITERAL WOULD HAVE SURVIVED EITHER, which is the real reason this is a
+ * function. The root size is the SCALING setting — a learner on 90% or 115% moves every rem in
+ * the product, so any number typed here is right at exactly one setting. Reading the root font
+ * size back is reading `pb-4` itself.
+ */
+function canvasComposerInset(): number {
+  return parseFloat(getComputedStyle(document.documentElement).fontSize) || 18;
+}
+
+/** How big the character is on the front door. Bigger than the canvas dock's resting size,
+ *  because here it is the only thing on the page rather than a marker beside a composer. */
+const GREETER_SIZE = 64;
 
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const router = useRouter();
@@ -80,8 +98,40 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // travelling alone while a SECOND character faded in on the far side. It stays put and starts
   // thinking instead, so one character carries the whole handoff.
   const greeter = usePoke(stateForCanvas({ thinking: departing, preparing: false, listening }));
-  /** How far down, in px. Measured at the moment of the send; see `start`. */
-  const [lift, setLift] = useState(0);
+  /**
+   * Where the composer travels, in px. Measured at the moment of the send; see `start`.
+   *
+   * 🔴 IT SIDESTEPS AS WELL AS DROPS, AND THE SIDESTEP IS NOT A FLOURISH. The canvas is an
+   * immersive surface: it takes the nav rail away. So the composer this page centres inside a
+   * railed column is 26px to the RIGHT of where the canvas's composer will be centred inside
+   * the whole window — and travelling straight down landed it 26px off, which the route swap
+   * then corrected in a single frame. A move that ends with a jump is not a move; the learner
+   * sees the jump and reads the whole transition as broken. Measured rather than assumed,
+   * because the rail can be open or collapsed and the offset is zero in one of those cases.
+   */
+  const [travel, setTravel] = useState({ x: 0, y: 0 });
+  const greeterBox = useRef<HTMLDivElement>(null);
+  /**
+   * The character's trip to the middle, measured at the moment of the send.
+   *
+   * 🔴🔴 IT TRAVELS TO WHERE THE CANVAS'S CHARACTER WILL BE, TO THE PIXEL (owner 2026-08-21:
+   * "the mascot should move toward the center smoothly not jaggedly"). These are two different
+   * components on two different surfaces — this greeter unmounts and `BloubDock` mounts — so
+   * the only thing that makes the swap invisible is the two of them agreeing about where the
+   * character stands and how big it is. Anything less and the learner watches one character
+   * vanish and another appear somewhere else, which is what "jaggedly" was describing.
+   *
+   * 🔴 SO THE NUMBERS COME FROM THE DOCK, NOT FROM HERE. `centreStation`, `DOCK_SIZE` and
+   * `DOCK_CENTRE_SCALE` are exported by bloub-dock.tsx precisely so this cannot drift: retuning
+   * the middle station moves both ends of the hand-off at once. A literal `0.42` copied into
+   * this file would look right today and come apart on the first tweak.
+   *
+   * 🔴 AGAINST THE VIEWPORT, NOT AGAINST THIS PAGE'S OWN BOX. The canvas is an immersive
+   * surface — it takes the nav rail away — so its character centres on the whole window. If
+   * this page still has a rail beside it, the character is meant to end up slightly right of
+   * where THIS page's middle is, because that is where it is about to be standing.
+   */
+  const [handoff, setHandoff] = useState<{ dx: number; dy: number; k: number } | null>(null);
 
   // 🔴 THE MENU'S STATE, ITS REF AND ITS DISMISS EFFECT WENT WITH THE MENU. Two document-level
   // listeners kept alive for a control that no longer exists is the dead-lane shape this repo
@@ -128,8 +178,21 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     }
     const rect = box.getBoundingClientRect();
     // Where the canvas composer sits: `bottom-0` with `pb-4`, so 16px of clearance under it.
-    const target = window.innerHeight - CANVAS_COMPOSER_INSET - rect.height;
-    setLift(Math.max(0, Math.round(target - rect.top)));
+    const target = window.innerHeight - canvasComposerInset() - rect.height;
+    setTravel({
+      x: Math.round(window.innerWidth / 2 - (rect.left + rect.width / 2)),
+      y: Math.max(0, Math.round(target - rect.top)),
+    });
+    // The character's own trip, on the same beat as the composer's — one departure, not two.
+    const bot = greeterBox.current?.getBoundingClientRect();
+    if (bot) {
+      const middle = centreStation({ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight });
+      setHandoff({
+        dx: Math.round(middle.x - (bot.left + bot.width / 2)),
+        dy: Math.round(middle.y - (bot.top + bot.height / 2)),
+        k: (DOCK_SIZE * DOCK_CENTRE_SCALE) / GREETER_SIZE,
+      });
+    }
     setDeparting(true);
     window.setTimeout(() => router.push(href), DOCK_MS);
   };
@@ -230,10 +293,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               flow, so a corner dock would put it in an empty corner far from the only thing on
               screen. It stands above the question instead, which is where the eye already is.
 
-              🔴 AND IT LEAVES WITH THE GREETING, on the same curve. It belongs to the block that
-              has no counterpart on the canvas; carrying it through the transition would leave it
-              hanging over a composer that has already travelled, and it would then have to be
-              animated out at the far end instead.
+              🔴 AND IT DOES NOT LEAVE — IT WALKS TO THE MIDDLE. This comment used to say the
+              opposite ("it leaves with the greeting, on the same curve"), which was already
+              overruled once (see `greeter` above: it stays put and starts thinking) and is now
+              overruled again in the direction that finishes the job. Staying put was better than
+              fading, and still left a step: the character sat where the greeting had been while
+              the canvas's own character mounted somewhere else entirely. It now travels, on the
+              composer's beat, to the exact point the dock is about to occupy — so the swap
+              between the two components has nothing left to show. See `handoff`.
 
               This is also the one place the entrance turn belongs — the eyes go right round the
               body and come back, which is a real arrival and costs a beat. It is off everywhere
@@ -242,14 +309,31 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               the wrapper above already carries the greeting's own margin and its departure, so a
               jump written onto it would have to share a transform with the transition. Nested
               elements multiply, so each keeps one job. See `use-poke.ts` for what a poke draws. */}
-          <div className="mb-5">
+          {/* 🔴 `z-30` MATCHES `.bloub-dock`'s, so the character passes OVER the composer on its
+              way to the middle rather than under it — the composer is travelling the other way
+              and the two cross. `relative` is what makes the z-index apply at all. */}
+          <div
+            className="relative z-30 mb-5"
+            ref={greeterBox}
+            style={
+              handoff
+                ? {
+                    transform: `translate3d(${handoff.dx}px, ${handoff.dy}px, 0) scale(${handoff.k})`,
+                    // The composer's curve, not the dock's 680ms journey: the two are one
+                    // departure and must land together, and the navigation is held for exactly
+                    // this long. See `DOCK_MS`.
+                    transition: `transform ${DOCK_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)`,
+                  }
+                : undefined
+            }
+          >
             <div className={greeter.motion === "jump" ? "bloub-jump" : undefined}>
               <BloubBot
                 color={bloubColor}
                 entrance
                 onPoke={greeter.poke}
                 shape={bloubShape}
-                size={64}
+                size={GREETER_SIZE}
                 state={greeter.state}
                 track
                 waggle={greeter.motion === "waggle"}
@@ -272,7 +356,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               // 🔴 `transform`, NOT A LAYOUT PROPERTY. Animating margin or top would reflow the
               // Library list underneath on every frame of the move; a transform is composited and
               // touches nothing else on the page.
-              transform: departing ? `translateY(${lift}px)` : undefined,
+              transform: departing ? `translate3d(${travel.x}px, ${travel.y}px, 0)` : undefined,
               transition: departing ? `transform ${DOCK_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)` : undefined,
             }}
           >

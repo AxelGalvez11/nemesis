@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
-import { ACCENT_COLORS, accentGlyph, isAccent, normalizeStoredAccent, type AccentPreference } from "@/lib/accent";
+import { ACCENT_PROPERTIES, ACCENT_STORAGE_KEY, accentProperties, isAccent, normalizeStoredAccent, type AccentPreference } from "@/lib/accent";
 import { COLOR_BY_ID, DEFAULT_COLOR, DEFAULT_SHAPE, SHAPE_BY_ID } from "@nemesis/shared/bloub/skins";
 
 // Re-exported so every existing `from "@/components/theme-provider"` import
@@ -12,7 +12,6 @@ export { ACCENT_COLORS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, type AccentPr
 type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
 const STORAGE_KEY = "pharmaorb-theme";
-const ACCENT_STORAGE_KEY = "nemesis.web.accent";
 // v2, and the bump is load-bearing: SCALE_FACTOR below changes what a stored
 // number MEANS, so reading a v1 value would render it 25% larger than the
 // student chose. A new key retires those cleanly onto the new default.
@@ -144,32 +143,28 @@ const ThemeContext = createContext<ThemeContextValue>({
 function applyAccent(accent: AccentPreference) {
   const root = document.documentElement;
   if (accent === "default") {
-    root.style.removeProperty("--theme-primary");
-    root.style.removeProperty("--theme-midground");
-    root.style.removeProperty("--theme-warm");
-    // Removing these two is what makes "Default" mean the restrained green in
-    // app/styles/desktop-ui.css, rather than a seventh colour listed here.
-    root.style.removeProperty("--ui-action");
-    root.style.removeProperty("--ui-action-glyph");
+    // Removing every property an accent can set is what makes "Default" mean the values in
+    // app/styles/desktop-ui.css — a light/dark pair no single hex could stand for — rather
+    // than a seventh colour in the table. Driven off ACCENT_PROPERTIES so a property added
+    // to `accentProperties` cannot be left behind here and stick after a switch back.
+    for (const property of ACCENT_PROPERTIES) root.style.removeProperty(property);
     return;
   }
-  const color = ACCENT_COLORS[accent];
-  root.style.setProperty("--theme-primary", color);
-  root.style.setProperty("--theme-midground", color);
-  root.style.setProperty("--theme-warm", color);
-  // 🔴 THE ACCENT NOW GOVERNS THE SEND BUTTON, WHICH IT DELIBERATELY DID NOT (owner
-  // 2026-08-20: "the send button is hardcoded green and does not change with the other
-  // color changes"). desktop-ui.css kept --ui-action separate from --ui-accent on the
-  // reasoning that anything branded there "is erased the moment someone picks Blue" —
-  // correct about --theme-midground, which feeds the whole chrome tint, but it left the
-  // product's single most prominent control as the one thing the picker could not
-  // reach. Setting --ui-action HERE, as its own property, keeps both: the chrome tint
-  // stays a tint, and the primary action follows the choice.
-  root.style.setProperty("--ui-action", color);
-  // The glyph on that fill is no longer --ui-bg-editor, because a fill that moves needs
-  // a foreground that moves with it. See accentGlyph — five of the six accents want a
-  // near-black arrow, not a white one.
-  root.style.setProperty("--ui-action-glyph", accentGlyph(color));
+  // 🔴 THE SAME DEFINITION THE PRE-PAINT SCRIPT USES, not a second copy of it. See
+  // `accentProperties` and `accentPrePaintScript` in lib/accent.ts: this runs after
+  // hydration and that one runs before first paint, and the two disagreeing is precisely
+  // the flash they exist to prevent.
+  //
+  // 🔴 THE ACCENT GOVERNS THE SEND BUTTON (owner 2026-08-20: "the send button is hardcoded
+  // green and does not change with the other color changes"). desktop-ui.css kept
+  // --ui-action separate from --ui-accent on the reasoning that anything branded there "is
+  // erased the moment someone picks Blue" — correct about --theme-midground, which feeds the
+  // whole chrome tint, but it left the product's most prominent control as the one thing the
+  // picker could not reach. Setting --ui-action as its own property keeps both: the chrome
+  // tint stays a tint, and the primary action follows the choice. The glyph on that fill
+  // moves with it, because a fill that moves needs a foreground that moves too.
+  const properties = accentProperties(accent);
+  for (const [property, value] of Object.entries(properties)) root.style.setProperty(property, value);
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
