@@ -560,3 +560,43 @@ test("🔴🔴 Define looks through an inflected form to the term underneath", (
   // and quietly rewriting it is how a lookup ends up answering a question nobody asked.
   assert.match(prompt, /retatrutide's/, "the learner's actual selection was rewritten before the lookup");
 });
+
+// 🔴 THE TEACHING PATH NEEDS THE SAME NOTATION FACT AS THE REPLY PATH, and letting one have it
+// would be worse than neither having it: a learner would get drawn functional groups when they
+// asked a question and prose when the same groups appeared in a lesson, with nothing in the product
+// explaining why. See `turn-router.test.ts` for the measurement behind the clause.
+test("🔴 the lesson prompt teaches the attachment point too", () => {
+  const system = lessonMessages({ level: null, sources: [], topic: "functional groups" })
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(system, /an open attachment point is "\*"/, "a lesson cannot draw a generic group");
+  assert.match(system, /"R" is not a SMILES atom/, "the negative half went missing");
+});
+
+// 🔴 THE TEACHING PATH GETS THE SAME CHANNEL AS THE REPLY PATH (§45). One having it and the other
+// not is worse than neither: a curve when the learner asks a question and a table of coordinates
+// when the same idea appears in a lesson, with nothing in the product explaining the difference.
+test("🔴 the lesson prompt offers the computed-plot channel", () => {
+  const system = lessonMessages({ level: null, sources: [], topic: "exponential decay" })
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(system, /a series may give a FORMULA instead of points/);
+  assert.match(system, /"expression":"sin\(x\)"/);
+  assert.match(system, /"shape":"normal"/, "distributions are built and would be unreachable");
+  assert.match(system, /Nothing else runs, and anything else draws no curve/, "the allow list is what stops silent failure");
+});
+
+// 🔴 THE TEACHING PATH RESOLVES NAMES TOO (§42). A lesson drawing a remembered molecule beside a
+// reply drawing a looked-up one is the worst of both: same product, two trust levels, no way for a
+// learner to tell which they are reading.
+test("🔴 the lesson prompt prefers a lookup over recall for a named compound", () => {
+  const system = lessonMessages({ level: null, sources: [], topic: "esters" })
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(system, /"compound":"aspirin"/, "a lesson cannot reach the resolver");
+  assert.match(system, /looked up from a chemical database/);
+  assert.match(system, /Use "value" only for a generic group/, "the wildcard channel was pushed aside");
+});

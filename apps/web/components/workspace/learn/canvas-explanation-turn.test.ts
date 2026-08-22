@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -55,3 +56,44 @@ test("policy_continue is a no-op on an already-empty state too", () => {
 //
 //   const bad = { kind: "unknown" } as unknown as import("./canvas-explanation-turn").ExplanationEvent;
 //   nextExplanationState(NO_EXPLANATIONS, bad); // exhaustiveness only, not exercised at runtime
+
+// ── an opening is not an answer, and it must not outlive its screen ──────────
+//
+// 🔴🔴 REPORTED 2026-08-21 WITH A SCREENSHOT, AND IT WAS THE SECOND TIME. The lesson had moved on
+// to "What follows from Java's increasing popularity at the time, and why?" and underneath it still
+// sat "Alright, let's get you started with JavaScript. The canvas will walk you through the core
+// concepts…" — a sentence whose entire job was to introduce a screen that was no longer there. The
+// owner's words: *"i thought we had already removed this?"*
+//
+// 🔴 THE RULE WAS RIGHT AND ITS SUBJECT WAS WRONG. `policy_continue` clearing NEITHER surface is
+// correct for a learner-triggered explanation — acknowledging a correction says nothing about a
+// question they asked three passages ago. An opening is not one of those: nobody asked for it, it
+// belongs to one screen, and the moment that screen advances it describes the past.
+
+test("🔴 an opening clears when the learner acknowledges the screen it introduced", () => {
+  const before = { asideIsOpening: true, hasAside: true, hasPopover: false };
+  const after = nextExplanationState(before, { kind: "policy_continue" });
+  assert.equal(after.hasAside, false, "the introduction outlived the lesson it introduced");
+  assert.equal(after.asideIsOpening, false);
+});
+
+// 🔴 AND THE ROW THIS FILE HAS ALWAYS PROTECTED SURVIVES INTACT. An explanation the learner asked
+// for is theirs until they dismiss it or take another turn; a Continue on an unrelated correction
+// is not permission to take it away.
+test("🔴 an answer the learner asked for still survives Continue", () => {
+  const before = { asideIsOpening: false, hasAside: true, hasPopover: true };
+  assert.deepEqual(nextExplanationState(before, { kind: "policy_continue" }), before);
+});
+
+test("Continue still clears nothing when there is no aside at all", () => {
+  const before = { asideIsOpening: false, hasAside: false, hasPopover: true };
+  assert.deepEqual(nextExplanationState(before, { kind: "policy_continue" }), before);
+});
+
+// 🔴 THE KIND HAS TO REACH THE REDUCER, OR THE ROW ABOVE IS UNREACHABLE. A field nothing populates
+// is a rule that reads correctly and never fires.
+test("🔴 the canvas tells the reducer which kind of aside is on screen", () => {
+  const canvas = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  assert.match(canvas, /asideIsOpening: session\.aside\?\.kind === "opening"/);
+  assert.match(canvas, /applyExplanationEvent\(\{ kind: "policy_continue" \}\)/);
+});

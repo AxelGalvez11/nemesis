@@ -42,6 +42,7 @@
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
+import { readMilestones } from "./turn-preview";
 import type { CanvasVisualRequest } from "./canvas-visual";
 import { extractJson } from "./canvas-parse";
 
@@ -146,6 +147,25 @@ export interface TurnDecision {
    * a null topic is the answer to the second question.
    */
   topic: string | null;
+  /**
+   * What Nemesis will be doing at each stage of this turn, in the learner's words.
+   *
+   * 🔴🔴 THE SANITISED SUMMARY, WRITTEN BY THE PARTICIPANT THAT CAN SANITISE IT. Owner, 2026-08-21:
+   * *"internal reasoning → sanitized progress summary → UI"*, and *"do not expose reasoning_content
+   * directly to the user."* Paraphrasing a chain of thought in code would produce a chain of thought
+   * with the hedging stripped out, which is worse rather than safer. The model writes these FOR a
+   * learner, so nothing internal has to be translated at all.
+   *
+   * 🔴 ONE PER STAGE, AND A STAGE IS ENTERED ONLY BY SOMETHING HAPPENING. `turn-preview.ts` indexes
+   * these by stage rather than consuming them in order: a turn that never searches never shows the
+   * line written for searching, however confidently the model wrote it. That is what keeps this out
+   * of the territory `thinking-phases.ts` bans — a plausible sequence on a timer.
+   *
+   * 🔴 EMPTY ON MOST TURNS, WHICH IS THE OWNER'S FIRST RULE: *"for a simple conversational response,
+   * do not show a thinking preview, answer immediately."* A greeting that flashes a line about
+   * planning teaches the learner that the preview means nothing.
+   */
+  milestones: readonly string[];
   /**
    * Figures this turn wants to draw, already validated, in the order `[figure n]` counts into.
    *
@@ -287,6 +307,45 @@ const NEMESIS_SYSTEM = [
   + "and the canvas replaces it with a real structural diagram exactly where you put it, or "
   + "[reaction: A>>B] for a reaction.",
 
+  // 🔴🔴 REPORTED 2026-08-21: *"nemesis is still not using smiles to represent orgo chemical
+  // structures … asking 'show me basic functional groups' should indicate that user wants to see
+  // the structure."* It does not, and the reason is not reluctance — it is that the answer to that
+  // question has no specific molecule in it. A functional group is a FRAGMENT with an open bond,
+  // chemistry writes the open end as `R`, and `R-OH` is the worst input this pipeline can receive:
+  //
+  //     validateStructure("smiles", "R-OH")  → ok       (R, O and H are all alphabet letters)
+  //     SmilesDrawer.Parser.parse("R-OH")    → SyntaxError: Expected "*", "B", "C", … but "R" found
+  //     SmilesDrawer.Parser.parse("*O")      → parses, and draws
+  //
+  // It passes every check this codebase makes and then dies at the depiction library, so the model
+  // gets no signal, learns nothing from the attempt, and answers "Alcohol: R-OH (hydroxyl group)"
+  // in prose the next time — which is the exact string that was reported a second time.
+  //
+  // 🔴 SO THIS IS A NOTATION FACT, NOT A SUBJECT RULE (§41). `*` is how SMILES spells an attachment
+  // point, the same kind of fact as `\frac` being how LaTeX spells a fraction. Nothing here names
+  // chemistry as a discipline Nemesis favours; it tells the model how to write the thing it is
+  // already allowed to draw.
+  "A group with an open attachment point — a functional group, a side chain, a monomer, any "
+  + "fragment a chemist would write with an R — uses \"*\" where the rest of the molecule would "
+  + "continue: [smiles: *O] is an alcohol, [smiles: *C(=O)O] a carboxylic acid, [smiles: *C(=O)N] "
+  + "an amide, [smiles: *C#N] a nitrile. \"R\" is not a SMILES atom, so [smiles: R-OH] draws "
+  + "nothing at all. When the learner asks to see a family of groups, draw each one.",
+
+  // 🔴🔴 §42's RULE, AND UNTIL 2026-08-21 NOTHING OBEYED IT. `chem-resolver.ts` was built, tested
+  // and merged with one dev-only caller, so every molecule Nemesis had ever drawn was one the model
+  // REMEMBERED. §42 is explicit about why that is the dangerous case: a remembered SMILES is
+  // usually right, carries no signal when it is not, and one wrong atom draws a clean, confident
+  // picture of a different compound. A wrong plot looks wrong; a wrong molecule looks like
+  // chemistry.
+  //
+  // 🔴 AND IT IS ADDITIVE, BECAUSE A GENERIC GROUP HAS NO NAME. `*O` is every alcohol and no
+  // database holds it. So the model is told which channel fits which case rather than being pushed
+  // off the one that was just made to work.
+  "When the molecule has a NAME, write [compound: aspirin] instead of writing the notation "
+  + "yourself. The structure is looked up in a chemical database and drawn from what comes back, "
+  + "which is more reliable than notation recalled from memory. Use [smiles: …] for generic groups, "
+  + "fragments and anything a database would not hold under a name.",
+
   // 🔴 THE OTHER EIGHT ARE NEW HERE, 2026-08-20, AND THEY ARE WHY THE MODEL USED TO REFUSE. It was
   // told about one kind and had one channel, so "plot this" got an honest "I can't" out of a
   // renderer that has drawn plots for weeks. A capability the model is not told about does not
@@ -298,6 +357,25 @@ const NEMESIS_SYSTEM = [
   + "xLabel, yLabel), relationship (nodes, edges), table (columns, rows), timeline (events), "
   + "construction (points, segments), vectors (vectors, bodyLabel), equation (latex), code "
   + "(language, source, trace). At most " + String(MAX_REPLY_VISUALS) + " per answer.",
+
+  // 🔴🔴 §45 SHIPPED THIS AND NOTHING COULD REACH IT. The expression evaluator, the distribution
+  // maths and the curve builder were built, hardened against a real sandbox-escape probe, tested
+  // and merged — and §45's status line said so plainly for two days: "NO LESSON EMITS ONE YET."
+  // The plot renderer even carried a comment about colouring a curve split by a pole, for curves
+  // nothing could produce. The missing piece was never maths: it was somewhere for the model to
+  // write `x^2` instead of a hundred and sixty coordinate pairs, and being told it may.
+  //
+  // 🔴 AND THE FUNCTION LIST IS `expression.ts`'s OWN ALLOW LIST, stated rather than left to be
+  // discovered. A model that reaches for `integrate(...)`, gets no curve and is told nothing learns
+  // that plotting does not work — which is exactly how chemistry lost three reports to `R-OH`.
+  "A plotted series may give a FORMULA instead of points: {\"label\":\"sin x\",\"expression\":\"sin(x)\","
+  + "\"from\":0,\"to\":6.28} is evaluated by trusted code and drawn as a smooth curve, and "
+  + "{\"label\":\"IQ\",\"distribution\":{\"shape\":\"normal\",\"mean\":100,\"sd\":15},\"from\":55,\"to\":145} "
+  + "draws a density curve. Write the formula rather than listing points whenever the shape comes "
+  + "from one. A formula may use + - * / ^ ( ), pi and e, and these functions: abs acos asin atan "
+  + "cbrt ceil cos cosh exp floor ln log log2 max min round sign sin sinh sqrt tan tanh. "
+  + "Distributions are normal (mean, sd), uniform (from, to), binomial (trials, probability) and "
+  + "poisson (rate). Nothing else runs, and anything else draws no curve.",
 
   "Draw when the shape, the trend or the arrangement is the point, and whenever the learner asks "
   + "to be SHOWN something. Keep writing the prose around it as normal, and do not draw something "
@@ -444,7 +522,7 @@ const DECISION_CONTRACT = [
   "Answer with a fenced JSON block for the decision, then your answer as ordinary text after it:",
   "",
   "```json",
-  '{"then": "reply" | "study" | "rewrite", "topic": "..." | null,'
+  '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "milestones": ["..."],'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null,',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
@@ -504,6 +582,21 @@ const DECISION_CONTRACT = [
   // The field itself is unchanged and still earns its place: whether a turn NAMED a subject is what
   // `learnFromAside` starts when the learner asks to be taught it, and it is the honest test that
   // kept "hello" from being treated as a topic.
+  // 🔴🔴 THESE ARE SHOWN WHILE THE TURN RUNS, WHICH IS WHY THEY ARE BOUNDED SO HARD. They are the
+  // only strings in this contract a learner reads BEFORE the answer, and therefore the easiest
+  // place for a model to describe a system that is not there. `turn-preview.ts` refuses a line that
+  // carries a percentage, a step number, a token count or our own vocabulary, and refuses any line
+  // mentioning a search on a turn that bought none. What survives is a milestone, not a log.
+  '"milestones" is 1-4 short lines, in order, saying what you will be DOING at each stage of this '
+  + "turn. They are shown one at a time beside the Nemesis character while the learner waits, and "
+  + "each one appears only when that stage actually begins. Write them for the learner, in your own "
+  + "words, about their subject: \"Comparing your notes with the current guidance\", \"Checking the "
+  + "latest treatment recommendations\". Four to twelve words each, conversational, no percentages, "
+  + "no step numbers, no counts, no jargon, and never the word \"thinking\". The order is: what you "
+  + "are doing first; what you do while searching (only if needsWeb is true); what you do with what "
+  + "you find; how you finish. Give an empty array for anything you can simply answer, which is "
+  + "most turns.",
+  "",
   '"topic" is the subject this turn is about, whenever the learner named one. On a "study" turn it '
   + "is what gets taught; on a \"reply\" it is what Nemesis would teach if the learner then asked to "
   + "learn it. Give it for a real question about a subject and leave it null for a greeting, a "
@@ -753,6 +846,23 @@ const DECISION_BLOCK = /```json\s*\n?([\s\S]*?)```/;
  * 🔴 PROSE ON BOTH SIDES IS KEPT. A model that writes a sentence, then the block, then the rest is
  * describing the same answer in two halves; dropping either would lose part of it.
  */
+/**
+ * The milestones this turn may show, or none.
+ *
+ * 🔴 THE SHAPE CHECKS LIVE IN `turn-preview.ts`, WHICH IS PURE AND HAS NO OPINION ABOUT TURNS. What
+ * belongs here is the one judgement that file cannot make: whether this turn is the kind that has
+ * stages at all.
+ *
+ * 🔴 A PLAIN REPLY GETS NONE. `reply` leaves the page exactly as it was and, without a search,
+ * finishes in one round — so there is nothing to narrate, and a line announcing one would train
+ * learners to ignore the slot. The owner's first rule, enforced where the turn's kind is known.
+ */
+function milestonesFrom(parsed: Record<string, unknown>, then: TurnAction): readonly string[] {
+  const searching = parsed.needsWeb === true;
+  if (then === "reply" && !searching) return [];
+  return readMilestones(parsed.milestones, searching);
+}
+
 export function readTurnDecision(raw: string): TurnDecision | null {
   const block = DECISION_BLOCK.exec(raw);
   if (!block) return null;
@@ -785,6 +895,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // not ask to be taught, and a model that skipped the field has told us nothing about which
     // this is.
     then: then ?? "reply",
+    milestones: milestonesFrom(parsed, then ?? "reply"),
     topic: asText(parsed.topic) || null,
     // Refused figures are dropped here, never repaired — see `replyVisuals`.
     visuals: replyVisuals(parsed.visuals),
@@ -826,10 +937,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
   if (looksLikeEnvelope(prose)) {
     const salvaged = salvageSay(prose);
     return salvaged
-      ? { needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
+      // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
+      // the envelope and simply answered; nothing announced an intention, so there is nothing to
+      // show. Inventing a plan here would be the product narrating on the model's behalf.
+      ? { milestones: [], needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
-  return { needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
+  return { milestones: [], needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

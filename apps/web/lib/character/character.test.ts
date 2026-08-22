@@ -5,6 +5,7 @@ import { BotEngine } from "@/lib/bloub/engine";
 import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
 import { SEQUENCE, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
+import { arcStops } from "./look";
 import { ARC_POOL, ARC_STOPS, DOT_POOL } from "./pool";
 import { speedOf, stationOf } from "./stations";
 
@@ -175,25 +176,39 @@ test("🔴 only ONE thing on the canvas draws a character", async () => {
   // defect was never two renderers: `CanvasThinkingPreview` and `BloubDock` each MOUNTED the one
   // renderer, both centred, both playing `thinking`, so two sets of three dots stacked up.
   //
-  // A guard on the wrong noun is worse than no guard, because it is believed. The rule that
-  // actually holds: on the canvas, the dock owns the character. Nothing else there draws one.
+  // A guard on the wrong noun is worse than no guard, because it is believed.
+  //
+  // 🔴🔴 AND THE RULE IS NOT "THE DOCK OWNS THE CHARACTER" — IT IS "EXACTLY ONE OF THEM DRAWS".
+  // The first wording was the fix for the six dots and it read as a law, so when the owner asked
+  // for something the dock cannot express (2026-08-21: *"the mascot should be on top of the three
+  // dots"* — the `thinking` pose turns the BODY into the middle dot) the guard would have refused
+  // a correct design. `CanvasThinkingPreview` draws its own figure now and the canvas hides the
+  // dock for the whole of that wait, which satisfies what this test was always protecting.
+  //
   // `canvas-home.tsx` is exempt because it IS a different route — the landing surface and a
   // session cannot be on screen together.
   const { readdir, readFile } = await import("node:fs/promises");
   const dir = "components/workspace/learn/";
   const root = new URL("../../", import.meta.url);
+  const canvas = await readFile(new URL(`${dir}learning-canvas.tsx`, root), "utf8");
   const offenders: string[] = [];
   for (const entry of await readdir(new URL(dir, root), { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".tsx")) continue;
     if (entry.name === "canvas-home.tsx") continue;
     const source = await readFile(new URL(`${dir}${entry.name}`, root), "utf8");
-    if (source.includes("<BloubBot")) offenders.push(entry.name);
+    if (!source.includes("<BloubBot")) continue;
+    // 🔴 DRAWING ONE IS ONLY ALLOWED WITH THE DOCK EXPLICITLY SWITCHED OFF. A `hidden` prop that
+    // exists but is never passed is the six-dot defect with an extra prop on it.
+    if (!/hidden=\{/.test(canvas)) offenders.push(entry.name);
   }
   assert.deepEqual(
     offenders,
     [],
-    `these draw a second character beside the dock — the learner sees two: ${offenders.join(", ")}`,
+    `these draw a second character while the dock is still mounted — the learner sees two: ${offenders.join(", ")}`,
   );
+  // And the dock can actually be switched off, rather than the canvas passing a prop into a void.
+  const dock = await readFile(new URL("components/bloub/bloub-dock.tsx", root), "utf8");
+  assert.match(dock, /if \(hidden\) return null;/, "`hidden` no longer takes the character away");
 });
 
 test("the character rests as a circle, and its colour is the app's accent", async () => {
@@ -354,4 +369,33 @@ test("🔴 pressing Speak twice actually speaks twice", async () => {
     `the utterance key is derived from the text (\`aloud:${call[1]}\`), so a second press is deduped into silence`,
   );
   assert.match(code, /aloudPress\.current \+= 1/, "nothing advances the per-press counter");
+});
+
+// ── colour: one meaning, one place ───────────────────────────────────────────
+//
+// 🔴 THESE GUARD A PRODUCT DECISION AGAINST A VENDORED DEFAULT, which is the fragile kind. The
+// hue wheel is still sitting in `lib/bloub/decor.ts` and every arc still arrives carrying one; what
+// keeps it off the screen is one line in the renderer choosing not to use it. A refactor that
+// "simplifies" that line back to `arc.grad.stops[s]` restores the rainbow and breaks nothing else.
+
+test("🔴 an orbit arc is drawn in ink, never in the seed's hue", () => {
+  const stops = arcStops("#0a0a0c", "#f9f9f9", ARC_STOPS);
+  for (const stop of stops) {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(stop.slice(i, i + 2), 16));
+    // A shade of one ink is grey when the ink is grey: the channels stay together. Any hue at all
+    // would spread them, which is exactly what the wheel does.
+    const spread = Math.max(r!, g!, b!) - Math.min(r!, g!, b!);
+    assert.ok(spread <= 4, `${stop} carries a hue — the wheel is back on the arcs`);
+  }
+});
+
+// 🔴 THE FADE IS NOT DECORATION AND MUST SURVIVE THE DE-COLOURING. An orbit is a stroke passing
+// behind the body and out in front; ends that dissolve read as going ROUND something, and a flat
+// band reads as a hoop laid on top. Removing the hue while flattening the gradient would have
+// traded one wrong picture for another.
+test("🔴 the arc still fades at its ends", () => {
+  const [start, middle, end] = arcStops("#0a0a0c", "#f9f9f9", 3);
+  const lum = (hex: string) => parseInt(hex.slice(1, 3), 16);
+  assert.ok(lum(start!) > lum(middle!), "the arc no longer fades in");
+  assert.ok(lum(end!) > lum(middle!), "the arc no longer fades out");
 });

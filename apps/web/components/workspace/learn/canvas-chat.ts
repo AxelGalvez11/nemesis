@@ -46,6 +46,8 @@ import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
+import { prepareAnswer } from "@/lib/learn/answer-prepare";
+import type { TurnStage } from "@/lib/learn/turn-preview";
 import {
   decisionOrReply,
   turnRouterMessages,
@@ -80,6 +82,14 @@ export interface TurnSurroundings {
 
 export interface CanvasTurnReply {
   decision: TurnDecision | null;
+  /**
+   * How far the work actually got, and what the model said it would be doing there.
+   *
+   * 🔴 RETURNED FOR THE RECORD, NOT FOR THE PREVIEW. The preview is live and is driven by `onStage`
+   * as each stage opens; by the time this comes back the turn is over and the line has faded. This
+   * is here so a caller can tell what a turn DID without re-deriving it from the sources list.
+   */
+  stage: TurnStage;
   /**
    * Live web results actually used, in the order CITED. Empty when no search ran.
    *
@@ -138,6 +148,37 @@ export async function askCanvasChat(
    * too late to be the thing that says "searching". This fires before the request goes out.
    */
   onSearching?: (found: number | null) => void,
+  /**
+   * The milestones this turn will show, the moment the model states them.
+   *
+   * 🔴🔴 A CALLBACK, FOR THE SAME REASON `onSearching` IS ONE: THE POINT IS THE TIMING. The
+   * milestones also come back on the decision, and that arrives WITH the answer — exactly too late
+   * for lines whose whole job is to be read during the wait. This fires as soon as the first
+   * decision is parsed, which on a searching turn is before any page has been fetched and before
+   * the second model call.
+   *
+   * 🔴 AND IT FIRES AGAIN ON EVERY LATER ROUND. A turn that searches twice may revise what it is
+   * doing, and a stale first-round list sitting over a second-round search would describe work that
+   * finished.
+   */
+  onMilestones?: (milestones: readonly string[]) => void,
+  /**
+   * The turn moved into a new stage, because something real happened.
+   *
+   * 🔴 THE PREVIEW ADVANCES ON THIS AND ON NOTHING ELSE. Owner, 2026-08-21: *"Real tool activity
+   * should be authoritative… Never claim an action that did not happen."* So the surface does not
+   * walk a list; it is TOLD, by the code that just did the thing.
+   */
+  onStage?: (stage: TurnStage) => void,
+  /**
+   * A step the runtime is running right now, or null when it finishes.
+   *
+   * 🔴 THE HONEST FALLBACK WHEN THE MODEL HAS NO LINE FOR THIS STAGE. Looking a compound up in
+   * PubChem and evaluating a curve are real round trips the model could not have anticipated when
+   * it wrote its milestones — it does not know whether the resolver will be slow. These labels name
+   * work that is executing, which is exactly what `thinking-phases.ts` permits in the caption slot.
+   */
+  onWork?: (label: string | null) => void,
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
 
@@ -167,12 +208,43 @@ export async function askCanvasChat(
       }),
       utterance: question,
     }),
-    { decision: CHAT_DECISION, signal },
+    {
+      decision: CHAT_DECISION,
+      signal,
+    },
   );
 
+  /**
+   * How far this turn has actually got.
+   *
+   * 🔴🔴 ADVANCED BY EVENTS, NEVER BY TIME, WHICH IS THE WHOLE HONESTY OF THE PREVIEW. Each `enter`
+   * below sits immediately beside the thing it names — the search request going out, the results
+   * coming back — so a stage cannot be reached by waiting. A turn that answers straight away goes
+   * `decided` → `finishing` and never shows the two lines in between, however confidently the model
+   * wrote them.
+   */
+  let stage: TurnStage = "decided";
+  const enter = (next: TurnStage) => {
+    stage = next;
+    onStage?.(next);
+  };
+
+  // 🔴 A NAMED COMPOUND IS LOOKED UP AND A FORMULA BECOMES POINTS BEFORE THE DECISION IS READ
+  // (§42, §45). `prepareAnswer` is a no-op — two
+  // `String.includes` — unless the answer actually contains an expression or a distribution, so the
+  // ordinary turn pays nothing for this. When it does contain one, the round trip has to happen
+  // HERE rather than inside the parser: `decisionOrReply` is synchronous, and the maths layer may
+  // not reach the learner's bundle (see lib/learn/plot-compute.ts for why that forces a route).
+  const readDecision = async (text: string) => {
+    const read = decisionOrReply(await prepareAnswer(text, undefined, signal, (label) => onWork?.(label)));
+    // 🔴 REPORTED AS SOON AS THEY ARE READ, NOT WHEN THE TURN RETURNS. See `onMilestones`.
+    onMilestones?.(read?.milestones ?? []);
+    return read;
+  };
+
   const first = await ask("", MAX_SEARCH_ROUNDS);
-  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [] };
-  let decision = first.text ? decisionOrReply(first.text) : null;
+  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [], stage };
+  let decision = first.text ? await readDecision(first.text) : null;
 
   // 🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH. It used to get exactly one search: the
   // packet told it "the search has happened, answer from them", so a first query aimed slightly
@@ -194,6 +266,8 @@ export async function askCanvasChat(
     // 🔴 THE SECOND BEAT REPORTS THE RUNNING TOTAL, NOT THIS ROUND'S HAUL. The learner is watching
     // one turn, and a counter that went 12, then 9, then 14 would describe our loop rather than
     // their search. What they are being told is how many pages this answer stands on.
+    // 🔴 THE REQUEST IS ABOUT TO GO OUT. This is the event, not a prediction of one.
+    enter("searching");
     onSearching?.(null);
     const found = await searchWebContext(
       uid,
@@ -208,13 +282,15 @@ export async function askCanvasChat(
       sources.push(source);
     }
     onSearching?.(sources.length);
+    // Pages are in hand and the model is about to read them.
+    enter("reading");
     // Re-numbered over everything gathered, so the numbers the model reads are the numbers
     // `citedWebResults` resolves against.
     const next = await ask(formatWebSearchContext(sources), MAX_SEARCH_ROUNDS - round - 1);
-    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, sources: [] };
+    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, sources: [], stage };
     // A failed round leaves the previous answer standing, which is better for the learner than an
     // error — and stops the loop, since a null decision cannot ask for another search.
-    decision = (next.text ? decisionOrReply(next.text) : null) ?? decision;
+    decision = (next.text ? await readDecision(next.text) : null) ?? decision;
     if (!next.text) break;
   }
 
@@ -224,6 +300,8 @@ export async function askCanvasChat(
   // the raw list would attribute a sentence to the wrong page as soon as one result was unusable
   // or one was evicted, and a citation that resolves to real text from the wrong place is the
   // exact defect this repository's provenance rules exist to make impossible.
+  // Tools are done; what is left is the answer itself.
+  enter("finishing");
   const numbered = webContextThatFits(usableWebResults([...sources])).kept;
   return {
     decision,
@@ -236,5 +314,6 @@ export async function askCanvasChat(
     // Only the pages the answer cited become promotion candidates. Search rank is retrieval
     // evidence, not permission to turn every hit into durable learning material.
     sources: decision?.say ? citedWebResults(decision.say, numbered) : [],
+    stage,
   };
 }

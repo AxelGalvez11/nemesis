@@ -173,8 +173,20 @@ function Relationship({ visual }: { visual: FlowVisual }) {
   );
 }
 
+/**
+ * The most points a series can have and still be read as measurements rather than as a function.
+ *
+ * A hand-listed series is a table someone typed; a computed one is 160 samples of a formula. Nothing
+ * on the request distinguishes them — §45 deliberately made a computed plot the SAME kind — so the
+ * count is the signal, and it only has to separate "a couple of dozen readings" from "a curve".
+ */
+const DOTTED_UP_TO = 24;
+
 function Quantitative({ visual }: { visual: PlotVisual }) {
   const points = visual.series.flatMap((series) => series.points);
+  // One colour per distinct curve name, so every run of a split curve draws in the same ink.
+  const names = visual.series.map((series) => series.label).filter((label, index, all) => all.indexOf(label) === index);
+  const colourOf = (label: string) => COLOURS[names.indexOf(label)];
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
   const xMin = Math.min(...xs);
@@ -195,9 +207,21 @@ function Quantitative({ visual }: { visual: PlotVisual }) {
         <text fill="var(--ui-text-tertiary)" fontSize="11" textAnchor="middle" x={(left + WIDTH - right) / 2} y={PLOT_HEIGHT - 10}>{visual.xLabel ?? "x"}</text>
         <text fill="var(--ui-text-tertiary)" fontSize="11" textAnchor="middle" transform={`rotate(-90 14 ${PLOT_HEIGHT / 2})`} x="14" y={PLOT_HEIGHT / 2}>{visual.yLabel ?? "y"}</text>
         {visual.series.map((series, index) => (
-          <g key={series.label}>
-            <polyline fill="none" points={series.points.map((point) => `${x(point.x)},${y(point.y)}`).join(" ")} stroke={COLOURS[index]} strokeWidth="2" />
-            {series.points.map((point, pointIndex) => <circle cx={x(point.x)} cy={y(point.y)} fill={COLOURS[index]} key={pointIndex} r="3" />)}
+          // 🔴 COLOURED AND KEYED BY THE CURVE, NOT BY THE SERIES (§45). A curve computed from an
+          // expression comes back as one series PER CONTINUOUS RUN — `1/x` is two, either side of
+          // the pole — all carrying the name the model gave the function. `COLOURS[index]` drew
+          // those two runs in different colours, which says "two functions" as loudly as a legend
+          // would, and `key={series.label}` gave React the same key twice. The legend below already
+          // deduped by label; the drawing did not, so the fix was half applied.
+          <g key={`${series.label}-${index}`}>
+            <polyline fill="none" points={series.points.map((point) => `${x(point.x)},${y(point.y)}`).join(" ")} stroke={colourOf(series.label)} strokeWidth="2" />
+            {/* 🔴 A COMPUTED CURVE HAS NO DATA POINTS TO MARK, and drawing them anyway is what a
+                160-sample sine wave looked like: a solid three-pixel band, not a curve. A dot says
+                "this is a measurement"; past a couple of dozen samples the series is a function,
+                and the line alone is the honest picture. */}
+            {series.points.length <= DOTTED_UP_TO
+              ? series.points.map((point, pointIndex) => <circle cx={x(point.x)} cy={y(point.y)} fill={colourOf(series.label)} key={pointIndex} r="3" />)
+              : null}
           </g>
         ))}
       </svg>
@@ -205,12 +229,9 @@ function Quantitative({ visual }: { visual: PlotVisual }) {
         {/* 🔴 DEDUPED BY LABEL (§45). A curve computed from an expression comes back as one series
             per continuous segment — `1/x` is two — and all of them carry the same name. Listing the
             legend per series would print "1/x" twice for one curve and imply two functions. */}
-        {visual.series
-          .map((series, index) => ({ colour: COLOURS[index], label: series.label }))
-          .filter((entry, index, all) => all.findIndex((other) => other.label === entry.label) === index)
-          .map((entry) => (
-            <span className="flex items-center gap-1.5" key={entry.label}><span className="h-2 w-2 rounded-full" style={{ background: entry.colour }} />{entry.label}</span>
-          ))}
+        {names.map((label) => (
+          <span className="flex items-center gap-1.5" key={label}><span className="h-2 w-2 rounded-full" style={{ background: colourOf(label) }} />{label}</span>
+        ))}
       </div>
     </div>
   );

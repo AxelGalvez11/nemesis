@@ -21,6 +21,7 @@ import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/le
 import type { PolicyOverride } from "@/lib/learn/policy-override";
 import type { TeachingStrategyId } from "@/lib/learn/teaching-strategy";
 import { THINKING_COPY } from "@/lib/learn/thinking-phases";
+import { previewLine, previewWorthShowing } from "@/lib/learn/turn-preview";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
@@ -277,7 +278,14 @@ export function LearningCanvas({
   // is correct: an un-opened toolbar is not the stale ANSWER rule 2 is about.
   const applyExplanationEvent = useCallback(
     (event: ExplanationEvent) => {
-      const current = { hasAside: session.aside !== null, hasPopover: answer !== null || term !== null };
+      const current = {
+        // 🔴 THE KIND TRAVELS WITH THE FACT. An opening and an answer are both "an aside is on
+        // screen", and only one of them should survive the learner acknowledging the screen it
+        // introduced — see `asideIsOpening`.
+        asideIsOpening: session.aside?.kind === "opening",
+        hasAside: session.aside !== null,
+        hasPopover: answer !== null || term !== null,
+      };
       const next = nextExplanationState(current, event);
       if (current.hasAside && !next.hasAside) session.dismissAside();
       if (current.hasPopover && !next.hasPopover) {
@@ -675,6 +683,8 @@ export function LearningCanvas({
           {/* Nothing is docked yet — there is no composer to stand above — so the character
               simply holds the middle, which is where it would have walked to anyway. */}
           <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
+          {/* This branch is one database read long and shows no caption, so the dock's own
+              animation is the whole of what says "working" here. Nothing draws a second one. */}
           {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
               database read long. It was not fine while it also covered knowledge resolution, which
               is a model call and an ingestion and can run for a minute. */}
@@ -853,8 +863,27 @@ export function LearningCanvas({
   // none and the lines carry the state alone"), so there is nothing to invent here. The session's
   // own label wins because it is the more specific of the two: "Reading" names the file being
   // ingested, where the policy phase names the canvas-wide step behind it.
-  const preparingLabel =
-    busy.kind !== null ? busy.label : policy.phase ? THINKING_COPY[policy.phase] : null;
+  // 🔴🔴 THE LIVE THINKING PREVIEW, RESOLVED IN ONE PLACE. Owner, 2026-08-21: a short natural-language
+  // line beside the character saying what Nemesis is working on, updated as real stages change, gone
+  // when the answer starts.
+  //
+  // 🔴 THE MODEL'S WORDS WHEN IT HAS THEM FOR THIS STAGE, THE SYSTEM'S WHEN IT DOES NOT. A milestone
+  // is conversational and about the learner's subject — only the model can write that. The system
+  // label is the honest fallback for a step the model could not have anticipated: pages coming back,
+  // a structure being looked up, a curve being computed.
+  //
+  // 🔴 AND NOTHING AT ALL ON A TURN THAT SIMPLY ANSWERS. `previewWorthShowing` is the owner's first
+  // rule — *"for a simple conversational response, do not show a thinking preview"* — because a
+  // greeting that flashes a line about planning teaches the learner to stop reading the slot.
+  // 🔴 IN ORDER OF HOW SPECIFIC THE FACT IS. `busy` names an ingestion or a search that owns the
+  // whole surface; `work` names a step inside a turn (a lookup, a curve); the policy phase names the
+  // canvas-wide step behind everything. All three are work that is genuinely running, which is the
+  // only thing this slot is allowed to hold.
+  const systemLabel =
+    busy.kind !== null ? busy.label : session.work ?? (policy.phase ? THINKING_COPY[policy.phase] : null);
+  const preparingLabel = previewWorthShowing({ milestones: session.milestones, systemLabel })
+    ? previewLine({ milestones: session.milestones, stage: session.stage, systemLabel })
+    : null;
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
   // with `policyOwns ? … : …`, which was safe only while ownership was all-or-nothing. Now that a
@@ -1358,7 +1387,9 @@ export function LearningCanvas({
             case, so what followed was an empty page with nothing running to explain it, on the
             first thing a student ever does. The trigger is now "there is no content to show",
             which is the question that was actually being asked. */}
-        {presence === "preparing" && <CanvasThinkingPreview label={preparingLabel} mascot={turnInFlight} />}
+        {presence === "preparing" && (
+          <CanvasThinkingPreview label={preparingLabel} mascot={turnInFlight} />
+        )}
 
         {/* 🔴 A CANVAS WITH NOTHING TO PRESENT AND NOTHING RUNNING SAYS SO. This is the other half
             of the same defect, and it must NOT be a caption: `thinking-phases.ts` rules that a
@@ -1501,6 +1532,14 @@ export function LearningCanvas({
         // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
         // beside something whose position is a live transform, so it moved onto the dock itself.
         caption={turnInFlight || presence === "preparing" ? preparingLabel : null}
+        // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE CAPTION MAKES WAY. `replyText` is the text as
+        // it streams, and its first character is the honest end of the wait — not a timer, and not
+        // the turn formally finishing.
+        captionLeaving={Boolean(replyText.trim())}
+        // 🔴 THE SURFACE KNOWS, BECAUSE THE POSE NO LONGER DOES. The character works in `idle` now
+        // that the dots are gone, and `idle` is also how it rests — so "come forward" has to be
+        // said by whoever knows a turn is in flight rather than inferred from the animation.
+        station={turnInFlight || presence === "preparing" ? "centre" : "corner"}
         contain
         // 🔴 "!" WHEN SOMETHING WENT WRONG, "?" WHEN NEMESIS IS WAITING ON THE LEARNER, and null on
         // nearly every render — a mascot that is always signalling is a mascot nobody looks at.
@@ -1535,6 +1574,13 @@ export function LearningCanvas({
         // 🔴 THE ANIMATION IS UNCHANGED. `ACTIVITY_STATE` maps `thinking` and `preparing` onto the
         // same state, so this alters WHERE the character stands and WHEN, never what it plays.
         state={stateForCanvas({ thinking: turnInFlight, preparing: presence === "preparing" })}
+        // 🔴🔴 EXACTLY ONE CHARACTER ON THE SURFACE, WHICH IS THE SIX-DOT RULE. `CanvasThinkingPreview`
+        // now draws its own — a resting blob standing over three dots of its own, because the
+        // engine's `thinking` pose turns the body INTO the middle dot and cannot express a blob
+        // above a row. Two mounts of one renderer on one surface is what produced six dots before;
+        // the fix then was "the dock owns the character", so a surface that draws its own has to
+        // take the dock away rather than hope the two never overlap.
+        hidden={presence === "preparing"}
       />
 
       {/* 🔴 ALONGSIDE THE QUESTION, NOT OVER IT. A judgement that runs long leaves the stimulus

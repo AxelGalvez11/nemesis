@@ -109,3 +109,55 @@ test("🔴🔴 no screen builds its own cue-arrow-answer any more", () => {
   assert.equal(inline.length, 0, `${inline.length} screen(s) still join the two sides by hand`);
   assert.match(view, /taughtClaim\(/, "the screen does not use the shared derivation");
 });
+
+// ── the joiner, and the claim that printed itself twice ──────────────────────
+//
+// 🔴🔴 REPORTED WITH A SCREENSHOT ON PRODUCTION, 2026-08-21. A JavaScript canvas showed, one line
+// under the other:
+//
+//     JavaScript → enables dynamic elements to your site
+//     JavaScript — enables — dynamic elements to your site
+//
+// One claim, twice, in two typographies. The heading is built here from `cue` and `answer` and joins
+// them with an arrow; the model had written the identical pair out with em dashes and called it a
+// statement. The duplicate check compared the two literally, saw different strings, and kept both —
+// so the learner read the same sentence twice and reasonably concluded they were being shown two
+// different things.
+
+test("🔴 a statement that is the heading with different joiners is dropped", () => {
+  const claim = taughtClaim({
+    answer: "enables dynamic elements to your site",
+    cue: "JavaScript",
+    statement: "JavaScript — enables — dynamic elements to your site",
+  });
+  assert.equal(claim.heading, "JavaScript → enables dynamic elements to your site");
+  assert.equal(claim.body, null, "the same claim is on screen twice");
+});
+
+test("the other joiners a model reaches for are caught too", () => {
+  for (const statement of ["Ohm's law: V = IR", "Ohm's law – V = IR", "Ohm's law — V = IR"]) {
+    assert.equal(taughtClaim({ answer: "V = IR", cue: "Ohm's law", statement }).body, null, statement);
+  }
+});
+
+// 🔴 THE CHECK WORTH MAKING BEFORE WIDENING A COMPARISON KEY: a body that says MORE must survive.
+// Suppressing one is worse than showing it twice, because the learner cannot tell it is missing.
+test("🔴 a statement that adds anything still prints", () => {
+  const claim = taughtClaim({
+    answer: "produce ATP",
+    cue: "Mitochondria",
+    statement: "Mitochondria produce ATP through oxidative phosphorylation.",
+  });
+  assert.equal(claim.body, "Mitochondria produce ATP through oxidative phosphorylation.");
+});
+
+// 🔴 AND THE HYPHEN IS DELIBERATELY NOT NORMALISED. `T-cell` and `well-known` are single words with
+// a hyphen in them; collapsing those would make genuinely different statements compare equal.
+test("🔴 a hyphen inside a word is not a joiner", () => {
+  const claim = taughtClaim({
+    answer: "matures in the thymus",
+    cue: "T-cell",
+    statement: "A T-cell matures in the thymus after leaving the marrow.",
+  });
+  assert.equal(claim.body, "A T-cell matures in the thymus after leaving the marrow.");
+});

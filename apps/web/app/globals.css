@@ -965,6 +965,58 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
    🔴 IT REPLACES `animate-pulse` ON THIS ONE PATH. A whole-element opacity throb
    says "wait"; §20 asks for information forming from left to right, and a
    paragraph about to be rewritten is exactly information being formed. */
+/* The thinking caption, lit by a band travelling across the words themselves.
+   Owner, 2026-08-21: *"the thinking words should be pulsing from left to right"*.
+
+   🔴 THE SAME BAND AND THE SAME 1900ms AS `.canvas-forming` AND `.canvas-rewriting`,
+   because §20 asks for ONE motion system — information forming from left to right —
+   and three effects at three speeds read as three unrelated things happening at once
+   rather than one product working.
+
+   🔴 IT REPLACES AN OPACITY THROB, WHICH IS THE WHOLE POINT OF THE REQUEST. The
+   caption used to fade in and sit still while the character animated beside it. A
+   whole-element fade says WAIT; a band crossing the words says something is being
+   worked through, left to right, in the direction the words are read.
+
+   🔴 `background-clip: text` AND A TRANSPARENT FILL, so the gradient IS the type
+   rather than a highlighter drawn behind it. The resting colour is the first stop,
+   which is why the words stay legible at every point in the cycle instead of
+   disappearing when the bright part is elsewhere. */
+/* The preview leaving. Owner, 2026-08-21: *"When the final answer begins, smoothly fade
+   the thinking preview away and transition into the answer."*
+
+   🔴 A FADE AND A SHORT RISE, NOT A DISAPPEARANCE. The line is replaced by the answer in
+   the same region, so cutting it reads as a flicker between two states; letting it lift
+   slightly as it goes reads as one thing making way for another.
+
+   🔴 SHORTER THAN THE SWEEP THAT PRECEDES IT. 1900ms is the rhythm of waiting; this is
+   the end of the wait, and a leisurely exit in front of an answer the learner is now
+   trying to read is the interface asking for attention it no longer deserves. */
+@keyframes canvas-preview-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
+.canvas-preview-out {
+  animation: canvas-preview-out 220ms ease-out forwards;
+}
+
+@keyframes canvas-thinking-word { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.canvas-thinking-word {
+  background-image: linear-gradient(
+    90deg,
+    var(--ui-text-quaternary) 0%,
+    var(--ui-text-quaternary) 35%,
+    var(--ui-text-primary) 50%,
+    var(--ui-text-quaternary) 65%,
+    var(--ui-text-quaternary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: canvas-thinking-word 1900ms linear infinite;
+}
+
 @keyframes canvas-rewriting { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .canvas-rewriting {
   background-image: linear-gradient(
@@ -993,8 +1045,22 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .canvas-chrome-in,
   .canvas-forming,
   .canvas-rewriting,
+  .canvas-thinking-word,
   [data-workspace] .animate-pulse {
     animation: none;
+  }
+  /* 🔴 IT STILL LEAVES, IT JUST DOES NOT TRAVEL. `forwards` is what holds the end state, so
+     removing the animation entirely would leave the preview on screen over the answer for
+     ever — the one case where "animation: none" is not the safe reading of the preference. */
+  .canvas-preview-out { animation-duration: 1ms; }
+  /* 🔴 THE CAPTION STOPS SWEEPING AND GOES BACK TO BEING TEXT. Held mid-animation it
+     would keep whatever slice of the gradient it stopped on, and `color: transparent`
+     means a badly-timed stop is an invisible sentence. */
+  .canvas-thinking-word {
+    background-image: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    color: var(--ui-text-tertiary);
   }
   /* 🔴 THE LINES STAY, THE SWEEP STOPS — they must not vanish. Someone who asked
      the system to stop moving still has to be able to see that this region is

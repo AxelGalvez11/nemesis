@@ -32,7 +32,7 @@ import type { StateId } from "@/lib/bloub/states";
 
 import { BloubBot } from "./bloub-bot";
 import { usePoke } from "./use-poke";
-import { speedOf, stationOf } from "@/lib/character/stations";
+import { speedOf, stationOf, type Station } from "@/lib/character/stations";
 
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;
@@ -58,6 +58,27 @@ export interface BloubDockProps {
    * there is no alignment left to get wrong.
    */
   caption?: string | null;
+  /**
+   * The answer has begun arriving, so the caption makes way.
+   *
+   * 🔴 IT FADES RATHER THAN VANISHING. Owner, 2026-08-21: *"When the final answer begins, smoothly
+   * fade the thinking preview away and transition into the answer."* The two occupy the same moment
+   * on screen, and an instant swap reads as a flicker between two states rather than as one thing
+   * making way for another.
+   */
+  captionLeaving?: boolean;
+  /**
+   * Where the character stands, when the surface knows better than the pose does.
+   *
+   * 🔴🔴 THE POSE USED TO DECIDE, AND IT CANNOT ANY MORE. `stationOf` reads the state id, which
+   * worked while every working pose was unique to working. The thinking pose IS the three dots, and
+   * the owner asked for those to go — so the character now WORKS in `idle`, the same pose it rests
+   * in. One id, two opposite places. Deriving the station from it would drag a resting character to
+   * the middle of the page, which is worse than the dots ever were.
+   *
+   * Omitted, the pose still decides — every caller with no opinion behaves exactly as before.
+   */
+  station?: Station;
   /** Rendered size in px. The viewBox is square. */
   size?: number;
   /**
@@ -93,11 +114,28 @@ export interface BloubDockProps {
    * and a character pinned to the WINDOW's lower-left corner lands inside it.
    */
   contain?: boolean;
+  /**
+   * Take the character off this surface entirely.
+   *
+   * 🔴🔴 IT EXISTS BECAUSE ONE SURFACE NOW DRAWS ITS OWN (owner 2026-08-21: *"when thinking, the
+   * mascot should be on top of the three dots"*). The dock's `thinking` animation IS the three dots
+   * — the body morphs into the middle one — so a blob standing above a row of dots is a composition
+   * the animation cannot express, and `CanvasThinkingPreview` builds it out of a resting character
+   * and three dots of its own.
+   *
+   * 🔴 WHICH MAKES THIS THE GUARD AGAINST SIX DOTS, AGAIN. That defect was two MOUNTS of one
+   * renderer on one surface, both centred, both playing `thinking`. The rule "the dock owns the
+   * character" is what fixed it, so a surface that draws its own has to switch the dock off rather
+   * than hope the two never overlap.
+   */
+  hidden?: boolean;
   className?: string;
 }
 
 export function BloubDock({
   caption = null,
+  captionLeaving: leaving = false,
+  station: stationOverride,
   marker = null,
   state = "idle",
   size = 52,
@@ -107,6 +145,7 @@ export function BloubDock({
   gap = 14,
   centreScale = 2.1,
   contain = false,
+  hidden = false,
   className,
 }: BloubDockProps) {
   const { accent, theme } = useTheme();
@@ -165,7 +204,7 @@ export function BloubDock({
   }, [anchor, bottom, gap, contain, left]);
 
   // ── Where it stands ──────────────────────────────────────────────────────────
-  const station = stationOf(shown);
+  const station = stationOverride ?? stationOf(shown);
   useEffect(() => {
     const measure = () => {
       const host = hostRef.current;
@@ -241,6 +280,10 @@ export function BloubDock({
     };
   }, []);
 
+  // 🔴 AFTER EVERY HOOK, NEVER BEFORE ONE. An early return above the effects would change the hook
+  // count between renders the moment `hidden` flips, which React treats as a different component.
+  if (hidden) return null;
+
   return (
     <div
       ref={hostRef}
@@ -306,9 +349,18 @@ export function BloubDock({
           gap is divided too: a margin here is measured in the parent's scaled space, so a constant
           8px on screen has to be 8/k in it. Origin pinned left so it grows away from the
           character rather than into it. */}
+      {/* 🔴 LIT LEFT TO RIGHT, WHICH IS THE MOTION THE WHOLE PRODUCT USES (owner, 2026-08-21: *"i
+          just want the mascot and the words lit left to right"*). `.canvas-thinking-word` is the
+          same band and the same 1900ms as `.canvas-forming` and `.canvas-rewriting`; §20 asks for
+          ONE motion system, and a second treatment beside the character would read as a second kind
+          of event happening at the same time.
+
+          🔴 NO PILL BEHIND IT ANY MORE. A filled capsule is a badge — it says "status", which is
+          what a spinner says. The words themselves carrying the light is what says "this is being
+          worked through", and a background defeats `background-clip: text` outright. */}
       {caption && (
         <span
-          className="bloub-caption pointer-events-none absolute left-full top-1/2 select-none whitespace-nowrap rounded-full bg-(--ui-bg-tertiary) px-2.5 py-1 text-[length:var(--canvas-text-meta)] leading-none text-(--ui-text-tertiary)"
+          className={`bloub-caption canvas-thinking-word pointer-events-none absolute left-full top-1/2 select-none whitespace-nowrap text-[length:var(--canvas-text-meta)] leading-none${leaving ? " canvas-preview-out" : ""}`}
           style={{
             marginLeft: `${8 / travel.k}px`,
             transform: `translateY(-50%) scale(${1 / travel.k})`,

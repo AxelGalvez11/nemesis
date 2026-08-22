@@ -32,7 +32,7 @@ import { clamp, easings } from "@/lib/bloub/math";
 import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
 import { mixHex } from "@/lib/bloub/skins";
 
-import { CHARACTER_SHAPE, aimFor, inkFor } from "@/lib/character/look";
+import { CHARACTER_SHAPE, aimFor, arcStops, inkFor } from "@/lib/character/look";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@/lib/character/pool";
@@ -253,6 +253,10 @@ export function BloubBot({
           : `translate(${d.x} ${d.y})`,
       );
       node.setAttribute("opacity", String(d.opacity));
+      // 🔴 INK, AND THE COLOURED VERSION OF THIS LASTED ONE ROUND (owner 2026-08-21: *"remove the
+      // 'colorful pulsing'"*). The dots were tinted through the app's accents while the character
+      // was thinking; what the owner wanted was the WORDS moving, not the mark changing colour.
+      // The character stays one ink in every state, which is what the file header has always said.
       node.setAttribute(
         "fill",
         d.color ?? (d.depth === undefined ? inkHex : mixHex(paperHex, inkHex, d.depth)),
@@ -283,10 +287,15 @@ export function BloubBot({
         grad.setAttribute("y1", String(arc.grad.y1));
         grad.setAttribute("x2", String(arc.grad.x2));
         grad.setAttribute("y2", String(arc.grad.y2));
+        // 🔴 THE SEED'S HUES ARE IGNORED, NOT REMOVED (owner 2026-08-21: *"remove the colorful
+        // swirls from the mascot"*). `lib/bloub/decor.ts` is vendored and must stay a plain copy,
+        // so `arc.grad.stops` still arrives as a rainbow and this product declines to paint it.
+        // See `arcStops` for why the FADE along the stroke survives when the colour does not.
+        const stops = arcStops(inkHex, paperHex, STOPS);
         for (let s = 0; s < STOPS; s += 1) {
           const stop = stopRefs.current[i * STOPS + s];
-          const colour = arc.grad.stops[s] ?? arc.grad.stops[arc.grad.stops.length - 1];
-          if (stop && colour) stop.setAttribute("stop-color", colour);
+          const colour = stops[s] ?? inkHex;
+          if (stop) stop.setAttribute("stop-color", colour);
         }
       }
     }

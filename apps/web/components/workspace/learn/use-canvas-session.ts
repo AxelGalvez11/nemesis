@@ -17,6 +17,7 @@ import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { TurnDecision } from "@/lib/learn/turn-router";
+import type { TurnStage } from "@/lib/learn/turn-preview";
 import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
@@ -187,6 +188,17 @@ export interface CanvasSession {
    * `learning-canvas.tsx` renders that case at the top of the canvas rather than under a block.
    */
   aside: CanvasAside;
+  /**
+   * The live thinking preview for the turn in flight.
+   *
+   * 🔴 TRANSIENT BY CONSTRUCTION. Cleared when the turn ends: once the answer is on screen a line
+   * about what was going to happen is noise, and the owner asked for it to fade rather than
+   * persist — *"it should not remain as a separate reasoning transcript below the answer"*.
+   */
+  milestones: readonly string[];
+  stage: TurnStage;
+  /** A real step running inside the turn — the caption's fallback when no milestone covers it. */
+  work: string | null;
   /** Words the learner has already asked the meaning of, for `lookedUpMarks`. Sitting-scoped. */
   lookedUp: readonly string[];
   /** The id of the prompt whose answer is being read, or null. */
@@ -295,6 +307,30 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
   const [canvas, setCanvas] = useState<LearningCanvas>(() => newCanvas());
   const [busy, setBusy] = useState<BusyState>({ kind: null });
+  /**
+   * The live thinking preview: what the model said it would be doing, and how far the work has got.
+   *
+   * 🔴 TWO PIECES OF STATE, NOT A RESOLVED STRING, because the line to show is a function of BOTH
+   * and of what is running — `turn-preview.ts` does that resolution and stays pure. Keeping a
+   * resolved string here would put the one decision that must be testable inside a React hook.
+   *
+   * 🔴 SEPARATE FROM `busy`. `busy.label` is the name of a step genuinely executing —
+   * `thinking-phases.ts` allows nothing else in that slot. Milestones are the model's words for
+   * stages that have opened. Merging them would let a model's sentence be read by every consumer
+   * that trusts `busy` to mean "this is running now".
+   */
+  const [milestones, setMilestones] = useState<readonly string[]>([]);
+  const [stage, setStage] = useState<TurnStage>("decided");
+  /**
+   * A real step running inside the turn, named, for the caption slot.
+   *
+   * 🔴🔴 DELIBERATELY NOT `busy`, AND THE REASON IS THE COMPOSER. `busy.kind !== null` is what
+   * DISABLES the text box — so routing a PubChem lookup through it would lock the learner out of
+   * their own composer for the length of a third-party round trip, which is precisely the *"inert
+   * loading screen"* the owner asked this feature not to become. The caption and the lockout are
+   * two different questions and had been sharing one answer.
+   */
+  const [work, setWork] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** What the learner said to open this sitting, when a canvas began from an utterance rather than
    *  from a file. Read by the teaching controller; see `TeachingContext.opening`. */
@@ -921,8 +957,27 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
               ? "Reading 1 page"
               : `Reading ${found} pages`,
         });
-      });
+      },
+      // 🔴🔴 THE PLAN BECOMES THE CAPTION, RATHER THAN SITTING BESIDE ONE. A stated intention and a
+      // phase name are the same slot on screen — one line, beside the character, lit left to right
+      // — and showing both would print two descriptions of one wait. When the model has said what
+      // it is about to do, that is strictly better than "Thinking": it is specific, it is in the
+      // learner's own subject, and `readTurnDecision` has already refused it if it claimed a step
+      // this turn did not ask for.
+      //
+      // 🔴 IT DOES NOT OVERWRITE A NAMED STEP THAT IS GENUINELY RUNNING. `onSearching` fires while
+      // pages are being fetched and says how many; that is a fact about work in flight, and a plan
+      // is a claim about work to come. The search caption wins for as long as it is true.
+      (next) => setMilestones(next),
+      (next) => setStage(next),
+      // 🔴 A REAL STEP, REPORTED WHILE IT RUNS, AND IT DOES NOT LOCK THE COMPOSER. The preview
+      // prefers a milestone over it, so this shows only where the model had nothing to say about
+      // the stage the turn is in.
+      (label) => setWork(label));
       setBusy({ kind: null });
+      setMilestones([]);
+      setStage("decided");
+      setWork(null);
       const decision = result.decision;
       if (!decision) {
         setError(result.error ?? "Nemesis had nothing to add.");
@@ -1591,6 +1646,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     busy,
     error,
     aside,
+    milestones,
+    stage,
+    work,
     lookedUp,
     judging,
     opening,

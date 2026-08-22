@@ -12,7 +12,7 @@
 // button and the character together.
 
 import { ACCENT_COLORS, isAccent } from "@/lib/accent";
-import { SHAPE_BY_ID } from "@/lib/bloub/skins";
+import { SHAPE_BY_ID, mixHex } from "@/lib/bloub/skins";
 
 /** The resting silhouette. Not a preference. */
 export const CHARACTER_SHAPE: number[] = SHAPE_BY_ID.get("cercle")!.radii;
@@ -65,4 +65,40 @@ export function aimFor(nx: number, ny: number, pointer: boolean): Aimed {
     // gets something alive rather than a fixed stare.
     wander: pointer ? 0 : 1,
   };
+}
+
+// ── Colour: where it belongs, and where it stopped belonging ──────────────────
+
+/**
+ * The stops one orbit arc is drawn with.
+ *
+ * 🔴🔴 THE RAINBOW IS GONE (owner, 2026-08-21: *"remove the colorful swirls from the mascot"*).
+ * Upstream builds every arc's gradient off a hue wheel — `RINGS` spreads six arcs across the full
+ * 360°, `COMET_RIBBONS` steps 85° a ribbon — so a search or a poke threw a spectrum around a
+ * character that is otherwise one flat ink. Two problems, and the second is the real one:
+ *
+ *   · it competes with the page. The character sits beside dense reading material, and the whole
+ *     reason it is flat — no gradient, no gloss, no shadow — is that a rendered-looking object next
+ *     to a paragraph pulls the eye off the paragraph. Six saturated rings undo that in one frame.
+ *   · it says nothing. Colour is the loudest signal a small mark has, and it was spent on decoration
+ *     that meant the same thing in every state. Spending it here left nothing for the one moment
+ *     that genuinely needs a signal — see `pulseTint`, which is where it went instead.
+ *
+ * 🔴 THE FADE STAYS, BECAUSE IT IS DOING A JOB. An orbit ring is a stroke passing behind the body
+ * and back out in front; ends that dissolve into the page read as an arc going round something,
+ * and a hard-ended band reads as a hoop laid on top. So the stops still travel — from near-paper at
+ * the ends to full ink in the middle — they simply travel in one colour now.
+ *
+ * 🔴 AND IT IS DONE HERE RATHER THAN IN `lib/bloub/decor.ts`. That file is vendored whole from
+ * upstream and must stay a plain copy so re-vendoring is a copy rather than a merge; the seeds keep
+ * their hues and this product declines to use them.
+ */
+export function arcStops(ink: string, paper: string, count: number): string[] {
+  if (count <= 1) return [ink];
+  return Array.from({ length: count }, (_, i) => {
+    // 0 at the ends, 1 in the middle.
+    const along = i / (count - 1);
+    const centred = 1 - Math.abs(along * 2 - 1);
+    return mixHex(paper, ink, 0.28 + 0.72 * centred);
+  });
 }

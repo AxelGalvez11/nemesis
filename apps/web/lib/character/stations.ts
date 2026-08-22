@@ -62,11 +62,27 @@ export type NemesisActivity =
   | "arrived";
 
 export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
-  thinking: "thinking",
-  // 🔴 ALSO `thinking`, NOT `orbit` (owner 2026-08-20: "why is it only doing swirl?"). The rings
-  // are the loudest animation in the catalogue; playing them on every wait meant they stopped
-  // reading as anything. Both waits are one experience to a learner, so they get one animation.
-  preparing: "thinking",
+  // 🔴🔴 `waiting`, NOT `thinking`, AND THE NAMES ARE THE OPPOSITE WAY ROUND FROM WHAT THEY LOOK.
+  // Owner, 2026-08-21: *"remove the three dots animation, i just want the mascot and the words lit
+  // left to right."* The catalogue's `thinking` pose IS the three dots — `lib/bloub/states.ts` says
+  // so outright, *"la boule DEVIENT le point du milieu"* — and it fades the eyes to zero while it
+  // does. So for weeks the character was not standing beside a caption while it worked; it had
+  // dissolved into the dots, which is why every screenshot showed dots and no face.
+  //
+  // 🔴 THE WORDS CARRY THE MOTION NOW. `BloubDock`'s caption is lit left to right, so the character
+  // is free to stay a character: present, eyes open, tracking the pointer, beside a line that says
+  // what is happening. `idle` is that pose.
+  //
+  // 🔴🔴 WHICH BREAKS THE DERIVED STATION, AND THE BREAK IS THE POINT. `stationOf` reads the POSE to
+  // decide corner or centre, and it could while the working poses were unique to working. `idle` is
+  // also how the character rests, so the same id now means two opposite places — and a resting
+  // character dragged to the middle of the page would be far worse than dots. The station is passed
+  // explicitly by the surface that knows (see `BloubDock`'s `station`), and `stationOf` remains the
+  // default for every caller that has no opinion.
+  thinking: "idle",
+  // 🔴 THE SAME POSE (owner 2026-08-20: "why is it only doing swirl?"). Both waits are one
+  // experience to a learner, so they get one animation.
+  preparing: "idle",
   retrieving: "comet",
   ingesting: "burst",
   resting: "idle",

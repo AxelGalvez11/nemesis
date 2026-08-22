@@ -19,6 +19,7 @@ import {
   type CanvasEscalationReason,
 } from "./canvas-escalation";
 import { parseEvaluation, verdictIsTrustworthy } from "./canvas-judge";
+import { prepareAnswer } from "./answer-prepare";
 import type { CognitiveAction } from "./canvas-policy";
 import {
   conceptLabel,
@@ -154,9 +155,14 @@ async function askValidated<T>(
   read: (text: string) => T | null,
   signal?: AbortSignal,
 ): Promise<{ value: T | null; error: string | null; escalated: CanvasEscalationReason | null }> {
+  // 🔴 EVERY CANVAS CALL PASSES THROUGH HERE, WHICH IS WHY §45'S COMPUTATION HOOKS IN AT THIS ONE
+  // LINE. A lesson, a command, a relearn and a selection explanation can all carry a plot, and
+  // wiring each of the fourteen entry points separately would mean fourteen chances to forget one.
+  // `prepareAnswer` returns its input untouched unless the answer actually names a compound or
+  // carries a formula, so turns that draw neither pay two substring tests and no round trip.
   const first = await ask(uid, messages, signal);
   if (first.error) return { error: first.error, escalated: null, value: null };
-  const value = first.text ? read(first.text) : null;
+  const value = first.text ? read(await computed(first.text, signal)) : null;
   if (value !== null) return { error: null, escalated: null, value };
 
   const ledger = escalationLedgerFor(uid);
@@ -179,7 +185,12 @@ async function askValidated<T>(
   }));
   const second = await ask(uid, messages, signal, undefined, RESCUE);
   if (second.error) return { error: second.error, escalated: choice.reason, value: null };
-  return { error: null, escalated: choice.reason, value: second.text ? read(second.text) : null };
+  return { error: null, escalated: choice.reason, value: second.text ? read(await computed(second.text, signal)) : null };
+}
+
+/** §42's compound names and §45's formulas, resolved on the server. See lib/learn/answer-prepare.ts. */
+function computed(text: string, signal?: AbortSignal): Promise<string> {
+  return prepareAnswer(text, undefined, signal);
 }
 
 // -------------------------------------------------------------------- lesson

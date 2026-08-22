@@ -194,7 +194,13 @@ test("a plain decision is read", () => {
   // 🔴 THE SAME ARGUMENT COVERS THE FOUR WEB FIELDS. A turn that did not ask for the web must say
   // so in the object rather than by omission, because the search loop reads `needsWeb` as its
   // condition and `undefined` there would end the loop for the wrong reason.
+  //
+  // 🔴 AND `milestones` JOINS THEM FOR THE SAME REASON, 2026-08-21. A turn that narrated nothing must
+  // say so with an empty list: `undefined` would be indistinguishable from "the field has not
+  // shipped yet" to every reader, and `previewWorthShowing` reads the length to decide whether this
+  // turn gets a thinking preview at all. A greeting is exactly the turn that must not.
   assert.deepEqual(read, {
+    milestones: [],
     needsWeb: false,
     say: "hey. what are you working on?",
     then: "reply",
@@ -575,6 +581,59 @@ test("🔴 nothing here checks the window against a list — that fact belongs t
 });
 
 console.log("turn-router.test.ts OK");
+
+// 🔴🔴 THE THIRD REPORT OF THE SAME SYMPTOM HAD A DIFFERENT CAUSE FROM THE FIRST TWO, AND THAT IS
+// why this test exists beside the ASCII-art one rather than inside it. Twice the fix was about
+// FORCE — the model knew the channel and chose characters, so the prompt gained a negative rule and
+// then an imperative. Reported a third time on 2026-08-21 ("nemesis is still not using smiles …
+// asking 'show me basic functional groups' should indicate that user wants to see the structure"),
+// force was no longer the missing thing: the model cannot draw what it cannot write, and nothing
+// had ever told it how to write a group with an open bond.
+//
+// `R-OH` is what a chemist writes and what a model reaches for. It clears every check this codebase
+// makes and then throws inside smiles-drawer, where no instruction can learn from it. `*O` draws.
+// Calibration: delete the clause and this reddens.
+test("🔴 the reply prompt teaches the attachment point, so a functional group is drawable at all", () => {
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "show me basic functional groups" })
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(prompt, /open attachment point/, "the model is not told how to write a generic group");
+  assert.match(prompt, /\[smiles: \*O\]/, "the worked example went missing");
+  assert.match(prompt, /"R" is not a SMILES atom/, "the negative half is what stops R-OH being written");
+});
+
+// 🔴🔴 §45's COMPUTATION LAYER WAS BUILT, HARDENED, TESTED, MERGED — AND UNREACHABLE FOR TWO DAYS,
+// because nothing told the model it could write a formula. This is the same failure as the visual
+// vocabulary naming three renderers out of nine, and the same failure as chemistry never being told
+// about `*`: a capability nobody is told about is indistinguishable from one that was never built.
+// Calibration: delete the clause and this reddens.
+test("🔴 the reply prompt offers the computed-plot channel, or nothing can reach it", () => {
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "plot sin x from 0 to 2 pi" })
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(prompt, /may give a FORMULA instead of points/, "the model cannot reach the curve builder");
+  assert.match(prompt, /"expression":"sin\(x\)"/, "the worked example went missing");
+  assert.match(prompt, /"distribution"/, "distributions are built and would be unreachable");
+  // 🔴 AND THE ALLOW LIST IS STATED RATHER THAN LEFT TO BE DISCOVERED. A model that reaches for
+  // `integrate(...)`, gets no curve and is told nothing concludes that plotting does not work —
+  // which is exactly how chemistry lost three reports to `R-OH`.
+  for (const fn of ["sqrt", "ln", "tanh"]) assert.ok(prompt.includes(fn), `${fn} left the stated allow list`);
+});
+
+// 🔴🔴 §42's RULE — "where a name exists, the name is resolved" — HAD NO OBEDIENT CALLER UNTIL THE
+// model was told the channel existed. A wrong plot looks wrong; a wrong molecule looks like
+// chemistry, which is why this one is worth a guard of its own.
+test("🔴 the reply prompt prefers a lookup over recall for a named compound", () => {
+  const prompt = turnRouterMessages({ context: EMPTY, utterance: "show me aspirin" })
+    .map((message) => message.content)
+    .join("\n");
+  assert.match(prompt, /\[compound: aspirin\]/, "the model cannot reach the resolver");
+  assert.match(prompt, /more reliable than notation recalled from memory/, "the reason went missing");
+  // 🔴 AND THE OTHER CHANNEL SURVIVES, because a generic group has no name to look up. Losing this
+  // would undo the fix that made functional groups drawable in the first place.
+  assert.match(prompt, /Use \[smiles: …\] for generic groups/, "the wildcard channel was pushed aside");
+});
+
 // ───────────────────────────────────────────────── the model is told it can be HEARD
 //
 // 🔴🔴 A CAPABILITY THE MODEL IS NOT TOLD ABOUT DOES NOT EXIST, HOWEVER COMPLETELY IT IS BUILT.

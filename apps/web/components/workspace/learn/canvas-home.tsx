@@ -57,6 +57,19 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // The character's look is a device preference, the same as the theme and the scale.
   const { accent } = useTheme();
   const [text, setText] = useState("");
+  /**
+   * Material the learner has picked but not sent.
+   *
+   * 🔴🔴 REPORTED 2026-08-21: *"it still will automatically send the attachment and not attach to
+   * the chat composer so that i can add more."* Picking a file used to `putPending` and navigate in
+   * the same breath, so one PDF WAS the whole instruction: no second file, no "focus on chapter 4",
+   * no chance to change your mind. A learner with three lecture PDFs had to open three canvases.
+   *
+   * 🔴 STAGED, NOT ATTACHED. Nothing is uploaded, parsed or paid for until Start — extraction is
+   * the expensive step, and a file sitting in a chip has not begun it. Removing one is free, which
+   * is the whole reason a chip beats a progress bar here.
+   */
+  const [staged, setStaged] = useState<File[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
   /** The whole page is a drop target, not just the composer — the copy has always said "drop a
    *  file in", and a learner dragging a PDF aims at the page, not at a 28px control. */
@@ -117,10 +130,22 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    */
   const start = () => {
     const topic = text.trim();
+    // 🔴 THE HANDOVER HAPPENS HERE NOW, NOT WHEN THE FILE WAS PICKED. `putPending` is a module-level
+    // stash the canvas claims once, so the files ride across the navigation without a query string —
+    // which is what lets the topic keep using one.
+    if (staged.length > 0) putPending(staged);
     // A canvas is addressed by query string, and a brand-new one has no id yet — the canvas
     // surface mints it. The opening instruction rides along so the learner does not have to
     // retype what they already said.
-    const href = topic ? `/learn?ask=${encodeURIComponent(topic)}` : "/learn";
+    //
+    // 🔴 `?new=1` WHEN THERE IS MATERIAL BUT NO TOPIC. Bare `/learn` renders this page, so files
+    // staged without a word typed would have been stashed for a canvas that never mounted — and
+    // `takePending` clears as it reads, so they would have been silently lost on the next visit.
+    const href = topic
+      ? `/learn?ask=${encodeURIComponent(topic)}`
+      : staged.length > 0
+        ? "/learn?new=1"
+        : "/learn";
     const box = composerBox.current;
     // 🔴 REDUCED MOTION SKIPS THE TRAVEL, NOT THE SEND. Someone who asked the system to stop moving
     // gets the canvas immediately; they must not get a slower version of the same animation.
@@ -148,10 +173,16 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    * `?new=1` is what makes the canvas surface mount instead of this page. It carries no id, so
    * `useCanvasSession(null)` mints a fresh canvas, and the files are claimed once it exists.
    */
-  const startWithFiles = (files: FileList | readonly File[]) => {
-    if (Array.from(files).length === 0) return;
-    putPending(files);
-    router.push("/learn?new=1");
+  const stageFiles = (files: FileList | readonly File[]) => {
+    const picked = Array.from(files);
+    if (picked.length === 0) return;
+    setStaged((current) => {
+      // 🔴 DEDUPED BY NAME AND SIZE, because the two ways in overlap. A learner who drops a file and
+      // then picks the same one from the dialog has not asked for it twice, and ingesting a lecture
+      // deck twice is the most expensive mistake this screen can make.
+      const seen = new Set(current.map((file) => `${file.name}:${file.size}`));
+      return [...current, ...picked.filter((file) => !seen.has(`${file.name}:${file.size}`))];
+    });
   };
 
   const startDictation = () => {
@@ -191,7 +222,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         if (!event.dataTransfer.files.length) return;
         event.preventDefault();
         setDraggingOver(false);
-        startWithFiles(event.dataTransfer.files);
+        stageFiles(event.dataTransfer.files);
       }}
       style={{ ["--canvas-column" as string]: "680px" }}
     >
@@ -277,12 +308,48 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         {/* 🔴 THE RECORDER REPLACES THE COMPOSER, IT DOES NOT SIT BESIDE IT. While a lecture is
             being captured there is exactly one thing to do; leaving the text box live underneath
             offers a second. Same position, same width. */}
+        {/* 🔴🔴 THE CHIPS SIT ABOVE THE PILL, NOT INSIDE IT. Owner, 2026-08-20: *"i dont want the
+            attachments to be above the composer"* — which was about the canvas session's composer,
+            where a file row pushed the text box down the screen every time one landed. This is the
+            front door, the pill is already centred in open space, and a row that grows here pushes
+            nothing: the block is centred as a whole. Putting them inside a 52px pill would shrink
+            the text field to nothing at two files.
+
+            🔴 AND THEY ONLY EXIST WHILE SOMETHING IS STAGED, so the resting front door is byte for
+            byte what it was — one greeting, one composer, one line of help. */}
+        {!recording && staged.length > 0 && (
+          <div className="pointer-events-auto mb-2 flex w-full max-w-[var(--composer-max-width)] flex-wrap gap-1.5">
+            {staged.map((file) => (
+              <span
+                className="flex items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary)"
+                key={`${file.name}:${file.size}`}
+              >
+                <Codicon name="file" size="14px" />
+                {/* A long filename must not stretch the row off the column. */}
+                <span className="max-w-[220px] truncate">{file.name}</span>
+                <button
+                  aria-label={`Remove ${file.name}`}
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  onClick={() =>
+                    setStaged((current) =>
+                      current.filter((entry) => entry.name !== file.name || entry.size !== file.size),
+                    )
+                  }
+                  title="Remove"
+                  type="button"
+                >
+                  <Codicon name="close" size="12px" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         {recording ? (
           <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
             <CanvasRecorder
               // No canvas exists yet on the front door, so a finished recording STARTS one — the
               // identical thing dropping a file here does, through the identical door.
-              attach={async (files) => { startWithFiles(files); }}
+              attach={async (files) => { stageFiles(files); setRecording(false); }}
               onClose={() => setRecording(false)}
             />
           </div>
@@ -299,7 +366,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             className="sr-only"
             multiple
             onChange={(event) => {
-              if (event.target.files?.length) startWithFiles(event.target.files);
+              if (event.target.files?.length) stageFiles(event.target.files);
               event.target.value = "";
             }}
             ref={filePicker}
@@ -393,7 +460,9 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   This was a plain transparent circle while the canvas's was a filled accent one, so
                   the primary action changed appearance between the front door and the room behind
                   it. See `ComposerSend`. */}
-              <ComposerSend disabled={!text.trim()} label="Start" onClick={start} />
+              {/* 🔴 MATERIAL ALONE IS ENOUGH TO SEND. Requiring text would make a staged file
+                  unsendable, which is the old behaviour with an extra step rather than a fix. */}
+              <ComposerSend disabled={!text.trim() && staged.length === 0} label="Start" onClick={start} />
             </>
           )}
         </div>
@@ -435,7 +504,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               transcript is the same thing dropping a file on this page does. */}
           <RecordingRecoveryNotice
             accessToken={accessToken}
-            onRecovered={(file) => startWithFiles([file])}
+            onRecovered={(file) => stageFiles([file])}
             uid={userId}
           />
         </div>

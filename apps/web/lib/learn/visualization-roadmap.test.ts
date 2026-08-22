@@ -39,6 +39,8 @@ const VOICE_FUNCTION = readFileSync(
 
 const CHEM = readFileSync(new URL("./chem-notation.ts", import.meta.url), "utf8");
 const RESOLVER = readFileSync(new URL("./chem-resolver.ts", import.meta.url), "utf8");
+const RESOLVER_WIRING = readFileSync(new URL("./structure-resolve.ts", import.meta.url), "utf8");
+const RESOLVER_ROUTE = readFileSync(new URL("../../app/api/learn/structure/route.ts", import.meta.url), "utf8");
 const REGISTRY = readFileSync(new URL("./reference-registry.ts", import.meta.url), "utf8");
 const PRONUNCIATION = readFileSync(new URL("./pronunciation-evidence.ts", import.meta.url), "utf8");
 const BAKEOFF = readFileSync(new URL("./tts-bakeoff.ts", import.meta.url), "utf8");
@@ -57,6 +59,8 @@ const SECTION_45 = CONTRACT.slice(CONTRACT.indexOf("# 45."));
 const EXPRESSION = readFileSync(new URL("./expression.ts", import.meta.url), "utf8");
 const STATISTICS = readFileSync(new URL("./statistics.ts", import.meta.url), "utf8");
 const COMPUTED = readFileSync(new URL("./computed-series.ts", import.meta.url), "utf8");
+const COMPUTED_WIRING = readFileSync(new URL("./plot-compute.ts", import.meta.url), "utf8");
+const ROUTE = readFileSync(new URL("../../app/api/learn/plot/route.ts", import.meta.url), "utf8");
 
 /** The stack §41 names, by the package that would appear if one were adopted. */
 //
@@ -183,7 +187,12 @@ test("§42's status line matches whether a registry or a generation wiring exist
   assert.ok(SECTION_42.length > 0, "§42 has gone missing from the contract");
   assert.match(
     SECTION_42,
-    /STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, NOW INCLUDING CHEMICAL STRUCTURES\. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY\. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT\./,
+    // 🔴 THE STATUS LINE MOVED ON 2026-08-21 AND THE GUARD MOVED WITH IT. It used to say rungs one
+    // and two were "shipped and serving", which was true of the CODE and false of the product: the
+    // resolver had one dev-only caller, so every molecule a learner had seen was recalled rather
+    // than looked up. The rungs that are still unreached are named in the same breath, which is the
+    // property this test protects.
+    /STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, AND A LESSON OR A REPLY NOW RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT\. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY\. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT\./,
     "§42 must say plainly which rungs are reached",
   );
   // 🔴 THE EMPTY REGISTRY IS THE CLAIM MOST LIKELY TO GO STALE, because seeding it is the obvious
@@ -468,12 +477,34 @@ test("🔴 nothing executes code", () => {
 
 test("§45's status line matches whether a lesson emits one and where the parser runs", () => {
   assert.ok(SECTION_45.length > 0, "§45 has gone missing from the contract");
+  // 🔴 THE STATUS LINE MOVED ON 2026-08-21 AND THE GUARD MOVED WITH IT. It used to say "NO LESSON
+  // EMITS ONE YET", which was true for two days and was the whole defect: a computation layer that
+  // was built, hardened, tested, merged — and unreachable. Now expressions and distributions are
+  // wired through `plot-compute.ts` and a lesson or a reply can produce one.
   assert.match(
     SECTION_45,
-    /STATUS: EXPRESSIONS, DISTRIBUTIONS AND SEEDED SIMULATION SHIPPED AND TESTED\. NO LESSON EMITS ONE YET\. NOTHING MODEL-WRITTEN REACHES THE DOM\./,
+    /STATUS: EXPRESSIONS AND DISTRIBUTIONS ARE REACHABLE FROM A LESSON AND A REPLY\. SEEDED SIMULATION IS NOT\. NOTHING MODEL-WRITTEN REACHES THE DOM\./,
   );
+  // 🔴 AND THE HALF THAT IS STILL UNREACHED IS NAMED, rather than quietly counted as coverage —
+  // the same honesty §42 keeps about its own lower rungs. A histogram wants bars and the plot
+  // renderer draws polylines, so simulation is a renderer question, not a wiring one.
+  assert.match(SECTION_45, /Simulation is still unreached/);
+  // 🔴 THE WIRING ITSELF IS PINNED. A route is what keeps mathjs off the learner's bundle, and
+  // deleting it in favour of a direct import is exactly the "harmless simplification" the header
+  // of this block warns about.
+  assert.match(COMPUTED_WIRING, /PLOT_ROUTE = "\/api\/learn\/plot"/);
+  assert.match(ROUTE, /import \{ curve, distributionCurve/);
   // The expression layer must not reach the browser: no client component may import it.
   const clientFiles = ["subject-visual.tsx", "semantic-visual.tsx", "chemical-structure.tsx", "canvas-document.tsx"];
+  // 🔴 AND THE WIRING MODULE IS ITSELF ON A CLIENT PATH — `canvas-chat.ts` imports it — so it is
+  // held to the same rule as the components. It may name the ROUTE; it may not name the maths.
+  for (const heavy of ["computed-series", "mathjs", "simple-statistics", "./expression"]) {
+    assert.equal(
+      COMPUTED_WIRING.includes(`"${heavy}"`),
+      false,
+      `plot-compute.ts imports ${heavy} — the maths layer has reached the learner's bundle`,
+    );
+  }
   for (const file of clientFiles) {
     const source = readFileSync(new URL(`../../components/workspace/learn/${file}`, import.meta.url), "utf8");
     for (const heavy of ["expression", "computed-series", "mathjs", "simple-statistics"]) {
@@ -633,4 +664,44 @@ test("🔴 §47 — the replayable phrase is looked up, never guessed from the c
   }
   assert.match(replay, /pair\.leftLocale/);
   assert.match(replay, /pair\.rightLocale/);
+});
+
+// 🔴🔴 §42's RESOLVER SPENT THREE DAYS BUILT AND UNREACHABLE, which is the failure this whole file
+// exists to make loud. A guard on the RULE is not enough when the rule has no caller: `chem-resolver`
+// was correct, tested, and asked for nothing by any teaching path, so §42 described a ladder the
+// product never climbed. These check the wiring, not the chemistry.
+test("🔴 §42's resolver is reachable from a lesson and a reply, not only from the Lab", () => {
+  assert.match(SECTION_42, /A LESSON OR A REPLY NOW RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT/);
+  assert.match(RESOLVER_ROUTE, /import \{ resolveStructure \}/, "the route stopped asking the resolver");
+  // PubChem is reached from the server. A page must not query a third party on a learner's behalf:
+  // that would hand out their IP and a referrer carrying a canvas URL.
+  assert.match(RESOLVER_ROUTE, /export const runtime = "nodejs"/);
+  // The pure layer must not IMPORT the resolver: it says what to look up, the route does the looking.
+  assert.equal(
+    /^import\b.*chem-resolver/m.test(RESOLVER_WIRING),
+    false,
+    "the pure layer reached for the resolver directly — PubChem is now in the learner's bundle",
+  );
+  assert.equal(RESOLVER_WIRING.includes("import"), false, "the pure layer grew a dependency");
+});
+
+// 🔴 THE PROVENANCE STAMP IS WRITTEN, NEVER READ — the same rule §44 keeps for `traceOrigin`, and
+// for the same reason. A model that could set `resolvedFrom` beside a remembered SMILES would make
+// its own memory indistinguishable from a database lookup, which is worse than no provenance at all.
+test("🔴 a model cannot claim a resolver's provenance", () => {
+  assert.match(SECTION_42, /stamped by the resolver and stripped from anything a model sent/);
+  assert.match(RESOLVER_WIRING, /resolvedFrom: \{ id: result\.structure\.id/);
+  assert.equal(
+    /resolvedFrom:\s*(value|item|rest)\.resolvedFrom/.test(RESOLVER_WIRING),
+    false,
+    "the stamp is being copied from the request — a model can now launder recall into provenance",
+  );
+});
+
+// 🔴 AND THE WILDCARD CHANNEL SURVIVES THE ADDITION. `*O` is every alcohol; no database holds it,
+// so routing generic notation through a resolver would silently undo the fix that made functional
+// groups drawable at all.
+test("🔴 model-written notation still draws, because a generic group has no name", () => {
+  assert.match(SECTION_42, /A generic group has no name and must not be resolved/);
+  assert.match(RESOLVER_WIRING, /Notation the model wrote directly\. It keeps working/);
 });
