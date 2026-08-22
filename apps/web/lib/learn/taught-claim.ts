@@ -19,12 +19,38 @@
 // awkward edges — smart quotes, trailing full stops, one side being a prefix of the other — and
 // those are cheap to state as tests and expensive to eyeball in a browser.
 
-/** Curly and straight quotes, trailing punctuation and case all removed, so two renderings of the
- *  same sentence compare equal. Not exported: this is a comparison key, never anything displayed. */
+/**
+ * Curly and straight quotes, trailing punctuation, JOINERS and case all removed, so two renderings
+ * of the same claim compare equal. Not exported: this is a comparison key, never anything displayed.
+ *
+ * 🔴🔴 THE JOINERS ARE WHY A CLAIM PRINTED ITSELF TWICE ON PRODUCTION, 2026-08-21. Reported with a
+ * screenshot of a JavaScript canvas showing, one under the other:
+ *
+ *     JavaScript → enables dynamic elements to your site      (the heading, built from cue + answer)
+ *     JavaScript — enables — dynamic elements to your site    (the statement, as the model wrote it)
+ *
+ * Those are the same claim. The heading joins the two sides with `→` because this file builds it
+ * that way; the model had written the identical pair out with em dashes and called it a statement.
+ * The duplicate check compared the strings literally, saw two different ones, and kept both — so
+ * the learner read the same sentence twice in two typographies and reasonably concluded the app was
+ * showing them two different things.
+ *
+ * 🔴 NORMALISING THE JOINER CANNOT SUPPRESS A BODY THAT ADDS ANYTHING, which is the check worth
+ * making before widening a comparison key. `body` survives whenever the statement says MORE than the
+ * heading — "Mitochondria produce ATP through oxidative phosphorylation" still differs from
+ * "Mitochondria → produce ATP" after both are stripped, because the extra clause is still there.
+ * What this removes is only the case where the two differ by punctuation alone.
+ *
+ * 🔴 AND THE HYPHEN IS DELIBERATELY NOT IN THE LIST. `well-known` and `T-cell` are one word with a
+ * hyphen in them, and collapsing those would make two genuinely different statements compare equal
+ * — a body silently dropped is worse than one shown twice.
+ */
 function sameish(value: string): string {
   return value
     .replace(/[‘’ʼ]/g, "'")
     .replace(/[“”]/g, '"')
+    // The joiners a claim can be written with: arrow, em dash, en dash, colon.
+    .replace(/[→—–:]/g, " ")
     .replace(/[.,;:!?]+$/g, "")
     .replace(/\s+/g, " ")
     .trim()
