@@ -208,3 +208,65 @@ export function speechFor(moment: SpokenMoment, key: string): SpeechChoice {
   if (text.length > SPEECH_CHAR_LIMIT) return { refused: "too-long-to-speak" };
   return { spoken: { key, text } };
 }
+
+/**
+ * A passage broken into pieces a synthesiser will actually accept.
+ *
+ * 🔴🔴 REPORTED 2026-08-21: *"it wouldn't play the whole passage."* Both providers refuse above
+ * `SPEECH_CHAR_LIMIT` — `nemesis-speak` answers 413 and `/api/speech/tts` answers 413 — and the
+ * "Read aloud" control under an answer sent the WHOLE answer as one request. Every answer longer
+ * than 600 characters, which is most answers worth reading aloud, therefore did nothing at all: no
+ * sound, no message, a control that looked fine and was dead.
+ *
+ * 🔴 THE BOUND IS A REQUEST BOUND, NOT A PRODUCT BOUND, WHICH IS WHY THIS SPLITS RATHER THAN
+ * REFUSES. 600 exists so one call cannot spend unboundedly; it was never a claim that a learner
+ * may not hear a long answer. `speechFor`'s refusal is the other thing and stays exactly as it is:
+ * that one governs the AUTOMATIC lane, where an unasked-for paragraph read at somebody is a
+ * nuisance. Asked for explicitly, a long passage is simply several requests.
+ *
+ * Splits on sentence ends first so a pause lands where a reader would pause, then on words, and
+ * only ever mid-word for a single "word" longer than the whole limit — a URL or a hash, where
+ * there is no better seam and the alternative is dropping it.
+ */
+export function speechChunks(text: string, limit: number = SPEECH_CHAR_LIMIT): string[] {
+  const clean = text.trim();
+  if (!clean) return [];
+  if (clean.length <= limit) return [clean];
+
+  const chunks: string[] = [];
+  let current = "";
+
+  const flush = () => {
+    if (current) chunks.push(current);
+    current = "";
+  };
+  const add = (piece: string) => {
+    if (!current) current = piece;
+    else if (current.length + 1 + piece.length <= limit) current = `${current} ${piece}`;
+    else {
+      flush();
+      current = piece;
+    }
+  };
+
+  // A sentence end followed by space, or a line break: the seams a reader already hears.
+  for (const sentence of clean.split(/(?<=[.!?…])\s+|\n+/)) {
+    const unit = sentence.trim();
+    if (!unit) continue;
+    if (unit.length <= limit) {
+      add(unit);
+      continue;
+    }
+    for (const word of unit.split(/\s+/)) {
+      if (word.length <= limit) {
+        add(word);
+        continue;
+      }
+      // No seam inside it. Break it up rather than lose it.
+      flush();
+      for (let at = 0; at < word.length; at += limit) chunks.push(word.slice(at, at + limit));
+    }
+  }
+  flush();
+  return chunks;
+}

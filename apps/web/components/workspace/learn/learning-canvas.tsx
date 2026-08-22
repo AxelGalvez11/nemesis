@@ -37,6 +37,7 @@ import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
 import { ReplyActions } from "./reply-actions";
+import { SpokenExample } from "./spoken-example";
 import { CanvasQuiet } from "./canvas-quiet";
 import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
@@ -1229,6 +1230,27 @@ export function LearningCanvas({
               {replySegments(replyText, replyVisualList).map((segment, index) =>
                 segment.kind === "visual" ? (
                   <SemanticVisual key={`v${index}`} visual={segment.visual} />
+                ) : segment.kind === "target_language" ? (
+                  /* 🔴🔴 THE ONE PLACE THE LANGUAGE LANE IS REACHED FROM. §43 built a router that
+                     speaks a target-language sentence in a named variety and §47 wired Azure to
+                     say it; neither could ever run, because nothing in a conversation could say
+                     "this much is Spanish". The model marks it, this mounts it, and `speakExample`
+                     is the only caller in the product that passes the language purpose.
+
+                     🔴 OUTSIDE THE MARKED DIV, for the same reason a drawing is: one marker
+                     wrapping prose AND a button would fail `readCanvasSelection`'s integrity
+                     check on every selection inside it. */
+                  <SpokenExample
+                    key={`s${index}`}
+                    locale={segment.locale}
+                    onSpeak={() => voice.speakExample(`s${index}`, segment.locale, segment.text)}
+                    onStop={voice.stopSpeaking}
+                    // 🔴 THIS ROW, NOT ANY ROW. `voice.header.speaking` is one boolean for the whole
+                    // surface, and handing it to every example turned all of them into stop buttons
+                    // the moment one played (owner, 2026-08-21).
+                    speaking={voice.speakingExample === `s${index}`}
+                    text={segment.text}
+                  />
                 ) : (
                   <div key={`p${index}`} {...selectableRegion(index === 0 ? "reply" : `reply-${index}`)}>
                     <AssistantMarkdown
@@ -1257,13 +1279,15 @@ export function LearningCanvas({
                   onCycleSpeed={voice.header.onCycleSpeed}
                   onSpeak={voice.speakAloud}
                   onStop={voice.stopSpeaking}
-                  speaking={voice.header.speaking}
+                  // 🔴 Not "something is playing": while an example row speaks, this is not its button.
+                  speaking={voice.header.speaking && voice.speakingExample === null}
                   speed={voice.header.speed}
                   // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
                   // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
                   // them, and a synthesiser reading it aloud is worse.
                   text={replySegments(replyText, replyVisualList)
-                    .filter((segment) => segment.kind === "prose")
+                    // 🔴 The spoken example is part of the answer: dropping it makes Copy lossy.
+                    .filter((segment) => segment.kind === "prose" || segment.kind === "target_language")
                     .map((segment) => (segment as { text: string }).text)
                     .join("\n\n")
                     .trim()}
@@ -1364,14 +1388,7 @@ export function LearningCanvas({
             first thing a student ever does. The trigger is now "there is no content to show",
             which is the question that was actually being asked. */}
         {presence === "preparing" && (
-          <CanvasThinkingPreview
-            label={preparingLabel}
-            // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE PREVIEW MAKES WAY. `replyText` is the text
-            // as it streams, and the first character of it is the honest end of the wait — not a
-            // timer, and not the turn formally finishing.
-            leaving={Boolean(replyText.trim())}
-            mascot={turnInFlight}
-          />
+          <CanvasThinkingPreview label={preparingLabel} mascot={turnInFlight} />
         )}
 
         {/* 🔴 A CANVAS WITH NOTHING TO PRESENT AND NOTHING RUNNING SAYS SO. This is the other half
@@ -1404,13 +1421,11 @@ export function LearningCanvas({
             is the whole mechanism by which reopening from the Library recovered. */}
         {presence === "quiet" && (
           <CanvasQuiet
-            onRetry={() => window.location.assign(`/learn?c=${canvas.id}`)}
-            // 🔴 THE REASON IS ALREADY ON THE CANVAS; IT WAS JUST NEVER ON THIS SCREEN. Every
-            // source carries the note the sources panel prints, so a document Nemesis could only
-            // partly read can say so here instead of leaving the learner with a dead end.
-            unread={canvas.sources
-              .filter((source) => source.coverageNote)
-              .map((source) => ({ note: source.coverageNote!, title: source.title }))}
+            // 🔴 `relook=1` IS WHAT MAKES THIS BUTTON DO ANYTHING. Without it the reload re-resolves
+            // and a remembered empty answer short-circuits before a lane runs — the identical screen,
+            // every press. See `takeRelook` in `use-policy-runtime.ts`.
+            onRetry={() => window.location.assign(`/learn?c=${canvas.id}&relook=1`)}
+            unread={canvas.sources.find((source) => source.coverageNote)?.coverageNote ?? null}
           />
         )}
 
@@ -1512,6 +1527,19 @@ export function LearningCanvas({
           a press meant for the composer behind it. */}
       <BloubDock
         anchor="#canvas-composer"
+        // 🔴 THE CAPTION RIDES THE CHARACTER. It used to be its own box on the page and ended up
+        // against the right edge of the window, hundreds of pixels from the mascot it was meant to
+        // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
+        // beside something whose position is a live transform, so it moved onto the dock itself.
+        caption={turnInFlight || presence === "preparing" ? preparingLabel : null}
+        // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE CAPTION MAKES WAY. `replyText` is the text as
+        // it streams, and its first character is the honest end of the wait — not a timer, and not
+        // the turn formally finishing.
+        captionLeaving={Boolean(replyText.trim())}
+        // 🔴 THE SURFACE KNOWS, BECAUSE THE POSE NO LONGER DOES. The character works in `idle` now
+        // that the dots are gone, and `idle` is also how it rests — so "come forward" has to be
+        // said by whoever knows a turn is in flight rather than inferred from the animation.
+        station={turnInFlight || presence === "preparing" ? "centre" : "corner"}
         contain
         // 🔴 "!" WHEN SOMETHING WENT WRONG, "?" WHEN NEMESIS IS WAITING ON THE LEARNER, and null on
         // nearly every render — a mascot that is always signalling is a mascot nobody looks at.
@@ -1519,7 +1547,15 @@ export function LearningCanvas({
         // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once (a question on screen and a
         // turn that just failed), and of the two only the failure is news: the question is already
         // rendered in full, in words, in the middle of the page.
-        marker={session.error ? "!" : awaitingDemonstration ? "?" : null}
+        // 🔴 AND NOT WHILE NEMESIS IS WORKING. `awaitingAnswer` stays true across a turn, so the
+        // "?" sat on the mascot's head THROUGH its own thinking — scaled up with it, in the middle
+        // of an otherwise empty page (owner, 2026-08-21: "a random question mark"). The mark means
+        // "Nemesis needs something from you", and while it is thinking it does not: it needs to
+        // finish. This is the same distinction the dock's own `state` already draws, applied to
+        // the badge that sits on top of it.
+        marker={
+          session.error ? "!" : awaitingDemonstration && !turnInFlight && presence !== "preparing" ? "?" : null
+        }
         // 🔴🔴 `turnInFlight`, NOT `policy.thinking` — AND THIS IS THE SAME MISTAKE THE THINKING
         // SCREEN ALREADY FIXED, MADE AGAIN ONE COMPONENT OVER.
         //

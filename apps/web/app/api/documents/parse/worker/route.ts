@@ -98,6 +98,14 @@ interface ClaimedSource {
    */
   parse_external_task_id?: string | null;
   parse_external_started_at?: string | null;
+  /**
+   * The parser version this source was explicitly asked to be re-read under, or null.
+   *
+   * 🔴 OPTIONAL FOR THE SAME REASON THE TWO ABOVE ARE — it arrives with a migration and
+   * `claim_document_parses` returns `s.*`. Absent means no reprocess is pending, which is the
+   * behaviour every deployment had before the column existed.
+   */
+  parse_reprocess_target?: string | null;
   /** Claims this row has had, INCLUDING this one — the claim increments it. */
   parse_attempts?: number | null;
 }
@@ -460,7 +468,19 @@ async function runClaimed(
   // `reuse_document_parse` that is not an unambiguous hit falls through to the ordinary lanes
   // below, which is exactly what happened before this block existed.
   const existing = await findReusableParse(admin, job.user_id, contentHash);
-  const reuse = decideReuse(existing);
+  // 🔴🔴 AND A REPROCESS IS THE ONE ASK THAT OUTRANKS THE LOOKUP. `decideReuse` has taken
+  // `reprocessRequested` since it was written and this call never passed it, so
+  // `parse_reprocess_target` was write-only: the app's reprocess button set it, the SQL claim
+  // predicate read it to claim the row, and the worker then reused the very parse the learner had
+  // asked to have replaced. Measured on production 2026-08-21 by asking for one: the worker logged
+  // `parse_reused` once a minute, spent 0ms, never cleared the target and burned the row's five
+  // attempts — a control that had never once done the thing it is named after.
+  //
+  // 🔴 THE ROW IS THE AUTHORITY, NOT A SEPARATE FLAG. `claim_document_parses` returns the source
+  // whole, so the request travels on the row it belongs to and cannot drift from the predicate that
+  // claimed it.
+  const reprocessRequested = typeof job.parse_reprocess_target === "string" && job.parse_reprocess_target.length > 0;
+  const reuse = decideReuse(existing, reprocessRequested ? { reprocessRequested } : {});
   if (reuse.reuse) {
     const { data: linked, error: reuseError } = await admin.rpc("reuse_document_parse", {
       p_content_hash: contentHash,

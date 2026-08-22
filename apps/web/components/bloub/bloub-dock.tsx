@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useTheme } from "@/components/theme-provider";
+import { inkFor } from "@/lib/character/look";
 import {
   ATTENTION_ATTR,
   getAttention,
@@ -31,7 +32,7 @@ import type { StateId } from "@/lib/bloub/states";
 
 import { BloubBot } from "./bloub-bot";
 import { usePoke } from "./use-poke";
-import { speedOf, stationOf } from "@/lib/character/stations";
+import { speedOf, stationOf, type Station } from "@/lib/character/stations";
 
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;
@@ -43,6 +44,41 @@ export interface BloubDockProps {
    *  from the learner. Absent on nearly every render — a mascot that is always signalling is a
    *  mascot nobody looks at. */
   marker?: "!" | "?" | null;
+  /**
+   * The step that is running, printed beside the character.
+   *
+   * 🔴🔴 IT RIDES THE DOCK BECAUSE THE CHARACTER MOVES. Owner, 2026-08-20: *"the mascot three dot
+   * should have the thinking preview to the right of it."* That was tried as a separate flexbox
+   * on the page, and the caption ended up pinned to the right EDGE of the window — `justify-end`
+   * had meant "push to the bottom" while the container was a column, and silently became "push to
+   * the right" when it became a row (owner, 2026-08-21: *"why is the 'thinking' so far off"*).
+   *
+   * No static box can sit beside a character whose position is a live transform. This is a sibling
+   * of the marker, so it inherits that transform and is beside the character by construction —
+   * there is no alignment left to get wrong.
+   */
+  caption?: string | null;
+  /**
+   * The answer has begun arriving, so the caption makes way.
+   *
+   * 🔴 IT FADES RATHER THAN VANISHING. Owner, 2026-08-21: *"When the final answer begins, smoothly
+   * fade the thinking preview away and transition into the answer."* The two occupy the same moment
+   * on screen, and an instant swap reads as a flicker between two states rather than as one thing
+   * making way for another.
+   */
+  captionLeaving?: boolean;
+  /**
+   * Where the character stands, when the surface knows better than the pose does.
+   *
+   * 🔴🔴 THE POSE USED TO DECIDE, AND IT CANNOT ANY MORE. `stationOf` reads the state id, which
+   * worked while every working pose was unique to working. The thinking pose IS the three dots, and
+   * the owner asked for those to go — so the character now WORKS in `idle`, the same pose it rests
+   * in. One id, two opposite places. Deriving the station from it would drag a resting character to
+   * the middle of the page, which is worse than the dots ever were.
+   *
+   * Omitted, the pose still decides — every caller with no opinion behaves exactly as before.
+   */
+  station?: Station;
   /** Rendered size in px. The viewBox is square. */
   size?: number;
   /**
@@ -97,6 +133,9 @@ export interface BloubDockProps {
 }
 
 export function BloubDock({
+  caption = null,
+  captionLeaving: leaving = false,
+  station: stationOverride,
   marker = null,
   state = "idle",
   size = 52,
@@ -109,7 +148,7 @@ export function BloubDock({
   hidden = false,
   className,
 }: BloubDockProps) {
-  const { accent } = useTheme();
+  const { accent, theme } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   const { state: shown, poke } = usePoke(state);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -165,7 +204,7 @@ export function BloubDock({
   }, [anchor, bottom, gap, contain, left]);
 
   // ── Where it stands ──────────────────────────────────────────────────────────
-  const station = stationOf(shown);
+  const station = stationOverride ?? stationOf(shown);
   useEffect(() => {
     const measure = () => {
       const host = hostRef.current;
@@ -280,9 +319,55 @@ export function BloubDock({
       {marker && (
         <span
           aria-hidden="true"
-          className="bloub-marker pointer-events-none absolute left-1/2 bottom-full mb-1 -translate-x-1/2 select-none text-[13px] font-semibold leading-none text-(--ui-text-tertiary)"
+          className="bloub-marker pointer-events-none absolute left-1/2 bottom-full flex items-center justify-center rounded-full font-semibold leading-none select-none"
+          style={{
+            // 🔴🔴 THE CHARACTER'S OWN COLOUR, FROM THE FUNCTION THE CHARACTER USES. Reported
+            // 2026-08-21: *"the mascot has a random question mark that isnt in purple like the
+            // mascot."* It was `--ui-text-tertiary` — page grey — so the one thing sitting on the
+            // mascot's head was the one thing that did not belong to it, and it read as a stray
+            // glyph on the page rather than as the character signalling. `inkFor` is what
+            // `BloubBot` paints its body with, so this cannot drift from it: not across themes,
+            // and not across the accents the learner can choose.
+            backgroundColor: inkFor(accent, theme),
+            // 🔴 COUNTER-SCALED, the same reason the caption is. The dock grows to `centreScale`
+            // when the character comes forward to think, and a badge that grew with it became a
+            // page-sized question mark floating above the middle of the screen.
+            color: "var(--ui-bg-elevated)",
+            fontSize: `${Math.round(size * 0.26) / travel.k}px`,
+            height: `${Math.round(size * 0.42) / travel.k}px`,
+            marginBottom: `${6 / travel.k}px`,
+            transform: "translateX(-50%)",
+            width: `${Math.round(size * 0.42) / travel.k}px`,
+          }}
         >
           {marker}
+        </span>
+      )}
+
+      {/* 🔴 COUNTER-SCALED, because the dock grows to `centreScale` when the character comes
+          forward to think and a caption that grew with it would be enormous type on the page. The
+          gap is divided too: a margin here is measured in the parent's scaled space, so a constant
+          8px on screen has to be 8/k in it. Origin pinned left so it grows away from the
+          character rather than into it. */}
+      {/* 🔴 LIT LEFT TO RIGHT, WHICH IS THE MOTION THE WHOLE PRODUCT USES (owner, 2026-08-21: *"i
+          just want the mascot and the words lit left to right"*). `.canvas-thinking-word` is the
+          same band and the same 1900ms as `.canvas-forming` and `.canvas-rewriting`; §20 asks for
+          ONE motion system, and a second treatment beside the character would read as a second kind
+          of event happening at the same time.
+
+          🔴 NO PILL BEHIND IT ANY MORE. A filled capsule is a badge — it says "status", which is
+          what a spinner says. The words themselves carrying the light is what says "this is being
+          worked through", and a background defeats `background-clip: text` outright. */}
+      {caption && (
+        <span
+          className={`bloub-caption canvas-thinking-word pointer-events-none absolute left-full top-1/2 select-none whitespace-nowrap text-[length:var(--canvas-text-meta)] leading-none${leaving ? " canvas-preview-out" : ""}`}
+          style={{
+            marginLeft: `${8 / travel.k}px`,
+            transform: `translateY(-50%) scale(${1 / travel.k})`,
+            transformOrigin: "left center",
+          }}
+        >
+          {caption}
         </span>
       )}
     </div>

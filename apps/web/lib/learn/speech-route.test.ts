@@ -11,6 +11,7 @@ import test from "node:test";
 import type { SpokenMoment } from "./canvas-speech";
 import {
   ANSWER_SPEED,
+  canonicalLocale,
   CANVAS_SPEED,
   isWellFormedLocale,
   MEASURED_PROVIDERS,
@@ -254,4 +255,27 @@ test("🔴 an answer that is mostly notation is still refused, exactly like a qu
   // that, rather than hearing it spelled out.
   const route = routeSpeech({ key: "a3", moment: { kind: "answer", text: "$$\\int x^2 \\, dx = \\frac{x^3}{3} + C$$" }, purpose: "canvas" });
   assert.equal(route.decision, "silent");
+});
+
+
+// ───────────────────────────────────────────────────────── a tag written any reasonable way
+
+test("🔴 casing is normalised, so a learner never loses audio to a capital letter", () => {
+  assert.equal(canonicalLocale("es-mx"), "es-MX");
+  assert.equal(canonicalLocale("ES-MX"), "es-MX");
+  assert.equal(canonicalLocale("  es-MX  "), "es-MX");
+});
+
+test("a script subtag is Titlecase and a region is upper, which is the registry's own rule", () => {
+  assert.equal(canonicalLocale("zh-hans-cn"), "zh-Hans-CN");
+});
+
+test("a bare language is a tag on its own", () => {
+  assert.equal(canonicalLocale("de"), "de");
+});
+
+test("🔴 normalising is not the same as accepting anything — a display name is still not a tag", () => {
+  assert.equal(canonicalLocale("Mexican Spanish"), null);
+  assert.equal(canonicalLocale("¿Dónde está la biblioteca?"), null);
+  assert.equal(canonicalLocale(""), null);
 });

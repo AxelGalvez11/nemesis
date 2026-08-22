@@ -67,8 +67,24 @@ export interface FigureCandidate {
   because: "large-figure" | "thin-unit";
 }
 
+/** A figure the router itself refused, and the reason it refused it. */
+export interface DeclinedFigure {
+  blockIndex: number;
+  skipped: "too-small" | "over-cap";
+}
+
 export interface RoutingPlan {
   candidates: FigureCandidate[];
+  /**
+   * Figures this router declined, each with the reason.
+   *
+   * 🔴🔴 THE ROUTER USED TO DECLINE IN SILENCE, WHICH IS THE ONE THING THIS VOCABULARY FORBIDS.
+   * A figure below the worth-looking area on a text-dense page was dropped with a bare `return`
+   * and reached storage carrying no verdict — indistinguishable from a figure nothing ever looked
+   * at. `lookAtFigures` already takes great care to name every absence it can see; it could not
+   * name the ones that never reached it.
+   */
+  declined: DeclinedFigure[];
   /**
    * Figures that qualified and did not fit the budget.
    *
@@ -99,6 +115,7 @@ export function planFigureVision(
   }
 
   const candidates: FigureCandidate[] = [];
+  const declined: DeclinedFigure[] = [];
   model.blocks.forEach((block, blockIndex) => {
     if (block.kind !== "figure" || !block.figure) return;
     // Already examined, or already skipped for a stated reason. Re-examining a
@@ -109,7 +126,11 @@ export function planFigureVision(
     const thinUnit = (textByUnit.get(block.unit) ?? 0) < THIN_UNIT_CHARS;
     // 🔴 OR, NOT AND. A large figure qualifies on a page dense with text — which
     // is the exact 326-page population production cannot see.
-    if (area < WORTH_LOOKING_AREA && !thinUnit) return;
+    if (area < WORTH_LOOKING_AREA && !thinUnit) {
+      // Judged, not overlooked: too small to be worth a call on a page that already has words.
+      declined.push({ blockIndex, skipped: "too-small" });
+      return;
+    }
 
     candidates.push({
       area,
@@ -121,8 +142,13 @@ export function planFigureVision(
   });
 
   candidates.sort((a, b) => b.area - a.area || a.blockIndex - b.blockIndex);
+  // 🔴 THE ONES PAST THE CEILING ARE NAMED TOO. The comment on `MAX_FIGURES_PER_DOC` says they
+  // "keep the `not-examined` reason they already have" — which was true and was the problem: a
+  // truncated document and an unexamined one read identically afterwards.
+  for (const over of candidates.slice(maxFigures)) declined.push({ blockIndex: over.blockIndex, skipped: "over-cap" });
   return {
     candidates: candidates.slice(0, maxFigures),
+    declined,
     overBudget: Math.max(0, candidates.length - maxFigures),
   };
 }

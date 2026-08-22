@@ -298,8 +298,25 @@ export function territoryReuse(input: {
    * `rules` gets.
    */
   material?: MaterialStamp;
+  /**
+   * The learner pressed "Try again". Never honour a remembered empty answer.
+   *
+   * 🔴🔴 THE MARKER EXISTS TO STOP PAYING ON EVERY PASSIVE REOPEN, AND A PRESSED BUTTON IS NOT ONE.
+   * Reported 2026-08-21 with a screenshot of a 276-excerpt lecture reading "Nemesis hasn't found
+   * anything to ask you about yet": the retry under that sentence reloads the page, the reload
+   * re-resolves, and `known-empty` short-circuits before a single lane runs — so the control
+   * returned the identical screen every time, for ever. That is this codebase's most-repeated
+   * defect, a control that does nothing, sitting on the one screen whose entire job is to offer a
+   * way out.
+   *
+   * 🔴 SCOPED TO AN EXPLICIT ASK, WHICH IS WHY IT IS A PARAMETER AND NOT A DELETION. The saving is
+   * real and the reasoning behind it is sound — an unwatched canvas must not re-buy the same empty
+   * answer on every open. What was wrong was that it applied to the one case the learner asked for
+   * by name.
+   */
+  force?: boolean;
 }): TerritoryReuse {
-  const { identityVersion, material, rules, stored } = input;
+  const { force, identityVersion, material, rules, stored } = input;
   if (!stored) return { miss: "never-built", reuse: false };
   if (stored.identityVersion !== identityVersion) return { miss: "identity-version-changed", reuse: false };
   // 🔴 CHECKED BEFORE THE HIT, BECAUSE AN EMPTY TERRITORY WOULD OTHERWISE READ AS A SUCCESSFUL ONE.
@@ -329,6 +346,8 @@ export function territoryReuse(input: {
     // came from `needsReprocess`, and inventing `ruleset-version-changed` here would report a change
     // that did not happen.
     if (!rules) return { miss: "empty-answer-superseded", reuse: false };
+
+    if (force) return { miss: "empty-answer-superseded", reuse: false };
 
     const verdict = markerStands({ material, over: stored.emptyOver, rules, under: stored.emptyUnder });
     return verdict.reprocess

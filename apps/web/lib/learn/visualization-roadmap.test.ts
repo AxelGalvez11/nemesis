@@ -255,16 +255,21 @@ test("§43's status line matches whether a language lane or a pronunciation prov
     /reason: "no-provider"/,
     "the named gap disappeared — a deployment with no key must still say so",
   );
-  // Every caller passes `canvas`. The day one passes the other purpose, this line is stale.
+  // 🔴 THE STATUS LINE AND THE CODE MUST AGREE, AND THIS IS ASSERTED FROM THE OTHER SIDE NOW. It
+  // used to read "every caller passes `canvas`; the day one passes the other purpose, this line is
+  // stale" — and that day came: a reply can mark a sentence with `[say: locale | text]` and
+  // `speakExample` enters the language lane with its locale. The prediction was right, so the
+  // assertion flips rather than relaxes: a caller must exist, and §43 must say so.
   const voiceHook = readFileSync(
     new URL("../../components/workspace/learn/use-canvas-voice.ts", import.meta.url),
     "utf8",
   );
-  assert.equal(
-    /purpose: "language_learning"/.test(voiceHook),
-    false,
-    "a caller now enters the language lane — §43's status line is stale",
+  assert.match(
+    voiceHook,
+    /purpose: "language_learning"/,
+    "nothing enters the language lane any more — §43's status line is stale in the other direction",
   );
+  assert.match(SECTION_43, /THE LANGUAGE LANE IS NOW REACHED FROM A CONVERSATION/);
 });
 
 test("🔴 §43's locale refusal is a refusal, not a fallback", () => {

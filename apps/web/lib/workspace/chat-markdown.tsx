@@ -14,7 +14,7 @@ import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
 import { citationsToMarkdown, groupCitationRuns } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
-import { normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
+import { escapeCurrencyDollars, normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 
 const MARKDOWN_CONTAINER_CLASS_NAME =
   "aui-md prose w-full max-w-none overflow-hidden text-[length:var(--conversation-text-font-size)] " +
@@ -317,7 +317,9 @@ export function AssistantMarkdown({
    *  "$0.20 per million input tokens and $1.20" stays money, not italics
    *  (owner screenshot 2026-08-04). Note surfaces turn it on — Obsidian
    *  users write `$x$` on purpose. `$$x$$`, `\(x\)` and `\[x\]` render as
-   *  math in BOTH modes (normalizeMathDelimiters emits the $$ forms). */
+   *  math in BOTH modes (normalizeMathDelimiters emits the $$ forms).
+   *  Where it IS on, escapeCurrencyDollars still holds prices back, so turning
+   *  it on no longer costs you "$0.87 to $3.96" (owner screenshot 2026-08-20). */
   singleDollarMath?: boolean;
   /**
    * Render each citation as a favicon + site name pill with a "+N" for a collapsed run, measured
@@ -349,6 +351,11 @@ export function AssistantMarkdown({
   const cited = namedCitations
     ? groupCitationRuns(citationsToMarkdown(markdown, sources?.length ?? 0))
     : citationsToMarkdown(markdown, sources?.length ?? 0);
+  const linked = onWikiLink ? wikiLinksToMarkdown(cited) : cited;
+  // 🔴 A PRICE IS NOT A FORMULA. With single-dollar math on, remark-math pairs the two `$` in
+  // "$0.87 to $3.96" into one italic run — the owner's screenshot, twice. Guarding here rather
+  // than turning the flag off keeps `$k$` and `$x^2$` working on the surfaces that asked for them.
+  const guarded = singleDollarMath ? escapeCurrencyDollars(linked) : linked;
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown
@@ -356,7 +363,7 @@ export function AssistantMarkdown({
         rehypePlugins={[rehypeKatex]}
         remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: singleDollarMath }]]}
       >
-        {normalizeMathDelimiters(onWikiLink ? wikiLinksToMarkdown(cited) : cited)}
+        {normalizeMathDelimiters(guarded)}
       </ReactMarkdown>
     </div>
   );

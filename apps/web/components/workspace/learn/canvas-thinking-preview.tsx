@@ -32,70 +32,15 @@
 // the lines stay, the sweep stops. Someone who asked the system to stop moving still has to be
 // able to see that the region is busy, so they hold their resting contrast rather than vanishing.
 
-import { BloubBot } from "@/components/bloub/bloub-bot";
-import { useTheme } from "@/components/theme-provider";
-
 
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
 
 
-/**
- * The whole thinking figure: the character, the three dots, and the words.
- *
- * 🔴🔴 THE MASCOT SITS ON TOP OF THE DOTS, AND THE ENGINE CANNOT DRAW THAT. Owner, 2026-08-21:
- * *"when thinking, the mascot should be on top of the three dots. the thinking words should be on
- * the right of the three dots."* `lib/bloub/states.ts`'s `thinking` pose is explicit that the ball
- * BECOMES the middle dot — *"la boule DEVIENT le point du milieu"* — and it fades the eyes to zero
- * while it does. So there is no blob standing over anything: for the last week the character
- * WAS the three dots, which is why the screen showed dots and no face.
- *
- * A blob above a row of three is therefore a composition rather than an animation, and it is built
- * here out of a RESTING character and three dots of this component's own. That also means the
- * character keeps its eyes and keeps looking around while it waits, which the thinking pose had
- * taken away.
- *
- * 🔴 AND THE DOCK IS SWITCHED OFF WHILE THIS IS ON SCREEN. The six-dot defect was never two
- * renderers — it was two MOUNTS of one, both centred, both playing `thinking`. `BloubDock`'s
- * `hidden` prop exists for exactly this, because a surface that draws its own character must take
- * the other one away rather than hope they do not overlap.
- */
-function ThinkingMark({ label, leaving = false }: { label: string | null; leaving?: boolean }) {
-  const { accent } = useTheme();
-  return (
-    <div className={`flex items-center gap-3${leaving ? " canvas-preview-out" : ""}`}>
-      {/* 🔴 `idle`, NOT `thinking`. The state that means "working" is the one that dissolves the
-          body into three dots — `lib/bloub/states.ts` says so outright, "la boule DEVIENT le point
-          du milieu" — and it fades the eyes to zero while it does. The character stays a character;
-          the words carry the motion. `track` keeps its gaze following the pointer through the wait. */}
-      <BloubBot color={accent} size={44} state="idle" track />
-      {/* 🔴 THE WORDS ARE THE WHOLE ANIMATION NOW (owner 2026-08-21: *"remove the three dots
-          animation, i just want the mascot and the words lit left to right"*). The band crossing
-          them is `.canvas-thinking-word` — the same 1900ms and the same gradient as
-          `.canvas-forming`, because §20 asks for ONE motion system and a second speed beside it
-          would read as two unrelated things happening at once. */}
-      {label && (
-        <span className="canvas-thinking-word text-[length:var(--canvas-text-meta)]">
-          {label.replace(/…$/, "")}…
-        </span>
-      )}
-    </div>
-  );
-}
-
 export function CanvasThinkingPreview({
   label = null,
-  leaving = false,
   mascot = false,
 }: {
   label?: string | null;
-  /**
-   * The answer has begun arriving.
-   *
-   * 🔴 THE PREVIEW MAKES WAY RATHER THAN VANISHING. Owner, 2026-08-21: *"When the final answer
-   * begins, smoothly fade the thinking preview away and transition into the answer."* Both occupy
-   * the same region, so an instant swap reads as a flicker between two states.
-   */
-  leaving?: boolean;
   /**
    * The learner just sent something and is waiting for the answer to it.
    *
@@ -117,16 +62,20 @@ export function CanvasThinkingPreview({
 }) {
   if (mascot) {
     return (
-      <div
-        aria-live="polite"
-        // 🔴 `min-h-[70vh]`, NOT `min-h-full`. This renders inside `CanvasFade`, which is a plain
-        // `<div>` with no height of its own, so a percentage minimum has nothing to resolve
-        // against and collapses to the content — measured in a browser: the mascot sat at the very
-        // top of the column instead of the middle of the page. A viewport unit always resolves.
-        className="flex min-h-[70vh] flex-row items-center justify-center px-6 pb-[104px]"
-        role="status"
-      >
-        <ThinkingMark label={label} leaving={leaving} />
+      // 🔴🔴 NOTHING VISIBLE HERE, AND THAT IS THE FIX. This box used to print the caption itself,
+      // laid out with `justify-end`. That meant "push to the bottom" while it was a column, and
+      // silently became "push to the RIGHT" when the owner asked for the caption to sit beside the
+      // mascot and it became a row — so the word ended up pinned to the right edge of the window,
+      // hundreds of pixels from the character it labelled (owner, 2026-08-21: *"why is the
+      // 'thinking' so far off"*). No static box can sit beside something whose position is a live
+      // transform; `BloubDock` prints the caption now, as a sibling of its own transform, and is
+      // beside the character by construction.
+      //
+      // 🔴 THE ANNOUNCEMENT STAYS. The dock is `aria-hidden` — it is decoration — so deleting this
+      // outright would take the name of the running step away from a screen reader, which is the
+      // one audience that cannot see the character at all.
+      <div aria-live="polite" className="sr-only" role="status">
+        {label ? `${label.replace(/…$/, "")}…` : null}
       </div>
     );
   }

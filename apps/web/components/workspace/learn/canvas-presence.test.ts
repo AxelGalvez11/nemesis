@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -273,6 +274,25 @@ test("🔴 the recovery goes to THIS canvas, by a full load", async () => {
     retry[0],
     /location\.assign|location\.href\s*=/,
     "the recovery is not a full document load — a client-side navigation leaves the knowledge key unchanged, so the policy never looks again and the control does nothing",
+  );
+
+  // 🔴🔴 AND THE RELOAD STILL WAS NOT ENOUGH, WHICH IS WHY THIS ASSERTION EXISTS BESIDE ONE THAT
+  // ALREADY REASONED ABOUT "the control does nothing". Everything above holds — it IS a full
+  // document load, it DOES carry the id — and the button was still inert, because one layer down a
+  // remembered empty answer short-circuits the re-resolve before a single lane runs. Reported
+  // 2026-08-21 on a 276-excerpt lecture. A guard can be completely right about its own layer and
+  // still be looking at the wrong one.
+  assert.match(
+    retry[0],
+    /relook=1/,
+    "the retry does not ask for another look — `known-empty` will short-circuit the re-resolve and the button returns the identical screen",
+  );
+  const runtime = readFileSync(new URL("./use-policy-runtime.ts", import.meta.url), "utf8");
+  assert.match(runtime, /relook: takeRelook\(\)/, "nothing reads the marker the retry leaves");
+  assert.match(
+    runtime,
+    /searchParams\.delete\("relook"\)/,
+    "the marker is never cleared — every later refresh would re-buy the look, which is the spend the empty marker exists to prevent",
   );
 });
 

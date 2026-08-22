@@ -52,6 +52,33 @@ export interface FigureLookResult {
  * contract is that a failure here shows up as a disclosed gap rather than as an
  * upload that did not happen.
  */
+/**
+ * Nothing leaves this function without a verdict on every picture.
+ *
+ * 🔴🔴 THE GUARD THAT MAKES THE 2026-08-21 DEFECT IMPOSSIBLE TO REPEAT SILENTLY. Measured on
+ * production: a 47-page lecture stored 28 figures, every one with a rectangle and 27 of them
+ * comfortably past the router's own worth-looking threshold, and all 28 reached the database with
+ * no description and no reason. Across the corpus that shape is 84 of 102 lost figures. Every
+ * branch above names its absences carefully — but only for figures that reached it, and these
+ * never did.
+ *
+ * 🔴 IT DOES NOT INVENT A VERDICT. `no-verdict` says exactly what happened: the parse ended and
+ * nothing decided. That is a worse fact than any of the others and it is supposed to look like
+ * one — a count in the logs and a named reason in coverage, rather than a hole that reads like an
+ * ordinary gap.
+ */
+function settle(model: DocumentModel): DocumentModel {
+  const missing = new Map<number, { skipped: string }>();
+  model.blocks.forEach((block, blockIndex) => {
+    if (block.kind !== "figure" || !block.figure) return;
+    if (block.figure.description || block.figure.skipped) return;
+    missing.set(blockIndex, { skipped: "no-verdict" });
+  });
+  if (missing.size === 0) return model;
+  console.warn(JSON.stringify({ event: "figure_no_verdict", figures: missing.size }));
+  return applyFigureDescriptions(model, missing);
+}
+
 export async function lookAtFigures(
   model: DocumentModel,
   images: ReadonlyMap<string, CapturedFigure>,
@@ -59,6 +86,10 @@ export async function lookAtFigures(
 ): Promise<FigureLookResult> {
   const env = options.env ?? process.env;
   const plan: RoutingPlan = planFigureVision(model, { maxFigures: options.maxFigures });
+  /** The router's own refusals, carried onto every exit from this function. */
+  const declined = new Map<number, { description?: string; skipped?: string }>(
+    plan.declined.map((one) => [one.blockIndex, { skipped: one.skipped }]),
+  );
   const empty: FigureLookReport = {
     described: 0,
     notSent: 0,
@@ -66,20 +97,19 @@ export async function lookAtFigures(
     routed: plan.candidates.length,
     withoutPixels: 0,
   };
-  if (plan.candidates.length === 0) return { model, report: empty };
+  if (plan.candidates.length === 0) return { model: settle(applyFigureDescriptions(model, declined)), report: empty };
 
   if (!visionConfigured(env)) {
     // Say so on every routed figure. Leaving them untouched would report them as
     // "nobody looked", which is true of the provider and false of the router —
     // and it is the router's blind spot this phase exists to close.
-    const results = new Map(
-      plan.candidates.map((candidate) => [candidate.blockIndex, { skipped: "vision-unavailable" }]),
-    );
-    return { model: applyFigureDescriptions(model, results), report: empty };
+    const results = new Map<number, { description?: string; skipped?: string }>(declined);
+    for (const candidate of plan.candidates) results.set(candidate.blockIndex, { skipped: "vision-unavailable" });
+    return { model: settle(applyFigureDescriptions(model, results)), report: empty };
   }
 
   const send: { name: string; mime: string; bytes: Uint8Array }[] = [];
-  const results = new Map<number, { description?: string; skipped?: string }>();
+  const results = new Map<number, { description?: string; skipped?: string }>(declined);
   for (const candidate of plan.candidates) {
     const image = images.get(`${candidate.unit}:${candidate.ref}`);
     if (!image) {
@@ -155,7 +185,7 @@ export async function lookAtFigures(
   }
 
   return {
-    model: applyFigureDescriptions(model, results),
+    model: settle(applyFigureDescriptions(model, results)),
     report: {
       described: [...results.values()].filter((r) => r.description).length,
       notSent: [...results.values()].filter((r) => r.skipped === "over-cap").length,

@@ -223,3 +223,61 @@ test("🔴 a refused figure is not resurrected by the append", () => {
   const segments = replySegments("See [figure 1].", visuals);
   assert.deepEqual(segments.map((s) => s.kind), ["prose"]);
 });
+
+// ───────────────────────────────────────────────── a sentence the learner is meant to HEAR
+//
+// 🔴 THE MODEL STATES THE VARIETY AND NOTHING INFERS IT. `speech-route.ts` refuses to speak a
+// target-language utterance without a locale, on the grounds that a learner drilled in the wrong
+// accent has no way to find out. That refusal is only useful if something can actually supply one.
+
+test("🔴 a [say: …] token becomes a spoken segment carrying its own locale", () => {
+  const segments = replySegments("Try it: [say: es-MX | Buenos días] and listen to the stress.");
+  assert.deepEqual(segments.map((s) => s.kind), ["prose", "target_language", "prose"]);
+  assert.deepEqual(segments[1], { kind: "target_language", locale: "es-MX", text: "Buenos días" });
+});
+
+test("the sentence lands where the model put it, between the words that introduce and follow it", () => {
+  const segments = replySegments("Before [say: fr-FR | bonjour] after");
+  assert.equal(segments[0]?.kind === "prose" && segments[0].text, "Before ");
+  assert.equal(segments[2]?.kind === "prose" && segments[2].text, " after");
+});
+
+test("casing is normalised rather than refused — a capital letter must not cost the learner the audio", () => {
+  const segments = replySegments("[say: es-mx | Hola]");
+  assert.equal(segments[0]?.kind === "target_language" && segments[0].locale, "es-MX");
+});
+
+test("a script subtag keeps its own casing rule", () => {
+  const segments = replySegments("[say: zh-hans-cn | 你好]");
+  assert.equal(segments[0]?.kind === "target_language" && segments[0].locale, "zh-Hans-CN");
+});
+
+test("🔴 a tag that is not a tag leaves the token in the prose, so the sentence never silently vanishes", () => {
+  const segments = replySegments("[say: Mexican Spanish | Hola]");
+  assert.deepEqual(segments.map((s) => s.kind), ["prose"]);
+  assert.match(segments[0]?.kind === "prose" ? segments[0].text : "", /Mexican Spanish/);
+});
+
+test("a [say: …] with no sentence after the pipe is left alone too", () => {
+  assert.deepEqual(replySegments("[say: es-MX]").map((s) => s.kind), ["prose"]);
+});
+
+test("several examples in one answer keep their order", () => {
+  const segments = replySegments("[say: es-ES | gracias] versus [say: es-MX | gracias]");
+  assert.deepEqual(segments.map((s) => s.kind), ["target_language", "prose", "target_language"]);
+  assert.equal(segments[0]?.kind === "target_language" && segments[0].locale, "es-ES");
+  assert.equal(segments[2]?.kind === "target_language" && segments[2].locale, "es-MX");
+});
+
+test("🔴 it cannot collide with a citation marker or a drawing token", () => {
+  const segments = replySegments("Water [1] is [smiles: O] and [say: de-DE | Wasser].");
+  assert.deepEqual(segments.map((s) => s.kind), ["prose", "visual", "prose", "target_language", "prose"]);
+});
+
+test("an answer with no example is untouched, so the ordinary reply still has one path", () => {
+  assert.deepEqual(replySegments("Nothing to hear here."), [{ kind: "prose", text: "Nothing to hear here." }]);
+});
+
+test("a spoken example is not a drawing", () => {
+  assert.equal(hasReplyVisuals("[say: it-IT | ciao]"), false);
+});

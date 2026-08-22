@@ -633,3 +633,34 @@ test("🔴 the reply prompt prefers a lookup over recall for a named compound", 
   // would undo the fix that made functional groups drawable in the first place.
   assert.match(prompt, /Use \[smiles: …\] for generic groups/, "the wildcard channel was pushed aside");
 });
+
+// ───────────────────────────────────────────────── the model is told it can be HEARD
+//
+// 🔴🔴 A CAPABILITY THE MODEL IS NOT TOLD ABOUT DOES NOT EXIST, HOWEVER COMPLETELY IT IS BUILT.
+// That sentence is already in this file's history once, about `[figure n]`. §43's router and §47's
+// Azure catalogue were unreachable for the same reason: nothing told the one participant that
+// writes the sentence that it could mark one to be spoken.
+
+test("🔴 the model is told it can mark a sentence to be heard, and in which variety", () => {
+  const system = turnRouterMessages({ context: EMPTY, utterance: "how do I say hello in Spanish?" })[0]?.content ?? "";
+  assert.match(system, /\[say: es-MX \| Buenos días\]/, "the exact token form is missing");
+  assert.match(system, /BCP-47/, "nothing tells it what shape the tag takes");
+});
+
+test("🔴 naming the variety is stated as load-bearing, not as a formatting detail", () => {
+  const system = turnRouterMessages({ context: EMPTY, utterance: "hello" })[0]?.content ?? "";
+  assert.match(system, /no way to hear that they got the wrong one/);
+});
+
+test("🔴 it names the channel rather than a list of disciplines", () => {
+  // The same correction the drawing instruction already took: a prompt that listed languages would
+  // be a discipline hardcoded into a prompt, which CLAUDE.md's field-agnostic rule forbids outright.
+  const system = turnRouterMessages({ context: EMPTY, utterance: "hello" })[0]?.content ?? "";
+  assert.match(system, /how something SOUNDS is part of what you are teaching/);
+  assert.match(system, /not a language-lesson feature/);
+});
+
+test("the model is told what must NOT go inside the token, because a synthesiser reads it literally", () => {
+  const system = turnRouterMessages({ context: EMPTY, utterance: "hello" })[0]?.content ?? "";
+  assert.match(system, /no quotation marks, no translation/);
+});

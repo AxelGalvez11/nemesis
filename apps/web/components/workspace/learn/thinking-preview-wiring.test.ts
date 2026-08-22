@@ -17,7 +17,6 @@ import test from "node:test";
 const CHAT = readFileSync(new URL("./canvas-chat.ts", import.meta.url), "utf8");
 const SESSION = readFileSync(new URL("./use-canvas-session.ts", import.meta.url), "utf8");
 const CANVAS = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
-const FIGURE = readFileSync(new URL("./canvas-thinking-preview.tsx", import.meta.url), "utf8");
 const CSS = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 
 test("🔴 a stage is entered beside the thing it names, never on a clock", () => {
@@ -65,7 +64,9 @@ test("🔴 the raw chain of thought is off the surface entirely", () => {
 test("🔴 the preview fades out when the answer starts", () => {
   assert.match(CSS, /@keyframes canvas-preview-out/);
   assert.match(CSS, /\.canvas-preview-out \{\s*animation: canvas-preview-out 220ms ease-out forwards;/);
-  assert.match(FIGURE, /canvas-preview-out/);
+  // The caption lives on the dock now — beside the character by construction, rather than in a
+  // static box hoping to line up with a live transform. See `thinking-figure.test.ts`.
+  assert.match(readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8"), /canvas-preview-out/);
   // 🔴 AND REDUCED MOTION SHORTENS IT RATHER THAN REMOVING IT. `forwards` holds the end state, so
   // `animation: none` would leave the preview sitting over the answer for ever — the one case where
   // stopping the animation is not the safe reading of the preference.

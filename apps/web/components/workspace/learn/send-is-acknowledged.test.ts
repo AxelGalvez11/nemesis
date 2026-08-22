@@ -93,24 +93,28 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption sits 
   assert.ok(!/canvas-forming/.test(previewCode), "the skeleton bars are back");
   assert.ok(!/LINES\.map/.test(previewCode), "something is still drawing placeholder bars");
 
-  // 🔴 THE "BESIDE" HALF SURVIVES AND IS NOW THE WHOLE OF IT. Owner, 2026-08-21, in two steps:
-  // first the character was to stand over the three dots, then *"remove the three dots animation, i
-  // just want the mascot and the words lit left to right."* What is left is a character and a
-  // caption in one row, which is what this test has always been protecting — the caption never ends
-  // up a long way under the character, printing through it or reading as two separate events.
-  assert.match(previewCode, /flex items-center gap-3/, "the character and the caption are no longer a row");
-  const mark = previewCode.slice(previewCode.indexOf("function ThinkingMark"));
-  assert.ok(
-    mark.indexOf("<BloubBot") < mark.indexOf('className="canvas-thinking-word'),
-    "the caption is no longer to the right of the character",
-  );
+  // 🔴🔴 AND THIS HALF HAS BEEN REVERSED AGAIN, FOR THE REASON THE FIRST VERSION COULD NOT SEE.
+  //
+  // It used to assert BOTH waits laid the caption out as a row, which was the mechanism chosen to
+  // put it beside the character. A row is the right shape and it was still the wrong mechanism:
+  // the mascot's position is a live transform (it walks, and it scales 2.1x to come forward), so
+  // no static box on the page can be beside it. The `justify-end` that had meant "push to the
+  // bottom" as a column silently became "push to the right" as a row, and the caption ended up
+  // against the right edge of the window — owner, 2026-08-21: *"why is the 'thinking' so far
+  // off"*, with a screenshot of the word alone in the far corner.
+  //
+  // So the caption moved onto the dock, as a sibling of its own transform, where being beside the
+  // character is structural rather than a coincidence of two layouts agreeing.
+  //
+  // The wait with NO mascot still centres its own caption — there is no character to sit beside.
+  assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 1, "the mascot wait is laying out a caption again");
+  assert.match(previewCode, /className="sr-only"/, "the mascot wait is painting a caption instead of announcing one");
+  assert.ok(!/justify-end/.test(previewCode), "justify-end is back — in a row that means the right edge, not the foot");
   assert.match(canvasCode, /mascot=\{turnInFlight\}/);
-  // 🔴 AND THE PREVIEW NOW DRAWS THE CHARACTER, WHICH IS ONLY SAFE BECAUSE THE DOCK STANDS DOWN.
-  // Two mounts of one renderer put two sets of three dots on one screen. The rule was never "the
-  // dock owns the character" for its own sake — it was "exactly one of them draws" — and the
-  // canvas enforces it by hiding the dock for the whole of this wait.
-  assert.match(previewCode, /<BloubBot/, "the figure lost its character");
-  assert.match(canvasCode, /hidden=\{presence === "preparing"\}/, "two characters can share the surface again");
+  assert.match(canvasCode, /caption=\{turnInFlight \|\| presence === "preparing" \? preparingLabel : null\}/, "the dock is no longer given the caption");
+  // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
+  // of three dots on one screen; the dock owns the character, this owns the caption.
+  assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");
 });
 
 // ── The composer travels to where it is about to be ─────────────────────────
@@ -267,7 +271,19 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
 
   // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
   // the question is already rendered in full, in words, in the middle of the page.
-  assert.match(canvasCode, /marker=\{session\.error \? "!" : awaitingDemonstration \? "\?" : null\}/);
+  assert.match(canvasCode, /session\.error \? "!" :/, "the error no longer outranks the question");
+  assert.match(canvasCode, /awaitingDemonstration && !turnInFlight && presence !== "preparing" \? "\?" : null/,
+    "the question mark is back on the mascot's head while Nemesis is working");
+
+  // 🔴 THE BADGE IS THE CHARACTER'S OWN COLOUR, NOT THE PAGE'S. Reported 2026-08-21: *"the mascot
+  // has a random question mark that isnt in purple like the mascot."* It was `--ui-text-tertiary`,
+  // so the one thing sitting ON the character was the one thing that did not belong to it.
+  // `inkFor` is what `BloubBot` paints its body with, so the badge cannot drift from the body it
+  // sits on — not across themes, and not across the accents a learner can choose.
+  assert.match(dock, /backgroundColor: inkFor\(accent, theme\)/, "the mark is painted in page grey again");
+  // 🔴 AND IT DOES NOT GROW WITH THE DOCK. The character scales to `centreScale` coming forward;
+  // a badge that scaled with it became a page-sized glyph over the middle of an empty screen.
+  assert.match(dock, /travel\.k/, "the badge is no longer counter-scaled");
 });
 
 test("🔴🔴 the mascot comes forward for a TURN, never for background work", () => {

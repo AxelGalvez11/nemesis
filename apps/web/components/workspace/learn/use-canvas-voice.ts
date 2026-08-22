@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { shouldSpeakAction, type SpokenMoment } from "@/lib/learn/canvas-speech";
+import { shouldSpeakAction, speechChunks, SPEECH_CHAR_LIMIT, type SpokenMoment } from "@/lib/learn/canvas-speech";
 import { LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
 import {
   type AutoDictation,
@@ -69,6 +69,17 @@ export interface CanvasVoice {
   };
   /** Speak an arbitrary passage on demand; pressing again repeats it. */
   speakAloud: (text: string) => void;
+  /**
+   * Speak a sentence in the language being TAUGHT, in the variety it must be heard in.
+   *
+   * 🔴 A DIFFERENT LANE, NOT A LOUDER `speakAloud`. This is the one call in the product that passes
+   * `purpose: "language_learning"`, which is what routes the utterance to Azure and its named
+   * catalogue voice rather than to the Canvas provider. Until it existed the language half of §43
+   * and the whole of §47 were unreachable from a conversation.
+   */
+  speakExample: (key: string, locale: string, text: string) => void;
+  /** The `key` passed to `speakExample` for the row currently playing, or null. */
+  speakingExample: string | null;
   /** Straight onto `<CanvasComposer listenSignal={…}>`. Changes when the microphone should open. */
   listenSignal: number | null;
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
@@ -155,6 +166,16 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
   const [listenSignal, setListenSignal] = useState<number | null>(null);
   /** Counts presses of the on-demand Speak control, so each one is a new utterance key. */
   const aloudPress = useRef(0);
+  /**
+   * WHICH example row is speaking, or null.
+   *
+   * 🔴🔴 REPORTED 2026-08-21: *"pressing play on voice makes all the other icons change too."* Every
+   * row and the answer's own Read-aloud button were handed one shared `speaking` boolean, so
+   * playing the German sentence turned all three examples AND the answer control into stop buttons
+   * at once. A boolean cannot say WHICH utterance is playing, and on a surface that can hold
+   * several it has to.
+   */
+  const [speakingExample, setSpeakingExample] = useState<string | null>(null);
   /** 🔴 STARTS AT THE DEFAULT AND IS CORRECTED AFTER THE FIRST PAINT, exactly like `mode` above.
    *  Reading `localStorage` during render is a hydration mismatch; this file already solved that
    *  once and the answer is the effect below, not a second pattern. */
@@ -317,8 +338,69 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
       // branches, and taking either alone loses the other: the fresh key without `speed` ignores
       // the control, and `speed` without the fresh key silently refuses to repeat.
       aloudPress.current += 1;
-      void speech.speak(`aloud:${aloudPress.current}`, text, { locale: LOCALE_UNSPECIFIED, speed, voiceId });
+      const press = aloudPress.current;
+
+      // 🔴🔴 SEVERAL REQUESTS, BECAUSE ONE WOULD BE REFUSED. Both synthesisers answer 413 above
+      // SPEECH_CHAR_LIMIT, and this used to send the whole answer as a single request — so every
+      // answer past 600 characters played nothing at all, silently (owner, 2026-08-21: "it
+      // wouldn't play the whole passage"). `speechChunks` cuts at sentence ends, so the seams
+      // land where a reader would pause anyway.
+      const parts = speechChunks(text, SPEECH_CHAR_LIMIT);
+      void (async () => {
+        for (let index = 0; index < parts.length; index += 1) {
+          // 🔴 CANCELLATION IS CHECKED, NOT ASSUMED. `stop()` currently leaves its pending promise
+          // unresolved, which happens to halt this loop on its own — but relying on that would
+          // make a future fix to `stop()` restart a passage the learner silenced. The press
+          // counter is the real guard and holds either way.
+          if (aloudPress.current !== press) return;
+          await speech.speak(`aloud:${press}:${index}`, parts[index] ?? "", { locale: LOCALE_UNSPECIFIED, speed, voiceId });
+        }
+      })();
     },
-    stopSpeaking: speech.stop,
+    speakExample: (key: string, locale: string, text: string) => {
+      // Restarting mid-sentence is what pressing a second example means.
+      speech.stop();
+
+      // 🔴 THE ROUTER DECIDES, NOT THIS CALLER. It is what refuses a target-language utterance
+      // with no locale, holds the natural pace a drill needs, and names Azure — and every one of
+      // those is a rule with a test behind it. Reaching past it to `speech.speak` would be
+      // rebuilding all three here, badly.
+      const route = routeSpeech({
+        key: `example:${aloudPress.current + 1}`,
+        moment: { kind: "target_language", text },
+        purpose: "language_learning",
+        targetLocale: locale,
+      });
+      if (route.decision !== "speak") return;
+
+      // A fresh key every press, for the same reason `speakAloud` needs one: `speak` refuses a key
+      // it has already spoken, which is right for the automatic lane and is exactly the silent
+      // no-op a repeat control exists to avoid.
+      aloudPress.current += 1;
+
+      // 🔴 NO `voiceId`, AND THE OMISSION IS THE POINT. The learner's chosen speaker belongs to
+      // Nemesis's own voice; a target-language example is spoken by a voice picked from Azure's
+      // catalogue FOR that variety, deterministically, so the same lesson sounds the same
+      // tomorrow. Sending the canvas speaker here would ask a Mexican Spanish drill to be read by
+      // whichever English voice the learner liked.
+      // 🔴 THE ROW IS NAMED WHILE IT PLAYS, so only its own button becomes a stop button. Cleared
+      // when playback ends; `stopSpeaking` clears it too, because a stopped utterance never
+      // resolves its promise and would otherwise leave one row looking like it was still talking.
+      setSpeakingExample(key);
+      void speech
+        .speak(route.utterance.key, route.utterance.text, {
+          locale: route.locale,
+          provider: route.provider,
+          speed: route.speed,
+        })
+        .then(() => setSpeakingExample((playing) => (playing === key ? null : playing)));
+    },
+    speakingExample,
+    stopSpeaking: () => {
+      // Bumping the press invalidates any passage still being read chunk by chunk.
+      aloudPress.current += 1;
+      setSpeakingExample(null);
+      speech.stop();
+    },
   };
 }
