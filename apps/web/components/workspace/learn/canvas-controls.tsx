@@ -853,7 +853,7 @@ export function OptionsControl({
                   <ToggleItem
                     checked={listenOn}
                     disabled={!voice.dictationSupported}
-                    hint={voice.dictationSupported ? undefined : "This browser has no speech recognition"}
+                    hint={voice.dictationSupported ? undefined : "This browser cannot listen"}
                     label="Open the mic after each question"
                     onClick={() => voice.onSetAutoDictation(listenOn ? "off" : "on")}
                   />

@@ -18,6 +18,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  type DictationEngine,
+  dictationLanguage,
+  engineFor,
+  MAX_DICTATION_SECONDS,
+  pickDictationMime,
+} from "@/lib/voice/dictation-engine";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
+import { supabase } from "@/lib/supabase";
 import { publishMicLevel, resetMicLevel } from "@/lib/workspace/mic-level";
 
 const METER_MS = 80;
@@ -47,15 +56,43 @@ function recogniser(): SpeechRecognitionConstructor | null {
 }
 
 /**
+ * Whether `MediaRecorder` and a microphone are both reachable — the xAI lane's requirement.
+ *
+ * 🔴 `navigator.mediaDevices` IS UNDEFINED IN AN INSECURE CONTEXT, NOT MERELY UNPERMITTED, and the
+ * optional chain is what keeps that a `false` rather than a TypeError. A page served over plain
+ * http (anything but localhost) has no microphone API at all, so the engine falls to "none" and the
+ * button does not appear — which is right: a microphone that throws on press is worse than none.
+ */
+function canRecord(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    typeof (window as { MediaRecorder?: unknown }).MediaRecorder !== "undefined" &&
+    typeof navigator !== "undefined" &&
+    Boolean(navigator.mediaDevices?.getUserMedia)
+  );
+}
+
+/** Which engine this browser will actually use. See `lib/voice/dictation-engine.ts`. */
+export function dictationEngine(): DictationEngine {
+  return engineFor({ mediaRecorder: canRecord(), speechRecognition: recogniser() !== null });
+}
+
+/**
  * Whether this browser can listen at all, without mounting the hook.
  *
  * 🔴 EXPORTED SO ONE FACT HAS ONE ANSWER. Voice mode's "shall I open the microphone for you?"
  * question lives in the header and the microphone lives in the composer; both must agree, and two
  * independent feature checks are two things that can disagree after a browser update. It is a
  * property of the window, not of either component, so neither owns it.
+ *
+ * 🔴🔴 IT NO LONGER MEANS "HAS THE WEB SPEECH API", AND THE RENAME IS THE WHOLE POINT (owner
+ * 2026-08-22). Firefox ships no recogniser, so this returned false there and the microphone was not
+ * disabled — it was ABSENT. "Your browser cannot do this" and "Nemesis cannot do this" look
+ * identical from the outside, and the second one is what a learner concluded. There is now a second
+ * engine behind it, so the honest question is whether dictation works at all.
  */
 export function speechRecognitionSupported(): boolean {
-  return recogniser() !== null;
+  return dictationEngine() !== "none";
 }
 
 export interface Dictation {
@@ -63,6 +100,15 @@ export interface Dictation {
    *  offer typing, so this hides the microphone rather than disabling the answer. */
   supported: boolean;
   listening: boolean;
+  /**
+   * True while a recorded clip is being turned into words.
+   *
+   * 🔴 ALWAYS FALSE ON THE BROWSER LANE, WHICH IS THE HONEST ANSWER RATHER THAN AN OMISSION. The
+   * Web Speech API writes as it hears, so there is no gap to report. On the xAI lane there is one
+   * — a real wait, after the learner has stopped talking — and a microphone that goes quiet with
+   * nothing on screen reads as a control that ate the sentence.
+   */
+  transcribing: boolean;
   /** Everything heard this session: settled text plus the phrase currently in flight. */
   transcript: string;
   error: string | null;
@@ -72,8 +118,10 @@ export interface Dictation {
 }
 
 export function useCanvasDictation(): Dictation {
-  const [supported] = useState(() => recogniser() !== null);
+  const [lane] = useState<DictationEngine>(() => dictationEngine());
+  const [supported] = useState(() => lane !== "none");
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [settled, setSettled] = useState("");
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +129,15 @@ export function useCanvasDictation(): Dictation {
   const engine = useRef<SpeechRecognitionLike | null>(null);
   const wanted = useRef(false);
   const meter = useRef<{ context: AudioContext; stream: MediaStream; timer: number } | null>(null);
+  /** The recorder, its pieces, and when it started — the xAI lane only. */
+  const recorder = useRef<MediaRecorder | null>(null);
+  const pieces = useRef<Blob[]>([]);
+  const openedAt = useRef(0);
+  /** Bumped by every stop, so a clip still uploading knows it has been superseded or abandoned. */
+  const clip = useRef(0);
+  /** The hard stop. See `MAX_DICTATION_SECONDS`. */
+  const cap = useRef<number | null>(null);
+  const alive = useRef(true);
 
   const closeMeter = useCallback(() => {
     const open = meter.current;
@@ -92,14 +149,22 @@ export function useCanvasDictation(): Dictation {
     resetMicLevel();
   }, []);
 
-  const openMeter = useCallback(async () => {
-    if (meter.current) return;
+  /**
+   * Open the microphone for the waveform, and hand the stream back.
+   *
+   * 🔴 ONE STREAM, SHARED WITH THE RECORDER. `lib/workspace/mic-level.ts` argues never to open the
+   * microphone twice, and it is right; the Web Speech API is the exception it does not cover,
+   * because that API owns its microphone privately and exposes nothing to read. The xAI lane has no
+   * such excuse — it records from exactly the stream the meter is already animating.
+   */
+  const openMeter = useCallback(async (): Promise<MediaStream | null> => {
+    if (meter.current) return meter.current.stream;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Stop may have been pressed while the permission prompt was still up.
       if (!wanted.current) {
         for (const track of stream.getTracks()) track.stop();
-        return;
+        return null;
       }
       const context = new AudioContext();
       const analyser = context.createAnalyser();
@@ -114,14 +179,103 @@ export function useCanvasDictation(): Dictation {
         publishMicLevel(Math.min(1, Math.sqrt(squares / Math.max(1, samples.length)) * 4));
       }, METER_MS);
       meter.current = { context, stream, timer };
+      return stream;
     } catch {
-      // No waveform, but dictation itself may well still work: the Web Speech API holds its own
-      // permission. Losing the animation is not a reason to refuse to listen.
+      // No waveform, but dictation itself may well still work on the browser lane: the Web Speech
+      // API holds its own permission. Losing the animation is not a reason to refuse to listen.
+      // 🔴 THE xAI LANE CANNOT SHRUG THIS OFF, and its caller checks for null — there the stream is
+      // not decoration, it is the recording.
+      return null;
+    }
+  }, []);
+
+  /**
+   * Send the recorded clip and put what came back into the transcript.
+   *
+   * 🔴 EVERY FAILURE IS NAMED IN THE LEARNER'S TERMS, AND EVERY ONE ENDS WITH "you can type
+   * instead". A microphone that swallows a spoken sentence and says nothing is the worst version of
+   * this feature: the learner has already done the work of composing out loud, and silence tells
+   * them neither what happened nor what to do next.
+   */
+  const sendClip = useCallback(async (ticket: number) => {
+    const parts = pieces.current;
+    pieces.current = [];
+    const type = recorder.current?.mimeType || parts[0]?.type || "audio/webm";
+    recorder.current = null;
+    const blob = new Blob(parts, { type });
+    // Nothing was captured — a permission revoked mid-answer, or a press so short no frame landed.
+    // Not an error worth a line of red: there is nothing to transcribe and nothing was lost.
+    if (blob.size === 0) return;
+
+    const seconds = Math.max(1, Math.round((Date.now() - openedAt.current) / 1000));
+    setTranscribing(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        if (alive.current) setError("Sign in to use dictation. You can type instead.");
+        return;
+      }
+      const query = new URLSearchParams({
+        language: dictationLanguage(typeof navigator === "undefined" ? undefined : navigator.language),
+        seconds: String(Math.min(MAX_DICTATION_SECONDS, seconds)),
+      });
+      const res = await fetch(`${supabaseUrl}/functions/v1/nemesis-dictate?${query}`, {
+        body: blob,
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": type,
+        },
+        method: "POST",
+      });
+      // Abandoned while it was in flight — the learner cleared the composer, or left the canvas.
+      if (!alive.current || clip.current !== ticket) return;
+      if (!res.ok) {
+        setError(
+          res.status === 402 ? "You have used this month's voice time. You can type instead."
+            : res.status === 503 ? "Dictation is not set up yet. You can type instead."
+            : res.status === 422 ? "Nothing could be made out. Try again, or type instead."
+            : "Dictation is unavailable right now. You can type instead.",
+        );
+        return;
+      }
+      const body = (await res.json().catch(() => null)) as { text?: unknown } | null;
+      const heard = typeof body?.text === "string" ? body.text.trim() : "";
+      if (!alive.current || clip.current !== ticket) return;
+      if (!heard) {
+        setError("Nothing could be made out. Try again, or type instead.");
+        return;
+      }
+      // Appended, not replaced: someone may dictate twice into the same answer, exactly as the
+      // browser lane accumulates its own final phrases.
+      setSettled((current) => `${current}${current ? " " : ""}${heard}`);
+    } catch {
+      if (alive.current && clip.current === ticket) {
+        setError("Dictation is unavailable right now. You can type instead.");
+      }
+    } finally {
+      if (alive.current) setTranscribing(false);
     }
   }, []);
 
   const stop = useCallback(() => {
     wanted.current = false;
+    clip.current += 1;
+    if (cap.current !== null) {
+      window.clearTimeout(cap.current);
+      cap.current = null;
+    }
+    // 🔴 THE RECORDER IS STOPPED, NOT DISCARDED. Its `onstop` is what uploads the clip, so tearing
+    // it down here without letting that fire would throw away the sentence the learner just spoke.
+    const taping = recorder.current;
+    if (taping && taping.state !== "inactive") {
+      try {
+        taping.stop();
+      } catch {
+        // Already stopped.
+      }
+    }
     const active = engine.current;
     engine.current = null;
     if (active) {
@@ -144,8 +298,54 @@ export function useCanvasDictation(): Dictation {
   }, [closeMeter]);
 
   const start = useCallback(() => {
+    if (wanted.current) return;
+
+    // 🔴🔴 THE xAI LANE, AND IT RUNS ONLY WHERE THE BROWSER HAS NOTHING (owner 2026-08-22: keep the
+    // browser recogniser, add xAI behind it). No interim words here — the clip is transcribed after
+    // it ends — which is exactly why it is the fallback and not the default: nothing bought with a
+    // round trip beats words appearing as you say them.
+    if (lane === "xai") {
+      setError(null);
+      wanted.current = true;
+      const ticket = clip.current;
+      void (async () => {
+        const stream = await openMeter();
+        if (!wanted.current || clip.current !== ticket) return;
+        if (!stream) {
+          wanted.current = false;
+          setError("Nemesis needs microphone access to hear you. You can type instead.");
+          return;
+        }
+        try {
+          const mime = pickDictationMime((type) => MediaRecorder.isTypeSupported(type));
+          // An empty string means "let the browser choose", which is a legitimate answer: every
+          // engine has a default it can definitely write, and forcing one it refuses produces a
+          // zero-byte clip.
+          const taping = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+          pieces.current = [];
+          taping.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) pieces.current.push(event.data);
+          };
+          taping.onstop = () => void sendClip(clip.current);
+          recorder.current = taping;
+          openedAt.current = Date.now();
+          taping.start();
+          setListening(true);
+          // 🔴 A HARD STOP, BECAUSE THIS LANE SPENDS MONEY AND THE OTHER ONE DOES NOT. The browser
+          // recogniser can be left running for an hour and cost nothing; a recorder left open in a
+          // pocket is a clip the server will refuse and an allowance quietly drawn down. Stopping
+          // it here also means the learner GETS the two minutes they spoke, rather than a 413.
+          cap.current = window.setTimeout(() => stop(), MAX_DICTATION_SECONDS * 1_000);
+        } catch {
+          wanted.current = false;
+          setError("Nemesis couldn't start listening. You can type instead.");
+        }
+      })();
+      return;
+    }
+
     const Engine = recogniser();
-    if (!Engine || wanted.current) return;
+    if (!Engine) return;
     setError(null);
     wanted.current = true;
 
@@ -201,7 +401,7 @@ export function useCanvasDictation(): Dictation {
       engine.current = null;
       setError("Nemesis couldn't start listening. You can type instead.");
     }
-  }, [openMeter, stop]);
+  }, [lane, openMeter, sendClip, stop]);
 
   const reset = useCallback(() => {
     setSettled("");
@@ -211,11 +411,18 @@ export function useCanvasDictation(): Dictation {
 
   // A component unmounted mid-answer would leave the microphone open and the recogniser running
   // with nowhere to put its words.
-  useEffect(() => stop, [stop]);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      stop();
+    };
+  }, [stop]);
 
   return {
     supported,
     listening,
+    transcribing,
     transcript: [settled, interim].filter(Boolean).join(" "),
     error,
     start,

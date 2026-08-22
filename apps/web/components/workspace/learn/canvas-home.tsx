@@ -472,6 +472,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             that while verifying: `SpeechRecognition` exists, so the button renders, but the capture
             never begins and the learner is told nothing. The session composer already prints this;
             the front door was the surface missing it. */}
+{/* 🔴 THE GAP BETWEEN STOPPING AND THE WORDS ARRIVING HAS TO BE VISIBLE. On the browser
+            lane there is none — it writes as it hears — but where Nemesis falls back to recording
+            and sending, the microphone goes quiet and nothing appears for a second or two. Silence
+            there reads as a control that ate the sentence. */}
+        {dictation.transcribing && (
+          <p className="mt-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">Turning that into words…</p>
+        )}
         {dictation.error && !listening && (
           <p className="mt-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}
