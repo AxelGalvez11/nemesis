@@ -1,15 +1,8 @@
 // The rest pose, and how two poses blend.
 //
-// 🔴 `REST` IS THE ONLY BASE ANY STATE INHERITS FROM, AND IT IS EXPLICIT.
-//
-// States are authored as sparse patches over this record and resolved to a complete
-// `Pose` at module load (`states.ts`), so nothing incomplete ever reaches the engine.
-// The rule comes from a real failure in the landing organism, written down in
-// `landing/components/organism/states.ts`: a partial state that inherits "the rest"
-// lets one screen silently keep the PREVIOUS screen's motion while looking deliberate,
-// and that class of bug is invisible until someone visits in an order nobody tested.
-// Inheriting from one named constant has neither problem — the fallback is always the
-// blob standing still, which is never wrong, only plain.
+// `REST` is the only base any state inherits from. States are authored as sparse
+// patches over this record and resolved to a complete `Pose` at module load, so a state
+// never accidentally inherits movement from the state that happened to precede it.
 
 import { clamp01, lerp, lerpAngle } from "./easing";
 import { EYE_H, EYE_RISE, EYE_SPLIT, EYE_W } from "./geometry";
@@ -17,15 +10,11 @@ import { blendRadii, SHAPES, type ShapeId } from "./shapes";
 import type { BodyPose, EyePose, Pose, SatellitePose } from "./types";
 
 /**
- * The resting silhouette.
+ * The resting silhouette is deliberately symmetric and circular.
  *
- * `blob` is the identity — a superellipse of exponent 2.45. At 2 the body would be
- * exactly an ellipse, the shape every mascot already is; above about 3 it reads as a
- * rounded rectangle rather than as a creature. 2.45 has real sides and soft corners, and
- * both survive 18px.
- *
- * `taper: 0.07` is small enough that nobody can name it and large enough that the form
- * is not symmetric. A perfectly symmetric blob reads as a logo.
+ * Personality now lives in the eyes, gaze and authored motion. A permanent taper made
+ * the resting character a different silhouette, which conflicts with the product rule
+ * that Nemesis is always recognisably the same round blob.
  */
 const NEUTRAL_BODY: BodyPose = {
   dx: 0,
@@ -35,7 +24,7 @@ const NEUTRAL_BODY: BodyPose = {
   squash: 1,
   tilt: 0,
   radii: SHAPES.blob,
-  taper: 0.07,
+  taper: 0,
   pinch: 0,
   ripple: 0,
   ripplePhase: 0,
@@ -63,7 +52,7 @@ const NEUTRAL_EYE: EyePose = {
   wink: 0,
 };
 
-/** The blob, standing still, looking straight ahead. */
+/** The circle, standing still, looking straight ahead. */
 export const REST: Pose = {
   body: NEUTRAL_BODY,
   eye: NEUTRAL_EYE,
@@ -82,20 +71,11 @@ export const REST: Pose = {
 export type PosePatch = {
   readonly [K in keyof Pose]?: Pose[K] extends number ? number : Partial<Pose[K]>;
 } & {
-  /**
-   * Sugar so a state can say `body: { shape: "lens" }` instead of importing the
-   * catalogue and spelling out an array of forty-eight numbers. Resolved here, once, at
-   * module load.
-   */
+  /** Historical shape sugar retained for the lab. Production semantic states do not use it. */
   readonly body?: Partial<BodyPose> & { shape?: ShapeId };
 };
 
-/**
- * Fills a patch out to a complete pose.
- *
- * Two levels deep and no deeper, which is the shape of `Pose` — a generic deep merge
- * would accept a patch with a misspelled key and silently drop it.
- */
+/** Fills a patch out to a complete pose. */
 export function resolvePose(patch: PosePatch, base: Pose = REST): Pose {
   const { shape, ...body } = patch.body ?? {};
   return {
@@ -126,8 +106,6 @@ function blendBody(a: BodyPose, b: BodyPose, t: number): BodyPose {
     taper: lerp(a.taper, b.taper, t),
     pinch: lerp(a.pinch, b.pinch, t),
     ripple: lerp(a.ripple, b.ripple, t),
-    // NOT shortest-path: the phase is a running total, and taking the short way round
-    // would make a wave that has travelled 400 degrees rewind to 40 mid-transition.
     ripplePhase: lerp(a.ripplePhase, b.ripplePhase, t),
     alpha: lerp(a.alpha, b.alpha, t),
   };
@@ -176,14 +154,7 @@ export function blendPose(a: Pose, b: Pose, t: number): Pose {
   };
 }
 
-/**
- * Turns the character down.
- *
- * `intensity` interpolates the pose back toward `REST`, so one number covers "the same
- * state, less of it" for every state at once. It deliberately does NOT touch
- * `liveliness` or `lookGain`: a quiet mascot still blinks and still looks at you —
- * those are what make it alive, and turning them down makes it dead rather than calm.
- */
+/** Turns the character down without making it dead. */
 export function scalePose(pose: Pose, intensity: number): Pose {
   const k = clamp01(intensity);
   if (k >= 1) return pose;
