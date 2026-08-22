@@ -24,16 +24,33 @@
 // `learning-canvas.tsx`'s, which calls this at every point one of the four events below actually
 // happens rather than re-deriving the rule at each call site.
 
-/** What is currently on screen, reduced to the two facts this rule needs. */
+/** What is currently on screen, reduced to the facts this rule needs. */
 export interface ExplanationState {
   /** An "Explain this" / "where did this come from" popover is open under some block. */
   readonly hasAside: boolean;
   /** A Define/Example/Why/Explain popover is open on a highlight or a clicked term. */
   readonly hasPopover: boolean;
+  /**
+   * The aside on screen is the sentence that INTRODUCED the lesson, not an answer to a question.
+   *
+   * 🔴🔴 THE DISTINCTION WAS MISSING AND IT COST THE OWNER A SECOND REPORT. Reported 2026-08-21
+   * with a screenshot: the lesson had moved on to *"What follows from Java's increasing popularity
+   * at the time, and why?"* and, underneath it, still sat *"Alright, let's get you started with
+   * JavaScript. The canvas will walk you through the core concepts…"* — a sentence whose entire job
+   * was to introduce a screen that was no longer there.
+   *
+   * 🔴 THE RULE WAS RIGHT AND ITS SUBJECT WAS WRONG. `policy_continue` clears NEITHER surface, and
+   * the reason given is sound: *"acknowledging a correction says nothing about an aside opened three
+   * questions ago, on an unrelated passage."* That is a statement about a LEARNER-TRIGGERED
+   * explanation — the thing this file's header scopes it to. An opening is not one of those. It is
+   * written by the same `setAside` call and is a different object entirely: the learner never asked
+   * for it, it belongs to one screen, and the moment that screen advances it is describing the past.
+   */
+  readonly asideIsOpening?: boolean;
 }
 
 /** Nothing open — the ordinary resting state of a canvas nobody has asked anything of yet. */
-export const NO_EXPLANATIONS: ExplanationState = { hasAside: false, hasPopover: false };
+export const NO_EXPLANATIONS: ExplanationState = { asideIsOpening: false, hasAside: false, hasPopover: false };
 
 export type ExplanationEvent =
   /**
@@ -65,7 +82,8 @@ export type ExplanationEvent =
  * gets it for free by dispatching once at the top, rather than each of "explain this", "rewrite",
  * "refused" and "ordinary" needing to remember. `policy_continue` clears NEITHER, which is the row
  * that makes this a different rule from the teaching policy's `Exposition`, not a restatement of it
- * under a new name — see the file header.
+ * under a new name — see the file header. What it DOES clear is an `opening`, which is not a
+ * learner-triggered explanation at all — see `asideIsOpening`.
  */
 export function nextExplanationState(state: ExplanationState, event: ExplanationEvent): ExplanationState {
   switch (event.kind) {
@@ -76,6 +94,10 @@ export function nextExplanationState(state: ExplanationState, event: Explanation
     case "dismiss_popover":
       return state.hasPopover ? { ...state, hasPopover: false } : state;
     case "policy_continue":
-      return state;
+      // 🔴 AN OPENING GOES, AN ANSWER STAYS, AND THE ASYMMETRY IS THE WHOLE POINT OF THE FIELD. The
+      // learner acknowledging the screen an opening introduced is exactly the moment that sentence
+      // stops being true; the same press says nothing about an explanation they asked for on an
+      // unrelated passage, which is what this row has always protected.
+      return state.hasAside && state.asideIsOpening ? { ...state, asideIsOpening: false, hasAside: false } : state;
   }
 }

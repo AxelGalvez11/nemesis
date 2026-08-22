@@ -277,7 +277,14 @@ export function LearningCanvas({
   // is correct: an un-opened toolbar is not the stale ANSWER rule 2 is about.
   const applyExplanationEvent = useCallback(
     (event: ExplanationEvent) => {
-      const current = { hasAside: session.aside !== null, hasPopover: answer !== null || term !== null };
+      const current = {
+        // 🔴 THE KIND TRAVELS WITH THE FACT. An opening and an answer are both "an aside is on
+        // screen", and only one of them should survive the learner acknowledging the screen it
+        // introduced — see `asideIsOpening`.
+        asideIsOpening: session.aside?.kind === "opening",
+        hasAside: session.aside !== null,
+        hasPopover: answer !== null || term !== null,
+      };
       const next = nextExplanationState(current, event);
       if (current.hasAside && !next.hasAside) session.dismissAside();
       if (current.hasPopover && !next.hasPopover) {
