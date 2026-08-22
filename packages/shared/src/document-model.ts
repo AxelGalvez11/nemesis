@@ -414,7 +414,22 @@ export interface DocFigure {
      * of them is a gap in the pipeline, and collapsing them would make a vision
      * pass that silently returned nothing look like a vision pass that ran.
      */
-    | "examined-empty";
+    | "examined-empty"
+    /**
+     * The parse ended and nothing ever decided about this picture.
+     *
+     * 🔴🔴 NOT A DECISION — THE ABSENCE OF ONE, RECORDED SO IT STOPS BEING INVISIBLE.
+     * Measured on production 2026-08-21: a 47-page lecture carried 28 figures, every one with a
+     * rectangle, 27 of them comfortably past the router's own worth-looking threshold, and all 28
+     * reached storage with no description and no reason. Across the corpus that shape accounts for
+     * 84 of 102 lost figures. Every other member of this union is a verdict somebody reached; a
+     * figure with none was silently dropped by a lane that never said so, and the coverage counted
+     * it as "nobody looked" without being able to say why nobody looked.
+     *
+     * Nothing should ever emit this. It exists so that when something does, the next parse names
+     * it instead of leaving a hole that reads like an ordinary gap.
+     */
+    | "no-verdict";
 }
 
 /** One structural element. Blocks are ordered; order is reading order. */
@@ -856,6 +871,14 @@ export function unitsWithUnexaminedFigures(doc: DocumentModel): number[] {
   const out = new Set<number>();
   for (const block of doc.blocks) {
     if (block.kind !== "figure") continue;
+    // 🔴 `no-verdict` IS NOT A DECISION AND MUST NOT BUY ITS UNIT A PASS. It records that nothing
+    // ever decided, which is the same loss to the reader as carrying no reason at all — the only
+    // difference is that it is now visible. Letting it satisfy this check would turn a fix that
+    // makes a gap NAMEABLE into one that makes the gap disappear from unit coverage.
+    if (block.figure?.skipped === "no-verdict") {
+      out.add(block.unit);
+      continue;
+    }
     if (block.figure?.description || block.figure?.skipped) continue;
     out.add(block.unit);
   }
