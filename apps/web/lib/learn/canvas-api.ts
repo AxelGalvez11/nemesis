@@ -35,8 +35,8 @@ import {
   parseTeachingReply,
   parseRecallCards,
   parseSelectionAnswer,
+  parseSelectionRequest,
   parseShortAnswer,
-  parseSimplifiedContent,
   parseTestQuestions,
   type ParsedLesson,
 } from "./canvas-parse";
@@ -47,8 +47,8 @@ import {
   lessonMessages,
   recallMessages,
   relearnMessages,
-  selectionMessages,
-  simplifyMessages,
+  defineSelectionMessages,
+  selectionRequestMessages,
   teachingMessages,
   causalMessages,
   territoryMessages,
@@ -60,7 +60,7 @@ import { parseCausalTerritory } from "./causal-grounded";
 import { parseSemanticTerritory } from "./semantic-grounded";
 import { parseTerritory, type TerritoryResult } from "./knowledge-territory";
 import type { KnowledgeObject } from "./knowledge-types";
-import type { CanvasSelection, SelectionAction } from "./canvas-selection";
+import type { CanvasSelection } from "./canvas-selection";
 import { knownDefinition } from "./learner-friction";
 import { loadLookups, recordLookup } from "./learner-lookups-store";
 import { wordShares, worthDefining } from "./vocabulary-lookup";
@@ -690,16 +690,15 @@ export interface SelectionExplanation {
   sourceLabel?: string;
 }
 
-/** Define / Explain / Example / Why for an exact highlighted range.
+/** What a marked vocabulary word means, in the sentence it appears in.
  *
  *  Returns text for a popover. It deliberately does NOT touch the page: looking up one word must
  *  not disturb the paragraph being read, and a definition that rewrote the passage underneath
  *  the learner would move the thing they were looking at while they looked at it. */
-export async function explainSelection(
+export async function defineSelection(
   uid: string,
   canvas: LearningCanvas,
   selection: CanvasSelection,
-  action: SelectionAction,
   signal?: AbortSignal,
 ): Promise<CanvasCallResult<SelectionExplanation>> {
   const block = selection.blockId
@@ -715,13 +714,12 @@ export async function explainSelection(
   //
   // 🔴 ONLY FOR `define`. "Explain this", "why", and "give me an example" are questions about a
   // passage in its context, and the answer to them is not reusable the way a term's meaning is.
-  const remembered = action === "define" ? await rememberedDefinition(uid, selection) : null;
+  const remembered = await rememberedDefinition(uid, selection);
   if (remembered) return { value: remembered, error: null };
 
   const { text, error } = await ask(
     uid,
-    selectionMessages({
-      action,
+    defineSelectionMessages({
       selectedText: selection.selectedText,
       surroundingText: selection.surroundingText,
       ...(block ? { passage: block.content } : {}),
@@ -746,13 +744,11 @@ export async function explainSelection(
   // 🔴 REMEMBERED AFTER THE ANSWER EXISTS, AND THE WRITE CANNOT DELAY IT. `recordLookup` never
   // throws and returns a boolean; a glossary that failed to save must not cost the learner the
   // definition they are looking at.
-  if (action === "define") {
-    void recordLookup(uid, {
-      canvasId: canvas.id,
-      definition: answer.text,
-      displayTerm: selection.selectedText,
-    });
-  }
+  void recordLookup(uid, {
+    canvasId: canvas.id,
+    definition: answer.text,
+    displayTerm: selection.selectedText,
+  });
 
   return {
     value: {
@@ -804,45 +800,100 @@ async function rememberedDefinition(
   return { term: selection.selectedText, text: known.definition };
 }
 
-/** "Simpler" — the one selection action that edits the page, and it edits ONE block.
+/**
+ * What happened to a typed request about a highlighted range.
  *
- *  Scoped through the same validator the teaching loop uses, which is what keeps
- *  `replace_canvas` and `rewrite_section` out of reach. Unscoped, a request to simplify one
- *  sentence comes back as a regenerated page. */
-export async function simplifySelection(
+ * A discriminated result rather than two nullable fields, because the caller does two completely
+ * different things with them — one paints a popover, the other writes to the document — and a shape
+ * that allowed both at once would eventually do both.
+ */
+export type SelectionOutcome =
+  | { kind: "answer"; answer: SelectionExplanation }
+  | { kind: "rewrite"; ops: CanvasOp[]; before: string; blockId: string };
+
+/**
+ * The learner highlighted something and typed what they wanted. This is that.
+ *
+ * 🔴🔴 THE MODEL DECIDES WHETHER THIS ANSWERS OR REWRITES, AND THAT IS THE WHOLE POINT. The five
+ * buttons this replaces each hard-wired one of those two outcomes: "Define"/"Explain"/"Example"/
+ * "Why?" could only ever answer, "Simpler" could only ever rewrite, and a learner whose sentence
+ * did not fit any of the five had nowhere to put it. Now the sentence goes in the packet and the
+ * reply names the act. See `SELECTION_REQUEST_RULE` in canvas-prompts.ts.
+ *
+ * 🔴 THE ONLY REWRITE IMPLEMENTATION THERE IS, WHICH IS THE POINT OF DELETING THE OTHER ONE. Until
+ * now `simplifySelection` sat beside this with its own prompt, and it was reached from the composer
+ * route — the turn router returning `then: "rewrite"` — where it threw the learner's sentence away
+ * and asked for "simpler" every time. So "make this shorter" and "add an example here" both came
+ * back as the same simplification, and two rewrite paths were free to drift apart. One path now,
+ * carrying the words that were actually typed.
+ *
+ * 🔴 A REWRITE IS STILL SCOPED BY THE VALIDATOR. Being asked in free text does not widen what may
+ * be written: the ops go through `validateOps` pinned to the one block the selection came from,
+ * which is what keeps `replace_canvas` and `rewrite_section` out of reach of a sentence somebody
+ * typed into a popover.
+ *
+ * 🔴 AND A REWRITE WITH NOWHERE TO LAND BECOMES AN ANSWER RATHER THAN AN ERROR. Over a question, a
+ * correction or a chat reply there is no block, the prompt has already said so, and a model that
+ * asks to rewrite anyway is telling us something useful — it wrote a better version of the text.
+ * Showing that beside the passage is a worse outcome than rewriting and a much better one than
+ * "that text isn't part of the document".
+ */
+export async function askSelection(
   uid: string,
   canvas: LearningCanvas,
   selection: CanvasSelection,
+  request: string,
   signal?: AbortSignal,
-): Promise<CanvasCallResult<{ ops: CanvasOp[]; before: string; blockId: string }>> {
+): Promise<CanvasCallResult<SelectionOutcome>> {
   const block = selection.blockId
     ? canvas.blocks.find((candidate) => candidate.id === selection.blockId)
     : undefined;
-  if (!block) return { value: null, error: "That text isn't part of the document, so there's nothing to rewrite." };
+  const rewritable = Boolean(block) && selection.rewritable;
+  const objective = selection.conceptIds?.[0] ? conceptLabel(canvas, selection.conceptIds[0]) : "";
 
   const { text, error } = await ask(
     uid,
-    simplifyMessages({
+    selectionRequestMessages({
+      request,
       selectedText: selection.selectedText,
-      block,
+      surroundingText: selection.surroundingText,
+      ...(block ? { passage: block.content } : {}),
       canvasTitle: canvas.title,
+      ...(objective ? { objective } : {}),
+      rewritable,
       sources: canvas.sources,
     }),
     signal,
   );
   if (error) return { value: null, error };
 
-  const content = text ? parseSimplifiedContent(text) : null;
-  if (!content) return { value: null, error: "Nemesis couldn't rewrite that. Nothing was changed." };
+  const outcome = text ? parseSelectionRequest(text) : null;
+  if (!outcome) return { value: null, error: "Nemesis had nothing useful to add about that." };
 
-  const { ops } = validateOps(
-    canvas,
-    [{ operation: "replace_block", blockId: block.id, content }],
-    { scopeBlockIds: [block.id] },
-  );
-  if (ops.length === 0) return { value: null, error: "Nemesis couldn't rewrite that. Nothing was changed." };
+  if (outcome.kind === "rewrite" && block && rewritable) {
+    const { ops } = validateOps(
+      canvas,
+      [{ operation: "replace_block", blockId: block.id, content: outcome.content }],
+      { scopeBlockIds: [block.id] },
+    );
+    if (ops.length === 0) return { value: null, error: "Nemesis couldn't rewrite that. Nothing was changed." };
+    // `before` is captured HERE, at the moment of the write. Once the ops are applied the original
+    // wording is gone and no later step can reconstruct it — which is what `restoreBlock` needs.
+    return { value: { kind: "rewrite", ops, before: block.content, blockId: block.id }, error: null };
+  }
 
-  // `before` is captured HERE, at the moment of the write. Once the ops are applied the original
-  // wording is gone and no later step can reconstruct it.
-  return { value: { ops, before: block.content, blockId: block.id }, error: null };
+  const answerText = outcome.kind === "rewrite" ? outcome.content : outcome.text;
+  const claimed = outcome.kind === "answer" ? outcome.fromSource : "";
+  // Checked against the canvas's real sources rather than trusted from the reply — a plausible
+  // citation to material that says no such thing is worse than no citation at all.
+  const named = claimed
+    ? canvas.sources.find((source) => source.title.toLowerCase() === claimed.toLowerCase())
+    : undefined;
+  return {
+    value: {
+      kind: "answer",
+      answer: { term: selection.selectedText, text: answerText, ...(named ? { sourceLabel: named.title } : {}) },
+    },
+    error: null,
+  };
 }

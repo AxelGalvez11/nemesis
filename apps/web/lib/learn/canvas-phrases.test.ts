@@ -102,16 +102,25 @@ test("🔴 a rewritten passage becomes unread again — the defect §12 shipped"
   assert.equal(rewritten.blocks[0]?.previousContent, "Dense original wording.");
 });
 
-test("the typed path and the toolbar path share one rewrite implementation", () => {
-  // Two implementations of "simpler" would drift, and the one nobody uses would rot. The composer
-  // route calls the same `askAboutSelection(…, "simpler")` the selection toolbar does.
-  const source = readFileSync(
+test("🔴 there is exactly one rewrite implementation, and the learner's words reach it", () => {
+  // Two implementations of "rewrite" would drift, and the one nobody uses would rot. This used to
+  // assert that the composer route called the same `askAboutSelection(…, "simpler")` the selection
+  // toolbar did — and it stayed green while the real problem grew underneath it: the toolbar was
+  // deleted (owner 2026-08-21), which left `simplifySelection` as a second implementation reached
+  // from one place, with a prompt that threw the learner's sentence away and asked for "simpler"
+  // every time. "Make this shorter" and "add an example here" both came back simplified.
+  //
+  // 🔴 SO THE ASSERTION IS NOW ON THE SENTENCE REACHING THE REWRITE, which is the thing that was
+  // actually missing. Calibration: drop `text` from the call below and this reddens.
+  const canvas = readFileSync(
     join(import.meta.dirname, "..", "..", "components", "workspace", "learn", "learning-canvas.tsx"),
     "utf8",
   );
-  const calls = source.match(/askAboutSelection\(/g) ?? [];
-  assert.ok(calls.length >= 2, "expected the composer route to reuse the selection path");
-  assert.match(source, /"simpler",/, "and to ask for the same action");
+  assert.match(canvas, /session\.rewriteSelection\(\{[\s\S]{0,400}\}, text\);/, "the composer route rewrites without saying what was asked for");
+
+  const api = readFileSync(join(import.meta.dirname, "canvas-api.ts"), "utf8");
+  assert.ok(!/export async function simplifySelection/.test(api), "the second rewrite implementation is back");
+  assert.equal((api.match(/operation: "replace_block"/g) ?? []).length, 1, "more than one place builds a block rewrite");
 });
 
 // ── §39, structurally: any op that changes what the learner reads invalidates `readAt` ──────────

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { selectionActions } from "@/lib/learn/canvas-selection";
 
 // 🔴🔴🔴 THE HIGHLIGHT TOOLBAR WAS UNREACHABLE ON EVERY CANVAS WITH NO READING MATERIAL.
 //
@@ -101,11 +100,15 @@ test("🔴🔴 'Simpler' is NOT offered on a region with no block behind it", ()
   // 🔴 THE FILTER ALREADY EXISTED — this asserts the new regions inherit it by declining
   // `rewritable`, rather than adding a second rule. Calibration: pass `{ rewritable: true }` to any
   // of the three call sites and this reddens.
-  for (const shape of ["word", "phrase", "passage"] as const) {
-    const offered = selectionActions(shape, false).map((option) => option.action);
-    assert.ok(!offered.includes("simpler"), `${shape} still offers simpler when nothing is rewritable`);
-    assert.ok(offered.length > 0, `${shape} offers nothing at all`);
-  }
+  // 🔴 THE ENFORCEMENT MOVED WHEN THE BUTTONS DID. There is no "Simpler" button to withhold any
+  // more — the learner types what they want and the model decides whether that means rewriting. So
+  // the guarantee is now made twice, in the two places it can be broken: the packet TELLS the model
+  // there is nowhere to write, and `askSelection` refuses to build a `replace_block` without a
+  // block regardless of what comes back.
+  const prompts = code(readFileSync(new URL("../../../lib/learn/canvas-prompts.ts", import.meta.url), "utf8"));
+  assert.match(prompts, /rewritable\s*\n?\s*\?[\s\S]{0,160}nothing to rewrite/, "the packet no longer says when a rewrite has nowhere to land");
+  const api = code(readFileSync(new URL("../../../lib/learn/canvas-api.ts", import.meta.url), "utf8"));
+  assert.match(api, /outcome\.kind === "rewrite" && block && rewritable/, "askSelection writes a block without checking there is one");
   for (const site of ['selectableRegion(index === 0 ? "reply"', 'selectableRegion("claim-heading")', 'selectableRegion("claim-body")', 'selectableRegion("question")']) {
     const source = canvasCode.includes(site) ? canvasCode : policyCode;
     const at = source.indexOf(site);
@@ -118,8 +121,8 @@ test("🔴 a document block still IS rewritable, so this took nothing away", () 
   // The one region that legitimately rewrites must keep doing so; a fix that made every region
   // non-rewritable would pass every assertion above and delete a feature.
   assert.match(code(document_), /rewritable/, "the document block no longer claims to be rewritable");
-  const withBlock = selectionActions("passage", true).map((option) => option.action);
-  assert.ok(withBlock.includes("simpler"), "simpler is gone even where there is a block to rewrite");
+  const api = code(readFileSync(new URL("../../../lib/learn/canvas-api.ts", import.meta.url), "utf8"));
+  assert.match(api, /kind: "rewrite", ops, before: block\.content, blockId: block\.id/, "a rewrite can no longer reach the document at all");
 });
 
 // ── Inline citations, and the misattribution that was one line away ─────────

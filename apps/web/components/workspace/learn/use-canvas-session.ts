@@ -27,8 +27,8 @@ import {
   applyTeachingAction,
   cardAsTask,
   evaluateLearningResponse,
-  explainSelection,
-  simplifySelection,
+  askSelection,
+  defineSelection as apiDefineSelection,
   questionAsTask,
   runCommand,
 } from "@/lib/learn/canvas-api";
@@ -54,7 +54,7 @@ import {
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps, applyRewrite, restoreBlock } from "@/lib/learn/canvas-ops";
 import { finishReading } from "@/lib/learn/canvas-reading";
-import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
+import type { CanvasSelection } from "@/lib/learn/canvas-selection";
 import { canStart, canTransition } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { readingSubjectFor, thinkingCopy } from "@/lib/learn/thinking-phases";
@@ -162,6 +162,18 @@ type CanvasAside = {
   /** Figures this reply draws, validated, in the order its `[figure n]` markers count into. */
   visuals?: readonly CanvasVisualRequest[];
 } | null;
+
+/**
+ * What came back from a typed request about a highlighted range.
+ *
+ * 🔴 "REWROTE THE PASSAGE" AND "COULD NOT" ARE DIFFERENT ANSWERS AND MUST LOOK DIFFERENT. Both used
+ * to be `null`, and the caller closed the popover on it — which is right for a rewrite, whose result
+ * is on the page, and wrong for a failure, whose result is the error message inside the popover
+ * being closed.
+ */
+export type SelectionReply =
+  | { kind: "answer"; term: string; text: string; sourceLabel?: string }
+  | { kind: "rewritten" };
 
 export interface CanvasSession {
   canvas: LearningCanvas;
@@ -271,16 +283,24 @@ export interface CanvasSession {
   /** "I don't know" — an explicit statement of state, which is real evidence, unlike a reveal
    *  shortcut that only tells us they looked. */
   admitUnknown: () => Promise<void>;
-  /** Answer a question about an exact highlighted range. Returns text for a popover; for
-   *  "simpler" it rewrites the one block instead and returns null. */
+  /** What a marked vocabulary word means. Returns text for a popover. */
+  defineSelection: (selection: CanvasSelection) => Promise<{ term: string; text: string; sourceLabel?: string } | null>;
+  /** Rewrite one passage in place. The turn router's `then: "rewrite"` lands here, with the
+   *  sentence the learner typed, so the rewrite is the one they asked for. */
+  rewriteSelection: (selection: CanvasSelection, request: string) => Promise<void>;
+  /**
+   * The learner highlighted something and said what they wanted, in their own words.
+   *
+   * Which of the two outcomes happens is the model's reading of `request`, not a flag the caller
+   * sets. `null` means neither happened and `selectionError` says why — a case the caller must not
+   * confuse with a rewrite, or a failed request would silently close the popover carrying its own
+   * error message.
+   */
+  askAboutSelection: (selection: CanvasSelection, request: string) => Promise<SelectionReply | null>;
   /** Session management (§10). Kept away from the teaching API above on purpose — these change
    *  what the session IS, not what the learner is doing inside it. */
   rename: (title: string) => void;
   remove: () => Promise<void>;
-  askAboutSelection: (
-    selection: CanvasSelection,
-    action: SelectionAction,
-  ) => Promise<{ term: string; text: string; sourceLabel?: string } | null>;
   /** Record what the learner did. 🔴 Telemetry only — see canvas-events.ts. */
   recordEvent: (event: NewLearningEvent) => void;
   selectionBusy: boolean;
@@ -1474,78 +1494,44 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     else await respond(task.id, "I don't know.", "typed");
   }, [recordEvent, respond, revealRecall]);
 
-  /** The fast path from "I don't understand this bit" to an answer, without leaving the page.
-   *
-   *  🔴 Only "simpler" is allowed to touch the document, and only the one block the selection
-   *  came from. Everything else answers in a popover: looking up a word must not move the
-   *  paragraph the learner is looking at. */
-  const askAboutSelection = useCallback(
-    async (selection: CanvasSelection, action: SelectionAction) => {
-      const id = requireUid();
-      if (!id) {
-        // 🔴 Also reported in the popover, not only in the page-level error strip. The learner
-        // asked about one word and is looking at that word; an explanation that appears at the
-        // bottom of the screen is an explanation they will not connect to what they just did.
-        setSelectionError("Sign in to use the canvas.");
-        return null;
-      }
+  /** Shared preamble for every selection call: who is asking, and clearing the last error. */
+  const beginSelection = useCallback(() => {
+    const id = requireUid();
+    // 🔴 Reported in the popover, not only in the page-level error strip. The learner asked about
+    // one word and is looking at that word; an explanation that appears at the bottom of the
+    // screen is an explanation they will not connect to what they just did.
+    if (!id) setSelectionError("Sign in to use the canvas.");
+    else {
       setSelectionError(null);
       setSelectionBusy(true);
+    }
+    return id;
+  }, [requireUid]);
 
-      // 🔴 REMEMBERED HERE BECAUSE THIS IS THE ONE DOOR EVERY LOOKUP GOES THROUGH — the selection
-      // toolbar and a click on an already-marked term both arrive as the same call, which is what
-      // `lookUpTerm` in learning-canvas.tsx exists to guarantee. Recording it at either call site
-      // would have covered half the ways a learner asks what a word means.
-      //
-      // 🔴 A DEFINITION-SHAPED ACTION ONLY. "Simpler" rewrites a passage and "why" explains a
-      // mechanism; neither means "I did not know this word", and underlining a whole rewritten
-      // sentence is not what was asked for.
-      if (action === "define" || action === "explain") {
-        const word = selection.selectedText.trim();
-        if (word && word.length <= LOOKUP_MARK_MAX_CHARS) {
-          setLookedUp((known) => (known.some((k) => k.toLowerCase() === word.toLowerCase()) ? known : [...known, word]));
-        }
-      }
+  /** Underline a word the learner has now had explained, so the page shows what they asked about.
+   *
+   *  🔴 A WORD, NOT A SENTENCE. Underlining a whole rewritten paragraph is not what was asked for,
+   *  and `LOOKUP_MARK_MAX_CHARS` is what keeps a dragged passage out of the glossary marks. */
+  const markLookedUp = useCallback((selectedText: string) => {
+    const word = selectedText.trim();
+    if (!word || word.length > LOOKUP_MARK_MAX_CHARS) return;
+    setLookedUp((known) => (known.some((k) => k.toLowerCase() === word.toLowerCase()) ? known : [...known, word]));
+  }, []);
 
+  /** What a marked vocabulary word means. The click IS the question, so no words are involved and
+   *  the answer is worth remembering — this is the one lookup `recordLookup` caches. */
+  const defineSelection = useCallback(
+    async (selection: CanvasSelection) => {
+      const id = beginSelection();
+      if (!id) return null;
+      markLookedUp(selection.selectedText);
       recordEvent({
-        type:
-          action === "define"
-            ? "definition_opened"
-            : action === "simpler"
-              ? "simplification_requested"
-              : action === "example"
-                ? "example_requested"
-                : action === "why"
-                  ? "why_requested"
-                  : "explanation_requested",
+        type: "definition_opened",
         ...(selection.blockId ? { blockId: selection.blockId } : {}),
         ...(selection.conceptIds ? { conceptIds: selection.conceptIds } : {}),
         selectedText: selection.selectedText,
       });
-
-      if (action === "simpler") {
-        // 🔴 THE PASSAGE SHOWS THE WORK, NOT THE POPOVER (§11). `setSelectionBusy` drives the
-        // toolbar the learner just clicked; on its own it left the paragraph — the thing actually
-        // being rewritten — looking untouched until the new wording appeared out of nowhere.
-        if (selection.blockId) setBusy({ blockIds: [selection.blockId], kind: "rewrite" });
-        const result = await simplifySelection(id, latest.current, selection);
-        setSelectionBusy(false);
-        setBusy({ kind: null });
-        if (!result.value) {
-          setSelectionError(result.error);
-          return null;
-        }
-        // 🔴 `applyRewrite`, NOT `applyOps` — and the difference is a field that already existed
-        // and was being thrown away. `simplifySelection` has always returned `before`, captured at
-        // the moment of the write with the comment *"once the ops are applied the original wording
-        // is gone and no later step can reconstruct it"*. Nothing read it. §11's *"keep the old
-        // version internally so it can be restored"* was one assignment away the whole time.
-        const rewrite = result.value;
-        update((current) => applyRewrite(current, rewrite));
-        return null;
-      }
-
-      const result = await explainSelection(id, latest.current, selection, action);
+      const result = await apiDefineSelection(id, latest.current, selection);
       setSelectionBusy(false);
       if (!result.value) {
         setSelectionError(result.error);
@@ -1553,7 +1539,95 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       }
       return result.value;
     },
-    [recordEvent, requireUid, update],
+    [beginSelection, markLookedUp, recordEvent],
+  );
+
+  /**
+   * Rewrite one passage in place, because the turn router read the learner's sentence and returned
+   * `then: "rewrite"`.
+   *
+   * 🔴🔴 IT GOES THROUGH `askSelection` LIKE EVERYTHING ELSE, AND CARRIES WHAT THEY ACTUALLY TYPED.
+   * This used to call a second implementation, `simplifySelection`, whose prompt asked for "the same
+   * meaning, plainer construction" and nothing else — so the learner's sentence was read once, by
+   * the router, to decide THAT a rewrite was wanted, and then discarded before deciding WHICH one.
+   * "Make this shorter", "add an example here" and "say this more simply" all produced the same
+   * simplification. The words go the whole way now, and there is one rewrite implementation instead
+   * of two free to drift.
+   *
+   * 🔴 AND IT CAN COME BACK AS AN ANSWER. The router decided from the composer packet; this call
+   * also sees the block itself, and may reasonably conclude the passage should stand. That lands in
+   * the aside — the same place a conversational reply lands — because the alternative is a turn
+   * where the learner typed something and nothing at all happened.
+   */
+  const rewriteSelection = useCallback(
+    async (selection: CanvasSelection, request: string) => {
+      const id = beginSelection();
+      if (!id) return;
+      // 🔴 THE PASSAGE SHOWS THE WORK, NOT THE POPOVER (§11). Unlike a typed request from the ask
+      // box, this path already knows a rewrite is intended — the router said so — so the paragraph
+      // can honestly show that it is the thing being worked on.
+      if (selection.blockId) setBusy({ blockIds: [selection.blockId], kind: "rewrite" });
+      const result = await askSelection(id, latest.current, selection, request);
+      setSelectionBusy(false);
+      setBusy({ kind: null });
+      if (!result.value) {
+        setSelectionError(result.error);
+        return;
+      }
+      const outcome = result.value;
+      recordEvent({
+        type: outcome.kind === "rewrite" ? "simplification_requested" : "explanation_requested",
+        ...(selection.blockId ? { blockId: selection.blockId } : {}),
+        ...(selection.conceptIds ? { conceptIds: selection.conceptIds } : {}),
+        selectedText: selection.selectedText,
+      });
+      // 🔴 `applyRewrite`, NOT `applyOps` — and the difference is a field that already existed and
+      // was being thrown away. The rewrite has always returned `before`, captured at the moment of
+      // the write. §11's *"keep the old version internally so it can be restored"* was one
+      // assignment away the whole time.
+      if (outcome.kind === "rewrite") update((current) => applyRewrite(current, outcome));
+      else setAside({ blockId: selection.blockId ?? null, kind: "reply", text: outcome.answer.text });
+    },
+    [beginSelection, recordEvent, update],
+  );
+
+  /**
+   * The learner highlighted something and typed what they wanted done about it.
+   *
+   * 🔴 THIS FUNCTION DOES NOT READ WHAT THEY TYPED. Whether the request means "tell me" or "change
+   * this" is decided by the model (`askSelection`), and the two outcomes arrive already
+   * distinguished. A branch here on the words would be the deleted toolbar growing back inside the
+   * thing that replaced it.
+   *
+   * 🔴 THE PASSAGE GOES BUSY ONLY ONCE WE KNOW IT IS BEING REWRITTEN, which is after the reply. A
+   * typed request cannot say in advance which of the two it is, so unlike `rewriteSelection` there
+   * is nothing honest to show on the paragraph while the model is still deciding.
+   */
+  const askAboutSelection = useCallback(
+    async (selection: CanvasSelection, request: string): Promise<SelectionReply | null> => {
+      const id = beginSelection();
+      if (!id) return null;
+      const result = await askSelection(id, latest.current, selection, request);
+      setSelectionBusy(false);
+      if (!result.value) {
+        setSelectionError(result.error);
+        return null;
+      }
+      const outcome = result.value;
+      recordEvent({
+        type: outcome.kind === "rewrite" ? "simplification_requested" : "explanation_requested",
+        ...(selection.blockId ? { blockId: selection.blockId } : {}),
+        ...(selection.conceptIds ? { conceptIds: selection.conceptIds } : {}),
+        selectedText: selection.selectedText,
+      });
+      if (outcome.kind === "rewrite") {
+        update((current) => applyRewrite(current, outcome));
+        return { kind: "rewritten" };
+      }
+      markLookedUp(selection.selectedText);
+      return { kind: "answer", ...outcome.answer };
+    },
+    [beginSelection, markLookedUp, recordEvent, update],
   );
 
   /**
@@ -1638,6 +1712,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       await deleteCanvas(uid, latest.current.id);
     },
     askAboutSelection,
+    defineSelection,
+    rewriteSelection,
     recordEvent,
     selectionBusy,
     selectionError,

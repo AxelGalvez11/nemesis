@@ -82,28 +82,12 @@ const TERMS_RULE =
   "the sentence containing it. Do not name ordinary words, words the document has already introduced, or words that " +
   "are merely long.";
 
-/**
- * What "simpler" asks for. Named here rather than only inside `SELECTION_INTENT` because it is
- * also half of `SIMPLIFY_RULE`, and two copies of an instruction are two instructions the moment
- * one is edited.
- */
-const SELECTION_INTENT_SIMPLER =
-  "Rewrite the passage below so it is easier to follow, keeping every technical term that the learner needs " +
-  "and every claim the original made. Same meaning, plainer construction. Do not add new information and do not remove content.";
-
 /** The contract every selection answer follows, identical on every selection. */
 const SELECTION_ANSWER_RULE =
   "If the attached material defines this itself, prefer that meaning and set \"fromSource\" to the source title. " +
   "If it does not, answer from established knowledge and leave \"fromSource\" empty — never imply the learner's " +
   "own material said something it did not.\n\n" +
   'Return JSON: {"answer":"…","fromSource":"…"}';
-
-/** "Simpler" — the one selection action that edits the page. Identical on every use. */
-const SIMPLIFY_RULE =
-  `${SELECTION_INTENT_SIMPLER}\n\n` +
-  "You are rewriting one passage and nothing else. Do not write a heading. Do not add a second paragraph. " +
-  "Do not comment on the change.\n\n" +
-  'Return JSON: {"content":"…"}';
 
 /** Answering a question about one block. Identical on every use. */
 const EXPLAIN_BLOCK_RULE =
@@ -1074,7 +1058,7 @@ export function documentText(blocks: readonly CanvasBlock[]): string {
  *  asking the model — which would let it invent a source. This is the one-block explainer. */
 // ----------------------------------------------------------------- selection
 
-/** What each selection action is actually asking for.
+/** What "Define" is actually asking for.
  *
  *  🔴 A definition must be SHORTER AND SIMPLER than the sentence that caused the confusion.
  *  "Homeostasis is the dynamic self-regulatory process by which biological systems maintain
@@ -1084,41 +1068,66 @@ export function documentText(blocks: readonly CanvasBlock[]): string {
  *  🔴 And it must not simplify the terminology away. If a term is part of what is being learned,
  *  the learner eventually needs the term itself, not a paraphrase of it — so the formal word is
  *  kept and glossed, never replaced. */
-const SELECTION_INTENT: Record<string, string> = {
-  // 🔴 REPORTED 2026-08-20, WITH A SCREENSHOT: the learner highlighted "retatrutide's" and got back
-  // *"'retatrutide's' means something that belongs to or is connected to retatrutide"*. A lesson in
-  // the possessive apostrophe, delivered to someone asking what a drug is.
-  //
-  // The model followed its instructions exactly. It was told to say what "this term" means "HERE,
-  // in this context", it was handed the string `retatrutide's`, and the honest answer to that
-  // literal question IS the grammar. Nothing was broken; the prompt asked the wrong question.
-  //
-  // 🔴 THE FIX IS A SENTENCE, NOT A STRIPPER, AND THAT IS DELIBERATE. The obvious repair is to trim
-  // a trailing `'s` before the lookup — but that is an English rule quietly deciding what a learner
-  // meant, in a product whose standing test is "would this work for a law student and a mechanical
-  // engineering student", in any language. Telling the model to look through the inflection is the
-  // same fix without the rule, and it also covers plurals, cases and conjugations no strip list
-  // would have reached.
-  define:
-    "Say what this term means HERE, in this context, in one or two short sentences. " +
-    "Use plainer words than the sentence it came from. Keep the technical term itself — the learner needs the word, " +
-    "not a replacement for it — and explain it rather than swapping it out. " +
-    "If the highlighted text is an inflected form — a possessive, a plural, a conjugation, a case ending — " +
-    "define the underlying term it is a form OF. Never explain the grammar; the learner highlighted a word " +
-    "because they did not know the thing, not because they did not know the ending.",
-  explain:
-    "Explain what this means in this context, in at most three short sentences. " +
-    "Explain the idea, not the wording. Assume they have read the surrounding passage.",
-  simpler: SELECTION_INTENT_SIMPLER,
-  example:
-    "Give one concrete example that makes this clear, in at most three short sentences. " +
-    "A specific case, not a restatement of the definition.",
-  why: "Explain WHY this is so — the reason or mechanism behind it — in at most three short sentences.",
-};
+// 🔴 REPORTED 2026-08-20, WITH A SCREENSHOT: the learner highlighted "retatrutide's" and got back
+// *"'retatrutide's' means something that belongs to or is connected to retatrutide"*. A lesson in
+// the possessive apostrophe, delivered to someone asking what a drug is.
+//
+// The model followed its instructions exactly. It was told to say what "this term" means "HERE, in
+// this context", it was handed the string `retatrutide's`, and the honest answer to that literal
+// question IS the grammar. Nothing was broken; the prompt asked the wrong question.
+//
+// 🔴 THE FIX IS A SENTENCE, NOT A STRIPPER, AND THAT IS DELIBERATE. The obvious repair is to trim a
+// trailing `'s` before the lookup — but that is an English rule quietly deciding what a learner
+// meant, in a product whose standing test is "would this work for a law student and a mechanical
+// engineering student", in any language. Telling the model to look through the inflection is the
+// same fix without the rule, and it also covers plurals, cases and conjugations no strip list would
+// have reached.
+const LOOK_THROUGH_INFLECTION =
+  "If the highlighted text is an inflected form — a possessive, a plural, a conjugation, a case ending — " +
+  "treat it as the underlying term it is a form OF. Never explain the grammar; the learner highlighted a word " +
+  "because they did not know the thing, not because they did not know the ending.";
 
-/** A definition, an explanation, an example or a reason, about an exact selected range. */
-export function selectionMessages(input: {
-  action: string;
+const DEFINE_INTENT =
+  "Say what this term means HERE, in this context, in one or two short sentences. " +
+  "Use plainer words than the sentence it came from. Keep the technical term itself — the learner needs the word, " +
+  "not a replacement for it — and explain it rather than swapping it out. " +
+  LOOK_THROUGH_INFLECTION;
+
+/**
+ * What the learner typed into the ask box, and what may be done about it.
+ *
+ * 🔴🔴 THE MODEL CHOOSES BETWEEN ANSWERING AND REWRITING, BECAUSE THE LEARNER'S SENTENCE IS THE
+ * ONLY THING THAT KNOWS WHICH. "what does this mean" wants an answer beside the passage; "say this
+ * more simply" wants the passage itself to change; "add an example here" wants the passage to grow.
+ * The old toolbar made that choice for them by which button they pressed, which is why there had to
+ * be five buttons — and why a request that was not one of the five had nowhere to go.
+ *
+ * 🔴 THE SAME ENVELOPE SHAPE `turn-router.ts` USES, deliberately. One JSON object naming the act,
+ * then the body of it. Two surfaces of one product should not answer the same question two ways.
+ *
+ * 🔴 REWRITING IS PERMITTED BY THE CALLER, NOT ASSUMED HERE. A selection over a question, a
+ * correction or a chat reply has no document block underneath it, so there is nowhere for a rewrite
+ * to land. `selectionRequestMessages` is told whether this one does, and says so plainly — a
+ * control that fails at the moment of use is worse than one that was never offered.
+ */
+const SELECTION_REQUEST_RULE =
+  "The learner highlighted part of what they are reading and asked you for something. Do exactly what they asked, " +
+  "about THAT text, and nothing else.\n\n" +
+  "Choose one of two things:\n" +
+  '· "answer" — say something back, beside the passage, without changing it. This is the right choice for a question, ' +
+  "for anything they want to understand, and whenever you are unsure. At most four short sentences.\n" +
+  '· "rewrite" — they asked for the passage itself to be different: put more simply, reworded, expanded, shortened, ' +
+  "or with something added. Return the WHOLE passage as it should now read, keeping every claim the original made " +
+  "and every technical term the learner needs. Do not write a heading, do not comment on the change.\n\n" +
+  `${LOOK_THROUGH_INFLECTION}\n\n` +
+  "If the attached material covers this itself, prefer what it says and set \"fromSource\" to that source's title. " +
+  "If it does not, answer from established knowledge and leave \"fromSource\" empty — never imply the learner's own " +
+  "material said something it did not.\n\n" +
+  'Return JSON: {"do":"answer","answer":"…","fromSource":"…"} or {"do":"rewrite","content":"…"}';
+
+/** What a marked vocabulary word means, in this sentence. The one lookup the software originates
+ *  on the learner's behalf — everything they ask in words goes through `selectionRequestMessages`. */
+export function defineSelectionMessages(input: {
   selectedText: string;
   /** The sentence it sits in. Without this a word gets a dictionary answer, and "power" means
    *  four different things depending on the field and the paragraph. */
@@ -1129,7 +1138,6 @@ export function selectionMessages(input: {
   objective?: string;
   sources: readonly CanvasSource[];
 }): WireMsg[] {
-  const intent = SELECTION_INTENT[input.action] ?? SELECTION_INTENT.explain;
   return [
     canvasSystem(SELECTION_ANSWER_RULE),
     {
@@ -1140,7 +1148,7 @@ export function selectionMessages(input: {
         `They highlighted this exact text: "${input.selectedText}"\n\n` +
         `It appears in this sentence: "${input.surroundingText}"\n\n` +
         (input.passage ? `Which sits in this passage:\n${input.passage}\n\n` : "") +
-        `${intent}\n\n` +
+        `${DEFINE_INTENT}\n\n` +
         // 🔴 THE SELECTED WORDS ARE THE QUERY. A learner highlighting a term wants what THEIR
         // material says about it, and their material says it in the excerpts that share its
         // vocabulary. `scope` is empty here because a selection names no block — the surrounding
@@ -1154,26 +1162,46 @@ export function selectionMessages(input: {
   ];
 }
 
-/** "Simpler" — the one selection action that edits the page. Scoped to a single block. */
-export function simplifyMessages(input: {
+/**
+ * The learner's own words about an exact highlighted range.
+ *
+ * 🔴 `request` IS QUOTED, NEVER INTERPRETED HERE. Nothing in this file reads it, matches it or
+ * branches on it — the whole point of replacing the toolbar was to stop code guessing what somebody
+ * meant. It is placed in the packet next to the text they pointed at, and the model decides.
+ */
+export function selectionRequestMessages(input: {
+  request: string;
   selectedText: string;
-  block: CanvasBlock;
+  /** The sentence it sits in — the same context a definition needs, for the same reason. */
+  surroundingText: string;
+  /** The wider block, where the selection came from one. */
+  passage?: string;
   canvasTitle: string;
+  objective?: string;
+  /** Whether a rewrite has anywhere to land. False over a question, a correction or a reply. */
+  rewritable: boolean;
   sources: readonly CanvasSource[];
 }): WireMsg[] {
   return [
-    canvasSystem(SIMPLIFY_RULE),
+    canvasSystem(SELECTION_REQUEST_RULE),
     {
       content:
-        `The learner is reading "${input.canvasTitle}" and highlighted: "${input.selectedText}"\n\n` +
-        `They asked for it to be put more simply. Rewrite THIS ONE passage:\n${input.block.content}\n\n` +
-        // Scope stated twice on purpose — see `SIMPLIFY_RULE`, which carries both statements: the
-        // model reaches for a full-page rewrite whenever the instruction is ambiguous, and a
-        // rewrite of everything would silently undo the teaching loop's earlier local corrections.
-        "" +
+        `The learner is studying "${input.canvasTitle}"` +
+        (input.objective ? ` and is currently working on: ${input.objective}` : "") +
+        ".\n\n" +
+        `They highlighted this exact text: "${input.selectedText}"\n\n` +
+        `It appears in this sentence: "${input.surroundingText}"\n\n` +
+        (input.passage ? `Which sits in this passage:\n${input.passage}\n\n` : "") +
+        `And they asked: "${input.request}"\n\n` +
+        (input.rewritable
+          ? "You may rewrite that passage if that is what they asked for.\n\n"
+          : "This text is not part of the document, so there is nothing to rewrite: answer them instead.\n\n") +
+        // The highlighted words are the query, exactly as in `defineSelectionMessages` — and the
+        // learner's request joins them, because "compare this to the other method" needs the
+        // excerpts about the other method too.
         focusedMaterialSection(input.sources, input.canvasTitle, {
-          scope: [input.block],
-          texts: [input.selectedText, input.block.content],
+          scope: [],
+          texts: [input.selectedText, input.surroundingText, input.passage ?? "", input.request, input.objective ?? ""],
         }),
       role: "user",
     },

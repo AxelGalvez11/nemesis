@@ -117,7 +117,21 @@ export function useCanvasSelection(enabled: boolean) {
     if (!enabled) return;
     const onChange = () => {
       if (settle.current) clearTimeout(settle.current);
-      settle.current = setTimeout(() => setCurrent(readCanvasSelection()), 180);
+      settle.current = setTimeout(() => {
+        const next = readCanvasSelection();
+        // 🔴🔴 TYPING INTO THE ASK BOX IS NOT DROPPING THE HIGHLIGHT. Clicking into the menu's
+        // input moves focus, and the browser collapses the document selection when it does — so
+        // `readCanvasSelection` returns null, this cleared the state, and the menu unmounted from
+        // under the cursor the instant the learner tried to type in it. The five fixed buttons
+        // never hit this: a `<button>` takes no text caret, so nothing collapsed.
+        //
+        // The guard is about WHERE FOCUS WENT, not about what was selected — the selection genuinely
+        // is gone, and pretending otherwise anywhere else would leave a stale range behind. Inside
+        // the menu the learner is still working on that exact range, and the range we already read
+        // is the honest record of it.
+        if (!next && document.activeElement?.closest("[data-canvas-selection-menu]")) return;
+        setCurrent(next);
+      }, 180);
     };
     document.addEventListener("selectionchange", onChange);
     return () => {

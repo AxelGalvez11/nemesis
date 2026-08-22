@@ -344,24 +344,35 @@ export function LearningCanvas({
       };
       setAnswer(null);
       setTerm({ selection, rect });
-      const result = await session.askAboutSelection(selection, "define");
+      const result = await session.defineSelection(selection);
       if (result) setAnswer(result);
     },
     [session],
   );
 
-  const act = useCallback(
-    async (action: Parameters<typeof session.askAboutSelection>[1]) => {
+  /**
+   * The learner typed something about what they highlighted.
+   *
+   * 🔴 NOTHING HERE READS IT. Whether that request means "tell me" or "change this" is the model's
+   * reading (see `askSelection`), and the two arrive already distinguished: an answer comes back to
+   * paint, and a rewrite comes back as null because the DOCUMENT is where it shows. This function
+   * used to take one of five action names and branch on `"simpler"`, which is the branch that made
+   * five buttons necessary in the first place.
+   */
+  const ask = useCallback(
+    async (request: string) => {
+      // 🔴 Captured BEFORE the call. A rewrite replaces the block these offsets index, so reading
+      // the selection again afterwards would measure against text that no longer exists.
       const picked = pointed?.selection;
       if (!picked) return;
-      // 🔴 Captured BEFORE the call. "Simpler" replaces the block the offsets index, so reading
-      // the selection again afterwards would measure against text that no longer exists.
-      const result = await session.askAboutSelection(picked, action);
-      if (action === "simpler") {
-        dismissSelection();
-        return;
-      }
-      if (result) setAnswer(result);
+      const reply = await session.askAboutSelection(picked, request);
+      if (reply?.kind === "answer") setAnswer(reply);
+      // A rewrite already showed itself on the page; leaving an empty popover open over the
+      // paragraph it just changed would hide the one thing the learner asked to see.
+      //
+      // 🔴 AND A FAILURE IS NOT A REWRITE. `null` leaves the popover exactly where it is, because
+      // `session.selectionError` is about to be rendered inside it.
+      else if (reply?.kind === "rewritten") dismissSelection();
     },
     [dismissSelection, pointed, session],
   );
@@ -578,22 +589,20 @@ export function LearningCanvas({
         if (routing.kind === "rewrite") {
           const block = canvas.blocks.find((candidate) => candidate.id === routing.blockId);
           if (block) {
-            // The same path the toolbar takes, so there is one rewrite implementation rather than
-            // two that drift. `rewritable` is true because a document block is exactly where a
-            // rewrite has somewhere to land.
-            await session.askAboutSelection(
-              {
-                anchor: { exact: block.content.slice(0, 64), prefix: "", suffix: "" },
-                blockId: block.id,
-                endOffset: block.content.length,
-                regionId: block.id,
-                rewritable: true,
-                selectedText: block.content,
-                startOffset: 0,
-                surroundingText: block.content,
-              },
-              "simpler",
-            );
+            // 🔴 `text` GOES WITH IT. The router read this sentence to decide a rewrite was wanted;
+            // the rewrite itself then needs it to know WHICH rewrite. Without it every instruction
+            // came back as the same simplification. `rewritable` is true because a document block is
+            // exactly where a rewrite has somewhere to land.
+            await session.rewriteSelection({
+              anchor: { exact: block.content.slice(0, 64), prefix: "", suffix: "" },
+              blockId: block.id,
+              endOffset: block.content.length,
+              regionId: block.id,
+              rewritable: true,
+              selectedText: block.content,
+              startOffset: 0,
+              surroundingText: block.content,
+            }, text);
             clearSelection();
             return;
           }
@@ -1549,7 +1558,7 @@ export function LearningCanvas({
           busy={session.selectionBusy}
           error={session.selectionError}
           forceOpen={!text.selection && Boolean(term)}
-          onAct={(action) => void act(action)}
+          onAsk={(request) => void ask(request)}
           onSpeak={(text) => voice.speakAloud(text)}
           speaking={voice.header.speaking}
           onDismiss={dismissSelection}
