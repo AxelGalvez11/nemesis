@@ -270,18 +270,22 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     // A new answer replaces the old one on screen; its audio must go with it, whether or not the
     // next one will play. Leaving the previous player open under a different answer is the
     // "controls that do not belong to what you are looking at" failure.
-    if (autoplayed.current !== replyKey) replyAudio.stop();
+    const arrived = autoplayed.current !== replyKey;
+    if (arrived) replyAudio.stop();
     autoplayed.current = replyKey;
-    if (!replyKey || !reply) return;
+    // 🔴 ONLY WHEN THE ANSWER IS NEW, NEVER WHEN THE SETTING CHANGES. Switching autoplay on while an
+    // answer is already on screen would make the toggle read the paragraph you are in the middle of
+    // reading — a preference about what happens NEXT, narrating the present retroactively.
+    if (!arrived || !replyKey || !reply) return;
     // 🔴 THE ONLY THING AUTOPLAY DECIDES IS WHETHER TO PRESS PLAY. Everything after this point —
     // which provider, which voice, how it streams, how it is controlled — is identical to what a
     // learner gets by pressing the button themselves. One path, two ways in.
     if (mode !== "on") return;
     replyAudio.start(reply.text);
-    // Keyed on the answer and the preference, never on `replyAudio`: the controller's identity
-    // changes as its own state does, and depending on it would restart the audio on every tick.
+    // Keyed on the answer, never on `replyAudio`: the controller's identity changes as its own
+    // state does, and depending on it would restart the audio on every tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [replyKey, mode]);
+  }, [replyKey]);
 
   const spokenMoment = mode === "on" ? momentFor(runtime, reply) : null;
   const key = spokenMoment?.key ?? null;

@@ -56,6 +56,31 @@ test("🔴 the controls exist only while there is audio, and the transition is o
   assert.match(PLAYER, /transition-\[grid-template-columns,opacity\]/);
 });
 
+test("🔴🔴 ONE player for the whole response, never one per block", () => {
+  // Owner, 2026-08-22: *"It's supposed to be one player for the whole response."* An answer renders
+  // as SEGMENTS — prose runs, drawings, spoken examples, each its own element — and the obvious
+  // mistake is to hang the controls inside that map, which would put a transport row under every
+  // paragraph and give one answer several independent playheads.
+  //
+  // Calibration: move `<ReplyActions` inside `replySegments(...).map(` and this reddens.
+  assert.equal((CANVAS.match(/<ReplyActions/g) ?? []).length, 1, "the answer mounts more than one player");
+  const map = CANVAS.indexOf("replySegments(replyText, replyVisualList).map(");
+  const mapEnd = CANVAS.indexOf("\n              )}", map);
+  assert.ok(map > 0 && mapEnd > map, "the segment map moved; re-point this check");
+  assert.ok(CANVAS.indexOf("<ReplyActions") > mapEnd, "the player is rendered inside the per-segment map");
+  // And ONE controller behind it, so the whole answer has a single playhead, a single progress bar
+  // and a single speed — `useResponseAudio` is called once, by the voice hook, never per segment.
+  assert.equal((VOICE_HOOK.match(/useResponseAudio\(/g) ?? []).length, 1);
+  assert.match(CANVAS, /audio=\{voice\.replyAudio\}/, "the row is not reading the one shared controller");
+});
+
+test("🔴 turning autoplay ON does not retro-read the answer already on screen", () => {
+  // A preference about what happens NEXT must not narrate the paragraph you are in the middle of
+  // reading. Calibration: put `mode` back in the effect's dependencies and this reddens.
+  assert.match(VOICE_HOOK, /const arrived = autoplayed\.current !== replyKey/);
+  assert.match(VOICE_HOOK, /if \(!arrived \|\| !replyKey \|\| !reply\) return;/);
+});
+
 test("🔴🔴 the row does NOT appear while the turn is still arriving", () => {
   // Copying half an answer copies half an answer, and a play button on a sentence about to be
   // replaced reads as broken.
