@@ -18,6 +18,7 @@ import {
   MAX_FIGURES_PER_DOC,
 } from "./figure-routing";
 import { figureToPng, GRAYSCALE_1BPP, RGBA_32BPP, RGB_24BPP } from "./figure-image";
+import { lookAtFigures } from "./figure-look";
 
 /** A page with `chars` of prose and one figure covering `area` of it. */
 function page(unit: number, chars: number, area: number, ref = `img${unit}`) {
@@ -241,4 +242,61 @@ test("an oversized figure is downscaled rather than refused", () => {
   if (!result.ok) return;
   assert.ok(result.width < width, "expected a downscale");
   assert.ok(result.width * result.height <= 2_200_000);
+});
+
+// ── every refusal is named ───────────────────────────────────────────────────
+//
+// 🔴🔴 MEASURED ON PRODUCTION 2026-08-21. A 47-page lecture stored 28 figures — every one with a
+// rectangle, 27 of them comfortably past the worth-looking threshold — and all 28 reached the
+// database with no description and no reason at all. Across the whole corpus that shape is 84 of
+// 102 lost figures. Every branch of `lookAtFigures` names its absences with real care; none of it
+// helps a figure the router dropped before it got there.
+
+test("🔴 a figure declined for its size says so, instead of leaving no verdict", () => {
+  // Small figure, text-rich page: a real decision, and it used to be a bare `return`.
+  const plan = planFigureVision(doc([page(0, 1_200, 0.01)]));
+  assert.equal(plan.candidates.length, 0);
+  assert.deepEqual(plan.declined, [{ blockIndex: 1, skipped: "too-small" }]);
+});
+
+test("🔴 figures past the per-document ceiling are named too, so truncation is countable", () => {
+  const pages = Array.from({ length: MAX_FIGURES_PER_DOC + 3 }, (_, i) => page(i, 1_200, 0.25));
+  const plan = planFigureVision(doc(pages));
+  assert.equal(plan.candidates.length, MAX_FIGURES_PER_DOC);
+  assert.equal(plan.overBudget, 3);
+  assert.equal(plan.declined.length, 3);
+  assert.ok(plan.declined.every((one) => one.skipped === "over-cap"), "a truncated figure is not named");
+});
+
+test("a routed figure is not declined — the two lists never overlap", () => {
+  const plan = planFigureVision(doc([page(0, 1_200, 0.25), page(1, 1_200, 0.01)]));
+  const routed = new Set(plan.candidates.map((c) => c.blockIndex));
+  assert.ok(plan.declined.every((one) => !routed.has(one.blockIndex)));
+});
+
+test("🔴 a figure that already carries a verdict is left alone, not re-declined", () => {
+  // `decorative` was somebody's decision. Overwriting it here would spend the vocabulary's
+  // strongest word on a picture that was already correctly classified.
+  const model = doc([page(0, 1_200, 0.01)]);
+  const marked = applyFigureDescriptions(model, new Map([[1, { skipped: "decorative" }]]));
+  assert.deepEqual(planFigureVision(marked).declined, []);
+});
+
+
+// ── nothing leaves the phase undecided ───────────────────────────────────────
+
+test("🔴🔴 every figure carries a verdict when the phase returns — the 84-figure defect", () => {
+  // One figure worth looking at, one too small. With no vision key the first is
+  // `vision-unavailable` and the second `too-small`; what must never happen again is a figure
+  // reaching storage with neither a description nor a reason, which is indistinguishable from
+  // one nothing ever saw.
+  const model = doc([page(0, 1_200, 0.25), page(1, 1_200, 0.01)]);
+  return lookAtFigures(model, new Map(), { env: {} }).then((result) => {
+    const verdictless = result.model.blocks.filter(
+      (block) => block.kind === "figure" && !block.figure?.description && !block.figure?.skipped,
+    );
+    assert.equal(verdictless.length, 0, "a figure finished the parse with no verdict at all");
+    const reasons = figureCoverageOf(result.model).reasons;
+    assert.equal(reasons["not-examined"] ?? 0, 0, "something is still landing in the unexplained bucket");
+  });
 });
