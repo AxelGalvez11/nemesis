@@ -35,6 +35,7 @@ import {
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
+import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
@@ -295,6 +296,9 @@ export interface CanvasSession {
   ) => Promise<{ term: string; text: string; sourceLabel?: string } | null>;
   /** Record what the learner did. 🔴 Telemetry only — see canvas-events.ts. */
   recordEvent: (event: NewLearningEvent) => void;
+  /** Records a learner-visible moment for the History Rail. 🔴 Never evidence — see the
+   *  implementation's own note, and lib/learn/canvas-moment.ts. */
+  recordMoment: (moment: NewCanvasMoment) => void;
   selectionBusy: boolean;
   selectionError: string | null;
   clearSelectionAnswer: () => void;
@@ -393,6 +397,39 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       update((current) =>
         appendEvent(current, event, new Date().toISOString(), `e${current.events.length}-${Date.now()}`),
       );
+    },
+    [update],
+  );
+
+  /**
+   * Records that a learner-visible moment happened, for the History Rail.
+   *
+   * 🔴 SITS BESIDE `recordEvent` AND IS NOT IT. That one is capped telemetry that drops its oldest
+   * rows and includes tooltip opens and text selections — transient system activity the rail must
+   * not show. This one is the ordering spine the rail reads: when something happened, and which
+   * durable entity it was. See lib/learn/canvas-moment.ts.
+   *
+   * 🔴 IT MUST NEVER TOUCH A VERDICT, `weakConceptIds`, OR A SCHEDULING GRADE — the same rule
+   * `recordEvent` carries, for the stronger reason: history is read-only navigation, and a rail
+   * that could move the learner model would make rewinding destructive.
+   *
+   * 🔴 CONSECUTIVE DUPLICATES ARE DROPPED. React effects run twice in development StrictMode and a
+   * re-render must not buy a second marker for one answer.
+   */
+  const recordMoment = useCallback(
+    (moment: NewCanvasMoment) => {
+      update((current) => {
+        if (sameMoment(current.moments.at(-1), moment)) return current;
+        return {
+          ...current,
+          moments: appendMoment(
+            current.moments,
+            moment,
+            new Date().toISOString(),
+            `m${current.moments.length}-${Date.now()}`,
+          ),
+        };
+      });
     },
     [update],
   );
@@ -580,6 +617,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ...(sourceUrl ? { sourceUrl } : {}),
           };
           update((current) => mergeSourceIntoCanvas(current, source));
+          // 🔴 THE MOMENT, NOT A COPY OF THE SOURCE. It stores the id; the title is read back
+          // from `canvas.sources` when the rail draws, so renaming a source renames its history row
+          // and detaching one cannot leave a stale title on the rail. See lib/learn/canvas-moment.ts.
+          recordMoment({ kind: "source", sourceIds: [source.id] });
 
           // 🔴 THE FIRST TIME THE RUNNING APP CREATES DURABLE KNOWLEDGE. Until this landed,
           // `extractKnowledgeObjects` existed and was called only by tests and scripts, so the
@@ -633,7 +674,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         setBusy({ kind: null });
       }
     },
-    [requireUid, update],
+    [recordMoment, requireUid, update],
   );
 
   /**
@@ -1675,6 +1716,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
      * names the action that resolves it; "ambiguous referent" is not the learner's problem.
      */
     showNotice: (message: string) => setError(message),
+    recordMoment,
     restoreRewritten,
     finishReadingChunk,
     dismissAside: () => setAside(null),

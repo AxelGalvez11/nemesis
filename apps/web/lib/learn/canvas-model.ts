@@ -11,6 +11,7 @@
 /** Where the canvas is in the learning arc. The UI demonstrates this progression; the model
  *  never picks it — only an explicit user action or a validated transition op moves it. */
 import type { LearningEvent } from "./canvas-events";
+import type { CanvasMoment } from "./canvas-moment";
 import type { CanvasVisualRequest } from "./canvas-visual";
 
 export type CanvasState =
@@ -681,6 +682,16 @@ export interface LearningCanvas {
    *  change a diagnosis. Capped and lossy: this is telemetry for INTERPRETING evidence, not the
    *  append-only evidence history, which is still to come. See canvas-events.ts. */
   events: LearningEvent[];
+  /** When each learner-visible thing happened, and which durable entity it was — the History
+   *  Rail's ordering spine.
+   *
+   *  🔴 NOT A SECOND COPY OF THE CANVAS AND NOT EVIDENCE. Rows point at `sources`, `questions` and
+   *  `responses` by id; the only text they carry is conversational, because that text exists
+   *  nowhere else. Capped like `events` and for the same reason — this array travels inside the
+   *  jsonb document on every save. See canvas-moment.ts.
+   *
+   *  🔴 Needs its own line in `canvasToRow` AND in `canvasFromRow`, which both enumerate by hand. */
+  moments: CanvasMoment[];
   /** Artifacts made from this canvas. Always empty today — nothing generates one yet — and
    *  carried anyway so the input/output distinction is in the model rather than in a comment.
    *  🔴 Needs its own line in `canvasToRow`, which enumerates by hand. */
@@ -714,6 +725,7 @@ export function emptyCanvas(id: string, now: string): LearningCanvas {
     responses: [],
     correctiveAttempts: {},
     events: [],
+    moments: [],
     outputs: [],
     weakConceptIds: [],
     correctedConceptIds: [],

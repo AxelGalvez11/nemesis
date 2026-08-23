@@ -10,10 +10,6 @@ import {
   writeAutoDictation,
   writeVoiceMode,
   type AutoDictation,
-  DEFAULT_VOICE_SPEED,
-  nextVoiceSpeed,
-  readVoiceSpeed,
-  VOICE_SPEEDS,
 } from "./voice-preferences";
 
 /** A localStorage stand-in. The real one is unavailable to this runner. */
@@ -122,24 +118,7 @@ test("🔴 switching voice mode off mid-utterance stops the microphone opening a
 });
 
 // ── How fast Nemesis reads ───────────────────────────────────────────────────────────────────
-
-test("🔴 the speed cycles through its three steps and wraps", () => {
-  assert.equal(nextVoiceSpeed(1), 1.5);
-  assert.equal(nextVoiceSpeed(1.5), 2);
-  assert.equal(nextVoiceSpeed(2), 1, "the cycle does not wrap, so the control is a dead end at 2x");
-});
-
-test("🔴 nothing below 1, and that is a decision rather than an oversight", () => {
-  // Voice already runs a QUESTION at 0.95 as a concession to working memory, and that belongs to
-  // the moment rather than to a preference: a learner who slows every utterance down is training
-  // on a rhythm nobody speaks. Calibration: add 0.75 to VOICE_SPEEDS and this reddens.
-  assert.ok(VOICE_SPEEDS.every((s) => s >= 1), `a speed below natural is offered: ${VOICE_SPEEDS.join(", ")}`);
-});
-
-test("🔴 a stored value outside the list falls back rather than being trusted", () => {
-  // A hand-edited "4" would otherwise read every answer at quadruple speed with nothing to say why.
-  const at = (value: string) => readVoiceSpeed({ getItem: () => value });
-  assert.equal(at("4"), DEFAULT_VOICE_SPEED);
-  assert.equal(at("nonsense"), DEFAULT_VOICE_SPEED);
-  assert.equal(at("1.5"), 1.5, "a legitimate stored value is being thrown away");
-});
+//
+// 🔴 THOSE TESTS MOVED TO `playback.test.ts` WITH THE THING THEY TEST (§48). Reading speed is no
+// longer a preference this module owns: it is the audio element's `playbackRate`, applied to audio
+// that already exists, so it can never regenerate anything.

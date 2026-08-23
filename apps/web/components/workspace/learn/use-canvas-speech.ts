@@ -18,6 +18,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { type AudioSink, openAudioSink, pumpInto } from "@/lib/learn/audio-stream";
+import { ttsRequest } from "@/lib/learn/tts-request";
 import { supabase } from "@/lib/supabase";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
 
@@ -110,8 +112,8 @@ export function useCanvasSpeech(): CanvasSpeech {
 
   /** The element currently playing, so a new utterance can cancel it. */
   const playing = useRef<HTMLAudioElement | null>(null);
-  /** Object URLs outlive their element and leak the whole MP3 until revoked. */
-  const objectUrl = useRef<string | null>(null);
+  /** The sink feeding it. Its object URL outlives the element and leaks the MP3 until disposed. */
+  const audioSink = useRef<AudioSink | null>(null);
   /** Keys already spoken. A re-render must not re-read the question on screen. */
   const spoken = useRef(new Set<string>());
   /** Set when the component is going away, so a request in flight cannot set state afterwards. */
@@ -126,11 +128,11 @@ export function useCanvasSpeech(): CanvasSpeech {
       element.onended = null;
       element.onerror = null;
       element.pause();
+      element.removeAttribute("src");
+      element.load();
     }
-    if (objectUrl.current) {
-      URL.revokeObjectURL(objectUrl.current);
-      objectUrl.current = null;
-    }
+    audioSink.current?.dispose();
+    audioSink.current = null;
   }, []);
 
   const stop = useCallback(() => {
@@ -158,45 +160,27 @@ export function useCanvasSpeech(): CanvasSpeech {
           return;
         }
 
-        // 🔴 TWO PROVIDERS, TWO ENDPOINTS, AND THE CHOICE IS THE ROUTER'S RATHER THAN THIS HOOK'S.
-        // Azure lives behind a Next route because its key is in Vercel; xAI lives behind a Supabase
-        // function because its key is in that project's secrets. The difference is where a credential
-        // sits, which is exactly the sort of thing a caller should not have to know — so the router
-        // names a provider and this picks the door.
+        // 🔴🔴 ONE PROVIDER, ONE REQUEST, DECIDED IN A PURE FUNCTION. This used to be two inline
+        // `fetch` calls behind a ternary, which meant "only the selected provider is involved" could
+        // only be checked by reading the hook and believing it. `ttsRequest` builds exactly one url
+        // and one body from the provider on the utterance, and `tts-request.test.ts` asserts the
+        // negative directly: an xAI plan never names Azure's endpoint and vice versa.
         //
         // 🔴 AZURE REQUIRES A LOCALE AND THIS DOES NOT PAPER OVER THAT. `/api/speech/tts` refuses
         // without one, deliberately (§43: guessing a variety teaches the wrong accent invisibly). A
-        // route that asked for Azure without a locale is a caller bug, and it fails loudly here
-        // rather than being quietly downgraded to a provider that would have guessed.
-        const useAzure = voice?.provider === "azure";
-        const res = useAzure
-          ? await fetch("/api/speech/tts", {
-              body: JSON.stringify({
-                fallback: true,
-                locale: voice?.locale,
-                ...(typeof voice?.speed === "number" ? { rate: voice.speed } : {}),
-                text,
-              }),
-              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-              method: "POST",
-            })
-          : await fetch(`${supabaseUrl}/functions/v1/nemesis-speak`, {
-              // 🔴 OMITTED WHEN UNSET RATHER THAN SENT AS A DEFAULT. `nemesis-speak` already has
-              // defaults for both, and sending `locale: "auto"` explicitly would make the function
-              // unable to tell "the caller chose auto" from "the caller is old and sends neither".
-              body: JSON.stringify({
-                text,
-                ...(voice?.locale && voice.locale !== "auto" ? { locale: voice.locale } : {}),
-                ...(typeof voice?.speed === "number" ? { speed: voice.speed } : {}),
-                ...(voice?.voiceId ? { voice: voice.voiceId } : {}),
-              }),
-              headers: {
-                apikey: supabaseAnonKey,
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              method: "POST",
-            });
+        // caller that asks for Azure without a locale fails loudly rather than being quietly
+        // downgraded to a provider that would have guessed.
+        const plan = ttsRequest({
+          provider: voice?.provider === "azure" ? "azure" : "xai",
+          supabaseAnonKey,
+          supabaseUrl,
+          text,
+          token,
+          ...(voice?.locale ? { locale: voice.locale } : {}),
+          ...(typeof voice?.speed === "number" ? { rate: voice.speed } : {}),
+          ...(voice?.voiceId ? { voiceId: voice.voiceId } : {}),
+        });
+        const res = await fetch(plan.url, plan.init);
 
         if (!res.ok) {
           if (alive.current) {
@@ -210,40 +194,75 @@ export function useCanvasSpeech(): CanvasSpeech {
           return;
         }
 
-        const blob = await res.blob();
-        // A zero-byte 200 plays as silence and reads exactly like a canvas choosing not to speak.
-        // The function already refuses this; checking again is cheap and the failure is invisible.
-        if (blob.size === 0) {
-          if (alive.current) { setFailure("provider-error"); setSpeaking(false); }
-          return;
-        }
         // Stopped, unmounted, or superseded while the request was in flight.
         if (!alive.current || !spoken.current.has(key)) return;
 
-        const url = URL.createObjectURL(blob);
-        objectUrl.current = url;
-        const element = new Audio(url);
+        // 🔴🔴 STREAMED INTO THE ELEMENT RATHER THAN COLLECTED INTO A BLOB (§48). This was
+        // `await res.blob()`, which waits for the LAST byte before the FIRST one can be heard — so
+        // both routes streamed and the client threw that away, on every question voice mode reads.
+        // The sink attaches its source immediately and the bytes flow into it, which is why the
+        // attach happens BEFORE the pump rather than on first bytes: a MediaSource cannot accept an
+        // append until it has opened, and it only opens once attached. Found in a real browser.
+        const sink = openAudioSink();
+        audioSink.current = sink;
+        const element = new Audio();
         playing.current = element;
+        if (sink.streaming) {
+          const opening = sink.src();
+          if (opening) element.src = opening;
+        }
+
+        let started = false;
+        const begin = () => {
+          if (started) return;
+          const src = sink.src();
+          if (!src) return;
+          started = true;
+          if (!element.src) element.src = src;
+          void element.play().catch(() => {
+            // Autoplay policy rejects play() when the learner has not interacted with the page.
+            // Turning voice mode on IS an interaction, so this is rare — but it must not hang, or
+            // the caller waits for a microphone moment that never comes.
+            if (playing.current === element) releaseAudio();
+            if (alive.current) { setFailure("playback-blocked"); setSpeaking(false); }
+          });
+        };
+
+        const gone = () => !alive.current || !spoken.current.has(key) || playing.current !== element;
+        const bytes = res.body
+          ? await pumpInto(sink, res.body, begin, gone)
+          : await (async () => {
+              const buffer = await res.arrayBuffer();
+              if (buffer.byteLength > 0) { await sink.append(new Uint8Array(buffer)); begin(); }
+              return buffer.byteLength;
+            })();
+        if (gone()) return;
+        // A zero-byte 200 plays as silence and reads exactly like a canvas choosing not to speak.
+        // Both routes already refuse this; checking again is cheap and the failure is invisible.
+        if (bytes === 0) {
+          if (alive.current) { setFailure("provider-error"); setSpeaking(false); }
+          releaseAudio();
+          return;
+        }
+        await sink.end();
+        if (gone()) return;
+        begin();
 
         await new Promise<void>((resolve) => {
-          element.onended = () => {
+          const finish = (failed: boolean) => {
             if (playing.current === element) releaseAudio();
-            if (alive.current) setSpeaking(false);
+            if (alive.current) {
+              if (failed) setFailure("playback-blocked");
+              setSpeaking(false);
+            }
             resolve();
           };
-          element.onerror = () => {
-            if (playing.current === element) releaseAudio();
-            if (alive.current) { setFailure("playback-blocked"); setSpeaking(false); }
-            resolve();
-          };
-          // Autoplay policy rejects play() when the learner has not interacted with the page.
-          // Turning voice mode on IS an interaction, so this is rare — but it must resolve rather
-          // than hang, or the caller waits for a microphone moment that never comes.
-          void element.play().catch(() => {
-            if (playing.current === element) releaseAudio();
-            if (alive.current) { setFailure("playback-blocked"); setSpeaking(false); }
-            resolve();
-          });
+          element.onended = () => finish(false);
+          element.onerror = () => finish(true);
+          // Already over by the time the listeners were attached — a very short utterance whose
+          // last bytes landed while `end()` was resolving. Without this the caller waits forever
+          // for a microphone moment that has already passed.
+          if (element.ended) finish(false);
         });
       } catch {
         if (alive.current) { setFailure("provider-error"); setSpeaking(false); }

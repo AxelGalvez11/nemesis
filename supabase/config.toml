@@ -398,6 +398,20 @@ verify_jwt = false
 [functions.source-index]
 verify_jwt = false
 
+# Voice mode's synthesis call. Its own header has said "verify_jwt must be FALSE
+# on this function" since the day it shipped, and nothing recorded it here — the
+# same omission this file already documents twice above, left open on a third
+# function. The browser sends a USER JWT, not the anon key, and the function
+# verifies that token against the auth server itself.
+[functions.nemesis-speak]
+verify_jwt = false
+
+# The dictation fallback, for browsers with no Web Speech API. Same lane, same
+# reason, same user JWT — recorded here at birth rather than after the deploy
+# that forgets it.
+[functions.nemesis-dictate]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

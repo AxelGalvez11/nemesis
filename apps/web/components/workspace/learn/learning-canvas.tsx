@@ -27,12 +27,15 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { projectAll } from "@/lib/learn/learner-evidence";
 import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
+import { buildCanvasHistory, reconstructMoment } from "@/lib/learn/canvas-history";
 import type { TurnSurroundings } from "./canvas-chat";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
+import { CanvasHistoryRail } from "./canvas-history-rail";
+import { CanvasHistoryView } from "./canvas-history-view";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
@@ -184,7 +187,6 @@ export function LearningCanvas({
     const text = aside.text.trim();
     return text ? { key: `${text.length}:${text.slice(0, 24)}`, text } : null;
   }, [session.aside]);
-  const voice = useCanvasVoice(policy, policy.judging, spokenReply);
 
   /**
    * The session record, read from the append-only evidence log.
@@ -446,6 +448,22 @@ export function LearningCanvas({
         setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
       }, staged);
       remember({ replied: decision?.say ?? "", said: trimmed });
+      // 🔴🔴 THE ONE THING ON THIS CANVAS THAT EXISTED NOWHERE DURABLE. `conversation` above is a
+      // ref, capped at six turns, and its own comment says it is deliberately not persisted — so
+      // "what I asked and what Nemesis said" was gone on refresh, which is exactly the history the
+      // rail is for. Recording it here does NOT put a chat log back on the page: contract rule 2
+      // still takes the reply off the surface on the next turn. Attention and memory are different
+      // questions, and `session-transcript.ts` already made that distinction in this repo — *"that
+      // is a rule about ATTENTION, not about memory"*.
+      //
+      // 🔴 `assistant` ONLY WHEN NEMESIS ACTUALLY SAID SOMETHING. A `study` turn answers by
+      // starting a lesson rather than by speaking, and marking that as an answer would put a
+      // marker on the rail that opens to an empty reconstruction.
+      session.recordMoment({
+        kind: decision?.say ? "assistant" : "user",
+        userText: trimmed,
+        ...(decision?.say ? { assistantText: decision.say } : {}),
+      });
       return decision;
     },
     [policy.decision, remember, session, surroundings],
@@ -779,6 +797,16 @@ export function LearningCanvas({
    * drawing on top.
    */
   const turnInFlight = busy.kind !== null;
+  /**
+   * Voice, once the answer has actually finished arriving.
+   *
+   * 🔴🔴 `turnInFlight` IS THE GATE, AND WITHOUT IT AUTOPLAY IS A COST BUG (§48). `spokenReply`'s key
+   * is derived from the text, and the text GROWS as the answer streams — so an ungated autoplay
+   * would fire a fresh paid synthesis on every chunk of every answer, each one cancelling the last,
+   * and the learner would hear the beginning of the answer over and over. It is the same signal the
+   * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
+   */
+  const voice = useCanvasVoice(policy, policy.judging, turnInFlight ? null : spokenReply);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -852,6 +880,66 @@ export function LearningCanvas({
 
     const lessonHeld = policyPresenting && !regions.policy;
 
+  /**
+   * The moment the History Rail is showing, or null for the present.
+   *
+   * 🔴 COMPONENT STATE, NOT SESSION STATE, AND NOT PERSISTED. Where you are LOOKING is not a fact
+   * about the canvas — reopening it tomorrow must land on now, not on wherever you last browsed
+   * to. It is also why nothing about rewinding reaches `update()`: the canvas is not modified by
+   * being read.
+   */
+  const [rewound, setRewound] = useState<string | null>(null);
+
+  /**
+   * The rail's rows.
+   *
+   * 🔴 MEMOISED ON THE FOUR ARRAYS IT ACTUALLY READS, NOT ON `canvas`. The canvas object is
+   * replaced on every autosave (`update` spreads it and stamps `updatedAt`), so depending on the
+   * whole thing would rebuild the history — and re-render the rail — on a keystroke that touched
+   * nothing it shows. This is the "keep it cheap" requirement, and it is the only place it needed
+   * spending.
+   */
+  const history = useMemo(
+    () =>
+      buildCanvasHistory({
+        createdAt: canvas.createdAt,
+        moments: canvas.moments,
+        questions: canvas.questions,
+        responses: canvas.responses,
+        sources: canvas.sources,
+      }),
+    [canvas.createdAt, canvas.moments, canvas.questions, canvas.responses, canvas.sources],
+  );
+
+  /** What to paint while rewound. Null whenever the moment has gone or nothing is rewound to. */
+  const viewing = useMemo(
+    () =>
+      rewound
+        ? reconstructMoment(
+            {
+              createdAt: canvas.createdAt,
+              moments: canvas.moments,
+              questions: canvas.questions,
+              responses: canvas.responses,
+              sources: canvas.sources,
+            },
+            rewound,
+          )
+        : null,
+    [canvas.createdAt, canvas.moments, canvas.questions, canvas.responses, canvas.sources, rewound],
+  );
+
+  /**
+   * 🔴 A NEW TURN RETURNS THE LEARNER TO NOW. Leaving the canvas rewound while an answer arrives
+   * behind it would put the reply somewhere they cannot see and leave a stale moment reading as
+   * the live one — the single dangerous state this feature has. `turnInFlight` is the same signal
+   * the thinking screen keys on.
+   */
+  useEffect(() => {
+    if (turnInFlight) setRewound(null);
+  }, [turnInFlight]);
+
+
   // 🔴🔴 THE MODE IS NOT PART OF THE IDENTITY ANY MORE (owner 2026-08-22: "canvas should have one
   // persistent screen not a swapping one"). `presence` was the first element, so every change of
   // MODE — reading → thinking → question — rebuilt the whole surface through `CanvasFade` at
@@ -865,6 +953,10 @@ export function LearningCanvas({
   const surfaceKey = [
     regions.policy ? screenKey(policy) : "-",
     session.aside ? `aside:${session.aside.text.slice(0, 40)}` : "-",
+    // 🔴 SO THE HISTORICAL VIEW ARRIVES AND LEAVES THROUGH THE SAME FADE EVERYTHING ELSE USES.
+    // Without this the swap between two moments is instant while every other swap on the canvas
+    // is animated, which reads as a different app for one interaction.
+    rewound ? `moment:${rewound}` : "-",
   ].join("|");
 
   // 🔴 THE NAME OF THE STEP THAT IS RUNNING, OR NONE — never a guess. `CanvasThinkingPreview`
@@ -1115,6 +1207,39 @@ export function LearningCanvas({
           16px (`pb-4`) is 124, and the composer GROWS with what is typed into it, to
           `MAX_COMPOSER_HEIGHT`. 160 clears a composer several lines tall and leaves the gradient
           doing its job rather than hiding text behind it. */}
+      {/* ── the History Rail ───────────────────────────────────────────────────────────────
+          🔴 A SIBLING OF THE SCROLLER, NOT A CHILD OF IT. Inside, it would scroll away with the
+          answer; the rail is a fixture of the Canvas, not a mark on the page.
+
+          🔴 IT IS NOT THE MINIMAP AND THEY BOTH LIVE HERE AT ONCE. The Minimap is a header control
+          answering "where am I in what I'm learning" from the learner model; this answers "what
+          happened here, and how did I get here" from a moment log that provably cannot state
+          anything about knowledge. See canvas-history-rail.tsx. */}
+      <CanvasHistoryRail
+        activeMomentId={rewound}
+        entries={history}
+        onSelect={setRewound}
+      />
+
+      {/* ── the rewound Canvas ─────────────────────────────────────────────────────────────
+          🔴 AN OPAQUE OVERLAY RATHER THAN A REPLACED SUBTREE, AND THAT IS THE CHEAP CORRECT ONE.
+          Unmounting the live surface to show history would tear down the policy's screen, the
+          reply and its audio controller, and rebuild all three on `Return to now` — a visible
+          rebuild, and a loss of any local state they hold, for a read-only detour. The sheet's own
+          background makes it a replacement to look at while leaving the live Canvas standing
+          behind it, which is why returning is instant.
+
+          🔴 `z-10`: OVER THE CONTENT, UNDER THE CHROME. The exit `×` and the header controls sit at
+          z-20/z-30 in `CanvasSurface` and must stay pressable — a history view that trapped the
+          learner would be a worse bug than the one it fixes. */}
+      {viewing && (
+        <div className="absolute inset-0 z-10 overflow-y-auto bg-(--ui-bg-editor) pb-[160px] pt-[64px]">
+          <CanvasFade contentKey={`moment:${viewing.momentId}`}>
+            <CanvasHistoryView moment={viewing} onReturn={() => setRewound(null)} />
+          </CanvasFade>
+        </div>
+      )}
+
       <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
@@ -1288,12 +1413,10 @@ export function LearningCanvas({
                   broken. `turnInFlight` is the same signal the thinking screen keys on. */}
               {!turnInFlight && replyText.trim() && (
                 <ReplyActions
-                  onCycleSpeed={voice.header.onCycleSpeed}
-                  onSpeak={voice.speakAloud}
-                  onStop={voice.stopSpeaking}
-                  // 🔴 Not "something is playing": while an example row speaks, this is not its button.
-                  speaking={voice.header.speaking && voice.speakingExample === null}
-                  speed={voice.header.speed}
+                  // 🔴 THE CONTROLLER FOR *THIS ANSWER'S* AUDIO (§48), not a shared "something is
+                  // playing" boolean. Play, pause, seek, speed and progress all read from one state,
+                  // so an example row speaking elsewhere can never turn this into a stop button.
+                  audio={voice.replyAudio}
                   // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
                   // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
                   // them, and a synthesiser reading it aloud is worse.

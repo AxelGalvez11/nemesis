@@ -44,7 +44,6 @@ import {
   type AutoDictation,
   type VoiceMode,
 } from "@/lib/learn/voice-preferences";
-import { CANVAS_VOICES } from "@/lib/learn/canvas-voices";
 import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 import { cn } from "@/lib/utils";
 
@@ -832,9 +831,21 @@ export function OptionsControl({
             <>
               {voice && (
                 <>
+                  {/* 🔴🔴 ONE VOICE DECISION LIVES ON THE CANVAS, AND IT IS NOT "WHICH VOICE" (§48).
+                      Owner, 2026-08-22: *"Canvas should not make the user repeatedly choose a
+                      voice… Canvas should have a simple option for: Automatically read responses
+                      aloud."* The speaker, and whether to preview it, moved to Settings — they are
+                      properties of the person, asked once. What is left here is the only voice
+                      question that belongs to a session: should Nemesis start talking by itself.
+
+                      🔴 THE READING SPEED WENT WITH THEM, AND IT DID NOT REAPPEAR AS A SETTING. It
+                      was a SYNTHESIS argument — pressing it threw away a paid MP3 and bought
+                      another at a different rate. Speed is now a property of listening, on the
+                      player under the answer, where changing it is instant and free. */}
                   <ToggleItem
                     checked={voiceOn}
-                    label="Speak"
+                    hint="Nemesis starts reading each answer as soon as it is finished. You can always press play yourself."
+                    label="Read responses aloud"
                     onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
                   />
                   {/* Offering to open a microphone that cannot listen is a promise the product
@@ -842,49 +853,10 @@ export function OptionsControl({
                   <ToggleItem
                     checked={listenOn}
                     disabled={!voice.dictationSupported}
-                    hint={voice.dictationSupported ? undefined : "This browser has no speech recognition"}
+                    hint={voice.dictationSupported ? undefined : "This browser cannot listen"}
                     label="Open the mic after each question"
                     onClick={() => voice.onSetAutoDictation(listenOn ? "off" : "on")}
                   />
-                  {/* 🔴🔴 THE VOICE PICKER SITS UNDER THE TOGGLE THAT TURNS VOICE ON, because it is
-                      meaningless above it: choosing a speaker for something that never speaks is a
-                      setting with no effect. Owner call, 2026-08-20: "read out loud works but i want
-                      nemesis users to be able to choose the voice too."
-
-                      🔴 SIX NAMES AND NO DESCRIPTIONS. Nobody here has listened to all six, and
-                      writing "warm" or "authoritative" beside one on that basis would be inventing a
-                      claim the learner can check in one press and find false. The list itself is a
-                      MEASUREMENT — see `lib/learn/canvas-voices.ts` for why an invented id is a 502
-                      rather than a typo. */}
-                  <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
-                  <p className="px-2.5 pb-1 pt-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                    Voice
-                  </p>
-                  {CANVAS_VOICES.map((option) => (
-                    <ToggleItem
-                      checked={voice.voiceId === option.id}
-                      disabled={!voiceOn}
-                      hint={voiceOn ? undefined : "Turn Speak on first"}
-                      key={option.id}
-                      label={option.label}
-                      onClick={() => voice.onSetVoice(option.id)}
-                    />
-                  ))}
-                  {/* 🔴 THE SPEED LIVES HERE TOO, AND THE DUPLICATION IS THE OWNER'S CALL ("both",
-                      2026-08-20). They are two different moments asking the same question: this one
-                      is "how should Nemesis read to me from now on", and the control under an
-                      answer is "read THIS faster". One value behind both, so setting either is
-                      setting the same thing — which is what makes showing it twice honest rather
-                      than confusing. */}
-                  <button
-                    className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary) disabled:opacity-40"
-                    disabled={!voiceOn}
-                    onClick={voice.onCycleSpeed}
-                    type="button"
-                  >
-                    <span>Reading speed</span>
-                    <span className="tabular-nums text-(--ui-text-tertiary)">{voice.speed}×</span>
-                  </button>
                   <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
                 </>
               )}
