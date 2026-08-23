@@ -42,8 +42,13 @@ export type HistoryRailDisplay = "collapsed" | "peek" | "expanded";
  * How many markers the rail draws.
  *
  * 🔴 A WINDOW, NOT A LIMIT ON HISTORY. Everything is always reachable through the drawer; this is
- * about what a quiet edge strip can hold without becoming a texture. At 24 the column is about
- * 190px tall, which sits comfortably inside a laptop viewport beside a reading column.
+ * about what a quiet edge strip can hold without becoming a texture. At 24 (plus "Now") the
+ * collapsed column measures 272px and the peeked one 470px, both of which sit inside a laptop
+ * viewport beside a reading column.
+ *
+ * 🔴 THE NUMBER IN THIS COMMENT USED TO BE 190px AND IT WAS NEVER MEASURED. The real column was
+ * 520px — 65% of an 800px viewport — because every collapsed marker still carried its hidden
+ * label's 12px line box. Measure the rail after changing its metrics; do not estimate it.
  */
 export const RAIL_MARKERS = 24;
 
@@ -135,12 +140,23 @@ export function CanvasHistoryRail({
           <nav
             aria-label="Canvas history"
             className={cn(
-              "flex flex-col items-stretch gap-[7px] rounded-lg py-2 transition-[background-color,box-shadow,padding] duration-200 ease-out",
+              "flex flex-col items-stretch rounded-lg py-2 transition-[background-color,box-shadow,padding,gap] duration-200 ease-out",
               // 🔴 THE STRIP ONLY GETS A SURFACE WHILE IT IS BEING READ. Collapsed it is bare
               // marks on the sheet — "nearly disappear until needed".
+              //
+              // 🔴🔴 TWO PITCHES, AND THAT IS THE WHOLE OF "TIGHTER". Owner, 2026-08-23, about the
+              // rail rather than the card: the marks sat 19px apart. Collapsed, a marker is a 1px
+              // rule and the row exists only to be hit, so the pitch is 9px (8px row + 1px gap)
+              // and the column reads as one fine ladder instead of scattered dots. Peeking, each
+              // row carries a 12px title that has to be readable, so the gap opens to 5px. The
+              // rail growing as it opens is the gesture, not a glitch: it is the same 200ms as
+              // the surface and the labels, and it expands about its own centre.
+              //
+              // Measured at the cap (25 marks): 272px collapsed, 470px peeked. `h-2` is 9px here,
+              // not 8 — this app sets `html { font-size: 112.5% }`, so 1rem is 18px.
               peeking
-                ? "bg-(--ui-bg-elevated)/95 px-2 shadow-lg ring-1 ring-(--ui-stroke-secondary) backdrop-blur-sm"
-                : "px-0",
+                ? "gap-[5px] bg-(--ui-bg-elevated)/95 px-2 shadow-lg ring-1 ring-(--ui-stroke-secondary) backdrop-blur-sm"
+                : "gap-px px-0",
             )}
           >
             {shown.map((entry) => (
@@ -226,7 +242,18 @@ function RailMarker({
       // is a 16px rule with no text in it; without this a screen reader reads a column of empty
       // buttons, which is exactly as useful as it sounds.
       aria-label={label}
-      className="group flex items-center justify-end gap-2 focus-visible:outline-none"
+      className={cn(
+        "group flex items-center justify-end gap-2 transition-[height] duration-200 ease-out focus-visible:outline-none",
+        // 🔴 A HIT TARGET, NOT A HAIRLINE. The rule itself is 1px; a 1px button cannot be clicked,
+        // so the collapsed row is 8px of transparent space around it. With the nav's 1px gap the
+        // column has no dead pixels — every point on the strip belongs to a marker.
+        //
+        // 🔴 EXPLICIT, BECAUSE THE HIDDEN LABEL IS NOT A RELIABLE ZERO. `max-w-0` clips the text
+        // to nothing horizontally but leaves a full 12px line box behind, which is what made the
+        // collapsed rail 2.2× taller than its own comment claimed. Height is stated here rather
+        // than inherited from something invisible.
+        peeking ? "h-auto" : "h-2",
+      )}
       onClick={onSelect}
       type="button"
     >
