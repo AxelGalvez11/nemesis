@@ -271,8 +271,23 @@
 
        Measured glyph-on-fill against the RESOLVED --ui-bg-editor: 6.95:1 light,
        9.54:1 dark. Both clear WCAG AA, and both fix the graphite dark button,
-       which measured 3.58:1 and did not. */
-    --ui-action: #37614a;
+       which measured 3.58:1 and did not.
+
+       2026-08-23, OWNER: THE GREEN IS RETIRED. "The send button and the mascot
+       should be following the same accent color." The character's default ink is
+       #0a0a0c light / #f2f2f4 dark (lib/character/look.ts, inkFor) and there is
+       no second colour to disagree — so the default action IS that ink, and a
+       chosen accent overrides both surfaces together (lib/accent.ts writes
+       --ui-action inline, and inkFor returns the same hex). The dark-graphite
+       trap above does not reopen: dark's value is the LIGHT ink on the dark
+       ground, same inversion as before. Glyph-on-fill ≈19:1 light, ≈17:1 dark —
+       far above the green it replaces. accent.test.ts pins this file to inkFor
+       so the two can never drift apart again. */
+    --ui-action: #0a0a0c;
+    /* The glyph ON the action fill. accentProperties() computes this per accent;
+       these are the defaults for the ink pair above, from the same accentGlyph
+       rule (white on the near-black ink, near-black on the near-white one). */
+    --ui-action-glyph: #ffffff;
     --ui-warm: var(--theme-warm);
     --ui-red: #cf2d56;
     --ui-orange: #db704b;
@@ -650,10 +665,10 @@
     /* Dark's --ui-action must be LIGHTER than light's, not darker: the glyph on
        it is --ui-bg-editor, which is near-black here, so the fill carries a dark
        glyph. Same inversion the graphite pair already made (#404040 → #6e6e6e).
-       The same restrained green, lifted to sit on a near-black background:
-       9.54:1 glyph-on-fill, and still low chroma (0.050) so it reads as a quiet
-       accent rather than a success state. */
-    --ui-action: #9fc4ae;
+       Since 2026-08-23 the value is the character's own dark ink (see the light
+       block's note): the send button and the mascot wear one colour. */
+    --ui-action: #f2f2f4;
+    --ui-action-glyph: #1a1a1a;
 
     --dt-muted: #1e1e1e;
     --dt-primary-foreground: #1a1a1a;
