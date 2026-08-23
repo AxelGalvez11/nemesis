@@ -6,6 +6,7 @@ import {
   parseFreeQuestions,
   parseLesson,
   parseRecallCards,
+  parseSelectionRequest,
   parseShortAnswer,
   parseTestQuestions,
 } from "./canvas-parse";
@@ -332,4 +333,42 @@ test("🔴🔴 a decision carrying raw LaTeX does NOT parse, and that is left al
 test("🔴 a correctly escaped decision is read, LaTeX and all", () => {
   // The path that DOES work: a model that escapes properly gets its notation through untouched.
   assert.equal(String(extractJson('{"say":"$$\\\\int x^2$$","then":"reply"}')?.say), "$$\\int x^2$$");
+});
+
+// ── What a typed request about a highlighted range came back as ─────────────
+
+test("🔴🔴 only an explicit rewrite carrying content may touch the document", () => {
+  // The asymmetry this whole parser is built around: an answer that should have been a rewrite
+  // leaves the page as it was and the learner asks again; a rewrite that should have been an answer
+  // has already overwritten the paragraph they were reading. So every ambiguous reply resolves to
+  // "answer", and only an unambiguous one is allowed to write.
+  assert.deepEqual(
+    parseSelectionRequest('{"do":"rewrite","content":"Sodium moves in."}'),
+    { kind: "rewrite", content: "Sodium moves in." },
+  );
+  // Says rewrite, brought nothing to write.
+  assert.deepEqual(
+    parseSelectionRequest('{"do":"rewrite","answer":"It means the gradient reverses."}'),
+    { kind: "answer", text: "It means the gradient reverses.", fromSource: "" },
+  );
+  // Names no act at all.
+  assert.deepEqual(
+    parseSelectionRequest('{"answer":"It means the gradient reverses.","fromSource":"Lecture 4"}'),
+    { kind: "answer", text: "It means the gradient reverses.", fromSource: "Lecture 4" },
+  );
+  // Ignored the format entirely — still an answer, because the model did answer.
+  assert.deepEqual(
+    parseSelectionRequest("It means the gradient reverses."),
+    { kind: "answer", text: "It means the gradient reverses.", fromSource: "" },
+  );
+  assert.equal(parseSelectionRequest("   "), null);
+});
+
+test("🔴 a reply that only filled in `content` is read as an answer, not as a silent rewrite", () => {
+  // The commonest near-miss: the model returns the right prose under the wrong key. Treating a bare
+  // `content` as a rewrite would let a formatting slip edit the learner's document.
+  assert.deepEqual(
+    parseSelectionRequest('{"content":"It means the gradient reverses."}'),
+    { kind: "answer", text: "It means the gradient reverses.", fromSource: "" },
+  );
 });

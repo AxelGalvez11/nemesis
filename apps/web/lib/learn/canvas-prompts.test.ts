@@ -12,8 +12,8 @@ import {
   lessonMessages,
   recallMessages,
   relearnMessages,
-  selectionMessages,
-  simplifyMessages,
+  defineSelectionMessages,
+  selectionRequestMessages,
   teachingMessages,
   territoryMessages,
   testMessages,
@@ -66,8 +66,8 @@ test("🔴 NO EM DASHES: every system prompt carries the rule, not just the shar
     lesson: systemOf(lessonMessages({ level: null, sources: [], topic: "x" })),
     recall: systemOf(recallMessages({ blocks: [BLOCK], canvasTitle: "c", concepts: [], count: 4 })),
     relearn: systemOf(relearnMessages({ canvasTitle: "c", level: null, misses: [], relevantBlocks: [], sources: [], weak: [] })),
-    selection: systemOf(selectionMessages({ action: "define", canvasTitle: "c", selectedText: "s", sources: [], surroundingText: "t" })),
-    simplify: systemOf(simplifyMessages({ block: BLOCK, canvasTitle: "c", selectedText: "s", sources: [] })),
+    selection: systemOf(defineSelectionMessages({ canvasTitle: "c", selectedText: "s", sources: [], surroundingText: "t" })),
+    selectionRequest: systemOf(selectionRequestMessages({ canvasTitle: "c", request: "r", rewritable: true, selectedText: "s", sources: [], surroundingText: "t" })),
     teaching: systemOf(
       teachingMessages({
         action: { because: "they said the opposite", missing: ["m"], type: "correct" },
@@ -546,16 +546,28 @@ test("🔴🔴 Define looks through an inflected form to the term underneath", (
   // not a stripper. Trimming `'s` is an English rule guessing at intent inside a field-agnostic,
   // language-agnostic product; a sentence in the prompt covers plurals, cases and conjugations
   // that no strip list would reach. Calibration: delete the clause and this reddens.
-  const messages = selectionMessages({
-    action: "define",
+  const messages = defineSelectionMessages({
     canvasTitle: "Obesity pharmacotherapy",
     selectedText: "retatrutide's",
     sources: [],
     surroundingText: "What's the last thing you remember about retatrutide's approval status?",
   });
-  const prompt = messages.map((m) => m.content).join("\n");
+  const prompt = messages.map((message) => message.content).join("\n");
   assert.match(prompt, /inflected form/i, "Define no longer tells the model to look through inflection");
   assert.match(prompt, /[Nn]ever explain the grammar/, "nothing stops it answering with the grammar");
+
+  // 🔴 AND THE ASK BOX INHERITS IT. The buttons are gone, so "retatrutide's" now reaches the model
+  // through a typed request instead — the identical string, the identical trap. A fix that stayed
+  // on the path nobody uses any more is a fix that has been quietly undone.
+  const typed = selectionRequestMessages({
+    canvasTitle: "Obesity pharmacotherapy",
+    request: "what is this",
+    rewritable: true,
+    selectedText: "retatrutide's",
+    sources: [],
+    surroundingText: "What's the last thing you remember about retatrutide's approval status?",
+  }).map((message) => message.content).join("\n");
+  assert.match(typed, /inflected form/i, "a typed request can still be answered with the grammar");
   // The selection still reaches the model verbatim — the learner's own highlight is the evidence,
   // and quietly rewriting it is how a lookup ends up answering a question nobody asked.
   assert.match(prompt, /retatrutide's/, "the learner's actual selection was rewritten before the lookup");

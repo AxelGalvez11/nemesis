@@ -403,10 +403,32 @@ export function parseSelectionAnswer(raw: string): SelectionAnswer | null {
   return trimmed ? { text: trimmed, fromSource: "" } : null;
 }
 
-/** The rewritten passage for "Simpler". Returns null rather than the raw reply: this one becomes
- *  a `replace_block`, so a stray sentence of commentary would be written into the document. */
-export function parseSimplifiedContent(raw: string): string | null {
+/**
+ * What the learner's typed request came back as: something to say, or a new version of the passage.
+ *
+ * 🔴 THE DEFAULT IS "ANSWER", AND IT IS NOT A TIE-BREAK — IT IS THE SAFE SIDE OF AN ASYMMETRY. An
+ * answer that should have been a rewrite leaves the page exactly as it was and the learner asks
+ * again. A rewrite that should have been an answer has already overwritten the paragraph they were
+ * reading. So a reply with no recognisable `do`, or with `do:"rewrite"` and nothing to write, is
+ * read as an answer; only an explicit rewrite carrying content is allowed to touch the document.
+ *
+ * 🔴 AND PROSE STILL COUNTS AS AN ANSWER, for the same reason `parseSelectionAnswer` accepts it: a
+ * model that ignored the format still answered the question, and making the learner press the
+ * button again for a formatting reason they cannot see is our bug showing through as theirs.
+ */
+export type SelectionRequestOutcome =
+  | { kind: "answer"; text: string; fromSource: string }
+  | { kind: "rewrite"; content: string };
+
+export function parseSelectionRequest(raw: string): SelectionRequestOutcome | null {
   const payload = extractJson(raw);
-  const content = payload ? text(payload.content) || text(payload.answer) : "";
-  return content || null;
+  if (payload) {
+    const content = text(payload.content);
+    if (text(payload.do).toLowerCase() === "rewrite" && content) return { kind: "rewrite", content };
+    const answer = text(payload.answer) || content;
+    if (answer) return { kind: "answer", text: answer, fromSource: text(payload.fromSource) };
+  }
+  const trimmed = raw.trim();
+  return trimmed ? { kind: "answer", text: trimmed, fromSource: "" } : null;
 }
+
