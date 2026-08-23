@@ -271,9 +271,25 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
 
   // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
   // the question is already rendered in full, in words, in the middle of the page.
-  assert.match(canvasCode, /session\.error \? "!" :/, "the error no longer outranks the question");
-  assert.match(canvasCode, /awaitingDemonstration && !turnInFlight && presence !== "preparing" \? "\?" : null/,
-    "the question mark is back on the mascot's head while Nemesis is working");
+  // Whitespace-tolerant: this guards the ORDER (a failure outranks a question), not the line
+  // breaks. Written tight, it reddened the moment the condition was reformatted onto four lines.
+  assert.match(canvasCode, /session\.error\s*\?\s*"!"\s*:/, "the error no longer outranks the question");
+  // 🔴 EVERY GUARD ON THE "?", ASSERTED SEPARATELY. This matched the whole condition as one
+  // string, so tightening it — which is what the owner's repeat report on 2026-08-21 required —
+  // reddened the test for doing the right thing, while a future edit that DROPPED a guard and
+  // reformatted would slip past. Each clause is now its own claim.
+  const mark = canvasCode.slice(canvasCode.indexOf("marker={"), canvasCode.indexOf("marker={") + 320);
+  for (const [clause, why] of [
+    ["awaitingDemonstration", "the mark no longer waits on the policy actually wanting an answer"],
+    // 🔴 THE REST OF "RANDOM". `awaitingAnswer` is the policy's belief; `regions.policy` is whether
+    // the question is on screen. They come apart on every surface that withholds the policy region,
+    // and the mark then sat over a page with no question anywhere on it.
+    ["regions.policy", "the mark can appear while the question it refers to is off screen"],
+    ["!turnInFlight", "the mark is back on the mascot's head while Nemesis is working"],
+    ['presence !== "preparing"', "the mark is back during preparation"],
+  ] as const) {
+    assert.ok(mark.includes(clause), why);
+  }
 
   // 🔴 THE BADGE IS THE CHARACTER'S OWN COLOUR, NOT THE PAGE'S. Reported 2026-08-21: *"the mascot
   // has a random question mark that isnt in purple like the mascot."* It was `--ui-text-tertiary`,
