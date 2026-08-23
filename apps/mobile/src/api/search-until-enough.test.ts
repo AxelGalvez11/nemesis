@@ -1,13 +1,23 @@
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-import { MAX_SEARCH_ROUNDS } from "./chat.ts";
-
 /** Source with comments stripped, so prose ABOUT a rule is never mistaken for the rule. */
 function code(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
 }
 
 const chat = code(await Deno.readTextFile(new URL("./chat.ts", import.meta.url)));
+
+// 🔴🔴 READ FROM THE SOURCE TEXT, NOT IMPORTED — AND THE IMPORT BROKE THE WHOLE MOBILE SUITE.
+// `import { MAX_SEARCH_ROUNDS } from "./chat.ts"` puts chat.ts in the runtime module graph, and
+// chat.ts imports "@/lib/chat-threads" — the tsconfig alias Deno has no import map for. Deno
+// refuses the graph before a single test runs: `error: Import "@/lib/chat-threads" not a
+// dependency`. It shipped anyway because the Actions runners were down the same day (2026-08-21),
+// so the first CI run that ever executed this file was four days later, on the day the repo went
+// public. This file already reads chat.ts as TEXT for every other assertion — and already extracts
+// the Canvas's copy of this constant with the same regex below — so the value comes from the same
+// channel. The parse is asserted, so a renamed constant fails loudly rather than comparing NaN.
+const MAX_SEARCH_ROUNDS = Number(/MAX_SEARCH_ROUNDS = (\d+)/.exec(chat)?.[1] ?? Number.NaN);
+assert(Number.isInteger(MAX_SEARCH_ROUNDS), "MAX_SEARCH_ROUNDS was renamed or is no longer a literal; re-point this extraction");
 
 // 🔴🔴 THE PHONE SEARCHES UNTIL THE MODEL SAYS IT HAS ENOUGH, LIKE THE CANVAS.
 //
