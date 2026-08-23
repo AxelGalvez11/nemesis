@@ -31,7 +31,8 @@
 
 import { jsonFrom } from "@nemesis/shared";
 
-import { readWithVision, type VisionEnv } from "@/lib/vision/gemini";
+import type { VisionEnv } from "@/lib/vision/gemini";
+import { readImage, type VisionSpend } from "@/lib/vision/read";
 
 /**
  * What kind of thing one mark on the page is.
@@ -382,6 +383,8 @@ export function standingMarks(work: WrittenWork): readonly WrittenMark[] {
 export interface WrittenWorkOptions {
   env?: VisionEnv;
   signal?: AbortSignal;
+  /** Who to bill. Forwarded to the vision front door, which writes the one spend row. */
+  spend?: VisionSpend;
 }
 
 /**
@@ -398,10 +401,11 @@ export async function readWrittenWork(
   mimeType: string,
   options: WrittenWorkOptions = {},
 ): Promise<WrittenWork | null> {
-  const result = await readWithVision(bytes, mimeType, {
+  const result = await readImage(bytes, mimeType, {
     env: options.env,
     prompt: WRITTEN_WORK_PROMPT,
     signal: options.signal,
+    ...(options.spend ? { spend: options.spend } : {}),
   });
   if (!result) return null;
   return parseWrittenWork(result.text, result.model);
