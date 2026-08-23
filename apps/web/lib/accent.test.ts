@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { ACCENT_COLORS, ACCENT_PREFERENCES, accentGlyph, DEFAULT_ACCENT_SWATCH, isAccent, normalizeStoredAccent } from "./accent";
+import { ACCENT_COLORS, ACCENT_PREFERENCES, ACCENT_PROPERTIES, accentGlyph, accentPrePaintScript, DEFAULT_ACCENT_SWATCH, isAccent, normalizeStoredAccent } from "./accent";
 
 test("the palette is the owner's seven, in that order", () => {
   assert.deepEqual([...ACCENT_PREFERENCES], ["default", "blue", "green", "yellow", "pink", "orange", "purple"]);
@@ -90,4 +91,73 @@ test("purple is the only accent that takes a white glyph", () => {
     .filter(([, color]) => accentGlyph(color) === "#ffffff")
     .map(([accent]) => accent);
   assert.deepEqual(white, ["purple"]);
+});
+
+// ── The accent reaches every surface that claims to carry it ────────────────
+
+const read = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8");
+
+test("🔴🔴 the accent is resolved BEFORE first paint, not after hydration", () => {
+  // Owner 2026-08-21: "there is a discrepancy between the color chosen in settings and the
+  // chat composer send button". It was applied only from ThemeProvider's mount effect, so
+  // every load painted the send button in the DEFAULT accent and swapped it once React came
+  // up — long enough on the Canvas to read as "the setting did not take".
+  //
+  // Calibration: drop `accentPrePaintScript()` from the layout's script and this reddens.
+  assert.match(read("../app/layout.tsx"), /accentPrePaintScript\(\)/);
+  const script = accentPrePaintScript();
+  for (const property of ACCENT_PROPERTIES) assert.ok(script.includes(property), property);
+  for (const color of Object.values(ACCENT_COLORS)) assert.ok(script.includes(color), color);
+});
+
+test("🔴🔴 and the pre-paint and post-hydration values come from ONE definition", () => {
+  // Two copies of the table is how the accent ends up flickering to a different colour one
+  // frame in — correct immediately afterwards, and so the hardest kind of bug to catch.
+  //
+  // Calibration: inline the hexes into either caller and this reddens.
+  assert.match(read("../components/theme-provider.tsx"), /accentProperties\(accent\)/);
+  assert.ok(
+    !/ACCENT_COLORS\[/.test(read("../components/theme-provider.tsx")),
+    "the provider builds its own copy of the accent's properties",
+  );
+});
+
+test("🔴 Default clears every property an accent can set", () => {
+  // Driven off ACCENT_PROPERTIES rather than a hand-written list, so a property added to
+  // `accentProperties` cannot be left behind and stick after a switch back to Default.
+  assert.match(read("../components/theme-provider.tsx"), /for \(const property of ACCENT_PROPERTIES\) root\.style\.removeProperty/);
+  assert.ok(ACCENT_PROPERTIES.includes("--ui-action"), "the send button's fill is not in the set");
+});
+
+test("🔴🔴🔴 the character is the accent, and there is no second colour preference", () => {
+  // Owner 2026-08-21: "make the character follow the accent color". It used to carry its own
+  // twelve-swatch palette with its own picker and its own stored preference, so the app held
+  // two colour settings that could disagree — and whose defaults did: the character's was
+  // `encre` (#0a0a0c), a near-invisible smudge on the black theme.
+  //
+  // Calibration: point `--bloub-ink` at anything but the accent, or give the character back a
+  // stored colour, and this reddens.
+  assert.match(read("../components/bloub/bloub.css"), /--bloub-ink:\s*var\(--ui-action\)/);
+  assert.match(read("../components/bloub/bloub-bot.tsx"), /getPropertyValue\("--bloub-ink"\)/);
+  for (const file of ["../components/theme-provider.tsx", "../components/SettingsSurface.tsx"]) {
+    assert.ok(!/bloubColor/.test(read(file)), `${file} still carries a second colour preference`);
+  }
+});
+
+test("🔴 and it is --ui-action, the token the send button carries", () => {
+  // The two part only on Default — `--theme-primary` is a neutral graphite there while
+  // `--ui-action` is the product's own green. Since the complaint being answered was the
+  // character and the send button showing different colours, they read the same token.
+  const composer = read("../components/workspace/learn/composer-controls.tsx");
+  assert.match(composer, /bg-\(--ui-action\)/, "the send button no longer carries --ui-action");
+});
+
+test("🔴 a frozen character repaints when the accent or the theme moves", () => {
+  // Both colours are CSS tokens resolved at paint time, which an animated bot picks up on its
+  // next frame for free — but a `frozenAt` bot paints once from an effect, and nothing in its
+  // dependency list moved when someone switched accent. The Settings preview would have sat in
+  // the previous colour. (Already true of `--bloub-paper` and a theme switch; the accent only
+  // made it visible.)
+  const bot = read("../components/bloub/bloub-bot.tsx");
+  assert.match(bot, /\}, \[still, frozenAt, state, shape, color, expression, paper, accent, theme\]\);/);
 });

@@ -99,7 +99,20 @@ test("🔴🔴 the distance is MEASURED, never a constant", () => {
   // greeting's height, the window's height and the length of the Library list below it. A
   // hard-coded translate would be correct at exactly one window size.
   assert.match(homeCode, /getBoundingClientRect\(\)/);
-  assert.match(homeCode, /window\.innerHeight - CANVAS_COMPOSER_INSET - rect\.height/);
+  assert.match(homeCode, /window\.innerHeight - canvasComposerInset\(\) - rect\.height/);
+});
+
+test("🔴🔴 the clearance under the canvas composer is READ, not typed", () => {
+  // It is `pb-4` — one rem — and the root font size is the learner's SCALING setting. A literal
+  // here is right at exactly one setting, and the literal that was here (16) was right at none:
+  // the app's root is 112.5%, so `pb-4` is 18px and the composer landed 2px high.
+  //
+  // Calibration: put any number back in place of the read and this reddens.
+  assert.match(homeCode, /getComputedStyle\(document\.documentElement\)\.fontSize/);
+  assert.ok(
+    !/const CANVAS_COMPOSER_INSET = \d/.test(homeCode),
+    "the clearance is a literal again, so it is wrong at every scale but one",
+  );
 });
 
 test("🔴🔴 the navigation waits for the move, or the move plays against a dead page", () => {
@@ -118,8 +131,67 @@ test("🔴🔴 reduced motion skips the TRAVEL, not the send", () => {
 
 test("🔴 it moves with a transform, so nothing under it reflows", () => {
   // Animating a layout property would reflow the Library list on every frame of the move.
-  assert.match(homeCode, /transform: departing \? `translateY\(\$\{lift\}px\)` : undefined/);
+  assert.match(homeCode, /transform: departing \? `translate3d\(\$\{travel\.x\}px, \$\{travel\.y\}px, 0\)`/);
   assert.ok(!/marginTop: departing/.test(homeCode), "the move animates layout instead of a transform");
+});
+
+test("🔴🔴 the composer SIDESTEPS as well as drops, because the canvas has no rail", () => {
+  // The canvas is immersive — it takes the nav rail away — so a composer centred inside a railed
+  // column here is centred 26px right of where the canvas will centre its own. Travelling only
+  // downward meant the route swap corrected the horizontal in one frame, and a move that ends
+  // with a jump reads as a broken move.
+  //
+  // Calibration: drop the `x` term and this reddens.
+  assert.match(homeCode, /x: Math\.round\(window\.innerWidth \/ 2 - \(rect\.left \+ rect\.width \/ 2\)\)/);
+});
+
+// ── And the character travels with it ───────────────────────────────────────
+
+test("🔴🔴🔴 the character walks to the exact spot the canvas will stand it on", () => {
+  // Owner 2026-08-21: "the mascot should move toward the center smoothly not jaggedly".
+  //
+  // These are two components on two surfaces — this greeter unmounts and `BloubDock` mounts —
+  // so the hand-off is invisible only while the two agree about the point and the size. It was
+  // not agreeing about either: the greeter held its place while the dock mounted in the
+  // lower-left corner and crawled to the middle, which the learner reads as two characters.
+  assert.match(homeCode, /const \[handoff, setHandoff\]/);
+  assert.match(homeCode, /transform: `translate3d\(\$\{handoff\.dx\}px, \$\{handoff\.dy\}px, 0\) scale\(\$\{handoff\.k\}\)`/);
+});
+
+test("🔴🔴 and it takes those numbers FROM the dock, so they cannot drift apart", () => {
+  // A copied `0.42`, a copied `2.1` and a copied `52` would all look right the day they were
+  // typed and come apart on the first retune of the middle station — as a hand-off that is
+  // subtly wrong, which is harder to see than one that is obviously wrong.
+  //
+  // Calibration: inline any of the three as a literal and this reddens.
+  assert.match(homeCode, /from "@\/components\/bloub\/bloub-dock"/);
+  for (const name of ["centreStation", "DOCK_SIZE", "DOCK_CENTRE_SCALE"]) {
+    assert.match(homeCode, new RegExp(name), `${name} is not read from the dock`);
+  }
+});
+
+test("🔴🔴 and the dock does not walk in from a corner it was never standing in", () => {
+  // The other half of the same hand-off. A canvas opened from the front door mounts ALREADY
+  // busy, so its dock's first placement is the middle — and animating into it would replay,
+  // from the corner, a journey the learner just watched the greeter make.
+  //
+  // Calibration: make the first placement use the journey duration and this reddens.
+  const dock = code(readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8"));
+  assert.match(dock, /ms: !was\.placed \? 0 :/);
+  assert.match(dock, /visibility: place\.placed \? undefined : "hidden"/);
+});
+
+test("🔴🔴 the dock moves ONE property, so nothing snaps while something else eases", () => {
+  // The judder had a mechanism: the corner was `left`/`bottom`, re-measured off the composer
+  // every 120ms and written with no transition, while the journey was an eased transform
+  // measured FROM that corner. Every anchor change jumped the element AND retargeted the
+  // easing mid-flight. The base corner is the props now and never moves.
+  //
+  // Calibration: write the measured anchor back onto `left`/`bottom` and this reddens.
+  const dock = code(readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8"));
+  assert.ok(!/setOffset|setInset/.test(dock), "the dock moves itself with layout properties again");
+  assert.match(dock, /^\s+left,$/m);
+  assert.match(dock, /^\s+bottom,$/m);
 });
 
 // ── The vendored engine keeps its licence ───────────────────────────────────

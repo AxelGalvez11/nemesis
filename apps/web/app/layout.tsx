@@ -13,6 +13,7 @@ import { ConfirmProvider } from "@/components/desktop-ui/confirm-dialog";
 import { PromptProvider } from "@/components/desktop-ui/prompt-dialog";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PostHogProvider } from "@/components/PostHogProvider";
+import { accentPrePaintScript } from "@/lib/accent";
 
 export const metadata: Metadata = {
   title: "Nemesis",
@@ -58,7 +59,17 @@ export const metadata: Metadata = {
 // before that theme was removed) normalizes to "dark". On exception only, fall back to the dark anchor.
 // Dark tone rides along: a stored "charcoal" must land before paint too, or charcoal users flash the
 // pure-black default every load. Anything else resolves to "black".
-const themeScript = `(function(){try{var p=localStorage.getItem('pharmaorb-theme');if(p==='grey')p='dark';var s=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var t=(p==='light'||p==='dark')?p:s;document.documentElement.setAttribute('data-theme',t);var dt=localStorage.getItem('nemesis.web.dark-tone');document.documentElement.setAttribute('data-dark-tone',dt==='charcoal'?'charcoal':'black');}catch(e){document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-dark-tone','black');}})();`;
+//
+// 🔴 AND SO DOES THE ACCENT, WHICH IT DID NOT (owner 2026-08-21: "there is a discrepancy between the
+// color chosen in settings and the chat composer send button"). Theme and dark tone were resolved
+// here while the accent was applied only from `ThemeProvider`'s mount effect — so every load painted
+// the send button, the focus rings and the chrome tint in the DEFAULT accent and swapped them once
+// React came up. That is the same flash this script exists to prevent, on the product's most
+// prominent control. `accentPrePaintScript` serialises the real colour table rather than repeating
+// it; see lib/accent.ts.
+const themeScript =
+  `(function(){try{var p=localStorage.getItem('pharmaorb-theme');if(p==='grey')p='dark';var s=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var t=(p==='light'||p==='dark')?p:s;document.documentElement.setAttribute('data-theme',t);var dt=localStorage.getItem('nemesis.web.dark-tone');document.documentElement.setAttribute('data-dark-tone',dt==='charcoal'?'charcoal':'black');}catch(e){document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-dark-tone','black');}})();` +
+  accentPrePaintScript();
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

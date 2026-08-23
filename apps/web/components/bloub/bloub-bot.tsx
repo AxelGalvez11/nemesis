@@ -37,10 +37,11 @@ import { BotEngine, type BotFrame } from "@nemesis/shared/bloub/engine";
 import { TURN_TIME, lookTarget } from "@nemesis/shared/bloub/gaze";
 import { clamp, easings } from "@nemesis/shared/bloub/math";
 import { DEMI_VIEWBOX, RAYON } from "@nemesis/shared/bloub/repere";
-import { COLOR_BY_ID, SHAPE_BY_ID, mixHex } from "@nemesis/shared/bloub/skins";
+import { SHAPE_BY_ID, mixHex } from "@nemesis/shared/bloub/skins";
 import { capsulePath } from "@nemesis/shared/bloub/shape";
 import { POSES, STATE_BY_ID, type StateId } from "@nemesis/shared/bloub/states";
 
+import { useTheme } from "@/components/theme-provider";
 import { browFrame } from "@nemesis/shared/character/brow";
 import { restingFace } from "@nemesis/shared/character/face";
 import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@nemesis/shared/character/pool";
@@ -72,7 +73,18 @@ export interface BloubBotProps {
   size?: number;
   /** Customiser: silhouette used by the resting states. */
   shape?: string;
-  /** Customiser: body colour. */
+  /**
+   * An explicit body colour, as a CSS colour.
+   *
+   * 🔴 NORMALLY OMITTED, AND OMITTING IT IS THE ANSWER (owner 2026-08-21: "make the character
+   * follow the accent color"). Left unset, the body is `--bloub-ink`, which is the app's accent
+   * — see bloub.css. This used to be an id into a twelve-swatch palette with its own picker and
+   * its own stored preference, which is how the product ended up with two colour settings that
+   * could disagree with each other.
+   *
+   * What it survives for is the character lab, which exists to look at the character in colours
+   * nobody has chosen. That is a developer surface exploring a value, not a second preference.
+   */
   color?: string;
   /**
    * Which resting face to wear — an id from the vendored expression table.
@@ -155,7 +167,7 @@ export function BloubBot({
   state = "idle",
   size = 96,
   shape = "cercle",
-  color = "encre",
+  color,
   expression = "neutre",
   paper,
   track = false,
@@ -204,10 +216,15 @@ export function BloubBot({
     );
   }
 
-  // Resolved once per render and read by the loop, so the loop never re-subscribes.
-  const ink = COLOR_BY_ID.get(color)?.hex ?? "#0a0a0c";
-  const live = useRef({ ink, paper: paper ?? "", speed, track, aimAt, entrance });
-  live.current = { ink, paper: paper ?? "", speed, track, aimAt, entrance };
+  // 🔴 THE THEME AND THE ACCENT ARE READ SO A FROZEN BOT REPAINTS WHEN THEY MOVE. Both colours
+  // are CSS tokens resolved at paint time, and an animated bot picks a change up on its next
+  // frame for free — but a `frozenAt` bot paints once, from an effect with a dependency list,
+  // and nothing in that list moves when someone switches accent or theme. So the Settings
+  // preview would sit in the previous colour until something else made it re-render. (That was
+  // already true of `--bloub-paper` and a theme switch; the accent only made it visible.)
+  const { accent, theme } = useTheme();
+  const live = useRef({ color: color ?? "", paper: paper ?? "", speed, track, aimAt, entrance });
+  live.current = { color: color ?? "", paper: paper ?? "", speed, track, aimAt, entrance };
 
   /**
    * Writes one frame onto the DOM.
@@ -420,6 +437,24 @@ export function BloubBot({
       : "") ||
     "#f9f9f9";
 
+  /**
+   * The body colour: the `color` prop when one was given, otherwise `--bloub-ink` — which is
+   * the app's accent. Read from the DOM at paint time, exactly like the paper above and for
+   * the same reason: the token moves when someone changes accent or theme, and the animation
+   * loop must not have to re-subscribe to notice.
+   *
+   * The fallback is the light theme's own `--ui-action`, matching `resolvedPaper`'s light
+   * `#f9f9f9` — the pair a renderer with no stylesheet at all should draw.
+   */
+  const resolvedInk = () =>
+    live.current.color ||
+    (typeof window !== "undefined"
+      ? getComputedStyle(svgRef.current ?? document.documentElement)
+          .getPropertyValue("--bloub-ink")
+          .trim()
+      : "") ||
+    "#37614a";
+
   useLayoutEffect(() => {
     if (!still) return;
     const engine = engineRef.current;
@@ -427,10 +462,10 @@ export function BloubBot({
     // 🔴 HELD AT ITS CHARACTERISTIC INSTANT, NOT FROZEN AT ZERO. Every animation
     // publishes the moment it reads best (`POSES`), and holding that is what keeps
     // `thinking` legible as three dots rather than as a ball caught before it split.
-    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null);
+    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), resolvedInk(), resolvedPaper(), null);
     // Redrawn whenever the look changes, since nothing else will redraw it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [still, frozenAt, state, shape, color, expression, paper]);
+  }, [still, frozenAt, state, shape, color, expression, paper, accent, theme]);
 
   useLayoutEffect(() => {
     if (still) return;
@@ -518,7 +553,7 @@ export function BloubBot({
       const from = waggleFromRef.current;
       paint(
         engine.sample(clockRef.current),
-        live.current.ink,
+        resolvedInk(),
         resolvedPaper(),
         from === null ? null : clockRef.current - from,
       );

@@ -55,7 +55,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { SecuritySettings } from "@/components/workspace/shell/security-settings";
 import { ACCENT_COLORS, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type DarkTone, type ThemePreference } from "@/components/theme-provider";
 import { BloubBot } from "@/components/bloub/bloub-bot";
-import { COLORS, SHAPES } from "@nemesis/shared/bloub/skins";
+import { SHAPES } from "@nemesis/shared/bloub/skins";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
 import { cn } from "@/lib/utils";
 
@@ -144,7 +144,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
   // "Calculating available storage…" forever, which reads as a hang rather than
   // as an answer. "unsupported" is a real outcome and says so.
   const [storage, setStorage] = useState<{ used: number } | "unsupported" | null>(null);
-  const { preference, accent, scale, darkTone, libraryFullScreen, bloubShape, bloubColor, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setBloubShape, setBloubColor } = useTheme();
+  const { preference, accent, scale, darkTone, libraryFullScreen, bloubShape, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setBloubShape } = useTheme();
 
   useEffect(() => {
     if (section !== "usage") return;
@@ -254,7 +254,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
                   cannot drift out of date with what the canvas actually renders. */}
               <div className="flex items-center gap-5 max-sm:flex-col max-sm:items-start">
                 <div className="grid size-[92px] shrink-0 place-items-center rounded-2xl border border-(--ui-stroke-secondary)">
-                  <BloubBot color={bloubColor} frozenAt={1} shape={bloubShape} size={76} state="idle" />
+                  <BloubBot frozenAt={1} shape={bloubShape} size={76} state="idle" />
                 </div>
                 <div className="min-w-0 flex-1 space-y-3">
                   <div>
@@ -272,38 +272,24 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
                           onClick={() => setBloubShape(item.id)}
                           type="button"
                         >
-                          {/* Shown in the chosen colour, so the two choices are read together. */}
-                          <BloubBot color={bloubColor} frozenAt={1} shape={item.id} size={28} state="idle" />
+                          {/* Drawn in the accent, like every other character on screen — so the
+                              swatch is answering "what shape", which is the only thing left to ask. */}
+                          <BloubBot frozenAt={1} shape={item.id} size={28} state="idle" />
                         </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="mb-1.5 text-[0.7rem] text-(--ui-text-tertiary)">Colour</p>
-                    <div className="flex flex-wrap gap-2">
-                      {COLORS.map((item) => (
-                        <button
-                          aria-label={item.id}
-                          aria-pressed={bloubColor === item.id}
-                          className={cn(
-                            "size-7 rounded-full border border-(--ui-stroke-secondary)",
-                            bloubColor === item.id && "ring-2 ring-(--theme-primary) ring-offset-2 ring-offset-background",
-                          )}
-                          key={item.id}
-                          onClick={() => setBloubColor(item.id)}
-                          style={{ backgroundColor: item.hex }}
-                          title={item.id}
-                          type="button"
-                        />
                       ))}
                     </div>
                   </div>
                 </div>
               </div>
+              {/* 🔴 THE COLOUR PICKER IS GONE, AND THE COPY SAYS WHERE THE COLOUR WENT (owner
+                  2026-08-21: "make the character follow the accent color"). A removed control
+                  that is not accounted for reads as a control that broke, and this one sat
+                  directly under Accent colour — the setting that now governs it. */}
               <p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">
                 The character sits above the composer while you work, and comes forward to the
                 middle of the page while Nemesis is thinking. Some animations draw their own
-                body — the shape you pick is the one it returns to at rest.
+                body — the shape you pick is the one it returns to at rest. Its colour is the
+                accent colour above.
               </p>
             </SettingsCard>
             <SettingsCard title="Scaling"><div className="flex flex-wrap gap-2">{SCALE_PRESETS.map((preset) => <button aria-pressed={scale === preset} className={cn("min-w-16 rounded-xl border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-xs font-semibold tabular-nums hover:bg-(--ui-control-hover-background)", scale === preset && "border-(--theme-primary) text-(--theme-primary) ring-1 ring-(--theme-primary)")} key={preset} onClick={() => setScale(preset)} type="button">{preset}%</button>)}</div><p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">Everything in the app grows or shrinks together. Currently {scale}%.</p></SettingsCard>

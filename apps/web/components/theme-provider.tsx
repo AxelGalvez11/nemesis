@@ -2,8 +2,8 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
-import { ACCENT_COLORS, accentGlyph, isAccent, normalizeStoredAccent, type AccentPreference } from "@/lib/accent";
-import { COLOR_BY_ID, DEFAULT_COLOR, DEFAULT_SHAPE, SHAPE_BY_ID } from "@nemesis/shared/bloub/skins";
+import { ACCENT_PROPERTIES, ACCENT_STORAGE_KEY, accentProperties, isAccent, normalizeStoredAccent, type AccentPreference } from "@/lib/accent";
+import { DEFAULT_SHAPE, SHAPE_BY_ID } from "@nemesis/shared/bloub/skins";
 
 // Re-exported so every existing `from "@/components/theme-provider"` import
 // keeps working; lib/accent.ts is the definition.
@@ -12,7 +12,6 @@ export { ACCENT_COLORS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, type AccentPr
 type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
 const STORAGE_KEY = "pharmaorb-theme";
-const ACCENT_STORAGE_KEY = "nemesis.web.accent";
 // v2, and the bump is load-bearing: SCALE_FACTOR below changes what a stored
 // number MEANS, so reading a v1 value would render it 25% larger than the
 // student chose. A new key retires those cleanly onto the new default.
@@ -39,7 +38,13 @@ const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
 // otherwise resolve to `undefined` and render a shapeless body. `resolveShape` and
 // `resolveColor` fall back rather than throw.
 const BLOUB_SHAPE_STORAGE_KEY = "nemesis.web.bloub.shape";
-const BLOUB_COLOR_STORAGE_KEY = "nemesis.web.bloub.color";
+// 🔴 THE CHARACTER'S COLOUR IS NOT STORED ANY MORE, AND THAT IS THE FIX (owner 2026-08-21:
+// "make the character follow the accent color"). `nemesis.web.bloub.color` held an id into a
+// twelve-swatch palette that had nothing to do with the accent, so the app carried two colour
+// preferences that could disagree — and whose defaults did: the character's was `encre`
+// (#0a0a0c), a near-invisible smudge on the black theme. The colour is `--bloub-ink` now, which
+// is the accent (see bloub.css), so there is nothing left here to remember. Any stored value is
+// simply never read again; nothing has to migrate, because the setting it fed is gone.
 // Dark mode ships in two tones (owner 2026-08-05: "keep charcoal as an option
 // in settings, bring back the 100% black background"): "black" is the default
 // pure-black skin, "charcoal" the ChatGPT-parity gray ladder. CSS keys off
@@ -102,10 +107,7 @@ const normalizeStoredPreference = (v: string | null): string | null => (v === "g
 interface ThemeContextValue {
   /** Silhouette the character rests in. An id from `lib/bloub/skins`. */
   bloubShape: string;
-  /** Body colour. An id from `lib/bloub/skins`. */
-  bloubColor: string;
   setBloubShape: (id: string) => void;
-  setBloubColor: (id: string) => void;
   preference: ThemePreference;
   theme: Theme;
   accent: AccentPreference;
@@ -124,9 +126,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue>({
   bloubShape: DEFAULT_SHAPE,
-  bloubColor: DEFAULT_COLOR,
   setBloubShape: () => {},
-  setBloubColor: () => {},
   preference: "system",
   theme: "light",
   accent: "default",
@@ -144,32 +144,28 @@ const ThemeContext = createContext<ThemeContextValue>({
 function applyAccent(accent: AccentPreference) {
   const root = document.documentElement;
   if (accent === "default") {
-    root.style.removeProperty("--theme-primary");
-    root.style.removeProperty("--theme-midground");
-    root.style.removeProperty("--theme-warm");
-    // Removing these two is what makes "Default" mean the restrained green in
-    // app/styles/desktop-ui.css, rather than a seventh colour listed here.
-    root.style.removeProperty("--ui-action");
-    root.style.removeProperty("--ui-action-glyph");
+    // Removing every property an accent can set is what makes "Default" mean the values in
+    // app/styles/desktop-ui.css — a light/dark pair no single hex could stand for — rather
+    // than a seventh colour in the table. Driven off ACCENT_PROPERTIES so a property added
+    // to `accentProperties` cannot be left behind here and stick after a switch back.
+    for (const property of ACCENT_PROPERTIES) root.style.removeProperty(property);
     return;
   }
-  const color = ACCENT_COLORS[accent];
-  root.style.setProperty("--theme-primary", color);
-  root.style.setProperty("--theme-midground", color);
-  root.style.setProperty("--theme-warm", color);
-  // 🔴 THE ACCENT NOW GOVERNS THE SEND BUTTON, WHICH IT DELIBERATELY DID NOT (owner
-  // 2026-08-20: "the send button is hardcoded green and does not change with the other
-  // color changes"). desktop-ui.css kept --ui-action separate from --ui-accent on the
-  // reasoning that anything branded there "is erased the moment someone picks Blue" —
-  // correct about --theme-midground, which feeds the whole chrome tint, but it left the
-  // product's single most prominent control as the one thing the picker could not
-  // reach. Setting --ui-action HERE, as its own property, keeps both: the chrome tint
-  // stays a tint, and the primary action follows the choice.
-  root.style.setProperty("--ui-action", color);
-  // The glyph on that fill is no longer --ui-bg-editor, because a fill that moves needs
-  // a foreground that moves with it. See accentGlyph — five of the six accents want a
-  // near-black arrow, not a white one.
-  root.style.setProperty("--ui-action-glyph", accentGlyph(color));
+  // 🔴 THE SAME DEFINITION THE PRE-PAINT SCRIPT USES, not a second copy of it. See
+  // `accentProperties` and `accentPrePaintScript` in lib/accent.ts: this runs after
+  // hydration and that one runs before first paint, and the two disagreeing is precisely
+  // the flash they exist to prevent.
+  //
+  // 🔴 THE ACCENT GOVERNS THE SEND BUTTON (owner 2026-08-20: "the send button is hardcoded
+  // green and does not change with the other color changes"). desktop-ui.css kept
+  // --ui-action separate from --ui-accent on the reasoning that anything branded there "is
+  // erased the moment someone picks Blue" — correct about --theme-midground, which feeds the
+  // whole chrome tint, but it left the product's most prominent control as the one thing the
+  // picker could not reach. Setting --ui-action as its own property keeps both: the chrome
+  // tint stays a tint, and the primary action follows the choice. The glyph on that fill
+  // moves with it, because a fill that moves needs a foreground that moves too.
+  const properties = accentProperties(accent);
+  for (const [property, value] of Object.entries(properties)) root.style.setProperty(property, value);
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -182,7 +178,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [darkTone, setDarkToneState] = useState<DarkTone>("black");
   const [libraryFullScreen, setLibraryFullScreenState] = useState(false);
   const [bloubShape, setBloubShapeState] = useState<string>(DEFAULT_SHAPE);
-  const [bloubColor, setBloubColorState] = useState<string>(DEFAULT_COLOR);
 
   useEffect(() => {
     // Resolve the stored preference (stored → OS → dark) and make it AUTHORITATIVE on the DOM.
@@ -219,9 +214,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setLibraryFullScreenState(localStorage.getItem(LIBRARY_FULL_SCREEN_STORAGE_KEY) === "true");
     // Unknown ids fall back to the defaults rather than reaching the renderer.
     const storedShape = localStorage.getItem(BLOUB_SHAPE_STORAGE_KEY);
-    const storedColor = localStorage.getItem(BLOUB_COLOR_STORAGE_KEY);
     if (storedShape && SHAPE_BY_ID.has(storedShape)) setBloubShapeState(storedShape);
-    if (storedColor && COLOR_BY_ID.has(storedColor)) setBloubColorState(storedColor);
   }, []);
 
   useEffect(() => {
@@ -273,12 +266,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem(BLOUB_SHAPE_STORAGE_KEY, id); } catch { /* best effort */ }
   };
 
-  const setBloubColor = (id: string) => {
-    if (!COLOR_BY_ID.has(id)) return;
-    setBloubColorState(id);
-    try { localStorage.setItem(BLOUB_COLOR_STORAGE_KEY, id); } catch { /* best effort */ }
-  };
-
   const setLibraryFullScreen = (next: boolean) => {
     setLibraryFullScreenState(next);
     try { localStorage.setItem(LIBRARY_FULL_SCREEN_STORAGE_KEY, String(next)); } catch { /* best effort */ }
@@ -287,7 +274,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // The topbar button toggles light ↔ dark; Settings offers System/Light/Dark explicitly.
   const toggle = () => setTheme(theme === "light" ? "dark" : "light");
 
-  return <ThemeContext.Provider value={{ preference, theme, accent, scale, darkTone, libraryFullScreen, bloubShape, bloubColor, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setBloubShape, setBloubColor, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ preference, theme, accent, scale, darkTone, libraryFullScreen, bloubShape, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setBloubShape, toggle }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {
