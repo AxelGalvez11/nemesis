@@ -45,7 +45,10 @@ test("🔴🔴 no player CARD — no border, no background, no toolbar under the
   assert.ok(!/\bborder-\(/.test(PLAYER), "the playback controls have drawn themselves a border");
   assert.ok(!/\brounded-2xl|\bshadow-|\bbg-\(--ui-bg-(secondary|elevated)\)/.test(PLAYER), "the controls have become a card");
   // And they are inside the SAME row as Copy rather than a second surface below it.
-  assert.match(ACTIONS, /<ResponseAudioControls audio=\{audio\} text=\{text\} \/>/);
+  // 🔴 `text={spoken}`, NOT `text={text}`: the player is handed the RAW reply so `replySpeechPlan`
+  // can read the `[say: …]` marks and route each sentence to the voice that must say it. The
+  // clipboard keeps the flattened prose. Calibration: hand the player `text` and this reddens.
+  assert.match(ACTIONS, /<ResponseAudioControls audio=\{audio\} text=\{spoken\} \/>/);
 });
 
 test("🔴 the controls exist only while there is audio, and the transition is on the whole group", () => {
@@ -90,7 +93,9 @@ test("🔴🔴 the row does NOT appear while the turn is still arriving", () => 
 test("🔴🔴 it copies the PROSE, not the wire format", () => {
   // `replySegments` splits drawings out of the text. Pasting "[figure 1]" into someone's notes is
   // pasting our own wire format at them, and a synthesiser reading it aloud is worse.
-  const mount = CANVAS.slice(CANVAS.indexOf("<ReplyActions"), CANVAS.indexOf("<ReplyActions") + 900);
+  // 1600, not 900: the mount now carries `spoken={replyText}` and its comment ahead of the copy
+  // expression, and a window that ends before the expression it asserts on reddens on honesty.
+  const mount = CANVAS.slice(CANVAS.indexOf("<ReplyActions"), CANVAS.indexOf("<ReplyActions") + 1600);
   assert.match(mount, /replySegments\(replyText, replyVisualList\)/, "the copy text is not derived from the split");
   assert.match(mount, /segment\.kind === "prose"/, "drawings are being copied as their markers");
 });

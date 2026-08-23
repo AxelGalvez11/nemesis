@@ -14,9 +14,12 @@
 // started from an effect after the answer is already on screen, and every state it sets is
 // additive. An answer appears at the same moment whether voice is on, off, or failing.
 //
-// 🔴 ONE PROVIDER PER UTTERANCE, DECIDED BY THE SELECTED VOICE AND NOTHING ELSE. `ttsRequest` builds
-// exactly one request; there is no second fetch, no probe, and no fallback that would put the other
-// provider on the wire behind the learner's back.
+// 🔴 ONE PROVIDER PER UTTERANCE, AND AN ANSWER IS AN ORDERED LIST OF UTTERANCES. `replySpeechPlan`
+// decides each one: prose is read by the voice the learner chose in Settings, and a sentence the
+// model marked `[say: es-MX | …]` is routed to the language lane, which names that variety (owner,
+// 2026-08-23: a mixed answer reads with both voices). The pieces play SEQUENTIALLY into one sink —
+// two synthesisers never make sound at once — and `ttsRequest` still builds exactly one request per
+// piece, with no probe and no fallback that would put an unchosen provider on the wire.
 //
 // No test file, for the reason `use-canvas-speech.ts` states about itself: this wraps `Audio`,
 // `MediaSource` and `fetch`, none of which this repo's runner can exercise. The decisions it makes
@@ -24,7 +27,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { speechChunks, SPEECH_CHAR_LIMIT } from "@/lib/learn/canvas-speech";
 import { openAudioSink, pumpInto, type AudioSink } from "@/lib/learn/audio-stream";
 import {
   DEFAULT_PLAYBACK_RATE,
@@ -35,7 +37,8 @@ import {
   scrubTarget,
   writePlaybackRate,
 } from "@/lib/learn/playback";
-import { ANSWER_SPEED } from "@/lib/learn/speech-route";
+import { replySpeechPlan } from "@/lib/learn/reply-speech";
+import { LOCALE_UNSPECIFIED } from "@/lib/learn/speech-route";
 import { ttsRequest } from "@/lib/learn/tts-request";
 import { supabase } from "@/lib/supabase";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
@@ -229,27 +232,36 @@ export function useResponseAudio(voice: ReadingVoice = DEFAULT_READING_VOICE): R
           });
         };
 
-        // 🔴 SEVERAL REQUESTS, BECAUSE ONE WOULD BE REFUSED, AND THEY BECOME ONE TIMELINE. Both
-        // providers answer 413 above 600 characters. `speechChunks` cuts at sentence ends, and the
-        // pieces are appended into a single sink so the listener gets one progress bar rather than
-        // a queue of clips.
-        const parts = speechChunks(passage, SPEECH_CHAR_LIMIT);
+        // 🔴 SEVERAL REQUESTS, AND THEY BECOME ONE TIMELINE. `replySpeechPlan` decides each one:
+        // sentence-seamed chunks (both providers answer 413 above 600 characters), a short opener
+        // first so the first audible word arrives while the rest is still synthesising, and a
+        // `[say: …]`-marked sentence routed to the language lane in its stated variety. The pieces
+        // are appended into a single sink so the listener gets one progress bar rather than a
+        // queue of clips.
+        const parts = replySpeechPlan(passage, chosen);
+        if (parts.length === 0) {
+          // Nothing sayable survived the split — an answer that is all notation, or all drawing.
+          setStatus("idle");
+          teardown();
+          return;
+        }
 
         try {
           for (const part of parts) {
             if (stale()) return;
             const plan = ttsRequest({
-              provider: chosen.provider,
+              provider: part.provider,
               // 🔴 THE SYNTHESIS RATE, WHICH IS THE ROUTER'S CONSTANT AND NOT THE LISTENER'S SETTING.
-              // An answer is explained TO the learner with the text in front of them, so it is
-              // generated at natural pace; how fast they then hear it is `audio.playbackRate`.
-              rate: ANSWER_SPEED,
+              // Prose runs at answer pace; a target-language sentence at the natural pace a drill
+              // needs. How fast the learner then hears it is `audio.playbackRate`.
+              rate: part.speed,
               supabaseAnonKey,
               supabaseUrl,
-              text: part,
+              text: part.text,
               token,
-              ...(chosen.provider === "azure" && chosen.locale ? { locale: chosen.locale } : {}),
-              voiceId: chosen.id,
+              ...(part.locale !== LOCALE_UNSPECIFIED ? { locale: part.locale } : {}),
+              // Absent on a target-language line: the catalogue names that variety's speaker (§47).
+              ...(part.voiceId ? { voiceId: part.voiceId } : {}),
             });
 
             const response = await fetch(plan.url, plan.init);
