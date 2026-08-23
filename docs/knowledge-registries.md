@@ -1,9 +1,16 @@
 # The knowledge registries — Concept, Curriculum, Visualization
 
-> **STATUS (2026-08-23): THE COURSE VERTICAL SLICE IS BUILT — composer capability → turn router →
-> plan on the territory marker → Minimap course section — WITH ONE SEED (General Chemistry,
-> provisional). NO BULK CORPUS EXISTS. The registry tables' migration is written and NOT applied;
-> the checked-in seed serves reads until it is.**
+> **STATUS (2026-08-23, evening): THE COURSE VERTICAL SLICE IS BUILT — composer capability → turn
+> router → plan on the territory marker → Minimap course section — AND THE LIBRARY SWEEP LANDED:
+> 103 checked-in skeletons (`lib/learn/curricula/`), all `provisional`/`nemesis-authored`, every
+> AP subject mapped by alias, the 1L law core, the nursing sequence and the engineering core
+> included. Owner rulings the same day: sweep everything at once; ONE skeleton per subject taught
+> to the clarified depth (no per-depth variants); unknown subjects go to the deep-research builder
+> (next slice, not started). Whole-exam names (nclex, mcat, cpa, bar) deliberately resolve to
+> nothing — the builder owns exam-shaped prep. NO EXTERNAL CORPUS WAS INGESTED. The licence
+> attestation migration is written and NOT applied (one apply attempt was correctly blocked by the
+> permission layer; it waits for an explicit owner-approved run); the checked-in seeds serve
+> reads.**
 >
 > Owner brief 2026-08-22; three explicit rulings 2026-08-23 — §38 narrowed for one-shot composer
 > capabilities, v1 course scope follows the explicit user goal, and `core_sources` stays the one
