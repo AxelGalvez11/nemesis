@@ -155,6 +155,8 @@ export interface BloubDockProps {
    * is taken in. A poke's own face (the sigma) outranks it for the poke's short hold.
    */
   face?: FaceId | null;
+  /** The pointing glove, popped out for the moment a surface has something to point AT. */
+  hand?: "point" | null;
   hidden?: boolean;
   className?: string;
 }
@@ -173,6 +175,7 @@ export function BloubDock({
   centreScale = DOCK_CENTRE_SCALE,
   contain = false,
   face = null,
+  hand = null,
   hidden = false,
   className,
 }: BloubDockProps) {
@@ -356,6 +359,7 @@ export function BloubDock({
           aimAt={aimAt}
           color={accent}
           face={pokeFace ?? face}
+          hand={hand}
           onPoke={poke}
           size={size}
           speed={speedOf(shown)}

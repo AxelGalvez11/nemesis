@@ -85,10 +85,10 @@ export const SIGMA_BROW_EYE = 0;
 /** How long a face takes to arrive, seconds of SCENE time. */
 export const FACE_IN = 0.18;
 
-/** 0..1 progress of a face's arrival; ease-out. `null` elapsed means "already there". */
-export function arrival(elapsed: number | null): number {
+/** 0..1 progress of an arrival; ease-out. `null` elapsed means "already there". */
+export function arrival(elapsed: number | null, span: number = FACE_IN): number {
   if (elapsed === null || !Number.isFinite(elapsed)) return 1;
-  const p = Math.min(Math.max(elapsed / FACE_IN, 0), 1);
+  const p = Math.min(Math.max(elapsed / span, 0), 1);
   return 1 - (1 - p) ** 3;
 }
 
@@ -117,3 +117,52 @@ export const BRIDGE = {
   /** A hair above centre — bridges sit at the frame's top half. */
   dy: -0.05,
 } as const;
+
+// ── The glove ────────────────────────────────────────────────────────────────
+//
+// Owner 2026-08-24, round two of the hand: "make it look like a real hand… the classic white
+// glove, like in the cartoons, but minimalist." The first attempt was three floating capsules
+// and read as nothing; this is a drawn silhouette — one plump index finger continuing the
+// hand's own left edge, two knuckle scallops for the curled fingers, a thumb, and a flared
+// cuff overlapping the wrist the way cartoon cuffs do. The character has no arms, so the
+// glove floats beside the body, Rayman-fashion; the shared ink outline is what ties it to
+// the creature. Drawn in ENGINE units (RAYON = 100, the frame is ±158) because it lives
+// outside the body's mask, painted in front.
+//
+// 🔴 IT ARRIVES BY POPPING OUT FROM BEHIND THE BODY — smaller, closer in, more tilted, then
+// eased to its held pose (owner: "it's supposed to be an animation, not a thing that stays
+// on there"). `gloveTransform` is that whole journey as a single eased parameter.
+
+/** The hand: index up, two knuckle scallops, a thumb. One closed path, engine units. */
+export const GLOVE_HAND =
+  "M -38 -54 A 15 15 0 0 1 -8 -54 L -8 -18 C -2 -29 12 -29 16 -18 C 21 -26 32 -22 34 -9 " +
+  "C 38 -3 40 8 38 15 C 35 25 26 30 12 30 L -16 30 C -28 30 -36 24 -38 13 C -38 10 -40 8 -43 7 " +
+  "C -50 5 -56 1 -58 -6 A 8.5 8.5 0 0 1 -50 -21 C -45 -19 -41 -15 -38 -9 Z";
+
+/** The cuff: a flared rounded band, drawn AFTER the hand so its stroke crosses the wrist —
+ *  the crossing is the seam. */
+export const GLOVE_CUFF =
+  "M -44 37 A 11.5 11.5 0 0 1 -32.5 25.5 L 32.5 25.5 A 11.5 11.5 0 0 1 44 37 " +
+  "A 11.5 11.5 0 0 1 32.5 48.5 L -32.5 48.5 A 11.5 11.5 0 0 1 -44 37 Z";
+
+/** Outline weight, engine units — a cartoon line, reads at 52px and at 168px. */
+export const GLOVE_STROKE = 7.6;
+
+/** Where the glove holds, and where its pop begins (tucked behind the shoulder). */
+export const GLOVE_AT = { x: 102, y: -86, rot: 18, scale: 0.92 } as const;
+export const GLOVE_FROM = { x: 70, y: -58, rot: 34, scale: 0.4 } as const;
+
+/** How long the pop takes, seconds of scene time. A touch longer than a face's arrival —
+ *  it crosses real distance, where a face only fades in place. */
+export const HAND_IN = 0.22;
+
+/** The glove's whole entrance as one transform; `enter` is `arrival(elapsed, HAND_IN)`. */
+export function gloveTransform(enter: number): string {
+  const t = Math.min(Math.max(enter, 0), 1);
+  const l = (a: number, b: number) => a + (b - a) * t;
+  return (
+    `translate(${l(GLOVE_FROM.x, GLOVE_AT.x).toFixed(1)} ${l(GLOVE_FROM.y, GLOVE_AT.y).toFixed(1)}) ` +
+    `rotate(${l(GLOVE_FROM.rot, GLOVE_AT.rot).toFixed(1)}) ` +
+    `scale(${l(GLOVE_FROM.scale, GLOVE_AT.scale).toFixed(3)})`
+  );
+}

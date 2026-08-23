@@ -34,7 +34,7 @@ import { mixHex } from "@/lib/bloub/skins";
 
 import { CHARACTER_SHAPE, aimFor, arcStops, inkFor } from "@/lib/character/look";
 import { browFrame, raisedBrow } from "@/lib/character/brow";
-import { BRIDGE, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SIGMA_BROW_EYE, SMIRK, annulusPath, arrival, type FaceId } from "@/lib/character/face";
+import { BRIDGE, GLOVE_CUFF, GLOVE_HAND, GLOVE_STROKE, HAND_IN, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SIGMA_BROW_EYE, SMIRK, annulusPath, arrival, gloveTransform, type FaceId } from "@/lib/character/face";
 import { capsulePath } from "@/lib/bloub/shape";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
@@ -215,13 +215,15 @@ export function BloubBot({
    * members are parked at `display: none` rather than removed, so the node count is
    * constant for the lifetime of the component.
    */
-  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null, handId: "point" | null) => {
+  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null, handId: "point" | null, handAt: number | null) => {
     const handGroup = handGroupRef.current;
     if (handGroup) {
       if (handId === "point") {
         handGroup.style.display = "";
         handGroup.setAttribute("fill", paperHex);
         handGroup.setAttribute("stroke", inkHex);
+        // The pop from behind the shoulder — same arrival easing as the faces, its own span.
+        handGroup.setAttribute("transform", gloveTransform(arrival(handAt, HAND_IN)));
       } else {
         handGroup.style.display = "none";
       }
@@ -464,6 +466,13 @@ export function BloubBot({
     faceSeenRef.current = face;
     faceFromRef.current = face ? clockRef.current : null;
   }
+  // The glove's own clock, for the pop — stamped the render the hand is asked for.
+  const handSeenRef = useRef<"point" | null>(null);
+  const handFromRef = useRef<number | null>(null);
+  if (hand !== handSeenRef.current) {
+    handSeenRef.current = hand;
+    handFromRef.current = hand ? clockRef.current : null;
+  }
   const waggledRef = useRef(false);
   if (waggle !== waggledRef.current) {
     waggledRef.current = waggle;
@@ -513,7 +522,7 @@ export function BloubBot({
     // 🔴 HELD AT ITS CHARACTERISTIC INSTANT, NOT FROZEN AT ZERO. Every animation
     // publishes the moment it reads best (`POSES`), and holding that is what keeps
     // `thinking` legible as three dots rather than as a ball caught before it split.
-    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null, face, null, hand);
+    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null, face, null, hand, null);
     // Redrawn whenever the look changes, since nothing else will redraw it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [still, frozenAt, state, color, expression, paper, face, hand]);
@@ -603,6 +612,7 @@ export function BloubBot({
         live.current.face,
         faceFromRef.current === null ? null : clockRef.current - faceFromRef.current,
         live.current.hand,
+        handFromRef.current === null ? null : clockRef.current - handFromRef.current,
       );
     };
 
@@ -745,21 +755,22 @@ export function BloubBot({
       </g>
 
       {/* 🔴 THE GLOVE (owner 2026-08-24: "the classic white glove, like in the cartoons, but
-          minimalist"). Paper-filled with an ink outline, so it flips with the theme exactly as
-          the face does — and the OVERLAPPING outlines are the drawing: where cuff meets palm
-          and palm meets finger, the strokes cross and read as the glove's own seams. It reaches
-          outside the silhouette, so it cannot be a mask hole; it is painted in front, in the
-          frame's own ink and paper, per frame. Prototype: wired only on the review board. */}
+          minimalist"). A drawn silhouette this time — the first attempt was three floating
+          capsules and the owner's verdict was exact ("the hand looks so weird"). The geometry
+          lives in lib/character/face.ts with the rest of the language; paper fill and ink
+          outline flip with the theme, the cuff's stroke crossing the wrist is the seam, and
+          `paint` drives its entrance transform so it POPS out from behind the body rather than
+          appearing. It reaches outside the silhouette, so it cannot be a mask hole; it is
+          painted in front. */}
       <g
         ref={handGroupRef}
-        strokeWidth={3.4}
+        strokeWidth={GLOVE_STROKE}
         strokeLinecap="round"
         strokeLinejoin="round"
         style={{ display: "none" }}
       >
-        <path d={capsulePath(16, 9)} transform="translate(70,-57) rotate(-42)" />
-        <circle cx={86} cy={-72} r={12.5} />
-        <path d={capsulePath(22, 8)} transform="translate(101,-87) rotate(-42)" />
+        <path d={GLOVE_HAND} />
+        <path d={GLOVE_CUFF} />
       </g>
 
       {/* Every other dot — the thinking trio, the tear of the "!" — sits in front. */}
