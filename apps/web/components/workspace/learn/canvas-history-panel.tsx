@@ -50,6 +50,34 @@ export function CanvasHistoryPanel({
   open: boolean;
 }) {
   const panel = useRef<HTMLDivElement | null>(null);
+  const activeRow = useRef<HTMLButtonElement | null>(null);
+
+  /**
+   * Open on the moment the learner is at, not on the beginning of the session.
+   *
+   * 🔴🔴 MEASURED DEFECT, NOT A NICETY. With 40 moments the card's content is 1767px in a 540px
+   * box, and it opened at `scrollTop: 0` — "Canvas started" at the top and "Now" twelve hundred
+   * pixels below the fold, unreachable without dragging. A history that opens at the far end of
+   * itself is a history you have to search rather than read, and the longer the session the worse
+   * it gets, which is exactly backwards.
+   *
+   * 🔴 `scrollTop` IS SET DIRECTLY RATHER THAN VIA `scrollIntoView`. That method walks up the
+   * ancestors and will happily scroll the Canvas behind the card to bring a row into view —
+   * moving the page the learner was reading, as a side effect of opening a menu. Assigning
+   * `scrollTop` on this one element cannot reach anything else.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const box = panel.current;
+    if (!box) return;
+    const row = activeRow.current;
+    // Nothing rewound to: the learner is at the end of the list, so start there.
+    if (!row) {
+      box.scrollTop = box.scrollHeight;
+      return;
+    }
+    box.scrollTop = Math.max(0, row.offsetTop - (box.clientHeight - row.offsetHeight) / 2);
+  }, [activeMomentId, open]);
 
   // 🔴 BOUND ONLY WHILE OPEN. A listener that lives for the life of the Canvas and returns early
   // is a listener on every keystroke the composer receives.
@@ -84,8 +112,8 @@ export function CanvasHistoryPanel({
         // the card sits next to the marks it belongs to, which is what makes it read as the rail
         // opening rather than as a panel arriving from off-screen.
         "absolute right-9 top-1/2 z-40 -translate-y-1/2",
-        "flex max-h-[min(30rem,72vh)] w-[min(20rem,calc(100vw-4.5rem))] flex-col overflow-y-auto",
-        "rounded-2xl bg-(--ui-bg-elevated) p-1.5 shadow-xl ring-1 ring-(--ui-stroke-secondary)",
+        "flex max-h-[min(26rem,70vh)] w-[min(18rem,calc(100vw-4.5rem))] flex-col overflow-y-auto",
+        "rounded-xl bg-(--ui-bg-elevated) p-1 shadow-xl ring-1 ring-(--ui-stroke-secondary)",
         // 🔴 SCALE AND FADE, NOT A SLIDE. A card belongs to the thing it opened from; sliding it in
         // from the edge is the sidebar gesture this replaced.
         "origin-right transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none",
@@ -98,6 +126,7 @@ export function CanvasHistoryPanel({
         <CanvasHistoryRow
           active={entry.momentId === activeMomentId}
           entry={entry}
+          innerRef={entry.momentId === activeMomentId ? activeRow : undefined}
           key={entry.id}
           onSelect={() => onSelect(entry.momentId)}
         />

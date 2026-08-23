@@ -98,7 +98,7 @@ test("🔴🔴 it is a card beside the rail, not a full-height sidebar", () => {
   // Calibration: put `inset-y-0` back on the panel and this reddens alone.
   assert.ok(!/inset-y-0/.test(PANEL_CODE), "the history panel spans the full height again");
   assert.ok(/max-h-\[min\(/.test(PANEL_CODE), "the card has no height cap, so it can grow into a sidebar");
-  assert.ok(/rounded-2xl/.test(PANEL_CODE), "the card is not a card");
+  assert.ok(/rounded-xl/.test(PANEL_CODE), "the card is not a card");
   assert.ok(/top-1\/2/.test(PANEL_CODE), "the card is not anchored beside the rail");
 });
 
@@ -107,6 +107,21 @@ test("🔴 the card carries no header, no title and no close control", () => {
   assert.ok(!/Codicon/.test(PANEL_CODE), "an icon control came back");
   assert.ok(!/Close history/.test(PANEL_CODE), "the close chevron came back");
   assert.ok(!/>History</.test(PANEL_CODE), "the header title came back");
+});
+
+test("🔴🔴 a long history scrolls, and opens where the learner actually is", () => {
+  // Calibration: delete the scroll effect and this reddens. Measured with 40 moments before the
+  // fix: 1767px of content in a 540px box, opening at scrollTop 0 — "Canvas started" on screen and
+  // "Now" twelve hundred pixels below the fold. A history that opens at the far end of itself gets
+  // worse the longer the session runs, which is backwards.
+  assert.ok(/overflow-y-auto/.test(PANEL_CODE), "the card cannot scroll");
+  assert.ok(/box\.scrollTop = box\.scrollHeight/.test(PANEL_CODE), "an un-rewound card does not open at Now");
+  assert.ok(/row\.offsetTop/.test(PANEL_CODE), "a rewound card does not open on the moment being viewed");
+
+  // 🔴 NOT `scrollIntoView`: it walks up the ancestors and would scroll the Canvas behind the card
+  // to bring a row into view — moving the page the learner was reading, as a side effect of
+  // opening a menu.
+  assert.ok(!/scrollIntoView/.test(PANEL_CODE), "scrollIntoView can scroll the Canvas behind the card");
 });
 
 test("🔴 there is no full-screen dark backdrop", () => {
@@ -143,7 +158,7 @@ test("the card stays inside the width the brief asked for", () => {
   // 22rem painted at **396px**, outside the 300–360 the brief asked for; 20rem is 360px exactly.
   // A rem value that reads as one number and paints as another is the same trap §46.3 documents
   // for type — it just costs layout here instead of typography.
-  assert.ok(/w-\[min\(20rem,/.test(PANEL_CODE), "the card width is not clamped");
+  assert.ok(/w-\[min\(18rem,/.test(PANEL_CODE), "the card width is not clamped");
 });
 
 // ── collapsed state stays quiet ─────────────────────────────────────────────────────────────

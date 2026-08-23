@@ -19,10 +19,13 @@ import type { CanvasHistoryEntry } from "@/lib/learn/canvas-history";
 export function CanvasHistoryRow({
   active,
   entry,
+  innerRef,
   onSelect,
 }: {
   active: boolean;
   entry: CanvasHistoryEntry;
+  /** Set on the active row only, so the card can scroll it into view when it opens. */
+  innerRef?: React.Ref<HTMLButtonElement>;
   onSelect: () => void;
 }) {
   return (
@@ -32,18 +35,26 @@ export function CanvasHistoryRow({
       // choosing FROM, and a screen reader announces the two differently.
       aria-current={active ? "true" : undefined}
       className={cn(
-        "w-full rounded-xl px-3 py-2.5 text-left transition-colors duration-150 focus-visible:outline-none",
+        "w-full rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150 focus-visible:outline-none",
         active
           ? "bg-(--ui-bg-tertiary)"
           : "hover:bg-(--ui-bg-tertiary) focus-visible:bg-(--ui-bg-tertiary)",
       )}
       onClick={onSelect}
+      ref={innerRef}
       type="button"
     >
       {/* 🔴 THE TEXT IS IN A SPAN AND THE SIZE LIVES ON THE SPAN. `[data-workspace] button { font:
           inherit }` sits in `@layer base` (desktop-chrome.css) so a utility still wins — but a
           span is the shape the rest of this feature already uses, and it keeps the button free to
-          be a box. */}
+          be a box.
+
+          🔴🔴 STILL `--canvas-text-small` (14px), AND THAT IS A CONSTRAINT RATHER THAN A CHOICE.
+          Owner asked why this is not as compact as ChatGPT's list; part of the honest answer is
+          that ChatGPT's rows are about 13px and §46.3 declares five sizes — 12, 14, 16, 18, 24 —
+          with `canvas-shell.test.ts` failing the build on anything else. 13px would be a sixth
+          step nobody chose. So the row got tighter by 11px of padding instead, which is where the
+          bulk was: 42px tall became 31px without inventing a font size. */}
       <span
         className={cn(
           "block truncate text-[length:var(--canvas-text-small)] leading-snug",
