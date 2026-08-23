@@ -307,7 +307,9 @@ function GloveLive() {
 
 export default function MascotLanguagePage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 px-8 py-14">
+    // data-workspace: outside it, the legacy stylesheet repaints every button as an accent
+    // pill — same opt-out the app shell and the other dev-preview boards use.
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 px-8 py-14" data-workspace="">
       <header>
         <h1 className="text-lg font-medium text-(--ui-text-primary)">The mascot&apos;s own language</h1>
         <p className="mt-1 text-sm text-(--ui-text-secondary)">
