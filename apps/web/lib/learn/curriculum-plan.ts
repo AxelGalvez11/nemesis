@@ -42,6 +42,12 @@ export interface PlanNode {
   readonly position: number;
 }
 
+/** One web source a researched plan was synthesised FROM — a citation, never content. */
+export interface PlanSource {
+  readonly url: string;
+  readonly title: string;
+}
+
 export interface CurriculumPlan {
   /** Which skeleton this was cut from, and which version of it. */
   readonly curriculumKey: string;
@@ -52,6 +58,12 @@ export interface CurriculumPlan {
   /** ISO — when the plan was applied to this canvas. */
   readonly appliedAt: string;
   readonly nodes: readonly PlanNode[];
+  /**
+   * Present only on a plan the deep-research builder synthesised: the pages consulted, kept so
+   * the plan can always say where it came from. 🔴 CITATIONS, NOT CONTENT — no source text is
+   * stored, only what a provenance audit needs. Registry plans never carry this field.
+   */
+  readonly sources?: readonly PlanSource[];
 }
 
 /** Cut a plan from a skeleton. The whole skeleton in v1 — scoping to a syllabus is later work. */
@@ -198,6 +210,18 @@ export function readCurriculumPlan(value: unknown): CurriculumPlan | null {
     if (aliases === null) return null;
     nodes.push({ aliases, conceptKey: entry.conceptKey, label: entry.label, parentKey, position: entry.position });
   }
+  // 🔴 SOURCES DEGRADE, THE PLAN SURVIVES. A malformed citation list loses the citations, never
+  // the course — the opposite trade (refusing the plan) would delete a learner's course because
+  // one URL row rotted.
+  const sources = Array.isArray(row.sources)
+    ? row.sources.flatMap((raw): PlanSource[] => {
+        if (typeof raw !== "object" || raw === null) return [];
+        const entry = raw as Record<string, unknown>;
+        if (typeof entry.url !== "string" || !entry.url.trim()) return [];
+        if (typeof entry.title !== "string") return [];
+        return [{ title: entry.title, url: entry.url }];
+      })
+    : null;
   return {
     appliedAt: row.appliedAt,
     curriculumKey: row.curriculumKey,
@@ -205,5 +229,6 @@ export function readCurriculumPlan(value: unknown): CurriculumPlan | null {
     maturity: row.maturity,
     nodes,
     title: row.title,
+    ...(sources && sources.length > 0 ? { sources } : {}),
   };
 }
