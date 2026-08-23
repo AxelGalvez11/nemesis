@@ -491,6 +491,51 @@ export const ERROR_TYPES: readonly ErrorType[] = [
 /** 🔴 THIS IS THE LEARNER EVIDENCE. A scheduling grade is derived from it and is not a
  *  substitute for it — storing only the grade would throw away everything Nemesis actually
  *  cares about and leave a spaced-repetition app wearing a canvas. */
+/**
+ * What to do next about one objective, after reading a learner's answer.
+ *
+ * 🔴🔴 THE MODEL CHOOSES THIS. IT USED TO BE AN `if` LADDER (owner 2026-08-22: "'policy picks
+ * next move' is the wrong architecture, deepseek needs to pick the next move").
+ *
+ * The ladder in `canvas-policy.ts` mapped verdict + confidence + attempt-count onto one of these
+ * five. That is a rule table standing between the only thing that read the learner's actual words
+ * and the decision about what to do with them — so a reading rich enough to say "they have the
+ * mechanism but inverted the direction" was flattened to `verdict: partial, confidence: 0.6` and
+ * the branch picked from there. Every judgement a good tutor makes in that gap was discarded
+ * before anything could act on it.
+ *
+ * This is also what the two shipped study modes do. ChatGPT's Study Mode is ~450 words that name
+ * the moves available and then say "always know the next step, and switch or end activities once
+ * they've done their job" — the selection is left to the model. Claude's Learning Mode is the same
+ * shape. Neither ships a decision table.
+ *
+ * The list itself is NOT arbitrary, and is the part worth keeping from the old policy:
+ *
+ *  - `clarify_missing` vs `correct` vs `repair_misconception` is the gap/error/misconception
+ *    distinction from the conceptual-change literature. A false belief is not a bigger gap, and
+ *    teaching it as one does not work — conceptual-change strategies are a distinct and
+ *    separately-evidenced intervention (Pacaci et al. 2024, meta-analysis, J. Res. Sci. Teach.).
+ *  - Every non-`advance` move ends by asking again rather than by explaining and moving on,
+ *    because retrieval beats re-study (Rowland 2014: g = 0.50 over re-reading) and retrieval WITH
+ *    feedback is what transfers.
+ *  - The moves are step-sized, not answer-sized. VanLehn (2011) puts intelligent tutoring at
+ *    d = 0.76 against d = 0.79 for human tutors, and attributes the effect to interaction
+ *    granularity plus feedback and scaffolding — not to the size of the explanation.
+ */
+export const COGNITIVE_MOVES = [
+  "advance",
+  "clarify_missing",
+  "correct",
+  "repair_misconception",
+  "retry",
+] as const;
+
+export type CognitiveMove = (typeof COGNITIVE_MOVES)[number];
+
+export function isCognitiveMove(value: unknown): value is CognitiveMove {
+  return typeof value === "string" && (COGNITIVE_MOVES as readonly string[]).includes(value);
+}
+
 export interface ResponseEvaluation {
   verdict: Verdict;
   /** 0-1: how much the response actually settled. A one-line answer to a broad task can be
@@ -506,6 +551,19 @@ export interface ResponseEvaluation {
   /** The one concise thing the learner is shown. Everything above is for the engine — §9: the
    *  rich output is not for dumping onto the reader. */
   feedback: string;
+  /**
+   * What the judge decided to DO about this reading, chosen by the model that read the answer.
+   *
+   * 🔴 OPTIONAL ON PURPOSE, AND THAT IS THE MIGRATION. An older reply, a rescue call that came
+   * back thin, or a model that ignored the field leaves this undefined — and `canvas-policy.ts`
+   * then falls back to the old ladder rather than refusing the turn. So this ships without a
+   * flag day: the moment a reply carries a move, the model is driving; when it does not, the
+   * learner still gets taught.
+   */
+  nextMove?: CognitiveMove;
+  /** The judge's own one-line reason for that move. Shown to nobody; it is what makes a bad
+   *  decision reviewable afterwards instead of merely wrong. */
+  moveReason?: string;
   /** Other concepts on THIS canvas the performance showed to be shaky. Ids are checked against
    *  the canvas's own concept list; a judge naming a concept we never declared invented it. */
   alsoWeakConceptIds?: string[];

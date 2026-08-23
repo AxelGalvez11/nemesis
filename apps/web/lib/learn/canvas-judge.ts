@@ -18,7 +18,8 @@
 // evaluation into a review grade, and note the direction: evidence first, dates afterwards.
 
 import type { ErrorType, ResponseEvaluation, Verdict } from "./canvas-model";
-import { ERROR_TYPES, VERDICTS } from "./canvas-model";
+import { ERROR_TYPES, VERDICTS, isCognitiveMove } from "./canvas-model";
+import type { CognitiveMove } from "./canvas-model";
 import { extractJson } from "./canvas-parse";
 
 /** Eight points is far more than any useful critique and far below a runaway. */
@@ -179,6 +180,20 @@ export function validateEvaluation(raw: unknown, context: EvaluationContext): Ev
     return { evaluation: null, rejected: ["the evaluation had no feedback to show the learner"] };
   }
 
+  // 🔴🔴 THE MOVE THE JUDGE CHOSE. Owner 2026-08-22: "deepseek needs to pick the next move."
+  //
+  // 🔴 AN UNREADABLE MOVE IS DROPPED, NEVER GUESSED, AND NEVER FATAL. `canvas-policy.ts` falls
+  // back to the old ladder when this is undefined, so a model that omits the field or invents a
+  // sixth option still gets the learner taught. Coercing "clarify" to "clarify_missing" is the
+  // tempting version and the wrong one: the five differ in what they DO to the page, and a guess
+  // here rewrites the wrong block.
+  let nextMove: CognitiveMove | undefined;
+  if (raw.next_move !== undefined) {
+    if (isCognitiveMove(raw.next_move)) nextMove = raw.next_move;
+    else rejected.push(`next_move ${JSON.stringify(raw.next_move)} is not a move; falling back to the policy`);
+  }
+  const moveReason = clampText(raw.move_reason, MAX_FEEDBACK_CHARS) || undefined;
+
   let verdict: Verdict = raw.verdict;
   const misconceptions = pointList(raw.misconceptions);
   if (verdict === "misconception" && misconceptions.length === 0) {
@@ -219,6 +234,8 @@ export function validateEvaluation(raw: unknown, context: EvaluationContext): Ev
       ...(kind ? { errorType: kind } : {}),
       feedback,
       ...(alsoWeak.length > 0 ? { alsoWeakConceptIds: alsoWeak } : {}),
+      ...(nextMove ? { nextMove } : {}),
+      ...(moveReason ? { moveReason } : {}),
     },
     rejected,
   };

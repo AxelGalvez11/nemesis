@@ -765,6 +765,43 @@ const WRITTEN_WORK_GUIDANCE =
  *     ("it, uh, it goes up — no, down"). §7 wants speaking to be first-class precisely because it
  *     exposes the mental model; marking someone down for sounding like a person would defeat
  *     the point and quietly push everyone back to typing. */
+/**
+ * The move menu handed to the judge.
+ *
+ * 🔴 A MENU WITH CONDITIONS, NOT A DECISION PROCEDURE. Each entry says what the move is FOR and
+ * what it costs to get wrong. Nothing here counts attempts, thresholds confidence, or ranks the
+ * options — those were the ladder, and the ladder is what the owner removed.
+ *
+ * 🔴 EVERY CORRECTIVE MOVE ENDS BY ASKING AGAIN. That is the one non-negotiable, and it is the
+ * best-evidenced thing in the file: retrieval practice beats re-reading at g = 0.50 (Rowland
+ * 2014), and retrieval WITH feedback is what carries to transfer. A move that explains and then
+ * moves on has spent the learner's attention on the weakest available activity.
+ *
+ * 🔴 AND THEY ARE SMALL. VanLehn (2011) measures intelligent tutoring at d = 0.76 against d = 0.79
+ * for human tutors and attributes it to interaction granularity, feedback and scaffolding — not to
+ * the length of the explanation. ChatGPT's Study Mode carries the same instruction in one line:
+ * "don't ever send essay-length responses."
+ */
+const MOVE_CHOICE =
+  "Now decide what should happen next, and put it in `next_move`. You are choosing, not reporting — " +
+  "nothing downstream re-decides this.\n\n" +
+  '- "advance": they have it, or this is not worth more of their attention right now. Something ' +
+  "unresolved comes back later on its own, so moving on is not giving up.\n" +
+  '- "clarify_missing": they showed most of it and one piece is absent. Teach ONLY that piece. ' +
+  "Re-teaching what they already demonstrated is how a page stops feeling adaptive.\n" +
+  '- "correct": wrong, and you can see exactly where. The smallest fix that lands, then ask again ' +
+  "a different way.\n" +
+  '- "repair_misconception": they hold a specific false belief you can state in one sentence. ' +
+  "This is NOT a bigger gap — more detail does not dislodge a wrong model. Name the false " +
+  "relationship, say plainly it does not hold, put the right one in its place, and have them " +
+  "rebuild it in their own words. Only choose this if `misconceptions` is non-empty.\n" +
+  '- "retry": wrong, and you genuinely cannot see where. Teach the idea again from a different ' +
+  "angle, then a fresh attempt. Prefer a sharper reading over this — `retry` is what you pick " +
+  "when the reading itself is the thing that failed.\n\n" +
+  "Every move except `advance` ends with them attempting something again. Explaining and moving on " +
+  "is the one thing that does not work.\n\n" +
+  "`move_reason` is one line, for a human reviewing your decision later. Not shown to the learner.\n\n";
+
 export function evaluationMessages(input: EvaluationInput): WireMsg[] {
   const expected = input.expectedEvidence;
   const standard = [
@@ -793,10 +830,10 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         // 🔴 THE JUDGE NEEDS THE EM DASH RULE TOO, AND IT IS THE ONE BUILDER THAT WOULD HAVE BEEN
         // MISSED: it is the only system prompt in this file that is not `CANVAS_SYSTEM`, and it
         // writes the FEEDBACK a learner reads — the exact surface the owner was looking at.
-        "You are Nemesis, judging what a learner's own explanation shows about their understanding. " +
+        "You are Nemesis, a tutor reading what a learner just said and deciding what to do about it. " +
         "Your entire output is the JSON payload requested: no greeting, no commentary. " +
         "You are not marking an exam. You are working out what this person does and does not yet understand, " +
-        "so the page can teach the right next thing. " +
+        "and then choosing the next teaching move yourself. " +
         NO_EM_DASH,
       role: "system",
     },
@@ -861,8 +898,21 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         "This matters more than the verdict: a forgotten term and a backwards causal model both look wrong, and " +
         "they need opposite teaching.\n\n" +
         `Concepts on this page: ${input.concepts.map((c) => `${c.id}=${c.label}`).join(", ")}\n\n` +
+        // 🔴🔴 YOU DECIDE THE MOVE. This is the change the owner asked for on 2026-08-22
+        // ("deepseek needs to pick the next move") and it replaces an `if` ladder in
+        // canvas-policy.ts that mapped verdict + confidence + attempt count onto the same five
+        // options. See `CognitiveMove` in canvas-model.ts for why the LIST is kept and the
+        // CHOOSING is not.
+        //
+        // Written as a menu with the condition each move is FOR, and no arithmetic. Both shipped
+        // study modes are shaped this way — ChatGPT's Study Mode names the moves and then says
+        // "always know the next step, and switch or end activities once they've done their job",
+        // leaving selection to the model. What is stated here instead is the evidence a rule
+        // table cannot carry: which move suits which kind of wrongness.
+        MOVE_CHOICE +
         'Return JSON: {"verdict":"partial","confidence":0.7,"demonstrated":["…"],"missing":["…"],' +
-        '"misconceptions":["…"],"errorType":"conceptual","feedback":"…","alsoWeakConceptIds":["k3"]}\n\n' +
+        '"misconceptions":["…"],"errorType":"conceptual","feedback":"…","alsoWeakConceptIds":["k3"],' +
+        '"next_move":"clarify_missing","move_reason":"…"}\n\n' +
         "`confidence` is 0 to 1: how much this performance actually settled. A short answer to a broad task can be " +
         "right and still tell you little — say so with a low number rather than a confident verdict. " +
         "`demonstrated` and `missing` are for the teaching engine, not for the learner to read. " +
