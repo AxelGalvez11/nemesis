@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { ACCENT_COLORS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, isAccent, normalizeStoredAccent } from "./accent";
+import { ACCENT_COLORS, ACCENT_PREFERENCES, ACCENT_PROPERTIES, accentGlyph, accentPrePaintScript, DEFAULT_ACCENT_SWATCH, isAccent, normalizeStoredAccent } from "./accent";
 
 test("the palette is the owner's seven, in that order", () => {
   assert.deepEqual([...ACCENT_PREFERENCES], ["default", "blue", "green", "yellow", "pink", "orange", "purple"]);
@@ -47,3 +48,105 @@ test("the Default swatch is a true grey", () => {
   assert.equal(r, g);
   assert.equal(g, b);
 });
+
+// ── the glyph that rides on an accent fill ───────────────────────────────────
+//
+// The send button is the primary action of the whole product, and since the accent
+// picker started moving --ui-action its foreground moves too. These are the tests that
+// stop a new accent shipping an unreadable arrow.
+
+/** WCAG 2.1, duplicated here on purpose: a test that reuses the implementation's own
+ *  maths cannot catch the implementation's own maths being wrong. */
+function contrast(a: string, b: string): number {
+  const luminance = (hex: string): number => {
+    const channel = (offset: number): number => {
+      const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  };
+  const [x, y] = [luminance(a), luminance(b)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+test("every accent's glyph clears WCAG AA on its own fill", () => {
+  for (const [accent, color] of Object.entries(ACCENT_COLORS)) {
+    const ratio = contrast(color, accentGlyph(color));
+    assert.ok(ratio >= 4.5, `${accent} (${color}) glyph contrast ${ratio.toFixed(2)}:1`);
+  }
+});
+
+test("the glyph is always the better of the two, never a fixed choice", () => {
+  for (const color of Object.values(ACCENT_COLORS)) {
+    const chosen = accentGlyph(color);
+    const other = chosen === "#ffffff" ? "#1a1a1a" : "#ffffff";
+    assert.ok(contrast(color, chosen) >= contrast(color, other), color);
+  }
+});
+
+// 🔴 THE POINT OF COMPUTING IT. Five of the six accents want a DARK arrow — hard-coding
+// white (the obvious reading of the palette comment) would put four of them below AA.
+test("purple is the only accent that takes a white glyph", () => {
+  const white = Object.entries(ACCENT_COLORS)
+    .filter(([, color]) => accentGlyph(color) === "#ffffff")
+    .map(([accent]) => accent);
+  assert.deepEqual(white, ["purple"]);
+});
+
+// ── The accent reaches every surface that claims to carry it ────────────────
+
+const read = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8");
+
+test("🔴🔴 the accent is resolved BEFORE first paint, not after hydration", () => {
+  // Owner 2026-08-21: "there is a discrepancy between the color chosen in settings and the
+  // chat composer send button". It was applied only from ThemeProvider's mount effect, so
+  // every load painted the send button in the DEFAULT accent and swapped it once React came
+  // up — long enough on the Canvas to read as "the setting did not take".
+  //
+  // Calibration: drop `accentPrePaintScript()` from the layout's script and this reddens.
+  assert.match(read("../app/layout.tsx"), /accentPrePaintScript\(\)/);
+  const script = accentPrePaintScript();
+  for (const property of ACCENT_PROPERTIES) assert.ok(script.includes(property), property);
+  for (const color of Object.values(ACCENT_COLORS)) assert.ok(script.includes(color), color);
+});
+
+test("🔴🔴 and the pre-paint and post-hydration values come from ONE definition", () => {
+  // Two copies of the table is how the accent ends up flickering to a different colour one
+  // frame in — correct immediately afterwards, and so the hardest kind of bug to catch.
+  //
+  // Calibration: inline the hexes into either caller and this reddens.
+  assert.match(read("../components/theme-provider.tsx"), /accentProperties\(accent\)/);
+  assert.ok(
+    !/ACCENT_COLORS\[/.test(read("../components/theme-provider.tsx")),
+    "the provider builds its own copy of the accent's properties",
+  );
+});
+
+test("🔴 Default clears every property an accent can set", () => {
+  // Driven off ACCENT_PROPERTIES rather than a hand-written list, so a property added to
+  // `accentProperties` cannot be left behind and stick after a switch back to Default.
+  assert.match(read("../components/theme-provider.tsx"), /for \(const property of ACCENT_PROPERTIES\) root\.style\.removeProperty/);
+  assert.ok(ACCENT_PROPERTIES.includes("--ui-action"), "the send button's fill is not in the set");
+});
+
+test("🔴🔴🔴 the character is the accent, and there is no second colour preference", () => {
+  // Owner 2026-08-21: "make the character follow the accent color". It used to carry its own
+  // twelve-swatch palette with its own picker and its own stored preference, so the app held
+  // two colour settings that could disagree — and whose defaults did. The mapping itself —
+  // accent id in, accent hex out, the theme's neutral pair on Default — is pinned in
+  // lib/character/character.test.ts; what THIS guards is the wiring around it: the body is
+  // painted from that one mapping, and no second stored colour grows back beside it.
+  assert.match(read("../components/bloub/bloub-bot.tsx"), /inkFor\(color/);
+  for (const file of ["../components/theme-provider.tsx", "../components/SettingsSurface.tsx"]) {
+    assert.ok(!/bloubColor/.test(read(file)), `${file} still carries a second colour preference`);
+  }
+});
+
+test("🔴 and it is --ui-action, the token the send button carries", () => {
+  // The two part only on Default — `--theme-primary` is a neutral graphite there while
+  // `--ui-action` is the product's own green. Since the complaint being answered was the
+  // character and the send button showing different colours, they read the same token.
+  const composer = read("../components/workspace/learn/composer-controls.tsx");
+  assert.match(composer, /bg-\(--ui-action\)/, "the send button no longer carries --ui-action");
+});
+
