@@ -112,8 +112,11 @@ export function CanvasHistoryPanel({
         // the card sits next to the marks it belongs to, which is what makes it read as the rail
         // opening rather than as a panel arriving from off-screen.
         "absolute right-9 top-1/2 z-40 -translate-y-1/2",
-        "flex max-h-[min(26rem,70vh)] w-[min(18rem,calc(100vw-4.5rem))] flex-col overflow-y-auto",
-        "rounded-xl bg-(--ui-bg-elevated) p-1 shadow-xl ring-1 ring-(--ui-stroke-secondary)",
+        // 🔴 20rem (360px here — this repo sets `html { font-size: 112.5% }`), NOT 18. Reverted
+        // with the row padding above: the card was narrowed to 324px in the same unmeasured
+        // compaction pass, and a narrower card truncates more titles for no gain.
+        "flex max-h-[min(30rem,72vh)] w-[min(20rem,calc(100vw-4.5rem))] flex-col overflow-y-auto",
+        "rounded-2xl bg-(--ui-bg-elevated) p-1.5 shadow-xl ring-1 ring-(--ui-stroke-secondary)",
         // 🔴 SCALE AND FADE, NOT A SLIDE. A card belongs to the thing it opened from; sliding it in
         // from the edge is the sidebar gesture this replaced.
         "origin-right transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none",

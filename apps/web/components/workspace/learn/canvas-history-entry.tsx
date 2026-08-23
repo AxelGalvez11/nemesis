@@ -35,7 +35,12 @@ export function CanvasHistoryRow({
       // choosing FROM, and a screen reader announces the two differently.
       aria-current={active ? "true" : undefined}
       className={cn(
-        "w-full rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150 focus-visible:outline-none",
+        // 🔴 42px ROWS, NOT 33. Owner, 2026-08-23, against the reference shot: "the 'open'
+        // history rail is too compact, change it back to how it was". An earlier pass tightened
+        // this to px-2.5/py-1.5 chasing a compactness I could not measure — this environment
+        // blocks chatgpt.com, so that pass was judgement against a screenshot and it overshot.
+        // The reference is roomier than this list ever needed to be tight.
+        "w-full rounded-xl px-3 py-2.5 text-left transition-colors duration-150 focus-visible:outline-none",
         active
           ? "bg-(--ui-bg-tertiary)"
           : "hover:bg-(--ui-bg-tertiary) focus-visible:bg-(--ui-bg-tertiary)",
