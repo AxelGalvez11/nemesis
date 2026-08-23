@@ -32,6 +32,7 @@ import type { StateId } from "@/lib/bloub/states";
 
 import { BloubBot } from "./bloub-bot";
 import { usePoke } from "./use-poke";
+import type { FaceId } from "@/lib/character/face";
 import { speedOf, stationOf, type Station } from "@/lib/character/stations";
 
 /** How often the anchor and the attention target are re-measured. */
@@ -149,6 +150,11 @@ export interface BloubDockProps {
    * character" is what fixed it, so a surface that draws its own has to switch the dock off rather
    * than hope the two never overlap.
    */
+  /**
+   * A face from our own layer for the surface's ACTIVITY — reading glasses while material
+   * is taken in. A poke's own face (the sigma) outranks it for the poke's short hold.
+   */
+  face?: FaceId | null;
   hidden?: boolean;
   className?: string;
 }
@@ -166,13 +172,14 @@ export function BloubDock({
   gap = 14,
   centreScale = DOCK_CENTRE_SCALE,
   contain = false,
+  face = null,
   hidden = false,
   className,
 }: BloubDockProps) {
   const { accent, theme } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   // `motion` is the half the engine has no pose for — the hop. See `use-poke.ts`.
-  const { state: shown, motion, poke } = usePoke(state);
+  const { state: shown, motion, face: pokeFace, poke } = usePoke(state);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState(bottom);
   const [inset, setInset] = useState(left);
@@ -344,15 +351,17 @@ export function BloubDock({
           rather than move it. It does not need the trick: `usePoke` alternates jump → wink and
           always returns to null between reactions, so the class really is removed and re-added,
           which restarts the animation on its own. */}
-      <div className={motion === "jump" ? "bloub-jump" : undefined}>
+      <div className={motion === "jump" ? "bloub-jump" : motion === "spin" ? "bloub-spin" : undefined}>
         <BloubBot
           aimAt={aimAt}
           color={accent}
+          face={pokeFace ?? face}
           onPoke={poke}
           size={size}
           speed={speedOf(shown)}
           state={shown}
           track
+          waggle={motion === "waggle"}
         />
       </div>
       {/* 🔴 A MARK ABOVE THE HEAD, NOT A BODY STATE — owner's own wording, 2026-08-20: *"the mascot

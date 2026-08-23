@@ -1870,6 +1870,11 @@ export function LearningCanvas({
         // 🔴 THE ANIMATION IS UNCHANGED. `ACTIVITY_STATE` maps `thinking` and `preparing` onto the
         // same state, so this alters WHERE the character stands and WHEN, never what it plays.
         state={stateForCanvas({ thinking: turnInFlight, preparing: presence === "preparing" })}
+        // 🔴 THE GLASSES GO ON ONLY WHILE MATERIAL IS ACTUALLY BEING TAKEN IN — `busy` names an
+        // ingestion or a search that owns the surface, which is the one moment "reading" is the
+        // literal truth. Tied to anything broader (thinking, preparing) they would become a
+        // costume, and rule 4 of the language is that every face has a reason. See face.ts.
+        face={busy.kind !== null ? "reading" : undefined}
         // 🔴🔴 EXACTLY ONE CHARACTER ON THE SURFACE, WHICH IS THE SIX-DOT RULE. `CanvasThinkingPreview`
         // now draws its own — a resting blob standing over three dots of its own, because the
         // engine's `thinking` pose turns the body INTO the middle dot and cannot express a blob

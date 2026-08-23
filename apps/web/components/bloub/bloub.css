@@ -93,17 +93,46 @@
 }
 
 @keyframes bloub-jump {
-  0% { transform: translateY(0) scaleY(1); }
+  0% { transform: translateY(0) scale(1, 1); }
   /* The crouch. Small — a deep one on a 52px character reads as a glitch. */
-  12% { transform: translateY(2%) scaleY(0.9); }
-  /* Up, and stretched slightly along the direction of travel. */
-  34% { transform: translateY(-58%) scaleY(1.06); }
+  12% { transform: translateY(2%) scale(1.07, 0.9); }
+  /* Up, and stretched along the direction of travel — narrower as it rises. */
+  34% { transform: translateY(-58%) scale(0.95, 1.07); }
   /* The hang, where a jump becomes readable at all. */
-  50% { transform: translateY(-66%) scaleY(1); }
-  78% { transform: translateY(0) scaleY(1); }
-  /* Landing. Flattens, then comes back. */
-  88% { transform: translateY(0) scaleY(0.86); }
-  100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-66%) scale(1, 1); }
+  78% { transform: translateY(0) scale(1, 1); }
+  /* 🔴 THE LANDING IS THE POINT (owner 2026-08-23: "when it lands, it looks squishy").
+     Squash conserves volume: what the body loses in height it gains in width. The old
+     frame only shrank scaleY, which reads as scaling, not as weight meeting a floor. */
+  86% { transform: translateY(0) scale(1.18, 0.76); }
+  /* A small overshoot past neutral on the way back — jelly settles, it does not stop. */
+  94% { transform: translateY(-2%) scale(0.96, 1.05); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+
+/*
+ * One clean pirouette — the poke's third gesture.
+ *
+ * 🔴 THIS IS OUR SPIN, NOT THE VENDORED SWIRL. The swirl sent the eyes orbiting the body
+ * behind rainbow arcs; this turns the CREATURE, once, with a lean in and a jelly settle,
+ * and draws nothing that is not the body. Origin sits at the visual centre of mass.
+ */
+.bloub-spin {
+  animation: bloub-spin var(--bloub-spin-ms, 760ms) cubic-bezier(0.3, 0.05, 0.22, 1) both;
+  transform-origin: 50% 55%;
+  will-change: transform;
+}
+
+@keyframes bloub-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  /* The wind-up: a small counter-lean before committing, like any turn with weight in it. */
+  12% { transform: rotate(-16deg) scale(0.95); }
+  /* The turn itself, slightly narrowed by speed. */
+  62% { transform: rotate(300deg) scale(0.97); }
+  /* Overshoot… */
+  88% { transform: rotate(372deg) scale(1.03); }
+  /* …and settle. 360 and 0 are the same heading, so nothing snaps at the end. */
+  100% { transform: rotate(360deg) scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -111,7 +140,8 @@
      information — where the character stands says whether Nemesis has taken the floor — so it
      is only made quicker. A hop carries none: it is a reply to a poke, and the wink in the
      same cycle still answers one. */
-  .bloub-jump {
+  .bloub-jump,
+  .bloub-spin {
     animation: none;
   }
 }
