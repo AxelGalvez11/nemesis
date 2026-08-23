@@ -367,6 +367,18 @@ export function CanvasComposer({
   useEffect(() => {
     const element = input.current;
     if (!element) return;
+    // 🔴 EMPTY MEANS NO INLINE HEIGHT AT ALL, NOT A MEASUREMENT OF NOTHING. Measuring here can
+    // run while the surface is still settling — hydration recovery re-mounts this tree before
+    // flex has given the box its width — and a zero-width textarea reports its PLACEHOLDER
+    // wrapped into a column, so an empty one-line box was stamped `height: 160px` and stayed a
+    // tall blank pill until the first keystroke re-measured it (owner screenshot, 2026-08-23).
+    // An empty box needs no measurement: clearing the style hands height back to the CSS
+    // min-height, which is one line by construction.
+    if (!text) {
+      element.style.height = "";
+      element.style.overflowY = "hidden";
+      return;
+    }
     element.style.height = "auto";
     const needed = element.scrollHeight;
     element.style.height = `${Math.min(needed, MAX_COMPOSER_HEIGHT)}px`;
