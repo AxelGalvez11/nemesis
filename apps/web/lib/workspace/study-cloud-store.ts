@@ -1021,9 +1021,12 @@ export function useCloudStudy(): UseCloudStudyApi {
     const reviewedAt = new Date();
     let nextCard: StudyCard;
     if (preview) {
-      const schedule = scheduleStudyCard(card, grade);
-      const due = new Date(reviewedAt);
-      due.setDate(due.getDate() + schedule.intervalDays);
+      // 🔴 Due time comes from `dueInMinutes`, NOT from intervalDays. A
+      // relearning card is due in ten minutes while carrying an interval of one
+      // day; adding whole days here would push every failed card to tomorrow and
+      // silently reinstate the bug this scheduler exists to fix.
+      const { dueInMinutes, ...schedule } = scheduleStudyCard(card, grade);
+      const due = new Date(reviewedAt.getTime() + dueInMinutes * 60_000);
       nextCard = { ...card, ...schedule, dueAt: due.toISOString(), updatedAt: reviewedAt.toISOString() };
     } else {
       if (!userId) throw new Error("Sign in to review cards.");
