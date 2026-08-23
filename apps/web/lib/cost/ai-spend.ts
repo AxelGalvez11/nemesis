@@ -40,10 +40,12 @@ import { usdFor } from "@/lib/provider-costs";
  *                                this code sends `cost_effective`, measured at 3 credits/page, so
  *                                the rate is ~$0.00375 and not the $0.001 a 1-credit reading gives.
  *   ai.google.dev/pricing     — Gemini Flash-Lite, an image is ~258 input tokens
+ *   api-docs.deepseek.com/quick_start/pricing — deepseek-v4-flash-vision-exp, priced per TOKEN at
+ *                                the published peak rate (off-peak is half; a table has no clock)
  *
  * The numbers themselves live in `lib/provider-costs.ts`. See `REGISTRY_LOOKUP` below for why.
  */
-export const PRICE_REV = "2026-08-18";
+export const PRICE_REV = "2026-08-23";
 
 /** Providers this module prices. Every one is billed per UNIT, and the unit is named. */
 export type SpendProvider =
@@ -52,7 +54,14 @@ export type SpendProvider =
   /** LlamaParse. One unit is one page. */
   | "llamaparse"
   /** Gemini vision. One unit is one image or one PDF page — the same unit `VisionLedger` counts. */
-  | "gemini_vision";
+  | "gemini_vision"
+  /**
+   * DeepSeek vision (lib/vision/deepseek.ts). One unit is one image, but 🔴 THE UNIT IS NOT THE
+   * PRICE — DeepSeek returns real token counts on every reply, so a row for this provider carries
+   * `tokens` and is priced from them. That makes it the first vision lane whose ledger records
+   * what a call actually cost rather than what an assumption says a call should cost.
+   */
+  | "deepseek_vision";
 
 /**
  * Where each provider's rate is looked up. NOT a price list.
@@ -72,21 +81,37 @@ export type SpendProvider =
  * A price belongs in exactly one file. `ai-spend.test.ts` asserts these resolve to the registry's
  * numbers, so a future edit to one cannot reopen the gap.
  */
-const REGISTRY_LOOKUP: Readonly<Record<SpendProvider, { provider: "gemini" | "llamaparse" | "mistral"; service: string; unit: "per_image" | "per_page" }>> = {
+/** The providers billed as units x flat rate. `deepseek_vision` is deliberately NOT here: its
+ *  rows are priced from measured tokens (`visionTokensCostUsd`), never from a per-unit fiction. */
+export type UnitSpendProvider = Exclude<SpendProvider, "deepseek_vision">;
+
+const REGISTRY_LOOKUP: Readonly<Record<UnitSpendProvider, { provider: "gemini" | "llamaparse" | "mistral"; service: string; unit: "per_image" | "per_page" }>> = {
   gemini_vision: { provider: "gemini", service: "gemini-3.5-flash vision", unit: "per_image" },
   llamaparse: { provider: "llamaparse", service: "cost_effective", unit: "per_page" },
   mistral_ocr: { provider: "mistral", service: "mistral-ocr", unit: "per_page" },
 };
 
 /** USD per unit, at `PRICE_REV`, resolved from the one registry. */
-export const UNIT_PRICE_USD: Readonly<Record<SpendProvider, number>> = Object.freeze(
+export const UNIT_PRICE_USD: Readonly<Record<UnitSpendProvider, number>> = Object.freeze(
   Object.fromEntries(
-    (Object.keys(REGISTRY_LOOKUP) as SpendProvider[]).map((key) => {
+    (Object.keys(REGISTRY_LOOKUP) as UnitSpendProvider[]).map((key) => {
       const at = REGISTRY_LOOKUP[key];
       return [key, usdFor(at.provider, at.service, at.unit, 1)];
     }),
-  ) as Record<SpendProvider, number>,
+  ) as Record<UnitSpendProvider, number>,
 );
+
+/** What one DeepSeek vision call cost, from the provider's own token meter. PURE.
+ *  Rates resolve from the one registry, at the published PEAK rate — see lib/provider-costs.ts
+ *  for why the expensive reading is the only permissible estimate. */
+export function visionTokensCostUsd(tokens: SpendTokens): number {
+  const service = "deepseek-v4-flash-vision-exp";
+  const usd =
+    usdFor("deepseek", service, "per_million_input_tokens", tokens.inputMissTokens / 1e6)
+    + usdFor("deepseek", service, "per_million_cached_input_tokens", tokens.inputHitTokens / 1e6)
+    + usdFor("deepseek", service, "per_million_output_tokens", tokens.outputTokens / 1e6);
+  return Math.round(usd * 1e9) / 1e9;
+}
 
 export interface SpendResult {
   /** USD, or null when the provider is not in the price list. */
@@ -95,9 +120,16 @@ export interface SpendResult {
   readonly priced: boolean;
 }
 
+/** The token meter one call reported, when the provider has one. */
+export interface SpendTokens {
+  readonly inputMissTokens: number;
+  readonly inputHitTokens: number;
+  readonly outputTokens: number;
+}
+
 /** What `units` of `provider` cost. PURE. */
 export function unitCostUsd(provider: string, units: number): SpendResult {
-  const price = UNIT_PRICE_USD[provider as SpendProvider];
+  const price = UNIT_PRICE_USD[provider as UnitSpendProvider];
   if (price === undefined) return { priced: false, usd: null };
   const safe = Number.isFinite(units) && units > 0 ? units : 0;
   // Nine decimals, matching `llm-cost.ts`: one cached image is worth millionths of a dollar and
@@ -131,6 +163,8 @@ export interface SpendRecord {
   /** Why this spend happened — a routing reason, an escalation reason. */
   readonly reason?: string;
   readonly durationMs?: number;
+  /** The provider's own token meter for this call. When present, the row is priced from it. */
+  readonly tokens?: SpendTokens;
 }
 
 /**
@@ -146,7 +180,11 @@ export interface SpendRecord {
  * evaluation, most obviously.
  */
 export async function recordAiSpend(admin: SupabaseClient, record: SpendRecord): Promise<void> {
-  const cost = unitCostUsd(record.provider, record.units);
+  // 🔴 MEASURED BEATS ASSUMED, ALWAYS. A row carrying the provider's own token meter is priced
+  // from it; the flat unit table is only for providers that never tell us what a call consumed.
+  const cost: SpendResult = record.tokens
+    ? { priced: true, usd: visionTokensCostUsd(record.tokens) }
+    : unitCostUsd(record.provider, record.units);
   try {
     await admin.from("usage_events").insert({
       cost_credits: 0,
@@ -160,6 +198,13 @@ export async function recordAiSpend(admin: SupabaseClient, record: SpendRecord):
         provider: record.provider,
         units: record.units,
         ...(record.model ? { model: record.model } : {}),
+        ...(record.tokens
+          ? {
+            cached_input_tokens: record.tokens.inputHitTokens,
+            input_tokens: record.tokens.inputMissTokens,
+            output_tokens: record.tokens.outputTokens,
+          }
+          : {}),
         ...(record.reason ? { reason: record.reason } : {}),
         ...(record.durationMs === undefined ? {} : { duration_ms: record.durationMs }),
         ...(record.scope.sourceId ? { source_id: record.scope.sourceId } : {}),

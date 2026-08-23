@@ -18,14 +18,23 @@
  * Everything except the single fetch is pure and unit-tested.
  */
 
-/** Walk a current, production-priced ladder on a 404 exactly like
- * supabase/functions/nemesis-media does. Gemini 2.0 Flash was shut down on
- * 2026-06-01, so it must not remain the recovery path for camera or slide OCR.
- * Flash-Lite is the lower-cost fallback and is still multimodal. */
+/** Walk a ladder of model ids newest-first on failure, exactly like
+ * supabase/functions/nemesis-media does.
+ *
+ * 🔴 REPOINTED 2026-08-23 TO THE LADDER lib/pdf/vision.ts ALREADY MEASURED. The previous three
+ * rungs here — gemini-3.5-flash, gemini-3.1-flash-lite, gemini-2.5-flash — were ALL measured
+ * returning 404 on generateContent with a working key on 2026-08-15 (that file's header records
+ * it; the last one answers "no longer available to new users"). The PDF module was migrated that
+ * day; this one was not, so every camera, occlusion and handwriting read has been walking a dead
+ * ladder since. This module now matters MORE as a fallback than it did as the primary — it is
+ * what a read degrades to when DeepSeek (lib/vision/read.ts) cannot answer — and a fallback of
+ * dead ids is a fake fallback. Flash-Lite stays as the last rung: it was re-verified reachable in
+ * that same measurement. The two ladders still being two files is tracked separately (dedup task,
+ * 2026-08-23). */
 export const VISION_MODEL_LADDER = [
-  "gemini-3.5-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
   "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
 ] as const;
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";

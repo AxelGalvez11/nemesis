@@ -28,8 +28,8 @@ import { NextResponse } from "next/server";
 import { analyzeHandwriting } from "@/lib/handwriting/vision";
 import { matchExpectedElements } from "@/lib/handwriting/match-elements";
 import { checkImageUpload } from "@/lib/handwriting/upload";
-import { verifyBearer } from "@/lib/server";
-import { visionConfigured } from "@/lib/vision/gemini";
+import { adminClient, verifyBearer } from "@/lib/server";
+import { visionConfigured } from "@/lib/vision/read";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -77,7 +77,9 @@ export async function POST(req: Request) {
   if (!upload.ok) return NextResponse.json({ error: upload.error }, { status: upload.status });
 
   const bytes = new Uint8Array(await upload.file.arrayBuffer());
-  const observation = await analyzeHandwriting(bytes, upload.mime);
+  const observation = await analyzeHandwriting(bytes, upload.mime, {
+    spend: { admin: adminClient(), scope: { operation: "handwriting" }, userId: user.id },
+  });
   // null is the infra-failure path (unconfigured, oversized, provider outage) — distinct from a
   // real, structured abstention, which is a 200 with `observation.abstained === true`.
   if (!observation) {
