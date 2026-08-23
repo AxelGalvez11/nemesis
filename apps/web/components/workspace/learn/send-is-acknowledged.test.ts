@@ -35,10 +35,34 @@ const TEACHING = { blocks: 0, canvasState: "learn", policyPresenting: true, work
 
 // ── The thinking state takes the surface ────────────────────────────────────
 
-test("🔴🔴 a turn in flight replaces what was on screen", () => {
-  // The owner's explicit choice between three options: "Replaces it while thinking."
-  // Calibration: remove the `turnInFlight ?` arm from the presence ladder and this reddens.
-  const { presence } = canvasPresentation({ ...TEACHING, turnInFlight: true });
+test("🔴🔴🔴 a turn in flight KEEPS what was on screen", () => {
+  // 🔴 THIS ASSERTED THE OPPOSITE UNTIL 2026-08-22, on the owner's earlier call ("Replaces it while
+  // thinking"). They reversed it after using it: *"canvas should have one persistent screen not a
+  // swapping one."*
+  //
+  // The cost of replacing was measurable. `presence` was the first element of `surfaceKey`, so a
+  // mode change rebuilt the entire surface through `CanvasFade` — 160ms out, 220ms in — and one
+  // answer crossed that twice. ~760ms per turn spent dissolving the page away and back.
+  const { presence, working } = canvasPresentation({ ...TEACHING, turnInFlight: true });
+  assert.equal(presence, "task", "a turn in flight took the lesson off the screen again");
+  // The send still has to be reported — just not by evicting content.
+  assert.equal(working, true, "nothing tells the surface a step is running");
+});
+
+test("🔴🔴🔴 but with NOTHING to keep, the thinking state still owns the surface", () => {
+  // The safety half, and the reason `canvas-presence.ts` exists at all: a canvas that paints
+  // nothing and says nothing was the original defect. Content outranking thinking must not
+  // reintroduce it — when there is no content, `preparing` is still what the learner gets.
+  //
+  // Calibration: delete the `turnInFlight ||` from the `preparing` arm and this reddens while the
+  // test above stays green. That asymmetry is the whole safety argument.
+  const { presence } = canvasPresentation({
+    blocks: 0,
+    canvasState: "learn",
+    policyPresenting: false,
+    turnInFlight: true,
+    working: false,
+  });
   assert.equal(presence, "preparing");
 });
 
@@ -65,18 +89,33 @@ test("🔴 the canvas keys the thinking screen on the SESSION's busy, not the po
   );
 });
 
-test("🔴🔴 and the content regions stand down while it owns the surface", () => {
-  // A presence that says "preparing" while the policy region still paints is two things on screen
-  // and the replacement never happens. All three content regions ask the same question.
+test("🔴🔴🔴 and the content regions no longer stand down while a step runs", () => {
+  // 🔴 THE INVERSE OF WHAT THIS ASSERTED. It required `presence !== "preparing"` on all three
+  // content regions — the gate that took the lesson away mid-turn. With the ladder reversed the
+  // regions paint whenever `composeSurface` says they may, and re-adding any of those gates brings
+  // the blanking back one region at a time.
   for (const region of ["policy", "reply", "document"]) {
     const at = canvasCode.indexOf(`{regions.${region} &&`);
     assert.notEqual(at, -1, `the ${region} region is gone`);
-    assert.match(
-      canvasCode.slice(at, at + 120),
-      /presence !== "preparing"/,
-      `the ${region} region still paints while the thinking screen owns the surface`,
+    assert.ok(
+      !/presence !== "preparing"/.test(canvasCode.slice(at, at + 120)),
+      `the ${region} region is blanked while a step runs again`,
     );
   }
+});
+
+test("🔴🔴🔴 and the surface is not rebuilt just because the mode changed", () => {
+  // The other half of "one persistent screen". `surfaceKey` drives `CanvasFade`; while `presence`
+  // was part of it, going busy and coming back counted as new content and cost a full crossfade
+  // each way. What survives is what the surface is SHOWING — which question, and what Nemesis last
+  // said — because those genuinely are new content.
+  //
+  // Calibration: put `presence` back into the key and this reddens.
+  const at = canvasCode.indexOf("const surfaceKey = [");
+  assert.notEqual(at, -1, "the surface key is gone");
+  const key = canvasCode.slice(at, canvasCode.indexOf("].join(", at));
+  assert.ok(!/^\s*presence,\s*$/m.test(key), "the mode is back in the surface key");
+  assert.match(key, /screenKey\(policy\)/, "a new question no longer refreshes the surface");
 });
 
 test("🔴🔴 there is no skeleton loader on either wait, and the caption sits BESIDE the mascot", () => {

@@ -852,8 +852,17 @@ export function LearningCanvas({
 
     const lessonHeld = policyPresenting && !regions.policy;
 
+  // 🔴🔴 THE MODE IS NOT PART OF THE IDENTITY ANY MORE (owner 2026-08-22: "canvas should have one
+  // persistent screen not a swapping one"). `presence` was the first element, so every change of
+  // MODE — reading → thinking → question — rebuilt the whole surface through `CanvasFade` at
+  // 160ms out plus 220ms in. A single answer crossed it twice and spent ~760ms dissolving the page
+  // away and back.
+  //
+  // What is left is what the surface is SHOWING: which question, and what Nemesis last said. Those
+  // are genuinely new content and deserve the crossfade the fade was written for — "question →
+  // feedback → next question", as globals.css puts it. Going busy and coming back is not new
+  // content and no longer counts as a swap.
   const surfaceKey = [
-    presence,
     regions.policy ? screenKey(policy) : "-",
     session.aside ? `aside:${session.aside.text.slice(0, 40)}` : "-",
   ].join("|");
@@ -1126,7 +1135,10 @@ export function LearningCanvas({
             wanted to look something up would have to dismiss the question to do it. It sits above
             the reading and the reading continues beneath it — one continuous surface, which is why
             neither is in a panel, a modal or a column of its own. */}
-        {regions.policy && presence !== "preparing" && (
+        {/* 🔴 NO LONGER GATED ON `preparing`. Content outranks thinking — see `canvas-presence.ts`.
+            The presence ladder now reports `preparing` only when there is nothing to keep, so this
+            region simply paints whenever `composeSurface` says it may. */}
+        {regions.policy && (
           <CanvasPolicyView
             lookedUp={session.lookedUp}
             voice={{ replay: voice.replay, speaking: voice.speaking }}
@@ -1158,7 +1170,7 @@ export function LearningCanvas({
             `replyOnScreen` computes — that is the point: `composeSurface` decides the RELATIONSHIP
             between this and the policy's screen (which of them yields, and to which), and reading
             the raw state here would be a second opinion free to disagree with the first. */}
-        {regions.reply && session.aside && presence !== "preparing" && (
+        {regions.reply && session.aside && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
             {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
                 and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
@@ -1429,7 +1441,7 @@ export function LearningCanvas({
           />
         )}
 
-        {regions.document && presence !== "preparing" && (
+        {regions.document && (
           <>
 
         {["learn", "targeted_relearn"].includes(canvas.state) && (
