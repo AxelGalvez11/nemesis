@@ -136,6 +136,8 @@ export function canvasFromRow(row: CanvasRow): LearningCanvas {
     // discarded on every cloud read. It survived in the browser only because the local path
     // normalises the parsed JSON directly, which still had the field.
     events: list(document.events),
+    // 🔴 Lifted out of the document HERE for the same reason `events` is — see the note above.
+    moments: list(document.moments),
     outputs: list(document.outputs),
     weakConceptIds: list(document.weakConceptIds),
     correctedConceptIds: list(document.correctedConceptIds),
@@ -175,6 +177,7 @@ export function canvasToRow(canvas: LearningCanvas, userId: string): Record<stri
       responses: canvas.responses,
       correctiveAttempts: canvas.correctiveAttempts,
       events: canvas.events,
+      moments: canvas.moments,
       outputs: canvas.outputs,
       weakConceptIds: canvas.weakConceptIds,
       correctedConceptIds: canvas.correctedConceptIds,

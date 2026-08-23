@@ -26,6 +26,7 @@ export async function GET(request: Request) {
   const gender = url.searchParams.get("gender")?.trim().toLowerCase() ?? "";
   const style = url.searchParams.get("style")?.trim() ?? "";
   const fallback = url.searchParams.get("fallback") === "true";
+  const multilingual = url.searchParams.get("multilingual") === "true";
 
   const result = await fetchVoiceCatalogue({ fetch });
   if (!result.ok) {
@@ -34,6 +35,33 @@ export async function GET(request: Request) {
   }
 
   const catalogue = result.catalogue;
+
+  // 🔴🔴 THE VOICES A READING PREFERENCE MAY OFFER, WHICH IS A SMALLER QUESTION THAN "WHICH VOICES
+  // EXIST" (§48). Settings needs voices that can read whatever a learner works in — Nemesis is
+  // field- AND language-agnostic, and a `de-DE` voice reading an English answer is worse than no
+  // choice at all. Azure marks its cross-lingual voices by listing other locales they speak, so
+  // `SecondaryLocaleList` is the real signal and this filters on it rather than on a name pattern.
+  //
+  // 🔴 DISCOVERED, NEVER HARD-CODED. The alternative was a checked-in list of Azure ids, which is
+  // the exact failure `voice-catalog.ts` was written to avoid: wrong within a month, and wrong in
+  // the way that 404s a learner's chosen voice. Where Azure is not configured this route already
+  // answers 503 and the picker simply does not offer an Azure section.
+  if (multilingual) {
+    const rows = catalogue.voices
+      .filter((voice) => voice.neural && !voice.preview && voice.secondaryLocales.length > 0)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName))
+      .slice(0, MAX_ROWS)
+      .map((voice) => ({
+        gender: voice.gender,
+        locale: voice.locale,
+        localeName: voice.localeName,
+        name: voice.displayName,
+        shortName: voice.shortName,
+        speaks: voice.secondaryLocales.length + 1,
+      }));
+    return json({ fetchedAt: catalogue.fetchedAt, provider: "azure", voices: rows });
+  }
+
   if (!locale) {
     // No locale: answer the widest question — what can be spoken at all.
     return json({
