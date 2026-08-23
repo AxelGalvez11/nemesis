@@ -6,7 +6,9 @@
 > AP subject mapped by alias, the 1L law core, the nursing sequence and the engineering core
 > included. Owner rulings the same day: sweep everything at once; ONE skeleton per subject taught
 > to the clarified depth (no per-depth variants); unknown subjects go to the deep-research builder
-> (next slice, not started). Whole-exam names (nclex, mcat, cpa, bar) deliberately resolve to
+> — SHIPPED the same evening: `lib/learn/curriculum-research.ts` (search → read → synthesise →
+> validate, same rails as every turn), a researched plan carries its citations, and only research
+> FAILING is a refusal now. Whole-exam names (nclex, mcat, cpa, bar) deliberately resolve to
 > nothing — the builder owns exam-shaped prep. NO EXTERNAL CORPUS WAS INGESTED. The licence
 > attestation migration is written and NOT applied (one apply attempt was correctly blocked by the
 > permission layer; it waits for an explicit owner-approved run); the checked-in seeds serve

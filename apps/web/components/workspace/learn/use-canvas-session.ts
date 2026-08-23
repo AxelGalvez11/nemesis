@@ -17,7 +17,8 @@ import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { ComposerCapability } from "@/lib/learn/composer-capability";
-import { applyCurriculumPlan, courseRefusalLine, loadCurriculumPlan } from "@/lib/learn/curriculum-course";
+import { applyCurriculumPlan, applyResearchedPlan, courseRefusalLine, loadCurriculumPlan } from "@/lib/learn/curriculum-course";
+import { researchCurriculum, researchRefusalLine } from "@/lib/learn/curriculum-research";
 import type { CurriculumPlan } from "@/lib/learn/curriculum-plan";
 import type { TurnDecision } from "@/lib/learn/turn-router";
 import type { TurnStage } from "@/lib/learn/turn-preview";
@@ -1150,7 +1151,24 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (decision.curriculumFor) {
         const applied = await applyCurriculumPlan(id, latest.current, decision.curriculumFor, new Date().toISOString());
         if (applied.ok) setCoursePlan(applied.plan);
-        else courseNote = courseRefusalLine(applied.refusal, decision.curriculumFor);
+        else if (applied.refusal === "no-curriculum-for-subject") {
+          // 🔴 A LIBRARY MISS IS NOT A REFUSAL ANY MORE — owner decision three, 2026-08-23:
+          // "always deep-research; a course is worth the wait." The pass rides the same busy
+          // caption machinery as the turn's own search, and every label below is emitted by a
+          // step genuinely running (thinking-phases.ts's rule). Only research FAILING is a
+          // refusal now, and it says so beside the reply like every other one.
+          const researched = await researchCurriculum(id, decision.curriculumFor, {
+            onStep: (label) => setBusy({ blockIds: [], kind: "command", label }),
+          });
+          setBusy({ kind: null });
+          if (researched.ok) {
+            setCoursePlan(
+              await applyResearchedPlan(id, latest.current, researched.skeleton, researched.sources, new Date().toISOString()),
+            );
+          } else {
+            courseNote = researchRefusalLine(researched.refusal, decision.curriculumFor);
+          }
+        } else courseNote = courseRefusalLine(applied.refusal, decision.curriculumFor);
       }
 
       // 🔴 HANDED BACK, NOT ACTED ON. Which passage a rewrite lands on is §11's referent rule, and

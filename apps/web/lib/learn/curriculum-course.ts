@@ -17,8 +17,8 @@
 
 import { KNOWLEDGE_IDENTITY_VERSION } from "./knowledge-identity";
 import { loadCanvasTerritory, saveCanvasTerritory } from "./canvas-store";
-import { planFromSkeleton, type CurriculumPlan } from "./curriculum-plan";
-import { readCurriculum } from "./curriculum-registry";
+import { planFromSkeleton, type CurriculumPlan, type PlanSource } from "./curriculum-plan";
+import { readCurriculum, type CurriculumSkeleton } from "./curriculum-registry";
 import type { LearningCanvas } from "./canvas-model";
 
 export type CourseRefusal =
@@ -78,16 +78,50 @@ export async function applyCurriculumPlan(
   if (!lookup.ok) return { detail: lookup.detail, ok: false, refusal: lookup.refusal };
 
   const plan = planFromSkeleton(lookup.skeleton, appliedAt);
+  await persistPlan(userId, canvas, subject.trim() || lookup.skeleton.title, plan);
+  return { ok: true, plan };
+}
+
+/** The ONE write of a plan onto the marker — both the registry path and the researched path end
+ *  here, so the pre-territory shape and the documented race have exactly one home. */
+async function persistPlan(
+  userId: string | null,
+  canvas: LearningCanvas,
+  topic: string,
+  plan: CurriculumPlan,
+): Promise<void> {
   const stored = await loadCanvasTerritory(userId, canvas.id);
   await saveCanvasTerritory(userId, canvas, {
     ...(stored ?? {
       identityVersion: KNOWLEDGE_IDENTITY_VERSION,
       objects: [],
-      topic: subject.trim() || lookup.skeleton.title,
+      topic,
     }),
     plan,
   });
-  return { ok: true, plan };
+}
+
+/**
+ * Persist a plan cut from a skeleton the deep-research builder synthesised.
+ *
+ * 🔴 THE SKELETON NEVER ENTERS THE REGISTRY — it becomes THIS canvas's plan and nothing else.
+ * Promotion into `CURRICULUM_SEEDS` is a human edit in a diff (the maturity ladder's "never
+ * silently" governs entry too). The citations ride the plan so a researched course can always
+ * say where it came from.
+ */
+export async function applyResearchedPlan(
+  userId: string | null,
+  canvas: LearningCanvas,
+  skeleton: CurriculumSkeleton,
+  sources: readonly PlanSource[],
+  appliedAt: string,
+): Promise<CurriculumPlan> {
+  const plan: CurriculumPlan = {
+    ...planFromSkeleton(skeleton, appliedAt),
+    ...(sources.length > 0 ? { sources } : {}),
+  };
+  await persistPlan(userId, canvas, skeleton.title, plan);
+  return plan;
 }
 
 /** Read the plan back for a canvas, for the session's own state on open. */
