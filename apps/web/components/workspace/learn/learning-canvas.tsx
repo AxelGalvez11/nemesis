@@ -724,51 +724,6 @@ export function LearningCanvas({
   // which the owner has now said should not come back: *"The only button should be 'continue'
   // below reading passages, thats it."* The six session methods they called went with them.
 
-  // 🔴🔴 THIS USED TO RETURN ON `policy.status === "loading"` TOO, AND THAT WAS THE BLANK SCREEN.
-  //
-  // Measured 2026-08-18 against production: a learner types anything on the front door and gets an
-  // EMPTY PAGE — no composer, no reply, nothing they can do — for as long as the canvas takes to
-  // resolve its knowledge. 25 seconds for a plain greeting; 59 for "teach me pharmacokinetics",
-  // which has to search for material and ingest it first. No error, no crash, no console line: the
-  // component was returning a surface with one optional caption in it, and the caption only appears
-  // once a NAMED phase has been running long enough to be worth saying out loud. Most of that time
-  // there was literally nothing on screen.
-  //
-  // 🔴 THE REASON IT WAS WRITTEN IS GONE. The comment here used to say that painting early would
-  // let "the stage machine's own effects start generating a lesson for a canvas the policy is about
-  // to own". That machine no longer exists: nothing below this line generates anything on mount,
-  // and `composeSurface` already withholds every content region while the policy has nothing —
-  // `policyPresenting` requires `status === "ready"`, so a loading canvas resolves to `preparing`,
-  // which is a real surface WITH the composer under it. Suppressing the whole page was protecting
-  // against a runtime that had already been deleted.
-  //
-  // 🔴 WHAT STAYS IS `!session.ready`, WHICH IS A DIFFERENT CLAIM. That means the canvas itself has
-  // not loaded from the database yet — there is no title, no sources, no state, and a composer
-  // would have nothing to submit into. It is one read and it is fast.
-  //
-  // 🔴 AND IT CARRIES THE EXIT, WHICH IT DID NOT (UX brief §38.2). This branch used to return a
-  // bare `<main>` with a caption in it: no header, therefore no way out. Harmless while the shell
-  // still floated a rail toggle in the corner; under §38.1, which takes the rail away inside a
-  // canvas, it is a page a learner cannot leave — on the exact entry paths (deep link, hard
-  // refresh, fresh sign-in) that land here first. `CanvasSurface` renders the `×` above the
-  // branch, so this state cannot be reached without one.
-  if (!session.ready) {
-    return (
-      <CanvasSurface onExit={leave}>
-        <div className="flex h-full items-center justify-center">
-          {/* Nothing is docked yet — there is no composer to stand above — so the character
-              simply holds the middle, which is where it would have walked to anyway. */}
-          <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
-          {/* This branch is one database read long and shows no caption, so the dock's own
-              animation is the whole of what says "working" here. Nothing draws a second one. */}
-          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
-              database read long. It was not fine while it also covered knowledge resolution, which
-              is a model call and an ingestion and can run for a minute. */}
-          {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
-        </div>
-      </CanvasSurface>
-    );
-  }
 
   // ── Composition, not ownership ────────────────────────────────────────────
   //
@@ -996,6 +951,60 @@ export function LearningCanvas({
   useEffect(() => {
     if (turnInFlight) setRewound(null);
   }, [turnInFlight]);
+
+  // 🔴🔴🔴 AND IT SITS BELOW EVERY HOOK, WHICH IS NOT A STYLE CHOICE. React identifies hooks
+  // by call order, and this gate used to stand in the middle of the component with
+  // `useCanvasVoice`, the history rail's state and three more hooks underneath it — so the
+  // render after the canvas's one database read called MORE hooks than the render before it.
+  // React throws for exactly that, and the crash landed on precisely the entry paths that start
+  // unready (a deep link, a hard refresh, going back into an old canvas) and took the exit
+  // button down with it. Guarded in send-is-acknowledged.test.ts.
+  // 🔴🔴 THIS USED TO RETURN ON `policy.status === "loading"` TOO, AND THAT WAS THE BLANK SCREEN.
+  //
+  // Measured 2026-08-18 against production: a learner types anything on the front door and gets an
+  // EMPTY PAGE — no composer, no reply, nothing they can do — for as long as the canvas takes to
+  // resolve its knowledge. 25 seconds for a plain greeting; 59 for "teach me pharmacokinetics",
+  // which has to search for material and ingest it first. No error, no crash, no console line: the
+  // component was returning a surface with one optional caption in it, and the caption only appears
+  // once a NAMED phase has been running long enough to be worth saying out loud. Most of that time
+  // there was literally nothing on screen.
+  //
+  // 🔴 THE REASON IT WAS WRITTEN IS GONE. The comment here used to say that painting early would
+  // let "the stage machine's own effects start generating a lesson for a canvas the policy is about
+  // to own". That machine no longer exists: nothing below this line generates anything on mount,
+  // and `composeSurface` already withholds every content region while the policy has nothing —
+  // `policyPresenting` requires `status === "ready"`, so a loading canvas resolves to `preparing`,
+  // which is a real surface WITH the composer under it. Suppressing the whole page was protecting
+  // against a runtime that had already been deleted.
+  //
+  // 🔴 WHAT STAYS IS `!session.ready`, WHICH IS A DIFFERENT CLAIM. That means the canvas itself has
+  // not loaded from the database yet — there is no title, no sources, no state, and a composer
+  // would have nothing to submit into. It is one read and it is fast.
+  //
+  // 🔴 AND IT CARRIES THE EXIT, WHICH IT DID NOT (UX brief §38.2). This branch used to return a
+  // bare `<main>` with a caption in it: no header, therefore no way out. Harmless while the shell
+  // still floated a rail toggle in the corner; under §38.1, which takes the rail away inside a
+  // canvas, it is a page a learner cannot leave — on the exact entry paths (deep link, hard
+  // refresh, fresh sign-in) that land here first. `CanvasSurface` renders the `×` above the
+  // branch, so this state cannot be reached without one.
+  if (!session.ready) {
+    return (
+      <CanvasSurface onExit={leave}>
+        <div className="flex h-full items-center justify-center">
+          {/* Nothing is docked yet — there is no composer to stand above — so the character
+              simply holds the middle, which is where it would have walked to anyway. */}
+          <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
+          {/* This branch is one database read long and shows no caption, so the dock's own
+              animation is the whole of what says "working" here. Nothing draws a second one. */}
+          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
+              database read long. It was not fine while it also covered knowledge resolution, which
+              is a model call and an ingestion and can run for a minute. */}
+          {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
+        </div>
+      </CanvasSurface>
+    );
+  }
+
 
 
   // 🔴🔴 THE MODE IS NOT PART OF THE IDENTITY ANY MORE (owner 2026-08-22: "canvas should have one
