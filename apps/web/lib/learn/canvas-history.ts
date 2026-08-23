@@ -186,12 +186,13 @@ export const ORIGIN_MOMENT_ID = "origin";
 /**
  * The rail's rows, oldest first.
  *
- * 🔴 OLDEST FIRST HERE, NEWEST FIRST ON BOTH SURFACES, AND THAT IS DELIBERATE. Chronological
- * order is the one an index should be built in — it is what makes the sort below meaningful and
- * what any later consumer (an export, a branch point) would expect. Both the rail and the drawer
- * then reverse it, because the owner's own sketch puts "Now" at the top with the past running
- * downwards. One order produced, one reversal applied twice, rather than two orders that can
- * disagree about where a moment sits.
+ * 🔴🔴 OLDEST FIRST, AND BOTH SURFACES RENDER IT EXACTLY AS RETURNED. Owner's screenshot,
+ * 2026-08-23: the bright marker sits at the BOTTOM of the rail and the rows above it run back
+ * through the session. Time goes downwards, "Now" is last. An earlier version reversed this on
+ * both surfaces — newest at the top, which is how a chat sidebar is ordered — and that changes
+ * what the column MEANS: downwards-as-time makes it a path the learner walked, upwards-as-time
+ * makes it a stack of documents. There is now no reversal anywhere, so there is no second order
+ * that could disagree with this one about where a moment sits.
  *
  * 🔴 ORDERED BY `occurredAt` AND THEN BY STORED ORDER. Two moments in the same millisecond are
  * real — an answer and the correction that follows it can share a timestamp — and a sort that is

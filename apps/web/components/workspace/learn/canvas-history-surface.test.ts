@@ -14,8 +14,8 @@ const CANVAS = read("learning-canvas.tsx");
 const CANVAS_CODE = strip(CANVAS);
 const RAIL = read("canvas-history-rail.tsx");
 const RAIL_CODE = strip(RAIL);
-const DRAWER = read("canvas-history-drawer.tsx");
-const DRAWER_CODE = strip(DRAWER);
+const PANEL = read("canvas-history-panel.tsx");
+const PANEL_CODE = strip(PANEL);
 const VIEW_CODE = strip(read("canvas-history-view.tsx"));
 
 // ── one rail for the whole Canvas ───────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ test("🔴🔴 the History Rail and the Minimap stay separate, architecturally",
   // The Minimap reads the learner model; this must not be able to.
   for (const [name, code] of [
     ["canvas-history-rail.tsx", RAIL_CODE],
-    ["canvas-history-drawer.tsx", DRAWER_CODE],
+    ["canvas-history-panel.tsx", PANEL_CODE],
     ["canvas-history-view.tsx", VIEW_CODE],
   ] as const) {
     assert.ok(!/canvas-minimap/.test(code), `${name} reaches into the Minimap`);
@@ -85,30 +85,65 @@ test("🔴 rewinding never calls the session's writer", () => {
 
 // ── the drawer's stated behaviours ──────────────────────────────────────────────────────────
 
-test("the drawer closes on Escape and on a click outside", () => {
-  assert.ok(/"Escape"/.test(DRAWER_CODE), "no Escape handler");
-  assert.ok(/mousedown/.test(DRAWER_CODE), "no outside-click handler");
-  assert.ok(/contains\(event\.target/.test(DRAWER_CODE), "the outside-click test does not check containment");
+test("the history card closes on Escape and on a click outside", () => {
+  assert.ok(/"Escape"/.test(PANEL_CODE), "no Escape handler");
+  assert.ok(/mousedown/.test(PANEL_CODE), "no outside-click handler");
+  assert.ok(/contains\(event\.target/.test(PANEL_CODE), "the outside-click test does not check containment");
 });
 
-test("🔴 the drawer overlays and never reflows the Canvas", () => {
-  // Owner: "NOT resize/reflow the main Canvas." A drawer in the flow would re-wrap every line of
-  // the answer behind it.
-  assert.ok(/absolute inset-y-0 right-0/.test(DRAWER_CODE), "the drawer is not positioned over the sheet");
+test("🔴🔴 it is a card beside the rail, not a full-height sidebar", () => {
+  // Owner, 2026-08-23, with a screenshot: "it needs to be like this, not a full sidebar". The
+  // first version was `absolute inset-y-0 right-0` with a "History" header and a close chevron —
+  // a surface announcing itself as somewhere you have gone.
+  // Calibration: put `inset-y-0` back on the panel and this reddens alone.
+  assert.ok(!/inset-y-0/.test(PANEL_CODE), "the history panel spans the full height again");
+  assert.ok(/max-h-\[min\(/.test(PANEL_CODE), "the card has no height cap, so it can grow into a sidebar");
+  assert.ok(/rounded-2xl/.test(PANEL_CODE), "the card is not a card");
+  assert.ok(/top-1\/2/.test(PANEL_CODE), "the card is not anchored beside the rail");
+});
+
+test("🔴 the card carries no header, no title and no close control", () => {
+  // Everything the screenshot does not have. Rows are the only thing a learner came here for.
+  assert.ok(!/Codicon/.test(PANEL_CODE), "an icon control came back");
+  assert.ok(!/Close history/.test(PANEL_CODE), "the close chevron came back");
+  assert.ok(!/>History</.test(PANEL_CODE), "the header title came back");
 });
 
 test("🔴 there is no full-screen dark backdrop", () => {
   // Owner: "No full-screen dark modal backdrop. A subtle shadow/border is enough."
-  assert.ok(!/bg-black\/|bg-\(--ui-bg-editor\)\/\d/.test(DRAWER_CODE), "a scrim crept into the drawer");
-  assert.ok(/shadow-xl|border-l/.test(DRAWER_CODE), "the drawer has neither a shadow nor a border to separate it");
+  assert.ok(!/bg-black\/|bg-\(--ui-bg-editor\)\/\d/.test(PANEL_CODE), "a scrim crept in");
+  assert.ok(/shadow-xl/.test(PANEL_CODE), "the card has no shadow to separate it from the Canvas");
 });
 
-test("the drawer stays inside the width the brief asked for", () => {
+test("🔴🔴 time runs downwards: oldest at the top, Now last", () => {
+  // Owner's screenshot: the bright marker is at the BOTTOM and the rows above it run back through
+  // the session. The first version reversed the list and put Now at the top, which is how a chat
+  // sidebar is ordered — it makes the column a stack of documents rather than a path.
+  // Calibration: add `.reverse()` back in either file and this reddens.
+  assert.ok(!/entries\]\.reverse\(\)/.test(PANEL_CODE), "the card reverses the history");
+  assert.ok(!/entries\]\.reverse\(\)/.test(RAIL_CODE), "the rail reverses the history");
+
+  // "Now" is the last child in both.
+  const cardNow = PANEL_CODE.indexOf('title: "Now"');
+  const cardRows = PANEL_CODE.indexOf("entries.map(");
+  assert.ok(cardNow > cardRows && cardRows > 0, "Now is not the last row of the card");
+
+  const railNow = RAIL_CODE.indexOf('label="Now"');
+  const railRows = RAIL_CODE.indexOf("shown.map(");
+  assert.ok(railNow > railRows && railRows > 0, "Now is not the last mark on the rail");
+});
+
+test("🔴 with more moments than the rail can draw, an un-rewound rail holds the newest end", () => {
+  // The learner is at the bottom of the column, so that is the end that must stay on screen.
+  assert.ok(/rows\.slice\(-RAIL_MARKERS\)/.test(RAIL_CODE), "the window holds the oldest end instead");
+});
+
+test("the card stays inside the width the brief asked for", () => {
   // 🔴 20rem AND NOT 22, BECAUSE THIS REPO SETS `html { font-size: 112.5% }`. Measured in Chromium:
   // 22rem painted at **396px**, outside the 300–360 the brief asked for; 20rem is 360px exactly.
   // A rem value that reads as one number and paints as another is the same trap §46.3 documents
   // for type — it just costs layout here instead of typography.
-  assert.ok(/w-\[min\(20rem,85vw\)\]/.test(DRAWER_CODE), "the drawer width is not clamped");
+  assert.ok(/w-\[min\(20rem,/.test(PANEL_CODE), "the card width is not clamped");
 });
 
 // ── collapsed state stays quiet ─────────────────────────────────────────────────────────────

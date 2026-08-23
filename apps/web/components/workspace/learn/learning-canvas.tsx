@@ -1208,8 +1208,6 @@ export function LearningCanvas({
       <CanvasHistoryRail
         activeMomentId={rewound}
         entries={history}
-        // What "Now" currently is, so the drawer's top row is not a bare word.
-        nowSubtitle={canvas.title || undefined}
         onSelect={setRewound}
       />
 

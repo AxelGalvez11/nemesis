@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 import type { CanvasHistoryEntry } from "@/lib/learn/canvas-history";
 import { TITLE_LIMIT, shortTitle } from "@/lib/learn/canvas-history";
 
-import { CanvasHistoryDrawer } from "./canvas-history-drawer";
+import { CanvasHistoryPanel } from "./canvas-history-panel";
 
 /** One component owns the interaction — the brief's own rule, and the reason this type is here. */
 export type HistoryRailDisplay = "collapsed" | "peek" | "expanded";
@@ -53,14 +53,12 @@ const PEEK_GRACE_MS = 120;
 export function CanvasHistoryRail({
   activeMomentId,
   entries,
-  nowSubtitle,
   onSelect,
 }: {
   /** The moment on screen, or null for the present. */
   activeMomentId: string | null;
   /** Oldest first. */
   entries: readonly CanvasHistoryEntry[];
-  nowSubtitle?: string;
   onSelect: (momentId: string | null) => void;
 }) {
   const [display, setDisplay] = useState<HistoryRailDisplay>("collapsed");
@@ -81,17 +79,25 @@ export function CanvasHistoryRail({
   }, []);
 
   /**
-   * The markers, newest at the bottom.
+   * The markers, oldest at the top and the most recent at the bottom.
+   *
+   * 🔴🔴 NOT REVERSED, AND THE FIRST VERSION WAS. Owner's screenshot, 2026-08-23: the bright
+   * marker sits at the BOTTOM of the column and the list above it runs back through the session —
+   * "the current nemesis app doesnt even feel l…" first, "i need this fixed…" last. I had built it
+   * newest-first, which is how a chat sidebar is ordered. The difference is what the column MEANS:
+   * downwards-as-time makes the rail a path you walked, and "Now" the end of it. Upwards-as-time
+   * makes it a stack of documents.
    *
    * 🔴 THE WINDOW FOLLOWS THE LEARNER, NOT THE END OF THE LIST. Rewinding to something 40 moments
    * back must leave its marker visible and active — a window fixed to the tail would show an
    * active marker that is not on screen, which is the one thing a position indicator may not do.
    */
   const shown = useMemo(() => {
-    const rows = [...entries].reverse();
+    const rows = [...entries];
     if (rows.length <= RAIL_MARKERS) return rows;
     const at = rows.findIndex((entry) => entry.momentId === activeMomentId);
-    if (at < 0) return rows.slice(0, RAIL_MARKERS);
+    // Nothing rewound to: hold the tail, because the bottom of the column is where the learner is.
+    if (at < 0) return rows.slice(-RAIL_MARKERS);
     const start = Math.min(Math.max(0, at - Math.floor(RAIL_MARKERS / 2)), rows.length - RAIL_MARKERS);
     return rows.slice(start, start + RAIL_MARKERS);
   }, [activeMomentId, entries]);
@@ -137,12 +143,6 @@ export function CanvasHistoryRail({
                 : "px-0",
             )}
           >
-            <RailMarker
-              active={live}
-              label="Now"
-              onSelect={() => onSelect(null)}
-              peeking={peeking}
-            />
             {shown.map((entry) => (
               <RailMarker
                 active={entry.momentId === activeMomentId}
@@ -152,6 +152,8 @@ export function CanvasHistoryRail({
                 peeking={peeking}
               />
             ))}
+            {/* 🔴 "NOW" IS THE LAST MARK, BECAUSE THE COLUMN RUNS FORWARD IN TIME. */}
+            <RailMarker active={live} label="Now" onSelect={() => onSelect(null)} peeking={peeking} />
             {/* 🔴 THE EXPLICIT AFFORDANCE, AND IT ONLY EXISTS WHILE THE RAIL IS BEING READ. A
                 permanent "History" word on the edge would be chrome; a marker column that opens a
                 drawer when you click a marker and nothing when you click between them would be a
@@ -183,12 +185,11 @@ export function CanvasHistoryRail({
         History
       </button>
 
-      <CanvasHistoryDrawer
+      <CanvasHistoryPanel
         activeMomentId={activeMomentId}
         entries={entries}
-        nowSubtitle={nowSubtitle}
         onClose={() => setDisplay("collapsed")}
-        onSelect={(momentId) => {
+        onSelect={(momentId: string | null) => {
           onSelect(momentId);
           setDisplay("collapsed");
         }}
