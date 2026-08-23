@@ -637,12 +637,24 @@ const DECISION_CONTRACT = [
   + "learn it. Give it for a real question about a subject and leave it null for a greeting, a "
   + "remark or anything with no subject in it.",
   "",
+  // 🔴 THE BORDERLINE CASE SEARCHES, AND THAT IS AN OWNER DECISION (2026-08-21: *"make it search
+  // when unsure, remove the 'costs money and time' it should be able to search web"*). This
+  // sentence used to read *"Searching costs money and time, so when it is genuinely borderline, say
+  // false"* — so a coin-flip question was answered from training data, and the whole point of
+  // letting the model decide was to stop answering current questions from stale memory.
+  //
+  // 🔴 IT IS ONLY THE TIE-BREAK THAT MOVED. The false list above is untouched and is what actually
+  // does the work: an explanation, a definition, a calculation, a translation and anything the
+  // attached material answers are all still false, and none of those are borderline. What flipped
+  // is the residue — the questions where the model genuinely cannot tell — and on those a wrong
+  // "false" is invisible to the learner while a wrong "true" costs a search.
   '"needsWeb" is true when answering well depends on something that changes or that you could not '
   + "have memorised: recent or ongoing events, current prices, standings, releases, versions, laws, "
   + "guidelines, schedules, anything the learner says is new or has changed, or a specific source "
   + "they want read. It is false for settled knowledge, explanations, definitions, calculations, "
-  + "translations, and anything answerable from the attached material. Searching costs money and "
-  + "time, so when it is genuinely borderline, say false.",
+  + "translations, and anything answerable from the attached material. When it is genuinely "
+  + "borderline, say true. An answer built on pages that exist beats one built on a memory nobody "
+  + "can date, and the learner cannot tell the two apart.",
   "",
   // 🔴 THE MODEL DECIDES WHEN IT HAS ENOUGH, WHICH MEANS IT HAS TO BE ABLE TO SAY "NOT YET". A
   // single upfront count was still a guess made blind: nothing has been read at the moment it is
