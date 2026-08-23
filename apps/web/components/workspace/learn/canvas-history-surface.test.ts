@@ -98,7 +98,7 @@ test("🔴🔴 it is a card beside the rail, not a full-height sidebar", () => {
   // Calibration: put `inset-y-0` back on the panel and this reddens alone.
   assert.ok(!/inset-y-0/.test(PANEL_CODE), "the history panel spans the full height again");
   assert.ok(/max-h-\[min\(/.test(PANEL_CODE), "the card has no height cap, so it can grow into a sidebar");
-  assert.ok(/rounded-xl/.test(PANEL_CODE), "the card is not a card");
+  assert.ok(/rounded-2xl/.test(PANEL_CODE), "the card is not a card");
   assert.ok(/top-1\/2/.test(PANEL_CODE), "the card is not anchored beside the rail");
 });
 
@@ -158,7 +158,11 @@ test("the card stays inside the width the brief asked for", () => {
   // 22rem painted at **396px**, outside the 300–360 the brief asked for; 20rem is 360px exactly.
   // A rem value that reads as one number and paints as another is the same trap §46.3 documents
   // for type — it just costs layout here instead of typography.
-  assert.ok(/w-\[min\(18rem,/.test(PANEL_CODE), "the card width is not clamped");
+  //
+  // 🔴 AND NOT 18 EITHER. It was narrowed to 18rem (324px) on 2026-08-23 chasing ChatGPT's
+  // compactness, which this environment cannot load and so could not be measured against. The
+  // owner read the result as too compact and asked for the earlier size back.
+  assert.ok(/w-\[min\(20rem,/.test(PANEL_CODE), "the card width is not clamped");
 });
 
 // ── collapsed state stays quiet ─────────────────────────────────────────────────────────────
