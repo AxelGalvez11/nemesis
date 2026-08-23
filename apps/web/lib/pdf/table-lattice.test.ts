@@ -156,3 +156,67 @@ test("empty border columns are trimmed, or the header is silently lost", () => {
   const rows = trimEmptyColumns([["", "Date", "Topic", ""], ["", "8-17", "Exam 1", ""]]);
   assert.deepEqual(rows, [["Date", "Topic"], ["8-17", "Exam 1"]]);
 });
+
+// ── frame-welded tables: the deeper sub-bands ────────────────────────────────
+
+/**
+ * The measured geometry of a real pharmacology lecture printed two slides to a
+ * page: each slide is a drawn frame (two vertical positions alive down most of
+ * the page), and a shaded dosing table lives inside the lower slide. At three
+ * coexisting positions the sweep welds both slides into one region; the table's
+ * own five column positions only coexist across its rows.
+ */
+function framedSlidePage(): Ruling[] {
+  const out: Ruling[] = [];
+  // Two slide frames sharing x edges, stacked: rectangles become four rules each.
+  for (const [top, bottom] of [[94, 364], [428, 765]] as const) {
+    out.push({ at: top, from: 126, horizontal: true, to: 486 });
+    out.push({ at: bottom, from: 126, horizontal: true, to: 486 });
+    out.push({ at: 126, from: top, horizontal: false, to: bottom });
+    out.push({ at: 486, from: top, horizontal: false, to: bottom });
+  }
+  // A decorative vertical (a slide-template flourish) that keeps a third
+  // position alive across both slides — the ingredient that welds the band.
+  out.push({ at: 440, from: 100, horizontal: false, to: 760 });
+  // The table inside the lower slide: shaded cells emit their edges as rules.
+  out.push(...grid([138, 225, 306, 387, 468], [516, 545, 574, 603, 629]));
+  return out;
+}
+
+test("a table welded to its slide frame is still offered as its own region", () => {
+  const regions = latticeRegions(framedSlidePage());
+  assert.ok(regions.length >= 2, `expected the welded parent plus a tighter sub-band, got ${regions.length}`);
+  // The parent — the slide frame welded to the table inside it — comes first,
+  // so every region that validates today still wins before any sub-band is
+  // tried. It spans the frame, not just the table.
+  assert.ok(regions[0]!.y1 - regions[0]!.y0 > 250, "the shallow welded band leads the list");
+  // Somewhere after it: the table's own band, tight around its rows.
+  const tight = regions.find((r) => Math.abs(r.y0 - 516) < 8 && Math.abs(r.y1 - 629) < 8);
+  assert.ok(tight, "no candidate isolates the table's own rows");
+});
+
+test("the tight sub-band reconstructs the table the welded band could not", () => {
+  const rulings = framedSlidePage();
+  const items = text([
+    ["Drug", 145, 520], ["Start", 230, 520], ["Max", 311, 520], ["Strength", 392, 520],
+    ["CanaA", 145, 550], ["100 mg", 230, 550], ["300 mg", 311, 550], ["100, 300", 392, 550],
+    ["DapaB", 145, 580], ["5 mg", 230, 580], ["10 mg", 311, 580], ["5, 10", 392, 580],
+    ["ThirdC", 145, 608], ["20 mg", 230, 608], ["40 mg", 311, 608], ["20, 40", 392, 608],
+  ]);
+  const regions = latticeRegions(rulings);
+  const welded = judge(regions[0]!, rulings, items);
+  assert.equal(welded?.verdict.ok ?? false, false, "the welded band must not validate");
+  const tight = regions.find((r) => Math.abs(r.y0 - 516) < 8 && Math.abs(r.y1 - 629) < 8)!;
+  const result = judge(tight, rulings, items)!;
+  assert.equal(result.verdict.ok, true, `tight band rejected as ${result.verdict.reason}`);
+  assert.deepEqual(result.rows[0], ["Drug", "Start", "Max", "Strength"]);
+  assert.deepEqual(result.rows[1], ["CanaA", "100 mg", "300 mg", "100, 300"]);
+});
+
+test("a frameless table is proposed once, not once per depth", () => {
+  // Five column positions coexist over the whole band, so the same interval
+  // recurs at thresholds 3, 4 and 5 — and must be offered exactly once.
+  const rulings = [...border(), ...grid([100, 180, 260, 340, 420], [100, 130, 160, 190])];
+  const regions = latticeRegions(rulings);
+  assert.equal(regions.length, 1, `expected one deduplicated region, got ${regions.length}`);
+});

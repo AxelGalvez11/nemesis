@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { unzlibSync } from "fflate";
 
 import { imageSize } from "./image-dimensions";
-import { isTiff, tiffImage } from "./tiff-image";
+import { isTiff, tiffImage, tiffLzwDecode } from "./tiff-image";
 
 interface TiffOptions {
   width: number;
@@ -183,10 +183,12 @@ test("a white-is-zero scan is inverted, not rendered as a negative", () => {
 
 // ── What it refuses, and why refusing is right ───────────────────────────────
 
-test("a compressed TIFF is reported unreadable rather than decoded wrongly", () => {
+test("a compression this decoder does not implement is refused, not guessed at", () => {
   const pixels = new Uint8Array(12);
-  assert.equal(tiffImage(tiff({ compression: 5, height: 2, pixels, width: 2 })), null, "LZW");
   assert.equal(tiffImage(tiff({ compression: 32773, height: 2, pixels, width: 2 })), null, "PackBits");
+  // LZW is implemented now — but a strip whose BYTES are not LZW at all must
+  // still refuse rather than shear: zeroed "compressed" data is not a stream.
+  assert.equal(tiffImage(tiff({ compression: 5, height: 2, pixels, width: 2 })), null, "not-actually-LZW bytes");
 });
 
 test("16-bit samples and planar layouts are refused", () => {
@@ -203,4 +205,54 @@ test("CMYK is refused rather than read as if it were RGB", () => {
 test("a header promising more rows than the file holds returns nothing", () => {
   const file = tiff({ height: 4, pixels: new Uint8Array(12), width: 1 });
   assert.equal(tiffImage(file.subarray(0, file.length - 6)), null);
+});
+
+// ── LZW, proven against a real encoder rather than a mirror of ourselves ─────
+//
+// The fixture below is a 12x8 RGB TIFF written by macOS `sips` with LZW and the
+// horizontal-differencing predictor — big-endian, out-of-line tag values, the
+// exact shape of the Mac-authored lecture decks that carried real figures this
+// decoder used to refuse. Its pixels follow a generative pattern, so the test
+// asserts every byte against the FORMULA, not against a second copy of the
+// decoder's own output: a decode that shears, swaps channels, or mishandles the
+// early-change boundary cannot pass by construction.
+const LZW_FIXTURE = Buffer.from(
+  "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",
+  "base64",
+);
+
+test("a real encoder's LZW strip with predictor decodes to the exact source pixels", () => {
+  const image = tiffImage(new Uint8Array(LZW_FIXTURE));
+  assert.ok(image, "the LZW fixture was refused");
+  assert.equal(image.width, 12);
+  assert.equal(image.height, 8);
+  const rgb = decodePng(image.bytes);
+  for (let y = 0; y < 8; y += 1) {
+    for (let x = 0; x < 12; x += 1) {
+      const at = (y * 12 + x) * 3;
+      assert.deepEqual(
+        [rgb[at], rgb[at + 1], rgb[at + 2]],
+        [(x * 20 + y * 3) % 256, (y * 30) % 256, (x * 10 + y * 17) % 256],
+        `pixel ${x},${y}`,
+      );
+    }
+  }
+});
+
+// The fixture's single strip: offset 0x26, 76 bytes, ending where the IFD
+// begins at 0x72 — read off its own StripOffsets/StripByteCounts tags.
+const FIXTURE_STRIP = new Uint8Array(LZW_FIXTURE.subarray(0x26, 0x72));
+const FIXTURE_STRIP_BYTES = 12 * 8 * 3;
+
+test("a truncated LZW stream is refused, never sheared into a partial picture", () => {
+  const decoded = tiffLzwDecode(FIXTURE_STRIP, FIXTURE_STRIP_BYTES);
+  assert.ok(decoded, "the intact strip must decode");
+  const cut = tiffLzwDecode(FIXTURE_STRIP.subarray(0, FIXTURE_STRIP.length / 2), FIXTURE_STRIP_BYTES);
+  assert.equal(cut, null);
+});
+
+test("a stream that does not open with a Clear code is not LZW and is refused", () => {
+  const broken = new Uint8Array(FIXTURE_STRIP);
+  broken[0] = 0x00; // The leading Clear code's high bits live in the first byte.
+  assert.equal(tiffLzwDecode(broken, FIXTURE_STRIP_BYTES), null);
 });

@@ -142,10 +142,42 @@ export function bandBox(rulings: readonly Ruling[], band: { y0: number; y1: numb
 }
 
 /**
+ * Beyond this many coexisting column positions, a still-denser sub-band adds
+ * nothing: no measured page has needed more than one or two extra thresholds to
+ * separate a table from the frame around it.
+ */
+const MAX_BAND_DEPTH = 8;
+
+/** Two bands whose edges sit within a drawn line's tolerance are one band. PURE. */
+function sameBand(a: LatticeBox, b: LatticeBox): boolean {
+  return Math.abs(a.y0 - b.y0) <= SAME_LINE && Math.abs(a.y1 - b.y1) <= SAME_LINE;
+}
+
+/**
  * Every region on a page that a ruled table might occupy.
  *
  * A page can hold several — a grading scale near the top and a schedule below
  * it are two lattices, not one — so this returns a list and never merges them.
+ *
+ * 🔴 THE MINIMUM-DEPTH BANDS COME FIRST, AND THE DEEPER SUB-BANDS EXIST BECAUSE
+ * A SLIDE FRAME WELDS ITSELF TO THE TABLE INSIDE IT. A lecture printed two
+ * slides to a page draws each slide as a rectangle — two vertical positions
+ * alive from the top of the page to the bottom — so one more coincidental
+ * vertical anywhere keeps the ≥3-position band open across BOTH slides, and the
+ * dosing table inside one of them is swallowed by a region ten times its
+ * height. Inside that union the table's own rules span far less than the 60%
+ * `gridWithin` demands, the grid collapses to one column, and a real table is
+ * rejected as `too-few-columns`. Measured on a real pharmacology lecture: five
+ * drawn column boundaries, present and exact, lost to a region three slides
+ * tall.
+ *
+ * A table's own signature is DENSER than what surrounds it — five or six
+ * positions coexist across its rows where the frame keeps only two or three —
+ * so re-running the same sweep at higher thresholds recovers the tight band the
+ * shallow one merged away. The deeper bands are appended AFTER the shallow ones
+ * so every region that reconstructs and validates today still wins first;
+ * a candidate that overlaps an already-claimed region is the caller's to skip.
+ * The validator judges the rest, at the same bar as every other candidate.
  *
  * PURE.
  */
@@ -154,6 +186,16 @@ export function latticeRegions(rulings: readonly Ruling[]): LatticeBox[] {
   for (const band of columnBands(rulings)) {
     const box = bandBox(rulings, band);
     if (box) out.push(box);
+  }
+  // Depth is monotone — a band alive at ≥5 positions is alive at ≥4 — so the
+  // first threshold that yields nothing ends the walk.
+  for (let depth = MIN_COLUMN_POSITIONS + 1; depth <= MAX_BAND_DEPTH; depth += 1) {
+    const bands = columnBands(rulings, depth);
+    if (bands.length === 0) break;
+    for (const band of bands) {
+      const box = bandBox(rulings, band);
+      if (box && !out.some((have) => sameBand(have, box))) out.push(box);
+    }
   }
   return out;
 }
