@@ -741,30 +741,6 @@ export function CanvasComposer({
           </div>
         )}
 
-        {/* The chip needs its own surface. It sits inside the composer's fade, where the
-            gradient is nearly transparent, so without a background it was printed straight
-            over the paragraph behind it and neither could be read. */}
-        {/* 🔴 THE CAPABILITY CHIP SAYS WHAT THE NEXT SUBMISSION IS, AND ITS × IS THE WAY OUT.
-            Same surface treatment as the staged-selection chip below and for the same reason: it
-            sits inside the composer's fade and needs its own background to be readable. One-shot by
-            construction — `submit` clears it — so it can never harden into a mode indicator. */}
-        {capability && !listening && (
-          <div className="mb-1.5 ml-1 flex w-fit max-w-full items-center gap-2 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-2 shadow-sm ring-1 ring-(--ui-stroke-tertiary)">
-            <Codicon className="shrink-0 text-(--ui-action)" name={CAPABILITY_COPY[capability].icon} size="0.6875rem" />
-            <span className="shrink-0 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-secondary)">
-              {CAPABILITY_COPY[capability].label}
-            </span>
-            <button
-              aria-label={`Remove ${CAPABILITY_COPY[capability].label}`}
-              className="shrink-0 text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
-              onClick={() => onCapability?.(null)}
-              type="button"
-            >
-              <Codicon name="close" size="0.6875rem" />
-            </button>
-          </div>
-        )}
-
         {selected.length > 0 && !listening && (
           <div className="mb-1.5 ml-1 flex w-fit max-w-full items-center gap-2 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-2 shadow-sm ring-1 ring-(--ui-stroke-tertiary)">
             {/* 🔴 THE CHIP HAS TO SAY WHAT IT IS. It used to print the quoted words and nothing
@@ -896,6 +872,33 @@ export function CanvasComposer({
             </div>
             )}
 
+            {/* 🔴 THE CAPABILITY SITS IN THE INPUT ROW ITSELF, LIKE THE REFERENCE COMPOSER'S OWN
+                TOOL LABEL — the owner asked for exactly this composition (2026-08-23, screenshots):
+                icon and name inline where the text starts, in the accent, with the words flowing
+                after them. It declares what THIS submission is, so it lives where the submission is
+                typed — the chips row above is for material. Its × stays always visible: a
+                hover-only dismiss is a control that does not exist on touch. One-shot by
+                construction — `submit` clears it — so it can never harden into a mode indicator. */}
+            {capability && !listening && (
+              <div className="ml-[12px] flex shrink-0 items-center gap-[6px] text-(--ui-action)">
+                <Codicon className="shrink-0" name={CAPABILITY_COPY[capability].icon} size="1rem" />
+                {/* §46.3-exempt: it shares the input's own line and must be exactly the input's
+                    size — and that size is the 16px iOS-zoom threshold, not a scale step. A token
+                    here would let the label and the text it sits beside drift apart. */}
+                <span className="text-[16px] font-medium leading-[26px]">
+                  {CAPABILITY_COPY[capability].label}
+                </span>
+                <button
+                  aria-label={`Remove ${CAPABILITY_COPY[capability].label}`}
+                  className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  onClick={() => onCapability?.(null)}
+                  type="button"
+                >
+                  <Codicon name="close" size="0.75rem" />
+                </button>
+              </div>
+            )}
+
             {listening ? (
               <>
                 <div className="ml-[12px] flex min-w-0 flex-1 items-center">
@@ -946,7 +949,7 @@ export function CanvasComposer({
                     "transition-[height] duration-90 ease-out motion-reduce:transition-none",
                     // The attach control used to supply this gap. Without it the text would start
                     // hard against the pill's edge.
-                    inSession ? "ml-[4px]" : "ml-[12px]",
+                    capability ? "ml-[8px]" : inSession ? "ml-[4px]" : "ml-[12px]",
                   )}
                   disabled={busy}
                   onChange={(event) => {
