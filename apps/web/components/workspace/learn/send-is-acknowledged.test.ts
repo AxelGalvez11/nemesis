@@ -370,3 +370,23 @@ test("🔴🔴 the mascot comes forward for a TURN, never for background work", 
     "the dock is back on the policy's phase flag, which stays true through background work",
   );
 });
+
+test("🔴🔴🔴 every hook runs before the not-ready gate, so a loading canvas cannot change the hook order", () => {
+  // React identifies hooks by call ORDER. The `!session.ready` return used to sit mid-component
+  // with `useCanvasVoice`, the history rail's state and three more hooks below it, so the render
+  // after the canvas's one database read called MORE hooks than the render before it. React
+  // throws for exactly this, and in production the crash landed on the entry paths that start
+  // unready — a deep link, a hard refresh, going back into an old canvas — and took the exit
+  // button down with it.
+  //
+  // Calibration: move the gate back above `useCanvasVoice` and this reddens.
+  const source = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  const gate = source.indexOf("if (!session.ready)");
+  assert.ok(gate > 0, "the not-ready gate is gone entirely");
+  const hooks = [...source.matchAll(/\buse[A-Z][A-Za-z]*\(/g)];
+  const lastHook = hooks[hooks.length - 1]!;
+  assert.ok(
+    lastHook.index! < gate,
+    `a hook call (${lastHook[0]}…) sits below the not-ready gate again`,
+  );
+});
