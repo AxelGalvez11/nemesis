@@ -240,11 +240,19 @@ test("🔴 the loading branch does NOT accept drops, because there is nothing to
 // assertion is inverted rather than deleted: what has to hold is that no future edit puts them
 // back, above OR inside. `answer-is-not-a-start.test.ts` carries the rest — that the composer is
 // not even GIVEN the list, and that the Sources panel still draws it.
-test("🔴🔴 the composer draws no source chips at all, above or inside", () => {
+// 🔴 SHARPENED AGAIN, 2026-08-23. The owner, pointing at ChatGPT's composer with two PDFs chipped
+// on it: *"nemesis should also be able to attach attachments to the chat composer like in this
+// image before sending."* Read beside 2026-08-21, the rule was never "no chips"; it was "no chips
+// for things the learner did not attach" — the deleted row chipped machine-grounded pages because
+// it was fed `canvas.sources`. So the guard now bans the DATA SOURCE, not the pixels: chips may
+// draw only from `recentAttachments` (names captured at the picker), and the canvas's source list
+// must never reach the composer as a list again.
+test("🔴🔴 the composer chips only what the learner picked, never the canvas's sources", () => {
   const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
   assert.ok(!/\{chipsInside && \(/.test(composer), "the chips are back inside the composer box");
-  assert.ok(!/mb-1\.5 ml-1 flex flex-wrap items-center gap-1\.5/.test(composer), "the floating chip row is back");
   assert.ok(!/faviconUrl/.test(composer), "the composer is drawing source favicons again");
+  assert.ok(!/pendingSources/.test(composer), "the source-list prop is back on the composer");
+  assert.ok(/recentAttachments\.map/.test(composer), "the picked-file chips are gone");
   // The box itself is still a column, because the textarea grows inside it.
   assert.ok(composer.includes('"flex flex-col bg-(--ui-bg-elevated)"'), "the composer stopped being a column");
 });

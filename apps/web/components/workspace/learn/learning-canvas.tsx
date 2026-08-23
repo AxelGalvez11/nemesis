@@ -222,6 +222,31 @@ export function LearningCanvas({
    */
   const [materialRequestedDuring, setMaterialRequestedDuring] = useState<string | null>(null);
 
+  /**
+   * Files the learner picked since their last send, for the composer's attachment chips.
+   *
+   * 🔴 FED BY THE PICK, CLEARED BY THE SEND, AND NEVER READ FROM `canvas.sources` — that is the
+   * entire design, and the history demanding it is written on `recentAttachments` in
+   * canvas-composer.tsx. A machine-grounded page never passes through the picker, so it can never
+   * chip. A reload starts this empty, which is correct: nothing is pending over the box the
+   * learner has not touched yet.
+   *
+   * 🔴 THE CHIP APPEARS ON PICK, NOT ON INGEST COMPLETING. The learner's question is "did my file
+   * land where I'm typing?", and the honest moment to answer it is immediately — `attachFiles`
+   * takes seconds on a real deck, and a chip that appears only afterwards reproduces the silence
+   * this exists to end. If ingest fails, `session.error` already says so on the same screen.
+   */
+  const [recentAttachments, setRecentAttachments] = useState<readonly { id: string; title: string }[]>([]);
+  const attachWithChips = useCallback(
+    (files: FileList | File[]) => {
+      const picked = Array.from(files).map((file) => ({ id: crypto.randomUUID(), title: file.name }));
+      if (picked.length > 0) setRecentAttachments((current) => [...current, ...picked]);
+      void session.attachFiles(files);
+    },
+    [session],
+  );
+  const acknowledgeAttachments = useCallback(() => setRecentAttachments([]), []);
+
   const selected = useMemo(
     () => canvas.blocks.filter((block) => selectedIds.includes(block.id)),
     [canvas.blocks, selectedIds],
@@ -502,6 +527,8 @@ export function LearningCanvas({
 
   const beginOrAnswer = useCallback(
     (asked: string) => {
+      // A send acknowledges the attachment chips, same as every other send route.
+      acknowledgeAttachments();
       applyExplanationEvent({ kind: "new_turn" });
       const trimmed = asked.trim();
       // An empty send with material staged is "learn this material with me", which is not an
@@ -513,7 +540,7 @@ export function LearningCanvas({
       }
       void converse(trimmed);
     },
-    [applyExplanationEvent, converse, session],
+    [acknowledgeAttachments, applyExplanationEvent, converse, session],
   );
 
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
@@ -1222,7 +1249,7 @@ export function LearningCanvas({
         // learner may be reading rather than answering, and stripping the title and navigation from
         // someone who is reading takes away their way out. So: quiet when the policy is alone,
         // continuous across question and feedback, never quiet over a document.
-        onFiles={(files) => void session.attachFiles(files)}
+        onFiles={attachWithChips}
         onUrl={(url) => void session.attachUrl(url)}
         onRename={session.rename}
       />
@@ -1845,6 +1872,7 @@ export function LearningCanvas({
           // live — see canvas-hosting.ts.
           listenSignal={voice.listenSignal}
           onAnswer={(text, via, tookMs) => {
+            acknowledgeAttachments();
             // 🔴 NEMESIS STOPS TALKING THE MOMENT THE LEARNER ANSWERS. Speech that outlives the
             // screen it belongs to reads the previous question over the current one.
             voice.stopSpeaking();
@@ -1871,13 +1899,17 @@ export function LearningCanvas({
           // 🔴 THE SAME ROUTE THE CARD'S BUTTONS TAKE. Typing "academic" under the card and tapping
           // the Academic option must reach one handler, or the two drift and only one keeps working.
           onClarify={(text) => {
+            acknowledgeAttachments();
             // Nemesis stops talking the moment the learner responds, exactly as `onAnswer` does.
             voice.stopSpeaking();
             void answerClarification(text);
           }}
-          onAsk={(text) => void submit(text)}
+          onAsk={(text) => {
+            acknowledgeAttachments();
+            void submit(text);
+          }}
           onClearSelection={clearSelection}
-          onFiles={(files) => void session.attachFiles(files)}
+          onFiles={attachWithChips}
           // 🔴 "Record a lecture" IS HIDDEN, NOT DELETED. Owner call, 2026-08-20: "remove the
           // 'record a lecture' option or just hide it." Withholding `onRecord` is the whole change:
           // the composer's `+` already falls through to the file picker on the first press when
@@ -1914,6 +1946,7 @@ export function LearningCanvas({
           // know is whether pressing send with an empty box means anything, and passing the list
           // for that would be handing it everything it needs to start drawing them again.
           attachedCount={canvas.sources.length}
+          recentAttachments={recentAttachments}
           selected={selected}
         />
       )}
