@@ -40,6 +40,7 @@ import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import { entrySummary, groupByDay, type TranscriptEntry } from "@/lib/learn/session-transcript";
+import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
 import {
   type AutoDictation,
   type VoiceMode,
@@ -51,6 +52,7 @@ import {
   orderedTerritories,
   recommendedTerritoryLabel,
   sourceDisclosure,
+  territoryMark,
   type Territory,
   type MarkedTerritory,
   type TerritoryMark,
@@ -441,6 +443,8 @@ const TERRITORY_MEANING: Record<TerritoryMark, string> = {
  *  component only lays them out. */
 export function MinimapControl({
   territories,
+  plan = null,
+  planTitle = null,
   focus,
   setFocus,
   decidedObjectiveKey,
@@ -449,6 +453,23 @@ export function MinimapControl({
   evidence,
 }: {
   territories: readonly Territory[];
+  /**
+   * The canvas's COURSE, projected for this panel — null on the ordinary canvas that has none.
+   *
+   * 🔴 A SECOND, SEPARATELY-LABELLED TREE, NEVER MERGED INTO `territories`. The knowledge tree
+   * earns its parents from the material's own explicit semantic relations — evidence-backed
+   * grouping. A plan's structure is an AUTHOR'S claim about the subject. Folding one into the
+   * other would leave the next reader believing the curriculum was derived from the learner's own
+   * material — the provenance confusion this file's own header warns about for Objectives vs
+   * Territory. A plan is a third thing in that corner, and it stays third.
+   *
+   * 🔴 AND ITS ROWS KEEP THE AUTHOR'S ORDER. Plan rows deliberately do NOT pass through
+   * `orderedTerritories`, whose recommended-then-marked re-sort is right for evidence-backed
+   * territories and would destroy an authored sequence.
+   */
+  plan?: readonly PlanTerritory[] | null;
+  /** The course's title, shown over its rows. */
+  planTitle?: string | null;
   focus: FocusScope;
   setFocus: (scope: FocusScope) => void;
   /** The objective the CURRENT decision names, if any — used only to find which territory
@@ -536,6 +557,99 @@ export function MinimapControl({
     );
   };
 
+  /**
+   * One course row. Deliberately NOT `renderTerritory`: that renderer offers "Suggested next" and
+   * calls `setFocus` unconditionally, and a plan row has a state knowledge rows cannot have — a
+   * node the canvas holds NO MATERIAL for. That row is not a button at all: `applyFocus` returns
+   * everything when a filter empties, so focusing an empty node would silently focus the whole
+   * canvas — a control that appears to work and does something else, the defect this codebase
+   * names most often.
+   *
+   * 🔴 "No material yet" IS A SOURCE FACT, NOT A LEARNER STATE, and it must not be collapsed into
+   * the reading-gap ◇ or the evidence dots: I3 keeps source uncertainty, learner unknown and
+   * no-demonstration as separate states, and this is a fourth — there is no source here at all.
+   *
+   * 🔴 EXPANSION PATHS ARE NAMESPACED `course/…` so a plan node and a knowledge territory sharing
+   * a label cannot toggle each other's chevrons.
+   */
+  const renderPlanRow = (entry: PlanTerritory, depth = 0, path = `course/${entry.label}`): React.ReactNode => {
+    const mark = territoryMark(entry.identityKeys, evidence);
+    const current = focus.kind === "selection" && focus.label === entry.label;
+    const hasChildren = Boolean(entry.children?.length);
+    const isExpanded = expanded.has(path);
+    return (
+      <div key={path}>
+        <div className="flex items-center">
+          {hasChildren ? (
+            <button
+              aria-expanded={isExpanded}
+              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${entry.label}`}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
+              onClick={() => setExpanded((currentSet) => {
+                const next = new Set(currentSet);
+                if (next.has(path)) next.delete(path);
+                else next.add(path);
+                return next;
+              })}
+              type="button"
+            >
+              <Codicon name={isExpanded ? "chevron-down" : "chevron-right"} size="0.6875rem" />
+            </button>
+          ) : (
+            <span aria-hidden className="h-7 w-7 shrink-0" />
+          )}
+          {entry.reachable ? (
+            <button
+              className={cn(
+                "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
+                current && "bg-(--ui-bg-tertiary)",
+              )}
+              onClick={() => {
+                setFocus({ identityKeys: entry.identityKeys, kind: "selection", label: entry.label });
+                setOpen(false);
+              }}
+              style={{ paddingLeft: `${8 + depth * 12}px` }}
+              title={mark ? TERRITORY_MEANING[mark] : undefined}
+              type="button"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "h-[7px] w-[7px] shrink-0 rounded-full",
+                  current && "ring-2 ring-(--ui-text-primary)/25",
+                  mark ? TERRITORY_DOT[mark] : "bg-transparent",
+                )}
+              />
+              <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
+                {entry.label}
+                <span className="sr-only">
+                  {mark ? `. ${TERRITORY_MEANING[mark]}` : ""}
+                  {current ? ". Currently focused here." : ""}
+                </span>
+              </span>
+            </button>
+          ) : (
+            <div
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
+              style={{ paddingLeft: `${8 + depth * 12}px` }}
+            >
+              <span aria-hidden className="h-[7px] w-[7px] shrink-0 rounded-full bg-transparent" />
+              <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+                {entry.label}
+              </span>
+              <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                No material yet
+              </span>
+            </div>
+          )}
+        </div>
+        {hasChildren && isExpanded && (
+          <div>{entry.children!.map((child) => renderPlanRow(child, depth + 1, `${path}/${child.label}`))}</div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="pointer-events-auto relative shrink-0" ref={holder}>
       <button
@@ -610,6 +724,15 @@ export function MinimapControl({
             </p>
           ) : (
             rows.map((territory) => renderTerritory(territory))
+          )}
+
+          {plan && plan.length > 0 && (
+            <>
+              <p className="px-2 pb-1 pt-3 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
+                Course{planTitle ? ` · ${planTitle}` : ""}
+              </p>
+              {plan.map((entry) => renderPlanRow(entry))}
+            </>
           )}
         </div>
       )}

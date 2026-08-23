@@ -44,7 +44,10 @@ test("🔴 the milestones are reported when stated, not when the turn returns", 
 // this feature not to become. The caption and the lockout are two questions and had one answer.
 test("🔴 naming a running step does not lock the composer", () => {
   assert.match(SESSION, /const \[work, setWork\] = useState<string \| null>\(null\)/);
-  assert.match(SESSION, /\(label\) => setWork\(label\)\)/);
+  // `[,)]`: the call legitimately grew a trailing `courseRequested` argument (2026-08-23), so the
+  // label callback is no longer the final parameter. What this pins is unchanged — the label lands
+  // in `setWork`, never in `setBusy`.
+  assert.match(SESSION, /\(label\) => setWork\(label\)[,)]/);
   assert.ok(
     !/setBusy\(label \?/.test(SESSION),
     "a step label is back on `busy`, which disables the composer while it runs",

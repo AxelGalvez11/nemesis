@@ -105,6 +105,25 @@ export const REUSABLE_LICENCES: readonly string[] = [
   "public-domain",
 ];
 
+/**
+ * Whether a licence string names something on that list.
+ *
+ * 🔴 EXTRACTED SO THE RULE HAS ONE IMPLEMENTATION AND TWO CALL SITES, NOT TWO IMPLEMENTATIONS.
+ * `chooseAsset` has always applied this at SHOW time; `admitSource` in `licensed-source.ts` now
+ * applies the same rule at INGEST time. Written twice, the two would answer differently the first
+ * time either was edited, and the ingest copy is the one whose mistakes are permanent — a refused
+ * picture is a missing picture, a wrongly admitted source is a row in a corpus nobody re-checks.
+ *
+ * 🔴 EXACT MATCH AFTER TRIM AND CASE-FOLD. NEVER A PREFIX TEST. `reference-images.ts` names the
+ * trap by hand: `startsWith("CC BY")` admits `CC BY-NC` — the licence that ends this product's
+ * commercial use — and it looks correct while doing it.
+ */
+export function isReusableLicence(licence: string): boolean {
+  const named = licence.trim().toLowerCase();
+  if (!named) return false;
+  return REUSABLE_LICENCES.some((allowed) => allowed.toLowerCase() === named);
+}
+
 /** Which of those legally require a credit line to be displayed. */
 export function attributionRequired(licence: string): boolean {
   return /^CC-BY/i.test(licence.trim());
@@ -253,7 +272,7 @@ export function chooseAsset(input: AssetChoiceInput): AssetChoice {
       continue;
     }
 
-    if (!REUSABLE_LICENCES.some((allowed) => allowed.toLowerCase() === licence.licence.trim().toLowerCase())) {
+    if (!isReusableLicence(licence.licence)) {
       remember({
         detail: `"${licence.licence}" is not a licence Nemesis may reuse a teaching image under`,
         ok: false,

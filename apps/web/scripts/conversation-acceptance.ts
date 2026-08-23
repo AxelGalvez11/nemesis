@@ -88,6 +88,7 @@ const FRESH: TurnContext = {
   clarified: [],
   demonstrated: 0,
   history: [],
+  courseRequested: false,
   lessonInProgress: false,
   materialContext: "",
   objectives: 0,

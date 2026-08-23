@@ -39,7 +39,11 @@ test("🔴🔴 the deleted classifier has not come back", () => {
 test("🔴🔴 the front door hands the utterance to the model, and never starts a lesson from it", () => {
   const front = canvas.slice(canvas.indexOf("const beginOrAnswer = useCallback"));
   const body = front.slice(0, front.indexOf("\n  );"));
-  assert.match(body, /converse\(trimmed\)/, "typed text no longer reaches the model at the front door");
+  // 🔴 `[,)]`, because the call legitimately grew arguments: `converse(trimmed, null, withCapability)`
+  // carries the one-shot Course declaration down the SAME call as the words (owner, 2026-08-23 —
+  // "structured intent on the same submission pipeline"). What this still pins is that the trimmed
+  // text is the first argument of a real model call on the front-door path.
+  assert.match(body, /converse\(trimmed[,)]/, "typed text no longer reaches the model at the front door");
   // The ONE `begin` left on this path is the empty send with material staged, which carries no
   // utterance for a model to read. A `begin(trimmed)` or `begin(asked)` here is the defect.
   assert.match(body, /session\.begin\(undefined\)/, "the empty-send-with-material route is gone");
@@ -98,6 +102,10 @@ test("🔴🔴 the invariant above all of this is untouched", () => {
 
 test("🔴 the canvas picks the mechanism for a study turn, not the model", () => {
   const converse = session.slice(session.indexOf("const converse = useCallback"));
+  // 🔴 THE ANCHOR ITSELF IS ASSERTED. If `converse`'s dependency array ever changes shape, the
+  // slice below silently becomes nearly the whole file and every assertion after it passes by
+  // matching unrelated text — a guard that cannot fail. Fail loudly on the anchor instead.
+  assert.notEqual(converse.indexOf("\n    [begin, command"), -1, "converse's dep-array anchor moved — update this test deliberately");
   const body = converse.slice(0, converse.indexOf("\n    [begin, command"));
   assert.match(body, /decision\.then === "study"/);
   assert.match(body, /isPreContent\(latest\.current\.state\)/, "the begin/command choice is not read off canvas state");

@@ -192,6 +192,15 @@ export async function askCanvasChat(
    * work that is executing, which is exactly what `thinking-phases.ts` permits in the caption slot.
    */
   onWork?: (label: string | null) => void,
+  /**
+   * The learner attached the Course capability to this submission.
+   *
+   * 🔴 A FACT FOR THE PACKET, NEVER A BRANCH IN THIS FILE. It rides into `TurnContext` beside
+   * `lessonInProgress` and the model reads it there; nothing in this function routes on it. The
+   * owner's rule for the whole feature: the button adds structured intent to the SAME submission
+   * pipeline everything else uses — it is not a second execution path.
+   */
+  courseRequested = false,
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
 
@@ -212,6 +221,7 @@ export async function askCanvasChat(
         // packet builder so `turnRouterMessages` stays pure and its tests stay deterministic.
         today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
         lessonInProgress: surroundings.lessonInProgress,
+        courseRequested,
         searchesLeft,
         stagedPassage,
         webContext,

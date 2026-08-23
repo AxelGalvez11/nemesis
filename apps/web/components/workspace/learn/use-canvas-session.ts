@@ -16,6 +16,9 @@ import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
+import type { ComposerCapability } from "@/lib/learn/composer-capability";
+import { applyCurriculumPlan, courseRefusalLine, loadCurriculumPlan } from "@/lib/learn/curriculum-course";
+import type { CurriculumPlan } from "@/lib/learn/curriculum-plan";
 import type { TurnDecision } from "@/lib/learn/turn-router";
 import type { TurnStage } from "@/lib/learn/turn-preview";
 import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
@@ -268,9 +271,21 @@ export interface CanvasSession {
     onStudyDocument?: () => void,
     /** The one passage the learner staged, which scopes the turn without classifying it. */
     staged?: CanvasBlock | null,
+    /** The one-shot capability the learner attached to this submission, or null. It becomes a
+     *  FACT in the model's packet (`TurnContext.courseRequested`), never a branch in this file —
+     *  the model still decides what the turn meant. */
+    capability?: ComposerCapability | null,
     /** Whether this turn may be parked behind a clarification card. False on a resumed turn. */
     mayAsk?: boolean,
   ) => Promise<TurnDecision | null>;
+  /**
+   * The course this canvas is working through, or null — loaded with the canvas, set the moment
+   * one is applied, and persisted on the territory marker so a refresh keeps it.
+   *
+   * 🔴 SCOPE, NEVER STATE. It says where this canvas is going; it carries no progress and no
+   * mastery, and nothing may derive either from it.
+   */
+  coursePlan: CurriculumPlan | null;
   /**
    * The one decision Nemesis is waiting on before it can finish a turn, or null. Null nearly always.
    *
@@ -476,6 +491,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [update],
   );
 
+  const [coursePlan, setCoursePlan] = useState<CurriculumPlan | null>(null);
+
   /**
    * Records that a learner-visible moment happened, for the History Rail.
    *
@@ -527,6 +544,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           setCanvas(found);
           latest.current = found;
           setReady(true);
+
+          // The course rides the territory marker; a refresh must keep it (acceptance item 10).
+          // Fire-and-forget beside the coverage refresh below, for the same reason: the canvas is
+          // usable before either lands, and neither failing may block it.
+          void loadCurriculumPlan(uid, canvasId).then((plan) => {
+            if (alive && plan) setCoursePlan(plan);
+          });
 
           // 🔴🔴 THE COVERAGE DISCLOSURE IS RE-DERIVED ON LOAD, BECAUSE IT WAS A SNAPSHOT AND
           // COVERAGE NOW IMPROVES. `coverageNote` is computed once when a file is attached and
@@ -1050,6 +1074,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
        * three openers were answered beside the passage and every other sentence silently EDITED it.
        */
       staged?: CanvasBlock | null,
+      capability?: ComposerCapability | null,
       /**
        * May this turn be parked behind a clarification card?
        *
@@ -1099,7 +1124,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 A REAL STEP, REPORTED WHILE IT RUNS, AND IT DOES NOT LOCK THE COMPOSER. The preview
       // prefers a milestone over it, so this shows only where the model had nothing to say about
       // the stage the turn is in.
-      (label) => setWork(label));
+      (label) => setWork(label),
+      // The one-shot capability, as a FACT in the packet. Never a branch in this function.
+      capability === "course");
       setBusy({ kind: null });
       setMilestones([]);
       setStage("decided");
@@ -1108,6 +1135,22 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!decision) {
         setError(result.error ?? "Nemesis had nothing to add.");
         return null;
+      }
+
+      // 🔴 THE COURSE IS APPLIED BESIDE THE TURN, NEVER INSTEAD OF IT. Everything below runs
+      // exactly as it does on a turn with no course in it — `begin`, `command` and the aside are
+      // untouched — which is what keeps a course a SCOPE the canvas gains rather than a mode it
+      // enters. Applied here, before the branches, only so a refusal can ride the same reply the
+      // turn was going to show anyway: a Course press that failed and said nothing would be a
+      // control that does nothing, this codebase's most-repeated defect.
+      //
+      // 🔴 AND IT NEVER FORCES `study`. `decision.then` was decided by `asAction`'s three-value
+      // whitelist before this line runs; a reply turn that also asked for a course stays a reply.
+      let courseNote = "";
+      if (decision.curriculumFor) {
+        const applied = await applyCurriculumPlan(id, latest.current, decision.curriculumFor, new Date().toISOString());
+        if (applied.ok) setCoursePlan(applied.plan);
+        else courseNote = courseRefusalLine(applied.refusal, decision.curriculumFor);
       }
 
       // 🔴 HANDED BACK, NOT ACTED ON. Which passage a rewrite lands on is §11's referent rule, and
@@ -1153,8 +1196,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // "teach me this" typed on a canvas with a file attached but no lesson yet fell through to
         // a document command instead of starting one. One predicate, one meaning.
         if (isPreContent(latest.current.state)) {
-          if (decision.say) {
-            setAside({ blockId: null, kind: "opening", question: said, sources: [], text: decision.say });
+          const opening = [decision.say, courseNote].filter(Boolean).join("\n\n");
+          if (opening) {
+            setAside({ blockId: null, kind: "opening", question: said, sources: [], text: opening });
           }
           // 🔴 THE MODEL'S SUBJECT OR NOTHING, NEVER THE RAW SENTENCE. `begin` uses this as the
           // canvas TITLE, and falling back to `said` is what produced canvases called "teach me
@@ -1190,7 +1234,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         question: said,
         consulted: result.consulted,
         sources: result.sources,
-        text: decision.say,
+        text: [decision.say, courseNote].filter(Boolean).join("\n\n"),
         topic: decision.topic ?? undefined,
         visuals: decision.visuals,
       });
@@ -1235,6 +1279,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         { ...surroundings, answerOwed: false, clarified: [...surroundings.clarified, fact] },
         onStudyDocument,
         // No staged passage on a resumed turn — the card, not a selection, is what held it.
+        null,
+        // And no capability: one was consumed by the original submission if it existed at all.
         null,
         false,
       );
@@ -1952,6 +1998,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     command,
     askAbout,
     converse,
+    coursePlan,
     learnFromAside,
     markKnown,
     toggleCollapsed,

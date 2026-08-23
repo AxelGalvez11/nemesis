@@ -43,7 +43,7 @@
 // silently swap it back to `1rem` for consistency with the rest of this file, which would
 // reintroduce the zoom by way of looking like a tidy-up.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
@@ -55,6 +55,7 @@ import {
   CLARIFY_PLACEHOLDER,
   START_WITH_MATERIAL_PLACEHOLDER,
 } from "@/lib/learn/canvas-tasks";
+import { CAPABILITY_COPY, type ComposerCapability } from "@/lib/learn/composer-capability";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
 import { cn } from "@/lib/utils";
 
@@ -68,7 +69,7 @@ interface CanvasComposerProps {
   selected: readonly CanvasBlock[];
   onClearSelection: () => void;
   /** A question or instruction for Nemesis about the canvas. */
-  onAsk: (text: string) => void;
+  onAsk: (text: string, capability: ComposerCapability | null) => void;
   /** A performance: the learner's answer to whatever is currently being asked. */
   onAnswer: (text: string, via: LearnerInputModality, tookMs?: number) => void;
   /** Adding material belongs here as well as in the sources panel: it is the one control the
@@ -85,6 +86,21 @@ interface CanvasComposerProps {
    * this way: upload and record are both ways of bringing material in.
    */
   onRecord?: (() => void) | null;
+  /**
+   * Which one-shot capabilities this surface offers under `+`. Empty means none, and the `+` menu
+   * is whatever it was without them.
+   *
+   * 🔴 A CAPABILITY IS NOT A MODE, AND §38 TURNS ON THAT DISTINCTION. The owner amended §38 on
+   * 2026-08-23 to permit exactly this: "One-shot composer capabilities may explicitly declare user
+   * intent or attach resources to the next submission… These capabilities clear after submission
+   * and must not become persistent teaching modes." `capability` is therefore parent-owned and
+   * cleared by `submit`; this component never holds it across a send. See composer-capability.ts.
+   */
+  capabilities?: readonly ComposerCapability[];
+  /** The capability attached to the NEXT submission, or null. Parent-owned; see `capabilities`. */
+  capability?: ComposerCapability | null;
+  /** Select or clear the capability. Called with null by the chip's ×. */
+  onCapability?: (capability: ComposerCapability | null) => void;
   /**
    * 🔴🔴🔴 WHAT SUBMITTING MEANS RIGHT NOW. ONE VALUE, DECIDED BY THE CALLER, NEVER RE-DERIVED HERE.
    *
@@ -214,7 +230,7 @@ interface CanvasComposerProps {
    * refusal that used to sit in `submit()` — `if (!value) return;` — silently threw exactly that
    * case away.
    */
-  onStart: (text: string) => void;
+  onStart: (text: string, capability: ComposerCapability | null) => void;
 }
 
 /** Grows to about six lines, then stops. Beyond that the box would eat the question. */
@@ -227,6 +243,9 @@ export function CanvasComposer({
   onAsk,
   onAnswer,
   onFiles,
+  capabilities = [],
+  capability = null,
+  onCapability,
   onRecord = null,
   intent,
   busy,
@@ -372,7 +391,47 @@ export function CanvasComposer({
    *  🔴 `intent.kind === "start"`, NOT `Boolean(onStart)`. The handler is always passed now; whether
    *  it is the RIGHT one is the intent's decision, and asking "were we given a function?" is exactly
    *  the reasoning that routed answers into `begin()`. */
-  const canStartFromAttachment = intent.kind === "start" && attachedCount > 0;
+  // 🔴 `!capability` IS THE ARGUMENT-DROP FIX'S OTHER HALF. An empty send is a real submission
+  // when material is staged — but it carries no words, and a staged capability is a declaration
+  // ABOUT words. Allowing it would force `beginOrAnswer`'s empty branch to silently drop the
+  // declaration, which is the exact defect the whole plumbing exists to end. Refusing the send
+  // keeps the placeholder's question ("What do you want to learn?") one that has to be answered.
+  const canStartFromAttachment = intent.kind === "start" && attachedCount > 0 && !capability;
+
+  /**
+   * Everything `+` can do here, in menu order.
+   *
+   * 🔴🔴 THE LIST IS THE COUNT, WHICH IS THE ONLY WAY THE ONE-OFFER SHORTCUT STAYS CORRECT. `+`
+   * opens a menu when it has a choice to present and performs the action directly when it does
+   * not — a one-item menu is a second click charged for nothing. That shortcut used to be spelled
+   * `onRecord ? openMenu() : filePicker.click()`, which hard-codes the assumption that the single
+   * remaining offer is always upload. Add a capability under a flag and that assumption is false in
+   * a way nothing catches: the button opens a file dialog and the offer it was supposed to run is
+   * unreachable, with no error. Running `offers[0].run()` cannot make that mistake, because the
+   * thing it runs is the thing the list contains.
+   */
+  const addOffers = useMemo(() => {
+    const offers: Array<{ detail?: string; icon: string; key: string; label: string; run: () => void }> = [
+      { icon: "file", key: "upload", label: "Upload material", run: () => filePicker.current?.click() },
+    ];
+    if (onRecord) {
+      offers.push({ icon: "record", key: "record", label: "Record a lecture", run: onRecord });
+    }
+    for (const offered of capabilities) {
+      const copy = CAPABILITY_COPY[offered];
+      offers.push({
+        detail: copy.detail,
+        icon: copy.icon,
+        key: offered,
+        label: copy.label,
+        // 🔴 SELECTING IS ALL IT DOES. It stages a declaration on the next submission; it starts
+        // nothing, calls no model, and changes nothing on the page. That is what keeps it a
+        // capability rather than the mode selector §38 bans.
+        run: () => onCapability?.(offered),
+      });
+    }
+    return offers;
+  }, [capabilities, onCapability, onRecord]);
 
   const submit = () => {
     const value = text.trim();
@@ -397,14 +456,25 @@ export function CanvasComposer({
     // `onStart` was non-null on every canvas whose stored state had not advanced, which includes
     // every canvas with a question staged on attached material, and it silently outranked a real
     // answer to a real question. `answer-is-not-a-start.test.ts` fails if the precedence returns.
+    // 🔴🔴 THE CAPABILITY RIDES THE SAME PIPELINE AS THE TEXT — IT IS NOT A SECOND PATH.
+    // Owner, 2026-08-23: "The button shouldn't become a separate execution path; it should add
+    // structured intent to the same submission pipeline everything else already uses."
+    //
+    // 🔴 AND `answer` CARRIES NONE. A capability is offered only outside a session (see the `+`
+    // menu's guard), so this branch cannot normally hold one — but a stale selection surviving into
+    // an answer would attach a curriculum request to a learner's answer to a question, which is the
+    // class of defect `composer-intent.ts` exists to end. Stated here rather than assumed.
     if (intent.kind === "answer") onAnswer(value, inputModality.current, Date.now() - startedAt.current);
     // 🔴🔴 BEFORE `onAsk`, AND WITHOUT THIS LINE THE CARD IS DECORATION. `onAsk` opens a fresh
     // conversational turn: the learner's "academic" would be read as a new question, the pending
     // card would still be on screen, and the turn it was holding would never finish. The intent
     // already knows which of the two this is — the composer must not re-derive it.
     else if (intent.kind === "clarify") onClarify(value);
-    else if (intent.kind === "start") onStart(value);
-    else onAsk(value);
+    else if (intent.kind === "start") onStart(value, capability);
+    else onAsk(value, capability);
+    // 🔴 ONE-SHOT, ALWAYS. A capability that survived its own submission would be a persistent mode,
+    // whatever it was called, and §38 would be right to ban it. See `clearsOnSubmit`.
+    if (capability) onCapability?.(null);
     modalityEvent({ kind: "submitted" });
     typedBefore.current = "";
   };
@@ -674,6 +744,27 @@ export function CanvasComposer({
         {/* The chip needs its own surface. It sits inside the composer's fade, where the
             gradient is nearly transparent, so without a background it was printed straight
             over the paragraph behind it and neither could be read. */}
+        {/* 🔴 THE CAPABILITY CHIP SAYS WHAT THE NEXT SUBMISSION IS, AND ITS × IS THE WAY OUT.
+            Same surface treatment as the staged-selection chip below and for the same reason: it
+            sits inside the composer's fade and needs its own background to be readable. One-shot by
+            construction — `submit` clears it — so it can never harden into a mode indicator. */}
+        {capability && !listening && (
+          <div className="mb-1.5 ml-1 flex w-fit max-w-full items-center gap-2 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-2 shadow-sm ring-1 ring-(--ui-stroke-tertiary)">
+            <Codicon className="shrink-0 text-(--ui-action)" name={CAPABILITY_COPY[capability].icon} size="0.6875rem" />
+            <span className="shrink-0 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-secondary)">
+              {CAPABILITY_COPY[capability].label}
+            </span>
+            <button
+              aria-label={`Remove ${CAPABILITY_COPY[capability].label}`}
+              className="shrink-0 text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+              onClick={() => onCapability?.(null)}
+              type="button"
+            >
+              <Codicon name="close" size="0.6875rem" />
+            </button>
+          </div>
+        )}
+
         {selected.length > 0 && !listening && (
           <div className="mb-1.5 ml-1 flex w-fit max-w-full items-center gap-2 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-2 shadow-sm ring-1 ring-(--ui-stroke-tertiary)">
             {/* 🔴 THE CHIP HAS TO SAY WHAT IT IS. It used to print the quoted words and nothing
@@ -746,8 +837,8 @@ export function CanvasComposer({
             {!inSession && (
             <div className="relative shrink-0" ref={addMenu}>
               <button
-                aria-expanded={onRecord ? addOpen : undefined}
-                aria-haspopup={onRecord ? "menu" : undefined}
+                aria-expanded={addOffers.length > 1 ? addOpen : undefined}
+                aria-haspopup={addOffers.length > 1 ? "menu" : undefined}
                 aria-label="Add material"
                 className={cn(
                   // 36×36, MEASURED -- ChatGPT's "Add files and more" button is the same box size
@@ -758,41 +849,48 @@ export function CanvasComposer({
                     ? "text-(--ui-text-quaternary)"
                     : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
                 )}
-                // 🔴 WITH NOTHING TO CHOOSE BETWEEN, THERE IS NO MENU. A surface that cannot record
-                // opens the file picker on the first press, exactly as it always did — a one-item
-                // menu is a second click charged for nothing.
-                onClick={() => (onRecord ? setAddOpen((open) => !open) : filePicker.current?.click())}
+                // 🔴 WITH NOTHING TO CHOOSE BETWEEN, THERE IS NO MENU — a one-item menu is a second
+                // click charged for nothing. 🔴 AND THE SHORTCUT RUNS THE LIST'S OWN ONE ITEM,
+                // never a hard-coded action. This was `onRecord ? menu : filePicker.click()`, which
+                // assumes the single remaining offer is always upload — add an offer under any flag
+                // and that assumption fails silently, with the button opening the wrong thing and
+                // the real offer unreachable.
+                onClick={() => (addOffers.length > 1 ? setAddOpen((open) => !open) : addOffers[0]?.run())}
                 title="Add material"
                 type="button"
               >
                 <Codicon name="add" size="20px" />
               </button>
 
-              {onRecord && addOpen && (
+              {addOffers.length > 1 && addOpen && (
                 <div
                   className="absolute bottom-[46px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
                   role="menu"
                 >
-                  <button
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-                    onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
-                    role="menuitem"
-                    type="button"
-                  >
-                    <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
-                    Upload material
-                  </button>
-                  <button
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-                    onClick={() => { setAddOpen(false); onRecord(); }}
-                    role="menuitem"
-                    type="button"
-                  >
-                    {/* A filled circle, not a microphone. The mic on the right of this composer is
-                        dictation; these two must never look like the same offer. */}
-                    <Codicon className="text-(--ui-text-tertiary)" name="record" size="16px" />
-                    Record a lecture
-                  </button>
+                  {/* One row per offer, from the same list the shortcut runs. The record row keeps
+                      a filled circle, not a microphone — the mic on the right of this composer is
+                      dictation, and the two must never look like the same offer. */}
+                  {addOffers.map((offer) => (
+                    <button
+                      className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                      key={offer.key}
+                      onClick={() => { setAddOpen(false); offer.run(); }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <Codicon className="text-(--ui-text-tertiary)" name={offer.icon} size="16px" />
+                      {offer.detail ? (
+                        <span className="flex min-w-0 flex-col">
+                          <span>{offer.label}</span>
+                          <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                            {offer.detail}
+                          </span>
+                        </span>
+                      ) : (
+                        offer.label
+                      )}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -872,7 +970,11 @@ export function CanvasComposer({
                         // THINKING_COPY's captions are Runtime's copy and may or may not end in "…"
                         // (see thinking-phases.ts); doubling it up reads as a typo, not as emphasis.
                         `${(busyLabel ?? "Working").replace(/…$/, "")}…`
-                      : selected.length > 0
+                      : capability === "course"
+                        ? // The chip names the capability; the placeholder asks the one question a
+                          // course needs answered. Owner-specified pairing, 2026-08-23.
+                          "What do you want to learn?"
+                        : selected.length > 0
                         ? "What should Nemesis do with this?"
                         : // Material is staged and nothing has started — say that sending with
                           // nothing typed is a real option, because §3 makes it one.
