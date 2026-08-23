@@ -107,6 +107,6 @@ export function browFrame(elapsed: number): BrowFrame | null {
  * geometry so the two can never drift apart. Full width (no reveal: a held face is not a
  * gesture arriving), highest position the waggle reaches.
  */
-export function raisedBrow(): BrowFrame {
-  return { w: BROW_W, h: BROW_H, dy: -(BROW_REST + BROW_RISE) };
+export function raisedBrow(lift = 1): BrowFrame {
+  return { w: BROW_W, h: BROW_H, dy: -(BROW_REST + lift * BROW_RISE) };
 }

@@ -34,7 +34,7 @@ import { mixHex } from "@/lib/bloub/skins";
 
 import { CHARACTER_SHAPE, aimFor, arcStops, inkFor } from "@/lib/character/look";
 import { browFrame, raisedBrow } from "@/lib/character/brow";
-import { LENS_RING, LENS_RX, LENS_RY, SIGMA_BROW_EYE, SMIRK, annulusPath, type FaceId } from "@/lib/character/face";
+import { BRIDGE, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SIGMA_BROW_EYE, SMIRK, annulusPath, arrival, type FaceId } from "@/lib/character/face";
 import { capsulePath } from "@/lib/bloub/shape";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
@@ -125,6 +125,13 @@ export interface BloubBotProps {
   waggle?: boolean;
   /** A face from OUR layer (reading glasses, the sigma). Omitted is the plain rest face. */
   face?: FaceId | null;
+  /**
+   * 🔴 PROTOTYPE (owner 2026-08-24: "add, like, a hand so that it can point at things").
+   * A mitt and a finger at the body's upper-right edge. Unlike the face it CANNOT be a mask
+   * hole — it reaches outside the silhouette — so it is ink drawn in front. Wired only on
+   * the review board until the owner approves the look; pointing AT things comes after.
+   */
+  hand?: "point" | null;
   /** Freeze at this many seconds into the state. Reproducible; no loop is started. */
   frozenAt?: number;
   /** Playback rate. 0 pauses the scene clock. */
@@ -143,6 +150,7 @@ export function BloubBot({
   expression = "neutre",
   waggle = false,
   face = null,
+  hand = null,
   paper,
   track = false,
   aimAt = null,
@@ -168,6 +176,8 @@ export function BloubBot({
   // rather than a stroke laid on the face. Parked at display:none like every pool node.
   const browRefs = useRef<(SVGPathElement | null)[]>([]);
   const lensRefs = useRef<(SVGPathElement | null)[]>([]);
+  const armRefs = useRef<(SVGPathElement | null)[]>([]);
+  const bridgeRef = useRef<SVGPathElement | null>(null);
   const mouthRef = useRef<SVGPathElement | null>(null);
   const notchRef = useRef<SVGCircleElement | null>(null);
   const notifRef = useRef<SVGCircleElement | null>(null);
@@ -204,7 +214,7 @@ export function BloubBot({
    * members are parked at `display: none` rather than removed, so the node count is
    * constant for the lifetime of the component.
    */
-  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null) => {
+  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null) => {
     maskBodyRef.current?.setAttribute("d", frame.bodyPath);
     paperBodyRef.current?.setAttribute("d", frame.bodyPath);
     paperBodyRef.current?.setAttribute("fill", paperHex);
@@ -215,9 +225,13 @@ export function BloubBot({
     // raises both together; the sigma holds ONE at the waggle's own top, so the two can
     // never drift apart (see raisedBrow in lib/character/brow.ts).
     const sigma = faceId === "sigma";
-    const brow = browAt !== null ? browFrame(browAt) : sigma ? raisedBrow() : null;
+    // How far the face has ARRIVED — the sigma's brow lifts to height, the smirk grows in,
+    // the glasses scale up the last quarter. 1 on stills and once the entrance is done.
+    const enter = arrival(faceAt);
+    const brow = browAt !== null ? browFrame(browAt) : sigma ? raisedBrow(enter) : null;
     const browPath = brow ? capsulePath(brow.w * RAYON, brow.h * RAYON) : "";
     const lensPath = faceId === "reading" ? annulusPath(LENS_RX * RAYON, LENS_RY * RAYON, LENS_RING * RAYON) : "";
+    const lensEnter = ` scale(${(0.75 + 0.25 * enter).toFixed(3)})`;
 
     for (let i = 0; i < 2; i += 1) {
       const node = eyeRefs.current[i];
@@ -247,8 +261,25 @@ export function BloubBot({
         } else {
           lensNode.style.display = "";
           lensNode.setAttribute("d", lensPath);
-          lensNode.setAttribute("transform", eye.matrix);
+          lensNode.setAttribute("transform", eye.matrix + lensEnter);
           lensNode.setAttribute("opacity", String(eye.alpha));
+        }
+      }
+      // The temple piece, running OUTWARD from this lens — screen-left for the first eye,
+      // screen-right for the second; both matrices keep local +x pointing screen-right.
+      const armNode = armRefs.current[i];
+      if (armNode) {
+        if (!eye || faceId !== "reading") {
+          armNode.style.display = "none";
+        } else {
+          const sign = i === 0 ? -1 : 1;
+          armNode.style.display = "";
+          armNode.setAttribute("d", capsulePath(LENS_ARM.len * RAYON, LENS_ARM.h * RAYON));
+          armNode.setAttribute(
+            "transform",
+            `${eye.matrix} translate(${(sign * (LENS_RX + LENS_ARM.len / 2) * RAYON).toFixed(2)},${(LENS_ARM.dy * RAYON).toFixed(2)})${lensEnter}`,
+          );
+          armNode.setAttribute("opacity", String(eye.alpha));
         }
       }
       if (!node) continue;
@@ -263,20 +294,38 @@ export function BloubBot({
     }
 
     // The smirk rides the SAME eye the sigma brow does, offset down the face in that eye's
-    // local frame — anywhere else and it would detach the moment the head rolled.
+    // local frame — anywhere else and it would detach the moment the head rolled. It GROWS
+    // in with the arrival; below a sliver it is not drawn at all (a capsule clamps tiny
+    // widths up, so it would pop instead of closing — same reason browFrame closes early).
     const mouth = mouthRef.current;
     if (mouth) {
       const anchorEye = frame.eyes[SIGMA_BROW_EYE];
-      if (!sigma || !anchorEye) {
+      if (!sigma || !anchorEye || enter < 0.06) {
         mouth.style.display = "none";
       } else {
         mouth.style.display = "";
-        mouth.setAttribute("d", capsulePath(SMIRK.w * RAYON, SMIRK.h * RAYON));
+        mouth.setAttribute("d", capsulePath(SMIRK.w * enter * RAYON, SMIRK.h * RAYON));
         mouth.setAttribute(
           "transform",
           `${anchorEye.matrix} translate(${(SMIRK.dx * RAYON).toFixed(2)},${(SMIRK.dy * RAYON).toFixed(2)}) rotate(${SMIRK.rot})`,
         );
         mouth.setAttribute("opacity", String(anchorEye.alpha));
+      }
+    }
+    // The bridge welds the two inner rims; it hangs off eye 0's frame like the smirk does.
+    const bridge = bridgeRef.current;
+    if (bridge) {
+      const anchorEye = frame.eyes[0];
+      if (faceId !== "reading" || !anchorEye) {
+        bridge.style.display = "none";
+      } else {
+        bridge.style.display = "";
+        bridge.setAttribute("d", capsulePath(BRIDGE.w * RAYON, BRIDGE.h * RAYON));
+        bridge.setAttribute(
+          "transform",
+          `${anchorEye.matrix} translate(${(BRIDGE.dx * RAYON).toFixed(2)},${(BRIDGE.dy * RAYON).toFixed(2)})${lensEnter}`,
+        );
+        bridge.setAttribute("opacity", String(anchorEye.alpha));
       }
     }
 
@@ -397,6 +446,13 @@ export function BloubBot({
   // timer would keep waggling on a paused character and race on a slowed one. Stamped at
   // render, like the engine's own timestamped setters.
   const waggleFromRef = useRef<number | null>(null);
+  // The face's own clock, for the arrival — see `arrival` in lib/character/face.ts.
+  const faceSeenRef = useRef<FaceId | null>(null);
+  const faceFromRef = useRef<number | null>(null);
+  if (face !== faceSeenRef.current) {
+    faceSeenRef.current = face;
+    faceFromRef.current = face ? clockRef.current : null;
+  }
   const waggledRef = useRef(false);
   if (waggle !== waggledRef.current) {
     waggledRef.current = waggle;
@@ -446,7 +502,7 @@ export function BloubBot({
     // 🔴 HELD AT ITS CHARACTERISTIC INSTANT, NOT FROZEN AT ZERO. Every animation
     // publishes the moment it reads best (`POSES`), and holding that is what keeps
     // `thinking` legible as three dots rather than as a ball caught before it split.
-    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null, face);
+    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null, face, null);
     // Redrawn whenever the look changes, since nothing else will redraw it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [still, frozenAt, state, color, expression, paper, face]);
@@ -486,7 +542,11 @@ export function BloubBot({
       // An explicit target outranks the cursor; with neither, `pointer` stays null and
       // the head keeps its resting drift, which is what keeps it alive on a touch
       // device where no pointer exists at all.
-      const at = waggleFromRef.current !== null || live.current.face === "sigma" ? null : (live.current.aimAt ?? pointerRef.current);
+      // 🔴 GESTURES NEVER TOUCH THE GAZE (owner 2026-08-24: "the eyes are sort of drifting
+      // off… I want it to look at the cursor"). Every face feature rides the eye matrices,
+      // so it follows wherever the eyes go; the old suppression here made the gaze slide
+      // home mid-waggle, which read as the character losing interest in the learner.
+      const at = live.current.aimAt ?? pointerRef.current;
       const box = svgRef.current?.getBoundingClientRect();
       // 🔴 A ZERO-SIZED BOX IS REFUSED, and this is not defensive noise. The
       // normalisation below would be 0/0, and the engine KEEPS its last target: a
@@ -530,6 +590,7 @@ export function BloubBot({
         resolvedPaper(),
         from === null ? null : clockRef.current - from,
         live.current.face,
+        faceFromRef.current === null ? null : clockRef.current - faceFromRef.current,
       );
     };
 
@@ -595,6 +656,18 @@ export function BloubBot({
               style={{ display: "none" }}
             />
           ))}
+          {[0, 1].map((i) => (
+            <path
+              key={`arm-${i}`}
+              ref={(el) => {
+                armRefs.current[i] = el;
+              }}
+              d=""
+              fill="#000"
+              style={{ display: "none" }}
+            />
+          ))}
+          <path ref={bridgeRef} d="" fill="#000" style={{ display: "none" }} />
           <path ref={mouthRef} d="" fill="#000" style={{ display: "none" }} />
           <circle ref={notchRef} cx={0} cy={0} r={0} fill="#000" style={{ display: "none" }} />
         </mask>
@@ -658,6 +731,16 @@ export function BloubBot({
           <rect ref={inkRectRef} x={-VB} y={-VB} width={VB * 2} height={VB * 2} />
         </g>
       </g>
+
+      {/* The pointing hand — see the prop's note. A short arm welded over the body's edge,
+          a round mitt, one finger. All ink, so it stays the same creature in every theme. */}
+      {hand === "point" && (
+        <g fill={ink}>
+          <path d={capsulePath(26, 9)} transform="translate(72,-60) rotate(-42)" />
+          <circle cx={87} cy={-73} r={11} />
+          <path d={capsulePath(20, 7)} transform="translate(99,-87) rotate(-42)" />
+        </g>
+      )}
 
       {/* Every other dot — the thinking trio, the tear of the "!" — sits in front. */}
       <g>

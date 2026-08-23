@@ -11,6 +11,7 @@
 // linked from navigation, nothing the product ships imports it.
 
 import { BloubBot } from "@/components/bloub/bloub-bot";
+import { BloubDock } from "@/components/bloub/bloub-dock";
 import { usePoke } from "@/components/bloub/use-poke";
 import { POSES, type StateId } from "@/lib/bloub/states";
 import type { FaceId } from "@/lib/character/face";
@@ -75,6 +76,27 @@ export default function MascotLanguagePage() {
         <Still caption="Wink" state="wink" />
         <Still caption="Reading — glasses" face="reading" />
         <Still caption="Sigma" face="sigma" />
+      </section>
+
+      <section className="flex flex-wrap items-end gap-10">
+        <figure className="flex flex-col items-center gap-3">
+          <BloubBot frozenAt={1} hand="point" size={168} state="idle" />
+          <figcaption className="text-xs text-(--ui-text-secondary)">Pointing — hand prototype</figcaption>
+        </figure>
+        {/* The marks ride the dock, exactly as they do in the product — same colour rule,
+            same counter-scaling. The "?" already ships; the "!" is here for approval. */}
+        <figure className="flex flex-col items-center gap-3">
+          <div className="relative h-44 w-44">
+            <BloubDock bottom={28} contain left={44} marker="?" state="idle" />
+          </div>
+          <figcaption className="text-xs text-(--ui-text-secondary)">Asking — the ? it already wears</figcaption>
+        </figure>
+        <figure className="flex flex-col items-center gap-3">
+          <div className="relative h-44 w-44">
+            <BloubDock bottom={28} contain left={44} marker="!" state="idle" />
+          </div>
+          <figcaption className="text-xs text-(--ui-text-secondary)">Heads-up — the ! (new, unwired)</figcaption>
+        </figure>
       </section>
 
       <section className="flex flex-wrap items-end gap-14">

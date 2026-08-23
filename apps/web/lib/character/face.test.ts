@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { EYE_H, EYE_W } from "@/lib/bloub/face";
 
 import { browFrame, raisedBrow, WAGGLE_TIME } from "./brow";
-import { annulusPath, LENS_RING, LENS_RX, LENS_RY, SMIRK } from "./face";
+import { annulusPath, arrival, BRIDGE, FACE_IN, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SMIRK } from "./face";
 
 // The face layer is geometry in body-radius units, drawn as holes in the body's own mask.
 // These tests pin the proportions that make each feature read as WHAT IT IS at the 52px the
@@ -47,4 +47,27 @@ test("the waggle closes its own window — nothing to un-draw when the gesture e
   assert.equal(browFrame(-0.01), null);
   assert.equal(browFrame(WAGGLE_TIME + 0.01), null);
   assert.equal(browFrame(Number.NaN), null);
+});
+
+test("a face arrives smoothly and is simply there on stills", () => {
+  assert.equal(arrival(null), 1, "a still has no clock and wears the finished face");
+  assert.equal(arrival(0), 0);
+  assert.equal(arrival(FACE_IN), 1);
+  assert.ok(arrival(FACE_IN / 2) > 0.5, "ease-OUT: most of the arrival happens early");
+  assert.ok(arrival(FACE_IN / 4) < arrival(FACE_IN / 2), "monotonic on the way in");
+});
+
+test("the frame is one object: the bridge welds the rims and the arms leave from them", () => {
+  // A bridge narrower than the gap floats between the lenses; one that reaches past each
+  // inner rim reads as a single pair of glasses. Same wire thickness everywhere.
+  assert.ok(BRIDGE.dx - BRIDGE.w / 2 < LENS_RX, "the bridge does not reach the first rim");
+  assert.ok(BRIDGE.dx + BRIDGE.w / 2 > 0.48 - LENS_RX, "the bridge does not reach the second rim");
+  assert.ok(Math.abs(LENS_ARM.h - LENS_RING) <= 0.01, "the temple wire differs from the ring wire");
+  assert.ok(LENS_ARM.len >= 0.1, "a stub temple reads as a smudge, not a frame");
+});
+
+test("the sigma brow lifts from rest height to the waggle's peak", async () => {
+  const { raisedBrow } = await import("./brow");
+  assert.ok(raisedBrow(0).dy > raisedBrow(1).dy, "no lift should sit LOWER (less negative) than full lift");
+  assert.ok(Math.abs(raisedBrow(0.5).dy - (raisedBrow(0).dy + raisedBrow(1).dy) / 2) < 1e-9, "the lift is linear in between");
 });
