@@ -100,6 +100,25 @@ test("🔴🔴 it copies the PROSE, not the wire format", () => {
   assert.match(mount, /segment\.kind === "prose"/, "drawings are being copied as their markers");
 });
 
+test("🔴🔴 two lanes, one sound — no start leaves the other lane playing", () => {
+  // Owner, 2026-08-23: pressing read-aloud must not stack voices. Within one lane stacking was
+  // already impossible (the player's run ticket, the speaker's single element); ACROSS the two —
+  // the answer's player and the narration speaker — four starts each silenced only their own.
+  // Calibration: remove `hushNarration()` from the player wrapper, or either `player.stop()`, or
+  // the replay wrapper's stop, and the matching line reddens.
+  assert.match(VOICE_HOOK, /start: \(text: string\) => \{\n\s*hushNarration\(\);\n\s*player\.start\(text\);/, "starting the answer's audio no longer silences the narration lane");
+  // The IMPLEMENTATION (`=> {`), not the interface line that shares its prefix.
+  const aloud = VOICE_HOOK.slice(VOICE_HOOK.indexOf("speakAloud: (text: string) => {"));
+  assert.ok(aloud.slice(0, 400).includes("player.stop()"), "a spoken passage no longer silences the answer's player");
+  const example = VOICE_HOOK.slice(VOICE_HOOK.indexOf("speakExample: (key: string, locale: string, text: string) => {"));
+  assert.ok(example.slice(0, 500).includes("player.stop()"), "an example row no longer silences the answer's player");
+  assert.match(VOICE_HOOK, /replay: \(text, voice\) => \{\n\s*player\.stop\(\);/, "a replay press no longer silences the answer's player");
+  // 🔴 The narration hush bumps the press counter, or a chunked passage resumes on a timer over
+  // whatever started meanwhile.
+  const hush = VOICE_HOOK.slice(VOICE_HOOK.indexOf("const hushNarration"));
+  assert.ok(hush.slice(0, 400).includes("aloudPress.current += 1"), "the hush no longer cancels a chunked passage's loop");
+});
+
 test("🔴 a refused clipboard is silent rather than an error strip", () => {
   assert.match(ACTIONS, /catch \{/);
   assert.ok(!/setError|throw/.test(ACTIONS), "a clipboard refusal is being escalated");

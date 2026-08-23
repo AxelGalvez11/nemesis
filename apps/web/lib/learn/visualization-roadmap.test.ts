@@ -648,7 +648,10 @@ test("🔴 §47 — hearing a phrase again is not gated on voice mode", () => {
   const control = readFileSync(new URL("../../components/workspace/learn/hear-again.tsx", import.meta.url), "utf8");
   const voiceHook = readFileSync(new URL("../../components/workspace/learn/use-canvas-voice.ts", import.meta.url), "utf8");
   assert.equal(/voiceMode|VoiceMode|mode === "on"/.test(control), false, "the replay control reads voice mode");
-  assert.match(voiceHook, /replay: speech\.replay/, "the canvas cannot offer a replay at all");
+  // 🔴 Wrapped since the cross-lane arbiter (2026-08-23): a replay press first silences the
+  // answer's player, then delegates to the speech lane, which still owns the fresh-key rule. The
+  // wrapper carries no voice-mode gate, which is what this test protects.
+  assert.match(voiceHook, /replay: \(text, voice\) => \{\n\s*player\.stop\(\);\n\s*return speech\.replay\(text, voice\);/, "the canvas cannot offer a replay at all");
   // It names Azure because the variety is the whole point of this lane.
   assert.match(control, /provider: "azure"/);
   assert.match(control, /TARGET_LANGUAGE_SPEED/, "a drilled phrase is slowed, which teaches a rhythm the language lacks");
