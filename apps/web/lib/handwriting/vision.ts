@@ -1,8 +1,9 @@
 // Calling Gemini Vision on a photo or drawing of a learner's handwritten or hand-drawn work, and
 // turning the reply into a HandwritingObservation — never into a verdict.
 //
-// 🔴 REUSES THE EXISTING VISION PLUMBING RATHER THAN INVENTING A SECOND CLIENT. `readWithVision`
-// (lib/vision/gemini.ts) already owns the model ladder, the key lookup, the size ceiling and the
+// 🔴 REUSES THE EXISTING VISION PLUMBING RATHER THAN INVENTING A SECOND CLIENT. `readImage`
+// (lib/vision/read.ts — DeepSeek first, the Gemini ladder behind it) owns the provider choice,
+// the key lookup, the size ceiling, the spend row and the
 // "never throw, return null on infra failure" contract — the same client `/api/study/occlusion`
 // uses to turn a slide into suggested boxes. This module supplies a different prompt and a
 // different parser; it does not touch the network itself.
@@ -13,7 +14,8 @@
 
 import { jsonFrom } from "@nemesis/shared";
 
-import { readWithVision, type VisionEnv } from "@/lib/vision/gemini";
+import type { VisionEnv } from "@/lib/vision/gemini";
+import { readImage, type VisionSpend } from "@/lib/vision/read";
 
 import type { HandwritingItem, HandwritingObservation } from "./types";
 
@@ -181,6 +183,8 @@ export function parseHandwritingObservation(text: string, model: string): Handwr
 export interface HandwritingAnalysisOptions {
   env?: VisionEnv;
   signal?: AbortSignal;
+  /** Who to bill. Forwarded to the vision front door, which writes the one spend row. */
+  spend?: VisionSpend;
 }
 
 /**
@@ -198,10 +202,11 @@ export async function analyzeHandwriting(
   mimeType: string,
   options: HandwritingAnalysisOptions = {},
 ): Promise<HandwritingObservation | null> {
-  const result = await readWithVision(bytes, mimeType, {
+  const result = await readImage(bytes, mimeType, {
     env: options.env,
     prompt: HANDWRITING_OBSERVATION_PROMPT,
     signal: options.signal,
+    ...(options.spend ? { spend: options.spend } : {}),
   });
   if (!result) return null;
   return parseHandwritingObservation(result.text, result.model);

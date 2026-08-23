@@ -46,7 +46,7 @@ import { reuseStoredParse } from "@/lib/notebooks/parse-reuse";
 import { kindFor, parseDocument, sniffKind } from "@/lib/notebooks/parse-document";
 import { noTextMessage } from "@/lib/notebooks/parse-message";
 import { MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
-import { visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
+import { visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
 
 export const runtime = "nodejs";
 /** A picture-heavy lecture now costs several transcription calls in waves of
