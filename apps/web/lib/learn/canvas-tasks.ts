@@ -32,6 +32,15 @@ export const RECALL_PLACEHOLDER = "Answer…";
 export const ASK_PLACEHOLDER = "Ask Nemesis or change how you're learning…";
 
 /**
+ * What it says while Nemesis is waiting on a decision from the learner.
+ *
+ * 🔴 IT DOES NOT REPEAT THE QUESTION. The card above the composer is already asking it, and the
+ * same sentence twice on one screen reads as a rendering fault. What the learner cannot otherwise
+ * tell is that this box is wired to the card, which is the one thing this says.
+ */
+export const CLARIFY_PLACEHOLDER = "Pick one above, or say it your own way…";
+
+/**
  * Material is attached and the canvas has not begun.
  *
  * 🔴 IT NAMES THE OPTION, NOT THE OBLIGATION — UX brief §3, *"uploading without a prompt must

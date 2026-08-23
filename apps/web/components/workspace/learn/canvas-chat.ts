@@ -78,6 +78,19 @@ export interface TurnSurroundings {
   objectives: number;
   demonstrated: number;
   history: readonly TurnExchange[];
+  /** Decisions the learner already made this sitting, as facts. See `clarify-question.ts`. */
+  clarified: readonly string[];
+  /**
+   * A real question is on screen with no answer yet.
+   *
+   * 🔴 IT NEVER REACHES THE PACKET, AND THAT IS DELIBERATE — `turn-router.ts`'s header says this
+   * invariant is owned by `composerIntent` upstream and does not route through the model. It is
+   * carried here because `converse` needs it for a different decision the model has no part in:
+   * whether it may PARK this turn behind a clarification card. It may not while the learner already
+   * owes an answer, because two things awaiting an answer at once is the one shape
+   * `canvas-hosting.ts` exists to make impossible.
+   */
+  answerOwed: boolean;
 }
 
 export interface CanvasTurnReply {
@@ -188,6 +201,7 @@ export async function askCanvasChat(
     turnRouterMessages({
       context: {
         canvasTitle: canvas.title,
+        clarified: surroundings.clarified,
         demonstrated: surroundings.demonstrated,
         history: surroundings.history,
         materialContext,

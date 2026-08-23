@@ -93,6 +93,7 @@ export default function DrillPreviewPage() {
               busyLabel=""
               onAnswer={(text) => record(text, false)}
               onAsk={() => undefined}
+          onClarify={() => undefined}
               onClearSelection={() => undefined}
               onFiles={() => undefined}
               onStart={() => undefined}

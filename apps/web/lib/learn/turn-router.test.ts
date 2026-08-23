@@ -24,6 +24,7 @@ import {
 
 const EMPTY: TurnContext = {
   canvasTitle: "",
+  clarified: [],
   demonstrated: 0,
   history: [],
   lessonInProgress: false,
@@ -202,6 +203,7 @@ test("a plain decision is read", () => {
   assert.deepEqual(read, {
     milestones: [],
     needsWeb: false,
+    question: null,
     say: "hey. what are you working on?",
     then: "reply",
     topic: null,
@@ -663,4 +665,96 @@ test("🔴 it names the channel rather than a list of disciplines", () => {
 test("the model is told what must NOT go inside the token, because a synthesiser reads it literally", () => {
   const system = turnRouterMessages({ context: EMPTY, utterance: "hello" })[0]?.content ?? "";
   assert.match(system, /no quotation marks, no translation/);
+});
+
+// ── Clarification rides the envelope, and never invents a turn ──────────────
+
+test("a question is read alongside the action it parks, not instead of it", () => {
+  // 🔴 `then` KEEPS ITS MEANING. The turn is still a "study"; it simply happens after one answer.
+  // A `"clarify"` action would have made every consumer learn a third destination and then work out
+  // which of the two real ones to run once the answer landed.
+  const decision = readTurnDecision(turn({
+    question: {
+      allowOther: true,
+      id: "course-depth",
+      options: [
+        { description: "The major ideas.", id: "survey", label: "Overview" },
+        { description: "Comparable to a college course.", id: "academic", label: "Academic" },
+      ],
+      prompt: "How deep should this course go?",
+    },
+    then: "study",
+    topic: "biology",
+  }, "One thing first."));
+  assert.equal(decision?.then, "study");
+  assert.equal(decision?.question?.id, "course-depth");
+  assert.equal(decision?.question?.options.length, 2);
+});
+
+test("🔴🔴 a clarification on a \"reply\" turn is dropped — the gate is COST, not vagueness", () => {
+  // Owner, 2026-08-22: it should ask when the result is a course structure, not for "throwaway
+  // questions for a websearch". A reply produces a sentence; a sentence guessed wrong costs one
+  // more turn. A study turn builds something the learner has to throw away to escape. So the
+  // permission is tied to `then`, and it is enforced here rather than merely asked for in the
+  // contract — asking is the cheapest way for a model to look careful, and one drifting sentence in
+  // a long prompt is all it takes to put a card in front of "what is the half-life of caffeine".
+  const ask = {
+    options: [{ label: "Cell and molecular" }, { label: "Human biology" }],
+    prompt: "Which kind of biology?",
+  };
+
+  const reply = readTurnDecision(turn(
+    { question: ask, then: "reply", topic: "caffeine" },
+    "Caffeine's half-life is about five hours.",
+  ));
+  assert.equal(reply?.question, null, "a throwaway answer was held up by a card");
+  // 🔴 AND THE TURN STILL RUNS. Dropping the question must never drop the answer with it.
+  assert.equal(reply?.then, "reply");
+  assert.match(reply?.say ?? "", /five hours/);
+
+  const study = readTurnDecision(turn(
+    { question: ask, then: "study", topic: "biology" },
+    "One thing first.",
+  ));
+  assert.equal(study?.question?.options.length, 2, "a course-shaped turn lost its question");
+});
+
+test("🔴 every turn without one carries question: null, so nothing parks by accident", () => {
+  for (const raw of [
+    turn({ then: "reply", topic: null }, "Hello."),
+    turn({ question: null, then: "study", topic: "immunity" }, "Right."),
+    turn({ question: { prompt: "Which one?" }, then: "study" }, "Right."),
+    turn({ question: { options: [{ label: "Only one" }], prompt: "Which?" }, then: "study" }, "Hi"),
+  ]) {
+    assert.equal(readTurnDecision(raw)?.question ?? null, null, `${raw} parked a turn`);
+  }
+});
+
+test("🔴 a question alone is not a decision — a parked turn needs a turn behind it", () => {
+  assert.equal(
+    readTurnDecision(turn({ question: { options: [{ label: "A" }, { label: "B" }], prompt: "Which?" } }, "")),
+    null,
+  );
+});
+
+test("🔴 prose never becomes a card", () => {
+  // A model that answered in prose asked for nothing. Manufacturing a question from text nobody
+  // parsed would park a turn behind a choice the model never offered.
+  const decision = decisionOrReply("Overview, Academic or Deep — which would you like?");
+  assert.equal(decision?.then, "reply");
+  assert.equal(decision?.question, null);
+});
+
+test("the contract tells the model when NOT to ask, and caps how much it may ask", () => {
+  const contract = turnRouterMessages({ context: EMPTY, utterance: "teach me Python" })
+    .at(-1)?.content ?? "";
+  assert.match(contract, /"question"/);
+  assert.match(contract, /Use\s+null on nearly every turn/);
+  assert.match(contract, /Ask at most one question/);
+  assert.match(contract, /Two to four options/);
+  // 🔴 THE COST GATE IS SPELLED OUT TO THE MODEL TOO, NOT ONLY ENFORCED BEHIND IT. A model that
+  // believes it may ask on any turn writes cards that are silently binned, and the sentence it
+  // wrote to introduce them ("One thing first.") arrives with nothing behind it.
+  assert.match(contract, /ONLY EVER ASK ON A "study" TURN/);
+  assert.match(contract, /half-life of caffeine/);
 });

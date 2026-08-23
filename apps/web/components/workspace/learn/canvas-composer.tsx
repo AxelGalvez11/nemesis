@@ -49,7 +49,12 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
 import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model";
 import { endsPushToTalk, isTypingTarget, startsPushToTalk } from "@/lib/learn/canvas-hotkeys";
-import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
+import {
+  ACCEPTED_MATERIAL,
+  ASK_PLACEHOLDER,
+  CLARIFY_PLACEHOLDER,
+  START_WITH_MATERIAL_PLACEHOLDER,
+} from "@/lib/learn/canvas-tasks";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
 import { cn } from "@/lib/utils";
 
@@ -100,6 +105,16 @@ interface CanvasComposerProps {
    * composer-intent.ts for the full account and for why `answer` outranks `start`.
    */
   intent: ComposerIntent;
+  /**
+   * Nemesis asked the learner a question about what to build, and they typed rather than tapped.
+   *
+   * 🔴🔴 REQUIRED, NOT OPTIONAL, AND THAT IS THE POINT. An optional handler would let a call site
+   * mount this component with a clarification live and no route for it, and the submission would
+   * fall through to `onAsk` — a brand new conversational turn, the pending question still on
+   * screen, and the learner's answer read as a fresh question. Presence is not meaning (see
+   * `onStart`); this is required so the compiler asks every caller where a clarification goes.
+   */
+  onClarify: (text: string) => void;
   busy: boolean;
   busyLabel?: string;
   /**
@@ -186,6 +201,7 @@ interface CanvasComposerProps {
 const MAX_COMPOSER_HEIGHT = 160;
 
 export function CanvasComposer({
+  onClarify,
   selected,
   onClearSelection,
   onAsk,
@@ -361,6 +377,11 @@ export function CanvasComposer({
     // every canvas with a question staged on attached material, and it silently outranked a real
     // answer to a real question. `answer-is-not-a-start.test.ts` fails if the precedence returns.
     if (intent.kind === "answer") onAnswer(value, inputModality.current, Date.now() - startedAt.current);
+    // 🔴🔴 BEFORE `onAsk`, AND WITHOUT THIS LINE THE CARD IS DECORATION. `onAsk` opens a fresh
+    // conversational turn: the learner's "academic" would be read as a new question, the pending
+    // card would still be on screen, and the turn it was holding would never finish. The intent
+    // already knows which of the two this is — the composer must not re-derive it.
+    else if (intent.kind === "clarify") onClarify(value);
     else if (intent.kind === "start") onStart(value);
     else onAsk(value);
     modalityEvent({ kind: "submitted" });
@@ -818,7 +839,12 @@ export function CanvasComposer({
                           ? START_WITH_MATERIAL_PLACEHOLDER
                           : intent.kind === "answer"
                             ? (intent.task.placeholder || ASK_PLACEHOLDER)
-                            : ASK_PLACEHOLDER
+                            : // 🔴 IT SAYS WHAT SENDING DOES RIGHT NOW. The card above already asks
+                              // the question, so repeating it here would be the same sentence twice;
+                              // what the learner cannot see is that this box is wired to it.
+                              intent.kind === "clarify"
+                              ? CLARIFY_PLACEHOLDER
+                              : ASK_PLACEHOLDER
                   }
                   ref={input}
                   rows={1}
