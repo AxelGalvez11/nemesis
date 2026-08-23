@@ -378,25 +378,21 @@ export function BloubDock({
       {marker && (
         <span
           aria-hidden="true"
-          className="bloub-marker pointer-events-none absolute left-1/2 bottom-full flex items-center justify-center rounded-full font-semibold leading-none select-none"
+          className="bloub-mark pointer-events-none absolute left-1/2 bottom-full font-extrabold leading-none select-none"
           style={{
-            // 🔴🔴 THE CHARACTER'S OWN COLOUR, FROM THE FUNCTION THE CHARACTER USES. Reported
-            // 2026-08-21: *"the mascot has a random question mark that isnt in purple like the
-            // mascot."* It was `--ui-text-tertiary` — page grey — so the one thing sitting on the
-            // mascot's head was the one thing that did not belong to it, and it read as a stray
-            // glyph on the page rather than as the character signalling. `inkFor` is what
-            // `BloubBot` paints its body with, so this cannot drift from it: not across themes,
-            // and not across the accents the learner can choose.
-            backgroundColor: inkFor(accent, theme),
+            // 🔴🔴 A GLYPH IN THE CHARACTER'S OWN INK, NOT A COIN (owner 2026-08-24: "I didn't
+            // want a circle around the exclamation mark or the question mark"). The filled disc
+            // read as a badge stuck onto the scene; the bare glyph in `inkFor` — the same
+            // function the body is painted with — reads as the creature itself signalling, and
+            // it cannot drift from the body across themes or accents. Its ARRIVAL is the
+            // animation (owner: "it's supposed to be an animation"): pop in with a small
+            // overshoot, then bob gently while the state holds — see `.bloub-mark` in bloub.css.
+            color: inkFor(accent, theme),
             // 🔴 COUNTER-SCALED, the same reason the caption is. The dock grows to `centreScale`
-            // when the character comes forward to think, and a badge that grew with it became a
+            // when the character comes forward to think, and a mark that grew with it became a
             // page-sized question mark floating above the middle of the screen.
-            color: "var(--ui-bg-elevated)",
-            fontSize: `${Math.round(size * 0.26) / travel.k}px`,
-            height: `${Math.round(size * 0.42) / travel.k}px`,
-            marginBottom: `${6 / travel.k}px`,
-            transform: "translateX(-50%)",
-            width: `${Math.round(size * 0.42) / travel.k}px`,
+            fontSize: `${Math.round(size * 0.46) / travel.k}px`,
+            marginBottom: `${4 / travel.k}px`,
           }}
         >
           {marker}

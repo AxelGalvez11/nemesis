@@ -177,6 +177,7 @@ export function BloubBot({
   const browRefs = useRef<(SVGPathElement | null)[]>([]);
   const lensRefs = useRef<(SVGPathElement | null)[]>([]);
   const armRefs = useRef<(SVGPathElement | null)[]>([]);
+  const handGroupRef = useRef<SVGGElement | null>(null);
   const bridgeRef = useRef<SVGPathElement | null>(null);
   const mouthRef = useRef<SVGPathElement | null>(null);
   const notchRef = useRef<SVGCircleElement | null>(null);
@@ -204,8 +205,8 @@ export function BloubBot({
 
   // Resolved once per render and read by the loop, so the loop never re-subscribes.
   const ink = inkFor(color, typeof document !== "undefined" ? document.documentElement.dataset.theme : undefined);
-  const live = useRef({ ink, paper: paper ?? "", speed, track, aimAt, entrance, face });
-  live.current = { ink, paper: paper ?? "", speed, track, aimAt, entrance, face };
+  const live = useRef({ ink, paper: paper ?? "", speed, track, aimAt, entrance, face, hand });
+  live.current = { ink, paper: paper ?? "", speed, track, aimAt, entrance, face, hand };
 
   /**
    * Writes one frame onto the DOM.
@@ -214,7 +215,17 @@ export function BloubBot({
    * members are parked at `display: none` rather than removed, so the node count is
    * constant for the lifetime of the component.
    */
-  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null) => {
+  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null, handId: "point" | null) => {
+    const handGroup = handGroupRef.current;
+    if (handGroup) {
+      if (handId === "point") {
+        handGroup.style.display = "";
+        handGroup.setAttribute("fill", paperHex);
+        handGroup.setAttribute("stroke", inkHex);
+      } else {
+        handGroup.style.display = "none";
+      }
+    }
     maskBodyRef.current?.setAttribute("d", frame.bodyPath);
     paperBodyRef.current?.setAttribute("d", frame.bodyPath);
     paperBodyRef.current?.setAttribute("fill", paperHex);
@@ -502,10 +513,10 @@ export function BloubBot({
     // 🔴 HELD AT ITS CHARACTERISTIC INSTANT, NOT FROZEN AT ZERO. Every animation
     // publishes the moment it reads best (`POSES`), and holding that is what keeps
     // `thinking` legible as three dots rather than as a ball caught before it split.
-    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null, face, null);
+    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null, face, null, hand);
     // Redrawn whenever the look changes, since nothing else will redraw it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [still, frozenAt, state, color, expression, paper, face]);
+  }, [still, frozenAt, state, color, expression, paper, face, hand]);
 
   useLayoutEffect(() => {
     if (still) return;
@@ -591,6 +602,7 @@ export function BloubBot({
         from === null ? null : clockRef.current - from,
         live.current.face,
         faceFromRef.current === null ? null : clockRef.current - faceFromRef.current,
+        live.current.hand,
       );
     };
 
@@ -732,15 +744,23 @@ export function BloubBot({
         </g>
       </g>
 
-      {/* The pointing hand — see the prop's note. A short arm welded over the body's edge,
-          a round mitt, one finger. All ink, so it stays the same creature in every theme. */}
-      {hand === "point" && (
-        <g fill={ink}>
-          <path d={capsulePath(26, 9)} transform="translate(72,-60) rotate(-42)" />
-          <circle cx={87} cy={-73} r={11} />
-          <path d={capsulePath(20, 7)} transform="translate(99,-87) rotate(-42)" />
-        </g>
-      )}
+      {/* 🔴 THE GLOVE (owner 2026-08-24: "the classic white glove, like in the cartoons, but
+          minimalist"). Paper-filled with an ink outline, so it flips with the theme exactly as
+          the face does — and the OVERLAPPING outlines are the drawing: where cuff meets palm
+          and palm meets finger, the strokes cross and read as the glove's own seams. It reaches
+          outside the silhouette, so it cannot be a mask hole; it is painted in front, in the
+          frame's own ink and paper, per frame. Prototype: wired only on the review board. */}
+      <g
+        ref={handGroupRef}
+        strokeWidth={3.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ display: "none" }}
+      >
+        <path d={capsulePath(16, 9)} transform="translate(70,-57) rotate(-42)" />
+        <circle cx={86} cy={-72} r={12.5} />
+        <path d={capsulePath(22, 8)} transform="translate(101,-87) rotate(-42)" />
+      </g>
 
       {/* Every other dot — the thinking trio, the tear of the "!" — sits in front. */}
       <g>

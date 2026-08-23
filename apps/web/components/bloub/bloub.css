@@ -135,13 +135,39 @@
   100% { transform: rotate(360deg) scale(1); }
 }
 
+/*
+ * The mark over its head — ? while Nemesis waits on an answer, ! for a heads-up.
+ *
+ * 🔴 A GLYPH THAT ARRIVES, NOT A STICKER (owner 2026-08-24). It pops in with a small
+ * overshoot — same spring family as the poke gestures — then bobs gently for as long as
+ * the state holds, so a waiting question keeps feeling alive without shouting.
+ */
+.bloub-mark {
+  transform: translateX(-50%);
+  animation:
+    bloub-mark-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    bloub-mark-bob 2200ms ease-in-out 380ms infinite;
+  will-change: transform;
+}
+
+@keyframes bloub-mark-in {
+  0% { opacity: 0; transform: translateX(-50%) translateY(35%) scale(0.4); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+@keyframes bloub-mark-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-9%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* 🔴 REMOVED, NOT SHORTENED, AND THAT DIFFERS FROM THE DOCK ABOVE. The dock's travel carries
      information — where the character stands says whether Nemesis has taken the floor — so it
      is only made quicker. A hop carries none: it is a reply to a poke, and the wink in the
      same cycle still answers one. */
   .bloub-jump,
-  .bloub-spin {
+  .bloub-spin,
+  .bloub-mark {
     animation: none;
   }
 }

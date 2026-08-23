@@ -81,7 +81,7 @@ export default function MascotLanguagePage() {
       <section className="flex flex-wrap items-end gap-10">
         <figure className="flex flex-col items-center gap-3">
           <BloubBot frozenAt={1} hand="point" size={168} state="idle" />
-          <figcaption className="text-xs text-(--ui-text-secondary)">Pointing — hand prototype</figcaption>
+          <figcaption className="text-xs text-(--ui-text-secondary)">Pointing — the glove (prototype)</figcaption>
         </figure>
         {/* The marks ride the dock, exactly as they do in the product — same colour rule,
             same counter-scaling. The "?" already ships; the "!" is here for approval. */}
@@ -97,6 +97,19 @@ export default function MascotLanguagePage() {
           </div>
           <figcaption className="text-xs text-(--ui-text-secondary)">Heads-up — the ! (new, unwired)</figcaption>
         </figure>
+      </section>
+
+      <section className="max-w-xl">
+        <h2 className="text-sm font-medium text-(--ui-text-primary)">What plays when</h2>
+        <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-(--ui-text-secondary)">
+          <li>Documents drop in, or sources are searched → the glasses go on.</li>
+          <li>Nemesis is thinking → it walks to the middle and the words light up beside it.</li>
+          <li>Nemesis asks you a question → the ? pops in over its head and bobs until you answer.</li>
+          <li>You click into a field or start typing → its eyes go to where you are working.</li>
+          <li>The answer arrives → it reads its own words for a beat, then comes back to you.</li>
+          <li>You poke it → jump, waggle, spin, sigma, wink — in that order.</li>
+          <li>Nothing is happening → it follows your cursor and blinks.</li>
+        </ul>
       </section>
 
       <section className="flex flex-wrap items-end gap-14">
