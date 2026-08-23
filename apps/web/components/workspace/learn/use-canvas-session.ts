@@ -1554,10 +1554,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
       // ── The teaching loop ────────────────────────────────────────────────
       //
-      // 🔴 This is the step that makes the canvas adaptive rather than a graded quiz. The
-      // decision is deterministic — the evaluation already says what was demonstrated, what was
-      // missing and which false belief appeared, so no second model call is spent working out
-      // what to do. A model is used only to WRITE the correction, once the action is chosen.
+      // 🔴 This is the step that makes the canvas adaptive rather than a graded quiz.
+      //
+      // 🔴🔴 THE DECISION IS THE JUDGE'S, NOT A LADDER'S (owner 2026-08-22: "deepseek needs to
+      // pick the next move"). This comment used to say "the decision is deterministic" and
+      // described an `if` ladder over verdict and confidence. The move now arrives ON the
+      // evaluation — chosen by the model that read the answer — and `determineNextCognitiveAction`
+      // enforces only what that model cannot see from one reply: a revealed answer, a missing
+      // reading, the attempt cap, and a move with an empty list to act on.
+      //
+      // 🔴 WHAT IS UNCHANGED IS THE COST. There is still no second model call: the move rides home
+      // on the evaluation that had to be made anyway, so this stays one call to read and one to
+      // WRITE the correction, exactly as before.
       const objectiveId = question.conceptId;
       const action = determineNextCognitiveAction({
         evaluation,
