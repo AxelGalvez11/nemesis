@@ -26,6 +26,7 @@ const EMPTY: TurnContext = {
   canvasTitle: "",
   demonstrated: 0,
   history: [],
+  courseRequested: false,
   lessonInProgress: false,
   materialContext: "",
   objectives: 0,
@@ -200,6 +201,10 @@ test("a plain decision is read", () => {
   // shipped yet" to every reader, and `previewWorthShowing` reads the length to decide whether this
   // turn gets a thinking preview at all. A greeting is exactly the turn that must not.
   assert.deepEqual(read, {
+    // `curriculumFor` joins the always-present set for the same reason the web fields did: a turn
+    // that asked for no course must say so in the object, because the canvas reads it as the
+    // condition for applying a plan and `undefined` there is indistinguishable from "not shipped".
+    curriculumFor: null,
     milestones: [],
     needsWeb: false,
     say: "hey. what are you working on?",

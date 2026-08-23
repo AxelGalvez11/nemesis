@@ -24,6 +24,7 @@ import { MinimapControl, OptionsControl, SourcesControl } from "./canvas-control
 import type { AutoDictation, VoiceMode } from "@/lib/learn/voice-preferences";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
+import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
 import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 
 interface CanvasHeaderProps {
@@ -42,6 +43,9 @@ interface CanvasHeaderProps {
    *  reach into runtime internals it does not need. */
   minimap: Pick<PolicyRuntime, "coverage" | "evidence" | "focus" | "outcome" | "setFocus" | "territories"> & {
     decidedObjectiveKey: string | null;
+    /** The course, projected — see MinimapControl's own prop comment. Null on most canvases. */
+    plan: readonly PlanTerritory[] | null;
+    planTitle: string | null;
   };
   /** Whether this canvas holds knowledge that provably came from the model rather than from
    *  attached material — disclosed in the Sources panel so a sourceless canvas does not report
@@ -126,6 +130,8 @@ export function CanvasHeader({
             evidence={minimap.evidence}
             focus={minimap.focus}
             outcome={minimap.outcome}
+            plan={minimap.plan}
+            planTitle={minimap.planTitle}
             setFocus={minimap.setFocus}
             territories={minimap.territories}
           />

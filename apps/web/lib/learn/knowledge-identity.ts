@@ -77,8 +77,20 @@ export function normalizeForIdentity(text: string): string {
  * A hash rather than the text itself because a definition can be a paragraph, and a key that long
  * is a poor database index and an unreadable log line. It is not a security boundary: nothing is
  * being hidden, and nothing is trusted because of it.
+ *
+ * 🔴 EXPORTED SO THERE IS ONE OF IT, NOT SO IT IS GENERAL. `concept-identity.ts` mints keys for the
+ * canonical concept registry and needs the same hash; copying sixteen lines of arithmetic would
+ * produce two functions that agree today and drift the first time either is touched, and the
+ * disagreement would be invisible — both return sixteen hex characters either way. This repo has
+ * already paid for two hand-maintained copies of one rule more than once (see `ACCEPTED_MATERIAL`
+ * in canvas-tasks.ts, kept in step with `IMAGE_EXTENSIONS` by hand and guarded because of it).
+ *
+ * 🔴 EXPORTING THE HASH IS NOT EXPORTING THE IDENTITY. `knowledgeIdentityKey` remains the sole
+ * identity of a CLAIM and nothing outside this file may compute one. A caller that hashes its own
+ * basis string is minting an identity in a DIFFERENT namespace, which is exactly what the concept
+ * registry does and exactly why it may not reuse `identityBasis`.
  */
-function fnv1a64(text: string): string {
+export function fnv1a64(text: string): string {
   const PRIME = 0x100000001b3n;
   const MASK = 0xffffffffffffffffn;
   let hash = 0xcbf29ce484222325n;

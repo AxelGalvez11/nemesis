@@ -24,6 +24,7 @@
 // path does not have.
 
 import { needsReprocess, type ReprocessReason, type ReprocessVerdict } from "./reprocess";
+import { readCurriculumPlan, type CurriculumPlan } from "./curriculum-plan";
 import type { KnowledgeObject } from "./knowledge-types";
 
 /**
@@ -91,6 +92,20 @@ export interface CanvasTerritory {
   mechanismsUnder?: string;
   /** The MATERIAL `mechanismsUnder` was read over — see `MaterialStamp`. Absent means unknown. */
   mechanismsOver?: MaterialStamp;
+  /**
+   * The COURSE this canvas is working through, when the learner asked for one.
+   *
+   * 🔴 ON THE MARKER, NOT IN A NEW COLUMN, AND THE PLACEMENT IS A RULING. A second jsonb column
+   * with its own marker triple and its own reuse predicate would be a second independent retry
+   * system — banned above in bold — and `canvas-knowledge.ts` had already filed the remedy for
+   * multi-subject work in these words: "making it right needs THE MARKER to hold an accumulating
+   * set of subjects". One marker, one `markerStands`, one `force`.
+   *
+   * 🔴 SCOPE, NEVER STATE. It says where this canvas is going. It carries no progress, no mastery
+   * and no acquisition flags — those are computed where they can be changed (`resolvePlanScope`,
+   * `projectLearnerState`). Absent on every canvas without a course, which is almost all of them.
+   */
+  plan?: CurriculumPlan;
   /**
    * Set ONLY when a completed build produced nothing — the rules it produced nothing UNDER.
    *
@@ -319,6 +334,13 @@ export function territoryReuse(input: {
   const { force, identityVersion, material, rules, stored } = input;
   if (!stored) return { miss: "never-built", reuse: false };
   if (stored.identityVersion !== identityVersion) return { miss: "identity-version-changed", reuse: false };
+  // 🔴 A PLAN-BEARING PRE-TERRITORY IS A MISS, STATED HERE RATHER THAN LEFT TO `readTerritory`.
+  // Historically an empty unstamped row could not reach this function at all — the reader refused
+  // it — so the fall-through below could safely treat "exists, right version, not empty-stamped"
+  // as built. A course applied before the first build makes that shape real: it carries scope and
+  // no material, and reusing it would lock the canvas at zero objectives for ever, insisting it
+  // had been built. The plan is scope; it is never evidence that anything was constructed.
+  if (stored.objects.length === 0 && !stored.emptyUnder) return { miss: "never-built", reuse: false };
   // 🔴 CHECKED BEFORE THE HIT, BECAUSE AN EMPTY TERRITORY WOULD OTHERWISE READ AS A SUCCESSFUL ONE.
   // The identity check comes first on purpose: rules that moved matter less than keys that no longer
   // converge, and a version rebuild should not be pre-empted by a stale empty marker.
@@ -408,7 +430,13 @@ export function readTerritory(value: unknown): CanvasTerritory | null {
   if (typeof row.identityVersion !== "number" || !Number.isFinite(row.identityVersion)) return null;
   if (!Array.isArray(row.objects)) return null;
   const emptyUnder = typeof row.emptyUnder === "string" && row.emptyUnder.trim() ? row.emptyUnder : null;
-  if (row.objects.length === 0 && !emptyUnder) return null;
+  // 🔴 A PLAN-BEARING PRE-TERRITORY IS THE ONE VALID EMPTY-AND-UNSTAMPED SHAPE. A course can be
+  // applied to a canvas whose territory has not been built yet (`applyCurriculumPlan`), and the
+  // plan has to survive that gap or it is written and never read back. `territoryReuse` still
+  // reports this shape as a MISS — the plan is scope, never a claim that anything was built — so
+  // the corrupt-row protection this line has always provided is unchanged for rows without one.
+  const storedPlan = readCurriculumPlan((row as { plan?: unknown }).plan);
+  if (row.objects.length === 0 && !emptyUnder && !storedPlan) return null;
   // 🔴 A NON-EMPTY LIST NEVER CARRIES THE STAMP. Both together would be a row claiming to be both a
   // territory and the absence of one, and every consumer would have to pick which half to believe.
   if (row.objects.length > 0 && emptyUnder) return null;
@@ -420,11 +448,18 @@ export function readTerritory(value: unknown): CanvasTerritory | null {
   // one more read, never a wrongly-honoured "we already looked".
   const emptyOver = readMaterialStamp(row.emptyOver);
   const mechanismsOver = readMaterialStamp(row.mechanismsOver);
+  // 🔴 THE PLAN NEEDS ITS OWN LINE IN THE RECONSTRUCTION OR IT IS WRITTEN AND NEVER READ BACK.
+  // This function rebuilds its return value field by field and silently drops anything it does not
+  // name — the same hand-written-list trap as `canvasToRow`, one level down. A malformed plan reads
+  // as absent (see `readCurriculumPlan`), which costs the Minimap its course view for one load and
+  // never renders a curriculum with silent holes.
+  const plan = storedPlan;
   return {
     ...(emptyUnder ? { emptyUnder } : {}),
     ...(emptyOver ? { emptyOver } : {}),
     ...(mechanismsUnder ? { mechanismsUnder } : {}),
     ...(mechanismsOver ? { mechanismsOver } : {}),
+    ...(plan ? { plan } : {}),
     identityVersion: row.identityVersion,
     objects: row.objects as KnowledgeObject[],
     topic: row.topic,

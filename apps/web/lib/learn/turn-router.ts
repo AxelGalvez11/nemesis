@@ -178,6 +178,26 @@ export interface TurnDecision {
    * rides in `say`. Empty on nearly every turn.
    */
   visuals: readonly CanvasVisualRequest[];
+  /**
+   * The subject the learner asked to have PLANNED OUT as a persistent course, as opposed to asked
+   * about. Null on almost every turn.
+   *
+   * 🔴 NOT A FOURTH `TurnAction`, AND THAT IS THE WHOLE SAFETY ARGUMENT. `asAction` stays a
+   * three-value whitelist and `readTurnDecision`'s fallback stays `reply` — a field that FORCED
+   * `study` would be a bypass wearing a hint's clothes. A course request usually rides a `study`
+   * turn, and the canvas applies the plan AFTER doing exactly what the turn would have done anyway,
+   * which is what keeps it a scope change rather than a mode.
+   *
+   * 🔴 A SUBJECT, NOT AN INSTRUCTION. No operation, no difficulty, no strategy, no task form, no
+   * surface and no engine name may ever ride here. If its effect can be described as "run the
+   * policy differently", it is the arm picker this file's header forbids.
+   *
+   * 🔴 SET BY THE MODEL READING THE SENTENCE, never by a scanner. The learner can reach it two
+   * ways — the composer's Course capability (an explicit declaration in the packet) or plain
+   * language ("I want to spend next month learning organic chemistry properly") — and both are the
+   * model's reading. There is no "build me a course" regex and there must never be one.
+   */
+  curriculumFor: string | null;
 }
 
 /** Everything the canvas already knows, stated as facts for the model to reason over. */
@@ -212,6 +232,17 @@ export interface TurnContext {
    * and putting one in a prompt would leak vocabulary the model would then try to speak.
    */
   lessonInProgress: boolean;
+  /**
+   * The learner attached the Course capability to THIS submission — an explicit declaration that
+   * they want a persistent learning path, made at the composer boundary the way a file is attached.
+   *
+   * 🔴 A FACT ABOUT THE REQUEST, NOT AN OVERRIDE. `lessonInProgress` is the template: a broad fact
+   * belongs in the packet, and what it MEANS stays the model's reading. The declaration removes
+   * ambiguity about what the learner wanted; it does not remove the model's judgement about whether
+   * it can be done — an ambiguous subject still comes back as a question, and a bare category still
+   * gets the WHICH-SUBJECT refusal.
+   */
+  courseRequested: boolean;
   /** Objectives this canvas holds, and how many the learner has demonstrated. */
   objectives: number;
   demonstrated: number;
@@ -640,6 +671,19 @@ const DECISION_CONTRACT = [
   + "questions about the past, where a narrow window would hide the source that actually explains "
   + "it. When in doubt, null: an old page you can judge beats no page at all.",
   "",
+  // 🔴 A SUBJECT THE PLANNER CAN LOOK UP, NOT A RESTATEMENT OF THE SENTENCE. The same reason
+  // `topic` is "the model's subject or nothing": a canvas called "teach me innate immunity" is the
+  // measured failure this vocabulary exists to prevent.
+  '"curriculumFor" names the subject when the learner is asking for a COURSE — a persistent '
+  + "learning path through a subject over time — rather than an answer or a single lesson. Two "
+  + "ways you will see that: the canvas facts say they attached Course to this message, or their "
+  + "own words ask for one (learning something properly over weeks, preparing for a named course "
+  + 'of study, "make me a plan for…"). Name the subject the path should cover, as a subject '
+  + '("organic chemistry"), never their sentence back at them. It rides WITH your other answers: '
+  + 'a course request is usually also "study". The WHICH-SUBJECT rule applies here unchanged — a '
+  + "category with no member chosen is a question back, not a plan — and if they asked an ordinary "
+  + "question, this is null however the message arrived.",
+  "",
   // 🔴🔴 AN ORDERED PROCEDURE, NOT A PILE OF MAXIMS, AND THE ORDER IS MEASURED. Three earlier
   // drafts each fixed one direction and broke the other, because the two rules genuinely conflict
   // for a broad request:
@@ -746,6 +790,16 @@ export function stateBlock(context: TurnContext): string {
       : "The study document is empty, so this canvas has not begun teaching.",
   );
   if (context.lessonInProgress) lines.push("A lesson is in progress on this canvas right now.");
+  if (context.courseRequested) {
+    // 🔴 LEARNER-FACING PROSE, NO INTERNAL IDENTIFIERS — the same rule the whole block obeys, and
+    // turn-router.test.ts pins. "Course" is the word on the chip the learner pressed, so it is
+    // their vocabulary, not ours.
+    lines.push(
+      "The learner attached Course to this message: they are explicitly asking for a persistent "
+      + "learning path through a subject, not a one-off answer. Read their message as naming what "
+      + "that path should cover.",
+    );
+  }
   if (context.webContext.trim()) {
     lines.push(
       context.searchesLeft > 0
@@ -908,6 +962,10 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // Passed through as text; which windows exist belongs to the search function, which is the one
     // place that talks to the provider. Same contradiction rule: no search, no window.
     webFreshness: parsed.needsWeb === true ? asText(parsed.webFreshness) || null : null,
+    // 🔴 A SUBJECT OR NOTHING, AND IT FORCES NO ACTION. `then` above was already decided before
+    // this line runs, and nothing here can change it — which is what keeps this a request the
+    // canvas may act on rather than a fourth action smuggled around `asAction`'s whitelist.
+    curriculumFor: asText(parsed.curriculumFor) || null,
   };
 }
 
@@ -940,10 +998,10 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { milestones: [], needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
-  return { milestones: [], needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

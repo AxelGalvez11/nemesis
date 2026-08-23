@@ -30,6 +30,11 @@ import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
 import type { TurnSurroundings } from "./canvas-chat";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
+import type { ComposerCapability } from "@/lib/learn/composer-capability";
+import { planTerritories } from "@/lib/learn/curriculum-plan";
+
+/** The capabilities this surface offers. Module-level so the array's identity is stable. */
+const COURSE_CAPABILITY: readonly ComposerCapability[] = ["course"];
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
@@ -435,8 +440,26 @@ export function LearningCanvas({
    * the conversation so far and everything the canvas knows go to the model, and what comes back
    * says both what to say and what to do. See lib/learn/turn-router.ts.
    */
+  /**
+   * The one-shot capability staged on the NEXT submission, or null.
+   *
+   * 🔴 CLEARED BY THE COMPOSER'S OWN SUBMIT, PER §38's AMENDMENT (owner, 2026-08-23): a capability
+   * declares what one submission IS and must never become a persistent teaching mode. It lives
+   * here rather than in the composer so the submission handlers receive it as an argument — the
+   * same pipeline as the text, never a second path.
+   */
+  const [capability, setCapability] = useState<ComposerCapability | null>(null);
+
+  /** The course's Minimap projection, or null on the ordinary canvas. Resolution runs against the
+   *  policy's own resolved objectives, so "no material yet" is computed where it can change —
+   *  never stored (non-goal 9). */
+  const planRows = useMemo(
+    () => (session.coursePlan ? planTerritories(session.coursePlan, policy.objectives) : null),
+    [policy.objectives, session.coursePlan],
+  );
+
   const converse = useCallback(
-    async (asked: string, staged: CanvasBlock | null = null) => {
+    async (asked: string, staged: CanvasBlock | null = null, withCapability: ComposerCapability | null = null) => {
       const trimmed = asked.trim();
       if (!trimmed) return null;
       const decision = await session.converse(trimmed, surroundings(), () => {
@@ -444,7 +467,7 @@ export function LearningCanvas({
         // moves on. The action in flight is stamped rather than a bare `true`, which is what makes
         // attention return by itself; see `materialOwnsAttention`.
         setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
-      }, staged);
+      }, staged, withCapability);
       remember({ replied: decision?.say ?? "", said: trimmed });
       return decision;
     },
@@ -452,17 +475,24 @@ export function LearningCanvas({
   );
 
   const beginOrAnswer = useCallback(
-    (asked: string) => {
+    (asked: string, withCapability: ComposerCapability | null = null) => {
       applyExplanationEvent({ kind: "new_turn" });
       const trimmed = asked.trim();
       // An empty send with material staged is "learn this material with me", which is not an
       // utterance at all — there is nothing for the model to read, and the composer's own chips
-      // already said what the send means.
+      // already said what the send means. 🔴 A capability cannot arrive here: the composer refuses
+      // the empty send while one is staged (`canStartFromAttachment`), because a declaration with
+      // no words attached would have to be silently dropped — the exact argument-drop this
+      // signature exists to end.
       if (!trimmed) {
         session.begin(undefined);
         return;
       }
-      void converse(trimmed);
+      // 🔴 THE CAPABILITY RIDES THE SAME CALL AS THE WORDS. This function used to take `(asked)`
+      // alone, so anything the composer attached to the submission was dropped on the one canvas
+      // the Course capability exists for — a fresh one. Structured intent and text travel together
+      // or the pipeline has two doors again.
+      void converse(trimmed, null, withCapability);
     },
     [applyExplanationEvent, converse, session],
   );
@@ -519,7 +549,7 @@ export function LearningCanvas({
   );
 
   const submit = useCallback(
-    async (text: string) => {
+    async (text: string, withCapability: ComposerCapability | null = null) => {
       // 🔴 CONTRACT RULE 2 — "normal chat responses may remain only until the next turn." Fired
       // ONCE, before any branch below, so every route out of this function (explain-this, scoped
       // edit, rewrite, refused, ordinary) gets it for free rather than five branches each needing
@@ -564,7 +594,7 @@ export function LearningCanvas({
       // — and answered it three different ways. Now the model answers it once, with the staged
       // passage in the packet so "this" has something to resolve against, and the canvas decides
       // what each answer is allowed to do. See lib/learn/turn-router.ts.
-      const decision = await converse(text, only);
+      const decision = await converse(text, only, withCapability);
 
       if (decision?.then === "rewrite") {
         // 🔴 THE REFERENT IS READ, NEVER GUESSED — see canvas-phrases.ts. "Most recent block" and
@@ -1061,6 +1091,10 @@ export function LearningCanvas({
           evidence: policy.evidence,
           focus: policy.focus,
           outcome: policy.outcome,
+          // 🔴 THE COURSE, RESOLVED AGAINST WHAT THIS CANVAS ACTUALLY HOLDS — see `planRows` above.
+          // Null on the ordinary canvas, in which case the panel is exactly what it was yesterday.
+          plan: planRows,
+          planTitle: session.coursePlan?.title ?? null,
           setFocus: policy.setFocus,
           territories: policy.territories,
         }}
@@ -1654,7 +1688,7 @@ export function LearningCanvas({
           // moved the learner past material; it is a `Continue` below that material now, because
           // §38 allows exactly one button and §39 makes the trigger the policy's declared cognitive
           // mode rather than anything the composer can observe.
-          onAsk={(text) => void submit(text)}
+          onAsk={(text, chosen) => void submit(text, chosen)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}
           // 🔴 "Record a lecture" IS HIDDEN, NOT DELETED. Owner call, 2026-08-20: "remove the
@@ -1694,6 +1728,13 @@ export function LearningCanvas({
           // for that would be handing it everything it needs to start drawing them again.
           attachedCount={canvas.sources.length}
           selected={selected}
+          // 🔴 ONE CAPABILITY OFFERED, AND ONLY THE COMPOSER CLEARS IT. §38's amendment (owner,
+          // 2026-08-23) permits one-shot capabilities that declare what the next submission IS;
+          // Course is the first. The state lives above so the submission handlers receive it as an
+          // argument — same pipeline as the text.
+          capabilities={COURSE_CAPABILITY}
+          capability={capability}
+          onCapability={setCapability}
         />
       )}
     </CanvasSurface>

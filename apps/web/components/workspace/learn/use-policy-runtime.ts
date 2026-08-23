@@ -25,7 +25,7 @@ import { teachingExperimentStartedAt } from "@/lib/env";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { evaluateLearningResponse } from "@/lib/learn/canvas-api";
 import type { CanvasSource, LearnerInputModality, LearningCanvas, ResponseEvaluation } from "@/lib/learn/canvas-model";
-import { ensureKnowledgeForCanvas, type CanvasKnowledge } from "@/lib/learn/canvas-knowledge";
+import { ensureKnowledgeForCanvas, type CanvasKnowledge, type ResolvedObjective } from "@/lib/learn/canvas-knowledge";
 import {
   applyFocus,
   availableTerritories,
@@ -134,6 +134,17 @@ export interface PolicyRuntime {
    * provenance statement must not quietly narrow with it.
    */
   claims: readonly KnowledgeObject[];
+  /**
+   * Every resolved objective this canvas holds — the pairing `claims` is derived FROM.
+   *
+   * 🔴 EXPOSED FOR THE COURSE PLAN'S RESOLUTION AND NOTHING ELSE YET. `resolvePlanScope` needs the
+   * objective's `identityKey` BESIDE its knowledge — `claims` alone cannot say which objective a
+   * recognised knowledge object mints, and re-deriving the pairing outside would be a second copy
+   * of `knowledge.objectives`. Same width as `claims` (see that comment: today `supported` filters
+   * nothing), and the same caveat travels with it: this is what minted an objective, not what the
+   * document contains.
+   */
+  objectives: readonly ResolvedObjective[];
   /**
    * Every evidence row loaded for this canvas's supported objectives, newest last.
    *
@@ -1808,6 +1819,7 @@ export function usePolicyRuntime(
     // policy owns anyway, the parameter changed nothing and there is nothing to disclose.
     forced: forced && !knowledge.ownership.owns,
     judging,
+    objectives: knowledge.objectives,
     outcome: knowledge.outcome,
     ownership: knowledge.ownership,
     phase,

@@ -43,6 +43,7 @@ const FRESH: TurnContext = {
   canvasTitle: "",
   demonstrated: 0,
   history: [],
+  courseRequested: false,
   lessonInProgress: false,
   materialContext: "",
   objectives: 0,

@@ -916,6 +916,34 @@ for either is the learner managing the system, which §26 forbids. If the learne
 **And the rule generalises: no button on the learning surface that selects what happens next.**
 §27's ban on mode selection, expressed as a UI rule.
 
+**Narrowed, not reversed — owner, 2026-08-23.** The rule above was written against controls that
+steer the learning machine mid-loop: quiz me, test me, easier, harder. Those stay banned; Nemesis
+keeps deciding the next pedagogical action itself. What the owner carved out is a different object,
+in their own words: *"`Course` is … a one-shot declaration of user intent at the composer boundary,
+analogous to attaching a file. It tells Nemesis: 'Treat this next submission as a request to create
+a persistent curriculum.' It does not tell the teaching engine what to do next."* The rule as it now
+stands:
+
+```
+Do not expose persistent controls that select the next pedagogical
+action during an active learning loop.
+
+One-shot composer capabilities may explicitly declare user intent
+or attach resources to the next submission.
+
+Examples:
+- Attach files
+- Course
+
+These capabilities clear after submission and must not become
+persistent teaching modes.
+```
+
+The distinguishing test: **a capability says what this submission IS; a mode says what Nemesis
+should do next.** `+ attach` was always on the KEEP list below for exactly this reason, and Course
+is the same shape — it clears on send (`clearsOnSubmit` in `composer-capability.ts` is always true,
+and a guard holds it), and once a course exists the Canvas owns it and the composer carries nothing.
+
 ## KEEP — these are not "buttons" in the sense meant
 
 ```

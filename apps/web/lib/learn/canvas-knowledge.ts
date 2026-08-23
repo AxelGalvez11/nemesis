@@ -677,6 +677,11 @@ async function topicTerritory(
   // learner at half a map — and the rows the interrupted run did manage to write converge with the
   // rebuild by identity instead of doubling.
   await saveCanvasTerritory(userId, canvas, {
+    // 🔴 THE COURSE PLAN RIDES THE MARKER AND EVERY FRESH MARKER MUST CARRY IT FORWARD, or the
+    // build that runs seconds after a course is applied silently deletes the course. This
+    // construction replaces the whole row; the plan is the one field on it this build did not
+    // produce and must not lose.
+    ...(stored?.plan ? { plan: stored.plan } : {}),
     identityVersion: KNOWLEDGE_IDENTITY_VERSION,
     objects: value.objects,
     topic,
@@ -901,6 +906,8 @@ async function groundedTerritory(input: {
       // document was already looked at.
       emptyUnder: RULESET_VERSION,
       ...(material ? { emptyOver: material } : {}),
+      // A fresh marker replaces the row; the plan is the one field it did not produce and must not lose.
+      ...(previous?.plan ? { plan: previous.plan } : {}),
       identityVersion: KNOWLEDGE_IDENTITY_VERSION,
       objects: [],
       topic: subject,
@@ -911,6 +918,8 @@ async function groundedTerritory(input: {
   // Written last and only on a complete build, so a tab closed mid-construction marks nothing and
   // the next open rebuilds rather than locking the learner at half a map.
   await saveCanvasTerritory(userId, canvas, {
+    // A fresh marker replaces the row; the plan is the one field it did not produce and must not lose.
+    ...(previous?.plan ? { plan: previous.plan } : {}),
     identityVersion: KNOWLEDGE_IDENTITY_VERSION,
     objects,
     topic: subject,
