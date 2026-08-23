@@ -1,13 +1,18 @@
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-import { MAX_SEARCH_ROUNDS } from "./chat.ts";
-
 /** Source with comments stripped, so prose ABOUT a rule is never mistaken for the rule. */
 function code(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
 }
 
 const chat = code(await Deno.readTextFile(new URL("./chat.ts", import.meta.url)));
+
+// 🔴🔴 READ FROM THE SOURCE, NOT IMPORTED FROM THE MODULE. chat.ts is phone code — it imports
+// expo/fetch on its first screen of lines — so a value import here makes Deno load the entire
+// React-Native module graph, and the whole mobile suite dies on that import before a single
+// assertion runs (this was the failure the runner outage had been hiding). Every other check in
+// this file already reads chat.ts as TEXT; the constant comes from the same text.
+const MAX_SEARCH_ROUNDS = Number(/MAX_SEARCH_ROUNDS = (\d+)/.exec(chat)?.[1]);
 
 // 🔴🔴 THE PHONE SEARCHES UNTIL THE MODEL SAYS IT HAS ENOUGH, LIKE THE CANVAS.
 //
@@ -50,6 +55,7 @@ Deno.test("the progress count is the running total, not the round's own haul", (
 });
 
 Deno.test("the bound is real, and the same number the Canvas uses", async () => {
+  assert(Number.isFinite(MAX_SEARCH_ROUNDS), "MAX_SEARCH_ROUNDS is no longer a plain literal in chat.ts");
   assert(MAX_SEARCH_ROUNDS >= 2, "one round is the single-search behaviour this replaced");
   assert(MAX_SEARCH_ROUNDS <= 6, `${MAX_SEARCH_ROUNDS} rounds is a turn nobody waits through`);
   // 🔴 ONE PRODUCT, ONE ANSWER TO "HOW HARD WILL NEMESIS LOOK". Two surfaces with different
