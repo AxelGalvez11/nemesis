@@ -130,8 +130,10 @@ export function shouldSpeakAction(input: {
   return input.text.trim().length <= SPOKEN_EXPLANATION_LIMIT;
 }
 
-/** Inline formatting a reader sees as emphasis and a synthesiser would pronounce. */
-function stripFormatting(raw: string): string {
+/** Inline formatting a reader sees as emphasis and a synthesiser would pronounce.
+ *  Exported for `reply-speech.ts`, which cleans an answer's prose with the SAME rules this module
+ *  cleans a question with — a second copy is a copy that drifts. */
+export function stripFormatting(raw: string): string {
   return raw
     // Citation markers — "[3]" read aloud is "bracket three".
     .replace(/\[\d{1,2}\]/g, " ")

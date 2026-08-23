@@ -32,6 +32,7 @@ const COPIED_MS = 1600;
 
 export function ReplyActions({
   audio,
+  spoken,
   text,
 }: {
   /**
@@ -43,7 +44,17 @@ export function ReplyActions({
    * and progress reading from one state rather than from five props that can disagree.
    */
   audio: ResponseAudio;
-  /** The answer, as plain text. Markdown and citation markers are the renderer's business. */
+  /**
+   * The answer as the MODEL wrote it, marks and all, for the synthesiser.
+   *
+   * 🔴 RAW ON PURPOSE, AND DIFFERENT FROM `text` ON PURPOSE. `replySpeechPlan` reads the
+   * `[say: es-MX | …]` marks to route each sentence to the voice that must say it; text that was
+   * flattened for the clipboard has already lost them, and the Spanish sentence would be read by
+   * the English prose voice — the exact miseducation §43 exists to prevent.
+   */
+  spoken: string;
+  /** The answer, as plain text — for the clipboard. Markdown and citation markers are the
+   *  renderer's business. */
   text: string;
 }) {
   const [copied, setCopied] = useState(false);
@@ -74,7 +85,7 @@ export function ReplyActions({
         <Codicon name={copied ? "check" : "copy"} size="15px" />
       </button>
 
-      <ResponseAudioControls audio={audio} text={text} />
+      <ResponseAudioControls audio={audio} text={spoken} />
     </div>
   );
 }

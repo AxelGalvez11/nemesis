@@ -1442,6 +1442,12 @@ export function LearningCanvas({
                   // playing" boolean. Play, pause, seek, speed and progress all read from one state,
                   // so an example row speaking elsewhere can never turn this into a stop button.
                   audio={voice.replyAudio}
+                  // 🔴 THE RAW REPLY FOR THE VOICE, THE FLATTENED PROSE FOR THE CLIPBOARD, AND THE
+                  // TWO MUST DIFFER. `replySpeechPlan` reads the `[say: …]` marks to route each
+                  // sentence to the voice that must say it; the clipboard wants those marks gone.
+                  // Handing the synthesiser the flattened copy is how a Spanish drill gets read by
+                  // the English prose voice.
+                  spoken={replyText}
                   // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
                   // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
                   // them, and a synthesiser reading it aloud is worse.
