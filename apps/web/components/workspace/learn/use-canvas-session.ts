@@ -61,6 +61,11 @@ import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas 
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
 import { isPreContent } from "@/lib/learn/canvas-hosting";
+import {
+  clarifyAnswerFact,
+  readClarifyAnswer,
+  type UserQuestion,
+} from "@/lib/learn/clarify-question";
 import { askCanvasChat, type TurnSurroundings } from "./canvas-chat";
 import { prepareWebSourcePromotion } from "./web-source-promotion";
 
@@ -224,7 +229,34 @@ export interface CanvasSession {
     /** Fired immediately before a `study` turn writes into an existing study document, so the
      *  caller can stamp the action that was in flight when the learner asked for material. */
     onStudyDocument?: () => void,
+    /** Whether this turn may be parked behind a clarification card. False on a resumed turn. */
+    mayAsk?: boolean,
   ) => Promise<TurnDecision | null>;
+  /**
+   * The one decision Nemesis is waiting on before it can finish a turn, or null. Null nearly always.
+   *
+   * 🔴 IT IS FED TO `answerSink`, NOT READ DIRECTLY BY THE COMPOSER. That is the whole placement
+   * argument: a pending question the sink cannot see is one `composerIntent` cannot see, and a
+   * learner who types their answer instead of tapping it would have their canvas re-titled and
+   * regenerated. See canvas-hosting.ts.
+   */
+  clarifying: UserQuestion | null;
+  /** Decisions already settled this sitting, as facts for the packet. Empty nearly always. */
+  clarified: readonly string[];
+  /**
+   * Settle the pending decision and finish the turn it was holding.
+   *
+   * 🔴 THIS IS NOT AN ANSWER TO A COGNITIVE TASK AND MUST NEVER REACH ONE. No judge, no evidence
+   * row, no objective. A preference filed as knowledge is read by the retention model as if the
+   * learner had demonstrated something.
+   */
+  answerClarification: (
+    text: string,
+    surroundings: TurnSurroundings,
+    onStudyDocument?: () => void,
+  ) => Promise<TurnDecision | null>;
+  /** They closed the card instead of answering. The turn is dropped, not guessed at. */
+  dismissClarification: () => void;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
   learnFromAside: () => Promise<void>;
@@ -286,6 +318,29 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    *  from a file. Read by the teaching controller; see `TeachingContext.opening`. */
   const [opening, setOpening] = useState<string | null>(null);
   const [aside, setAside] = useState<CanvasAside>(null);
+  /**
+   * The one decision Nemesis is waiting on, and the turn it is holding until the answer lands.
+   *
+   * 🔴 ONE, NOT A QUEUE. Two pending questions would make "which one does this typed sentence
+   * answer?" a real question, and that is precisely the ambiguity `AnswerSink` is a union to
+   * prevent. A second decision is a second turn.
+   *
+   * 🔴 THE ORIGINAL UTTERANCE RIDES ALONG, BECAUSE THE ANSWER RESUMES THE TURN BY RE-ASKING IT.
+   * Replaying `decision.then` locally would freeze what Nemesis decided before it knew the answer —
+   * the depth it picks changes the topic, the opening line and sometimes whether teaching is even
+   * the right move. Re-running the same utterance WITH the answer as a stated fact lets the model
+   * finish the turn it started rather than have the software finish it on its behalf.
+   */
+  const [clarifying, setClarifying] = useState<{ question: UserQuestion; said: string } | null>(null);
+  /**
+   * Decisions already settled this sitting, phrased as facts for the packet.
+   *
+   * 🔴 THIS SITTING ONLY, AND THAT IS A KNOWN LIMIT RATHER THAN AN OVERSIGHT. Nothing here is
+   * written to the canvas row, so a reload loses it and the model may ask again. Persisting it is a
+   * schema change and belongs to the owner; asking twice across a reload is mildly annoying, where
+   * a half-migrated column that some canvases have and others do not is a bug in the packet.
+   */
+  const [clarified, setClarified] = useState<readonly string[]>([]);
   /** The prompt whose answer is being read right now. Per-question rather than a page-wide busy
    *  flag, so judging one answer does not freeze the rest of the page. */
   const [judging, setJudging] = useState<string | null>(null);
@@ -838,6 +893,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       question: string,
       surroundings: TurnSurroundings,
       onStudyDocument?: () => void,
+      /**
+       * May this turn be parked behind a clarification card?
+       *
+       * 🔴 FALSE ON THE RESUMED TURN, AND IT IS A GUARD RATHER THAN A PROMPT RULE. The contract
+       * already tells the model not to ask again once the learner has answered, and a model that
+       * ignores it would otherwise park the same utterance forever: answer, re-ask, answer,
+       * re-ask, with the learner doing all the work. A prompt cannot make a loop unreachable; this
+       * can. The turn still runs — the question is simply dropped and `then` happens.
+       */
+      mayAsk = true,
     ): Promise<TurnDecision | null> => {
       const id = requireUid();
       if (!id) return null;
@@ -867,6 +932,33 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!decision) {
         setError(result.error ?? "Nemesis had nothing to add.");
         return null;
+      }
+
+      // 🔴🔴 PARKING IS DECIDED HERE, NOT BY THE MODEL, AND THE THREE REFUSALS ARE THE FEATURE.
+      // `turn-router.ts` returns a question beside the action it parks and defers nothing itself;
+      // this is the caller it says owns the parking. A card is hosted only when the learner owes
+      // nothing (two things awaiting an answer at once is the shape `canvas-hosting.ts` exists to
+      // make impossible), when this is not already the resumed turn, and when the question survived
+      // parsing. Every refusal falls through to running `then` immediately, which is always a legal
+      // reading of a clarification: going ahead is what Nemesis would have done without asking.
+      if (decision.question && mayAsk && !surroundings.answerOwed) {
+        setClarifying({ question: decision.question, said });
+        // The sentence above the card. `reply` rather than `opening` because this turn IS the
+        // reply: nothing is about to transition underneath it, and the learner is being asked to
+        // look at the card rather than being introduced to a lesson.
+        if (decision.say) {
+          setAside({
+            blockId: null,
+            kind: "reply",
+            offer: decision.offer ?? undefined,
+            question: said,
+            consulted: result.consulted,
+            sources: result.sources,
+            text: decision.say,
+            topic: decision.topic ?? undefined,
+          });
+        }
+        return decision;
       }
 
       if (decision.then === "study") {
@@ -920,6 +1012,59 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     },
     [begin, command, requireUid],
   );
+
+  /**
+   * The learner settled the decision Nemesis was waiting on. Record it, then finish the turn.
+   *
+   * 🔴🔴 IT NEVER TOUCHES EVIDENCE, AND THAT IS THE POINT OF THE WHOLE SEPARATE PATH. `answerActiveTask`
+   * and `policy.submit` reach a judge and write a `learner_evidence` row against an objective.
+   * Picking "Academic" over "Overview" demonstrates nothing about what somebody knows; filing it as
+   * knowledge would put a preference in the durable record the retention model reads. So this
+   * function shares no line with either of them, and `composerIntent` returns a different kind so
+   * that a call site cannot reach the wrong one by accident.
+   *
+   * 🔴 THE ANSWER IS FED BACK AS A FACT AND THE ORIGINAL UTTERANCE IS RE-ASKED. See `clarifying`.
+   */
+  const answerClarification = useCallback(
+    async (
+      text: string,
+      surroundings: TurnSurroundings,
+      onStudyDocument?: () => void,
+    ): Promise<TurnDecision | null> => {
+      const pending = clarifying;
+      if (!pending) return null;
+      const answer = readClarifyAnswer(pending.question, text);
+      // 🔴 AN EMPTY SUBMISSION IS NOT AN ANSWER AND MUST NOT DISCARD THE QUESTION. Clearing here
+      // would leave the learner staring at a card that had silently stopped mattering.
+      if (!answer) return null;
+      const fact = clarifyAnswerFact(pending.question, answer);
+      setClarified((facts) => [...facts, fact]);
+      setClarifying(null);
+      setAside(null);
+      return converse(
+        pending.said,
+        // The fact is in the packet on THIS turn, not merely from the next one. `clarified` state
+        // has not committed yet when this runs, and a resumed turn that could not see its own
+        // answer is the one turn where it matters most.
+        { ...surroundings, answerOwed: false, clarified: [...surroundings.clarified, fact] },
+        onStudyDocument,
+        false,
+      );
+    },
+    [clarifying, converse],
+  );
+
+  /**
+   * The learner dismissed the question instead of answering it.
+   *
+   * 🔴 IT DOES NOT RESUME THE TURN, AND THAT IS THE HONEST READING. Answering says "build it this
+   * way"; closing the card says "not now". Guessing an answer and building anyway would be the
+   * software deciding the thing it just admitted it could not decide. The learner's next sentence
+   * starts a fresh turn, which is what dismissing a question means everywhere else.
+   */
+  const dismissClarification = useCallback(() => {
+    setClarifying(null);
+  }, []);
 
   /**
    * Cross the boundary from information to learning only after the learner asks to.
@@ -1503,6 +1648,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     busy,
     error,
     aside,
+    /** The decision Nemesis is waiting on, or null. See `clarify-question.ts`. */
+    clarifying: clarifying?.question ?? null,
+    /** Decisions already settled this sitting, as facts for the packet. */
+    clarified,
+    answerClarification,
+    dismissClarification,
     judging,
     opening,
     ready,

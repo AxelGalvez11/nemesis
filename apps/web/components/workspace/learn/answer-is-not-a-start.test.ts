@@ -50,6 +50,7 @@ async function render(intent: ComposerIntent, pendingSources: readonly { id: str
       intent,
       onAnswer: noop,
       onAsk: noop,
+      onClarify: noop,
       onClearSelection: noop,
       onFiles: noop,
       onStart: noop,
@@ -121,4 +122,28 @@ test("🔴 the caller hands over the start handler unconditionally", () => {
     "the stale-state predicate is back in the composer's wiring",
   );
   assert.match(canvasSource, /intent=\{intent\}/, "the composer is no longer told what a submission means");
+});
+
+// ── A clarification is answerable through the same box ──────────────────────
+
+test("🔴🔴 a pending clarification labels the composer as its answer surface", async () => {
+  // The card's buttons are a shortcut for typing the label. The box under them must say so, or the
+  // learner reads the options as the only way to respond and the "Other" case never gets used.
+  const html = await render({
+    kind: "clarify",
+    question: {
+      id: "course-depth",
+      invitesWritten: true,
+      options: [
+        { description: null, id: "survey", label: "Overview" },
+        { description: null, id: "academic", label: "Academic" },
+      ],
+      prompt: "How deep should this course go?",
+    },
+  });
+  assert.ok(html.includes("Pick one above"), "the composer is not wired to the pending question");
+  assert.ok(!html.includes(ASK_PLACEHOLDER), "it still reads as an ordinary question box");
+  // 🔴 AND IT IS NOT AN EVIDENCE SURFACE. `answering` drives the answer chrome, and a preference
+  // dressed as a cognitive answer is the confusion this whole path exists to avoid.
+  assert.ok(!html.includes("Submit answer"), "a preference is being presented as a demonstration");
 });

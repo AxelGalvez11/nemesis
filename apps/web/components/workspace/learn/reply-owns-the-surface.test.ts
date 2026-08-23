@@ -271,7 +271,15 @@ test("🔴🔴 a displaced teaching screen has a way back", () => {
   assert.match(back.slice(0, 700), /BACK_TO_LESSON/);
   // 🔴 AND ONLY ONE CONTROL SHOWS. The offer must stand down while a lesson is held, or the owner's
   // report ("its showing 'back to lesson' pill and 'learn this'") comes straight back.
-  assert.match(canvasCode, /\{!lessonHeld && session\.aside\.topic && \(/, "Learn this can stack under a held lesson again");
+  // 🔴 THE HEAD OF THE CONDITION IS WHAT IS PINNED, NOT THE WHOLE OF IT. A pending clarification
+  // now stands the offer down as well (asking what kind of lesson to build while offering to start
+  // one is two contradictory controls), and more reasons to withhold an OFFER are safe by
+  // construction — the failure this guards is the offer appearing, never it being absent.
+  assert.match(
+    canvasCode,
+    /\{!lessonHeld && [^\n]*session\.aside\.topic && \(/,
+    "Learn this can stack under a held lesson again",
+  );
 });
 
 test("🔴 the way back is offered ONLY when something is being held", () => {

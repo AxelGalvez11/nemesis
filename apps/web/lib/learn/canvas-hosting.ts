@@ -21,6 +21,7 @@
 // PURE. No React, no I/O, no cognitive meaning. What a task MEANS is Brain's; what it LOOKS like is
 // UI's; this file only says where it may live and who receives its answer.
 
+import type { UserQuestion } from "./clarify-question";
 import type { CanvasState } from "./canvas-model";
 import type { KnowledgeType } from "./knowledge-types";
 // 🔴 `ObjectiveCapability`, NOT `CognitiveOperation`. The doc's §3 list of sixteen operations is
@@ -77,6 +78,26 @@ export interface HostedTask {
 export type AnswerSink =
   | { kind: "policy"; task: HostedTaskShape }
   | { kind: "stage"; task: HostedTaskShape }
+  /**
+   * Nemesis asked the LEARNER something before it acts — which kind of course, how deep, which of
+   * two readings of an ambiguous upload. See `clarify-question.ts`.
+   *
+   * 🔴🔴 IT IS IN THIS UNION AND IT CARRIES NO `task`, AND BOTH HALVES OF THAT ARE THE POINT.
+   *
+   * IN, because the alternative was a `pendingQuestion` held beside this in session state, and the
+   * learner who reads a card and types their answer into the primary composer instead of tapping is
+   * the ordinary case, not the edge. A pending question this union cannot see is a question
+   * `composerIntent` cannot see, and on a canvas that has not begun that submission falls through
+   * to `start` — `begin()` re-titles the canvas and regenerates it. That is the exact destruction
+   * this file's own header was written about, arriving through a new door.
+   *
+   * NO `task`, because a `HostedTaskShape` is a cognitive act: answered, judged, written to
+   * `learner_evidence` against an objective. Picking "Academic" over "Overview" demonstrates
+   * nothing about what somebody knows. Giving this branch a `task` would let one careless
+   * `sink.task` at a call site file a preference as knowledge, and the retention model reads those
+   * rows. The shape difference makes that a type error instead of a bad row.
+   */
+  | { kind: "clarify"; question: UserQuestion }
   | { kind: "none" };
 
 /**
@@ -427,10 +448,23 @@ export function answerSink(input: {
   hosted: HostedTask | null;
   stageTask: HostedTaskShape | null;
   regions: CanvasRegions;
+  /**
+   * A clarification Nemesis is waiting on. Null on nearly every turn.
+   *
+   * 🔴 RANKED LAST, DELIBERATELY, AND THE SESSION IS SUPPOSED TO MAKE THAT UNREACHABLE. A real
+   * question owes the learner an answer and their typed sentence belongs to it; a clarification is
+   * Nemesis's own convenience and yields. The canvas already refuses to STAGE one while an answer
+   * is owed, so this ordering should never decide anything — it is the second, redundant witness
+   * this file keeps for the same reason `composerIntent` keeps `awaitingAnswer`. If a future path
+   * forgets the refusal, the failure is "the clarification waits its turn", not "an answer to a
+   * real question was filed as a preference".
+   */
+  clarifying?: UserQuestion | null;
 }): AnswerSink {
-  const { hosted, regions, stageTask } = input;
+  const { clarifying = null, hosted, regions, stageTask } = input;
   if (regions.policy && hosted) return { kind: "policy", task: hosted.task };
   if (regions.stages && stageTask) return { kind: "stage", task: stageTask };
+  if (clarifying) return { kind: "clarify", question: clarifying };
   return { kind: "none" };
 }
 

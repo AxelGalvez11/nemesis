@@ -15,6 +15,7 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
+import { CanvasClarification } from "./canvas-clarification";
 import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
@@ -401,12 +402,17 @@ export function LearningCanvas({
     let demonstrated = 0;
     for (const state of projected.values()) if (state.demonstratedAt !== null) demonstrated += 1;
     return {
+      // 🔴 THE RUNTIME'S OWN ANSWER, NOT THE STORED STATE. It is what decides whether this turn may
+      // be parked behind a clarification card: a learner who already owes an answer to a real
+      // question must not be handed a second thing to answer. See `converse`.
+      answerOwed: policy.awaitingAnswer,
+      clarified: session.clarified,
       demonstrated,
       history: conversation.current,
       lessonInProgress: policy.decision !== null,
       objectives: policy.claims.length,
     };
-  }, [policy.claims.length, policy.decision, policy.evidence]);
+  }, [policy.awaitingAnswer, policy.claims.length, policy.decision, policy.evidence, session.clarified]);
 
   /**
    * One turn of talking to Nemesis.
@@ -424,6 +430,31 @@ export function LearningCanvas({
         // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
         // moves on. The action in flight is stamped rather than a bare `true`, which is what makes
         // attention return by itself; see `materialOwnsAttention`.
+        setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
+      });
+      remember({ replied: decision?.say ?? "", said: trimmed });
+    },
+    [policy.decision, remember, session, surroundings],
+  );
+
+  /**
+   * The learner settled the decision Nemesis was waiting on, by tapping an option or by typing one.
+   *
+   * 🔴 ONE WRAPPER FOR BOTH ROUTES, BESIDE `converse` AND FOR THE SAME REASONS. It stamps the
+   * action in flight before the resumed turn can write into the document, and it records the
+   * exchange in the conversation the packet carries — a resumed turn that vanished from the
+   * transcript would leave the next "why?" resolving against the wrong thing.
+   *
+   * 🔴 IT IS NOT `converse`, AND IT MUST NOT BE FOLDED INTO IT. `converse` opens a NEW turn; this
+   * finishes one that is already open. Routing an answer through the new-turn path is exactly the
+   * defect shape this whole feature was careful about: the card would stay on screen, and the
+   * learner's answer would be read as a fresh question.
+   */
+  const answerClarification = useCallback(
+    async (answered: string) => {
+      const trimmed = answered.trim();
+      if (!trimmed) return;
+      const decision = await session.answerClarification(trimmed, surroundings(), () => {
         setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
       });
       remember({ replied: decision?.say ?? "", said: trimmed });
@@ -844,6 +875,13 @@ export function LearningCanvas({
   // to the policy's prompt id — evidence written against a question nobody was asked, with every
   // test still green. See canvas-hosting.ts.
   const sink = answerSink({
+    // 🔴 THE CARD GOES IN THE SINK RATHER THAN BESIDE IT, WHICH IS THE WHOLE REASON IT IS SAFE. The
+    // primary composer stays on screen underneath the options, and typing into a text box that is
+    // right there is the ordinary thing to do. Held anywhere this union cannot see, that submission
+    // reaches `start` on a canvas that has not begun — `begin()` re-titles it and regenerates it.
+    // `answerSink` ranks it last, so a real question still outranks it and no owed answer can be
+    // read as a preference.
+    clarifying: session.clarifying,
     hosted: policy.task,
     regions,
     stageTask: session.activeTask,
@@ -1215,7 +1253,11 @@ export function LearningCanvas({
                   is gone for the session, which `no-screen-is-a-dead-end.test.ts` calls the
                   product's worst failure. "Learn this" is an OFFER, and an offer can wait for a
                   turn when nothing is already owed. */}
-              {!lessonHeld && session.aside.topic && (
+              {/* 🔴 NOT WHILE A DECISION IS PENDING. Offering to start a lesson underneath a card
+                  asking what KIND of lesson to build is two contradictory controls on one screen,
+                  and the offer is the one that can wait — the card is holding a turn, "Learn this"
+                  is holding nothing. */}
+              {!lessonHeld && !session.clarifying && session.aside.topic && (
                 <div className="mt-3">
                   {/* Only when Nemesis actually noticed something. A nudge on every reply is not a
                       nudge, it is nagging, and the learner stops seeing it. */}
@@ -1269,6 +1311,29 @@ export function LearningCanvas({
                   the whole complaint. `dismiss_aside` stays in `canvas-explanation-turn.ts` — it is
                   still how the block-scoped popover closes. */}
             </div>
+          </div>
+        )}
+
+        {/* 🔴🔴 ITS OWN BLOCK, NOT NESTED IN THE REPLY ABOVE, AND THAT IS DELIBERATE. `say` is
+            allowed to be empty — a model that asks a good question and says nothing else has still
+            taken a complete turn — and nesting the card inside `regions.reply && session.aside`
+            would make the whole feature disappear on exactly that turn, silently. The card is what
+            the turn IS; the sentence above it is optional. */}
+        {session.clarifying && presence !== "preparing" && (
+          // 🔴 `pb-40` IS THE COMPOSER'S HEIGHT, THE SAME NUMBER `canvas-document.tsx` USES. The
+          // composer is absolutely positioned over the bottom of this scroll container, so a card
+          // with no bottom padding has its last control sitting underneath it — and on a short
+          // canvas there is nothing to scroll, so the Submit button is simply unreachable.
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
+            <CanvasClarification
+              onDismiss={session.dismissClarification}
+              // 🔴 THE LABEL, NOT THE ID — because tapping must be indistinguishable from typing
+              // it, and `readClarifyAnswer` resolves a label back to its option. One route in, one
+              // meaning, and no branch that only the mouse exercises. The card's own Other box
+              // sends its prose through this same prop for the same reason.
+              onAnswer={(text) => void answerClarification(text)}
+              question={session.clarifying}
+            />
           </div>
         )}
 
@@ -1495,6 +1560,16 @@ export function LearningCanvas({
           // moved the learner past material; it is a `Continue` below that material now, because
           // §38 allows exactly one button and §39 makes the trigger the policy's declared cognitive
           // mode rather than anything the composer can observe.
+          // 🔴 THE SAME ROUTE THE BUTTONS TAKE. Typing "academic" under the card and tapping the
+          // Academic option must reach one handler, or the two drift and only one of them keeps
+          // working. `session.answerClarification` is that handler; the card below calls it too.
+          // 🔴 THE SAME ROUTE THE CARD'S BUTTONS TAKE. Typing "academic" under the card and tapping
+          // the Academic option must reach one handler, or the two drift and only one keeps working.
+          onClarify={(text) => {
+            // Nemesis stops talking the moment the learner responds, exactly as `onAnswer` does.
+            voice.stopSpeaking();
+            void answerClarification(text);
+          }}
           onAsk={(text) => void submit(text)}
           onClearSelection={clearSelection}
           onFiles={(files) => void session.attachFiles(files)}

@@ -13,6 +13,8 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:export": "tsx scripts/smoke-export.mts",
     "azure-speech": "tsx scripts/azure-speech-acceptance.mts",
+    "conversation-acceptance": "tsx --env-file=.env.local scripts/conversation-acceptance.ts",
+    "deepseek-vision-probe": "tsx --env-file=.env.local scripts/deepseek-vision-probe.ts",
     "test": "tsx --test components/workspace/*/*.test.ts lib/*.test.ts lib/*/*.test.ts lib/*/*/*.test.ts",
     "lint": "next lint",
     "parse-thread": "node scripts/build-parse-thread.mjs",
