@@ -78,6 +78,19 @@ export interface DeepseekVisionResult {
 }
 
 /**
+ * The output ceiling on every request, in tokens.
+ *
+ * 🔴 MEASURED, NOT GUESSED (2026-08-23, quality test on real lecture figures). This model
+ * REASONS before it answers and bills the reasoning as output: a molecular diagram whose visible
+ * answer was ~150 tokens burned 18,642 output tokens — $0.025 and 135 seconds for one figure —
+ * enumerating every printed residue. The largest LEGITIMATE reply seen (a full page transcript
+ * with labels) is under 3,000; 8,192 is comfortably past every real answer and caps the
+ * pathological case at less than half its unbounded cost. A reply that still hits the ceiling
+ * comes back truncated, which the caller already treats as "use what arrived".
+ */
+export const DEEPSEEK_VISION_MAX_OUTPUT = 8192;
+
+/**
  * The chat completions body for one image. OpenAI vision shape: the image rides as a data URL
  * content part beside the prompt text. PURE.
  */
@@ -88,6 +101,7 @@ export function buildDeepseekVisionRequest(
   model: string,
 ): string {
   return JSON.stringify({
+    max_tokens: DEEPSEEK_VISION_MAX_OUTPUT,
     messages: [
       {
         content: [

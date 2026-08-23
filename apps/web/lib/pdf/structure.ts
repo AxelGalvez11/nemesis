@@ -386,6 +386,15 @@ async function readPage(
   if (options.lattice !== false) {
     const consumed = new Set<TextItem>();
     for (const region of latticeRegions(rulings)) {
+      // 🔴 A DEEPER SUB-BAND OF A REGION THAT ALREADY CLAIMED ITS TABLE MUST NOT
+      // RUN. Suppression happens after this loop, so a second candidate over the
+      // same rules would reconstruct from the same still-present items and emit
+      // the same cells twice — indistinguishable downstream from the table
+      // genuinely occurring twice. Skipping on overlap is the same rule the
+      // layout lane below already applies against these claims.
+      if (claimedRegions.some((claimed) => overlaps(claimed, [region.x0, region.y0, region.x1, region.y1]))) {
+        continue;
+      }
       const built = reconstructRegion(region, rulings, items);
       if (!built) continue;
       // 🔴 THE CELLS ARE COMPUTED BEFORE THE ROWS, AND THE ROWS COME FROM THEM.
