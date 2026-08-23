@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { conceptIdentityKey } from "./concept-identity";
+import { conceptIdentityKey, conceptSurfaceKeys } from "./concept-identity";
 import {
   CURRICULUM_SEEDS,
   readCurriculum,
@@ -18,13 +18,22 @@ test("🔴 a subject resolves by any of its declared names, and by nothing else"
 });
 
 test("🔴🔴 a near-miss is a refusal, never the wrong subject's plan", () => {
-  // "organic chemistry" overlaps "general chemistry" on most similarity measures, and resolving it
-  // to the wrong course would hand a learner a plan for a subject they did not name — strictly
-  // worse than the honest refusal the caller already renders.
-  for (const wrong of ["organic chemistry", "chemistry", "biochemistry", "physics 101", ""]) {
+  // "physical chemistry" overlaps "general chemistry" on most similarity measures, and resolving
+  // it to the wrong course would hand a learner a plan for a subject they did not name — strictly
+  // worse than the honest refusal the caller already renders. (When the library GAINED organic
+  // chemistry and biochemistry, those names moved from this list to their own courses — which is
+  // this same rule succeeding: a name resolves to its own subject or to nothing, never to a
+  // neighbour.)
+  for (const wrong of ["physical chemistry", "inorganic chemistry", "chemistry", "quantum mechanics 2", ""]) {
     const found = readCurriculum(wrong);
     assert.equal(found.ok, false, `"${wrong}" resolved to a skeleton it should not have`);
     if (!found.ok) assert.equal(found.refusal, "no-curriculum-for-subject");
+  }
+  // And the two that used to sit in the refusal list now land on their OWN skeletons.
+  for (const [name, own] of [["organic chemistry", "Organic Chemistry"], ["biochemistry", "Biochemistry"]] as const) {
+    const found = readCurriculum(name);
+    assert.equal(found.ok, true, `"${name}" no longer resolves at all`);
+    if (found.ok) assert.equal(found.skeleton.title, own);
   }
 });
 
@@ -35,10 +44,70 @@ test("🔴 the refusal carries a sentence, because a silent no is a dead control
 });
 
 test("🔴 the seed count is a decision, not a drift", () => {
-  // Growing this list is deliberate work reviewed in a diff — each of the owner's five subjects
-  // arrives in its own slice, proving something the last did not. If you just added one: update
-  // this number in the same change, on purpose.
-  assert.equal(CURRICULUM_SEEDS.length, 1);
+  // 103 = General Chemistry (longhand, the founding proof) + the 102-course library sweep the
+  // owner ordered on 2026-08-23 ("aren't you supposed to be building everything at once?").
+  // If you just added or removed one: update this number in the same change, on purpose.
+  assert.equal(CURRICULUM_SEEDS.length, 103);
+});
+
+// ── the library, as a whole ─────────────────────────────────────────────────────────────────────
+
+test("🔴🔴 every name resolves to exactly ONE course — a shared alias serves whoever is listed first", () => {
+  // Found live before this guard existed: "micro" was claimed by Microbiology AND Microeconomics,
+  // and a biology student would silently have received an economics course. Ambiguous short names
+  // belong to the clarify question, not to whichever file loads first.
+  const claimed = new Map<string, string>();
+  for (const skeleton of CURRICULUM_SEEDS) {
+    for (const name of conceptSurfaceKeys({ aliases: skeleton.aliases, label: skeleton.title })) {
+      const holder = claimed.get(name);
+      assert.ok(
+        holder === undefined || holder === skeleton.title,
+        `"${name}" is claimed by both ${holder} and ${skeleton.title}`,
+      );
+      claimed.set(name, skeleton.title);
+    }
+  }
+});
+
+test("🔴 every curriculum key is distinct — two courses cannot share an identity", () => {
+  const keys = new Map<string, string>();
+  for (const skeleton of CURRICULUM_SEEDS) {
+    assert.ok(!keys.has(skeleton.key), `${skeleton.title} shares a key with ${keys.get(skeleton.key)}`);
+    keys.set(skeleton.key, skeleton.title);
+  }
+});
+
+test("🔴 the whole library is provisional and nemesis-authored — the sweep smuggled nothing up the ladder", () => {
+  for (const skeleton of CURRICULUM_SEEDS) {
+    assert.equal(skeleton.maturity, "provisional", `${skeleton.title} climbed the maturity ladder in a bulk sweep`);
+    assert.equal(skeleton.provenance, "nemesis-authored", `${skeleton.title} claims a provenance no one attested`);
+    assert.ok(skeleton.nodes.length >= 6, `${skeleton.title} is too thin to be a course (${skeleton.nodes.length} nodes)`);
+  }
+});
+
+test("🔴 the names students actually type reach the right course", () => {
+  for (const [asked, expected] of [
+    ["ap biology", "General Biology"],
+    ["calc 2", "Calculus II"],
+    ["orgo", "Organic Chemistry"],
+    ["apush", "US History"],
+    ["med surg", "Medical-Surgical Nursing"],
+    ["spanish", "Spanish"],
+    ["torts", "Torts"],
+    ["dsa", "Data Structures and Algorithms"],
+  ] as const) {
+    const found = readCurriculum(asked);
+    assert.equal(found.ok, true, `"${asked}" did not resolve`);
+    if (found.ok) assert.equal(found.skeleton.title, expected, `"${asked}" resolved to ${found.skeleton.title}`);
+  }
+});
+
+test("🔴 umbrella words and whole-exam names still refuse — the clarify question and the research builder own them", () => {
+  // "biology" is the turn contract's own clarify example; "nclex" spans four nursing courses and
+  // resolving it to one would hand a learner a fraction wearing the whole exam's name.
+  for (const ambiguous of ["biology", "economics", "micro", "physics", "nclex", "mcat", "cpa", "bar exam", "python"]) {
+    assert.equal(readCurriculum(ambiguous).ok, false, `"${ambiguous}" resolved — that ambiguity belongs to the model`);
+  }
 });
 
 test("🔴 the first seed is honest about what it is", () => {

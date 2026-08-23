@@ -30,6 +30,7 @@
 // PURE. No React, no I/O, no model call.
 
 import { conceptIdentityKey, conceptSurfaceKey, conceptSurfaceKeys } from "./concept-identity";
+import { CURRICULUM_LIBRARY } from "./curricula";
 
 /** How trusted a skeleton is. See the header — one generated course never climbs this silently. */
 export type CurriculumMaturity = "provisional" | "reviewed" | "canonical";
@@ -264,9 +265,13 @@ const GENERAL_CHEMISTRY: CurriculumSkeleton = {
 /**
  * Every skeleton the registry serves.
  *
- * 🔴 ONE SEED, DELIBERATELY. The owner's five subjects arrive one per slice, each proving something
- * the last did not — adding four more copies of the same shape before the first has been read end
- * to end would be coverage theatre. The count is asserted in the test file so growing this list is
- * a decision someone makes in a diff, not a drive-by.
+ * 🔴 THE WHOLE LIBRARY AT ONCE — the owner overturned one-seed-per-slice on 2026-08-23 ("aren't
+ * you supposed to be building everything at once? … I just want you to build all of this") after
+ * the General Chemistry slice proved the pipeline end to end. Every skeleton in `./curricula` is
+ * `provisional` and `nemesis-authored` by construction (the `course()` mint has no override), so
+ * the sweep cannot smuggle anything up the maturity ladder. GENERAL_CHEMISTRY stays first and
+ * longhand: it is the reviewed reference for what a seed looks like, and tests index it at [0].
+ * The count is still asserted in the test file, so growing or shrinking the library stays a
+ * decision someone makes in a diff, not a drive-by.
  */
-export const CURRICULUM_SEEDS: readonly CurriculumSkeleton[] = [GENERAL_CHEMISTRY];
+export const CURRICULUM_SEEDS: readonly CurriculumSkeleton[] = [GENERAL_CHEMISTRY, ...CURRICULUM_LIBRARY];
