@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { BloubBot } from "@/components/bloub/bloub-bot";
 import { BloubDock } from "@/components/bloub/bloub-dock";
 import { usePoke } from "@/components/bloub/use-poke";
-import type { FaceId } from "@/lib/character/face";
+import type { FaceId, HandId } from "@/lib/character/face";
 import type { Station } from "@/lib/character/stations";
 import { lookAt } from "@/lib/mascot/attention";
 
@@ -33,7 +33,7 @@ function Stage() {
   const [marker, setMarker] = useState<"!" | "?" | null>(null);
   const [caption, setCaption] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
-  const [hand, setHand] = useState<"point" | null>(null);
+  const [hand, setHand] = useState<HandId | null>(null);
   const [typed, setTyped] = useState("");
   const [reply, setReply] = useState("");
   const [chip, setChip] = useState(false);
@@ -128,7 +128,7 @@ function Stage() {
     },
     {
       name: "Nemesis thinks",
-      hint: "it walks to the middle, grows, and the working words shimmer beside it",
+      hint: "it walks to the middle, grows, sways while it works, and its eyes search",
       fire: () => run("think", thinkSteps(0)),
     },
     {
@@ -138,10 +138,14 @@ function Stage() {
     },
     {
       name: "Nemesis needs an answer from you",
-      hint: "the ? pops in over its head and bobs until you answer",
+      hint: "the ? pops in and bobs until you answer — answering earns a thumbs-up",
       fire: () => {
         if (marker === "?") {
-          run("answered", [[0, rest]]);
+          run("answered", [
+            [0, rest],
+            [60, () => setHand("up")],
+            [1800, () => setHand(null)],
+          ]);
         } else {
           timers.current.forEach(window.clearTimeout);
           rest();
@@ -278,29 +282,34 @@ function LivePokeable() {
 }
 
 function GloveLive() {
-  const [on, setOn] = useState(false);
+  const [pose, setPose] = useState<HandId | null>(null);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(window.clearTimeout), []);
-  const pop = () => {
+  const pop = (next: HandId) => {
     timers.current.forEach(window.clearTimeout);
-    setOn(false);
+    setPose(null);
     timers.current = [
-      window.setTimeout(() => setOn(true), 60),
-      window.setTimeout(() => setOn(false), 2800),
+      window.setTimeout(() => setPose(next), 60),
+      window.setTimeout(() => setPose(null), 2800),
     ];
   };
   return (
     <figure className="flex flex-col items-center gap-3">
-      <BloubBot hand={on ? "point" : null} size={148} state="idle" track />
+      <BloubBot hand={pose} size={148} state="idle" track />
       <figcaption className="text-xs text-(--ui-text-secondary)">The glove, up close</figcaption>
-      <button
-        className="rounded-lg border border-(--ui-stroke-secondary) px-3 py-1 text-xs text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)"
-        data-glove
-        onClick={pop}
-        type="button"
-      >
-        Pop the glove
-      </button>
+      <div className="flex gap-2">
+        {(["point", "up", "down"] as const).map((p) => (
+          <button
+            key={p}
+            className="rounded-lg border border-(--ui-stroke-secondary) px-3 py-1 text-xs text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)"
+            data-glove={p}
+            onClick={() => pop(p)}
+            type="button"
+          >
+            {p === "point" ? "Point" : p === "up" ? "Thumbs up" : "Thumbs down"}
+          </button>
+        ))}
+      </div>
     </figure>
   );
 }

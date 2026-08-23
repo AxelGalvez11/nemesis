@@ -490,3 +490,14 @@ test("🔴 a fresh reply sends the eyes to the words, and lets them go again", (
   assert.match(lc, /lookAt\(null\)/, "the eyes are never released");
   assert.match(lc, /ref=\{replyRegionRef\}/, "the reply region lost its ref");
 });
+
+test("working is never just standing: the middle station sways, and reduced motion stands still", () => {
+  // Owner 2026-08-25: "when it's thinking… not just staring — have some movements as well."
+  // The sway is a state, not an event: it lives on the hop wrapper only while the station is
+  // the centre, and prefers-reduced-motion removes it along with the other gestures.
+  const css = readFileSync(new URL("../../bloub/bloub.css", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.ok(css.includes("@keyframes bloub-ponder"), "the sway is named but never defined");
+  assert.match(css, /\.bloub-ponder,\s*\n\s*\.bloub-jump/, "reduced motion no longer switches the sway off");
+  assert.match(dock, /station === "centre" \? "bloub-ponder"/, "the sway is not gated on holding the middle");
+});

@@ -32,7 +32,7 @@ import type { StateId } from "@/lib/bloub/states";
 
 import { BloubBot } from "./bloub-bot";
 import { usePoke } from "./use-poke";
-import type { FaceId } from "@/lib/character/face";
+import type { FaceId, HandId } from "@/lib/character/face";
 import { speedOf, stationOf, type Station } from "@/lib/character/stations";
 
 /** How often the anchor and the attention target are re-measured. */
@@ -42,7 +42,7 @@ const MEASURE_MS = 120;
  *  the front door has to aim its own character at the exact point this one will occupy.
  *  See `canvas-home.tsx`: the two surfaces are different components and the hand-off between
  *  them is only invisible while they agree to the pixel. */
-export const DOCK_SIZE = 52;
+export const DOCK_SIZE = 60; // was 52; owner 2026-08-25: "the mascot looks a little bit small"
 export const DOCK_CENTRE_SCALE = 2.1;
 
 /** How far down the surface the middle station sits.
@@ -155,8 +155,8 @@ export interface BloubDockProps {
    * is taken in. A poke's own face (the sigma) outranks it for the poke's short hold.
    */
   face?: FaceId | null;
-  /** The pointing glove, popped out for the moment a surface has something to point AT. */
-  hand?: "point" | null;
+  /** The glove, popped out for a moment: pointing at something, or a thumbs up or down. */
+  hand?: HandId | null;
   hidden?: boolean;
   className?: string;
 }
@@ -198,6 +198,8 @@ export function BloubDock({
   const [aimAt, setAimAt] = useState<{ x: number; y: number } | null>(null);
   const targetRef = useRef<AttentionTarget>(getAttention());
   const focusedRef = useRef<Element | null>(null);
+  // The station, readable from inside the attention interval without re-arming it.
+  const stationRef = useRef<Station>("corner");
 
   // ── Where the dock sits ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -245,6 +247,7 @@ export function BloubDock({
 
   // ── Where it stands ──────────────────────────────────────────────────────────
   const station = stationOverride ?? stationOf(shown);
+  stationRef.current = station;
   useEffect(() => {
     const measure = () => {
       const host = hostRef.current;
@@ -310,6 +313,20 @@ export function BloubDock({
       const point =
         resolveAttention(targetRef.current) ??
         (focusedRef.current ? resolveAttention({ kind: "element", el: focusedRef.current }) : null);
+      // 🔴 THINKING EYES SEARCH, THEY DO NOT FOLLOW (owner 2026-08-25: working must not be
+      // "just staring"). At the middle, with nothing explicitly claiming the gaze, the eyes
+      // drift on two slow, unsynchronised arcs — mostly upward, the way anyone's do when
+      // recalling — rather than falling through to the pointer. Corner stations fall through
+      // exactly as before.
+      if (!point && stationRef.current === "centre" && hostRef.current) {
+        const r = hostRef.current.getBoundingClientRect();
+        const t = performance.now();
+        setAimAt({
+          x: r.left + r.width / 2 + Math.sin(t / 1700) * r.width * 1.6,
+          y: r.top + r.height / 2 - r.height * 0.9 + Math.sin(t / 1150) * r.height * 0.55,
+        });
+        return;
+      }
       setAimAt(point);
     }, MEASURE_MS);
 
@@ -354,7 +371,11 @@ export function BloubDock({
           rather than move it. It does not need the trick: `usePoke` alternates jump → wink and
           always returns to null between reactions, so the class really is removed and re-added,
           which restarts the animation on its own. */}
-      <div className={motion === "jump" ? "bloub-jump" : motion === "spin" ? "bloub-spin" : undefined}>
+      {/* 🔴 WORKING IS NEVER JUST STANDING (owner 2026-08-25: "when it's thinking… not just
+          staring — have some movements as well"). At the middle station the wrapper carries a
+          slow sway — weight shifting foot to foot — and the eyes wander (below). Both are
+          physics, both melt away the moment it walks back. A poke's own motion outranks it. */}
+      <div className={motion === "jump" ? "bloub-jump" : motion === "spin" ? "bloub-spin" : station === "centre" ? "bloub-ponder" : undefined}>
         <BloubBot
           aimAt={aimAt}
           color={accent}
@@ -419,7 +440,7 @@ export function BloubDock({
           worked through", and a background defeats `background-clip: text` outright. */}
       {caption && (
         <span
-          className={`bloub-caption canvas-thinking-word pointer-events-none absolute left-full top-1/2 select-none whitespace-nowrap text-[length:var(--canvas-text-meta)] leading-none${leaving ? " canvas-preview-out" : ""}`}
+          className={`bloub-caption canvas-thinking-word pointer-events-none absolute left-full top-1/2 select-none whitespace-nowrap text-[length:var(--canvas-text-small)] leading-none${leaving ? " canvas-preview-out" : ""}`}
           style={{
             marginLeft: `${8 / travel.k}px`,
             transform: `translateY(-50%) scale(${1 / travel.k})`,

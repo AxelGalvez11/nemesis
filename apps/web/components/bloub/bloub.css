@@ -165,9 +165,36 @@
      information — where the character stands says whether Nemesis has taken the floor — so it
      is only made quicker. A hop carries none: it is a reply to a poke, and the wink in the
      same cycle still answers one. */
+  .bloub-ponder,
   .bloub-jump,
   .bloub-spin,
   .bloub-mark {
     animation: none;
+  }
+}
+
+/* ── The ponder ──────────────────────────────────────────────────────────────
+ *
+ * Owner 2026-08-25: "when it's thinking… make sure it's not just staring — have some
+ * movements as well." While the character holds the middle station the dock puts this on
+ * the hop wrapper: a slow shift of weight, side to side and slightly up on the crossing,
+ * the way anyone stands when they are working something out. Physics, not effects (rule 2),
+ * and pointed at itself, not the learner (rule 3). The wander of the eyes is the dock's —
+ * see the attention interval in bloub-dock.tsx; this is only the body.
+ *
+ * 🔴 SLOWER THAN EVERY GESTURE. A poke's jump is 620ms and reads as an event; this is
+ * 2900ms and must read as a state. If it ever reads as an event on a loop, it is wrong.
+ */
+.bloub-ponder {
+  animation: bloub-ponder 2900ms ease-in-out infinite;
+  transform-origin: 50% 82%;
+}
+@keyframes bloub-ponder {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1.7deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(1.7deg);
   }
 }

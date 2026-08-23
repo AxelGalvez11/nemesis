@@ -34,7 +34,7 @@ import { mixHex } from "@/lib/bloub/skins";
 
 import { CHARACTER_SHAPE, aimFor, arcStops, inkFor } from "@/lib/character/look";
 import { browFrame, raisedBrow } from "@/lib/character/brow";
-import { BRIDGE, GLOVE_CUFF, GLOVE_HAND, GLOVE_STROKE, HAND_IN, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SIGMA_BROW_EYE, SMIRK, annulusPath, arrival, gloveTransform, type FaceId } from "@/lib/character/face";
+import { BRIDGE, GLOVE_CUFF, GLOVE_CUFF_SMALL, GLOVE_HAND, GLOVE_STROKE, GLOVE_THUMB, HAND_IN, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SIGMA_BROW_EYE, SMIRK, annulusPath, arrival, gloveTransform, type FaceId, type HandId } from "@/lib/character/face";
 import { capsulePath } from "@/lib/bloub/shape";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
@@ -131,7 +131,7 @@ export interface BloubBotProps {
    * hole — it reaches outside the silhouette — so it is ink drawn in front. Wired only on
    * the review board until the owner approves the look; pointing AT things comes after.
    */
-  hand?: "point" | null;
+  hand?: HandId | null;
   /** Freeze at this many seconds into the state. Reproducible; no loop is started. */
   frozenAt?: number;
   /** Playback rate. 0 pauses the scene clock. */
@@ -178,6 +178,8 @@ export function BloubBot({
   const lensRefs = useRef<(SVGPathElement | null)[]>([]);
   const armRefs = useRef<(SVGPathElement | null)[]>([]);
   const handGroupRef = useRef<SVGGElement | null>(null);
+  const handPathRef = useRef<SVGPathElement | null>(null);
+  const cuffPathRef = useRef<SVGPathElement | null>(null);
   const bridgeRef = useRef<SVGPathElement | null>(null);
   const mouthRef = useRef<SVGPathElement | null>(null);
   const notchRef = useRef<SVGCircleElement | null>(null);
@@ -215,15 +217,19 @@ export function BloubBot({
    * members are parked at `display: none` rather than removed, so the node count is
    * constant for the lifetime of the component.
    */
-  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null, handId: "point" | null, handAt: number | null) => {
+  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null, handId: HandId | null, handAt: number | null) => {
     const handGroup = handGroupRef.current;
     if (handGroup) {
-      if (handId === "point") {
+      if (handId) {
         handGroup.style.display = "";
         handGroup.setAttribute("fill", paperHex);
         handGroup.setAttribute("stroke", inkHex);
+        // Which drawing this pose wears — the pointing hand or the thumb fist. Set per frame
+        // for the same reason as the colours: the pose can change while the group is showing.
+        handPathRef.current?.setAttribute("d", handId === "point" ? GLOVE_HAND : GLOVE_THUMB);
+        cuffPathRef.current?.setAttribute("d", handId === "point" ? GLOVE_CUFF : GLOVE_CUFF_SMALL);
         // The pop from behind the shoulder — same arrival easing as the faces, its own span.
-        handGroup.setAttribute("transform", gloveTransform(arrival(handAt, HAND_IN)));
+        handGroup.setAttribute("transform", gloveTransform(arrival(handAt, HAND_IN), handId));
       } else {
         handGroup.style.display = "none";
       }
@@ -466,8 +472,9 @@ export function BloubBot({
     faceSeenRef.current = face;
     faceFromRef.current = face ? clockRef.current : null;
   }
-  // The glove's own clock, for the pop — stamped the render the hand is asked for.
-  const handSeenRef = useRef<"point" | null>(null);
+  // The glove's own clock, for the pop — stamped the render the hand (or its pose) changes,
+  // so switching point → thumbs-up pops the new pose rather than teleporting it.
+  const handSeenRef = useRef<HandId | null>(null);
   const handFromRef = useRef<number | null>(null);
   if (hand !== handSeenRef.current) {
     handSeenRef.current = hand;
@@ -769,8 +776,8 @@ export function BloubBot({
         strokeLinejoin="round"
         style={{ display: "none" }}
       >
-        <path d={GLOVE_HAND} />
-        <path d={GLOVE_CUFF} />
+        <path ref={handPathRef} d={GLOVE_HAND} />
+        <path ref={cuffPathRef} d={GLOVE_CUFF} />
       </g>
 
       {/* Every other dot — the thinking trio, the tear of the "!" — sits in front. */}

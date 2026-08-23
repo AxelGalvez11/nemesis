@@ -37,9 +37,10 @@ export type FaceId = "reading" | "sigma";
 // the preview board 2026-08-23. Tall ellipses clear the eye vertically, stay apart
 // horizontally, and read MORE like glasses on this face, not less.
 
-/** Outer radii of a lens, body-radius units. */
-export const LENS_RX = 0.2;
-export const LENS_RY = 0.3;
+/** Outer radii of a lens, body-radius units. Sized up 2026-08-24 (owner: "the glasses look
+ *  way too tight") — as big as the 0.46 eye gap allows while two rings still read as two. */
+export const LENS_RX = 0.215;
+export const LENS_RY = 0.335;
 /** Ring thickness. Thin enough to read as wire, thick enough to survive 52px. */
 export const LENS_RING = 0.05;
 
@@ -148,21 +149,53 @@ export const GLOVE_CUFF =
 /** Outline weight, engine units — a cartoon line, reads at 52px and at 168px. */
 export const GLOVE_STROKE = 7.6;
 
-/** Where the glove holds, and where its pop begins (tucked behind the shoulder). */
-export const GLOVE_AT = { x: 102, y: -86, rot: 18, scale: 0.92 } as const;
-export const GLOVE_FROM = { x: 70, y: -58, rot: 34, scale: 0.4 } as const;
+/** The thumb hand: a fat thumb off a squat fist, drawn like the like-icon everyone reads
+ *  at a glance — no seams; the silhouette carries it. Mirrored/flipped by its poses. */
+export const GLOVE_THUMB =
+  "M -32.4 -21.7 A 10 10 0 0 1 -14.6 -29.3 L -5.6 -10.3 C -4 -13.5 0 -15 4 -15 L 10 -15 " +
+  "C 20 -15 27 -9 27 -1 L 27 15 C 27 24 20 29 10 29 L -10 29 C -19 29 -24 24 -24 15 L -24 -1 " +
+  "C -27 -8 -30 -15 -32.4 -21.7 Z";
+
+/** The thumb hand's narrower cuff — the pointing hand is nearly twice as wide. */
+export const GLOVE_CUFF_SMALL =
+  "M -34 37 A 11.5 11.5 0 0 1 -22.5 25.5 L 22.5 25.5 A 11.5 11.5 0 0 1 34 37 " +
+  "A 11.5 11.5 0 0 1 22.5 48.5 L -22.5 48.5 A 11.5 11.5 0 0 1 -34 37 Z";
+
+/** What the glove can do. Owner 2026-08-25: "I don't just want it to point — maybe give,
+ *  like, a thumbs up or thumbs down." */
+export type HandId = "point" | "up" | "down";
+
+/** Where each pose holds and where its pop begins (tucked behind the shoulder). `fx`/`fy`
+ *  mirror the drawing: the thumb hand flips horizontally so the thumb jabs AWAY from the
+ *  body into open space, and thumbs-down is the same hand flipped over. */
+export const GLOVE_POSE: Record<HandId, {
+  at: { x: number; y: number; rot: number; scale: number };
+  from: { x: number; y: number; rot: number; scale: number };
+  fx: 1 | -1;
+  fy: 1 | -1;
+}> = {
+  point: { at: { x: 102, y: -86, rot: 18, scale: 0.92 }, from: { x: 70, y: -58, rot: 34, scale: 0.4 }, fx: 1, fy: 1 },
+  up: { at: { x: 108, y: -96, rot: 10, scale: 1 }, from: { x: 76, y: -64, rot: 26, scale: 0.4 }, fx: -1, fy: 1 },
+  down: { at: { x: 112, y: -54, rot: 10, scale: 1 }, from: { x: 80, y: -40, rot: 26, scale: 0.4 }, fx: -1, fy: -1 },
+};
+
+/** Kept as the point pose's own numbers — the fingertip clip guard reads them. */
+export const GLOVE_AT = GLOVE_POSE.point.at;
+export const GLOVE_FROM = GLOVE_POSE.point.from;
 
 /** How long the pop takes, seconds of scene time. A touch longer than a face's arrival —
  *  it crosses real distance, where a face only fades in place. */
 export const HAND_IN = 0.22;
 
-/** The glove's whole entrance as one transform; `enter` is `arrival(elapsed, HAND_IN)`. */
-export function gloveTransform(enter: number): string {
+/** A pose's whole entrance as one transform; `enter` is `arrival(elapsed, HAND_IN)`. */
+export function gloveTransform(enter: number, pose: HandId = "point"): string {
   const t = Math.min(Math.max(enter, 0), 1);
   const l = (a: number, b: number) => a + (b - a) * t;
+  const { at, from, fx, fy } = GLOVE_POSE[pose];
+  const k = l(from.scale, at.scale);
   return (
-    `translate(${l(GLOVE_FROM.x, GLOVE_AT.x).toFixed(1)} ${l(GLOVE_FROM.y, GLOVE_AT.y).toFixed(1)}) ` +
-    `rotate(${l(GLOVE_FROM.rot, GLOVE_AT.rot).toFixed(1)}) ` +
-    `scale(${l(GLOVE_FROM.scale, GLOVE_AT.scale).toFixed(3)})`
+    `translate(${l(from.x, at.x).toFixed(1)} ${l(from.y, at.y).toFixed(1)}) ` +
+    `rotate(${l(from.rot, at.rot).toFixed(1)}) ` +
+    `scale(${(k * fx).toFixed(3)} ${(k * fy).toFixed(3)})`
   );
 }

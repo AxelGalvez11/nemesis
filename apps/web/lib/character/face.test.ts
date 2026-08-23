@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { EYE_H, EYE_W } from "@/lib/bloub/face";
 
 import { browFrame, raisedBrow, WAGGLE_TIME } from "./brow";
-import { annulusPath, arrival, BRIDGE, FACE_IN, GLOVE_AT, GLOVE_CUFF, GLOVE_FROM, GLOVE_HAND, GLOVE_STROKE, gloveTransform, HAND_IN, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SMIRK } from "./face";
+import { annulusPath, arrival, BRIDGE, FACE_IN, GLOVE_AT, GLOVE_CUFF, GLOVE_CUFF_SMALL, GLOVE_FROM, GLOVE_HAND, GLOVE_POSE, GLOVE_STROKE, GLOVE_THUMB, gloveTransform, HAND_IN, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SMIRK, type HandId } from "./face";
 
 // The face layer is geometry in body-radius units, drawn as holes in the body's own mask.
 // These tests pin the proportions that make each feature read as WHAT IT IS at the 52px the
@@ -107,4 +107,44 @@ test("arrival keeps its face-sized default and scales to any span", () => {
   assert.equal(arrival(FACE_IN), 1, "the default span is still the face's");
   assert.equal(arrival(HAND_IN, HAND_IN), 1);
   assert.ok(arrival(HAND_IN / 2, HAND_IN) > 0.5, "ease-out holds for a custom span too");
+});
+
+test("the thumb hand is one drawn silhouette with its own narrower cuff", () => {
+  assert.equal(GLOVE_THUMB.split("M").length - 1, 1, "the thumb hand is one subpath");
+  assert.ok(GLOVE_THUMB.trim().endsWith("Z"), "the thumb hand closes");
+  assert.equal(GLOVE_CUFF_SMALL.split("M").length - 1, 1);
+  assert.ok(GLOVE_CUFF_SMALL.trim().endsWith("Z"));
+});
+
+test("the poses flip the drawing, not redraw it: up mirrors out, down turns over", () => {
+  // The thumb is drawn jutting left; mirrored, it jabs AWAY from the body into open space.
+  assert.equal(GLOVE_POSE.point.fx, 1);
+  assert.equal(GLOVE_POSE.point.fy, 1);
+  assert.equal(GLOVE_POSE.up.fx, -1, "thumbs-up must mirror so the thumb clears the body");
+  assert.equal(GLOVE_POSE.up.fy, 1);
+  assert.equal(GLOVE_POSE.down.fx, -1);
+  assert.equal(GLOVE_POSE.down.fy, -1, "thumbs-down is the same hand turned over");
+  assert.ok(gloveTransform(1, "up").includes("scale(-1.000 1.000)"));
+  assert.ok(gloveTransform(1, "down").includes("scale(-1.000 -1.000)"));
+  assert.equal(gloveTransform(1), gloveTransform(1, "point"), "the default pose is still the point");
+});
+
+test("every pose pops from behind the body, and holds inside the frame", () => {
+  for (const pose of Object.keys(GLOVE_POSE) as HandId[]) {
+    const { at, from } = GLOVE_POSE[pose];
+    assert.ok(from.scale < at.scale / 2, `${pose} starts big enough to skip the pop`);
+    assert.ok(Math.hypot(from.x, from.y) < Math.hypot(at.x, at.y), `${pose} starts outside its hold`);
+  }
+  // The thumb's tip is its extreme point; if a nudge to a pose pushes it past ±158 the
+  // clip flat-tops it silently. Same guard the fingertip has.
+  const tip = { x: -23.5, y: -34.5 - GLOVE_STROKE / 2 };
+  for (const pose of ["up", "down"] as const) {
+    const { at, fx, fy } = GLOVE_POSE[pose];
+    const rad = (at.rot * Math.PI) / 180;
+    const px = tip.x * fx * at.scale;
+    const py = tip.y * fy * at.scale;
+    const x = at.x + px * Math.cos(rad) - py * Math.sin(rad);
+    const y = at.y + px * Math.sin(rad) + py * Math.cos(rad);
+    assert.ok(Math.abs(x) < 158 && Math.abs(y) < 158, `${pose} tip at (${x.toFixed(1)}, ${y.toFixed(1)}) is clipped`);
+  }
 });
