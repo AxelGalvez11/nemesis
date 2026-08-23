@@ -106,6 +106,15 @@ export const RATES: readonly ProviderRate[] = [
   { basis: "mirrored", checked: "2026-07-24", provider: "deepseek", service: "deepseek-v4-pro", source: "supabase/functions/_shared/llm-cost.ts", unit: "per_million_input_tokens", usd: 0.435 },
   { basis: "mirrored", checked: "2026-07-24", provider: "deepseek", service: "deepseek-v4-pro", source: "supabase/functions/_shared/llm-cost.ts", unit: "per_million_cached_input_tokens", usd: 0.003625 },
   { basis: "mirrored", checked: "2026-07-24", provider: "deepseek", service: "deepseek-v4-pro", source: "supabase/functions/_shared/llm-cost.ts", unit: "per_million_output_tokens", usd: 0.87 },
+  // 🔴 DEEPSEEK VISION IS PRICED AT THE PUBLISHED PEAK RATE, DELIBERATELY THE EXPENSIVE READING.
+  // DeepSeek halves these outside 01:00-04:00 and 06:00-10:00 UTC weekdays; a single-rate table
+  // cannot carry a clock, and after gemini vision was found under-recorded ~150x the standing rule
+  // is that an estimate may only ever err toward looking MORE expensive than reality. Basis is
+  // "published" rather than "mirrored" because these calls go to DeepSeek directly from the web
+  // server (lib/vision/deepseek.ts) — the valve's llm-cost.ts never sees them.
+  { basis: "published", checked: "2026-08-23", provider: "deepseek", service: "deepseek-v4-flash-vision-exp", source: "api-docs.deepseek.com/quick_start/pricing -- peak rate; off-peak is half", unit: "per_million_input_tokens", usd: 0.44 },
+  { basis: "published", checked: "2026-08-23", provider: "deepseek", service: "deepseek-v4-flash-vision-exp", source: "api-docs.deepseek.com/quick_start/pricing -- peak rate; off-peak is half", unit: "per_million_cached_input_tokens", usd: 0.014 },
+  { basis: "published", checked: "2026-08-23", provider: "deepseek", service: "deepseek-v4-flash-vision-exp", source: "api-docs.deepseek.com/quick_start/pricing -- peak rate; off-peak is half", unit: "per_million_output_tokens", usd: 1.32 },
 
   // ── Gemini. 🔴 THE WEAKEST ROW IN THE TABLE, AND THE ONE THAT MATTERS MOST. ──
   //

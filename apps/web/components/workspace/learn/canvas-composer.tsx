@@ -49,7 +49,12 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
 import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model";
 import { endsPushToTalk, isTypingTarget, startsPushToTalk } from "@/lib/learn/canvas-hotkeys";
-import { ACCEPTED_MATERIAL, ASK_PLACEHOLDER, START_WITH_MATERIAL_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
+import {
+  ACCEPTED_MATERIAL,
+  ASK_PLACEHOLDER,
+  CLARIFY_PLACEHOLDER,
+  START_WITH_MATERIAL_PLACEHOLDER,
+} from "@/lib/learn/canvas-tasks";
 import { CAPABILITY_COPY, type ComposerCapability } from "@/lib/learn/composer-capability";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
 import { cn } from "@/lib/utils";
@@ -116,6 +121,16 @@ interface CanvasComposerProps {
    * composer-intent.ts for the full account and for why `answer` outranks `start`.
    */
   intent: ComposerIntent;
+  /**
+   * Nemesis asked the learner a question about what to build, and they typed rather than tapped.
+   *
+   * 🔴🔴 REQUIRED, NOT OPTIONAL, AND THAT IS THE POINT. An optional handler would let a call site
+   * mount this component with a clarification live and no route for it, and the submission would
+   * fall through to `onAsk` — a brand new conversational turn, the pending question still on
+   * screen, and the learner's answer read as a fresh question. Presence is not meaning (see
+   * `onStart`); this is required so the compiler asks every caller where a clarification goes.
+   */
+  onClarify: (text: string) => void;
   busy: boolean;
   busyLabel?: string;
   /**
@@ -179,6 +194,26 @@ interface CanvasComposerProps {
    */
   attachedCount?: number;
   /**
+   * Files the learner PICKED since their last send — names straight off the picker, not sources.
+   *
+   * 🔴🔴 THIS IS THE ATTACHMENT PREVIEW COMING BACK, WITH THE LIE REMOVED. The chips deleted on
+   * 2026-08-21 (owner: "sources are still appearing on the chat composer which i dont want") died
+   * of their data source: fed `canvas.sources`, they chipped pages the MACHINE grounded itself
+   * with as though the learner had attached them. On 2026-08-23 the same owner, pointing at
+   * ChatGPT's composer with two PDFs on it: "nemesis should also be able to attach attachments to
+   * the chat composer like in this image before sending." Both are right, about different data.
+   *
+   * 🔴 SO THIS LIST IS FED BY THE PICK, NEVER BY THE CANVAS. `learning-canvas.tsx` records the
+   * file names at the moment the learner chooses them and clears them on the next send. A
+   * grounding page, a promoted web result, a source restored on reload — none of those pass
+   * through the picker, so none of them can EVER appear here. The failure mode that killed the
+   * old chips is unrepresentable, not discouraged.
+   *
+   * 🔴 NO ✕, DELIBERATELY. Attach ingests immediately (§2: attach ≠ start) — parsing has begun.
+   * An ✕ would promise an un-ingest nothing can perform.
+   */
+  recentAttachments?: readonly { readonly id: string; readonly title: string }[];
+  /**
    * This canvas has not begun. Submitting starts it; `null` once it has.
    *
    * 🔴 SEND IS THE TRIGGER, NEVER ATTACH — that is the whole of §2, and it is why this is a
@@ -202,6 +237,7 @@ interface CanvasComposerProps {
 const MAX_COMPOSER_HEIGHT = 160;
 
 export function CanvasComposer({
+  onClarify,
   selected,
   onClearSelection,
   onAsk,
@@ -216,6 +252,7 @@ export function CanvasComposer({
   busyLabel,
   advanceBusy = false,
   attachedCount = 0,
+  recentAttachments = [],
   onStart,
   listenSignal = null,
 }: CanvasComposerProps) {
@@ -428,6 +465,11 @@ export function CanvasComposer({
     // an answer would attach a curriculum request to a learner's answer to a question, which is the
     // class of defect `composer-intent.ts` exists to end. Stated here rather than assumed.
     if (intent.kind === "answer") onAnswer(value, inputModality.current, Date.now() - startedAt.current);
+    // 🔴🔴 BEFORE `onAsk`, AND WITHOUT THIS LINE THE CARD IS DECORATION. `onAsk` opens a fresh
+    // conversational turn: the learner's "academic" would be read as a new question, the pending
+    // card would still be on screen, and the turn it was holding would never finish. The intent
+    // already knows which of the two this is — the composer must not re-derive it.
+    else if (intent.kind === "clarify") onClarify(value);
     else if (intent.kind === "start") onStart(value, capability);
     else onAsk(value, capability);
     // 🔴 ONE-SHOT, ALWAYS. A capability that survived its own submission would be a persistent mode,
@@ -677,7 +719,27 @@ export function CanvasComposer({
 
             🔴 THE BEHAVIOUR STAYS. `canStartFromAttachment` still makes an empty box submittable
             when material is waiting, because that is about what SEND means, not about what is
-            drawn. Only the display went. */}
+            drawn. Only the display went.
+
+            🔴 2026-08-23: THE DISPLAY IS BACK, FED DIFFERENTLY — see `recentAttachments`. Chips now
+            draw only files the learner picked this turn, so the machine's reading list can never
+            reappear over the composer. */}
+        {recentAttachments.length > 0 && !listening && (
+          <div className="mb-1.5 ml-1 flex flex-wrap items-center gap-1.5">
+            {recentAttachments.map((file) => (
+              <span
+                className="flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)"
+                key={file.id}
+                title={file.title}
+              >
+                <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+                <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                  {file.title}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* The chip needs its own surface. It sits inside the composer's fade, where the
             gradient is nearly transparent, so without a background it was printed straight
@@ -920,7 +982,12 @@ export function CanvasComposer({
                           ? START_WITH_MATERIAL_PLACEHOLDER
                           : intent.kind === "answer"
                             ? (intent.task.placeholder || ASK_PLACEHOLDER)
-                            : ASK_PLACEHOLDER
+                            : // 🔴 IT SAYS WHAT SENDING DOES RIGHT NOW. The card above already asks
+                              // the question, so repeating it here would be the same sentence twice;
+                              // what the learner cannot see is that this box is wired to it.
+                              intent.kind === "clarify"
+                              ? CLARIFY_PLACEHOLDER
+                              : ASK_PLACEHOLDER
                   }
                   ref={input}
                   rows={1}
@@ -984,6 +1051,13 @@ export function CanvasComposer({
           </div>
         </div>
 
+{/* 🔴 THE GAP BETWEEN STOPPING AND THE WORDS ARRIVING HAS TO BE VISIBLE. On the browser
+            lane there is none — it writes as it hears — but where Nemesis falls back to recording
+            and sending, the microphone goes quiet and nothing appears for a second or two. Silence
+            there reads as a control that ate the sentence. */}
+        {dictation.transcribing && (
+          <p className="mt-2 pl-4 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">Turning that into words…</p>
+        )}
         {dictation.error && !listening && (
           <p className="mt-2 pl-4 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}

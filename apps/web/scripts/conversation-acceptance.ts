@@ -17,12 +17,28 @@
  * a browser: see `scripts/conversation-browser.ts`.
  *
  * Usage, from apps/web:
+ *   npm run conversation-acceptance
+ *
+ * It prints as it goes AND writes the whole run to `$TMPDIR/nemesis-conversation-acceptance.txt`,
+ * so there is no pipeline to get right in order to keep the report.
+ *
+ * That reads `apps/web/.env.local`, which is gitignored — copy `.env.example` and fill in
+ * `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY`. 🔴 A FILE RATHER THAN A COMMAND
+ * PREFIX, because a service role key typed on a command line lands in shell history, and this is a
+ * key that can read and write every learner's rows.
+ *
+ * Passing them inline still works and is unchanged:
  *   NEXT_PUBLIC_SUPABASE_URL=… NEXT_PUBLIC_SUPABASE_ANON_KEY=… SUPABASE_SERVICE_KEY=… \
  *     npx tsx scripts/conversation-acceptance.ts
  */
 
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { extractJson } from "@/lib/learn/canvas-parse";
+import { readClarifyQuestion, type UserQuestion } from "@/lib/learn/clarify-question";
 import {
   decisionOrReply,
   turnRouterMessages,
@@ -38,9 +54,38 @@ const LLM = `${SB}/functions/v1/nemesis-llm`;
 
 const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" };
 
+/**
+ * The run is written to a file as well as printed, and the script does it itself.
+ *
+ * 🔴 BECAUSE THE SHELL PLUMBING IS A REAL FAILURE MODE, NOT A HYPOTHETICAL ONE. Asking for
+ * `… 2>&1 | tee somewhere` to capture a run produced 783MB of the letter "y" on 2026-08-22 — the
+ * `yes` command, piped into the file the report was supposed to be in. A report that only exists
+ * if the reader gets a pipeline right is a report that goes missing exactly when somebody is tired
+ * enough to need it written down.
+ *
+ * 🔴 IT STILL PRINTS. This is a copy, not a redirect: watching a live run is most of the value, and
+ * a script that silently swallowed its own output to be tidy would be worse than the pipeline.
+ */
+const REPORT = join(tmpdir(), "nemesis-conversation-acceptance.txt");
+const transcript: string[] = [];
+const say = (line = "") => {
+  transcript.push(line);
+  console.log(line);
+  flush();
+};
+/** Written after every line, so a run that dies halfway still leaves everything up to the failure. */
+function flush(): void {
+  try {
+    writeFileSync(REPORT, `${transcript.join("\n")}\n`);
+  } catch {
+    // A report we cannot write is not a reason to lose the run that is still printing.
+  }
+}
+
 /** A canvas nobody has done anything with — the state the owner's own repro starts from. */
 const FRESH: TurnContext = {
   canvasTitle: "",
+  clarified: [],
   demonstrated: 0,
   history: [],
   courseRequested: false,
@@ -59,6 +104,15 @@ interface Case {
   utterance: string;
   /** What a person would expect. Null when both readings are defensible and we only report. */
   expect: TurnAction | null;
+  /**
+   * Whether this turn should pause for a decision from the learner. Absent when it is not what
+   * this case is measuring.
+   *
+   * 🔴 SEPARATE FROM `expect`, BECAUSE THEY ARE SEPARATE FACTS AND THE PRODUCT TREATS THEM THAT
+   * WAY. `then` says what the turn does; a question says whether it happens now or after one
+   * answer. A case can pin either, both, or neither.
+   */
+  asks?: boolean;
   context?: Partial<TurnContext>;
 }
 
@@ -236,10 +290,63 @@ const CATEGORIES: { name: string; note?: string; cases: Case[] }[] = [
       ].map((utterance) => ({ expect: "study" as const, utterance })),
     ],
   },
+  {
+    // 🔴🔴 THE GATE IS THE COST OF GUESSING WRONG, NOT HOW VAGUE THE LEARNER WAS — owner, 2026-08-22:
+    // *"it should ask when the result is a course structure etc. ... it shouldnt always ask for
+    // things like throwaway questions for a websearch."* People are vague, and that is fine. A
+    // reply produces a sentence, and a sentence guessed wrong costs one more turn. A study turn
+    // builds something the learner has to throw away to escape.
+    //
+    // 🔴 BOTH COLUMNS ARE THE FINDING, EXACTLY AS IN "Show me, versus teach me". A model that never
+    // asks passes the second half and fails the first; a model that always asks does the reverse.
+    // Either alone would let a prompt edit look like an improvement while breaking the other side.
+    //
+    // 🔴 AND THE SECOND COLUMN IS MEASURED ON THE MODEL'S RAW REPLY, NOT ON THE PRODUCT'S. The
+    // product drops a question on a "reply" turn, so scoring the parsed decision would score the
+    // guard and report 100% however the model behaved. What is being measured here is whether the
+    // MODEL asked — because when it does on a reply turn, its lead-in ("One thing first.") still
+    // reaches the learner with no card underneath it, which reads as a broken turn.
+    name: "When to pause for a decision",
+    note: "ask when a wrong guess costs days, never when it costs a sentence",
+    cases: [
+      ...[
+        "teach me biology",
+        "create a course on biology",
+        "teach me Python",
+        "build me a course on machine learning",
+        "teach me history",
+      ].map((utterance) => ({ asks: true, expect: "study" as const, utterance })),
+      // Named material, a named goal, or a subject narrow enough that there is only one course in
+      // it. Asking here is the insult the gate exists to prevent.
+      ...[
+        "teach me my cardiovascular lectures for the exam on Friday",
+        "teach me innate immunity",
+        "quiz me on the Krebs cycle",
+      ].map((utterance) => ({ asks: false, expect: "study" as const, utterance })),
+      // Throwaway. Getting these wrong costs one more sentence, so a card in front of them is pure
+      // delay — and the lead-in sentence arrives with nothing behind it.
+      ...[
+        "what is the half-life of caffeine",
+        "what does osmolarity mean",
+        "whats the latest news on ai",
+        "show me the functional groups",
+      ].map((utterance) => ({ asks: false, expect: "reply" as const, utterance })),
+    ],
+  },
 ];
 
 /** A conversation run turn by turn, each turn seeing the ones before it. */
-const SEQUENCES: { name: string; turns: { said: string; expect: TurnAction | null }[] }[] = [
+const SEQUENCES: {
+  name: string;
+  turns: {
+    said: string;
+    expect: TurnAction | null;
+    /** Decisions already settled, as the canvas would carry them. See `clarify-question.ts`. */
+    clarified?: string[];
+    /** Whether this turn should pause for a decision. Absent when it is not what is measured. */
+    asks?: boolean;
+  }[];
+}[] = [
   {
     name: "small talk into a subject",
     turns: [
@@ -249,6 +356,23 @@ const SEQUENCES: { name: string; turns: { said: string; expect: TurnAction | nul
       { expect: "reply", said: "mostly kinetics" },
       { expect: null, said: "I don't understand clearance" },
       { expect: null, said: "why?" },
+    ],
+  },
+  {
+    // 🔴🔴 THE LOOP THIS CLOSES IS THE ONE THAT WOULD BE WORST TO SHIP. A model that asks, is
+    // answered, and asks again has made the learner do all the work and produced nothing. The
+    // product already blocks the second ask on the resumed turn (`mayAsk`), so what this measures
+    // is whether the model NEEDS blocking — a run where it asks again every time means the contract
+    // sentence is not landing, and the guard is carrying the feature on its own.
+    name: "a vague course, answered",
+    turns: [
+      { asks: true, expect: "study", said: "teach me biology" },
+      {
+        asks: false,
+        clarified: ['The learner answered your question "Which kind of biology?"\nbiology-scope = cell'],
+        expect: "study",
+        said: "teach me biology",
+      },
     ],
   },
   {
@@ -275,7 +399,13 @@ async function ask(key: string, utterance: string, context: TurnContext) {
   const body = (await res.json().catch(() => null)) as { choices?: { message?: { content?: string } }[] } | null;
   const text = body?.choices?.[0]?.message?.content ?? "";
   if (!res.ok) throw new Error(`valve ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
-  return decisionOrReply(text);
+  // 🔴🔴 THE MODEL'S OWN ASK, BEFORE THE PRODUCT'S GATE, AND THAT IS THE ONLY HONEST WAY TO MEASURE
+  // IT. `readTurnDecision` drops a question on a "reply" turn, so a run scored on the parsed
+  // decision would report "never asks on a reply turn" no matter how the model behaved — it would
+  // be measuring the guard, which a unit test already proves. This reads the raw envelope, so the
+  // two columns are "what the model wanted" and "what the learner got".
+  const asked = readClarifyQuestion(extractJson(text)?.question);
+  return { asked, decision: decisionOrReply(text) };
 }
 
 async function main(): Promise<void> {
@@ -306,23 +436,26 @@ async function main(): Promise<void> {
   }).then((r) => r.json());
   const key: string = minted?.key;
   if (!key) throw new Error(`could not mint a device key: ${JSON.stringify(minted).slice(0, 200)}`);
-  console.log(`learner ${userId.slice(0, 8)}… · plan pro · key ${key.slice(0, 8)}…\n`);
+  say(`learner ${userId.slice(0, 8)}… · plan pro · key ${key.slice(0, 8)}…\n`);
 
   let total = 0;
   let passed = 0;
   const bare: { utterance: string; alone: TurnAction; afterGreeting: TurnAction }[] = [];
 
   for (const category of CATEGORIES) {
-    console.log(`── ${category.name}${category.note ? `  (${category.note})` : ""}`);
+    say(`── ${category.name}${category.note ? `  (${category.note})` : ""}`);
     let hit = 0;
     let judged = 0;
     for (const item of category.cases) {
       const context = { ...FRESH, ...item.context };
       let decision;
+      let asked: UserQuestion | null = null;
       try {
-        decision = await ask(key, item.utterance, context);
+        const reply = await ask(key, item.utterance, context);
+        decision = reply.decision;
+        asked = reply.asked;
       } catch (error) {
-        console.log(`   ERR  ${item.utterance} — ${(error as Error).message}`);
+        say(`   ERR  ${item.utterance} — ${(error as Error).message}`);
         continue;
       }
       const then = decision?.then ?? "reply";
@@ -335,38 +468,63 @@ async function main(): Promise<void> {
           passed += 1;
         }
       }
+      // 🔴 SCORED SEPARATELY FROM `expect`, AND BOTH COUNT. A turn can route correctly and still
+      // stop the learner for no reason, or route correctly and build the wrong course silently.
+      // Folding them into one tick would hide whichever half was wrong.
+      if (item.asks !== undefined) {
+        judged += 1;
+        total += 1;
+        const askOk = item.asks ? decision?.question != null : asked === null;
+        if (askOk) {
+          hit += 1;
+          passed += 1;
+        }
+        const askMark = askOk ? "   ok" : "  FAIL";
+        const shape = asked
+          ? `asked ${asked.options.length} options${decision?.question ? "" : " (DROPPED: not a study turn)"}`
+          : "did not ask";
+        say(`${askMark}  ${JSON.stringify(item.utterance)} · expected ${item.asks ? "a question" : "no question"} → ${shape}`);
+        if (asked) say(`         "${asked.prompt}" — ${asked.options.map((o) => o.label).join(" / ")}`);
+      }
       const mark = item.expect === null ? "   ·" : ok ? "   ok" : "  FAIL";
       // 🔴 `topic` IS PRINTED BECAUSE IT IS LOAD-BEARING NOW, NOT DECORATION. It decides whether
       // the "Learn this" button appears beside a plain answer, so a null on a real question is a
       // missing offer and a value under "hello" is an offer to learn a greeting.
       const topic = decision?.topic ?? null;
-      console.log(`${mark}  ${JSON.stringify(item.utterance)} → ${then} · topic=${topic === null ? "—" : JSON.stringify(topic)}   "${(decision?.say ?? "").slice(0, 56)}"`);
+      say(`${mark}  ${JSON.stringify(item.utterance)} → ${then} · topic=${topic === null ? "—" : JSON.stringify(topic)}   "${(decision?.say ?? "").slice(0, 56)}"`);
       if (category.name.startsWith("Bare topics")) {
         const seen = bare.find((b) => b.utterance === item.utterance);
         if (seen) seen.afterGreeting = then;
         else bare.push({ afterGreeting: then, alone: then, utterance: item.utterance });
       }
     }
-    if (judged) console.log(`   ${hit}/${judged}\n`);
-    else console.log("");
+    if (judged) say(`   ${hit}/${judged}\n`);
+    else say("");
   }
 
   // 🔴 THE PAIR IS THE MEASUREMENT. Four words that read one way alone and another way as an answer
   // to a question is the difference between understanding and a rule.
-  console.log("── Bare topics: does context change the reading?");
+  say("── Bare topics: does context change the reading?");
   const moved = bare.filter((b) => b.alone !== b.afterGreeting).length;
-  for (const b of bare) console.log(`   ${b.utterance.padEnd(18)} alone → ${b.alone.padEnd(6)} after a greeting → ${b.afterGreeting}`);
-  console.log(`   ${moved}/${bare.length} read differently in context\n`);
+  for (const b of bare) say(`   ${b.utterance.padEnd(18)} alone → ${b.alone.padEnd(6)} after a greeting → ${b.afterGreeting}`);
+  say(`   ${moved}/${bare.length} read differently in context\n`);
 
   for (const sequence of SEQUENCES) {
-    console.log(`── Sequence: ${sequence.name}`);
+    say(`── Sequence: ${sequence.name}`);
     const history: TurnExchange[] = [];
     for (const turn of sequence.turns) {
       let decision;
+      let asked: UserQuestion | null = null;
       try {
-        decision = await ask(key, turn.said, { ...FRESH, history: [...history] });
+        const reply = await ask(key, turn.said, {
+          ...FRESH,
+          clarified: turn.clarified ?? [],
+          history: [...history],
+        });
+        decision = reply.decision;
+        asked = reply.asked;
       } catch (error) {
-        console.log(`   ERR  ${turn.said} — ${(error as Error).message}`);
+        say(`   ERR  ${turn.said} — ${(error as Error).message}`);
         break;
       }
       const then = decision?.then ?? "reply";
@@ -375,20 +533,34 @@ async function main(): Promise<void> {
         total += 1;
         if (ok) passed += 1;
       }
+      if (turn.asks !== undefined) {
+        total += 1;
+        const askOk = turn.asks ? decision?.question != null : asked === null;
+        if (askOk) passed += 1;
+        say(`${askOk ? "   ok" : "  FAIL"}  ${JSON.stringify(turn.said)} · expected ${turn.asks ? "a question" : "no question"} → ${asked ? `asked "${asked.prompt}"` : "did not ask"}`);
+      }
       const mark = turn.expect === null ? "   ·" : ok ? "   ok" : "  FAIL";
-      console.log(`${mark}  ${JSON.stringify(turn.said)} → ${then}`);
-      console.log(`         "${(decision?.say ?? "").replace(/\n+/g, " ").slice(0, 140)}"`);
+      say(`${mark}  ${JSON.stringify(turn.said)} → ${then}`);
+      say(`         "${(decision?.say ?? "").replace(/\n+/g, " ").slice(0, 140)}"`);
       history.push({ replied: decision?.say ?? "", said: turn.said });
     }
-    console.log("");
+    say("");
   }
 
-  console.log(`TOTAL ${passed}/${total} judged utterances behaved as a person would expect`);
+  say(`TOTAL ${passed}/${total} judged utterances behaved as a person would expect`);
+  say(`report written to ${REPORT}`);
 
   // Leave nothing behind. Cleanup is not optional: throwaway learners accumulated once already.
   await fetch(`${SB}/auth/v1/admin/users/${userId}`, { headers: svc, method: "DELETE" });
-  console.log(`cleaned up learner ${userId.slice(0, 8)}…`);
+  say(`cleaned up learner ${userId.slice(0, 8)}…`);
   process.exit(passed === total ? 0 : 1);
 }
 
-void main();
+void main().catch((error: unknown) => {
+  // 🔴 A CRASH IS A RESULT. Missing keys, a valve refusal, a network drop: whoever reads the report
+  // needs to see why nothing was measured, and the console alone scrolls away.
+  say("");
+  say(`RUN FAILED — ${(error as Error).message}`);
+  say(`report written to ${REPORT}`);
+  process.exit(1);
+});

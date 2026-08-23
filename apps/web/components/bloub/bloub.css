@@ -41,7 +41,17 @@
   pointer-events: none;
   z-index: 30;
   will-change: transform;
-  transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* How long a CHANGE OF STATION takes — the walk to the middle and the walk back. It is a
+     variable rather than a literal so `prefers-reduced-motion` below can shorten the journey
+     without JavaScript having to ask about it. */
+  --bloub-travel: 680ms;
+  /* 🔴 `--bloub-travel-ms` IS AN OVERRIDE THE DOCK SETS PER MOVE, and it is unset most of the
+     time. Not every move is a journey: following the composer as it grows under the character
+     wants ~140ms, and the very first placement wants none at all so a canvas that opens
+     already thinking does not slide in from a corner it was never standing in. Falling back
+     to `--bloub-travel` keeps the reduced-motion rule below authoritative over the one move
+     that carries meaning. See bloub-dock.tsx. */
+  transition: transform var(--bloub-travel-ms, var(--bloub-travel)) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -49,6 +59,59 @@
     /* 🔴 SHORTER, NOT CANCELLED. Where the character is standing IS the message — that
        the system has taken the floor to think. Removing the travel would remove the
        information, not just the motion. */
-    transition: transform 220ms ease;
+    --bloub-travel: 220ms;
+  }
+}
+
+/* ── The hop ─────────────────────────────────────────────────────────────────
+ *
+ * Owner 2026-08-20: "the mascot should be able to jump when clicked on ... he should
+ * jump, wink, or do an eyebrow waggle."
+ *
+ * 🔴 A JUMP IS NOT A POSE, WHICH IS WHY IT IS HERE AND NOT IN THE ENGINE. The pose table in
+ * `lib/bloub` describes a face on a sphere — where the eyes sit, how wide they open, what the
+ * silhouette is. Leaving the ground is the whole body moving through space, which that model
+ * has no vocabulary for and which does not need one: it is a transform on the element the
+ * character is drawn in. The engine stays unedited and keeps being the single opinion about
+ * the face.
+ *
+ * 🔴 TRANSFORM AND NOTHING ELSE, for the same reason the dock's journey is a transform — this
+ * runs on a character floating over a live composer, and a decorative hop that lays the page
+ * out twenty times would make typing feel worse than no hop at all.
+ *
+ * The shape of it: a fast crouch, a quick rise to the top, a slower hang, then a fall that
+ * lands harder than it left (gravity is not symmetrical with a jump's push-off), and a small
+ * squash on landing. `translateY` is negative upward.
+ */
+.bloub-jump {
+  animation: bloub-jump var(--bloub-jump-ms, 620ms) cubic-bezier(0.33, 0, 0.2, 1) both;
+  /* Squash reads as weight only if the body flattens against the floor, not about its middle.
+     Without this the character shrinks symmetrically and looks like it is being scaled rather
+     than landing on something. */
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+
+@keyframes bloub-jump {
+  0% { transform: translateY(0) scaleY(1); }
+  /* The crouch. Small — a deep one on a 52px character reads as a glitch. */
+  12% { transform: translateY(2%) scaleY(0.9); }
+  /* Up, and stretched slightly along the direction of travel. */
+  34% { transform: translateY(-58%) scaleY(1.06); }
+  /* The hang, where a jump becomes readable at all. */
+  50% { transform: translateY(-66%) scaleY(1); }
+  78% { transform: translateY(0) scaleY(1); }
+  /* Landing. Flattens, then comes back. */
+  88% { transform: translateY(0) scaleY(0.86); }
+  100% { transform: translateY(0) scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 🔴 REMOVED, NOT SHORTENED, AND THAT DIFFERS FROM THE DOCK ABOVE. The dock's travel carries
+     information — where the character stands says whether Nemesis has taken the floor — so it
+     is only made quicker. A hop carries none: it is a reply to a poke, and the wink in the
+     same cycle still answers one. */
+  .bloub-jump {
+    animation: none;
   }
 }

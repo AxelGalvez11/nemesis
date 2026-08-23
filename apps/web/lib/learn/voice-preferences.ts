@@ -26,7 +26,23 @@
 /** Whether the microphone opens by itself once Nemesis has finished speaking. */
 export type AutoDictation = "unasked" | "on" | "off";
 
-/** Whether Nemesis reads questions and corrections aloud on this canvas. */
+/**
+ * Whether Nemesis starts reading aloud BY ITSELF.
+ *
+ * 🔴 THE AUTOPLAY PREFERENCE, AND SINCE §48 THAT IS THE ONLY THING IT DECIDES. Owner, 2026-08-22:
+ * *"When enabled: after Nemesis finishes generating a response, begin TTS automatically… When
+ * disabled: responses remain silent by default, the user should still be able to manually play a
+ * response."* So this gates the UNPROMPTED lane and nothing else: the play button under an answer,
+ * "hear it again" on a foreign phrase and reading a highlighted passage all work with it off,
+ * because pressing a button IS the prompt.
+ *
+ * 🔴 USER-LEVEL, WITH NO PER-CANVAS OVERRIDE, AND THAT IS A DELIBERATE CHOICE ABOUT CLUTTER. The
+ * owner asked us to pick based on the architecture and to prefer the least cluttered UX. It has
+ * always been one stored value shared by every canvas; a per-canvas override would mean a second
+ * control, a second stored thing, and a learner having to remember which canvas they set it on —
+ * for a preference nobody wants to hold two opinions about. One switch, in the canvas menu where it
+ * is reachable mid-session, writing one preference that every canvas reads.
+ */
 export type VoiceMode = "on" | "off";
 
 const AUTO_DICTATION_KEY = "nemesis.voice.autoDictation";
@@ -128,40 +144,10 @@ export function shouldOpenDictation(input: {
   return input.moment === "question";
 }
 
-/**
- * How fast Nemesis reads, as a multiplier.
- *
- * 🔴 THREE STEPS, NOT A SLIDER. Owner, 2026-08-20: *"there should also be a control for controlling
- * the voice speaking speed."* A slider invites fine-tuning a thing nobody wants to fine-tune, and
- * every product that gets this right — podcast players, audiobooks — ships a cycle button. Three
- * values fit in one control the width of a word.
- *
- * 🔴 NOTHING BELOW 1. Voice already runs a QUESTION at 0.95 as a concession to working memory
- * (`speech-route.ts`), and that decision belongs to the moment rather than to a preference: a
- * learner who slows every utterance down is training on a rhythm nobody speaks. The dial goes up.
- */
-export const VOICE_SPEEDS = [1, 1.5, 2] as const;
-
-export type VoiceSpeed = (typeof VOICE_SPEEDS)[number];
-
-export const DEFAULT_VOICE_SPEED: VoiceSpeed = 1;
-
-const SPEED_KEY = "nemesis.canvas.voice-speed.v1";
-
-/** The next step, wrapping. What the cycle button does. */
-export function nextVoiceSpeed(current: VoiceSpeed): VoiceSpeed {
-  const at = VOICE_SPEEDS.indexOf(current);
-  return VOICE_SPEEDS[(at + 1) % VOICE_SPEEDS.length]!;
-}
-
-/** 🔴 AN UNRECOGNISED STORED VALUE FALLS BACK RATHER THAN BEING TRUSTED — the same rule
- *  `readVoice()` follows for a speaker id. A hand-edited `4` would otherwise read every answer at
- *  quadruple speed with no way to tell why. */
-export function readVoiceSpeed(storage: Pick<Storage, "getItem"> | null): VoiceSpeed {
-  const raw = Number(storage?.getItem(SPEED_KEY));
-  return (VOICE_SPEEDS as readonly number[]).includes(raw) ? (raw as VoiceSpeed) : DEFAULT_VOICE_SPEED;
-}
-
-export function writeVoiceSpeed(storage: Pick<Storage, "setItem"> | null, value: VoiceSpeed): void {
-  storage?.setItem(SPEED_KEY, String(value));
-}
+// 🔴🔴 THE READING SPEED USED TO LIVE HERE AND IT HAS MOVED TO `playback.ts` (§48). It was a
+// SYNTHESIS rate — a number posted to the provider — so every press of the control threw away a paid
+// MP3 and bought another one at a different pace: a round trip, a wait, and a restart from the
+// beginning of the sentence. Speed is a property of LISTENING. It belongs to the audio element,
+// where it is instant and free, and the steps now go below 1 because slowing a RECORDING down is a
+// different act from asking a synthesiser to speak unnaturally slowly. The storage key travelled
+// with it, so nobody's setting was reset.

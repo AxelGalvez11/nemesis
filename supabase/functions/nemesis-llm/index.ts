@@ -87,6 +87,13 @@ const MAX_REQUEST_BYTES = 2_000_000
 const MAX_MESSAGES = 200
 const MAX_MESSAGE_BYTES = 1_250_000
 const MAX_COMPLETION_TOKENS = 32_000
+/** Ceiling on forwarded tool definitions. A caller needing more than this is not describing a
+ *  choice, it is shipping a catalogue, and every one of them is billed context on every call. */
+const MAX_TOOLS = 16
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
 // ── Cost attribution (PostHog LLM analytics) ────────────────────────────────
@@ -616,6 +623,38 @@ async function chatCompletions(req: Request): Promise<Response> {
   }
   if (typeof body.max_completion_tokens === 'number') {
     body.max_completion_tokens = Math.max(1, Math.min(MAX_COMPLETION_TOKENS, Math.floor(body.max_completion_tokens)))
+  }
+
+  // 🔴🔴 JSON MODE SURVIVES THE VALVE. It did not, and that is why the learning lane parses JSON
+  // out of prose: `apps/web/lib/learn/canvas-ops.ts` says so in as many words — "there is no JSON
+  // mode on this lane — `response_format` is not handled by the nemesis-llm valve and no caller in
+  // the repo has ever sent it." No caller had ever sent it because sending it did nothing.
+  //
+  // The cost of not having it is not cosmetic. When the scrape fails the learning lane yields no
+  // operations and the page is left untouched — silently. A learner asks for something and nothing
+  // happens, with no error anywhere.
+  //
+  // 🔴 ALLOW-LISTED, NOT FORWARDED WHOLESALE. This valve is the shared front door for both clients
+  // and it is where spend is enforced; passing an arbitrary caller-supplied body upstream would let
+  // a client set anything the provider accepts. Only the two shapes DeepSeek documents are let
+  // through, and `json_object` is the only response_format type that exists there.
+  //
+  // 🔴 DEEPSEEK REQUIRES THE WORD "json" IN THE PROMPT, or generation can run to the token limit
+  // emitting whitespace — a request that looks hung. Callers own that; the guard here is that
+  // max_tokens is already clamped above, so the failure is bounded rather than open-ended.
+  if (isRecord(body.response_format) && body.response_format.type === 'json_object') {
+    body.response_format = { type: 'json_object' }
+  } else {
+    delete body.response_format
+  }
+  if (Array.isArray(body.tools) && body.tools.length > 0) {
+    body.tools = body.tools.slice(0, MAX_TOOLS)
+    if (body.tool_choice !== undefined && typeof body.tool_choice !== 'string' && !isRecord(body.tool_choice)) {
+      delete body.tool_choice
+    }
+  } else {
+    delete body.tools
+    delete body.tool_choice
   }
 
   const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'

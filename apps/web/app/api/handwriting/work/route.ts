@@ -15,8 +15,8 @@ import { NextResponse } from "next/server";
 
 import { checkImageUpload } from "@/lib/handwriting/upload";
 import { readWrittenWork } from "@/lib/handwriting/written-work";
-import { verifyBearer } from "@/lib/server";
-import { visionConfigured } from "@/lib/vision/gemini";
+import { adminClient, verifyBearer } from "@/lib/server";
+import { visionConfigured } from "@/lib/vision/read";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -43,7 +43,9 @@ export async function POST(req: Request) {
   if (!upload.ok) return NextResponse.json({ error: upload.error }, { status: upload.status });
 
   const bytes = new Uint8Array(await upload.file.arrayBuffer());
-  const work = await readWrittenWork(bytes, upload.mime);
+  const work = await readWrittenWork(bytes, upload.mime, {
+    spend: { admin: adminClient(), scope: { operation: "written-work" }, userId: user.id },
+  });
   // 🔴 null IS AN INFRASTRUCTURE FAILURE, NOT AN ABSTENTION, and the two must not collapse into
   // one response. A provider outage means we never got a reading and the learner should try again;
   // an abstention means we got one and it says the page could not be made out, which is a 200 with

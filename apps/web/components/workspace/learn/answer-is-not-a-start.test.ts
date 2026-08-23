@@ -51,6 +51,7 @@ async function render(intent: ComposerIntent, attachedCount = 0) {
       intent,
       onAnswer: noop,
       onAsk: noop,
+      onClarify: noop,
       onClearSelection: noop,
       onFiles: noop,
       onStart: noop,
@@ -139,4 +140,71 @@ test("🔴 the caller hands over the start handler unconditionally", () => {
     "the stale-state predicate is back in the composer's wiring",
   );
   assert.match(canvasSource, /intent=\{intent\}/, "the composer is no longer told what a submission means");
+});
+
+// ── A clarification is answerable through the same box ──────────────────────
+
+test("🔴🔴 a pending clarification labels the composer as its answer surface", async () => {
+  // The card's buttons are a shortcut for typing the label. The box under them must say so, or the
+  // learner reads the options as the only way to respond and the "Other" case never gets used.
+  const html = await render({
+    kind: "clarify",
+    question: {
+      id: "course-depth",
+      invitesWritten: true,
+      options: [
+        { description: null, id: "survey", label: "Overview" },
+        { description: null, id: "academic", label: "Academic" },
+      ],
+      prompt: "How deep should this course go?",
+    },
+  });
+  assert.ok(html.includes("Pick one above"), "the composer is not wired to the pending question");
+  assert.ok(!html.includes(ASK_PLACEHOLDER), "it still reads as an ordinary question box");
+  // 🔴 AND IT IS NOT AN EVIDENCE SURFACE. `answering` drives the answer chrome, and a preference
+  // dressed as a cognitive answer is the confusion this whole path exists to avoid.
+  assert.ok(!html.includes("Submit answer"), "a preference is being presented as a demonstration");
+});
+
+// ── Files the learner just picked are visible before sending ────────────────
+
+test("🔴 a file picked mid-conversation chips on the composer before the next send", async () => {
+  // Owner, 2026-08-23, pointing at ChatGPT: "nemesis should also be able to attach attachments to
+  // the chat composer like in this image before sending." Attaching worked; it was invisible where
+  // the learner was typing. The chips are fed by the PICK, never by canvas.sources — the data
+  // source that got the previous chips deleted (2026-08-21: machine-grounded pages chipping as if
+  // the learner attached them) cannot reach these.
+  const { CanvasComposer } = await import("./canvas-composer");
+  const html = renderToStaticMarkup(
+    createElement(CanvasComposer, {
+      busy: false,
+      intent: { kind: "ask" },
+      onAnswer: noop,
+      onAsk: noop,
+      onClarify: noop,
+      onClearSelection: noop,
+      onFiles: noop,
+      onStart: noop,
+      recentAttachments: [{ id: "f1", title: "Top_300_Drug_Charts.pdf" }],
+      selected: [],
+    }),
+  );
+  assert.ok(html.includes("Top_300_Drug_Charts.pdf"), "the picked file is invisible at the composer");
+
+  const empty = await render({ kind: "ask" });
+  assert.ok(!empty.includes("Top_300_Drug_Charts"), "control: chips render with nothing picked");
+});
+
+test("🔴 the chips are fed by the pick, not by the canvas — the 2026-08-21 regression stays dead", () => {
+  // The deleted chips died of `pendingSources={canvas.sources...}`. Nothing may feed the new row
+  // from the canvas's source list.
+  assert.ok(
+    !/recentAttachments=\{canvas\.sources/.test(canvasSource),
+    "the attachment chips are reading canvas.sources again",
+  );
+  assert.match(
+    canvasSource,
+    /file\.name/,
+    "the chips are no longer built from the picked files themselves",
+  );
 });

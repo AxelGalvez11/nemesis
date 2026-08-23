@@ -45,6 +45,7 @@ import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
 import { readMilestones } from "./turn-preview";
 import type { CanvasVisualRequest } from "./canvas-visual";
 import { extractJson } from "./canvas-parse";
+import { readClarifyQuestion, type UserQuestion } from "./clarify-question";
 
 /**
  * What Nemesis does with this turn, beyond speaking.
@@ -198,6 +199,24 @@ export interface TurnDecision {
    * model's reading. There is no "build me a course" regex and there must never be one.
    */
   curriculumFor: string | null;
+  /**
+   * A decision Nemesis needs from the learner before this turn can finish, or null when it does not
+   * need one. Null on nearly every turn.
+   *
+   * 🔴🔴 IT SITS BESIDE `then`, IT IS NOT A VALUE OF IT, AND THAT IS THE WHOLE PLACEMENT ARGUMENT.
+   * `then` answers one question — does the page change? — and the header above says a new value
+   * would only ever be another word for one of the existing doors. Asking is not a door: it is
+   * one of them, PARKED. `{then: "study", question: …}` is "I am going to teach this, once you
+   * tell me which kind", and the caller runs the same "study" it would have run, afterwards. A
+   * `"clarify"` action would have forced every consumer to learn a new destination and then work
+   * out which real one to run when the answer came back.
+   *
+   * 🔴 WHICH MEANS THE PARKING IS THE CALLER'S, NOT THE MODEL'S. Nothing here defers anything. The
+   * canvas holds the decision, shows the card, and re-runs `then` when the answer lands — and when
+   * it cannot host a card right now (an answer is already owed to a real question), it drops this
+   * field and runs `then` immediately. Going ahead is always a legal reading of a clarification.
+   */
+  question: UserQuestion | null;
 }
 
 /** Everything the canvas already knows, stated as facts for the model to reason over. */
@@ -281,6 +300,22 @@ export interface TurnContext {
    * matching benefit; six exchanges is enough for a pronoun to resolve.
    */
   history: readonly TurnExchange[];
+  /**
+   * Decisions the learner has already made this sitting, in answer to questions Nemesis itself
+   * asked. Empty on nearly every turn. See `clarify-question.ts`.
+   *
+   * 🔴🔴 IT IS HERE SO THE MODEL STOPS ASKING, AND THAT IS THE WHOLE JOB. A clarification the model
+   * cannot see on the next turn is a clarification it will ask again, and a product that asks the
+   * same question twice is worse than one that never asked: the first ask reads as care, the second
+   * reads as not listening. The contract tells it not to re-ask; this is what makes that
+   * instruction possible to obey.
+   *
+   * 🔴 SEPARATE FROM `history` BECAUSE IT IS NOT SOMETHING ANYONE SAID. The exchanges are a
+   * conversation and pronouns resolve against them. This is a settled fact about what to build, and
+   * it stays true for the rest of the sitting no matter how far back the exchange that produced it
+   * scrolls out of the bounded window.
+   */
+  clarified: readonly string[];
 }
 
 export interface TurnExchange {
@@ -555,7 +590,7 @@ const DECISION_CONTRACT = [
   "```json",
   '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "milestones": ["..."],'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
-  + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null,',
+  + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -633,12 +668,24 @@ const DECISION_CONTRACT = [
   + "learn it. Give it for a real question about a subject and leave it null for a greeting, a "
   + "remark or anything with no subject in it.",
   "",
+  // 🔴 THE BORDERLINE CASE SEARCHES, AND THAT IS AN OWNER DECISION (2026-08-21: *"make it search
+  // when unsure, remove the 'costs money and time' it should be able to search web"*). This
+  // sentence used to read *"Searching costs money and time, so when it is genuinely borderline, say
+  // false"* — so a coin-flip question was answered from training data, and the whole point of
+  // letting the model decide was to stop answering current questions from stale memory.
+  //
+  // 🔴 IT IS ONLY THE TIE-BREAK THAT MOVED. The false list above is untouched and is what actually
+  // does the work: an explanation, a definition, a calculation, a translation and anything the
+  // attached material answers are all still false, and none of those are borderline. What flipped
+  // is the residue — the questions where the model genuinely cannot tell — and on those a wrong
+  // "false" is invisible to the learner while a wrong "true" costs a search.
   '"needsWeb" is true when answering well depends on something that changes or that you could not '
   + "have memorised: recent or ongoing events, current prices, standings, releases, versions, laws, "
   + "guidelines, schedules, anything the learner says is new or has changed, or a specific source "
   + "they want read. It is false for settled knowledge, explanations, definitions, calculations, "
-  + "translations, and anything answerable from the attached material. Searching costs money and "
-  + "time, so when it is genuinely borderline, say false.",
+  + "translations, and anything answerable from the attached material. When it is genuinely "
+  + "borderline, say true. An answer built on pages that exist beats one built on a memory nobody "
+  + "can date, and the learner cannot tell the two apart.",
   "",
   // 🔴 THE MODEL DECIDES WHEN IT HAS ENOUGH, WHICH MEANS IT HAS TO BE ABLE TO SAY "NOT YET". A
   // single upfront count was still a guess made blind: nothing has been read at the moment it is
@@ -683,6 +730,67 @@ const DECISION_CONTRACT = [
   + 'a course request is usually also "study". The WHICH-SUBJECT rule applies here unchanged — a '
   + "category with no member chosen is a question back, not a plan — and if they asked an ordinary "
   + "question, this is null however the message arrived.",
+  "",
+  // 🔴🔴 THE GATE IS COST OF BEING WRONG, NOT VAGUENESS, AND THAT IS THE OWNER'S OWN CORRECTION
+  // (2026-08-22): *"it should ask when the result is a course structure etc. ... it shouldnt always
+  // ask for things like throwaway questions for a websearch."*
+  //
+  // An earlier draft of this gate said "ask when an unresolved decision would materially change
+  // what you are about to build OR SAY", which reads sensibly and is wrong in a way that produces
+  // exactly the behaviour he named. Almost every vague utterance would change what gets SAID —
+  // "tell me about enzymes" could be a paragraph on catalysis or a paragraph on kinetics — so a
+  // model obeying that sentence asks a clarifying question before answering a one-line factual
+  // question. The learner wanted a sentence and got a form.
+  //
+  // 🔴 VAGUENESS IS NOT THE TRIGGER, BECAUSE PEOPLE ARE VAGUE AND THAT IS FINE. The trigger is what
+  // the turn is about to PRODUCE. A sentence is disposable: guess, and a learner who wanted the
+  // other reading simply asks again, one turn lost. A course is structural: it retitles their
+  // canvas, picks a scope, orders a curriculum and gets taught for days, and the way out of a wrong
+  // one is to throw the work away. Same vagueness, two completely different costs of guessing.
+  //
+  // 🔴 SO THE GATE IS TIED TO `then`, WHICH IS THE ONE FACT THAT ALREADY DISTINGUISHES THEM. It is
+  // not a new judgement the model has to make on top of the one it is already making, and it is
+  // enforced in `readTurnDecision` rather than merely requested here — see that function.
+  '"question" pauses this turn to get one decision from the learner. Whatever you put in "then" '
+  + "happens once they have answered, so it is not a way to avoid deciding what this turn is. Use "
+  + "null on nearly every turn.",
+  "",
+  "🔴 ONLY EVER ASK ON A \"study\" TURN. On a \"reply\" you are producing a sentence, and a "
+  + "sentence is cheap to get wrong: guess the most useful reading, answer it, and let the learner "
+  + "redirect you in one line. Never hold up an answer to ask which kind of answer they wanted. A "
+  + "\"study\" turn is different, because it BUILDS something: it takes over the canvas, fixes a "
+  + "scope, orders a curriculum and gets taught for days, and the only way out of the wrong one is "
+  + "to throw the work away.",
+  "",
+  "On a \"study\" turn, ask only when the request could honestly become several genuinely "
+  + "different courses and you cannot tell which. If the learner's words, the attached material or "
+  + "the earlier turns point at one of them, take it and go ahead. Never ask about something you "
+  + "could adjust later just as easily, and never ask a learner to confirm what they have already "
+  + "told you.",
+  "",
+  "\"teach me biology\" or \"create a course on biology\" is worth a question: general biology, "
+  + "cell and molecular biology and human biology are different courses, and building the wrong one "
+  + "wastes days. \"teach me Python\" is too, because programming fundamentals, data analysis and "
+  + "automation are different courses. \"teach me my cardiovascular lectures for the exam on "
+  + "Friday\" is not: the subject, the material and the goal are all there, so asking would only "
+  + "delay them. And \"what does osmolarity mean\", \"what is the half-life of caffeine\" or "
+  + "\"whats the latest news on ai\" are never worth one, however loosely they are phrased: those "
+  + "are answers, and an answer that missed the point costs one more sentence.",
+  "",
+  "When you do ask, the shape is:",
+  '  {"id": "course-depth", "prompt": "How deep should this course go?", "options": [{"id": "survey",'
+  + ' "label": "Overview", "description": "The major ideas, without going deeply technical."}, {"id":'
+  + ' "academic", "label": "Academic", "description": "Comparable to a college course."}],'
+  + ' "allowOther": true}',
+  "",
+  "Two to four options, each a real alternative somebody would pick on purpose. Do not pad to four: "
+  + "three is a complete answer and so is two. Give every option a short \"description\" saying "
+  + "what choosing it means, keep \"prompt\" to one plain question, and set \"allowOther\" to "
+  + "false only when the options really are the whole space. Ask at most one question at a time, and "
+  + "when the learner has just answered one, do not ask another: go and do the thing.",
+  "",
+  "Keep the text after the block to a sentence at most when you ask, and do not repeat the "
+  + "question inside it. The learner is about to read the question itself on a card underneath.",
   "",
   // 🔴🔴 AN ORDERED PROCEDURE, NOT A PILE OF MAXIMS, AND THE ORDER IS MEASURED. Three earlier
   // drafts each fixed one direction and broke the other, because the two rules genuinely conflict
@@ -848,6 +956,15 @@ export function turnRouterMessages(input: {
         role: "system" as const,
       }]
       : []),
+    ...(context.clarified.length > 0
+      ? [{
+        content:
+          "DECISIONS THE LEARNER HAS ALREADY MADE, in answer to questions you asked earlier. These "
+          + "are settled. Do not ask about them again.\n\n"
+          + context.clarified.join("\n"),
+        role: "system" as const,
+      }]
+      : []),
     ...(context.webContext.trim()
       ? [{
         content:
@@ -941,9 +1058,30 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   const then = asAction(parsed.then);
   // 🔴 A BLOCK WITH NO `then` AND NO ANSWER IS NOT A DECISION. Both empty means the model emitted
   // something JSON-shaped that says nothing, and treating it as a turn would blank the screen.
+  // 🔴 A QUESTION IS NOT ENOUGH TO BE A DECISION ON ITS OWN. It parks a turn; a parked turn with no
+  // turn behind it is a card the learner answers into nothing. Read it, but let the same two fields
+  // as before decide whether there was a decision here at all.
+  const asked = readClarifyQuestion(parsed.question);
   if (!then && !say) return null;
+  // 🔴🔴 A CLARIFICATION ON A "reply" TURN IS DROPPED, AND THIS IS THE OWNER'S RULE MADE STRUCTURAL
+  // RATHER THAN REQUESTED (2026-08-22): *"it should ask when the result is a course structure etc.
+  // ... it shouldnt always ask for things like throwaway questions for a websearch."*
+  //
+  // The gate is the COST OF GUESSING WRONG, not how vague the learner was. People are vague and
+  // that is fine. A "reply" produces a sentence, and a sentence guessed wrong costs one more turn:
+  // the learner says "no, the other thing" and gets it. A "study" turn BUILDS — it takes the
+  // canvas, fixes a scope, orders a curriculum — and the way out of the wrong one is to bin the
+  // work. Identical vagueness, two costs that are nowhere near each other.
+  //
+  // 🔴 IT IS ENFORCED HERE BECAUSE THE PROMPT ALONE CANNOT HOLD IT. Asking is the cheapest way for
+  // a model to look careful, "would this change what I say?" is true of nearly every loose
+  // question, and one drifting sentence in a long contract is all it takes to put a card in front
+  // of "what is the half-life of caffeine". Dropping it costs nothing: `then` still runs, so the
+  // learner gets their answer instead of a form.
+  const question = then === "study" ? asked : null;
   return {
     needsWeb: parsed.needsWeb === true,
+    question,
     say,
     // 🔴 THE FALLBACK IS "reply", NOT "study". The expensive mistake is teaching somebody who did
     // not ask to be taught, and a model that skipped the field has told us nothing about which
@@ -998,10 +1136,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsWeb: false, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
-  return { curriculumFor: null, milestones: [], needsWeb: false, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
+  // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
+  // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
+  // offered — the same class of mistake as promoting an unreadable decision to "study".
+  return { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

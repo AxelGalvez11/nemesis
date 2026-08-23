@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
   buildAnchor,
   locateAnchor,
-  selectionActions,
   selectionShape,
   surroundingSentence,
 } from "./canvas-selection";
@@ -29,30 +29,32 @@ test("a short phrase ending in a decimal point is not mistaken for a sentence", 
   assert.equal(selectionShape("near -90 mV"), "phrase");
 });
 
-test("the menu stays restrained and shape-appropriate", () => {
-  assert.deepEqual(
-    selectionActions("word", true).map((option) => option.label),
-    ["Define", "Explain"],
-  );
-  assert.deepEqual(
-    selectionActions("phrase", true).map((option) => option.label),
-    ["Explain", "Simpler", "Example"],
-  );
-  assert.deepEqual(
-    selectionActions("passage", true).map((option) => option.label),
-    ["Explain", "Simplify", "Why?"],
-  );
-  for (const shape of ["word", "phrase", "passage"] as const) {
-    assert.ok(selectionActions(shape, true).length <= 3, "never six or seven buttons");
+test("🔴 there is no menu of fixed actions left to keep restrained", async () => {
+  // Owner, 2026-08-21: *"remove the 'define, explain, simpler, example, why?' and replace with the
+  // 'ask nemesis'."* The old assertions here pinned which two or three of five buttons each shape
+  // offered, and they passed for months while the real defect was that there were buttons at all —
+  // a learner whose question was not one of the five had nowhere to put it.
+  //
+  // 🔴 THE GHOST IS WHAT IS ASSERTED, NOT THE ABSENCE OF A CALL. Deleting `selectionActions` does
+  // not stop the next person from adding `quickActions` under the same pressure, which is the
+  // pattern `no-scripted-intent.test.ts` already guards on the chat side.
+  const module: Record<string, unknown> = await import("./canvas-selection");
+  for (const ghost of ["selectionActions", "SelectionActionOption", "quickActions", "selectionMenu"]) {
+    assert.equal(module[ghost], undefined, `${ghost} is back — the ask box is the menu now`);
   }
 });
 
-test("rewriting is not offered where there is nothing to rewrite", () => {
-  // Question and feedback text are selectable (§27) but are not document blocks, so "Simpler"
-  // would have nowhere to write and would fail at the moment of use.
-  const labels = selectionActions("passage", false).map((option) => option.label);
-  assert.deepEqual(labels, ["Explain", "Why?"]);
-  assert.ok(!selectionActions("phrase", false).some((option) => option.action === "simpler"));
+test("🔴 the two actions left are the ones the SOFTWARE originates, not ones it offers", () => {
+  // `define` is a click on a marked word; `simpler` is the turn router already having read a
+  // sentence and returned `then: "rewrite"`. Neither is a guess at what somebody might want, and
+  // neither is reachable from a button that says its name. Anything a learner wants to SAY goes
+  // through `askSelection`, in their own words.
+  const source = readFileSync(new URL("./canvas-selection.ts", import.meta.url), "utf8");
+  const union = /export type SelectionAction = ([^;]+);/.exec(source)?.[1] ?? "";
+  assert.equal(union.trim(), '"define" | "simpler"');
+  for (const gone of ["explain", "example", "why"]) {
+    assert.ok(!union.includes(`"${gone}"`), `${gone} is back in the action union`);
+  }
 });
 
 test("an anchor keeps enough either side to disambiguate a repeat", () => {

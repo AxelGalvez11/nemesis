@@ -7,6 +7,7 @@ import { BillingSettings } from "@/components/workspace/shell/billing-settings";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { SecuritySettings } from "@/components/workspace/shell/security-settings";
+import { VoiceSettings } from "@/components/workspace/shell/voice-settings";
 import { ACCENT_COLORS, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type DarkTone, type ThemePreference } from "@/components/theme-provider";
 import { BloubBot } from "@/components/bloub/bloub-bot";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
@@ -35,8 +36,6 @@ interface AssistantPreferences {
   occupation: string;
   studyReminders: boolean;
   productUpdates: boolean;
-  voice: string;
-  voiceSpeed: number;
 }
 
 const PREFERENCES_STORAGE_KEY = "nemesis.web.settings";
@@ -50,8 +49,6 @@ const DEFAULT_PREFERENCES: AssistantPreferences = {
   occupation: "",
   studyReminders: true,
   productUpdates: false,
-  voice: "Juniper",
-  voiceSpeed: 1,
 };
 
 const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
@@ -249,12 +246,21 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
 
         {section === "usage" && <UsageSettings bars={usageBars} />}
 
+        {/* 🔴🔴 THE VOICE PICKER LIVES HERE NOW, AND WHAT WAS HERE BEFORE WAS DECORATION (§48). This
+            card used to offer "Juniper / Maple / Vale / Cove" and a speaking-speed slider — four
+            names Nemesis cannot produce and a number nothing read. The real picker was buried in a
+            Canvas menu, where the owner had to re-find it every session. See `voice-settings.tsx`.
+
+            🔴 NO SPEED CONTROL REPLACED THE SLIDER, DELIBERATELY. Speed is now a property of
+            LISTENING — `playbackRate` on the player under an answer, where changing it is instant
+            and costs nothing. A second copy in Settings would be a preference for something you can
+            only sensibly judge while you are hearing it. */}
         {section === "voice" && (
-          <SettingsPage title="Voice" description="Defaults for dictation and future recording playback.">
-            <SettingsCard>
-              <SettingsRow label="Voice"><select className={SELECT_CLASS} onChange={(event) => updatePreferences({ voice: event.target.value })} value={preferences.voice}><option>Juniper</option><option>Maple</option><option>Vale</option><option>Cove</option></select></SettingsRow>
-              <SettingsRow label="Speaking speed"><div className="flex min-w-44 items-center gap-3"><input aria-label="Speaking speed" className="min-w-0 flex-1 accent-[var(--theme-primary)]" max={1.5} min={0.75} onChange={(event) => updatePreferences({ voiceSpeed: Number(event.target.value) })} step={0.05} type="range" value={preferences.voiceSpeed} /><span className="text-xs tabular-nums">{preferences.voiceSpeed.toFixed(2)}×</span></div></SettingsRow>
-            </SettingsCard>
+          <SettingsPage
+            title="Voice"
+            description="The voice Nemesis reads in. It is used everywhere Nemesis speaks, and it is remembered on this device."
+          >
+            <VoiceSettings />
           </SettingsPage>
         )}
 

@@ -35,10 +35,34 @@ const TEACHING = { blocks: 0, canvasState: "learn", policyPresenting: true, work
 
 // ── The thinking state takes the surface ────────────────────────────────────
 
-test("🔴🔴 a turn in flight replaces what was on screen", () => {
-  // The owner's explicit choice between three options: "Replaces it while thinking."
-  // Calibration: remove the `turnInFlight ?` arm from the presence ladder and this reddens.
-  const { presence } = canvasPresentation({ ...TEACHING, turnInFlight: true });
+test("🔴🔴🔴 a turn in flight KEEPS what was on screen", () => {
+  // 🔴 THIS ASSERTED THE OPPOSITE UNTIL 2026-08-22, on the owner's earlier call ("Replaces it while
+  // thinking"). They reversed it after using it: *"canvas should have one persistent screen not a
+  // swapping one."*
+  //
+  // The cost of replacing was measurable. `presence` was the first element of `surfaceKey`, so a
+  // mode change rebuilt the entire surface through `CanvasFade` — 160ms out, 220ms in — and one
+  // answer crossed that twice. ~760ms per turn spent dissolving the page away and back.
+  const { presence, working } = canvasPresentation({ ...TEACHING, turnInFlight: true });
+  assert.equal(presence, "task", "a turn in flight took the lesson off the screen again");
+  // The send still has to be reported — just not by evicting content.
+  assert.equal(working, true, "nothing tells the surface a step is running");
+});
+
+test("🔴🔴🔴 but with NOTHING to keep, the thinking state still owns the surface", () => {
+  // The safety half, and the reason `canvas-presence.ts` exists at all: a canvas that paints
+  // nothing and says nothing was the original defect. Content outranking thinking must not
+  // reintroduce it — when there is no content, `preparing` is still what the learner gets.
+  //
+  // Calibration: delete the `turnInFlight ||` from the `preparing` arm and this reddens while the
+  // test above stays green. That asymmetry is the whole safety argument.
+  const { presence } = canvasPresentation({
+    blocks: 0,
+    canvasState: "learn",
+    policyPresenting: false,
+    turnInFlight: true,
+    working: false,
+  });
   assert.equal(presence, "preparing");
 });
 
@@ -65,18 +89,33 @@ test("🔴 the canvas keys the thinking screen on the SESSION's busy, not the po
   );
 });
 
-test("🔴🔴 and the content regions stand down while it owns the surface", () => {
-  // A presence that says "preparing" while the policy region still paints is two things on screen
-  // and the replacement never happens. All three content regions ask the same question.
+test("🔴🔴🔴 and the content regions no longer stand down while a step runs", () => {
+  // 🔴 THE INVERSE OF WHAT THIS ASSERTED. It required `presence !== "preparing"` on all three
+  // content regions — the gate that took the lesson away mid-turn. With the ladder reversed the
+  // regions paint whenever `composeSurface` says they may, and re-adding any of those gates brings
+  // the blanking back one region at a time.
   for (const region of ["policy", "reply", "document"]) {
     const at = canvasCode.indexOf(`{regions.${region} &&`);
     assert.notEqual(at, -1, `the ${region} region is gone`);
-    assert.match(
-      canvasCode.slice(at, at + 120),
-      /presence !== "preparing"/,
-      `the ${region} region still paints while the thinking screen owns the surface`,
+    assert.ok(
+      !/presence !== "preparing"/.test(canvasCode.slice(at, at + 120)),
+      `the ${region} region is blanked while a step runs again`,
     );
   }
+});
+
+test("🔴🔴🔴 and the surface is not rebuilt just because the mode changed", () => {
+  // The other half of "one persistent screen". `surfaceKey` drives `CanvasFade`; while `presence`
+  // was part of it, going busy and coming back counted as new content and cost a full crossfade
+  // each way. What survives is what the surface is SHOWING — which question, and what Nemesis last
+  // said — because those genuinely are new content.
+  //
+  // Calibration: put `presence` back into the key and this reddens.
+  const at = canvasCode.indexOf("const surfaceKey = [");
+  assert.notEqual(at, -1, "the surface key is gone");
+  const key = canvasCode.slice(at, canvasCode.indexOf("].join(", at));
+  assert.ok(!/^\s*presence,\s*$/m.test(key), "the mode is back in the surface key");
+  assert.match(key, /screenKey\(policy\)/, "a new question no longer refreshes the surface");
 });
 
 test("🔴🔴 there is no skeleton loader on either wait, and the caption sits BESIDE the mascot", () => {
@@ -124,7 +163,20 @@ test("🔴🔴 the distance is MEASURED, never a constant", () => {
   // greeting's height, the window's height and the length of the Library list below it. A
   // hard-coded translate would be correct at exactly one window size.
   assert.match(homeCode, /getBoundingClientRect\(\)/);
-  assert.match(homeCode, /window\.innerHeight - CANVAS_COMPOSER_INSET - rect\.height/);
+  assert.match(homeCode, /window\.innerHeight - canvasComposerInset\(\) - rect\.height/);
+});
+
+test("🔴🔴 the clearance under the canvas composer is READ, not typed", () => {
+  // It is `pb-4` — one rem — and the root font size is the learner's SCALING setting. A literal
+  // here is right at exactly one setting, and the literal that was here (16) was right at none:
+  // the app's root is 112.5%, so `pb-4` is 18px and the composer landed 2px high.
+  //
+  // Calibration: put any number back in place of the read and this reddens.
+  assert.match(homeCode, /getComputedStyle\(document\.documentElement\)\.fontSize/);
+  assert.ok(
+    !/const CANVAS_COMPOSER_INSET = \d/.test(homeCode),
+    "the clearance is a literal again, so it is wrong at every scale but one",
+  );
 });
 
 test("🔴🔴 the navigation waits for the move, or the move plays against a dead page", () => {
@@ -143,8 +195,72 @@ test("🔴🔴 reduced motion skips the TRAVEL, not the send", () => {
 
 test("🔴 it moves with a transform, so nothing under it reflows", () => {
   // Animating a layout property would reflow the Library list on every frame of the move.
-  assert.match(homeCode, /transform: departing \? `translateY\(\$\{lift\}px\)` : undefined/);
+  assert.match(homeCode, /transform: departing \? `translate3d\(\$\{travel\.x\}px, \$\{travel\.y\}px, 0\)`/);
   assert.ok(!/marginTop: departing/.test(homeCode), "the move animates layout instead of a transform");
+});
+
+test("🔴🔴 the composer SIDESTEPS as well as drops, because the canvas has no rail", () => {
+  // The canvas is immersive — it takes the nav rail away — so a composer centred inside a railed
+  // column here is centred 26px right of where the canvas will centre its own. Travelling only
+  // downward meant the route swap corrected the horizontal in one frame, and a move that ends
+  // with a jump reads as a broken move.
+  //
+  // Calibration: drop the `x` term and this reddens.
+  assert.match(homeCode, /x: Math\.round\(window\.innerWidth \/ 2 - \(rect\.left \+ rect\.width \/ 2\)\)/);
+});
+
+// ── And the character travels with it ───────────────────────────────────────
+
+test("🔴🔴🔴 the character walks to the exact spot the canvas will stand it on", () => {
+  // Owner 2026-08-21: "the mascot should move toward the center smoothly not jaggedly".
+  //
+  // These are two components on two surfaces — this greeter unmounts and `BloubDock` mounts —
+  // so the hand-off is invisible only while the two agree about the point and the size. It was
+  // not agreeing about either: the greeter held its place while the dock mounted in the
+  // lower-left corner and crawled to the middle, which the learner reads as two characters.
+  assert.match(homeCode, /const \[handoff, setHandoff\]/);
+  assert.match(homeCode, /transform: `translate3d\(\$\{handoff\.dx\}px, \$\{handoff\.dy\}px, 0\) scale\(\$\{handoff\.k\}\)`/);
+});
+
+test("🔴🔴 and it takes those numbers FROM the dock, so they cannot drift apart", () => {
+  // A copied `0.42`, a copied `2.1` and a copied `52` would all look right the day they were
+  // typed and come apart on the first retune of the middle station — as a hand-off that is
+  // subtly wrong, which is harder to see than one that is obviously wrong.
+  //
+  // Calibration: inline any of the three as a literal and this reddens.
+  assert.match(homeCode, /from "@\/components\/bloub\/bloub-dock"/);
+  for (const name of ["centreStation", "DOCK_SIZE", "DOCK_CENTRE_SCALE"]) {
+    assert.match(homeCode, new RegExp(name), `${name} is not read from the dock`);
+  }
+});
+
+test("🔴🔴 and the dock does not walk in from a corner it was never standing in", () => {
+  // The other half of the same hand-off. A canvas opened from the front door mounts ALREADY
+  // busy, so its dock's first placement is the middle — and animating into it would replay,
+  // from the corner, a journey the learner just watched the greeter make.
+  //
+  // Calibration: make the first placement use the journey duration and this reddens.
+  const dock = code(readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8"));
+  assert.match(dock, /ms: was\.placed \? null : 0/);
+  assert.match(dock, /visibility: travel\.placed \? undefined : "hidden"/);
+});
+
+test("🔴🔴 the WALK is one eased property, and layout never eases", () => {
+  // The judder had a mechanism: two properties moving on two clocks. The journey between
+  // stations is an eased transform — one property, one easing — while the corner the composer
+  // drags around is layout written with NO transition at all, so it can never fight the walk
+  // mid-flight. The fight comes back the day either side crosses over: a transition on
+  // `left`/`bottom`, or a station journey written as layout.
+  //
+  // Calibration: add left or bottom to the stylesheet's transition, or write setOffset inside
+  // the station effect, and this reddens.
+  const dockRaw = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  const cssRaw = readFileSync(new URL("../../bloub/bloub.css", import.meta.url), "utf8");
+  assert.match(cssRaw, /transition: transform var\(--bloub-travel-ms, var\(--bloub-travel\)\)/);
+  assert.ok(!/transition:[^;]*(left|bottom|all)/.test(cssRaw), "layout properties have gained a transition");
+  const stationEffect = dockRaw.slice(dockRaw.indexOf("Where it stands"), dockRaw.indexOf("What it is looking at"));
+  assert.ok(stationEffect.includes("setTravel"), "the walk no longer goes through the transform");
+  assert.ok(!/setOffset|setInset/.test(stationEffect), "the walk writes layout properties");
 });
 
 // ── The vendored engine keeps its licence ───────────────────────────────────
@@ -201,11 +317,19 @@ test("🔴 the loading branch does NOT accept drops, because there is nothing to
 // assertion is inverted rather than deleted: what has to hold is that no future edit puts them
 // back, above OR inside. `answer-is-not-a-start.test.ts` carries the rest — that the composer is
 // not even GIVEN the list, and that the Sources panel still draws it.
-test("🔴🔴 the composer draws no source chips at all, above or inside", () => {
+// 🔴 SHARPENED AGAIN, 2026-08-23. The owner, pointing at ChatGPT's composer with two PDFs chipped
+// on it: *"nemesis should also be able to attach attachments to the chat composer like in this
+// image before sending."* Read beside 2026-08-21, the rule was never "no chips"; it was "no chips
+// for things the learner did not attach" — the deleted row chipped machine-grounded pages because
+// it was fed `canvas.sources`. So the guard now bans the DATA SOURCE, not the pixels: chips may
+// draw only from `recentAttachments` (names captured at the picker), and the canvas's source list
+// must never reach the composer as a list again.
+test("🔴🔴 the composer chips only what the learner picked, never the canvas's sources", () => {
   const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
   assert.ok(!/\{chipsInside && \(/.test(composer), "the chips are back inside the composer box");
-  assert.ok(!/mb-1\.5 ml-1 flex flex-wrap items-center gap-1\.5/.test(composer), "the floating chip row is back");
   assert.ok(!/faviconUrl/.test(composer), "the composer is drawing source favicons again");
+  assert.ok(!/pendingSources/.test(composer), "the source-list prop is back on the composer");
+  assert.ok(/recentAttachments\.map/.test(composer), "the picked-file chips are gone");
   // The box itself is still a column, because the textarea grows inside it.
   assert.ok(composer.includes('"flex flex-col bg-(--ui-bg-elevated)"'), "the composer stopped being a column");
 });
@@ -271,9 +395,25 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
 
   // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
   // the question is already rendered in full, in words, in the middle of the page.
-  assert.match(canvasCode, /session\.error \? "!" :/, "the error no longer outranks the question");
-  assert.match(canvasCode, /awaitingDemonstration && !turnInFlight && presence !== "preparing" \? "\?" : null/,
-    "the question mark is back on the mascot's head while Nemesis is working");
+  // Whitespace-tolerant: this guards the ORDER (a failure outranks a question), not the line
+  // breaks. Written tight, it reddened the moment the condition was reformatted onto four lines.
+  assert.match(canvasCode, /session\.error\s*\?\s*"!"\s*:/, "the error no longer outranks the question");
+  // 🔴 EVERY GUARD ON THE "?", ASSERTED SEPARATELY. This matched the whole condition as one
+  // string, so tightening it — which is what the owner's repeat report on 2026-08-21 required —
+  // reddened the test for doing the right thing, while a future edit that DROPPED a guard and
+  // reformatted would slip past. Each clause is now its own claim.
+  const mark = canvasCode.slice(canvasCode.indexOf("marker={"), canvasCode.indexOf("marker={") + 320);
+  for (const [clause, why] of [
+    ["awaitingDemonstration", "the mark no longer waits on the policy actually wanting an answer"],
+    // 🔴 THE REST OF "RANDOM". `awaitingAnswer` is the policy's belief; `regions.policy` is whether
+    // the question is on screen. They come apart on every surface that withholds the policy region,
+    // and the mark then sat over a page with no question anywhere on it.
+    ["regions.policy", "the mark can appear while the question it refers to is off screen"],
+    ["!turnInFlight", "the mark is back on the mascot's head while Nemesis is working"],
+    ['presence !== "preparing"', "the mark is back during preparation"],
+  ] as const) {
+    assert.ok(mark.includes(clause), why);
+  }
 
   // 🔴 THE BADGE IS THE CHARACTER'S OWN COLOUR, NOT THE PAGE'S. Reported 2026-08-21: *"the mascot
   // has a random question mark that isnt in purple like the mascot."* It was `--ui-text-tertiary`,
@@ -305,5 +445,25 @@ test("🔴🔴 the mascot comes forward for a TURN, never for background work", 
   assert.ok(
     !/stateForCanvas\(\{ thinking: policy\.thinking/.test(canvasCode),
     "the dock is back on the policy's phase flag, which stays true through background work",
+  );
+});
+
+test("🔴🔴🔴 every hook runs before the not-ready gate, so a loading canvas cannot change the hook order", () => {
+  // React identifies hooks by call ORDER. The `!session.ready` return used to sit mid-component
+  // with `useCanvasVoice`, the history rail's state and three more hooks below it, so the render
+  // after the canvas's one database read called MORE hooks than the render before it. React
+  // throws for exactly this, and in production the crash landed on the entry paths that start
+  // unready — a deep link, a hard refresh, going back into an old canvas — and took the exit
+  // button down with it.
+  //
+  // Calibration: move the gate back above `useCanvasVoice` and this reddens.
+  const source = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  const gate = source.indexOf("if (!session.ready)");
+  assert.ok(gate > 0, "the not-ready gate is gone entirely");
+  const hooks = [...source.matchAll(/\buse[A-Z][A-Za-z]*\(/g)];
+  const lastHook = hooks[hooks.length - 1]!;
+  assert.ok(
+    lastHook.index! < gate,
+    `a hook call (${lastHook[0]}…) sits below the not-ready gate again`,
   );
 });

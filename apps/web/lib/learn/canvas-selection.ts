@@ -24,10 +24,34 @@ const ANCHOR_CONTEXT = 32;
  *  so it reads the same for a statute, a proof and a weld procedure. */
 const SENTENCE_END = /[.!?]["')\]]?\s/g;
 
-export type SelectionAction = "define" | "explain" | "simpler" | "example" | "why";
+/**
+ * The two things the CODE asks for on the learner's behalf, neither of which is a menu button.
+ *
+ * 🔴🔴 THIS USED TO BE THE TOOLBAR, AND THE TOOLBAR WAS THE WRONG SHAPE. It read
+ * `"define" | "explain" | "simpler" | "example" | "why"`, and `selectionActions()` below chose two
+ * or three of them to show. Owner, 2026-08-21: *"remove the 'define, explain, simpler, example,
+ * why?' and replace with the 'ask nemesis'."*
+ *
+ * The objection is the same one that deleted `learning-intent.ts` from the front door. Five buttons
+ * are five guesses at what somebody might want, made by us, in advance, in English, for every
+ * field at once — and a learner whose question is not one of the five has nowhere to put it. They
+ * are also a claim we cannot keep: "Why?" is the only way to ask for a reason, so "why is this
+ * different from the one on the previous slide" has to be typed into the composer, where the
+ * highlight is gone and they must describe where they were looking.
+ *
+ * What is left here are the two asks the SOFTWARE originates, where the intent is already settled
+ * before any words exist:
+ *   · `define` — the learner clicked a marked vocabulary word. The click IS the question, and this
+ *     is the one lookup whose answer is worth remembering for next time (`recordLookup`).
+ *   · `simpler` — the turn router already read a sentence and returned `then: "rewrite"`. The
+ *     decision was made by the model upstream; this names what the canvas then does.
+ * Everything a learner might want to SAY about a selection now goes through `askSelection`, in
+ * their own words, and the model decides whether that means answering or rewriting.
+ */
+export type SelectionAction = "define" | "simpler";
 
-/** What kind of thing was selected. Drives which actions are worth offering — §3 is explicit
- *  that six or seven buttons on every selection is the wrong answer. */
+/** What kind of thing was selected. No longer picks buttons — there is one control now — but it
+ *  still names what the learner is pointing at, which is what the ask box says above the input. */
 export type SelectionShape = "word" | "phrase" | "passage";
 
 export interface TextAnchor {
@@ -55,11 +79,6 @@ export interface CanvasSelection {
   rewritable: boolean;
 }
 
-export interface SelectionActionOption {
-  action: SelectionAction;
-  label: string;
-}
-
 /** Word / phrase / passage, by shape rather than by length alone. */
 export function selectionShape(text: string): SelectionShape {
   const trimmed = text.trim();
@@ -69,32 +88,6 @@ export function selectionShape(text: string): SelectionShape {
   // however short it is.
   if (words.length > 8 || /[.!?](\s|$)/.test(trimmed)) return "passage";
   return "phrase";
-}
-
-/** The restrained menu. Ordered with the most likely intent first, because the first button is
- *  the one that gets pressed. */
-export function selectionActions(shape: SelectionShape, rewritable: boolean): SelectionActionOption[] {
-  const options: SelectionActionOption[] =
-    shape === "word"
-      ? [
-          { action: "define", label: "Define" },
-          { action: "explain", label: "Explain" },
-        ]
-      : shape === "phrase"
-        ? [
-            { action: "explain", label: "Explain" },
-            { action: "simpler", label: "Simpler" },
-            { action: "example", label: "Example" },
-          ]
-        : [
-            { action: "explain", label: "Explain" },
-            { action: "simpler", label: "Simplify" },
-            { action: "why", label: "Why?" },
-          ];
-
-  // Rewriting is the one action that needs somewhere to write. Offering it over feedback text
-  // would fail at the moment of use, which is the worst time to discover a control is a lie.
-  return rewritable ? options : options.filter((option) => option.action !== "simpler");
 }
 
 /** Context either side, for finding this selection again after the block around it changes. */

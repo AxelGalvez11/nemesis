@@ -1,14 +1,30 @@
 "use client";
 
-// The fast path: point at the confusing thing, get an answer next to it.
+// The fast path: point at the confusing thing, say what you want, get it.
 //
 // The alternative — copy the phrase, find the composer, type a question about it — costs enough
 // that most learners simply carry the confusion forward. §28: this toolbar is the shortcut, and
 // the persistent composer stays for anything broader.
 //
-// A short answer stays in a popover here. It does NOT become a message, and it does NOT rewrite
-// the paragraph: looking up one word must not disturb the thing being read. Only "Simpler" edits
-// the page, and only the block it was invoked from.
+// 🔴🔴 IT IS AN ASK BOX NOW, NOT A MENU OF FIVE VERBS. Owner, 2026-08-21: *"remove the 'define,
+// explain, simpler, example, why?' and replace with the 'ask nemesis'."* The five buttons were five
+// guesses at what somebody might want, chosen by us in advance, and a learner whose question was
+// not one of the five had to abandon the highlight and describe where they had been looking. They
+// were also each hard-wired to one of only two outcomes — four could only ever answer, "Simpler"
+// could only ever rewrite — which is the same shape `learning-intent.ts` was deleted for at the
+// front door: code deciding what a sentence means before a model has read it.
+//
+// What the learner types goes to `askSelection`, and the MODEL decides whether it means "tell me"
+// or "change this". So "what does this mean" answers beside the passage, "say this more simply"
+// rewrites it, and "add an example here" grows it — with nothing in this file reading any of them.
+//
+// 🔴 "Speak" IS NOT ONE OF THE DELETED FIVE AND STAYS. Reading the highlighted words aloud is a
+// direct action on the text, not a guess at an intent: there is no sentence to interpret, and no
+// second thing it could have meant.
+//
+// 🔴 NO ⌘K HINT, THOUGH THE REFERENCE HAS ONE. This app already binds ⌘K to Search chats
+// (AppShell.tsx). Printing a shortcut on a control that opens something else would be a lie, and
+// a lie the learner discovers by pressing it.
 //
 // 🔴 PLACEMENT IS THE BUG FAMILY ON THIS SURFACE. The composer's scrim owns the bottom of the
 // page and the title scrim owns the top 88px, both of which will happily paint over a menu
@@ -16,14 +32,10 @@
 // `elementFromPoint` on its own centre, because "visible in a screenshot" and "actually on top"
 // are different claims.
 
+import { useEffect, useRef, useState } from "react";
+
 import { Codicon } from "@/components/desktop-ui/codicon";
-import {
-  selectionActions,
-  selectionShape,
-  type CanvasSelection,
-  type SelectionAction,
-} from "@/lib/learn/canvas-selection";
-import { cn } from "@/lib/utils";
+import { selectionShape, type CanvasSelection } from "@/lib/learn/canvas-selection";
 
 /** Clearance for the title scrim at the top and the composer pill at the bottom.
  *
@@ -43,20 +55,39 @@ export interface SelectionAnswer {
   sourceLabel?: string;
 }
 
+/** What the learner is pointing at, said back to them above the box they type in. Structural —
+ *  word, phrase or passage — so it reads the same for a statute and a stress-strain curve. */
+function askPlaceholder(selection: CanvasSelection): string {
+  switch (selectionShape(selection.selectedText)) {
+    case "word":
+      return "Ask about this word";
+    case "phrase":
+      return "Ask about this phrase";
+    default:
+      return "Ask about this passage";
+  }
+}
+
 interface CanvasSelectionMenuProps {
   selection: CanvasSelection;
   rect: { top: number; bottom: number; left: number; right: number };
-  /** Non-null once an action has produced something. */
+  /** Non-null once a request has produced something. */
   answer: SelectionAnswer | null;
   busy: boolean;
   error: string | null;
   /** The learner clicked a marked vocabulary word rather than highlighting text.
    *
-   *  🔴 That click already chose its action, so the toolbar must never appear for it. Falling
-   *  back to Explain/Simpler/Example when the lookup has not produced anything yet reads as a
-   *  broken button: they asked what a word means and got a menu asking what they want. */
+   *  🔴 That click already asked its question, so the toolbar must never appear for it. Falling
+   *  back to an empty ask box while the definition is still loading reads as a broken control:
+   *  they asked what a word means and got a box asking them what they want. */
   forceOpen?: boolean;
-  onAct: (action: SelectionAction) => void;
+  /**
+   * What the learner typed. Never read here — see this file's header.
+   *
+   * The answer comes back through `answer`, and a null one means Nemesis rewrote the passage
+   * instead, which the document itself shows.
+   */
+  onAsk: (request: string) => void;
   /**
    * Read the highlighted passage aloud, and read it again on a second press.
    *
@@ -79,17 +110,37 @@ export function CanvasSelectionMenu({
   busy,
   error,
   forceOpen = false,
-  onAct,
+  onAsk,
   onSpeak,
   speaking = false,
   onDismiss,
 }: CanvasSelectionMenuProps) {
   const open = Boolean(answer || busy || error || forceOpen);
-  const shape = selectionShape(selection.selectedText);
-  const actions = selectionActions(shape, selection.rewritable);
+  /** The ask box is showing, before anything has been asked. */
+  const [asking, setAsking] = useState(false);
+  const [draft, setDraft] = useState("");
+  const input = useRef<HTMLInputElement | null>(null);
+
+  // A new selection is a new question. Without this the half-typed request about the last
+  // paragraph is still sitting in the box over the next one.
+  useEffect(() => {
+    setAsking(false);
+    setDraft("");
+  }, [selection.regionId, selection.startOffset, selection.endOffset]);
+
+  useEffect(() => {
+    if (asking || open) input.current?.focus();
+  }, [asking, open]);
+
+  const submit = () => {
+    const request = draft.trim();
+    if (!request || busy) return;
+    setDraft("");
+    onAsk(request);
+  };
 
   // An open popover is taller than a toolbar, so where it fits is a different question.
-  const height = open ? 168 : 40;
+  const height = open ? 200 : asking ? 48 : 40;
 
   // 🔴 The safe band is computed FIRST and everything is clamped into it.
   //
@@ -111,9 +162,41 @@ export function CanvasSelectionMenu({
       ? preferBelow
       : Math.max(bandTop, Math.min(preferAbove, bandBottom - height));
 
-  const width = open ? MENU_WIDTH : undefined;
+  const width = open || asking ? MENU_WIDTH : undefined;
   const centred = (rect.left + rect.right) / 2 - (width ?? 150) / 2;
   const left = Math.max(12, Math.min(centred, window.innerWidth - (width ?? 150) - 12));
+
+  /** The one control the learner types into, in both the toolbar and the open panel. */
+  const askRow = (
+    <div className="flex items-center gap-1.5 rounded-full bg-(--ui-bg-tertiary) py-1 pl-3 pr-1 ring-1 ring-(--ui-stroke-tertiary)">
+      <input
+        className="min-w-0 flex-1 bg-transparent text-[length:var(--canvas-text-small)] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+        disabled={busy}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            submit();
+          }
+          // Escape gives the page back rather than only closing the box: the learner is looking
+          // at the paragraph, and a control that half-closes leaves them pressing it twice.
+          if (event.key === "Escape") onDismiss();
+        }}
+        placeholder={answer ? "Ask a follow-up" : askPlaceholder(selection)}
+        ref={input}
+        value={draft}
+      />
+      <button
+        aria-label="Ask Nemesis"
+        className="shrink-0 rounded-full p-1.5 text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-elevated) hover:text-(--ui-text-primary) disabled:opacity-40"
+        disabled={busy || !draft.trim()}
+        onClick={submit}
+        type="button"
+      >
+        <Codicon name="arrow-up" size="0.75rem" />
+      </button>
+    </div>
+  );
 
   return (
     <div
@@ -159,24 +242,18 @@ export function CanvasSelectionMenu({
               {answer.sourceLabel && (
                 <p className="mt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">From {answer.sourceLabel}</p>
               )}
-              <div className="mt-3 flex items-center gap-3 text-[length:var(--canvas-text-meta)]">
-                <button
-                  className="text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
-                  onClick={() => onAct("example")}
-                  type="button"
-                >
-                  Example
-                </button>
-                <button
-                  className="text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
-                  onClick={() => onAct("explain")}
-                  type="button"
-                >
-                  Go deeper
-                </button>
-              </div>
             </>
           )}
+
+          {/* 🔴 THE BOX STAYS OPEN UNDERNEATH THE ANSWER, which is what replaces the old
+              "Example" / "Go deeper" pair. Those were two more fixed guesses, and they were the
+              two that most often were not what the learner wanted next. A follow-up is typed in
+              the same place the first question was, about the same highlighted words. */}
+          {!busy && <div className="mt-3">{askRow}</div>}
+        </div>
+      ) : asking ? (
+        <div className="canvas-swap rounded-full bg-(--ui-bg-elevated) p-1 shadow-[0_4px_20px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
+          {askRow}
         </div>
       ) : (
         <div className="flex items-center gap-0.5 rounded-full bg-(--ui-bg-elevated) p-1 shadow-[0_4px_20px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)">
@@ -195,19 +272,14 @@ export function CanvasSelectionMenu({
               <span aria-hidden className="mx-0.5 h-4 w-px bg-(--ui-stroke-tertiary)" />
             </>
           )}
-          {actions.map((option, index) => (
-            <button
-              className={cn(
-                "rounded-full px-3 py-1.5 text-[length:var(--canvas-text-small)] transition-colors hover:bg-(--ui-bg-tertiary)",
-                index === 0 ? "text-(--ui-text-primary)" : "text-(--ui-text-secondary)",
-              )}
-              key={option.action}
-              onClick={() => onAct(option.action)}
-              type="button"
-            >
-              {option.label}
-            </button>
-          ))}
+          <button
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-primary) transition-colors hover:bg-(--ui-bg-tertiary)"
+            onClick={() => setAsking(true)}
+            type="button"
+          >
+            <Codicon name="sparkle" size="0.75rem" />
+            Ask Nemesis
+          </button>
         </div>
       )}
     </div>

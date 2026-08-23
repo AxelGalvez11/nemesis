@@ -35,6 +35,7 @@
 // paints and who would RECEIVE an answer; this one decides what a submission IS.
 
 import { isPreContent, type AnswerSink, type HostedTaskShape } from "./canvas-hosting";
+import type { UserQuestion } from "./clarify-question";
 import type { CanvasState } from "./canvas-model";
 
 /**
@@ -47,6 +48,21 @@ import type { CanvasState } from "./canvas-model";
 export type ComposerIntent =
   /** Nemesis is waiting for the learner to respond to a cognitive task. */
   | { kind: "answer"; sink: "policy" | "stage"; task: HostedTaskShape }
+  /**
+   * Nemesis asked the learner a question about what to build, and this is the answer to it.
+   *
+   * 🔴🔴 A FOURTH KIND RATHER THAN A FLAVOUR OF `answer`, BECAUSE THE TWO GO TO OPPOSITE PLACES. An
+   * `answer` is evidence: it reaches a judge and lands in `learner_evidence` against an objective.
+   * A clarification is a preference and must reach neither. Folding it into `answer` with a flag
+   * means every consumer that forgets to read the flag files a preference as knowledge — silently,
+   * because nothing fails. A separate kind makes the compiler stop at each call site instead.
+   *
+   * 🔴 AND IT EXISTS AT ALL BECAUSE THE COMPOSER STAYS OPEN UNDER THE CARD. The learner may tap an
+   * option, but typing is the ordinary thing to do with a text box that is right there, and without
+   * this branch that submission reaches `start` on a canvas that has not begun — which re-titles
+   * and regenerates it. The card being answerable by mouse is not a reason the keyboard may lose.
+   */
+  | { kind: "clarify"; question: UserQuestion }
   /** The Canvas has genuinely not begun. Submitting starts it. */
   | { kind: "start" }
   /** Ordinary conversational input about whatever is on screen. */
@@ -106,8 +122,16 @@ export function composerIntent(input: {
   // 🔴 `answered` AND `placeholder` ARE CHECKED HERE RATHER THAN IN THE COMPOSER, WHICH IS WHERE
   // THEY USED TO LIVE (`const answering = Boolean(task && !task.answered && task.placeholder)`).
   // Two components each deciding whether a task is answerable is two chances to disagree.
-  if (sink.kind !== "none" && !sink.task.answered && Boolean(sink.task.placeholder)) {
-    return { kind: "answer", sink: sink.kind, task: sink.task };
+  if (sink.kind === "policy" || sink.kind === "stage") {
+    if (!sink.task.answered && Boolean(sink.task.placeholder)) {
+      return { kind: "answer", sink: sink.kind, task: sink.task };
+    }
+  } else if (sink.kind === "clarify") {
+    // 🔴 NO `answered` GATE AND NO `placeholder` GATE, BECAUSE NEITHER FIELD EXISTS ON A QUESTION
+    // THAT IS STILL BEING ASKED. `answerSink` stops returning `clarify` the moment the answer
+    // lands; an answered clarification is not a spent sink to be stepped over, it is gone. The
+    // task branch needs those gates because a stage task outlives its own answer.
+    return { kind: "clarify", question: sink.question };
   }
 
   // A sink that exists but is spent — an answered stage task — is still a Canvas that has content.

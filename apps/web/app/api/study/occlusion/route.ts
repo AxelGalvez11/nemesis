@@ -13,7 +13,8 @@
 import { NextResponse } from "next/server";
 
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
-import { readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
+import { readImage, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
+import { adminClient } from "@/lib/server";
 import {
   jsonFrom,
   looksNormalized,
@@ -61,7 +62,12 @@ export async function POST(req: Request) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const seen = await readWithVision(bytes, mime, { prompt: OCCLUSION_VISION_PROMPT });
+  const seen = await readImage(bytes, mime, {
+    prompt: OCCLUSION_VISION_PROMPT,
+    // The front door writes the spend row (see lib/vision/read.ts) — this route never had one,
+    // which is exactly the "Gemini vision records nothing" gap provider-costs.ts complains about.
+    spend: { admin: adminClient(), scope: { operation: "occlusion" }, userId: check.userId },
+  });
   if (!seen?.text) {
     return NextResponse.json({ error: "Couldn't read that image. Try again." }, { status: 502 });
   }

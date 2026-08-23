@@ -37,6 +37,27 @@ import { speedOf, stationOf, type Station } from "@/lib/character/stations";
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;
 
+/** The dock's rendered size, and how much bigger it gets in the middle — as values, because
+ *  the front door has to aim its own character at the exact point this one will occupy.
+ *  See `canvas-home.tsx`: the two surfaces are different components and the hand-off between
+ *  them is only invisible while they agree to the pixel. */
+export const DOCK_SIZE = 52;
+export const DOCK_CENTRE_SCALE = 2.1;
+
+/** How far down the surface the middle station sits.
+ *
+ *  Optically above the true centre: a form parked on the exact middle of a page reads as
+ *  sitting low, because the eye weights the top of a column more heavily. */
+export const CENTRE_Y_FRACTION = 0.42;
+
+/** Where the character stands when it takes the middle of `surface`, in client coordinates. */
+export function centreStation(surface: { left: number; top: number; width: number; height: number }): {
+  x: number;
+  y: number;
+} {
+  return { x: surface.left + surface.width / 2, y: surface.top + surface.height * CENTRE_Y_FRACTION };
+}
+
 export interface BloubDockProps {
   /** Which animation is playing. Its station decides corner or centre. */
   state?: StateId;
@@ -138,23 +159,32 @@ export function BloubDock({
   station: stationOverride,
   marker = null,
   state = "idle",
-  size = 52,
+  size = DOCK_SIZE,
   anchor,
   left = 22,
   bottom = 24,
   gap = 14,
-  centreScale = 2.1,
+  centreScale = DOCK_CENTRE_SCALE,
   contain = false,
   hidden = false,
   className,
 }: BloubDockProps) {
   const { accent, theme } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
-  const { state: shown, poke } = usePoke(state);
+  // `motion` is the half the engine has no pose for — the hop. See `use-poke.ts`.
+  const { state: shown, motion, poke } = usePoke(state);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState(bottom);
   const [inset, setInset] = useState(left);
-  const [travel, setTravel] = useState({ dx: 0, dy: 0, k: 1 });
+  /**
+   * Where the character stands relative to its corner, and whether the first measurement has
+   * landed yet. `placed` starts false so the very first placement can be INSTANT: a canvas that
+   * opens already thinking mounts this dock straight onto the middle station, and animating that
+   * first placement would walk the character in from a corner it was never standing in —
+   * replaying, badly, the journey the front door's greeter just made. `ms` is the per-move
+   * override for `--bloub-travel-ms` (see bloub.css); null means the stylesheet's journey time.
+   */
+  const [travel, setTravel] = useState<{ dx: number; dy: number; k: number; ms: number | null; placed: boolean }>({ dx: 0, dy: 0, k: 1, ms: null, placed: false });
   const [aimAt, setAimAt] = useState<{ x: number; y: number } | null>(null);
   const targetRef = useRef<AttentionTarget>(getAttention());
   const focusedRef = useRef<Element | null>(null);
@@ -210,7 +240,7 @@ export function BloubDock({
       const host = hostRef.current;
       if (!host) return;
       if (station === "corner") {
-        setTravel({ dx: 0, dy: 0, k: 1 });
+        setTravel((was) => ({ dx: 0, dy: 0, k: 1, ms: was.placed ? null : 0, placed: true }));
         return;
       }
       const parent =
@@ -222,13 +252,14 @@ export function BloubDock({
       // every 120ms until the character drifted off the screen.
       const cornerX = pr.left + inset + size / 2;
       const cornerY = pr.bottom - offset - size / 2;
-      // Optically above the middle. A form parked on the exact centre of a page reads as
-      // sitting low, because the eye weights the top of a column more heavily.
-      setTravel({
-        dx: pr.left + pr.width / 2 - cornerX,
-        dy: pr.top + pr.height * 0.42 - cornerY,
+      const middle = centreStation(pr);
+      setTravel((was) => ({
+        dx: middle.x - cornerX,
+        dy: middle.y - cornerY,
         k: centreScale,
-      });
+        ms: was.placed ? null : 0,
+        placed: true,
+      }));
     };
     measure();
     const timer = window.setInterval(measure, MEASURE_MS);
@@ -293,18 +324,37 @@ export function BloubDock({
         left: inset,
         bottom: offset,
         transform: `translate3d(${travel.dx}px, ${travel.dy}px, 0) scale(${travel.k})`,
+        // Instant only while `ms` says so; every later move takes the stylesheet's journey.
+        ...(travel.ms !== null ? ({ "--bloub-travel-ms": `${travel.ms}ms` } as React.CSSProperties) : {}),
+        // Nothing stands anywhere until the first measurement has said where.
+        visibility: travel.placed ? undefined : "hidden",
       }}
       aria-hidden="true"
     >
-      <BloubBot
-        aimAt={aimAt}
-        color={accent}
-        onPoke={poke}
-        size={size}
-        speed={speedOf(shown)}
-        state={shown}
-        track
-      />
+      {/* 🔴 THE HOP IS ITS OWN ELEMENT, INSIDE THE ONE THAT TRAVELS. The host already carries
+          `translate3d(...) scale(...)` for the corner→centre walk and re-writes it whenever the
+          composer moves, so a jump written onto the SAME element would either be overwritten by
+          the next measurement or have to be spliced into that string every frame. Nested
+          transforms multiply, so a child that only ever hops composes with a parent that only
+          ever travels, and neither has to know about the other.
+
+          🔴 NOT KEYED, AND IT MUST NOT BE. Re-mounting to restart the animation is the obvious
+          trick and it would take `BloubBot` down with it — the engine, its clock and the gaze's
+          entry turn all live in that subtree, so every second poke would restart the character
+          rather than move it. It does not need the trick: `usePoke` alternates jump → wink and
+          always returns to null between reactions, so the class really is removed and re-added,
+          which restarts the animation on its own. */}
+      <div className={motion === "jump" ? "bloub-jump" : undefined}>
+        <BloubBot
+          aimAt={aimAt}
+          color={accent}
+          onPoke={poke}
+          size={size}
+          speed={speedOf(shown)}
+          state={shown}
+          track
+        />
+      </div>
       {/* 🔴 A MARK ABOVE THE HEAD, NOT A BODY STATE — owner's own wording, 2026-08-20: *"the mascot
           should have an exclamation mark or question mark appear above its head for those kinds of
           things."* The engine ships `exclaim` and `alert` poses that deform the character itself,

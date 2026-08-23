@@ -142,6 +142,14 @@ export const CANVAS_PRESENCES: readonly CanvasPresence[] = [
 const PRE_CONTENT_STATES: readonly CanvasState[] = ["empty", "sources_attached"];
 
 export interface CanvasPresentation {
+  /**
+   * A step is running — a turn the learner asked for, or ambient work.
+   *
+   * 🔴 NOT THE SAME QUESTION AS `presence`, and keeping them apart is what lets the canvas be one
+   * persistent screen: content stays put while this is true, and the surface shows it is working
+   * without taking the lesson away to prove it.
+   */
+  working: boolean;
   /** Which regions may paint. Decided by `composeSurface`, never re-decided here. */
   regions: CanvasRegions;
   /** What the learner is actually looking at, once the regions are resolved against reality. */
@@ -226,16 +234,27 @@ export function canvasPresentation(input: {
   // and in that case the ASK is what the learner is being held to, so it names the presence and the
   // answer rides along beneath it. Everywhere else a reply is the newest thing Nemesis has said and
   // the only thing on the surface, so it outranks a document, a running step, and `quiet`.
-  const presence: CanvasPresence = turnInFlight
-    ? // 🔴🔴 THE ONE THING THAT OUTRANKS CONTENT, AND ONLY BECAUSE THE LEARNER JUST ASKED FOR IT.
-      // Their own words are never rendered, so without this a send produces no visible change at
-      // all until the answer lands. Owner's call: the thinking state replaces what was there.
-      //
-      // 🔴 IT IS SAFE ONLY BECAUSE `turnInFlight` IS NARROW. Keyed on `working` instead, a
-      // knowledge resolution measured at MINUTES would take a readable lesson off the screen of
-      // someone who was reading it. See the field's own note.
-      "preparing"
-    : regions.policy
+  // 🔴🔴 CONTENT OUTRANKS THINKING NOW, AND THAT REVERSES A DELIBERATE CHOICE (owner 2026-08-22:
+  // "canvas should have one persistent screen not a swapping one").
+  //
+  // `turnInFlight` used to sit ABOVE everything here, so a send replaced whatever was on screen
+  // with the thinking state — the owner's own call on 2026-08-20, for a real reason: the learner's
+  // words are never rendered, so without SOME visible change a send looked like nothing happened.
+  //
+  // What it cost, measured against the surface: `presence` is part of `surfaceKey`, and every
+  // change of that key runs `CanvasFade` — 160ms out, 220ms in. One answer crossed it twice and
+  // spent ~760ms dissolving the page away and back, with the document rewritten in the gap. Two
+  // full rebuilds per turn is what "changing screens" was.
+  //
+  // 🔴 THE ACKNOWLEDGEMENT DOES NOT DEPEND ON THE REPLACEMENT, which is what makes this safe to
+  // reverse. Three other things already report a turn in flight and none of them blank the page:
+  // the character walks to the middle of the surface, `CanvasThinking` names the running step, and
+  // the composer goes busy. The send stays unmistakable; the lesson stays where the learner left it.
+  //
+  // 🔴 `preparing` IS NOT GONE — IT MOVED DOWN. It still owns the surface when there is nothing to
+  // keep, which is the blank-page defect this whole file exists to prevent. It just stops evicting
+  // content that is already there.
+  const presence: CanvasPresence = regions.policy
     ? "task"
     : regions.reply
       ? "reply"
@@ -243,11 +262,14 @@ export function canvasPresentation(input: {
         ? "stage"
         : regions.document && blocks > 0
           ? "reading"
-          : working
+          : turnInFlight || working
             ? "preparing"
             : hasNotBegun(canvasState)
               ? "invitation"
               : "quiet";
 
-  return { presence, regions };
+  // 🔴 REPORTED SEPARATELY RATHER THAN FOLDED INTO THE PRESENCE, which is the point of the
+  // reversal above: the surface must be able to say "something is running" without that being the
+  // same fact as "this is what you are looking at".
+  return { presence, regions, working: turnInFlight || working };
 }

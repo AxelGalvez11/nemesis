@@ -31,13 +31,14 @@ import {
   applyTeachingAction,
   cardAsTask,
   evaluateLearningResponse,
-  explainSelection,
-  simplifySelection,
+  askSelection,
+  defineSelection as apiDefineSelection,
   questionAsTask,
   runCommand,
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
+import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
@@ -58,7 +59,7 @@ import {
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps, applyRewrite, restoreBlock } from "@/lib/learn/canvas-ops";
 import { finishReading } from "@/lib/learn/canvas-reading";
-import type { CanvasSelection, SelectionAction } from "@/lib/learn/canvas-selection";
+import type { CanvasSelection } from "@/lib/learn/canvas-selection";
 import { canStart, canTransition } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { readingSubjectFor, thinkingCopy } from "@/lib/learn/thinking-phases";
@@ -66,6 +67,11 @@ import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas 
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
 import { isPreContent } from "@/lib/learn/canvas-hosting";
+import {
+  clarifyAnswerFact,
+  readClarifyAnswer,
+  type UserQuestion,
+} from "@/lib/learn/clarify-question";
 import { askCanvasChat, type TurnSurroundings } from "./canvas-chat";
 import { prepareWebSourcePromotion } from "./web-source-promotion";
 
@@ -167,6 +173,18 @@ type CanvasAside = {
   visuals?: readonly CanvasVisualRequest[];
 } | null;
 
+/**
+ * What came back from a typed request about a highlighted range.
+ *
+ * 🔴 "REWROTE THE PASSAGE" AND "COULD NOT" ARE DIFFERENT ANSWERS AND MUST LOOK DIFFERENT. Both used
+ * to be `null`, and the caller closed the popover on it — which is right for a rewrite, whose result
+ * is on the page, and wrong for a failure, whose result is the error message inside the popover
+ * being closed.
+ */
+export type SelectionReply =
+  | { kind: "answer"; term: string; text: string; sourceLabel?: string }
+  | { kind: "rewritten" };
+
 export interface CanvasSession {
   canvas: LearningCanvas;
   busy: BusyState;
@@ -257,6 +275,8 @@ export interface CanvasSession {
      *  FACT in the model's packet (`TurnContext.courseRequested`), never a branch in this file —
      *  the model still decides what the turn meant. */
     capability?: ComposerCapability | null,
+    /** Whether this turn may be parked behind a clarification card. False on a resumed turn. */
+    mayAsk?: boolean,
   ) => Promise<TurnDecision | null>;
   /**
    * The course this canvas is working through, or null — loaded with the canvas, set the moment
@@ -266,6 +286,31 @@ export interface CanvasSession {
    * mastery, and nothing may derive either from it.
    */
   coursePlan: CurriculumPlan | null;
+  /**
+   * The one decision Nemesis is waiting on before it can finish a turn, or null. Null nearly always.
+   *
+   * 🔴 IT IS FED TO `answerSink`, NOT READ DIRECTLY BY THE COMPOSER. That is the whole placement
+   * argument: a pending question the sink cannot see is one `composerIntent` cannot see, and a
+   * learner who types their answer instead of tapping it would have their canvas re-titled and
+   * regenerated. See canvas-hosting.ts.
+   */
+  clarifying: UserQuestion | null;
+  /** Decisions already settled this sitting, as facts for the packet. Empty nearly always. */
+  clarified: readonly string[];
+  /**
+   * Settle the pending decision and finish the turn it was holding.
+   *
+   * 🔴 THIS IS NOT AN ANSWER TO A COGNITIVE TASK AND MUST NEVER REACH ONE. No judge, no evidence
+   * row, no objective. A preference filed as knowledge is read by the retention model as if the
+   * learner had demonstrated something.
+   */
+  answerClarification: (
+    text: string,
+    surroundings: TurnSurroundings,
+    onStudyDocument?: () => void,
+  ) => Promise<TurnDecision | null>;
+  /** They closed the card instead of answering. The turn is dropped, not guessed at. */
+  dismissClarification: () => void;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
   learnFromAside: () => Promise<void>;
@@ -298,18 +343,29 @@ export interface CanvasSession {
   /** "I don't know" — an explicit statement of state, which is real evidence, unlike a reveal
    *  shortcut that only tells us they looked. */
   admitUnknown: () => Promise<void>;
-  /** Answer a question about an exact highlighted range. Returns text for a popover; for
-   *  "simpler" it rewrites the one block instead and returns null. */
+  /** What a marked vocabulary word means. Returns text for a popover. */
+  defineSelection: (selection: CanvasSelection) => Promise<{ term: string; text: string; sourceLabel?: string } | null>;
+  /** Rewrite one passage in place. The turn router's `then: "rewrite"` lands here, with the
+   *  sentence the learner typed, so the rewrite is the one they asked for. */
+  rewriteSelection: (selection: CanvasSelection, request: string) => Promise<void>;
+  /**
+   * The learner highlighted something and said what they wanted, in their own words.
+   *
+   * Which of the two outcomes happens is the model's reading of `request`, not a flag the caller
+   * sets. `null` means neither happened and `selectionError` says why — a case the caller must not
+   * confuse with a rewrite, or a failed request would silently close the popover carrying its own
+   * error message.
+   */
+  askAboutSelection: (selection: CanvasSelection, request: string) => Promise<SelectionReply | null>;
   /** Session management (§10). Kept away from the teaching API above on purpose — these change
    *  what the session IS, not what the learner is doing inside it. */
   rename: (title: string) => void;
   remove: () => Promise<void>;
-  askAboutSelection: (
-    selection: CanvasSelection,
-    action: SelectionAction,
-  ) => Promise<{ term: string; text: string; sourceLabel?: string } | null>;
   /** Record what the learner did. 🔴 Telemetry only — see canvas-events.ts. */
   recordEvent: (event: NewLearningEvent) => void;
+  /** Records a learner-visible moment for the History Rail. 🔴 Never evidence — see the
+   *  implementation's own note, and lib/learn/canvas-moment.ts. */
+  recordMoment: (moment: NewCanvasMoment) => void;
   selectionBusy: boolean;
   selectionError: string | null;
   clearSelectionAnswer: () => void;
@@ -360,6 +416,29 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * words carry the dotted underline that says "you can open this again".
    */
   const [lookedUp, setLookedUp] = useState<readonly string[]>([]);
+  /**
+   * The one decision Nemesis is waiting on, and the turn it is holding until the answer lands.
+   *
+   * 🔴 ONE, NOT A QUEUE. Two pending questions would make "which one does this typed sentence
+   * answer?" a real question, and that is precisely the ambiguity `AnswerSink` is a union to
+   * prevent. A second decision is a second turn.
+   *
+   * 🔴 THE ORIGINAL UTTERANCE RIDES ALONG, BECAUSE THE ANSWER RESUMES THE TURN BY RE-ASKING IT.
+   * Replaying `decision.then` locally would freeze what Nemesis decided before it knew the answer —
+   * the depth it picks changes the topic, the opening line and sometimes whether teaching is even
+   * the right move. Re-running the same utterance WITH the answer as a stated fact lets the model
+   * finish the turn it started rather than have the software finish it on its behalf.
+   */
+  const [clarifying, setClarifying] = useState<{ question: UserQuestion; said: string } | null>(null);
+  /**
+   * Decisions already settled this sitting, phrased as facts for the packet.
+   *
+   * 🔴 THIS SITTING ONLY, AND THAT IS A KNOWN LIMIT RATHER THAN AN OVERSIGHT. Nothing here is
+   * written to the canvas row, so a reload loses it and the model may ask again. Persisting it is a
+   * schema change and belongs to the owner; asking twice across a reload is mildly annoying, where
+   * a half-migrated column that some canvases have and others do not is a bug in the packet.
+   */
+  const [clarified, setClarified] = useState<readonly string[]>([]);
   /** The prompt whose answer is being read right now. Per-question rather than a page-wide busy
    *  flag, so judging one answer does not freeze the rest of the page. */
   const [judging, setJudging] = useState<string | null>(null);
@@ -413,6 +492,39 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   );
 
   const [coursePlan, setCoursePlan] = useState<CurriculumPlan | null>(null);
+
+  /**
+   * Records that a learner-visible moment happened, for the History Rail.
+   *
+   * 🔴 SITS BESIDE `recordEvent` AND IS NOT IT. That one is capped telemetry that drops its oldest
+   * rows and includes tooltip opens and text selections — transient system activity the rail must
+   * not show. This one is the ordering spine the rail reads: when something happened, and which
+   * durable entity it was. See lib/learn/canvas-moment.ts.
+   *
+   * 🔴 IT MUST NEVER TOUCH A VERDICT, `weakConceptIds`, OR A SCHEDULING GRADE — the same rule
+   * `recordEvent` carries, for the stronger reason: history is read-only navigation, and a rail
+   * that could move the learner model would make rewinding destructive.
+   *
+   * 🔴 CONSECUTIVE DUPLICATES ARE DROPPED. React effects run twice in development StrictMode and a
+   * re-render must not buy a second marker for one answer.
+   */
+  const recordMoment = useCallback(
+    (moment: NewCanvasMoment) => {
+      update((current) => {
+        if (sameMoment(current.moments.at(-1), moment)) return current;
+        return {
+          ...current,
+          moments: appendMoment(
+            current.moments,
+            moment,
+            new Date().toISOString(),
+            `m${current.moments.length}-${Date.now()}`,
+          ),
+        };
+      });
+    },
+    [update],
+  );
 
   const go = useCallback(
     (to: CanvasState) => {
@@ -604,6 +716,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ...(sourceUrl ? { sourceUrl } : {}),
           };
           update((current) => mergeSourceIntoCanvas(current, source));
+          // 🔴 THE MOMENT, NOT A COPY OF THE SOURCE. It stores the id; the title is read back
+          // from `canvas.sources` when the rail draws, so renaming a source renames its history row
+          // and detaching one cannot leave a stale title on the rail. See lib/learn/canvas-moment.ts.
+          recordMoment({ kind: "source", sourceIds: [source.id] });
 
           // 🔴 THE FIRST TIME THE RUNNING APP CREATES DURABLE KNOWLEDGE. Until this landed,
           // `extractKnowledgeObjects` existed and was called only by tests and scripts, so the
@@ -657,7 +773,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         setBusy({ kind: null });
       }
     },
-    [requireUid, update],
+    [recordMoment, requireUid, update],
   );
 
   /**
@@ -959,6 +1075,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
        */
       staged?: CanvasBlock | null,
       capability?: ComposerCapability | null,
+      /**
+       * May this turn be parked behind a clarification card?
+       *
+       * 🔴 FALSE ON THE RESUMED TURN, AND IT IS A GUARD RATHER THAN A PROMPT RULE. The contract
+       * already tells the model not to ask again once the learner has answered, and a model that
+       * ignores it would otherwise park the same utterance forever: answer, re-ask, answer,
+       * re-ask, with the learner doing all the work. A prompt cannot make a loop unreachable; this
+       * can. The turn still runs — the question is simply dropped and `then` happens.
+       */
+      mayAsk = true,
     ): Promise<TurnDecision | null> => {
       const id = requireUid();
       if (!id) return null;
@@ -1031,6 +1157,32 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // the runtime state it reads (unread chunk, awaiting demonstration) lives in the component.
       // See `routeRewrite` in lib/learn/canvas-phrases.ts.
       if (decision.then === "rewrite") return decision;
+      // 🔴🔴 PARKING IS DECIDED HERE, NOT BY THE MODEL, AND THE THREE REFUSALS ARE THE FEATURE.
+      // `turn-router.ts` returns a question beside the action it parks and defers nothing itself;
+      // this is the caller it says owns the parking. A card is hosted only when the learner owes
+      // nothing (two things awaiting an answer at once is the shape `canvas-hosting.ts` exists to
+      // make impossible), when this is not already the resumed turn, and when the question survived
+      // parsing. Every refusal falls through to running `then` immediately, which is always a legal
+      // reading of a clarification: going ahead is what Nemesis would have done without asking.
+      if (decision.question && mayAsk && !surroundings.answerOwed) {
+        setClarifying({ question: decision.question, said });
+        // The sentence above the card. `reply` rather than `opening` because this turn IS the
+        // reply: nothing is about to transition underneath it, and the learner is being asked to
+        // look at the card rather than being introduced to a lesson.
+        if (decision.say) {
+          setAside({
+            blockId: null,
+            kind: "reply",
+            question: said,
+            consulted: result.consulted,
+            sources: result.sources,
+            text: decision.say,
+            topic: decision.topic ?? undefined,
+            visuals: decision.visuals,
+          });
+        }
+        return decision;
+      }
 
       if (decision.then === "study") {
         // 🔴 THE LEARNER'S OWN WORDS, KEPT FOR THIS SITTING ONLY. The teaching controller needs to
@@ -1090,6 +1242,63 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     },
     [begin, command, requireUid],
   );
+
+  /**
+   * The learner settled the decision Nemesis was waiting on. Record it, then finish the turn.
+   *
+   * 🔴🔴 IT NEVER TOUCHES EVIDENCE, AND THAT IS THE POINT OF THE WHOLE SEPARATE PATH. `answerActiveTask`
+   * and `policy.submit` reach a judge and write a `learner_evidence` row against an objective.
+   * Picking "Academic" over "Overview" demonstrates nothing about what somebody knows; filing it as
+   * knowledge would put a preference in the durable record the retention model reads. So this
+   * function shares no line with either of them, and `composerIntent` returns a different kind so
+   * that a call site cannot reach the wrong one by accident.
+   *
+   * 🔴 THE ANSWER IS FED BACK AS A FACT AND THE ORIGINAL UTTERANCE IS RE-ASKED. See `clarifying`.
+   */
+  const answerClarification = useCallback(
+    async (
+      text: string,
+      surroundings: TurnSurroundings,
+      onStudyDocument?: () => void,
+    ): Promise<TurnDecision | null> => {
+      const pending = clarifying;
+      if (!pending) return null;
+      const answer = readClarifyAnswer(pending.question, text);
+      // 🔴 AN EMPTY SUBMISSION IS NOT AN ANSWER AND MUST NOT DISCARD THE QUESTION. Clearing here
+      // would leave the learner staring at a card that had silently stopped mattering.
+      if (!answer) return null;
+      const fact = clarifyAnswerFact(pending.question, answer);
+      setClarified((facts) => [...facts, fact]);
+      setClarifying(null);
+      setAside(null);
+      return converse(
+        pending.said,
+        // The fact is in the packet on THIS turn, not merely from the next one. `clarified` state
+        // has not committed yet when this runs, and a resumed turn that could not see its own
+        // answer is the one turn where it matters most.
+        { ...surroundings, answerOwed: false, clarified: [...surroundings.clarified, fact] },
+        onStudyDocument,
+        // No staged passage on a resumed turn — the card, not a selection, is what held it.
+        null,
+        // And no capability: one was consumed by the original submission if it existed at all.
+        null,
+        false,
+      );
+    },
+    [clarifying, converse],
+  );
+
+  /**
+   * The learner dismissed the question instead of answering it.
+   *
+   * 🔴 IT DOES NOT RESUME THE TURN, AND THAT IS THE HONEST READING. Answering says "build it this
+   * way"; closing the card says "not now". Guessing an answer and building anyway would be the
+   * software deciding the thing it just admitted it could not decide. The learner's next sentence
+   * starts a fresh turn, which is what dismissing a question means everywhere else.
+   */
+  const dismissClarification = useCallback(() => {
+    setClarifying(null);
+  }, []);
 
   /**
    * Cross the boundary from information to learning only after the learner asks to.
@@ -1411,10 +1620,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
       // ── The teaching loop ────────────────────────────────────────────────
       //
-      // 🔴 This is the step that makes the canvas adaptive rather than a graded quiz. The
-      // decision is deterministic — the evaluation already says what was demonstrated, what was
-      // missing and which false belief appeared, so no second model call is spent working out
-      // what to do. A model is used only to WRITE the correction, once the action is chosen.
+      // 🔴 This is the step that makes the canvas adaptive rather than a graded quiz.
+      //
+      // 🔴🔴 THE DECISION IS THE JUDGE'S, NOT A LADDER'S (owner 2026-08-22: "deepseek needs to
+      // pick the next move"). This comment used to say "the decision is deterministic" and
+      // described an `if` ladder over verdict and confidence. The move now arrives ON the
+      // evaluation — chosen by the model that read the answer — and `determineNextCognitiveAction`
+      // enforces only what that model cannot see from one reply: a revealed answer, a missing
+      // reading, the attempt cap, and a move with an empty list to act on.
+      //
+      // 🔴 WHAT IS UNCHANGED IS THE COST. There is still no second model call: the move rides home
+      // on the evaluation that had to be made anyway, so this stays one call to read and one to
+      // WRITE the correction, exactly as before.
       const objectiveId = question.conceptId;
       const action = determineNextCognitiveAction({
         evaluation,
@@ -1573,78 +1790,44 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     else await respond(task.id, "I don't know.", "typed");
   }, [recordEvent, respond, revealRecall]);
 
-  /** The fast path from "I don't understand this bit" to an answer, without leaving the page.
-   *
-   *  🔴 Only "simpler" is allowed to touch the document, and only the one block the selection
-   *  came from. Everything else answers in a popover: looking up a word must not move the
-   *  paragraph the learner is looking at. */
-  const askAboutSelection = useCallback(
-    async (selection: CanvasSelection, action: SelectionAction) => {
-      const id = requireUid();
-      if (!id) {
-        // 🔴 Also reported in the popover, not only in the page-level error strip. The learner
-        // asked about one word and is looking at that word; an explanation that appears at the
-        // bottom of the screen is an explanation they will not connect to what they just did.
-        setSelectionError("Sign in to use the canvas.");
-        return null;
-      }
+  /** Shared preamble for every selection call: who is asking, and clearing the last error. */
+  const beginSelection = useCallback(() => {
+    const id = requireUid();
+    // 🔴 Reported in the popover, not only in the page-level error strip. The learner asked about
+    // one word and is looking at that word; an explanation that appears at the bottom of the
+    // screen is an explanation they will not connect to what they just did.
+    if (!id) setSelectionError("Sign in to use the canvas.");
+    else {
       setSelectionError(null);
       setSelectionBusy(true);
+    }
+    return id;
+  }, [requireUid]);
 
-      // 🔴 REMEMBERED HERE BECAUSE THIS IS THE ONE DOOR EVERY LOOKUP GOES THROUGH — the selection
-      // toolbar and a click on an already-marked term both arrive as the same call, which is what
-      // `lookUpTerm` in learning-canvas.tsx exists to guarantee. Recording it at either call site
-      // would have covered half the ways a learner asks what a word means.
-      //
-      // 🔴 A DEFINITION-SHAPED ACTION ONLY. "Simpler" rewrites a passage and "why" explains a
-      // mechanism; neither means "I did not know this word", and underlining a whole rewritten
-      // sentence is not what was asked for.
-      if (action === "define" || action === "explain") {
-        const word = selection.selectedText.trim();
-        if (word && word.length <= LOOKUP_MARK_MAX_CHARS) {
-          setLookedUp((known) => (known.some((k) => k.toLowerCase() === word.toLowerCase()) ? known : [...known, word]));
-        }
-      }
+  /** Underline a word the learner has now had explained, so the page shows what they asked about.
+   *
+   *  🔴 A WORD, NOT A SENTENCE. Underlining a whole rewritten paragraph is not what was asked for,
+   *  and `LOOKUP_MARK_MAX_CHARS` is what keeps a dragged passage out of the glossary marks. */
+  const markLookedUp = useCallback((selectedText: string) => {
+    const word = selectedText.trim();
+    if (!word || word.length > LOOKUP_MARK_MAX_CHARS) return;
+    setLookedUp((known) => (known.some((k) => k.toLowerCase() === word.toLowerCase()) ? known : [...known, word]));
+  }, []);
 
+  /** What a marked vocabulary word means. The click IS the question, so no words are involved and
+   *  the answer is worth remembering — this is the one lookup `recordLookup` caches. */
+  const defineSelection = useCallback(
+    async (selection: CanvasSelection) => {
+      const id = beginSelection();
+      if (!id) return null;
+      markLookedUp(selection.selectedText);
       recordEvent({
-        type:
-          action === "define"
-            ? "definition_opened"
-            : action === "simpler"
-              ? "simplification_requested"
-              : action === "example"
-                ? "example_requested"
-                : action === "why"
-                  ? "why_requested"
-                  : "explanation_requested",
+        type: "definition_opened",
         ...(selection.blockId ? { blockId: selection.blockId } : {}),
         ...(selection.conceptIds ? { conceptIds: selection.conceptIds } : {}),
         selectedText: selection.selectedText,
       });
-
-      if (action === "simpler") {
-        // 🔴 THE PASSAGE SHOWS THE WORK, NOT THE POPOVER (§11). `setSelectionBusy` drives the
-        // toolbar the learner just clicked; on its own it left the paragraph — the thing actually
-        // being rewritten — looking untouched until the new wording appeared out of nowhere.
-        if (selection.blockId) setBusy({ blockIds: [selection.blockId], kind: "rewrite" });
-        const result = await simplifySelection(id, latest.current, selection);
-        setSelectionBusy(false);
-        setBusy({ kind: null });
-        if (!result.value) {
-          setSelectionError(result.error);
-          return null;
-        }
-        // 🔴 `applyRewrite`, NOT `applyOps` — and the difference is a field that already existed
-        // and was being thrown away. `simplifySelection` has always returned `before`, captured at
-        // the moment of the write with the comment *"once the ops are applied the original wording
-        // is gone and no later step can reconstruct it"*. Nothing read it. §11's *"keep the old
-        // version internally so it can be restored"* was one assignment away the whole time.
-        const rewrite = result.value;
-        update((current) => applyRewrite(current, rewrite));
-        return null;
-      }
-
-      const result = await explainSelection(id, latest.current, selection, action);
+      const result = await apiDefineSelection(id, latest.current, selection);
       setSelectionBusy(false);
       if (!result.value) {
         setSelectionError(result.error);
@@ -1652,7 +1835,95 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       }
       return result.value;
     },
-    [recordEvent, requireUid, update],
+    [beginSelection, markLookedUp, recordEvent],
+  );
+
+  /**
+   * Rewrite one passage in place, because the turn router read the learner's sentence and returned
+   * `then: "rewrite"`.
+   *
+   * 🔴🔴 IT GOES THROUGH `askSelection` LIKE EVERYTHING ELSE, AND CARRIES WHAT THEY ACTUALLY TYPED.
+   * This used to call a second implementation, `simplifySelection`, whose prompt asked for "the same
+   * meaning, plainer construction" and nothing else — so the learner's sentence was read once, by
+   * the router, to decide THAT a rewrite was wanted, and then discarded before deciding WHICH one.
+   * "Make this shorter", "add an example here" and "say this more simply" all produced the same
+   * simplification. The words go the whole way now, and there is one rewrite implementation instead
+   * of two free to drift.
+   *
+   * 🔴 AND IT CAN COME BACK AS AN ANSWER. The router decided from the composer packet; this call
+   * also sees the block itself, and may reasonably conclude the passage should stand. That lands in
+   * the aside — the same place a conversational reply lands — because the alternative is a turn
+   * where the learner typed something and nothing at all happened.
+   */
+  const rewriteSelection = useCallback(
+    async (selection: CanvasSelection, request: string) => {
+      const id = beginSelection();
+      if (!id) return;
+      // 🔴 THE PASSAGE SHOWS THE WORK, NOT THE POPOVER (§11). Unlike a typed request from the ask
+      // box, this path already knows a rewrite is intended — the router said so — so the paragraph
+      // can honestly show that it is the thing being worked on.
+      if (selection.blockId) setBusy({ blockIds: [selection.blockId], kind: "rewrite" });
+      const result = await askSelection(id, latest.current, selection, request);
+      setSelectionBusy(false);
+      setBusy({ kind: null });
+      if (!result.value) {
+        setSelectionError(result.error);
+        return;
+      }
+      const outcome = result.value;
+      recordEvent({
+        type: outcome.kind === "rewrite" ? "simplification_requested" : "explanation_requested",
+        ...(selection.blockId ? { blockId: selection.blockId } : {}),
+        ...(selection.conceptIds ? { conceptIds: selection.conceptIds } : {}),
+        selectedText: selection.selectedText,
+      });
+      // 🔴 `applyRewrite`, NOT `applyOps` — and the difference is a field that already existed and
+      // was being thrown away. The rewrite has always returned `before`, captured at the moment of
+      // the write. §11's *"keep the old version internally so it can be restored"* was one
+      // assignment away the whole time.
+      if (outcome.kind === "rewrite") update((current) => applyRewrite(current, outcome));
+      else setAside({ blockId: selection.blockId ?? null, kind: "reply", text: outcome.answer.text });
+    },
+    [beginSelection, recordEvent, update],
+  );
+
+  /**
+   * The learner highlighted something and typed what they wanted done about it.
+   *
+   * 🔴 THIS FUNCTION DOES NOT READ WHAT THEY TYPED. Whether the request means "tell me" or "change
+   * this" is decided by the model (`askSelection`), and the two outcomes arrive already
+   * distinguished. A branch here on the words would be the deleted toolbar growing back inside the
+   * thing that replaced it.
+   *
+   * 🔴 THE PASSAGE GOES BUSY ONLY ONCE WE KNOW IT IS BEING REWRITTEN, which is after the reply. A
+   * typed request cannot say in advance which of the two it is, so unlike `rewriteSelection` there
+   * is nothing honest to show on the paragraph while the model is still deciding.
+   */
+  const askAboutSelection = useCallback(
+    async (selection: CanvasSelection, request: string): Promise<SelectionReply | null> => {
+      const id = beginSelection();
+      if (!id) return null;
+      const result = await askSelection(id, latest.current, selection, request);
+      setSelectionBusy(false);
+      if (!result.value) {
+        setSelectionError(result.error);
+        return null;
+      }
+      const outcome = result.value;
+      recordEvent({
+        type: outcome.kind === "rewrite" ? "simplification_requested" : "explanation_requested",
+        ...(selection.blockId ? { blockId: selection.blockId } : {}),
+        ...(selection.conceptIds ? { conceptIds: selection.conceptIds } : {}),
+        selectedText: selection.selectedText,
+      });
+      if (outcome.kind === "rewrite") {
+        update((current) => applyRewrite(current, outcome));
+        return { kind: "rewritten" };
+      }
+      markLookedUp(selection.selectedText);
+      return { kind: "answer", ...outcome.answer };
+    },
+    [beginSelection, markLookedUp, recordEvent, update],
   );
 
   /**
@@ -1694,6 +1965,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     stage,
     work,
     lookedUp,
+    /** The decision Nemesis is waiting on, or null. See `clarify-question.ts`. */
+    clarifying: clarifying?.question ?? null,
+    /** Decisions already settled this sitting, as facts for the packet. */
+    clarified,
+    answerClarification,
+    dismissClarification,
     judging,
     opening,
     ready,
@@ -1711,6 +1988,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
      * names the action that resolves it; "ambiguous referent" is not the learner's problem.
      */
     showNotice: (message: string) => setError(message),
+    recordMoment,
     restoreRewritten,
     finishReadingChunk,
     dismissAside: () => setAside(null),
@@ -1741,6 +2019,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       await deleteCanvas(uid, latest.current.id);
     },
     askAboutSelection,
+    defineSelection,
+    rewriteSelection,
     recordEvent,
     selectionBusy,
     selectionError,

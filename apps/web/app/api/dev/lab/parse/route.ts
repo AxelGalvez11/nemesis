@@ -41,7 +41,7 @@ import {
   type DocumentKind,
   type ParseOutcome,
 } from "@/lib/notebooks/parse-document";
-import { visionConfigured } from "@/lib/vision/gemini";
+import { visionConfigured } from "@/lib/vision/read";
 
 export const runtime = "nodejs";
 /** A picture-heavy lecture with the vision pass armed is minutes of work, exactly as it is on the

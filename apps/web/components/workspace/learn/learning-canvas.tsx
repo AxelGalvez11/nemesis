@@ -15,6 +15,7 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
+import { CanvasClarification } from "./canvas-clarification";
 import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
@@ -27,6 +28,7 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 import { projectAll } from "@/lib/learn/learner-evidence";
 import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
+import { buildCanvasHistory, reconstructMoment } from "@/lib/learn/canvas-history";
 import type { TurnSurroundings } from "./canvas-chat";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
@@ -38,6 +40,8 @@ const COURSE_CAPABILITY: readonly ComposerCapability[] = ["course"];
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
+import { CanvasHistoryRail } from "./canvas-history-rail";
+import { CanvasHistoryView } from "./canvas-history-view";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
@@ -189,7 +193,6 @@ export function LearningCanvas({
     const text = aside.text.trim();
     return text ? { key: `${text.length}:${text.slice(0, 24)}`, text } : null;
   }, [session.aside]);
-  const voice = useCanvasVoice(policy, policy.judging, spokenReply);
 
   /**
    * The session record, read from the append-only evidence log.
@@ -223,6 +226,31 @@ export function LearningCanvas({
    * are the same rows, so the only honest discriminator is what the learner was doing.
    */
   const [materialRequestedDuring, setMaterialRequestedDuring] = useState<string | null>(null);
+
+  /**
+   * Files the learner picked since their last send, for the composer's attachment chips.
+   *
+   * 🔴 FED BY THE PICK, CLEARED BY THE SEND, AND NEVER READ FROM `canvas.sources` — that is the
+   * entire design, and the history demanding it is written on `recentAttachments` in
+   * canvas-composer.tsx. A machine-grounded page never passes through the picker, so it can never
+   * chip. A reload starts this empty, which is correct: nothing is pending over the box the
+   * learner has not touched yet.
+   *
+   * 🔴 THE CHIP APPEARS ON PICK, NOT ON INGEST COMPLETING. The learner's question is "did my file
+   * land where I'm typing?", and the honest moment to answer it is immediately — `attachFiles`
+   * takes seconds on a real deck, and a chip that appears only afterwards reproduces the silence
+   * this exists to end. If ingest fails, `session.error` already says so on the same screen.
+   */
+  const [recentAttachments, setRecentAttachments] = useState<readonly { id: string; title: string }[]>([]);
+  const attachWithChips = useCallback(
+    (files: FileList | File[]) => {
+      const picked = Array.from(files).map((file) => ({ id: crypto.randomUUID(), title: file.name }));
+      if (picked.length > 0) setRecentAttachments((current) => [...current, ...picked]);
+      void session.attachFiles(files);
+    },
+    [session],
+  );
+  const acknowledgeAttachments = useCallback(() => setRecentAttachments([]), []);
 
   const selected = useMemo(
     () => canvas.blocks.filter((block) => selectedIds.includes(block.id)),
@@ -357,24 +385,35 @@ export function LearningCanvas({
       };
       setAnswer(null);
       setTerm({ selection, rect });
-      const result = await session.askAboutSelection(selection, "define");
+      const result = await session.defineSelection(selection);
       if (result) setAnswer(result);
     },
     [session],
   );
 
-  const act = useCallback(
-    async (action: Parameters<typeof session.askAboutSelection>[1]) => {
+  /**
+   * The learner typed something about what they highlighted.
+   *
+   * 🔴 NOTHING HERE READS IT. Whether that request means "tell me" or "change this" is the model's
+   * reading (see `askSelection`), and the two arrive already distinguished: an answer comes back to
+   * paint, and a rewrite comes back as null because the DOCUMENT is where it shows. This function
+   * used to take one of five action names and branch on `"simpler"`, which is the branch that made
+   * five buttons necessary in the first place.
+   */
+  const ask = useCallback(
+    async (request: string) => {
+      // 🔴 Captured BEFORE the call. A rewrite replaces the block these offsets index, so reading
+      // the selection again afterwards would measure against text that no longer exists.
       const picked = pointed?.selection;
       if (!picked) return;
-      // 🔴 Captured BEFORE the call. "Simpler" replaces the block the offsets index, so reading
-      // the selection again afterwards would measure against text that no longer exists.
-      const result = await session.askAboutSelection(picked, action);
-      if (action === "simpler") {
-        dismissSelection();
-        return;
-      }
-      if (result) setAnswer(result);
+      const reply = await session.askAboutSelection(picked, request);
+      if (reply?.kind === "answer") setAnswer(reply);
+      // A rewrite already showed itself on the page; leaving an empty popover open over the
+      // paragraph it just changed would hide the one thing the learner asked to see.
+      //
+      // 🔴 AND A FAILURE IS NOT A REWRITE. `null` leaves the popover exactly where it is, because
+      // `session.selectionError` is about to be rendered inside it.
+      else if (reply?.kind === "rewritten") dismissSelection();
     },
     [dismissSelection, pointed, session],
   );
@@ -425,12 +464,17 @@ export function LearningCanvas({
     let demonstrated = 0;
     for (const state of projected.values()) if (state.demonstratedAt !== null) demonstrated += 1;
     return {
+      // 🔴 THE RUNTIME'S OWN ANSWER, NOT THE STORED STATE. It is what decides whether this turn may
+      // be parked behind a clarification card: a learner who already owes an answer to a real
+      // question must not be handed a second thing to answer. See `converse`.
+      answerOwed: policy.awaitingAnswer,
+      clarified: session.clarified,
       demonstrated,
       history: conversation.current,
       lessonInProgress: policy.decision !== null,
       objectives: policy.claims.length,
     };
-  }, [policy.claims.length, policy.decision, policy.evidence]);
+  }, [policy.awaitingAnswer, policy.claims.length, policy.decision, policy.evidence, session.clarified]);
 
   /**
    * One turn of talking to Nemesis.
@@ -469,13 +513,56 @@ export function LearningCanvas({
         setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
       }, staged, withCapability);
       remember({ replied: decision?.say ?? "", said: trimmed });
+      // 🔴🔴 THE ONE THING ON THIS CANVAS THAT EXISTED NOWHERE DURABLE. `conversation` above is a
+      // ref, capped at six turns, and its own comment says it is deliberately not persisted — so
+      // "what I asked and what Nemesis said" was gone on refresh, which is exactly the history the
+      // rail is for. Recording it here does NOT put a chat log back on the page: contract rule 2
+      // still takes the reply off the surface on the next turn. Attention and memory are different
+      // questions, and `session-transcript.ts` already made that distinction in this repo — *"that
+      // is a rule about ATTENTION, not about memory"*.
+      //
+      // 🔴 `assistant` ONLY WHEN NEMESIS ACTUALLY SAID SOMETHING. A `study` turn answers by
+      // starting a lesson rather than by speaking, and marking that as an answer would put a
+      // marker on the rail that opens to an empty reconstruction.
+      session.recordMoment({
+        kind: decision?.say ? "assistant" : "user",
+        userText: trimmed,
+        ...(decision?.say ? { assistantText: decision.say } : {}),
+      });
       return decision;
+    },
+    [policy.decision, remember, session, surroundings],
+  );
+
+  /**
+   * The learner settled the decision Nemesis was waiting on, by tapping an option or by typing one.
+   *
+   * 🔴 ONE WRAPPER FOR BOTH ROUTES, BESIDE `converse` AND FOR THE SAME REASONS. It stamps the
+   * action in flight before the resumed turn can write into the document, and it records the
+   * exchange in the conversation the packet carries — a resumed turn that vanished from the
+   * transcript would leave the next "why?" resolving against the wrong thing.
+   *
+   * 🔴 IT IS NOT `converse`, AND IT MUST NOT BE FOLDED INTO IT. `converse` opens a NEW turn; this
+   * finishes one that is already open. Routing an answer through the new-turn path is exactly the
+   * defect shape this whole feature was careful about: the card would stay on screen, and the
+   * learner's answer would be read as a fresh question.
+   */
+  const answerClarification = useCallback(
+    async (answered: string) => {
+      const trimmed = answered.trim();
+      if (!trimmed) return;
+      const decision = await session.answerClarification(trimmed, surroundings(), () => {
+        setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
+      });
+      remember({ replied: decision?.say ?? "", said: trimmed });
     },
     [policy.decision, remember, session, surroundings],
   );
 
   const beginOrAnswer = useCallback(
     (asked: string, withCapability: ComposerCapability | null = null) => {
+      // A send acknowledges the attachment chips, same as every other send route.
+      acknowledgeAttachments();
       applyExplanationEvent({ kind: "new_turn" });
       const trimmed = asked.trim();
       // An empty send with material staged is "learn this material with me", which is not an
@@ -494,7 +581,7 @@ export function LearningCanvas({
       // or the pipeline has two doors again.
       void converse(trimmed, null, withCapability);
     },
-    [applyExplanationEvent, converse, session],
+    [acknowledgeAttachments, applyExplanationEvent, converse, session],
   );
 
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
@@ -616,22 +703,20 @@ export function LearningCanvas({
         if (routing.kind === "rewrite") {
           const block = canvas.blocks.find((candidate) => candidate.id === routing.blockId);
           if (block) {
-            // The same path the toolbar takes, so there is one rewrite implementation rather than
-            // two that drift. `rewritable` is true because a document block is exactly where a
-            // rewrite has somewhere to land.
-            await session.askAboutSelection(
-              {
-                anchor: { exact: block.content.slice(0, 64), prefix: "", suffix: "" },
-                blockId: block.id,
-                endOffset: block.content.length,
-                regionId: block.id,
-                rewritable: true,
-                selectedText: block.content,
-                startOffset: 0,
-                surroundingText: block.content,
-              },
-              "simpler",
-            );
+            // 🔴 `text` GOES WITH IT. The router read this sentence to decide a rewrite was wanted;
+            // the rewrite itself then needs it to know WHICH rewrite. Without it every instruction
+            // came back as the same simplification. `rewritable` is true because a document block is
+            // exactly where a rewrite has somewhere to land.
+            await session.rewriteSelection({
+              anchor: { exact: block.content.slice(0, 64), prefix: "", suffix: "" },
+              blockId: block.id,
+              endOffset: block.content.length,
+              regionId: block.id,
+              rewritable: true,
+              selectedText: block.content,
+              startOffset: 0,
+              surroundingText: block.content,
+            }, text);
             clearSelection();
             return;
           }
@@ -678,51 +763,6 @@ export function LearningCanvas({
   // which the owner has now said should not come back: *"The only button should be 'continue'
   // below reading passages, thats it."* The six session methods they called went with them.
 
-  // 🔴🔴 THIS USED TO RETURN ON `policy.status === "loading"` TOO, AND THAT WAS THE BLANK SCREEN.
-  //
-  // Measured 2026-08-18 against production: a learner types anything on the front door and gets an
-  // EMPTY PAGE — no composer, no reply, nothing they can do — for as long as the canvas takes to
-  // resolve its knowledge. 25 seconds for a plain greeting; 59 for "teach me pharmacokinetics",
-  // which has to search for material and ingest it first. No error, no crash, no console line: the
-  // component was returning a surface with one optional caption in it, and the caption only appears
-  // once a NAMED phase has been running long enough to be worth saying out loud. Most of that time
-  // there was literally nothing on screen.
-  //
-  // 🔴 THE REASON IT WAS WRITTEN IS GONE. The comment here used to say that painting early would
-  // let "the stage machine's own effects start generating a lesson for a canvas the policy is about
-  // to own". That machine no longer exists: nothing below this line generates anything on mount,
-  // and `composeSurface` already withholds every content region while the policy has nothing —
-  // `policyPresenting` requires `status === "ready"`, so a loading canvas resolves to `preparing`,
-  // which is a real surface WITH the composer under it. Suppressing the whole page was protecting
-  // against a runtime that had already been deleted.
-  //
-  // 🔴 WHAT STAYS IS `!session.ready`, WHICH IS A DIFFERENT CLAIM. That means the canvas itself has
-  // not loaded from the database yet — there is no title, no sources, no state, and a composer
-  // would have nothing to submit into. It is one read and it is fast.
-  //
-  // 🔴 AND IT CARRIES THE EXIT, WHICH IT DID NOT (UX brief §38.2). This branch used to return a
-  // bare `<main>` with a caption in it: no header, therefore no way out. Harmless while the shell
-  // still floated a rail toggle in the corner; under §38.1, which takes the rail away inside a
-  // canvas, it is a page a learner cannot leave — on the exact entry paths (deep link, hard
-  // refresh, fresh sign-in) that land here first. `CanvasSurface` renders the `×` above the
-  // branch, so this state cannot be reached without one.
-  if (!session.ready) {
-    return (
-      <CanvasSurface onExit={leave}>
-        <div className="flex h-full items-center justify-center">
-          {/* Nothing is docked yet — there is no composer to stand above — so the character
-              simply holds the middle, which is where it would have walked to anyway. */}
-          <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
-          {/* This branch is one database read long and shows no caption, so the dock's own
-              animation is the whole of what says "working" here. Nothing draws a second one. */}
-          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
-              database read long. It was not fine while it also covered knowledge resolution, which
-              is a model call and an ingestion and can run for a minute. */}
-          {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
-        </div>
-      </CanvasSurface>
-    );
-  }
 
   // ── Composition, not ownership ────────────────────────────────────────────
   //
@@ -809,6 +849,16 @@ export function LearningCanvas({
    * drawing on top.
    */
   const turnInFlight = busy.kind !== null;
+  /**
+   * Voice, once the answer has actually finished arriving.
+   *
+   * 🔴🔴 `turnInFlight` IS THE GATE, AND WITHOUT IT AUTOPLAY IS A COST BUG (§48). `spokenReply`'s key
+   * is derived from the text, and the text GROWS as the answer streams — so an ungated autoplay
+   * would fire a fresh paid synthesis on every chunk of every answer, each one cancelling the last,
+   * and the learner would hear the beginning of the answer over and over. It is the same signal the
+   * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
+   */
+  const voice = useCanvasVoice(policy, policy.judging, turnInFlight ? null : spokenReply);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -882,10 +932,137 @@ export function LearningCanvas({
 
     const lessonHeld = policyPresenting && !regions.policy;
 
+  /**
+   * The moment the History Rail is showing, or null for the present.
+   *
+   * 🔴 COMPONENT STATE, NOT SESSION STATE, AND NOT PERSISTED. Where you are LOOKING is not a fact
+   * about the canvas — reopening it tomorrow must land on now, not on wherever you last browsed
+   * to. It is also why nothing about rewinding reaches `update()`: the canvas is not modified by
+   * being read.
+   */
+  const [rewound, setRewound] = useState<string | null>(null);
+
+  /**
+   * The rail's rows.
+   *
+   * 🔴 MEMOISED ON THE FOUR ARRAYS IT ACTUALLY READS, NOT ON `canvas`. The canvas object is
+   * replaced on every autosave (`update` spreads it and stamps `updatedAt`), so depending on the
+   * whole thing would rebuild the history — and re-render the rail — on a keystroke that touched
+   * nothing it shows. This is the "keep it cheap" requirement, and it is the only place it needed
+   * spending.
+   */
+  const history = useMemo(
+    () =>
+      buildCanvasHistory({
+        createdAt: canvas.createdAt,
+        moments: canvas.moments,
+        questions: canvas.questions,
+        responses: canvas.responses,
+        sources: canvas.sources,
+      }),
+    [canvas.createdAt, canvas.moments, canvas.questions, canvas.responses, canvas.sources],
+  );
+
+  /** What to paint while rewound. Null whenever the moment has gone or nothing is rewound to. */
+  const viewing = useMemo(
+    () =>
+      rewound
+        ? reconstructMoment(
+            {
+              createdAt: canvas.createdAt,
+              moments: canvas.moments,
+              questions: canvas.questions,
+              responses: canvas.responses,
+              sources: canvas.sources,
+            },
+            rewound,
+          )
+        : null,
+    [canvas.createdAt, canvas.moments, canvas.questions, canvas.responses, canvas.sources, rewound],
+  );
+
+  /**
+   * 🔴 A NEW TURN RETURNS THE LEARNER TO NOW. Leaving the canvas rewound while an answer arrives
+   * behind it would put the reply somewhere they cannot see and leave a stale moment reading as
+   * the live one — the single dangerous state this feature has. `turnInFlight` is the same signal
+   * the thinking screen keys on.
+   */
+  useEffect(() => {
+    if (turnInFlight) setRewound(null);
+  }, [turnInFlight]);
+
+  // 🔴🔴🔴 AND IT SITS BELOW EVERY HOOK, WHICH IS NOT A STYLE CHOICE. React identifies hooks
+  // by call order, and this gate used to stand in the middle of the component with
+  // `useCanvasVoice`, the history rail's state and three more hooks underneath it — so the
+  // render after the canvas's one database read called MORE hooks than the render before it.
+  // React throws for exactly that, and the crash landed on precisely the entry paths that start
+  // unready (a deep link, a hard refresh, going back into an old canvas) and took the exit
+  // button down with it. Guarded in send-is-acknowledged.test.ts.
+  // 🔴🔴 THIS USED TO RETURN ON `policy.status === "loading"` TOO, AND THAT WAS THE BLANK SCREEN.
+  //
+  // Measured 2026-08-18 against production: a learner types anything on the front door and gets an
+  // EMPTY PAGE — no composer, no reply, nothing they can do — for as long as the canvas takes to
+  // resolve its knowledge. 25 seconds for a plain greeting; 59 for "teach me pharmacokinetics",
+  // which has to search for material and ingest it first. No error, no crash, no console line: the
+  // component was returning a surface with one optional caption in it, and the caption only appears
+  // once a NAMED phase has been running long enough to be worth saying out loud. Most of that time
+  // there was literally nothing on screen.
+  //
+  // 🔴 THE REASON IT WAS WRITTEN IS GONE. The comment here used to say that painting early would
+  // let "the stage machine's own effects start generating a lesson for a canvas the policy is about
+  // to own". That machine no longer exists: nothing below this line generates anything on mount,
+  // and `composeSurface` already withholds every content region while the policy has nothing —
+  // `policyPresenting` requires `status === "ready"`, so a loading canvas resolves to `preparing`,
+  // which is a real surface WITH the composer under it. Suppressing the whole page was protecting
+  // against a runtime that had already been deleted.
+  //
+  // 🔴 WHAT STAYS IS `!session.ready`, WHICH IS A DIFFERENT CLAIM. That means the canvas itself has
+  // not loaded from the database yet — there is no title, no sources, no state, and a composer
+  // would have nothing to submit into. It is one read and it is fast.
+  //
+  // 🔴 AND IT CARRIES THE EXIT, WHICH IT DID NOT (UX brief §38.2). This branch used to return a
+  // bare `<main>` with a caption in it: no header, therefore no way out. Harmless while the shell
+  // still floated a rail toggle in the corner; under §38.1, which takes the rail away inside a
+  // canvas, it is a page a learner cannot leave — on the exact entry paths (deep link, hard
+  // refresh, fresh sign-in) that land here first. `CanvasSurface` renders the `×` above the
+  // branch, so this state cannot be reached without one.
+  if (!session.ready) {
+    return (
+      <CanvasSurface onExit={leave}>
+        <div className="flex h-full items-center justify-center">
+          {/* Nothing is docked yet — there is no composer to stand above — so the character
+              simply holds the middle, which is where it would have walked to anyway. */}
+          <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
+          {/* This branch is one database read long and shows no caption, so the dock's own
+              animation is the whole of what says "working" here. Nothing draws a second one. */}
+          {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
+              database read long. It was not fine while it also covered knowledge resolution, which
+              is a model call and an ingestion and can run for a minute. */}
+          {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
+        </div>
+      </CanvasSurface>
+    );
+  }
+
+
+
+  // 🔴🔴 THE MODE IS NOT PART OF THE IDENTITY ANY MORE (owner 2026-08-22: "canvas should have one
+  // persistent screen not a swapping one"). `presence` was the first element, so every change of
+  // MODE — reading → thinking → question — rebuilt the whole surface through `CanvasFade` at
+  // 160ms out plus 220ms in. A single answer crossed it twice and spent ~760ms dissolving the page
+  // away and back.
+  //
+  // What is left is what the surface is SHOWING: which question, and what Nemesis last said. Those
+  // are genuinely new content and deserve the crossfade the fade was written for — "question →
+  // feedback → next question", as globals.css puts it. Going busy and coming back is not new
+  // content and no longer counts as a swap.
   const surfaceKey = [
-    presence,
     regions.policy ? screenKey(policy) : "-",
     session.aside ? `aside:${session.aside.text.slice(0, 40)}` : "-",
+    // 🔴 SO THE HISTORICAL VIEW ARRIVES AND LEAVES THROUGH THE SAME FADE EVERYTHING ELSE USES.
+    // Without this the swap between two moments is instant while every other swap on the canvas
+    // is animated, which reads as a different app for one interaction.
+    rewound ? `moment:${rewound}` : "-",
   ].join("|");
 
   // 🔴 THE NAME OF THE STEP THAT IS RUNNING, OR NONE — never a guess. `CanvasThinkingPreview`
@@ -921,6 +1098,13 @@ export function LearningCanvas({
   // to the policy's prompt id — evidence written against a question nobody was asked, with every
   // test still green. See canvas-hosting.ts.
   const sink = answerSink({
+    // 🔴 THE CARD GOES IN THE SINK RATHER THAN BESIDE IT, WHICH IS THE WHOLE REASON IT IS SAFE. The
+    // primary composer stays on screen underneath the options, and typing into a text box that is
+    // right there is the ordinary thing to do. Held anywhere this union cannot see, that submission
+    // reaches `start` on a canvas that has not begun — `begin()` re-titles it and regenerates it.
+    // `answerSink` ranks it last, so a real question still outranks it and no owed answer can be
+    // read as a preference.
+    clarifying: session.clarifying,
     hosted: policy.task,
     regions,
     stageTask: session.activeTask,
@@ -1117,7 +1301,7 @@ export function LearningCanvas({
         // learner may be reading rather than answering, and stripping the title and navigation from
         // someone who is reading takes away their way out. So: quiet when the policy is alone,
         // continuous across question and feedback, never quiet over a document.
-        onFiles={(files) => void session.attachFiles(files)}
+        onFiles={attachWithChips}
         onUrl={(url) => void session.attachUrl(url)}
         onRename={session.rename}
       />
@@ -1140,6 +1324,39 @@ export function LearningCanvas({
           16px (`pb-4`) is 124, and the composer GROWS with what is typed into it, to
           `MAX_COMPOSER_HEIGHT`. 160 clears a composer several lines tall and leaves the gradient
           doing its job rather than hiding text behind it. */}
+      {/* ── the History Rail ───────────────────────────────────────────────────────────────
+          🔴 A SIBLING OF THE SCROLLER, NOT A CHILD OF IT. Inside, it would scroll away with the
+          answer; the rail is a fixture of the Canvas, not a mark on the page.
+
+          🔴 IT IS NOT THE MINIMAP AND THEY BOTH LIVE HERE AT ONCE. The Minimap is a header control
+          answering "where am I in what I'm learning" from the learner model; this answers "what
+          happened here, and how did I get here" from a moment log that provably cannot state
+          anything about knowledge. See canvas-history-rail.tsx. */}
+      <CanvasHistoryRail
+        activeMomentId={rewound}
+        entries={history}
+        onSelect={setRewound}
+      />
+
+      {/* ── the rewound Canvas ─────────────────────────────────────────────────────────────
+          🔴 AN OPAQUE OVERLAY RATHER THAN A REPLACED SUBTREE, AND THAT IS THE CHEAP CORRECT ONE.
+          Unmounting the live surface to show history would tear down the policy's screen, the
+          reply and its audio controller, and rebuild all three on `Return to now` — a visible
+          rebuild, and a loss of any local state they hold, for a read-only detour. The sheet's own
+          background makes it a replacement to look at while leaving the live Canvas standing
+          behind it, which is why returning is instant.
+
+          🔴 `z-10`: OVER THE CONTENT, UNDER THE CHROME. The exit `×` and the header controls sit at
+          z-20/z-30 in `CanvasSurface` and must stay pressable — a history view that trapped the
+          learner would be a worse bug than the one it fixes. */}
+      {viewing && (
+        <div className="absolute inset-0 z-10 overflow-y-auto bg-(--ui-bg-editor) pb-[160px] pt-[64px]">
+          <CanvasFade contentKey={`moment:${viewing.momentId}`}>
+            <CanvasHistoryView moment={viewing} onReturn={() => setRewound(null)} />
+          </CanvasFade>
+        </div>
+      )}
+
       <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
@@ -1160,7 +1377,10 @@ export function LearningCanvas({
             wanted to look something up would have to dismiss the question to do it. It sits above
             the reading and the reading continues beneath it — one continuous surface, which is why
             neither is in a panel, a modal or a column of its own. */}
-        {regions.policy && presence !== "preparing" && (
+        {/* 🔴 NO LONGER GATED ON `preparing`. Content outranks thinking — see `canvas-presence.ts`.
+            The presence ladder now reports `preparing` only when there is nothing to keep, so this
+            region simply paints whenever `composeSurface` says it may. */}
+        {regions.policy && (
           <CanvasPolicyView
             lookedUp={session.lookedUp}
             voice={{ replay: voice.replay, speaking: voice.speaking }}
@@ -1192,7 +1412,7 @@ export function LearningCanvas({
             `replyOnScreen` computes — that is the point: `composeSurface` decides the RELATIONSHIP
             between this and the policy's screen (which of them yields, and to which), and reading
             the raw state here would be a second opinion free to disagree with the first. */}
-        {regions.reply && session.aside && presence !== "preparing" && (
+        {regions.reply && session.aside && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
             {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
                 and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
@@ -1310,12 +1530,10 @@ export function LearningCanvas({
                   broken. `turnInFlight` is the same signal the thinking screen keys on. */}
               {!turnInFlight && replyText.trim() && (
                 <ReplyActions
-                  onCycleSpeed={voice.header.onCycleSpeed}
-                  onSpeak={voice.speakAloud}
-                  onStop={voice.stopSpeaking}
-                  // 🔴 Not "something is playing": while an example row speaks, this is not its button.
-                  speaking={voice.header.speaking && voice.speakingExample === null}
-                  speed={voice.header.speed}
+                  // 🔴 THE CONTROLLER FOR *THIS ANSWER'S* AUDIO (§48), not a shared "something is
+                  // playing" boolean. Play, pause, seek, speed and progress all read from one state,
+                  // so an example row speaking elsewhere can never turn this into a stop button.
+                  audio={voice.replyAudio}
                   // 🔴 THE PROSE, NOT THE RENDERED PAGE. `replySegments` splits drawings out of the
                   // text; pasting "[figure 1]" into someone's notes is pasting our wire format at
                   // them, and a synthesiser reading it aloud is worse.
@@ -1403,6 +1621,29 @@ export function LearningCanvas({
           </div>
         )}
 
+        {/* 🔴🔴 ITS OWN BLOCK, NOT NESTED IN THE REPLY ABOVE, AND THAT IS DELIBERATE. `say` is
+            allowed to be empty — a model that asks a good question and says nothing else has still
+            taken a complete turn — and nesting the card inside `regions.reply && session.aside`
+            would make the whole feature disappear on exactly that turn, silently. The card is what
+            the turn IS; the sentence above it is optional. */}
+        {session.clarifying && presence !== "preparing" && (
+          // 🔴 `pb-40` IS THE COMPOSER'S HEIGHT, THE SAME NUMBER `canvas-document.tsx` USES. The
+          // composer is absolutely positioned over the bottom of this scroll container, so a card
+          // with no bottom padding has its last control sitting underneath it — and on a short
+          // canvas there is nothing to scroll, so the Submit button is simply unreachable.
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
+            <CanvasClarification
+              onDismiss={session.dismissClarification}
+              // 🔴 THE LABEL, NOT THE ID — because tapping must be indistinguishable from typing
+              // it, and `readClarifyAnswer` resolves a label back to its option. One route in, one
+              // meaning, and no branch that only the mouse exercises. The card's own Other box
+              // sends its prose through this same prop for the same reason.
+              onAnswer={(text) => void answerClarification(text)}
+              question={session.clarifying}
+            />
+          </div>
+        )}
+
         {/* 🔴 THE TWO PRE-CONTENT SCREENS ARE DELETED, NOT HIDDEN (UX brief §1). `CanvasEmpty`
             painted "What do you want to learn?" over a large dashed upload box with its own topic
             input; `SourcesAttached` painted "1 source attached" over a "Help me learn this"
@@ -1463,7 +1704,7 @@ export function LearningCanvas({
           />
         )}
 
-        {regions.document && presence !== "preparing" && (
+        {regions.document && (
           <>
 
         {["learn", "targeted_relearn"].includes(canvas.state) && (
@@ -1587,8 +1828,23 @@ export function LearningCanvas({
         // "Nemesis needs something from you", and while it is thinking it does not: it needs to
         // finish. This is the same distinction the dock's own `state` already draws, applied to
         // the badge that sits on top of it.
+        // 🔴🔴 AND NOT WHILE THE QUESTION IS OFF SCREEN, WHICH IS THE REST OF "RANDOM" (owner
+        // 2026-08-21, still seeing it after the narrowing above: "the mascot randomly gets a
+        // question mark on its head"). `awaitingAnswer` is the POLICY's state — it stays true
+        // whenever the runtime believes it has asked for something — while `regions.policy` is
+        // whether that question is actually PAINTING. The two come apart on every surface that
+        // withholds the policy region: a reply, a document, a lesson held back. So the mark sat
+        // over a page with no question anywhere on it, which from the learner's side is exactly
+        // a mark appearing for no reason.
+        //
+        // The mark means "Nemesis needs something from you". If the thing it needs is not on
+        // screen, the mark is not a signal — it is a puzzle. Gated on the region that renders it.
         marker={
-          session.error ? "!" : awaitingDemonstration && !turnInFlight && presence !== "preparing" ? "?" : null
+          session.error
+            ? "!"
+            : awaitingDemonstration && regions.policy && !turnInFlight && presence !== "preparing"
+              ? "?"
+              : null
         }
         // 🔴🔴 `turnInFlight`, NOT `policy.thinking` — AND THIS IS THE SAME MISTAKE THE THINKING
         // SCREEN ALREADY FIXED, MADE AGAIN ONE COMPONENT OVER.
@@ -1629,7 +1885,7 @@ export function LearningCanvas({
           busy={session.selectionBusy}
           error={session.selectionError}
           forceOpen={!text.selection && Boolean(term)}
-          onAct={(action) => void act(action)}
+          onAsk={(request) => void ask(request)}
           onSpeak={(text) => voice.speakAloud(text)}
           speaking={voice.header.speaking}
           onDismiss={dismissSelection}
@@ -1668,6 +1924,7 @@ export function LearningCanvas({
           // live — see canvas-hosting.ts.
           listenSignal={voice.listenSignal}
           onAnswer={(text, via, tookMs) => {
+            acknowledgeAttachments();
             // 🔴 NEMESIS STOPS TALKING THE MOMENT THE LEARNER ANSWERS. Speech that outlives the
             // screen it belongs to reads the previous question over the current one.
             voice.stopSpeaking();
@@ -1688,9 +1945,23 @@ export function LearningCanvas({
           // moved the learner past material; it is a `Continue` below that material now, because
           // §38 allows exactly one button and §39 makes the trigger the policy's declared cognitive
           // mode rather than anything the composer can observe.
-          onAsk={(text, chosen) => void submit(text, chosen)}
+          // 🔴 THE SAME ROUTE THE BUTTONS TAKE. Typing "academic" under the card and tapping the
+          // Academic option must reach one handler, or the two drift and only one of them keeps
+          // working. `session.answerClarification` is that handler; the card below calls it too.
+          // 🔴 THE SAME ROUTE THE CARD'S BUTTONS TAKE. Typing "academic" under the card and tapping
+          // the Academic option must reach one handler, or the two drift and only one keeps working.
+          onClarify={(text) => {
+            acknowledgeAttachments();
+            // Nemesis stops talking the moment the learner responds, exactly as `onAnswer` does.
+            voice.stopSpeaking();
+            void answerClarification(text);
+          }}
+          onAsk={(text, chosen) => {
+            acknowledgeAttachments();
+            void submit(text, chosen);
+          }}
           onClearSelection={clearSelection}
-          onFiles={(files) => void session.attachFiles(files)}
+          onFiles={attachWithChips}
           // 🔴 "Record a lecture" IS HIDDEN, NOT DELETED. Owner call, 2026-08-20: "remove the
           // 'record a lecture' option or just hide it." Withholding `onRecord` is the whole change:
           // the composer's `+` already falls through to the file picker on the first press when
@@ -1727,6 +1998,7 @@ export function LearningCanvas({
           // know is whether pressing send with an empty box means anything, and passing the list
           // for that would be handing it everything it needs to start drawing them again.
           attachedCount={canvas.sources.length}
+          recentAttachments={recentAttachments}
           selected={selected}
           // 🔴 ONE CAPABILITY OFFERED, AND ONLY THE COMPOSER CLEARS IT. §38's amendment (owner,
           // 2026-08-23) permits one-shot capabilities that declare what the next submission IS;

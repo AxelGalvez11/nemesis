@@ -107,6 +107,7 @@ test("the chip pairs with the owner's placeholder", () => {
 
 const CONTEXT: TurnContext = {
   canvasTitle: "",
+  clarified: [],
   courseRequested: true,
   demonstrated: 0,
   history: [],
