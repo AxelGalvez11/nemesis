@@ -272,15 +272,21 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               This is also the one place the entrance turn belongs — the eyes go right round the
               body and come back, which is a real arrival and costs a beat. It is off everywhere
               else precisely because it would then happen on every appearance. */}
+          {/* 🔴 THE HOP GETS ITS OWN ELEMENT HERE TOO, AND FOR THE SAME REASON AS IN `BloubDock`:
+              the wrapper above already carries the greeting's own margin and its departure, so a
+              jump written onto it would have to share a transform with the transition. Nested
+              elements multiply, so each keeps one job. See `use-poke.ts` for what a poke draws. */}
           <div className="mb-5">
-            <BloubBot
-              color={accent}
-              entrance
-              onPoke={greeter.poke}
-              size={64}
-              state={greeter.state}
-              track
-            />
+            <div className={greeter.motion === "jump" ? "bloub-jump" : undefined}>
+              <BloubBot
+                color={accent}
+                entrance
+                onPoke={greeter.poke}
+                size={64}
+                state={greeter.state}
+                track
+              />
+            </div>
           </div>
           <h1
             className="text-[length:var(--canvas-text-title)] font-medium tracking-[-0.01em] text-(--ui-text-primary)"

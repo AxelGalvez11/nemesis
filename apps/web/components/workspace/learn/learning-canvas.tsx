@@ -1736,8 +1736,23 @@ export function LearningCanvas({
         // "Nemesis needs something from you", and while it is thinking it does not: it needs to
         // finish. This is the same distinction the dock's own `state` already draws, applied to
         // the badge that sits on top of it.
+        // 🔴🔴 AND NOT WHILE THE QUESTION IS OFF SCREEN, WHICH IS THE REST OF "RANDOM" (owner
+        // 2026-08-21, still seeing it after the narrowing above: "the mascot randomly gets a
+        // question mark on its head"). `awaitingAnswer` is the POLICY's state — it stays true
+        // whenever the runtime believes it has asked for something — while `regions.policy` is
+        // whether that question is actually PAINTING. The two come apart on every surface that
+        // withholds the policy region: a reply, a document, a lesson held back. So the mark sat
+        // over a page with no question anywhere on it, which from the learner's side is exactly
+        // a mark appearing for no reason.
+        //
+        // The mark means "Nemesis needs something from you". If the thing it needs is not on
+        // screen, the mark is not a signal — it is a puzzle. Gated on the region that renders it.
         marker={
-          session.error ? "!" : awaitingDemonstration && !turnInFlight && presence !== "preparing" ? "?" : null
+          session.error
+            ? "!"
+            : awaitingDemonstration && regions.policy && !turnInFlight && presence !== "preparing"
+              ? "?"
+              : null
         }
         // 🔴🔴 `turnInFlight`, NOT `policy.thinking` — AND THIS IS THE SAME MISTAKE THE THINKING
         // SCREEN ALREADY FIXED, MADE AGAIN ONE COMPONENT OVER.

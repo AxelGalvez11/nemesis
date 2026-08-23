@@ -341,7 +341,22 @@ test("🔴 a click reaches the character", async () => {
   );
   const { readFile: rf } = await import("node:fs/promises");
   const poke = await rf(new URL("../../components/bloub/use-poke.ts", import.meta.url), "utf8");
-  assert.match(poke, /REACTIONS[^=]*=\s*\[\s*"swirl"/, "a poke no longer leads with the spin");
+  // 🔴🔴 THIS GUARD USED TO ENFORCE THE SPIN, AND THE OWNER REVERSED THAT THE SAME DAY. It read
+  // `assert.match(poke, /REACTIONS[^=]*=\s*\[\s*"swirl"/)` — written for "it should have a
+  // little animation, like a spin" (2026-08-20) and left standing after "remove the current one
+  // where it enlarges eyes, turns into exclamation mark, turns into triangle, remove the swirls"
+  // (2026-08-20, later). So the suite was actively holding four unwanted animations in place, and
+  // production kept drawing them until the owner reported it again on 2026-08-21.
+  //
+  // It now guards the rule that replaced it. Calibration: put any of the four back in REACTIONS
+  // and this reddens.
+  for (const gone of ["swirl", "wide", "exclaim", "play"]) {
+    assert.ok(
+      !new RegExp(`state:\\s*"${gone}"`).test(poke),
+      `a poke draws "${gone}" again — the owner removed it`,
+    );
+  }
+  assert.match(poke, /motion: "jump"/, "a poke no longer leads with the hop");
 });
 
 test("🔴 pressing Speak twice actually speaks twice", async () => {
