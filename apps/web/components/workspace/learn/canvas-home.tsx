@@ -361,14 +361,16 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 : undefined
             }
           >
-            <div className={greeter.motion === "jump" ? "bloub-jump" : undefined}>
+            <div className={greeter.motion === "jump" ? "bloub-jump" : greeter.motion === "spin" ? "bloub-spin" : undefined}>
               <BloubBot
                 color={accent}
                 entrance
+                face={greeter.face}
                 onPoke={greeter.poke}
                 size={GREETER_SIZE}
                 state={greeter.state}
                 track
+                waggle={greeter.motion === "waggle"}
               />
             </div>
           </div>

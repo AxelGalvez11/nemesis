@@ -83,11 +83,19 @@ export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   // 🔴 THE SAME POSE (owner 2026-08-20: "why is it only doing swirl?"). Both waits are one
   // experience to a learner, so they get one animation.
   preparing: "idle",
-  retrieving: "comet",
-  ingesting: "burst",
+  // 🔴🔴 THE LAST OF THE VENDORED PACK LEAVES THE SCHEDULE (owner 2026-08-23: *"I don't want
+  // any rainbow swirls or animations from the GitHub that we used"*). `comet` and `burst`
+  // were borrowed loading effects; `wide` is the enlarged-eyes pose the owner asked gone by
+  // name ("remove the big eyes"); `notify` bolts a badge onto the body, which our language
+  // forbids outright — a creature, never an icon. What replaces them is not another pose but
+  // OUR OWN layer: while material is being taken in, the character puts its reading glasses
+  // on (see `FaceId` in face.ts and the `face` prop on BloubDock) and stays a creature doing
+  // something, instead of becoming a different drawing.
+  retrieving: "idle",
+  ingesting: "idle",
   resting: "idle",
-  listening: "wide",
-  arrived: "notify",
+  listening: "idle",
+  arrived: "idle",
 };
 
 export function stateFor(activity: NemesisActivity): StateId {

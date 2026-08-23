@@ -414,3 +414,19 @@ test("🔴 the arc still fades at its ends", () => {
   assert.ok(lum(start!) > lum(middle!), "the arc no longer fades in");
   assert.ok(lum(end!) > lum(middle!), "the arc no longer fades out");
 });
+
+test("🔴🔴 the canvas can no longer schedule ANY of the vendored gestures", async () => {
+  // Owner 2026-08-23: "I don't want any rainbow swirls or animations from the GitHub that we
+  // used." The poke list was cleaned on 2026-08-22 — but three survivors kept playing from the
+  // ACTIVITY side: listening scheduled `wide` (the big eyes, removed by name), and the loading
+  // states scheduled `comet` and `burst`, with `notify` bolting a badge onto the body. This
+  // pins the whole schedule: every activity resolves to a pose that is the creature being a
+  // creature, never a borrowed effect.
+  //
+  // Calibration: point any ACTIVITY_STATE row back at "wide" and this reddens.
+  const { ACTIVITY_STATE } = await import("./stations");
+  const banned = new Set(["swirl", "wide", "exclaim", "play", "comet", "burst", "notify", "orbit"]);
+  for (const [activity, pose] of Object.entries(ACTIVITY_STATE)) {
+    assert.ok(!banned.has(pose), `${activity} still schedules the vendored "${pose}"`);
+  }
+});

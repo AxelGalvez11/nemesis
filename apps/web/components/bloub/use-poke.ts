@@ -13,68 +13,77 @@
 //
 // ── WHAT A POKE DRAWS ────────────────────────────────────────────────────────
 //
-// 🔴🔴 FOUR OF THE FIVE WERE REMOVED, AND THIS SHIPPED LATE. Owner 2026-08-20: "remove the
-// current one where it enlarges eyes, turns into exclamation mark, turns into triangle,
-// remove the swirls. he should jump, wink, or do an eyebrow waggle." Reported again on
-// 2026-08-21 against production — "the mascot still does the colorful swirls, it still
-// changes into the triangle and exclamation mark, i thought we fixed this" — because it HAD
-// been fixed, on a branch that never merged, while this list stayed live.
+// 🔴🔴 EVERY GESTURE HERE IS OURS, NONE IS THE VENDORED PACK'S (owner 2026-08-23: *"I don't
+// want any rainbow swirls or animations from the GitHub that we used… I want us to create
+// our own animation language"*). The language's rules live in `lib/character/face.ts`; the
+// short version: a creature, never an icon; physics, never effects. The vendored `swirl`,
+// `wide`, `exclaim` and `play` states remain in the catalogue as a plain copy of upstream,
+// and nothing in this product schedules them — guarded in `lib/character/character.test.ts`.
 //
-// Each removal names a real state in the vendored table: `swirl` turns the body and sends the
-// eyes around it, `wide` is the pair of enlarged eyes, `exclaim` replaces the body with an
-// upright bar and a tear, and `play` is BOTH the spinning triangle and the swirl arcs (its
-// SWOOSH arcs sweep across it).
-//
-// 🔴 THE FOUR THAT WENT ARE THE FOUR THAT STOP BEING THE CHARACTER. Every one of them either
-// replaces the body with a glyph or bolts a notification onto it — the character briefly
-// becomes a punctuation mark or a status indicator. A wink and a hop are things the SAME
-// creature does, which is what makes leaning on it feel like poking something alive rather
-// than cycling an icon.
-//
-// 🔴 THE EYEBROW WAGGLE IS NOT HERE, AND THAT IS A LIMIT RATHER THAN A CHOICE. It is the third
-// gesture the owner asked for, and brows are geometry this renderer does not model — there is
-// no brow anywhere in `bloub-bot.tsx`. Adding them is a change to the character's drawing, not
-// to this list, so it is not smuggled into a fix whose whole point is to stop four animations
-// that are live right now. The jump needs no such thing: leaving the ground is a transform on
-// the element the character is drawn in, so it is CSS (see `.bloub-jump` in bloub.css) and the
-// engine stays the single opinion about the face.
+// The five, in the order repeated clicks walk them:
+//   jump   — leaves the ground and LANDS SQUISHY (owner's word): the body flattens wide on
+//            impact and rebounds. CSS on the wrapper; see `.bloub-jump` in bloub.css.
+//   waggle — both brows rise and fall twice. Drawn as holes in the body's own mask through
+//            the eye matrices, so they turn with the head; see `lib/character/brow.ts`.
+//   spin   — one clean pirouette, body only. 🔴 THIS IS NOT THE OLD SWIRL: no arcs, no
+//            colour trails, no eyes orbiting the body — the creature simply turns once,
+//            with a lean in and a settle out. CSS on the wrapper; see `.bloub-spin`.
+//   sigma  — one raised brow, half-lidded stare, lopsided smirk, held still and staring
+//            straight ahead (the gaze is deliberately suppressed while it holds). The
+//            owner asked for "a funny one, like a sigma emoji type"; the joke is that it
+//            plays it completely straight.
+//   wink   — the engine's own wink, kept from the start: it is entirely a face and the
+//            one vendored gesture that was always the creature being a creature.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { FaceId } from "@/lib/character/face";
 import { STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 /** Movement the engine does not know about, drawn over whatever pose is playing. */
-export type PokeMotion = "jump" | null;
+export type PokeMotion = "jump" | "waggle" | "spin" | null;
 
 interface Reaction {
   /** The engine state to hold. `idle` means "keep its ordinary face while the body moves". */
   readonly state: StateId;
   readonly motion: PokeMotion;
+  /** A face from our own layer, worn for the reaction's whole hold. */
+  readonly face: FaceId | null;
   /** How long to hold it, ms. Engine states use the animation's own published duration. */
   readonly hold: number;
 }
 
 /** How long the hop takes, start to landing. Must match `--bloub-jump-ms` in bloub.css. */
 export const JUMP_MS = 620;
+/** Up, down, up, down, gone. Must match WAGGLE_TIME in lib/character/brow.ts (seconds). */
+export const WAGGLE_MS = 900;
+/** One full turn, lean-in to settle. Must match `--bloub-spin-ms` in bloub.css. */
+export const SPIN_MS = 760;
+/** How long the sigma face holds. Long enough to be seen, short enough to stay a joke. */
+export const SIGMA_MS = 1600;
 
 /**
  * Reactions a poke can draw, in order.
  *
  * Repeated clicks walk the list rather than replaying one gesture, so leaning on the
- * character is rewarded rather than flat — the same reason the old list had five entries.
+ * character is rewarded rather than flat.
  *
- * 🔴 THE JUMP HOLDS `idle`, IT DOES NOT REPLACE IT. A hop is something done WHILE wearing an
- * ordinary face; swapping the pose underneath it would fight the gesture. `wink` is the
- * opposite case — it is entirely a face, and needs no motion.
+ * 🔴 THE MOTIONS HOLD `idle`, THEY DO NOT REPLACE IT. A hop, a waggle and a spin are things
+ * done WHILE wearing an ordinary face; swapping the pose underneath would fight the gesture.
+ * `wink` is the opposite case — entirely a face — and `sigma` is a face from OUR layer.
  */
 const REACTIONS: readonly Reaction[] = [
-  { state: "idle", motion: "jump", hold: JUMP_MS },
-  { state: "wink", motion: null, hold: (STATE_BY_ID.get("wink")?.duration ?? 1.6) * 1000 },
+  { state: "idle", motion: "jump", face: null, hold: JUMP_MS },
+  { state: "idle", motion: "waggle", face: null, hold: WAGGLE_MS },
+  { state: "idle", motion: "spin", face: null, hold: SPIN_MS },
+  { state: "idle", motion: null, face: "sigma", hold: SIGMA_MS },
+  { state: "wink", motion: null, face: null, hold: (STATE_BY_ID.get("wink")?.duration ?? 1.6) * 1000 },
 ];
 
 export function usePoke(base: StateId): {
   state: StateId;
   motion: PokeMotion;
+  face: FaceId | null;
   poke: () => void;
   poking: boolean;
 } {
@@ -113,6 +122,7 @@ export function usePoke(base: StateId): {
   return {
     state: reaction?.state ?? base,
     motion: reaction?.motion ?? null,
+    face: reaction?.face ?? null,
     poke,
     poking: reaction !== null,
   };
