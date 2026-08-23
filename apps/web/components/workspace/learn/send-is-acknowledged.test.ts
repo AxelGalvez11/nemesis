@@ -317,11 +317,19 @@ test("🔴 the loading branch does NOT accept drops, because there is nothing to
 // assertion is inverted rather than deleted: what has to hold is that no future edit puts them
 // back, above OR inside. `answer-is-not-a-start.test.ts` carries the rest — that the composer is
 // not even GIVEN the list, and that the Sources panel still draws it.
-test("🔴🔴 the composer draws no source chips at all, above or inside", () => {
+// 🔴 SHARPENED AGAIN, 2026-08-23. The owner, pointing at ChatGPT's composer with two PDFs chipped
+// on it: *"nemesis should also be able to attach attachments to the chat composer like in this
+// image before sending."* Read beside 2026-08-21, the rule was never "no chips"; it was "no chips
+// for things the learner did not attach" — the deleted row chipped machine-grounded pages because
+// it was fed `canvas.sources`. So the guard now bans the DATA SOURCE, not the pixels: chips may
+// draw only from `recentAttachments` (names captured at the picker), and the canvas's source list
+// must never reach the composer as a list again.
+test("🔴🔴 the composer chips only what the learner picked, never the canvas's sources", () => {
   const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
   assert.ok(!/\{chipsInside && \(/.test(composer), "the chips are back inside the composer box");
-  assert.ok(!/mb-1\.5 ml-1 flex flex-wrap items-center gap-1\.5/.test(composer), "the floating chip row is back");
   assert.ok(!/faviconUrl/.test(composer), "the composer is drawing source favicons again");
+  assert.ok(!/pendingSources/.test(composer), "the source-list prop is back on the composer");
+  assert.ok(/recentAttachments\.map/.test(composer), "the picked-file chips are gone");
   // The box itself is still a column, because the textarea grows inside it.
   assert.ok(composer.includes('"flex flex-col bg-(--ui-bg-elevated)"'), "the composer stopped being a column");
 });
@@ -437,5 +445,25 @@ test("🔴🔴 the mascot comes forward for a TURN, never for background work", 
   assert.ok(
     !/stateForCanvas\(\{ thinking: policy\.thinking/.test(canvasCode),
     "the dock is back on the policy's phase flag, which stays true through background work",
+  );
+});
+
+test("🔴🔴🔴 every hook runs before the not-ready gate, so a loading canvas cannot change the hook order", () => {
+  // React identifies hooks by call ORDER. The `!session.ready` return used to sit mid-component
+  // with `useCanvasVoice`, the history rail's state and three more hooks below it, so the render
+  // after the canvas's one database read called MORE hooks than the render before it. React
+  // throws for exactly this, and in production the crash landed on the entry paths that start
+  // unready — a deep link, a hard refresh, going back into an old canvas — and took the exit
+  // button down with it.
+  //
+  // Calibration: move the gate back above `useCanvasVoice` and this reddens.
+  const source = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  const gate = source.indexOf("if (!session.ready)");
+  assert.ok(gate > 0, "the not-ready gate is gone entirely");
+  const hooks = [...source.matchAll(/\buse[A-Z][A-Za-z]*\(/g)];
+  const lastHook = hooks[hooks.length - 1]!;
+  assert.ok(
+    lastHook.index! < gate,
+    `a hook call (${lastHook[0]}…) sits below the not-ready gate again`,
   );
 });

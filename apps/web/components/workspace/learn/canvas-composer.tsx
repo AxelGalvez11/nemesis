@@ -178,6 +178,26 @@ interface CanvasComposerProps {
    */
   attachedCount?: number;
   /**
+   * Files the learner PICKED since their last send — names straight off the picker, not sources.
+   *
+   * 🔴🔴 THIS IS THE ATTACHMENT PREVIEW COMING BACK, WITH THE LIE REMOVED. The chips deleted on
+   * 2026-08-21 (owner: "sources are still appearing on the chat composer which i dont want") died
+   * of their data source: fed `canvas.sources`, they chipped pages the MACHINE grounded itself
+   * with as though the learner had attached them. On 2026-08-23 the same owner, pointing at
+   * ChatGPT's composer with two PDFs on it: "nemesis should also be able to attach attachments to
+   * the chat composer like in this image before sending." Both are right, about different data.
+   *
+   * 🔴 SO THIS LIST IS FED BY THE PICK, NEVER BY THE CANVAS. `learning-canvas.tsx` records the
+   * file names at the moment the learner chooses them and clears them on the next send. A
+   * grounding page, a promoted web result, a source restored on reload — none of those pass
+   * through the picker, so none of them can EVER appear here. The failure mode that killed the
+   * old chips is unrepresentable, not discouraged.
+   *
+   * 🔴 NO ✕, DELIBERATELY. Attach ingests immediately (§2: attach ≠ start) — parsing has begun.
+   * An ✕ would promise an un-ingest nothing can perform.
+   */
+  recentAttachments?: readonly { readonly id: string; readonly title: string }[];
+  /**
    * This canvas has not begun. Submitting starts it; `null` once it has.
    *
    * 🔴 SEND IS THE TRIGGER, NEVER ATTACH — that is the whole of §2, and it is why this is a
@@ -213,6 +233,7 @@ export function CanvasComposer({
   busyLabel,
   advanceBusy = false,
   attachedCount = 0,
+  recentAttachments = [],
   onStart,
   listenSignal = null,
 }: CanvasComposerProps) {
@@ -628,7 +649,27 @@ export function CanvasComposer({
 
             🔴 THE BEHAVIOUR STAYS. `canStartFromAttachment` still makes an empty box submittable
             when material is waiting, because that is about what SEND means, not about what is
-            drawn. Only the display went. */}
+            drawn. Only the display went.
+
+            🔴 2026-08-23: THE DISPLAY IS BACK, FED DIFFERENTLY — see `recentAttachments`. Chips now
+            draw only files the learner picked this turn, so the machine's reading list can never
+            reappear over the composer. */}
+        {recentAttachments.length > 0 && !listening && (
+          <div className="mb-1.5 ml-1 flex flex-wrap items-center gap-1.5">
+            {recentAttachments.map((file) => (
+              <span
+                className="flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)"
+                key={file.id}
+                title={file.title}
+              >
+                <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+                <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                  {file.title}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* The chip needs its own surface. It sits inside the composer's fade, where the
             gradient is nearly transparent, so without a background it was printed straight
