@@ -12,7 +12,7 @@
 // server renders voice off, the browser renders it on, React discards the tree. Starting from the
 // default and correcting after mount means the first paint always matches.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { shouldSpeakAction, speechChunks, SPEECH_CHAR_LIMIT, type SpokenMoment } from "@/lib/learn/canvas-speech";
 import { ANSWER_SPEED, LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
@@ -206,7 +206,46 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
    */
   const [readingVoice, setReadingVoice] = useState<ReadingVoice>(DEFAULT_READING_VOICE);
   const speech = useCanvasSpeech();
-  const replyAudio = useResponseAudio(readingVoice);
+  const player = useResponseAudio(readingVoice);
+
+  /**
+   * Silence the narration lane — the routed narration, a spoken passage mid-loop, an example row.
+   *
+   * 🔴🔴 TWO LANES, ONE SOUND, AND THIS IS THE ARBITER (owner, 2026-08-23: pressing read-aloud
+   * repeatedly must not stack voices). The answer's player and the narration speaker are separate
+   * machines with separate stop buttons, and until now four different starts silenced only their
+   * OWN lane — so an example row could speak over the answer's audio, and the answer's audio could
+   * start under a narration still running. Within one lane stacking was already impossible (the
+   * player's run ticket, the speaker's single element); ACROSS them nothing decided.
+   *
+   * 🔴 THE PRESS COUNTER IS BUMPED HERE, NOT ONLY `speech.stop()`. A spoken passage is a LOOP of
+   * chunked utterances guarded by `aloudPress`; stopping the current chunk without bumping the
+   * counter lets the loop start the next one two seconds later, over whatever began meanwhile —
+   * the stack, rebuilt on a timer.
+   */
+  const hushNarration = useCallback(() => {
+    aloudPress.current += 1;
+    setSpeakingExample(null);
+    speech.stop();
+  }, [speech.stop]);
+
+  /**
+   * The answer's player, with the arbiter on its only way in.
+   *
+   * 🔴 WRAPPED HERE SO EVERY CALLER GETS IT FOR FREE — the autoplay effect below, the Read-aloud
+   * button in `ResponseAudioControls`, and any future caller all reach `start` through this object,
+   * so none of them can start the player without silencing the narration first.
+   */
+  const replyAudio = useMemo<ResponseAudio>(
+    () => ({
+      ...player,
+      start: (text: string) => {
+        hushNarration();
+        player.start(text);
+      },
+    }),
+    [hushNarration, player],
+  );
 
   // Browser-only facts, corrected after the first paint. See the file header.
   useEffect(() => {
@@ -354,7 +393,12 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     },
     listenSignal,
     replyAudio,
-    replay: speech.replay,
+    // 🔴 THE PLAYER YIELDS TO A REPLAY PRESS, like every other cross-lane start. Delegates the
+    // repeat itself to the speech lane, which owns the fresh-key rule.
+    replay: (text, voice) => {
+      player.stop();
+      return speech.replay(text, voice);
+    },
     speaking: speech.speaking,
     /**
      * Speak an arbitrary passage on demand.
@@ -374,6 +418,8 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     speakAloud: (text: string) => {
       // Restarting mid-sentence is what "repeat" means when it is already talking.
       speech.stop();
+      // 🔴 AND THE ANSWER'S PLAYER — the other lane. See `hushNarration`.
+      player.stop();
       // 🔴 A FRESH KEY EVERY PRESS, AND THIS IS THE WHOLE OF "AGAIN". `speak` keeps a set of keys
       // it has already spoken and returns silently on a repeat — correct for the routed lane,
       // where a question must not be read (or paid for) twice because a render ran again. Derive
@@ -410,6 +456,9 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     speakExample: (key: string, locale: string, text: string) => {
       // Restarting mid-sentence is what pressing a second example means.
       speech.stop();
+      // 🔴 AND THE ANSWER'S PLAYER — a German example spoken over the answer still reading itself
+      // aloud is the stack the arbiter exists to prevent. See `hushNarration`.
+      player.stop();
 
       // 🔴 THE ROUTER DECIDES, NOT THIS CALLER. It is what refuses a target-language utterance
       // with no locale, holds the natural pace a drill needs, and names Azure — and every one of
