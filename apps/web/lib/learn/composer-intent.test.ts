@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { AnswerSink, HostedTaskShape } from "./canvas-hosting";
+import { answerSink, type AnswerSink, type HostedTask, type HostedTaskShape } from "./canvas-hosting";
 import type { CanvasState } from "./canvas-model";
+import type { UserQuestion } from "./clarify-question";
 import { composerIntent } from "./composer-intent";
 
 // 🔴🔴🔴 THE DEFECT THIS FILE PINS: A TYPED ANSWER WAS ROUTED TO "START THIS CANVAS".
@@ -24,6 +25,16 @@ const QUESTION: HostedTaskShape = {
   placeholder: "Type your answer…",
   prompt: "What happens to clearance when hepatic blood flow falls?",
   total: 1,
+};
+
+const DEPTH: UserQuestion = {
+  id: "course-depth",
+  invitesWritten: true,
+  options: [
+    { description: "The major ideas.", id: "survey", label: "Overview" },
+    { description: "Comparable to a college course.", id: "academic", label: "Academic" },
+  ],
+  prompt: "How deep should this course go?",
 };
 
 const policySink: AnswerSink = { kind: "policy", task: QUESTION };
@@ -179,5 +190,87 @@ test("🔴 CALIBRATION — the old predicate reddens the invariant above", () =>
       sink: policySink,
     }).kind,
     "the new intent agrees with the broken one on the exact case that lost every typed answer",
+  );
+});
+
+// ── Clarification: Nemesis asking the LEARNER, and the same destruction it could cause ──
+
+test("🔴🔴 a pending clarification is never a START, on any stored state", () => {
+  // The whole reason this lives in `AnswerSink` instead of beside it in session state. The card is
+  // on screen with the primary composer under it; the learner types "academic" rather than tapping.
+  // Held anywhere this union cannot see, that submission reaches `begin()` on a canvas that has not
+  // begun — which re-titles it and regenerates it. Same destruction as the original defect, new door.
+  for (const canvasState of EVERY_STATE) {
+    const intent = composerIntent({
+      awaitingAnswer: false,
+      canvasState,
+      policyHasContent: false,
+      sink: { kind: "clarify", question: DEPTH },
+    });
+    assert.equal(intent.kind, "clarify", `state ${canvasState} swallowed a pending clarification`);
+    assert.equal(intent.kind === "clarify" && intent.question.id, "course-depth");
+  }
+});
+
+test("🔴 a clarification is its OWN kind, so it can never be filed as evidence", () => {
+  // `answer` reaches a judge and writes a `learner_evidence` row against an objective. Picking
+  // "Academic" over "Overview" demonstrates nothing about what somebody knows, so the two must not
+  // share a kind: a consumer that forgot to check a flag would file a preference as knowledge, and
+  // nothing would fail.
+  const intent = composerIntent({
+    awaitingAnswer: false,
+    canvasState: "learn",
+    policyHasContent: false,
+    sink: { kind: "clarify", question: DEPTH },
+  });
+  assert.notEqual(intent.kind, "answer");
+  assert.equal(Object.hasOwn(intent, "task"), false, "a clarification must carry no task");
+});
+
+test("🔴 a REAL question outranks a clarification, so no owed answer is read as a preference", () => {
+  // The redundant second witness. `answerSink` ranks a hosted task first and the session refuses to
+  // stage a clarification while an answer is owed, so both would have to fail for this to matter.
+  // The direction is what is pinned: a clarification waiting its turn is recoverable, an answer to
+  // a real question filed as a preference is a lost observation and a wrong evidence row.
+  const hosted: HostedTask = {
+    knowledgeType: "association",
+    operation: "recall",
+    task: QUESTION,
+    tempo: "instant",
+  };
+  const sink = answerSink({
+    clarifying: DEPTH,
+    hosted,
+    regions: { document: true, policy: true, reply: false, sharing: false, stages: false },
+    stageTask: null,
+  });
+  assert.equal(sink.kind, "policy");
+
+  const intent = composerIntent({
+    awaitingAnswer: true,
+    canvasState: "sources_attached",
+    policyHasContent: true,
+    sink,
+  });
+  assert.equal(intent.kind, "answer");
+});
+
+test("no clarification pending leaves every existing sink exactly where it was", () => {
+  const sink = answerSink({
+    clarifying: null,
+    hosted: null,
+    regions: { document: true, policy: false, reply: false, sharing: false, stages: false },
+    stageTask: null,
+  });
+  assert.equal(sink.kind, "none");
+  assert.equal(
+    composerIntent({
+      awaitingAnswer: false,
+      canvasState: "sources_attached",
+      policyHasContent: false,
+      sink,
+    }).kind,
+    "start",
+    "an absent clarification must not cost a fresh canvas its ability to start",
   );
 });
