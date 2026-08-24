@@ -33,6 +33,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
+import { deckDesign } from "@/lib/export/deck-designs";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
@@ -343,7 +344,7 @@ export function SourcesControl({
                     );
                   }
                   if (output.kind === "slides" && output.deck) {
-                    return <SlidesOutputRow key={output.id} output={output} rowClass={row} />;
+                    return <SlidesOutputRow canvasId={canvas.id} key={output.id} output={output} rowClass={row} />;
                   }
                   return (
                     <div className="px-2 py-1.5" key={output.id}>
@@ -414,39 +415,22 @@ const MEANING: Record<ObjectiveState, string> = {
  * (`\u00d7`, Sources and outputs, Progress) plus `\u22ef`, and this moved inside the last of them. The
  * BODY is what mattered and it is unchanged; only the way in did.
  */
-/** A slides output: click the row to download the .pptx, use the chip to change its design.
+/** A slides output: click the row to OPEN the deck; the .pptx download lives inside it.
  *
- *  The file is rebuilt from the stored plan on every click (deck-pptx.ts), so switching theme
- *  costs nothing and needs no round trip — which is the whole reason the learner gets twenty
- *  looks instead of one. */
-function SlidesOutputRow({ output, rowClass }: { output: CanvasOutput; rowClass: string }) {
+ *  Owner 2026-08-24: "HTML is the deck, .pptx is an export." A deck that could only be
+ *  downloaded made the learner leave the app to see what they had made. */
+function SlidesOutputRow({ canvasId, output, rowClass }: { canvasId: string; output: CanvasOutput; rowClass: string }) {
   const { choose, designId } = useDeckDesignChoice(output.assetId ?? output.id);
-  const [building, setBuilding] = useState(false);
-  const deck = output.deck;
-  if (!deck) return null;
+  const design = deckDesign(designId);
+  if (!output.deck) return null;
   return (
     <div className="flex items-center gap-1">
-      <button
-        className={cn(rowClass, "min-w-0 flex-1")}
-        disabled={building}
-        onClick={() =>
-          void (async () => {
-            setBuilding(true);
-            try {
-              const { downloadDeck } = await import("@/lib/export/deck-download");
-              await downloadDeck(deck, output.title, designId);
-            } finally {
-              setBuilding(false);
-            }
-          })()
-        }
-        type="button"
-      >
+      <a className={cn(rowClass, "min-w-0 flex-1")} href={`/deck?c=${canvasId}&o=${encodeURIComponent(output.assetId ?? output.id)}`}>
         <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
         <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-          {building ? "Building your file…" : "Slides · click to download .pptx"}
+          Slides · {output.deck.slides.length} in {design.name}
         </p>
-      </button>
+      </a>
       <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={output.title} />
     </div>
   );

@@ -567,7 +567,11 @@ test("a PowerPoint ask in chat becomes a deck, not a lesson about decks", () => 
   // checks and what §38 already required of every other learning request. So the assertion worth
   // keeping is the opposite one: no Make button came back.
   assert.ok(!controls.includes("Make slides"), "a Make button returned to the outputs tab");
-  assert.match(controls, /downloadDeck/, "a slides output can no longer be downloaded");
+  // 2026-08-24 REVERSAL (separate, same day): this used to demand `downloadDeck` here. The owner
+  // moved the deck into the app ("HTML is the deck, .pptx is an export"), so the row now OPENS it
+  // and the download lives inside the deck view. The invariant is unchanged and survives both
+  // changes — a slides output must still be REACHABLE from the outputs tab, just not makeable there.
+  assert.match(controls, /\/deck\?c=/, "a slides output can no longer be opened");
   const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
   assert.match(library, /generated_slides/, "the Library no longer lists slide decks");
 });
@@ -580,8 +584,11 @@ test("a deck's design is the learner's to choose, in both places it lives", () =
   // design regardless.
   const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
   assert.match(controls, /DeckDesignPicker/, "the canvas outputs panel lost its design picker");
-  assert.match(controls, /downloadDeck\(deck, output\.title, designId\)/, "the canvas panel downloads without the chosen design");
   const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
   assert.match(library, /DeckDesignPicker/, "the Library's Slides shelf lost its design picker");
-  assert.match(library, /downloadDeck\(output\.deck, output\.title, designId\)/, "the Library downloads without the chosen design");
+  // 2026-08-24 REVERSAL: the download used to happen from these rows, so the guard checked that
+  // the chosen design was passed to downloadDeck here. Both rows now open /deck, which carries
+  // the picker AND the export; the design still reaches the builder, one surface further in.
+  const deck = readFileSync(new URL("../../../app/(workspace)/deck/page.tsx", import.meta.url), "utf8");
+  assert.match(deck, /downloadDeck\(plan, output\.title, designId\)/, "the deck view exports without the chosen design");
 });

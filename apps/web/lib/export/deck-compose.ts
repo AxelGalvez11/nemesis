@@ -1,27 +1,31 @@
-// How a slide is COMPOSED — the part the owner was actually asking for.
+// How a slide is COMPOSED. This is the design work.
 //
-// 🔴 THE LESSON THAT PAID FOR THIS FILE. Twenty gradients with different hues is not twenty
-// designs. What PowerPoint's Designer does — and what this does — is change the LAYOUT: a
-// colour block down one edge, a title reversed out of a band, points as cards instead of
-// bullets, a huge numeral behind a section title, a hairline rule doing the work an image
-// would do. Palette is the smallest part of a design; structure is the design.
+// 🔴 THE BAR, SET BY THE OWNER: *"it needs to look like it's from one of the top hedge funds,
+// like one of the top data analyst presentations."* That register is not decoration — it is a
+// set of habits, and they are all encoded below:
 //
-// Every function here turns (design, slide) into a Scene (see deck-scene.ts). Nothing here
-// knows about PowerPoint or SVG — that is the point. deck-pptx.ts writes the scene into a real
-// file; deck-svg.ts draws the same scene for review, so a design cannot look good in a preview
-// and wrong in the download.
+//   1. THE TITLE IS A FINDING, NOT A HEADING. "Photorespiration wastes a fifth of fixed carbon"
+//      beats "Photorespiration". The plan asks the model for exactly that (deck-plan.ts), and
+//      every content slide can carry a takeaway line under it, in a tinted action box.
+//   2. NUMBERS ARE DRAWN, NOT DESCRIBED. kpi, chart and table layouts turn the model's figures
+//      into column, bar and line exhibits, KPI rows and ruled tables — built from scene
+//      primitives, so the preview and the .pptx agree to the pixel.
+//   3. THE PAGE HAS FURNITURE. An eyebrow, a hairline under the header, a footer rule, a page
+//      number, a footnote slot. Cheap, and the single biggest difference between a deck that
+//      looks typed and one that looks published.
+//   4. DENSITY. Institutional decks are set small and tight: 12.5pt body, 22pt titles, 0.72in
+//      margins. Big friendly text reads as a school project.
+//   5. NOTHING SITS ON TOP OF ANYTHING. Ghost numerals are sized FROM their box and confined to
+//      a corner no text enters; a test asserts no two text boxes overlap on any slide of any
+//      design, because "the shapes are blocking the text" is a defect the eye catches instantly
+//      and code will not, unless it is asked to.
 //
-// 🔴 RULES THE WHOLE SET OBEYS, so twenty designs still feel like one product made them:
-//   - Generous margins. Designed decks breathe; 0.85in is the house minimum.
-//   - Titles are large and set once. Body copy never competes with them.
-//   - Type never rides an edge it cannot be read against: text on an accent block uses the
-//     design's accentInk, text on a dark field uses deepInk. Both are declared, not guessed.
-//   - Kickers are small, capitalised and letter-spaced; that single detail is most of what
-//     separates a designed slide from a typed one.
-//   - No accent rule under every title — still the tell of an AI deck.
+// Every function here turns (design, slide) into a Scene (deck-scene.ts). Nothing here knows
+// about PowerPoint or SVG: deck-pptx.ts writes the scene into a real file, deck-svg.ts draws
+// the same scene for review.
 
 import type { DeckArt } from "./deck-art";
-import type { DeckSlide, DeckPlan } from "./deck-plan";
+import type { DeckDatum, DeckPlan, DeckSlide } from "./deck-plan";
 import {
   box,
   cells,
@@ -70,52 +74,85 @@ export type BodyKind =
 export type SectionKind = "solid-numeral" | "band" | "split" | "rule" | "art";
 export type StatKind = "panel" | "rule" | "circle" | "block";
 export type QuoteKind = "mark" | "band" | "rule" | "panel";
+/** How much page furniture a design wears: the institutional ones wear all of it. */
+export type ChromeKind = "full" | "light" | "none";
 
 export interface DeckDesign {
   id: string;
   name: string;
   blurb: string;
   fonts: { display: string; body: string };
-  /** Page and its inks. */
   paper: string;
   ink: string;
   soft: string;
   muted: string;
-  /** The brand colour: blocks, rules, numerals — and what text sits on it. */
   accent: string;
   accentInk: string;
-  /** The dark (or simply full-bleed) field a cover or section can be built on. */
   deep: string;
   deepInk: string;
   deepSoft: string;
+  /** A second data colour, for the comparison series in an exhibit. */
+  second: string;
   cover: CoverKind;
   section: SectionKind;
   body: BodyKind;
   stat: StatKind;
   quote: QuoteKind;
-  /** Painted art, for the designs whose covers are meant to glow rather than block. */
+  chrome: ChromeKind;
   art?: { cover?: DeckArt; section?: DeckArt; closing?: DeckArt };
-  /** Kickers in caps with letter spacing — on by default, off for the quiet designs. */
   kicker?: boolean;
-  /** Nudge the whole type scale, for designs that want to shout or whisper. */
   scale?: number;
 }
 
-const M = 0.85;
+// ── the grid ─────────────────────────────────────────────────────────────────────────────────
+
+const M = 0.72;
+const TOP = 0.58;
+const FOOT = 0.42;
 const CONTENT_W = SLIDE_W - M * 2;
+
+/** Type scale, in points. One place, so twenty designs cannot drift apart. */
+const T = {
+  action: 12,
+  body: 12.5,
+  cover: 44,
+  eyebrow: 9.5,
+  footer: 8.5,
+  kpi: 46,
+  label: 10.5,
+  note: 9,
+  sectionTitle: 34,
+  title: 22,
+  value: 11,
+} as const;
 
 /** Titles shrink as they lengthen, so a long one never crowds the composition. */
 function fit(base: number, text: string): number {
   const n = text.length;
-  if (n > 90) return base * 0.6;
-  if (n > 62) return base * 0.72;
-  if (n > 42) return base * 0.85;
+  if (n > 110) return base * 0.58;
+  if (n > 78) return base * 0.7;
+  if (n > 52) return base * 0.82;
+  if (n > 34) return base * 0.92;
   return base;
 }
 
-/** Blend two hex colours. Used for "ghost" type — a numeral sunk into its own background —
- *  because PowerPoint will not give us transparent TEXT, only transparent fills, and a preview
- *  that fakes it would be lying about the file. */
+/** A numeral sized FROM its box, never past it — the overflow that used to run a "01" straight
+ *  through a title. Digits in the display faces run about 0.58em wide. */
+function fitNumeral(text: string, widthIn: number, heightIn: number): number {
+  const byWidth = (widthIn * 72) / Math.max(1, text.length * 0.58);
+  const byHeight = heightIn * 72 * 0.92;
+  return Math.min(byWidth, byHeight);
+}
+
+interface Ctx {
+  plan: DeckPlan;
+  /** 1-based position among the plan's slides — page numbers and section marks use it. */
+  index: number;
+  credit: string;
+}
+
+/** Blend two hex colours. Used for ghost type and tinted bands, because PowerPoint gives us
+ *  transparent FILLS but not transparent TEXT, and a preview that faked it would be lying. */
 function mix(a: string, b: string, t: number): string {
   const ch = (hex: string, i: number): number => parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return [0, 1, 2]
@@ -124,71 +161,126 @@ function mix(a: string, b: string, t: number): string {
     .join("");
 }
 
-interface Ctx {
-  plan: DeckPlan;
-  /** 1-based position among the plan's slides — numerals and section marks use it. */
-  index: number;
-  credit: string;
-}
-
-// ── small builders ───────────────────────────────────────────────────────────────────────────
+// ── primitives ───────────────────────────────────────────────────────────────────────────────
 
 const rect = (b: Box, fill: string, alpha?: number): SceneItem => ({ alpha, box: b, fill, kind: "shape", shape: "rect" });
 
-const hair = (b: Box, color: string, width = 0.012): SceneItem => ({
+const hair = (b: Box, color: string, width = 0.01): SceneItem => ({
   box: b,
   kind: "shape",
   line: { color, width },
   shape: "line",
 });
 
-function title(d: DeckDesign, text: string, b: Box, size: number, color: string, align?: "left" | "center"): SceneItem {
-  return {
-    align: align ?? "left",
-    bold: true,
-    box: b,
-    color,
-    font: d.fonts.display,
-    kind: "text",
-    lineSpacing: 1.06,
-    size: fit(size, text) * (d.scale ?? 1),
-    text,
-    valign: "top",
-  };
+interface TextOpts {
+  align?: "left" | "center" | "right";
+  bold?: boolean;
+  caps?: boolean;
+  italic?: boolean;
+  lineSpacing?: number;
+  spacing?: number;
+  valign?: "top" | "middle" | "bottom";
 }
 
-function kicker(d: DeckDesign, text: string, b: Box, color: string, align?: "left" | "center"): SceneItem[] {
-  if (!text) return [];
-  return [
-    {
-      align: align ?? "left",
-      bold: true,
-      box: b,
-      caps: d.kicker !== false,
-      color,
-      font: d.fonts.body,
-      kind: "text",
-      size: 10.5,
-      spacing: d.kicker === false ? 0 : 1.8,
-      text,
-      valign: "top",
-    },
-  ];
+const text = (t: string, b: Box, font: string, size: number, color: string, opts: TextOpts = {}): SceneItem => ({
+  align: opts.align ?? "left",
+  bold: opts.bold,
+  box: b,
+  caps: opts.caps,
+  color,
+  font,
+  italic: opts.italic,
+  kind: "text",
+  lineSpacing: opts.lineSpacing ?? 1.16,
+  size,
+  spacing: opts.spacing,
+  text: t,
+  valign: opts.valign ?? "top",
+});
+
+/** Numbers as an exhibit prints them: 1,240 not 1240; 12.4 not 12.400000001. */
+function figure(value: number, unit: string): string {
+  const abs = Math.abs(value);
+  const rounded = abs >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
+  const shown = rounded.toLocaleString("en-US");
+  return unit === "%" || unit === "x" ? `${shown}${unit}` : unit ? `${shown} ${unit}` : shown;
 }
 
-function body(d: DeckDesign, text: string, b: Box, size: number, color: string, align?: "left" | "center"): SceneItem {
-  return {
-    align: align ?? "left",
-    box: b,
-    color,
-    font: d.fonts.body,
-    kind: "text",
-    lineSpacing: 1.22,
-    size,
-    text,
-    valign: "top",
-  };
+// ── page furniture ───────────────────────────────────────────────────────────────────────────
+
+interface Head {
+  items: SceneItem[];
+  /** Where the content may start. */
+  top: number;
 }
+
+/** Eyebrow, action title, action box and the rule under them. Returns where content begins. */
+function header(d: DeckDesign, s: DeckSlide, ctx: Ctx, opts: { eyebrow?: string; titleWidth?: number } = {}): Head {
+  const items: SceneItem[] = [];
+  const wide = opts.titleWidth ?? CONTENT_W * 0.88;
+  let y = TOP;
+  if (d.chrome !== "none") {
+    const eyebrow = opts.eyebrow ?? `Exhibit ${ordinal(ctx.index)}`;
+    items.push(
+      text(eyebrow, box(M, y, CONTENT_W * 0.6, 0.22), d.fonts.body, T.eyebrow, d.accent, {
+        bold: true,
+        caps: d.kicker !== false,
+        spacing: d.kicker === false ? 0 : 1.6,
+      }),
+    );
+    y += 0.32;
+  }
+  items.push(text(s.title, box(M, y, wide, 1.0), d.fonts.display, fit(T.title, s.title), d.ink, { bold: true, lineSpacing: 1.08 }));
+  y += s.title.length > 52 ? 1.02 : 0.72;
+  if (s.takeaway && d.chrome === "full") {
+    // The action box: consulting's one true habit. A tinted band carrying the "so what".
+    const h = s.takeaway.length > 120 ? 0.72 : 0.52;
+    items.push(rect(box(M, y, CONTENT_W, h), d.accent, 92));
+    items.push(rect(box(M, y, 0.06, h), d.accent));
+    items.push(
+      text(s.takeaway, box(M + 0.22, y + 0.12, CONTENT_W - 0.5, h - 0.16), d.fonts.body, T.action, mix(d.ink, d.accent, 0.35), {
+        lineSpacing: 1.14,
+      }),
+    );
+    y += h + 0.28;
+  } else if (s.takeaway) {
+    items.push(text(s.takeaway, box(M, y, CONTENT_W * 0.8, 0.5), d.fonts.body, T.action, d.soft, { italic: true }));
+    y += 0.6;
+  } else {
+    items.push(hair(box(M, y + 0.04, CONTENT_W, 0), d.chrome === "none" ? d.accent : mix(d.paper, d.ink, 0.18), d.chrome === "none" ? 0.028 : 0.008));
+    y += 0.3;
+  }
+  return { items, top: y };
+}
+
+/** The footer rule, the page number, and the footnote line.
+ *
+ *  🔴 THE SOURCE LINE IS THE CANVAS'S, NOT THE MODEL'S. An exhibit with a "Source:" under it is
+ *  the most institutional detail there is, and also the easiest to fake — so it is printed only
+ *  from `plan.references`, which canvas-deliverables.ts fills from the canvas's real sources.
+ *  A deck built from the model's own knowledge has no references and gets no source line. */
+function footer(d: DeckDesign, s: DeckSlide, ctx: Ctx, exhibit = false): SceneItem[] {
+  if (d.chrome === "none") return [];
+  const y = SLIDE_H - FOOT - 0.18;
+  const items: SceneItem[] = [hair(box(M, y, CONTENT_W, 0), mix(d.paper, d.ink, 0.14), 0.006)];
+  const source = exhibit && ctx.plan.references.length ? ctx.plan.references[0] : undefined;
+  const sourceLine = source
+    ? `Source: ${source.title}${ctx.plan.references.length > 1 ? ` and ${ctx.plan.references.length - 1} other source${ctx.plan.references.length > 2 ? "s" : ""}` : ""}`
+    : "";
+  const foot = [sourceLine, s.note].filter(Boolean).join("   ·   ");
+  if (foot) {
+    items.push(text(foot, box(M, y + 0.1, CONTENT_W * 0.72, 0.3), d.fonts.body, T.note, d.muted));
+  }
+  items.push(
+    text(`${ctx.credit}  ·  ${ctx.index}`, box(SLIDE_W - M - 3, y + 0.1, 3, 0.3), d.fonts.body, T.footer, d.muted, {
+      align: "right",
+    }),
+  );
+  return items;
+}
+
+/** Where content lives on a chromed slide. */
+const contentArea = (top: number): Box => box(M, top, CONTENT_W, SLIDE_H - top - FOOT - 0.42);
 
 // ── covers ───────────────────────────────────────────────────────────────────────────────────
 
@@ -197,109 +289,111 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const sub = s.subtitle || ctx.plan.subtitle;
   const items: SceneItem[] = [];
   let background = d.paper;
+  type Align = "left" | "center" | "right";
+  const kick = (t: string, b: Box, color: string, align?: Align) =>
+    text(t, b, d.fonts.body, T.eyebrow, color, { align, bold: true, caps: d.kicker !== false, spacing: d.kicker === false ? 0 : 1.7 });
+  const titleAt = (b: Box, color: string, align?: Align, size: number = T.cover) =>
+    text(heading, b, d.fonts.display, fit(size, heading), color, { align, bold: true, lineSpacing: 1.04 });
+  const subAt = (b: Box, color: string, align?: Align) =>
+    text(sub, b, d.fonts.body, 14.5, color, { align, lineSpacing: 1.25 });
 
   switch (d.cover) {
     case "band-left": {
-      const band = edgeBand("left", SLIDE_W * 0.34);
+      const band = edgeBand("left", SLIDE_W * 0.36);
       items.push(rect(band, d.accent));
-      items.push(...kicker(d, ctx.credit, box(M, M, band.w - M * 1.4, 0.3), d.accentInk));
-      items.push(title(d, heading, box(band.w + 0.9, 2.3, SLIDE_W - band.w - 0.9 - M, 3), 46, d.ink));
-      if (sub) items.push(body(d, sub, box(band.w + 0.9, 4.6, SLIDE_W - band.w - 1.9, 1.4), 15, d.soft));
+      items.push(kick(ctx.credit, box(M, M, band.w - M * 1.4, 0.3), d.accentInk));
+      items.push(kick("Prepared for the reader", box(M, SLIDE_H - M - 0.3, band.w - M * 1.4, 0.3), mix(d.accent, d.accentInk, 0.65)));
+      items.push(titleAt(box(band.w + 0.85, 2.25, SLIDE_W - band.w - 0.85 - M, 2.6), d.ink));
+      if (sub) items.push(subAt(box(band.w + 0.85, 4.65, SLIDE_W - band.w - 1.8, 1.4), d.soft));
       break;
     }
     case "band-bottom": {
       background = d.deep;
-      const band = crossBand("bottom", SLIDE_H * 0.34);
+      const band = crossBand("bottom", SLIDE_H * 0.3);
       items.push(rect(band, d.accent));
-      items.push(title(d, heading, box(M, 2.1, CONTENT_W * 0.8, 2.2), 42, d.deepInk));
-      items.push(...kicker(d, ctx.credit, box(M, 1.5, CONTENT_W, 0.3), d.accent));
-      if (sub) items.push(body(d, sub, box(M, band.y + 0.8, CONTENT_W * 0.7, 1.4), 15, d.accentInk));
+      items.push(kick(ctx.credit, box(M, 1.45, CONTENT_W, 0.3), mix(d.deep, d.accent, 0.75)));
+      items.push(titleAt(box(M, 2.05, CONTENT_W * 0.82, 2.4), d.deepInk));
+      if (sub) items.push(subAt(box(M, band.y + 0.7, CONTENT_W * 0.72, 1.3), d.accentInk));
       break;
     }
     case "split-diagonal": {
       background = d.deep;
       items.push({ box: box(0, 0, SLIDE_W, SLIDE_H), fill: d.accent, kind: "shape", shape: "rtTriangle" });
-      items.push(title(d, heading, box(M, 4.05, CONTENT_W * 0.62, 2.2), 38, d.deepInk));
-      if (sub) items.push(body(d, sub, box(M, 6.05, CONTENT_W * 0.55, 0.9), 14, d.deepSoft));
-      items.push(...kicker(d, ctx.credit, box(SLIDE_W - M - 3.2, M, 3.2, 0.3), d.accentInk, "center"));
+      items.push(titleAt(box(M, 4.15, CONTENT_W * 0.6, 2.1), d.deepInk, "left", 38));
+      if (sub) items.push(subAt(box(M, 6.15, CONTENT_W * 0.5, 0.9), d.deepSoft));
+      items.push(kick(ctx.credit, box(SLIDE_W - M - 3.4, M, 3.4, 0.3), d.accentInk, "right"));
       break;
     }
     case "frame": {
-      const f = inset(box(0, 0, SLIDE_W, SLIDE_H), 0.55);
-      items.push({ box: f, kind: "shape", line: { color: d.accent, width: 0.02 }, shape: "rect" });
-      items.push(...kicker(d, ctx.credit, box(M, 1.5, CONTENT_W, 0.3), d.accent, "center"));
-      items.push(title(d, heading, box(M + 0.6, 2.5, CONTENT_W - 1.2, 2.4), 44, d.ink, "center"));
-      items.push(hair(box(SLIDE_W / 2 - 0.5, 5.15, 1, 0), d.accent, 0.02));
-      if (sub) items.push(body(d, sub, box(M + 1.2, 5.5, CONTENT_W - 2.4, 1), 14, d.soft, "center"));
+      const f = inset(box(0, 0, SLIDE_W, SLIDE_H), 0.5);
+      items.push({ box: f, kind: "shape", line: { color: d.accent, width: 0.018 }, shape: "rect" });
+      items.push(kick(ctx.credit, box(M, 1.55, CONTENT_W, 0.3), d.accent, "center"));
+      items.push(titleAt(box(M + 0.7, 2.6, CONTENT_W - 1.4, 2.3), d.ink, "center", 42));
+      items.push(hair(box(SLIDE_W / 2 - 0.45, 5.2, 0.9, 0), d.accent, 0.022));
+      if (sub) items.push(subAt(box(M + 1.3, 5.55, CONTENT_W - 2.6, 1), d.soft, "center"));
       break;
     }
     case "numeral": {
       background = d.deep;
-      items.push({
-        align: "right",
-        bold: true,
-        box: box(SLIDE_W - 6.4, -0.9, 6, 6),
-        color: mix(d.deep, d.accent, 0.26),
-        font: d.fonts.display,
-        kind: "text",
-        size: 260,
-        text: ordinal(1),
-        valign: "top",
-      });
-      items.push(...kicker(d, ctx.credit, box(M, M, CONTENT_W, 0.3), d.accent));
-      items.push(title(d, heading, box(M, 3.1, CONTENT_W * 0.72, 2.4), 42, d.deepInk));
-      if (sub) items.push(body(d, sub, box(M, 5.3, CONTENT_W * 0.6, 1.2), 15, d.deepSoft));
+      const nb = box(SLIDE_W - 5.3, 0.5, 4.6, 3.2);
+      items.push(
+        text(ordinal(1), nb, d.fonts.display, fitNumeral("01", nb.w, nb.h), mix(d.deep, d.accent, 0.3), {
+          align: "right",
+          bold: true,
+        }),
+      );
+      items.push(kick(ctx.credit, box(M, M, CONTENT_W * 0.5, 0.3), d.accent));
+      items.push(titleAt(box(M, 4.0, CONTENT_W * 0.66, 2.2), d.deepInk));
+      if (sub) items.push(subAt(box(M, 6.0, CONTENT_W * 0.55, 0.9), d.deepSoft));
       break;
     }
     case "stack-bars": {
-      const widths = [4.6, 3.1, 1.8];
-      widths.forEach((w, i) => items.push(rect(box(M, 1.35 + i * 0.34, w, 0.16), d.accent, i * 28)));
-      items.push(title(d, heading, box(M, 3.0, CONTENT_W * 0.78, 2.4), 40, d.ink));
-      if (sub) items.push(body(d, sub, box(M, 5.2, CONTENT_W * 0.62, 1.2), 15, d.soft));
-      items.push(...kicker(d, ctx.credit, box(M, SLIDE_H - M - 0.3, CONTENT_W, 0.3), d.muted));
+      [4.4, 2.9, 1.6].forEach((w, i) => items.push(rect(box(M, 1.3 + i * 0.3, w, 0.14), d.accent, i * 26)));
+      items.push(titleAt(box(M, 2.85, CONTENT_W * 0.76, 2.4), d.ink));
+      if (sub) items.push(subAt(box(M, 5.25, CONTENT_W * 0.6, 1.2), d.soft));
+      items.push(kick(ctx.credit, box(M, SLIDE_H - M - 0.3, CONTENT_W, 0.3), d.muted));
       break;
     }
     case "circle": {
       background = d.deep;
-      items.push({ box: box(SLIDE_W - 5.2, -1.5, 6.4, 6.4), fill: d.accent, kind: "shape", shape: "ellipse" });
-      items.push(...kicker(d, ctx.credit, box(M, M, 5, 0.3), d.deepSoft));
-      items.push(title(d, heading, box(M, 3.4, CONTENT_W * 0.6, 2.4), 40, d.deepInk));
-      if (sub) items.push(body(d, sub, box(M, 5.6, CONTENT_W * 0.5, 1), 14, d.deepSoft));
+      items.push({ box: box(SLIDE_W - 4.9, -1.6, 6.2, 6.2), fill: d.accent, kind: "shape", shape: "ellipse" });
+      items.push(kick(ctx.credit, box(M, M, 4.6, 0.3), d.deepSoft));
+      items.push(titleAt(box(M, 3.5, CONTENT_W * 0.56, 2.3), d.deepInk));
+      if (sub) items.push(subAt(box(M, 5.75, CONTENT_W * 0.46, 1), d.deepSoft));
       break;
     }
     case "panel-right": {
-      const panel = edgeBand("right", SLIDE_W * 0.38);
+      const panel = edgeBand("right", SLIDE_W * 0.36);
       items.push(rect(panel, d.deep));
-      items.push(title(d, heading, box(M, 2.5, SLIDE_W - panel.w - M - 0.9, 2.6), 46, d.ink));
-      items.push(hair(box(M, 2.25, 1.1, 0), d.accent, 0.03));
-      if (sub) items.push(body(d, sub, box(panel.x + 0.8, 3.0, panel.w - 1.5, 2), 15, d.deepSoft));
-      items.push(...kicker(d, ctx.credit, box(panel.x + 0.8, 2.4, panel.w - 1.5, 0.3), d.accent));
+      items.push(titleAt(box(M, 2.45, SLIDE_W - panel.w - M - 0.85, 2.6), d.ink));
+      items.push(hair(box(M, 2.1, 1.0, 0), d.accent, 0.028));
+      items.push(kick(ctx.credit, box(panel.x + 0.75, 2.45, panel.w - 1.4, 0.3), d.accent));
+      if (sub) items.push(subAt(box(panel.x + 0.75, 2.95, panel.w - 1.4, 2), d.deepSoft));
       break;
     }
     case "editorial": {
-      items.push(...kicker(d, ctx.credit, box(M, 2.1, CONTENT_W, 0.3), d.accent, "center"));
-      items.push(title(d, heading, box(M + 0.9, 2.85, CONTENT_W - 1.8, 2.6), 46, d.ink, "center"));
-      if (sub) items.push(body(d, sub, box(M + 1.6, 5.35, CONTENT_W - 3.2, 1), 14.5, d.soft, "center"));
-      items.push(hair(box(M, 1.7, CONTENT_W, 0), d.ink, 0.008));
-      items.push(hair(box(M, SLIDE_H - 1.7, CONTENT_W, 0), d.ink, 0.008));
+      items.push(hair(box(M, 1.75, CONTENT_W, 0), mix(d.paper, d.ink, 0.3), 0.008));
+      items.push(kick(ctx.credit, box(M, 2.05, CONTENT_W, 0.3), d.accent, "center"));
+      items.push(titleAt(box(M + 0.8, 2.8, CONTENT_W - 1.6, 2.5), d.ink, "center", 46));
+      if (sub) items.push(subAt(box(M + 1.5, 5.35, CONTENT_W - 3, 1), d.soft, "center"));
+      items.push(hair(box(M, SLIDE_H - 1.75, CONTENT_W, 0), mix(d.paper, d.ink, 0.3), 0.008));
       break;
     }
     case "corner-blocks": {
-      items.push(rect(box(0, 0, 1.5, 1.5), d.accent));
-      items.push(rect(box(SLIDE_W - 2.2, SLIDE_H - 0.55, 2.2, 0.55), d.deep));
-      items.push(title(d, heading, box(M, 2.8, CONTENT_W * 0.7, 2.4), 46, d.ink));
-      if (sub) items.push(body(d, sub, box(M, 5.1, CONTENT_W * 0.55, 1.2), 15, d.soft));
-      items.push(...kicker(d, ctx.credit, box(M, 2.35, CONTENT_W, 0.3), d.accent));
+      items.push(rect(box(0, 0, 1.4, 1.4), d.accent));
+      items.push(rect(box(SLIDE_W - 2.6, SLIDE_H - 0.5, 2.6, 0.5), d.deep));
+      items.push(kick(ctx.credit, box(M, 2.3, CONTENT_W, 0.3), d.accent));
+      items.push(titleAt(box(M, 2.85, CONTENT_W * 0.68, 2.4), d.ink));
+      if (sub) items.push(subAt(box(M, 5.25, CONTENT_W * 0.54, 1.2), d.soft));
       break;
     }
     case "ribbon": {
-      background = d.paper;
-      const ribbon = box(0, 2.55, SLIDE_W, 2.4);
+      const ribbon = box(0, 2.5, SLIDE_W, 2.3);
       items.push(rect(ribbon, d.deep));
-      items.push(rect(box(0, 2.4, SLIDE_W, 0.14), d.accent));
-      items.push(title(d, heading, box(M, ribbon.y + 0.55, CONTENT_W * 0.8, 1.6), 38, d.deepInk));
-      if (sub) items.push(body(d, sub, box(M, ribbon.y + ribbon.h + 0.45, CONTENT_W * 0.6, 1), 14.5, d.soft));
-      items.push(...kicker(d, ctx.credit, box(M, 1.7, CONTENT_W, 0.3), d.muted));
+      items.push(rect(box(0, 2.36, SLIDE_W, 0.12), d.accent));
+      items.push(titleAt(box(M, ribbon.y + 0.5, CONTENT_W * 0.78, 1.5), d.deepInk, "left", 38));
+      items.push(kick(ctx.credit, box(M, 1.7, CONTENT_W, 0.3), d.muted));
+      if (sub) items.push(subAt(box(M, ribbon.y + ribbon.h + 0.4, CONTENT_W * 0.6, 1), d.soft));
       break;
     }
     case "grid-dots": {
@@ -307,45 +401,253 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
         for (let c = 0; c < 6; c += 1) {
           items.push({
             alpha: 55,
-            box: box(SLIDE_W - 4.3 + c * 0.42, 1.1 + r * 0.42, 0.1, 0.1),
+            box: box(SLIDE_W - 4.1 + c * 0.4, 1.0 + r * 0.4, 0.09, 0.09),
             fill: d.accent,
             kind: "shape",
             shape: "ellipse",
           });
         }
       }
-      items.push(title(d, heading, box(M, 2.9, CONTENT_W * 0.62, 2.4), 44, d.ink));
-      if (sub) items.push(body(d, sub, box(M, 5.2, CONTENT_W * 0.5, 1.2), 15, d.soft));
-      items.push(...kicker(d, ctx.credit, box(M, 2.45, CONTENT_W, 0.3), d.accent));
+      items.push(kick(ctx.credit, box(M, 2.4, CONTENT_W * 0.55, 0.3), d.accent));
+      items.push(titleAt(box(M, 2.95, CONTENT_W * 0.58, 2.3), d.ink));
+      if (sub) items.push(subAt(box(M, 5.3, CONTENT_W * 0.48, 1.2), d.soft));
       break;
     }
     case "arc-corner": {
       background = d.deep;
-      items.push({ box: box(-2.2, SLIDE_H - 4.4, 6.6, 6.6), fill: d.accent, kind: "shape", shape: "ellipse" });
-      items.push(title(d, heading, box(SLIDE_W * 0.36, 2.7, SLIDE_W * 0.55, 2.6), 40, d.deepInk));
-      if (sub) items.push(body(d, sub, box(SLIDE_W * 0.36, 5.0, SLIDE_W * 0.45, 1.2), 15, d.deepSoft));
-      items.push(...kicker(d, ctx.credit, box(SLIDE_W * 0.36, 2.15, 4, 0.3), d.accent));
+      items.push({ box: box(-2.6, SLIDE_H - 4.2, 6.2, 6.2), fill: d.accent, kind: "shape", shape: "ellipse" });
+      items.push(kick(ctx.credit, box(SLIDE_W * 0.34, 2.1, 4, 0.3), d.accent));
+      items.push(titleAt(box(SLIDE_W * 0.34, 2.65, SLIDE_W * 0.56, 2.5), d.deepInk));
+      if (sub) items.push(subAt(box(SLIDE_W * 0.34, 5.1, SLIDE_W * 0.44, 1.2), d.deepSoft));
       break;
     }
     case "half-split": {
-      const [left] = [edgeBand("left", SLIDE_W / 2)];
+      const left = edgeBand("left", SLIDE_W / 2);
       items.push(rect(left, d.accent));
-      items.push(title(d, heading, box(M, 2.9, left.w - M - 0.7, 2.6), 36, d.accentInk));
-      items.push(...kicker(d, ctx.credit, box(M, 2.35, left.w - M, 0.3), d.accentInk));
-      if (sub) items.push(body(d, sub, box(left.w + 0.9, 3.05, SLIDE_W / 2 - 1.75, 2), 15, d.soft));
-      items.push(hair(box(left.w + 0.9, 2.75, 1, 0), d.accent, 0.03));
+      items.push(kick(ctx.credit, box(M, 2.35, left.w - M * 2, 0.3), d.accentInk));
+      items.push(titleAt(box(M, 2.85, left.w - M - 0.65, 2.6), d.accentInk, "left", 36));
+      items.push(hair(box(left.w + 0.85, 2.7, 0.9, 0), d.accent, 0.028));
+      if (sub) items.push(subAt(box(left.w + 0.85, 3.0, SLIDE_W / 2 - 1.7, 2), d.soft));
       break;
     }
     default: {
-      // art-glow — the painted background, kept for the designs whose character is light
       background = d.deep;
-      items.push(...kicker(d, ctx.credit, box(M, M, CONTENT_W, 0.3), d.accent));
-      items.push(title(d, heading, box(M, 3.2, CONTENT_W * 0.75, 2.4), 42, d.deepInk));
-      if (sub) items.push(body(d, sub, box(M, 5.4, CONTENT_W * 0.6, 1.2), 15, d.deepSoft));
+      items.push(kick(ctx.credit, box(M, M, CONTENT_W, 0.3), d.accent));
+      items.push(titleAt(box(M, 3.1, CONTENT_W * 0.72, 2.4), d.deepInk));
+      if (sub) items.push(subAt(box(M, 5.5, CONTENT_W * 0.58, 1.2), d.deepSoft));
     }
   }
-
   return { background: { art: d.cover === "art-glow" ? d.art?.cover : undefined, color: background }, items };
+}
+
+// ── agenda ───────────────────────────────────────────────────────────────────────────────────
+
+function composeAgenda(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
+  const items: SceneItem[] = [];
+  const entries = s.points.slice(0, 6);
+  items.push(text(s.title || "Agenda", box(M, TOP, CONTENT_W * 0.7, 0.9), d.fonts.display, T.title, d.ink, { bold: true }));
+  items.push(hair(box(M, TOP + 0.78, CONTENT_W, 0), mix(d.paper, d.ink, 0.2), 0.008));
+  const area = box(M, TOP + 1.15, CONTENT_W, SLIDE_H - TOP - 1.15 - FOOT - 0.5);
+  const lines = rows(area, Math.max(entries.length, 1), 0.06);
+  entries.forEach((entry, i) => {
+    const r = lines[i];
+    if (!r) return;
+    items.push(text(ordinal(i + 1), box(r.x, r.y + 0.06, 0.8, r.h), d.fonts.display, 20, d.accent, { bold: true }));
+    items.push(text(entry, box(r.x + 1.0, r.y + 0.1, r.w - 1.4, r.h), d.fonts.body, 15, i === 0 ? d.ink : d.soft, { bold: i === 0 }));
+    items.push(hair(box(r.x, r.y + r.h - 0.02, r.w, 0), mix(d.paper, d.ink, 0.12), 0.006));
+  });
+  items.push(...footer(d, s, ctx));
+  return { background: { color: d.paper }, items };
+}
+
+// ── exhibits: kpi, chart, table ──────────────────────────────────────────────────────────────
+
+function composeKpi(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
+  const head = header(d, s, ctx, { eyebrow: "Key figures" });
+  const items = [...head.items];
+  const area = contentArea(head.top);
+  const figures = s.data.slice(0, 4);
+  // The figures own the page: the block is as tall as it needs and sits a third down the slack,
+  // with full-height rules between columns, the way a tear sheet sets them.
+  const blockH = Math.min(area.h, 3.0);
+  const band = box(area.x, area.y + Math.max(0, (area.h - blockH) / 3), area.w, blockH);
+  const cols = columns(band, Math.max(figures.length, 1), 0.4);
+  figures.forEach((datum, i) => {
+    const c = cols[i];
+    if (!c) return;
+    if (i > 0) items.push(hair(box(c.x - 0.2, c.y + 0.1, 0, c.h * 0.82), mix(d.paper, d.ink, 0.16), 0.006));
+    const value = figure(datum.value, s.unit);
+    items.push(
+      text(value, box(c.x, c.y + 0.1, c.w, 1.3), d.fonts.display, fitNumeral(value, c.w * 0.98, 1.0), d.accent, { bold: true }),
+    );
+    items.push(hair(box(c.x, c.y + 1.35, Math.min(1.1, c.w * 0.4), 0), d.accent, 0.022));
+    items.push(text(datum.label, box(c.x, c.y + 1.6, c.w - 0.2, band.h - 1.6), d.fonts.body, T.label, d.soft, { lineSpacing: 1.2 }));
+  });
+  items.push(...footer(d, s, ctx, true));
+  return { background: { color: d.paper }, items };
+}
+
+/** The plot area's own furniture: two faint gridlines and a baseline. */
+function plotFrame(d: DeckDesign, plot: Box): SceneItem[] {
+  const grid = mix(d.paper, d.ink, 0.1);
+  return [
+    hair(box(plot.x, plot.y + plot.h * 0.34, plot.w, 0), grid, 0.005),
+    hair(box(plot.x, plot.y + plot.h * 0.67, plot.w, 0), grid, 0.005),
+    hair(box(plot.x, plot.y + plot.h, plot.w, 0), mix(d.paper, d.ink, 0.35), 0.008),
+  ];
+}
+
+function columnChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box): SceneItem[] {
+  const items: SceneItem[] = [];
+  const plot = box(area.x, area.y + 0.3, area.w, area.h - 0.95);
+  const top = Math.max(...data.map((p) => Math.abs(p.value)), 1);
+  const band = plot.w / data.length;
+  const barW = Math.min(1.15, band * 0.5);
+  items.push(...plotFrame(d, plot));
+  data.forEach((point, i) => {
+    // Small values still have to be visible: a bar that rounds to nothing reads as missing data.
+    const h = Math.max((Math.abs(point.value) / top) * (plot.h - 0.4), 0.07);
+    const x = plot.x + band * i + (band - barW) / 2;
+    const y = plot.y + plot.h - h;
+    // The last bar is the point of most exhibits, so it wears the accent and the rest recede.
+    const last = i === data.length - 1;
+    items.push(rect(box(x, y, barW, h), last ? d.accent : d.second));
+    items.push(
+      text(figure(point.value, unit), box(x - band * 0.24, y - 0.32, barW + band * 0.48, 0.3), d.fonts.body, T.value, d.ink, {
+        align: "center",
+        bold: true,
+      }),
+    );
+    items.push(
+      text(point.label, box(x - band * 0.24, plot.y + plot.h + 0.12, barW + band * 0.48, 0.5), d.fonts.body, T.label, d.soft, {
+        align: "center",
+        lineSpacing: 1.1,
+      }),
+    );
+  });
+  return items;
+}
+
+function barChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box): SceneItem[] {
+  const items: SceneItem[] = [];
+  const labelW = Math.min(3.2, area.w * 0.26);
+  const plot = box(area.x + labelW + 0.25, area.y + 0.1, area.w - labelW - 1.15, area.h - 0.3);
+  const top = Math.max(...data.map((p) => Math.abs(p.value)), 1);
+  const lines = rows(plot, data.length, 0.16);
+  data.forEach((point, i) => {
+    const r = lines[i];
+    if (!r) return;
+    const h = Math.min(r.h, 0.46);
+    const w = (Math.abs(point.value) / top) * plot.w;
+    const y = r.y + (r.h - h) / 2;
+    items.push(text(point.label, box(area.x, y - 0.02, labelW, h + 0.1), d.fonts.body, T.label, d.soft, { align: "right", valign: "middle" }));
+    items.push(rect(box(plot.x, y, Math.max(w, 0.04), h), i === 0 ? d.accent : d.second));
+    items.push(
+      text(figure(point.value, unit), box(plot.x + w + 0.12, y - 0.02, 1.0, h + 0.1), d.fonts.body, T.value, d.ink, {
+        bold: true,
+        valign: "middle",
+      }),
+    );
+  });
+  items.push(hair(box(plot.x - 0.06, plot.y, 0, plot.h), mix(d.paper, d.ink, 0.35), 0.008));
+  return items;
+}
+
+function lineChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box): SceneItem[] {
+  const items: SceneItem[] = [];
+  const plot = box(area.x + 0.1, area.y + 0.45, area.w - 0.5, area.h - 1.05);
+  const values = data.map((p) => p.value);
+  const top = Math.max(...values);
+  const bottom = Math.min(...values, 0);
+  const span = Math.max(top - bottom, 1);
+  const step = data.length > 1 ? plot.w / (data.length - 1) : 0;
+  const at = (i: number, v: number) => ({ x: plot.x + step * i, y: plot.y + plot.h - ((v - bottom) / span) * plot.h });
+  items.push(...plotFrame(d, plot));
+  for (let i = 0; i < data.length - 1; i += 1) {
+    const a = at(i, values[i] ?? 0);
+    const b = at(i + 1, values[i + 1] ?? 0);
+    items.push({ box: box(a.x, a.y, b.x - a.x, b.y - a.y), kind: "shape", line: { color: d.accent, width: 0.032 }, shape: "line" });
+  }
+  data.forEach((point, i) => {
+    const p = at(i, point.value);
+    items.push({ box: box(p.x - 0.075, p.y - 0.075, 0.15, 0.15), fill: d.accent, kind: "shape", shape: "ellipse" });
+    items.push(text(point.label, box(p.x - 0.8, plot.y + plot.h + 0.14, 1.6, 0.4), d.fonts.body, T.label, d.soft, { align: "center" }));
+    if (i === 0 || i === data.length - 1) {
+      items.push(
+        text(figure(point.value, unit), box(p.x - 0.8, p.y - 0.42, 1.6, 0.3), d.fonts.body, T.value, d.ink, {
+          align: "center",
+          bold: true,
+        }),
+      );
+    }
+  });
+  return items;
+}
+
+function composeChart(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
+  const head = header(d, s, ctx);
+  const items = [...head.items];
+  const area = contentArea(head.top);
+  const data = s.data.slice(0, 8);
+  if (data.length === 0) {
+    items.push(text(s.points.join("  ·  "), box(area.x, area.y, area.w, area.h), d.fonts.body, T.body, d.soft));
+  } else if (s.chart === "bar") {
+    items.push(...barChart(d, data, s.unit, area));
+  } else if (s.chart === "line") {
+    items.push(...lineChart(d, data, s.unit, area));
+  } else {
+    items.push(...columnChart(d, data, s.unit, area));
+  }
+  items.push(...footer(d, s, ctx, true));
+  return { background: { color: d.paper }, items };
+}
+
+function composeTable(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
+  const head = header(d, s, ctx);
+  const items = [...head.items];
+  const area = contentArea(head.top);
+  const heads = s.columns.length ? s.columns : (s.rows[0] ?? []).map((_, i) => `Column ${i + 1}`);
+  const bodyRows = s.rows.slice(0, 7);
+  const cols = columns(area, Math.max(heads.length, 1), 0.28);
+  const headH = 0.36;
+  // A three-row table on a 7.5in page looks abandoned at the top. Rows stretch toward the
+  // footer, and whatever slack is left pushes the block down a third of it — optically centred
+  // against a page that has furniture at the bottom.
+  const rowH = Math.max(0.44, Math.min(0.88, (area.h - headH - 0.25) / Math.max(bodyRows.length, 1)));
+  const used = headH + 0.14 + rowH * bodyRows.length;
+  const slack = Math.max(0, area.h - used);
+  const top = area.y + slack / 3;
+  // A number belongs on the right; text belongs on the left. Same rule every printed table obeys.
+  const numeric = (cell: string): boolean => /^[^a-z]*\d/i.test(cell) && /\d/.test(cell) && cell.length <= 12;
+  heads.forEach((heading, i) => {
+    const c = cols[i];
+    if (!c) return;
+    items.push(
+      text(heading, box(c.x, top, c.w, headH), d.fonts.body, T.label, d.ink, {
+        align: i > 0 && bodyRows.every((r) => numeric(r[i] ?? "")) ? "right" : "left",
+        bold: true,
+        caps: true,
+        spacing: 0.8,
+      }),
+    );
+  });
+  items.push(hair(box(area.x, top + headH, area.w, 0), d.accent, 0.022));
+  bodyRows.forEach((row, r) => {
+    const y = top + headH + 0.14 + r * rowH;
+    row.forEach((cell, i) => {
+      const c = cols[i];
+      if (!c) return;
+      items.push(
+        text(cell, box(c.x, y + rowH / 2 - 0.14, c.w, 0.34), d.fonts.body, T.body, i === 0 ? d.ink : d.soft, {
+          align: numeric(cell) && i > 0 ? "right" : "left",
+          bold: i === 0,
+        }),
+      );
+    });
+    if (r < bodyRows.length - 1) items.push(hair(box(area.x, y + rowH - 0.06, area.w, 0), mix(d.paper, d.ink, 0.12), 0.006));
+  });
+  items.push(...footer(d, s, ctx, true));
+  return { background: { color: d.paper }, items };
 }
 
 // ── section breaks ───────────────────────────────────────────────────────────────────────────
@@ -353,54 +655,48 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
 function composeSection(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const items: SceneItem[] = [];
   let background = d.paper;
+  const title = (b: Box, color: string) =>
+    text(s.title, b, d.fonts.display, fit(T.sectionTitle, s.title), color, { bold: true, lineSpacing: 1.06 });
+  const part = `Part ${ordinal(ctx.index)}`;
   switch (d.section) {
     case "solid-numeral": {
       background = d.accent;
-      items.push({
-        bold: true,
-        box: box(SLIDE_W - 4.6, 1.2, 4, 4.4),
-        color: mix(d.accent, d.accentInk, 0.24),
-        font: d.fonts.display,
-        kind: "text",
-        size: 190,
-        text: ordinal(ctx.index),
-        valign: "top",
-      });
-      items.push(title(d, s.title, box(M, 3.1, CONTENT_W * 0.62, 2.4), 38, d.accentInk));
+      const nb = box(SLIDE_W - 4.9, 0.9, 4.2, 3.4);
+      items.push(
+        text(ordinal(ctx.index), nb, d.fonts.display, fitNumeral(ordinal(ctx.index), nb.w, nb.h), mix(d.accent, d.accentInk, 0.28), {
+          align: "right",
+          bold: true,
+        }),
+      );
+      items.push(title(box(M, 3.3, CONTENT_W * 0.58, 2.4), d.accentInk));
+      items.push(hair(box(M, 3.05, 1.0, 0), d.accentInk, 0.022));
       break;
     }
     case "band": {
-      background = d.paper;
-      items.push(rect(crossBand("top", 2.5), d.deep));
-      items.push(...kicker(d, `Part ${ordinal(ctx.index)}`, box(M, 1.0, 4, 0.3), d.accent));
-      items.push(title(d, s.title, box(M, 3.15, CONTENT_W * 0.72, 2.2), 36, d.ink));
+      items.push(rect(crossBand("top", 2.4), d.deep));
+      items.push(text(part, box(M, 1.0, 4, 0.3), d.fonts.body, T.eyebrow, d.accent, { bold: true, caps: true, spacing: 1.7 }));
+      items.push(title(box(M, 3.05, CONTENT_W * 0.7, 2.2), d.ink));
       break;
     }
     case "split": {
-      items.push(rect(edgeBand("left", SLIDE_W * 0.42), d.deep));
-      items.push({
-        bold: true,
-        box: box(M, 2.9, 3, 2),
-        color: d.accent,
-        font: d.fonts.display,
-        kind: "text",
-        size: 96,
-        text: ordinal(ctx.index),
-        valign: "top",
-      });
-      items.push(title(d, s.title, box(SLIDE_W * 0.42 + 0.9, 3.2, SLIDE_W * 0.5, 2), 34, d.ink));
+      items.push(rect(edgeBand("left", SLIDE_W * 0.4), d.deep));
+      const nb = box(M, 2.7, 2.6, 2.2);
+      items.push(
+        text(ordinal(ctx.index), nb, d.fonts.display, fitNumeral(ordinal(ctx.index), nb.w, nb.h), d.accent, { bold: true }),
+      );
+      items.push(title(box(SLIDE_W * 0.4 + 0.85, 3.1, SLIDE_W * 0.5, 2), d.ink));
       break;
     }
     case "rule": {
-      items.push(...kicker(d, `Part ${ordinal(ctx.index)}`, box(M, 2.9, 4, 0.3), d.accent));
-      items.push(hair(box(M, 3.35, CONTENT_W, 0), d.accent, 0.03));
-      items.push(title(d, s.title, box(M, 3.7, CONTENT_W * 0.8, 2), 36, d.ink));
+      items.push(text(part, box(M, 2.85, 4, 0.3), d.fonts.body, T.eyebrow, d.accent, { bold: true, caps: true, spacing: 1.7 }));
+      items.push(hair(box(M, 3.3, CONTENT_W, 0), d.accent, 0.026));
+      items.push(title(box(M, 3.65, CONTENT_W * 0.78, 2), d.ink));
       break;
     }
     default: {
       background = d.deep;
-      items.push(...kicker(d, `Part ${ordinal(ctx.index)}`, box(M, 2.9, 4, 0.3), d.accent));
-      items.push(title(d, s.title, box(M, 3.4, CONTENT_W * 0.75, 2.2), 36, d.deepInk));
+      items.push(text(part, box(M, 2.85, 4, 0.3), d.fonts.body, T.eyebrow, d.accent, { bold: true, caps: true, spacing: 1.7 }));
+      items.push(title(box(M, 3.35, CONTENT_W * 0.72, 2.2), d.deepInk));
     }
   }
   return { background: { art: d.section === "art" ? d.art?.section : undefined, color: background }, items };
@@ -412,332 +708,283 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const points = s.points.slice(0, 5);
   const items: SceneItem[] = [];
   let background = d.paper;
-  const heading = s.title;
 
-  switch (d.body) {
-    case "cards": {
-      items.push(title(d, heading, box(M, 0.75, CONTENT_W * 0.8, 1.1), 27, d.ink));
-      const area = box(M, 2.25, CONTENT_W, SLIDE_H - 2.25 - 0.9);
-      const grid = cells(area, points.length || 1, 0.32);
-      const tight = points.length > 3;
-      points.forEach((point, i) => {
-        const c = grid[i];
-        if (!c) return;
-        items.push({ alpha: 92, box: c, fill: d.accent, kind: "shape", radius: 0.06, shape: "roundRect" });
-        items.push({ box: box(c.x, c.y, 0.07, c.h), fill: d.accent, kind: "shape", shape: "rect" });
-        items.push({
-          bold: true,
-          box: box(c.x + 0.32, c.y + 0.26, 1, 0.4),
-          color: d.accent,
-          font: d.fonts.display,
-          kind: "text",
-          size: 14,
-          text: ordinal(i + 1),
-          valign: "top",
+  // Designs whose body treatment owns the whole page draw their own header; the rest use the
+  // shared one, which is what gives the set its institutional consistency.
+  const ownsPage = d.body === "rail" || d.body === "panel-title" || d.body === "banner";
+
+  if (!ownsPage) {
+    const head = header(d, s, ctx);
+    items.push(...head.items);
+    const area = contentArea(head.top);
+    switch (d.body) {
+      case "cards": {
+        const grid = cells(area, points.length || 1, 0.3);
+        const tight = points.length > 3;
+        points.forEach((point, i) => {
+          const c = grid[i];
+          if (!c) return;
+          items.push({ alpha: 93, box: c, fill: d.accent, kind: "shape", radius: 0.05, shape: "roundRect" });
+          items.push(rect(box(c.x, c.y, 0.055, c.h), d.accent));
+          items.push(text(ordinal(i + 1), box(c.x + 0.3, c.y + 0.22, 1, 0.35), d.fonts.display, 13, d.accent, { bold: true }));
+          items.push(text(point, box(c.x + 0.3, c.y + 0.66, c.w - 0.6, c.h - 0.85), d.fonts.body, tight ? 12 : 13.5, d.soft, { lineSpacing: 1.2 }));
         });
-        items.push(body(d, point, box(c.x + 0.32, c.y + 0.74, c.w - 0.64, c.h - 0.95), tight ? 13 : 15, d.soft));
-      });
-      break;
-    }
-    case "numbered": {
-      items.push(title(d, heading, box(M, 0.75, CONTENT_W * 0.8, 1.1), 27, d.ink));
-      const area = box(M, 2.1, CONTENT_W, SLIDE_H - 2.1 - 0.85);
-      const lines = rows(area, Math.max(points.length, 1), 0.12);
-      points.forEach((point, i) => {
-        const r = lines[i];
-        if (!r) return;
-        items.push({
-          bold: true,
-          box: box(r.x, r.y + 0.04, 0.9, r.h),
-          color: d.accent,
-          font: d.fonts.display,
-          kind: "text",
-          size: 26,
-          text: ordinal(i + 1),
-          valign: "top",
-        });
-        items.push(body(d, point, box(r.x + 1.05, r.y + 0.12, r.w - 1.05, r.h), 15, d.soft));
-        if (i < points.length - 1) items.push(hair(box(r.x, r.y + r.h + 0.02, r.w, 0), d.muted, 0.006));
-      });
-      break;
-    }
-    case "rail": {
-      const rail = edgeBand("left", 3.25);
-      items.push(rect(rail, d.deep));
-      items.push(rect(box(0, 0, 0.14, SLIDE_H), d.accent));
-      items.push(title(d, heading, box(0.62, 1.15, rail.w - 1.15, 3.4), 19, d.deepInk));
-      items.push(...kicker(d, ordinal(ctx.index), box(0.62, 0.78, 1.5, 0.3), d.accent));
-      items.push({
-        box: box(rail.w + 0.85, 1.15, SLIDE_W - rail.w - 0.85 - M, SLIDE_H - 2.2),
-        bullet: "dash",
-        color: d.soft,
-        font: d.fonts.body,
-        gap: 12,
-        items: points,
-        kind: "bullets",
-        size: 15.5,
-      });
-      break;
-    }
-    case "panel-title": {
-      const panel = crossBand("top", 1.95);
-      items.push(rect(panel, d.deep));
-      items.push(rect(box(0, panel.h, SLIDE_W, 0.1), d.accent));
-      items.push(title(d, heading, box(M, 0.72, CONTENT_W * 0.85, 1.1), 26, d.deepInk));
-      items.push({
-        box: box(M, panel.h + 0.75, CONTENT_W * 0.88, SLIDE_H - panel.h - 1.4),
-        bullet: "dash",
-        color: d.soft,
-        font: d.fonts.body,
-        gap: 12,
-        items: points,
-        kind: "bullets",
-        size: 15.5,
-      });
-      break;
-    }
-    case "two-col-rule": {
-      items.push(title(d, heading, box(M, 0.75, CONTENT_W * 0.8, 1.1), 27, d.ink));
-      const half = Math.ceil(points.length / 2);
-      const [left, right] = columns(box(M, 2.1, CONTENT_W, SLIDE_H - 3), 2, 0.9);
-      if (left && right) {
-        items.push(hair(box(left.x + left.w + 0.45, 2.1, 0, SLIDE_H - 3.1), d.muted, 0.006));
-        items.push({ box: left, bullet: "dash", color: d.soft, font: d.fonts.body, gap: 12, items: points.slice(0, half), kind: "bullets", size: 15 });
-        items.push({ box: right, bullet: "dash", color: d.soft, font: d.fonts.body, gap: 12, items: points.slice(half), kind: "bullets", size: 15 });
+        break;
       }
-      break;
+      case "numbered": {
+        const lines = rows(area, Math.max(points.length, 1), 0.1);
+        points.forEach((point, i) => {
+          const r = lines[i];
+          if (!r) return;
+          items.push(text(ordinal(i + 1), box(r.x, r.y + 0.04, 0.8, r.h), d.fonts.display, 20, d.accent, { bold: true }));
+          items.push(text(point, box(r.x + 0.95, r.y + 0.1, r.w - 1.1, r.h), d.fonts.body, T.body, d.soft, { lineSpacing: 1.2 }));
+          if (i < points.length - 1) items.push(hair(box(r.x, r.y + r.h + 0.02, r.w, 0), mix(d.paper, d.ink, 0.12), 0.006));
+        });
+        break;
+      }
+      case "two-col-rule": {
+        const half = Math.ceil(points.length / 2);
+        const [left, right] = columns(area, 2, 0.85);
+        if (left && right) {
+          items.push(hair(box(left.x + left.w + 0.42, area.y, 0, area.h), mix(d.paper, d.ink, 0.14), 0.006));
+          items.push({ box: left, bullet: "dash", color: d.soft, font: d.fonts.body, gap: 11, items: points.slice(0, half), kind: "bullets", size: T.body });
+          items.push({ box: right, bullet: "dash", color: d.soft, font: d.fonts.body, gap: 11, items: points.slice(half), kind: "bullets", size: T.body });
+        }
+        break;
+      }
+      case "chips": {
+        const lines = rows(area, Math.max(points.length, 1), 0.16);
+        points.forEach((point, i) => {
+          const r = lines[i];
+          if (!r) return;
+          const h = Math.min(r.h, 0.62);
+          items.push({ alpha: 94, box: box(r.x, r.y, r.w, h), fill: d.accent, kind: "shape", radius: 0.5, shape: "roundRect" });
+          items.push({ box: box(r.x + 0.34, r.y + h / 2 - 0.08, 0.16, 0.16), fill: d.accent, kind: "shape", shape: "ellipse" });
+          items.push(text(point, box(r.x + 0.78, r.y + h / 2 - 0.15, r.w - 1.2, h), d.fonts.body, T.body, d.soft));
+        });
+        break;
+      }
+      case "boxed": {
+        items.push({ box: inset(area, -0.06), kind: "shape", line: { color: mix(d.paper, d.ink, 0.16), width: 0.006 }, shape: "rect" });
+        items.push({
+          box: inset(area, 0.34),
+          bullet: "dash",
+          color: d.soft,
+          font: d.fonts.body,
+          gap: 12,
+          items: points,
+          kind: "bullets",
+          size: T.body,
+        });
+        break;
+      }
+      case "hanging-rule": {
+        items.push({
+          box: box(area.x + area.w * 0.16, area.y, area.w * 0.8, area.h),
+          bullet: "none",
+          color: d.soft,
+          font: d.fonts.body,
+          gap: 14,
+          items: points,
+          kind: "bullets",
+          size: T.body,
+        });
+        break;
+      }
+      default: {
+        items.push({
+          box: area,
+          bullet: "dash",
+          color: d.soft,
+          font: d.fonts.body,
+          gap: 13,
+          items: points,
+          kind: "bullets",
+          size: T.body,
+        });
+      }
     }
-    case "chips": {
-      items.push(title(d, heading, box(M, 0.75, CONTENT_W * 0.8, 1.1), 27, d.ink));
-      const area = box(M, 2.2, CONTENT_W, SLIDE_H - 3.1);
-      const lines = rows(area, Math.max(points.length, 1), 0.22);
-      points.forEach((point, i) => {
-        const r = lines[i];
-        if (!r) return;
-        items.push({ box: r, fill: d.accent, kind: "shape", alpha: 94, radius: 0.5, shape: "roundRect" });
-        items.push({ box: box(r.x + 0.42, r.y + r.h / 2 - 0.09, 0.18, 0.18), fill: d.accent, kind: "shape", shape: "ellipse" });
-        items.push(body(d, point, box(r.x + 0.95, r.y + r.h / 2 - 0.16, r.w - 1.4, r.h), 14.5, d.soft));
-      });
-      break;
-    }
-    case "banner": {
-      items.push(rect(box(0, 0.65, SLIDE_W * 0.62, 1.3), d.accent));
-      items.push(title(d, heading, box(M, 0.95, SLIDE_W * 0.62 - M - 0.4, 1), 25, d.accentInk));
-      items.push({
-        box: box(M, 2.7, CONTENT_W * 0.85, SLIDE_H - 3.5),
-        bullet: "dash",
-        color: d.soft,
-        font: d.fonts.body,
-        gap: 13,
-        items: points,
-        kind: "bullets",
-        size: 15.5,
-      });
-      break;
-    }
-    case "boxed": {
-      const frame = inset(box(0, 0, SLIDE_W, SLIDE_H), 0.5);
-      items.push({ box: frame, kind: "shape", line: { color: d.muted, width: 0.008 }, shape: "rect" });
-      items.push(title(d, heading, box(frame.x + 0.55, frame.y + 0.5, frame.w - 1.1, 1.1), 26, d.ink));
-      items.push(hair(box(frame.x + 0.55, frame.y + 1.5, 0.9, 0), d.accent, 0.03));
-      items.push({
-        box: box(frame.x + 0.55, frame.y + 1.95, frame.w - 1.5, frame.h - 2.6),
-        bullet: "dash",
-        color: d.soft,
-        font: d.fonts.body,
-        gap: 12,
-        items: points,
-        kind: "bullets",
-        size: 15,
-      });
-      break;
-    }
-    case "hanging-rule": {
-      items.push(...kicker(d, `${ordinal(ctx.index)} / ${ordinal(ctx.plan.slides.length)}`, box(M, 0.75, 3, 0.3), d.accent));
-      items.push(title(d, heading, box(M, 1.25, CONTENT_W * 0.72, 1.2), 28, d.ink));
-      items.push(hair(box(M, 2.55, CONTENT_W, 0), d.ink, 0.01));
-      items.push({
-        box: box(M + CONTENT_W * 0.22, 2.95, CONTENT_W * 0.72, SLIDE_H - 3.7),
-        bullet: "none",
-        color: d.soft,
-        font: d.fonts.body,
-        gap: 15,
-        items: points,
-        kind: "bullets",
-        size: 15.5,
-      });
-      break;
-    }
-    default: {
-      items.push(title(d, heading, box(M, 0.8, CONTENT_W * 0.78, 1.2), 27, d.ink));
-      items.push(rect(box(M, 2.0, 0.75, 0.05), d.accent));
-      items.push({
-        box: box(M, 2.45, CONTENT_W * 0.86, SLIDE_H - 3.2),
-        bullet: "dash",
-        color: d.soft,
-        font: d.fonts.body,
-        gap: 13,
-        items: points,
-        kind: "bullets",
-        size: 16,
-      });
-    }
+    items.push(...footer(d, s, ctx));
+    return { background: { color: background }, items };
   }
+
+  // ── the three treatments that take the whole page ──
+  if (d.body === "rail") {
+    const rail = edgeBand("left", 3.5);
+    items.push(rect(rail, d.deep));
+    items.push(rect(box(0, 0, 0.12, SLIDE_H), d.accent));
+    items.push(
+      text(`Exhibit ${ordinal(ctx.index)}`, box(0.6, TOP, rail.w - 1.1, 0.3), d.fonts.body, T.eyebrow, d.accent, {
+        bold: true,
+        caps: true,
+        spacing: 1.6,
+      }),
+    );
+    items.push(text(s.title, box(0.6, TOP + 0.42, rail.w - 1.1, 2.6), d.fonts.display, fit(19, s.title), d.deepInk, { bold: true, lineSpacing: 1.1 }));
+    if (s.takeaway) {
+      items.push(text(s.takeaway, box(0.6, SLIDE_H - 2.5, rail.w - 1.1, 1.9), d.fonts.body, 11, d.deepSoft, { lineSpacing: 1.24 }));
+    }
+    items.push({
+      box: box(rail.w + 0.75, TOP + 0.3, SLIDE_W - rail.w - 0.75 - M, SLIDE_H - TOP - 1.4),
+      bullet: "dash",
+      color: d.soft,
+      font: d.fonts.body,
+      gap: 13,
+      items: points,
+      kind: "bullets",
+      size: T.body,
+    });
+    items.push(
+      text(`${ctx.credit}  ·  ${ctx.index}`, box(SLIDE_W - M - 3, SLIDE_H - 0.62, 3, 0.3), d.fonts.body, T.footer, d.muted, {
+        align: "right",
+      }),
+    );
+    return { background: { color: background }, items };
+  }
+
+  if (d.body === "panel-title") {
+    const panel = crossBand("top", 1.85);
+    items.push(rect(panel, d.deep));
+    items.push(rect(box(0, panel.h, SLIDE_W, 0.08), d.accent));
+    items.push(
+      text(`Exhibit ${ordinal(ctx.index)}`, box(M, 0.42, CONTENT_W * 0.6, 0.28), d.fonts.body, T.eyebrow, d.accent, {
+        bold: true,
+        caps: true,
+        spacing: 1.6,
+      }),
+    );
+    items.push(text(s.title, box(M, 0.78, CONTENT_W * 0.82, 0.9), d.fonts.display, fit(T.title, s.title), d.deepInk, { bold: true }));
+    let y = panel.h + 0.45;
+    if (s.takeaway) {
+      items.push(text(s.takeaway, box(M, y, CONTENT_W * 0.78, 0.5), d.fonts.body, T.action, mix(d.ink, d.accent, 0.3), { italic: true }));
+      y += 0.6;
+    }
+    items.push({
+      box: box(M, y, CONTENT_W * 0.86, SLIDE_H - y - 0.9),
+      bullet: "dash",
+      color: d.soft,
+      font: d.fonts.body,
+      gap: 13,
+      items: points,
+      kind: "bullets",
+      size: T.body,
+    });
+    items.push(...footer(d, s, ctx));
+    return { background: { color: background }, items };
+  }
+
+  // banner
+  const bannerH = 1.15;
+  items.push(
+    text(`Exhibit ${ordinal(ctx.index)}`, box(M, 0.24, CONTENT_W * 0.6, 0.26), d.fonts.body, T.eyebrow, d.muted, {
+      bold: true,
+      caps: d.kicker !== false,
+      spacing: 1.6,
+    }),
+  );
+  items.push(rect(box(0, TOP, SLIDE_W * 0.66, bannerH), d.accent));
+  items.push(text(s.title, box(M, TOP + 0.26, SLIDE_W * 0.66 - M - 0.35, 0.75), d.fonts.display, fit(T.title, s.title), d.accentInk, { bold: true }));
+  let y = TOP + bannerH + 0.4;
+  if (s.takeaway) {
+    items.push(text(s.takeaway, box(M, y, CONTENT_W * 0.8, 0.5), d.fonts.body, T.action, d.ink, { italic: true }));
+    y += 0.62;
+  }
+  items.push({
+    box: box(M, y, CONTENT_W * 0.84, SLIDE_H - y - 0.9),
+    bullet: "dash",
+    color: d.soft,
+    font: d.fonts.body,
+    gap: 13,
+    items: points,
+    kind: "bullets",
+    size: T.body,
+  });
+  items.push(...footer(d, s, ctx));
   return { background: { color: background }, items };
 }
 
 // ── stat, quote, closing ─────────────────────────────────────────────────────────────────────
 
-function composeStat(d: DeckDesign, s: DeckSlide): Scene {
+function composeStat(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const items: SceneItem[] = [];
   let background = d.paper;
   const label = s.statLabel || s.title;
+  const value = s.statValue || "—";
   switch (d.stat) {
     case "panel": {
-      items.push(rect(edgeBand("left", SLIDE_W * 0.46), d.accent));
-      items.push({
-        bold: true,
-        box: box(M, 2.5, SLIDE_W * 0.46 - M - 0.4, 2.4),
-        color: d.accentInk,
-        font: d.fonts.display,
-        kind: "text",
-        size: 96,
-        text: s.statValue,
-        valign: "top",
-      });
-      items.push(body(d, label, box(SLIDE_W * 0.46 + 0.9, 3.0, SLIDE_W * 0.42, 2), 18, d.ink));
+      const panel = edgeBand("left", SLIDE_W * 0.44);
+      items.push(rect(panel, d.accent));
+      const nb = box(M, 2.4, panel.w - M * 2, 2.2);
+      items.push(text(value, nb, d.fonts.display, fitNumeral(value, nb.w, nb.h), d.accentInk, { bold: true }));
+      items.push(text(label, box(panel.w + 0.85, 2.9, SLIDE_W * 0.42, 2), d.fonts.body, 17, d.ink, { lineSpacing: 1.25 }));
+      if (s.takeaway) items.push(text(s.takeaway, box(panel.w + 0.85, 4.5, SLIDE_W * 0.4, 1.4), d.fonts.body, T.body, d.soft, { lineSpacing: 1.25 }));
       break;
     }
     case "circle": {
       background = d.deep;
-      items.push({ box: box(SLIDE_W / 2 - 2.5, 1.15, 5, 5), fill: d.accent, kind: "shape", shape: "donut" });
-      items.push({
-        align: "center",
-        bold: true,
-        box: box(SLIDE_W / 2 - 2.4, 3.0, 4.8, 1.6),
-        color: d.deepInk,
-        font: d.fonts.display,
-        kind: "text",
-        size: 76,
-        text: s.statValue,
-        valign: "top",
-      });
-      items.push(body(d, label, box(SLIDE_W / 2 - 3, 6.35, 6, 0.9), 15, d.deepSoft, "center"));
+      items.push({ box: box(SLIDE_W / 2 - 2.35, 1.2, 4.7, 4.7), fill: d.accent, kind: "shape", shape: "donut" });
+      const nb = box(SLIDE_W / 2 - 1.9, 3.05, 3.8, 1.4);
+      items.push(text(value, nb, d.fonts.display, fitNumeral(value, nb.w, nb.h), d.deepInk, { align: "center", bold: true }));
+      items.push(text(label, box(SLIDE_W / 2 - 3.2, 6.3, 6.4, 0.8), d.fonts.body, T.body, d.deepSoft, { align: "center" }));
       break;
     }
     case "block": {
       background = d.deep;
-      items.push(rect(box(M, 1.5, 2.1, 4.5), d.accent));
-      items.push({
-        bold: true,
-        box: box(M + 2.9, 2.2, CONTENT_W - 3.2, 2.6),
-        color: d.deepInk,
-        font: d.fonts.display,
-        kind: "text",
-        size: 104,
-        text: s.statValue,
-        valign: "top",
-      });
-      items.push(body(d, label, box(M + 2.95, 4.85, CONTENT_W * 0.6, 1.4), 17, d.deepSoft));
+      items.push(rect(box(M, 1.6, 1.9, 4.2), d.accent));
+      const nb = box(M + 2.6, 2.2, CONTENT_W - 3.0, 2.4);
+      items.push(text(value, nb, d.fonts.display, fitNumeral(value, nb.w, nb.h), d.deepInk, { bold: true }));
+      items.push(text(label, box(M + 2.65, 4.8, CONTENT_W * 0.58, 1.4), d.fonts.body, 16, d.deepSoft, { lineSpacing: 1.25 }));
       break;
     }
     default: {
-      items.push({
-        bold: true,
-        box: box(M, 2.15, CONTENT_W, 2.6),
-        color: d.accent,
-        font: d.fonts.display,
-        kind: "text",
-        size: 118,
-        text: s.statValue,
-        valign: "top",
-      });
-      items.push(hair(box(M, 4.55, CONTENT_W * 0.5, 0), d.ink, 0.012));
-      items.push(body(d, label, box(M, 4.85, CONTENT_W * 0.62, 1.4), 18, d.soft));
+      const nb = box(M, 2.0, CONTENT_W * 0.7, 2.5);
+      items.push(text(value, nb, d.fonts.display, fitNumeral(value, nb.w, nb.h), d.accent, { bold: true }));
+      items.push(hair(box(M, 4.7, CONTENT_W * 0.45, 0), d.ink, 0.012));
+      items.push(text(label, box(M, 4.95, CONTENT_W * 0.6, 1.4), d.fonts.body, 17, d.soft, { lineSpacing: 1.25 }));
     }
   }
+  if (d.chrome !== "none" && d.stat !== "circle" && d.stat !== "block") items.push(...footer(d, s, ctx));
   return { background: { color: background }, items };
 }
 
-function composeQuote(d: DeckDesign, s: DeckSlide): Scene {
+function composeQuote(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const items: SceneItem[] = [];
   let background = d.paper;
   const attribution = s.quoteAttribution;
+  const quote = (b: Box, color: string, wrapped = true) =>
+    text(wrapped ? `“${s.title}”` : s.title, b, d.fonts.display, fit(28, s.title), color, { italic: true, lineSpacing: 1.24 });
   switch (d.quote) {
     case "band": {
       background = d.deep;
-      items.push(rect(box(0, 2.0, SLIDE_W, 0.1), d.accent));
-      items.push({
-        box: box(M, 2.75, CONTENT_W * 0.85, 2.8),
-        color: d.deepInk,
-        font: d.fonts.display,
-        italic: true,
-        kind: "text",
-        lineSpacing: 1.2,
-        size: fit(30, s.title),
-        text: `“${s.title}”`,
-        valign: "top",
-      });
-      if (attribution) items.push(body(d, attribution, box(M, 5.85, CONTENT_W * 0.6, 0.7), 14, d.deepSoft));
+      items.push(rect(box(0, 1.95, SLIDE_W, 0.08), d.accent));
+      items.push(quote(box(M, 2.6, CONTENT_W * 0.84, 2.8), d.deepInk));
+      if (attribution) items.push(text(attribution, box(M, 5.7, CONTENT_W * 0.6, 0.6), d.fonts.body, 13.5, d.deepSoft, { caps: true, spacing: 1.2 }));
       break;
     }
     case "panel": {
-      items.push(rect(edgeBand("left", 0.9), d.accent));
-      items.push({
-        box: box(1.75, 2.35, CONTENT_W - 1.1, 3),
-        color: d.ink,
-        font: d.fonts.display,
-        italic: true,
-        kind: "text",
-        lineSpacing: 1.22,
-        size: fit(30, s.title),
-        text: `“${s.title}”`,
-        valign: "top",
-      });
-      if (attribution) items.push(body(d, attribution, box(1.75, 5.6, CONTENT_W * 0.6, 0.7), 14, d.muted));
+      items.push(rect(edgeBand("left", 0.75), d.accent));
+      items.push(quote(box(1.6, 2.3, CONTENT_W - 1.0, 3), d.ink));
+      if (attribution) items.push(text(attribution, box(1.6, 5.5, CONTENT_W * 0.6, 0.6), d.fonts.body, 13.5, d.muted, { caps: true, spacing: 1.2 }));
       break;
     }
     case "rule": {
-      items.push(hair(box(M, 2.2, CONTENT_W, 0), d.accent, 0.03));
-      items.push({
-        box: box(M, 2.75, CONTENT_W * 0.82, 3),
-        color: d.ink,
-        font: d.fonts.display,
-        italic: true,
-        kind: "text",
-        lineSpacing: 1.22,
-        size: fit(30, s.title),
-        text: s.title,
-        valign: "top",
-      });
-      if (attribution) items.push(body(d, `— ${attribution}`, box(M, 5.75, CONTENT_W * 0.6, 0.7), 14, d.muted));
+      items.push(hair(box(M, 2.15, CONTENT_W, 0), d.accent, 0.026));
+      items.push(quote(box(M, 2.65, CONTENT_W * 0.82, 3), d.ink, false));
+      if (attribution) items.push(text(`— ${attribution}`, box(M, 5.65, CONTENT_W * 0.6, 0.6), d.fonts.body, 13.5, d.muted));
       break;
     }
     default: {
-      items.push({
-        bold: true,
-        box: box(M - 0.15, 0.6, 3, 3),
-        color: mix(d.paper, d.accent, 0.3),
-        font: d.fonts.display,
-        kind: "text",
-        size: 200,
-        text: "“",
-        valign: "top",
-      });
-      items.push({
-        box: box(M + 0.15, 2.6, CONTENT_W * 0.8, 3),
-        color: d.ink,
-        font: d.fonts.display,
-        italic: true,
-        kind: "text",
-        lineSpacing: 1.22,
-        size: fit(30, s.title),
-        text: s.title,
-        valign: "top",
-      });
-      if (attribution) items.push(body(d, `— ${attribution}`, box(M + 0.15, 5.7, CONTENT_W * 0.6, 0.7), 14, d.muted));
+      // The mark HANGS: it sits in its own column to the left of the quote, never behind it.
+      // (It used to be set at 145pt in a box the text also used, and it printed straight
+      // through the first line — the defect the owner spotted as "shapes blocking the text".)
+      const mb = box(M, 2.0, 1.5, 1.5);
+      items.push(text("“", mb, d.fonts.display, 84, mix(d.paper, d.accent, 0.3), { bold: true }));
+      const left = M + 1.55;
+      items.push(quote(box(left, 2.45, SLIDE_W - left - M, 2.9), d.ink, false));
+      if (attribution) items.push(text(`— ${attribution}`, box(left, 5.55, CONTENT_W * 0.6, 0.6), d.fonts.body, 13.5, d.muted));
     }
   }
+  if (d.chrome === "full") items.push(...footer(d, s, ctx));
   return { background: { color: background }, items };
 }
 
@@ -748,38 +995,44 @@ function composeClosing(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const background = dark ? d.deep : d.paper;
   const ink = dark ? d.deepInk : d.ink;
   const soft = dark ? d.deepSoft : d.soft;
-  items.push(rect(crossBand("bottom", 0.5), d.accent));
-  items.push(title(d, heading, box(M, 2.7, CONTENT_W * 0.75, 1.8), 40, ink));
+  items.push(rect(crossBand("bottom", 0.42), d.accent));
+  items.push(
+    text(ctx.credit, box(M, 2.15, CONTENT_W, 0.3), d.fonts.body, T.eyebrow, d.accent, {
+      bold: true,
+      caps: d.kicker !== false,
+      spacing: 1.7,
+    }),
+  );
+  items.push(text(heading, box(M, 2.65, CONTENT_W * 0.72, 1.7), d.fonts.display, fit(40, heading), ink, { bold: true }));
   if (s.points.length) {
     items.push({
-      box: box(M, 4.35, CONTENT_W * 0.7, 2),
+      box: box(M, 4.35, CONTENT_W * 0.66, 2),
       bullet: "dash",
       color: soft,
       font: d.fonts.body,
       gap: 9,
       items: s.points.slice(0, 3),
       kind: "bullets",
-      size: 14,
+      size: T.body,
     });
   }
-  items.push(...kicker(d, ctx.credit, box(M, 2.2, CONTENT_W, 0.3), d.accent));
   return { background: { art: d.cover === "art-glow" ? d.art?.closing : undefined, color: background }, items };
 }
 
 /** The references slide: the canvas's own sources, never anything invented. */
 export function composeReferences(d: DeckDesign, refs: Array<{ title: string; url?: string }>): Scene {
   const items: SceneItem[] = [];
-  items.push(title(d, "References", box(M, 0.8, CONTENT_W * 0.6, 1), 26, d.ink));
-  items.push(rect(box(M, 2.0, 0.75, 0.05), d.accent));
+  items.push(text("Sources", box(M, TOP, CONTENT_W * 0.6, 0.8), d.fonts.display, T.title, d.ink, { bold: true }));
+  items.push(hair(box(M, TOP + 0.72, CONTENT_W, 0), d.accent, 0.022));
   items.push({
-    box: box(M, 2.45, CONTENT_W, SLIDE_H - 3.2),
+    box: box(M, TOP + 1.05, CONTENT_W, SLIDE_H - TOP - 2),
     bullet: "none",
     color: d.muted,
     font: d.fonts.body,
-    gap: 10,
-    items: refs.slice(0, 10).map((r) => (r.url ? `${r.title}  ${r.url}` : r.title)),
+    gap: 9,
+    items: refs.slice(0, 10).map((r, i) => (r.url ? `${i + 1}.  ${r.title}  —  ${r.url}` : `${i + 1}.  ${r.title}`)),
     kind: "bullets",
-    size: 12,
+    size: 10.5,
   });
   return { background: { color: d.paper }, items };
 }
@@ -789,16 +1042,23 @@ export function composeSlide(design: DeckDesign, slide: DeckSlide, ctx: Ctx): Sc
   switch (slide.layout) {
     case "cover":
       return composeCover(design, slide, ctx);
+    case "agenda":
+      return composeAgenda(design, slide, ctx);
     case "section":
       return composeSection(design, slide, ctx);
+    case "kpi":
+      return composeKpi(design, slide, ctx);
+    case "chart":
+      return composeChart(design, slide, ctx);
+    case "table":
+      return composeTable(design, slide, ctx);
     case "stat":
-      return composeStat(design, slide);
+      return composeStat(design, slide, ctx);
     case "quote":
-      return composeQuote(design, slide);
+      return composeQuote(design, slide, ctx);
     case "closing":
       return composeClosing(design, slide, ctx);
     case "two_column": {
-      // Two-column content is a body slide whose points are already split by the model.
       const merged = { ...slide, points: [...slide.points, ...slide.rightPoints] };
       return composeBody({ ...design, body: "two-col-rule" }, merged, ctx);
     }
