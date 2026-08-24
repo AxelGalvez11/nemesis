@@ -16,6 +16,7 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
+import { lookAt } from "@/lib/mascot/attention";
 import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
@@ -991,6 +992,22 @@ export function LearningCanvas({
     if (turnInFlight) setRewound(null);
   }, [turnInFlight]);
 
+  // 🔴 IT READS ITS OWN ANSWER (owner 2026-08-24: when it is "reading off the output", it
+  // should "look at the words that are on screen"). A fresh reply sends the eyes to the
+  // words for a beat — through the same attention channel a focused field uses — then the
+  // pointer gets them back. lookAt(null) on cleanup, so leaving the canvas mid-beat never
+  // strands the character staring at a spot where text used to be.
+  const replyRegionRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!replyText || !replyRegionRef.current) return;
+    lookAt(replyRegionRef.current);
+    const timer = window.setTimeout(() => lookAt(null), 2600);
+    return () => {
+      window.clearTimeout(timer);
+      lookAt(null);
+    };
+  }, [replyText]);
+
   // 🔴🔴🔴 AND IT SITS BELOW EVERY HOOK, WHICH IS NOT A STYLE CHOICE. React identifies hooks
   // by call order, and this gate used to stand in the middle of the component with
   // `useCanvasVoice`, the history rail's state and three more hooks underneath it — so the
@@ -1413,7 +1430,7 @@ export function LearningCanvas({
             between this and the policy's screen (which of them yields, and to which), and reading
             the raw state here would be a second opinion free to disagree with the first. */}
         {regions.reply && session.aside && (
-          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8" ref={replyRegionRef}>
             {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
                 and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
                 ASIDES: something attached to the document, subordinate to it, quoted off to one

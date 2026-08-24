@@ -1,25 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { EYE_H, EYE_W } from "@/lib/bloub/face";
+import { EYE_H } from "@/lib/bloub/face";
 
 import { browFrame, raisedBrow, WAGGLE_TIME } from "./brow";
-import { annulusPath, LENS_RING, LENS_RX, LENS_RY, SMIRK } from "./face";
+import { annulusPath, arrival, FACE_IN, SMIRK, SPECS } from "./face";
 
 // The face layer is geometry in body-radius units, drawn as holes in the body's own mask.
 // These tests pin the proportions that make each feature read as WHAT IT IS at the 52px the
 // dock actually renders — the difference between "glasses" and "outlined eyes" is numbers.
-
-test("a lens clears its eye on both axes, and two lenses stay apart", () => {
-  // The eye capsule is EYE_W×EYE_H, tall and narrow, and the pair sits ~0.46 body-radii
-  // apart. If the ring's inner edge touches the eye, the lens reads as an outline OF the eye;
-  // if two outer edges meet, the pair reads as one white mass — the vendored "big eyes" the
-  // owner removed by name. Both failures were seen on the preview board before these numbers.
-  assert.ok(LENS_RX - LENS_RING > EYE_W / 2 + 0.03, "the ring hugs the eye's sides");
-  assert.ok(LENS_RY - LENS_RING > EYE_H / 2 + 0.03, "the ring hugs the eye's top");
-  assert.ok(LENS_RX * 2 < 0.46, `two lenses ${LENS_RX * 2} wide merge across a 0.46 gap`);
-  assert.ok(LENS_RING < EYE_W, "the ring reads as a frame, not a second body");
-});
 
 test("an annulus is one even-odd path with exactly two rings", () => {
   const d = annulusPath(10, 14, 3);
@@ -47,4 +36,48 @@ test("the waggle closes its own window — nothing to un-draw when the gesture e
   assert.equal(browFrame(-0.01), null);
   assert.equal(browFrame(WAGGLE_TIME + 0.01), null);
   assert.equal(browFrame(Number.NaN), null);
+});
+
+test("a face arrives smoothly and is simply there on stills", () => {
+  assert.equal(arrival(null), 1, "a still has no clock and wears the finished face");
+  assert.equal(arrival(0), 0);
+  assert.equal(arrival(FACE_IN), 1);
+  assert.ok(arrival(FACE_IN / 2) > 0.5, "ease-OUT: most of the arrival happens early");
+  assert.ok(arrival(FACE_IN / 4) < arrival(FACE_IN / 2), "monotonic on the way in");
+});
+
+test("the sigma brow lifts from rest height to the waggle's peak", async () => {
+  const { raisedBrow } = await import("./brow");
+  assert.ok(raisedBrow(0).dy > raisedBrow(1).dy, "no lift should sit LOWER (less negative) than full lift");
+  assert.ok(Math.abs(raisedBrow(0.5).dy - (raisedBrow(0).dy + raisedBrow(1).dy) / 2) < 1e-9, "the lift is linear in between");
+});
+
+
+
+
+test("arrival keeps its face-sized default and scales to any span", () => {
+  assert.equal(arrival(FACE_IN), 1, "the default span is still the face's");
+  assert.equal(arrival(0.3, 0.3), 1);
+  assert.ok(arrival(0.15, 0.3) > 0.5, "ease-out holds for a custom span too");
+});
+
+
+
+
+test("the spectacles are worn on the face, not drawn around the eyes", () => {
+  // A ring that CONTAINS the eye reads as an outlined eye — the vendored "big eyes" ghost,
+  // and the owner's "a bit weird" twice over. Worn means: round, smaller than the eye is
+  // tall, sitting low so the frame crosses the eye and the eye shows over the rim.
+  assert.ok(SPECS.r * 2 < EYE_H, "a lens tall enough to swallow the eye outlines it instead");
+  assert.ok(SPECS.dy > 0, "perched low on the face, never lifted to ring the eye");
+  assert.ok(SPECS.dy - SPECS.r < -EYE_H / 2 + EYE_H * 0.25, "the frame must actually cross the eye");
+  assert.ok(SPECS.r * 2 > 0.46 / 2, "two dots read as blush, not glasses");
+});
+
+test("the frame is one object: the bridge reaches both rims and the wire is one weight", () => {
+  const gap = 0.46 - 2 * SPECS.r;
+  assert.ok(SPECS.bridge.w > gap, "the bridge floats between the rims");
+  assert.ok(SPECS.arm.len >= 0.1, "a stub temple reads as a smudge, not a frame");
+  assert.ok(SPECS.ring < SPECS.r / 2, "the ring is a frame, not a filled coin");
+  assert.ok(SPECS.stroke > 0.02, "without an ink edge the frame vanishes where it crosses the eye");
 });

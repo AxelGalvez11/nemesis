@@ -391,7 +391,7 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
   assert.match(dock, /\{marker && \(/, "the marker is accepted and never drawn");
   // 🔴 OUTSIDE THE ENGINE. lib/bloub is vendored whole and not edited, and its loop writes SVG
   // attributes every frame — a glyph pushed through it would be a fourth thing to keep in sync.
-  assert.match(dock, /bloub-marker/, "the marker is not a sibling of the character");
+  assert.match(dock, /className="bloub-mark /, "the mark is not a sibling of the character");
 
   // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
   // the question is already rendered in full, in words, in the middle of the page.
@@ -420,7 +420,8 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
   // so the one thing sitting ON the character was the one thing that did not belong to it.
   // `inkFor` is what `BloubBot` paints its body with, so the badge cannot drift from the body it
   // sits on — not across themes, and not across the accents a learner can choose.
-  assert.match(dock, /backgroundColor: inkFor\(accent, theme\)/, "the mark is painted in page grey again");
+  assert.match(dock, /color: inkFor\(accent, theme\)/, "the mark no longer carries the character's own ink");
+  assert.ok(!/backgroundColor: inkFor/.test(dock), "the coin is back behind the mark");
   // 🔴 AND IT DOES NOT GROW WITH THE DOCK. The character scales to `centreScale` coming forward;
   // a badge that scaled with it became a page-sized glyph over the middle of an empty screen.
   assert.match(dock, /travel\.k/, "the badge is no longer counter-scaled");
@@ -466,4 +467,37 @@ test("🔴🔴🔴 every hook runs before the not-ready gate, so a loading canva
     lastHook.index! < gate,
     `a hook call (${lastHook[0]}…) sits below the not-ready gate again`,
   );
+});
+
+test("🔴 the mark is an animation, not a sticker", () => {
+  // Owner 2026-08-24: "I need an animation for it… not like a thing that stays on there."
+  // It POPS in (spring overshoot) and BOBS while the state holds; reduced motion stills it.
+  //
+  // Calibration: drop either keyframe block, or the class off the span, and this reddens.
+  const cssRaw = readFileSync(new URL("../../bloub/bloub.css", import.meta.url), "utf8");
+  const dockRaw = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.ok(cssRaw.includes("@keyframes bloub-mark-in"), "the pop-in is gone");
+  assert.ok(cssRaw.includes("@keyframes bloub-mark-bob"), "the bob is gone");
+  assert.match(dockRaw, /className="bloub-mark /, "the span no longer wears the animation class");
+});
+
+test("🔴 a fresh reply sends the eyes to the words, and lets them go again", () => {
+  // Owner 2026-08-24: when it is reading off the output, "look at the words that are on
+  // screen". The release matters as much as the look: without lookAt(null) the character
+  // would stare at where text used to be for the rest of the session.
+  const lc = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  assert.match(lc, /lookAt\(replyRegionRef\.current\)/, "the reply no longer draws the eyes");
+  assert.match(lc, /lookAt\(null\)/, "the eyes are never released");
+  assert.match(lc, /ref=\{replyRegionRef\}/, "the reply region lost its ref");
+});
+
+test("working is never just standing: the middle station sways, and reduced motion stands still", () => {
+  // Owner 2026-08-25: "when it's thinking… not just staring — have some movements as well."
+  // The sway is a state, not an event: it lives on the hop wrapper only while the station is
+  // the centre, and prefers-reduced-motion removes it along with the other gestures.
+  const css = readFileSync(new URL("../../bloub/bloub.css", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.ok(css.includes("@keyframes bloub-ponder"), "the sway is named but never defined");
+  assert.match(css, /\.bloub-ponder,\s*\n\s*\.bloub-jump/, "reduced motion no longer switches the sway off");
+  assert.match(dock, /station === "centre" \? "bloub-ponder"/, "the sway is not gated on holding the middle");
 });
