@@ -352,32 +352,18 @@ export function SourcesControl({
                   );
                 })
               )}
-              {onMakeDeliverable && (
-                <div className="mt-1 border-t border-(--ui-stroke-tertiary) pt-1">
-                  {(
-                    [
-                      { kind: "flashcards", icon: "layers", idle: "Make flashcards", busy: "Making flashcards…" },
-                      { kind: "note", icon: "note", idle: "Make a summary note", busy: "Writing the note…" },
-                      { kind: "slides", icon: "preview", idle: "Make slides", busy: "Building your slides…" },
-                    ] as const
-                  ).map((action) => (
-                    <button
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary) disabled:cursor-default disabled:opacity-60"
-                      disabled={making !== null}
-                      key={action.kind}
-                      onClick={() => onMakeDeliverable(action.kind)}
-                      type="button"
-                    >
-                      <Codicon
-                        className={making === action.kind ? "animate-spin" : undefined}
-                        name={making === action.kind ? "loading" : action.icon}
-                        size="0.75rem"
-                      />
-                      {making === action.kind ? action.busy : action.idle}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* 🔴🔴 THE THREE "MAKE …" ROWS ARE GONE — owner, 2026-08-24: "remove the make flash
+                  cards, make slide, make summary note from the output section." This panel LISTS
+                  what a canvas has produced; it is not where you produce it. Asking in words is now
+                  the way — "make me flashcards from this" works from any conversation since the
+                  deliverables stopped requiring lesson blocks — and that is also exactly what §38
+                  already required of every other learning request: *"a phrase to the composer, not
+                  a control."* Three buttons that steered the machine were the last survivors of the
+                  older shape.
+
+                  🔴 `makeDeliverable` ITSELF IS UNTOUCHED and still reached from the composer, so
+                  this deletes a door and not a feature. `outputs-have-no-make-buttons.test.ts`
+                  holds the absence. */}
             </>
           )}
         </div>

@@ -846,8 +846,24 @@ export function LearningCanvas({
   //
   // 🔴 `policy.decision` AND `policy.feedback`, NOT JUST THE QUESTION. A correction and a verdict
   // occupy the surface exactly as a prompt does, and must not sit beside a recall card either.
+  //
+  // 🔴🔴 AND NOT ON A CANVAS THAT HAS NOTHING TO SHOW BESIDE IT — owner, 2026-08-24: *"going back
+  // to previous canvases causes a glitch where it just flips, it doesn't even show anything, and it
+  // just asks questions."* Reproduced: a canvas the retired teaching lane had put into `learn`
+  // reopens, the policy resumes, and it stages a question over a surface with no blocks and no live
+  // reply — so the learner is ambushed by a question about a lesson they cannot see. This file
+  // already documents that exact shape one state over ("a question float at the top of an empty
+  // surface"); the door §24 opened is what let it reach `learn` too.
+  //
+  // A course keeps its right to ask: `coursePlan` means there is a plan behind the question even
+  // when this canvas holds no blocks yet. Everything else waits for the learner to say something,
+  // which is what a conversation does anyway.
+  const policyHasSomethingBehindIt =
+    canvas.blocks.length > 0 || session.coursePlan !== null;
   const policyPresenting =
-    policy.status === "ready" && (policy.feedback !== null || policy.decision !== null);
+    policy.status === "ready" &&
+    policyHasSomethingBehindIt &&
+    (policy.feedback !== null || policy.decision !== null);
 
   /**
    * Nemesis has answered something the learner asked, and that answer is live.

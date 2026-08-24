@@ -23,11 +23,25 @@ const EXTRAS = strip(readFileSync(new URL("../study/study-extras.tsx", import.me
 const GUARD = readFileSync(new URL("../retired-surface-guard.tsx", import.meta.url), "utf8");
 const STUDY_PAGE = readFileSync(new URL("../../../app/(workspace)/study/page.tsx", import.meta.url), "utf8");
 
-test("🔴🔴 the Library offers the last two reasons anyone visited Study", () => {
-  assert.match(OUTPUTS, /Import from Anki/, "importing an Anki deck still needs the retired surface");
-  assert.match(OUTPUTS, /Progress/, "progress still needs the retired surface");
-  assert.match(OUTPUTS, /\{importing && \(/, "the importer is not mounted");
-  assert.match(OUTPUTS, /\{showingProgress && <LibraryProgress /, "progress is not mounted");
+test("🔴🔴 the Library is the learner's shelves, and not a home for retired features", () => {
+  // 🔴🔴 REVERSED BY THE OWNER, 2026-08-24, AND THE OLD ASSERTION IS DESCRIBED HERE SO THE REVERSAL
+  // IS LEGIBLE. This used to REQUIRE an "Import from Anki" and a "Progress" button, because
+  // workstream F had to put the retired Study tab's two survivors somewhere and the Library was the
+  // only door left. The owner's verdict on meeting them: *"the library page has an import from Anki
+  // button that I don't want. The library also has a progress button that I did not ask for. I
+  // mainly just want buttons for slides, flash cards, and documents."*
+  //
+  // The lesson is about WHERE a retired feature goes. "It has to live somewhere" put two controls
+  // at the top of the one page a learner opens to reach their own work, ahead of the shelves that
+  // page exists for. Neither component was deleted — `study-extras.tsx` still exports both, and the
+  // test below still holds them unmodified — the Library simply stopped offering them.
+  assert.ok(!/Import from Anki/.test(OUTPUTS), "the Anki import button is back on the Library");
+  assert.ok(!/<LibraryProgress/.test(OUTPUTS), "the Progress panel is back on the Library");
+  assert.ok(!/<LibraryAnkiImport/.test(OUTPUTS), "the Anki importer is mounted on the Library again");
+  // What the page IS for, asserted positively: the three shelves the owner named.
+  assert.match(OUTPUTS, /Flashcard decks/, "the flashcards shelf is gone");
+  assert.match(OUTPUTS, /Slides/, "the slides shelf is gone");
+  assert.match(OUTPUTS, /Notes/, "the documents shelf is gone");
 });
 
 test("🔴🔴 they mount the Study tab's own screens, unmodified", () => {
@@ -46,9 +60,13 @@ test("🔴 neither is mounted until it is pressed", () => {
   assert.match(OUTPUTS, /\{reviewing && <DeckReview /, "the review mount stopped being conditional");
 });
 
-test("🔴 an import that added decks shows them without a manual reload", () => {
-  assert.match(OUTPUTS, /setRefreshKey\(\(was\) => was \+ 1\)/, "finishing an import leaves the shelves stale");
-  assert.match(OUTPUTS, /\}, \[refreshKey, userId\]\);/, "the refresh counter is not wired to the loader");
+test("🔴 the shelves load on the account and nothing else", () => {
+  // The refresh counter existed for ONE caller: a bulk Anki import that had just added forty decks
+  // and needed the shelves re-read without a manual reload. That caller is gone (above), so the
+  // counter went with it rather than sitting there as an unused setter — a door left standing after
+  // its room was demolished. One effect, keyed on the account.
+  assert.ok(!/setRefreshKey/.test(OUTPUTS), "a refresh counter came back with no caller to bump it");
+  assert.match(OUTPUTS, /\}, \[userId\]\);/, "the shelves' loader is no longer keyed on the account");
 });
 
 test("🔴🔴 Study stays retired, and Library stays NOT retired", () => {

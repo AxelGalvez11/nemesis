@@ -127,17 +127,25 @@ export function CanvasHeader({
               was deleted, and voice especially could not be, because that button was the only way
               into voice mode. */}
           <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} />
-          <MinimapControl
-            coverage={minimap.coverage}
-            decidedObjectiveKey={minimap.decidedObjectiveKey}
-            evidence={minimap.evidence}
-            focus={minimap.focus}
-            outcome={minimap.outcome}
-            plan={minimap.plan}
-            planTitle={minimap.planTitle}
-            setFocus={minimap.setFocus}
-            territories={minimap.territories}
-          />
+          {/* 🔴🔴 THE MAP APPEARS ONLY WHERE THERE IS SOMETHING TO MAP — owner, 2026-08-24: "the map
+              icon should only appear if there is a course active." On an ordinary conversation there
+              is no plan, no territory worth narrowing and nothing to recommend from, so the panel
+              opened onto its own empty state: a control whose only message is that it has nothing to
+              say. `planTitle` is the honest test — it is set when a course plan has actually been
+              applied to this canvas and null on every other one. */}
+          {minimap.planTitle !== null && (
+            <MinimapControl
+              coverage={minimap.coverage}
+              decidedObjectiveKey={minimap.decidedObjectiveKey}
+              evidence={minimap.evidence}
+              focus={minimap.focus}
+              outcome={minimap.outcome}
+              plan={minimap.plan}
+              planTitle={minimap.planTitle}
+              setFocus={minimap.setFocus}
+              territories={minimap.territories}
+            />
+          )}
           <OptionsControl
             activeTaskId={activeTaskId}
             canvas={canvas}
