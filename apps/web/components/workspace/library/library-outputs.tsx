@@ -27,6 +27,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
+  ChevronLeft,
   FolderPlus,
   Folder as FolderIcon,
   GraduationCap,
@@ -249,12 +250,38 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
     if (kind === "slides") setSlides((was) => was.map((row) => (row.assetId === id ? { ...row, folderId } : row)));
   }, []);
 
-  const addFolder = useCallback(async () => {
-    const name = window.prompt("Name this folder")?.trim();
-    if (!name) return;
-    const made = await createFolder(userId, name);
-    if (made) setFolders((was) => [...was, made].sort((a, b) => a.name.localeCompare(b.name)));
-  }, [userId]);
+  /**
+   * Naming a new folder, inline in the folder bar.
+   *
+   * 🔴 AN INPUT IN THE BAR, NOT `window.prompt`. The first version of this used the browser's
+   * prompt, which is unstyled, modal to the whole tab, suppressible by the browser, and unlike
+   * every other input in this app. The sidebar already names a new folder inline; this is the same
+   * gesture in the row the folder is about to appear in. `naming` is the draft text, or null when
+   * nothing is being named.
+   */
+  const [naming, setNaming] = useState<string | null>(null);
+
+  /**
+   * 🔴🔴 THE NAME IS AN ARGUMENT, NOT READ FROM STATE, AND THAT IS THE WHOLE CORRECTNESS ARGUMENT.
+   * Committing happens on Enter AND on blur, and Escape has to cancel a blur it causes itself. A
+   * version that read `naming` from the closure could not: `setNaming` does not update the already-
+   * mounted blur handler, so cancelling with a name typed created the folder anyway on the way out.
+   * Taking the value from the event means every caller passes what the input holds AT THAT MOMENT,
+   * and Escape simply empties the input first — an empty name is already a no-op here.
+   */
+  const addFolder = useCallback(
+    async (raw: string) => {
+      const name = raw.trim();
+      setNaming(null);
+      if (!name) return;
+      const made = await createFolder(userId, name);
+      // 🔴 A REFUSED CREATE LEAVES THE LIST ALONE. `createFolder` returns null when the database
+      // refuses — the two-level depth trigger raises rather than nesting deeper — and pushing a
+      // folder that does not exist would give the learner somewhere to file things that vanishes.
+      if (made) setFolders((was) => [...was, made].sort((a, b) => a.name.localeCompare(b.name)));
+    },
+    [userId],
+  );
 
   // 🔴 ONE PREDICATE, APPLIED TO ALL THREE SHELVES. Writing the folder test into each list is how
   // the three quietly come to disagree about what "unfiled" means.
@@ -308,10 +335,10 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-10">
       <header className="pb-8">
+        {/* 🔴 NO SUBTITLE — owner, 2026-08-24: *"remove the description under the library heading."*
+            The shelves say what the page holds, and a sentence explaining a page the learner has
+            already opened is the kind of chrome §41 refuses. It also went stale twice in one day. */}
         <h1 className="text-xl font-semibold text-(--ui-text-primary)">Library</h1>
-        <p className="mt-1 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
-          What Nemesis has made for you: decks to review, notes to keep.
-        </p>
         {/* 🔴🔴 BOTH DOORS REMOVED — owner, 2026-08-24: "the library page has an import from Anki
             button that I don't want. The library also has a progress button that I did not ask for.
             I mainly just want buttons for slides, flash cards, and documents." They arrived here
@@ -324,70 +351,126 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
             slides, flashcards and documents can only mean one thing: a way to look at one kind at
             a time. A button that MADE one would be the outputs panel again, which they had just
             asked to have removed. */}
-        <div className="mt-5 flex flex-wrap items-center gap-1.5">
-          {SHELVES.map((option) => (
+        {/* 🔴🔴 ONE ROW OF PILLS, AND THE SECOND ROW IS GONE — the owner's catch: *"why is there an
+            everything button if we already have the all button"*. Exactly right: a kind filter whose
+            selected state reads "All", stacked above a folder filter whose selected state reads
+            "Everything", is two controls saying the same English word. The reference they pointed at
+            (ChatGPT's library) has no second row at all — one row of kind pills, and folders are
+            ROWS IN THE LIST you open. So folders moved into the list, and "Everything" stopped
+            needing to exist: being in no folder is simply the top of the list.
+
+            🔴 IT ALSO MAKES THE COUNT HONEST. A chip reading "Fall 2026 · 3" was counted across all
+            three kinds while these pills might be showing only one of them. A folder you OPEN just
+            shows what is in it. */}
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {SHELVES.map((option) => (
+              <button
+                aria-pressed={shelf === option.id}
+                className={cn(
+                  "rounded-full px-3 py-1.5 text-[length:var(--canvas-text-small)] transition-colors",
+                  shelf === option.id
+                    ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary)"
+                    : "bg-transparent text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
+                )}
+                key={option.id}
+                onClick={() => setShelf(option.id)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {/* 🔴 ONLY AT THE TOP LEVEL. Folders nest two deep in the database and the sidebar already
+              spends that second level; offering "New folder" from inside one would either make a
+              third level the trigger refuses, or quietly make a sibling, and neither is what the
+              button says. */}
+          {openFolder === null && naming === null && (
             <button
-              aria-pressed={shelf === option.id}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-[length:var(--canvas-text-small)] transition-colors",
-                shelf === option.id
-                  ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary) ring-1 ring-(--ui-stroke-secondary)"
-                  : "bg-transparent text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
-              )}
-              key={option.id}
-              onClick={() => setShelf(option.id)}
+              className="flex shrink-0 items-center gap-1.5 rounded-full bg-transparent px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+              onClick={() => setNaming("")}
               type="button"
             >
-              {option.label}
+              <FolderPlus size={13} strokeWidth={1.8} />
+              New folder
             </button>
-          ))}
+          )}
         </div>
 
-        {/* 🔴 FOLDERS ARE A SCOPE, NOT A SECOND PAGE. Opening one narrows the shelves already on
-            screen; "All" puts them back. Nothing navigates, so a learner cannot get lost inside a
-            folder and have to find their way out. */}
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <button
-            aria-pressed={openFolder === null}
-            className={cn(
-              "rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] transition-colors",
-              openFolder === null
-                ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary)"
-                : "bg-transparent text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background)",
-            )}
-            onClick={() => setOpenFolder(null)}
-            type="button"
-          >
-            Everything
-          </button>
-          {folders.map((folder) => (
-            <button
-              aria-pressed={openFolder === folder.id}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] transition-colors",
-                openFolder === folder.id
-                  ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary)"
-                  : "bg-transparent text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background)",
-              )}
-              key={folder.id}
-              onClick={() => setOpenFolder(folder.id)}
-              type="button"
-            >
-              <FolderIcon size={13} strokeWidth={1.8} />
-              {folder.name}
-              <span className="text-(--ui-text-quaternary)">{folderCounts.get(folder.id) ?? 0}</span>
-            </button>
-          ))}
-          <button
-            className="flex items-center gap-1.5 rounded-full bg-transparent px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
-            onClick={() => void addFolder()}
-            type="button"
-          >
-            <FolderPlus size={13} strokeWidth={1.8} />
-            New folder
-          </button>
-        </div>
+        {/* 🔴🔴 THERE IS NO SECOND ROW OF PILLS, AND REMOVING IT WAS THE OWNER'S CATCH: *"why is
+            there an everything button if we already have the all button"*. Exactly right — a kind
+            filter reading "All" above a folder filter reading "Everything" is two controls whose
+            selected state is the same English word, stacked. The reference they pointed at
+            (ChatGPT's library) does not have the second row at all: it has ONE row of kind pills,
+            and folders are ROWS IN THE LIST you open. So folders moved into the list below, and
+            "Everything" stopped needing to exist — being in no folder is just the top of the list.
+
+            🔴 WHICH ALSO MAKES THE COUNT HONEST. A chip saying "Fall 2026 · 3" had to be computed
+            across all three shelves while the pills above might be showing only one of them; a
+            folder you OPEN just shows what is in it. */}
       </header>
+
+      {/* 🔴 FOLDERS ARE ROWS, ABOVE THE SHELVES, THE WAY THE REFERENCE DOES IT. They are not
+          filtered by the kind pills: a folder holds decks, slides and notes at once, so hiding it
+          because the learner is looking at slides would hide the slides inside it too. */}
+      {openFolder === null && (folders.length > 0 || naming !== null) && (
+        <section className="pb-6">
+          <ul className="flex flex-col gap-0.5">
+            {folders.map((folder) => (
+              <li key={folder.id}>
+                <button className={cn(ROW, "w-full")} onClick={() => setOpenFolder(folder.id)} type="button">
+                  <FolderIcon className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
+                    {folder.name}
+                  </span>
+                  <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                    {folderCounts.get(folder.id) ?? 0} item{(folderCounts.get(folder.id) ?? 0) === 1 ? "" : "s"}
+                  </span>
+                </button>
+              </li>
+            ))}
+            {naming !== null && (
+              <li className={cn(ROW, "gap-3")}>
+                <FolderIcon className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
+                <input
+                  aria-label="Name the new folder"
+                  autoFocus
+                  className="min-w-0 flex-1 bg-transparent text-[length:var(--canvas-text-small)] text-(--ui-text-primary) outline-none"
+                  maxLength={120}
+                  // Enter commits, clicking away commits, Escape abandons.
+                  onBlur={(event) => void addFolder(event.currentTarget.value)}
+                  onChange={(event) => setNaming(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void addFolder(event.currentTarget.value);
+                    if (event.key === "Escape") {
+                      // 🔴 EMPTY THE INPUT ITSELF, NOT THE STATE. Whatever blur follows this reads
+                      // the DOM node's value, so clearing it here is what makes cancelling actually
+                      // cancel, with no assumption about when React next renders.
+                      event.currentTarget.value = "";
+                      setNaming(null);
+                    }
+                  }}
+                  placeholder="Folder name"
+                  value={naming}
+                />
+              </li>
+            )}
+          </ul>
+        </section>
+      )}
+
+      {/* 🔴 THE WAY BACK OUT, AND THE ONLY THING THAT SAYS WHERE YOU ARE. Without it a folder with
+          two decks in it is indistinguishable from an account with two decks in it. */}
+      {openFolder !== null && (
+        <button
+          className="mb-4 flex items-center gap-2 rounded-xl bg-transparent px-3 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background)"
+          onClick={() => setOpenFolder(null)}
+          type="button"
+        >
+          <ChevronLeft size={15} strokeWidth={1.8} />
+          {folders.find((folder) => folder.id === openFolder)?.name ?? "Library"}
+        </button>
+      )}
 
       {/* 🔴 A SHELF THE FILTER HAS HIDDEN IS NOT RENDERED AT ALL, heading included. Keeping the
           heading over an empty list would make a filtered-out shelf look like an emptied one. */}

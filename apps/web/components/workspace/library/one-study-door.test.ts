@@ -64,6 +64,26 @@ test("🔴🔴 the filter offers exactly the three kinds the owner named, plus A
   assert.match(OUTPUTS, /useState<Shelf>\("all"\)/, "the Library no longer opens showing everything");
 });
 
+test("🔴🔴 there is exactly ONE control meaning 'show me everything'", () => {
+  // 🔴 THE OWNER'S CATCH, 2026-08-24: *"why is there an everything button if we already have the
+  // all button"*. The first version had two rows of pills — kinds above, folders below — whose
+  // selected states read "All" and "Everything". Two controls, same English word, stacked.
+  //
+  // The reference they pointed at (ChatGPT's library) has no second row: one row of kind pills, and
+  // folders are ROWS IN THE LIST you open. So folders moved into the list and "Everything" stopped
+  // needing to exist — being in no folder IS the top of the list.
+  assert.ok(!/>\s*Everything\s*</.test(OUTPUTS), "the second 'show me everything' control is back");
+  // …and the folders it replaced are really rows now, with a way back out of one.
+  assert.match(OUTPUTS, /setOpenFolder\(folder\.id\)/, "a folder can no longer be opened");
+  assert.match(OUTPUTS, /openFolder !== null && \(/, "there is no way back out of an open folder");
+});
+
+test("🔴 the page does not explain itself under its own heading", () => {
+  // Owner, same message: *"remove the description under the library heading."* It had also gone
+  // stale twice in one day, which is the usual fate of a sentence describing a page's contents.
+  assert.ok(!/What Nemesis has made for you/.test(OUTPUTS), "the subtitle is back under the heading");
+});
+
 test("🔴🔴 a hidden shelf is not rendered, heading and all", () => {
   // A heading left standing over a list the filter emptied says "you have no decks", which is a
   // different and false claim. Calibration: drop the `showing(...)` wrappers and this reddens.
