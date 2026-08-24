@@ -105,15 +105,20 @@ test("🔴 the canvas picks the mechanism for a study turn, not the model", () =
   // 🔴 THE ANCHOR ITSELF IS ASSERTED. If `converse`'s dependency array ever changes shape, the
   // slice below silently becomes nearly the whole file and every assertion after it passes by
   // matching unrelated text — a guard that cannot fail. Fail loudly on the anchor instead.
-  assert.notEqual(converse.indexOf("\n    [begin, command"), -1, "converse's dep-array anchor moved — update this test deliberately");
-  const body = converse.slice(0, converse.indexOf("\n    [begin, command"));
-  assert.match(body, /decision\.then === "study"/);
-  assert.match(body, /isPreContent\(latest\.current\.state\)/, "the begin/command choice is not read off canvas state");
-  // 🔴 THE MODEL'S SUBJECT OR NOTHING, NEVER THE RAW SENTENCE. Falling back to `said` titled the
-  // canvas with the learner's whole utterance ("teach me innate immunity") and then web-searched
-  // that phrase — which is what `groundingQuery`'s five layers of prefix-stripping existed to undo.
-  assert.match(body, /begin\(decision\.topic \?\? undefined\)/);
-  assert.ok(!/begin\(decision\.topic \?\? said\)/.test(body), "the raw utterance is a canvas title again");
+  //
+  // 🔴🔴 THE ANCHOR MOVED ON 2026-08-24, DELIBERATELY, AND THIS IS THE UPDATE IT ASKED FOR. `begin`
+  // left the dependency list when the topic branch left the body. A named subject may no longer
+  // start the laid-out lesson: doing so seized the screen, swapped the composer for an answer box
+  // and began asking template-generated recall questions, which the owner watched happen and asked
+  // to have removed. `begin` still exists and still runs — from `learnFromAside`, where the learner
+  // asks for the lesson on purpose.
+  assert.notEqual(converse.indexOf("\n    [command, requireUid]"), -1, "converse's dep-array anchor moved — update this test deliberately");
+  const body = converse.slice(0, converse.indexOf("\n    [command, requireUid]"));
+  // 🔴 THE GUARD IS THE FEATURE. "study" is honoured only when there is material to work on; on an
+  // un-begun canvas the turn falls through and is answered as a conversation instead — so a model
+  // that says "study" anyway gets a conversation rather than a takeover.
+  assert.match(body, /decision\.then === "study" && !isPreContent\(latest\.current\.state\)/);
+  assert.ok(!/begin\(/.test(body), "a conversation can start the laid-out lesson again — the rigid lane is back");
   assert.match(body, /await command\(said, staged \? \[staged\] : \[\]\)/);
 });
 

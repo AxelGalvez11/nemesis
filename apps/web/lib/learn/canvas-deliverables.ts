@@ -44,29 +44,58 @@ export interface DeliverableFailure {
  *  transcript of a long session. */
 const BRIEF_LIMIT = 7000;
 
-/** Everything the canvas knows, flattened for a prompt: the title, what it set out to teach,
- *  and the taught blocks in order. */
+/**
+ * Everything the canvas knows, flattened for a prompt: the title, what it set out to teach, the
+ * taught blocks in order, and — since 2026-08-24 — WHAT WAS ACTUALLY SAID.
+ *
+ * 🔴🔴 THE CONVERSATION IS MATERIAL, AND LEAVING IT OUT MADE THESE THREE UNREACHABLE. This read
+ * `canvas.blocks` alone, which was right while every lesson arrived as blocks. Once teaching moved
+ * into the conversation, a canvas that had just taught a full lesson on female anatomy from 31
+ * sources still held `blocks: 0` — so `canvasHasMaterial` was false and asking for flashcards
+ * answered "There's nothing on the canvas to make cards from yet." The owner hit exactly that and
+ * ruled on it: flashcards and slide decks "are just general things that a general chat AI should be
+ * able to do… it should use the uploaded documents as a reference, but not ONLY create them from
+ * the uploaded document."
+ *
+ * 🔴 BLOCKS FIRST, THEN THE TALK. A laid-out lesson is the more considered text when one exists, so
+ * it leads; the conversation follows and fills the rest of the budget. Whichever is present, the
+ * deliverable is built from what the learner actually saw.
+ */
 export function canvasBrief(canvas: LearningCanvas): string {
   const concepts = canvas.concepts.map((concept) => concept.label).filter(Boolean);
   const blocks = canvas.blocks
     .filter((block) => !block.collapsed)
     .map((block) => block.content)
     .filter(Boolean);
+  const said = canvas.moments
+    .map((moment) => {
+      const asked = (moment.userText ?? "").trim();
+      const answered = (moment.assistantText ?? "").trim();
+      return [asked ? `Q: ${asked}` : "", answered].filter(Boolean).join("\n");
+    })
+    .filter(Boolean);
   const brief = [
     `Topic: ${canvas.title || "(untitled)"}`,
     concepts.length ? `Concepts: ${concepts.join("; ")}` : "",
     "",
     blocks.join("\n\n"),
+    said.length ? `What was taught in conversation:\n${said.join("\n\n")}` : "",
   ]
     .filter(Boolean)
     .join("\n");
   return brief.slice(0, BRIEF_LIMIT);
 }
 
-/** A canvas with nothing taught yet has nothing to make a deliverable FROM, and a model call
- *  would return confident filler about the title alone. */
+/**
+ * Whether there is anything to make a deliverable FROM.
+ *
+ * 🔴 THE GATE STAYS, BECAUSE THE FAILURE IT PREVENTS IS REAL: a model asked for flashcards about a
+ * bare title returns confident filler. What changed is what counts as material — taught blocks OR
+ * something Nemesis actually said. An empty canvas still refuses, and still says so plainly.
+ */
 export function canvasHasMaterial(canvas: LearningCanvas): boolean {
-  return canvas.blocks.some((block) => block.content.trim().length > 0);
+  if (canvas.blocks.some((block) => block.content.trim().length > 0)) return true;
+  return canvas.moments.some((moment) => (moment.assistantText ?? "").trim().length > 0);
 }
 
 // ---------------------------------------------------------------- parsing
