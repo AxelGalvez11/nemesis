@@ -29,6 +29,7 @@ import { ChevronDown, GraduationCap, Layers, MonitorPlay, NotebookText } from "l
 
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { DeckReview } from "@/components/workspace/study/deck-review";
+import { LibraryAnkiImport, LibraryProgress } from "@/components/workspace/study/study-extras";
 import { loadCanvas } from "@/lib/learn/canvas-store";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -59,6 +60,9 @@ interface SlidesRow {
   createdAt: string;
 }
 
+const HEADER_ACTION =
+  "rounded-lg border border-(--ui-stroke-tertiary) bg-transparent px-2.5 py-1 text-[length:var(--canvas-text-meta)] " +
+  "text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-primary)";
 const SECTION_TITLE = "px-1 pb-2 text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-secondary)";
 const ROW =
   "flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:bg-(--ui-control-hover-background)";
@@ -82,6 +86,15 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   // text) because mounting DeckReview is what triggers the whole-account study load —
   // see its header. Null means nothing is mounted and nothing has been fetched.
   const [reviewing, setReviewing] = useState<string | null>(null);
+  // 🔴 THE LAST TWO REASONS TO VISIT THE RETIRED STUDY TAB (workstream F). Both mount the Study
+  // tab's own screens unchanged — see `study-extras.tsx` — and both stay unmounted until pressed,
+  // because each reaches `useCloudStudy()` and that loads the whole account.
+  const [importing, setImporting] = useState(false);
+  const [showingProgress, setShowingProgress] = useState(false);
+  // 🔴 A COUNTER, NOT AN EXTRACTED LOADER. The shelves load inside one effect keyed on `userId`;
+  // bumping this re-runs exactly that effect, so an Anki import that just added forty decks shows
+  // them without a manual reload and without a second copy of the three queries to keep in step.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!userId) {
@@ -158,7 +171,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
     return () => {
       alive = false;
     };
-  }, [userId]);
+  }, [refreshKey, userId]);
 
   const toggleDeck = useCallback(
     async (id: string) => {
@@ -192,6 +205,17 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
         <p className="mt-1 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
           What Nemesis has made for you: decks to review, notes to keep.
         </p>
+        {/* 🔴 THE TWO DOORS THAT USED TO BE ON ANOTHER PAGE. Quiet, secondary, and to the side:
+            the shelves below are what this page is for, and a learner arriving to review should
+            not have to read past two buttons to reach their decks. */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className={cn(HEADER_ACTION)} onClick={() => setImporting(true)} type="button">
+            Import from Anki
+          </button>
+          <button className={cn(HEADER_ACTION)} onClick={() => setShowingProgress(true)} type="button">
+            Progress
+          </button>
+        </div>
       </header>
 
       <section className="pb-10">
@@ -332,6 +356,16 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           card and review on the account; keeping it unmounted until a learner presses a deck
           is what stops the Library paying that cost on arrival. */}
       {reviewing && <DeckReview deckId={reviewing} onClose={() => setReviewing(null)} />}
+      {importing && (
+        <LibraryAnkiImport
+          onClose={() => {
+            setImporting(false);
+            // A deck that arrived while the page was open must appear without a manual reload.
+            setRefreshKey((was) => was + 1);
+          }}
+        />
+      )}
+      {showingProgress && <LibraryProgress onClose={() => setShowingProgress(false)} />}
     </main>
   );
 }
