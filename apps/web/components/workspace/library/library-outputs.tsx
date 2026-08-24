@@ -8,9 +8,16 @@
 // files → canvases (§L, 2026-08-13) → OUTPUTS (this). The canvas manager it replaces is not
 // deleted — /dev-preview/library still renders it — but no shipped route mounts it now.
 //
-// 🔴 EVERY ROW OPENS THE REAL THING. A deck expands into its actual cards (the same
+// 🔴 EVERY ROW OPENS THE REAL THING. A deck starts an actual review (the same
 // study_decks/study_cards rows the grading RPC schedules); a note opens in the library's own
 // reader at /library/classic. Nothing here is a picture of an artifact.
+//
+// 🔴🔴 PRESSING A DECK REVIEWS IT. IT USED TO JUST UNROLL THE TEXT. Owner 2026-08-24, on
+// what a deck in here is for: "I kinda just want … the cards as an artifact that the user can
+// study". Reading a list of answers is the one thing a flashcard is designed to prevent, so
+// the list is demoted to a deliberate peek behind the chevron and the row itself opens
+// `DeckReview` — the Study tab's own screen, unchanged. Same for the `?deck=` deep link a
+// canvas sends: a canvas linking here means "go study this", not "go read this".
 //
 // 🔴 READS ONLY WHAT EXISTS. Decks come from study_decks, notes from
 // readable_library_documents — the two stores canvas-deliverables.ts writes. When slides and
@@ -18,9 +25,10 @@
 // forever-empty shelves and read as broken (the §38.3 lesson).
 
 import { useCallback, useEffect, useState } from "react";
-import { GraduationCap, Layers, MonitorPlay, NotebookText } from "lucide-react";
+import { ChevronDown, GraduationCap, Layers, MonitorPlay, NotebookText } from "lucide-react";
 
 import { DeckThemePicker, useDeckThemeChoice } from "@/components/workspace/deck/deck-theme-picker";
+import { DeckReview } from "@/components/workspace/study/deck-review";
 import { loadCanvas } from "@/lib/learn/canvas-store";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -70,6 +78,10 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   const [cards, setCards] = useState<Record<string, Card[]>>({});
   const [slides, setSlides] = useState<SlidesRow[]>([]);
   const [fetching, setFetching] = useState<string | null>(null);
+  // Which deck is being REVIEWED. Held apart from `openDeck` (which only peeks at the
+  // text) because mounting DeckReview is what triggers the whole-account study load —
+  // see its header. Null means nothing is mounted and nothing has been fetched.
+  const [reviewing, setReviewing] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) {
@@ -163,12 +175,13 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
     [cards, openDeck],
   );
 
-  // Deep link: /library?deck=<id> opens straight onto that deck — the canvas's Outputs tab
-  // links here. Read from the location rather than useSearchParams, which would demand a
-  // Suspense boundary for one string.
+  // Deep link: /library?deck=<id> starts reviewing that deck — the canvas's Outputs tab
+  // links here, and it links here to send the learner into the cards. Read from the
+  // location rather than useSearchParams, which would demand a Suspense boundary for one
+  // string.
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("deck");
-    if (id) void toggleDeck(id);
+    if (id) setReviewing(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once, on arrival.
   }, []);
 
@@ -193,15 +206,34 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           <ul className="flex flex-col gap-0.5">
             {decks.map((deck) => (
               <li key={deck.id}>
-                <button className={cn(ROW)} onClick={() => void toggleDeck(deck.id)} type="button">
-                  <Layers className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
-                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
-                    {deck.name}
-                  </span>
-                  <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                    {deck.cards} card{deck.cards === 1 ? "" : "s"} · {when(deck.createdAt)}
-                  </span>
-                </button>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    aria-label={`Review ${deck.name}`}
+                    className={cn(ROW, "min-w-0 flex-1")}
+                    onClick={() => setReviewing(deck.id)}
+                    type="button"
+                  >
+                    <Layers className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
+                    <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
+                      {deck.name}
+                    </span>
+                    <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                      {deck.cards} card{deck.cards === 1 ? "" : "s"} · {when(deck.createdAt)}
+                    </span>
+                  </button>
+                  {/* The peek. Deliberately secondary and deliberately still here: reading
+                      the answers is sometimes what you want (checking what Nemesis made
+                      before trusting it), it just must not be what pressing a deck does. */}
+                  <button
+                    aria-expanded={openDeck === deck.id}
+                    aria-label={openDeck === deck.id ? `Hide the cards in ${deck.name}` : `Show the cards in ${deck.name}`}
+                    className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+                    onClick={() => void toggleDeck(deck.id)}
+                    type="button"
+                  >
+                    <ChevronDown className={cn("transition-transform", openDeck === deck.id && "rotate-180")} size={15} strokeWidth={1.8} />
+                  </button>
+                </div>
                 {openDeck === deck.id && (
                   <div className="mb-2 ml-8 mr-2 max-h-80 overflow-y-auto rounded-xl border border-(--ui-stroke-tertiary)">
                     {(cards[deck.id] ?? []).map((card) => (
@@ -295,6 +327,11 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           kept here.
         </p>
       </footer>
+
+      {/* 🔴 CONDITIONAL, NEVER `open={…}`. Mounting DeckReview starts a load of every deck,
+          card and review on the account; keeping it unmounted until a learner presses a deck
+          is what stops the Library paying that cost on arrival. */}
+      {reviewing && <DeckReview deckId={reviewing} onClose={() => setReviewing(null)} />}
     </main>
   );
 }
