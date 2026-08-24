@@ -10,6 +10,7 @@ import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import {
+  allowedAssetUrl,
   commonsUrl,
   findReferenceImages,
   normaliseLicence,
@@ -98,6 +99,36 @@ test("🔴 the search asks for files, not articles", () => {
   assert.match(url, /gsrnamespace=6/);
   assert.match(url, /iiprop=url%7Cextmetadata/);
   assert.match(url, /gsrsearch=nephron/);
+  // And for a bounded rendition, so an <img> never receives a 40MB original.
+  assert.match(url, /iiurlwidth=1024/);
+});
+
+test("the bounded rendition is preferred over the original, which stays available as fallback", async () => {
+  const body = commonsResponse([{ Artist: { value: "A" }, LicenseShortName: { value: "CC BY 4.0" } }]);
+  const page = body.query.pages[0]!.imageinfo[0]! as Record<string, unknown>;
+  page.thumburl = "https://upload.wikimedia.org/thumb/example0-1024.png";
+  const found = await searchCommons({ concept: "nephron" }, answering(body));
+  assert.equal(at(found).assetPath, "https://upload.wikimedia.org/thumb/example0-1024.png");
+
+  const bare = await searchCommons(
+    { concept: "nephron" },
+    answering(commonsResponse([{ Artist: { value: "A" }, LicenseShortName: { value: "CC BY 4.0" } }])),
+  );
+  assert.equal(at(bare).assetPath, "https://upload.wikimedia.org/example0.png");
+});
+
+test("🔴 the asset host allow list admits the repository's file store and nothing else", () => {
+  assert.equal(allowedAssetUrl("https://upload.wikimedia.org/wikipedia/commons/a/b.png"), true);
+  for (const url of [
+    "http://upload.wikimedia.org/a.png", // https only — a mixed-content <img> is a downgrade
+    "https://upload.wikimedia.org.evil.example/a.png",
+    "https://evil.example/upload.wikimedia.org/a.png",
+    "https://commons.wikimedia.org/wiki/File:A.png", // a page is not pixels
+    "not a url",
+    "",
+  ]) {
+    assert.equal(allowedAssetUrl(url), false, `${url} should be refused`);
+  }
 });
 
 test("a file whose licence is reusable becomes a candidate carrying its credit", async () => {
@@ -141,10 +172,13 @@ test("a curated row matches on concept overlap and carries everything needed to 
   assert.equal(creditLineFor(at(found)), "A. Author, An Open Textbook · CC-BY-4.0");
 });
 
-test("🔴 the shipped registry is empty, because no licence could be verified where this was written", () => {
-  // A row is a claim about a specific file's licence. Writing one from memory is the same act §42
-  // forbids everywhere else in the ladder.
-  assert.deepEqual(REFERENCE_REGISTRY, []);
+test("🔴 the shipped registry is seeded, and every row still claims a licence somebody verified", () => {
+  // This asserted emptiness until 2026-08-23, because the environment §42 was authored in could
+  // not open a single file page. The registry was then seeded through
+  // `scripts/reference-registry-harvest.mts`, which reads each file's own licence through the
+  // repository API and refuses to emit rows it cannot verify. The row-by-row rules — reusable
+  // licence, credit kept, allowed host — live in `reference-registry.test.ts`.
+  assert.ok(REFERENCE_REGISTRY.length > 0, "the shipped registry has lost its rows");
 });
 
 test("🔴 a curated row and a live row both reach the ladder, curated first", async () => {

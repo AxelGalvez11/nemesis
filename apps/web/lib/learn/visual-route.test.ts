@@ -340,7 +340,13 @@ test("🔴 no subject-matter vocabulary has crept into the router", () => {
   const code = source
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*") && !line.trimStart().startsWith("/*"))
-    .join("\n");
+    .join("\n")
+    // 🔴 ONE CARVE-OUT, THE REPRESENTATION LITERAL ITSELF. `"macromolecule"` is a §42 shape name —
+    // an accession drawn by a viewer, the same semantic class "structure" is — and the contract
+    // chose that name before the representation existed. Removing exactly the quoted literal keeps
+    // this guard armed against every OTHER appearance of "molecule": a branch, a comparison, a
+    // keyword list would all still trip it.
+    .replaceAll('"macromolecule"', "");
   for (const word of ["anatomy", "molecule", "chemistry", "biology", "physics", "pharmac", "drug", "legal", "statute", "circuit"]) {
     assert.equal(code.toLowerCase().includes(word), false, `the router branches on the subject "${word}"`);
   }
@@ -452,4 +458,65 @@ test("an unlicensed picture is refused with the reason that names the bookkeepin
   const route = routeVisual({ assets: [{ ...LICENSED, licence: undefined }] });
   assert.equal(route.decision, "prose");
   assert.equal(route.decision === "prose" && route.assetRefusal, "licence-missing");
+});
+
+// ───────────────────────────────────────────── the figure request meets the ladder's gate
+
+// A request's asset also passes the validator's host allow-list, so unlike the caller-supplied
+// `LICENSED` above it must live on the repository file store the reference lane admits.
+const STAMPED_ASSET: CandidateAsset = {
+  assetPath: "https://upload.wikimedia.org/wikipedia/commons/a/ab/Mitosis.png",
+  licence: { attribution: "Ali Zifan", licence: "CC-BY-SA-4.0", source: "Wikimedia Commons" },
+  provenance: "reference_image",
+};
+
+test("a resolved figure request routes to the reference rung with its caption riding along", () => {
+  const route = routeVisual({
+    request: {
+      asset: STAMPED_ASSET,
+      caption: "The stages of mitosis.",
+      kind: "figure",
+      learningGoal: "See the stages",
+      subject: "mitosis stages",
+    },
+  });
+  assert.equal(route.decision, "render");
+  if (route.decision === "render" && route.representation === "reference_image") {
+    assert.equal(route.asset.assetPath, STAMPED_ASSET.assetPath);
+    assert.equal(route.caption, "The stages of mitosis.");
+  } else {
+    assert.fail(`expected reference_image, routed to ${JSON.stringify(route)}`);
+  }
+});
+
+test("an unresolved figure request is honest prose, not a broken frame", () => {
+  const route = routeVisual({
+    request: { kind: "figure", learningGoal: "See the stages", subject: "mitosis stages" },
+  });
+  assert.equal(route.decision, "prose");
+  assert.equal(route.decision === "prose" && route.reason, "no-trusted-asset");
+  assert.equal(route.decision === "prose" && route.assetRefusal, "no-candidates");
+});
+
+test("🔴 the licence gate cannot be reached around by arriving as a spec", () => {
+  // The validator checks the licence object's SHAPE; whether the licence is one Nemesis may reuse
+  // under is chooseAsset's decision, and a stored NC asset must die here, at routing time.
+  const route = routeVisual({
+    request: {
+      asset: { ...STAMPED_ASSET, licence: { attribution: "Somebody", licence: "CC-BY-NC-4.0", source: "somewhere" } },
+      kind: "figure",
+      learningGoal: "g",
+      subject: "mitosis",
+    },
+  });
+  assert.equal(route.decision, "prose");
+  assert.equal(route.decision === "prose" && route.assetRefusal, "licence-not-reusable");
+});
+
+test("a macromolecule spec routes as its own rung-two representation", () => {
+  const route = routeVisual({
+    request: { accession: "1MBN", kind: "macromolecule", learningGoal: "See the fold" },
+  });
+  assert.equal(route.decision, "render");
+  assert.equal(route.decision === "render" && route.representation, "macromolecule");
 });

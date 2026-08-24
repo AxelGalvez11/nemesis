@@ -13,6 +13,8 @@
 // that genuinely only need to know whether anything survived.
 
 import { validateStructure, type ChemNotation } from "./chem-notation";
+import { allowedAssetUrl } from "./reference-images";
+import type { CandidateAsset } from "./visual-provenance";
 import {
   SUBJECT_KINDS,
   validateSubjectVisual,
@@ -126,12 +128,62 @@ export interface StructureVisual extends CanvasVisualBase {
   reactionLabel?: string;
 }
 
+/**
+ * A REAL picture, retrieved from an openly licensed repository — §42's rung three, as a request.
+ *
+ * 🔴 THE MODEL NAMES A SUBJECT AND STOPS THERE, exactly as `structure` names a compound. What may
+ * actually be shown is decided below this boundary: `figure-resolve.ts` strips any `asset` a model
+ * wrote, `app/api/learn/reference-image` asks the curated registry and the live providers, and
+ * `chooseAsset` in `visual-provenance.ts` refuses anything whose licence or credit was not kept.
+ * A subject that resolves to nothing loses its picture and never the prose.
+ */
+export interface FigureVisual extends CanvasVisualBase {
+  kind: "figure";
+  /** What must be visible, as a short noun phrase — the model's own words, kept for the record. */
+  subject: string;
+  /**
+   * The chosen picture with its licence, stamped by the reference resolver.
+   *
+   * 🔴 TRUSTED CALLERS SET IT; NOTHING FROM A MODEL KEEPS IT — the same rule as `resolvedFrom` on a
+   * structure. The validator still bounds it (https, an allow-listed host, a licence object),
+   * because stored blocks are re-validated long after the resolve pass ran and defence in depth is
+   * cheaper than an incident.
+   */
+  asset?: CandidateAsset;
+}
+
 export type CanvasVisualRequest =
   | EquationVisual
+  | FigureVisual
   | FlowVisual
+  | MacromoleculeVisual
   | PlotVisual
   | StructureVisual
   | SubjectVisual;
+
+/**
+ * A macromolecule — a protein, a nucleic acid — named by its structure-database accession (§42).
+ *
+ * 🔴 THE SAME SHAPE AS `StructureVisual`, ONE DATABASE UP. `value` in, a depiction library draws;
+ * `accession` in, an embedded structure viewer draws from the worldwide Protein Data Bank's own
+ * data. The model supplies an identifier and never geometry, and the identifier is shown beside the
+ * viewer so anybody can check what was asked for.
+ *
+ * 🔴 A MODEL NEVER WRITES THE ACCESSION EITHER. Four opaque characters are exactly the remembered-
+ * SMILES danger with fewer chances to notice: `1HHO` and `1HH0` are both plausible and different
+ * structures. So the request vocabulary takes a NAME (`{"kind":"macromolecule","molecule":"…"}`),
+ * `macromolecule-resolve.ts` looks it up through RCSB's own search, and the accession that reaches
+ * this spec was stamped by that resolver together with `resolvedFrom`.
+ */
+export interface MacromoleculeVisual extends CanvasVisualBase {
+  kind: "macromolecule";
+  /** A PDB entry id — one digit, then three letters or digits. Uppercased on the way through. */
+  accession: string;
+  /** The entry's own title, from the structure database — what the accession actually is. */
+  title?: string;
+  /** Present when a resolver was asked for a name and returned this accession. See `StructureVisual`. */
+  resolvedFrom?: { name: string; provider: "rcsb"; id: string };
+}
 
 export type {
   CodeVisual,
@@ -210,6 +262,17 @@ export type VisualRefusal =
    * that a structure was unusable, and the chemistry module owns why.
    */
   | "malformed-structure"
+  /**
+   * A reference-figure request that is not usable. `detail` carries the specific reason.
+   *
+   * 🔴 THE INTERESTING CASE INSIDE IT IS AN ASSET NOBODY STAMPED. A `figure` whose `asset` names a
+   * host outside the allow list, or carries no licence object, is either a stored row from before a
+   * rule tightened or a model trying to hand the renderer a URL — and both must refuse rather than
+   * render, because the refusal is the only place the second one becomes visible.
+   */
+  | "malformed-figure"
+  /** A macromolecule request without a usable accession. `detail` names the field. */
+  | "malformed-macromolecule"
   /** An edge polarity naming something no renderer draws. */
   | "malformed-polarity"
   /**
@@ -443,6 +506,41 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
     };
   }
 
+  if (value.kind === "figure") {
+    const subject = boundedText(value.subject, 120);
+    if (!subject) return refuse("text-out-of-bounds", "subject must be 1–120 characters");
+    const asset = figureAsset(value.asset);
+    if (typeof asset === "string") return refuse("malformed-figure", asset);
+    return { ok: true, visual: { ...common, kind: "figure", subject, ...(asset ? { asset } : {}) } };
+  }
+
+  if (value.kind === "macromolecule") {
+    // 🔴 ONE DIGIT THEN THREE ALPHANUMERICS — the PDB's own format, and the bound that makes this
+    // field an identifier rather than a string a renderer interpolates into a URL.
+    const accession = boundedText(value.accession, 8);
+    if (!accession || !/^[0-9][A-Za-z0-9]{3}$/.test(accession)) {
+      return refuse("malformed-macromolecule", "accession must be a PDB id: one digit then three letters or digits");
+    }
+    const title = value.title === undefined ? null : boundedText(value.title, 200);
+    if (value.title !== undefined && !title) {
+      return refuse("text-out-of-bounds", "title must be 1–200 characters when present");
+    }
+    const resolved = macromoleculeResolvedFrom(value.resolvedFrom);
+    if (resolved === "malformed") {
+      return refuse("malformed-macromolecule", "resolvedFrom must carry a provider, an id and the name that was looked up");
+    }
+    return {
+      ok: true,
+      visual: {
+        ...common,
+        accession: accession.toUpperCase(),
+        kind: "macromolecule",
+        ...(title ? { title } : {}),
+        ...(resolved ? { resolvedFrom: resolved } : {}),
+      },
+    };
+  }
+
   if (typeof value.kind === "string" && SUBJECT_KINDS.includes(value.kind)) {
     // 🔴 DELEGATED, NOT REIMPLEMENTED, AND THE BOUNDARY STAYS HERE. `subject-visuals.ts` owns the
     // five shapes' rules and their arithmetic; this switch stays the one place a model request is
@@ -455,6 +553,62 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
   }
 
   return refuse("unknown-kind", `no trusted renderer owns ${JSON.stringify(value.kind)}`);
+}
+
+/**
+ * The stamped asset on a figure: a `CandidateAsset` when usable, an error detail when present and
+ * broken, null when absent.
+ *
+ * 🔴 EVERY RULE HERE IS DEFENCE IN DEPTH BEHIND `figure-resolve.ts` AND `chooseAsset`, and each one
+ * still earns its place: the strip runs only on text arriving from a model, and the licence gate
+ * runs only at routing time — a stored block travels between those two moments, and this is what
+ * checks it there.
+ */
+function figureAsset(value: unknown): CandidateAsset | string | null {
+  if (value === undefined || value === null) return null;
+  if (!record(value)) return "asset must be an object when present";
+  const assetPath = boundedText(value.assetPath, 500);
+  if (!assetPath || !allowedAssetUrl(assetPath)) {
+    return "assetPath must be an https URL on a host the reference lane allows";
+  }
+  // A figure is rung three by definition. Rung four travels a different route (`visual-route.ts`
+  // receives it as a candidate, never as a request), so provenance here is one value, stated.
+  if (value.provenance !== "reference_image") return "a figure's asset must carry reference_image provenance";
+  const caption = value.caption === undefined ? null : boundedText(value.caption, 300);
+  if (value.caption !== undefined && !caption) return "asset caption must be 1–300 characters when present";
+  if (!record(value.licence)) return "a reference asset must carry its licence object";
+  const licence = boundedText(value.licence.licence, 60);
+  const source = boundedText(value.licence.source, 80);
+  if (!licence || !source) return "a licence must name its identifier and its source repository";
+  const attribution = value.licence.attribution === undefined ? null : boundedText(value.licence.attribution, 200);
+  if (value.licence.attribution !== undefined && !attribution) {
+    return "attribution must be 1–200 characters when present";
+  }
+  const url = value.licence.url === undefined ? null : boundedText(value.licence.url, 400);
+  if (url && !/^https:\/\//.test(url)) return "a licence url must be https when present";
+  return {
+    assetPath,
+    ...(caption ? { caption } : {}),
+    licence: {
+      ...(attribution ? { attribution } : {}),
+      licence,
+      source,
+      ...(url ? { url } : {}),
+    },
+    provenance: "reference_image",
+  };
+}
+
+/** The provenance stamp on a resolved macromolecule, mirroring `resolvedFrom` one database up. */
+function macromoleculeResolvedFrom(
+  value: unknown,
+): MacromoleculeVisual["resolvedFrom"] | "malformed" | null {
+  if (value === undefined || value === null) return null;
+  if (!record(value)) return "malformed";
+  const name = boundedText(value.name, 120);
+  const id = boundedText(value.id, 12);
+  if (!name || !id || value.provider !== "rcsb") return "malformed";
+  return { id, name, provider: "rcsb" };
 }
 
 /** The provenance stamp on a resolved structure, or `malformed` when it is present and broken. */

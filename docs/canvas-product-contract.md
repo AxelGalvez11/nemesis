@@ -1342,7 +1342,28 @@ enjoyable engineering should read this line as the answer.
 
 # 42. 🔴 SCIENTIFIC REPRESENTATION IS A TRUST LADDER — generation is the last rung, not the first (owner, 2026-08-18)
 
-## STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, AND A LESSON OR A REPLY NOW RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
+## STATUS: RUNGS ONE, TWO AND THREE SHIPPED AND SERVING. A LESSON OR A REPLY RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT; A LESSON NOW REQUESTS A REAL LICENSED PICTURE BY SUBJECT AND A 3D MACROMOLECULE BY NAME, BOTH RESOLVED SERVER-SIDE AND LICENCE-GATED. THE CURATED REGISTRY IS SEEDED AND A LIVE PROVIDER STANDS BEHIND IT. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
+
+🔴 **Rung three went live on 2026-08-23, on the owner's instruction** (*"let's ingest it… can you
+put those APIs in as well… Nemesis or DeepSeek needs to be able to have access to a lot of these
+visualizations when it's teaching"*). The shape mirrors the compound lane exactly: the model names
+a SUBJECT — `{"kind":"figure","subject":"mitosis stages labelled diagram"}` — and stops there.
+`figure-resolve.ts` strips any `asset` a model wrote, `app/api/learn/reference-image` asks the
+curated registry and the live provider from the **server**, `chooseAsset` makes the one licence
+decision, and the chosen picture travels with its licence object and is rendered with its credit
+line by `ReferenceFigure`. A subject that resolves to nothing keeps its prose and shows nothing,
+and the stored, assetless request is the countable record of the coverage gap.
+
+🔴 **The macromolecule representation shipped the same day, and it is rung two, not rung three.**
+`{"kind":"macromolecule","molecule":"haemoglobin"}` resolves through RCSB's own search on the
+server (`macromolecule-resolver.ts` — a name in, a validated accession and the entry's own title
+out, `resolvedFrom` stamped and stripped from anything a model sent, exactly as compounds work). An
+embedded Mol* viewer (`macromolecule-viewer.tsx`, loaded in its own chunk only when a structure
+appears) draws from the Protein Data Bank's deposited coordinates, fetched by the browser from the
+database's public file store the way reference images are fetched from theirs. The accession and
+title stay printed beside the viewer — the same inspectability a SMILES string gets. A
+model-written accession is refused by construction: four opaque characters are the remembered-
+SMILES danger with fewer ways to notice, so only the resolver mints them.
 
 🔴 **The resolver was wired on 2026-08-21, and until then this section described something no
 learner had ever seen.** `chem-resolver.ts` was built, tested and merged, and `grep -r
@@ -1446,8 +1467,20 @@ picture is shown. A licence stored in a database and never rendered is a record 
 kept.
 
 Candidate repositories the owner named — open textbook programmes, government and public-health
-image libraries, commons collections, historical medical archives — are **sources to harvest into a
-registry with per-asset licence metadata**, not services to query live at teaching time.
+image libraries, commons collections, historical medical archives — feed the lane in **two ways,
+and the preference between them is code** (`reference-images.ts` lists curated candidates first):
+
+- **A curated registry, entered by hand** (`reference-registry.ts`, seeded 2026-08-23 via
+  `scripts/reference-registry-harvest.mts`): each row is one file whose own licence was read
+  through the repository's API and normalised onto the allow list, with its credit kept verbatim.
+  `reference-registry.test.ts` re-asserts every row's licence, credit and host on every run, so a
+  row cannot rot quietly.
+- **A narrow live provider** (Wikimedia Commons' API, whose per-file licence metadata is
+  machine-readable), asked a specific question at teaching time and believed only about files
+  whose licence normalises. This is retrieval, not ingestion: no crawler, no mirror, no embedding
+  index — the owner's *"Do NOT bulk-ingest the internet"* stands. One candidate repository was
+  evaluated and REFUSED on exactly these rules (Open-i, 2026-08-23: its API hides per-image
+  licences and answers only browsers, so nothing it returns can pass the licence gate honestly).
 
 ## 🔴 FIELD-AGNOSTIC, AS EVERYWHERE ELSE
 
@@ -1470,9 +1503,9 @@ provenance rather than about subject matter.
 | Reaction scheme | `reactants>agents>products`, conditions as prose | **shipped** (`reaction-smiles`) |
 | Group highlighting inside a structure | atom indices | **shipped** (what makes a structure answerable-against) |
 | Relationship polarity | `increases` / `decreases` on an edge | **shipped** (arrowhead vs bar) |
-| Licensed reference image | a live provider query, or a curated registry row | **resolver shipped, curated registry EMPTY** |
+| Licensed reference image | `{"kind":"figure","subject":"…"}` — a subject, resolved and licence-gated | **shipped** (seeded registry + live provider, credit rendered) |
 | Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
-| Macromolecular structure | a structure-database accession | **not built** |
+| Macromolecular structure | `{"kind":"macromolecule","molecule":"…"}` — a name, resolved to a PDB accession | **shipped** (Mol* viewer, RCSB resolver) |
 
 ## 🔴 CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION
 
@@ -1542,14 +1575,17 @@ the theme as an effect dependency and draws again. **Measured:** bonds render `#
 makes redrawing safe. Without this, switching to dark left a molecule in near-black strokes on a
 near-black ground: invisible, with nothing on screen to explain why.
 
-Macromolecules remain **not built**. Their canonical form is an accession into a structure database
-rather than a drawing, and 2D stays the default whenever it teaches the concept adequately — §41's
-3D rule already says depth must be part of what has to be understood, not a way to look
-sophisticated. The clean boundary if that day comes: a `macromolecule` representation carrying an
-accession, resolved by a provider module shaped like `chem-resolver.ts`, drawn by an embedded viewer
-behind the same constrained interface. **Nothing may be simulated with an image model in the
-meantime** — that would put a plausible-looking wrong structure in front of a learner, which is the
-whole reason the ladder exists.
+Macromolecules are **built** (2026-08-23), on exactly the boundary this paragraph reserved for them
+while they were not: a `macromolecule` representation carrying an accession, resolved by a provider
+module shaped like `chem-resolver.ts` (`macromolecule-resolver.ts` — RCSB search plus the entry's
+own title), drawn by an embedded viewer behind the same constrained interface
+(`macromolecule-viewer.tsx`, Mol* — its own engine, loaded in its own chunk only when a structure
+appears; the §41 planned stack of graphing and diagram renderers remains untouched and unadopted).
+2D stays the default whenever it teaches the concept adequately — §41's 3D rule still holds: depth
+must be part of what has to be understood, not a way to look sophisticated, and the prompt tells
+the model to prefer `structure` for anything small enough to read flat. **Nothing is ever simulated
+with an image model here** — that would put a plausible-looking wrong structure in front of a
+learner, which is the whole reason the ladder exists.
 
 ## 🔴 PATHWAYS REUSED THE RELATIONSHIP RENDERER, AND NEEDED ONE THING
 

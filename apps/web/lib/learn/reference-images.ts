@@ -30,6 +30,28 @@ export interface ReferenceQuery {
 export type ReferenceProviderId = "curated" | "wikimedia-commons";
 
 /**
+ * The only hosts a reference asset may be served from.
+ *
+ * 🔴 AN ALLOW LIST FOR THE SAME REASON THE LICENCE TABLE IS ONE. A `figure` visual ends life as an
+ * `<img src>` in a learner's page, and the resolve pass strips anything a model wrote — but stored
+ * blocks are re-validated long after that pass ran, and defence in depth there means a URL naming a
+ * host nobody chose refuses rather than renders. Curated rows point at the Commons file store too,
+ * so one entry covers both providers; `openi.nlm.nih.gov` is deliberately absent — evaluated
+ * 2026-08-23 and rejected, because its API hides per-image licences and answers only browsers.
+ */
+export const REFERENCE_ASSET_HOSTS: readonly string[] = ["upload.wikimedia.org"];
+
+/** Does this URL name a host the reference lane may serve pixels from? */
+export function allowedAssetUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" && REFERENCE_ASSET_HOSTS.includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * One picture a provider is offering, with everything §42 requires to be allowed to show it.
  *
  * 🔴 IT EXTENDS `CandidateAsset` RATHER THAN CONVERTING TO ONE. The ladder's rules run on the same
@@ -147,6 +169,13 @@ export function commonsUrl(query: ReferenceQuery): string {
     gsrnamespace: "6",
     gsrsearch: query.concept,
     iiprop: "url|extmetadata",
+    // 🔴 A BOUNDED RENDITION, NOT THE ORIGINAL. `url` alone is the full-resolution file, and on
+    // Commons that is routinely a 40MB TIFF or an 8000-pixel scan — handed to an `<img>`, the
+    // learner's phone downloads a poster to show a paragraph-width figure. `iiurlwidth` makes the
+    // API answer with `thumburl`, a server-rendered rendition at this width (and a PNG for SVG
+    // sources, which is also the safer thing to embed). The original URL is still kept on the
+    // candidate for the credit line to point at.
+    iiurlwidth: "1024",
     origin: "*",
     prop: "imageinfo",
   });
@@ -177,7 +206,10 @@ export async function searchCommons(query: ReferenceQuery, deps: ReferenceDeps):
     if (!info || typeof info !== "object") continue;
     const meta = (info as { extmetadata?: Record<string, { value?: unknown }> }).extmetadata ?? {};
     const licence = normaliseLicence(plainText(meta.LicenseShortName?.value));
-    const assetPath = (info as { url?: unknown }).url;
+    // The bounded rendition when the API produced one, the original otherwise — see `commonsUrl`.
+    const thumb = (info as { thumburl?: unknown }).thumburl;
+    const original = (info as { url?: unknown }).url;
+    const assetPath = typeof thumb === "string" && thumb ? thumb : original;
     const pageUrl = (info as { descriptionurl?: unknown }).descriptionurl;
     if (!licence || typeof assetPath !== "string") continue;
     const author = plainText(meta.Artist?.value);
