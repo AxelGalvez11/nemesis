@@ -1,5 +1,6 @@
 "use client";
 
+import { ConnectionsSettings } from "@/components/settings/connections-settings";
 import { MemorySettings } from "@/components/settings/memory-settings";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -20,6 +21,7 @@ export type SettingsSection =
   | "appearance"
   | "usage"
   | "memory"
+  | "connections"
   | "voice"
   | "billing"
   | "storage"
@@ -62,6 +64,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
   // to be findable by someone looking for it without knowing our menu — burying it two levels down
   // is how a privacy surface becomes technically-present and practically-hidden.
   { id: "memory", label: "Memory", icon: "history" },
+  { id: "connections", label: "Connected apps", icon: "plug" },
   { id: "voice", label: "Voice", icon: "unmute" },
   { id: "billing", label: "Billing", icon: "credit-card" },
   { id: "storage", label: "Storage", icon: "database" },
@@ -251,6 +254,14 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
         )}
 
         {section === "usage" && <UsageSettings bars={usageBars} />}
+        {section === "connections" && (
+          <SettingsPage
+            description="Apps Nemesis can reach for you, and what it must ask about before doing."
+            title="Connected apps"
+          >
+            <ConnectionsSettings />
+          </SettingsPage>
+        )}
         {section === "memory" && (
           <SettingsPage
             description="What Nemesis has picked up about you while you study, and how to remove any of it."
