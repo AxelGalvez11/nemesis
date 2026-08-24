@@ -598,6 +598,35 @@ const NEMESIS_SYSTEM = [
   + "picture in words. Nothing is invented: a subject that finds no licensed picture simply draws "
   + "nothing, so keep the prose standing on its own.",
 
+  // 🔴🔴 THE SUBJECT IS A NAME, NOT A DESCRIPTION, AND A WORDY ONE FETCHES THE WRONG PICTURE.
+  // Measured against production 2026-08-24, asking the live repository for the same diagram four
+  // ways: "meiosis" and "meiosis I and meiosis II stages" both returned the real meiosis diagram;
+  // "the stages of meiosis" returned the life stages of NAEGLERIA FOWLERI, "diagram of meiosis
+  // showing both divisions" returned the layers of human skin, and "meiosis showing both divisions"
+  // returned an illustration of cleft lip. Every one of them came back `ok`. The extra words are
+  // not neutral — "stages", "diagram", "showing", "both" are common across millions of captioned
+  // pictures, so they outvote the one word that identifies the subject.
+  //
+  // 🔴 AND A WRONG PICTURE IS WORSE THAN NO PICTURE HERE, because it arrives captioned, credited
+  // and confidently placed beside prose that describes something else.
+  "Write the figure's \"subject\" as the SHORTEST NAME of the thing itself, the way an index would "
+  + "list it: \"meiosis\", \"nephron\", \"four-stroke engine cycle\". Do not describe the picture "
+  + "you want. Words like diagram, stages, showing, labelled, cross-section and illustration appear "
+  + "in millions of captions and will outvote the word that identifies your subject, which returns "
+  + "a confident picture of something else entirely.",
+
+  // 🔴🔴 THE MARKER IS A POSITION, NOT A REQUEST, AND SAYING SO IS THE NEGATIVE INSTRUCTION THIS
+  // FILE HAS LEARNED TWICE THAT IT NEEDS. Measured on production 2026-08-24, immediately after the
+  // figure shape was added above: asked for a diagram of meiosis, the model wrote "Here's a diagram
+  // of meiosis showing both divisions:" followed by `[figure 1]` — and sent NO `visuals` array at
+  // all. Stored canvas 204d3e54, `visuals: null`. It had understood that a marker is how you point
+  // at a picture and never supplied one, which is the same half-step as the `visuals: []` case the
+  // filled-in template below was written to fix.
+  "🔴 A [figure n] marker draws NOTHING on its own. It only says WHERE a picture goes; the picture "
+  + "itself is the matching entry in \"visuals\". [figure 1] needs \"visuals\"[0], [figure 2] needs "
+  + "\"visuals\"[1]. If you write a marker and leave \"visuals\" empty or absent, the learner reads "
+  + "your sentence promising a picture and sees the literal text [figure 1] instead.",
+
   // 🔴🔴 §45 SHIPPED THIS AND NOTHING COULD REACH IT. The expression evaluator, the distribution
   // maths and the curve builder were built, hardened against a real sandbox-escape probe, tested
   // and merged — and §45's status line said so plainly for two days: "NO LESSON EMITS ONE YET."

@@ -192,6 +192,37 @@ test("🔴🔴 a NEW kind cannot be added without telling the model its shape ei
   );
 });
 
+test("🔴🔴🔴 the packet says a marker without a payload draws nothing", () => {
+  // 🔴 MEASURED ON PRODUCTION 2026-08-24, MINUTES AFTER THE FIGURE SHAPE WAS ADDED. Asked for a
+  // diagram of meiosis, the model wrote "Here's a diagram of meiosis showing both divisions:"
+  // followed by `[figure 1]`, and sent NO `visuals` array at all — stored canvas 204d3e54,
+  // `visuals: null`. The learner got a sentence promising a picture and the literal text
+  // `[figure 1]` underneath.
+  //
+  // It is the same half-step as the `visuals: []` case that the filled-in template was written to
+  // fix, and it needs the same treatment: say the negative out loud. A marker is a POSITION; the
+  // picture is the entry in `visuals`.
+  const packet = PACKET.replace(/\s+/g, " ");
+  assert.match(packet, /\[figure n\] marker draws NOTHING on its own/, "the marker-without-payload warning is gone");
+  assert.match(packet, /\[figure 1\] needs "visuals"\[0\]/, "the packet no longer says which marker maps to which entry");
+});
+
+test("🔴🔴 the packet warns that a wordy figure subject fetches the wrong picture", () => {
+  // 🔴 ALSO MEASURED, against the live repository, asking for one diagram four ways:
+  //   "meiosis"                                   → the real meiosis diagram
+  //   "meiosis I and meiosis II stages"           → the real meiosis diagram
+  //   "the stages of meiosis"                     → the life stages of NAEGLERIA FOWLERI
+  //   "diagram of meiosis showing both divisions" → the layers of human skin
+  //   "meiosis showing both divisions"            → an illustration of cleft lip
+  // Every one returned `ok`. "stages", "diagram", "showing" and "both" appear in millions of
+  // captions and outvote the one word that identifies the subject — and a wrong picture is worse
+  // than none, because it arrives captioned, credited, and confidently placed beside prose about
+  // something else.
+  const packet = PACKET.replace(/\s+/g, " ");
+  assert.match(packet, /SHORTEST NAME of the thing itself/, "the short-subject rule is gone");
+  assert.match(packet, /Do not describe the picture you want/, "the packet stopped warning against describing the picture");
+});
+
 test("🔴 the packet's own claim about where it is guarded is true", () => {
   // The sentence that started this: turn-router.ts pointed at visual-route.test.ts, which never
   // checked the packet. A comment naming the wrong guard is worse than naming none, because the
