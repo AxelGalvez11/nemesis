@@ -82,9 +82,19 @@ const DECISION_BLOCK = /```json\s*\n?([\s\S]*?)```/;
  * production 2026-08-24 for a plot, a circuit and the anatomy atlas, every one of which draws
  * correctly the moment the passes can see the JSON.
  *
- * 🔴 PROSE OUTSIDE THE BLOCK IS RETURNED UNTOUCHED. It is the answer the learner reads, it is not
- * JSON, and no pass here has any business rewriting it. Only the block's contents are replaced, and
- * only when a pass actually changed them.
+ * 🔴🔴 AND THE PROSE GOES THROUGH THE PASSES TOO, WHICH THE FIRST VERSION OF THIS FIX MISSED. Two
+ * of the six resolve MARKERS WRITTEN IN THE PROSE — `[compound: aspirin]` becomes `[smiles: …]`,
+ * `[macromolecule: 2DN2]` becomes a viewer — and they find them by walking every string in the
+ * parsed value. That worked while the prose lived INSIDE the object as `say`. It moved outside in
+ * the same contract change, so walking only the block leaves those markers exactly as unresolved as
+ * walking nothing did: measured on production, "show me aspirin" printed the literal text
+ * `[compound: aspirin]`.
+ *
+ * So both halves are handed to the passes together, as one value they can walk — `{decision, prose}`
+ * — and split back apart afterwards. Every pass already walks anything ("the same shape arrives
+ * inside three different envelopes"), so this is a fourth envelope and needs no change in any of
+ * them. Nothing is rewritten that a pass did not deliberately rewrite: when the passes change
+ * nothing, the ORIGINAL text is returned byte-for-byte.
  */
 export async function prepareAnswer(
   text: string,
@@ -94,10 +104,27 @@ export async function prepareAnswer(
 ): Promise<string> {
   const block = DECISION_BLOCK.exec(text);
   if (block) {
-    const inner = block[1] ?? "";
-    const prepared = await prepareJson(inner, deps, signal, onStep);
-    if (prepared === inner) return text;
-    return `${text.slice(0, block.index)}\`\`\`json\n${prepared}\n\`\`\`${text.slice(block.index + block[0].length)}`;
+    let decision: unknown;
+    try {
+      decision = JSON.parse(block[1] ?? "");
+    } catch {
+      // An unparseable block is not ours to repair; `readTurnDecision` will refuse it too. Fall
+      // through and let each pass's own guard decide, exactly as before.
+      return prepareJson(text, deps, signal, onStep);
+    }
+    const before = text.slice(0, block.index);
+    const after = text.slice(block.index + block[0].length);
+    const bundled = JSON.stringify({ decision, prose: [before, after] });
+    const prepared = await prepareJson(bundled, deps, signal, onStep);
+    // 🔴 UNCHANGED MEANS UNTOUCHED. Re-serialising a turn nothing happened to would reformat the
+    // model's own block for no reason, and every byte of this text is read by something.
+    if (prepared === bundled) return text;
+    try {
+      const done = JSON.parse(prepared) as { decision: unknown; prose: [string, string] };
+      return `${done.prose[0]}\`\`\`json\n${JSON.stringify(done.decision)}\n\`\`\`${done.prose[1]}`;
+    } catch {
+      return text;
+    }
   }
   // A lesson job answers with bare JSON, and a rescued turn answers with prose. Both are handled
   // below exactly as before — the second by each pass's own parse guard.

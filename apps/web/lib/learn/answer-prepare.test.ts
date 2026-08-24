@@ -77,6 +77,35 @@ test("🔴 …and the prose around it is returned untouched", () => {
   });
 });
 
+test("🔴🔴 a marker written in the PROSE resolves too — the other half of the same bug", async () => {
+  // 🔴🔴🔴 TWO OF THE SIX PASSES REWRITE MARKERS IN THE PROSE, NOT FIGURES IN THE BLOCK.
+  // `[compound: aspirin]` becomes `[smiles: …]` and `[macromolecule: 2DN2]` becomes a viewer, and
+  // both find their markers by walking every string in the parsed value. That worked while the
+  // prose lived INSIDE the object as `say`; it moved outside in the same contract change that broke
+  // the block. Unwrapping the fence and handing the passes only the block fixed the plots and left
+  // these exactly as broken — measured on production: "show me the structure of aspirin" printed
+  // the literal text `[compound: aspirin]`, and haemoglobin printed `[macromolecule: 2DN2]`.
+  //
+  // So both halves travel together as one walkable value. This is the test that says so.
+  const decision = { then: "reply", topic: "aspirin", milestones: [], needsWeb: false, visuals: [] };
+  const raw = `\`\`\`json\n${JSON.stringify(decision)}\n\`\`\`\n\nHere's aspirin:\n\n[compound: aspirin]\n\nIt inhibits COX.`;
+  const structure = { id: "2244", name: "aspirin", notation: "smiles", provider: "pubchem", value: "CC(=O)Oc1ccccc1C(=O)O" };
+  const deps = {
+    structures: {
+      fetch: async () =>
+        new Response(JSON.stringify({ results: [{ ok: true, structure }] }), {
+          headers: { "content-type": "application/json" },
+        }),
+    },
+  } as never;
+
+  const out = await prepareAnswer(raw, deps);
+  assert.ok(!out.includes("[compound: aspirin]"), "the compound marker was never looked up");
+  assert.ok(out.includes("[smiles: CC(=O)Oc1ccccc1C(=O)O]"), "the resolved structure did not reach the prose");
+  assert.ok(out.includes("Here's aspirin:") && out.includes("It inhibits COX."), "the surrounding prose was damaged");
+  assert.ok(out.startsWith("```json"), "the decision block is no longer where the parser looks");
+});
+
 test("🔴 bare JSON still works, because a lesson job answers with exactly that", async () => {
   const out = await prepareAnswer(JSON.stringify(DECISION), stubbedRoute());
   assert.ok(out.includes('"points"'), "unwrapping the fence broke the envelope that never had one");
