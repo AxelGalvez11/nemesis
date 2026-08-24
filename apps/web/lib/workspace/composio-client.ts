@@ -77,6 +77,83 @@ export async function disconnect(app: string): Promise<boolean> {
   return body?.ok === true;
 }
 
+/** An OpenAI-shaped tool the model can call, plus the app it belongs to. */
+export interface ComposioToolDef {
+  readonly type: "function";
+  readonly function: { name: string; description: string; parameters: Record<string, unknown> };
+}
+
+/** Which app each offered action belongs to, so a call can be routed and named on its card. */
+export type ComposioToolIndex = ReadonlyMap<string, string>;
+
+/**
+ * The tools this learner's connected apps offer, ready to hand to the model.
+ *
+ * 🔴🔴🔴 IT RETURNS AN EMPTY LIST FOR EVERY PROBLEM, AND THAT IS THE WHOLE SAFETY ARGUMENT OF THIS
+ * FEATURE. No key, no connected apps, a network failure, a response shaped differently than
+ * expected, a row missing a name: all of them produce `[]`, and `[]` means the model is offered
+ * exactly the tools it was offered before Composio existed. This code was written without a live
+ * key to test against, so the one thing it must never do is break the chat of somebody who never
+ * connected anything.
+ *
+ * 🔴 THE NAME THE MODEL SEES IS THE ACTION SLUG, unchanged. Renaming it to something friendlier
+ * would mean mapping back at execution time, and a mapping that loses an entry sends a call to the
+ * wrong action — against somebody's real mailbox.
+ */
+export async function composioTools(): Promise<{ tools: readonly ComposioToolDef[]; index: ComposioToolIndex }> {
+  const empty = { index: new Map<string, string>(), tools: [] as ComposioToolDef[] };
+  const body = await call({ op: "tools" });
+  if (!body || !Array.isArray(body.tools)) return empty;
+  const tools: ComposioToolDef[] = [];
+  const index = new Map<string, string>();
+  for (const row of body.tools as unknown[]) {
+    if (!row || typeof row !== "object") continue;
+    const entry = row as Record<string, unknown>;
+    const name = typeof entry.action === "string" ? entry.action : "";
+    const app = typeof entry.app === "string" ? entry.app : "";
+    const parameters = entry.parameters;
+    if (!name || !parameters || typeof parameters !== "object" || Array.isArray(parameters)) continue;
+    const description = typeof entry.description === "string" ? entry.description : "";
+    tools.push({
+      function: { description, name, parameters: parameters as Record<string, unknown> },
+      type: "function",
+    });
+    index.set(name, app);
+  }
+  return { index, tools };
+}
+
+/**
+ * Run one model-issued tool call against a connected app.
+ *
+ * 🔴🔴 THE SAME CONTRACT AS `executeAgentTool`: this NEVER throws. A failure comes back as
+ * `{error}` so the model can say something true about it, rather than the turn dying with an empty
+ * bubble. That contract is why the caller can route to either executor without a try/catch.
+ *
+ * 🔴🔴 AND A WRITE COMES BACK HELD, NOT DONE. `runAction` refuses an unconfirmed write before the
+ * network is touched, and the server refuses it again; either way what reaches the model is
+ * `confirm_required` with an instruction not to claim it happened. `confirmed` is never set here —
+ * only a learner's click can set it, which is the entire point.
+ */
+export async function runConnectedApp(
+  call: { name: string; arguments: string },
+  app: string,
+): Promise<unknown> {
+  let parsed: Record<string, unknown> = {};
+  try {
+    const raw = JSON.parse(call.arguments || "{}") as unknown;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) parsed = raw as Record<string, unknown>;
+  } catch {
+    // 🔴 UNPARSEABLE ARGUMENTS ARE AN ERROR, NEVER AN EMPTY OBJECT. Running a send with `{}`
+    // because the model's JSON was malformed is how an empty email reaches somebody.
+    return { error: "Those instructions could not be read. Nothing was done." };
+  }
+  const result = await runAction({ action: call.name, app, arguments: parsed });
+  if (result.kind === "held") return pendingActionResult(result.pending);
+  if (result.kind === "failed") return { error: result.error };
+  return { data: result.data };
+}
+
 export type RunResult =
   | { kind: "held"; pending: PendingAction }
   | { kind: "ran"; data: unknown }

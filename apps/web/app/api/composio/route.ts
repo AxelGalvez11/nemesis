@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
   const op = typeof body.op === "string" ? body.op : "";
   try {
     if (op === "status") return await statusFor(user.id);
+    if (op === "tools") return await toolsFor(user.id);
     if (op === "connect") return await connectTo(user.id, String(body.app ?? ""));
     if (op === "disconnect") return await disconnectFrom(user.id, String(body.app ?? ""));
     if (op === "execute") return await execute(user.id, body);
@@ -111,6 +112,86 @@ async function statusFor(uid: string): Promise<Response> {
     .map((item) => item.toolkit?.slug ?? "")
     .filter(Boolean);
   return Response.json({ apps: APPS, configured: true, connected });
+}
+
+/**
+ * The actions this learner's connected apps can perform, as tool schemas the model can read.
+ *
+ * 🔴🔴 THE CATALOGUE IS ASKED FOR, NEVER GUESSED. Action slugs like `GMAIL_FETCH_EMAILS` are
+ * Composio's to name and they change without us; a hardcoded list would silently stop matching and
+ * the feature would look built and be dead. So we ask, and adapt to whatever comes back.
+ *
+ * 🔴🔴🔴 AND EVERY ROW IS VALIDATED STRUCTURALLY, BECAUSE THIS CODE HAS NEVER SEEN A REAL RESPONSE.
+ * It was written without a Composio key to test against, which is exactly the situation in which
+ * "it will probably be shaped like this" ships a broken chat for everybody. So nothing is assumed:
+ * a row must have a string name and an object schema or it is dropped, several plausible field
+ * names are accepted, and ANY failure at any level yields an empty list. An empty list means the
+ * model is offered no Composio tools and the chat behaves exactly as it did before this existed.
+ *
+ * 🔴 READS ARE PREFERRED WHEN THE LIST IS TRIMMED. A toolkit can carry fifty actions; offering all
+ * of them to the model on every turn is a context cost paid forever and makes every other tool
+ * harder to pick. The cap keeps reads first because those are the ones that run without
+ * interrupting the learner for a confirmation.
+ */
+async function toolsFor(uid: string): Promise<Response> {
+  try {
+    const res = await composio(`/connected_accounts?user_ids=${encodeURIComponent(uid)}`);
+    if (!res.ok) return Response.json({ tools: [] });
+    const accounts = (await res.json()) as { items?: { toolkit?: { slug?: string }; status?: string }[] };
+    const connected = (accounts.items ?? [])
+      .filter((item) => item.status === "ACTIVE")
+      .map((item) => item.toolkit?.slug ?? "")
+      .filter((slug) => APPS.some((app) => app.key === slug));
+
+    const tools: ComposioTool[] = [];
+    for (const slug of connected) {
+      const listed = await composio(`/tools?toolkit_slug=${encodeURIComponent(slug)}&limit=${PER_APP_LIMIT}`);
+      if (!listed.ok) continue;
+      const body = (await listed.json()) as { items?: unknown[]; data?: unknown[] };
+      const rows = Array.isArray(body.items) ? body.items : Array.isArray(body.data) ? body.data : [];
+      for (const row of rows) {
+        const tool = readTool(row, slug);
+        if (tool) tools.push(tool);
+      }
+    }
+
+    // Reads first, then writes, then cut. See the header.
+    tools.sort((a, b) => Number(riskOf(a.action) === "write") - Number(riskOf(b.action) === "write"));
+    return Response.json({ tools: tools.slice(0, TOTAL_TOOL_LIMIT) });
+  } catch {
+    return Response.json({ tools: [] });
+  }
+}
+
+/** The most actions offered from any one app, and in total. Both are context budget, not policy. */
+const PER_APP_LIMIT = 12;
+const TOTAL_TOOL_LIMIT = 24;
+
+interface ComposioTool {
+  readonly action: string;
+  readonly app: string;
+  readonly description: string;
+  readonly parameters: Record<string, unknown>;
+}
+
+/**
+ * One catalogue row, read defensively.
+ *
+ * 🔴 SEVERAL FIELD NAMES ARE ACCEPTED because this was written against documentation rather than a
+ * live response. What is NOT flexible is the shape: a non-string name or a non-object schema is a
+ * row we cannot safely hand to a model, so it is dropped rather than coerced.
+ */
+function readTool(row: unknown, app: string): ComposioTool | null {
+  if (!row || typeof row !== "object") return null;
+  const entry = row as Record<string, unknown>;
+  const action = [entry.slug, entry.name, entry.enum].find((value) => typeof value === "string" && value.trim());
+  if (typeof action !== "string") return null;
+  const schema = [entry.input_parameters, entry.parameters, entry.inputParameters].find(
+    (value) => value && typeof value === "object" && !Array.isArray(value),
+  );
+  if (!schema) return null;
+  const description = typeof entry.description === "string" ? entry.description.trim() : "";
+  return { action, app, description: description.slice(0, 400), parameters: schema as Record<string, unknown> };
 }
 
 /** Start an OAuth connection. Returns the URL the learner is sent to. */
