@@ -1,5 +1,6 @@
 "use client";
 
+import { MemorySettings } from "@/components/settings/memory-settings";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -18,6 +19,7 @@ export type SettingsSection =
   | "notifications"
   | "appearance"
   | "usage"
+  | "memory"
   | "voice"
   | "billing"
   | "storage"
@@ -56,6 +58,10 @@ const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
   { id: "notifications", label: "Notifications", icon: "bell" },
   { id: "appearance", label: "Appearance", icon: "symbol-color" },
   { id: "usage", label: "Usage", icon: "pulse" },
+  // 🔴 A TOP-LEVEL SECTION, NOT A ROW INSIDE "General". What Nemesis remembers about a person has
+  // to be findable by someone looking for it without knowing our menu — burying it two levels down
+  // is how a privacy surface becomes technically-present and practically-hidden.
+  { id: "memory", label: "Memory", icon: "history" },
   { id: "voice", label: "Voice", icon: "unmute" },
   { id: "billing", label: "Billing", icon: "credit-card" },
   { id: "storage", label: "Storage", icon: "database" },
@@ -245,6 +251,14 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
         )}
 
         {section === "usage" && <UsageSettings bars={usageBars} />}
+        {section === "memory" && (
+          <SettingsPage
+            description="What Nemesis has picked up about you while you study, and how to remove any of it."
+            title="Memory"
+          >
+            <MemorySettings />
+          </SettingsPage>
+        )}
 
         {/* 🔴🔴 THE VOICE PICKER LIVES HERE NOW, AND WHAT WAS HERE BEFORE WAS DECORATION (§48). This
             card used to offer "Juniper / Maple / Vale / Cove" and a speaking-speed slider — four

@@ -91,6 +91,7 @@ const FRESH: TurnContext = {
   courseRequested: false,
   lessonInProgress: false,
   materialContext: "",
+  memory: "",
   objectives: 0,
   passages: 0,
   searchesLeft: 0,

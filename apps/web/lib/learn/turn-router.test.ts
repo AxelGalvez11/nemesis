@@ -31,6 +31,7 @@ const EMPTY: TurnContext = {
   courseRequested: false,
   lessonInProgress: false,
   materialContext: "",
+  memory: "",
   objectives: 0,
   passages: 0,
   searchesLeft: 0,
@@ -210,6 +211,10 @@ test("a plain decision is read", () => {
     milestones: [],
     needsWeb: false,
     question: null,
+    // `remember` is always a list for the same reason `visuals` and `milestones` are: a turn that
+    // noticed nothing durable about the learner must say so with an empty list, so the writer can
+    // iterate without a null check. A greeting is exactly that turn.
+    remember: [],
     say: "hey. what are you working on?",
     then: "reply",
     topic: null,
@@ -876,4 +881,64 @@ test("🔴🔴 the contract asks the model to read the MEANING, and promises the
   assert.match(contract, /nothing has been taught on this canvas yet/);
   // And it must stay a phrase path: no chip, ever.
   assert.doesNotMatch(contract, /Test button|Test chip/, "the contract started advertising a test control");
+});
+
+// ── what may be remembered about a person (workstream C) ─────────────────────────────────────
+//
+// 🔴🔴 EVERY GATE BELOW IS A GATE ON WHAT MAY BE STORED ABOUT A HUMAN BEING. The learner sees
+// each of these sentences verbatim in Settings and can delete any of them, and that is precisely
+// what makes remembering permissible — so the failure that matters is not "forgot something
+// useful", it is "showed them a sentence they never said".
+
+test("🔴 a durable fact is read, and the kind must be one the schema knows", () => {
+  const read = readTurnDecision(
+    turn({ then: "reply", remember: [{ kind: "deadline", statement: "Contract law final on the 14th." }] }, "noted."),
+  );
+  assert.deepEqual(read?.remember, [{ kind: "deadline", statement: "Contract law final on the 14th." }]);
+});
+
+test("🔴🔴 an unknown kind is DROPPED, never coerced into a known one", () => {
+  // Coercing to "context" would file a sentence under a heading the model never chose, and the
+  // learner would read it under that heading. Dropping loses a fact; coercing invents one.
+  const read = readTurnDecision(
+    turn({ then: "reply", remember: [{ kind: "diagnosis", statement: "Finds abstraction hard." }] }, "ok"),
+  );
+  assert.deepEqual(read?.remember, [], "an unrecognised kind was filed anyway");
+});
+
+test("🔴🔴 an over-long statement is dropped, not truncated into something they never said", () => {
+  const read = readTurnDecision(
+    turn({ then: "reply", remember: [{ kind: "context", statement: "x".repeat(401) }] }, "ok"),
+  );
+  assert.deepEqual(read?.remember, [], "a statement was cut mid-sentence and stored");
+});
+
+test("🔴 at most three per turn, and no duplicates within one", () => {
+  const many = Array.from({ length: 6 }, (_, i) => ({ kind: "subject", statement: `Subject ${i}` }));
+  assert.equal(readTurnDecision(turn({ then: "reply", remember: many }, "ok"))?.remember.length, 3);
+
+  const dupes = [
+    { kind: "subject", statement: "Studying contract law." },
+    { kind: "subject", statement: "studying CONTRACT LAW." },
+  ];
+  assert.equal(readTurnDecision(turn({ then: "reply", remember: dupes }, "ok"))?.remember.length, 1);
+});
+
+test("junk in the list is skipped rather than crashing the turn", () => {
+  const read = readTurnDecision(
+    turn({ then: "reply", remember: [null, "a string", 7, { kind: "subject" }, { statement: "no kind" }] }, "ok"),
+  );
+  assert.deepEqual(read?.remember, []);
+  assert.equal(read?.say, "ok", "bad memory input took the whole turn down with it");
+});
+
+test("🔴🔴 the contract forbids inference, and asks for the learner's own words", () => {
+  const contract = turnRouterMessages({ context: EMPTY, utterance: "my final is on the 14th" }).at(-1)?.content ?? "";
+  assert.match(contract, /Only what they actually SAID, never what you concluded about them/);
+  assert.match(contract, /is a judgement about a person and must never be written/);
+  // It must not become a second, worse copy of the evidence log.
+  assert.match(contract, /Never record what they got right or wrong/);
+  // And the empty case must be stated, or the model fills it every turn (the `visuals: []` lesson).
+  assert.match(contract, /Leave this an empty list on almost every turn/);
+  assert.match(contract, /they will be shown these sentences and can delete any of them/);
 });

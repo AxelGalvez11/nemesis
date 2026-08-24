@@ -21,6 +21,7 @@ import { applyCurriculumPlan, applyResearchedPlan, courseRefusalLine, loadCurric
 import { researchCurriculum, researchRefusalLine } from "@/lib/learn/curriculum-research";
 import type { CurriculumPlan } from "@/lib/learn/curriculum-plan";
 import { courseGate, type TurnDecision } from "@/lib/learn/turn-router";
+import { rememberLine } from "@/lib/learn/learner-memory";
 import type { TurnStage } from "@/lib/learn/turn-preview";
 import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
@@ -1249,6 +1250,22 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // that structural instead of a habit. `readTurnDecision` has already dropped `wantsTest` from
       // any turn that is not "study", so this cannot fire on a plain answer.
       setTestRequested(decision.wantsTest);
+
+      // 🔴🔴 REMEMBERED BESIDE THE TURN, NEVER INSTEAD OF IT, AND NEVER AWAITED BY IT. Everything
+      // below runs exactly as it would on a turn that noticed nothing durable; a memory write that
+      // failed, or a table that has not been migrated yet, must not cost the learner their answer.
+      // `rememberLine` swallows its own failures for the same reason.
+      //
+      // 🔴 EMPTY ON ALMOST EVERY TURN. `readRemembered` already capped and validated the list, so
+      // there is nothing to decide here — this is the write, not a second gate on what may be
+      // stored. The gates live in the contract paragraph and in `readRemembered`.
+      if (decision.remember.length > 0 && uid) {
+        void Promise.all(
+          decision.remember.map((fact) =>
+            rememberLine(uid, { kind: fact.kind, sourceCanvasId: id, statement: fact.statement }),
+          ),
+        );
+      }
 
       // 🔴 THE COURSE IS APPLIED BESIDE THE TURN, NEVER INSTEAD OF IT. Everything below runs
       // exactly as it does on a turn with no course in it — `begin`, `command` and the aside are
