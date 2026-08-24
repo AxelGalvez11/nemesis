@@ -1192,7 +1192,7 @@ keep deciding which engine to invoke, and an arm picker is exactly that.
 
 # 41. 🔴 THE VISUALIZATION LAYER — a router, not a graphics library (owner, 2026-08-14)
 
-## STATUS: FIRST TRUSTED ROUTES SHIPPED — source figure, equation, relationship and quantitative, behind a router. ADVANCED ROUTES REMAIN PLANNED.
+## STATUS: FIRST TRUSTED ROUTES SHIPPED — source figure, equation, relationship and quantitative, behind a router. THE COMPUTED SURFACE (2026-08-24) TOOK THE FIRST SELECTIVE-3D SLOT — three.js drawing numbers our own evaluator produced, never model code. OTHER ADVANCED ROUTES REMAIN PLANNED.
 
 🔴 **The router exists** — `routeVisual()` in `apps/web/lib/learn/visual-route.ts`. It is a pure
 function taking a knowledge object, the cognitive operation in flight, and an untrusted model
@@ -1807,7 +1807,7 @@ session type, not work that precedes it.
 
 # 44. 🔴 FIVE SHAPES, SEVEN SUBJECTS — and the arithmetic is checked before it is drawn (owner, 2026-08-19)
 
-## STATUS: ALL FIVE REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED. NOTHING EXECUTES CODE.
+## STATUS: ALL EIGHT REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED. NOTHING EXECUTES CODE.
 
 🔴 **"NO CANVAS LESSON EMITS ONE YET" WAS TRUE FOR THE FIRST DAY OF THIS SECTION'S LIFE AND IS RECORDED RATHER THAN ERASED.** Every renderer here was built, routed, verified and tested while the teaching prompt offered the model three shapes out of nine — so no lesson could produce one, and a capability nobody is told about is indistinguishable from one that was never built. The vocabulary in `canvas-prompts.ts` now names all nine. A guard in `visualization-roadmap.test.ts` went red the moment it did, which is why this line moved in the same commit, and a second guard now holds the offered vocabulary and the accepted vocabulary to being the same set in both directions.
 
@@ -1823,6 +1823,22 @@ physics/engineering and finance. **That is seven subjects and five representatio
 | Geometry | `construction` | physics |
 | Physics / engineering | `vectors` | geometry |
 | Computer science | `code` | nothing |
+
+🔴 **THREE SHAPES JOINED ON THE OWNER'S ORDER, 2026-08-24.** The feasibility audit named the courses
+the drawn vocabulary could not yet serve, and the owner greenlit each by name — circuits, music
+notation, 3D surfaces. Same discipline, same trust rung, one new row of the table each:
+
+| Subject | Representation | The encoding trusted code draws from |
+|---|---|---|
+| Electric circuits | `circuit` | a series/parallel component tree; layout is arithmetic in `visual-layout.ts`, and a claimed `equivalentOhms` is recomputed from the tree before anything is drawn |
+| Music theory | `score` | ABC notation — music's SMILES — engraved by a trusted library (`abcjs`), its ink swept to `currentColor` so both themes read it; `%%`-directives refused because they steer the engraver, not the music |
+| Multivariable calculus | `surface` | a formula in x and y, evaluated server-side under §45's allow list into a grid; a three.js viewer the model never scripts draws the numbers, renders on gesture rather than per frame, and disposes on unmount |
+
+🔴 **`circuit` IS A TREE, NOT A NETLIST, AND THE RESTRICTION IS THE FEATURE.** An arbitrary
+node-wire netlist needs an auto-router — a hard layout problem whose failures draw wires through
+components. A series/parallel tree lays out deterministically with school arithmetic and is the
+shape of nearly every schematic an introductory course draws. A bridge or an op-amp stage refuses at
+the validator rather than rendering wrongly, and that refusal is a recorded gap, not a silent one.
 
 🔴 **BUILDING "ACCOUNTING MODE" WOULD HAVE BUILT THE TABLE THREE TIMES** — once for accounting, once
 for finance, once for statistics — and taught the Canvas three subjects it must not know. §41's rule
@@ -1844,6 +1860,7 @@ So `visual-verification.ts` recomputes every numeric claim **before the spec is 
 | Two columns that must balance | summing both sides |
 | An angle labelled on a figure | measuring it from the supplied coordinates |
 | Forces claimed to cancel | resolving them |
+| A circuit's claimed equivalent resistance | reducing the series/parallel tree; it verifies only when every part is a resistor with a stated `ohms`, and a claim over anything else refuses rather than rendering as checked |
 
 🔴 **A MISMATCH REFUSES; IT NEVER SILENTLY CORRECTS.** Substituting the right total would hide a
 model producing bad arithmetic — the same argument `visual-route.ts` already makes for refusing a
@@ -1897,26 +1914,31 @@ Executing code for real is a **security commitment**, not a feature flag. It wou
 
 ## What is deliberately NOT built
 
-- **No Canvas lesson emits any of these yet.** All five validate, route, verify and render, and the
-  teaching prompts do not produce them. Said plainly rather than counted as coverage, exactly as §42
-  says of its lower rungs.
 - **No execution.** See above.
-- **No interaction** on constructions, and no circuit schematics or ray diagrams — both are separate
-  primitives with their own layout problems that share nothing with `vectors`.
+- **No interaction** on constructions, and no ray diagrams — a separate primitive with its own
+  layout problems. (Circuit schematics sat in this bullet until 2026-08-24, when the owner ordered
+  them built; the series/parallel `circuit` shape above is that order delivered.)
+- **No electron-pushing arrows yet.** The owner's same order names curly-arrow mechanisms for
+  organic chemistry; they extend the §42 `structure` lane rather than this section, and they are the
+  next build.
+- **No score audio.** The engraver can synthesise sound, but its instrument samples load from an
+  external host, and the asset-host allow list is one host long on purpose. Hearing the interval is
+  a real teaching win recorded here as future work with a licensing check attached.
 - **Statistics gets tables and plots and no simulation.** Distributions are drawable today; sampling
   and resampling are not.
 
 ## 🔴 PRIORITY — this sits where §41 put it
 
 The owner deferred language voice work only because it needs API keys, and deferred music, geography
-and spectroscopy outright. This section is the middle of that ordering, and it does not outrank §41's
-list: the core learning algorithm and Canvas session quality still come first. A perfect free-body
-diagram attached to a policy that asks the wrong question next is worth less than plain text attached
-to the right one.
+and spectroscopy outright. **2026-08-24 reversed part of that:** music notation, circuits and 3D
+surfaces were ordered built by name, and animation/simulation was explicitly kept deferred ("let's
+just stick with the plots for now"). This section still does not outrank §41's list: the core
+learning algorithm and Canvas session quality come first. A perfect free-body diagram attached to a
+policy that asks the wrong question next is worth less than plain text attached to the right one.
 
 # 45. 🔴 THE MODEL MAY WRITE A CALCULATION, NEVER A DRAWING (owner, 2026-08-19)
 
-## STATUS: EXPRESSIONS AND DISTRIBUTIONS ARE REACHABLE FROM A LESSON AND A REPLY. SEEDED SIMULATION IS NOT. NOTHING MODEL-WRITTEN REACHES THE DOM.
+## STATUS: EXPRESSIONS AND DISTRIBUTIONS ARE REACHABLE FROM A LESSON AND A REPLY. SEEDED SIMULATION IS NOT. NOTHING MODEL-WRITTEN REACHES THE DOM. THE SURFACE (2026-08-24) COMPUTES THROUGH THE SAME ROUTE UNDER THE SAME ALLOW LIST.
 
 🔴 **The wiring, 2026-08-21, and why it took a route.** This layer sat finished and unreachable for
 two days — the status line above used to read *"no lesson emits one yet"*, and `grep -r
@@ -1960,10 +1982,19 @@ write the maths.
 | `normal, mean 100, sd 15` | computes the density curve | a bell curve |
 | `sample 500, seed 42` | draws them, bins them | a histogram that is the same tomorrow |
 | `(x+1)^2` vs `x^2+2x+1` | evaluates both at 97 points | a refusal, if they ever disagree |
+| `x^2 - y^2` over a rectangle (2026-08-24) | evaluates a 41×41 grid, same allow list, `x` and `y` as the variables | a rotatable saddle, on the §44 `surface` renderer |
 
 🔴 **AND NO NEW VISUAL KIND WAS ADDED.** A function plot IS a quantitative plot whose points were
 computed rather than listed. A `function` representation would have meant a second plot renderer, a
 second set of axis rules, and two places for a chart to disagree with itself.
+
+🔴 **THE SURFACE IS THE STATED EXCEPTION, AND THE RULE IT ACTUALLY KEEPS IS THE DEEPER ONE.** No
+existing renderer can draw z = f(x, y), so `surface` is a genuinely new kind (§44 owns its shape) —
+but the CHANNEL is this section's, unchanged: the model writes a formula, `computed-surface.ts`
+walks for it exactly as `computed-plot.ts` walks for curves, the same `/api/learn/plot` route
+evaluates it under the same AST allow list, and a surface that cannot be computed is dropped whole
+while the prose survives. The validator refuses a surface whose grid is absent, so nothing a model
+writes by hand can impersonate a computed one's numbers reaching the drawing.
 
 ## 🔴 THE DEFENCE IS AN AST ALLOW LIST, AND THAT WAS MEASURED RATHER THAN ASSUMED
 

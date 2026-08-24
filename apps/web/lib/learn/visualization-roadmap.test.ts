@@ -69,13 +69,17 @@ const ROUTE = readFileSync(new URL("../../app/api/learn/plot/route.ts", import.m
 // any of this — so listing it would make the guard permanently red and it would be deleted within
 // a week. §41 states that exception in prose instead. Every OTHER renderer here is genuinely
 // absent today, so each one going red means something real just changed.
+//
+// 🔴 `three` LEFT THIS LIST ON 2026-08-24, AND THE GUARD DID ITS JOB ON THE WAY OUT. It went red
+// the moment the surface renderer's dependency landed, and §41's status line moved in the same
+// commit — which is the entire mechanism. The surface guard below now holds the shipped route to
+// its own rules instead.
 const PLANNED_RENDERERS: readonly string[] = [
   "jsxgraph",
   "mermaid",
   "vega-lite",
   "vega-embed",
   "@react-three/fiber",
-  "three",
 ];
 
 const SECTION = CONTRACT.slice(CONTRACT.indexOf("# 41."));
@@ -101,7 +105,7 @@ test("§41 distinguishes shipped trusted routes from advanced routes", () => {
   // because it teaches the next reader to discount the whole section.
   assert.match(
     SECTION,
-    /STATUS: FIRST TRUSTED ROUTES SHIPPED[^\n]*ADVANCED ROUTES REMAIN PLANNED/,
+    /STATUS: FIRST TRUSTED ROUTES SHIPPED[^\n]*SELECTIVE-3D[^\n]*ADVANCED ROUTES REMAIN PLANNED/,
     "§41 must say plainly what is shipped and what remains planned",
   );
   for (const kind of ["equation", "relationship", "quantitative"]) {
@@ -414,14 +418,14 @@ test("§44's status line matches whether a lesson emits these or anything execut
   assert.ok(SECTION_44.length > 0, "§44 has gone missing from the contract");
   assert.match(
     SECTION_44,
-    /STATUS: ALL FIVE REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED\. NOTHING EXECUTES CODE\./,
+    /STATUS: ALL EIGHT REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED\. NOTHING EXECUTES CODE\./,
     "§44 must say plainly what is reached",
   );
   // 🔴 THE CLAIM FLIPPED ON 2026-08-19 AND THIS GUARD IS WHY IT COULD NOT BE FORGOTTEN. It asserted
   // for months that no prompt asked for these; the day the vocabulary was extended it went red, and
   // moving the status line was part of the same commit. That is the entire mechanism.
   const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
-  for (const kind of ['"table"', '"timeline"', '"construction"', '"vectors"', '"code"']) {
+  for (const kind of ['"table"', '"timeline"', '"construction"', '"vectors"', '"code"', '"score"', '"circuit"', '"surface"']) {
     assert.ok(prompts.includes(kind), `canvas-prompts stopped offering ${kind} — §44's status line is stale`);
   }
   // Nothing runs the code, and the label saying so is still on screen.
@@ -449,9 +453,12 @@ test("🔴 the vocabulary offered to the model and the vocabulary the validator 
   assert.deepEqual([...offered].sort(), [...accepted].sort());
 });
 
-test("🔴 five representations, and not one of them is named after a subject", () => {
+test("🔴 eight representations, and not one of them is named after a subject", () => {
   const ROUTER_TEXT = readFileSync(new URL("./visual-route.ts", import.meta.url), "utf8");
-  for (const shape of ['"table"', '"timeline"', '"construction"', '"vectors"', '"code"']) {
+  // 🔴 `"circuit"` IS A SHAPE NAME THE CONTRACT CHOSE, exactly as `"macromolecule"` is in §42 — a
+  // series/parallel network diagram, drawn from structure. The guard in `visual-route.test.ts`
+  // still refuses every OTHER appearance of the word in router code.
+  for (const shape of ['"table"', '"timeline"', '"construction"', '"vectors"', '"code"', '"score"', '"circuit"', '"surface"']) {
     assert.ok(ROUTER_TEXT.includes(shape), `the router lost the ${shape} representation`);
   }
   // The line that must never be crossed. §41's rule, checked on the new vocabulary.
@@ -466,8 +473,8 @@ test("🔴 five representations, and not one of them is named after a subject", 
 
 test("🔴 every numeric claim is still recomputed rather than trusted", () => {
   assert.match(SECTION_44, /an unverified computed answer may not be an answer key/i);
-  // Each of the four checks §44 tabulates, called from the validator rather than merely existing.
-  for (const call of ["verifyTotal(", "verifyBalance(", "verifyAngle(", "verifyEquilibrium("]) {
+  // Each of the five checks §44 tabulates, called from the validator rather than merely existing.
+  for (const call of ["verifyTotal(", "verifyBalance(", "verifyAngle(", "verifyEquilibrium(", "verifyEquivalentResistance("]) {
     assert.ok(SUBJECTS.includes(call), `${call} is no longer called — a claim is being trusted again`);
   }
   // The refusal exists and is produced from a verification result rather than hand-written, so a
@@ -537,7 +544,17 @@ test("§45's status line matches whether a lesson emits one and where the parser
   assert.match(COMPUTED_WIRING, /PLOT_ROUTE = "\/api\/learn\/plot"/);
   assert.match(ROUTE, /import \{ curve, distributionCurve/);
   // The expression layer must not reach the browser: no client component may import it.
-  const clientFiles = ["subject-visual.tsx", "semantic-visual.tsx", "chemical-structure.tsx", "canvas-document.tsx"];
+  const clientFiles = [
+    "subject-visual.tsx",
+    "semantic-visual.tsx",
+    "chemical-structure.tsx",
+    "canvas-document.tsx",
+    // 🔴 THE TWO 2026-08-24 RENDERERS SIT CLOSEST TO THE TEMPTATION: a surface is MADE of computed
+    // numbers, and evaluating "just this one formula" client-side is the exact simplification §45
+    // forbids. Named here the day they were born.
+    "surface-plot.tsx",
+    "music-score.tsx",
+  ];
   // 🔴 AND THE WIRING MODULE IS ITSELF ON A CLIENT PATH — `canvas-chat.ts` imports it — so it is
   // held to the same rule as the components. It may name the ROUTE; it may not name the maths.
   for (const heavy of ["computed-series", "mathjs", "simple-statistics", "./expression"]) {

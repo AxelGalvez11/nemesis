@@ -18,13 +18,22 @@
 import { useId } from "react";
 
 import type {
+  CircuitVisual,
   CodeVisual,
   ConstructionVisual,
   TableVisual,
   TimelineVisual,
   VectorsVisual,
 } from "@/lib/learn/canvas-visual";
-import { layoutConstruction, layoutTimeline, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
+import {
+  layoutCircuit,
+  layoutConstruction,
+  layoutTimeline,
+  VISUAL_FIGURE_CLASS,
+  VISUAL_HEIGHT,
+  VISUAL_WIDTH,
+  type CircuitPartBox,
+} from "@/lib/learn/visual-layout";
 
 const WIDTH = VISUAL_WIDTH;
 
@@ -329,6 +338,186 @@ export function VectorDiagram({ visual }: { visual: VectorsVisual }) {
         </text>
       )}
     </svg>
+  );
+}
+
+/**
+ * One component symbol, drawn across its slot with its own lead wires.
+ *
+ * 🔴 EVERY GLYPH IS THE SCHOOLBOOK SYMBOL, PARAMETERISED BY THE BOX THE LAYOUT CHOSE. The zigzag,
+ * the plates, the long-and-short battery lines are conventions a learner will meet on every exam
+ * paper; nothing here is a style choice beyond stroke width.
+ */
+function CircuitGlyph({ part }: { part: CircuitPartBox }) {
+  const { component, cx, cy, h, w } = part;
+  const gw = w * 0.44;
+  const left = cx - w / 2;
+  const right = cx + w / 2;
+  const g0 = cx - gw / 2;
+  const g1 = cx + gw / 2;
+  const stroke = "var(--ui-text-primary)";
+  const leads = (toGlyphStart: number, fromGlyphEnd: number) => (
+    <>
+      <line stroke={stroke} strokeWidth="1.5" x1={left} x2={toGlyphStart} y1={cy} y2={cy} />
+      <line stroke={stroke} strokeWidth="1.5" x1={fromGlyphEnd} x2={right} y1={cy} y2={cy} />
+    </>
+  );
+
+  if (component === "resistor") {
+    const a = h * 0.3;
+    const step = gw / 6;
+    const zig = [
+      `${g0},${cy}`,
+      `${g0 + step * 0.5},${cy - a}`,
+      `${g0 + step * 1.5},${cy + a}`,
+      `${g0 + step * 2.5},${cy - a}`,
+      `${g0 + step * 3.5},${cy + a}`,
+      `${g0 + step * 4.5},${cy - a}`,
+      `${g0 + step * 5.5},${cy + a}`,
+      `${g1},${cy}`,
+    ].join(" ");
+    return (
+      <g>
+        {leads(g0, g1)}
+        <polyline fill="none" points={zig} stroke={stroke} strokeLinejoin="round" strokeWidth="1.5" />
+      </g>
+    );
+  }
+  if (component === "capacitor") {
+    const gap = Math.max(3, w * 0.05);
+    const plate = h * 0.42;
+    return (
+      <g>
+        {leads(cx - gap, cx + gap)}
+        <line stroke={stroke} strokeWidth="2" x1={cx - gap} x2={cx - gap} y1={cy - plate} y2={cy + plate} />
+        <line stroke={stroke} strokeWidth="2" x1={cx + gap} x2={cx + gap} y1={cy - plate} y2={cy + plate} />
+      </g>
+    );
+  }
+  if (component === "inductor") {
+    const r = gw / 8;
+    const bumps = Array.from({ length: 4 }, (_, index) => {
+      const x = g0 + r + index * 2 * r;
+      return `M ${x - r} ${cy} A ${r} ${r} 0 0 1 ${x + r} ${cy}`;
+    }).join(" ");
+    return (
+      <g>
+        {leads(g0, g1)}
+        <path d={bumps} fill="none" stroke={stroke} strokeWidth="1.5" />
+      </g>
+    );
+  }
+  if (component === "battery") {
+    const gap = Math.max(3.5, w * 0.055);
+    return (
+      <g>
+        {leads(cx - gap, cx + gap)}
+        <line stroke={stroke} strokeWidth="2" x1={cx - gap} x2={cx - gap} y1={cy - h * 0.42} y2={cy + h * 0.42} />
+        <line stroke={stroke} strokeWidth="2" x1={cx + gap} x2={cx + gap} y1={cy - h * 0.2} y2={cy + h * 0.2} />
+      </g>
+    );
+  }
+  if (component === "switch") {
+    return (
+      <g>
+        {leads(g0, g1)}
+        <circle cx={g0} cy={cy} fill={stroke} r="2.5" />
+        <circle cx={g1} cy={cy} fill={stroke} r="2.5" />
+        <line stroke={stroke} strokeWidth="1.5" x1={g0} x2={g1 - 2} y1={cy} y2={cy - h * 0.42} />
+      </g>
+    );
+  }
+  if (component === "diode") {
+    const half = h * 0.32;
+    const tip = cx + gw * 0.22;
+    const back = cx - gw * 0.22;
+    return (
+      <g>
+        {leads(back, tip)}
+        <path d={`M ${back} ${cy - half} L ${back} ${cy + half} L ${tip} ${cy} Z`} fill="none" stroke={stroke} strokeWidth="1.5" />
+        <line stroke={stroke} strokeWidth="2" x1={tip} x2={tip} y1={cy - half} y2={cy + half} />
+      </g>
+    );
+  }
+  const r = h * 0.46;
+  if (component === "lamp") {
+    const k = r * 0.7071;
+    return (
+      <g>
+        {leads(cx - r, cx + r)}
+        <circle cx={cx} cy={cy} fill="none" r={r} stroke={stroke} strokeWidth="1.5" />
+        <line stroke={stroke} strokeWidth="1.5" x1={cx - k} x2={cx + k} y1={cy - k} y2={cy + k} />
+        <line stroke={stroke} strokeWidth="1.5" x1={cx - k} x2={cx + k} y1={cy + k} y2={cy - k} />
+      </g>
+    );
+  }
+  // Ammeter and voltmeter: a circle wearing its letter, which is the whole convention.
+  return (
+    <g>
+      {leads(cx - r, cx + r)}
+      <circle cx={cx} cy={cy} fill="none" r={r} stroke={stroke} strokeWidth="1.5" />
+      <text dominantBaseline="central" fill={stroke} fontSize={r * 1.1} textAnchor="middle" x={cx} y={cy + 0.5}>
+        {component === "ammeter" ? "A" : "V"}
+      </text>
+    </g>
+  );
+}
+
+export function Circuit({ visual }: { visual: CircuitVisual }) {
+  // 🔴 EVERY POSITION COMES FROM `visual-layout.ts` (§46). The series runs, the parallel rails and
+  // where each symbol sits are arithmetic a test exercises; this component only draws the answer.
+  const layout = layoutCircuit(visual);
+  return (
+    <div>
+      <svg aria-label={visual.learningGoal} className={VISUAL_FIGURE_CLASS} role="img" viewBox={`0 0 ${VISUAL_WIDTH} ${layout.height}`}>
+        {layout.wires.map((wire, index) => (
+          <line key={index} stroke="var(--ui-text-primary)" strokeWidth="1.5" x1={wire.x1} x2={wire.x2} y1={wire.y1} y2={wire.y2} />
+        ))}
+        {layout.dots.map((dot, index) => (
+          <circle cx={dot.x} cy={dot.y} fill="var(--ui-text-primary)" key={index} r="2.5" />
+        ))}
+        {layout.parts.map((part, index) => (
+          <g key={index}>
+            <CircuitGlyph part={part} />
+            {part.label && (
+              <text fill="var(--ui-text-secondary)" fontSize="11" textAnchor="middle" x={part.cx} y={part.cy - part.h / 2 - 5}>
+                {part.label}
+              </text>
+            )}
+            {part.value && (
+              <text fill="var(--ui-text-tertiary)" fontSize="10" textAnchor="middle" x={part.cx} y={part.cy + part.h / 2 + 13}>
+                {part.value}
+              </text>
+            )}
+          </g>
+        ))}
+        {layout.supply && (
+          <g>
+            <CircuitGlyph
+              part={{ component: "battery", cx: layout.supply.cx, cy: layout.supply.cy, h: layout.supply.h, w: layout.supply.w }}
+            />
+            {layout.supply.label && (
+              <text
+                fill="var(--ui-text-secondary)"
+                fontSize="11"
+                textAnchor="middle"
+                x={layout.supply.cx}
+                y={layout.supply.cy + layout.supply.h / 2 + 14}
+              >
+                {layout.supply.label}
+              </text>
+            )}
+          </g>
+        )}
+      </svg>
+      {visual.equivalentOhms !== undefined && (
+        // Stated because it was checked: a claimed equivalent that did not match the network's own
+        // arithmetic never reached this component. The same visible half the table's balance keeps.
+        <p className="mt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+          Equivalent resistance {visual.equivalentOhms} Ω · checked against the diagram.
+        </p>
+      )}
+    </div>
   );
 }
 

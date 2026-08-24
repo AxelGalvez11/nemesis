@@ -560,6 +560,9 @@ function RoutedVisual({ visual }: { visual: CanvasBlock["visual"] }) {
     && route.representation !== "construction"
     && route.representation !== "vectors"
     && route.representation !== "code"
+    && route.representation !== "score"
+    && route.representation !== "circuit"
+    && route.representation !== "surface"
   ) {
     return null;
   }

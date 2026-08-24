@@ -151,6 +151,69 @@ export function curve(request: CurveRequest): Computed<Segment[]> {
   return { ok: true, value: segments };
 }
 
+export interface SurfaceGridRequest {
+  readonly expression: string;
+  readonly xFrom: number;
+  readonly xTo: number;
+  readonly yFrom: number;
+  readonly yTo: number;
+}
+
+/**
+ * How finely a surface is sampled, per axis.
+ *
+ * 🔴 FIXED RATHER THAN REQUESTABLE. A curve's sample count is a bound the model may move within; a
+ * surface's cost is that number SQUARED, and 41×41 is already 1,681 evaluations. The one knob that
+ * exists is the domain, which is the one that is actually about the mathematics.
+ */
+export const SURFACE_SAMPLES = 41;
+
+/**
+ * Evaluate z = f(x, y) across a rectangle.
+ *
+ * 🔴 HOLES STAY IN THE GRID AS `null` INSTEAD OF SPLITTING IT. A curve splits at a gap because a
+ * polyline joining across one draws a lie; a surface mesh simply omits every patch that touches an
+ * undefined corner, so the renderer needs the positions kept — `grid[row][col]` must stay
+ * addressable by (x, y) index or every point after a hole shifts.
+ *
+ * Rows follow y and columns follow x, each from its `from` to its `to` in equal steps.
+ */
+export function surfaceGrid(request: SurfaceGridRequest): Computed<Array<Array<number | null>>> {
+  const checked = checkExpression(request.expression, ["x", "y"]);
+  if (!checked.ok) return { detail: checked.detail, ok: false, reason: checked.reason };
+
+  const { xFrom, xTo, yFrom, yTo } = request;
+  if ([xFrom, xTo, yFrom, yTo].some((value) => !Number.isFinite(value)) || xFrom === xTo || yFrom === yTo) {
+    return { detail: "a surface needs an x range and a y range with width", ok: false, reason: "domain-unusable" };
+  }
+
+  const xStep = (xTo - xFrom) / (SURFACE_SAMPLES - 1);
+  const yStep = (yTo - yFrom) / (SURFACE_SAMPLES - 1);
+  const grid: Array<Array<number | null>> = [];
+  let defined = 0;
+  for (let row = 0; row < SURFACE_SAMPLES; row += 1) {
+    const y = yFrom + row * yStep;
+    const line: Array<number | null> = [];
+    for (let col = 0; col < SURFACE_SAMPLES; col += 1) {
+      const value = checked.evaluate({ x: xFrom + col * xStep, y });
+      if (value !== null) defined += 1;
+      line.push(value);
+    }
+    grid.push(line);
+  }
+
+  // The validator's own floor, applied where the numbers are made: a formula defined almost nowhere
+  // in the asked region should say so rather than ship a grid of holes.
+  if (defined < 4) {
+    return {
+      detail: `"${request.expression}" has almost no value over this region`,
+      ok: false,
+      reason: "nothing-to-plot",
+    };
+  }
+  return { ok: true, value: grid };
+}
+
 /** The middle value of a list, used to judge what "large" means for one particular curve. */
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
-import { curve, DEFAULT_SAMPLES, distributionCurve, sampledHistogram } from "./computed-series";
+import { curve, DEFAULT_SAMPLES, distributionCurve, sampledHistogram, SURFACE_SAMPLES, surfaceGrid } from "./computed-series";
 import { verifyEquivalence, verifyExpressionValue } from "./visual-verification";
 
 function segments(expression: string, from: number, to: number, samples?: number) {
@@ -155,4 +155,47 @@ test("comparing where neither side exists is nothing-to-check, not agreement", (
   const result = verifyEquivalence("sqrt(x)", "sqrt(x)", "x", { from: -10, to: -5 });
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.reason, "nothing-to-check");
+});
+
+// ─────────────────────────────────────────────────────────────── surfaces
+
+test("a paraboloid grid is the sampled square, oriented rows-follow-y", () => {
+  const result = surfaceGrid({ expression: "x^2 + y^2", xFrom: -2, xTo: 2, yFrom: -2, yTo: 2 });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.value.length, SURFACE_SAMPLES);
+  assert.equal(at(result.value).length, SURFACE_SAMPLES);
+  // Corners are (±2)² + (±2)² = 8; the exact centre of a 41×41 grid is (0, 0) → 0.
+  assert.equal(at(at(result.value)), 8);
+  const middle = at(at(result.value, (SURFACE_SAMPLES - 1) / 2), (SURFACE_SAMPLES - 1) / 2);
+  assert.equal(middle, 0);
+});
+
+test("🔴 a region where the formula has no value becomes null holes, never zeros", () => {
+  // sqrt(x·y) exists only where the product is non-negative: two quadrants of holes.
+  const result = surfaceGrid({ expression: "sqrt(x*y)", xFrom: -2, xTo: 2, yFrom: -2, yTo: 2 });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const flat = result.value.flat();
+  assert.ok(flat.some((cell) => cell === null), "no holes were recorded");
+  assert.ok(flat.some((cell) => typeof cell === "number"), "nothing was defined");
+  // x = -2, y = 2 (last row, first column): product negative, so a hole.
+  assert.equal(at(at(result.value, SURFACE_SAMPLES - 1)), null);
+});
+
+test("a formula defined nowhere in the region says so instead of shipping a grid of holes", () => {
+  const result = surfaceGrid({ expression: "sqrt(0 - 5 - x^2 - y^2)", xFrom: -2, xTo: 2, yFrom: -2, yTo: 2 });
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "nothing-to-plot");
+});
+
+test("a surface expression is held to the same allow list as a curve", () => {
+  const result = surfaceGrid({ expression: "import(\'fs\')", xFrom: 0, xTo: 1, yFrom: 0, yTo: 1 });
+  assert.equal(result.ok, false);
+});
+
+test("a surface domain with no width is refused", () => {
+  const result = surfaceGrid({ expression: "x + y", xFrom: 1, xTo: 1, yFrom: 0, yTo: 1 });
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "domain-unusable");
 });

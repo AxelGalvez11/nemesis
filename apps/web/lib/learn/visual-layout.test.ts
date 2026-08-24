@@ -15,6 +15,7 @@ import test from "node:test";
 
 import type { ConstructionVisual, FlowVisual, TimelineVisual } from "./canvas-visual";
 import {
+  layoutCircuit,
   layoutConstruction,
   layoutFlow,
   layoutTimeline,
@@ -485,7 +486,8 @@ test("🔴 every drawn figure wears the one class, rather than restating it", ()
   // floor. There were three such spellings in each file before this.
   assert.ok(!/className="h-auto w-full" role="img"/.test(SEMANTIC_SOURCE + SUBJECT_SOURCE));
   assert.equal((SEMANTIC_SOURCE.match(/className=\{VISUAL_FIGURE_CLASS\}/g) ?? []).length, 2);
-  assert.equal((SUBJECT_SOURCE.match(/className=\{VISUAL_FIGURE_CLASS\}/g) ?? []).length, 3);
+  // Four: timeline, construction, vectors — and the circuit, which joined 2026-08-24.
+  assert.equal((SUBJECT_SOURCE.match(/className=\{VISUAL_FIGURE_CLASS\}/g) ?? []).length, 4);
 });
 
 test("🔴🔴 a figure that sizes itself is NEVER capped — the viewBox stays truthful", () => {
@@ -561,4 +563,89 @@ test("🔴 a molecule's FRAME fits the molecule; every other figure still fills 
   assert.match(source, /visual\.kind === "structure"\s*\?\s*"my-4 mx-auto w-fit max-w-full/);
   const fitCount = (source.match(/w-fit/g) ?? []).length;
   assert.equal(fitCount, 1, `${fitCount} figure kinds shrink-wrap; only a structure should`);
+});
+
+// ─────────────────────────────────────────────────────────────── circuit
+
+const LADDER_LAYOUT = layoutCircuit({
+  elements: {
+    arrangement: "series",
+    parts: [
+      { component: "resistor", label: "R1", ohms: 100 },
+      {
+        arrangement: "parallel",
+        parts: [
+          { component: "resistor", label: "R2", ohms: 200 },
+          { component: "lamp", label: "L1" },
+        ],
+      },
+    ],
+  },
+  kind: "circuit",
+  learningGoal: "Read a series-parallel circuit",
+  supply: { label: "12 V" },
+});
+
+test("series parts sit on one centreline, left to right", () => {
+  const r1 = present(LADDER_LAYOUT.parts.find((part) => part.label === "R1"));
+  const r2 = present(LADDER_LAYOUT.parts.find((part) => part.label === "R2"));
+  const lamp = present(LADDER_LAYOUT.parts.find((part) => part.label === "L1"));
+  assert.ok(r1.cx < r2.cx, "the series neighbour is not to the right");
+  // The parallel group centres on the series line: one branch above it, one below.
+  assert.ok(r2.cy < r1.cy && lamp.cy > r1.cy, "the parallel branches do not straddle the run");
+  assert.equal(r2.cx, lamp.cx);
+});
+
+test("🔴 parallel branches never overlap — the gap holds a label line and a value line", () => {
+  const r2 = present(LADDER_LAYOUT.parts.find((part) => part.label === "R2"));
+  const lamp = present(LADDER_LAYOUT.parts.find((part) => part.label === "L1"));
+  assert.ok(lamp.cy - lamp.h / 2 - (r2.cy + r2.h / 2) >= 30, "the branch gap has collapsed");
+});
+
+test("a parallel group grows rails and junction dots", () => {
+  // Two vertical wires (the rails) and four tee dots, two per rail.
+  const rails = LADDER_LAYOUT.wires.filter((wire) => wire.x1 === wire.x2 && wire.y1 !== wire.y2 && wire.x1 > 0);
+  assert.ok(rails.length >= 2, `expected two rails, found ${rails.length}`);
+  assert.equal(LADDER_LAYOUT.dots.length, 4);
+});
+
+test("the supply closes the loop at the bottom, under the network", () => {
+  const supply = present(LADDER_LAYOUT.supply);
+  assert.equal(supply.label, "12 V");
+  for (const part of LADDER_LAYOUT.parts) {
+    assert.ok(supply.cy > part.cy + part.h / 2, "the supply is not below every component");
+  }
+  // The two loop columns: vertical wires at the far left and far right edges.
+  const columns = LADDER_LAYOUT.wires.filter((wire) => wire.x1 === wire.x2 && Math.abs(wire.y2 - wire.y1) > 40);
+  assert.ok(columns.length >= 2, "the loop does not close");
+});
+
+test("🔴 a wide circuit scales down uniformly rather than escaping the column", () => {
+  const wide = layoutCircuit({
+    elements: {
+      arrangement: "series",
+      parts: Array.from({ length: 6 }, (_, index) => ({ component: "resistor" as const, label: `R${index + 1}`, ohms: 10 })),
+    },
+    kind: "circuit",
+    learningGoal: "Six in series",
+    supply: {},
+  });
+  assert.ok(wide.scale < 1, "six series slots cannot fit the column at natural size");
+  for (const wire of wide.wires) {
+    for (const x of [wire.x1, wire.x2]) assert.ok(x >= 0 && x <= VISUAL_WIDTH, `a wire reaches ${x}`);
+  }
+  // ...and an ordinary circuit does not pay for that: the ladder above drew at natural size.
+  assert.equal(LADDER_LAYOUT.scale, 1);
+});
+
+test("a fragment with no supply draws no loop, just the network with open leads", () => {
+  const fragment = layoutCircuit({
+    elements: { arrangement: "series", parts: [{ component: "resistor", label: "R", ohms: 5 }] },
+    kind: "circuit",
+    learningGoal: "Just the network",
+  });
+  assert.equal(fragment.supply, null);
+  const columns = fragment.wires.filter((wire) => wire.x1 === wire.x2 && Math.abs(wire.y2 - wire.y1) > 40);
+  assert.equal(columns.length, 0);
+  assert.ok(fragment.height < 100, "a one-part fragment should be shallow");
 });

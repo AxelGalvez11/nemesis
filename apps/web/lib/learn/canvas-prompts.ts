@@ -149,9 +149,15 @@ const VISUAL_RULE =
   '{"kind":"timeline","unit":"years","events":[{"at":-49,"atLabel":"49 BCE","label":"…","until":-44,"lane":"…","uncertain":true}],"hidden":0} — "at" is a plain number on any scale you choose and "atLabel" is what a human reads, so eras, geological time and seconds all work without a date format; ' +
   '{"kind":"construction","points":[{"id":"A","x":0,"y":0,"label":"A"}],"segments":[{"from":"A","to":"B","label":"4"}],"circles":[{"centre":"A","through":"B"}],"angles":[{"at":"A","from":"B","to":"C","degrees":90}]}; ' +
   '{"kind":"vectors","bodyLabel":"…","axesDegrees":30,"vectors":[{"label":"Weight","magnitude":98,"degrees":270,"unit":"N"}],"equilibrium":true}; ' +
-  'or {"kind":"code","language":"python","source":"…","trace":[{"line":1,"note":"…","variables":[{"name":"total","value":"0"}]}]}. ' +
+  '{"kind":"code","language":"python","source":"…","trace":[{"line":1,"note":"…","variables":[{"name":"total","value":"0"}]}]}; ' +
+  // 🔴 THE THREE SHAPES THE OWNER'S AUDIT ASKED FOR (2026-08-24), STATED THE SAME WAY: a canonical
+  // encoding in, trusted drawing out. ABC is music's SMILES; the circuit tree is a netlist the
+  // layout arithmetic can always place; the surface is §45's computed channel with one more axis.
+  '{"kind":"score","abc":"X:1\\nT:…\\nM:4/4\\nL:1/4\\nK:C\\nC D E F|G2 G2|"} — real staff notation engraved from ABC, for a melody, a rhythm, an interval or a chord voicing. Standard ABC with headers, K: required; no %%-directive or comment lines. Keep it an excerpt a learner reads at a glance, not a whole piece; ' +
+  '{"kind":"circuit","supply":{"label":"12 V"},"elements":{"arrangement":"series","parts":[{"component":"resistor","label":"R1","value":"100 Ω","ohms":100},{"arrangement":"parallel","parts":[{"component":"resistor","label":"R2","value":"200 Ω","ohms":200},{"component":"lamp","label":"L1"}]}]},"equivalentOhms":…} — a schematic drawn from series/parallel structure alone, never coordinates. Components: resistor, capacitor, inductor, battery, switch, lamp, diode, ammeter, voltmeter. Give a resistor its "ohms" as a number whenever the lesson works with values; "equivalentOhms" is RECOMPUTED from the tree and verifies only when every part is a resistor with ohms, so state it only then and only after working it out; ' +
+  'or {"kind":"surface","expression":"x^2 - y^2","xFrom":-2,"xTo":2,"yFrom":-2,"yTo":2,"zLabel":"z"} — a rotatable 3D surface z = f(x,y). Write the FORMULA in x and y with the domain; trusted code evaluates it on a grid and draws it, exactly as a series expression becomes a curve. Never write grid values yourself. ' +
   'Every shape also takes "learningGoal" and "caption". ' +
-  "A stated total, balance, angle or equilibrium is RECOMPUTED from the data you supply, and a claim that does not hold produces no visual at all — so state one only when you have worked it out. " +
+  "A stated total, balance, angle, equilibrium or equivalent resistance is RECOMPUTED from the data you supply, and a claim that does not hold produces no visual at all — so state one only when you have worked it out. " +
   // 🔴 THE FUNCTION LIST IS THE PARSER'S OWN ALLOW LIST (`expression.ts`), NOT A SELECTION. Naming
   // them stops the model reaching for `gamma(x)` or `integrate(...)`, discovering nothing was
   // drawn, and concluding the channel does not work — the same silent-failure shape that cost

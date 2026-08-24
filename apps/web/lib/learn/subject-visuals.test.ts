@@ -286,3 +286,245 @@ test("a snippet past the teaching bound is refused", () => {
   assert.equal(validateCanvasVisual({ ...CODE, source: "x = 1\n".repeat(200) }).ok, false);
   assert.equal(validateCanvasVisual({ ...CODE, source: "" }).ok, false);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────── score
+
+const PHRASE = base({
+  abc: "X:1\nT:Ode fragment\nM:4/4\nL:1/4\nK:G\nB B c d|d c B A|G G A B|B3/2 A/2 A2|",
+  kind: "score",
+});
+
+test("a notated phrase validates and keeps its ABC intact", () => {
+  const result = validateCanvasVisual(PHRASE);
+  assert.equal(result.ok, true);
+  assert.ok(result.ok && result.visual.kind === "score" && result.visual.abc.includes("K:G"));
+});
+
+test("an excerpt without an index header is given one rather than refused", () => {
+  // X: is bookkeeping, not content, and the engraver requires it — a model must never lose an
+  // excerpt over a serial number.
+  const result = validateCanvasVisual(base({ abc: "M:3/4\nK:D\nA B c|", kind: "score" }));
+  assert.ok(result.ok && result.visual.kind === "score" && result.visual.abc.startsWith("X:1\n"));
+});
+
+test("🔴 a %%-directive line is refused — directives steer the engraver, not the music", () => {
+  const result = validateCanvasVisual(base({ abc: "X:1\nK:C\n%%pagewidth 21cm\nC D E F|", kind: "score" }));
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "malformed-subject");
+  assert.match(result.ok === false ? result.detail : "", /directive/);
+});
+
+test("🔴 notes with no key header are refused, because the engraver would fail silently", () => {
+  const result = validateCanvasVisual(base({ abc: "X:1\nC D E F|G A B c|", kind: "score" }));
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.detail : "", /key header/);
+});
+
+test("a whole piece is past the excerpt bound", () => {
+  const long = `X:1\nK:C\n${"C D E F|G A B c|\n".repeat(80)}`;
+  const result = validateCanvasVisual(base({ abc: long, kind: "score" }));
+  assert.equal(result.ok, false);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────── circuit
+
+/** R1 in series with (R2 parallel R3): 100 + (200·200)/(200+200) = 200 Ω. */
+const LADDER = base({
+  elements: {
+    arrangement: "series",
+    parts: [
+      { component: "resistor", label: "R1", ohms: 100, value: "100 Ω" },
+      {
+        arrangement: "parallel",
+        parts: [
+          { component: "resistor", label: "R2", ohms: 200, value: "200 Ω" },
+          { component: "resistor", label: "R3", ohms: 200, value: "200 Ω" },
+        ],
+      },
+    ],
+  },
+  equivalentOhms: 200,
+  kind: "circuit",
+  supply: { label: "12 V" },
+});
+
+test("a series-parallel ladder validates, and the claimed equivalent is checked rather than trusted", () => {
+  const result = validateCanvasVisual(LADDER);
+  assert.equal(result.ok, true);
+  assert.ok(result.ok && result.visual.kind === "circuit" && result.visual.equivalentOhms === 200);
+});
+
+test("🔴 a wrong equivalent resistance is refused as a REASONING failure — it is the answer key", () => {
+  const result = validateCanvasVisual({ ...LADDER, equivalentOhms: 500 });
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "failed-verification");
+  assert.match(result.ok === false ? result.detail : "", /value-mismatch/);
+  // The refusal names both numbers, because that is the form a person can check by hand.
+  assert.match(result.ok === false ? result.detail : "", /200/);
+});
+
+test("a hand-rounded equivalent within three significant figures verifies", () => {
+  // 80·200/280 = 57.142857… and a learner's 57.1 must not be refused over the rounding.
+  const result = validateCanvasVisual(base({
+    elements: {
+      arrangement: "parallel",
+      parts: [
+        { component: "resistor", ohms: 80 },
+        { component: "resistor", ohms: 200 },
+      ],
+    },
+    equivalentOhms: 57.1,
+    kind: "circuit",
+  }));
+  assert.equal(result.ok, true);
+});
+
+test("🔴 an equivalent claimed over a network with a capacitor in it refuses — the claim cannot be recomputed", () => {
+  const result = validateCanvasVisual(base({
+    elements: {
+      arrangement: "series",
+      parts: [
+        { component: "resistor", ohms: 100 },
+        { component: "capacitor", value: "10 µF" },
+      ],
+    },
+    equivalentOhms: 100,
+    kind: "circuit",
+  }));
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "failed-verification");
+  assert.match(result.ok === false ? result.detail : "", /nothing-to-check/);
+});
+
+test("the same network with no claim attached validates — drawing is fine, claiming is the commitment", () => {
+  const result = validateCanvasVisual(base({
+    elements: {
+      arrangement: "series",
+      parts: [
+        { component: "resistor", ohms: 100 },
+        { component: "capacitor", value: "10 µF" },
+        { component: "lamp", label: "L1" },
+        { component: "ammeter" },
+      ],
+    },
+    kind: "circuit",
+  }));
+  assert.equal(result.ok, true);
+});
+
+test("a component no renderer draws is refused by name", () => {
+  const result = validateCanvasVisual(base({
+    elements: { arrangement: "series", parts: [{ component: "op-amp" }] },
+    kind: "circuit",
+  }));
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.detail : "", /op-amp/);
+});
+
+test("groups past the nesting bound are refused rather than laid out wrongly", () => {
+  const deep = {
+    arrangement: "series",
+    parts: [{ arrangement: "parallel", parts: [{ arrangement: "series", parts: [{ arrangement: "parallel", parts: [{ component: "resistor", ohms: 1 }] }] }] }],
+  };
+  const result = validateCanvasVisual(base({ elements: deep, kind: "circuit" }));
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.detail : "", /nest/);
+});
+
+test("a circuit past the component budget is refused", () => {
+  const crowded = {
+    arrangement: "series",
+    parts: [
+      { arrangement: "parallel", parts: Array.from({ length: 5 }, () => ({ component: "resistor", ohms: 10 })) },
+      { arrangement: "parallel", parts: Array.from({ length: 5 }, () => ({ component: "resistor", ohms: 10 })) },
+      { arrangement: "parallel", parts: Array.from({ length: 5 }, () => ({ component: "resistor", ohms: 10 })) },
+    ],
+  };
+  const result = validateCanvasVisual(base({ elements: crowded, kind: "circuit" }));
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.detail : "", /12 components/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────── surface
+
+const SADDLE_GRID = [
+  [0, -1, -4],
+  [1, 0, -3],
+  [4, 3, 0],
+];
+
+const SADDLE = base({
+  expression: "x^2 - y^2",
+  grid: SADDLE_GRID,
+  kind: "surface",
+  xFrom: -2,
+  xTo: 2,
+  yFrom: -2,
+  yTo: 2,
+});
+
+test("a surface with its computed grid validates", () => {
+  const result = validateCanvasVisual(SADDLE);
+  assert.equal(result.ok, true);
+  assert.ok(result.ok && result.visual.kind === "surface" && result.visual.grid.length === 3);
+});
+
+test("🔴 a surface without a grid is refused — nothing model-written may impersonate computed numbers", () => {
+  const { grid: _grid, ...request } = SADDLE;
+  const result = validateCanvasVisual(request);
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.detail : "", /computed grid/);
+});
+
+test("holes travel as null and survive validation", () => {
+  const result = validateCanvasVisual({
+    ...SADDLE,
+    grid: [
+      [1, null, 2],
+      [null, 3, 4],
+      [5, 6, null],
+    ],
+  });
+  assert.equal(result.ok, true);
+});
+
+test("🔴 ragged grid rows are refused rather than padded", () => {
+  const result = validateCanvasVisual({ ...SADDLE, grid: [[1, 2, 3], [4, 5]] });
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.detail : "", /same length/);
+});
+
+test("a grid cell that is not a finite number or null is refused", () => {
+  const result = validateCanvasVisual({ ...SADDLE, grid: [[1, 2], [3, "4"]] });
+  assert.equal(result.ok, false);
+});
+
+test("a domain with no width is refused", () => {
+  const result = validateCanvasVisual({ ...SADDLE, xTo: -2 });
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.detail : "", /width/);
+});
+
+test("a grid that is almost entirely holes is refused rather than drawn as an empty box", () => {
+  const result = validateCanvasVisual({
+    ...SADDLE,
+    grid: [
+      [1, null, null],
+      [null, 2, null],
+      [null, null, 3],
+    ],
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.detail : "", /defined points/);
+});
+
+test("all three new shapes route to their own renderers", () => {
+  for (const request of [PHRASE, LADDER, SADDLE]) {
+    const validated = validateCanvasVisual(request);
+    assert.equal(validated.ok, true);
+    if (!validated.ok) continue;
+    const route = routeVisual({ request: validated.visual });
+    assert.equal(route.decision, "render");
+    assert.equal(route.decision === "render" && route.representation, validated.visual.kind);
+  }
+});

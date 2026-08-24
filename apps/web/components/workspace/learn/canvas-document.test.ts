@@ -148,3 +148,21 @@ test("🔴 REVERSED: the exposure-acknowledgment button is DELETED, and Continue
     "🔴 restrained, per the owner: 'not a giant black CTA… it is the learner saying I have read this'",
   );
 });
+
+test("🔴 every shape the validator accepts survives RoutedVisual's narrowing to the renderer", async () => {
+  // 🔴 THE FAILURE THIS CATCHES SHIPPED ONCE, ON 2026-08-24, AND WAS FOUND BY EYES RATHER THAN BY
+  // A TEST. Three new shapes validated, routed and rendered in every unit test — and drew nothing
+  // on the page, because RoutedVisual narrows the route's representation with explicit `!==`
+  // comparisons (deliberately, so TypeScript narrows `route.spec`) and nobody had taught the list
+  // the new names. A shape missing here is a renderer nobody can reach, which is this repo's most
+  // repeated defect. `SUBJECT_KINDS` is the validator's own list, so the two cannot drift apart
+  // silently again.
+  const source = await SOURCE;
+  const { SUBJECT_KINDS } = await import("@/lib/learn/subject-visuals");
+  for (const kind of SUBJECT_KINDS) {
+    assert.ok(
+      source.includes(`route.representation !== "${kind}"`),
+      `RoutedVisual never lets a "${kind}" through to SemanticVisual — the shape validates and then draws nothing`,
+    );
+  }
+});
