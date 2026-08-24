@@ -26,6 +26,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { emptyCanvas } from "./canvas-model";
+import { validateCanvasVisual } from "./canvas-visual";
 import { canvasHasMaterial } from "./canvas-deliverables";
 
 const ROUTER = readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8");
@@ -81,6 +82,60 @@ test("🔴 …and the RULE is in the code, not only in the prompt", () => {
     !branch.includes("begin("),
     "the conversation can start the laid-out lesson again; only `learnFromAside` may do that",
   );
+});
+
+test("🔴🔴 the shapes the prompt DOCUMENTS are the shapes the validator ACCEPTS", () => {
+  // 🔴🔴🔴 BEING TOLD ABOUT A TOOL IS NOT ENOUGH — THE SHAPE HAS TO BE GUESSABLE. The prompt used to
+  // summarise these ("table (columns, rows)", "timeline (events)", "vectors (vectors, bodyLabel)")
+  // and every one of those readings is REFUSED: a column is an object with a key, an event is
+  // positioned by a number, a vector is a magnitude and a bearing. The refusal is silent by design
+  // — the figure is dropped and the `[figure n]` marker stays in the prose — so from the outside an
+  // unguessable shape looks exactly like a broken renderer. Measured on 2026-08-24: table,
+  // timeline, vectors and circuit all refused a natural reading of the old text.
+  //
+  // Each payload below is the prompt's documented shape, written out. If a validator tightens, this
+  // reddens and the prompt has to move with it.
+  const documented: Record<string, unknown> = {
+    circuit: {
+      kind: "circuit", learningGoal: "series resistance",
+      elements: { arrangement: "series", parts: [{ component: "resistor", label: "R1", ohms: 100 }, { component: "resistor", label: "R2", ohms: 220 }] },
+      supply: { label: "9 V" }, equivalentOhms: 320,
+    },
+    construction: {
+      kind: "construction", learningGoal: "a 3-4-5 triangle",
+      points: [{ id: "A", x: 0, y: 0 }, { id: "B", x: 3, y: 0 }, { id: "C", x: 0, y: 4 }],
+      segments: [{ from: "A", to: "B" }, { from: "B", to: "C" }, { from: "C", to: "A" }],
+    },
+    quantitative: {
+      kind: "quantitative", learningGoal: "the shape", xLabel: "x", yLabel: "y",
+      series: [{ label: "y", points: [{ x: -2, y: 0 }, { x: 0, y: -4 }, { x: 2, y: 0 }] }],
+    },
+    score: { kind: "score", learningGoal: "C major", abc: "K:C\nCDEFGABc" },
+    structure: { kind: "structure", learningGoal: "aspirin", notation: "smiles", value: "CC(=O)Oc1ccccc1C(=O)O" },
+    table: {
+      kind: "table", learningGoal: "compare",
+      columns: [{ key: "b", label: "Branch" }, { key: "r", label: "Role" }],
+      rows: [{ key: "1", cells: { b: "Legislative", r: "Writes law" } }],
+    },
+    timeline: {
+      kind: "timeline", learningGoal: "the revolution", unit: "year",
+      events: [{ label: "Bastille", at: 1789 }, { label: "Coup", at: 1799 }],
+    },
+    vectors: {
+      kind: "vectors", learningGoal: "forces on a block", bodyLabel: "block",
+      vectors: [{ label: "weight", magnitude: 10, degrees: 270 }, { label: "normal", magnitude: 10, degrees: 90 }],
+    },
+  };
+  for (const [kind, payload] of Object.entries(documented)) {
+    const result = validateCanvasVisual(payload) as { ok: boolean; detail?: string };
+    assert.ok(result.ok, `the documented shape for "${kind}" is refused: ${result.detail ?? ""}`);
+  }
+
+  // 🔴 AND THE DISTINGUISHING FIELDS ARE ACTUALLY IN THE PROMPT — the ones a model would otherwise
+  // never guess, which is precisely why each was wrong before.
+  for (const field of ["magnitude", "degrees", "cells", "columnKey", "supply", "equivalentOhms", "xFrom"]) {
+    assert.ok(ROUTER.includes(field), `the conversation is never told about the "${field}" field`);
+  }
 });
 
 test("🔴 flashcards, notes and slides build from what was SAID, not only from blocks", () => {

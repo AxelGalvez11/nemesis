@@ -513,14 +513,30 @@ const NEMESIS_SYSTEM = [
   + "a force diagram, an equation, a traced snippet of code, a circuit, a bar of music, a 3D "
   + "surface, a molecule, a protein, an anatomical structure, a licensed textbook figure — put the "
   + "figure in the \"visuals\" array and write [figure 1], [figure 2] inline where each one "
-  + "belongs. Every kind takes \"kind\" and \"learningGoal\", plus its own fields: quantitative "
-  + "(series of {x,y} points or an expression, xLabel, yLabel), relationship (nodes, edges), table "
-  + "(columns, rows), timeline (events), construction (points, segments), vectors (vectors, "
-  + "bodyLabel), equation (latex), code (language, source, trace), circuit (elements as a "
-  + "series/parallel tree of parts, supply, equivalentOhms), score (abc notation with a K: header), "
-  + "surface (expression in x and y, xFrom, xTo, yFrom, yTo), structure (smiles), macromolecule "
-  + "(accession), anatomy (structure: one anatomical NAME), figure (a licensed picture requested by "
-  + "subject). At most " + String(MAX_REPLY_VISUALS) + " per answer.",
+  + "belongs. Every kind takes \"kind\" and \"learningGoal\", plus its own fields. At most "
+  + String(MAX_REPLY_VISUALS) + " per answer.",
+
+  // 🔴🔴 EXACT FIELD NAMES, BECAUSE A LOOSE DESCRIPTION IS REFUSED AS SURELY AS A MISSING ONE. This
+  // read "table (columns, rows)", "timeline (events)", "vectors (vectors, bodyLabel)" — each a
+  // plausible sentence that produces an INVALID figure, because a column is an object with a key,
+  // an event is positioned by a NUMBER, and a vector is a magnitude with a bearing. Measured
+  // 2026-08-24 against the real validator: the natural reading of the old text was refused for
+  // table, timeline, vectors and circuit alike. And the refusal is silent by design — the figure is
+  // dropped and its `[figure n]` marker stays in the prose — so a shape the model cannot guess is
+  // indistinguishable, from the outside, from a renderer that does not work.
+  "The exact shapes. The validator checks these and silently drops anything that does not match: "
+  + "quantitative {xLabel, yLabel, series:[{label, points:[{x,y}]}]}, or a formula instead of the "
+  + "points (see below). relationship {nodes:[{id,label}], edges:[{from,to,label}]}. "
+  + "table {columns:[{key,label}], rows:[{key, cells:{<columnKey>: \"…\"}}]}. "
+  + "timeline {unit, events:[{label, at:<number>}]} — `at` is a NUMBER on that unit's scale, never a "
+  + "date string. vectors {bodyLabel, vectors:[{label, magnitude:<number>, degrees:<number>}]} — a "
+  + "length and a bearing, never components. construction {points:[{id,x,y}], segments:[{from,to}]}. "
+  + "equation {latex}. code {language, source, trace}. "
+  + "circuit {elements:{arrangement:\"series\"|\"parallel\", parts:[{component:\"resistor\", label, "
+  + "ohms}]}, supply:{label:\"9 V\"}, equivalentOhms} — `supply` is an OBJECT with a label, and an "
+  + "`equivalentOhms` you state is recomputed and the whole figure refused if it disagrees. "
+  + "score {abc} — ABC notation including its K: header line. "
+  + "surface {expression, xFrom, xTo, yFrom, yTo} — the grid is computed for you.",
 
   // 🔴 THE THREE THAT ARE A LOOKUP RATHER THAN A DRAWING, SAID SEPARATELY BECAUSE THE MISTAKE IS
   // TO WRITE THEIR DATA FROM MEMORY. Each takes a NAME and trusted code fetches the real thing;
