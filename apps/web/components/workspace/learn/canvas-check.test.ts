@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { cardsFromMisses, type TestRun } from "@/lib/learn/test-run";
+import { cardsFromMisses, describeAttempt, type TestRun } from "@/lib/learn/test-run";
+
+/** Two questions, one answered wrongly and one skipped — enough to exercise every branch. */
+const RUN: TestRun = {
+  questions: [
+    { objectiveIdentityKey: "a", options: [{ correct: true, text: "right" }, { correct: false, text: "wrong" }], prompt: "Q1?" },
+    { objectiveIdentityKey: "b", options: [{ correct: true, text: "yes" }, { correct: false, text: "no" }], prompt: "Q2?" },
+  ],
+};
 
 // ── the test card on the canvas: where it may appear, and what it may take over ──────────────
 //
@@ -59,19 +67,31 @@ test("🔴🔴 no question is marked while the test is still running", () => {
   // the right row grew a ring, the wrong rows faded to 45% opacity, and every row went `disabled`.
   // A learner could see which one was right without reading anything. So: the question screen must
   // not branch on correctness, and the marking must live in `CheckResult`.
-  const question = CHECK.slice(CHECK.indexOf("export function CanvasCheck"), CHECK.indexOf("export function groundedMiss"));
-  const result = CHECK.slice(CHECK.indexOf("function CheckResult"));
-  assert.ok(question.length > 0 && result.length > 0, "the two screens could not be told apart — this guard is pointed at nothing");
+  assert.ok(!/option\.correct/.test(CHECK), "the question screen reads which option is correct — the answer leaks through styling");
+  assert.ok(!/verdictFor\(/.test(CHECK), "the question screen is scoring a tap as it happens");
+  assert.ok(!/groundedMiss\(/.test(CHECK), "a verdict sentence is back on the question screen");
 
-  assert.ok(!/option\.correct/.test(question), "the live question screen reads which option is correct — the answer leaks through styling");
-  assert.ok(!/groundedMiss\(/.test(question), "a verdict sentence is back on the live question screen");
-  assert.ok(!/verdictFor\(/.test(question), "the live question screen is scoring a tap as it happens");
+  // …and the feedback genuinely moved rather than being deleted. It now lives in the account
+  // `describeAttempt` writes for the model — score, every prompt, every pick, every answer.
+  const account = describeAttempt(RUN, ["wrong", null]);
+  assert.match(account, /0 out of 2/, "the account no longer carries the score");
+  assert.match(account, /I answered "wrong", but the answer was "right"/, "the account hides what they picked or what was right");
+  assert.match(account, /I skipped this one/, "an unanswered question is not reported as skipped");
+});
 
-  // …and the feedback genuinely moved rather than being deleted: the review still names the
-  // ground, still states the answer, and still shows what they picked.
-  assert.match(result, /groundedMiss\(/, "the grounded sentence was dropped instead of moved to the review");
-  assert.match(result, /verdictFor\(/, "the review does not mark the questions at all");
-  assert.match(result, /The answer:/, "the review never states the right answer");
+test("🔴🔴 the run ends by handing the conversation an account, not by drawing a screen", () => {
+  // 🔴 OWNER, 2026-08-24: *"at the end it shouldn't show anything… it's just up to DeepSeek to
+  // report the results in its own words, not some kind of screen. I just want it to say, okay, you
+  // got four out of five right, and here's the one you missed and why. That's more natural."*
+  assert.ok(!/CheckResult/.test(CHECK), "the results screen is back");
+  assert.ok(!/Make cards from what I missed/.test(CHECK), "the deck button came back with the screen");
+  assert.match(CHECK, /onFinished\(describeAttempt\(run, answered\)\)/, "the last answer no longer hands over an account");
+
+  // The canvas sends it as an ordinary turn, so it lands in the transcript and the packet.
+  assert.match(CANVAS, /const finishCheck = useCallback/, "nothing receives the finished check");
+  const finish = CANVAS.slice(CANVAS.indexOf("const finishCheck = useCallback"), CANVAS.indexOf("const finishCheck = useCallback") + 400);
+  assert.match(finish, /session\.clearTest\(\);/, "the card is left on screen while the reply is fetched");
+  assert.match(finish, /await converse\(account\)/, "the account never reaches the model");
 });
 
 test("🔴 one tap answers and advances — the second press was the friction", () => {
@@ -80,8 +100,11 @@ test("🔴 one tap answers and advances — the second press was the friction", 
   assert.ok(!/See how you did/.test(CHECK), "the extra press before the results is back");
   const answer = CHECK.slice(CHECK.indexOf("const answer = ("), CHECK.indexOf("return (", CHECK.indexOf("const answer = (")));
   assert.match(answer, /setPicks\(/, "tapping an option no longer records the answer");
-  assert.match(answer, /if \(last\) setDone\(true\)/, "the last answer no longer ends the run");
   assert.match(answer, /else setIndex/, "answering no longer advances to the next question");
+  // 🔴 THE ACCOUNT IS BUILT FROM THE LOCAL VALUE, NOT FROM STATE. `setPicks` does not update the
+  // captured `picks`, so reading state here would report the final question as skipped every time.
+  assert.match(answer, /Object\.assign\(\[\.\.\.picks\]/, "the last tap is no longer folded in before the account is written");
+  assert.ok(!/describeAttempt\(run, picks\)/.test(answer), "the account is built from stale state — the last answer will read as skipped");
 });
 
 test("🔴 a mis-tap is recoverable, because deferred marking is what made it invisible", () => {
@@ -92,11 +115,16 @@ test("🔴 a mis-tap is recoverable, because deferred marking is what made it in
   assert.match(CHECK, />\s*Back\s*</, "there is no way back after a mis-tap");
 });
 
-test("🔴 cards from misses reuse the canvas's own deck and cost no model call", () => {
-  const body = CANVAS.slice(CANVAS.indexOf("const makeCardsFromMisses"), CANVAS.indexOf("const makeCardsFromMisses") + 1600);
-  assert.match(body, /ensureCanvasDeck\(uid, canvas\.title, canvas\.studyDeckId\)/, "a test now makes its own deck each time");
-  assert.match(body, /writeRecallCards\(/, "the misses no longer become real study cards");
-  assert.ok(!/postChatCompletion/.test(body), "making cards from misses started paying for a model call");
+test("🔴 no deck is written behind the learner's back when a check ends", () => {
+  // 🔴 THE "Make cards from what I missed" BUTTON WENT WITH THE RESULTS SCREEN (owner,
+  // 2026-08-24). The rule it enforced outlives it and is the one worth keeping: a check must not
+  // put an artifact in the Library on its own. Previously that was guaranteed by the write being
+  // behind a press; now it is guaranteed by there being no write at all on this path.
+  const finish = CANVAS.slice(CANVAS.indexOf("const finishCheck = useCallback"), CANVAS.indexOf("const finishCheck = useCallback") + 400);
+  assert.ok(finish.length > 0, "the finish handler is gone — this guard is pointed at nothing");
+  assert.ok(!/ensureCanvasDeck|writeRecallCards/.test(finish), "finishing a check silently writes a deck");
+  // A learner who wants cards asks for them in words, the same rule §38 applies everywhere here.
+  assert.ok(!/cardsFromMisses/.test(CHECK), "the check card is minting cards again");
 });
 
 test("cardsFromMisses turns the exact question they failed into the card", () => {

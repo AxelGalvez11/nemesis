@@ -1276,7 +1276,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // under the learner. The prompt asks; this makes the leak unreachable (the `mayAsk` split).
       const decision = result.decision && courseGate(result.decision, capability === "course");
       if (!decision) {
-        setError(result.error ?? "Nemesis had nothing to add.");
+        // 🔴 A REAL FAILURE IS STILL REPORTED; AN UNREADABLE TURN IS NOT NARRATED. `result.error`
+        // is the network, the refusal, the quota — everything the learner can act on, and it is
+        // shown unchanged. What went with the owner's complaint (see the `decision.say` branch
+        // below) is the invented fallback for the remaining case, which told them a sentence about
+        // Nemesis's state instead of anything about their request.
+        if (result.error) setError(result.error);
         return null;
       }
 
@@ -1413,10 +1418,17 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 THE ANSWER COMES BACK IN FULL, WHATEVER THE OFFER SAYS. `offer` changes one line of copy
       // above a button the learner may ignore; it never shortens or withholds what they asked for.
       // Offering is not seizing.
-      if (!decision.say) {
-        setError("Nemesis had nothing to add.");
-        return null;
-      }
+      // 🔴🔴 A TURN THAT SPOKE NO PROSE ENDS QUIETLY — OWNER, 2026-08-24: *"[it] keeps saying that
+      // annoying thing, 'Nemesis had nothing to add'. Why is that even there? I don't even want
+      // that."* It was an error banner for something that is usually not an error: a turn whose
+      // work WAS the thing on screen — the check chips, a drawing, a write — with no sentence
+      // beside it. Announcing that as a failure put a complaint above an answer that had arrived.
+      //
+      // 🔴 THE CAUSE WAS FIXED IN THE PROMPT RATHER THAN HERE. `turn-router.ts` now says a check
+      // never replaces the answer, which is what produced the empty `say` the owner kept meeting.
+      // This stops the leftover case from shouting; it does not hide a failed request, which
+      // arrives as `result.error` above and is still shown.
+      if (!decision.say) return null;
       setAside({
         // Under the passage when they staged one, at the top of the canvas when they did not.
         blockId: staged?.id ?? null,

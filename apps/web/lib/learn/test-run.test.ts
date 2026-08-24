@@ -11,8 +11,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { groundedMiss } from "@/components/workspace/learn/canvas-check";
-
+// 🔴 `groundedMiss` LIVED IN `canvas-check.tsx` AND IS NOW `groundNote` HERE (owner, 2026-08-24).
+// Its only reader was the results screen, which the owner replaced with a spoken reply; rather
+// than leave a UI sentence exported with nothing rendering it, the same fact is written into the
+// account `describeAttempt` hands the model. The guard below moved with it unchanged.
 import type { ResolvedObjective } from "./canvas-knowledge";
 import type { DistractorGround } from "./choice-set";
 import type { KnowledgeObject } from "./knowledge-types";
@@ -20,6 +22,8 @@ import type { LearnerEvidence } from "./learner-evidence";
 import { objectivesForKnowledge } from "./learning-objective";
 import {
   buildTestRun,
+  describeAttempt,
+  groundNote,
   isTestRefusal,
   MAX_QUESTIONS,
   MIN_QUESTIONS,
@@ -220,12 +224,43 @@ test("🔴🔴 every kind of wrong answer gets its own sentence, and no branch i
   const kinds = [...new Set([...union.matchAll(/\{ kind: "([a-z_]+)"/g)].map((match) => match[1]!))];
   assert.ok(kinds.length >= 3, "the ground union could not be read — this guard is pointed at nothing");
 
-  const sentences = new Map(kinds.map((kind) => [kind, groundedMiss({ kind } as DistractorGround)]));
-  const generic = groundedMiss(undefined);
+  const sentences = new Map(kinds.map((kind) => [kind, groundNote({ kind } as DistractorGround)]));
+  const generic = groundNote(undefined);
+  assert.equal(generic, "", "an unknown ground now adds a note — chat-minted questions would gain a category nobody established");
   for (const kind of kinds) {
     assert.notEqual(sentences.get(kind), generic, `"${kind}" falls through to the generic sentence — its branch is dead`);
   }
   assert.equal(new Set(sentences.values()).size, kinds.length, "two grounds share one sentence, so one of them says nothing specific");
+});
+
+test("🔴🔴 a grounded miss carries its ground into the account the model reads", () => {
+  // 🔴 THE HALF OF THE DELETED RESULTS SCREEN THAT WAS WORTH SAVING. `choice-set.ts` mints every
+  // distractor from a NAMED competing model, which is the entire reason multiple choice is
+  // permitted in this product — `canvas-model.ts`'s standing objection (*"you cannot detect a
+  // misconception from which of four options someone clicked"*) is answered by knowing in advance
+  // what each option means. Dropping the screen without moving this would have thrown it away.
+  const run: TestRun = {
+    questions: [
+      {
+        objectiveIdentityKey: "a",
+        options: [
+          { correct: true, text: "right" },
+          { correct: false, ground: { kind: "held_misconception" } as DistractorGround, text: "wrong" },
+        ],
+        prompt: "Q?",
+      },
+    ],
+  };
+  const account = describeAttempt(run, ["wrong"]);
+  assert.match(account, /I answered "wrong", but the answer was "right"\./, "the account lost what they picked");
+  assert.match(account, /a mix-up I have made before/, "the ground never reaches the model, so it cannot say why the wrong answer was tempting");
+
+  // An ungrounded option adds nothing — chat-minted questions carry no ground.
+  const bare = describeAttempt(
+    { questions: [{ objectiveIdentityKey: "a", options: [{ correct: true, text: "r" }, { correct: false, text: "w" }], prompt: "Q?" }] },
+    ["w"],
+  );
+  assert.ok(!/mix-up|neighbouring|same shape/.test(bare), "a category was invented for a question that had none");
 });
 
 test("🔴 the run mints no questions of its own", () => {

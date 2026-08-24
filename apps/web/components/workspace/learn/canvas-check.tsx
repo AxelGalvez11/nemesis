@@ -26,26 +26,33 @@
 // routes wherever it normally would. A test does not capture the learner's typing.
 //
 // 🔴 NOTHING HERE IS KEPT. The run lives in this component's state and dies with it — owner's
-// rule that a test never becomes an artifact. The ONLY thing that outlives it is a deck made
-// from the misses, and that is an explicit press, not an automatic write.
+// rule that a test never becomes an artifact.
 //
 // 🔴🔴 ANSWERS FIRST, MARKING AFTERWARDS — OWNER, 2026-08-24: *"I need that to just be one where
 // the user does not immediately get feedback until the end. That way they can just go over what
 // they missed after that. And that way it's not just like friction every time you click the
 // answer."* The first version marked each tap on the spot and then demanded a second press on
 // "Next question" to move on, so a five-question test cost ten presses and broke its own rhythm
-// nine times. Now one tap answers and advances, and every verdict is held back to `CheckResult`.
+// nine times. Now one tap answers and advances, and nothing is marked while the run is live.
 //
-// 🔴 THIS IS NOT A LOSS OF FEEDBACK, IT IS A MOVE OF IT. The review at the end says of EVERY
-// question what the old card said of one: the prompt, what they picked, what was right, and the
-// grounded sentence naming which competing model they acted on. Nothing that was shown before is
-// gone; it arrives when they can act on the whole pattern rather than one question at a time.
+// 🔴🔴🔴 AND THE MARKING IS NOT A SCREEN, IT IS A REPLY — the same owner, an hour later, on the
+// results card this file used to end with: *"at the end it shouldn't show anything… it's just up
+// to DeepSeek to report the results in its own words, not some kind of screen. I just want it to
+// say, okay, you got four out of five right, and here's the one you missed and why. That's more
+// natural."* So the last tap ends this component. `describeAttempt` writes down what happened, the
+// canvas sends it as the learner's turn, and Nemesis answers in the conversation — where it can
+// tie a miss back to what it taught two turns ago, and be argued with. Neither of those is
+// something a card printing "4 out of 5" could ever do.
+//
+// 🔴 THIS IS NOT A LOSS OF FEEDBACK, IT IS A MOVE OF IT — twice over. Everything the inline
+// verdict said, and everything the results card said, is in the account handed to the model:
+// the score, every prompt, what they picked, what was right, and which ones they skipped.
 //
 // 🔴 AND A MIS-TAP IS RECOVERABLE, WHICH IT DID NOT HAVE TO BE BEFORE. While a tap was answered
 // instantly the learner saw at once that they had hit the wrong row. Deferring the marking takes
 // that away, so `Back` exists to give it back — it re-opens the previous question with their pick
 // still selected and changeable. Without it, deferring feedback would have quietly made a slip
-// permanent and invisible until the results.
+// permanent and invisible until the reply.
 //
 // 🔴 `list-none` AND `bg-transparent` ARE EXPLICIT, NOT REDUNDANT — this app's stylesheet gives
 // every `button` and `li` outside `[data-workspace]` a blue marketing fill and a disc bullet.
@@ -53,49 +60,49 @@
 
 import { useEffect, useState } from "react";
 
-import type { DistractorGround } from "@/lib/learn/choice-set";
-import { missedObjectives, scoreTestRun, verdictFor, type TestRun, type TestScore } from "@/lib/learn/test-run";
+// 🔴 `groundedMiss` MOVED TO `test-run.ts` AS `groundNote` WHEN THE RESULTS SCREEN WENT. It named
+// which competing model a wrong tap acted on — the whole reason multiple choice is permitted here —
+// and its only reader was that screen. Rather than leave it exported with nothing rendering it, it
+// now writes the same fact into the account `describeAttempt` hands the model.
+import { describeAttempt, type TestRun } from "@/lib/learn/test-run";
 
 export function CanvasCheck({
   run,
   onDismiss,
-  onMakeCards,
-  making = false,
+  onFinished,
 }: {
   run: TestRun;
   /** They closed the test. Nothing is scored and nothing is kept. */
   onDismiss: () => void;
   /**
-   * Make a deck from the objectives they missed.
+   * They answered the last question. The card is done; the conversation takes it from here.
    *
-   * 🔴 THE ONLY WAY ANYTHING SURVIVES A TEST, AND IT IS A PRESS. Writing a deck automatically at
-   * the end would put a Library artifact in front of someone who just wanted to check themselves,
-   * which is the thing "tests stay in the chat" rules out.
+   * 🔴🔴 THIS REPLACED A RESULTS SCREEN — OWNER, 2026-08-24: *"at the end it shouldn't show
+   * anything… it's just up to DeepSeek to report the results in its own words, not some kind of
+   * screen."* The card used to print "4 out of 5", list every answer, and offer a button that made
+   * a deck from the misses. All of it was a report the product wrote ABOUT the conversation while
+   * sitting outside it — and none of it could do the thing that actually helps, which is to
+   * connect a miss to what was taught two turns ago and then be argued with.
+   *
+   * `describeAttempt` writes what happened; the caller sends it as the learner's turn and Nemesis
+   * answers. The deck-from-misses button went with the screen: a learner who wants cards can ask
+   * for them in words, which is the same rule §38 applies to everything else here.
    */
-  onMakeCards: (objectiveKeys: readonly string[]) => void;
-  /** A deck is being made right now. */
-  making?: boolean;
+  onFinished: (account: string) => void;
 }) {
   const [index, setIndex] = useState(0);
   const [picks, setPicks] = useState<(string | null)[]>([]);
-  const [done, setDone] = useState(false);
 
   // A different run is a different test. Without this, opening a second test after a first would
   // resume halfway through the old one's answers.
   useEffect(() => {
     setIndex(0);
     setPicks([]);
-    setDone(false);
   }, [run]);
 
   const question = run.questions[index];
   const picked = picks[index] ?? null;
   const last = index === run.questions.length - 1;
-
-  if (done) {
-    const score = scoreTestRun(run, picks);
-    return <CheckResult making={making} onDismiss={onDismiss} onMakeCards={onMakeCards} picks={picks} run={run} score={score} />;
-  }
 
   if (!question) return null;
 
@@ -107,8 +114,12 @@ export function CanvasCheck({
    * straight forward again and making the back button impossible to use.
    */
   const answer = (text: string) => {
-    setPicks((was) => Object.assign([...was], { [index]: text }));
-    if (last) setDone(true);
+    const answered = Object.assign([...picks], { [index]: text }) as (string | null)[];
+    setPicks(answered);
+    // 🔴 THE ACCOUNT IS BUILT FROM `answered`, NOT FROM `picks`. `setPicks` does not update the
+    // value this closure captured, so reading state here would describe the run as it was BEFORE
+    // the last tap — reporting the final question as skipped, every time.
+    if (last) onFinished(describeAttempt(run, answered));
     else setIndex((was) => was + 1);
   };
 
@@ -176,148 +187,6 @@ export function CanvasCheck({
           Back
         </button>
       )}
-    </section>
-  );
-}
-
-/**
- * What to say about a wrong tap.
- *
- * 🔴🔴 THE GROUND IS THE WHOLE REASON MULTIPLE CHOICE IS ALLOWED HERE. `choice-set.ts` mints every
- * distractor from a named competing model, so a wrong tap is a belief stated in advance rather
- * than a guess — and `canvas-model.ts`'s standing objection to multiple choice (*"you cannot
- * detect a misconception from which of four options someone clicked"*) is answered by exactly
- * that. Saying which KIND of wrong it was is the visible half of that answer.
- *
- * 🔴 AND IT NEVER QUOTES THE BELIEF BACK AS THOUGH IT WERE TRUE. "You think X" is a sentence this
- * card has no standing to write; naming the shape of the confusion does the same work honestly.
- *
- * 🔴 STRUCTURAL, NEVER SUBJECT-MATTER — nothing here reads a word of any field (CLAUDE.md).
- */
-export function groundedMiss(ground: DistractorGround | undefined): string {
-  // 🔴 A `switch` OVER THE UNION, NOT AN `if` CHAIN ON STRINGS, AND THAT IS NOT STYLE. The first
-  // draft of this function tested for `"same_output_role"`, a kind that does not exist — the real
-  // one is `sibling_answer` — so that branch was dead and every sibling miss silently fell through
-  // to the generic sentence. Typing the parameter as the union is what makes the compiler catch
-  // the next such typo, and `groundSentences` below is what makes a NEW kind impossible to ignore.
-  // 🔴 NO SENTENCE HERE POINTS AT "THE MARKED OPTION" ANY MORE, AND THAT IS NOT TIDYING. Two of
-  // them said so while this text sat under a list where the answer was highlighted; the review
-  // screen now PRINTS the answer on its own line directly above, so the old wording described a
-  // marking that is no longer on screen. Each branch says only what the answer line cannot: which
-  // kind of wrong this was.
-  switch (ground?.kind) {
-    case "held_misconception":
-      return "Not quite, and this one has come up before.";
-    case "neighbouring_class":
-      return "Not quite. That is the neighbouring case your material sets this one against.";
-    case "sibling_answer":
-      return "Not quite. That is the answer to a different question of the same shape.";
-    default:
-      return "Not quite.";
-  }
-}
-
-/**
- * The score, and then the marking for every question in the run.
- *
- * 🔴🔴 THIS SCREEN CARRIES THE FEEDBACK THAT USED TO INTERRUPT EACH TAP (owner, 2026-08-24). It
- * is therefore NOT a summary: it repeats each prompt, says what they picked, says what was right,
- * and — on a miss — gives the same grounded sentence naming the competing model they acted on.
- * A results card that only reported "3 out of 5" would have deleted the teaching rather than
- * moved it, which is the one way this change could have made the product worse.
- *
- * 🔴 CORRECT ANSWERS ARE LISTED TOO, QUIETLY. The owner's words were *"they can just go over what
- * they missed"*, and the misses are what lead the list and what earn cards — but a learner who
- * guessed right still does not know they guessed, and hiding the questions they got right would
- * hide that. They are shown without the marking chrome the misses get.
- */
-function CheckResult({
-  score,
-  run,
-  picks,
-  onDismiss,
-  onMakeCards,
-  making,
-}: {
-  score: TestScore;
-  run: TestRun;
-  picks: readonly (string | null)[];
-  onDismiss: () => void;
-  onMakeCards: (objectiveKeys: readonly string[]) => void;
-  making: boolean;
-}) {
-  const missed = missedObjectives(score);
-  return (
-    <section aria-label="How you did" className="canvas-swap mt-5 rounded-2xl p-4 ring-1 ring-(--ui-stroke-secondary)">
-      <h2 className="text-[length:var(--canvas-text-body)] font-medium leading-snug text-(--ui-text-primary)">
-        {score.correct} out of {score.total}
-      </h2>
-      <p className="mt-1 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)">
-        {missed.length === 0
-          ? "Nothing missed. Nothing to turn into cards."
-          : `You missed ${missed.length} ${missed.length === 1 ? "thing" : "things"}. Cards for exactly those will come back until they stick.`}
-      </p>
-
-      <ol className="mt-4 flex list-none flex-col gap-3 border-t border-(--ui-stroke-tertiary) pt-4">
-        {run.questions.map((question, index) => {
-          const picked = picks[index] ?? null;
-          const verdict = picked === null ? null : verdictFor(question, picked);
-          const right = Boolean(verdict?.correct);
-          return (
-            <li key={`${question.objectiveIdentityKey}:${index}`}>
-              <p className="text-[length:var(--canvas-text-small)] font-medium leading-snug text-(--ui-text-primary)">
-                <span className="text-(--ui-text-quaternary)">{index + 1}. </span>
-                {question.prompt}
-              </p>
-              {right ? (
-                <p className="mt-0.5 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-secondary)">
-                  Correct: {verdict?.chosen?.text}
-                </p>
-              ) : (
-                <div className="mt-1 flex flex-col gap-0.5">
-                  {/* 🔴 AN UNANSWERED QUESTION IS SAID TO BE UNANSWERED, NOT SHOWN AS A WRONG PICK.
-                      `scoreTestRun` counts silence as missed, and a learner who backed out of a
-                      question deserves to see that rather than a blank quotation. */}
-                  <p className="text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
-                    {picked === null ? "You did not answer this one." : `You picked: ${picked}`}
-                  </p>
-                  <p className="text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-primary)">
-                    The answer: {verdict?.answer?.text}
-                  </p>
-                  {picked !== null && (
-                    <p className="text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-secondary)">
-                      {groundedMiss(verdict?.chosen?.ground)}
-                    </p>
-                  )}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {/* 🔴 ABSENT RATHER THAN DISABLED WHEN THERE IS NOTHING TO MAKE. A greyed-out button asks
-            the learner to work out what would switch it on; this codebase's most-repeated defect
-            is a control that does not do anything. */}
-        {missed.length > 0 && (
-          <button
-            className="rounded-xl bg-(--ui-bg-tertiary) px-3.5 py-2 text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-primary) transition-colors hover:bg-(--ui-control-hover-background) disabled:opacity-60"
-            disabled={making}
-            onClick={() => onMakeCards(missed)}
-            type="button"
-          >
-            {making ? "Making cards…" : "Make cards from what I missed"}
-          </button>
-        )}
-        <button
-          className="rounded-xl bg-transparent px-3.5 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
-          onClick={onDismiss}
-          type="button"
-        >
-          Done
-        </button>
-      </div>
     </section>
   );
 }

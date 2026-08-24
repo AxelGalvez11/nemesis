@@ -296,7 +296,14 @@ export async function explainBlock(
   );
   if (error) return { value: null, error };
   const answer = text ? parseShortAnswer(text) : null;
-  return answer ? { value: answer, error: null } : { value: null, error: "Nemesis had nothing to add." };
+  // 🔴 NOT "Nemesis had nothing to add" — OWNER, 2026-08-24: *"why is that even there? I don't
+  // even want that."* Unlike a conversational turn (which now ends silently when it spoke no
+  // prose), this path CANNOT go quiet: the learner pressed a control asking for an explanation and
+  // a popover is waiting to open, so saying nothing would be a spinner that stopped for no reason.
+  // What was wrong with the old sentence is that it reported Nemesis's state rather than theirs.
+  return answer
+    ? { value: answer, error: null }
+    : { value: null, error: "That did not come back with an explanation. Ask again and it will retry." };
 }
 
 // -------------------------------------------------------------------- recall

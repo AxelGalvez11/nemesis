@@ -33,7 +33,7 @@
 //
 // PURE. No React, no I/O, no clock.
 
-import { type ChoiceOption, MIN_OPTIONS } from "./choice-set";
+import { type ChoiceOption, type DistractorGround, MIN_OPTIONS } from "./choice-set";
 import type { KnowledgeObject } from "./knowledge-types";
 import type { LearnerEvidence } from "./learner-evidence";
 import type { LearningObjective } from "./learning-objective";
@@ -174,6 +174,83 @@ export function verdictFor(question: TestQuestion, picked: string): {
 /** Deduplicated, order-preserving — a learner who missed one objective twice earns one card. */
 export function missedObjectives(score: TestScore): readonly string[] {
   return [...new Set(score.missed)];
+}
+
+/**
+ * What the learner just did, written so Nemesis can answer it in its own words.
+ *
+ * 🔴🔴 THERE IS NO RESULTS SCREEN ANY MORE — OWNER, 2026-08-24: *"at the end it shouldn't show
+ * anything… it's just up to DeepSeek to report the results in its own words, not some kind of
+ * screen. I just want it to say, okay, you got four out of five right, and here's the one you
+ * missed and why. I feel like that's more natural."* A card that prints "4 out of 5" and lists the
+ * answers is a report the product writes ABOUT the conversation, sitting outside it; the same
+ * facts said in the conversation can do what a card cannot — connect the miss to what was taught
+ * two turns ago, and be argued with.
+ *
+ * So the run ends by handing the model this, and the model replies. Which means this string is
+ * the ONLY record of what happened, and it has to be complete: the score, every question, what
+ * they picked, and what was right. A summary that dropped the wrong answers would leave Nemesis
+ * writing "you missed one" with no idea which.
+ *
+ * 🔴 IT IS FIRST-PERSON BECAUSE IT IS THE LEARNER'S TURN. They answered the questions; this says
+ * what they answered. It states facts and nothing else — no score-keeping language, no "well
+ * done", no interpretation. Whether four out of five is good is the model's judgement to make
+ * with everything else it knows about them, and a phrase baked in here would pre-empt it.
+ *
+ * 🔴 AND AN UNANSWERED QUESTION SAYS SO, matching `scoreTestRun`, which counts silence as a miss.
+ * "I skipped it" and "I got it wrong" are different things to be taught about.
+ *
+ * PURE. Structural, never subject-matter — nothing here reads a word of any field (CLAUDE.md).
+ */
+export function describeAttempt(run: TestRun, picks: readonly (string | null)[]): string {
+  const score = scoreTestRun(run, picks);
+  const lines = run.questions.map((question, index) => {
+    const picked = picks[index] ?? null;
+    const answer = question.options.find((option) => option.correct)?.text ?? "";
+    if (picked === null) return `${index + 1}. "${question.prompt}" — I skipped this one. The answer was "${answer}".`;
+    const chosen = question.options.find((option) => option.text === picked);
+    if (chosen?.correct) return `${index + 1}. "${question.prompt}" — I answered "${picked}", which was right.`;
+    const note = groundNote(chosen?.ground);
+    return `${index + 1}. "${question.prompt}" — I answered "${picked}", but the answer was "${answer}".${note}`;
+  });
+  return [
+    `I finished the check you gave me: ${score.correct} out of ${score.total}.`,
+    ...lines,
+  ].join("\n");
+}
+
+/**
+ * What KIND of wrong a wrong answer was, when the option carries that on its face.
+ *
+ * 🔴🔴 THIS IS THE HALF OF THE DELETED RESULTS SCREEN THAT WAS WORTH SAVING. That card rendered
+ * `groundedMiss` — a sentence naming which competing model the learner had just acted on — and
+ * `choice-set.ts` mints every distractor FROM such a model, which is the entire reason multiple
+ * choice is permitted in this product at all (`canvas-model.ts`'s standing objection: *"you cannot
+ * detect a misconception from which of four options someone clicked"* is answered by knowing what
+ * each option means in advance). Dropping the card without moving this would have thrown that
+ * away and left the model guessing why a wrong answer was tempting.
+ *
+ * 🔴 IT IS A FACT, NOT A VERDICT, BECAUSE THE READER CHANGED. The old sentences addressed the
+ * learner — "Not quite. That is the neighbouring case…" — and this text is read by the MODEL, in
+ * the learner's voice, before it writes anything. So each note states what the option was without
+ * grading it, and leaves the teaching to the reply.
+ *
+ * 🔴 AND AN UNGROUNDED OPTION ADDS NOTHING. Chat-minted questions (`chat-check.ts`) carry no
+ * ground; inventing a category for them would tell the model something nobody established.
+ */
+export function groundNote(ground: DistractorGround | undefined): string {
+  // A `switch` over the union, so a NEW ground added to `choice-set.ts` fails typecheck here
+  // rather than falling silently into the empty default — the lesson `groundedMiss` learned.
+  switch (ground?.kind) {
+    case "held_misconception":
+      return " That is a mix-up I have made before.";
+    case "neighbouring_class":
+      return " That is the neighbouring case this one is usually set against.";
+    case "sibling_answer":
+      return " That is the answer to a different question of the same shape.";
+    default:
+      return "";
+  }
 }
 
 /**
