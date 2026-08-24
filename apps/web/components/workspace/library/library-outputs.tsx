@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { GraduationCap, Layers, MonitorPlay, NotebookText } from "lucide-react";
 
-import { DeckThemePicker, useDeckThemeChoice } from "@/components/workspace/deck/deck-theme-picker";
+import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { loadCanvas } from "@/lib/learn/canvas-store";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -237,7 +237,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
               <SlidesShelfRow
                 busy={fetching === row.assetId}
                 key={row.assetId}
-                onDownload={(themeId) =>
+                onDownload={(designId) =>
                   void (async () => {
                     if (!row.canvasId) return;
                     setFetching(row.assetId);
@@ -246,7 +246,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                       const output = canvas?.outputs?.find((entry) => entry.assetId === row.assetId && entry.deck);
                       if (!output?.deck) return;
                       const { downloadDeck } = await import("@/lib/export/deck-download");
-                      await downloadDeck(output.deck, output.title, themeId);
+                      await downloadDeck(output.deck, output.title, designId);
                     } finally {
                       setFetching(null);
                     }
@@ -306,15 +306,15 @@ function SlidesShelfRow({
 }: {
   row: SlidesRow;
   busy: boolean;
-  onDownload: (themeId: string) => void;
+  onDownload: (designId: string) => void;
 }) {
-  const { choose, themeId } = useDeckThemeChoice(row.assetId);
+  const { choose, designId } = useDeckDesignChoice(row.assetId);
   return (
     <li className="flex items-center gap-1">
       <button
         className={cn(ROW, "min-w-0 flex-1 disabled:opacity-60")}
         disabled={busy || !row.canvasId}
-        onClick={() => onDownload(themeId)}
+        onClick={() => onDownload(designId)}
         type="button"
       >
         <MonitorPlay className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
@@ -325,7 +325,7 @@ function SlidesShelfRow({
           {busy ? "Building…" : `.pptx · ${when(row.createdAt)}`}
         </span>
       </button>
-      <DeckThemePicker onPick={choose} themeId={themeId} />
+      <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={row.title} />
     </li>
   );
 }

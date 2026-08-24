@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { DECK_ICON_NAMES, DECK_LAYOUTS, deckSystemPrompt, readDeckJson } from "./deck-plan";
+import { DECK_LAYOUTS, deckSystemPrompt, readDeckJson } from "./deck-plan";
 
 // The border control between a chatty model and the deck builder. Same posture as the
 // flashcards parser: tolerate fences and preamble, refuse junk, clamp runaways — and
@@ -55,18 +55,15 @@ test("vocabulary outside the theme's is coerced or dropped, never crashes the de
       title: "X",
       slides: [
         slide("hero", "Invented layout", { points: ["a"] }),
-        slide("bullets", "Known", { icon: "sparkles-mega", points: ["a"] }),
-        slide("bullets", "Iconed", { icon: "lightbulb", points: ["a"] }),
+        slide("bullets", "Known", { points: ["a"] }),
+        slide("bullets", "Second", { points: ["a"] }),
       ],
     }),
   );
   assert.ok(read);
   assert.equal(read.slides[1]?.layout, "bullets", "an invented layout falls back to bullets");
-  assert.equal(read.slides[1]?.icon, null, "wait — index check below");
   const known = read.slides.find((s) => s.title === "Iconed");
   const unknown = read.slides.find((s) => s.title === "Known");
-  assert.equal(known?.icon, "lightbulb");
-  assert.equal(unknown?.icon, null, "an unknown icon name renders no icon");
 });
 
 test("runaway output is clamped, not obeyed", () => {
@@ -88,6 +85,5 @@ test("runaway output is clamped, not obeyed", () => {
 test("the prompt and the reader can never drift: the prompt prints the constants", () => {
   const prompt = deckSystemPrompt();
   for (const layout of DECK_LAYOUTS) assert.ok(prompt.includes(layout), `prompt lost layout ${layout}`);
-  for (const icon of DECK_ICON_NAMES) assert.ok(prompt.includes(icon), `prompt lost icon ${icon}`);
   assert.ok(prompt.includes("never invent"), "the no-invented-references rule left the prompt");
 });

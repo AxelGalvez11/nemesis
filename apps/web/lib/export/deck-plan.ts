@@ -12,25 +12,12 @@
 
 /** The layouts the theme knows how to draw. A tag outside this list is coerced to "bullets"
  *  rather than refused — a whole deck should not die because the model invented "hero". */
+// 🔴 NO ICON VOCABULARY. The model used to be able to name a Lucide icon per slide, which the
+// theme rasterised from a 97KB baked module. The designs draw their own furniture now — rules,
+// numerals, cards, rails — and a stock glyph dropped into a composed slide read as clip art
+// every time. If iconography returns it will be drawn by the composer, not chosen by the model.
 export const DECK_LAYOUTS = ["cover", "section", "bullets", "two_column", "stat", "quote", "closing"] as const;
 export type DeckLayout = (typeof DECK_LAYOUTS)[number];
-
-/** Icon slots the theme can fill — the product's own Lucide set, rasterised in
- *  deck-theme-assets.ts. A name outside the list simply renders no icon. */
-export const DECK_ICON_NAMES = [
-  "lightbulb",
-  "target",
-  "book-open",
-  "flask-conical",
-  "scale",
-  "settings",
-  "trending-up",
-  "globe",
-  "heart-pulse",
-  "shield",
-  "users",
-  "clock",
-] as const;
 
 export interface DeckSlide {
   layout: DeckLayout;
@@ -50,7 +37,6 @@ export interface DeckSlide {
   /** cover only. */
   subtitle: string;
   /** An icon slot, when the layout shows one and the model picked a known name. */
-  icon: string | null;
 }
 
 export interface DeckPlan {
@@ -97,9 +83,7 @@ export function readDeckJson(text: string): DeckPlan | null {
     const layout = (DECK_LAYOUTS as readonly string[]).includes(s.layout as string)
       ? (s.layout as DeckLayout)
       : "bullets";
-    const icon = (DECK_ICON_NAMES as readonly string[]).includes(s.icon as string) ? (s.icon as string) : null;
     const slide: DeckSlide = {
-      icon,
       layout,
       leftHeading: str(s.leftHeading, 60),
       points: strList(s.points, 220),
@@ -138,7 +122,6 @@ export function readDeckJson(text: string): DeckPlan | null {
 }
 
 export const EMPTY_SLIDE: DeckSlide = {
-  icon: null,
   layout: "bullets",
   leftHeading: "",
   points: [],
@@ -164,10 +147,8 @@ export function deckSystemPrompt(): string {
     'two_column → "leftHeading", "points", "rightHeading", "rightPoints"; stat → "statValue" ' +
     '(a short figure like "86%" or "3x") and "statLabel"; quote → "title" is the quote and ' +
     '"quoteAttribution" names who said it; cover → "subtitle"; section → just "title"; ' +
-    'closing → "title" and optionally "points" (key takeaways). Optionally give a slide an ' +
-    '"icon" from: ' +
-    DECK_ICON_NAMES.join(", ") +
-    ". Structure: one cover first, 6-12 body slides with a section slide introducing each part, " +
+    'closing → "title" and optionally "points" (key takeaways). ' +
+    "Structure: one cover first, 6-12 body slides with a section slide introducing each part, " +
     "one closing last. Prefer concrete facts from the provided material; never invent " +
     "references. No markdown fences, no commentary."
   );

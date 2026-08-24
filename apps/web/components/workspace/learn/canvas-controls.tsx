@@ -32,7 +32,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { DeckThemePicker, useDeckThemeChoice } from "@/components/workspace/deck/deck-theme-picker";
+import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
@@ -418,13 +418,13 @@ const MEANING: Record<ObjectiveState, string> = {
  * (`\u00d7`, Sources and outputs, Progress) plus `\u22ef`, and this moved inside the last of them. The
  * BODY is what mattered and it is unchanged; only the way in did.
  */
-/** A slides output: click the row to download the .pptx, use the chip to change its look.
+/** A slides output: click the row to download the .pptx, use the chip to change its design.
  *
  *  The file is rebuilt from the stored plan on every click (deck-pptx.ts), so switching theme
  *  costs nothing and needs no round trip — which is the whole reason the learner gets twenty
  *  looks instead of one. */
 function SlidesOutputRow({ output, rowClass }: { output: CanvasOutput; rowClass: string }) {
-  const { choose, themeId } = useDeckThemeChoice(output.assetId ?? output.id);
+  const { choose, designId } = useDeckDesignChoice(output.assetId ?? output.id);
   const [building, setBuilding] = useState(false);
   const deck = output.deck;
   if (!deck) return null;
@@ -438,7 +438,7 @@ function SlidesOutputRow({ output, rowClass }: { output: CanvasOutput; rowClass:
             setBuilding(true);
             try {
               const { downloadDeck } = await import("@/lib/export/deck-download");
-              await downloadDeck(deck, output.title, themeId);
+              await downloadDeck(deck, output.title, designId);
             } finally {
               setBuilding(false);
             }
@@ -451,7 +451,7 @@ function SlidesOutputRow({ output, rowClass }: { output: CanvasOutput; rowClass:
           {building ? "Building your file…" : "Slides · click to download .pptx"}
         </p>
       </button>
-      <DeckThemePicker onPick={choose} themeId={themeId} />
+      <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={output.title} />
     </div>
   );
 }
