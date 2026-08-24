@@ -87,3 +87,52 @@ test("the prompt and the reader can never drift: the prompt prints the constants
   for (const layout of DECK_LAYOUTS) assert.ok(prompt.includes(layout), `prompt lost layout ${layout}`);
   assert.ok(prompt.includes("never invent"), "the no-invented-references rule left the prompt");
 });
+
+test("figures survive the trip, and junk figures do not", () => {
+  // The exhibit layouts are only as good as the numbers reaching them, and models write
+  // numbers as strings, with units glued on, and sometimes as prose.
+  const read = readDeckJson(
+    JSON.stringify({
+      slides: [
+        slide("cover", "Deck", {}),
+        slide("chart", "Losses", {
+          chart: "line",
+          data: [
+            { label: "Captured", value: 100 },
+            { label: "Reflected", value: "47%" },
+            { label: "Heat", value: "about a fifth" },
+            { value: 12 },
+            { label: "Stored", value: 4.5 },
+          ],
+          unit: "%",
+        }),
+        slide("table", "Pathways", {
+          columns: ["Pathway", "Water", "Share", "Temp", "Notes", "Sixth column"],
+          rows: [["C3", "High", "85%"], ["C4", "Low", "12%"], "not a row", []],
+        }),
+        slide("closing", "End", {}),
+      ],
+      title: "Deck",
+    }),
+  );
+  const chart = read?.slides.find((s) => s.layout === "chart");
+  assert.equal(chart?.chart, "line", "the chart kind was dropped");
+  assert.deepEqual(
+    chart?.data.map((d) => `${d.label}:${d.value}`),
+    ["Captured:100", "Reflected:47", "Stored:4.5"],
+    "a prose value, or an entry with no label, must not reach a chart",
+  );
+  const table = read?.slides.find((s) => s.layout === "table");
+  assert.equal(table?.columns.length, 5, "columns are clamped to five");
+  assert.equal(table?.rows.length, 2, "a row that is not an array of cells must be dropped");
+});
+
+test("the model is asked for findings and takeaways, and told where figures may come from", () => {
+  const prompt = deckSystemPrompt();
+  for (const layout of ["agenda", "kpi", "chart", "table"]) {
+    assert.ok(prompt.includes(layout), `prompt lost the ${layout} layout`);
+  }
+  assert.match(prompt, /takeaway/, "the prompt no longer asks for a takeaway");
+  assert.match(prompt, /FINDINGS, NOT HEADINGS/, "the prompt no longer asks for action titles");
+  assert.match(prompt, /FIGURES MUST COME FROM THE PROVIDED MATERIAL/, "the prompt no longer fences invented data");
+});

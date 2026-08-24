@@ -16,12 +16,33 @@
 // theme rasterised from a 97KB baked module. The designs draw their own furniture now — rules,
 // numerals, cards, rails — and a stock glyph dropped into a composed slide read as clip art
 // every time. If iconography returns it will be drawn by the composer, not chosen by the model.
-export const DECK_LAYOUTS = ["cover", "section", "bullets", "two_column", "stat", "quote", "closing"] as const;
+export const DECK_LAYOUTS = [
+  "cover",
+  "agenda",
+  "section",
+  "bullets",
+  "two_column",
+  "kpi",
+  "chart",
+  "table",
+  "stat",
+  "quote",
+  "closing",
+] as const;
 export type DeckLayout = (typeof DECK_LAYOUTS)[number];
+
+/** One measured thing: a bar in a chart, or a figure in a KPI row. */
+export interface DeckDatum {
+  label: string;
+  value: number;
+}
 
 export interface DeckSlide {
   layout: DeckLayout;
   title: string;
+  /** The "so what" line under an action title. The single most valuable sentence on a slide in
+   *  the institutional register, and the model is asked for one on every content slide. */
+  takeaway: string;
   /** bullets / two_column / closing use these. Clamped: 6 points, 220 chars each. */
   points: string[];
   /** two_column only: the right column; `points` is the left. */
@@ -36,7 +57,18 @@ export interface DeckSlide {
   quoteAttribution: string;
   /** cover only. */
   subtitle: string;
-  /** An icon slot, when the layout shows one and the model picked a known name. */
+  /** chart / kpi: the figures. Clamped to 8 — more than that is a table, not a chart. */
+  data: DeckDatum[];
+  /** What the figures are measured in: "%", "$m", "x", "GW". Printed with every value. */
+  unit: string;
+  /** chart only: how to draw the figures. */
+  chart: "column" | "bar" | "line";
+  /** table only: the header row and the body rows. Clamped to 5 columns and 7 rows. */
+  columns: string[];
+  rows: string[][];
+  /** A small footnote under the exhibit — the model's own caveat, never a citation (sources
+   *  come from the canvas, see DeckPlan.references). */
+  note: string;
 }
 
 export interface DeckPlan {
@@ -50,6 +82,9 @@ export interface DeckPlan {
 
 const MAX_SLIDES = 24;
 const MAX_POINTS = 6;
+const MAX_DATA = 8;
+const MAX_COLUMNS = 5;
+const MAX_ROWS = 7;
 
 const str = (value: unknown, cap: number): string =>
   typeof value === "string" ? value.trim().slice(0, cap) : "";
@@ -60,6 +95,32 @@ const strList = (value: unknown, capEach: number): string[] =>
         .map((entry) => str(entry, capEach))
         .filter(Boolean)
         .slice(0, MAX_POINTS)
+    : [];
+
+/** Figures, read strictly: a label and a finite number, or the entry is dropped. */
+const dataList = (value: unknown): DeckDatum[] =>
+  Array.isArray(value)
+    ? value
+        .map((entry) => {
+          const e = (entry ?? {}) as Record<string, unknown>;
+          // 🔴 A STRING WITH NO DIGITS IS NOT A ZERO. "about a fifth" once cleaned to "" and
+          // Number("") is 0, which put a fabricated zero bar on a chart — the worst possible
+          // failure for an exhibit, because it looks like data.
+          const cleaned = typeof e.value === "string" ? e.value.replace(/[^0-9.eE+-]/g, "") : "";
+          const raw = typeof e.value === "string" ? (/\d/.test(cleaned) ? Number(cleaned) : NaN) : e.value;
+          return { label: str(e.label, 28), value: typeof raw === "number" && Number.isFinite(raw) ? raw : NaN };
+        })
+        .filter((d) => d.label !== "" && Number.isFinite(d.value))
+        .slice(0, MAX_DATA)
+    : [];
+
+/** A table body: rows of cells, both dimensions clamped. */
+const cellRows = (value: unknown): string[][] =>
+  Array.isArray(value)
+    ? value
+        .map((row) => (Array.isArray(row) ? row.map((cell) => str(cell, 40)).slice(0, MAX_COLUMNS) : []))
+        .filter((row) => row.some((cell) => cell !== ""))
+        .slice(0, MAX_ROWS)
     : [];
 
 /** The model's reply, read strictly into a plan — or null when nothing deck-shaped survived. */
@@ -83,7 +144,18 @@ export function readDeckJson(text: string): DeckPlan | null {
     const layout = (DECK_LAYOUTS as readonly string[]).includes(s.layout as string)
       ? (s.layout as DeckLayout)
       : "bullets";
+    const data = dataList(s.data);
+    const rows = cellRows(s.rows);
+    const columns = Array.isArray(s.columns) ? s.columns.map((c) => str(c, 28)).filter(Boolean).slice(0, MAX_COLUMNS) : [];
+    const chart = s.chart === "bar" || s.chart === "line" ? s.chart : ("column" as const);
     const slide: DeckSlide = {
+      chart,
+      columns,
+      data,
+      note: str(s.note, 140),
+      rows,
+      takeaway: str(s.takeaway, 180),
+      unit: str(s.unit, 8),
       layout,
       leftHeading: str(s.leftHeading, 60),
       points: strList(s.points, 220),
@@ -122,12 +194,19 @@ export function readDeckJson(text: string): DeckPlan | null {
 }
 
 export const EMPTY_SLIDE: DeckSlide = {
+  chart: "column",
+  columns: [],
+  data: [],
+  note: "",
+  takeaway: "",
+  unit: "",
   layout: "bullets",
   leftHeading: "",
   points: [],
   quoteAttribution: "",
   rightHeading: "",
   rightPoints: [],
+  rows: [],
   statLabel: "",
   statValue: "",
   subtitle: "",
@@ -144,12 +223,21 @@ export function deckSystemPrompt(): string {
     '"layout" (one of: ' +
     DECK_LAYOUTS.join(", ") +
     '), "title", and by layout: bullets → "points" (3-5 short strings, no trailing periods); ' +
-    'two_column → "leftHeading", "points", "rightHeading", "rightPoints"; stat → "statValue" ' +
-    '(a short figure like "86%" or "3x") and "statLabel"; quote → "title" is the quote and ' +
-    '"quoteAttribution" names who said it; cover → "subtitle"; section → just "title"; ' +
-    'closing → "title" and optionally "points" (key takeaways). ' +
-    "Structure: one cover first, 6-12 body slides with a section slide introducing each part, " +
-    "one closing last. Prefer concrete facts from the provided material; never invent " +
-    "references. No markdown fences, no commentary."
+    'two_column → "leftHeading", "points", "rightHeading", "rightPoints"; kpi → "data" (2-4 ' +
+    'entries of {"label","value"}) and "unit"; chart → "data" (3-8 entries of ' +
+    '{"label","value"}), "unit", and "chart" ("column", "bar" or "line"); table → "columns" ' +
+    '(2-5 headings) and "rows" (arrays of cells); stat → "statValue" (a short figure like ' +
+    '"86%" or "3x") and "statLabel"; quote → "title" is the quote and "quoteAttribution" ' +
+    'names who said it; cover → "subtitle"; agenda → "points" (the sections ahead); section → ' +
+    'just "title"; closing → "title" and optionally "points" (key takeaways). ' +
+    "🔴 TITLES ARE FINDINGS, NOT HEADINGS: write the title as the claim the slide proves " +
+    '("Photorespiration wastes a fifth of fixed carbon"), not the subject ("Photorespiration"). ' +
+    'Give every content slide a "takeaway": one sentence saying what the reader should ' +
+    'conclude. Optionally add "note" for a caveat. ' +
+    "🔴 FIGURES MUST COME FROM THE PROVIDED MATERIAL. Use kpi, chart and table only for numbers " +
+    "the material actually contains; with no material, do not use them at all. " +
+    "Structure: one cover first, then an agenda, then 6-12 body slides with a section slide " +
+    "introducing each part, one closing last. Prefer concrete facts from the provided material, " +
+    "and never invent references. No markdown fences, no commentary."
   );
 }
