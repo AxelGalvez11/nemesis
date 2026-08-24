@@ -1,13 +1,11 @@
 "use client";
 
-import { IconDots, IconFlag, IconFlagFilled, IconPencil, IconPlayerPause, IconSparkles } from "@tabler/icons-react";
+import { IconDots, IconFlag, IconFlagFilled, IconPlayerPause, IconSparkles, IconWand } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/desktop-ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
-import { Input } from "@/components/desktop-ui/input";
-import { Textarea } from "@/components/desktop-ui/textarea";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { explainCardContext, explainTranscript, parseRevisedCard, reviseCardMessages } from "@/lib/workspace/study-ai-extras";
@@ -54,12 +52,21 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastGrade, setLastGrade] = useState<{ cardId: string; snapshot: StudyScheduleSnapshot | null; progress: number; wasRetry: boolean } | null>(null);
-  // Editing swaps the card area for an inline form — no nested dialog, which
-  // Radix would dismiss during the dropdown-menu close sequence.
-  const [editOpen, setEditOpen] = useState(false);
-  const [editFront, setEditFront] = useState("");
-  const [editBack, setEditBack] = useState("");
-  const [editTags, setEditTags] = useState("");
+  // 🔴🔴 THERE IS NO CARD EDITOR, AND ITS ABSENCE IS THE FEATURE (owner 2026-08-24:
+  // "I don't really want the user to be able to edit them", and on the plan: "no card
+  // editing anywhere, including the old tab"). What used to sit here was an inline
+  // front/back/tags form reachable from the ⋯ menu. It is gone.
+  //
+  // 🔴 BUT THE REASON PEOPLE EDIT A CARD IS THAT THE CARD IS WRONG, and taking the
+  // editor away without answering that leaves a student stuck with a bad card and no
+  // move except suspending it. So the editor is REPLACED, not merely removed: one
+  // press of "This card is wrong" rewrites it. The learner never types.
+  //
+  // The rewrite reuses the Explain panel's own path (`reviseCardMessages` →
+  // `parseRevisedCard` → `updateCard`) with an EMPTY transcript, which that prompt
+  // already reads as "(none — improve accuracy and clarity)". One mechanism, two
+  // doors, so a fix to either lands on both.
+  const [rewriting, setRewriting] = useState(false);
   // The Explain side chat: transcripts cache per card for the sitting, so
   // reopening a card never bills twice; the panel itself lives to the RIGHT
   // of the card (owner 2026-08-04) and streams into explain-chat.tsx.
@@ -75,7 +82,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     setRevealed(false);
     setError(null);
     setLastGrade(null);
-    setEditOpen(false);
+    setRewriting(false);
   }, [open, deck?.id]);
 
   const queue = useMemo(
@@ -204,33 +211,52 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     }
   }
 
-  function openEdit() {
-    if (!current) return;
-    setEditFront(current.front);
-    setEditBack(current.back);
-    setEditTags(current.tags.map((tag) => `#${tag}`).join(" "));
-    setEditOpen(true);
-  }
-
-  async function saveEdit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!current || saving) return;
-    setSaving(true);
+  /** "This card is wrong" — the whole replacement for the deleted editor.
+   *
+   *  🔴 ONE PRESS, NO FORM. The learner states that the card is bad and nothing else;
+   *  the model does the writing. Anything that asked them what to change would be the
+   *  editor again wearing a different hat.
+   *
+   *  🔴 OCCLUSION CARDS ARE REFUSED, not silently mangled. Their content is a masked
+   *  image plus coordinates, and `parseRevisedCard` returns front/back TEXT — applying
+   *  it would blank the labels and leave the image orphaned. The menu item hides for
+   *  them rather than failing after the learner has already waited on a model call.
+   */
+  async function rewriteCurrent() {
+    if (!current || saving || rewriting) return;
+    if (!userId || previewMode) {
+      setError("Sign in to have Nemesis rewrite a card.");
+      return;
+    }
+    setRewriting(true);
     setError(null);
     try {
-      await updateCard({ id: current.id, front: editFront, back: editBack, cardType: current.cardType, flag: current.flag, tags: editTags.split(/[\s,]+/) });
-      setEditOpen(false);
+      const reply = await postChatCompletion(
+        userId,
+        reviseCardMessages({ back: current.back, front: current.front, transcript: "" }),
+        { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
+      );
+      const revised = reply.text ? parseRevisedCard(reply.text) : null;
+      if (!revised) {
+        setError(reply.errorText ?? "Couldn't rewrite this card. Try again.");
+        return;
+      }
+      await updateCard({ back: revised.back, cardType: current.cardType, flag: current.flag, front: revised.front, id: current.id, tags: current.tags });
+      // Back to the question side: the card the learner is looking at just changed
+      // underneath them, and showing the new answer they never tried to recall would
+      // spend the retrieval for nothing.
+      setRevealed(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn't update the card.");
+      setError(cause instanceof Error ? cause.message : "Couldn't rewrite this card.");
     } finally {
-      setSaving(false);
+      setRewriting(false);
     }
   }
 
   // Keyboard review: Space/Enter reveals then grades Good, 1-4 grade, Z undoes,
   // F flags. Re-subscribed every render so the closures stay fresh.
   useEffect(() => {
-    if (!open || editOpen) return;
+    if (!open || rewriting) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -267,39 +293,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       <DialogContent className="review-stage left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-none border-0 px-7 py-6" showCloseButton>
         <DialogTitle className="sr-only">{deck?.name ?? "Flashcard review"}</DialogTitle>
         <DialogDescription className="sr-only">Review the front of the card, reveal its answer, then grade your recall.</DialogDescription>
-        {current && editOpen ? (
-          <div className="mx-auto grid min-h-0 w-full max-w-xl content-start gap-4 overflow-y-auto pt-6">
-            <div>
-              <h2 className="text-sm font-semibold">Edit card</h2>
-              <p className="mt-0.5 text-xs text-(--ui-text-tertiary)">Changes save to the card and show immediately in this review.</p>
-            </div>
-            <form className="grid gap-4" onSubmit={saveEdit}>
-              <label className="grid gap-1.5 text-xs font-medium">
-                {current.cardType === "image_occlusion" ? "Label" : "Front"}
-                <Textarea autoFocus className="min-h-24 text-sm font-normal leading-relaxed" onChange={(event) => setEditFront(event.target.value)} value={editFront} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                {current.cardType === "image_occlusion" ? "Notes" : "Back"}
-                <Textarea className="min-h-20 text-sm font-normal leading-relaxed" onChange={(event) => setEditBack(event.target.value)} value={editBack} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Tags
-                <Input onChange={(event) => setEditTags(event.target.value)} placeholder="#concept #exam-1" value={editTags} />
-              </label>
-              {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
-              <div className="flex justify-end gap-2">
-                <Button onClick={() => setEditOpen(false)} type="button" variant="ghost">Cancel</Button>
-                <Button
-                  disabled={saving || !editFront.trim() || (!editBack.trim() && current.cardType !== "cloze" && current.cardType !== "image_occlusion" && !hasCloze(editFront))}
-                  type="submit"
-                  variant="secondary"
-                >
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        ) : current ? (
+        {current ? (
           <div className="mx-auto grid min-h-0 w-full max-w-6xl grid-rows-[auto_minmax(0,1fr)_auto] gap-4 pt-1">
             <div className="flex items-center justify-between pr-10">
               <span className="min-w-0 truncate text-xs text-(--ui-text-tertiary)">{deck ? deck.name.split("::").at(-1) : "All decks"}</span>
@@ -356,7 +350,11 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                     <Button aria-label="Card actions" size="icon-xs" variant="ghost"><IconDots /></Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-44">
-                    <DropdownMenuItem onSelect={openEdit}><IconPencil /> Edit card</DropdownMenuItem>
+                    {current.cardType !== "image_occlusion" && (
+                      <DropdownMenuItem disabled={rewriting} onSelect={() => void rewriteCurrent()}>
+                        <IconWand /> {rewriting ? "Rewriting…" : "This card is wrong"}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onSelect={() => void suspendCurrent()}><IconPlayerPause /> Suspend card</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -418,6 +416,13 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
               )}
             </div>
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
+            {/* A rewrite is a model call, so it takes seconds. Saying so beats a menu
+                item that closed and apparently did nothing. */}
+            {rewriting && (
+              <p className="rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-xs text-(--ui-text-secondary)" role="status">
+                Rewriting this card…
+              </p>
+            )}
             <div className="grid justify-items-center gap-3">
               <div className="flex items-center justify-center gap-4 text-xs font-medium tabular-nums" data-testid="review-counts" title="New · Learning · Due left in this session">
                 <span className={cn("text-sky-500", currentBucket === "new" && "underline underline-offset-4")}>{remaining.newCount}</span>

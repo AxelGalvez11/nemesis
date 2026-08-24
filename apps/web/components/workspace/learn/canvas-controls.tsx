@@ -39,6 +39,7 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
+import { DeckReview } from "@/components/workspace/study/deck-review";
 import { SourcePreview } from "./source-preview";
 import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
@@ -145,6 +146,13 @@ export function SourcesControl({
   // the reply's source cards still file pages through it; only this panel's manual door closed.
   /** The source whose ORIGINAL document is open in the preview card, or null. */
   const [previewing, setPreviewing] = useState<CanvasSource | null>(null);
+  // 🔴 A DECK MADE HERE IS REVIEWED HERE. Owner 2026-08-24: the cards are "an artifact
+  // that the user can study", and the canvas's Outputs tab is one of the two places that
+  // artifact lives. This row used to be an `<a href="/library?deck=…">`, so studying the
+  // deck a canvas had just made meant leaving the canvas. Now the same `DeckReview` the
+  // Library mounts opens over the canvas; the Library link still works for anyone who
+  // wants the shelf. Null until pressed — mounting it is what triggers the study load.
+  const [reviewingDeck, setReviewingDeck] = useState<string | null>(null);
   const { session } = useAuth();
   const holder = useDismiss(open, () => setOpen(false));
 
@@ -306,7 +314,7 @@ export function SourcesControl({
                       <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
                       <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
                         {output.kind === "flashcards"
-                          ? "Flashcard deck · in your Library"
+                          ? "Flashcard deck · click to review"
                           : output.kind === "note"
                             ? "Note · in your Library"
                             : output.kind === "slides"
@@ -327,10 +335,11 @@ export function SourcesControl({
                     );
                   }
                   if (output.kind === "flashcards" && output.deckId) {
+                    const deckId = output.deckId;
                     return (
-                      <a className={row} href={`/library?deck=${output.deckId}`} key={output.id}>
+                      <button className={row} key={output.id} onClick={() => setReviewingDeck(deckId)} type="button">
                         {body}
-                      </a>
+                      </button>
                     );
                   }
                   if (output.kind === "slides" && output.deck) {
@@ -380,6 +389,7 @@ export function SourcesControl({
       {previewing && (
         <SourcePreview onClose={() => setPreviewing(null)} source={previewing} uid={session?.user.id ?? null} />
       )}
+      {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
     </div>
   );
 }
