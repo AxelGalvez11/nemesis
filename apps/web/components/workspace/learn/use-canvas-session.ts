@@ -328,6 +328,9 @@ export interface CanvasSession {
   testQuestions: TestRun | null;
   /** The test is over, or they closed it. Nothing about it is kept. */
   clearTest: () => void;
+  /** The sites the turn in flight is reading, deduped, in the order the search ranked them.
+   *  Empty between turns and while a request is still outgoing. */
+  searchedDomains: readonly string[];
   /** How many new things the last turn remembered. 0 when it remembered nothing. */
   memoryNotice: number;
   /** They read or dismissed the memory notice. */
@@ -488,6 +491,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * mid-lesson, and the place to read and delete those is Settings, where all of them are.
    */
   const [memoryNotice, setMemoryNotice] = useState(0);
+  /**
+   * The sites this turn is reading, for the dock's favicon chips.
+   *
+   * 🔴 CLEARED WHEN THE SEARCH BEGINS, NOT WHEN THE TURN ENDS. `onSearching(null)` means a fresh
+   * request just went out, so last round's hosts are already wrong — leaving them up would show
+   * chips for pages this answer does not stand on, which is the exact claim the dock's contract
+   * with `thinking-phases.ts` forbids.
+   */
+  const [searchedDomains, setSearchedDomains] = useState<readonly string[]>([]);
   const [testQuestions, setTestQuestions] = useState<TestRun | null>(null);
   /**
    * Decisions already settled this sitting, phrased as facts for the packet.
@@ -1219,7 +1231,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
       // `thinking-phases.ts`'s rule holds: a caption is emitted by a step that is genuinely running,
       // never by a timer walking through plausible-sounding stages.
-      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "", (found) => {
+      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "", (found, domains) => {
+        // 🔴 THE HOSTS TRACK THE BEAT THEY ARRIVED ON. `[]` on the outgoing request clears the
+        // previous round; the real list replaces it the moment the results land.
+        setSearchedDomains(domains);
         // 🔴 THE COUNT WHEN THERE IS ONE, AND NEVER A GUESS BEFORE. `thinking-phases.ts`'s rule is
         // that a caption is emitted by a step genuinely running; a number invented before the
         // results land would be the same theatre with more precision.
@@ -2167,6 +2182,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     testQuestions,
     testRequested,
     clearTest,
+    searchedDomains,
     memoryNotice,
     clearMemoryNotice,
     judging,
