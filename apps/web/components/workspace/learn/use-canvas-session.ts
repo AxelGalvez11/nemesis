@@ -328,6 +328,10 @@ export interface CanvasSession {
   testQuestions: TestRun | null;
   /** The test is over, or they closed it. Nothing about it is kept. */
   clearTest: () => void;
+  /** How many new things the last turn remembered. 0 when it remembered nothing. */
+  memoryNotice: number;
+  /** They read or dismissed the memory notice. */
+  clearMemoryNotice: () => void;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
   learnFromAside: () => Promise<void>;
@@ -476,6 +480,14 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * because it cannot become a state the learner is left sitting inside.
    */
   const [testRequested, setTestRequested] = useState(false);
+  /**
+   * How many things this turn just remembered, for the "Memory updated" line.
+   *
+   * 🔴 A COUNT, NOT THE SENTENCES. The notice says something was kept and where to read it;
+   * printing the fact itself into the canvas would put a claim about the learner on their screen
+   * mid-lesson, and the place to read and delete those is Settings, where all of them are.
+   */
+  const [memoryNotice, setMemoryNotice] = useState(0);
   const [testQuestions, setTestQuestions] = useState<TestRun | null>(null);
   /**
    * Decisions already settled this sitting, phrased as facts for the packet.
@@ -1279,7 +1291,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           decision.remember.map((fact) =>
             rememberLine(uid, { kind: fact.kind, sourceCanvasId: id, statement: fact.statement }),
           ),
-        );
+        ).then((written) => {
+          // 🔴🔴 SAID ONLY WHEN SOMETHING WAS ACTUALLY WRITTEN — owner 2026-08-24, asking whether
+          // memory works "like it does in ChatGPT where you can see the memory prompt and the
+          // updates". `rememberLine` returns false for a near-duplicate, and announcing "memory
+          // updated" for a fact already held would train the learner to ignore the notice, which is
+          // the one thing a transparency signal cannot afford. Counting the trues is the difference.
+          const saved = written.filter(Boolean).length;
+          if (saved > 0) setMemoryNotice(saved);
+        });
       }
 
       // 🔴 THE COURSE IS APPLIED BESIDE THE TURN, NEVER INSTEAD OF IT. Everything below runs
@@ -1466,6 +1486,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     setTestRequested(false);
     setTestQuestions(null);
   }, []);
+
+  const clearMemoryNotice = useCallback(() => setMemoryNotice(0), []);
 
   const dismissClarification = useCallback(() => {
     setClarifying(null);
@@ -2145,6 +2167,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     testQuestions,
     testRequested,
     clearTest,
+    memoryNotice,
+    clearMemoryNotice,
     judging,
     opening,
     ready,

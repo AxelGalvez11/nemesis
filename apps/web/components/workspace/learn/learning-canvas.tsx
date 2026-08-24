@@ -1774,6 +1774,39 @@ export function LearningCanvas({
             yet, or too little that can carry an honest question — and a request that produced
             silence would read as a broken feature. Saying which of the two happened is the whole
             difference between "not yet" and "something is wrong". */}
+        {/* 🔴🔴 "MEMORY UPDATED", THE WAY CHATGPT SAYS IT — owner 2026-08-24: *"does memory work like
+            it does in ChatGPT where you basically can see the memory prompt and the updates?"* The
+            Settings screen already answered the first half (every line, verbatim, deletable). This
+            is the second half: knowing at the moment it happens, rather than discovering weeks
+            later that a file has been accumulating.
+
+            🔴 IT NAMES A COUNT AND A DESTINATION, NEVER THE FACT ITSELF. Printing the sentence into
+            the canvas would put a claim about the learner on their screen mid-lesson; the place to
+            read and delete those is Settings, where all of them are together and none of them is a
+            surprise.
+
+            🔴 AND IT IS DISMISSIBLE, because a notice that cannot be put away is an alert. */}
+        {session.memoryNotice > 0 && (
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6">
+            <p className="canvas-swap mt-4 flex items-center gap-2 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary)">
+              <span className="flex-1">
+                Memory updated.{" "}
+                <a className="underline" href="/settings">
+                  See what Nemesis remembers
+                </a>
+              </span>
+              <button
+                aria-label="Dismiss"
+                className="shrink-0 rounded-md bg-transparent px-1.5 py-0.5 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                onClick={session.clearMemoryNotice}
+                type="button"
+              >
+                ✕
+              </button>
+            </p>
+          </div>
+        )}
+
         {session.testRequested && presence !== "preparing" && !policy.awaitingAnswer && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
             {isTestRefusal(testRun) ? (

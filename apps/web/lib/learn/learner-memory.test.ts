@@ -183,3 +183,35 @@ test("🔴 the duplicate check runs across every kind, not within one", () => {
   assert.match(source, /existing\.some\(\(line\) => saysTheSameThing\(line\.statement, statement\)\)/);
   assert.ok(!/line\.kind === input\.kind/.test(source), "the duplicate check is scoped to one kind again");
 });
+
+// ── seeing that it happened, the way ChatGPT does ───────────────────────────────────────────
+//
+// Owner 2026-08-24: *"does memory work like it does in ChatGPT where you basically can see the
+// memory prompt and the updates?"* The Settings screen answered the first half. These hold the
+// second: knowing AT THE MOMENT it happens, rather than discovering later that a file has been
+// quietly accumulating.
+
+test("🔴🔴 the notice fires only when something was actually written", () => {
+  // `rememberLine` returns false for a near-duplicate. Saying "memory updated" for a fact already
+  // held would train the learner to ignore the notice, which is the one thing a transparency
+  // signal cannot afford.
+  assert.match(SESSION, /const saved = written\.filter\(Boolean\)\.length;/, "the notice stopped counting real writes");
+  assert.match(SESSION, /if \(saved > 0\) setMemoryNotice\(saved\);/, "the notice fires regardless of whether anything was kept");
+});
+
+test("🔴🔴 the notice never prints the remembered sentence into the canvas", () => {
+  // That would put a claim about the learner on their screen mid-lesson. The place to read and
+  // delete them is Settings, where all of them are together and none is a surprise.
+  const canvas = strip(readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8"));
+  const notice = canvas.slice(canvas.indexOf("session.memoryNotice > 0"), canvas.indexOf("session.testRequested &&"));
+  assert.ok(notice.length > 0, "the notice moved — this guard is pointed at nothing");
+  assert.ok(!/\.statement|remember\[/.test(notice), "the notice started printing the fact itself");
+  assert.match(notice, /Memory updated\./);
+  assert.match(notice, /See what Nemesis remembers/, "the notice stopped saying where to read them");
+  assert.match(notice, /href="\/settings"/, "the notice no longer links anywhere");
+});
+
+test("🔴 the notice can be dismissed, because a notice that cannot be is an alert", () => {
+  const canvas = strip(readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8"));
+  assert.match(canvas, /onClick=\{session\.clearMemoryNotice\}/, "the memory notice cannot be put away");
+});

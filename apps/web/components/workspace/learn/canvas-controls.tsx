@@ -159,6 +159,20 @@ export function SourcesControl({
 
   const outputs = canvas.outputs ?? [];
 
+  // 🔴🔴 GROUPED ONLY WHEN THERE IS SOMETHING TO GROUP — owner 2026-08-24, asking for ChatGPT's
+  // shape: *"can we just have it grouped under something that says websites with a websites icon
+  // or globe icon".* A canvas built from three PDFs and nothing else gets NO headings: the panel's
+  // own tab already says "sources", and "Documents" printed under it is a label restating a label.
+  // The moment a web page joins them the two kinds genuinely need telling apart, and both headings
+  // appear together.
+  //
+  // 🔴 THE HOST DECIDES, exactly as the row rendering below already decides. `sourceUrl` is
+  // documented as absent for every upload and present only for a page, so one idea stays spelled
+  // once — see `source-pill.ts` and the composer chips, which follow the same rule.
+  const websites = canvas.sources.filter((source) => hostnameOf(source.sourceUrl) !== null);
+  const documents = canvas.sources.filter((source) => hostnameOf(source.sourceUrl) === null);
+  const grouped = websites.length > 0 && documents.length > 0;
+
   return (
     <div className="pointer-events-auto relative shrink-0" ref={holder}>
       <button
@@ -227,7 +241,8 @@ export function SourcesControl({
                   <p className="px-2 py-3 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Nothing attached yet.</p>
                 )
               ) : (
-                canvas.sources.map((source) => {
+                (() => {
+                  const renderSource = (source: CanvasSource) => {
                   // 🔴🔴 THE ROWS OPEN NOW. Owner, 2026-08-20: *"the sources box should be more the
                   // right and have the actual sources clickable in there."* This panel is the one
                   // place a learner goes to ask "where did that come from", and it answered with
@@ -280,7 +295,17 @@ export function SourcesControl({
                       {body}
                     </button>
                   );
-                })
+                  };
+                  if (!grouped) return canvas.sources.map(renderSource);
+                  return (
+                    <>
+                      <SourceGroup icon="file" label="Documents" />
+                      {documents.map(renderSource)}
+                      <SourceGroup icon="globe" label="Websites" />
+                      {websites.map(renderSource)}
+                    </>
+                  );
+                })()
               )}
 
               <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
@@ -378,6 +403,17 @@ export function SourcesControl({
       )}
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
     </div>
+  );
+}
+
+/** A heading over one kind of source. Quiet by construction: this labels a shelf, it is not a
+ *  control, and it must not read as one on a panel where every other row opens something. */
+function SourceGroup({ icon, label }: { icon: string; label: string }) {
+  return (
+    <p className="flex items-center gap-1.5 px-2 pb-0.5 pt-2 text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary)">
+      <Codicon name={icon} size="0.7rem" />
+      {label}
+    </p>
   );
 }
 
