@@ -241,9 +241,11 @@ function base64(bytes: Uint8Array): string {
   return out;
 }
 
-/** Wrap a raw RGB grid as a PNG. Rows use the "Up" filter: smooth ramps become runs of ~zero. */
-export async function rgbToPng(rgb: Uint8Array, width: number, height: number): Promise<Uint8Array> {
-  const stride = width * 3;
+/** Wrap a raw pixel grid as a PNG. `channels` is 3 for RGB and 4 for RGBA — the alpha path is
+ *  what lets a .pptx carry a gradient wash, since PowerPoint has no gradient fill of its own.
+ *  Rows use the "Up" filter: smooth ramps become runs of ~zero. */
+export async function rgbToPng(rgb: Uint8Array, width: number, height: number, channels: 3 | 4 = 3): Promise<Uint8Array> {
+  const stride = width * channels;
   const raw = new Uint8Array((stride + 1) * height);
   for (let y = 0; y < height; y += 1) {
     const at = y * (stride + 1);
@@ -254,7 +256,7 @@ export async function rgbToPng(rgb: Uint8Array, width: number, height: number): 
       raw[at + 1 + x] = (here - above) & 0xff;
     }
   }
-  const ihdr = new Uint8Array([...be32(width), ...be32(height), 8, 2, 0, 0, 0]);
+  const ihdr = new Uint8Array([...be32(width), ...be32(height), 8, channels === 4 ? 6 : 2, 0, 0, 0]);
   const parts = [
     new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk("IHDR", ihdr),
@@ -283,6 +285,31 @@ export function deckArtPng(art: DeckArt, width = ART_W, height = ART_H): Promise
   const made = rgbToPng(paintDeckArt(art, width, height), width, height).then(
     (png) => `data:image/png;base64,${base64(png)}`,
   );
+  CACHE.set(key, made);
+  return made;
+}
+
+/**
+ * A vertical wash from transparent to `color`, as an RGBA PNG.
+ *
+ * Only the .pptx backend needs this: CSS and SVG draw the same overlay as a real gradient. It is
+ * painted one pixel wide — PowerPoint stretches it across the slide, and a gradient has nothing
+ * to lose horizontally.
+ */
+export function deckScrimPng(color: string, strength: number, start: number, height = 240): Promise<string> {
+  const key = `scrim:${color}:${strength}:${start}:${height}`;
+  const hit = CACHE.get(key);
+  if (hit) return hit;
+  const [r, g, b] = rgbOf(color);
+  const pixels = new Uint8Array(height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const t = smoothstep(((y + 0.5) / height - start) / Math.max(0.001, 1 - start));
+    pixels[y * 4] = r;
+    pixels[y * 4 + 1] = g;
+    pixels[y * 4 + 2] = b;
+    pixels[y * 4 + 3] = Math.round(Math.max(0, Math.min(1, t * strength)) * 255);
+  }
+  const made = rgbToPng(pixels, 1, height, 4).then((png) => `data:image/png;base64,${base64(png)}`);
   CACHE.set(key, made);
   return made;
 }

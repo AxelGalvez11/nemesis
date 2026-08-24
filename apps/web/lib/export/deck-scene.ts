@@ -92,7 +92,21 @@ export interface SceneImage {
 export type SceneItem = SceneShape | SceneText | SceneBullets | SceneImage;
 
 export interface Scene {
-  background: { color: string; art?: DeckArt };
+  background: {
+    color: string;
+    /** Painted art — a recipe, rendered by deck-art.ts. */
+    art?: DeckArt;
+    /** A real image, by app-relative URL (`/deck/textures/…`). Materials and photography live
+     *  here; the colour stays as the fallback the slide paints before the image loads, and as
+     *  what a design falls back TO if the asset ever goes missing. Legibility over an image is
+     *  the composer's job: it lays a scrim over the picture like any other item. */
+    image?: string;
+  };
+  /** A wash from transparent to `color`, running down the slide — what makes type legible over
+   *  a photograph. Declared rather than drawn, because each backend has a better way to do it
+   *  than the others: CSS and SVG have real gradients, and a .pptx gets a generated PNG with an
+   *  alpha channel. Stacked translucent rectangles were the first attempt and they BANDED. */
+  overlay?: { color: string; strength: number; start: number };
   items: SceneItem[];
 }
 

@@ -175,7 +175,7 @@ export function measureText(item: SceneText | SceneBullets): Box {
 export async function sceneToSvg(scene: Scene, width = 800): Promise<string> {
   const k = width / SLIDE_W;
   const height = SLIDE_H * k;
-  const art = scene.background.art ? await deckArtPng(scene.background.art) : null;
+  const art = scene.background.image ?? (scene.background.art ? await deckArtPng(scene.background.art) : null);
   const body = scene.items
     .map((item) => {
       switch (item.kind) {
@@ -193,9 +193,13 @@ export async function sceneToSvg(scene: Scene, width = 800): Promise<string> {
   // Everything is clipped to the slide, because PowerPoint clips too: a circle that bleeds off
   // the corner is a design decision there, and an unclipped preview would lie about it.
   const id = `slide${Math.round(width)}`;
+  const washId = `${id}wash`;
+  const wash = scene.overlay
+    ? `<defs><linearGradient id="${washId}" x1="0" x2="0" y1="0" y2="1"><stop offset="${scene.overlay.start}" stop-color="#${scene.overlay.color}" stop-opacity="0"/><stop offset="1" stop-color="#${scene.overlay.color}" stop-opacity="${scene.overlay.strength}"/></linearGradient></defs><rect fill="url(#${washId})" height="${height}" width="${width}"/>`
+    : "";
   return `<svg height="${height}" viewBox="0 0 ${width} ${height}" width="${width}" xmlns="http://www.w3.org/2000/svg"><defs><clipPath id="${id}"><rect height="${height}" width="${width}"/></clipPath></defs><g clip-path="url(#${id})"><rect fill="#${scene.background.color}" height="${height}" width="${width}"/>${
     art ? `<image height="${height}" href="${art}" preserveAspectRatio="none" width="${width}" x="0" y="0"/>` : ""
-  }${body}</g></svg>`;
+  }${wash}${body}</g></svg>`;
 }
 
 /** The same picture as a data URI, for an <img> in the picker. */

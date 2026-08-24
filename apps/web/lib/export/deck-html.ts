@@ -37,6 +37,12 @@ function stack(font: string): string {
   return `'${font}', Helvetica, Arial, sans-serif`;
 }
 
+/** #rrggbb + alpha → the rgba() a gradient stop needs. */
+function rgba(hex: string, alpha: number): string {
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 const place = (b: { x: number; y: number; w: number; h: number }): string =>
   `left:${px(b.x)};top:${px(b.y)};width:${px(b.w)};height:${px(b.h)}`;
 
@@ -123,9 +129,13 @@ const imageHtml = (item: SceneImage): string =>
 /** One slide, as a self-contained element sized in the printed page's own units. */
 export async function sceneToHtml(scene: Scene, index: number): Promise<string> {
   const art = scene.background.art ? await deckArtPng(scene.background.art) : null;
-  const background = art
-    ? `background-color:#${scene.background.color};background-image:url(${art});background-size:100% 100%`
+  const picture = scene.background.image ?? art;
+  const background = picture
+    ? `background-color:#${scene.background.color};background-image:url(${picture});background-size:cover;background-position:center`
     : `background:#${scene.background.color}`;
+  const wash = scene.overlay
+    ? `<div class="dk-i" style="left:0;top:0;width:${SLIDE_PX_W}px;height:${SLIDE_PX_H}px;background:linear-gradient(to bottom, rgba(0,0,0,0) ${(scene.overlay.start * 100).toFixed(0)}%, ${rgba(scene.overlay.color, scene.overlay.strength)} 100%)"></div>`
+    : "";
   const body = scene.items
     .map((item) => {
       switch (item.kind) {
@@ -140,7 +150,7 @@ export async function sceneToHtml(scene: Scene, index: number): Promise<string> 
       }
     })
     .join("");
-  return `<section aria-label="Slide ${index}" class="dk-s" data-slide="${index}" style="${background}">${body}</section>`;
+  return `<section aria-label="Slide ${index}" class="dk-s" data-slide="${index}" style="${background}">${wash}${body}</section>`;
 }
 
 /** Every slide of a plan, in order. */

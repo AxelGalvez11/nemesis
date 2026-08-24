@@ -33,10 +33,13 @@ const PLAN: DeckPlan = {
   title: "Photosynthesis",
 };
 
-test("there are twenty designs and the house design is one of them", () => {
-  assert.equal(DECK_DESIGNS.length, 20, "the owner asked for twenty");
-  assert.equal(new Set(DECK_DESIGNS.map((d) => d.id)).size, 20, "two designs share an id");
-  assert.equal(new Set(DECK_DESIGNS.map((d) => d.name)).size, 20, "two designs share a name");
+test("the set keeps growing, and every design in it is distinct", () => {
+  // Twenty was the first commission; the owner then asked for coverage of the Keynote
+  // categories (Education, Personal, Portfolio, Craft, Textured…), so the floor matters and
+  // the ceiling does not. What must hold is that no two are the same design.
+  assert.ok(DECK_DESIGNS.length >= 20, `the set shrank to ${DECK_DESIGNS.length}`);
+  assert.equal(new Set(DECK_DESIGNS.map((d) => d.id)).size, DECK_DESIGNS.length, "two designs share an id");
+  assert.equal(new Set(DECK_DESIGNS.map((d) => d.name)).size, DECK_DESIGNS.length, "two designs share a name");
   assert.ok(DECK_DESIGNS.some((d) => d.id === DEFAULT_DECK_DESIGN), "the default names a design that does not exist");
 });
 
@@ -147,5 +150,27 @@ test("all twenty build a genuine .pptx", async () => {
     assert.ok(text.includes("ppt/slides/slide7.xml"), `${d.id}: lost a slide (6 planned + references)`);
     assert.ok(!text.includes("ppt/slides/slide8.xml"), `${d.id}: invented a slide`);
     assert.ok(text.includes(d.fonts.display), `${d.id}: the display font is not named in the XML`);
+  }
+});
+
+test("a design built on a picture declares whether that picture is dark", () => {
+  // 2026-08-24: Quarry shipped its title in page ink on a slate cover and was nearly invisible.
+  // A composition cannot see its own background, so the design has to say.
+  for (const d of DECK_DESIGNS) {
+    if (!d.texture?.cover) continue;
+    assert.equal(typeof d.texture.dark, "boolean", `${d.id}: a textured cover must declare texture.dark`);
+    const ink = d.texture.dark ? d.deepInk : d.ink;
+    const ground = d.texture.dark ? d.deep : d.paper;
+    const gap = Math.abs(luminance(ink) - luminance(ground));
+    assert.ok(gap > 0.45, `${d.id}: the cover title is too close in tone to its own picture (${gap.toFixed(2)})`);
+  }
+});
+
+test("a texture is an app asset, not a link to somewhere else", () => {
+  // A deck must build with no network beyond our own origin: the .pptx inlines these bytes.
+  for (const d of DECK_DESIGNS) {
+    for (const url of [d.texture?.cover, d.texture?.section, d.texture?.closing].filter(Boolean)) {
+      assert.match(url as string, /^\/deck\/textures\/[a-z0-9-]+\.jpg$/, `${d.id}: "${url}" is not a local deck texture`);
+    }
   }
 });
