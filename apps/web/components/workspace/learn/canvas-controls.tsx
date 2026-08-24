@@ -304,7 +304,13 @@ export function SourcesControl({
                     <>
                       <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
                       <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                        {output.kind === "flashcards" ? "Flashcard deck · in your Library" : output.kind === "note" ? "Note · in your Library" : output.kind}
+                        {output.kind === "flashcards"
+                          ? "Flashcard deck · in your Library"
+                          : output.kind === "note"
+                            ? "Note · in your Library"
+                            : output.kind === "slides"
+                              ? "Slides · click to download .pptx"
+                              : output.kind}
                       </p>
                     </>
                   );
@@ -326,6 +332,19 @@ export function SourcesControl({
                       </a>
                     );
                   }
+                  if (output.kind === "slides" && output.deck) {
+                    const deck = output.deck;
+                    return (
+                      <button
+                        className={row}
+                        key={output.id}
+                        onClick={() => void import("@/lib/export/deck-download").then((m) => m.downloadDeck(deck, output.title))}
+                        type="button"
+                      >
+                        {body}
+                      </button>
+                    );
+                  }
                   return (
                     <div className="px-2 py-1.5" key={output.id}>
                       {body}
@@ -339,6 +358,7 @@ export function SourcesControl({
                     [
                       { kind: "flashcards", icon: "layers", idle: "Make flashcards", busy: "Making flashcards…" },
                       { kind: "note", icon: "note", idle: "Make a summary note", busy: "Writing the note…" },
+                      { kind: "slides", icon: "preview", idle: "Make slides", busy: "Building your slides…" },
                     ] as const
                   ).map((action) => (
                     <button

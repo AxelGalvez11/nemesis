@@ -550,3 +550,19 @@ test("a new send fades the old answer while the character takes the centre", () 
   // Owner 2026-08-25: "the current output did not disappear… to have the mascot in the middle."
   assert.match(CANVAS, /turnInFlight \? " canvas-preview-out" : ""/, "the previous reply no longer eases out under a new turn");
 });
+
+test("a PowerPoint ask in chat becomes a deck, not a lesson about decks", () => {
+  // Owner 2026-08-25. The route sits BEFORE the policy turn in converse, is narrow by the
+  // detector's own tests, and busies the surface with an honest label while it builds.
+  const hook = readFileSync(new URL("./use-canvas-session.ts", import.meta.url), "utf8");
+  const route = hook.indexOf("readDeliverableAsk(said)");
+  const policyCall = hook.indexOf("askCanvasChat(id");
+  assert.ok(route > -1, "the chat ask is no longer read");
+  assert.ok(policyCall > -1);
+  assert.ok(route < policyCall, "the ask routes AFTER the policy turn — the turn steals it back");
+  const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
+  assert.ok(controls.includes('"Make slides"') || controls.includes("Make slides"), "the outputs tab lost its slides action");
+  assert.match(controls, /downloadDeck/, "a slides output can no longer be downloaded");
+  const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
+  assert.match(library, /generated_slides/, "the Library no longer lists slide decks");
+});

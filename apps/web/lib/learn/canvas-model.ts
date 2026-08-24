@@ -654,6 +654,10 @@ export interface CanvasOutput {
   deckId?: string;
   /** A note output opens in the library's own reader, by path. */
   notePath?: string;
+  /** A slides output carries its whole plan: the .pptx is a deterministic function of
+   *  plan + theme, rebuilt client-side at download time — nothing to upload, no storage
+   *  bucket. See lib/export/deck-plan.ts. */
+  deck?: import("../export/deck-plan").DeckPlan;
 }
 
 export interface LearningCanvas {
