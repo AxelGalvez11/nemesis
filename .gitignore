@@ -66,3 +66,4 @@ apps/web/gallery.html
 # The Lab's throwaway learner credentials. Never committed: it is a password for a
 # `@nemesis.test` account on one developer's machine.
 apps/web/.lab/
+package-lock.json
