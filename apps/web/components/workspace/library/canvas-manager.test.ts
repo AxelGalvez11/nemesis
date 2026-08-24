@@ -125,7 +125,7 @@ test("a canvas row is distinguishable from a folder row at a glance, and says no
   // `RowIcon`, which is what makes a folder and a canvas read as two KINDS of object rather than
   // two weights of text — the tile is the part that does that work, and it is asserted below.
   assert.match(source, /<RowIcon icon=\{FolderIcon\} \/>/, "folders are marked");
-  assert.match(source, /<RowIcon icon=\{PanelsTopLeft\} \/>/, "and so are canvases — a row used to carry no glyph at all");
+  assert.match(source, /<RowIcon icon=\{canvas.courseTitle \? GraduationCap : PanelsTopLeft\} \/>/, "and so are canvases — a row used to carry no glyph at all (course rows swap to the cap, owner 2026-08-25)");
   const rowIcon = source.slice(source.indexOf("function RowIcon"));
   assert.match(rowIcon, /size-\[var\(--list-icon-tile\)\]/, "the glyph sits in a sized tile, not loose against the name");
   // The learner's own pin survives; it is the one honest per-canvas distinction there is.
