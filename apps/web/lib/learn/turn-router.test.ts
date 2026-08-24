@@ -207,6 +207,10 @@ test("a plain decision is read", () => {
     // `curriculumFor` joins the always-present set for the same reason the web fields did: a turn
     // that asked for no course must say so in the object, because the canvas reads it as the
     // condition for applying a plan and `undefined` there is indistinguishable from "not shipped".
+    // 🔴 `check` IS PRESENT AND null, NOT ABSENT — the same argument as every field below it, one
+    // more time. The canvas reads it as the fallback source of questions, and `undefined` there is
+    // indistinguishable from "the field has not shipped yet". A greeting asks nothing.
+    check: null,
     curriculumFor: null,
     milestones: [],
     needsWeb: false,
@@ -850,15 +854,22 @@ test("🔴 a test request is read off a study turn", () => {
   assert.equal(read?.wantsTest, true, "the learner asked to be checked and the canvas never heard it");
 });
 
-test("🔴🔴 a 'reply' turn can never carry a test", () => {
-  // Calibration: drop the `then === "study"` half of the guard and this reddens.
+test("🔴🔴 a 'reply' turn is now the ONLY turn that can carry a test", () => {
+  // 🔴🔴 REVERSED 2026-08-24, AND THE OLD REASONING IS KEPT BECAUSE IT WAS SOUND WHEN WRITTEN. This
+  // required `wantsTest` to be false on a reply: *"a reply turn answers a question. One that also
+  // claimed to want a test would be the model asking to take the canvas over on a turn nobody
+  // handed to the learning system."* True while `study` existed and taking the canvas over was what
+  // a test DID.
   //
-  // Same argument as the clarify-question drop directly above it in readTurnDecision: a "reply"
-  // turn answers a question. One that also claimed to want a test would be the model asking to
-  // take the canvas over on a turn nobody handed to the learning system.
+  // The rigid lane was removed hours after the chips shipped, so "quiz me" became an ordinary reply
+  // — and this guard turned a working feature into an unreachable one. Nothing takes the canvas
+  // over now: the chips render under the answer, the composer stays live, and the questions ride on
+  // the same turn. What stops a test becoming a MODE is that every turn re-answers `wantsTest` and
+  // nothing persists it, which is the second half asserted here.
   const read = readTurnDecision(turn({ then: "reply", wantsTest: true }, "caffeine's half-life is about five hours."));
-  assert.equal(read?.wantsTest, false, "a reply turn smuggled a test in");
-  assert.equal(read?.say, "caffeine's half-life is about five hours.", "dropping the test also dropped the answer");
+  assert.equal(read?.wantsTest, true, "a conversation can no longer ask to be checked");
+  assert.equal(read?.say, "caffeine's half-life is about five hours.", "carrying the test cost the answer");
+  assert.equal(readTurnDecision(turn({ then: "reply" }, "thanks"))?.wantsTest, false, "a test survived into the next turn");
 });
 
 test("🔴 a missing or junk field is false, never undefined", () => {

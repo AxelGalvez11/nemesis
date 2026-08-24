@@ -71,6 +71,7 @@ import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas 
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
 import { isPreContent } from "@/lib/learn/canvas-hosting";
+import type { TestRun } from "@/lib/learn/test-run";
 import {
   clarifyAnswerFact,
   readClarifyAnswer,
@@ -319,6 +320,12 @@ export interface CanvasSession {
    *  `learning-canvas.tsx` builds the questions, because the objectives live in the policy
    *  runtime and this hook does not know what an objective is. */
   testRequested: boolean;
+  /** The questions the TURN wrote, when it wrote usable ones.
+   *
+   *  🔴 CARRIED BESIDE `testRequested` RATHER THAN REPLACING IT, because the two answer different
+   *  questions: whether a check was asked for, and whether this particular turn happened to supply
+   *  the questions for it. A course canvas asks for one and supplies none — its pool does that. */
+  testQuestions: TestRun | null;
   /** The test is over, or they closed it. Nothing about it is kept. */
   clearTest: () => void;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
@@ -469,6 +476,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * because it cannot become a state the learner is left sitting inside.
    */
   const [testRequested, setTestRequested] = useState(false);
+  const [testQuestions, setTestQuestions] = useState<TestRun | null>(null);
   /**
    * Decisions already settled this sitting, phrased as facts for the packet.
    *
@@ -1247,9 +1255,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
       // 🔴 EVERY TURN ANSWERS THIS, INCLUDING BY CLEARING IT. A test that survived into the next
       // submission would be the mode §38 bans; setting rather than only-setting-true is what makes
-      // that structural instead of a habit. `readTurnDecision` has already dropped `wantsTest` from
-      // any turn that is not "study", so this cannot fire on a plain answer.
+      // that structural instead of a habit.
+      //
+      // 🔴 THE "ONLY ON A STUDY TURN" HALF OF THIS COMMENT WAS TRUE UNTIL 2026-08-24 and went with
+      // the rigid lane. A "quiz me" is an ordinary reply now, so gating on `study` made the chips
+      // unreachable — a feature that shipped and could never fire again. What stops it becoming a
+      // mode is the clearing above, not the turn's kind.
       setTestRequested(decision.wantsTest);
+      // 🔴 CLEARED ON EVERY TURN, LIKE THE REQUEST ITSELF. Questions from two turns ago answering
+      // under a third turn's ask is the "mode" shape §38 exists to prevent.
+      setTestQuestions(decision.wantsTest ? decision.check : null);
 
       // 🔴🔴 REMEMBERED BESIDE THE TURN, NEVER INSTEAD OF IT, AND NEVER AWAITED BY IT. Everything
       // below runs exactly as it would on a turn that noticed nothing durable; a memory write that
@@ -1447,7 +1462,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * software deciding the thing it just admitted it could not decide. The learner's next sentence
    * starts a fresh turn, which is what dismissing a question means everywhere else.
    */
-  const clearTest = useCallback(() => setTestRequested(false), []);
+  const clearTest = useCallback(() => {
+    setTestRequested(false);
+    setTestQuestions(null);
+  }, []);
 
   const dismissClarification = useCallback(() => {
     setClarifying(null);
@@ -2124,6 +2142,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     clarified,
     answerClarification,
     dismissClarification,
+    testQuestions,
     testRequested,
     clearTest,
     judging,

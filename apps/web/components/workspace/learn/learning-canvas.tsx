@@ -522,13 +522,19 @@ export function LearningCanvas({
   // 🔴 MEMOISED ON THE REQUEST, NOT ON EVERY RENDER. `buildTestRun` is pure, but a fresh object
   // each render would remount `CanvasCheck` and reset the learner to question one mid-test — the
   // component keys its progress reset on `run` identity for exactly that reason.
-  const testRun = useMemo(
-    () =>
-      session.testRequested
-        ? buildTestRun({ evidence: policy.evidence, objectives: policy.objectives })
-        : ("nothing-taught" as const),
-    [policy.evidence, policy.objectives, session.testRequested],
-  );
+  //
+  // 🔴🔴 THE COURSE'S OWN POOL FIRST, THE TURN'S QUESTIONS SECOND, AND THAT ORDER IS THE POINT.
+  // `buildTestRun` draws on tracked objectives with grounded distractors, real evidence and
+  // balanced answer seats — everything a model-written question cannot claim. Where that exists it
+  // is strictly better, so it wins. `session.testQuestions` carries the case it cannot reach at
+  // all: a conversation, which has no objectives, where the material is what was just said. Before
+  // 2026-08-24 that case did not exist, because a topic became a lesson; now it is the common one.
+  const testRun = useMemo(() => {
+    if (!session.testRequested) return "nothing-taught" as const;
+    const fromPool = buildTestRun({ evidence: policy.evidence, objectives: policy.objectives });
+    if (!isTestRefusal(fromPool)) return fromPool;
+    return session.testQuestions ?? fromPool;
+  }, [policy.evidence, policy.objectives, session.testQuestions, session.testRequested]);
   const [makingFromMisses, setMakingFromMisses] = useState(false);
   const { session: authSession } = useAuth();
   const uid = authSession?.user.id ?? null;

@@ -41,7 +41,9 @@
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
+import { readChatCheck } from "./chat-check";
 import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
+import type { TestRun } from "./test-run";
 import { readMilestones } from "./turn-preview";
 import type { CanvasVisualRequest } from "./canvas-visual";
 import { extractJson } from "./canvas-parse";
@@ -144,6 +146,15 @@ export interface TurnDecision {
    * `no-scripted-intent.test.ts`.
    */
   wantsTest: boolean;
+  /**
+   * The questions this turn wrote, when `wantsTest` is true and the model supplied usable ones.
+   *
+   * 🔴 THE FALLBACK, NOT THE AUTHORITY. A canvas with real objectives still builds its run from
+   * them — grounded distractors, evidence, balanced answer seats. This carries the case that path
+   * cannot reach: a conversation, which has no pool. Null whenever the model wrote nothing usable,
+   * and `chat-check.ts` decides what usable means.
+   */
+  check: TestRun | null;
   /**
    * Things worth remembering about this learner beyond this canvas.
    *
@@ -723,7 +734,8 @@ const DECISION_CONTRACT = [
   '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "milestones": ["..."],'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,'
-  + ' "wantsTest": true | false, "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],',
+  + ' "wantsTest": true | false, "check": [{"prompt": "...", "options": [{"text": "...", "correct": true}, {"text": "..."}]}],'
+  + ' "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -914,11 +926,26 @@ const DECISION_CONTRACT = [
   // says the request belongs in words instead. There is no chip for this and there must never be
   // one — `test-run.test.ts` holds that absence — so this paragraph is the only way a learner can
   // ever ask to be checked.
-  '"wantsTest" is true when the learner is asking to be CHECKED on material this canvas has '
-  + 'already taught them, rather than taught something new: "test me on this", "can you check I '
-  + 'actually know this", "give me some practice questions", "quiz me before my exam". Read what '
-  + "they mean, not the words they used — the same request in any language, and phrased any way, "
-  + "is this. It rides WITH your other answers and is only ever true on a \"study\" turn.",
+  '"wantsTest" is true when the learner is asking to be CHECKED on material they have already been '
+  + 'taught — here in the conversation, or earlier in this canvas — rather than taught something '
+  + 'new: "test me on this", "can you check I actually know this", "give me some practice '
+  + 'questions", "quiz me before my exam". Read what they mean, not the words they used — the same '
+  + "request in any language, and phrased any way, is this. It rides WITH your other answers.",
+  "",
+  // 🔴🔴 THE QUESTIONS THEMSELVES, BECAUSE THE POOL THEY CAME FROM NO LONGER EXISTS HERE.
+  // `buildTestRun` draws on a canvas's OBJECTIVES, which the retired teaching lane minted. A named
+  // topic is taught in the conversation now (2026-08-24), and a conversation has no objectives — so
+  // that path correctly refuses with "nothing-taught" in exactly the case the owner asked for: the
+  // learner has just been taught something in chat and says "quiz me". The material IS this
+  // conversation, so the questions come from the turn that taught it. A course canvas still uses
+  // its own grounded pool and ignores this; `chat-check.ts` bounds every field, because a model
+  // wrote them.
+  '"check" is the questions themselves, written whenever "wantsTest" is true: [{"prompt": "…", '
+  + '"options": [{"text": "…", "correct": true}, {"text": "…"}]}]. Two to five options each, '
+  + "EXACTLY ONE marked correct, up to twelve questions — three to five makes a good check. Ask "
+  + "about what was actually said in this conversation, make the wrong options genuinely tempting "
+  + "rather than obviously silly, and vary which seat the right answer sits in. They are shown as "
+  + "tappable chips under your answer, so do not also write them out in your prose.",
   "",
   // 🔴 THE THREE REFUSALS ARE STATED SO THE MODEL DOES NOT PROMISE WHAT THE CANVAS CANNOT DELIVER.
   // `buildTestRun` is the authority and it refuses freely; a reply that has already said "here are
@@ -1365,7 +1392,13 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // material IS handing this to the learning system; a "reply" turn that also claimed to want a
     // test would be the model asking for the canvas to be taken over while answering a question.
     // Dropping it costs nothing — `then` still runs and the learner still gets their answer.
-    wantsTest: then === "study" && parsed.wantsTest === true,
+    // 🔴🔴 NO LONGER `then === "study" &&`, BECAUSE THERE IS NO LONGER A STUDY TURN TO ASK ON. That
+    // guard was right while a topic ask became a lesson; since the rigid lane was removed a "quiz
+    // me" is an ordinary reply, so the old condition made the chips unreachable — the feature
+    // shipped in #773 could never fire again. It cannot become a mode either way: every turn
+    // re-answers it, and nothing persists it.
+    wantsTest: parsed.wantsTest === true,
+    check: readChatCheck(parsed.check),
     remember: readRemembered(parsed.remember),
     needsWeb: parsed.needsWeb === true,
     question,
@@ -1443,13 +1476,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {
