@@ -30,13 +30,15 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
-import type { LearningCanvas } from "@/lib/learn/canvas-model";
+import type { CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
+import { SourcePreview } from "./source-preview";
 import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
@@ -120,7 +122,6 @@ export function SourcesControl({
   canvas,
   modelKnowledge = false,
   onFiles,
-  onUrl,
   onMakeDeliverable,
   making = null,
 }: {
@@ -129,16 +130,6 @@ export function SourcesControl({
    *  attached material. See `canvas-provenance.ts` for why it is not simply "no sources". */
   modelKnowledge?: boolean;
   onFiles: (files: FileList | File[]) => void;
-  /**
-   * A pasted web link, read and filed as a source the same way an uploaded file is.
-   *
-   * 🔴 A LINK IS NAMED EXPLICITLY IN THE MANDATE'S OWN LIST ("Sources include uploaded files,
-   * recordings, URLs, and explicitly imported web results"), and until this existed there was no
-   * way to add one at all: `ACCEPTED_MATERIAL` is a file-extension allowlist with no URL case, and
-   * the file picker below cannot open a link. Optional so a caller mid-migration is not forced to
-   * wire it before this control can render at all.
-   */
-  onUrl?: (url: string) => void;
   /** Make a deliverable from this canvas (owner 2026-08-25) — absent while a caller has not
    *  wired it, in which case the tab only lists. */
   onMakeDeliverable?: (kind: DeliverableKind) => void;
@@ -147,7 +138,13 @@ export function SourcesControl({
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"sources" | "outputs">("sources");
-  const [urlDraft, setUrlDraft] = useState("");
+  // 🔴 THE PASTE-A-LINK FIELD IS GONE — owner cut, 2026-08-23: *"for the sources, I want you to
+  // remove the paste URL part because that's not really necessary."* The `onUrl` prop, the draft
+  // state and the inline form left with it. `attachUrl` itself survives untouched: grounding and
+  // the reply's source cards still file pages through it; only this panel's manual door closed.
+  /** The source whose ORIGINAL document is open in the preview card, or null. */
+  const [previewing, setPreviewing] = useState<CanvasSource | null>(null);
+  const { session } = useAuth();
   const holder = useDismiss(open, () => setOpen(false));
 
   const outputs = canvas.outputs ?? [];
@@ -260,12 +257,18 @@ export function SourcesControl({
                       {body}
                     </a>
                   ) : (
-                    // 🔴 A DOCUMENT OPENS ITS READER, WHICH ALREADY EXISTS AND IS ALREADY DEEP-
-                    // LINKABLE (`/library/source/<id>` — see `reader-anchor.ts`). Building a second
-                    // preview here would be a second answer to "show me this document".
-                    <a className={cn(row, "no-underline")} href={`/library/source/${source.id}`} key={source.id} rel="noopener noreferrer" target="_blank" title={source.title}>
+                    // 🔴🔴 A DOCUMENT OPENS A PREVIEW CARD, NOT THE LIBRARY — owner, 2026-08-23,
+                    // after clicking one: *"it took me to the old library. It's supposed to take
+                    // me to a small preview of it, a pop up."* The old anchor's reasoning ("the
+                    // reader already exists, a preview would be a second answer") lost to the
+                    // learner's actual context: they are mid-canvas, and a navigation to another
+                    // surface for "what did I attach?" costs them the room they were in. The old
+                    // link was also quietly broken — it interpolated the canvas-local slot id
+                    // (`s1`, `s2`…) into a route that resolves `library_sources.id`, so it 404'd
+                    // on every canvas regardless.
+                    <button className={row} key={source.id} onClick={() => setPreviewing(source)} title={source.title} type="button">
                       {body}
-                    </a>
+                    </button>
                   );
                 })
               )}
@@ -286,32 +289,6 @@ export function SourcesControl({
                 />
               </label>
 
-              {/* A link is the other half of "add source" a file picker cannot do (see the
-                  `onUrl` prop). Kept as a plain inline field rather than a second dialog: this
-                  panel already is one, so a nested one would be the second dialog for something
-                  the mandate treats as a peer of "upload a file", not a bigger action than it. */}
-              {onUrl && (
-                <form
-                  className="mt-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 has-[:focus-visible]:bg-(--ui-bg-tertiary)"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const trimmed = urlDraft.trim();
-                    if (!trimmed) return;
-                    onUrl(trimmed);
-                    setUrlDraft("");
-                    setOpen(false);
-                  }}
-                >
-                  <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="link" size="0.75rem" />
-                  <input
-                    className="min-w-0 flex-1 bg-transparent text-[length:var(--canvas-text-small)] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-                    onChange={(event) => setUrlDraft(event.target.value)}
-                    placeholder="Paste a link"
-                    type="url"
-                    value={urlDraft}
-                  />
-                </form>
-              )}
             </>
           ) : (
             <>
@@ -384,6 +361,13 @@ export function SourcesControl({
             </>
           )}
         </div>
+      )}
+
+      {/* The real document, in a card, over the canvas — see source-preview.tsx's header for the
+          owner ruling. Mounted beside the panel rather than inside it so closing the panel does
+          not tear the preview down mid-read. */}
+      {previewing && (
+        <SourcePreview onClose={() => setPreviewing(null)} source={previewing} uid={session?.user.id ?? null} />
       )}
     </div>
   );

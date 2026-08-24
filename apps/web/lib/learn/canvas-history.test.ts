@@ -133,11 +133,11 @@ test("an empty passage yields an empty title rather than throwing", () => {
 
 // ── the projection ──────────────────────────────────────────────────────────────────────────
 
-test("every canvas has an origin row, including one recorded before this feature existed", () => {
-  const entries = buildCanvasHistory(canvasWith());
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0]?.momentId, ORIGIN_MOMENT_ID);
-  assert.equal(entries[0]?.title, "Canvas started");
+test("🔴 a canvas with no moments projects an EMPTY history — no synthesised origin row", () => {
+  // Owner cut, 2026-08-23: "remove the all history and the canvas started, because that's not
+  // really necessary for the rail." The origin row spent a marker slot announcing the one event
+  // every canvas shares. Calibration: prepend it again in buildCanvasHistory and this reddens.
+  assert.deepEqual(buildCanvasHistory(canvasWith()), []);
 });
 
 test("🔴 rows are ordered by when they happened, and ties keep their stored order", () => {
@@ -154,7 +154,7 @@ test("🔴 rows are ordered by when they happened, and ties keep their stored or
       ],
     }),
   );
-  assert.deepEqual(entries.map((entry) => entry.momentId), [ORIGIN_MOMENT_ID, "a", "b", "c"]);
+  assert.deepEqual(entries.map((entry) => entry.momentId), ["a", "b", "c"]);
 });
 
 test("a conversational row is titled by what the LEARNER asked", () => {
@@ -169,8 +169,8 @@ test("a conversational row is titled by what the LEARNER asked", () => {
       ],
     }),
   );
-  assert.equal(entries[1]?.title, "Why does potassium rise");
-  assert.ok(entries[1]?.preview?.startsWith("Potassium rises"), entries[1]?.preview);
+  assert.equal(entries[0]?.title, "Why does potassium rise");
+  assert.ok(entries[0]?.preview?.startsWith("Potassium rises"), entries[0]?.preview);
 });
 
 test("🔴 a source row reads its title through to the live source, never from a copy", () => {
@@ -178,14 +178,14 @@ test("🔴 a source row reads its title through to the live source, never from a
     moments: [makeMoment({ kind: "source", sourceIds: ["s1"] }, "2026-08-23T10:00:00.000Z", "m1")],
     sources: [{ excerpts: [], id: "s1", kind: "pdf", title: "Lecture 4" }] as CanvasHistorySource["sources"],
   });
-  assert.equal(buildCanvasHistory(canvas)[1]?.title, "Lecture 4");
+  assert.equal(buildCanvasHistory(canvas)[0]?.title, "Lecture 4");
 
   // Renaming the source renames its history row. A stored copy would have frozen the old name.
   const renamed = {
     ...canvas,
     sources: [{ excerpts: [], id: "s1", kind: "pdf", title: "Week 4 handout" }] as CanvasHistorySource["sources"],
   };
-  assert.equal(buildCanvasHistory(renamed)[1]?.title, "Week 4 handout");
+  assert.equal(buildCanvasHistory(renamed)[0]?.title, "Week 4 handout");
 });
 
 test("🔴 a moment whose target is gone keeps its row rather than vanishing", () => {
@@ -195,12 +195,14 @@ test("🔴 a moment whose target is gone keeps its row rather than vanishing", (
     moments: [makeMoment({ kind: "source", sourceIds: ["deleted"] }, "2026-08-23T10:00:00.000Z", "m1")],
   });
   const entries = buildCanvasHistory(canvas);
-  assert.equal(entries.length, 2);
-  assert.equal(entries[1]?.title, "Material attached");
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.title, "Material attached");
   assert.equal(reconstructMoment(canvas, "m1")?.missing, true, "an empty reconstruction must say why");
 });
 
-test("the origin row reconstructs, and an unknown moment id returns null", () => {
+test("the origin id STILL reconstructs — a rewind stored before the cut may name it", () => {
+  // The row left the projection (see above); the id keeps resolving so an old stored rewind lands
+  // on the honest "empty start" view instead of a null that reads as data loss.
   const canvas = canvasWith();
   assert.equal(reconstructMoment(canvas, ORIGIN_MOMENT_ID)?.title, "Canvas started");
   assert.equal(reconstructMoment(canvas, "nope"), null);

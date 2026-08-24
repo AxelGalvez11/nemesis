@@ -334,6 +334,34 @@ export async function loadLibrarySources(uid: string | null, options?: { preview
   }
 }
 
+/**
+ * One source row by its durable id, or null. For the canvas's source preview, which holds a
+ * `librarySourceId` and needs the `storagePath` behind it — loading all 500 rows to find one
+ * would make opening a preview cost the whole Library.
+ *
+ * Same three-way behaviour as `loadLibrarySources`, for the same reasons: fixtures for the
+ * preview harness and the signed-out demo, and the BASE_COLUMNS fallback for the window where
+ * the app has deployed and the parse-status migration has not.
+ */
+export async function loadLibrarySource(
+  uid: string | null,
+  id: string,
+  options?: { preview?: boolean },
+): Promise<LibrarySource | null> {
+  if (options?.preview || !uid) return PREVIEW_LIBRARY_SOURCES.find((source) => source.id === id) ?? null;
+  const query = (columns: string) =>
+    supabase.from("library_sources").select(columns).eq("user_id", uid).eq("deleted", false).eq("id", id).maybeSingle();
+  try {
+    const { data, error } = await query(WITH_PARSE_STATUS);
+    if (!error && data) return rowToLibrarySource(data as unknown as SourceRow);
+    const base = await query(BASE_COLUMNS);
+    if (base.error || !base.data) return null;
+    return rowToLibrarySource(base.data as unknown as SourceRow);
+  } catch {
+    return null;
+  }
+}
+
 /** What a source needs to be listed at all. Present since the table existed. */
 const BASE_COLUMNS =
   "id,folder_path,file_name,mime_type,size_bytes,storage_path,created_at,parsed_document_id,parsed_documents(coverage,state,complete,failed_stage,error)";

@@ -383,7 +383,14 @@ export function CanvasComposer({
     const needed = element.scrollHeight;
     element.style.height = `${Math.min(needed, MAX_COMPOSER_HEIGHT)}px`;
     element.style.overflowY = needed > MAX_COMPOSER_HEIGHT ? "auto" : "hidden";
-  }, [text]);
+    // 🔴 `dictation.listening` IS A DEPENDENCY BECAUSE THE TEXTAREA LEAVES THE TREE WHILE IT IS
+    // TRUE. The waveform takes the input's place during dictation, so every transcript update ran
+    // this effect against `input.current === null` and did nothing — and when the ✓ brought the
+    // textarea back, `text` had already settled, nothing re-ran, and a five-line dictated answer
+    // sat in a one-line box (owner report, 2026-08-23: "the chat composer does not get bigger as
+    // the more dictated words there are"). Keying on the flag re-measures at the remount. (The
+    // `listening` alias below this effect is not usable here — a const in its temporal dead zone.)
+  }, [text, dictation.listening]);
 
   // Summonable from anywhere: "/" focuses the bar unless the learner is already typing.
   useEffect(() => {
@@ -853,6 +860,13 @@ export function CanvasComposer({
               {addOffers.length > 1 && addOpen && (
                 <div
                   className="absolute bottom-[46px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
+                  // 🔴 A SENTINEL FOR THE CHARACTER'S DOCK, PRESENT ONLY WHILE THE MENU IS OPEN.
+                  // The popover is absolutely positioned, so `#canvas-composer`'s bounding box —
+                  // the one BloubDock measures to float clear of — cannot see it, and the
+                  // character sat on top of the open menu (owner report, 2026-08-23). The dock
+                  // measures the union of the composer and this element; agreed with the mascot
+                  // lane 2026-08-23, and renaming it re-creates the clash silently.
+                  data-canvas-composer-popover=""
                   role="menu"
                 >
                   {/* One row per offer, from the same list the shortcut runs. The record row keeps

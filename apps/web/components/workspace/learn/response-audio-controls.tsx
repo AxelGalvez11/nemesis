@@ -17,20 +17,29 @@
 // button; Read-aloud and dismiss are not, because "start this" and "put this away" are different
 // wishes and collapsing them would leave no way to stop listening without losing your place.
 //
-// Measured against ChatGPT's own read-aloud row (owner's reference): play/pause, a ten-second jump
-// in each direction, a scrubbable progress bar, elapsed time, and a speed control that shows its
-// value rather than an icon. Its styling is not copied — these are Nemesis's own control tokens,
-// the same ones Copy has always used.
+// 🔴🔴 FOUR CONTROLS, LARGER, AND NOTHING ELSE — owner spec, 2026-08-23, looking at the full row:
+// *"the playbar looks a bit weird… make it look bigger… the blue circle that's supposed to
+// represent where the audio is at, I want you to remove that… It just needs to have the forward
+// and rewind and the pause and the x. It doesn't really need the timer in there."* The first
+// version measured ChatGPT's row and carried its whole transport — scrubber, elapsed clock, a
+// cycling speed label — and the owner's read of the result is that it was clutter. So the bar is
+// now exactly the four wishes a listener has (stop, pause/resume, back ten, forward ten), sized
+// up from the 28px Copy row to read as a control rather than a footnote. Position is still
+// audible — the jumps work — it is simply not DRAWN, which is the difference between a player
+// and a status display. Do not quietly reintroduce the scrubber, the clock or the speed control;
+// reply-actions.test.ts forbids each by name.
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { formatClock, progressFraction, SEEK_STEP_SECONDS } from "@/lib/learn/playback";
+import { SEEK_STEP_SECONDS } from "@/lib/learn/playback";
 import { cn } from "@/lib/utils";
 
 import type { ResponseAudio } from "./use-response-audio";
 
-/** The control shape every button in this row shares with Copy. */
+/** The control shape this row's buttons share. Same family as Copy's 28px row, sized up — the
+ *  owner asked for a bar that reads as a control ("make it look bigger"), and 34px is one step up
+ *  that still sits quietly under a paragraph. */
 const BUTTON =
-  "flex h-[28px] shrink-0 items-center justify-center gap-1 rounded-[6px] px-1.5 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary) disabled:opacity-40 disabled:hover:bg-transparent";
+  "flex h-[34px] shrink-0 items-center justify-center gap-1 rounded-[8px] px-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary) disabled:opacity-40 disabled:hover:bg-transparent";
 
 /** What a failure says, in the learner's terms rather than the provider's. */
 function failureCopy(failure: NonNullable<ResponseAudio["failure"]>): string {
@@ -51,7 +60,7 @@ function failureCopy(failure: NonNullable<ResponseAudio["failure"]>): string {
 /** A circular arrow with a number in it — the jump control every player draws this way. */
 function JumpIcon({ back }: { back: boolean }) {
   return (
-    <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 20 20" width="16">
+    <svg aria-hidden="true" fill="none" height="19" viewBox="0 0 20 20" width="19">
       <g transform={back ? undefined : "translate(20 0) scale(-1 1)"}>
         <path
           d="M10 5.2a5.4 5.4 0 1 0 5.3 6.4"
@@ -78,7 +87,6 @@ function JumpIcon({ back }: { back: boolean }) {
 export function ResponseAudioControls({ audio, text }: { audio: ResponseAudio; text: string }) {
   const open = audio.status !== "idle";
   const loading = audio.status === "loading";
-  const fraction = progressFraction(audio.currentTime, audio.reach);
 
   return (
     <>
@@ -93,7 +101,7 @@ export function ResponseAudioControls({ audio, text }: { audio: ResponseAudio; t
         title={open ? "Stop reading" : "Read aloud"}
         type="button"
       >
-        <Codicon name={open ? "close" : "unmute"} size="15px" spinning={false} />
+        <Codicon name={open ? "close" : "unmute"} size="18px" spinning={false} />
       </button>
 
       {/* 🔴 THE TRANSITION IS ON THE WHOLE GROUP, NOT ON EACH BUTTON. Five things fading in
@@ -107,12 +115,9 @@ export function ResponseAudioControls({ audio, text }: { audio: ResponseAudio; t
           open ? "grid-cols-[1fr] opacity-100" : "grid-cols-[0fr] opacity-0",
         )}
       >
-        {/* 🔴 CAPPED, BECAUSE A HAIRLINE SEEK BAR SPANNING THE WHOLE ANSWER IS NOT QUIET. Left to
-            `flex-1` alone the slider stretched the full width of the paragraph on a wide screen and
-            threw the time and the speed to the far right, so the transport buttons and the readout
-            they belong to stopped looking like one control. Capped, the whole thing stays a tight
-            cluster under the start of the answer and still shrinks to a phone. */}
-        <div className="flex min-w-0 max-w-[22rem] items-center gap-0.5 overflow-hidden">
+        {/* The whole strip is three buttons now, so it needs no width cap — the owner's four-
+            control ruling above is what keeps it from ever growing back into a bar that would. */}
+        <div className="flex min-w-0 items-center gap-0.5 overflow-hidden">
           <button
             aria-label={audio.playing ? "Pause" : "Play"}
             className={cn(BUTTON, "text-(--ui-text-secondary)")}
@@ -122,7 +127,7 @@ export function ResponseAudioControls({ audio, text }: { audio: ResponseAudio; t
             title={audio.playing ? "Pause" : "Play"}
             type="button"
           >
-            <Codicon name={loading ? "loading" : audio.playing ? "debug-pause" : "play"} size="15px" spinning={loading} />
+            <Codicon name={loading ? "loading" : audio.playing ? "debug-pause" : "play"} size="18px" spinning={loading} />
           </button>
 
           <button
@@ -149,53 +154,6 @@ export function ResponseAudioControls({ audio, text }: { audio: ResponseAudio; t
             <JumpIcon back={false} />
           </button>
 
-          {/* 🔴 A REAL RANGE INPUT RATHER THAN A DIV WITH POINTER HANDLERS. Keyboard seeking, screen
-              reader position and touch dragging all come free and none of them survive a hand-rolled
-              bar. It is styled down to a hairline; `accent-color` paints the filled half in the
-              learner's own accent, in both themes, without a second element to keep in sync.
-
-              🔴 IT SCRUBS THE PLAYABLE EXTENT, NOT THE FINAL DURATION. While bytes are still
-              arriving the duration is not known yet, and seeking past what has arrived stalls the
-              element rather than waiting. `audio.reach` is what can actually be heard right now. */}
-          <input
-            aria-label="Seek"
-            aria-valuetext={`${formatClock(audio.currentTime)} of ${audio.reach > 0 ? formatClock(audio.reach) : "unknown"}`}
-            className="mx-1 h-1 min-w-8 flex-1 cursor-pointer appearance-none rounded-full bg-(--ui-bg-quaternary) accent-[var(--theme-primary)] disabled:cursor-default"
-            disabled={!open || audio.reach <= 0}
-            max={1000}
-            min={0}
-            onChange={(event) => audio.scrub(Number(event.target.value) / 1000)}
-            step={1}
-            tabIndex={open ? 0 : -1}
-            type="range"
-            value={Math.round(fraction * 1000)}
-          />
-
-          <span className="shrink-0 px-1 text-[length:var(--canvas-text-meta)] tabular-nums text-(--ui-text-quaternary) max-[420px]:hidden">
-            {formatClock(audio.currentTime)}
-            {/* 🔴 THE TOTAL APPEARS ONLY ONCE IT IS TRUE. A running total that keeps growing as the
-                download arrives is worse than no total: it reads as the answer getting longer. */}
-            {audio.complete && audio.reach > 0 ? ` / ${formatClock(audio.reach)}` : ""}
-          </span>
-
-          {/* 🔴 THE SPEED SHOWS ITS VALUE RATHER THAN AN ICON — the rule this row already held. A
-              gauge glyph says "speed exists"; "1.5×" says what it is set to, which is the only thing
-              worth knowing at a glance, and it is why this needs no menu and no second click. */}
-          <button
-            aria-label={`Playback speed ${audio.rate}×. Press to change.`}
-            className={cn(
-              BUTTON,
-              "text-[length:var(--canvas-text-meta)] tabular-nums",
-              audio.rate !== 1 && "text-(--ui-text-secondary)",
-            )}
-            disabled={!open}
-            onClick={audio.cycleRate}
-            tabIndex={open ? 0 : -1}
-            title={`Playback speed ${audio.rate}×`}
-            type="button"
-          >
-            {audio.rate}×
-          </button>
         </div>
       </div>
 

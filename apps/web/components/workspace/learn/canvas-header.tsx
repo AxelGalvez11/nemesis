@@ -34,8 +34,6 @@ interface CanvasHeaderProps {
   /** Threaded straight to SourcesControl — see its own prop comments. */
   onMakeDeliverable?: (kind: DeliverableKind) => void;
   making?: DeliverableKind | null;
-  /** A pasted web link, filed as a source. See `SourcesControl`'s own prop comment. */
-  onUrl?: (url: string) => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** The card or question being answered right now, so the objectives panel can say which one
@@ -81,7 +79,6 @@ export function CanvasHeader({
   onFiles,
   onMakeDeliverable,
   making,
-  onUrl,
   onRename,
   onDelete,
   activeTaskId,
@@ -129,7 +126,7 @@ export function CanvasHeader({
               Objectives, the session record and voice moved INSIDE `OptionsControl`; none of them
               was deleted, and voice especially could not be, because that button was the only way
               into voice mode. */}
-          <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onUrl={onUrl} />
+          <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} />
           <MinimapControl
             coverage={minimap.coverage}
             decidedObjectiveKey={minimap.decidedObjectiveKey}

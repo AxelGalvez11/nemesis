@@ -38,6 +38,7 @@ import { Suspense } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { CanvasHome } from "@/components/workspace/learn/canvas-home";
 import { LearningCanvas } from "@/components/workspace/learn/learning-canvas";
+import { COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { learnEntryFrom, learnSurface } from "@/lib/learn/learn-entry";
 import { policyOverrideFrom } from "@/lib/learn/policy-override";
 import { strategyOverrideFrom } from "@/lib/learn/teaching-strategy";
@@ -62,6 +63,12 @@ function LearnSurface() {
   const surface = learnSurface(entry);
   const canvasId = entry.c;
   const ask = entry.ask;
+  // The staged capability from the front door, validated against the real list — an invented
+  // `?cap=` value is nobody's declaration and reads as none. `learn-entry.ts` deliberately keeps
+  // the raw string; which names are real is composer-capability.ts's fact, checked here.
+  const openingCapability = (COMPOSER_CAPABILITIES as readonly string[]).includes(entry.cap ?? "")
+    ? (entry.cap as ComposerCapability)
+    : null;
   // What the URL is still allowed to say about the teaching-policy runtime: stop it, or bypass
   // ownership deliberately. Neither is an opt-in — see policy-override.ts, where the rules live and
   // are tested, rather than as an expression here that nothing could assert.
@@ -111,6 +118,7 @@ function LearnSurface() {
     <LearningCanvas
       canvasId={canvasId}
       openingAsk={ask}
+      openingCapability={openingCapability}
       policyOverride={policyOverride}
       strategyOverride={strategyOverride}
     />

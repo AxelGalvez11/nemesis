@@ -57,8 +57,11 @@ test("🔴 material with no topic still opens a canvas", () => {
   assert.match(start, /staged\.length > 0\s*\?\s*"\/learn\?new=1"/);
 });
 
-test("🔴 material alone is enough to send", () => {
-  assert.match(HOME, /disabled=\{!text\.trim\(\) && staged\.length === 0\}/);
+test("🔴 material alone is enough to send — except under a staged capability, which needs words", () => {
+  // The capability half mirrors the session composer's own §3 rule (`canStartFromAttachment`
+  // refuses a capability there too): a chip is a declaration ABOUT words, and it is also what
+  // keeps `start`'s `&cap=` riding only beside a real `?ask=`.
+  assert.match(HOME, /disabled=\{capability \? !text\.trim\(\) : !text\.trim\(\) && staged\.length === 0\}/);
 });
 
 // 🔴 NOTHING IS UPLOADED, PARSED OR PAID FOR UNTIL START. Extraction is the expensive step; a file

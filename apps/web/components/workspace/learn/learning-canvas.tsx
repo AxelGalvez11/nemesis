@@ -133,6 +133,7 @@ function ContinueHotkey({ onContinue }: { onContinue: (() => void) | null }): nu
 export function LearningCanvas({
   canvasId,
   openingAsk = null,
+  openingCapability = null,
   policyOverride = null,
   strategyOverride = null,
 }: {
@@ -143,6 +144,11 @@ export function LearningCanvas({
    *  the home has no canvas to send it to yet, so the instruction travels in the URL and is
    *  consumed exactly once here. */
   openingAsk?: string | null;
+  /** The one-shot capability staged beside that typed instruction — the Course chip pressed on
+   *  the front door (owner, 2026-08-23: course mode must be reachable from the landing page).
+   *  Rides the same URL, consumed by the same effect, and meaningless without `openingAsk`:
+   *  a capability is a declaration about a submission, and the ask IS the submission here. */
+  openingCapability?: ComposerCapability | null;
   /** What the URL asked for, if anything — a stop, or a deliberate bypass of ownership.
    *
    *  🔴 THE DEFAULT IS THE POINT, AND IT IS `null`. Whether the policy takes this canvas is decided
@@ -593,8 +599,10 @@ export function LearningCanvas({
     if (!openingAsk || askedOnce.current || !session.ready) return;
     if (canvas.state !== "empty") return;
     askedOnce.current = true;
-    beginOrAnswer(openingAsk);
-  }, [beginOrAnswer, canvas.state, openingAsk, session.ready]);
+    // The front door's staged capability rides the consumed submission — the same one-shot the
+    // composer's own chip has, one navigation later.
+    beginOrAnswer(openingAsk, openingCapability);
+  }, [beginOrAnswer, canvas.state, openingAsk, openingCapability, session.ready]);
   converseRef.current = converse;
 
   // Material chosen on the landing page, before this canvas existed. Same shape as the opening
@@ -1055,7 +1063,12 @@ export function LearningCanvas({
           {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
               database read long. It was not fine while it also covered knowledge resolution, which
               is a model call and an ingestion and can run for a minute. */}
-          {policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
+          {/* 🔴 EXCEPT WHEN THE ONE READ FAILED — then the sentence is the whole point. The loader
+              sets `session.error` instead of leaving this screen to stand for ever (owner report,
+              2026-08-23), and a failure with no words here would be exactly that stand. */}
+          {session.error
+            ? <p className="max-w-sm px-6 text-center text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">{session.error}</p>
+            : policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
         </div>
       </CanvasSurface>
     );
@@ -1321,7 +1334,6 @@ export function LearningCanvas({
         // someone who is reading takes away their way out. So: quiet when the policy is alone,
         // continuous across question and feedback, never quiet over a document.
         onFiles={attachWithChips}
-        onUrl={(url) => void session.attachUrl(url)}
         onRename={session.rename}
       />
       }

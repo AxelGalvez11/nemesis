@@ -5,6 +5,20 @@
 // Owner, 2026-08-23: *"a thin vertical navigation rail… Each small horizontal marker represents a
 // meaningful previous moment in this Canvas… It should feel like a spatial memory for the Canvas."*
 //
+// 🔴🔴 THE RAIL IS THE WHOLE SURFACE NOW — the "All history" drawer is DELETED, by owner order,
+// same day, looking at both on production: *"there seems to be two rails. So when you click all
+// history, that's like the actual bigger one. So I want you to just remove that bigger one and
+// keep this one that's compact, but just increase the spacing a bit."* `CanvasHistoryPanel` and
+// its row component are gone from the tree, `HistoryRailDisplay` has no "expanded" state left,
+// and the windowed strip is the one way to reach a moment. Do not reintroduce a second history
+// surface; canvas-history-surface.test.ts forbids it by name.
+//
+// 🔴 WHICH MAKES THE WINDOW A REAL BOUND, STATED HONESTLY. With the drawer gone, moments older
+// than the window are not reachable from this edge (the window still FOLLOWS a rewind, so
+// anything the learner is looking at is always on the strip). That is the owner's trade — a
+// quiet edge over total reach — and it holds until they ask for more. Below `md` the rail is
+// hidden and nothing replaces it: the "History" pill existed only to open the deleted drawer.
+//
 // 🔴 IT IS NOT THE MINIMAP AND THEY MUST NOT MERGE. The Minimap answers *where am I in what I am
 // learning* — it reads `learner_evidence` through `projectLearnerState` and marks territories
 // established or developing. This answers *what happened in this Canvas, and how did I get here*,
@@ -24,7 +38,7 @@
 // 🔴 IT IS NOT A SCROLLBAR, AND THE WINDOWING IS WHY IT CANNOT BECOME ONE. A canvas may hold up to
 // `MAX_MOMENTS` moments; drawing all 80 as a full-height column of ticks IS a scrollbar, and the
 // brief rules that out by name. The rail shows the most recent `RAIL_MARKERS` around wherever the
-// learner is, and the drawer is how you reach the rest.
+// learner is.
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
@@ -33,18 +47,16 @@ import { cn } from "@/lib/utils";
 import type { CanvasHistoryEntry } from "@/lib/learn/canvas-history";
 import { TITLE_LIMIT, shortTitle } from "@/lib/learn/canvas-history";
 
-import { CanvasHistoryPanel } from "./canvas-history-panel";
-
-/** One component owns the interaction — the brief's own rule, and the reason this type is here. */
-export type HistoryRailDisplay = "collapsed" | "peek" | "expanded";
+/** One component owns the interaction — the brief's own rule, and the reason this type is here.
+ *  🔴 TWO STATES, NOT THREE: "expanded" left with the drawer it named (owner cut, 2026-08-23). */
+export type HistoryRailDisplay = "collapsed" | "peek";
 
 /**
  * How many markers the rail draws.
  *
- * 🔴 A WINDOW, NOT A LIMIT ON HISTORY. Everything is always reachable through the drawer; this is
- * about what a quiet edge strip can hold without becoming a texture. At 24 (plus "Now") the
- * collapsed column measures 272px and the peeked one 470px, both of which sit inside a laptop
- * viewport beside a reading column.
+ * 🔴 A WINDOW AROUND THE LEARNER, AND — SINCE THE DRAWER WAS CUT — THE BOUND OF WHAT THE EDGE CAN
+ * REACH. See the file header for the owner's trade. At 24 (plus "Now") the column stays inside a
+ * laptop viewport beside a reading column at both pitches (arithmetic under the nav's gap note).
  *
  * 🔴 THE NUMBER IN THIS COMMENT USED TO BE 190px AND IT WAS NEVER MEASURED. The real column was
  * 520px — 65% of an 800px viewport — because every collapsed marker still carried its hidden
@@ -72,13 +84,13 @@ export function CanvasHistoryRail({
   const open = useCallback(() => {
     if (closing.current !== null) window.clearTimeout(closing.current);
     closing.current = null;
-    setDisplay((current) => (current === "expanded" ? current : "peek"));
+    setDisplay("peek");
   }, []);
 
   const leave = useCallback(() => {
     if (closing.current !== null) window.clearTimeout(closing.current);
     closing.current = window.setTimeout(() => {
-      setDisplay((current) => (current === "expanded" ? current : "collapsed"));
+      setDisplay("collapsed");
       closing.current = null;
     }, PEEK_GRACE_MS);
   }, []);
@@ -108,7 +120,6 @@ export function CanvasHistoryRail({
   }, [activeMomentId, entries]);
 
   const peeking = display === "peek";
-  const expanded = display === "expanded";
   /** "Now" is the active marker whenever nothing has been rewound to. */
   const live = activeMomentId === null;
 
@@ -118,16 +129,9 @@ export function CanvasHistoryRail({
           🔴 HIDDEN BELOW `md`, WHERE THE EDGE IS NOT OURS TO SPEND. Owner: *"On narrow mobile
           screens, the collapsed rail may become a small History button rather than consuming
           permanent edge space."* A CSS breakpoint rather than a measured one, so there is no
-          layout read on mount and nothing to get wrong during hydration. */}
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-y-0 right-0 z-30 hidden items-center md:flex",
-          // Out of the way while the drawer is over it. Two things saying "you are here" at once
-          // is worse than one.
-          expanded && "opacity-0",
-          "transition-opacity duration-200",
-        )}
-      >
+          layout read on mount and nothing to get wrong during hydration. (The small-screen
+          button itself left with the drawer it opened — see the file header.) */}
+      <div className="pointer-events-none absolute inset-y-0 right-0 z-30 hidden items-center md:flex">
         <div
           className="pointer-events-auto flex max-h-[70vh] items-center py-4 pl-6 pr-2"
           onBlur={(event) => {
@@ -144,19 +148,17 @@ export function CanvasHistoryRail({
               // 🔴 THE STRIP ONLY GETS A SURFACE WHILE IT IS BEING READ. Collapsed it is bare
               // marks on the sheet — "nearly disappear until needed".
               //
-              // 🔴🔴 TWO PITCHES, AND THAT IS THE WHOLE OF "TIGHTER". Owner, 2026-08-23, about the
-              // rail rather than the card: the marks sat 19px apart. Collapsed, a marker is a 1px
-              // rule and the row exists only to be hit, so the pitch is 9px (8px row + 1px gap)
-              // and the column reads as one fine ladder instead of scattered dots. Peeking, each
-              // row carries a 12px title that has to be readable, so the gap opens to 5px. The
-              // rail growing as it opens is the gesture, not a glitch: it is the same 200ms as
-              // the surface and the labels, and it expands about its own centre.
-              //
-              // Measured at the cap (25 marks): 272px collapsed, 470px peeked. `h-2` is 9px here,
-              // not 8 — this app sets `html { font-size: 112.5% }`, so 1rem is 18px.
+              // 🔴🔴 TWO PITCHES, OPENED ONE STEP ON OWNER ORDER. The first pitches were 9px
+              // collapsed (8px row + 1px gap) and 5px of peeked gap; the owner, reading the live
+              // rail: *"just increase the spacing a bit."* So collapsed gap is 3px (11px pitch —
+              // the ladder still reads as one object) and the peeked gap is 8px. Arithmetic at
+              // the cap (25 marks): collapsed ≈322px, peeked ≈545px, both inside 70vh of an
+              // 800px viewport — but the previous cap in this comment was ESTIMATED too and was
+              // 2.2× wrong; measure after changing any metric here. `h-2` is 9px in this app
+              // (`html { font-size: 112.5% }`), not 8.
               peeking
-                ? "gap-[5px] bg-(--ui-bg-elevated)/95 px-2 shadow-lg ring-1 ring-(--ui-stroke-secondary) backdrop-blur-sm"
-                : "gap-px px-0",
+                ? "gap-[8px] bg-(--ui-bg-elevated)/95 px-2 shadow-lg ring-1 ring-(--ui-stroke-secondary) backdrop-blur-sm"
+                : "gap-[3px] px-0",
             )}
           >
             {shown.map((entry) => (
@@ -170,47 +172,9 @@ export function CanvasHistoryRail({
             ))}
             {/* 🔴 "NOW" IS THE LAST MARK, BECAUSE THE COLUMN RUNS FORWARD IN TIME. */}
             <RailMarker active={live} label="Now" onSelect={() => onSelect(null)} peeking={peeking} />
-            {/* 🔴 THE EXPLICIT AFFORDANCE, AND IT ONLY EXISTS WHILE THE RAIL IS BEING READ. A
-                permanent "History" word on the edge would be chrome; a marker column that opens a
-                drawer when you click a marker and nothing when you click between them would be a
-                guess. This is the stated door. */}
-            <button
-              className={cn(
-                "mt-1 overflow-hidden text-right text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary) transition-all duration-200 hover:text-(--ui-text-primary) focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--ui-stroke-primary)",
-                peeking ? "h-5 w-auto opacity-100" : "pointer-events-none h-0 w-0 opacity-0",
-              )}
-              onClick={() => setDisplay("expanded")}
-              type="button"
-            >
-              All history
-            </button>
           </nav>
         </div>
       </div>
-
-      {/* ── mobile: a button, not an edge ─────────────────────────────────────────────────── */}
-      <button
-        aria-label="Canvas history"
-        className={cn(
-          "absolute right-3 top-1/2 z-30 -translate-y-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated)/90 px-2.5 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) shadow-sm backdrop-blur-sm md:hidden",
-          expanded && "opacity-0",
-        )}
-        onClick={() => setDisplay("expanded")}
-        type="button"
-      >
-        History
-      </button>
-
-      <CanvasHistoryPanel
-        activeMomentId={activeMomentId}
-        entries={entries}
-        onClose={() => setDisplay("collapsed")}
-        onSelect={(momentId: string | null) => {
-          onSelect(momentId);
-          setDisplay("collapsed");
-        }}
-        open={expanded}
-      />
     </>
   );
 }
@@ -245,8 +209,9 @@ function RailMarker({
       className={cn(
         "group flex items-center justify-end gap-2 transition-[height] duration-200 ease-out focus-visible:outline-none",
         // 🔴 A HIT TARGET, NOT A HAIRLINE. The rule itself is 1px; a 1px button cannot be clicked,
-        // so the collapsed row is 8px of transparent space around it. With the nav's 1px gap the
-        // column has no dead pixels — every point on the strip belongs to a marker.
+        // so the collapsed row is 8px of transparent space around it. With the nav's 3px gap the
+        // column has no dead pixels — every point on the strip belongs to a marker or the gap
+        // beside it.
         //
         // 🔴 EXPLICIT, BECAUSE THE HIDDEN LABEL IS NOT A RELIABLE ZERO. `max-w-0` clips the text
         // to nothing horizontally but leaves a full 12px line box behind, which is what made the
