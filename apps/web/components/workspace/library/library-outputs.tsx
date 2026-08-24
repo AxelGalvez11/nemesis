@@ -24,12 +24,30 @@
 // reports earn a real home they earn a section; a section over an empty table would render
 // forever-empty shelves and read as broken (the §38.3 lesson).
 
-import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, GraduationCap, Layers, MonitorPlay, NotebookText, Share2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  FolderPlus,
+  Folder as FolderIcon,
+  GraduationCap,
+  Layers,
+  MonitorPlay,
+  NotebookText,
+  Share2,
+} from "lucide-react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/desktop-ui/dropdown-menu";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { DeckShare } from "./deck-share";
+import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
+import { fileOutput, type OutputKind } from "@/lib/workspace/library-filing";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -38,12 +56,15 @@ interface DeckRow {
   name: string;
   createdAt: string;
   cards: number;
+  folderId: string | null;
 }
 
 interface NoteRow {
+  id: string;
   path: string;
   title: string;
   updatedAt: string;
+  folderId: string | null;
 }
 
 interface Card {
@@ -57,7 +78,29 @@ interface SlidesRow {
   canvasId: string | null;
   title: string;
   createdAt: string;
+  folderId: string | null;
 }
+
+/**
+ * Which shelf the learner is looking at.
+ *
+ * 🔴🔴 A FILTER, NOT A NAVIGATION. Owner 2026-08-24, naming ChatGPT's library as the reference:
+ * *"make sure you add the flashcards, slides, or documents, selection, or filter."* Every choice
+ * here narrows ONE page that is already loaded — it does not route, does not refetch, and does not
+ * change what "the Library" means. That is why "All" exists and is the default: a learner who has
+ * not chosen anything must see everything, or the shelves they did not pick look deleted.
+ *
+ * 🔴 AND IT IS NOT A CONTROL OVER THE LEARNING MACHINE, so §38 has no quarrel with it. It steers
+ * a list of files the learner already owns; nothing here reaches the composer or the policy.
+ */
+type Shelf = "all" | OutputKind;
+
+const SHELVES: readonly { id: Shelf; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "deck", label: "Flashcards" },
+  { id: "slides", label: "Slides" },
+  { id: "note", label: "Documents" },
+];
 
 const SECTION_TITLE = "px-1 pb-2 text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-secondary)";
 const ROW =
@@ -90,6 +133,14 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   // 🔴 SHARING IS PUBLISHING, so it is one deliberate press on one named deck — never a default,
   // never applied in bulk. `sharing` holds the deck whose link panel is open.
   const [sharing, setSharing] = useState<DeckRow | null>(null);
+  // 🔴 THE SHELF FILTER AND THE OPEN FOLDER ARE INDEPENDENT, AND BOTH ARE VIEW STATE ONLY. Neither
+  // refetches: every row is already in hand (200 per shelf), so narrowing is a `filter` and
+  // switching back is instant. A learner who files a deck and then changes the filter must not
+  // watch the page reload to show them something it already had.
+  const [shelf, setShelf] = useState<Shelf>("all");
+  const [folders, setFolders] = useState<Folder[]>([]);
+  /** null means "everything, wherever it is filed" — the arrival view. */
+  const [openFolder, setOpenFolder] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) {
@@ -99,15 +150,15 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
     let alive = true;
     void (async () => {
       try {
-        const [deckRes, noteRes, slidesRes] = await Promise.all([
+        const [deckRes, noteRes, slidesRes, folderList] = await Promise.all([
         supabase
           .from("study_decks")
-          .select("id,name,created_at,study_cards(count)")
+          .select("id,name,created_at,folder_id,study_cards(count)")
           .order("created_at", { ascending: false })
           .limit(200),
         supabase
           .from("readable_library_documents")
-          .select("path,title,updated_at")
+          .select("id,path,title,updated_at,folder_id")
           .eq("kind", "note")
           .eq("deleted", false)
           .order("updated_at", { ascending: false })
@@ -117,19 +168,22 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
         // canvas and rebuilds the file from the stored plan.
         supabase
           .from("assets")
-          .select("id,title,created_at,canvas_outputs(canvas_id)")
+          .select("id,title,created_at,folder_id,canvas_outputs(canvas_id)")
           .eq("kind", "generated_slides")
           .eq("deleted", false)
           .order("created_at", { ascending: false })
           .limit(200),
+        // The SAME tree the sidebar files canvases into — see `library-filing.ts`.
+        listFolders(userId),
       ]);
       if (!alive) return;
       if (!deckRes.error && deckRes.data) {
         setDecks(
-          (deckRes.data as { id: string; name: string; created_at: string; study_cards: { count: number }[] }[]).map(
+          (deckRes.data as { id: string; name: string; created_at: string; folder_id: string | null; study_cards: { count: number }[] }[]).map(
             (row) => ({
               cards: row.study_cards?.[0]?.count ?? 0,
               createdAt: row.created_at,
+              folderId: row.folder_id,
               id: row.id,
               name: row.name,
             }),
@@ -138,7 +192,9 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
       }
       if (!noteRes.error && noteRes.data) {
         setNotes(
-          (noteRes.data as { path: string; title: string; updated_at: string }[]).map((row) => ({
+          (noteRes.data as { id: string; path: string; title: string; updated_at: string; folder_id: string | null }[]).map((row) => ({
+            folderId: row.folder_id,
+            id: row.id,
             path: row.path,
             title: row.title,
             updatedAt: row.updated_at,
@@ -147,16 +203,18 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
       }
       if (!slidesRes.error && slidesRes.data) {
         setSlides(
-          (slidesRes.data as { id: string; title: string; created_at: string; canvas_outputs: { canvas_id: string }[] }[]).map(
+          (slidesRes.data as { id: string; title: string; created_at: string; folder_id: string | null; canvas_outputs: { canvas_id: string }[] }[]).map(
             (row) => ({
               assetId: row.id,
               canvasId: row.canvas_outputs?.[0]?.canvas_id ?? null,
               createdAt: row.created_at,
+              folderId: row.folder_id,
               title: row.title,
             }),
           ),
         );
       }
+      setFolders(folderList);
       } finally {
         // A thrown fetch (offline, blocked) must still land on the empty states — a page
         // that says "Loading…" forever reads as broken, not as empty.
@@ -167,6 +225,51 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
       alive = false;
     };
   }, [userId]);
+
+  /**
+   * Move a row, and show it moved without refetching the page.
+   *
+   * 🔴 THE LOCAL STATE IS UPDATED ONLY AFTER THE WRITE LANDS. An optimistic move that the database
+   * then refused (the cross-account folder trigger) would leave the learner looking at a folder
+   * their deck is not in, and they would find out on the next reload.
+   */
+  const file = useCallback(async (kind: OutputKind, id: string, folderId: string | null) => {
+    if (!(await fileOutput(kind, id, folderId))) return;
+    if (kind === "deck") setDecks((was) => was.map((row) => (row.id === id ? { ...row, folderId } : row)));
+    if (kind === "note") setNotes((was) => was.map((row) => (row.id === id ? { ...row, folderId } : row)));
+    if (kind === "slides") setSlides((was) => was.map((row) => (row.assetId === id ? { ...row, folderId } : row)));
+  }, []);
+
+  const addFolder = useCallback(async () => {
+    const name = window.prompt("Name this folder")?.trim();
+    if (!name) return;
+    const made = await createFolder(userId, name);
+    if (made) setFolders((was) => [...was, made].sort((a, b) => a.name.localeCompare(b.name)));
+  }, [userId]);
+
+  // 🔴 ONE PREDICATE, APPLIED TO ALL THREE SHELVES. Writing the folder test into each list is how
+  // the three quietly come to disagree about what "unfiled" means.
+  const inFolder = useCallback(
+    <T extends { folderId: string | null }>(rows: readonly T[]): readonly T[] =>
+      openFolder === null ? rows : rows.filter((row) => row.folderId === openFolder),
+    [openFolder],
+  );
+
+  const shownDecks = useMemo(() => inFolder(decks), [decks, inFolder]);
+  const shownNotes = useMemo(() => inFolder(notes), [notes, inFolder]);
+  const shownSlides = useMemo(() => inFolder(slides), [slides, inFolder]);
+
+  /** How many outputs of any kind sit in each folder — a folder chip that never says 0 is a lie. */
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const bump = (id: string | null) => id && counts.set(id, (counts.get(id) ?? 0) + 1);
+    decks.forEach((row) => bump(row.folderId));
+    notes.forEach((row) => bump(row.folderId));
+    slides.forEach((row) => bump(row.folderId));
+    return counts;
+  }, [decks, notes, slides]);
+
+  const showing = (which: OutputKind) => shelf === "all" || shelf === which;
 
   const toggleDeck = useCallback(
     async (id: string) => {
@@ -205,20 +308,94 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
             I mainly just want buttons for slides, flash cards, and documents." They arrived here
             when the old Study tab was retired and its surviving features had to live somewhere;
             "somewhere" was read as "the top of the Library", which is the one page a learner opens
-            to reach their own work. The shelves below ARE the page. */}
+            to reach their own work. The shelves below ARE the page.
+
+            🔴 WHAT SITS HERE NOW IS THE THREE THE OWNER NAMED, AS A FILTER RATHER THAN AS BUTTONS.
+            "Buttons for slides, flash cards, and documents" on a page whose whole content is
+            slides, flashcards and documents can only mean one thing: a way to look at one kind at
+            a time. A button that MADE one would be the outputs panel again, which they had just
+            asked to have removed. */}
+        <div className="mt-5 flex flex-wrap items-center gap-1.5">
+          {SHELVES.map((option) => (
+            <button
+              aria-pressed={shelf === option.id}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-[length:var(--canvas-text-small)] transition-colors",
+                shelf === option.id
+                  ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary) ring-1 ring-(--ui-stroke-secondary)"
+                  : "bg-transparent text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
+              )}
+              key={option.id}
+              onClick={() => setShelf(option.id)}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {/* 🔴 FOLDERS ARE A SCOPE, NOT A SECOND PAGE. Opening one narrows the shelves already on
+            screen; "All" puts them back. Nothing navigates, so a learner cannot get lost inside a
+            folder and have to find their way out. */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <button
+            aria-pressed={openFolder === null}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] transition-colors",
+              openFolder === null
+                ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary)"
+                : "bg-transparent text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background)",
+            )}
+            onClick={() => setOpenFolder(null)}
+            type="button"
+          >
+            Everything
+          </button>
+          {folders.map((folder) => (
+            <button
+              aria-pressed={openFolder === folder.id}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[length:var(--canvas-text-meta)] transition-colors",
+                openFolder === folder.id
+                  ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary)"
+                  : "bg-transparent text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background)",
+              )}
+              key={folder.id}
+              onClick={() => setOpenFolder(folder.id)}
+              type="button"
+            >
+              <FolderIcon size={13} strokeWidth={1.8} />
+              {folder.name}
+              <span className="text-(--ui-text-quaternary)">{folderCounts.get(folder.id) ?? 0}</span>
+            </button>
+          ))}
+          <button
+            className="flex items-center gap-1.5 rounded-full bg-transparent px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+            onClick={() => void addFolder()}
+            type="button"
+          >
+            <FolderPlus size={13} strokeWidth={1.8} />
+            New folder
+          </button>
+        </div>
       </header>
 
+      {/* 🔴 A SHELF THE FILTER HAS HIDDEN IS NOT RENDERED AT ALL, heading included. Keeping the
+          heading over an empty list would make a filtered-out shelf look like an emptied one. */}
+      {showing("deck") && (
       <section className="pb-10">
         <h2 className={SECTION_TITLE}>Flashcard decks</h2>
-        {decks.length === 0 ? (
+        {shownDecks.length === 0 ? (
           <p className="px-1 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-            {loaded
-              ? "No decks yet. On a canvas, open Sources and outputs, then the outputs tab, and press Make flashcards."
-              : "Loading…"}
+            {!loaded
+              ? "Loading…"
+              : openFolder !== null
+                ? "No decks in this folder."
+                : "No decks yet. Ask Nemesis for flashcards in any conversation."}
           </p>
         ) : (
           <ul className="flex flex-col gap-0.5">
-            {decks.map((deck) => (
+            {shownDecks.map((deck) => (
               <li key={deck.id}>
                 <div className="flex items-center gap-0.5">
                   <button
@@ -238,6 +415,12 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                   {/* The peek. Deliberately secondary and deliberately still here: reading
                       the answers is sometimes what you want (checking what Nemesis made
                       before trusting it), it just must not be what pressing a deck does. */}
+                  <FolderPicker
+                    current={deck.folderId}
+                    folders={folders}
+                    label={`Move ${deck.name} to a folder`}
+                    onFile={(folderId) => void file("deck", deck.id, folderId)}
+                  />
                   <button
                     aria-label={`Share ${deck.name}`}
                     className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
@@ -276,39 +459,52 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           </ul>
         )}
       </section>
+      )}
 
+      {showing("slides") && (
       <section className="pb-10">
         <h2 className={SECTION_TITLE}>Slides</h2>
-        {slides.length === 0 ? (
+        {shownSlides.length === 0 ? (
           <p className="px-1 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-            {loaded
-              ? "No slide decks yet. On a canvas, ask for a PowerPoint, or press Make slides in the outputs panel."
-              : "Loading…"}
+            {!loaded
+              ? "Loading…"
+              : openFolder !== null
+                ? "No slide decks in this folder."
+                : "No slide decks yet. Ask Nemesis for a PowerPoint in any conversation."}
           </p>
         ) : (
           <ul className="flex flex-col gap-0.5">
-            {slides.map((row) => (
-              <SlidesShelfRow key={row.assetId} row={row} />
+            {shownSlides.map((row) => (
+              <SlidesShelfRow
+                folders={folders}
+                key={row.assetId}
+                onFile={(folderId) => void file("slides", row.assetId, folderId)}
+                row={row}
+              />
             ))}
           </ul>
         )}
       </section>
+      )}
 
+      {showing("note") && (
       <section className="pb-10">
-        <h2 className={SECTION_TITLE}>Notes</h2>
-        {notes.length === 0 ? (
+        <h2 className={SECTION_TITLE}>Documents</h2>
+        {shownNotes.length === 0 ? (
           <p className="px-1 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-            {loaded
-              ? "No notes yet. On a canvas, open Sources and outputs, then the outputs tab, and press Make a summary note."
-              : "Loading…"}
+            {!loaded
+              ? "Loading…"
+              : openFolder !== null
+                ? "No documents in this folder."
+                : "No documents yet. Ask Nemesis for a summary or a write-up in any conversation."}
           </p>
         ) : (
           <ul className="flex flex-col gap-0.5">
-            {notes.map((note) => (
-              <li key={note.path}>
+            {shownNotes.map((note) => (
+              <li className="flex items-center gap-0.5" key={note.path}>
                 {/* The library's own reader, deep-linked — the same route the canvas panel and
                     /slides already use. */}
-                <a className={cn(ROW, "no-underline")} href={`/library/classic?note=${encodeURIComponent(note.path)}`}>
+                <a className={cn(ROW, "min-w-0 flex-1 no-underline")} href={`/library/classic?note=${encodeURIComponent(note.path)}`}>
                   <NotebookText className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
                   <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
                     {note.title}
@@ -317,17 +513,24 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                     {when(note.updatedAt)}
                   </span>
                 </a>
+                <FolderPicker
+                  current={note.folderId}
+                  folders={folders}
+                  label={`Move ${note.title} to a folder`}
+                  onFile={(folderId) => void file("note", note.id, folderId)}
+                />
               </li>
             ))}
           </ul>
         )}
       </section>
+      )}
 
       <footer className="flex items-start gap-2 rounded-xl border border-(--ui-stroke-tertiary) px-4 py-3">
         <GraduationCap className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" size={15} strokeWidth={1.8} />
         <p className="text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-secondary)">
-          Your canvases now live in the sidebar, with folders. Everything a canvas makes for you is
-          kept here.
+          Your canvases live in the sidebar. Everything they make for you is kept here, and both
+          use the same folders.
         </p>
       </footer>
 
@@ -343,7 +546,62 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   );
 }
 
-function SlidesShelfRow({ row }: { row: SlidesRow }) {
+/**
+ * The move-to-folder menu that hangs off every row, on every shelf.
+ *
+ * 🔴 ONE COMPONENT FOR ALL THREE SHELVES, because the three tables are an accident of history and
+ * the learner is not supposed to be able to tell. Three copies of this menu would be three places
+ * for "No folder" to be spelled differently or to stop working.
+ *
+ * 🔴 NO "NEW FOLDER…" HERE, DELIBERATELY. Making a folder from inside a move menu means naming it
+ * in a prompt while a menu is open over the page, and the menu closing takes the row's context
+ * with it. The folder bar at the top makes folders; this menu only files into ones that exist.
+ * When there are none it says so rather than opening an empty menu.
+ */
+function FolderPicker({
+  current,
+  folders,
+  label,
+  onFile,
+}: {
+  current: string | null;
+  folders: readonly Folder[];
+  label: string;
+  onFile: (folderId: string | null) => void;
+}) {
+  if (folders.length === 0) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={label}
+        className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+      >
+        <FolderIcon size={15} strokeWidth={1.8} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem disabled={current === null} onClick={() => onFile(null)}>
+          No folder
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {folders.map((folder) => (
+          <DropdownMenuItem disabled={current === folder.id} key={folder.id} onClick={() => onFile(folder.id)}>
+            {folder.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function SlidesShelfRow({
+  row,
+  folders,
+  onFile,
+}: {
+  row: SlidesRow;
+  folders: readonly Folder[];
+  onFile: (folderId: string | null) => void;
+}) {
   const { choose, designId } = useDeckDesignChoice(row.assetId);
   return (
     <li className="flex items-center gap-1">
@@ -359,6 +617,7 @@ function SlidesShelfRow({ row }: { row: SlidesRow }) {
           {when(row.createdAt)}
         </span>
       </a>
+      <FolderPicker current={row.folderId} folders={folders} label={`Move ${row.title} to a folder`} onFile={onFile} />
       <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={row.title} />
     </li>
   );
