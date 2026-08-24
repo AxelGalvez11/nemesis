@@ -47,6 +47,7 @@ import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority"
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { prepareAnswer } from "@/lib/learn/answer-prepare";
+import { fillMissingFigures } from "@/lib/learn/figure-fallback";
 import type { TurnStage } from "@/lib/learn/turn-preview";
 import {
   decisionOrReply,
@@ -308,7 +309,14 @@ export async function askCanvasChat(
   // HERE rather than inside the parser: `decisionOrReply` is synchronous, and the maths layer may
   // not reach the learner's bundle (see lib/learn/plot-compute.ts for why that forces a route).
   const readDecision = async (text: string) => {
-    const read = decisionOrReply(await prepareAnswer(text, undefined, signal, (label) => onWork?.(label)));
+    // 🔴🔴 THE ORPHANED-MARKER REPAIR RUNS FIRST, AND THE ORDER IS THE WHOLE POINT. What it adds is
+    // a figure request carrying only a NAME, so putting it ahead of `prepareAnswer` means the thing
+    // it adds is looked up, validated and licence-checked by exactly the same passes as anything
+    // the model wrote itself — it cannot smuggle an asset past them. Placed after, it would be a
+    // picture nobody resolved. See `figure-fallback.ts` for why this lane needed finishing in code.
+    const read = decisionOrReply(
+      await prepareAnswer(fillMissingFigures(text), undefined, signal, (label) => onWork?.(label)),
+    );
     // 🔴 REPORTED AS SOON AS THEY ARE READ, NOT WHEN THE TURN RETURNS. See `onMilestones`.
     onMilestones?.(read?.milestones ?? []);
     return read;
