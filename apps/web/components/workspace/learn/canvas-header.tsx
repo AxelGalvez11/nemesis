@@ -18,6 +18,7 @@
 // those assertions moved to canvas-surface.tsx along with the element that carries them.
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { MinimapControl, OptionsControl, SourcesControl } from "./canvas-controls";
@@ -30,6 +31,9 @@ import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
   onFiles: (files: FileList | File[]) => void;
+  /** Threaded straight to SourcesControl — see its own prop comments. */
+  onMakeDeliverable?: (kind: DeliverableKind) => void;
+  making?: DeliverableKind | null;
   /** A pasted web link, filed as a source. See `SourcesControl`'s own prop comment. */
   onUrl?: (url: string) => void;
   onRename: (title: string) => void;
@@ -75,6 +79,8 @@ interface CanvasHeaderProps {
 export function CanvasHeader({
   canvas,
   onFiles,
+  onMakeDeliverable,
+  making,
   onUrl,
   onRename,
   onDelete,
@@ -123,7 +129,7 @@ export function CanvasHeader({
               Objectives, the session record and voice moved INSIDE `OptionsControl`; none of them
               was deleted, and voice especially could not be, because that button was the only way
               into voice mode. */}
-          <SourcesControl canvas={canvas} modelKnowledge={modelKnowledge} onFiles={onFiles} onUrl={onUrl} />
+          <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onUrl={onUrl} />
           <MinimapControl
             coverage={minimap.coverage}
             decidedObjectiveKey={minimap.decidedObjectiveKey}
