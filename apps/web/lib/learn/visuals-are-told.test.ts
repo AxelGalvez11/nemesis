@@ -223,6 +223,24 @@ test("🔴🔴 the packet warns that a wordy figure subject fetches the wrong pi
   assert.match(packet, /Do not describe the picture you want/, "the packet stopped warning against describing the picture");
 });
 
+test("🔴🔴 describing a picture, and offering one as a follow-up, are both banned", () => {
+  // 🔴 THE SAME REFUSAL IN THREE FORMS, AND ONLY TWO WERE COVERED. The packet already bans a
+  // picture made of CHARACTERS. It did not ban a picture made of SENTENCES, which is what the model
+  // reaches for instead — measured 2026-08-24, asked for the C major scale "in standard notation":
+  // the letters `C D E F G A B C` in a fence, then a bulleted list reading *"E — bottom line, F —
+  // first space, G — second line"*, against a renderer that engraves ABC from one field.
+  //
+  // 🔴 AND THE TELL IS IDENTICAL ACROSS CASES. It closed with *"If you'd like it, I can also show
+  // this as ABC notation"* — the same shape as the ethanol case's *"if you want it as a proper
+  // structural diagram, just say the word."* A model offering a drawing has already decided the
+  // drawing is worth making, so the offer itself is the thing to ban.
+  const packet = PACKET.replace(/\s+/g, " ");
+  assert.match(packet, /Never DESCRIBE a picture you could draw/, "describing a picture in prose is allowed again");
+  assert.match(packet, /never offer one as a follow-up/, "the model may once more offer a drawing instead of drawing it");
+  // The older character-art ban must survive alongside it: they catch different failures.
+  assert.match(packet, /Never draw a picture out of text characters/, "the ASCII-art ban was replaced rather than joined");
+});
+
 test("🔴 the packet's own claim about where it is guarded is true", () => {
   // The sentence that started this: turn-router.ts pointed at visual-route.test.ts, which never
   // checked the packet. A comment naming the wrong guard is worse than naming none, because the

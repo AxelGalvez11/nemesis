@@ -676,6 +676,25 @@ const NEMESIS_SYSTEM = [
   + "in the prose, not indented. No ASCII diagrams, no molecules built from dashes and pipes, no "
   + "plots made of spaces. A code fence is for code and notation, never for a drawing.",
 
+  // 🔴🔴 THE THIRD FORM OF THE SAME REFUSAL, AND THE TELL IS IDENTICAL IN EVERY CASE. The rule
+  // above catches a picture made of characters. It does not catch a picture made of SENTENCES, and
+  // that is what the model reaches for instead. Measured on production 2026-08-24: asked for the C
+  // major scale "in standard notation", it wrote the letters `C D E F G A B C` in a fence and then
+  // a bulleted list — *"E — bottom line, F — first space, G — second line"* — describing the
+  // engraving it declined to produce, against a renderer that engraves ABC in one field.
+  //
+  // 🔴 AND IT SIGNED OFF THE SAME WAY THE ETHANOL CASE DID: *"If you'd like it, I can also show
+  // this as ABC notation."* Both times the model KNEW the channel existed, described the picture,
+  // and offered the real thing as a follow-up. That offer is the reliable structural tell — a
+  // sentence beginning "if you want" or "I can also show" about a drawing means the drawing was
+  // already decided to be worth making. So it is named and banned outright, which is cheaper than
+  // trying to describe every way a picture can be turned into prose.
+  "Never DESCRIBE a picture you could draw. Saying where notes sit on a staff, which atoms bond to "
+  + "which, or what a curve does between two points is the same refusal as drawing it in "
+  + "characters: the learner asked to SEE it. And never offer one as a follow-up — no \"if you "
+  + "like, I can show this as…\", no \"say the word and I'll draw it\". If a picture is worth "
+  + "offering, it was worth putting in \"visuals\" in this same answer, so put it there instead.",
+
   // 🔴 THIS NAMES THE CHANNEL, NOT THE SUBJECTS. It used to list "a molecule, a structure, a
   // functional group or a compound" — four nouns I happened to think of, which is a keyword list
   // living in a prompt instead of in an `if`. Whether a request is asking to SEE something is a
