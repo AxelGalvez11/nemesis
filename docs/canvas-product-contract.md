@@ -1342,7 +1342,7 @@ enjoyable engineering should read this line as the answer.
 
 # 42. 🔴 SCIENTIFIC REPRESENTATION IS A TRUST LADDER — generation is the last rung, not the first (owner, 2026-08-18)
 
-## STATUS: RUNGS ONE, TWO AND THREE SHIPPED AND SERVING. A LESSON OR A REPLY RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT; A LESSON NOW REQUESTS A REAL LICENSED PICTURE BY SUBJECT, A 3D MACROMOLECULE BY NAME, AND A NAMED ANATOMICAL STRUCTURE — BONE, MUSCLE, VESSEL, NERVE OR ORGAN — FROM THE FOURTEEN-REGION HARVESTED ATLAS (2026-08-24). THE CURATED REGISTRY IS SEEDED AND A LIVE PROVIDER STANDS BEHIND IT. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
+## STATUS: RUNGS ONE, TWO AND THREE SHIPPED AND SERVING. A LESSON OR A REPLY RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT; A LESSON NOW REQUESTS A REAL LICENSED PICTURE BY SUBJECT, A 3D MACROMOLECULE BY NAME, AND A NAMED ANATOMICAL STRUCTURE — BONE, MUSCLE, VESSEL, NERVE OR ORGAN, MALE OR FEMALE — FROM THE SEVENTEEN-REGION HARVESTED ATLAS (2026-08-24). THE CURATED REGISTRY IS SEEDED AND A LIVE PROVIDER STANDS BEHIND IT. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
 
 🔴 **Rung three went live on 2026-08-23, on the owner's instruction** (*"let's ingest it… can you
 put those APIs in as well… Nemesis or DeepSeek needs to be able to have access to a lot of these
@@ -1397,26 +1397,52 @@ refusing outright reported the heart as absent from a model that is almost entir
 
 🔴 **THE MESHES ARE HARVESTED, LICENCE-CLEANED, AND SERVED FROM OUR OWN DEPLOYMENT.**
 `scripts/anatomy-harvest.mts` downloads named regions from the Open3DModel project (Dutch/Belgian
-university revisions of Z-Anatomy, itself descended from BodyParts3D) **and exports the body systems
-from Z-Anatomy's own 306 MB Blender file** via `scripts/anatomy-export-systems.py`. Both atlases are
-CC BY-SA 4.0 and each region records which one it came from, because attributing one atlas's work to
-the other is exactly what a share-alike licence exists to prevent. Open3DModel's TEXTURES are CC
-BY-NC-SA — NC is refused across this codebase by design — so the harvest strips every texture, image
-and UV channel before anything reaches the repo. What ships is geometry in our own material: **27 MB
-across fourteen files**, Draco-compressed, none of it loaded until a lesson asks for that region, and
-decoded by the decoder `copy-draco-decoder.mjs` copies out of our own three.js dependency at build
-time. The validator holds the asset to a same-origin `/anatomy/….glb` path — there is no external
-host in this lane at all, and a model-written URL refuses by name.
+university revisions of Z-Anatomy, itself descended from BodyParts3D), **exports the body systems
+from Z-Anatomy's own 306 MB Blender file** via `scripts/anatomy-export-systems.py`, and **assembles
+the female organs from the NIH Human Reference Atlas**. The first two are CC BY-SA 4.0 and the third
+is CC BY 4.0, so each region records which atlas it came from and the viewer prints THAT atlas's
+attribution and THAT atlas's terms — printing one licence under another's mesh is exactly what a
+share-alike licence exists to prevent. Open3DModel's TEXTURES are CC BY-NC-SA — NC is refused across
+this codebase by design — so the harvest strips every texture, image and UV channel before anything
+reaches the repo. What ships is geometry in our own material: **29 MB across seventeen files**,
+Draco-compressed, none of it loaded until a lesson asks for that region, and decoded by the decoder
+`copy-draco-decoder.mjs` copies out of our own three.js dependency at build time. The validator holds
+the asset to a same-origin `/anatomy/….glb` path — there is no external host in this lane at all, and
+a model-written URL refuses by name.
 
 🔴 **BLENDER IS A HARVEST-TIME TOOL AND NEVER A BUILD-TIME ONE.** The export runs once, its output is
 committed, and nobody needs Blender to build or run Nemesis. `ANATOMY_BLEND` is required rather than
 optional when the harvest runs, so a regenerated registry is never silently half an atlas.
 
-🔴 **WHAT THE ATLAS STILL DOES NOT HAVE, SAID PLAINLY.** Female reproductive anatomy: the upstream
-model is male, and no amount of matching invents a uterus. The oesophagus is named only as a
-landmark on the liver. Individual named arteries below the heart's own vessels live in Z-Anatomy's
-bonus collections, not the system collections harvested here. Each is a source gap rather than a
-wiring one, and each is one line in `SYSTEMS` or one upstream release away.
+🔴🔴 **THE THIRD ATLAS EXISTS BECAUSE THE FIRST TWO ARE ONE MALE BODY, AND THAT WAS NEVER FIXABLE BY
+MATCHING HARDER.** Both descend from BodyParts3D, whose own parts list carries fifteen entries for
+prostate, testis and penis and **zero** for uterus, ovary or uterine tube; Z-Anatomy's published
+to-do list puts "CREATE A FEMALE HUMAN MODEL" behind a fresh CT and MRI, and Open3DModel's pelvic
+floor model contains a prostate. So for three days this section recorded "the upstream model is
+male" as a source gap — accurate, and still a statement that half the learners Nemesis serves cannot
+see their own anatomy. The NIH's Human Reference Atlas is a different body: reference organs
+segmented from the Visible Human **female** dataset, published as glTF under CC BY 4.0. Three
+regions are assembled from it — **Female reproductive system** (uterus with its twelve named parts,
+both ovaries, both uterine tubes), **Breast**, and **Placenta, full term** — 54 structures and 2.7 MB.
+Merging separate organ files into one figure works only because HRA's files share a body coordinate
+space, which is measured rather than assumed: the uterus sits at the origin, the ovaries to either
+side, the breasts at chest height.
+
+🔴 **THE BONY FEMALE PELVIS IS DELIBERATELY LEFT OUT, AND THAT IS A MATCHER DECISION.** HRA publishes
+one, and taking it would put a second "Sacrum", "Ilium" and "Pubis" into the registry competing with
+the skeleton's own — the tie-break falls to the smallest region, so a three-organ model would win a
+whole-body bone ask. Sex differences in the pelvis are worth teaching; not at the price of breaking
+every bone ask that already works. A test pins `sacrum`, `femur`, `liver` and `prostate` to where
+they resolved before the third atlas arrived.
+
+🔴 **WHAT THE ATLAS STILL DOES NOT HAVE, SAID PLAINLY.** No external female genitalia and no vagina —
+HRA's reproductive set stops at the cervix. The oesophagus is named only as a landmark on the liver.
+Individual named arteries below the heart's own vessels live in Z-Anatomy's bonus collections, not
+the system collections harvested here. HRA node names carry the source's own spellings, so its
+"fibria of uterine tube" does not answer to *fimbriae* — correcting an atlas by hand is where
+invented vocabularies start, and the general fix is HRA's ontology terms rather than a typo list.
+Each is a source gap rather than a wiring one, and each is one line in `SYSTEMS`, `REGIONS` or
+`COMPOSITES` away.
 
 🔴 **The resolver was wired on 2026-08-21, and until then this section described something no
 learner had ever seen.** `chem-resolver.ts` was built, tested and merged, and `grep -r
@@ -1573,7 +1599,7 @@ provenance rather than about subject matter.
 | Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
 | Macromolecular structure | `{"kind":"macromolecule","molecule":"…"}` — a name, resolved to a PDB accession | **shipped** (Mol* viewer, RCSB resolver) |
 | Electron-pushing arrows on a structure | `arrows: [{from, to}]` — heavy-atom indices, the `highlight` index space | **shipped 2026-08-24** (curly arrows drawn over the depiction's own computed atom positions) |
-| Anatomy (3D body) | `{"kind":"anatomy","structure":"…"}` — a name, resolved against the harvested atlas registry | **shipped 2026-08-24** (14 regions, 3,777 askable terms — bones, muscles, vessels, nerves, organs; same-origin, textures stripped for licence) |
+| Anatomy (3D body) | `{"kind":"anatomy","structure":"…"}` — a name, resolved against the harvested atlas registry | **shipped 2026-08-24** (17 regions, 3,831 askable terms — bones, muscles, vessels, nerves, organs, and the female organs from a second body; same-origin, textures stripped for licence) |
 
 ## 🔴 CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION
 

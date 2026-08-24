@@ -279,6 +279,30 @@ test("🔴 §42's anatomy claims are tied to the harvest, the registry door and 
   assert.match(scripts.scripts?.prebuild ?? "", /copy-draco-decoder/, "the decoder copy has left prebuild");
 });
 
+test("🔴 every atlas the harvest names can be credited, on its OWN licence", () => {
+  // 🔴🔴 THE HARVEST AND THE CREDIT MODULE ARE TWO HAND-KEPT COPIES OF ONE TABLE, and they are
+  // apart on purpose: the registry may not reach the learner's bundle (see the next test), so the
+  // viewer's credit line lives in its own tiny module. That split is what makes drift possible —
+  // a region harvested under a source id the viewer has never heard of renders with somebody
+  // else's attribution under it, which for a share-alike mesh is the precise failure the licence
+  // exists to prevent. The third source made this real: HRA is CC BY 4.0 where the first two are
+  // CC BY-SA 4.0, so the TERMS travel per region now, not only the name.
+  const harvest = readFileSync(new URL("../../scripts/anatomy-harvest.mts", import.meta.url), "utf8");
+  const licence = readFileSync(new URL("./anatomy-licence.ts", import.meta.url), "utf8");
+  const ids = (source: string): string[] =>
+    [...source.matchAll(/^ {2}"([a-z0-9-]+)": \{$/gm)].map((match) => match[1] ?? "").sort();
+  assert.deepEqual(
+    ids(harvest),
+    ids(licence),
+    "the harvest and the credit module disagree about which atlases exist",
+  );
+  assert.ok(ids(licence).includes("hra"), "the female atlas has left the credit module");
+  assert.match(licence, /CC-BY-4\.0/, "the third atlas's own licence is no longer recorded");
+  // §42 has to say where the female organs come from, because "the model is male" was true here
+  // for three days and is the kind of claim that outlives its moment.
+  assert.match(SECTION_42, /Human Reference Atlas/);
+});
+
 test("🔴 the atlas REGISTRY never reaches the learner's bundle — §45's rule, applied to data", () => {
   // 🔴🔴 THE REGISTRY IS 3,700-ODD STRUCTURE NAMES AND GROWS WITH EVERY REGION HARVESTED. It was
   // imported straight into the resolve pass on the day the lane shipped, and `prepareAnswer` runs

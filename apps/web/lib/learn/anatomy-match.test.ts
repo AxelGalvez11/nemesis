@@ -31,6 +31,42 @@ test("🔴 the atlas is not just bones — muscles, nerves and vessels are in it
   }
 });
 
+test("🔴 …and it is not one body either — the female organs answer by name", () => {
+  // 🔴🔴 THE GAP THAT COULD NOT HAVE CLOSED BY MATCHING HARDER. Z-Anatomy and Open3DModel both
+  // descend from BodyParts3D, and BodyParts3D has NO female reproductive organs — its own parts
+  // list carries fifteen prostate/testis/penis entries and zero for uterus, ovary or uterine tube.
+  // Half the learners Nemesis serves could not see their own anatomy, and no scoring change would
+  // have fixed it; a third atlas had to arrive. This test is what stops it silently leaving again.
+  const female: Record<string, string> = {
+    "cervix": "female-reproductive-system",
+    "fallopian tube": "female-reproductive-system",
+    "fundus of uterus": "female-reproductive-system",
+    "mammary gland": "breast",
+    "nipple": "breast",
+    "ovary": "female-reproductive-system",
+    "placenta": "placenta",
+    "umbilical cord": "placenta",
+    "uterus": "female-reproductive-system",
+  };
+  for (const [name, region] of Object.entries(female)) {
+    const resolved = resolveStructureName(name);
+    assert.ok(resolved, `the atlas carries no "${name}"`);
+    assert.equal(resolved?.region, region, `"${name}" resolved to ${resolved?.region}`);
+    assert.ok((resolved?.structures.length ?? 0) > 0, `"${name}" resolved to a whole region`);
+  }
+});
+
+test("🔴 the third atlas took no ask away from the first two", () => {
+  // A new region is also a new competitor for every existing name, and the tie-breaks are decided
+  // partly on region SIZE — three small regions are exactly the shape that could quietly steal a
+  // whole-body ask. Nothing HRA-sourced shares a name with anything already harvested, and these
+  // are the asks that would notice first if that stopped being true.
+  assert.equal(resolveStructureName("sacrum")?.region, "overview-skeleton");
+  assert.equal(resolveStructureName("prostate")?.region, "visceral-systems");
+  assert.equal(resolveStructureName("liver")?.region, "visceral-systems");
+  assert.equal(resolveStructureName("femur")?.region, "overview-skeleton");
+});
+
 test("a single bone resolves to itself", () => {
   const resolved = resolveStructureName("sacrum");
   assert.ok(resolved);

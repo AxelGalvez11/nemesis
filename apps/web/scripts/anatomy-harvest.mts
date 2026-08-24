@@ -4,8 +4,10 @@
 //
 // 🔴 THE SAME SHAPE AS `reference-shelf-harvest.mts`, ONE MEDIUM OVER: a NAMED list of sources
 // (never a crawl), a per-run licence discipline, and a generated registry file the app imports.
-// The sources are the Open3DModel project's own GLB exports — Dutch/Belgian university revisions
-// of Z-Anatomy, which itself descends from BodyParts3D. The MESHES are CC BY-SA 4.0.
+// Three sources, and every region records which one it came from: the Open3DModel project's own
+// GLB exports (Dutch/Belgian university revisions of Z-Anatomy) and Z-Anatomy upstream, both CC
+// BY-SA 4.0 and both one male body; and the NIH Human Reference Atlas, CC BY 4.0, which is where
+// the female organs come from because the other two do not have any.
 //
 // 🔴🔴 THE TEXTURES ARE STRIPPED, AND THAT IS A LICENCE ACT BEFORE IT IS A SIZE ONE. Open3DModel's
 // own download page licenses the 3D models CC BY-SA 4.0 and the TEXTURES CC BY-NC-SA — and NC is
@@ -23,9 +25,9 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { NodeIO } from "@gltf-transform/core";
+import { Document, NodeIO } from "@gltf-transform/core";
 import { KHRDracoMeshCompression } from "@gltf-transform/extensions";
-import { dedup, draco, prune } from "@gltf-transform/functions";
+import { dedup, draco, mergeDocuments, prune, unpartition } from "@gltf-transform/functions";
 import draco3d from "draco3dgltf";
 
 /**
@@ -65,6 +67,79 @@ const SYSTEMS: readonly { slug: string; title: string }[] = [
 ];
 
 /**
+ * Regions assembled from the NIH Human Reference Atlas, by that atlas's own organ labels.
+ *
+ * 🔴🔴 THE THIRD SOURCE EXISTS BECAUSE THE FIRST TWO ARE ONE MALE BODY, AND NOT BY CHOICE. Both
+ * Z-Anatomy and Open3DModel descend from BodyParts3D, and BodyParts3D has no female reproductive
+ * organs at all — its own parts list carries fifteen entries for prostate, testis and penis and
+ * zero for uterus, ovary or uterine tube. Z-Anatomy's public to-do list puts "CREATE A FEMALE
+ * HUMAN MODEL" in its midterm plans, behind a fresh CT and MRI; Open3DModel's pelvic floor model
+ * contains a prostate. So the gap could never close by matching harder or harvesting more of the
+ * same lineage, and half the learners Nemesis serves cannot see their own anatomy until a
+ * different body arrives. The NIH's Human Reference Atlas is that body: reference organs
+ * segmented from the Visible Human female dataset, published as glTF, CC BY 4.0.
+ *
+ * 🔴 EACH REGION IS SEVERAL ORGAN FILES MERGED, AND THAT ONLY WORKS BECAUSE THEY SHARE A BODY.
+ * HRA ships one file per organ, but every file's vertices are in the same body coordinate space —
+ * measured: the uterus sits at the origin, the left ovary to its left, the right ovary to its
+ * right, the breasts up at chest height. Merging them therefore assembles the textbook figure
+ * rather than a pile of parts stacked on one another.
+ *
+ * 🔴 THE BONY PELVIS IS DELIBERATELY NOT HERE. HRA publishes a female pelvis, and taking it would
+ * put a second "Sacrum", "Ilium" and "Pubis" into the registry competing with the skeleton's own —
+ * the matcher would hand a whole-body ask a pelvis-only model on a tie-break. Sex differences in
+ * the bony pelvis are worth teaching, but not at the price of breaking every existing bone ask.
+ */
+const COMPOSITES: readonly { slug: string; title: string; parts: readonly string[] }[] = [
+  {
+    parts: ["uterus", "Left ovary", "Right ovary", "Left fallopian tube", "Right fallopian tube"],
+    slug: "female-reproductive-system",
+    title: "Female reproductive system",
+  },
+  { parts: ["Left mammary gland", "Right mammary gland"], slug: "breast", title: "Breast" },
+  { parts: ["placenta full term"], slug: "placenta", title: "Placenta, full term" },
+];
+
+/**
+ * Where the atlas publishes its current reference organs.
+ *
+ * 🔴 THE VERSION IS ASKED FOR, NOT PINNED INTO A URL. HRA revises organs independently
+ * (`uterus-female/v1.2`, `ovary-female-left/v1.3`), so a hand-written asset path goes stale
+ * silently and a re-harvest quietly rebuilds last year's atlas. Naming the organ and letting the
+ * atlas name the file keeps the list here anatomical, which is the only thing we should be
+ * maintaining.
+ */
+const HRA_ORGANS = "https://apps.humanatlas.io/api/v1/reference-organs";
+
+interface HraOrgan {
+  readonly label?: string;
+  readonly object?: { readonly file?: string };
+  readonly sex?: string;
+}
+
+/**
+ * The atlas's node names, rendered the way a learner says them.
+ *
+ * 🔴 A TRANSLATION, NOT AN INVENTION. HRA names nodes for machines —
+ * `VH_F_body_of_uterus`, `VH_F_fallopian_tube_L` — where the other two atlases name them for
+ * anatomists. Dropping the Visible-Human prefix, spacing the underscores and spelling out the
+ * side leaves the atlas's own words untouched ("body of uterus", "fallopian tube"); every term a
+ * lesson can ask for is still theirs. Source spellings are kept even where they are the source's
+ * own slip, because correcting an atlas by hand is where invented vocabularies start.
+ */
+function hraName(raw: string): string {
+  const bare = raw
+    .replace(/^VH_[FM](_|$)/, "")
+    .replace(/_/g, " ")
+    .trim();
+  if (!bare) return "";
+  const sided = bare.replace(/ ([LR])$/, (_match, side: string) =>
+    side === "L" ? " (left)" : " (right)",
+  );
+  return sided.charAt(0).toUpperCase() + sided.slice(1);
+}
+
+/**
  * Where the Z-Anatomy Blender file is, and how to get one.
  *
  * 🔴 REQUIRED RATHER THAN OPTIONAL, so a regenerated registry is never silently half an atlas. The
@@ -92,6 +167,13 @@ const SOURCES = {
     source: "Z-Anatomy",
     url: "https://www.z-anatomy.com/",
   },
+  "hra": {
+    attribution:
+      "Human Reference Atlas (HuBMAP), from the Visible Human Dataset, U.S. National Library of Medicine",
+    licence: "CC-BY-4.0",
+    source: "Human Reference Atlas",
+    url: "https://humanatlas.io/3d-reference-library",
+  },
 } as const;
 
 type SourceId = keyof typeof SOURCES;
@@ -118,15 +200,24 @@ async function main(): Promise<void> {
     structures: string[];
   }> = [];
 
-  /** One mesh file in, one licence-cleaned mesh file and a list of names out. */
+  /** One parsed model in, one licence-cleaned mesh file and a list of names out. */
   const process = async (
-    inputPath: string,
+    document: Document,
     slug: string,
     title: string,
     source: SourceId,
+    rename?: (name: string) => string,
   ): Promise<void> => {
-    const document = await io.read(inputPath);
     const root = document.getRoot();
+
+    // 🔴 RENAMING HAPPENS IN THE MODEL, NOT ONLY IN THE REGISTRY, AND THAT IS THE WHOLE POINT. The
+    // viewer highlights by matching a registry name against the loaded file's node names, so a
+    // registry that says "Body of uterus" over a file that still says `VH_F_body_of_uterus`
+    // resolves, downloads, renders — and ghosts everything, highlighting nothing. The two lists
+    // are the same list, so they are written once.
+    if (rename) {
+      for (const node of root.listNodes()) node.setName(rename(node.getName() ?? ""));
+    }
 
     // 🔴 THE LICENCE ACT: no texture, no image, no UV channel survives the harvest. Open3DModel's
     // textures are CC BY-NC-SA and NC is refused across this codebase by design, so nothing
@@ -171,7 +262,10 @@ async function main(): Promise<void> {
       .filter((name) => !structures.includes(name))
       .sort((a, b) => a.localeCompare(b));
 
-    await document.transform(prune(), dedup(), draco());
+    // 🔴 `unpartition` BECAUSE MERGING BRINGS EACH ORGAN'S OWN BUFFER AND A .GLB MAY HOLD ONE.
+    // Five reproductive organs merge into five buffers, and the write fails outright rather than
+    // shipping something broken — which is the good failure, but it still has to be answered.
+    await document.transform(prune(), dedup(), unpartition(), draco());
     const binary = await io.writeBinary(document);
     writeFileSync(join(OUT_DIR, `${slug}.glb`), binary);
     console.log(
@@ -206,7 +300,8 @@ async function main(): Promise<void> {
       (entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".glb"),
     );
     if (!found) throw new Error(`${region.slug}: the archive contains no .glb`);
-    await process(join(found.parentPath ?? scratch, found.name), region.slug, region.title, "open3dmodel");
+    const mesh = await io.read(join(found.parentPath ?? scratch, found.name));
+    await process(mesh, region.slug, region.title, "open3dmodel");
   }
 
   // ── the whole body, out of Z-Anatomy's own Blender file ──────────────────────────────────────
@@ -225,7 +320,47 @@ async function main(): Promise<void> {
   for (const system of SYSTEMS) {
     const path = join(exported, `${system.slug}.glb`);
     if (!existsSync(path)) throw new Error(`${system.slug}: Blender exported no mesh file`);
-    await process(path, system.slug, system.title, "z-anatomy");
+    await process(await io.read(path), system.slug, system.title, "z-anatomy");
+  }
+
+  // ── the female body, out of the NIH Human Reference Atlas ────────────────────────────────────
+  console.log(`↓ ${HRA_ORGANS}`);
+  const catalogue: HraOrgan[] = JSON.parse(
+    execFileSync("curl", ["-sL", HRA_ORGANS], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }),
+  );
+  const hraScratch = join(tmpdir(), "anatomy-hra");
+  rmSync(hraScratch, { force: true, recursive: true });
+  mkdirSync(hraScratch, { recursive: true });
+
+  for (const composite of COMPOSITES) {
+    let merged: Document | null = null;
+    for (const [index, part] of composite.parts.entries()) {
+      const organ = catalogue.find((row) => row.sex === "Female" && row.label === part);
+      const file = organ?.object?.file;
+      // 🔴 A MISSING ORGAN STOPS THE HARVEST RATHER THAN SHRINKING THE REGION. A reproductive
+      // system quietly missing its ovaries would pass every test we have and be wrong in the one
+      // place that matters.
+      if (!file) throw new Error(`${composite.slug}: the atlas lists no female "${part}"`);
+      const path = join(hraScratch, `${composite.slug}-${index}.glb`);
+      execFileSync("curl", ["-sL", "-o", path, file]);
+      const organDocument = await io.read(path);
+      if (!merged) {
+        merged = organDocument;
+        continue;
+      }
+      // 🔴 MERGING COPIES RESOURCES BUT LEAVES THE SCENES APART, so the arriving organ's nodes are
+      // moved under the region's own scene by hand. Skipping this writes a file whose extra organs
+      // exist, weigh their full size, and never render.
+      mergeDocuments(merged, organDocument);
+      const [primary, ...extra] = merged.getRoot().listScenes();
+      for (const scene of extra) {
+        for (const node of scene.listChildren()) primary.addChild(node);
+        scene.dispose();
+      }
+      merged.getRoot().setDefaultScene(primary);
+    }
+    if (!merged) throw new Error(`${composite.slug}: no parts listed`);
+    await process(merged, composite.slug, composite.title, "hra", hraName);
   }
 
   const total = regions.reduce((sum, region) => sum + region.bytes, 0);

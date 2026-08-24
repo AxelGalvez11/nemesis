@@ -6,13 +6,14 @@
 // `anatomy-atlas.ts` would drag the whole atlas into every page that can render a Canvas — the
 // §45 rule about the maths layer, applied to data.
 //
-// 🔴 TWO SOURCES, BOTH CC BY-SA 4.0, AND THE CREDIT MUST NAME THE RIGHT ONE. The bones, skulls and
+// 🔴 THREE SOURCES ON TWO LICENCES, AND THE CREDIT MUST NAME THE RIGHT ONE. The bones, skulls and
 // limbs come from the university-revised Open3DModel; the organs, muscles, vessels and nerves come
-// from Z-Anatomy upstream. Attributing one atlas's work to the other is the failure a share-alike
-// licence exists to prevent, so every region records which it came from and the viewer looks the
-// credit up from that.
+// from Z-Anatomy upstream; the female organs come from the NIH Human Reference Atlas, because the
+// other two descend from one male body and have none. The first two are share-alike and the third
+// is plain attribution, so the TERMS travel per region too, not just the name — printing one
+// atlas's licence under another atlas's mesh is exactly what these licences exist to prevent.
 
-export type AnatomySource = "open3dmodel" | "z-anatomy";
+export type AnatomySource = "open3dmodel" | "z-anatomy" | "hra";
 
 export interface AnatomyCredit {
   readonly attribution: string;
@@ -33,6 +34,13 @@ export const ANATOMY_SOURCES: Readonly<Record<AnatomySource, AnatomyCredit>> = {
     licence: "CC-BY-SA-4.0",
     source: "Z-Anatomy",
     url: "https://www.z-anatomy.com/",
+  },
+  "hra": {
+    attribution:
+      "Human Reference Atlas (HuBMAP), from the Visible Human Dataset, U.S. National Library of Medicine",
+    licence: "CC-BY-4.0",
+    source: "Human Reference Atlas",
+    url: "https://humanatlas.io/3d-reference-library",
   },
 };
 
