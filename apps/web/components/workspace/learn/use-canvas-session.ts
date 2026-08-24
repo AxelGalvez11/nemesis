@@ -40,7 +40,7 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
-import { makeFlashcardsDeliverable, makeNoteDeliverable, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { makeFlashcardsDeliverable, makeNoteDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
@@ -1090,6 +1090,44 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * document rewriting itself IS the reply there, and a sentence that appeared for an instant and
    * then vanished under the write would read as a glitch rather than as an answer.
    */
+  const makeDeliverable = useCallback(
+    async (kind: DeliverableKind, topic?: string) => {
+      // The ref, not the state: two clicks in one frame both see `making === null`.
+      if (makingRef.current) return;
+      if (!uid) {
+        setError("Sign in to save things to your library.");
+        return;
+      }
+      makingRef.current = true;
+      setMaking(kind);
+      try {
+        const result =
+          kind === "flashcards"
+            ? await makeFlashcardsDeliverable(uid, latest.current)
+            : kind === "slides"
+              ? await makeSlidesDeliverable(uid, latest.current, topic)
+              : await makeNoteDeliverable(uid, latest.current);
+        if ("error" in result) {
+          setError(result.error);
+          return;
+        }
+        update((current) => ({ ...current, outputs: [...(current.outputs ?? []), result.output] }));
+        // The notice strip, deliberately — see showNotice's own comment above.
+        setError(
+          kind === "flashcards"
+            ? "Flashcards saved to your Library."
+            : kind === "slides"
+              ? "Slides saved to your Library. Download them from the outputs panel."
+              : "Note saved to your Library.",
+        );
+      } finally {
+        makingRef.current = false;
+        setMaking(null);
+      }
+    },
+    [uid, update],
+  );
+
   const converse = useCallback(
     async (
       question: string,
@@ -1121,6 +1159,21 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!id) return null;
       const said = question.trim();
       if (!said) return null;
+      // 🔴 AN UNMISTAKABLE ARTIFACT ASK IS AN ORDER, NOT A QUESTION (owner 2026-08-25: "if you
+      // ask them to make a PowerPoint, then it'll do it for you"). Routed before the policy
+      // turn: the learner asked for a THING, and a lesson about the thing instead reads as a
+      // refusal. readDeliverableAsk is deliberately narrow — every ambiguous phrasing falls
+      // through to the ordinary turn.
+      const askedFor = readDeliverableAsk(said);
+      if (askedFor) {
+        setBusy({ blockIds: [], kind: "command", label: askedFor === "slides" ? "Building your slides" : askedFor === "flashcards" ? "Making your flashcards" : "Writing your note" });
+        try {
+          await makeDeliverable(askedFor, said);
+        } finally {
+          setBusy({ kind: null });
+        }
+        return null;
+      }
       setError(null);
       setBusy({ kind: "command", blockIds: [], label: "Thinking" });
       // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
@@ -2073,32 +2126,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
      *  persists; the Outputs tab and the Library both read what this writes. */
     addOutput: (output: CanvasOutput) =>
       update((current) => ({ ...current, outputs: [...(current.outputs ?? []), output] })),
-    makeDeliverable: async (kind: DeliverableKind) => {
-      // The ref, not the state: two clicks in one frame both see `making === null`.
-      if (makingRef.current) return;
-      if (!uid) {
-        setError("Sign in to save things to your library.");
-        return;
-      }
-      makingRef.current = true;
-      setMaking(kind);
-      try {
-        const result =
-          kind === "flashcards"
-            ? await makeFlashcardsDeliverable(uid, latest.current)
-            : await makeNoteDeliverable(uid, latest.current);
-        if ("error" in result) {
-          setError(result.error);
-          return;
-        }
-        update((current) => ({ ...current, outputs: [...(current.outputs ?? []), result.output] }));
-        // The notice strip, deliberately — see showNotice's own comment above.
-        setError(kind === "flashcards" ? "Flashcards saved to your Library." : "Note saved to your Library.");
-      } finally {
-        makingRef.current = false;
-        setMaking(null);
-      }
-    },
+    makeDeliverable,
     making,
     remove: async () => {
       // Written through before navigating away. The debounced autosave would otherwise fire

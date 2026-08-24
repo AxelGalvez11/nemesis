@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { canvasBrief, canvasHasMaterial, readCardsJson } from "./canvas-deliverables";
+import { canvasBrief, canvasHasMaterial, readCardsJson, readDeliverableAsk } from "./canvas-deliverables";
 import { newCanvas } from "./canvas-store";
 
 // The deliverables seam: a chatty model on one side, three real stores on the other. The
@@ -67,4 +67,30 @@ test("a deck lands in BOTH places the owner named: the library's tables and the 
   const page = readFileSync(new URL("../../app/(workspace)/library/page.tsx", import.meta.url), "utf8");
   assert.ok(page.includes("LibraryOutputs"), "/library stopped being the outputs home");
   assert.ok(!page.includes("<CanvasManager"), "/library went back to managing canvases — the sidebar does that now");
+});
+
+test("an unmistakable ask is read; anything ambiguous falls through to the ordinary turn", () => {
+  // Owner 2026-08-25: "if you ask them to make a PowerPoint, then it'll do it for you." The
+  // cost of a false match is a stolen turn, so ambiguity always loses.
+  assert.equal(readDeliverableAsk("Make me a PowerPoint about the French Revolution"), "slides");
+  assert.equal(readDeliverableAsk("can you create a slide deck on mitosis?"), "slides");
+  assert.equal(readDeliverableAsk("please generate a presentation for my seminar"), "slides");
+  assert.equal(readDeliverableAsk("make flashcards from this chapter"), "flashcards");
+  assert.equal(readDeliverableAsk("create a summary note of what we covered"), "note");
+
+  assert.equal(readDeliverableAsk("How do I make a good presentation?"), null, "advice, not an order");
+  assert.equal(readDeliverableAsk("What makes a strong slide deck?"), null);
+  assert.equal(readDeliverableAsk("Why do presentations use so many bullet points?"), null);
+  assert.equal(readDeliverableAsk("Tell me about the French Revolution"), null);
+  assert.equal(readDeliverableAsk("The presentation of symptoms varies"), null, "noun without a make-verb");
+});
+
+test("slides are the generalist deliverable: grounded when material exists, model knowledge when not", () => {
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  assert.ok(source.includes("makeSlidesDeliverable"), "the slides maker is gone");
+  assert.match(source, /grounded\s*\?\s*canvasBrief/, "a grounded canvas no longer feeds the deck its material");
+  assert.ok(source.includes("no attached material"), "the ungrounded path lost its honest framing");
+  assert.match(source, /plan\.references = grounded/, "references no longer come from the canvas's own sources");
+  assert.match(source, /kind: "generated_slides"/, "slides left the assets ledger");
+  assert.ok(source.includes("deck: plan"), "the plan no longer rides the canvas output — downloads would have nothing to rebuild from");
 });

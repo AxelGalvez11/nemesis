@@ -24,11 +24,13 @@ import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 
+import { deckSystemPrompt, readDeckJson } from "../export/deck-plan";
+
 import type { CanvasOutput, LearningCanvas } from "./canvas-model";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
 
-/** What the canvas can make today. Slides and reports join when they have a real home. */
-export type DeliverableKind = "flashcards" | "note";
+/** What the canvas can make today. Reports join when they have a real home. */
+export type DeliverableKind = "flashcards" | "note" | "slides";
 
 export interface DeliverableResult {
   output: CanvasOutput;
@@ -215,4 +217,100 @@ export async function makeNoteDeliverable(
       title: saved.title,
     },
   };
+}
+
+// ---------------------------------------------------------------- slides
+
+/**
+ * Slides are the GENERALIST deliverable (owner 2026-08-25: "users will ask for slides on
+ * anything… it needs to be a generalist tool just like ChatGPT and Claude"): grounded in the
+ * canvas's material when there is any, and built from the model's own knowledge of the topic
+ * when there is none. The other two makers refuse an empty canvas; this one only refuses an
+ * empty canvas WITH no topic to work from.
+ *
+ * The model writes a slide PLAN (deck-plan.ts is the border control); the theme in
+ * deck-pptx.ts does every visual. References are filled HERE from the canvas's own sources —
+ * the prompt forbids the model inventing any.
+ */
+export async function makeSlidesDeliverable(
+  uid: string,
+  canvas: LearningCanvas,
+  topic?: string,
+): Promise<DeliverableResult | DeliverableFailure> {
+  const grounded = canvasHasMaterial(canvas);
+  const subject = (topic ?? "").trim() || canvas.title.trim();
+  if (!grounded && !subject) {
+    return { error: "Give the deck a topic first: type what the slides should be about." };
+  }
+  const brief = grounded
+    ? canvasBrief(canvas)
+    : `Topic: ${subject}\n\nThere is no attached material. Build the deck from your own knowledge of the topic, accurately and at student level.`;
+  const reply = await postChatCompletion(uid, [
+    { content: deckSystemPrompt(), role: "system" },
+    { content: brief, role: "user" },
+  ]);
+  if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
+  const plan = readDeckJson(reply.text);
+  if (!plan) return { error: "The slide plan came back unusable, so nothing was saved. Try again." };
+  // References only from what the canvas really holds — never from the model.
+  plan.references = grounded
+    ? canvas.sources.slice(0, 10).map((source) => ({
+        title: source.title,
+        ...(source.sourceUrl ? { url: source.sourceUrl } : {}),
+      }))
+    : [];
+
+  const assetId = await recordSlidesLedger(canvas.id, plan.title);
+  return {
+    output: {
+      ...(assetId ? { assetId } : {}),
+      createdAt: new Date().toISOString(),
+      deck: plan,
+      id: newId(),
+      kind: "slides",
+      title: plan.title,
+    },
+  };
+}
+
+/** Slides get their own asset kind so the Library can list them without loading canvases. */
+async function recordSlidesLedger(canvasId: string, title: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from("assets")
+      .insert({ kind: "generated_slides", title: title.slice(0, 300) })
+      .select("id")
+      .single();
+    if (error || !data) return null;
+    const assetId = (data as { id: string }).id;
+    await supabase.from("canvas_outputs").insert({ asset_id: assetId, canvas_id: canvasId });
+    return assetId;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------- the chat ask
+
+/**
+ * Read an UNMISTAKABLE artifact ask out of a chat turn — "make me a PowerPoint about…",
+ * "create flashcards for this" — or nothing.
+ *
+ * 🔴 NARROW BY DESIGN, BECAUSE THE COST OF A FALSE MATCH IS A STOLEN TURN. A learner asking
+ * "how do I make a good presentation?" wants teaching, and getting a file instead reads as
+ * the system not listening. So: a make-verb within arm's reach of an artifact noun, and the
+ * turn must not OPEN as a question about making (how/why/what/when/where/whether). Everything
+ * ambiguous falls through to the ordinary turn, which can always still offer.
+ */
+export function readDeliverableAsk(text: string): DeliverableKind | null {
+  const said = text.trim();
+  if (/^(?:how|why|what|when|where|whether)\b/i.test(said)) return null;
+  const match =
+    /\b(?:make|create|build|generate|give)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(summary note|study note))\b/i.exec(
+      said,
+    );
+  if (!match) return null;
+  if (match[1]) return "slides";
+  if (match[2]) return "flashcards";
+  return "note";
 }

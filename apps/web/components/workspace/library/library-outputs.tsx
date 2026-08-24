@@ -18,8 +18,9 @@
 // forever-empty shelves and read as broken (the §38.3 lesson).
 
 import { useCallback, useEffect, useState } from "react";
-import { GraduationCap, Layers, NotebookText } from "lucide-react";
+import { GraduationCap, Layers, MonitorPlay, NotebookText } from "lucide-react";
 
+import { loadCanvas } from "@/lib/learn/canvas-store";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,13 @@ interface Card {
   back: string;
 }
 
+interface SlidesRow {
+  assetId: string;
+  canvasId: string | null;
+  title: string;
+  createdAt: string;
+}
+
 const SECTION_TITLE = "px-1 pb-2 text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-secondary)";
 const ROW =
   "flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:bg-(--ui-control-hover-background)";
@@ -59,6 +67,8 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   const [loaded, setLoaded] = useState(false);
   const [openDeck, setOpenDeck] = useState<string | null>(null);
   const [cards, setCards] = useState<Record<string, Card[]>>({});
+  const [slides, setSlides] = useState<SlidesRow[]>([]);
+  const [fetching, setFetching] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) {
@@ -68,7 +78,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
     let alive = true;
     void (async () => {
       try {
-        const [deckRes, noteRes] = await Promise.all([
+        const [deckRes, noteRes, slidesRes] = await Promise.all([
         supabase
           .from("study_decks")
           .select("id,name,created_at,study_cards(count)")
@@ -80,6 +90,16 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           .eq("kind", "note")
           .eq("deleted", false)
           .order("updated_at", { ascending: false })
+          .limit(200),
+        // Slides live as their PLAN on the canvas that made them; the assets ledger is what
+        // lets this page list them without loading every canvas. Download loads the one
+        // canvas and rebuilds the file from the stored plan.
+        supabase
+          .from("assets")
+          .select("id,title,created_at,canvas_outputs(canvas_id)")
+          .eq("kind", "generated_slides")
+          .eq("deleted", false)
+          .order("created_at", { ascending: false })
           .limit(200),
       ]);
       if (!alive) return;
@@ -102,6 +122,18 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
             title: row.title,
             updatedAt: row.updated_at,
           })),
+        );
+      }
+      if (!slidesRes.error && slidesRes.data) {
+        setSlides(
+          (slidesRes.data as { id: string; title: string; created_at: string; canvas_outputs: { canvas_id: string }[] }[]).map(
+            (row) => ({
+              assetId: row.id,
+              canvasId: row.canvas_outputs?.[0]?.canvas_id ?? null,
+              createdAt: row.created_at,
+              title: row.title,
+            }),
+          ),
         );
       }
       } finally {
@@ -184,6 +216,52 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                     )}
                   </div>
                 )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="pb-10">
+        <h2 className={SECTION_TITLE}>Slides</h2>
+        {slides.length === 0 ? (
+          <p className="px-1 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+            {loaded
+              ? "No slide decks yet. On a canvas, ask for a PowerPoint, or press Make slides in the outputs panel."
+              : "Loading…"}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-0.5">
+            {slides.map((row) => (
+              <li key={row.assetId}>
+                <button
+                  className={cn(ROW, "disabled:opacity-60")}
+                  disabled={fetching === row.assetId || !row.canvasId}
+                  onClick={() =>
+                    void (async () => {
+                      if (!row.canvasId) return;
+                      setFetching(row.assetId);
+                      try {
+                        const canvas = await loadCanvas(userId, row.canvasId);
+                        const output = canvas?.outputs?.find((entry) => entry.assetId === row.assetId && entry.deck);
+                        if (!output?.deck) return;
+                        const { downloadDeck } = await import("@/lib/export/deck-download");
+                        await downloadDeck(output.deck, output.title);
+                      } finally {
+                        setFetching(null);
+                      }
+                    })()
+                  }
+                  type="button"
+                >
+                  <MonitorPlay className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
+                    {row.title}
+                  </span>
+                  <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                    {fetching === row.assetId ? "Building…" : `.pptx · ${when(row.createdAt)}`}
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
