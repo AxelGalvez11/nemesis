@@ -79,7 +79,7 @@ test("🔴🔴 the offered apps are a closed list", () => {
   // Composio brokers hundreds of apps. Offering all of them turns a study tool into an
   // integrations directory, and every extra app is another consent screen clicked unread.
   assert.match(ROUTE, /if \(!APPS\.some\(\(entry\) => entry\.key === app\)\)/, "any app slug can now be connected");
-  for (const app of ["googledrive", "gmail", "googlecalendar"]) {
+  for (const app of ["googledrive", "gmail", "googlecalendar", "googledocs"]) {
     assert.ok(ROUTE.includes(`"${app}"`), `${app} is no longer offered`);
   }
 });

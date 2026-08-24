@@ -45,6 +45,10 @@ const APPS = [
   { detail: "Read lecture slides and notes you already keep there.", key: "googledrive", label: "Google Drive" },
   { detail: "Read your school mail, including the syllabus nobody forwards twice.", key: "gmail", label: "Gmail" },
   { detail: "See what is due, and put dates you mention on the calendar.", key: "googlecalendar", label: "Google Calendar" },
+  // Added 2026-08-24 at the owner's request, after they created its auth config. Reading a shared
+  // set of class notes is the same act as reading a lecture slide, so it costs no new safety
+  // thinking — `riskOf` classifies by verb and has never known which app it was looking at.
+  { detail: "Read notes and essays you keep there, including ones shared with you.", key: "googledocs", label: "Google Docs" },
 ] as const;
 
 type AppKey = (typeof APPS)[number]["key"];
