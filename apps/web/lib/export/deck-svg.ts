@@ -135,6 +135,42 @@ function bulletsSvg(item: SceneBullets, k: number): string {
   return out.join("");
 }
 
+/**
+ * The rectangle a text or bullet block will ACTUALLY occupy, as opposed to the box it was
+ * given — layout boxes are deliberately generous, so only a measured extent can answer "is
+ * anything sitting on top of anything". Exported for the composition tests.
+ */
+export function measureText(item: SceneText | SceneBullets): Box {
+  if (item.kind === "text") {
+    const lineH = (item.size / 72) * (item.lineSpacing ?? 1.18);
+    const content = item.caps ? item.text.toUpperCase() : item.text;
+    const lines = wrap(content, item.box.w, item.size, item.font, item.bold);
+    const h = Math.max(lines.length * lineH, lineH);
+    const widest = Math.max(...lines.map((l) => l.length), 1) * (item.size / 72) * emWidth(item.font, item.bold ?? false);
+    const w = Math.min(item.box.w, widest);
+    const y =
+      item.valign === "middle"
+        ? item.box.y + (item.box.h - h) / 2
+        : item.valign === "bottom"
+          ? item.box.y + item.box.h - h
+          : item.box.y;
+    const x =
+      item.align === "center"
+        ? item.box.x + (item.box.w - w) / 2
+        : item.align === "right"
+          ? item.box.x + item.box.w - w
+          : item.box.x;
+    return { h, w, x, y };
+  }
+  const lineH = (item.size / 72) * (item.lineSpacing ?? 1.24);
+  const gap = (item.gap ?? 8) / 72;
+  let h = 0;
+  for (const raw of item.items) {
+    h += wrap(raw, item.box.w, item.size, item.font).length * lineH + gap;
+  }
+  return { h: Math.max(0, h - gap), w: item.box.w, x: item.box.x, y: item.box.y };
+}
+
 /** Draw the scene at `width` pixels wide (the slide's aspect is fixed). */
 export async function sceneToSvg(scene: Scene, width = 800): Promise<string> {
   const k = width / SLIDE_W;
