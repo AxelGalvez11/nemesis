@@ -159,7 +159,9 @@ test("🔴 every shape the validator accepts survives RoutedVisual's narrowing t
   // silently again.
   const source = await SOURCE;
   const { SUBJECT_KINDS } = await import("@/lib/learn/subject-visuals");
-  for (const kind of SUBJECT_KINDS) {
+  // The spec-backed kinds that live outside SUBJECT_KINDS ride the same narrowing and rot the
+  // same way — "anatomy" joined the day after this tripwire was written, through this list.
+  for (const kind of [...SUBJECT_KINDS, "anatomy"]) {
     assert.ok(
       source.includes(`route.representation !== "${kind}"`),
       `RoutedVisual never lets a "${kind}" through to SemanticVisual — the shape validates and then draws nothing`,

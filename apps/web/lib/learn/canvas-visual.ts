@@ -178,7 +178,39 @@ export interface FigureVisual extends CanvasVisualBase {
   asset?: CandidateAsset;
 }
 
+/**
+ * A named anatomical structure, shown inside its region of the atlas — §42's ladder reaching the
+ * human body (owner order, 2026-08-24: Z-Anatomy).
+ *
+ * 🔴 THE MODEL NAMES A STRUCTURE AND STOPS THERE, the same boundary `figure` and `macromolecule`
+ * hold. `anatomy-resolve.ts` looks the name up in `anatomy-atlas.ts` — a registry generated from
+ * the atlas's OWN node names at harvest time — and stamps which region file to load and which
+ * named meshes to pick out. A name the atlas does not carry loses its picture, never the prose.
+ *
+ * 🔴 THE ASSET IS A SAME-ORIGIN PATH, NEVER A URL. The meshes live in this deployment's own
+ * `/anatomy/` directory, harvested by script from a named CC BY-SA source with its NC textures
+ * stripped — so there is no external host to allow-list and nothing a model writes can point the
+ * viewer anywhere else.
+ */
+export interface AnatomyVisual extends CanvasVisualBase {
+  kind: "anatomy";
+  /** What must be shown, as the model asked for it — kept for the record. */
+  structure: string;
+  /** Stamped by the resolve pass from the atlas registry. Required: unresolved never renders. */
+  resolved?: {
+    /** The atlas region slug, e.g. "overview-skeleton". */
+    region: string;
+    /** What a lesson calls the region. */
+    regionTitle: string;
+    /** Same-origin mesh path under /anatomy/. */
+    assetPath: string;
+    /** The atlas node names to pick out. Empty means: show the whole region. */
+    structures: readonly string[];
+  };
+}
+
 export type CanvasVisualRequest =
+  | AnatomyVisual
   | EquationVisual
   | FigureVisual
   | FlowVisual
@@ -305,6 +337,14 @@ export type VisualRefusal =
   | "malformed-figure"
   /** A macromolecule request without a usable accession. `detail` names the field. */
   | "malformed-macromolecule"
+  /**
+   * An anatomy request that is not usable. `detail` carries the specific reason.
+   *
+   * 🔴 THE INTERESTING CASE IS AN UNRESOLVED ONE — a request no resolver stamped, which means the
+   * resolve pass never ran or the atlas had no such structure. Refusing it here is what keeps the
+   * registry the only door to the mesh files, exactly as a gridless surface refuses.
+   */
+  | "malformed-anatomy"
   /** An edge polarity naming something no renderer draws. */
   | "malformed-polarity"
   /**
@@ -597,6 +637,42 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
         kind: "macromolecule",
         ...(title ? { title } : {}),
         ...(resolved ? { resolvedFrom: resolved } : {}),
+      },
+    };
+  }
+
+  if (value.kind === "anatomy") {
+    const structure = boundedText(value.structure, 80);
+    if (!structure) return refuse("text-out-of-bounds", "structure must be 1–80 characters");
+    if (!record(value.resolved)) {
+      return refuse("malformed-anatomy", "an anatomy view draws only what the atlas resolver stamped, and this one was never resolved");
+    }
+    const region = boundedText(value.resolved.region, 40);
+    const regionTitle = boundedText(value.resolved.regionTitle, 60);
+    const assetPath = boundedText(value.resolved.assetPath, 120);
+    if (!region || !/^[a-z0-9-]+$/.test(region)) return refuse("malformed-anatomy", "the resolved region must be a lowercase slug");
+    if (!regionTitle) return refuse("malformed-anatomy", "the resolved region needs its title");
+    // 🔴 A PATH, NEVER A URL. Same-origin under /anatomy/ is the whole asset story for this lane;
+    // anything else is a model steering the viewer somewhere, and refuses by name.
+    if (!assetPath || !/^\/anatomy\/[a-z0-9-]+\.glb$/.test(assetPath)) {
+      return refuse("malformed-anatomy", "the mesh must be a same-origin /anatomy/….glb path");
+    }
+    if (!Array.isArray(value.resolved.structures) || value.resolved.structures.length > 40) {
+      return refuse("malformed-anatomy", "resolved structures must be a list of at most 40 names");
+    }
+    const structures: string[] = [];
+    for (const name of value.resolved.structures) {
+      const bounded = boundedText(name, 80);
+      if (!bounded) return refuse("malformed-anatomy", "every resolved structure name must be 1–80 characters");
+      structures.push(bounded);
+    }
+    return {
+      ok: true,
+      visual: {
+        ...common,
+        kind: "anatomy",
+        resolved: { assetPath, region, regionTitle, structures },
+        structure,
       },
     };
   }

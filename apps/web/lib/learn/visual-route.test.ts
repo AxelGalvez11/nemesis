@@ -341,14 +341,15 @@ test("🔴 no subject-matter vocabulary has crept into the router", () => {
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*") && !line.trimStart().startsWith("/*"))
     .join("\n")
-    // 🔴 TWO CARVE-OUTS, BOTH THE REPRESENTATION LITERAL ITSELF. `"macromolecule"` is a §42 shape
+    // 🔴 THREE CARVE-OUTS, ALL THE REPRESENTATION LITERAL ITSELF. `"macromolecule"` is a §42 shape
     // name — an accession drawn by a viewer, the same semantic class "structure" is — and
-    // `"circuit"` is the §44 shape the owner ordered on 2026-08-24: a series/parallel network
-    // diagram drawn from structure, the same semantic class "vectors" is. The contract chose both
+    // `"circuit"` and `"anatomy"` are the shapes the owner ordered on 2026-08-24: a series/parallel
+    // network diagram and a named structure in the harvested atlas. The contract chose all three
     // names. Removing exactly the quoted literals keeps this guard armed against every OTHER
-    // appearance of either word: a branch, a comparison, a keyword list would all still trip it.
+    // appearance of these words: a branch, a comparison, a keyword list would all still trip it.
     .replaceAll('"macromolecule"', "")
-    .replaceAll('"circuit"', "");
+    .replaceAll('"circuit"', "")
+    .replaceAll('"anatomy"', "");
   for (const word of ["anatomy", "molecule", "chemistry", "biology", "physics", "pharmac", "drug", "legal", "statute", "circuit"]) {
     assert.equal(code.toLowerCase().includes(word), false, `the router branches on the subject "${word}"`);
   }

@@ -6,6 +6,7 @@ import { useId, useMemo } from "react";
 import type { CanvasVisualRequest, FlowVisual, PlotVisual } from "@/lib/learn/canvas-visual";
 import { layoutFlow, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
 
+import { AnatomyViewer } from "./anatomy-viewer";
 import { ChemicalStructure } from "./chemical-structure";
 import { Macromolecule } from "./macromolecule-viewer";
 import { MusicScore } from "./music-score";
@@ -53,6 +54,7 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
       {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
       {visual.kind === "structure" ? <ChemicalStructure visual={visual} /> : null}
       {visual.kind === "macromolecule" ? <Macromolecule visual={visual} /> : null}
+      {visual.kind === "anatomy" ? <AnatomyViewer visual={visual} /> : null}
       {visual.kind === "table" ? <DataTable visual={visual} /> : null}
       {visual.kind === "timeline" ? <Timeline visual={visual} /> : null}
       {visual.kind === "construction" ? <Construction visual={visual} /> : null}

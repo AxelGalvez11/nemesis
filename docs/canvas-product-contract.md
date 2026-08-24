@@ -1342,7 +1342,7 @@ enjoyable engineering should read this line as the answer.
 
 # 42. 🔴 SCIENTIFIC REPRESENTATION IS A TRUST LADDER — generation is the last rung, not the first (owner, 2026-08-18)
 
-## STATUS: RUNGS ONE, TWO AND THREE SHIPPED AND SERVING. A LESSON OR A REPLY RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT; A LESSON NOW REQUESTS A REAL LICENSED PICTURE BY SUBJECT AND A 3D MACROMOLECULE BY NAME, BOTH RESOLVED SERVER-SIDE AND LICENCE-GATED. THE CURATED REGISTRY IS SEEDED AND A LIVE PROVIDER STANDS BEHIND IT. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
+## STATUS: RUNGS ONE, TWO AND THREE SHIPPED AND SERVING. A LESSON OR A REPLY RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT; A LESSON NOW REQUESTS A REAL LICENSED PICTURE BY SUBJECT, A 3D MACROMOLECULE BY NAME, AND A NAMED ANATOMICAL STRUCTURE FROM THE HARVESTED ATLAS (2026-08-24). THE CURATED REGISTRY IS SEEDED AND A LIVE PROVIDER STANDS BEHIND IT. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
 
 🔴 **Rung three went live on 2026-08-23, on the owner's instruction** (*"let's ingest it… can you
 put those APIs in as well… Nemesis or DeepSeek needs to be able to have access to a lot of these
@@ -1364,6 +1364,28 @@ database's public file store the way reference images are fetched from theirs. T
 title stay printed beside the viewer — the same inspectability a SMILES string gets. A
 model-written accession is refused by construction: four opaque characters are the remembered-
 SMILES danger with fewer ways to notice, so only the resolver mints them.
+
+🔴 **The anatomy atlas shipped 2026-08-24, on the owner's order ("what I would like is z anatomy"),
+and it is the ladder reaching the body.** `{"kind":"anatomy","structure":"sacrum"}` resolves
+against `anatomy-atlas.ts` — a registry GENERATED at harvest time from the atlas model's own node
+names ("Atlas (C1)", "Frontal bone", "Sacrum"), so the vocabulary of askable structures is the
+atlas authors', never ours and never the model's. The resolve pass (`anatomy-resolve.ts`) is
+synchronous — the registry is a few kilobytes compiled in beside it — and stamps which region file
+to load and which named meshes to pick out; "cervical vertebrae" stamps all five, a left/right
+pair stamps both, and an ask too broad to point at anything ("bone") becomes the whole-region
+view rather than a smear of highlights. The viewer (`anatomy-viewer.tsx`, three.js in its own
+chunk, the Mol* discipline: render on gesture, dispose on unmount) ghosts everything the stamp did
+not name and frames the camera on what it did — a teacher's pointer, done with the camera.
+
+🔴 **THE MESHES ARE HARVESTED, LICENCE-CLEANED, AND SERVED FROM OUR OWN DEPLOYMENT.**
+`scripts/anatomy-harvest.mts` downloads named regions from the Open3DModel project (Dutch/Belgian
+university revisions of Z-Anatomy, itself descended from BodyParts3D), whose MESHES are CC BY-SA
+4.0 and whose TEXTURES are CC BY-NC-SA — and NC is refused across this codebase by design, so the
+harvest strips every texture, image and UV channel before anything reaches the repo. What ships is
+geometry in our own material: the whole labelled skeleton is 1.5 MB, Draco-compressed, decoded by
+the decoder `copy-draco-decoder.mjs` copies out of our own three.js dependency at build time. The
+validator holds the asset to a same-origin `/anatomy/….glb` path — there is no external host in
+this lane at all, and a model-written URL refuses by name.
 
 🔴 **The resolver was wired on 2026-08-21, and until then this section described something no
 learner had ever seen.** `chem-resolver.ts` was built, tested and merged, and `grep -r
@@ -1520,6 +1542,7 @@ provenance rather than about subject matter.
 | Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
 | Macromolecular structure | `{"kind":"macromolecule","molecule":"…"}` — a name, resolved to a PDB accession | **shipped** (Mol* viewer, RCSB resolver) |
 | Electron-pushing arrows on a structure | `arrows: [{from, to}]` — heavy-atom indices, the `highlight` index space | **shipped 2026-08-24** (curly arrows drawn over the depiction's own computed atom positions) |
+| Anatomy (3D body) | `{"kind":"anatomy","structure":"…"}` — a name, resolved against the harvested atlas registry | **shipped 2026-08-24** (Open3DModel / Z-Anatomy meshes, same-origin, textures stripped for licence) |
 
 ## 🔴 CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION
 
