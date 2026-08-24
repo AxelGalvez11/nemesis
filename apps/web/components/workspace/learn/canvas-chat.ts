@@ -54,6 +54,7 @@ import {
   type TurnDecision,
   type TurnExchange,
 } from "@/lib/learn/turn-router";
+import { hostnameOf } from "@/lib/favicon";
 import { loadMemory, memoryBlock } from "@/lib/learn/learner-memory";
 
 /** The non-thinking model, same choice `lib/learn/canvas-api.ts`'s own `ask()` makes for every
@@ -139,6 +140,27 @@ export interface CanvasTurnReply {
  * `use-canvas-session.ts` for the two things "study" can mean and why the canvas, not the model,
  * picks between them.
  */
+/**
+ * The distinct sites a set of results came from, in the order they arrived.
+ *
+ * 🔴 `hostnameOf` IS THE ONE PARSER, shared with the source pills and the sources panel, so a host
+ * that renders one way in the panel cannot render another way on the dock. A URL it cannot parse
+ * contributes nothing rather than a placeholder chip.
+ *
+ * PURE.
+ */
+export function searchedDomains(sources: readonly { url: string }[]): readonly string[] {
+  const seen = new Set<string>();
+  const domains: string[] = [];
+  for (const source of sources) {
+    const host = hostnameOf(source.url);
+    if (!host || seen.has(host)) continue;
+    seen.add(host);
+    domains.push(host);
+  }
+  return domains;
+}
+
 export async function askCanvasChat(
   uid: string,
   canvas: LearningCanvas,
@@ -161,7 +183,23 @@ export async function askCanvasChat(
    * comes back in the reply, but that arrives AFTER the search and the model call — several seconds
    * too late to be the thing that says "searching". This fires before the request goes out.
    */
-  onSearching?: (found: number | null) => void,
+  /**
+   * Fires twice per search round: `null` when the request goes out, then the running page count
+   * once the results are in hand.
+   *
+   * 🔴🔴 THE SECOND BEAT NOW ALSO CARRIES THE HOSTS, because that is the first moment they are
+   * KNOWN rather than guessed. The dock renders a favicon chip per host (nemesis-5e's lane, agreed
+   * contract 2026-08-24), and `thinking-phases.ts`'s standing rule applies to a picture exactly as
+   * it does to a caption: a favicon for a domain we merely might hit is the same theatre as a
+   * caption for a step that is not running. So the first beat passes `[]` — a search is happening
+   * and nothing is known about where yet — and the second passes what actually came back.
+   *
+   * 🔴 DEDUPED BY HOST, NOT BY URL. Four pages from one site is one place the answer stands on;
+   * four identical favicons would say the opposite. Order is the order the results arrived, which
+   * is the order the search ranked them, and NOT truncated — the dock decides how many to draw and
+   * wants the real count for its "+N".
+   */
+  onSearching?: (found: number | null, domains: readonly string[]) => void,
   /**
    * The milestones this turn will show, the moment the model states them.
    *
@@ -302,7 +340,7 @@ export async function askCanvasChat(
     // their search. What they are being told is how many pages this answer stands on.
     // 🔴 THE REQUEST IS ABOUT TO GO OUT. This is the event, not a prediction of one.
     enter("searching");
-    onSearching?.(null);
+    onSearching?.(null, []);
     const found = await searchWebContext(
       uid,
       decision.webQuery || question,
@@ -315,7 +353,10 @@ export async function askCanvasChat(
       seen.add(source.url);
       sources.push(source);
     }
-    onSearching?.(sources.length);
+    // 🔴 BUILT FROM `sources`, WHICH IS THE DEDUPED, ACCUMULATED LIST THE ANSWER ACTUALLY STANDS
+    // ON — not `found.sources`, which is this round's haul and would make the chips flicker between
+    // rounds of one turn. Same argument the running total above is built on.
+    onSearching?.(sources.length, searchedDomains(sources));
     // Pages are in hand and the model is about to read them.
     enter("reading");
     // Re-numbered over everything gathered, so the numbers the model reads are the numbers

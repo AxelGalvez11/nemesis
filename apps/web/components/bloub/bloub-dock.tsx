@@ -90,6 +90,22 @@ export interface BloubDockProps {
    */
   captionLeaving?: boolean;
   /**
+   * The sites the turn in flight is reading, deduped, in the order the search ranked them.
+   *
+   * 🔴 ACCEPTED HERE AND NOT YET DRAWN — a deliberate, agreed half-step (nemesis-5e ↔ this lane,
+   * 2026-08-24). The data half lives in `canvas-chat.ts` / `use-canvas-session.ts`; the chips are
+   * this file's to draw, and its owner asked for the prop to land first so the wiring could be
+   * finished without two sessions editing the dock at once. Rendering nothing for it is correct
+   * until then, and strictly better than the caller holding the list with nowhere to send it.
+   *
+   * 🔴 NOT TRUNCATED BY THE CALLER, BY REQUEST. The renderer decides how many chips to draw and
+   * needs the real count for its "+N".
+   *
+   * 🔴 `undefined` AND `[]` MEAN THE SAME THING: no chips. There is no third state, so no caller
+   * has to special-case a search that found nothing.
+   */
+  domains?: readonly string[];
+  /**
    * Where the character stands, when the surface knows better than the pose does.
    *
    * 🔴🔴 THE POSE USED TO DECIDE, AND IT CANNOT ANY MORE. `stationOf` reads the state id, which
@@ -162,6 +178,8 @@ export interface BloubDockProps {
 export function BloubDock({
   caption = null,
   captionLeaving: leaving = false,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted now, drawn by its owner; see the prop's doc.
+  domains: _domains = [],
   station: stationOverride,
   marker = null,
   state = "idle",

@@ -20,10 +20,16 @@ const CANVAS = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "
 const CSS = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 
 test("🔴 a stage is entered beside the thing it names, never on a clock", () => {
+  // 🔴 THE PROPERTY IS ADJACENCY, NOT THE ARGUMENT LIST. `onSearching` gained a second argument on
+  // 2026-08-24 (the hosts, for the dock's favicon chips) and these two patterns stopped matching —
+  // while the thing they exist to protect was untouched: each beat still fires beside the real
+  // event. So they were widened to allow arguments and kept strict about the ORDER, which is what
+  // a clock-driven stage would break. Anything else is a rewrite that quietly lowers the bar.
+  //
   // The search request going out.
-  assert.match(CHAT, /enter\("searching"\);\s*\n\s*onSearching\?\.\(null\);/);
-  // Results in hand.
-  assert.match(CHAT, /onSearching\?\.\(sources\.length\);\s*\n\s*\/\/[^\n]*\n\s*enter\("reading"\);/);
+  assert.match(CHAT, /enter\("searching"\);\s*\n\s*onSearching\?\.\(null[^)]*\);/);
+  // Results in hand. The hosts ride this beat because it is the first moment they are known.
+  assert.match(CHAT, /onSearching\?\.\(sources\.length[^)]*\)*\);\s*\n\s*\/\/[^\n]*\n\s*enter\("reading"\);/);
   // Tools done.
   assert.match(CHAT, /enter\("finishing"\);/);
   // 🔴 AND NOTHING SCHEDULES ONE. A timer here would be the exact theatre `thinking-phases.ts` bans.

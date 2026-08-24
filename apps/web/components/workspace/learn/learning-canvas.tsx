@@ -1993,6 +1993,12 @@ export function LearningCanvas({
         // it streams, and its first character is the honest end of the wait — not a timer, and not
         // the turn formally finishing.
         captionLeaving={Boolean(replyText.trim())}
+        // 🔴🔴 GATED ON THE TURN, NOT ON THE LIST BEING NON-EMPTY, and that is what makes a stale
+        // chip unrepresentable. The session clears the hosts when a fresh request goes out, but
+        // computing the gate HERE means no cleanup path has to be remembered: between turns there
+        // is no turn in flight, so there are no chips, whatever the session happens to be holding.
+        // Same construction as `caption` on the line above.
+        domains={turnInFlight ? session.searchedDomains : undefined}
         // 🔴 THE SURFACE KNOWS, BECAUSE THE POSE NO LONGER DOES. The character works in `idle` now
         // that the dots are gone, and `idle` is also how it rests — so "come forward" has to be
         // said by whoever knows a turn is in flight rather than inferred from the animation.
