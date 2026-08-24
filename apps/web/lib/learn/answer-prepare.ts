@@ -56,12 +56,60 @@ export interface AnswerDeps {
  */
 export type AnswerStep = (label: string | null) => void;
 
-/** Model text in, model text out — with every formula, compound, figure and accession resolved. */
+/**
+ * Where the decision JSON sits inside a conversational turn.
+ *
+ * 🔴🔴 THE SAME PATTERN AS `turn-router.ts`'s OWN, AND IT HAS TO STAY THAT WAY. That file reads the
+ * decision out of this block; this one has to hand the passes the identical bytes, or a turn gets
+ * resolved in one shape and parsed in another. `answer-prepare.test.ts` holds the two together.
+ */
+const DECISION_BLOCK = /```json\s*\n?([\s\S]*?)```/;
+
+/**
+ * Model text in, model text out — with every formula, compound, figure and accession resolved.
+ *
+ * 🔴🔴🔴 THE FENCE IS UNWRAPPED FIRST, AND NOT DOING SO SILENTLY DISABLED ALL SIX PASSES IN EVERY
+ * CONVERSATION. Each pass below is `JSON.parse(text)`-or-give-up, which was exactly right while a
+ * turn WAS a JSON envelope. Then the contract changed so a conversational turn is a fenced ```json
+ * block FOLLOWED BY PROSE — the change that let the model write `$$\frac{x^3}{3}$$` without JSON
+ * escaping mangling it. From that moment `JSON.parse` threw on every conversational turn, each pass
+ * took its "nothing to walk means nothing to do" branch, and the answer came back unchanged.
+ *
+ * Nothing errored. Three layers each did the safe thing: the passes returned the text untouched,
+ * the validator then refused the unresolved figures ("a surface draws only from a computed grid,
+ * and this one has none"), and the marker stayed in the prose so the learner could see something
+ * was meant to be there. The visible result was `[figure 1]` and no picture — measured on
+ * production 2026-08-24 for a plot, a circuit and the anatomy atlas, every one of which draws
+ * correctly the moment the passes can see the JSON.
+ *
+ * 🔴 PROSE OUTSIDE THE BLOCK IS RETURNED UNTOUCHED. It is the answer the learner reads, it is not
+ * JSON, and no pass here has any business rewriting it. Only the block's contents are replaced, and
+ * only when a pass actually changed them.
+ */
 export async function prepareAnswer(
   text: string,
   deps: AnswerDeps = {},
   signal?: AbortSignal,
   onStep?: AnswerStep,
+): Promise<string> {
+  const block = DECISION_BLOCK.exec(text);
+  if (block) {
+    const inner = block[1] ?? "";
+    const prepared = await prepareJson(inner, deps, signal, onStep);
+    if (prepared === inner) return text;
+    return `${text.slice(0, block.index)}\`\`\`json\n${prepared}\n\`\`\`${text.slice(block.index + block[0].length)}`;
+  }
+  // A lesson job answers with bare JSON, and a rescued turn answers with prose. Both are handled
+  // below exactly as before — the second by each pass's own parse guard.
+  return prepareJson(text, deps, signal, onStep);
+}
+
+/** The six passes, over text that is expected to BE the JSON. */
+async function prepareJson(
+  text: string,
+  deps: AnswerDeps,
+  signal: AbortSignal | undefined,
+  onStep: AnswerStep | undefined,
 ): Promise<string> {
   // 🔴 THE COUNTS COME FROM THE ANSWER ITSELF, NOT FROM A GUESS. Each is the same
   // substring-then-walk its pass already runs, so a label saying "three structures" is saying what
