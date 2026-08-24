@@ -104,13 +104,74 @@ export async function loadMemory(uid: string | null, options: { limit?: number }
   }
 }
 
+/** Words too common to tell two facts apart. Removed before statements are compared. */
+const NOISE = new Set(["a", "an", "and", "the", "of", "for", "to", "in", "on", "is", "my", "i", "am", "at", "it"]);
+
+/** Numbers and dates, which DISTINGUISH two otherwise-identical facts. See `saysTheSameThing`. */
+const FIGURE = /\d/;
+
+function meaningfulWords(statement: string): readonly string[] {
+  return statement
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((word) => word && !NOISE.has(word));
+}
+
+/**
+ * Whether two remembered sentences say the same thing.
+ *
+ * 🔴🔴 FOUND IN PRODUCTION DATA, 2026-08-24, NOT IMAGINED. The first two rows this feature ever
+ * wrote were "Learning the anatomy of the uterus for the first time" (subject) and "Learning the
+ * parts of the uterus for the first time" (context). One fact, stored twice, because the old check
+ * compared exact strings within a single kind. A memory screen that fills with near-copies is the
+ * "memory nobody can navigate" failure this module's own header warns about.
+ *
+ * 🔴🔴🔴 A DIFFERENCE IN ANY NUMBER MEANS THEY ARE DIFFERENT FACTS, AND THIS RULE COMES FIRST.
+ * "Exam on the 14th" and "exam on the 21st" share every other word; on word overlap alone they
+ * would be judged duplicates and the second deadline would be silently dropped. Losing a real
+ * deadline is far worse than showing one extra line, so any disagreement about figures ends the
+ * comparison immediately.
+ *
+ * 🔴 STRUCTURAL, NEVER SUBJECT-MATTER (CLAUDE.md): this counts shared words and compares digits.
+ * It knows nothing about anatomy, law, or any other field.
+ */
+export function saysTheSameThing(left: string, right: string): boolean {
+  const a = meaningfulWords(left);
+  const b = meaningfulWords(right);
+  if (a.length === 0 || b.length === 0) return false;
+
+  // Figures first. Different numbers, different facts, whatever else matches.
+  const figuresIn = (words: readonly string[]) => words.filter((word) => FIGURE.test(word)).sort().join(" ");
+  if (figuresIn(a) !== figuresIn(b)) return false;
+
+  const setA = new Set(a);
+  const setB = new Set(b);
+  let shared = 0;
+  for (const word of setA) if (setB.has(word)) shared += 1;
+  const union = new Set([...setA, ...setB]).size;
+  // 🔴🔴 0.6, AND THE NUMBER WAS CORRECTED BY MEASURING RATHER THAN ESTIMATED. The first draft used
+  // 0.7 on the assumption the production pair scored 0.78 — that figure counted filler words. With
+  // "the/of/for" stripped the real pair scores 4/6 = 0.67, so 0.7 would have shipped a fix that did
+  // not fix the case that prompted it.
+  //
+  // 🔴 AND 0.6 IS STILL WELL CLEAR OF THE PAIRS THAT MUST STAY SEPARATE, each of which is a test:
+  // two subjects (0.2), two topics within one subject (0.5), two preferences (0.5). Anything with a
+  // differing figure never reaches this line at all.
+  return union > 0 && shared / union >= 0.6;
+}
+
 /**
  * Remember one thing.
  *
  * 🔴 IT REFUSES A DUPLICATE RATHER THAN STACKING IT. "Studying contract law" written on four
  * mornings is one fact, and a memory screen that lists it four times reads as broken and makes
- * the learner delete all four. Compared case-insensitively on the trimmed sentence, within the
- * kind — which is cheap here because the whole point of `statement` is that it is short.
+ * the learner delete all four.
+ *
+ * 🔴🔴 COMPARED ACROSS EVERY KIND, NOT WITHIN ONE. The production pair that prompted this filed the
+ * same sentence under `subject` and `context`; a check scoped to one kind cannot see that at all.
+ * The kinds are a filing convenience for the Settings screen, never a reason to hold the same fact
+ * twice.
  */
 export async function rememberLine(
   uid: string | null,
@@ -120,9 +181,7 @@ export async function rememberLine(
   if (!uid || !statement) return false;
   try {
     const existing = await loadMemory(uid);
-    const already = existing.some(
-      (line) => line.kind === input.kind && line.statement.trim().toLowerCase() === statement.toLowerCase(),
-    );
+    const already = existing.some((line) => saysTheSameThing(line.statement, statement));
     if (already) return false;
     const { error } = await supabase.from("learner_memory").insert({
       expires_at: input.expiresAt ?? null,

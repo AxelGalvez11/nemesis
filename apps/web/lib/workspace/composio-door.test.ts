@@ -110,3 +110,12 @@ test("🔴 the screen states the safety line in the learner's own words", () => 
   assert.match(SETTINGS, /read freely/i);
   assert.match(SETTINGS, /wait for you to say yes/i);
 });
+
+test("🔴 the section is called Apps, the word the owner asked for", () => {
+  // Owner 2026-08-24: "can we just call it apps like in ChatGPT". Also the better word on its own
+  // terms — "integrations" is what an engineer calls it, and §38's copy rule is that a control
+  // names what the learner gets.
+  const surface = readFileSync(new URL("../../components/SettingsSurface.tsx", import.meta.url), "utf8");
+  assert.match(surface, /\{ id: "connections", label: "Apps", icon: "plug" \}/, "the Apps section was renamed");
+  assert.ok(!/label: "Connected apps"|label: "Integrations"/.test(surface), "the old engineer-facing label came back");
+});

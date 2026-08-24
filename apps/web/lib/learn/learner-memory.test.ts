@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { MEMORY_KINDS, MEMORY_PACKET_LIMIT, memoryBlock, type MemoryLine } from "./learner-memory";
+import { MEMORY_KINDS, MEMORY_PACKET_LIMIT, memoryBlock, saysTheSameThing, type MemoryLine } from "./learner-memory";
 
 // ── what Nemesis remembers about a person (workstream C) ────────────────────────────────────
 //
@@ -118,4 +118,68 @@ test("🔴 the migration ships with the code that needs it", () => {
   assert.match(sql, /auth\.uid\(\) = user_id/, "one learner could read another's memory");
   // Client-writable on purpose: deleting must work from the learner's own browser.
   assert.ok(!/revoke all on public\.learner_memory/.test(sql), "the learner cannot delete their own memory from the browser");
+});
+
+// ── near-duplicates, found in the first two rows this feature ever wrote ─────────────────────
+
+test("🔴🔴 the real production pair is caught", () => {
+  // Verbatim from learner_memory on 2026-08-24, filed under two different kinds. One fact, twice.
+  assert.equal(
+    saysTheSameThing(
+      "Learning the anatomy of the uterus for the first time.",
+      "Learning the parts of the uterus for the first time.",
+    ),
+    true,
+    "the pair that prompted this fix would still be stored twice",
+  );
+});
+
+test("🔴🔴🔴 two deadlines that differ only by their date are NOT duplicates", () => {
+  // The dangerous direction. These share every word except the figure, so word overlap alone
+  // judges them the same and the second deadline is silently dropped. Losing a real deadline is
+  // far worse than showing an extra line.
+  assert.equal(saysTheSameThing("Exam on the 14th.", "Exam on the 21st."), false, "a second deadline would be swallowed");
+  assert.equal(saysTheSameThing("Essay due in 3 weeks.", "Essay due in 8 weeks."), false);
+  assert.equal(saysTheSameThing("Chapter 4 test.", "Chapter 7 test."), false);
+});
+
+test("🔴🔴 two topics inside one subject stay separate", () => {
+  // The over-merging direction, and the reason the threshold is not higher still. Someone studying
+  // several structures must get a line for each; collapsing them would lose what they are studying.
+  assert.equal(
+    saysTheSameThing("Learning the anatomy of the uterus.", "Learning the anatomy of the heart."),
+    false,
+    "two different topics were merged into one memory",
+  );
+  assert.equal(saysTheSameThing("Studying contract law.", "Studying tort law."), false);
+  assert.equal(saysTheSameThing("Prefers worked examples.", "Prefers short examples."), false);
+});
+
+test("genuinely different facts survive", () => {
+  assert.equal(saysTheSameThing("Studying contract law.", "Studying mechanical engineering."), false);
+  assert.equal(saysTheSameThing("Prefers worked examples.", "Final on the 14th."), false);
+  // Field-agnostic: the same shape of pair in another discipline behaves identically.
+  assert.equal(
+    saysTheSameThing("Learning the anatomy of the crankshaft for the first time.", "Learning the parts of the crankshaft for the first time."),
+    true,
+  );
+});
+
+test("wording and punctuation do not make a new fact", () => {
+  assert.equal(saysTheSameThing("Studying contract law", "studying CONTRACT LAW."), true);
+  assert.equal(saysTheSameThing("I am studying contract law.", "Studying contract law."), true);
+});
+
+test("an empty statement is never a duplicate of anything", () => {
+  assert.equal(saysTheSameThing("", "Studying contract law."), false);
+  assert.equal(saysTheSameThing("   ", ""), false);
+});
+
+test("🔴 the duplicate check runs across every kind, not within one", () => {
+  // The production pair was filed under `subject` and `context`; a check scoped to one kind cannot
+  // see it at all. The kinds are a filing convenience for the Settings screen, never a reason to
+  // hold the same fact twice.
+  const source = STORE.slice(STORE.indexOf("export async function rememberLine"));
+  assert.match(source, /existing\.some\(\(line\) => saysTheSameThing\(line\.statement, statement\)\)/);
+  assert.ok(!/line\.kind === input\.kind/.test(source), "the duplicate check is scoped to one kind again");
 });
