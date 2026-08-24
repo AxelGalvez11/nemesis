@@ -1519,6 +1519,7 @@ provenance rather than about subject matter.
 | Licensed reference image | `{"kind":"figure","subject":"…"}` — a subject, resolved and licence-gated | **shipped** (seeded registry + live provider, credit rendered) |
 | Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
 | Macromolecular structure | `{"kind":"macromolecule","molecule":"…"}` — a name, resolved to a PDB accession | **shipped** (Mol* viewer, RCSB resolver) |
+| Electron-pushing arrows on a structure | `arrows: [{from, to}]` — heavy-atom indices, the `highlight` index space | **shipped 2026-08-24** (curly arrows drawn over the depiction's own computed atom positions) |
 
 ## 🔴 CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION
 
@@ -1548,6 +1549,17 @@ exact answer.
   acetic acid draws as a structure rather than the string `COOHCH3`; highlighting four atoms adds
   52 marks; an esterification draws 13 bonds and 8 text elements. See
   `scripts/visual-ladder-acceptance.mts` — 17 checks.
+- **Mechanisms ride the same indices (owner order, 2026-08-24: "can we just add the arrows?").**
+  `arrows: [{from: 0, to: 1}]` pushes an electron pair from one heavy atom toward another, in the
+  index space `highlight` already uses; the renderer reads the depiction library's own computed
+  atom positions and bends a quadratic between them (`curlyArrow` in `visual-layout.ts`, pure and
+  tested), so an arrow cannot point somewhere the drawing does not have. Dot-separated species
+  share one index space, which is what a nucleophile attacking across `[OH-].CBr` needs; each step
+  of a mechanism is its own structure visual. Stated plainly: arrows are ATOM-to-atom — the
+  bond-origin tail a chemist sometimes draws is approximated as "from the atom the pair leaves",
+  recorded here as the gap. Arrows refuse on `reaction-smiles`, whose sub-drawings do not share an
+  index space, and the on-screen line "arrows show where the electrons move" says what the marks
+  mean.
 
 ### What the depiction library offers, and what Nemesis takes
 

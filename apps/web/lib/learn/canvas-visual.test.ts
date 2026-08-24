@@ -372,3 +372,40 @@ test("a macromolecule stamp naming any provider but rcsb refuses", () => {
   });
   assert.equal(result.ok === false && result.reason, "malformed-macromolecule");
 });
+
+// ───────────────────────────────────────────── §42: electron-pushing arrows (owner, 2026-08-24)
+
+test("a mechanism step carries arrows in the highlight index space", () => {
+  const result = validateCanvasVisual({
+    arrows: [{ from: 0, to: 1 }, { from: 1, to: 2 }],
+    kind: "structure",
+    learningGoal: "Watch the nucleophile attack while the leaving group departs",
+    notation: "smiles",
+    value: "[OH-].CBr",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.visual.kind === "structure" && result.visual.arrows?.length, 2);
+});
+
+test("🔴 arrows on a reaction scheme refuse — sub-drawings do not share an index space", () => {
+  const result = validateCanvasVisual({
+    arrows: [{ from: 0, to: 1 }],
+    kind: "structure",
+    learningGoal: "This cannot mean one thing",
+    notation: "reaction-smiles",
+    value: "CCO>>CC=O",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "malformed-structure");
+  assert.match(result.ok === false ? result.detail : "", /dot-separated/);
+});
+
+test("an arrow from an atom to itself, a fractional index, and a ninth arrow all refuse", () => {
+  const base = { kind: "structure", learningGoal: "Bounds", notation: "smiles", value: "CCO" };
+  assert.equal(validateCanvasVisual({ ...base, arrows: [{ from: 1, to: 1 }] }).ok, false);
+  assert.equal(validateCanvasVisual({ ...base, arrows: [{ from: 0.5, to: 1 }] }).ok, false);
+  assert.equal(
+    validateCanvasVisual({ ...base, arrows: Array.from({ length: 9 }, (_, i) => ({ from: 0, to: i + 1 })) }).ok,
+    false,
+  );
+});

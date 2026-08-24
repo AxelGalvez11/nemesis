@@ -256,6 +256,26 @@ export function lessonSeed(): LearningCanvas {
           zLabel: "z",
         },
       },
+      {
+        id: "b9l",
+        type: "paragraph",
+        content:
+          "Organic chemistry's first mechanism, drawn the way the course draws it: hydroxide attacks the carbon while bromide leaves, and the curly arrows show where each electron pair moves.",
+        conceptIds: ["k5"],
+        // 🔴 THE §42 MECHANISM LANE: arrows in the highlight index space, over dot-separated
+        // species sharing one frame. O is heavy atom 0, C is 1, Br is 2.
+        visual: {
+          arrows: [
+            { from: 0, to: 1 },
+            { from: 1, to: 2 },
+          ],
+          carbons: "all",
+          kind: "structure",
+          learningGoal: "Follow both electron pairs through the substitution",
+          notation: "smiles",
+          value: "[OH-].CBr",
+        },
+      },
       { id: "b10", type: "heading", content: "Why this matters" },
       {
         id: "b11",

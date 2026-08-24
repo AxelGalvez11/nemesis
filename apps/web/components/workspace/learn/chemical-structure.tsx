@@ -29,6 +29,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import type { StructureVisual } from "@/lib/learn/canvas-visual";
 import { statesStereochemistry } from "@/lib/learn/chem-notation";
+import { curlyArrow } from "@/lib/learn/visual-layout";
 
 /** Why nothing was drawn. Named so a blank frame is diagnosable, exactly as elsewhere. */
 type StructureFailure =
@@ -118,6 +119,7 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           // indices the spec carried is the whole of §42's "answerable-against" seam.
           drawer.draw(parsed, element, theme, null, false, visual.highlight ? [...visual.highlight] : []);
           overlap = drawer.getTotalOverlapScore();
+          if (visual.arrows?.length) drawElectronArrows(element, drawer, visual.arrows);
         }
 
         if (cancelled) return;
@@ -142,7 +144,7 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
     // emitted SVG attributes rather than reading CSS, so a dark-mode toggle cannot repaint this
     // drawing — it has to be drawn again. Without `theme` here, switching to dark leaves a molecule
     // in near-black strokes on a near-black ground: invisible, with nothing on screen to say why.
-  }, [theme, visual.carbons, visual.conditions, visual.highlight, visual.notation, visual.reactionLabel, visual.value]);
+  }, [theme, visual.arrows, visual.carbons, visual.conditions, visual.highlight, visual.notation, visual.reactionLabel, visual.value]);
 
   return (
     <div>
@@ -204,9 +206,58 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           </span>
         ) : null}
         {statesStereochemistry(visual.value) ? <span className="font-sans">states stereochemistry</span> : null}
+        {visual.arrows?.length ? <span className="font-sans">arrows show where the electrons move</span> : null}
       </p>
     </div>
   );
+}
+
+/**
+ * Overlay the mechanism's curly arrows on the finished depiction.
+ *
+ * 🔴 THE POSITIONS ARE THE LIBRARY'S OWN. `graph.vertices[i].position` is the coordinate the
+ * drawing placed heavy atom `i` at, in the same space the emitted SVG uses — so the arrow between
+ * two indices lands between the two drawn atoms by construction, and `fitViewBoxToInk` afterwards
+ * takes the arrows into the frame with everything else.
+ *
+ * 🔴 AN INDEX THE MOLECULE DOES NOT HAVE SKIPS THAT ARROW, exactly the semantics `highlight`
+ * already has for a stray index: the structure is still right, and a wrong claim about it draws
+ * nothing rather than something invented.
+ *
+ * 🔴 `var(--ui-accent)` RATHER THAN A BAKED COLOUR, deliberately unlike the library's own output:
+ * these elements are ours, live in the page's DOM, and follow a theme switch with no redraw.
+ */
+function drawElectronArrows(
+  element: SVGSVGElement,
+  drawer: { preprocessor?: { graph?: { vertices?: Array<{ position?: { x: number; y: number } }> } } },
+  arrows: readonly { from: number; to: number }[],
+): void {
+  const vertices = drawer.preprocessor?.graph?.vertices;
+  if (!vertices) return;
+  const NS = "http://www.w3.org/2000/svg";
+  const group = document.createElementNS(NS, "g");
+  for (const arrow of arrows) {
+    const from = vertices[arrow.from]?.position;
+    const to = vertices[arrow.to]?.position;
+    if (!from || !to) continue;
+    const drawn = curlyArrow(from, to);
+    if (!drawn) continue;
+    const curve = document.createElementNS(NS, "path");
+    curve.setAttribute("d", drawn.path);
+    curve.setAttribute("fill", "none");
+    curve.setAttribute("stroke", "var(--ui-accent)");
+    curve.setAttribute("stroke-width", "1.8");
+    curve.setAttribute("stroke-linecap", "round");
+    const head = document.createElementNS(NS, "path");
+    head.setAttribute("d", drawn.head);
+    head.setAttribute("fill", "none");
+    head.setAttribute("stroke", "var(--ui-accent)");
+    head.setAttribute("stroke-width", "1.8");
+    head.setAttribute("stroke-linecap", "round");
+    head.setAttribute("stroke-linejoin", "round");
+    group.append(curve, head);
+  }
+  element.append(group);
 }
 
 const WIDTH = 480;

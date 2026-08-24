@@ -888,3 +888,64 @@ export function layoutCircuit(visual: CircuitVisual): CircuitPlacement {
     wires: draft.wires.map((wire) => ({ x1: sx(wire.x1), x2: sx(wire.x2), y1: sy(wire.y1), y2: sy(wire.y2) })),
   };
 }
+
+// ── electron-pushing arrows ────────────────────────────────────────────────────────────────────
+
+/** How far an arrow stands off its atoms, and how far its curve bows, in the drawing's own units. */
+const ARROW_STANDOFF = 7;
+const ARROW_BOW = 0.32;
+const ARROW_HEAD = 6;
+
+/**
+ * A curly arrow between two atom positions, as SVG path data.
+ *
+ * 🔴 PURE ARITHMETIC OVER TWO POINTS THE DEPICTION LIBRARY COMPUTED, which is what keeps the §42
+ * promise on mechanisms: the model names atoms, the library places them, and this bends a quadratic
+ * between the placements. The curve bows perpendicular to the line joining them — the convention
+ * every mechanism drawing uses — and both ends stand off the atoms so the arrow points AT an atom
+ * without sitting ON its label.
+ *
+ * Returns null when the two positions coincide, because electrons pushed nowhere have no direction
+ * to draw.
+ */
+export function curlyArrow(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): { path: string; head: string } | null {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-6) return null;
+
+  const ux = dx / length;
+  const uy = dy / length;
+  // Perpendicular, consistently to the left of travel so two arrows along one bond mirror sensibly.
+  const px = -uy;
+  const py = ux;
+
+  const start = { x: from.x + ux * ARROW_STANDOFF, y: from.y + uy * ARROW_STANDOFF };
+  const end = { x: to.x - ux * ARROW_STANDOFF, y: to.y - uy * ARROW_STANDOFF };
+  const bow = Math.min(40, length * ARROW_BOW);
+  const control = {
+    x: (start.x + end.x) / 2 + px * bow,
+    y: (start.y + end.y) / 2 + py * bow,
+  };
+
+  // The head follows the curve's ACTUAL arrival direction — the tangent at the end of the
+  // quadratic, which is the line from the control point — rather than the straight chord, so the
+  // barbs sit symmetrically about the stroke however hard it bows.
+  const tx = end.x - control.x;
+  const ty = end.y - control.y;
+  const tLength = Math.hypot(tx, ty) || 1;
+  const hx = tx / tLength;
+  const hy = ty / tLength;
+  const hpx = -hy;
+  const hpy = hx;
+  const barb = (side: 1 | -1) =>
+    `${end.x - hx * ARROW_HEAD + side * hpx * ARROW_HEAD * 0.6},${end.y - hy * ARROW_HEAD + side * hpy * ARROW_HEAD * 0.6}`;
+
+  return {
+    head: `M ${barb(1)} L ${end.x},${end.y} L ${barb(-1)}`,
+    path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`,
+  };
+}
