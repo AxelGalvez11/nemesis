@@ -192,6 +192,55 @@ test("🔴🔴 a NEW kind cannot be added without telling the model its shape ei
   );
 });
 
+test("🔴🔴🔴 the packet says a marker without a payload draws nothing", () => {
+  // 🔴 MEASURED ON PRODUCTION 2026-08-24, MINUTES AFTER THE FIGURE SHAPE WAS ADDED. Asked for a
+  // diagram of meiosis, the model wrote "Here's a diagram of meiosis showing both divisions:"
+  // followed by `[figure 1]`, and sent NO `visuals` array at all — stored canvas 204d3e54,
+  // `visuals: null`. The learner got a sentence promising a picture and the literal text
+  // `[figure 1]` underneath.
+  //
+  // It is the same half-step as the `visuals: []` case that the filled-in template was written to
+  // fix, and it needs the same treatment: say the negative out loud. A marker is a POSITION; the
+  // picture is the entry in `visuals`.
+  const packet = PACKET.replace(/\s+/g, " ");
+  assert.match(packet, /\[figure n\] marker draws NOTHING on its own/, "the marker-without-payload warning is gone");
+  assert.match(packet, /\[figure 1\] needs "visuals"\[0\]/, "the packet no longer says which marker maps to which entry");
+});
+
+test("🔴🔴 the packet warns that a wordy figure subject fetches the wrong picture", () => {
+  // 🔴 ALSO MEASURED, against the live repository, asking for one diagram four ways:
+  //   "meiosis"                                   → the real meiosis diagram
+  //   "meiosis I and meiosis II stages"           → the real meiosis diagram
+  //   "the stages of meiosis"                     → the life stages of NAEGLERIA FOWLERI
+  //   "diagram of meiosis showing both divisions" → the layers of human skin
+  //   "meiosis showing both divisions"            → an illustration of cleft lip
+  // Every one returned `ok`. "stages", "diagram", "showing" and "both" appear in millions of
+  // captions and outvote the one word that identifies the subject — and a wrong picture is worse
+  // than none, because it arrives captioned, credited, and confidently placed beside prose about
+  // something else.
+  const packet = PACKET.replace(/\s+/g, " ");
+  assert.match(packet, /SHORTEST NAME of the thing itself/, "the short-subject rule is gone");
+  assert.match(packet, /Do not describe the picture you want/, "the packet stopped warning against describing the picture");
+});
+
+test("🔴🔴 describing a picture, and offering one as a follow-up, are both banned", () => {
+  // 🔴 THE SAME REFUSAL IN THREE FORMS, AND ONLY TWO WERE COVERED. The packet already bans a
+  // picture made of CHARACTERS. It did not ban a picture made of SENTENCES, which is what the model
+  // reaches for instead — measured 2026-08-24, asked for the C major scale "in standard notation":
+  // the letters `C D E F G A B C` in a fence, then a bulleted list reading *"E — bottom line, F —
+  // first space, G — second line"*, against a renderer that engraves ABC from one field.
+  //
+  // 🔴 AND THE TELL IS IDENTICAL ACROSS CASES. It closed with *"If you'd like it, I can also show
+  // this as ABC notation"* — the same shape as the ethanol case's *"if you want it as a proper
+  // structural diagram, just say the word."* A model offering a drawing has already decided the
+  // drawing is worth making, so the offer itself is the thing to ban.
+  const packet = PACKET.replace(/\s+/g, " ");
+  assert.match(packet, /Never DESCRIBE a picture you could draw/, "describing a picture in prose is allowed again");
+  assert.match(packet, /never offer one as a follow-up/, "the model may once more offer a drawing instead of drawing it");
+  // The older character-art ban must survive alongside it: they catch different failures.
+  assert.match(packet, /Never draw a picture out of text characters/, "the ASCII-art ban was replaced rather than joined");
+});
+
 test("🔴 the packet's own claim about where it is guarded is true", () => {
   // The sentence that started this: turn-router.ts pointed at visual-route.test.ts, which never
   // checked the packet. A comment naming the wrong guard is worse than naming none, because the

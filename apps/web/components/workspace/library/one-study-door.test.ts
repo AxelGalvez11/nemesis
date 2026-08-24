@@ -64,6 +64,26 @@ test("🔴🔴 the filter offers exactly the three kinds the owner named, plus A
   assert.match(OUTPUTS, /useState<Shelf>\("all"\)/, "the Library no longer opens showing everything");
 });
 
+test("🔴🔴 there is exactly ONE control meaning 'show me everything'", () => {
+  // 🔴 THE OWNER'S CATCH, 2026-08-24: *"why is there an everything button if we already have the
+  // all button"*. The first version had two rows of pills — kinds above, folders below — whose
+  // selected states read "All" and "Everything". Two controls, same English word, stacked.
+  //
+  // The reference they pointed at (ChatGPT's library) has no second row: one row of kind pills, and
+  // folders are ROWS IN THE LIST you open. So folders moved into the list and "Everything" stopped
+  // needing to exist — being in no folder IS the top of the list.
+  assert.ok(!/>\s*Everything\s*</.test(OUTPUTS), "the second 'show me everything' control is back");
+  // …and the folders it replaced are really rows now, with a way back out of one.
+  assert.match(OUTPUTS, /setOpenFolder\(folder\.id\)/, "a folder can no longer be opened");
+  assert.match(OUTPUTS, /openFolder !== null && \(/, "there is no way back out of an open folder");
+});
+
+test("🔴 the page does not explain itself under its own heading", () => {
+  // Owner, same message: *"remove the description under the library heading."* It had also gone
+  // stale twice in one day, which is the usual fate of a sentence describing a page's contents.
+  assert.ok(!/What Nemesis has made for you/.test(OUTPUTS), "the subtitle is back under the heading");
+});
+
 test("🔴🔴 a hidden shelf is not rendered, heading and all", () => {
   // A heading left standing over a list the filter emptied says "you have no decks", which is a
   // different and false claim. Calibration: drop the `showing(...)` wrappers and this reddens.
@@ -84,6 +104,28 @@ test("🔴🔴 Library folders are the SIDEBAR's folders, never a second tree", 
   assert.match(OUTPUTS, /listFolders\(userId\)/, "the Library does not load the learner's folders");
   assert.match(OUTPUTS, /createFolder\(userId/, "there is no way to make a folder from the Library");
   assert.ok(!/library_folders/.test(OUTPUTS), "a second folder tree appeared");
+});
+
+test("🔴🔴🔴 image occlusion has a door that is not on the retired page", () => {
+  // Owner 2026-08-24: *"What about image occlusion? Can I do image occlusion?"* The answer was no,
+  // and not because it was unbuilt: `OcclusionEditor`, `OcclusionCardView`, the `image_occlusion`
+  // card type, the mask-suggest API and its migration all shipped and all work. Their ONLY door was
+  // `cards-tab.tsx`, mounted by exactly one page — `/study` — which has been retired behind
+  // `RetiredSurfaceGuard` for weeks. A whole authoring surface went dark when the page above it was
+  // retired, and nothing failed loudly enough for anyone to notice.
+  //
+  // 🔴 THE GUARD IS ON THE DOOR BEING SOMEWHERE REACHABLE, not on it being in any one place. If the
+  // Library stops being the home for this, the replacement must be a page a learner can open.
+  assert.match(OUTPUTS, /<DeckOcclusion/, "image occlusion lost its only door again");
+  assert.match(OUTPUTS, /\{occluding && \(/, "the occlusion editor is mounted before it is pressed");
+
+  const door = readFileSync(new URL("./deck-occlusion.tsx", import.meta.url), "utf8");
+  assert.match(door, /<OcclusionEditor/, "the Library grew its own occlusion editor");
+  // Same rule the Anki importer and the stats page are held to, one test up: mount the real thing.
+  assert.ok(
+    !/OcclusionShape|normalizeOcclusionRect|createOcclusionCards/.test(door),
+    "the Library door started deciding what a valid mask is",
+  );
 });
 
 test("🔴 filing waits for the write, and never guesses", () => {
