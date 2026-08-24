@@ -47,6 +47,29 @@ const SADDLE_GRID: number[][] = Array.from({ length: 21 }, (_, row) => {
   });
 });
 
+// 🔴🔴 A WEB SOURCE, BECAUSE THE FIXTURE HAD NONE AND THAT LEFT A WHOLE PATH UNSEEABLE. Every
+// seeded canvas carried uploads only, so nothing in dev-preview ever exercised the sources panel's
+// website branch: the favicon, the external anchor, and (2026-08-24) the Documents/Websites
+// grouping, which by design only appears when BOTH kinds are present. A preview harness that
+// cannot reach a branch is a harness that certifies the branch it cannot see.
+//
+// 🔴 `sourceUrl` IS WHAT MAKES IT A WEBSITE, and that is the same rule the panel and the composer
+// chips use — absent for every upload, present only for a page. Nothing here sets a "kind: web"
+// flag, because no such flag exists and inventing one for a fixture would teach the wrong shape.
+const WEB_SOURCE: CanvasSource = {
+  id: "s2",
+  title: "Cardiac conduction system",
+  kind: "page",
+  sourceUrl: "https://en.wikipedia.org/wiki/Electrical_conduction_system_of_the_heart",
+  excerpts: [
+    {
+      id: "s2:e1",
+      label: "Overview",
+      text: "The sinoatrial node generates the impulse that sets the heart rate; it passes to the atrioventricular node, where conduction is deliberately slowed before the ventricles are activated.",
+    },
+  ],
+};
+
 const SOURCE: CanvasSource = {
   id: "s1",
   title: "Cardiac action potentials (lecture 7).pdf",
@@ -94,7 +117,7 @@ export function lessonSeed(): LearningCanvas {
     title: "Cardiac action potentials",
     state: "learn",
     level: "basics_known",
-    sources: [SOURCE],
+    sources: [SOURCE, WEB_SOURCE],
     concepts: CONCEPTS,
     blocks: [
       { id: "b1", type: "heading", content: "Cardiac action potentials" },
