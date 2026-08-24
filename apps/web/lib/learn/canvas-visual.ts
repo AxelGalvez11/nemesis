@@ -132,6 +132,26 @@ export interface StructureVisual extends CanvasVisualBase {
    */
   conditions?: string;
   reactionLabel?: string;
+  /**
+   * Electron-pushing arrows — the owner's "can we just add the arrows?", 2026-08-24.
+   *
+   * 🔴 THE SAME INDEX SPACE AS `highlight`, AND THAT IS THE WHOLE DESIGN. Each arrow runs from the
+   * heavy atom the electron pair leaves to the heavy atom it moves toward, counting heavy atoms
+   * from zero in the notation. The model states indices; trusted code reads the depiction's own
+   * computed atom positions and draws the curve between them, so an arrow cannot point somewhere
+   * the drawing does not have.
+   *
+   * 🔴 ATOM-TO-ATOM, STATED PLAINLY, AND BOND-ORIGIN ARROWS ARE THE RECORDED GAP. A chemist draws
+   * some arrows from the middle of a bond; this vocabulary approximates that as "from the atom the
+   * pair leaves". It teaches the mechanism conversation; it does not yet draw the exam-perfect
+   * bond-tail, and saying so here beats implying otherwise.
+   *
+   * 🔴 ONLY ON `smiles`, BECAUSE A MECHANISM STEP IS ONE FRAME. Dot-separated species share one
+   * index space, so a nucleophile attacking across "[OH-].CBr" is drawable; `reaction-smiles` lays
+   * out several sub-drawings with per-molecule indices and refuses arrows rather than guessing
+   * which molecule an index meant. Sequence steps as separate structure visuals.
+   */
+  arrows?: readonly { from: number; to: number }[];
 }
 
 /**
@@ -502,6 +522,33 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
       return refuse("text-out-of-bounds", "reaction arrow text must be 1–60 characters when present");
     }
 
+    // 🔴 THE SAME BOUNDS DISCIPLINE AS `highlight`, because these indices are also handed to a
+    // renderer that will look them up in somebody else's graph.
+    let arrows: Array<{ from: number; to: number }> | null = null;
+    if (value.arrows !== undefined) {
+      if (notation !== "smiles") {
+        return refuse(
+          "malformed-structure",
+          "arrows draw on a single frame: use dot-separated species in one smiles value, and separate visuals for separate steps",
+        );
+      }
+      if (!Array.isArray(value.arrows) || value.arrows.length === 0 || value.arrows.length > 8) {
+        return refuse("malformed-structure", "arrows must be 1–8 entries when present");
+      }
+      arrows = [];
+      for (const item of value.arrows) {
+        if (!record(item)) return refuse("malformed-structure", "an arrow is not an object");
+        const { from, to } = item;
+        for (const index of [from, to]) {
+          if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 300) {
+            return refuse("malformed-structure", "every arrow end must be a heavy-atom index from 0 to 300");
+          }
+        }
+        if (from === to) return refuse("malformed-structure", "an arrow cannot push electrons from an atom to itself");
+        arrows.push({ from: from as number, to: to as number });
+      }
+    }
+
     return {
       ok: true,
       visual: {
@@ -514,6 +561,7 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
         ...(carbons && carbons !== "skeletal" ? { carbons } : {}),
         ...(conditions ? { conditions } : {}),
         ...(reactionLabel ? { reactionLabel } : {}),
+        ...(arrows ? { arrows } : {}),
       },
     };
   }

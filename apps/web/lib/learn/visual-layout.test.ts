@@ -15,6 +15,7 @@ import test from "node:test";
 
 import type { ConstructionVisual, FlowVisual, TimelineVisual } from "./canvas-visual";
 import {
+  curlyArrow,
   layoutCircuit,
   layoutConstruction,
   layoutFlow,
@@ -648,4 +649,32 @@ test("a fragment with no supply draws no loop, just the network with open leads"
   const columns = fragment.wires.filter((wire) => wire.x1 === wire.x2 && Math.abs(wire.y2 - wire.y1) > 40);
   assert.equal(columns.length, 0);
   assert.ok(fragment.height < 100, "a one-part fragment should be shallow");
+});
+
+// ─────────────────────────────────────────────────────────────── electron-pushing arrows
+
+test("a curly arrow bows perpendicular to the line between its atoms and stands off both", () => {
+  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 });
+  assert.ok(drawn, "two distinct atoms drew nothing");
+  if (!drawn) return;
+  const [, sx, sy, , cx, cy, ex, ey] = drawn.path.split(" ");
+  assert.ok(Number(sx) > 0, "the tail sits on the source atom");
+  assert.ok(Number(ex) < 100, "the head sits on the target atom");
+  assert.equal(Number(sy), 0);
+  assert.equal(Number(ey), 0);
+  assert.notEqual(Number(cy), 0, "the curve does not bow, so it reads as a bond");
+  assert.ok(Number(cx) > Number(sx) && Number(cx) < Number(ex), "the bow is not between the atoms");
+  assert.ok(Number.isFinite(Number(cy)));
+});
+
+test("🔴 coincident atoms draw no arrow, never a NaN path", () => {
+  assert.equal(curlyArrow({ x: 5, y: 5 }, { x: 5, y: 5 }), null);
+});
+
+test("the arrowhead's barbs straddle the arrival point", () => {
+  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 0, y: 80 });
+  assert.ok(drawn);
+  if (!drawn) return;
+  assert.doesNotMatch(drawn.head, /NaN/);
+  assert.match(drawn.head, /^M .* L .* L /, "the head is not two barbs meeting at the tip");
 });
