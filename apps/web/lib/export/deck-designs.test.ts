@@ -181,10 +181,28 @@ test("a material used on the INTERIOR pages is a light one", () => {
   }
 });
 
+test("a design that puts pictures IN its content brings enough of them", () => {
+  // 🔴 A FAMILY, NOT A PICTURE. The picture column is chosen by slide number, so a design with
+  // one photograph would print the same photograph down the whole deck — which is what a
+  // template looks like when nobody filled in the placeholders.
+  for (const d of DECK_DESIGNS) {
+    if (d.page !== "photo-side") continue;
+    const shots = d.texture?.gallery ?? [];
+    assert.ok(shots.length >= 3, `${d.id}: a picture column with only ${shots.length} picture(s) repeats`);
+    assert.equal(new Set(shots).size, shots.length, `${d.id}: the same picture appears twice in one family`);
+  }
+  // And a design that supplies a family must actually be able to show it.
+  for (const d of DECK_DESIGNS) {
+    if (!d.texture?.gallery?.length) continue;
+    assert.equal(d.page, "photo-side", `${d.id}: has a picture family nothing draws`);
+  }
+});
+
 test("a texture is an app asset, not a link to somewhere else", () => {
   // A deck must build with no network beyond our own origin: the .pptx inlines these bytes.
   for (const d of DECK_DESIGNS) {
-    for (const url of [d.texture?.cover, d.texture?.section, d.texture?.closing, d.texture?.page].filter(Boolean)) {
+    const slots = [d.texture?.cover, d.texture?.section, d.texture?.closing, d.texture?.page, ...(d.texture?.gallery ?? [])];
+    for (const url of slots.filter(Boolean)) {
       assert.match(url as string, /^\/deck\/textures\/[a-z0-9-]+\.jpg$/, `${d.id}: "${url}" is not a local deck texture`);
     }
   }
