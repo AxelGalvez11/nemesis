@@ -157,13 +157,31 @@ test("an exhibit draws the figures it was given", () => {
     const scene = composeSlide(design, chartSlide, { credit: "Nemesis", index: 4, plan: PLAN });
     // Bars are the rects that share a width and a baseline — counting by height would miss the
     // smallest bar, which is exactly the one a reader must still be able to see.
-    const rects = scene.items.filter((it): it is SceneShape => it.kind === "shape" && it.shape === "rect" && !!it.fill && it.box.w < 2);
+    // A design whose exhibits are dressed as cards draws its bars with a rounded top, and a
+    // "block" plot draws them nearly a band wide, so neither the shape nor the width may be
+    // assumed — only that there is one data-bearing mark per figure.
+    const rects = scene.items.filter(
+      (it): it is SceneShape =>
+        it.kind === "shape" && (it.shape === "rect" || it.shape === "roundRect") && !!it.fill && it.box.w < 3,
+    );
     const byWidth = new Map<string, SceneShape[]>();
     for (const r of rects) {
       const key = r.box.w.toFixed(3);
       byWidth.set(key, [...(byWidth.get(key) ?? []), r]);
     }
-    const bars = [...byWidth.values()].sort((a, b) => b.length - a.length)[0] ?? [];
+    // A "track" plot draws a faint full-height column behind every bar, so counting the biggest
+    // group would count tracks. Bars are the group whose HEIGHTS VARY: a track is the same
+    // height every time, and only the data-bearing marks change with the data.
+    const spread = (group: SceneShape[]): number => {
+      const hs = group.map((g) => g.box.h);
+      return Math.max(...hs) - Math.min(...hs);
+    };
+    const bars =
+      [...byWidth.values()]
+        .filter((group) => group.length === chartSlide.data.length)
+        .sort((a, b) => spread(b) - spread(a))[0] ??
+      [...byWidth.values()].sort((a, b) => b.length - a.length)[0] ??
+      [];
     assert.equal(bars.length, chartSlide.data.length, `${design.id}: ${bars.length} bars for ${chartSlide.data.length} figures`);
     // Bar heights must be proportional: the 100 bar is about 22x the 4.5 bar.
     const heights = bars.map((b) => b.box.h).sort((x, y) => y - x);

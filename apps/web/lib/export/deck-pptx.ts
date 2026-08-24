@@ -107,7 +107,19 @@ function draw(slide: Slide, item: SceneItem): void {
  * A missing asset must never cost the learner their download, so a failure falls back to the
  * design's own background colour — a plainer slide, not a broken one.
  */
+/** One copy per build. A design that lays material under every interior page asked for the same
+ *  file ten times; the bytes are identical, so it is read once and reused. */
+const inlined = new Map<string, string | null>();
+
 async function inlineAsset(url: string): Promise<string | null> {
+  const seen = inlined.get(url);
+  if (seen !== undefined) return seen;
+  const encoded = await readAsset(url);
+  inlined.set(url, encoded);
+  return encoded;
+}
+
+async function readAsset(url: string): Promise<string | null> {
   try {
     const response = await fetch(url);
     if (!response.ok) return null;

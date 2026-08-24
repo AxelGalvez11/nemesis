@@ -46,10 +46,28 @@ function rgba(hex: string, alpha: number): string {
 const place = (b: { x: number; y: number; w: number; h: number }): string =>
   `left:${px(b.x)};top:${px(b.y)};width:${px(b.w)};height:${px(b.h)}`;
 
-function shapeHtml(item: SceneShape): string {
+/**
+ * When this item arrives, as a CSS custom property.
+ *
+ * 🔴 THE CASCADE IS CAPPED. A chart slide can carry sixty primitives, and a strict
+ * index-times-delay stagger would take four seconds to finish drawing a slide someone is
+ * presenting. Everything is on screen within 0.55s no matter how busy the slide is.
+ */
+const beat = (index: number): string => `;--dk-d:${Math.min(index * 0.035, 0.55).toFixed(3)}s`;
+
+function shapeHtml(item: SceneShape, delay: string): string {
   const { box: b } = item;
-  const opacity = item.alpha ? `;opacity:${(100 - item.alpha) / 100}` : "";
-  const spin = item.rotate ? `;transform:rotate(${item.rotate}deg)` : "";
+  // 🔴 THE ITEM'S OWN OPACITY IS PUBLISHED, NOT JUST SET. The build-in animates opacity, and a
+  // keyframe ending at a flat `opacity:1` would OVERWRITE this one — permanently, because the
+  // animation fills forwards. Caught in the browser: an 8%-tint takeaway box settled as a solid
+  // accent block sitting on top of its own text, which is the exact defect the layout tests
+  // exist to prevent. The keyframes end at `var(--dk-o,1)` instead, so a translucent shape
+  // arrives at ITS opacity and an ordinary one arrives at 1.
+  const opacity = item.alpha ? `;--dk-o:${(100 - item.alpha) / 100};opacity:${(100 - item.alpha) / 100}` : "";
+  // 🔴 A ROTATION HAS TO SURVIVE THE ANIMATION. The build-in keyframes animate `transform`, so
+  // an inline `transform:rotate(45deg)` would be overwritten and a diamond would land as a
+  // square. The angle is published as a custom property the keyframes compose back in.
+  const spin = item.rotate ? `;--dk-r:${item.rotate}deg;transform:rotate(${item.rotate}deg)` : "";
   const fill = item.fill ? `;background:#${item.fill}` : "";
   const stroke = item.line ? `;border:${px(item.line.width)} solid #${item.line.color}` : "";
 
@@ -60,30 +78,30 @@ function shapeHtml(item: SceneShape): string {
       const h = Math.max(Math.abs(b.h), 0.01);
       const colour = item.line?.color ?? item.fill ?? "000000";
       const width = item.line?.width ?? 0.01;
-      return `<svg class="dk-i" style="${place({ h, w, x: b.x, y: b.y - (b.h === 0 ? width / 2 : 0) })};overflow:visible${opacity}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="0" y1="0" x2="${w}" y2="${h}" stroke="#${colour}" stroke-width="${width}" vector-effect="non-scaling-stroke" style="stroke-width:${px(width)}"/></svg>`;
+      return `<svg class="dk-i dk-a" style="${place({ h, w, x: b.x, y: b.y - (b.h === 0 ? width / 2 : 0) })};overflow:visible${opacity}${delay}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="0" y1="0" x2="${w}" y2="${h}" stroke="#${colour}" stroke-width="${width}" vector-effect="non-scaling-stroke" style="stroke-width:${px(width)}"/></svg>`;
     }
     case "ellipse":
-      return `<div class="dk-i" style="${place(b)}${fill}${stroke};border-radius:50%${opacity}${spin}"></div>`;
+      return `<div class="dk-i dk-a" style="${place(b)}${fill}${stroke};border-radius:50%${opacity}${spin}${delay}"></div>`;
     case "donut": {
       const ring = Math.min(b.w, b.h) * 0.08;
-      return `<div class="dk-i" style="${place(b)};border:${px(ring)} solid #${item.fill ?? "000"};border-radius:50%${opacity}${spin}"></div>`;
+      return `<div class="dk-i dk-a" style="${place(b)};border:${px(ring)} solid #${item.fill ?? "000"};border-radius:50%${opacity}${spin}${delay}"></div>`;
     }
     case "triangle":
-      return `<div class="dk-i" style="${place(b)}${fill}${opacity}${spin};clip-path:polygon(50% 0,100% 100%,0 100%)"></div>`;
+      return `<div class="dk-i dk-a" style="${place(b)}${fill}${opacity}${spin}${delay};clip-path:polygon(50% 0,100% 100%,0 100%)"></div>`;
     case "rtTriangle":
-      return `<div class="dk-i" style="${place(b)}${fill}${opacity}${spin};clip-path:polygon(0 0,100% 100%,0 100%)"></div>`;
+      return `<div class="dk-i dk-a" style="${place(b)}${fill}${opacity}${spin}${delay};clip-path:polygon(0 0,100% 100%,0 100%)"></div>`;
     case "chevron":
-      return `<div class="dk-i" style="${place(b)}${fill}${opacity}${spin};clip-path:polygon(0 0,72% 0,100% 50%,72% 100%,0 100%,28% 50%)"></div>`;
+      return `<div class="dk-i dk-a" style="${place(b)}${fill}${opacity}${spin}${delay};clip-path:polygon(0 0,72% 0,100% 50%,72% 100%,0 100%,28% 50%)"></div>`;
     case "blockArc":
-      return `<div class="dk-i" style="${place(b)}${fill}${opacity}${spin};border-radius:${px(b.w)} ${px(b.w)} 0 0"></div>`;
+      return `<div class="dk-i dk-a" style="${place(b)}${fill}${opacity}${spin}${delay};border-radius:${px(b.w)} ${px(b.w)} 0 0"></div>`;
     case "roundRect":
-      return `<div class="dk-i" style="${place(b)}${fill}${stroke};border-radius:${px((item.radius ?? 0.12) * Math.min(b.w, b.h))}${opacity}${spin}"></div>`;
+      return `<div class="dk-i dk-a" style="${place(b)}${fill}${stroke};border-radius:${px((item.radius ?? 0.12) * Math.min(b.w, b.h))}${opacity}${spin}${delay}"></div>`;
     default:
-      return `<div class="dk-i" style="${place(b)}${fill}${stroke}${opacity}${spin}"></div>`;
+      return `<div class="dk-i dk-a" style="${place(b)}${fill}${stroke}${opacity}${spin}${delay}"></div>`;
   }
 }
 
-function textHtml(item: SceneText): string {
+function textHtml(item: SceneText, delay: string): string {
   const justify = item.valign === "middle" ? "center" : item.valign === "bottom" ? "flex-end" : "flex-start";
   const style = [
     place(item.box),
@@ -100,10 +118,10 @@ function textHtml(item: SceneText): string {
   ]
     .filter(Boolean)
     .join(";");
-  return `<div class="dk-i dk-t" style="${style}"><span>${esc(item.text)}</span></div>`;
+  return `<div class="dk-i dk-a dk-t" style="${style}${delay}"><span>${esc(item.text)}</span></div>`;
 }
 
-function bulletsHtml(item: SceneBullets): string {
+function bulletsHtml(item: SceneBullets, delay: string): string {
   if (!item.items.length) return "";
   const mark = item.bullet === "dot" ? "•" : item.bullet === "none" ? "" : "–";
   const style = [
@@ -120,11 +138,11 @@ function bulletsHtml(item: SceneBullets): string {
         `<li>${mark ? `<span class="dk-m" aria-hidden="true">${mark}</span>` : ""}<span>${esc(line)}</span></li>`,
     )
     .join("");
-  return `<ul class="dk-i dk-b" style="${style}">${rows}</ul>`;
+  return `<ul class="dk-i dk-a dk-b" style="${style}${delay}">${rows}</ul>`;
 }
 
-const imageHtml = (item: SceneImage): string =>
-  `<img alt="" class="dk-i" src="${item.data}" style="${place(item.box)};object-fit:cover"/>`;
+const imageHtml = (item: SceneImage, delay: string): string =>
+  `<img alt="" class="dk-i dk-a" src="${item.data}" style="${place(item.box)}${delay};object-fit:cover"/>`;
 
 /** One slide, as a self-contained element sized in the printed page's own units. */
 export async function sceneToHtml(scene: Scene, index: number): Promise<string> {
@@ -134,23 +152,25 @@ export async function sceneToHtml(scene: Scene, index: number): Promise<string> 
     ? `background-color:#${scene.background.color};background-image:url(${picture});background-size:cover;background-position:center`
     : `background:#${scene.background.color}`;
   const wash = scene.overlay
-    ? `<div class="dk-i" style="left:0;top:0;width:${SLIDE_PX_W}px;height:${SLIDE_PX_H}px;background:linear-gradient(to bottom, rgba(0,0,0,0) ${(scene.overlay.start * 100).toFixed(0)}%, ${rgba(scene.overlay.color, scene.overlay.strength)} 100%)"></div>`
+    ? `<div class="dk-i dk-a" style="left:0;top:0;width:${SLIDE_PX_W}px;height:${SLIDE_PX_H}px;background:linear-gradient(to bottom, rgba(0,0,0,0) ${(scene.overlay.start * 100).toFixed(0)}%, ${rgba(scene.overlay.color, scene.overlay.strength)} 100%)"></div>`
     : "";
   const body = scene.items
-    .map((item) => {
+    .map((item, i) => {
+      const delay = beat(i);
       switch (item.kind) {
         case "shape":
-          return shapeHtml(item);
+          return shapeHtml(item, delay);
         case "text":
-          return textHtml(item);
+          return textHtml(item, delay);
         case "bullets":
-          return bulletsHtml(item);
+          return bulletsHtml(item, delay);
         default:
-          return imageHtml(item);
+          return imageHtml(item, delay);
       }
     })
     .join("");
-  return `<section aria-label="Slide ${index}" class="dk-s" data-slide="${index}" style="${background}">${wash}${body}</section>`;
+  const motion = scene.motion && scene.motion !== "none" ? ` data-motion="${scene.motion}"` : "";
+  return `<section aria-label="Slide ${index}" class="dk-s" data-slide="${index}"${motion} style="${background}">${wash}${body}</section>`;
 }
 
 /** Every slide of a plan, in order. */
@@ -174,7 +194,29 @@ export const DECK_CSS = `
 .dk-b li{display:flex;align-items:flex-start}
 .dk-b .dk-m{flex:0 0 auto;width:1.1em;opacity:.9}
 .dk-print-only{display:none}
+
+/* ── the build-in ──────────────────────────────────────────────────────────────────────────
+   🔴 MOTION IS OPT-IN FROM THE VIEWER, AND NEVER LOAD-BEARING. The hidden state lives only
+   under \`.dk-run\`, which the deck view adds to the slide it is showing. So a slide that is
+   printed, copied, embedded, or rendered by anything that never sets that class is simply a
+   finished slide — the failure mode of this whole feature is "no animation", never "no slide".
+   The rotation of a mark is composed back in from --dk-r; see shapeHtml. */
+@keyframes dk-rise{from{opacity:0;transform:translateY(15px) rotate(var(--dk-r,0deg))}to{opacity:var(--dk-o,1);transform:translateY(0) rotate(var(--dk-r,0deg))}}
+@keyframes dk-fade{from{opacity:0}to{opacity:var(--dk-o,1)}}
+@keyframes dk-wipe{from{opacity:0;clip-path:inset(0 100% 0 0)}to{opacity:var(--dk-o,1);clip-path:inset(0 0 0 0)}}
+@keyframes dk-zoom{from{opacity:0;transform:scale(.96) rotate(var(--dk-r,0deg))}to{opacity:var(--dk-o,1);transform:scale(1) rotate(var(--dk-r,0deg))}}
+.dk-run .dk-a{animation:var(--dk-k,dk-rise) .44s cubic-bezier(.22,.68,.24,1) both;animation-delay:var(--dk-d,0s)}
+.dk-s[data-motion="fade"]{--dk-k:dk-fade}
+.dk-s[data-motion="wipe"]{--dk-k:dk-wipe}
+.dk-s[data-motion="zoom"]{--dk-k:dk-zoom}
+@media (prefers-reduced-motion:reduce){.dk-run .dk-a{animation:none}}
+
 @media print{
+  /* 🔴 CANCEL THE ANIMATION, NOT THE DESIGN. An earlier version of this line also forced
+     opacity:1 and clip-path:none — which would have printed every translucent card solid and
+     every triangle as a rectangle. Removing the animation is enough: with no animation there is
+     no fill-mode holding the hidden state, and the element's own styles apply again. */
+  .dk-run .dk-a{animation:none!important}
   .dk-print-only{display:block!important}
   @page{size:${SLIDE_W}in ${SLIDE_H}in;margin:0}
   html,body{margin:0;padding:0;background:#fff}
