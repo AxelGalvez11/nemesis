@@ -31,6 +31,29 @@ export const DECK_LAYOUTS = [
 ] as const;
 export type DeckLayout = (typeof DECK_LAYOUTS)[number];
 
+/**
+ * One of the learner's OWN figures, offered to the deck.
+ *
+ * 🔴 FILLED BY THE CALLER FROM THE CANVAS, NEVER BY THE MODEL — exactly like `references`, and
+ * for a stronger reason. `path` addresses an object in a PRIVATE, owner-scoped bucket; a model
+ * that could write one would be writing a request for storage it may not read. The model picks a
+ * NUMBER out of a menu (see `lib/learn/deck-figures.ts`) and this side turns numbers into paths.
+ */
+export interface DeckFigure {
+  /** Object path in the private figure bucket. Not loadable until signed. */
+  path: string;
+  /** What the DOCUMENT called it, falling back to what vision saw. Printed on the slide. */
+  caption: string;
+  /** Which of the learner's sources it came from. Printed with the caption. */
+  source: string;
+  /** A signed, loadable URL. Added at render time and never stored: a signature expires, and a
+   *  baked one would give a deck that showed its diagrams the day it was made and empty frames a
+   *  week later. Absent means "draw the caption, not the picture". */
+  url?: string;
+  width?: number;
+  height?: number;
+}
+
 /** One measured thing: a bar in a chart, or a figure in a KPI row. */
 export interface DeckDatum {
   label: string;
@@ -69,6 +92,15 @@ export interface DeckSlide {
   /** A small footnote under the exhibit — the model's own caveat, never a citation (sources
    *  come from the canvas, see DeckPlan.references). */
   note: string;
+  /**
+   * Which of the learner's own figures to show, 1-based into `DeckPlan.figures`. 0 = none.
+   *
+   * 🔴 A NUMBER, NOT A PATH, AND THE RANGE IS CHECKED WHERE THE LIST IS KNOWN. This reader runs
+   * before the figures are attached, so it can only insist on a non-negative integer; the
+   * composer treats an index past the end as "no figure", which is the safe direction — a slide
+   * loses a picture rather than gaining somebody else's.
+   */
+  figure: number;
 }
 
 export interface DeckPlan {
@@ -78,6 +110,9 @@ export interface DeckPlan {
   /** References appended as the deck's last slide when the canvas was grounded. Filled by the
    *  CALLER from the canvas's own sources — never by the model, which would invent them. */
   references: { title: string; url?: string }[];
+  /** The learner's own figures this deck may draw on. Filled by the CALLER, same rule as
+   *  references — see DeckFigure. Empty when the canvas has no stored pictures. */
+  figures: DeckFigure[];
 }
 
 const MAX_SLIDES = 24;
@@ -113,6 +148,13 @@ const dataList = (value: unknown): DeckDatum[] =>
         .filter((d) => d.label !== "" && Number.isFinite(d.value))
         .slice(0, MAX_DATA)
     : [];
+
+/** A 1-based figure choice, or 0 for none. Anything that is not a whole positive number — a
+ *  path, a caption, a float, a negative — means the model did not pick a figure. */
+const figureIndex = (value: unknown): number => {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim()) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : 0;
+};
 
 /** A table body: rows of cells, both dimensions clamped. */
 const cellRows = (value: unknown): string[][] =>
@@ -152,6 +194,7 @@ export function readDeckJson(text: string): DeckPlan | null {
       chart,
       columns,
       data,
+      figure: figureIndex(s.figure),
       note: str(s.note, 140),
       rows,
       takeaway: str(s.takeaway, 180),
@@ -186,6 +229,7 @@ export function readDeckJson(text: string): DeckPlan | null {
     closing ?? { ...EMPTY_SLIDE, layout: "closing", title: "Questions?" },
   ];
   return {
+    figures: [],
     references: [],
     slides: ordered,
     subtitle: str(raw.subtitle, 160),
@@ -197,6 +241,7 @@ export const EMPTY_SLIDE: DeckSlide = {
   chart: "column",
   columns: [],
   data: [],
+  figure: 0,
   note: "",
   takeaway: "",
   unit: "",
@@ -236,6 +281,12 @@ export function deckSystemPrompt(): string {
     'conclude. Optionally add "note" for a caveat. ' +
     "🔴 FIGURES MUST COME FROM THE PROVIDED MATERIAL. Use kpi, chart and table only for numbers " +
     "the material actually contains; with no material, do not use them at all. " +
+    "🔴 PICTURES ARE CHOSEN BY NUMBER, NEVER NAMED. If the brief lists figures from the " +
+    'learner\'s own material, a bullets or two_column slide may set "figure" to one of those ' +
+    'numbers to show that picture beside its points. Use 0 — or leave it out — on every other ' +
+    "slide, and never write a filename, a path or a figure that is not in the list. Most slides " +
+    "should have no picture: one that illustrates the point earns its place, one that decorates " +
+    "does not. " +
     "Structure: one cover first, then an agenda, then 6-12 body slides with a section slide " +
     "introducing each part, one closing last. Prefer concrete facts from the provided material, " +
     "and never invent references. No markdown fences, no commentary."

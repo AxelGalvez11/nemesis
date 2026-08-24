@@ -30,7 +30,7 @@ import type { CanvasBlock } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
 import type { TeachingStrategyId } from "@/lib/learn/teaching-strategy";
-import { THINKING_COPY } from "@/lib/learn/thinking-phases";
+import { THINKING_COPY, thinkingMark } from "@/lib/learn/thinking-phases";
 import { previewLine, previewWorthShowing } from "@/lib/learn/turn-preview";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
@@ -1196,6 +1196,17 @@ export function LearningCanvas({
   const preparingLabel = previewWorthShowing({ milestones: session.milestones, systemLabel })
     ? previewLine({ milestones: session.milestones, stage: session.stage, systemLabel })
     : null;
+  // 🔴 THE MARK IS DERIVED FROM THE SAME THREE FACTS, IN THE SAME ORDER, as `systemLabel` above —
+  // that is the only thing stopping a magnifier appearing beside "Reading your material".
+  // `searching` is the most specific truth available and outranks the rest, and it is true only
+  // while a turn is in flight AND real hostnames have come back, which is the same gate the chips
+  // themselves are drawn behind.
+  const preparingMark = thinkingMark({
+    busyKind: busy.kind,
+    phase: policy.phase,
+    searching: turnInFlight && session.searchedDomains.length > 0,
+    work: session.work,
+  });
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
   // with `policyOwns ? … : …`, which was safe only while ownership was all-or-nothing. Now that a
@@ -1981,6 +1992,7 @@ export function LearningCanvas({
         // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
         // beside something whose position is a live transform, so it moved onto the dock itself.
         caption={turnInFlight || presence === "preparing" ? preparingLabel : null}
+        captionMark={turnInFlight || presence === "preparing" ? preparingMark : null}
         // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE CAPTION MAKES WAY. `replyText` is the text as
         // it streams, and its first character is the honest end of the wait — not a timer, and not
         // the turn formally finishing.

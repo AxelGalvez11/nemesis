@@ -29,8 +29,10 @@ import {
   type AttentionTarget,
 } from "@/lib/mascot/attention";
 import type { StateId } from "@/lib/bloub/states";
+import type { ThinkingMark as ThinkingMarkKind } from "@/lib/learn/thinking-phases";
 
 import { BloubBot } from "./bloub-bot";
+import { ThinkingMark } from "./thinking-mark";
 import { usePoke } from "./use-poke";
 import type { FaceId } from "@/lib/character/face";
 import { speedOf, stationOf, type Station } from "@/lib/character/stations";
@@ -106,6 +108,15 @@ export interface BloubDockProps {
    */
   domains?: readonly string[];
   /**
+   * The mark that belongs beside the caption, when the runtime can name the KIND of work.
+   *
+   * 🔴 DERIVED BY THE CALLER FROM THE SAME FACTS THE CAPTION IS, via `thinkingMark` — never
+   * guessed here from the caption's words. A mark is a claim about what Nemesis is doing, and one
+   * chosen by a different rule from the sentence beside it would eventually contradict it.
+   * Null wherever the kind is not known, which is the honest answer and the common one.
+   */
+  captionMark?: ThinkingMarkKind | null;
+  /**
    * Where the character stands, when the surface knows better than the pose does.
    *
    * 🔴🔴 THE POSE USED TO DECIDE, AND IT CANNOT ANY MORE. `stationOf` reads the state id, which
@@ -178,7 +189,8 @@ export interface BloubDockProps {
 export function BloubDock({
   caption = null,
   captionLeaving: leaving = false,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted now, drawn by its owner; see the prop's doc.
+  captionMark = null,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted now, drawn with the favicon proxy; see the prop's doc.
   domains: _domains = [],
   station: stationOverride,
   marker = null,
@@ -482,7 +494,7 @@ export function BloubDock({
           working, the step it is on. */}
       {caption && (
         <span
-          className={`bloub-caption canvas-thinking-word pointer-events-none absolute select-none whitespace-nowrap text-[length:var(--canvas-text-small)] leading-none${
+          className={`bloub-caption pointer-events-none absolute select-none whitespace-nowrap text-[length:var(--canvas-text-small)] leading-none${
             station === "centre" ? " left-1/2 top-full" : " left-full top-1/2"
           }${leaving ? " canvas-preview-out" : ""}`}
           style={
@@ -499,7 +511,18 @@ export function BloubDock({
                 }
           }
         >
-          {caption}
+          {/* 🔴 THE MARK RIDES THE CHARACTER TOO. The caption moved onto the dock because nothing
+              static can sit beside a live transform (see above); the mark is part of the same
+              claim, so it lives in the same box and counter-scales with it. */}
+          <span className="flex items-center gap-1.5">
+              {captionMark ? <ThinkingMark kind={captionMark} /> : null}
+              {/* 🔴 THE SHIMMER PAINTS TEXT, SO IT MAY ONLY WRAP TEXT. `canvas-thinking-word`
+                  clips a moving gradient to glyphs, which it does by setting `color:transparent`
+                  — so while it sat on the whole caption box it made the mark beside the words
+                  invisible (its strokes are `currentColor`) and would have done the same to
+                  anything else that ever joined them. It belongs on the sentence it animates. */}
+            <span className="canvas-thinking-word">{caption}</span>
+          </span>
         </span>
       )}
     </div>

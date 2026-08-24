@@ -13,6 +13,7 @@ import { SLIDE_H, SLIDE_W } from "./deck-scene";
 // geometry, same words.
 
 const PLAN: DeckPlan = {
+  figures: [],
   references: [],
   slides: [
     { ...EMPTY_SLIDE, layout: "cover", subtitle: "sub", title: "Photosynthesis" },

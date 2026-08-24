@@ -11,6 +11,7 @@ import { sceneToSvg } from "./deck-svg";
 // that would let a preview lie: clipping, escaping, and actually drawing the words.
 
 const PLAN: DeckPlan = {
+  figures: [],
   references: [],
   slides: [{ ...EMPTY_SLIDE, layout: "cover", subtitle: "sub", title: "Photosynthesis" }],
   subtitle: "sub",

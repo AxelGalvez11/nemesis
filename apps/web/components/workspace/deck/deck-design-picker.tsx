@@ -44,7 +44,7 @@ export function useDeckDesignChoice(deckKey?: string | null): { designId: string
 /** A cover for this design, carrying the learner's own title. */
 function coverScene(design: DeckDesign, title: string) {
   const slide = { ...EMPTY_SLIDE, layout: "cover" as const, subtitle: "A deck built by Nemesis", title };
-  const plan: DeckPlan = { references: [], slides: [slide], subtitle: slide.subtitle, title };
+  const plan: DeckPlan = { figures: [], references: [], slides: [slide], subtitle: slide.subtitle, title };
   return composeSlide(design, slide, { credit: "Nemesis", index: 1, plan });
 }
 

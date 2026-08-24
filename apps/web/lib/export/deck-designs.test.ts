@@ -20,6 +20,7 @@ function luminance(hex: string): number {
 }
 
 const PLAN: DeckPlan = {
+  figures: [],
   references: [{ title: "OpenStax Biology 2e", url: "https://openstax.org" }],
   slides: [
     { ...EMPTY_SLIDE, layout: "cover", subtitle: "How a plant turns light into sugar", title: "Photosynthesis" },
@@ -204,7 +205,7 @@ test("🔴 every picture a design declares is actually DRAWN", () => {
   // (rail, panel-title, banner) returned the page's COLOUR and dropped its material, so three
   // designs quietly lost the interior they had asked for. A declaration nobody reads is
   // invisible in review and invisible in code — only exercising it finds it.
-  const plan: DeckPlan = { references: [], slides: [], subtitle: "s", title: "T" };
+  const plan: DeckPlan = { figures: [], references: [], slides: [], subtitle: "s", title: "T" };
   const drawn = (slide: DeckPlan["slides"][number], index: number, d: (typeof DECK_DESIGNS)[number]) =>
     composeSlide(d, slide, { credit: "N", index, plan }).background.image;
 

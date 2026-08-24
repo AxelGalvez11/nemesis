@@ -10,7 +10,14 @@ import type { DeckPlan } from "./deck-plan";
 
 export async function downloadDeck(plan: DeckPlan, title: string, designId?: string | null): Promise<void> {
   const { buildDeckPptx } = await import("./deck-pptx");
-  const blob = (await buildDeckPptx(plan, { credit: "Made with Nemesis", designId })) as Blob;
+  // 🔴 THE LEARNER'S FIGURES ARE SIGNED HERE, NOT STORED. The bucket is private and a signature
+  // expires within the hour, so the plan carries paths and every render mints its own links —
+  // see deck-figures.ts. A deck whose signatures failed still downloads, with captions where the
+  // pictures would be.
+  const withFigures = plan.figures.length
+    ? { ...plan, figures: await (await import("../learn/deck-figures")).signDeckFigures(plan.figures) }
+    : plan;
+  const blob = (await buildDeckPptx(withFigures, { credit: "Made with Nemesis", designId })) as Blob;
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
