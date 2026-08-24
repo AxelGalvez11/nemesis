@@ -32,10 +32,11 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { DeckThemePicker, useDeckThemeChoice } from "@/components/workspace/deck/deck-theme-picker";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
-import type { CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
+import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { SourcePreview } from "./source-preview";
@@ -333,17 +334,7 @@ export function SourcesControl({
                     );
                   }
                   if (output.kind === "slides" && output.deck) {
-                    const deck = output.deck;
-                    return (
-                      <button
-                        className={row}
-                        key={output.id}
-                        onClick={() => void import("@/lib/export/deck-download").then((m) => m.downloadDeck(deck, output.title))}
-                        type="button"
-                      >
-                        {body}
-                      </button>
-                    );
+                    return <SlidesOutputRow key={output.id} output={output} rowClass={row} />;
                   }
                   return (
                     <div className="px-2 py-1.5" key={output.id}>
@@ -427,6 +418,44 @@ const MEANING: Record<ObjectiveState, string> = {
  * (`\u00d7`, Sources and outputs, Progress) plus `\u22ef`, and this moved inside the last of them. The
  * BODY is what mattered and it is unchanged; only the way in did.
  */
+/** A slides output: click the row to download the .pptx, use the chip to change its look.
+ *
+ *  The file is rebuilt from the stored plan on every click (deck-pptx.ts), so switching theme
+ *  costs nothing and needs no round trip — which is the whole reason the learner gets twenty
+ *  looks instead of one. */
+function SlidesOutputRow({ output, rowClass }: { output: CanvasOutput; rowClass: string }) {
+  const { choose, themeId } = useDeckThemeChoice(output.assetId ?? output.id);
+  const [building, setBuilding] = useState(false);
+  const deck = output.deck;
+  if (!deck) return null;
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        className={cn(rowClass, "min-w-0 flex-1")}
+        disabled={building}
+        onClick={() =>
+          void (async () => {
+            setBuilding(true);
+            try {
+              const { downloadDeck } = await import("@/lib/export/deck-download");
+              await downloadDeck(deck, output.title, themeId);
+            } finally {
+              setBuilding(false);
+            }
+          })()
+        }
+        type="button"
+      >
+        <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
+        <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+          {building ? "Building your file…" : "Slides · click to download .pptx"}
+        </p>
+      </button>
+      <DeckThemePicker onPick={choose} themeId={themeId} />
+    </div>
+  );
+}
+
 function ObjectivesPanel({
   canvas,
   activeTaskId,

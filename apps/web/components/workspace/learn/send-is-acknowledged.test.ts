@@ -566,3 +566,15 @@ test("a PowerPoint ask in chat becomes a deck, not a lesson about decks", () => 
   const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
   assert.match(library, /generated_slides/, "the Library no longer lists slide decks");
 });
+
+test("a deck's look is the learner's to choose, in both places it lives", () => {
+  // Owner 2026-08-25: "I need twenty themes." A picker the learner cannot reach is not a
+  // choice, so both surfaces that hand over a .pptx carry it, and both pass the chosen id
+  // through to the builder rather than downloading the house look regardless.
+  const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
+  assert.match(controls, /DeckThemePicker/, "the canvas outputs panel lost its theme picker");
+  assert.match(controls, /downloadDeck\(deck, output\.title, themeId\)/, "the canvas panel downloads without the chosen theme");
+  const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
+  assert.match(library, /DeckThemePicker/, "the Library's Slides shelf lost its theme picker");
+  assert.match(library, /downloadDeck\(output\.deck, output\.title, themeId\)/, "the Library downloads without the chosen theme");
+});
