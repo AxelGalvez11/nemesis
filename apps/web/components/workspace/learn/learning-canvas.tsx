@@ -522,13 +522,19 @@ export function LearningCanvas({
   // 🔴 MEMOISED ON THE REQUEST, NOT ON EVERY RENDER. `buildTestRun` is pure, but a fresh object
   // each render would remount `CanvasCheck` and reset the learner to question one mid-test — the
   // component keys its progress reset on `run` identity for exactly that reason.
-  const testRun = useMemo(
-    () =>
-      session.testRequested
-        ? buildTestRun({ evidence: policy.evidence, objectives: policy.objectives })
-        : ("nothing-taught" as const),
-    [policy.evidence, policy.objectives, session.testRequested],
-  );
+  //
+  // 🔴🔴 THE COURSE'S OWN POOL FIRST, THE TURN'S QUESTIONS SECOND, AND THAT ORDER IS THE POINT.
+  // `buildTestRun` draws on tracked objectives with grounded distractors, real evidence and
+  // balanced answer seats — everything a model-written question cannot claim. Where that exists it
+  // is strictly better, so it wins. `session.testQuestions` carries the case it cannot reach at
+  // all: a conversation, which has no objectives, where the material is what was just said. Before
+  // 2026-08-24 that case did not exist, because a topic became a lesson; now it is the common one.
+  const testRun = useMemo(() => {
+    if (!session.testRequested) return "nothing-taught" as const;
+    const fromPool = buildTestRun({ evidence: policy.evidence, objectives: policy.objectives });
+    if (!isTestRefusal(fromPool)) return fromPool;
+    return session.testQuestions ?? fromPool;
+  }, [policy.evidence, policy.objectives, session.testQuestions, session.testRequested]);
   const [makingFromMisses, setMakingFromMisses] = useState(false);
   const { session: authSession } = useAuth();
   const uid = authSession?.user.id ?? null;
@@ -846,8 +852,24 @@ export function LearningCanvas({
   //
   // 🔴 `policy.decision` AND `policy.feedback`, NOT JUST THE QUESTION. A correction and a verdict
   // occupy the surface exactly as a prompt does, and must not sit beside a recall card either.
+  //
+  // 🔴🔴 AND NOT ON A CANVAS THAT HAS NOTHING TO SHOW BESIDE IT — owner, 2026-08-24: *"going back
+  // to previous canvases causes a glitch where it just flips, it doesn't even show anything, and it
+  // just asks questions."* Reproduced: a canvas the retired teaching lane had put into `learn`
+  // reopens, the policy resumes, and it stages a question over a surface with no blocks and no live
+  // reply — so the learner is ambushed by a question about a lesson they cannot see. This file
+  // already documents that exact shape one state over ("a question float at the top of an empty
+  // surface"); the door §24 opened is what let it reach `learn` too.
+  //
+  // A course keeps its right to ask: `coursePlan` means there is a plan behind the question even
+  // when this canvas holds no blocks yet. Everything else waits for the learner to say something,
+  // which is what a conversation does anyway.
+  const policyHasSomethingBehindIt =
+    canvas.blocks.length > 0 || session.coursePlan !== null;
   const policyPresenting =
-    policy.status === "ready" && (policy.feedback !== null || policy.decision !== null);
+    policy.status === "ready" &&
+    policyHasSomethingBehindIt &&
+    (policy.feedback !== null || policy.decision !== null);
 
   /**
    * Nemesis has answered something the learner asked, and that answer is live.

@@ -561,10 +561,16 @@ test("a PowerPoint ask in chat becomes a deck, not a lesson about decks", () => 
   assert.ok(policyCall > -1);
   assert.ok(route < policyCall, "the ask routes AFTER the policy turn — the turn steals it back");
   const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
-  assert.ok(controls.includes('"Make slides"') || controls.includes("Make slides"), "the outputs tab lost its slides action");
-  // 2026-08-24 REVERSAL: this used to demand `downloadDeck` here. The owner moved the deck into
-  // the app ("HTML is the deck, .pptx is an export"), so the row now OPENS it and the download
-  // lives inside the deck view. The invariant is unchanged — a slides output must be reachable.
+  // 🔴🔴 THE "MAKE SLIDES" BUTTON IS GONE ON PURPOSE — owner, 2026-08-24: "remove the make flash
+  // cards, make slide, make summary note from the output section." The outputs tab LISTS what a
+  // canvas has produced; asking is done in words, which is exactly what the first half of this test
+  // checks and what §38 already required of every other learning request. So the assertion worth
+  // keeping is the opposite one: no Make button came back.
+  assert.ok(!controls.includes("Make slides"), "a Make button returned to the outputs tab");
+  // 2026-08-24 REVERSAL (separate, same day): this used to demand `downloadDeck` here. The owner
+  // moved the deck into the app ("HTML is the deck, .pptx is an export"), so the row now OPENS it
+  // and the download lives inside the deck view. The invariant is unchanged and survives both
+  // changes — a slides output must still be REACHABLE from the outputs tab, just not makeable there.
   assert.match(controls, /\/deck\?c=/, "a slides output can no longer be opened");
   const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
   assert.match(library, /generated_slides/, "the Library no longer lists slide decks");
