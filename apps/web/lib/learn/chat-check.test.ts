@@ -12,6 +12,26 @@ import test from "node:test";
 
 import { MAX_OPTIONS, MIN_OPTIONS, readChatCheck } from "./chat-check";
 import { cardsFromMisses, MAX_QUESTIONS } from "./test-run";
+import { turnRouterMessages, type TurnContext } from "./turn-router";
+
+/** An empty canvas, so the packet under test is the contract itself and not one turn's state. */
+const EMPTY_CONTEXT: TurnContext = {
+  canvasTitle: "",
+  clarified: [],
+  courseRequested: false,
+  demonstrated: 0,
+  history: [],
+  lessonInProgress: false,
+  materialContext: "",
+  memory: "",
+  objectives: 0,
+  passages: 0,
+  searchesLeft: 0,
+  sources: 0,
+  stagedPassage: "",
+  today: "Tuesday, 18 August 2026",
+  webContext: "",
+};
 
 const good = (over?: Record<string, unknown>) => ({
   prompt: "Which part of the uterus rises in pregnancy?",
@@ -102,4 +122,31 @@ test("🔴🔴 …and the chips are actually REACHABLE from a conversation", () 
   const canvas = readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8");
   assert.match(canvas, /session\.testQuestions \?\? fromPool/, "a conversation's questions never reach the chips");
   assert.match(canvas, /if \(!isTestRefusal\(fromPool\)\) return fromPool/, "the grounded pool stopped taking precedence");
+});
+
+test("🔴🔴 the packet says a check never replaces the answer", () => {
+  // 🔴 MEASURED ON PRODUCTION 2026-08-24. *"Teach me the three branches of the US government, then
+  // quiz me on it"* returned five perfectly good chips and an EMPTY answer, so the canvas rendered
+  // its "Nemesis had nothing to add." notice above a quiz on a lesson that was never given. The
+  // learner asked for two things and received only the second.
+  //
+  // 🔴 THE CAUSE WAS THE INSTRUCTION NEXT TO IT: "do not also write them out in your prose"
+  // presupposes prose exists, and the model read it as permission to write none. Same shape as a
+  // figure marker with no payload, in the other direction — one half of a two-part answer treated
+  // as the whole of it.
+  // 🔴 BUILT FROM `turnRouterMessages`, NOT READ OUT OF THE SOURCE. The rule spans two adjacent
+  // string literals, so a source match would break on where the `+` happens to fall — and would be
+  // testing the file rather than what the model is actually handed. This is the assembled packet.
+  const packet = turnRouterMessages({ context: EMPTY_CONTEXT, utterance: "quiz me on this" })
+    .map((message) => message.content)
+    .join("\n")
+    .replace(/\s+/g, " ");
+  assert.match(packet, /A check NEVER replaces your answer/, "a check may once more arrive with no answer at all");
+  assert.match(
+    packet,
+    /sending questions with an empty answer leaves them being tested on a lesson you never gave/,
+    "the consequence of an empty answer is no longer spelled out",
+  );
+  // The clause that caused it must survive too: it is right, it was just half a rule.
+  assert.match(packet, /do not also write them out in your prose/, "the no-duplication clause was removed rather than completed");
 });

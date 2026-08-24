@@ -1025,6 +1025,21 @@ const DECISION_CONTRACT = [
   + "about what was actually said in this conversation, make the wrong options genuinely tempting "
   + "rather than obviously silly, and vary which seat the right answer sits in. They are shown as "
   + "tappable chips under your answer, so do not also write them out in your prose.",
+
+  // 🔴🔴 THE CHIPS ACCOMPANY AN ANSWER; THEY NEVER REPLACE ONE, AND THE SENTENCE ABOVE CAUSED
+  // EXACTLY THAT. "Do not also write them out in your prose" presupposes prose exists — the model
+  // read it as permission to write none. Measured on production 2026-08-24: *"Teach me the three
+  // branches of the US government, then quiz me on it"* returned five perfectly good chips and an
+  // EMPTY answer, so the canvas rendered its "Nemesis had nothing to add." notice above a quiz on
+  // a lesson that was never given. The learner asked for two things and got the second one.
+  //
+  // 🔴 THIS IS THE SAME FAILURE AS THE FIGURE MARKER WITH NO PAYLOAD, in the other direction: there
+  // the prose promised a picture that was missing, here the chips test prose that is missing. Both
+  // are the model treating one half of a two-part answer as the whole of it.
+  "🔴 A check NEVER replaces your answer. The chips sit UNDER what you said, so write the teaching "
+  + "first and let them follow. If the learner asks to be taught AND tested — \"explain X then quiz "
+  + "me\" — the explanation is the answer and the questions are the check on it; sending questions "
+  + "with an empty answer leaves them being tested on a lesson you never gave.",
   "",
   // 🔴 THE THREE REFUSALS ARE STATED SO THE MODEL DOES NOT PROMISE WHAT THE CANVAS CANNOT DELIVER.
   // `buildTestRun` is the authority and it refuses freely; a reply that has already said "here are

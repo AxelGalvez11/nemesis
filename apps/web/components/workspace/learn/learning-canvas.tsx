@@ -18,8 +18,12 @@ import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
 import { useAuth } from "@/components/AuthProvider";
 import { CanvasCheck } from "./canvas-check";
-import { ensureCanvasDeck, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
-import { buildTestRun, cardsFromMisses, isTestRefusal } from "@/lib/learn/test-run";
+// 🔴 `ensureCanvasDeck` / `writeRecallCards` / `cardsFromMisses` LEFT WITH THE RESULTS SCREEN
+// (owner, 2026-08-24). They existed for one caller: the "Make cards from what I missed" button on
+// the card that no longer exists. All three are still exported and still used elsewhere; this file
+// simply has nothing to write a deck FOR any more. A learner who wants cards asks for them in
+// words, which is the rule §38 applies to everything else on this surface.
+import { buildTestRun, isTestRefusal } from "@/lib/learn/test-run";
 import { lookAt } from "@/lib/mascot/attention";
 import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
@@ -535,41 +539,8 @@ export function LearningCanvas({
     if (!isTestRefusal(fromPool)) return fromPool;
     return session.testQuestions ?? fromPool;
   }, [policy.evidence, policy.objectives, session.testQuestions, session.testRequested]);
-  const [makingFromMisses, setMakingFromMisses] = useState(false);
   const { session: authSession } = useAuth();
   const uid = authSession?.user.id ?? null;
-
-  /** Turn the objectives they missed into real cards, in this canvas's own deck.
-   *
-   *  🔴 THE SAME DECK THE CANVAS ALREADY WRITES TO, NEVER A NEW ONE PER TEST. `ensureCanvasDeck`
-   *  reuses `canvas.studyDeckId` when there is one, so a learner who tests themselves three times ends
-   *  up with one deck that grew, not three decks named the same thing. */
-  const makeCardsFromMisses = useCallback(
-    async (keys: readonly string[]) => {
-      if (isTestRefusal(testRun) || makingFromMisses) return;
-      const cards = cardsFromMisses(testRun, keys);
-      if (cards.length === 0 || !uid) return;
-      setMakingFromMisses(true);
-      try {
-        const deckId = await ensureCanvasDeck(uid, canvas.title, canvas.studyDeckId);
-        if (!deckId) {
-          session.showNotice("Those cards could not be saved. Your answers are still here.");
-          return;
-        }
-        await writeRecallCards(
-          uid,
-          deckId,
-          cards.map((card, index) => ({ back: card.back, conceptId: null, front: card.front, id: `miss-${index}` })),
-          canvas.concepts,
-        );
-        session.showNotice("Cards for what you missed are in your Library.");
-        session.clearTest();
-      } finally {
-        setMakingFromMisses(false);
-      }
-    },
-    [canvas.concepts, canvas.studyDeckId, canvas.title, makingFromMisses, session, testRun, uid],
-  );
 
   const converse = useCallback(
     async (asked: string, staged: CanvasBlock | null = null, withCapability: ComposerCapability | null = null) => {
@@ -601,6 +572,32 @@ export function LearningCanvas({
       return decision;
     },
     [policy.decision, remember, session, surroundings],
+  );
+
+  /**
+   * They answered the last question of a check. Nemesis marks it, in words, in the conversation.
+   *
+   * 🔴🔴 THIS IS WHERE THE RESULTS SCREEN WENT — OWNER, 2026-08-24: *"at the end it shouldn't show
+   * anything… it's just up to DeepSeek to report the results in its own words, not some kind of
+   * screen. I just want it to say, okay, you got four out of five right, and here's the one you
+   * missed and why. That's more natural."*
+   *
+   * 🔴 THE CARD IS CLEARED BEFORE THE TURN IS SENT, NOT AFTER. `converse` awaits a whole model
+   * round trip; leaving the check mounted for those seconds would show the learner a finished
+   * question list with no way forward, and `session.testRequested` is what keeps it on screen.
+   *
+   * 🔴 AND IT GOES THROUGH `converse`, NOT A NEW PATH. The account is the learner's own turn —
+   * they answered the questions and this says what they answered — so it belongs in the
+   * transcript, in the six-turn window the packet carries, and in the durable moment history,
+   * exactly like anything else they say. A private side channel would mark the test with
+   * information the next turn could not see.
+   */
+  const finishCheck = useCallback(
+    async (account: string) => {
+      session.clearTest();
+      await converse(account);
+    },
+    [converse, session],
   );
 
   /**
@@ -1816,12 +1813,7 @@ export function LearningCanvas({
                   : "Not enough of this canvas can carry a fair question yet. Keep going a little longer and ask again."}
               </p>
             ) : (
-              <CanvasCheck
-                making={makingFromMisses}
-                onDismiss={session.clearTest}
-                onMakeCards={(keys) => void makeCardsFromMisses(keys)}
-                run={testRun}
-              />
+              <CanvasCheck onDismiss={session.clearTest} onFinished={(account) => void finishCheck(account)} run={testRun} />
             )}
           </div>
         )}
