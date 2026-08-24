@@ -279,6 +279,38 @@ test("🔴 §42's anatomy claims are tied to the harvest, the registry door and 
   assert.match(scripts.scripts?.prebuild ?? "", /copy-draco-decoder/, "the decoder copy has left prebuild");
 });
 
+test("🔴 the atlas REGISTRY never reaches the learner's bundle — §45's rule, applied to data", () => {
+  // 🔴🔴 THE REGISTRY IS 3,700-ODD STRUCTURE NAMES AND GROWS WITH EVERY REGION HARVESTED. It was
+  // imported straight into the resolve pass on the day the lane shipped, and `prepareAnswer` runs
+  // in the BROWSER (`canvas-chat.ts` calls it) — so a learner reading a history lesson downloaded
+  // the name of every bone, muscle, nerve and vessel to discover their answer named none of them.
+  // The fix was the shape every heavy lane already uses: a route owns the data, the browser posts
+  // a name. This guard is what stops the shortcut being taken again.
+  assert.match(SECTION_42, /server-side only/i);
+  const clientReachable = [
+    "lib/learn/anatomy-resolve.ts",
+    "lib/learn/anatomy-lookup.ts",
+    "lib/learn/answer-prepare.ts",
+    "lib/learn/canvas-visual.ts",
+    "components/workspace/learn/anatomy-viewer.tsx",
+    "components/workspace/learn/semantic-visual.tsx",
+    "components/workspace/learn/canvas-document.tsx",
+  ];
+  for (const file of clientReachable) {
+    const source = readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
+    for (const heavy of ["anatomy-atlas", "anatomy-match"]) {
+      assert.equal(
+        source.includes(`"./${heavy}"`) || source.includes(`/learn/${heavy}"`),
+        false,
+        `${file} imports ${heavy} — the atlas registry has reached the learner's bundle`,
+      );
+    }
+  }
+  // ...and the route that legitimately holds it still does.
+  const route = readFileSync(new URL("../../app/api/learn/anatomy/route.ts", import.meta.url), "utf8");
+  assert.match(route, /anatomy-match/, "the anatomy route no longer owns the matcher");
+});
+
 test("🔴 §42's ladder is the array, not the paragraph", () => {
   // The whole mechanism of the section: an ordering a router calls, rather than one a reader
   // is trusted to honour. Reordering the array without reordering the section fails here.

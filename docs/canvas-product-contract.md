@@ -1342,7 +1342,7 @@ enjoyable engineering should read this line as the answer.
 
 # 42. 🔴 SCIENTIFIC REPRESENTATION IS A TRUST LADDER — generation is the last rung, not the first (owner, 2026-08-18)
 
-## STATUS: RUNGS ONE, TWO AND THREE SHIPPED AND SERVING. A LESSON OR A REPLY RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT; A LESSON NOW REQUESTS A REAL LICENSED PICTURE BY SUBJECT, A 3D MACROMOLECULE BY NAME, AND A NAMED ANATOMICAL STRUCTURE FROM THE HARVESTED ATLAS (2026-08-24). THE CURATED REGISTRY IS SEEDED AND A LIVE PROVIDER STANDS BEHIND IT. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
+## STATUS: RUNGS ONE, TWO AND THREE SHIPPED AND SERVING. A LESSON OR A REPLY RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT; A LESSON NOW REQUESTS A REAL LICENSED PICTURE BY SUBJECT, A 3D MACROMOLECULE BY NAME, AND A NAMED ANATOMICAL STRUCTURE — BONE, MUSCLE, VESSEL, NERVE OR ORGAN — FROM THE FOURTEEN-REGION HARVESTED ATLAS (2026-08-24). THE CURATED REGISTRY IS SEEDED AND A LIVE PROVIDER STANDS BEHIND IT. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT.
 
 🔴 **Rung three went live on 2026-08-23, on the owner's instruction** (*"let's ingest it… can you
 put those APIs in as well… Nemesis or DeepSeek needs to be able to have access to a lot of these
@@ -1365,27 +1365,58 @@ title stay printed beside the viewer — the same inspectability a SMILES string
 model-written accession is refused by construction: four opaque characters are the remembered-
 SMILES danger with fewer ways to notice, so only the resolver mints them.
 
-🔴 **The anatomy atlas shipped 2026-08-24, on the owner's order ("what I would like is z anatomy"),
-and it is the ladder reaching the body.** `{"kind":"anatomy","structure":"sacrum"}` resolves
-against `anatomy-atlas.ts` — a registry GENERATED at harvest time from the atlas model's own node
-names ("Atlas (C1)", "Frontal bone", "Sacrum"), so the vocabulary of askable structures is the
-atlas authors', never ours and never the model's. The resolve pass (`anatomy-resolve.ts`) is
-synchronous — the registry is a few kilobytes compiled in beside it — and stamps which region file
-to load and which named meshes to pick out; "cervical vertebrae" stamps all five, a left/right
-pair stamps both, and an ask too broad to point at anything ("bone") becomes the whole-region
-view rather than a smear of highlights. The viewer (`anatomy-viewer.tsx`, three.js in its own
-chunk, the Mol* discipline: render on gesture, dispose on unmount) ghosts everything the stamp did
-not name and frames the camera on what it did — a teacher's pointer, done with the camera.
+🔴 **The anatomy atlas shipped 2026-08-24, on the owner's order ("what I would like is z anatomy…
+finish the entire atlas, I don't just want bones"), and it is the ladder reaching the body.**
+`{"kind":"anatomy","structure":"liver"}` resolves against `anatomy-atlas.ts` — a registry GENERATED
+at harvest time from the atlas models' own node names ("Atlas (C1)", "Liver", "Deltoid muscle"), so
+the vocabulary of askable structures is the atlas authors', never ours and never the model's.
+**Fourteen regions, 3,209 outlinable structures and 568 landmarks: the skeleton, three skulls, both
+limbs and the hand from the university project, and the muscular, cardiovascular, nervous, lymphoid,
+visceral and joint systems exported from Z-Anatomy's own Blender file.** The viewer
+(`anatomy-viewer.tsx`, three.js in its own chunk, the Mol* discipline: render on gesture, dispose on
+unmount) ghosts everything the stamp did not name and frames the camera on what it did — a teacher's
+pointer, done with the camera.
+
+🔴 **THE REGISTRY IS SERVER-SIDE ONLY, AND THAT WAS A CORRECTION, NOT A DESIGN.** The first version
+imported the atlas straight into the resolve pass — and `prepareAnswer` runs in the BROWSER, so
+every learner reading a history lesson downloaded the name of every bone, muscle, nerve and vessel
+to discover their answer named none of them. `anatomy-resolve.ts` is now a pure walk that names
+what was asked, `app/api/learn/anatomy/route.ts` owns the registry and the matcher, and
+`anatomy-lookup.ts` is the seam between them — the same three-file shape the figure and macromolecule
+lanes already had, for the same reason §45 keeps mathjs off the learner's bundle.
+
+🔴 **MATCHING IS COVERAGE, AND EVERY RULE IN IT WAS A MEASURED DEFECT FIRST.** How much of a
+candidate name the ask accounts for decides the match, banded against the strongest match anywhere
+in the atlas: plain containment let "sacrum" lose to "Art cart of sacrum art process.r" in the leg.
+A low floor under that band is what lets an organ named only by its parts answer at all — the atlas
+has no node called "Lung", only five lobes. Breadth decides structure from category without a word
+list: measured, a specific ask touches at most a dozen candidates and "bone" touches sixty, so past
+the cap the honest picture is the region itself. And a named LANDMARK with no geometry — "Apex of
+heart", "Coronary sulcus" — answers with the region it is marked on rather than a dead end, because
+refusing outright reported the heart as absent from a model that is almost entirely heart.
 
 🔴 **THE MESHES ARE HARVESTED, LICENCE-CLEANED, AND SERVED FROM OUR OWN DEPLOYMENT.**
 `scripts/anatomy-harvest.mts` downloads named regions from the Open3DModel project (Dutch/Belgian
-university revisions of Z-Anatomy, itself descended from BodyParts3D), whose MESHES are CC BY-SA
-4.0 and whose TEXTURES are CC BY-NC-SA — and NC is refused across this codebase by design, so the
-harvest strips every texture, image and UV channel before anything reaches the repo. What ships is
-geometry in our own material: the whole labelled skeleton is 1.5 MB, Draco-compressed, decoded by
-the decoder `copy-draco-decoder.mjs` copies out of our own three.js dependency at build time. The
-validator holds the asset to a same-origin `/anatomy/….glb` path — there is no external host in
-this lane at all, and a model-written URL refuses by name.
+university revisions of Z-Anatomy, itself descended from BodyParts3D) **and exports the body systems
+from Z-Anatomy's own 306 MB Blender file** via `scripts/anatomy-export-systems.py`. Both atlases are
+CC BY-SA 4.0 and each region records which one it came from, because attributing one atlas's work to
+the other is exactly what a share-alike licence exists to prevent. Open3DModel's TEXTURES are CC
+BY-NC-SA — NC is refused across this codebase by design — so the harvest strips every texture, image
+and UV channel before anything reaches the repo. What ships is geometry in our own material: **27 MB
+across fourteen files**, Draco-compressed, none of it loaded until a lesson asks for that region, and
+decoded by the decoder `copy-draco-decoder.mjs` copies out of our own three.js dependency at build
+time. The validator holds the asset to a same-origin `/anatomy/….glb` path — there is no external
+host in this lane at all, and a model-written URL refuses by name.
+
+🔴 **BLENDER IS A HARVEST-TIME TOOL AND NEVER A BUILD-TIME ONE.** The export runs once, its output is
+committed, and nobody needs Blender to build or run Nemesis. `ANATOMY_BLEND` is required rather than
+optional when the harvest runs, so a regenerated registry is never silently half an atlas.
+
+🔴 **WHAT THE ATLAS STILL DOES NOT HAVE, SAID PLAINLY.** Female reproductive anatomy: the upstream
+model is male, and no amount of matching invents a uterus. The oesophagus is named only as a
+landmark on the liver. Individual named arteries below the heart's own vessels live in Z-Anatomy's
+bonus collections, not the system collections harvested here. Each is a source gap rather than a
+wiring one, and each is one line in `SYSTEMS` or one upstream release away.
 
 🔴 **The resolver was wired on 2026-08-21, and until then this section described something no
 learner had ever seen.** `chem-resolver.ts` was built, tested and merged, and `grep -r
@@ -1542,7 +1573,7 @@ provenance rather than about subject matter.
 | Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
 | Macromolecular structure | `{"kind":"macromolecule","molecule":"…"}` — a name, resolved to a PDB accession | **shipped** (Mol* viewer, RCSB resolver) |
 | Electron-pushing arrows on a structure | `arrows: [{from, to}]` — heavy-atom indices, the `highlight` index space | **shipped 2026-08-24** (curly arrows drawn over the depiction's own computed atom positions) |
-| Anatomy (3D body) | `{"kind":"anatomy","structure":"…"}` — a name, resolved against the harvested atlas registry | **shipped 2026-08-24** (Open3DModel / Z-Anatomy meshes, same-origin, textures stripped for licence) |
+| Anatomy (3D body) | `{"kind":"anatomy","structure":"…"}` — a name, resolved against the harvested atlas registry | **shipped 2026-08-24** (14 regions, 3,777 askable terms — bones, muscles, vessels, nerves, organs; same-origin, textures stripped for licence) |
 
 ## 🔴 CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION
 

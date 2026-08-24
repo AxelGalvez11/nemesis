@@ -280,26 +280,21 @@ export function lessonSeed(): LearningCanvas {
         id: "b9m",
         type: "paragraph",
         content:
-          "And anatomy gets the body itself: the five cervical vertebrae picked out inside the whole skeleton, turned by hand. Ask for any named bone and the atlas frames it.",
+          "And anatomy gets the whole body, not just the skeleton: here is the liver picked out among the abdominal organs, turned by hand. Ask for a muscle, a nerve, an artery or an organ and the atlas frames it the same way.",
         conceptIds: ["k5"],
-        // 🔴 THE ANATOMY LANE, STAMPED AS THE RESOLVER STAMPS IT: the atlas's own node names, a
-        // same-origin mesh path, and the ghost-everything-else highlight the viewer owes them.
+        // 🔴 THE ANATOMY LANE ON SOFT TISSUE, STAMPED AS THE ROUTE STAMPS IT: the atlas's own node
+        // name, a same-origin mesh path, and the ghost-everything-else highlight the viewer owes.
         visual: {
           kind: "anatomy",
-          learningGoal: "Place the cervical vertebrae inside the whole skeleton",
+          learningGoal: "Place the liver among the abdominal organs",
           resolved: {
-            assetPath: "/anatomy/overview-skeleton.glb",
-            region: "overview-skeleton",
-            regionTitle: "Skeleton",
-            structures: [
-              "Cervical vertebrae (C3)",
-              "Cervical vertebrae (C4)",
-              "Cervical vertebrae (C5)",
-              "Cervical vertebrae (C6)",
-              "Cervical vertebrae (C7)",
-            ],
+            assetPath: "/anatomy/visceral-systems.glb",
+            region: "visceral-systems",
+            regionTitle: "Internal organs",
+            source: "z-anatomy",
+            structures: ["Liver"],
           },
-          structure: "cervical vertebrae",
+          structure: "liver",
         },
       },
       { id: "b10", type: "heading", content: "Why this matters" },
