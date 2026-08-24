@@ -35,7 +35,12 @@ export function SettingsModalProvider({ children }: { children: React.ReactNode 
     <SettingsModalContext.Provider value={{ openSettings }}>
       {children}
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent className="h-[min(86dvh,48rem)] w-[min(64rem,calc(100vw-2rem))] max-h-none max-w-none gap-0 overflow-hidden rounded-2xl p-0 max-sm:h-[100dvh] max-sm:w-screen max-sm:rounded-none" showCloseButton>
+        {/* 🔴 SMALLER ON PURPOSE. It was 64rem × 48rem — 1024×768, a window the size of a laptop
+            screen holding eleven rows of preferences, so every page opened mostly empty and the
+            controls sat a hand's width from their labels. The reference measures 680×600
+            (2026-08-24); 48rem × 40rem is that shape with a little more room for the sections
+            Nemesis has and ChatGPT does not (Apps, Memory, Usage). */}
+        <DialogContent className="h-[min(86dvh,40rem)] w-[min(48rem,calc(100vw-2rem))] max-h-none max-w-none gap-0 overflow-hidden rounded-2xl p-0 max-sm:h-[100dvh] max-sm:w-screen max-sm:rounded-none" showCloseButton>
           <DialogTitle className="sr-only">Settings</DialogTitle>
           <DialogDescription className="sr-only">Configure Nemesis preferences, appearance, usage, billing, storage, and security.</DialogDescription>
           <SettingsSurface initialSection={initialSection} />

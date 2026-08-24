@@ -116,7 +116,13 @@ export function SidebarPanelLabel({ children }: { children: React.ReactNode }) {
     // reference). UPPERCASE at 0.16em tracking is louder than the chat titles
     // underneath it, which inverts the hierarchy: the label is scaffolding,
     // the titles are the content.
-    <span className="flex min-w-0 items-center gap-2 pl-2 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-tertiary)">
+    //
+    // 🔴 THE SIZE IS MEASURED, NOT CHOSEN. Same reference, read off the live page 2026-08-24:
+    // 14px / weight 500 / rgb(143,143,143) — the SAME size as the rows beneath it, held back to
+    // scaffolding by colour and weight alone. This was 12px, which is a size below anything else
+    // in the rail and read as fine print rather than as a quiet heading. Keeping the tertiary
+    // grey is what stops 14px from competing with the titles.
+    <span className="flex min-w-0 items-center gap-2 pl-2 text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-tertiary)">
       <span className="min-w-0 truncate leading-none">{children}</span>
     </span>
   );
@@ -197,6 +203,8 @@ interface SidebarSectionHeaderProps {
   meta?: React.ReactNode;
   icon?: React.ReactNode;
   collapsible?: boolean;
+  /** Extra spacing for a header that follows another section rather than opening the list. */
+  className?: string;
 }
 
 export function SidebarSectionHeader({
@@ -207,6 +215,7 @@ export function SidebarSectionHeader({
   meta,
   icon,
   collapsible = true,
+  className,
 }: SidebarSectionHeaderProps) {
   const labelBody = (
     <>
@@ -217,7 +226,7 @@ export function SidebarSectionHeader({
   );
 
   return (
-    <div className="group/section flex shrink-0 items-center justify-between gap-1 pb-1 pt-1.5">
+    <div className={cn("group/section flex shrink-0 items-center justify-between gap-1 pb-1 pt-1.5", className)}>
       {collapsible ? (
         <button
           className="group/section-label flex w-fit items-center gap-1 bg-transparent text-left leading-none"

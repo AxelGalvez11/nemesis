@@ -402,35 +402,75 @@ export function SidebarCanvases({
     );
   };
 
+  // 🔴🔴 THREE NAMED GROUPS, NOT ONE RUN OF ROWS (owner 2026-08-24: *"use the ChatGPT sidebar, how
+  // it organizes the chats and projects and folders so that we can do the same in the sidebar for
+  // nemesis"*). The rows were already ordered pinned → folders → recents, but under a single
+  // "Canvases" header — so the ordering was a rule only the code knew. Nothing on screen said the
+  // top rows were pinned, and a folder sat in the same undifferentiated column as a canvas.
+  // Measured off the reference the same day: `Pinned`, `Projects`, `Chats`, each a quiet grey
+  // label over its own rows, which is what makes the order legible instead of merely present.
+  //
+  // The names are Nemesis's own objects — a folder is a folder here, and the thing it holds is a
+  // canvas — because copying the reference's *structure* is the ask; copying its vocabulary would
+  // rename the product's objects after another product's.
+  const isEmpty = canvases.length === 0 && folders.length === 0;
+
+  const newFolderButton = (
+    <button
+      aria-label="New folder"
+      className="grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100"
+      onClick={() => void newFolder()}
+      title="New folder"
+      type="button"
+    >
+      <Codicon name="new-folder" size="0.875rem" />
+    </button>
+  );
+
   return (
     <SidebarGroup className="flex min-h-0 flex-1 flex-col p-0 pt-1">
-      <SidebarSectionHeader
-        action={
-          <button
-            aria-label="New folder"
-            className="grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100"
-            onClick={() => void newFolder()}
-            type="button"
-          >
-            <Codicon name="new-folder" size="0.875rem" />
-          </button>
-        }
-        collapsible={false}
-        label="Canvases"
-        onToggle={() => {}}
-        open
-      />
       <div className={cn("min-h-0 flex-1 pb-2", SCROLL_Y)}>
-        {canvases.length === 0 && folders.length === 0 ? (
+        {isEmpty ? (
           <div className="grid min-h-16 place-items-center rounded-lg px-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
             Your canvases will gather here.
           </div>
         ) : (
-          <ul className="flex flex-col">
-            {pinned.map((canvas) => canvasRow(canvas, 0))}
-            {rootFolders.map((folder) => folderRow(folder, 0))}
-            {unfiled.map((canvas) => canvasRow(canvas, 0))}
-          </ul>
+          <>
+            {/* Pinned only exists when something is pinned — an empty "Pinned" header would be a
+                heading over nothing, which reads as a list that failed to load. */}
+            {pinned.length > 0 ? (
+              <>
+                <SidebarSectionHeader collapsible={false} label="Pinned" onToggle={() => {}} open />
+                <ul className="flex flex-col">{pinned.map((canvas) => canvasRow(canvas, 0))}</ul>
+              </>
+            ) : null}
+
+            {/* 🔴 FOLDERS ALWAYS SHOWS, BECAUSE IT CARRIES THE ONLY WAY TO MAKE ONE. Hiding the
+                header until a folder exists would hide the button that creates the first folder,
+                and a learner with every canvas already filed would have no way back to it. */}
+            <SidebarSectionHeader
+              action={newFolderButton}
+              className={pinned.length > 0 ? "pt-4" : undefined}
+              collapsible={false}
+              label="Folders"
+              onToggle={() => {}}
+              open
+            />
+            {rootFolders.length > 0 ? (
+              <ul className="flex flex-col">{rootFolders.map((folder) => folderRow(folder, 0))}</ul>
+            ) : (
+              <p className="h-7 content-center px-[var(--nav-row-pad-x)] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                None yet.
+              </p>
+            )}
+
+            {unfiled.length > 0 ? (
+              <>
+                <SidebarSectionHeader className="pt-4" collapsible={false} label="Canvases" onToggle={() => {}} open />
+                <ul className="flex flex-col">{unfiled.map((canvas) => canvasRow(canvas, 0))}</ul>
+              </>
+            ) : null}
+          </>
         )}
       </div>
     </SidebarGroup>
