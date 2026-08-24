@@ -182,8 +182,11 @@ test("🔴 only ONE thing on the canvas draws a character", async () => {
   // The first wording was the fix for the six dots and it read as a law, so when the owner asked
   // for something the dock cannot express (2026-08-21: *"the mascot should be on top of the three
   // dots"* — the `thinking` pose turns the BODY into the middle dot) the guard would have refused
-  // a correct design. `CanvasThinkingPreview` draws its own figure now and the canvas hides the
-  // dock for the whole of that wait, which satisfies what this test was always protecting.
+  // a correct design. (History: the preview then drew its own figure and the canvas hid the
+  // dock for that wait. On 2026-08-25 that flipped back — the preview became announcement-only
+  // after its hidden-switch left NO character during "preparing" on production — so today the
+  // dock is the one owner again and nothing else in learn/ mounts a bot. The rule this test
+  // states survives both designs: whoever draws, exactly one of them does.)
   //
   // `canvas-home.tsx` is exempt because it IS a different route — the landing surface and a
   // session cannot be on screen together.

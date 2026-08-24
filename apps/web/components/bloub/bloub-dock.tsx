@@ -192,6 +192,17 @@ export function BloubDock({
    * override for `--bloub-travel-ms` (see bloub.css); null means the stylesheet's journey time.
    */
   const [travel, setTravel] = useState<{ dx: number; dy: number; k: number; ms: number | null; placed: boolean }>({ dx: 0, dy: 0, k: 1, ms: null, placed: false });
+  /**
+   * 🔴 THE ANCHOR MEASURES BEFORE ANY PLACEMENT COUNTS (owner 2026-08-25, on production: the
+   * character "was already on the bottom left side, moving upward"). The station effect and the
+   * anchor effect are separate, and the station used to place INSTANTLY against the DEFAULT
+   * corner (left 22, bottom 24) on the first pass — then the composer's real measurements
+   * arrived, left/bottom snapped, and the compensating transform GLIDED over 680ms: a visible
+   * diagonal drift from the lower-left to wherever the character was meant to stand. Placement
+   * is now instant until the first anchor measurement has landed, so the first thing ever
+   * painted is already in the right place. Starts true when there is no anchor to wait for.
+   */
+  const anchoredRef = useRef(false);
   const [aimAt, setAimAt] = useState<{ x: number; y: number } | null>(null);
   const targetRef = useRef<AttentionTarget>(getAttention());
   const focusedRef = useRef<Element | null>(null);
@@ -201,11 +212,15 @@ export function BloubDock({
   // ── Where the dock sits ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!anchor) {
+      anchoredRef.current = true;
       setOffset(bottom);
       return;
     }
     const measure = () => {
       const el = document.querySelector(anchor);
+      // Measured is measured, found or not — a missing composer resolves to the fallback,
+      // which is a real answer, not a pending one.
+      anchoredRef.current = true;
       if (!el) {
         setOffset(bottom);
         return;
@@ -216,6 +231,14 @@ export function BloubDock({
         setInset(left);
         return;
       }
+      // 🔴 THE OPEN MENU COUNTS AS PART OF THE COMPOSER (owner 2026-08-25: "the mascot should
+      // move above it"). The + menu's popover is absolutely positioned INSIDE the composer, so
+      // the composer's own rect never grows when it opens — the character sat on the menu. The
+      // popover carries data-canvas-composer-popover for exactly this measurement (stamped by
+      // canvas-composer.tsx; renaming either side re-creates the clash silently — pinned by
+      // bloub-dock.test.ts).
+      const popover = document.querySelector("[data-canvas-composer-popover]");
+      const top = popover ? Math.min(r.top, popover.getBoundingClientRect().top) : r.top;
       // Measured against whatever the dock is positioned within. Using the window's
       // height for a contained dock puts it hundreds of pixels below its own container,
       // where it simply vanishes.
@@ -224,7 +247,7 @@ export function BloubDock({
         contain && host?.offsetParent instanceof HTMLElement
           ? host.offsetParent.getBoundingClientRect().bottom
           : window.innerHeight;
-      setOffset(Math.max(bottom, floor - r.top + gap));
+      setOffset(Math.max(bottom, floor - top + gap));
       // Lined up with the composer's left edge, in the same coordinate space the dock is
       // positioned in. `left` survives only as the fallback for a composer that is not there.
       const originX =
@@ -250,7 +273,7 @@ export function BloubDock({
       const host = hostRef.current;
       if (!host) return;
       if (station === "corner") {
-        setTravel((was) => ({ dx: 0, dy: 0, k: 1, ms: was.placed ? null : 0, placed: true }));
+        setTravel((was) => ({ dx: 0, dy: 0, k: 1, ms: was.placed && anchoredRef.current ? null : 0, placed: anchoredRef.current }));
         return;
       }
       const parent =
@@ -267,8 +290,8 @@ export function BloubDock({
         dx: middle.x - cornerX,
         dy: middle.y - cornerY,
         k: centreScale,
-        ms: was.placed ? null : 0,
-        placed: true,
+        ms: was.placed && anchoredRef.current ? null : 0,
+        placed: anchoredRef.current,
       }));
     };
     measure();
@@ -434,14 +457,29 @@ export function BloubDock({
           🔴 NO PILL BEHIND IT ANY MORE. A filled capsule is a badge — it says "status", which is
           what a spinner says. The words themselves carrying the light is what says "this is being
           worked through", and a background defeats `background-clip: text` outright. */}
+      {/* 🔴 BESIDE THE CHARACTER IN THE CORNER, UNDER IT AT THE CENTRE (owner 2026-08-25: "I
+          want the mascot to be on top of the thinking preview lines"). At the centre the
+          character is the only thing on the page and twice its size; a word off its right
+          shoulder read as mislaid. Underneath, the pair reads as one composition — the creature
+          working, the step it is on. */}
       {caption && (
         <span
-          className={`bloub-caption canvas-thinking-word pointer-events-none absolute left-full top-1/2 select-none whitespace-nowrap text-[length:var(--canvas-text-small)] leading-none${leaving ? " canvas-preview-out" : ""}`}
-          style={{
-            marginLeft: `${8 / travel.k}px`,
-            transform: `translateY(-50%) scale(${1 / travel.k})`,
-            transformOrigin: "left center",
-          }}
+          className={`bloub-caption canvas-thinking-word pointer-events-none absolute select-none whitespace-nowrap text-[length:var(--canvas-text-small)] leading-none${
+            station === "centre" ? " left-1/2 top-full" : " left-full top-1/2"
+          }${leaving ? " canvas-preview-out" : ""}`}
+          style={
+            station === "centre"
+              ? {
+                  marginTop: `${10 / travel.k}px`,
+                  transform: `translateX(-50%) scale(${1 / travel.k})`,
+                  transformOrigin: "center top",
+                }
+              : {
+                  marginLeft: `${8 / travel.k}px`,
+                  transform: `translateY(-50%) scale(${1 / travel.k})`,
+                  transformOrigin: "left center",
+                }
+          }
         >
           {caption}
         </span>

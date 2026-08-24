@@ -35,73 +35,26 @@
 
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
 
-
 export function CanvasThinkingPreview({
   label = null,
-  mascot = false,
 }: {
   label?: string | null;
-  /**
-   * The learner just sent something and is waiting for the answer to it.
-   *
-   * 🔴🔴 TWO WAITS, TWO SHAPES, AND THE §21 ARGUMENT ABOVE IS WHY BOTH EXIST RATHER THAN ONE
-   * REPLACING THE OTHER. The forming lines are set to the column, the position and the leading a
-   * QUESTION occupies, so the first question lands where the placeholder already was — "the
-   * structure resolves into the content rather than being swapped for it". That reasoning holds
-   * exactly where it was written: a canvas generating its first question.
-   *
-   * It does not hold for a conversational turn. What lands there is a paragraph of unknown length,
-   * so lines pretending to be its shape would be a guess, and the wait is usually seconds rather
-   * than a minute. What that moment needs is different: the learner's own words are never rendered,
-   * so this is the ONLY acknowledgement that their send happened at all.
-   *
-   * Owner's call, 2026-08-20, both halves: a mascot for the thinking state, and it replaces what
-   * was on screen rather than sitting under it.
-   */
+  /** Kept for callers mid-migration; the visible split it used to select is gone. */
   mascot?: boolean;
 }) {
-  if (mascot) {
-    return (
-      // 🔴🔴 NOTHING VISIBLE HERE, AND THAT IS THE FIX. This box used to print the caption itself,
-      // laid out with `justify-end`. That meant "push to the bottom" while it was a column, and
-      // silently became "push to the RIGHT" when the owner asked for the caption to sit beside the
-      // mascot and it became a row — so the word ended up pinned to the right edge of the window,
-      // hundreds of pixels from the character it labelled (owner, 2026-08-21: *"why is the
-      // 'thinking' so far off"*). No static box can sit beside something whose position is a live
-      // transform; `BloubDock` prints the caption now, as a sibling of its own transform, and is
-      // beside the character by construction.
-      //
-      // 🔴 THE ANNOUNCEMENT STAYS. The dock is `aria-hidden` — it is decoration — so deleting this
-      // outright would take the name of the running step away from a screen reader, which is the
-      // one audience that cannot see the character at all.
-      <div aria-live="polite" className="sr-only" role="status">
-        {label ? `${label.replace(/…$/, "")}…` : null}
-      </div>
-    );
-  }
-
-  // 🔴🔴 THE SKELETON IS GONE. Owner, 2026-08-20: *"i dont want skeleton loader."*
-  //
-  // 🔴 AND ITS ORIGINAL ARGUMENT WAS GOOD, WHICH IS WHY IT LASTED. Three staggered bars occupied
-  // the shape a QUESTION occupies, so the first question landed where the placeholder already was:
-  // the structure resolved into the content instead of replacing it. That is a real effect and it
-  // is why this was not simply deleted earlier.
-  //
-  // It is also a guess about what is coming, drawn as though it were already there — three grey
-  // bars promising a paragraph that may turn out to be a molecule, a plot, or one sentence. The
-  // mascot says the same thing ("something is happening") without pretending to know the shape of
-  // it, and the owner has now asked for the mascot twice.
+  // 🔴🔴 NOTHING VISIBLE HERE ANY MORE, IN EITHER WAIT — AND THAT IS THE FIX (owner 2026-08-25,
+  // on production: "I'll send a prompt. It won't show the mascot… it would just disappear").
+  // This component stopped drawing its own character when the caption moved onto the dock, but
+  // the dock was STILL being switched off for it (`hidden={presence === "preparing"}` in
+  // learning-canvas.tsx) — a guard protecting against a second character that no longer
+  // existed, which left NO character at all on the one screen whose whole job is "something is
+  // happening". The dock now owns the character and the caption in every wait; what remains
+  // here is the half a screen reader needs, because the dock is aria-hidden decoration and
+  // deleting the announcement would take the running step's name away from the one audience
+  // that cannot see the character.
   return (
-    <div
-      aria-live="polite"
-      className="flex min-h-[70vh] flex-row items-center justify-center gap-3 px-6"
-      role="status"
-    >
-      {label && (
-        <span className="canvas-phrase text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-          {label.replace(/…$/, "")}…
-        </span>
-      )}
+    <div aria-live="polite" className="sr-only" role="status">
+      {label ? `${label.replace(/…$/, "")}…` : null}
     </div>
   );
 }
