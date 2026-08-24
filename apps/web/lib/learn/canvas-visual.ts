@@ -12,6 +12,7 @@
 // did not say. `validateCanvasVisual` names the reason; `parseCanvasVisual` remains for the callers
 // that genuinely only need to know whether anything survived.
 
+import { ANATOMY_SOURCES } from "./anatomy-licence";
 import { validateStructure, type ChemNotation } from "./chem-notation";
 import { allowedAssetUrl } from "./reference-images";
 import type { CandidateAsset } from "./visual-provenance";
@@ -204,6 +205,8 @@ export interface AnatomyVisual extends CanvasVisualBase {
     regionTitle: string;
     /** Same-origin mesh path under /anatomy/. */
     assetPath: string;
+    /** Which atlas this region came from, so the viewer credits the right one. */
+    source: string;
     /** The atlas node names to pick out. Empty means: show the whole region. */
     structures: readonly string[];
   };
@@ -650,6 +653,12 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
     const region = boundedText(value.resolved.region, 40);
     const regionTitle = boundedText(value.resolved.regionTitle, 60);
     const assetPath = boundedText(value.resolved.assetPath, 120);
+    // 🔴 BOUNDED TO THE ATLASES THAT EXIST, because this string chooses which credit line a
+    // share-alike licence gets. An unknown source is a stamp from a deploy that has moved on.
+    const source = boundedText(value.resolved.source, 40);
+    if (!source || !(source in ANATOMY_SOURCES)) {
+      return refuse("malformed-anatomy", "the resolved region must name an atlas the credit line knows");
+    }
     if (!region || !/^[a-z0-9-]+$/.test(region)) return refuse("malformed-anatomy", "the resolved region must be a lowercase slug");
     if (!regionTitle) return refuse("malformed-anatomy", "the resolved region needs its title");
     // 🔴 A PATH, NEVER A URL. Same-origin under /anatomy/ is the whole asset story for this lane;
@@ -671,7 +680,7 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
       visual: {
         ...common,
         kind: "anatomy",
-        resolved: { assetPath, region, regionTitle, structures },
+        resolved: { assetPath, region, regionTitle, source, structures },
         structure,
       },
     };

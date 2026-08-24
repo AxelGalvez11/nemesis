@@ -19,7 +19,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { AnatomyVisual } from "@/lib/learn/canvas-visual";
-import { ANATOMY_LICENCE } from "@/lib/learn/anatomy-atlas";
+// 🔴 THE LICENCE, NEVER THE REGISTRY. Four strings for the credit line; the atlas's structure
+// names stay server-side, where the route matches them. See `anatomy-licence.ts`.
+import { anatomyCredit } from "@/lib/learn/anatomy-licence";
 
 const HEIGHT = 380;
 
@@ -32,6 +34,7 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
   const [failure, setFailure] = useState(false);
 
   const resolved = visual.resolved;
+  const credit = anatomyCredit(resolved?.source);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,13 +112,20 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
         const isolating = wanted.size > 0;
         const nameOf = (node: { name: string; userData?: Record<string, unknown> }): string =>
           fold(typeof node.userData?.name === "string" ? node.userData.name : node.name);
+        // 🔴 THE WHOLE ANCESTOR CHAIN, BECAUSE AN ORGAN IS A PARENT AND ITS PARTS ARE THE MESHES.
+        // "Aorta" and "Apex of heart" are grouping nodes in the atlas; only their descendants
+        // carry geometry. Checking one level up lit the arteries and missed the organs.
+        const chosenBy = (node: InstanceType<typeof three.Object3D>): boolean => {
+          for (let step: typeof node | null = node; step !== null; step = step.parent) {
+            if (wanted.has(nameOf(step))) return true;
+          }
+          return false;
+        };
         const picked: InstanceType<typeof three.Object3D>[] = [];
         gltf.scene.traverse((node) => {
           const mesh = node as InstanceType<typeof three.Mesh>;
           if (!mesh.isMesh) return;
-          // Blender export sometimes nests a named node's mesh one level down; check both.
-          const chosen =
-            wanted.has(nameOf(node)) || (node.parent !== null && wanted.has(nameOf(node.parent)));
+          const chosen = chosenBy(node);
           mesh.material = isolating && !chosen ? faded : solid;
           if (isolating && chosen) picked.push(node);
         });
@@ -192,11 +202,11 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
         </span>
         <a
           className="underline decoration-(--ui-stroke-primary) underline-offset-2"
-          href={ANATOMY_LICENCE.url}
+          href={credit.url}
           rel="noreferrer"
           target="_blank"
         >
-          {ANATOMY_LICENCE.source} · {ANATOMY_LICENCE.licence}
+          {credit.source} · {credit.licence}
         </a>
       </p>
     </div>

@@ -1,11 +1,11 @@
 // The one thing that happens to a model's answer before anything parses it.
 //
-// 🔴 FIVE PASSES, ONE SEAM, AND THE ORDER MATTERS ONLY WHERE STATED. Structures resolve first,
+// 🔴 SIX PASSES, ONE SEAM, AND THE ORDER MATTERS ONLY WHERE STATED. Structures resolve first,
 // then plots and surfaces compute, because resolving a name REWRITES the prose — `[compound:
 // aspirin]` becomes `[smiles: CC(=O)…]` — and running the computing passes over the already-
 // rewritten text keeps there being exactly one version of the answer at every point. Figures and
 // macromolecules rewrite only their own `visual` objects and touch no prose, so they run after, in
-// a fixed order chosen once. Five seams in five files would have meant five chances for a caller
+// a fixed order chosen once. Six seams in six files would have meant six chances for a caller
 // to wire some and forget the rest, which is the failure that left the first two layers
 // unreachable for days after they were built.
 //
@@ -19,7 +19,8 @@
 // no route, no network, bad JSON, a mismatched response. The picture is lost; the explanation
 // that came with it is not.
 
-import { collectAnatomyAsks, mightResolveAnatomy, resolveAnatomy } from "./anatomy-resolve";
+import { resolveAnatomy, type AnatomyLookupDeps } from "./anatomy-lookup";
+import { collectAnatomyAsks, mightResolveAnatomy } from "./anatomy-resolve";
 import { collectComputedSeries, mightComputePlot } from "./computed-plot";
 import { collectSurfaceRequests, mightComputeSurface } from "./computed-surface";
 import { computePlots, type PlotComputeDeps } from "./plot-compute";
@@ -32,6 +33,7 @@ import { resolveStructures, type StructureLookupDeps } from "./structure-lookup"
 import { collectCompoundNames, mightResolveStructure } from "./structure-resolve";
 
 export interface AnswerDeps {
+  readonly anatomy?: AnatomyLookupDeps;
   readonly figures?: FigureLookupDeps;
   readonly macromolecules?: MacromoleculeLookupDeps;
   readonly plots?: PlotComputeDeps;
@@ -91,12 +93,9 @@ export async function prepareAnswer(
   const shaped = await resolveMacromolecules(pictured, deps.macromolecules, signal);
   if (molecules > 0) onStep?.(null);
 
-  // 🔴 SYNCHRONOUS, AND STILL A PASS. The anatomy atlas is a compiled-in registry, so this rewrite
-  // costs no round trip — but it lives here with its siblings so there is exactly one seam, and a
-  // caller can never wire five passes and forget the sixth.
   const anatomy = onStep ? pendingAnatomy(shaped) : 0;
   if (anatomy > 0) onStep?.(anatomy === 1 ? "Finding it in the atlas" : `Finding ${anatomy} structures in the atlas`);
-  const complete = resolveAnatomy(shaped);
+  const complete = await resolveAnatomy(shaped, deps.anatomy, signal);
   if (anatomy > 0) onStep?.(null);
   return complete;
 }
