@@ -142,7 +142,14 @@ export type VisualRepresentation =
    */
   | "circuit"
   | "score"
-  | "surface";
+  | "surface"
+  /**
+   * A named structure inside its region of the harvested anatomy atlas (owner order, 2026-08-24:
+   * Z-Anatomy). Rung three's trust story with rung two's interactivity: the meshes are a named,
+   * licence-cleaned source served from our own deployment, the structure names are the atlas's own
+   * node names, and the resolver stamp is the only door to the files.
+   */
+  | "anatomy";
 
 /** Why no visual was chosen, when nothing was wrong. */
 export type ProseReason =

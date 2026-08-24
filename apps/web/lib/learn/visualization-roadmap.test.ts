@@ -259,6 +259,26 @@ test("🔴 §42's macromolecule claims are tied to the viewer, the resolver and 
   assert.match(viewer, /import\("molstar\/lib\/mol-plugin\/context"\)/, "the viewer no longer lazy-loads its engine");
 });
 
+test("🔴 §42's anatomy claims are tied to the harvest, the registry door and the viewer", () => {
+  assert.match(SECTION_42, /The anatomy atlas shipped 2026-08-24/);
+  const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
+  assert.ok(prompts.includes('"kind":"anatomy"'), "the prompt no longer offers the anatomy request");
+  const seam = readFileSync(new URL("./answer-prepare.ts", import.meta.url), "utf8");
+  assert.match(seam, /resolveAnatomy/, "the answer seam no longer runs the anatomy pass");
+  // 🔴 THE LICENCE ACT: the harvest strips every texture before anything reaches the repo,
+  // because the source's textures are NC and NC is refused across this codebase by design.
+  const harvest = readFileSync(new URL("../../scripts/anatomy-harvest.mts", import.meta.url), "utf8");
+  assert.match(harvest, /texture\.dispose\(\)/, "the harvest no longer strips the NC textures");
+  assert.match(harvest, /CC-BY-SA-4\.0/, "the harvest no longer records the mesh licence");
+  // The registry is the only door: the validator holds the asset to a same-origin /anatomy/ path.
+  assert.match(VISUAL_CONTRACT, /\/anatomy\\\/\[a-z0-9-\]\+\\\.glb/, "the same-origin asset rule has left the validator");
+  // The viewer keeps the Mol* discipline: its own chunk, the decoder from our own dependency.
+  const viewer = readFileSync(new URL("../../components/workspace/learn/anatomy-viewer.tsx", import.meta.url), "utf8");
+  assert.match(viewer, /setDecoderPath\("\/draco\/"\)/, "the viewer no longer decodes from our own /draco/ copy");
+  const scripts = JSON.parse(WEB_PACKAGE) as { scripts?: Record<string, string> };
+  assert.match(scripts.scripts?.prebuild ?? "", /copy-draco-decoder/, "the decoder copy has left prebuild");
+});
+
 test("🔴 §42's ladder is the array, not the paragraph", () => {
   // The whole mechanism of the section: an ordering a router calls, rather than one a reader
   // is trusted to honour. Reordering the array without reordering the section fails here.

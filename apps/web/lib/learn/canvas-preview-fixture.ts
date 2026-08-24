@@ -276,6 +276,32 @@ export function lessonSeed(): LearningCanvas {
           value: "[OH-].CBr",
         },
       },
+      {
+        id: "b9m",
+        type: "paragraph",
+        content:
+          "And anatomy gets the body itself: the five cervical vertebrae picked out inside the whole skeleton, turned by hand. Ask for any named bone and the atlas frames it.",
+        conceptIds: ["k5"],
+        // 🔴 THE ANATOMY LANE, STAMPED AS THE RESOLVER STAMPS IT: the atlas's own node names, a
+        // same-origin mesh path, and the ghost-everything-else highlight the viewer owes them.
+        visual: {
+          kind: "anatomy",
+          learningGoal: "Place the cervical vertebrae inside the whole skeleton",
+          resolved: {
+            assetPath: "/anatomy/overview-skeleton.glb",
+            region: "overview-skeleton",
+            regionTitle: "Skeleton",
+            structures: [
+              "Cervical vertebrae (C3)",
+              "Cervical vertebrae (C4)",
+              "Cervical vertebrae (C5)",
+              "Cervical vertebrae (C6)",
+              "Cervical vertebrae (C7)",
+            ],
+          },
+          structure: "cervical vertebrae",
+        },
+      },
       { id: "b10", type: "heading", content: "Why this matters" },
       {
         id: "b11",

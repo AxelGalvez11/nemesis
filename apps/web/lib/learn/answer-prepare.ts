@@ -19,6 +19,7 @@
 // no route, no network, bad JSON, a mismatched response. The picture is lost; the explanation
 // that came with it is not.
 
+import { collectAnatomyAsks, mightResolveAnatomy, resolveAnatomy } from "./anatomy-resolve";
 import { collectComputedSeries, mightComputePlot } from "./computed-plot";
 import { collectSurfaceRequests, mightComputeSurface } from "./computed-surface";
 import { computePlots, type PlotComputeDeps } from "./plot-compute";
@@ -87,9 +88,27 @@ export async function prepareAnswer(
   if (molecules > 0) {
     onStep?.(molecules === 1 ? "Looking up the 3D structure" : `Looking up ${molecules} 3D structures`);
   }
-  const complete = await resolveMacromolecules(pictured, deps.macromolecules, signal);
+  const shaped = await resolveMacromolecules(pictured, deps.macromolecules, signal);
   if (molecules > 0) onStep?.(null);
+
+  // 🔴 SYNCHRONOUS, AND STILL A PASS. The anatomy atlas is a compiled-in registry, so this rewrite
+  // costs no round trip — but it lives here with its siblings so there is exactly one seam, and a
+  // caller can never wire five passes and forget the sixth.
+  const anatomy = onStep ? pendingAnatomy(shaped) : 0;
+  if (anatomy > 0) onStep?.(anatomy === 1 ? "Finding it in the atlas" : `Finding ${anatomy} structures in the atlas`);
+  const complete = resolveAnatomy(shaped);
+  if (anatomy > 0) onStep?.(null);
   return complete;
+}
+
+/** How many atlas structures this answer asks to have found. */
+function pendingAnatomy(text: string): number {
+  if (!mightResolveAnatomy(text)) return 0;
+  try {
+    return collectAnatomyAsks(JSON.parse(text)).length;
+  } catch {
+    return 0;
+  }
 }
 
 /** How many compounds this answer asks to have looked up. Cheap, and exact. */
