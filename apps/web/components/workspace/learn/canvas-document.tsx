@@ -23,6 +23,7 @@ import { routeVisual } from "@/lib/learn/visual-route";
 
 import { BOTTOM_KEEPOUT, TOP_KEEPOUT } from "./canvas-selection-menu";
 import { selectableRegion } from "./use-canvas-selection";
+import { ReferenceFigure } from "./reference-figure";
 import { SemanticVisual } from "./semantic-visual";
 
 /** The shape every floating popover on this page positions itself with. A plain object rather
@@ -531,6 +532,13 @@ function RoutedVisual({ visual }: { visual: CanvasBlock["visual"] }) {
   if (!visual) return null;
   const route = routeVisual({ request: visual });
   if (route.decision !== "render") return null;
+  // 🔴 THE ONE ASSET-BACKED ROUTE A BLOCK CAN NOW CARRY (§42, rung three). A `figure` request that
+  // resolved arrives here as a `reference_image` with its licence riding on the asset — the router
+  // already ran `chooseAsset`, so anything on this branch may be shown and owes only its credit
+  // line, which `ReferenceFigure` renders unconditionally.
+  if (route.representation === "reference_image") {
+    return <ReferenceFigure asset={route.asset} caption={route.caption} />;
+  }
   // 🔴 THIS COMPONENT OWNS THE RENDERED RUNG AND ONLY THAT ONE. `source_figure` belongs to
   // `FigureOcclusion` in the policy view, and §42's image rungs are asset-backed rather than
   // spec-backed — none of the three carries a `spec` this renderer could draw. Narrowing by naming
@@ -546,6 +554,7 @@ function RoutedVisual({ visual }: { visual: CanvasBlock["visual"] }) {
     && route.representation !== "quantitative"
     && route.representation !== "relationship"
     && route.representation !== "structure"
+    && route.representation !== "macromolecule"
     && route.representation !== "table"
     && route.representation !== "timeline"
     && route.representation !== "construction"

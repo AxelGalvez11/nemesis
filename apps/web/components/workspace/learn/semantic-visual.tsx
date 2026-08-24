@@ -7,6 +7,7 @@ import type { CanvasVisualRequest, FlowVisual, PlotVisual } from "@/lib/learn/ca
 import { layoutFlow, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
 
 import { ChemicalStructure } from "./chemical-structure";
+import { Macromolecule } from "./macromolecule-viewer";
 import { CodeTrace, Construction, DataTable, Timeline, VectorDiagram } from "./subject-visual";
 
 const WIDTH = VISUAL_WIDTH;
@@ -49,6 +50,7 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
       {visual.kind === "relationship" ? <Relationship visual={visual} /> : null}
       {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
       {visual.kind === "structure" ? <ChemicalStructure visual={visual} /> : null}
+      {visual.kind === "macromolecule" ? <Macromolecule visual={visual} /> : null}
       {visual.kind === "table" ? <DataTable visual={visual} /> : null}
       {visual.kind === "timeline" ? <Timeline visual={visual} /> : null}
       {visual.kind === "construction" ? <Construction visual={visual} /> : null}

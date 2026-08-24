@@ -139,6 +139,48 @@ export function lessonSeed(): LearningCanvas {
         terms: [{ term: "hyperpolarisation", conceptId: "k4" }, { term: "HCN channels", conceptId: "k4" }],
         sourceRefs: [{ sourceId: "s1", excerptId: "s1:e4" }],
       },
+      {
+        id: "b9f",
+        type: "paragraph",
+        content:
+          "Seeing where the nodes sit in the whole organ makes the conduction story concrete: the sinus node fires, the atria contract, and the signal funnels through the AV node before the ventricles answer.",
+        conceptIds: ["k3"],
+        // 🔴 A RESOLVED FIGURE, EXACTLY AS THE REFERENCE LANE STAMPS ONE (§42 rung three). The
+        // asset is a real registry row: its licence normalises, its host is on the allow list, and
+        // the credit line below the picture is the harness's proof the licence actually renders.
+        visual: {
+          asset: {
+            assetPath: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Diagram_of_the_human_heart_%28cropped%29.svg/1280px-Diagram_of_the_human_heart_%28cropped%29.svg.png",
+            caption: "The human heart with chambers, valves and great vessels labelled.",
+            licence: {
+              attribution: "Wapcaplet",
+              licence: "CC-BY-SA-3.0",
+              source: "Wikimedia Commons",
+              url: "https://commons.wikimedia.org/wiki/File:Diagram_of_the_human_heart_(cropped).svg",
+            },
+            provenance: "reference_image",
+          },
+          kind: "figure",
+          learningGoal: "Place the conduction system inside the anatomy it drives",
+          subject: "human heart anatomy labelled diagram",
+        },
+      },
+      {
+        id: "b9g",
+        type: "paragraph",
+        content:
+          "The funny current has a shape you can hold: HCN1 is a four-fold channel whose voltage sensors answer to hyperpolarisation instead of depolarisation. Turn the structure and the symmetry is the first thing you see.",
+        conceptIds: ["k4"],
+        // 🔴 A RESOLVED MACROMOLECULE, AS THE RCSB LANE STAMPS ONE. 5U6O is the real human HCN1
+        // entry; the harness draws it through the same Mol* path a lesson would.
+        visual: {
+          accession: "5U6O",
+          kind: "macromolecule",
+          learningGoal: "See the four-fold symmetry of the channel behind the funny current",
+          resolvedFrom: { id: "5U6O", name: "HCN1 channel", provider: "rcsb" },
+          title: "Structure of the human HCN1 hyperpolarization-activated cyclic nucleotide-gated ion channel",
+        },
+      },
       { id: "b10", type: "heading", content: "Why this matters" },
       {
         id: "b11",

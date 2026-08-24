@@ -183,34 +183,76 @@ test("🔴 the constrained-interface rule is still stated", () => {
 // and becomes the most misleading paragraph in the document the morning after somebody builds one.
 // The checks below fail when reality moves, so the status line has to move in the same change.
 
-test("§42's status line matches whether a registry or a generation wiring exists", () => {
+test("§42's status line matches what the registry, the figure lane and the generation wiring are", () => {
   assert.ok(SECTION_42.length > 0, "§42 has gone missing from the contract");
   assert.match(
     SECTION_42,
-    // 🔴 THE STATUS LINE MOVED ON 2026-08-21 AND THE GUARD MOVED WITH IT. It used to say rungs one
-    // and two were "shipped and serving", which was true of the CODE and false of the product: the
-    // resolver had one dev-only caller, so every molecule a learner had seen was recalled rather
-    // than looked up. The rungs that are still unreached are named in the same breath, which is the
-    // property this test protects.
-    /STATUS: RUNGS ONE AND TWO SHIPPED AND SERVING, AND A LESSON OR A REPLY NOW RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT\. RUNG THREE HAS A LIVE RESOLVER AND AN EMPTY CURATED REGISTRY\. RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT\./,
+    // 🔴 THE STATUS LINE MOVED ON 2026-08-21 AND AGAIN ON 2026-08-23, AND THE GUARD MOVED WITH IT
+    // BOTH TIMES. That is the entire mechanism this file exists for: the day the registry was
+    // seeded and the figure lane was wired, this regex went red until the section told the truth.
+    // The rung that is still unreached is named in the same breath, which is the property this
+    // test protects.
+    /STATUS: RUNGS ONE, TWO AND THREE SHIPPED AND SERVING\..*RUNG FOUR EXISTS AS A ROUTER RULE WITH NOTHING WIRED TO IT\./,
     "§42 must say plainly which rungs are reached",
   );
-  // 🔴 THE EMPTY REGISTRY IS THE CLAIM MOST LIKELY TO GO STALE, because seeding it is the obvious
-  // next task and the person doing it will not be reading this section.
-  assert.match(
-    REGISTRY,
-    /REFERENCE_REGISTRY: readonly CuratedEntry\[\] = \[\]/,
-    "the curated registry has rows — §42 still calls it empty",
+  // 🔴 THE SEEDED REGISTRY IS NOW THE CLAIM, and it is tied from both sides: rows must exist, and
+  // `reference-registry.test.ts` re-verifies every row's licence, credit and host on every run.
+  assert.equal(
+    /REFERENCE_REGISTRY: readonly CuratedEntry\[\] = \[\]/.test(REGISTRY),
+    false,
+    "the curated registry is empty again — §42 now claims it is seeded",
   );
-  // The claim is "no caller passes assets". If one starts to, this is the line that has to move.
+  assert.match(REGISTRY, /assetPath: "https:\/\/upload\.wikimedia\.org\//, "the registry's rows have lost their assets");
+  // 🔴 THE CALLER-SUPPLIED ASSET LANE REMAINS UNWIRED, AND SAYING SO PRECISELY IS THE POINT. Rung
+  // three serves through the REQUEST path (`figure-resolve.ts` → the reference-image route → a
+  // stored, licence-gated asset on the spec). Neither view fetches candidates itself and passes
+  // `assets:` to the router — the day one starts to, this is the line that has to move.
   for (const view of [POLICY_VIEW, readFileSync(new URL("../../components/workspace/learn/canvas-document.tsx", import.meta.url), "utf8")]) {
-    assert.equal(/assets:/.test(view), false, "a caller now supplies registry assets — §42's status line is stale");
+    assert.equal(/assets:/.test(view), false, "a caller now supplies registry assets — §42's account of the wiring is stale");
   }
   assert.equal(
     /nemesis-media/.test(ROUTER) || /nemesis-media/.test(PROVENANCE),
     false,
     "the generation rung has been wired — §42 still calls it a router rule only",
   );
+});
+
+// 🔴 THE 2026-08-23 CLAIMS ARE TIED TO REALITY THE SAME WAY EVERY EARLIER ONE WAS. Each assertion
+// below names one thing §42 now says is true of the product; if the code stops backing it, the
+// section has to move in the same change.
+test("🔴 §42's figure lane is reachable from a lesson, and the strip protects the asset field", () => {
+  assert.match(SECTION_42, /RUNG THREE WENT LIVE ON 2026-08-23/i);
+  // The vocabulary offers it, the seam resolves it, the route exists, the renderer credits it.
+  const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
+  assert.ok(prompts.includes('"kind":"figure"'), "the prompt no longer offers the figure request");
+  const seam = readFileSync(new URL("./answer-prepare.ts", import.meta.url), "utf8");
+  assert.match(seam, /resolveFigures/, "the answer seam no longer runs the figure pass");
+  const resolve = readFileSync(new URL("./figure-resolve.ts", import.meta.url), "utf8");
+  assert.match(resolve, /asset: _claimed/, "the model-asset strip has left the figure pass");
+  const route = readFileSync(new URL("../../app/api/learn/reference-image/route.ts", import.meta.url), "utf8");
+  assert.match(route, /chooseAsset/, "the reference route no longer runs the licence gate");
+  const renderer = readFileSync(new URL("../../components/workspace/learn/reference-figure.tsx", import.meta.url), "utf8");
+  assert.match(renderer, /creditLineFor/, "the figure renderer no longer draws the credit line");
+});
+
+test("🔴 §42's macromolecule claims are tied to the viewer, the resolver and the vocabulary", () => {
+  assert.match(SECTION_42, /Macromolecules are \*\*built\*\*/);
+  const declared = JSON.parse(WEB_PACKAGE) as { dependencies?: Record<string, string> };
+  assert.ok((declared.dependencies ?? {}).molstar, "molstar is gone from dependencies — §42 still claims a viewer");
+  const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
+  assert.ok(prompts.includes('"kind":"macromolecule"'), "the prompt no longer offers the macromolecule request");
+  const seam = readFileSync(new URL("./answer-prepare.ts", import.meta.url), "utf8");
+  assert.match(seam, /resolveMacromolecules/, "the answer seam no longer runs the macromolecule pass");
+  const resolver = readFileSync(new URL("./macromolecule-resolver.ts", import.meta.url), "utf8");
+  assert.match(resolver, /search\.rcsb\.org/, "the accession resolver no longer asks RCSB");
+  // A name resolves; a bare model-written accession dies. The two lines that make both true.
+  const resolve = readFileSync(new URL("./macromolecule-resolve.ts", import.meta.url), "utf8");
+  assert.match(resolve, /accession: _claimed/, "the model-accession strip has left the macromolecule pass");
+  const viewer = readFileSync(
+    new URL("../../components/workspace/learn/macromolecule-viewer.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(viewer, /import\("molstar\/lib\/mol-plugin\/context"\)/, "the viewer no longer lazy-loads its engine");
 });
 
 test("🔴 §42's ladder is the array, not the paragraph", () => {
@@ -674,7 +716,7 @@ test("🔴 §47 — the replayable phrase is looked up, never guessed from the c
 // was correct, tested, and asked for nothing by any teaching path, so §42 described a ladder the
 // product never climbed. These check the wiring, not the chemistry.
 test("🔴 §42's resolver is reachable from a lesson and a reply, not only from the Lab", () => {
-  assert.match(SECTION_42, /A LESSON OR A REPLY NOW RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT/);
+  assert.match(SECTION_42, /A LESSON OR A REPLY RESOLVES A NAMED COMPOUND RATHER THAN RECALLING IT/);
   assert.match(RESOLVER_ROUTE, /import \{ resolveStructure \}/, "the route stopped asking the resolver");
   // PubChem is reached from the server. A page must not query a third party on a learner's behalf:
   // that would hand out their IP and a referrer carrying a canvas URL.
