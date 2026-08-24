@@ -241,6 +241,16 @@ function localIndex(): string[] {
 
 // ------------------------------------------------------------------- the API
 
+/** Fired on window whenever anything below changes a canvas or a folder. The sidebar's list
+ *  subscribes; without a broadcast it would either poll or go stale the moment a rename
+ *  happened on the canvas itself. Fired AFTER the write returns, so a listener that re-reads
+ *  sees the new truth. */
+export const CANVASES_CHANGED_EVENT = "nemesis:canvases-changed";
+
+function emitCanvasesChanged(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CANVASES_CHANGED_EVENT));
+}
+
 export interface CanvasSummary {
   id: string;
   title: string;
@@ -254,6 +264,11 @@ export interface CanvasSummary {
    *  how two readers of one table drift apart. `learning_canvases.created_at` is
    *  `not null default now()`, so whenever it IS selected it is always a real date. */
   createdAt?: string;
+  /** The curriculum plan's title, when this canvas built a course. Read straight out of the
+   *  territory jsonb in the SELECT (`territory->plan->>title`) — a course has no column and no
+   *  table of its own on purpose (see curriculum-plan.ts), and lists only need the one fact
+   *  "this canvas carries a course", not the plan itself. */
+  courseTitle?: string | null;
 }
 
 export interface Folder {
@@ -275,7 +290,7 @@ export async function listCanvases(userId: string | null): Promise<CanvasSummary
   if (userId) {
     const { data, error } = await supabase
       .from(TABLE)
-      .select("id,title,state,updated_at,pinned_at,folder_id")
+      .select("id,title,state,updated_at,pinned_at,folder_id,course_title:territory->plan->>title")
       .eq("deleted", false)
       .order("pinned_at", { ascending: false, nullsFirst: false })
       .order("updated_at", { ascending: false })
@@ -289,6 +304,7 @@ export async function listCanvases(userId: string | null): Promise<CanvasSummary
           updated_at: string;
           pinned_at: string | null;
           folder_id: string | null;
+          course_title: string | null;
         };
         return {
           id: typed.id,
@@ -297,6 +313,7 @@ export async function listCanvases(userId: string | null): Promise<CanvasSummary
           updatedAt: typed.updated_at,
           pinnedAt: typed.pinned_at,
           folderId: typed.folder_id,
+          courseTitle: typed.course_title,
         };
       });
     }
@@ -317,12 +334,14 @@ export async function setCanvasPinned(userId: string | null, id: string, pinned:
     .update({ pinned_at: pinned ? new Date().toISOString() : null })
     .eq("id", id);
   if (error && !isMissingTableError(error)) console.warn("[learn] pin failed", error.message);
+  emitCanvasesChanged();
 }
 
 export async function setCanvasFolder(userId: string | null, id: string, folderId: string | null): Promise<void> {
   if (!userId) return;
   const { error } = await supabase.from(TABLE).update({ folder_id: folderId }).eq("id", id);
   if (error && !isMissingTableError(error)) console.warn("[learn] move failed", error.message);
+  emitCanvasesChanged();
 }
 
 export async function listFolders(userId: string | null): Promise<Folder[]> {
@@ -351,6 +370,7 @@ export async function createFolder(userId: string | null, name: string, parentId
     return null;
   }
   const row = data as { id: string; name: string; parent_id: string | null };
+  emitCanvasesChanged();
   return { id: row.id, name: row.name, parentId: row.parent_id };
 }
 
@@ -374,6 +394,7 @@ export async function saveCanvas(userId: string | null, canvas: LearningCanvas):
     // interrupting the learner for.
     console.warn("[learn] canvas save failed", error.message);
   }
+  emitCanvasesChanged();
 }
 
 // ------------------------------------------------------------ topic territory
@@ -448,6 +469,7 @@ export async function deleteCanvas(userId: string | null, id: string): Promise<v
   if (error && !isMissingTableError(error)) {
     console.warn("[learn] canvas delete failed", error.message);
   }
+  emitCanvasesChanged();
 }
 
 // ------------------------------------------------------- naming and unfiling (Library)
@@ -487,6 +509,7 @@ export async function renameCanvas(userId: string | null, id: string, title: str
     console.warn("[learn] canvas rename failed", error.message);
     return null;
   }
+  emitCanvasesChanged();
   return next;
 }
 
@@ -499,6 +522,7 @@ export async function renameFolder(userId: string | null, id: string, name: stri
     console.warn("[learn] folder rename failed", error.message);
     return null;
   }
+  emitCanvasesChanged();
   return next;
 }
 
@@ -522,6 +546,7 @@ export async function setFolderParent(userId: string | null, id: string, parentI
     console.warn("[learn] folder move failed", error.message);
     return false;
   }
+  emitCanvasesChanged();
   return true;
 }
 
@@ -551,6 +576,7 @@ export async function deleteFolder(userId: string | null, id: string): Promise<b
     console.warn("[learn] folder delete failed", error.message);
     return false;
   }
+  emitCanvasesChanged();
   return true;
 }
 

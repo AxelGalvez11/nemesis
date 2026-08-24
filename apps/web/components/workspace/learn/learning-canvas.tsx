@@ -1292,7 +1292,9 @@ export function LearningCanvas({
         // spreadsheet made it look like the origin of everything on the page. `policy.claims` is
         // the canvas's actual knowledge, and each object now carries whether a source really states
         // it. The predicate lives in `canvas-provenance.ts` with the reasoning.
+        making={session.making}
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
+        onMakeDeliverable={(kind) => void session.makeDeliverable(kind)}
         transcript={transcript}
         voice={voice.header}
         // 🔴 THE NARROW SLICE, NOT `policy` ITSELF — see the prop's own comment in

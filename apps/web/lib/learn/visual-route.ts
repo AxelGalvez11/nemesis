@@ -87,6 +87,15 @@ export type VisualRepresentation =
    */
   | "structure"
   /**
+   * A macromolecule drawn by an embedded structure viewer from its database accession (§42).
+   *
+   * 🔴 RUNG TWO STILL, THOUGH THE PIXELS COME FROM A VIEWER RATHER THAN OUR OWN SVG. The accession
+   * is the canonical encoding, the atomic coordinates are the Protein Data Bank's own deposited
+   * data, and both are inspectable — which is the property that separates every rung-two route from
+   * a retrieved photograph. The model supplies a name; the resolver supplies the accession.
+   */
+  | "macromolecule"
+  /**
    * A picture retrieved from an openly licensed repository, shown with its credit line.
    *
    * 🔴 THE THIRD RUNG (§42), AND IT SITS BELOW EVERY DETERMINISTIC ROUTE ON PURPOSE. A retrieved
@@ -195,6 +204,8 @@ export type VisualRoute =
        * asset outright to avoid. The renderer calls `creditLineFor` on this object.
        */
       asset: CandidateAsset;
+      /** The model's own caption when the asset arrived on a `figure` request, absent otherwise. */
+      caption?: string;
       because: string;
     }
   | {
@@ -361,6 +372,34 @@ export function routeVisual(input: VisualRouteInput): VisualRoute {
   // TEACHES NOTHING. A single cell, a figure with no lines: valid, drawable, and worse than the
   // sentence they replace. The timeline's own version of this rule lives in the validator instead,
   // because "every event at one position" makes the layout undefined rather than merely unhelpful.
+  if (spec.kind === "figure") {
+    // 🔴 THE SAME GATE THE ASSET FALLBACK USES, ON A REQUEST INSTEAD OF A CALLER'S CANDIDATES. A
+    // figure request that resolved carries exactly one candidate, and whether it may be shown is
+    // still `visual-provenance.ts`'s decision — the licence and credit rules cannot be reached
+    // around by arriving as a spec. One that never resolved carries none, and the honest outcome
+    // is the same `no-trusted-asset` prose the ladder reports everywhere else.
+    //
+    // 🔴 NEVER ACCURACY-BEARING FROM THIS ROUTE. A requested figure accompanies teaching prose;
+    // nothing is graded against it. The occlusion lane grades against SOURCE figures only, whose
+    // labels were parsed rather than retrieved.
+    const choice = chooseAsset({ accuracyBearing: false, candidates: spec.asset ? [spec.asset] : [] });
+    if (!choice.ok) {
+      return {
+        assetRefusal: choice.reason,
+        because: `a real picture of "${spec.subject}" was asked for and none may be shown: ${choice.detail}`,
+        decision: "prose",
+        reason: "no-trusted-asset",
+      };
+    }
+    return {
+      asset: choice.asset,
+      because: `a licensed picture of "${spec.subject}" was retrieved, and its licence and credit travel with it`,
+      ...(spec.caption ? { caption: spec.caption } : {}),
+      decision: "render",
+      representation: "reference_image",
+    };
+  }
+
   if (spec.kind === "table" && spec.columns.length < 2 && spec.rows.length < 2) {
     return {
       because: "a single cell is a sentence with a border drawn round it",

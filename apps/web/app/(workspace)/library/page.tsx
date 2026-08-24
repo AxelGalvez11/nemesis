@@ -1,6 +1,10 @@
-// Library — the CANVAS manager (§L, owner 2026-08-13).
+// Library — the home of OUTPUTS (owner 2026-08-25).
 //
-// 🔴 ITS PRIMARY OBJECTS ARE CANVASES, NOT FILES. The two-surface retirement removed Library as a
+// Third meaning for this route, each by owner decision: files → canvases (§L, 2026-08-13) →
+// what Nemesis has made (2026-08-25, the same day the canvases moved to the sidebar with
+// their folders). The canvas manager is not deleted — /dev-preview/library still renders it.
+//
+// 🔴 ITS PRIMARY OBJECTS WERE CANVASES, NOT FILES. The two-surface retirement removed Library as a
 // file manager; §L reinstates it as a different object — the place a learner finds and organises
 // what they have learned. The docs-style file surface it used to render still exists untouched at
 // `/library/classic`, and `library-v2/library-docs-page.tsx` is not deleted.
@@ -22,9 +26,9 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
-import { CanvasManager } from "@/components/workspace/library/canvas-manager";
+import { LibraryOutputs } from "@/components/workspace/library/library-outputs";
 
 export default function LibraryPage() {
   const { session } = useAuth();
-  return <CanvasManager userId={session?.user.id ?? null} />;
+  return <LibraryOutputs userId={session?.user.id ?? null} />;
 }

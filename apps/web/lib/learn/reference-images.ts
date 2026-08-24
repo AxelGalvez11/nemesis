@@ -30,6 +30,28 @@ export interface ReferenceQuery {
 export type ReferenceProviderId = "curated" | "wikimedia-commons";
 
 /**
+ * The only hosts a reference asset may be served from.
+ *
+ * 🔴 AN ALLOW LIST FOR THE SAME REASON THE LICENCE TABLE IS ONE. A `figure` visual ends life as an
+ * `<img src>` in a learner's page, and the resolve pass strips anything a model wrote — but stored
+ * blocks are re-validated long after that pass ran, and defence in depth there means a URL naming a
+ * host nobody chose refuses rather than renders. Curated rows point at the Commons file store too,
+ * so one entry covers both providers; `openi.nlm.nih.gov` is deliberately absent — evaluated
+ * 2026-08-23 and rejected, because its API hides per-image licences and answers only browsers.
+ */
+export const REFERENCE_ASSET_HOSTS: readonly string[] = ["upload.wikimedia.org"];
+
+/** Does this URL name a host the reference lane may serve pixels from? */
+export function allowedAssetUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" && REFERENCE_ASSET_HOSTS.includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * One picture a provider is offering, with everything §42 requires to be allowed to show it.
  *
  * 🔴 IT EXTENDS `CandidateAsset` RATHER THAN CONVERTING TO ONE. The ladder's rules run on the same
@@ -147,6 +169,13 @@ export function commonsUrl(query: ReferenceQuery): string {
     gsrnamespace: "6",
     gsrsearch: query.concept,
     iiprop: "url|extmetadata",
+    // 🔴 A BOUNDED RENDITION, NOT THE ORIGINAL. `url` alone is the full-resolution file, and on
+    // Commons that is routinely a 40MB TIFF or an 8000-pixel scan — handed to an `<img>`, the
+    // learner's phone downloads a poster to show a paragraph-width figure. `iiurlwidth` makes the
+    // API answer with `thumburl`, a server-rendered rendition at this width (and a PNG for SVG
+    // sources, which is also the safer thing to embed). The original URL is still kept on the
+    // candidate for the credit line to point at.
+    iiurlwidth: "1024",
     origin: "*",
     prop: "imageinfo",
   });
@@ -177,7 +206,12 @@ export async function searchCommons(query: ReferenceQuery, deps: ReferenceDeps):
     if (!info || typeof info !== "object") continue;
     const meta = (info as { extmetadata?: Record<string, { value?: unknown }> }).extmetadata ?? {};
     const licence = normaliseLicence(plainText(meta.LicenseShortName?.value));
-    const assetPath = (info as { url?: unknown }).url;
+    // The bounded rendition when the API produced one, the original otherwise — see `commonsUrl`.
+    // The API appends analytics parameters to rendition URLs; the file serves without them.
+    const thumb = (info as { thumburl?: unknown }).thumburl;
+    const original = (info as { url?: unknown }).url;
+    const chosen = typeof thumb === "string" && thumb ? thumb : original;
+    const assetPath = typeof chosen === "string" ? chosen.split("?")[0] : chosen;
     const pageUrl = (info as { descriptionurl?: unknown }).descriptionurl;
     if (!licence || typeof assetPath !== "string") continue;
     const author = plainText(meta.Artist?.value);
@@ -209,8 +243,22 @@ export async function searchCommons(query: ReferenceQuery, deps: ReferenceDeps):
 export function searchCurated(query: ReferenceQuery, registry: readonly CuratedEntry[]): ReferenceCandidate[] {
   const wanted = tokens(query.concept);
   if (wanted.length === 0) return [];
+  // 🔴 A CURATED ROW SHADOWS THE LIVE PROVIDER, SO A WEAK MATCH IS WORSE THAN NONE. Measured on
+  // the shelf: "balance sheet" matched a bathtub *balance* seat, and "bacteriophage structure"
+  // matched a DNA *structure* diagram — one shared word each, and being curated they outranked
+  // everything the live search would have found. So a row competes only when it matches at least
+  // TWO of the asked words, or most of the asked characters (a single-word query can still match
+  // its word; a specific word can still carry a phrase it dominates). A request this filter drops
+  // is not lost — it falls through to the live provider, which is exactly where a concept the
+  // shelf does not hold belongs.
+  const wantedMass = wanted.reduce((sum, word) => sum + word.length, 0);
   return registry
-    .map((entry) => ({ entry, score: overlap(wanted, entry.concepts.flatMap(tokens)) }))
+    .map((entry) => {
+      const have = new Set(entry.concepts.flatMap(tokens));
+      const matched = wanted.filter((word) => have.has(word));
+      return { entry, matched: matched.length, score: matched.reduce((sum, word) => sum + word.length, 0) };
+    })
+    .filter((row) => row.matched >= 2 || row.score >= wantedMass * 0.6)
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, Math.min(Math.max(query.limit ?? 4, 1), 10))
@@ -260,7 +308,8 @@ function tokens(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2);
 }
 
-function overlap(a: readonly string[], b: readonly string[]): number {
-  const set = new Set(b);
-  return a.filter((word) => set.has(word)).length;
-}
+// The score above sums MATCHED CHARACTERS, not matched words, and the difference was measured:
+// counting words scores "bacteriophage structure" the same against a bacteriophage row and a
+// DNA-structure row — a tie that arrival order then decides, wrongly. A word's length is a cheap,
+// dependency-free proxy for its specificity: thirteen letters of "bacteriophage" outweigh nine of
+// "structure", and generic glue words stop deciding matches they never should have.

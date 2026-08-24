@@ -281,3 +281,94 @@ test("reaction arrow text is bounded like every other piece of model prose", () 
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.reason, "text-out-of-bounds");
 });
+
+// ───────────────────────────────────────────── §42's request kinds: figure and macromolecule
+
+const GOOD_ASSET = {
+  assetPath: "https://upload.wikimedia.org/wikipedia/commons/a/ab/Mitosis.png",
+  licence: { attribution: "Ali Zifan", licence: "CC-BY-SA-4.0", source: "Wikimedia Commons" },
+  provenance: "reference_image",
+};
+
+test("a figure request needs only a subject, and a resolved one keeps its stamped asset", () => {
+  const bare = validateCanvasVisual({ kind: "figure", learningGoal: "See the real thing", subject: "mitosis stages" });
+  assert.equal(bare.ok, true);
+  assert.equal(bare.ok && bare.visual.kind === "figure" && bare.visual.asset, undefined);
+
+  const stamped = validateCanvasVisual({
+    asset: GOOD_ASSET,
+    kind: "figure",
+    learningGoal: "See the real thing",
+    subject: "mitosis stages",
+  });
+  assert.equal(stamped.ok, true);
+  assert.equal(stamped.ok && stamped.visual.kind === "figure" && stamped.visual.asset?.assetPath, GOOD_ASSET.assetPath);
+});
+
+test("🔴 a figure asset off the allowed host refuses — stored blocks are re-validated long after the strip", () => {
+  const result = validateCanvasVisual({
+    asset: { ...GOOD_ASSET, assetPath: "https://evil.example/x.png" },
+    kind: "figure",
+    learningGoal: "g",
+    subject: "mitosis",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "malformed-figure");
+});
+
+test("🔴 a figure asset without its licence object refuses — an unlicensed picture must not survive storage", () => {
+  for (const licence of [undefined, {}, { licence: "CC-BY-4.0" }, { source: "Wikimedia Commons" }]) {
+    const result = validateCanvasVisual({
+      asset: { ...GOOD_ASSET, licence },
+      kind: "figure",
+      learningGoal: "g",
+      subject: "mitosis",
+    });
+    assert.equal(result.ok, false, JSON.stringify(licence));
+    assert.equal(result.ok === false && result.reason, "malformed-figure");
+  }
+});
+
+test("a figure asset claiming any provenance but reference_image refuses", () => {
+  const result = validateCanvasVisual({
+    asset: { ...GOOD_ASSET, provenance: "generated_image" },
+    kind: "figure",
+    learningGoal: "g",
+    subject: "mitosis",
+  });
+  assert.equal(result.ok === false && result.reason, "malformed-figure");
+});
+
+test("a macromolecule carries a PDB accession, uppercased, with an optional title and stamp", () => {
+  const result = validateCanvasVisual({
+    accession: "1mbn",
+    kind: "macromolecule",
+    learningGoal: "See the fold",
+    resolvedFrom: { id: "1MBN", name: "myoglobin", provider: "rcsb" },
+    title: "The stereochemistry of the protein myoglobin",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok && result.visual.kind === "macromolecule") {
+    assert.equal(result.visual.accession, "1MBN");
+    assert.equal(result.visual.title, "The stereochemistry of the protein myoglobin");
+    assert.deepEqual(result.visual.resolvedFrom, { id: "1MBN", name: "myoglobin", provider: "rcsb" });
+  }
+});
+
+test("🔴 an accession that is not one digit and three alphanumerics refuses — it becomes a URL path", () => {
+  for (const accession of ["ABCD", "12345", "1MB", "1MB!", "../4H", "AF_AFP69905F1"]) {
+    const result = validateCanvasVisual({ accession, kind: "macromolecule", learningGoal: "g" });
+    assert.equal(result.ok, false, accession);
+    assert.equal(result.ok === false && result.reason, "malformed-macromolecule");
+  }
+});
+
+test("a macromolecule stamp naming any provider but rcsb refuses", () => {
+  const result = validateCanvasVisual({
+    accession: "1MBN",
+    kind: "macromolecule",
+    learningGoal: "g",
+    resolvedFrom: { id: "1MBN", name: "myoglobin", provider: "pubchem" },
+  });
+  assert.equal(result.ok === false && result.reason, "malformed-macromolecule");
+});

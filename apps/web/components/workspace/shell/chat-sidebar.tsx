@@ -50,16 +50,19 @@ import {
   SidebarSectionHeader,
 } from "./sidebar-primitives";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import { SidebarCanvases } from "./sidebar-canvases";
 import { navigationRootFor, navItemActive, SIDEBAR_NAV, NAV_ICON_PX } from "@/lib/workspace/sidebar-nav";
 
 
-// 🔴 THE SIDEBAR REPRESENTS DESTINATIONS, NOT CONTENT (owner 2026-08-13, §L). It is almost
-// static, and that is the design rather than an unfinished state.
-//
-// No `Recent`. No folder tree. No canvas names. No growing list. The owner's reason is the
-// constraint, not a preference: "eventually the sidebar becomes a giant chronological dump.
-// Nemesis users aren't primarily trying to recover a conversation from three weeks ago. They're
-// managing BODIES OF KNOWLEDGE." A rail that grows with history optimises for the wrong verb.
+// 🔴 THE SIDEBAR IS DESTINATIONS **PLUS THE LEARNER'S OWN CANVASES** (owner 2026-08-25:
+// "I would like the chats or canvases to accumulate on the left sidebar, like it does in
+// ChatGPT… and the user can create folders for the canvases"). This REVERSES §L (owner
+// 2026-08-13, "destinations, not content") — deliberately, by the same owner, asked again
+// with the old rule read back and confirmed. The 8-13 worry ("a giant chronological dump…
+// they're managing BODIES OF KNOWLEDGE") is answered by structure rather than absence:
+// pinned first, then the learner's own folders, then recents — the folder tree IS the body
+// of knowledge, in the rail. See sidebar-canvases.tsx for the list itself; with the list
+// living here, /library stops being the canvas manager and becomes the home of outputs.
 //
 // The mental model each row answers:
 //
@@ -118,11 +121,9 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
     onNavigate?.();
   };
 
-  // 🔴 THE RAIL IS THE THREE SURFACES AND NOTHING ELSE. It used to carry a list of chat threads
-  // behind a `showSessionSections = false` constant — switched off 2026-08-10, kept in place
-  // because "historical data may still be needed". The Sessions product it listed was deleted on
-  // 2026-08-20, so the constant, the list, the search field that only ever searched chats, and the
-  // pin/rename/delete handlers went with it. Organising canvases lives on the Canvas home.
+  // The list below the nav is CANVASES — the product's real object — not the deleted chat
+  // Sessions product this rail listed before 2026-08-10. Same data layer as everything else
+  // (canvas-store), no second system.
 
   return (
     <Sidebar
@@ -206,6 +207,8 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <SidebarCanvases onNavigate={onNavigate} />
 
       </SidebarContent>
 

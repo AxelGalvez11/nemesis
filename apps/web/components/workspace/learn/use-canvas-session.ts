@@ -40,6 +40,7 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
+import { makeFlashcardsDeliverable, makeNoteDeliverable, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
@@ -56,6 +57,7 @@ import {
   type LearningCanvas,
   type ResponseEvaluation,
   type RetrievalFormat,
+  type CanvasOutput,
 } from "@/lib/learn/canvas-model";
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps, applyRewrite, restoreBlock } from "@/lib/learn/canvas-ops";
@@ -361,6 +363,13 @@ export interface CanvasSession {
   /** Session management (§10). Kept away from the teaching API above on purpose — these change
    *  what the session IS, not what the learner is doing inside it. */
   rename: (title: string) => void;
+  /** Record a thing Nemesis made (a deck, a note); appends to `outputs` and persists. */
+  addOutput: (output: CanvasOutput) => void;
+  /** Make a deliverable from what the canvas holds and file it in the library — owner
+   *  2026-08-25. The deck/note lands in the library's own tables AND on `outputs`. */
+  makeDeliverable: (kind: DeliverableKind) => Promise<void>;
+  /** The deliverable currently being made, or null — drives the Outputs tab's busy row. */
+  making: DeliverableKind | null;
   remove: () => Promise<void>;
   /** Record what the learner did. 🔴 Telemetry only — see canvas-events.ts. */
   recordEvent: (event: NewLearningEvent) => void;
@@ -376,6 +385,9 @@ export interface CanvasSession {
 export function useCanvasSession(canvasId: string | null): CanvasSession {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
+  /** Which deliverable is being made right now, for the Outputs tab's own busy state. */
+  const [making, setMaking] = useState<DeliverableKind | null>(null);
+  const makingRef = useRef(false);
 
   const [canvas, setCanvas] = useState<LearningCanvas>(() => newCanvas());
   const [busy, setBusy] = useState<BusyState>({ kind: null });
@@ -2057,6 +2069,37 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     answerActiveTask,
     admitUnknown,
     rename: (title: string) => update((current) => ({ ...current, title: title.slice(0, 300) })),
+    /** Record a thing Nemesis just made for the learner (a deck, a note). Appends and
+     *  persists; the Outputs tab and the Library both read what this writes. */
+    addOutput: (output: CanvasOutput) =>
+      update((current) => ({ ...current, outputs: [...(current.outputs ?? []), output] })),
+    makeDeliverable: async (kind: DeliverableKind) => {
+      // The ref, not the state: two clicks in one frame both see `making === null`.
+      if (makingRef.current) return;
+      if (!uid) {
+        setError("Sign in to save things to your library.");
+        return;
+      }
+      makingRef.current = true;
+      setMaking(kind);
+      try {
+        const result =
+          kind === "flashcards"
+            ? await makeFlashcardsDeliverable(uid, latest.current)
+            : await makeNoteDeliverable(uid, latest.current);
+        if ("error" in result) {
+          setError(result.error);
+          return;
+        }
+        update((current) => ({ ...current, outputs: [...(current.outputs ?? []), result.output] }));
+        // The notice strip, deliberately — see showNotice's own comment above.
+        setError(kind === "flashcards" ? "Flashcards saved to your Library." : "Note saved to your Library.");
+      } finally {
+        makingRef.current = false;
+        setMaking(null);
+      }
+    },
+    making,
     remove: async () => {
       // Written through before navigating away. The debounced autosave would otherwise fire
       // after the row is already flagged deleted and quietly resurrect it.
