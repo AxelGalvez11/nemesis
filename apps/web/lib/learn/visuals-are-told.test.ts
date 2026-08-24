@@ -65,6 +65,42 @@ const PHRASE_FOR_KIND: Record<string, RegExp> = {
   vectors: /a force diagram/,
 };
 
+/**
+ * How the packet tells the model to WRITE each kind.
+ *
+ * 🔴🔴🔴 THIS HALF WAS MISSING, AND `figure` FELL STRAIGHT THROUGH THE GAP. The map above asks
+ * "is this kind named?" — `figure` was named, as "a licensed textbook figure", so every test in
+ * this file passed. The question that mattered is "can the model actually write one?", and the
+ * answer was no: its single field, `subject`, appeared nowhere in the packet. A kind whose shape
+ * cannot be guessed is refused exactly as silently as a kind that was never mentioned.
+ *
+ * Measured on production 2026-08-24: *"show me a diagram of meiosis and walk me through the
+ * stages"* produced a complete, correct, entirely wordless lesson with no `[figure n]` marker
+ * anywhere. `/api/learn/reference-image` answers that same subject with a real captioned meiosis
+ * diagram in one call. Five thousand licensed pictures were unreachable for want of one field name.
+ *
+ * 🔴 EACH ENTRY MATCHES A FIELD NAME, NOT A PHRASE, because a field name is the thing the model
+ * has to reproduce exactly. A shape sentence that mentions a kind without naming its fields would
+ * pass a prose match and still leave the model guessing.
+ */
+const SHAPE_FOR_KIND: Record<string, RegExp> = {
+  anatomy: /"kind":"anatomy","structure"/,
+  circuit: /circuit \{elements:\{arrangement/,
+  code: /code \{language, source, trace\}/,
+  construction: /construction \{points:\[\{id,x,y\}\], segments/,
+  equation: /equation \{latex\}/,
+  figure: /"kind":"figure","subject"/,
+  macromolecule: /"kind":"macromolecule","accession"/,
+  quantitative: /quantitative \{xLabel, yLabel, series/,
+  relationship: /relationship \{nodes:\[\{id,label\}\], edges/,
+  score: /score \{abc\}/,
+  structure: /"kind":"structure","notation"/,
+  surface: /surface \{expression, xFrom, xTo/,
+  table: /table \{columns:\[\{key,label\}\], rows/,
+  timeline: /timeline \{unit, events/,
+  vectors: /vectors \{bodyLabel, vectors/,
+};
+
 const EMPTY: TurnContext = {
   canvasTitle: "",
   clarified: [],
@@ -123,6 +159,36 @@ test("🔴🔴 a NEW kind cannot be added without telling the model about it", (
     "a renderer was added with no phrase for it. Two edits, same commit: (1) name it in the " +
       "capability sentence in lib/learn/turn-router.ts, in learner-facing words, and (2) add that " +
       "phrase to PHRASE_FOR_KIND in this file. A capability the model is not told about does not exist.",
+  );
+});
+
+test("🔴🔴🔴 every kind is told to the model in a shape it can actually write", () => {
+  // 🔴 THE TEST THAT WOULD HAVE CAUGHT `figure`. Being NAMED is not being usable: the packet
+  // advertised "a licensed textbook figure" while never once saying the field is `subject`, so the
+  // model wrote prose about meiosis instead of asking for the diagram that was sitting there.
+  // Calibration: delete the figure shape from turn-router.ts and this reddens naming `figure`.
+  const unwritable: string[] = [];
+  for (const kind of RENDERABLE) {
+    const shape = SHAPE_FOR_KIND[kind];
+    if (!shape) continue; // reported by the next test, with better instructions
+    if (!shape.test(PACKET.replace(/\s+/g, " "))) unwritable.push(kind);
+  }
+  assert.deepEqual(
+    unwritable,
+    [],
+    "these kinds are named to the model but their FIELDS are not, so anything it writes for them is " +
+      "refused silently — state each shape in the exact-shapes section of turn-router.ts",
+  );
+});
+
+test("🔴🔴 a NEW kind cannot be added without telling the model its shape either", () => {
+  const unmapped = RENDERABLE.filter((kind) => !SHAPE_FOR_KIND[kind]);
+  assert.deepEqual(
+    unmapped,
+    [],
+    "a renderer was added with no SHAPE entry. Naming a kind is not enough — the model has to know " +
+      "which fields to write, or the validator drops what it produces without a word. Two edits, " +
+      "same commit: state the shape in lib/learn/turn-router.ts, and add it to SHAPE_FOR_KIND here.",
   );
 });
 
