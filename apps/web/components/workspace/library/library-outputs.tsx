@@ -25,11 +25,12 @@
 // forever-empty shelves and read as broken (the §38.3 lesson).
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, GraduationCap, Layers, MonitorPlay, NotebookText } from "lucide-react";
+import { ChevronDown, GraduationCap, Layers, MonitorPlay, NotebookText, Share2 } from "lucide-react";
 
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { LibraryAnkiImport, LibraryProgress } from "@/components/workspace/study/study-extras";
+import { DeckShare } from "./deck-share";
 import { loadCanvas } from "@/lib/learn/canvas-store";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -95,6 +96,9 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   // bumping this re-runs exactly that effect, so an Anki import that just added forty decks shows
   // them without a manual reload and without a second copy of the three queries to keep in step.
   const [refreshKey, setRefreshKey] = useState(0);
+  // 🔴 SHARING IS PUBLISHING, so it is one deliberate press on one named deck — never a default,
+  // never applied in bulk. `sharing` holds the deck whose link panel is open.
+  const [sharing, setSharing] = useState<DeckRow | null>(null);
 
   useEffect(() => {
     if (!userId) {
@@ -249,6 +253,14 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                       the answers is sometimes what you want (checking what Nemesis made
                       before trusting it), it just must not be what pressing a deck does. */}
                   <button
+                    aria-label={`Share ${deck.name}`}
+                    className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+                    onClick={() => setSharing(deck)}
+                    type="button"
+                  >
+                    <Share2 size={15} strokeWidth={1.8} />
+                  </button>
+                  <button
                     aria-expanded={openDeck === deck.id}
                     aria-label={openDeck === deck.id ? `Hide the cards in ${deck.name}` : `Show the cards in ${deck.name}`}
                     className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
@@ -366,6 +378,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
         />
       )}
       {showingProgress && <LibraryProgress onClose={() => setShowingProgress(false)} />}
+      {sharing && <DeckShare deck={sharing} onClose={() => setSharing(null)} userId={userId} />}
     </main>
   );
 }
