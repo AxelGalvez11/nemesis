@@ -17,9 +17,36 @@
 // stroke at `currentColor` once lets the CSS cascade recolour it live in both themes with no
 // second engraving.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ScoreVisual } from "@/lib/learn/canvas-visual";
+
+/**
+ * Where the piano samples come from.
+ *
+ * Owner 2026-08-24: *"for the music, is there any… should we add, like, a piano sound so that
+ * users can hear it?"* Yes, and at no new dependency: the engraver already in this file ships a
+ * synthesiser beside its renderer, so the notation that draws the staff also plays it.
+ *
+ * 🔴 NAMED HERE RATHER THAN LEFT TO THE LIBRARY'S DEFAULT, WHICH IS THE SAME URL. A silent
+ * default is a third party the codebase never wrote down; spelled out, it is one line to point at
+ * a copy we host the day that matters. The precedent for the learner's browser fetching a static
+ * asset directly is already set by the figure lane, whose pictures load straight from Wikimedia.
+ *
+ * 🔴 THE TRAILING SLASH IS LOAD-BEARING — the library appends `${instrument}-mp3.js` to this
+ * string with no separator of its own.
+ */
+const SOUNDFONT_URL = "https://paulrosen.github.io/midi-js-soundfonts/abcjs/";
+
+/**
+ * General MIDI program 0 — acoustic grand piano.
+ *
+ * 🔴 PINNED, BECAUSE THE ALTERNATIVE IS WHATEVER THE TUNE ASKED FOR. ABC can name its own
+ * instrument, and a scale written by a model with a stray `%%MIDI program` line would arrive as a
+ * harpsichord or a tuba. One instrument, always, is what "hear the notes" means; the learner is
+ * checking a pitch, not auditioning a patch.
+ */
+const ACOUSTIC_GRAND_PIANO = 0;
 
 /** Why nothing was engraved. Named so a blank frame is diagnosable, exactly as elsewhere. */
 type ScoreFailure =
@@ -38,6 +65,20 @@ type ScoreFailure =
 export function MusicScore({ visual }: { visual: ScoreVisual }) {
   const target = useRef<HTMLDivElement | null>(null);
   const [failure, setFailure] = useState<ScoreFailure | null>(null);
+  /**
+   * The engraved tune, kept so playback does not re-parse the notation.
+   *
+   * 🔴 A REF, NOT STATE, AND THAT IS NOT AN OPTIMISATION. Putting the tune in state would rerender
+   * on every engraving, and the effect that engraves depends on nothing else — so a rerender would
+   * engrave again, which would set the state again. A ref is what keeps the loop from existing.
+   */
+  const engraved = useRef<import("abcjs").TuneObject | null>(null);
+  const player = useRef<import("abcjs").MidiBuffer | null>(null);
+  const [playing, setPlaying] = useState(false);
+  /** Whether this browser can play at all. Unknown until the engraver has loaded. */
+  const [audible, setAudible] = useState(false);
+  /** A press that could not produce sound. Said in words rather than left as a dead button. */
+  const [soundFailed, setSoundFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +118,11 @@ export function MusicScore({ visual }: { visual: ScoreVisual }) {
           const stroke = node.getAttribute("stroke");
           if (stroke && stroke !== "none") node.setAttribute("stroke", "currentColor");
         }
+        // 🔴 KEPT ONLY AFTER THE ENGRAVING PASSED ITS OWN CHECKS. A tune the renderer produced no
+        // lines for is exactly the tune the synthesiser would produce no notes for, and offering
+        // Play beside a refused score is the dead control this codebase keeps rebuilding.
+        engraved.current = tune ?? null;
+        setAudible(library.synth.supportsAudio());
         setFailure(null);
       } catch {
         if (!cancelled) {
@@ -90,6 +136,58 @@ export function MusicScore({ visual }: { visual: ScoreVisual }) {
       cancelled = true;
     };
   }, [visual.abc]);
+
+  /**
+   * 🔴🔴 SOUND MUST NOT OUTLIVE THE SCORE. A learner who presses Play and then sends another
+   * message unmounts this component mid-tune, and a `MidiBuffer` nobody stops keeps playing into
+   * a page that no longer shows the notes it is playing. The cleanup runs on unmount AND whenever
+   * the notation changes, because a new tune in the same frame is the same problem.
+   */
+  useEffect(() => {
+    return () => {
+      player.current?.stop();
+      player.current = null;
+    };
+  }, [visual.abc]);
+
+  const toggle = useCallback(async () => {
+    if (player.current) {
+      player.current.stop();
+      player.current = null;
+      setPlaying(false);
+      return;
+    }
+    const tune = engraved.current;
+    if (!tune) return;
+    setSoundFailed(false);
+    try {
+      const library = await import("abcjs");
+      // 🔴 THE AUDIO CONTEXT IS BUILT INSIDE THE PRESS, AND THAT IS A BROWSER RULE RATHER THAN A
+      // PREFERENCE. Every engine starts a context suspended unless it was created during a user
+      // gesture; one made when the score first drew would be silent and give no error saying so.
+      const audioContext = new AudioContext();
+      await audioContext.resume();
+      const synth = new library.synth.CreateSynth();
+      await synth.init({
+        audioContext,
+        onEnded: () => {
+          player.current = null;
+          setPlaying(false);
+        },
+        options: { program: ACOUSTIC_GRAND_PIANO, soundFontUrl: SOUNDFONT_URL },
+        visualObj: tune,
+      });
+      await synth.prime();
+      player.current = synth;
+      setPlaying(true);
+      synth.start();
+    } catch {
+      // Samples blocked, offline, or refused by the engine. One press, one honest sentence.
+      player.current = null;
+      setPlaying(false);
+      setSoundFailed(true);
+    }
+  }, []);
 
   return (
     <div>
@@ -105,17 +203,40 @@ export function MusicScore({ visual }: { visual: ScoreVisual }) {
           {visual.abc}
         </pre>
       ) : (
-        // 🔴 THE NOTATION STAYS INSPECTABLE, the rule every computed depiction keeps: anybody can
-        // read the exact string the engraving came from. Folded because a tune's ABC runs long
-        // where a SMILES runs short; folded is still on the record.
-        <details className="mt-2">
-          <summary className="cursor-pointer text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-            ABC notation
-          </summary>
-          <pre className="mt-1 overflow-x-auto font-mono text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-            {visual.abc}
-          </pre>
-        </details>
+        <>
+          {/* 🔴 THE BUTTON EXISTS ONLY WHERE IT CAN WORK. `audible` is the engraver's own answer
+              about this browser, and `!failure` means there is a real tune behind it — the two
+              conditions between them are what stop this becoming a control that does nothing,
+              which is the defect this codebase repeats most. */}
+          {audible && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                aria-label={playing ? "Stop the music" : "Hear this played on a piano"}
+                className="rounded-lg bg-(--ui-bg-tertiary) px-2.5 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-primary)"
+                onClick={() => void toggle()}
+                type="button"
+              >
+                {playing ? "Stop" : "Play"}
+              </button>
+              {soundFailed && (
+                <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                  The piano samples could not be loaded.
+                </span>
+              )}
+            </div>
+          )}
+          {/* 🔴 THE NOTATION STAYS INSPECTABLE, the rule every computed depiction keeps: anybody
+              can read the exact string the engraving came from. Folded because a tune's ABC runs
+              long where a SMILES runs short; folded is still on the record. */}
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+              ABC notation
+            </summary>
+            <pre className="mt-1 overflow-x-auto font-mono text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+              {visual.abc}
+            </pre>
+          </details>
+        </>
       )}
     </div>
   );

@@ -556,16 +556,47 @@ const NEMESIS_SYSTEM = [
   + "score {abc} — ABC notation including its K: header line. "
   + "surface {expression, xFrom, xTo, yFrom, yTo} — the grid is computed for you.",
 
-  // 🔴 THE THREE THAT ARE A LOOKUP RATHER THAN A DRAWING, SAID SEPARATELY BECAUSE THE MISTAKE IS
+  // 🔴 THE FOUR THAT ARE A LOOKUP RATHER THAN A DRAWING, SAID SEPARATELY BECAUSE THE MISTAKE IS
   // TO WRITE THEIR DATA FROM MEMORY. Each takes a NAME and trusted code fetches the real thing;
   // a name nothing carries simply draws nothing, so the prose must stand on its own either way.
-  "Three of those take a NAME and nothing else, because the data is looked up rather than recalled: "
+  //
+  // 🔴🔴 `figure` WAS THE FOURTH AND WAS MISSING FROM BOTH SHAPE SENTENCES, WHICH IS WHY NO
+  // TEXTBOOK PICTURE HAS EVER APPEARED IN A CONVERSATION. It was NAMED in the capability sentence
+  // above — "a licensed textbook figure" — so `visuals-are-told.test.ts` passed; but its one field
+  // was written down nowhere, and a kind whose shape the model cannot guess is refused exactly as
+  // silently as a kind that does not exist. Measured on production 2026-08-24: "show me a diagram
+  // of meiosis and walk me through the stages" produced a complete, correct, entirely wordless
+  // lesson, with no `[figure n]` marker anywhere — the model never asked. The same request through
+  // `/api/learn/reference-image` returns a real captioned meiosis diagram in one call, and so do
+  // glycolysis, the Krebs cycle and photosynthesis. Five thousand licensed pictures were unreachable
+  // for want of one field name.
+  //
+  // 🔴 THE GUARD THAT LET THIS THROUGH NOW CHECKS SHAPES TOO — see `visuals-are-told.test.ts`. The
+  // old one held "is this kind named?" and the answer was yes; the question that mattered was "can
+  // the model actually write one?"
+  "Four of those take a NAME and nothing else, because the data is looked up rather than recalled: "
   + "{\"kind\":\"anatomy\",\"structure\":\"uterus\"} shows an interactive 3D body region with that "
   + "structure picked out and the rest ghosted — any bone, muscle, vessel, nerve or organ, male or "
   + "female. {\"kind\":\"macromolecule\",\"accession\":\"1HHO\"} shows a rotatable protein. "
   + "{\"kind\":\"structure\",\"notation\":\"smiles\",\"value\":\"…\"} draws a molecule, and for a "
-  + "NAMED compound prefer [compound: aspirin] so it is looked up instead. Reach for them whenever "
-  + "WHERE something sits or WHAT SHAPE it is are the thing to understand.",
+  + "NAMED compound prefer [compound: aspirin] so it is looked up instead. "
+  + "{\"kind\":\"figure\",\"subject\":\"the stages of meiosis\"} finds a real licensed diagram or "
+  + "photograph and shows it with its credit — thousands of them, across biology, biochemistry, "
+  + "microbiology, anatomy, chemistry, physics and astronomy. Reach for them whenever WHERE "
+  + "something sits or WHAT SHAPE it is are the thing to understand.",
+
+  // 🔴🔴 THE POSITIVE INSTRUCTION FOR `figure`, BECAUSE THE OTHER FOURTEEN KINDS COMPUTE AND THIS
+  // ONE SEARCHES. Every other visual is drawn from data the model supplies, so "can I state this
+  // precisely?" is a fair test of whether to use it. A figure is the opposite: the right moment is
+  // exactly when the thing to be understood is a PICTURE nobody can compute — a process with
+  // stages, a cross-section, a life cycle, a piece of apparatus, a specimen. Without this the model
+  // reads the shape list, finds nothing it can compute for meiosis, and writes prose.
+  "A figure is the right answer whenever the thing to understand is a real picture rather than "
+  + "computed data: a process with stages, a cycle, a cross-section, a piece of apparatus, a "
+  + "specimen, a map. If a learner asks to SEE a process — meiosis, glycolysis, the nitrogen cycle, "
+  + "how a four-stroke engine fires — reach for {\"kind\":\"figure\"} rather than describing the "
+  + "picture in words. Nothing is invented: a subject that finds no licensed picture simply draws "
+  + "nothing, so keep the prose standing on its own.",
 
   // 🔴🔴 §45 SHIPPED THIS AND NOTHING COULD REACH IT. The expression evaluator, the distribution
   // maths and the curve builder were built, hardened against a real sandbox-escape probe, tested

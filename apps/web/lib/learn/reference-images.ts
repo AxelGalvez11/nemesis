@@ -18,6 +18,7 @@
 // licence. Nemesis prefers the curated answer when both have one, because a licence a human
 // recorded once beats a licence parsed out of a wiki template on every request.
 
+import { matchableConcepts, readableCaption } from "./figure-caption";
 import type { CandidateAsset } from "./visual-provenance";
 
 /** What a caller wants a picture of. Plain text — the concept, not a query language. */
@@ -215,7 +216,11 @@ export async function searchCommons(query: ReferenceQuery, deps: ReferenceDeps):
     const pageUrl = (info as { descriptionurl?: unknown }).descriptionurl;
     if (!licence || typeof assetPath !== "string") continue;
     const author = plainText(meta.Artist?.value);
-    const caption = plainText(meta.ImageDescription?.value);
+    // 🔴 THE LIVE PROVIDER IS FILTERED TOO, AND THAT IS NOT BELT-AND-BRACES. The shelf's book
+    // blurbs came from this very field: the same bulk-uploaded files are reachable through a live
+    // Commons search, so a caption refused from the frozen copy would otherwise walk straight back
+    // in through the fresh one.
+    const caption = readableCaption(plainText(meta.ImageDescription?.value));
     found.push({
       assetPath,
       ...(author ? { author } : {}),
@@ -254,7 +259,13 @@ export function searchCurated(query: ReferenceQuery, registry: readonly CuratedE
   const wantedMass = wanted.reduce((sum, word) => sum + word.length, 0);
   return registry
     .map((entry) => {
-      const have = new Set(entry.concepts.flatMap(tokens));
+      // 🔴🔴 A ROW IS MATCHED ON ITS REAL CONCEPTS ONLY — see `figure-caption.ts`. 1,235 shelf rows
+      // carry a book's blurb where a description belongs, and because the harvester turns the
+      // description into a concept, every row from one upload shares that string verbatim. Scoring
+      // against it makes a thousand rows tie on any query wide enough to brush the blurb, and the
+      // winner is then whichever the sort left on top — an arbitrary textbook figure, presented as
+      // the answer, and SHADOWING the live provider that would have found the right diagram.
+      const have = new Set(matchableConcepts(entry.concepts).flatMap(tokens));
       const matched = wanted.filter((word) => have.has(word));
       return { entry, matched: matched.length, score: matched.reduce((sum, word) => sum + word.length, 0) };
     })
@@ -262,21 +273,29 @@ export function searchCurated(query: ReferenceQuery, registry: readonly CuratedE
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, Math.min(Math.max(query.limit ?? 4, 1), 10))
-    .map(({ entry }) => ({
-      assetPath: entry.assetPath,
-      ...(entry.author ? { author: entry.author } : {}),
-      caption: entry.caption,
-      licence: {
-        attribution: entry.attribution,
-        licence: entry.licence,
-        source: entry.source,
+    .map(({ entry }) => {
+      // 🔴 AND A BOOK RECORD IS NEVER SHOWN AS THOUGH IT DESCRIBED THE PICTURE. Measured in
+      // production: asking for glycolysis returned the right diagram captioned "Name: Microbiology
+      // ID: e42bd376-…@4.4 Language: English Summary:". Omitted rather than blanked, because
+      // `caption` is optional and downstream tests it for presence, not for emptiness.
+      const caption = readableCaption(entry.caption);
+      return {
+        assetPath: entry.assetPath,
+        ...(entry.author ? { author: entry.author } : {}),
+        ...(caption ? { caption } : {}),
+        licence: {
+          attribution: entry.attribution,
+          licence: entry.licence,
+          source: entry.source,
+          ...(entry.url ? { url: entry.url } : {}),
+        },
+        provenance: "reference_image" as const,
+        providerId: "curated" as const,
+        // The tags are what this row CLAIMS to be about, and a book blurb is not such a claim.
+        tags: matchableConcepts(entry.concepts),
         ...(entry.url ? { url: entry.url } : {}),
-      },
-      provenance: "reference_image" as const,
-      providerId: "curated" as const,
-      tags: entry.concepts,
-      ...(entry.url ? { url: entry.url } : {}),
-    }));
+      };
+    });
 }
 
 /**

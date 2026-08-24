@@ -127,7 +127,18 @@ export function Macromolecule({ visual }: { visual: MacromoleculeVisual }) {
   if (failure) return null;
 
   return (
-    <div aria-label={visual.learningGoal}>
+    // 🔴 THE TITLE AND THE SOURCE NAME MOVED HERE WHEN THEY CAME OFF THE SCREEN (above). What was
+    // found, and what it was found FROM, is exactly what someone who cannot see the model needs.
+    <div
+      aria-label={[
+        visual.learningGoal,
+        visual.title || null,
+        visual.resolvedFrom ? `resolved from “${visual.resolvedFrom.name}”` : null,
+        `Protein Data Bank entry ${visual.accession}`,
+      ]
+        .filter(Boolean)
+        .join(". ")}
+    >
       <div
         className="relative h-90 w-full overflow-hidden rounded-md"
         ref={frame}
@@ -142,13 +153,19 @@ export function Macromolecule({ visual }: { visual: MacromoleculeVisual }) {
         )}
       </div>
       {/* 🔴 THE ACCESSION IS SHOWN, NOT HIDDEN BEHIND THE PICTURE — the same inspectability §42
-          requires of a SMILES string. The entry's own title says what the search actually found,
-          which is the honest answer to a fuzzy name; the source line is the provenance. */}
-      <p className="mt-2 font-mono text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-        {visual.accession}
-        {visual.title ? ` · ${visual.title}` : ""}
-      </p>
-      <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+          requires of a SMILES string. The link is the provenance: it opens the exact entry.
+          🔴🔴 ONE LINE, AND THE PDB TITLE IS NOT ON IT — owner, 2026-08-24: *"for the molecule,
+          looks good, but maybe the figure title should be different… maybe remove it because it
+          just looks a little bit messy there."* A Protein Data Bank title is a catalogue string,
+          not a caption: haemoglobin arrives as "HEMOGLOBIN (DEOXY) (ALPHA CHAIN)", shouted in
+          monospace and wrapped over two lines directly beneath the picture, with a second line
+          under it repeating the name they typed. Three lines of chrome for one 3D model.
+          Inspectability is not lost with it — the accession is still printed and still one click
+          from the full entry, which is where a catalogue title belongs. It stays in the frame's
+          accessible name so a screen reader still hears what was found. */}
+      <p className="mt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+        <span className="font-mono">{visual.accession}</span>
+        {" · "}
         <a
           className="underline decoration-(--ui-stroke-primary) underline-offset-2 hover:text-(--ui-text-secondary)"
           href={`https://www.rcsb.org/structure/${encodeURIComponent(visual.accession)}`}
@@ -157,7 +174,6 @@ export function Macromolecule({ visual }: { visual: MacromoleculeVisual }) {
         >
           RCSB Protein Data Bank
         </a>
-        {visual.resolvedFrom ? ` · resolved from “${visual.resolvedFrom.name}”` : ""}
       </p>
     </div>
   );

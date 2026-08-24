@@ -39,9 +39,59 @@ test("🔴🔴 the Library is the learner's shelves, and not a home for retired 
   assert.ok(!/<LibraryProgress/.test(OUTPUTS), "the Progress panel is back on the Library");
   assert.ok(!/<LibraryAnkiImport/.test(OUTPUTS), "the Anki importer is mounted on the Library again");
   // What the page IS for, asserted positively: the three shelves the owner named.
-  assert.match(OUTPUTS, /Flashcard decks/, "the flashcards shelf is gone");
-  assert.match(OUTPUTS, /Slides/, "the slides shelf is gone");
-  assert.match(OUTPUTS, /Notes/, "the documents shelf is gone");
+  // 🔴 MATCHED AS HEADINGS, NOT AS BARE WORDS. The old spelling of this checked for `/Notes/`,
+  // which passed on the `setNotes` state setter and would have gone on passing with every shelf
+  // deleted. A guard that cannot fail is worse than no guard, because it is counted as coverage.
+  for (const heading of ["Flashcard decks", "Slides", "Documents"]) {
+    assert.ok(
+      new RegExp(`SECTION_TITLE\\}>${heading}<`).test(OUTPUTS),
+      `the ${heading} shelf heading is gone`,
+    );
+  }
+});
+
+test("🔴🔴 the filter offers exactly the three kinds the owner named, plus All", () => {
+  // Owner 2026-08-24: *"make sure you add the flashcards, slides, or documents, selection, or
+  // filter in the library like in ChatGPT."*
+  //
+  // 🔴 "All" IS PART OF THE CONTRACT, NOT A FOURTH OPTION SOMEBODY ADDED. Without a way back to
+  // everything, picking a filter is a one-way door and the other two shelves read as deleted.
+  const shelves = OUTPUTS.slice(OUTPUTS.indexOf("const SHELVES"), OUTPUTS.indexOf("export function LibraryOutputs"));
+  assert.ok(shelves.length > 0, "the shelf filter is gone — this guard is pointed at nothing");
+  for (const label of ["All", "Flashcards", "Slides", "Documents"]) {
+    assert.ok(shelves.includes(`"${label}"`), `the filter lost "${label}"`);
+  }
+  assert.match(OUTPUTS, /useState<Shelf>\("all"\)/, "the Library no longer opens showing everything");
+});
+
+test("🔴🔴 a hidden shelf is not rendered, heading and all", () => {
+  // A heading left standing over a list the filter emptied says "you have no decks", which is a
+  // different and false claim. Calibration: drop the `showing(...)` wrappers and this reddens.
+  for (const kind of ["deck", "slides", "note"]) {
+    assert.ok(OUTPUTS.includes(`{showing("${kind}") && (`), `the ${kind} shelf renders even when filtered out`);
+  }
+});
+
+test("🔴🔴 Library folders are the SIDEBAR's folders, never a second tree", () => {
+  // Owner 2026-08-24: *"And the library, I don't know if you added the folders. Could you… yeah.
+  // Add the folders."*
+  //
+  // 🔴 THE `folders` TABLE WAS BUILT GENERIC FOR EXACTLY THIS — its migration says *"folders
+  // organise sessions, and Nemesis is not education-only"*. A `library_folders` table would give
+  // one learner two unrelated trees, so "Fall 2026 / Pharmacology" would have to be typed once
+  // for the canvas and again for the deck that canvas produced.
+  assert.match(OUTPUTS, /from "@\/lib\/learn\/canvas-store"/, "the Library stopped using the shared folder store");
+  assert.match(OUTPUTS, /listFolders\(userId\)/, "the Library does not load the learner's folders");
+  assert.match(OUTPUTS, /createFolder\(userId/, "there is no way to make a folder from the Library");
+  assert.ok(!/library_folders/.test(OUTPUTS), "a second folder tree appeared");
+});
+
+test("🔴 filing waits for the write, and never guesses", () => {
+  // The cross-account folder trigger can refuse a move. An optimistic update would leave the
+  // learner looking at a folder their deck is not in until the next reload.
+  const filing = OUTPUTS.slice(OUTPUTS.indexOf("const file = useCallback"), OUTPUTS.indexOf("const addFolder"));
+  assert.ok(filing.length > 0, "the filing callback is gone — this guard is pointed at nothing");
+  assert.match(filing, /if \(!\(await fileOutput\(/, "the Library moves a row before the database agrees");
 });
 
 test("🔴🔴 they mount the Study tab's own screens, unmodified", () => {

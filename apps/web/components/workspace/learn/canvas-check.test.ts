@@ -50,6 +50,48 @@ test("🔴🔴 a test is never a mode: every turn re-answers the question", () =
   assert.ok(!/setTestRequested\(true\)/.test(SESSION), "something sets the test flag without a decision behind it");
 });
 
+test("🔴🔴 no question is marked while the test is still running", () => {
+  // 🔴🔴 OWNER, 2026-08-24: *"I need that to just be one where the user does not immediately get
+  // feedback until the end… that way it's not just like friction every time you click the answer."*
+  //
+  // The guard is on the QUESTION screen reading `correct` at all, not merely on the verdict
+  // sentence, because the first version leaked the answer three other ways before it said a word:
+  // the right row grew a ring, the wrong rows faded to 45% opacity, and every row went `disabled`.
+  // A learner could see which one was right without reading anything. So: the question screen must
+  // not branch on correctness, and the marking must live in `CheckResult`.
+  const question = CHECK.slice(CHECK.indexOf("export function CanvasCheck"), CHECK.indexOf("export function groundedMiss"));
+  const result = CHECK.slice(CHECK.indexOf("function CheckResult"));
+  assert.ok(question.length > 0 && result.length > 0, "the two screens could not be told apart — this guard is pointed at nothing");
+
+  assert.ok(!/option\.correct/.test(question), "the live question screen reads which option is correct — the answer leaks through styling");
+  assert.ok(!/groundedMiss\(/.test(question), "a verdict sentence is back on the live question screen");
+  assert.ok(!/verdictFor\(/.test(question), "the live question screen is scoring a tap as it happens");
+
+  // …and the feedback genuinely moved rather than being deleted: the review still names the
+  // ground, still states the answer, and still shows what they picked.
+  assert.match(result, /groundedMiss\(/, "the grounded sentence was dropped instead of moved to the review");
+  assert.match(result, /verdictFor\(/, "the review does not mark the questions at all");
+  assert.match(result, /The answer:/, "the review never states the right answer");
+});
+
+test("🔴 one tap answers and advances — the second press was the friction", () => {
+  // The old card demanded "Next question" after every tap, so a five-question run cost ten presses.
+  assert.ok(!/Next question/.test(CHECK), "the extra press per question is back");
+  assert.ok(!/See how you did/.test(CHECK), "the extra press before the results is back");
+  const answer = CHECK.slice(CHECK.indexOf("const answer = ("), CHECK.indexOf("return (", CHECK.indexOf("const answer = (")));
+  assert.match(answer, /setPicks\(/, "tapping an option no longer records the answer");
+  assert.match(answer, /if \(last\) setDone\(true\)/, "the last answer no longer ends the run");
+  assert.match(answer, /else setIndex/, "answering no longer advances to the next question");
+});
+
+test("🔴 a mis-tap is recoverable, because deferred marking is what made it invisible", () => {
+  // While each tap was marked instantly, hitting the wrong row was obvious immediately. Deferring
+  // the marking removes that signal, so the way back has to be explicit — otherwise this change
+  // quietly turns a slip into a wrong answer the learner cannot see until the results.
+  assert.match(CHECK, /index > 0 && \(/, "Back is offered on the first question, where there is nothing behind");
+  assert.match(CHECK, />\s*Back\s*</, "there is no way back after a mis-tap");
+});
+
 test("🔴 cards from misses reuse the canvas's own deck and cost no model call", () => {
   const body = CANVAS.slice(CANVAS.indexOf("const makeCardsFromMisses"), CANVAS.indexOf("const makeCardsFromMisses") + 1600);
   assert.match(body, /ensureCanvasDeck\(uid, canvas\.title, canvas\.studyDeckId\)/, "a test now makes its own deck each time");
