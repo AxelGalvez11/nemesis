@@ -384,14 +384,20 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           {/* 🔴 ONLY AT THE TOP LEVEL. Folders nest two deep in the database and the sidebar already
               spends that second level; offering "New folder" from inside one would either make a
               third level the trigger refuses, or quietly make a sibling, and neither is what the
-              button says. */}
+              button says.
+
+              🔴 `--ui-text-secondary`, NOT `--ui-text-quaternary`. Measured against the reference
+              in dark mode: quaternary resolves to white at 36% on a pure-black ground, which is a
+              control you have to hunt for. ChatGPT's equivalent is a solid, prominent button;
+              secondary (74%) is this app's nearest honest equivalent and reads in both themes. The
+              unselected filter pills use the same token, so the row speaks with one voice. */}
           {openFolder === null && naming === null && (
             <button
-              className="flex shrink-0 items-center gap-1.5 rounded-full bg-transparent px-3 py-1.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+              className="flex shrink-0 items-center gap-1.5 rounded-full bg-transparent px-3 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-primary)"
               onClick={() => setNaming("")}
               type="button"
             >
-              <FolderPlus size={13} strokeWidth={1.8} />
+              <FolderPlus size={14} strokeWidth={1.8} />
               New folder
             </button>
           )}
