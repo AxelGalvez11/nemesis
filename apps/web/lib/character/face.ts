@@ -43,20 +43,23 @@ export type FaceId = "reading" | "sigma";
 // All numbers are body-radius units, offsets in the eye's local frame.
 
 export const SPECS = {
-  /** Lens outer radius. Round — spectacles, not goggles. Deliberately SMALLER than the
-   *  eye is tall: the frame crossing the eye is what makes it read as worn, not drawn. */
-  r: 0.145,
-  /** Ring thickness of the paper frame. */
-  ring: 0.046,
+  /** Lens outer radius. Round — spectacles, not goggles. Sized to the ceiling (owner
+   *  2026-08-25, twice: "make the glasses look bigger… it's too small"): as large as the
+   *  face allows while the lens stays SHORTER than the eye is tall — the eye's top showing
+   *  over the rim is what makes the frame read as worn, not drawn, and past ~0.2 the rims
+   *  also collide across the 0.46 eye gap. */
+  r: 0.19,
+  /** Ring thickness of the paper frame; scaled with the lens so it stays a frame. */
+  ring: 0.054,
   /** Lens centre, below the eye's centre — worn on the face the way reading glasses sit. */
-  dy: 0.04,
+  dy: 0.055,
   /** Ink edge around the frame, so it reads where it crosses the eye's own paper. */
   stroke: 0.03,
   /** Temple pieces, running outward from each rim toward the head's edge. */
-  arm: { len: 0.13, dy: -0.04 },
+  arm: { len: 0.14, dy: -0.04 },
   /** The bridge welds the two inner rims; from eye 0's centre toward eye 1. The eyes sit
    *  ~0.46 apart, the rings span 2r of it, and the extra 0.06 buries both ends. */
-  bridge: { w: 0.23, dx: 0.23, dy: -0.01 },
+  bridge: { w: 0.14, dx: 0.23, dy: -0.01 },
 } as const;
 
 /**
