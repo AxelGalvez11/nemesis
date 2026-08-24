@@ -55,24 +55,30 @@ const DEFAULT_PREFERENCES: AssistantPreferences = {
   productUpdates: false,
 };
 
-const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
-  { id: "general", label: "General", icon: "settings-gear" },
-  { id: "notifications", label: "Notifications", icon: "bell" },
-  { id: "appearance", label: "Appearance", icon: "symbol-color" },
-  { id: "usage", label: "Usage", icon: "pulse" },
+// 🔴 EACH SECTION CARRIES THE WORDS FOR WHAT IS *INSIDE* IT, NOT JUST ITS OWN NAME. The search
+// field in the rail matches against `keywords`, and this is the whole reason it is trustworthy:
+// a box that only matched the eleven labels would answer "accent colour" with nothing, because
+// that control lives inside Appearance and the word never appears in a section name. A search
+// that silently misses what it is standing on is worse than no search — the learner concludes
+// the setting does not exist. Anything added to a section belongs in its keyword list.
+const SECTIONS: { id: SettingsSection; label: string; icon: string; keywords: string }[] = [
+  { id: "general", label: "General", icon: "settings-gear", keywords: "language tone style headers lists emoji library pet nickname occupation" },
+  { id: "notifications", label: "Notifications", icon: "bell", keywords: "reminders alerts email push product updates study" },
+  { id: "appearance", label: "Appearance", icon: "symbol-color", keywords: "theme light dark mode contrast accent colour color scale font size character" },
+  { id: "usage", label: "Usage", icon: "pulse", keywords: "allowance limits quota credits" },
   // 🔴 A TOP-LEVEL SECTION, NOT A ROW INSIDE "General". What Nemesis remembers about a person has
   // to be findable by someone looking for it without knowing our menu — burying it two levels down
   // is how a privacy surface becomes technically-present and practically-hidden.
-  { id: "memory", label: "Memory", icon: "history" },
+  { id: "memory", label: "Memory", icon: "history", keywords: "remember forget facts privacy what nemesis knows deadlines subjects" },
   // 🔴 "Apps", NOT "Connected apps" OR "Integrations" — owner 2026-08-24, asking for the word
   // ChatGPT uses. It is also the better word on its own terms: "integrations" is what an engineer
   // calls it, and §38's copy rule is that a control names what the learner gets.
-  { id: "connections", label: "Apps", icon: "plug" },
-  { id: "voice", label: "Voice", icon: "unmute" },
-  { id: "billing", label: "Billing", icon: "credit-card" },
-  { id: "storage", label: "Storage", icon: "database" },
-  { id: "security", label: "Security & login", icon: "lock" },
-  { id: "keyboard", label: "Keyboard (shortcuts)", icon: "keyboard" },
+  { id: "connections", label: "Apps", icon: "plug", keywords: "connect google drive gmail calendar docs integrations composio" },
+  { id: "voice", label: "Voice", icon: "unmute", keywords: "speech dictation read aloud microphone speak" },
+  { id: "billing", label: "Billing", icon: "credit-card", keywords: "plan subscription payment invoice upgrade card" },
+  { id: "storage", label: "Storage", icon: "database", keywords: "space disk cache browser data" },
+  { id: "security", label: "Security & login", icon: "lock", keywords: "password sign in sessions devices two factor account delete" },
+  { id: "keyboard", label: "Keyboard (shortcuts)", icon: "keyboard", keywords: "shortcuts keys hotkeys command" },
 ];
 
 const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
@@ -102,7 +108,25 @@ const ACCENT_OPTIONS: { id: AccentPreference; label: string; color: string }[] =
   { id: "purple", label: "Purple", color: ACCENT_COLORS.purple },
 ];
 
-const SELECT_CLASS = "h-9 min-w-44 rounded-lg border border-(--ui-stroke-secondary) bg-background px-3 text-xs text-foreground outline-none focus:border-(--theme-primary)";
+// 🔴 TWO CONTROL SHAPES, NOT ONE — AND SPLITTING THEM IS WHY THE CHOOSER CAN GO BARE.
+// Measured off ChatGPT's settings 2026-08-24 (owner: "look at the ChatGPT settings… the spacing,
+// the color, and etcetera"): a chooser there is a 36px button, radius 8, `border: 1px rgba(0,0,0,0)`
+// and no fill — the value and its chevron read as text until the row is hovered. One class was
+// dressing both the choosers AND the three text fields, so taking the border off would have left
+// Pet/Nickname/Occupation as invisible boxes. A picker announces itself with a chevron and a value;
+// an empty text field has nothing to announce itself with, so it keeps its edge.
+//
+// 🔴 BOTH TAKE THE NAV ROW'S HEIGHT AND CORNER, NOT Tailwind's `h-9`/`rounded-lg`. Those two are
+// rem-based, so under the app's own font-scale setting they resolved to 40.5px and 13.5px here —
+// a control taller and rounder than the 36px/10px rows sitting a few pixels to its left, inside
+// one panel. `--nav-row-height` and `--nav-row-radius` are fixed px and are what the shell rail
+// already uses, so every row-shaped thing in Settings now agrees at any scale.
+const SELECT_CLASS = "h-[var(--nav-row-height)] cursor-pointer rounded-[var(--nav-row-radius)] border border-transparent bg-transparent px-2 text-[length:var(--canvas-text-small)] text-foreground outline-none transition-colors hover:bg-(--ui-control-hover-background) focus:border-(--theme-primary)";
+const INPUT_CLASS = "h-[var(--nav-row-height)] min-w-44 rounded-[var(--nav-row-radius)] border border-(--ui-stroke-secondary) bg-background px-3 text-[length:var(--canvas-text-small)] text-foreground outline-none focus:border-(--theme-primary)";
+/** The rail scrolls on its own once the section list outgrows a short window; the content pane
+ *  beside it already did. Without this the whole modal grew a single outer scrollbar and the
+ *  section you were reading slid away with the list. */
+const SCROLL_RAIL = "overflow-y-auto overflow-x-hidden overscroll-contain";
 // Discrete scale presets replace the old slider (owner 2026-07-20 evening).
 const SCALE_PRESETS = [50, 75, 90, 100, 110, 125, 150] as const;
 const KEYBOARD_SHORTCUTS: Array<[string, string]> = [
@@ -116,6 +140,7 @@ const KEYBOARD_SHORTCUTS: Array<[string, string]> = [
 
 export function SettingsSurface({ initialSection = "general" }: { initialSection?: SettingsSection; checkoutStatus?: string }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const [query, setQuery] = useState("");
   const [preferences, setPreferences] = useState<AssistantPreferences>(DEFAULT_PREFERENCES);
   const [usageBars, setUsageBars] = useState<UsageBar[] | null>(null);
   const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null);
@@ -162,26 +187,57 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
     });
   }
 
+  // Matching is on the label AND on what the section contains, so "accent" reaches Appearance.
+  // The needle is trimmed and lowercased once; an empty box matches everything.
+  const needle = query.trim().toLowerCase();
+  const matchedSections = needle
+    ? SECTIONS.filter((item) => `${item.label} ${item.keywords}`.toLowerCase().includes(needle))
+    : SECTIONS;
+
   return (
-    <div className="grid h-full min-h-0 grid-cols-[13.5rem_minmax(0,1fr)] bg-background max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(0,1fr)]">
-      <aside className="border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) p-4 max-md:border-b max-md:border-r-0 max-md:p-2">
-        <h1 className="workspace-page-title mb-4 px-2 max-md:sr-only">Settings</h1>
-        <nav aria-label="Settings pages" className="flex flex-col gap-1 max-md:flex-row max-md:overflow-x-auto max-md:pb-1">
-          {SECTIONS.map((item) => (
+    <div className="grid h-full min-h-0 grid-cols-[14rem_minmax(0,1fr)] bg-background max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(0,1fr)]">
+      <aside className="flex min-h-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) p-3 max-md:border-b max-md:border-r-0 max-md:p-2">
+        <h1 className="workspace-page-title mb-3 px-2 max-md:sr-only">Settings</h1>
+        {/* The rail's own search, as ChatGPT's has. It filters the list rather than jumping, so
+            an empty result is visible as an empty list instead of as a section that silently
+            failed to open. */}
+        <label className="relative mb-2 block max-md:hidden">
+          <Codicon className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-(--ui-text-tertiary)" name="search" size="0.85rem" />
+          <input
+            aria-label="Search settings"
+            className="h-[var(--nav-row-height)] w-full rounded-[var(--nav-row-radius)] border border-(--ui-stroke-secondary) bg-background pr-2 pl-8 text-[length:var(--canvas-text-small)] text-foreground outline-none placeholder:text-(--ui-text-tertiary) focus:border-(--theme-primary)"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search settings"
+            type="search"
+            value={query}
+          />
+        </label>
+        <nav aria-label="Settings pages" className={cn("flex min-h-0 flex-col gap-0 max-md:flex-row max-md:overflow-x-auto max-md:pb-1", SCROLL_RAIL)}>
+          {matchedSections.map((item) => (
             <button
               aria-current={section === item.id ? "page" : undefined}
               className={cn(
-                "flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-left text-xs font-medium text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground max-md:shrink-0",
-                section === item.id && "bg-(--ui-control-active-background) text-foreground",
+                // Row geometry is the shell sidebar's, which was already measured against the
+                // same reference: 36px tall, 10px radius, 14px label. It read a size smaller
+                // than every other list in the product for no reason anyone had chosen.
+                "flex h-[var(--nav-row-height)] shrink-0 items-center gap-2 rounded-[var(--nav-row-radius)] px-2.5 text-left text-[length:var(--canvas-text-small)] text-foreground transition-colors hover:bg-(--ui-control-hover-background) max-md:shrink-0",
+                section === item.id && "bg-(--ui-control-active-background)",
               )}
               key={item.id}
               onClick={() => setSection(item.id)}
               type="button"
             >
-              <Codicon className={cn("text-(--ui-text-tertiary)", section === item.id && "text-(--theme-primary)")} name={item.icon} size="0.9rem" />
-              {item.label}
+              {/* 🔴 THE ACTIVE ICON IS NOT TINTED. It used to turn --theme-primary, which made the
+                  selected row the loudest thing in a panel whose job is to be scaffolding, and
+                  contradicted the same owner's ruling for the shell rail (2026-08-15: icons read
+                  at full strength, matching their label, not as a second colour). */}
+              <Codicon className="shrink-0 text-(--ui-text-secondary)" name={item.icon} size="1rem" />
+              <span className="min-w-0 truncate">{item.label}</span>
             </button>
           ))}
+          {matchedSections.length === 0 && (
+            <p className="px-2.5 py-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">No setting matches “{query.trim()}”.</p>
+          )}
         </nav>
       </aside>
 
@@ -211,9 +267,9 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
               </SettingsRow>
             </SettingsCard>
             <SettingsCard>
-              <SettingsRow description="Optional. Used when examples involve pets." label="Pet"><input className={SELECT_CLASS} onChange={(event) => updatePreferences({ pet: event.target.value })} placeholder="e.g. Luna, a cat" value={preferences.pet} /></SettingsRow>
-              <SettingsRow label="Nickname"><input className={SELECT_CLASS} onChange={(event) => updatePreferences({ nickname: event.target.value })} placeholder="What should Nemesis call you?" value={preferences.nickname} /></SettingsRow>
-              <SettingsRow label="Occupation"><input className={SELECT_CLASS} onChange={(event) => updatePreferences({ occupation: event.target.value })} placeholder="Student, researcher…" value={preferences.occupation} /></SettingsRow>
+              <SettingsRow description="Optional. Used when examples involve pets." label="Pet"><input className={INPUT_CLASS} onChange={(event) => updatePreferences({ pet: event.target.value })} placeholder="e.g. Luna, a cat" value={preferences.pet} /></SettingsRow>
+              <SettingsRow label="Nickname"><input className={INPUT_CLASS} onChange={(event) => updatePreferences({ nickname: event.target.value })} placeholder="What should Nemesis call you?" value={preferences.nickname} /></SettingsRow>
+              <SettingsRow label="Occupation"><input className={INPUT_CLASS} onChange={(event) => updatePreferences({ occupation: event.target.value })} placeholder="Student, researcher…" value={preferences.occupation} /></SettingsRow>
             </SettingsCard>
           </SettingsPage>
         )}
@@ -316,16 +372,57 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
   );
 }
 
+// 🔴🔴 THE CARDS ARE GONE, AND THAT IS THE WHOLE REDESIGN (owner 2026-08-24: *"look at the ChatGPT
+// settings… so that you can implement that to Nemesis as well. The spacing, the color, and
+// etcetera."*). Every group used to be a `rounded-2xl` panel with a border AND a shadow, stacked
+// with gaps — so a page of six preferences drew six boxes, six borders and six shadows around
+// twelve words. Measured off the reference the same day, there is no box at all: a setting is one
+// 52px row (8px pad, 36px control, 8px pad) with a 1px hairline under it, and the ONLY separator
+// on the page is that hairline.
+//
+// 🔴 THE PALETTE WAS ALREADY RIGHT AND DID NOT MOVE. `--ui-stroke-tertiary` resolves to 5% of the
+// base colour; the reference's divider is `rgba(0,0,0,0.05)`. Same for the active row wash. So
+// nothing here hardcodes a colour — which is also what keeps dark mode correct, since a literal
+// `rgba(0,0,0,.05)` would vanish against a black page. What diverged was never the colour; it was
+// the structure and the type scale.
 function SettingsPage({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return <div className="mx-auto grid w-full max-w-3xl gap-4"><header><h2 className="workspace-page-title">{title}</h2><p className="mt-1 text-xs leading-relaxed text-(--ui-text-tertiary)">{description}</p></header>{children}</div>;
+  // 🔴 THE LAST ROW ON THE PAGE DROPS ITS HAIRLINE, AND IT HAS TO BE DECIDED HERE. Scoping it to
+  // `last:` inside a group put a gap in the middle of the list wherever two groups met — the rule
+  // is "no line under the final row of the PAGE", and only the page can see which row that is.
+  return (
+    <div className="mx-auto grid w-full max-w-2xl gap-0 [&>section:last-of-type>*:last-child]:border-b-0">
+      <header className="pb-2">
+        <h2 className="workspace-page-title">{title}</h2>
+        <p className="mt-1 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">{description}</p>
+      </header>
+      {children}
+    </div>
+  );
 }
 
 function SettingsCard({ title, children }: { title?: string; children: React.ReactNode }) {
-  return <section className="rounded-2xl border border-(--ui-stroke-secondary) bg-background p-4 shadow-sm">{title && <h3 className="mb-3 text-xs font-semibold text-foreground">{title}</h3>}{children}</section>;
+  // A group is now a label and nothing else. Where a group has no title its rows simply continue
+  // the list, which is what the reference's General page does.
+  return (
+    <section className="flex flex-col">
+      {title && <h3 className="pt-5 pb-2 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-tertiary)">{title}</h3>}
+      {children}
+    </section>
+  );
 }
 
 function SettingsRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
-  return <div className="flex min-h-12 items-center justify-between gap-5 border-b border-(--ui-stroke-tertiary) py-2.5 last:border-b-0 max-sm:items-start max-sm:flex-col max-sm:gap-2"><div><p className="text-xs font-medium text-foreground">{label}</p>{description && <p className="mt-0.5 max-w-md text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">{description}</p>}</div><div className="shrink-0 max-sm:w-full">{children}</div></div>;
+  // 52px = 8 + 36 + 8, the reference's row box exactly. Label 14px regular, description 12px/16
+  // in tertiary — it was 12px semibold over 11.2px, a size below everything else in the product.
+  return (
+    <div className="flex min-h-[3.25rem] items-center justify-between gap-6 border-b border-(--ui-stroke-tertiary) py-2 max-sm:flex-col max-sm:items-start max-sm:gap-2">
+      <div className="min-w-0">
+        <p className="text-[length:var(--canvas-text-small)] text-foreground">{label}</p>
+        {description && <p className="mt-0.5 max-w-md text-[length:var(--canvas-text-meta)] leading-4 text-(--ui-text-tertiary)">{description}</p>}
+      </div>
+      <div className="shrink-0 max-sm:w-full">{children}</div>
+    </div>
+  );
 }
 
 function FrequencyControl({ value, onChange }: { value: Frequency; onChange: (value: Frequency) => void }) {

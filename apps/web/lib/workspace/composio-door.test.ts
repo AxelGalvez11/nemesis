@@ -115,7 +115,14 @@ test("🔴 the section is called Apps, the word the owner asked for", () => {
   // Owner 2026-08-24: "can we just call it apps like in ChatGPT". Also the better word on its own
   // terms — "integrations" is what an engineer calls it, and §38's copy rule is that a control
   // names what the learner gets.
+  //
+  // 🔴 THE MATCH IS ON THE id→label PAIRING, NOT ON THE WHOLE OBJECT LITERAL. It used to pin
+  // `{ id: "connections", label: "Apps", icon: "plug" }` right down to the closing brace, so
+  // adding ANY field to a section entry reddened a test about a word — which it duly did when
+  // sections gained `keywords` (2026-08-24), while the label it defends had not moved. A guard
+  // that fires on edits it does not care about teaches people to edit the guard, and the next
+  // person doing that in a hurry deletes the assertion instead of narrowing it.
   const surface = readFileSync(new URL("../../components/SettingsSurface.tsx", import.meta.url), "utf8");
-  assert.match(surface, /\{ id: "connections", label: "Apps", icon: "plug" \}/, "the Apps section was renamed");
+  assert.match(surface, /id: "connections", label: "Apps"/, "the Apps section was renamed");
   assert.ok(!/label: "Connected apps"|label: "Integrations"/.test(surface), "the old engineer-facing label came back");
 });
