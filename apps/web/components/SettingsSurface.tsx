@@ -64,7 +64,10 @@ const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
   // to be findable by someone looking for it without knowing our menu — burying it two levels down
   // is how a privacy surface becomes technically-present and practically-hidden.
   { id: "memory", label: "Memory", icon: "history" },
-  { id: "connections", label: "Connected apps", icon: "plug" },
+  // 🔴 "Apps", NOT "Connected apps" OR "Integrations" — owner 2026-08-24, asking for the word
+  // ChatGPT uses. It is also the better word on its own terms: "integrations" is what an engineer
+  // calls it, and §38's copy rule is that a control names what the learner gets.
+  { id: "connections", label: "Apps", icon: "plug" },
   { id: "voice", label: "Voice", icon: "unmute" },
   { id: "billing", label: "Billing", icon: "credit-card" },
   { id: "storage", label: "Storage", icon: "database" },
@@ -257,7 +260,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
         {section === "connections" && (
           <SettingsPage
             description="Apps Nemesis can reach for you, and what it must ask about before doing."
-            title="Connected apps"
+            title="Apps"
           >
             <ConnectionsSettings />
           </SettingsPage>

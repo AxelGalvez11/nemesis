@@ -65,7 +65,7 @@ export function ConnectionsSettings() {
   return (
     <section className="rounded-2xl border border-(--ui-stroke-secondary) bg-background p-4 shadow-sm">
       <header className="mb-3">
-        <h3 className="text-xs font-semibold text-foreground">Connected apps</h3>
+        <h3 className="text-xs font-semibold text-foreground">Your apps</h3>
         <p className="mt-1 text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">
           Let Nemesis reach the places your material already lives. It can read freely once you connect
           something. Before it sends, posts, or deletes anything, it will always show you what it is about
