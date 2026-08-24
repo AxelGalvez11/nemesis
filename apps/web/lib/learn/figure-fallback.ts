@@ -39,8 +39,18 @@
 /** The same block both `turn-router.ts` and `answer-prepare.ts` read. */
 const DECISION_BLOCK = /```json\s*\n?([\s\S]*?)```/;
 
-/** `[figure 1]`, the marker `reply-visuals.ts` resolves against the turn's own list. */
-const FIGURE_MARKER = /\[figure\s+(\d{1,2})\]/gi;
+/**
+ * `[figure 1]`, the marker `reply-visuals.ts` resolves against the turn's own list.
+ *
+ * 🔴🔴 THE OPTIONAL BACKSLASHES MATTER AND ARE NOT PADDING. Measured on production 2026-08-24, the
+ * model wrote `\[figure 1\]` — LaTeX's display-math delimiters, which it reaches for because the
+ * packet tells it to write real LaTeX outside the JSON. A pattern demanding a bare `]` misses that
+ * entirely, and the raw text then reaches the maths renderer, which typesets `figure1` as an
+ * equation. This must stay in step with `reply-visuals.ts`'s `FIGURE_RE`: one of them matching a
+ * spelling the other does not means a figure is either fetched and never placed, or placed and
+ * never fetched. The test file holds the two together.
+ */
+const FIGURE_MARKER = /\\?\[figure\s+(\d{1,2})\\?\]/gi;
 
 /**
  * The longest a `topic` may be and still be a subject rather than a sentence.

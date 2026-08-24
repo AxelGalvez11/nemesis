@@ -98,8 +98,24 @@ const INLINE_RE = /\[(smiles|reaction|reaction-smiles)\s*:\s*([^\]\n]+)\]/gi;
  * asking a strict-JSON turn to emit nested quotes.
  *
  * 🔴 IT CANNOT COLLIDE WITH A CITATION MARKER: `[1]` is bare digits, this requires the word.
+ *
+ * 🔴🔴🔴 THE OPTIONAL BACKSLASHES ARE NOT DEFENSIVE PADDING — WITHOUT THEM THE MARKER BECOMES AN
+ * EQUATION. Measured on production 2026-08-24, the model wrote:
+ *
+ *     Here's the picture of meiosis … \[figure 1\] The key things to track …
+ *
+ * `\[ … \]` is LaTeX's DISPLAY-MATH delimiter, and this packet tells the model to write real LaTeX
+ * precisely because its answer sits outside the JSON. So it escaped the brackets; this pattern
+ * demanded a bare `]` immediately after the digits; nothing matched; and the raw text fell through
+ * to the maths renderer, which dutifully typeset `figure1` in centred italic serif as an equation.
+ * No picture, no marker left to explain the absence, and a formula where a diagram belongs.
+ *
+ * The same model wrote a plain `[figure 1]` on the previous turn, so it is not consistently doing
+ * either — both spellings have to work, which is what `\\?` allows. A `\[` with no closing `\]`
+ * still matches, deliberately: the marker's job is to name a POSITION, and half an escape is still
+ * an unambiguous request for one.
  */
-const FIGURE_RE = /\[figure\s+(\d{1,2})\]/gi;
+const FIGURE_RE = /\\?\[figure\s+(\d{1,2})\\?\]/gi;
 
 /**
  * `[say: es-MX | Buenos días]` — "this much is in the language being taught, in this variety".
@@ -164,7 +180,15 @@ export function replySegments(text: string, visuals: readonly CanvasVisualReques
     }
 
     // A `[figure n]` marker resolves against the turn's own validated list.
-    if (match[0].toLowerCase().startsWith("[figure")) {
+    //
+    // 🔴🔴 THE `\\?` HERE IS THE SECOND HALF OF THE ESCAPED-MARKER FIX, AND WIDENING `FIGURE_RE`
+    // ALONE WAS NOT ENOUGH. The pattern then matched `\[figure 1\]`, but this test asked whether
+    // the match STARTS WITH `[figure` — and an escaped match starts with `\`. So the marker fell
+    // past this branch, the prose kept the literal `\[figure 1\]` for the maths renderer to typeset,
+    // and the picture was appended at the END of the answer instead of where it was asked for.
+    // Measured: `[{"p":"Here's the picture of meiosis \\[figure 1\\] The key things"},{"v":"visual"}]`
+    // where the plain spelling correctly gives prose, visual, prose.
+    if (/^\\?\[figure/i.test(match[0])) {
       const visual = visuals[Number(match[1]) - 1];
       if (!visual) continue;
       const beforeFigure = text.slice(cursor, match.index);
