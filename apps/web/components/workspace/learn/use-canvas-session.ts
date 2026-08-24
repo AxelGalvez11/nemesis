@@ -1117,7 +1117,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           kind === "flashcards"
             ? "Flashcards saved to your Library."
             : kind === "slides"
-              ? "Slides saved to your Library. Download them from the outputs panel."
+              ? "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks."
               : "Note saved to your Library.",
         );
       } finally {

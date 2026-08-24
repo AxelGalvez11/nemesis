@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { GraduationCap, Layers, MonitorPlay, NotebookText } from "lucide-react";
 
+import { DeckThemePicker, useDeckThemeChoice } from "@/components/workspace/deck/deck-theme-picker";
 import { loadCanvas } from "@/lib/learn/canvas-store";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -233,36 +234,26 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
         ) : (
           <ul className="flex flex-col gap-0.5">
             {slides.map((row) => (
-              <li key={row.assetId}>
-                <button
-                  className={cn(ROW, "disabled:opacity-60")}
-                  disabled={fetching === row.assetId || !row.canvasId}
-                  onClick={() =>
-                    void (async () => {
-                      if (!row.canvasId) return;
-                      setFetching(row.assetId);
-                      try {
-                        const canvas = await loadCanvas(userId, row.canvasId);
-                        const output = canvas?.outputs?.find((entry) => entry.assetId === row.assetId && entry.deck);
-                        if (!output?.deck) return;
-                        const { downloadDeck } = await import("@/lib/export/deck-download");
-                        await downloadDeck(output.deck, output.title);
-                      } finally {
-                        setFetching(null);
-                      }
-                    })()
-                  }
-                  type="button"
-                >
-                  <MonitorPlay className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
-                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
-                    {row.title}
-                  </span>
-                  <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                    {fetching === row.assetId ? "Building…" : `.pptx · ${when(row.createdAt)}`}
-                  </span>
-                </button>
-              </li>
+              <SlidesShelfRow
+                busy={fetching === row.assetId}
+                key={row.assetId}
+                onDownload={(themeId) =>
+                  void (async () => {
+                    if (!row.canvasId) return;
+                    setFetching(row.assetId);
+                    try {
+                      const canvas = await loadCanvas(userId, row.canvasId);
+                      const output = canvas?.outputs?.find((entry) => entry.assetId === row.assetId && entry.deck);
+                      if (!output?.deck) return;
+                      const { downloadDeck } = await import("@/lib/export/deck-download");
+                      await downloadDeck(output.deck, output.title, themeId);
+                    } finally {
+                      setFetching(null);
+                    }
+                  })()
+                }
+                row={row}
+              />
             ))}
           </ul>
         )}
@@ -305,5 +296,36 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
         </p>
       </footer>
     </main>
+  );
+}
+
+function SlidesShelfRow({
+  row,
+  busy,
+  onDownload,
+}: {
+  row: SlidesRow;
+  busy: boolean;
+  onDownload: (themeId: string) => void;
+}) {
+  const { choose, themeId } = useDeckThemeChoice(row.assetId);
+  return (
+    <li className="flex items-center gap-1">
+      <button
+        className={cn(ROW, "min-w-0 flex-1 disabled:opacity-60")}
+        disabled={busy || !row.canvasId}
+        onClick={() => onDownload(themeId)}
+        type="button"
+      >
+        <MonitorPlay className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
+        <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
+          {row.title}
+        </span>
+        <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+          {busy ? "Building…" : `.pptx · ${when(row.createdAt)}`}
+        </span>
+      </button>
+      <DeckThemePicker onPick={choose} themeId={themeId} />
+    </li>
   );
 }

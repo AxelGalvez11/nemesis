@@ -39,3 +39,24 @@ test("no references, no references slide", async () => {
   assert.ok(text.includes("ppt/slides/slide5.xml"));
   assert.ok(!text.includes("ppt/slides/slide6.xml"), "a references slide appeared from nowhere");
 });
+
+test("the theme, not the plan, decides how the deck looks", async () => {
+  // Owner 2026-08-25 asked for twenty looks. The same plan must come out wearing different
+  // clothes — same slides, different fonts and colours — with no change to the content.
+  const house = ((await buildDeckPptx(PLAN, { credit: "x" })) as Buffer).toString("latin1");
+  const neon = ((await buildDeckPptx(PLAN, { credit: "x", themeId: "neon" })) as Buffer).toString("latin1");
+  assert.ok(house.includes("Georgia"), "the house look lost its display font");
+  assert.ok(neon.includes("Trebuchet MS"), "the neon look is not wearing its own display font");
+  assert.ok(!neon.includes("Georgia"), "the neon look leaked the house font");
+  for (let i = 1; i <= 6; i += 1) {
+    assert.ok(neon.includes(`ppt/slides/slide${i}.xml`), `theming dropped slide ${i}`);
+  }
+});
+
+test("a theme id nobody recognises still produces a deck", async () => {
+  // Stored ids outlive code. A theme that was renamed or removed must degrade to the house
+  // look, never to a failed download.
+  const built = (await buildDeckPptx(PLAN, { credit: "x", themeId: "theme-from-a-future-release" })) as Buffer;
+  assert.equal(built.subarray(0, 2).toString(), "PK");
+  assert.ok(built.toString("latin1").includes("Georgia"), "the fallback is not the house look");
+});
