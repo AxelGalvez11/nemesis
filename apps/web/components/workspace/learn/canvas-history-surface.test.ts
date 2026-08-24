@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
 // Source assertions for the History Rail's surface rules — the ones that are properties of where
 // something is mounted or what it may import, which no pure function can hold.
+//
+// 🔴🔴 THE "ALL HISTORY" DRAWER IS GONE, AND HALF THIS FILE NOW GUARDS THE ABSENCE. Owner,
+// 2026-08-23, reading both surfaces on production: *"there seems to be two rails. So when you
+// click all history, that's like the actual bigger one. So I want you to just remove that bigger
+// one and keep this one that's compact, but just increase the spacing a bit. …remove the all
+// history and the canvas started, because that's not really necessary for the rail."* The card's
+// own behaviour pins (Escape, width clamp, scroll-to-active) left with the card; what remains is
+// the rule that no second history surface comes back.
 
 const HERE = import.meta.dirname;
 const read = (name: string) => readFileSync(join(HERE, name), "utf8");
@@ -14,8 +22,6 @@ const CANVAS = read("learning-canvas.tsx");
 const CANVAS_CODE = strip(CANVAS);
 const RAIL = read("canvas-history-rail.tsx");
 const RAIL_CODE = strip(RAIL);
-const PANEL = read("canvas-history-panel.tsx");
-const PANEL_CODE = strip(PANEL);
 const VIEW_CODE = strip(read("canvas-history-view.tsx"));
 
 // ── one rail for the whole Canvas ───────────────────────────────────────────────────────────
@@ -41,6 +47,39 @@ test("🔴🔴 the rail is mounted exactly once, and not inside anything that re
   assert.ok(CANVAS_CODE.indexOf("<CanvasHistoryRail") < map, "the rail is rendered per segment");
 });
 
+// ── the compact rail is the ONLY history surface ────────────────────────────────────────────
+
+test("🔴🔴 the 'All history' drawer stays deleted — one history surface, the compact rail", () => {
+  // Calibration: recreate canvas-history-panel.tsx, or render an "All history" control, and this
+  // reddens before the owner sees two rails again.
+  assert.ok(!existsSync(join(HERE, "canvas-history-panel.tsx")), "the drawer component is back on disk");
+  assert.ok(!existsSync(join(HERE, "canvas-history-entry.tsx")), "the drawer's row component is back on disk");
+  // CODE, not source: the ruling that cut the control is quoted in the rail's own header comment.
+  assert.ok(!/All history/.test(RAIL_CODE), "the rail offers 'All history' again");
+  assert.ok(!/CanvasHistoryPanel/.test(RAIL_CODE), "the rail mounts a second surface again");
+  assert.ok(!/"expanded"/.test(RAIL_CODE), "the display union has an expanded state again");
+});
+
+test("🔴 the marks sit at the owner's opened-up pitch, in both states", () => {
+  // Owner: "keep this one that's compact, but just increase the spacing a bit." From 1px/5px of
+  // gap to 3px/8px. Calibration: tidy either back to the old value and this reddens.
+  assert.ok(/gap-\[8px\]/.test(RAIL_CODE), "the peeked gap closed up again");
+  assert.ok(/gap-\[3px\]/.test(RAIL_CODE), "the collapsed gap closed up again");
+});
+
+test("🔴 no synthesised 'Canvas started' row reaches any surface", () => {
+  // The row spent a marker slot announcing the one event every canvas shares. It is cut at the
+  // PROJECTION — `reconstructMoment` keeps the title for old stored rewinds, deliberately, so
+  // this scopes to buildCanvasHistory's own body.
+  const history = strip(readFileSync(join(HERE, "../../../lib/learn/canvas-history.ts"), "utf8"));
+  const build = history.slice(
+    history.indexOf("export function buildCanvasHistory"),
+    history.indexOf("export function", history.indexOf("export function buildCanvasHistory") + 1),
+  );
+  assert.ok(build.length > 0, "buildCanvasHistory moved; re-point this check");
+  assert.ok(!/Canvas started/.test(build), "buildCanvasHistory synthesises the origin row again");
+});
+
 // ── the rail is not the Minimap ─────────────────────────────────────────────────────────────
 
 test("🔴🔴 the History Rail and the Minimap stay separate, architecturally", () => {
@@ -48,7 +87,6 @@ test("🔴🔴 the History Rail and the Minimap stay separate, architecturally",
   // The Minimap reads the learner model; this must not be able to.
   for (const [name, code] of [
     ["canvas-history-rail.tsx", RAIL_CODE],
-    ["canvas-history-panel.tsx", PANEL_CODE],
     ["canvas-history-view.tsx", VIEW_CODE],
   ] as const) {
     assert.ok(!/canvas-minimap/.test(code), `${name} reaches into the Minimap`);
@@ -83,66 +121,14 @@ test("🔴 rewinding never calls the session's writer", () => {
   assert.ok(/onSelect=\{setRewound\}/.test(CANVAS_CODE), "the rail's selection goes somewhere other than the view state");
 });
 
-// ── the drawer's stated behaviours ──────────────────────────────────────────────────────────
-
-test("the history card closes on Escape and on a click outside", () => {
-  assert.ok(/"Escape"/.test(PANEL_CODE), "no Escape handler");
-  assert.ok(/mousedown/.test(PANEL_CODE), "no outside-click handler");
-  assert.ok(/contains\(event\.target/.test(PANEL_CODE), "the outside-click test does not check containment");
-});
-
-test("🔴🔴 it is a card beside the rail, not a full-height sidebar", () => {
-  // Owner, 2026-08-23, with a screenshot: "it needs to be like this, not a full sidebar". The
-  // first version was `absolute inset-y-0 right-0` with a "History" header and a close chevron —
-  // a surface announcing itself as somewhere you have gone.
-  // Calibration: put `inset-y-0` back on the panel and this reddens alone.
-  assert.ok(!/inset-y-0/.test(PANEL_CODE), "the history panel spans the full height again");
-  assert.ok(/max-h-\[min\(/.test(PANEL_CODE), "the card has no height cap, so it can grow into a sidebar");
-  assert.ok(/rounded-2xl/.test(PANEL_CODE), "the card is not a card");
-  assert.ok(/top-1\/2/.test(PANEL_CODE), "the card is not anchored beside the rail");
-});
-
-test("🔴 the card carries no header, no title and no close control", () => {
-  // Everything the screenshot does not have. Rows are the only thing a learner came here for.
-  assert.ok(!/Codicon/.test(PANEL_CODE), "an icon control came back");
-  assert.ok(!/Close history/.test(PANEL_CODE), "the close chevron came back");
-  assert.ok(!/>History</.test(PANEL_CODE), "the header title came back");
-});
-
-test("🔴🔴 a long history scrolls, and opens where the learner actually is", () => {
-  // Calibration: delete the scroll effect and this reddens. Measured with 40 moments before the
-  // fix: 1767px of content in a 540px box, opening at scrollTop 0 — "Canvas started" on screen and
-  // "Now" twelve hundred pixels below the fold. A history that opens at the far end of itself gets
-  // worse the longer the session runs, which is backwards.
-  assert.ok(/overflow-y-auto/.test(PANEL_CODE), "the card cannot scroll");
-  assert.ok(/box\.scrollTop = box\.scrollHeight/.test(PANEL_CODE), "an un-rewound card does not open at Now");
-  assert.ok(/row\.offsetTop/.test(PANEL_CODE), "a rewound card does not open on the moment being viewed");
-
-  // 🔴 NOT `scrollIntoView`: it walks up the ancestors and would scroll the Canvas behind the card
-  // to bring a row into view — moving the page the learner was reading, as a side effect of
-  // opening a menu.
-  assert.ok(!/scrollIntoView/.test(PANEL_CODE), "scrollIntoView can scroll the Canvas behind the card");
-});
-
-test("🔴 there is no full-screen dark backdrop", () => {
-  // Owner: "No full-screen dark modal backdrop. A subtle shadow/border is enough."
-  assert.ok(!/bg-black\/|bg-\(--ui-bg-editor\)\/\d/.test(PANEL_CODE), "a scrim crept in");
-  assert.ok(/shadow-xl/.test(PANEL_CODE), "the card has no shadow to separate it from the Canvas");
-});
+// ── the rail's stated behaviours ────────────────────────────────────────────────────────────
 
 test("🔴🔴 time runs downwards: oldest at the top, Now last", () => {
   // Owner's screenshot: the bright marker is at the BOTTOM and the rows above it run back through
   // the session. The first version reversed the list and put Now at the top, which is how a chat
   // sidebar is ordered — it makes the column a stack of documents rather than a path.
-  // Calibration: add `.reverse()` back in either file and this reddens.
-  assert.ok(!/entries\]\.reverse\(\)/.test(PANEL_CODE), "the card reverses the history");
+  // Calibration: add `.reverse()` back and this reddens.
   assert.ok(!/entries\]\.reverse\(\)/.test(RAIL_CODE), "the rail reverses the history");
-
-  // "Now" is the last child in both.
-  const cardNow = PANEL_CODE.indexOf('title: "Now"');
-  const cardRows = PANEL_CODE.indexOf("entries.map(");
-  assert.ok(cardNow > cardRows && cardRows > 0, "Now is not the last row of the card");
-
   const railNow = RAIL_CODE.indexOf('label="Now"');
   const railRows = RAIL_CODE.indexOf("shown.map(");
   assert.ok(railNow > railRows && railRows > 0, "Now is not the last mark on the rail");
@@ -151,18 +137,6 @@ test("🔴🔴 time runs downwards: oldest at the top, Now last", () => {
 test("🔴 with more moments than the rail can draw, an un-rewound rail holds the newest end", () => {
   // The learner is at the bottom of the column, so that is the end that must stay on screen.
   assert.ok(/rows\.slice\(-RAIL_MARKERS\)/.test(RAIL_CODE), "the window holds the oldest end instead");
-});
-
-test("the card stays inside the width the brief asked for", () => {
-  // 🔴 20rem AND NOT 22, BECAUSE THIS REPO SETS `html { font-size: 112.5% }`. Measured in Chromium:
-  // 22rem painted at **396px**, outside the 300–360 the brief asked for; 20rem is 360px exactly.
-  // A rem value that reads as one number and paints as another is the same trap §46.3 documents
-  // for type — it just costs layout here instead of typography.
-  //
-  // 🔴 AND NOT 18 EITHER. It was narrowed to 18rem (324px) on 2026-08-23 chasing ChatGPT's
-  // compactness, which this environment cannot load and so could not be measured against. The
-  // owner read the result as too compact and asked for the earlier size back.
-  assert.ok(/w-\[min\(20rem,/.test(PANEL_CODE), "the card width is not clamped");
 });
 
 // ── collapsed state stays quiet ─────────────────────────────────────────────────────────────
@@ -192,9 +166,12 @@ test("🔴 the rail listens to no scroll event", () => {
   assert.ok(!/IntersectionObserver/.test(RAIL_CODE), "the rail observes intersections it cannot use");
 });
 
-test("🔴 on a narrow screen the rail becomes a button instead of taking the edge", () => {
+test("🔴 on a narrow screen the edge stays free, and no orphaned control points at the drawer", () => {
+  // The edge rail is still desktop-only; the mobile "History" pill left with the drawer it
+  // opened, because a button whose only job was opening a deleted surface is a control wired to
+  // nothing — this codebase's most-repeated defect.
   assert.ok(/hidden items-center md:flex/.test(RAIL_CODE), "the edge rail is not hidden on mobile");
-  assert.ok(/md:hidden/.test(RAIL_CODE), "there is no mobile affordance");
+  assert.ok(!/md:hidden/.test(RAIL_CODE), "a small-screen affordance persists with nothing to open");
 });
 
 // ── it survives a reload ────────────────────────────────────────────────────────────────────

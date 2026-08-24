@@ -33,12 +33,23 @@ export interface LearnEntry {
   readonly ask: string | null;
   /** `?new=1` — material dropped on the front door; the canvas is minted on arrival. */
   readonly isNew: string | null;
+  /**
+   * `?cap=<capability>` — a one-shot composer capability staged on the front door, riding beside
+   * `ask` (owner, 2026-08-23: *"you can't access the course mode from the landing page"*). Raw
+   * here — whether the value names a real capability is `composer-capability.ts`'s question, and
+   * the page validates it there so this module keeps reading URLs and nothing else.
+   *
+   * 🔴 IT NEVER DECIDES THE SURFACE. A stray `?cap=` with nothing asked opens the front door,
+   * exactly as any unknown parameter does — a capability is a fact about a submission, and with
+   * no submission there is nothing for it to be about.
+   */
+  readonly cap: string | null;
 }
 
 export function learnEntryFrom(params: {
   get(name: string): string | null;
 }): LearnEntry {
-  return { ask: params.get("ask"), c: params.get("c"), isNew: params.get("new") };
+  return { ask: params.get("ask"), c: params.get("c"), cap: params.get("cap"), isNew: params.get("new") };
 }
 
 export function learnSurface({ ask, c, isNew }: LearnEntry): LearnSurface {
@@ -82,6 +93,17 @@ export const LEARN_ENTRY_PATHS: ReadonlyArray<{
     surface: "canvas",
   },
   { label: "a topic typed on the front door (?ask=)", search: "?ask=how%20insulin%20works", surface: "canvas" },
+  {
+    label: "a Course ordered on the front door (?ask= with &cap=course)",
+    search: "?ask=organic%20chemistry&cap=course",
+    surface: "canvas",
+  },
+  {
+    // A capability with no submission is a fact about nothing — see `LearnEntry.cap`.
+    label: "a stray capability with nothing asked (?cap= alone)",
+    search: "?cap=course",
+    surface: "home",
+  },
   { label: "material dropped on the front door (?new=1)", search: "?new=1", surface: "canvas" },
   {
     label: "the browser extension's coursework import",

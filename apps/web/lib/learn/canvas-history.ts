@@ -218,16 +218,13 @@ export function buildCanvasHistory(
       };
     });
 
-  return [
-    {
-      createdAt: canvas.createdAt,
-      id: ORIGIN_MOMENT_ID,
-      momentId: ORIGIN_MOMENT_ID,
-      title: "Canvas started",
-      type: "milestone" as const,
-    },
-    ...ordered,
-  ];
+  // 🔴 NO SYNTHESISED "Canvas started" ROW ANY MORE — owner cut, 2026-08-23, reading the live
+  // rail: *"remove the all history and the canvas started, because that's not really necessary
+  // for the rail."* The row said nothing the first real moment does not imply, and it spent the
+  // rail's scarcest resource — a marker slot — announcing the one event every canvas shares.
+  // `ORIGIN_MOMENT_ID` and its `reconstructMoment` branch stay: a rewind stored before the cut
+  // may still name it, and an id that resolves to the empty start is the honest answer there.
+  return ordered;
 }
 
 /** The clock a peek label shows. Local to the learner, for the same reason `groupByDay` is. */

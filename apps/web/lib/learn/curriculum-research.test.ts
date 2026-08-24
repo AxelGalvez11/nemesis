@@ -157,6 +157,27 @@ test("🔴🔴 the researched skeleton NEVER enters the registry — no import c
   }
 });
 
+test("🔴🔴 the session gates the course on the chip, and the clarify resume keeps the chip", () => {
+  // Owner ruling, 2026-08-23: a course builds ONLY behind the Course chip — "teach me" over a fat
+  // PDF must never start this file's research pass. The gate is code, not prompt (`courseGate`),
+  // and the one flow CERTAIN to want a course — press Course, get asked "how deep?", answer —
+  // must still carry the chip through the parked turn, or the gate kills the legitimate build.
+  const converse = SESSION.slice(SESSION.indexOf("const converse = useCallback"));
+  const body = converse.slice(0, converse.indexOf("\n    [begin, command"));
+  assert.match(
+    body,
+    /courseGate\(result\.decision, capability === "course"\)/,
+    "the decision is read ungated — a model reading 'teach me' as a course order reaches research again",
+  );
+  const resume = SESSION.slice(SESSION.indexOf("const answerClarification"));
+  const resumeBody = resume.slice(0, resume.indexOf("\n    [clarifying, converse]"));
+  assert.match(
+    resumeBody,
+    /pending\.capability/,
+    "the resumed turn dropped the chip — chip → clarify → answer could never build a course",
+  );
+});
+
 test("🔴🔴 the session researches ONLY on the library-miss refusal, and the failure is shown", () => {
   const converse = SESSION.slice(SESSION.indexOf("const converse = useCallback"));
   const body = converse.slice(0, converse.indexOf("\n    [begin, command"));

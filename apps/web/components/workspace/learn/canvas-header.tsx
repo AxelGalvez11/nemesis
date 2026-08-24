@@ -30,8 +30,6 @@ import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
   onFiles: (files: FileList | File[]) => void;
-  /** A pasted web link, filed as a source. See `SourcesControl`'s own prop comment. */
-  onUrl?: (url: string) => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** The card or question being answered right now, so the objectives panel can say which one
@@ -75,7 +73,6 @@ interface CanvasHeaderProps {
 export function CanvasHeader({
   canvas,
   onFiles,
-  onUrl,
   onRename,
   onDelete,
   activeTaskId,
@@ -123,7 +120,7 @@ export function CanvasHeader({
               Objectives, the session record and voice moved INSIDE `OptionsControl`; none of them
               was deleted, and voice especially could not be, because that button was the only way
               into voice mode. */}
-          <SourcesControl canvas={canvas} modelKnowledge={modelKnowledge} onFiles={onFiles} onUrl={onUrl} />
+          <SourcesControl canvas={canvas} modelKnowledge={modelKnowledge} onFiles={onFiles} />
           <MinimapControl
             coverage={minimap.coverage}
             decidedObjectiveKey={minimap.decidedObjectiveKey}

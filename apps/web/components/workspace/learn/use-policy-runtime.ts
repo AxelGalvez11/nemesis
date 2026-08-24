@@ -418,6 +418,23 @@ const KNOWLEDGE_RETRY_LIMIT = 3;
 const KNOWLEDGE_RETRY_DELAY_MS = 8_000;
 
 /**
+ * A promise that REJECTS when the signal aborts, and never resolves.
+ *
+ * 🔴 IT EXISTS BECAUSE THE KNOWLEDGE AWAIT CAN BE HANDED A PROMISE THE SIGNAL CANNOT REACH —
+ * `onlyOnceAtATime`'s in-flight cache returns an earlier mount's promise, wired to that mount's
+ * dead controller. Racing against this is what makes the 60-second deadline a fact about the
+ * LEARNER'S WAIT rather than about one particular fetch. `AbortError` by name so the catch's
+ * `signal.aborted` branch keeps owning the copy.
+ */
+function rejectedOnAbort(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    const fail = () => reject(new DOMException("knowledge deadline", "AbortError"));
+    if (signal.aborted) fail();
+    else signal.addEventListener("abort", fail, { once: true });
+  });
+}
+
+/**
  * The prompt as it was ACTUALLY MET, which is not always the prompt that was minted.
  *
  * 🔴 ONE PLACE MAKES THIS CORRECTION, AND EVERY WRITE PATH GOES THROUGH IT. A typed answer, a
@@ -619,6 +636,13 @@ export function usePolicyRuntime(
 
   useEffect(() => {
     if (!enabled || !uid) {
+      // 🔴 THE CAPTION IS CLEARED HERE TOO, AND THIS RETURN IS HOW IT WAS GETTING STUCK. This
+      // effect re-runs whenever `uid` changes, and an auth refresh makes it momentarily null — so
+      // a re-run could land here AFTER a previous run had already put "Mapping what you know" on
+      // screen, and nothing below ever ran to take it down (owner report, 2026-08-23: reopening a
+      // canvas showed the caption over an empty centre, for ever). Every exit from this effect
+      // now settles the phase, the same rule the catch and the success path already follow.
+      setPhase(null);
       setStatus("unavailable");
       return;
     }
@@ -643,12 +667,23 @@ export function usePolicyRuntime(
     // resolve later and write knowledge for a canvas the learner has given up on. The signal is
     // threaded all the way to the model call, so "we stopped waiting" and "it stopped" are the same
     // event.
+    //
+    // 🔴🔴 AND THE AWAIT STILL RACES THE SAME DEADLINE, BECAUSE THE SIGNAL DOES NOT REACH EVERY
+    // PROMISE THIS CAN RETURN. `onlyOnceAtATime` (canvas-knowledge.ts) hands a second caller the
+    // FIRST caller's in-flight promise — module-scoped, so it survives a remount — and that
+    // promise is wired to the first mount's controller, which is already dead. Abort all we like:
+    // nothing rejects, the catch below is unreachable, and the caption stands for ever over an
+    // empty canvas (owner report, 2026-08-23, on reopening a canvas). The race is what turns
+    // "a promise this mount does not own hung" into the same visible outcome as every other
+    // failure; the signal still cancels the work whenever this mount is the one that started it.
     const deadline = new AbortController();
     const expiry = setTimeout(() => deadline.abort(), KNOWLEDGE_DEADLINE_MS);
     void (async () => {
       let resolved: Awaited<ReturnType<typeof ensureKnowledgeForCanvas>>;
       try {
-        resolved = await ensureKnowledgeForCanvas(uid, canvas, {
+        resolved = await Promise.race([
+          rejectedOnAbort(deadline.signal),
+          ensureKnowledgeForCanvas(uid, canvas, {
           bypassOwnership: forced,
           // 🔴🔴 THE RETRY UNDER "Nemesis hasn't found anything to ask you about yet" HAD NO EFFECT
           // AT ALL. It reloads the page; the reload re-resolves; and a remembered empty answer
@@ -661,7 +696,8 @@ export function usePolicyRuntime(
             if (live) setPhase(step);
           },
           signal: deadline.signal,
-        });
+          }),
+        ]);
       } catch (cause) {
         // 🔴 A FAILURE THE LEARNER CAN SEE AND ACT ON, WHICH IS THE WHOLE REQUIREMENT. Not a silent
         // return, and not a retry loop: reloading is a thing they can already do, and a caption

@@ -20,7 +20,7 @@ import type { ComposerCapability } from "@/lib/learn/composer-capability";
 import { applyCurriculumPlan, applyResearchedPlan, courseRefusalLine, loadCurriculumPlan } from "@/lib/learn/curriculum-course";
 import { researchCurriculum, researchRefusalLine } from "@/lib/learn/curriculum-research";
 import type { CurriculumPlan } from "@/lib/learn/curriculum-plan";
-import type { TurnDecision } from "@/lib/learn/turn-router";
+import { courseGate, type TurnDecision } from "@/lib/learn/turn-router";
 import type { TurnStage } from "@/lib/learn/turn-preview";
 import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
@@ -430,7 +430,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * the right move. Re-running the same utterance WITH the answer as a stated fact lets the model
    * finish the turn it started rather than have the software finish it on its behalf.
    */
-  const [clarifying, setClarifying] = useState<{ question: UserQuestion; said: string } | null>(null);
+  // 🔴 THE CAPABILITY IS PART OF THE PARKED TURN. A clarification pauses a submission; the chip
+  // the learner attached to that submission is a fact about it, and the resumed turn must carry
+  // it or a Course press that got (rightly) asked "how deep?" could never build — `courseGate`
+  // drops a curriculum request from any turn that does not carry the chip.
+  const [clarifying, setClarifying] = useState<
+    { question: UserQuestion; said: string; capability: ComposerCapability | null } | null
+  >(null);
   /**
    * Decisions already settled this sitting, phrased as facts for the packet.
    *
@@ -540,7 +546,19 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     let alive = true;
     void (async () => {
       if (canvasId) {
-        const found = await loadCanvas(uid, canvasId);
+        let found: Awaited<ReturnType<typeof loadCanvas>> = null;
+        try {
+          found = await loadCanvas(uid, canvasId);
+        } catch {
+          // 🔴 A LOAD THAT THREW MUST NOT LEAVE THE HOLDING SCREEN UP FOR EVER. This IIFE had no
+          // catch, so a network blip here skipped `setReady(true)` permanently and the learner
+          // watched an empty centre that never settled (owner report, 2026-08-23, reopening a
+          // canvas). And it must NOT fall through to `newCanvas()` either: an empty fresh canvas
+          // standing where their work was reads as the work being gone, which is worse than the
+          // truth. The truth is a sentence, on the same screen, with the exit still above it.
+          if (alive) setError("This canvas didn't load. Check your connection, then open it again. Nothing on it is lost.");
+          return;
+        }
         if (alive && found) {
           setCanvas(found);
           latest.current = found;
@@ -1132,7 +1150,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setMilestones([]);
       setStage("decided");
       setWork(null);
-      const decision = result.decision;
+      // 🔴🔴 GATED BEFORE ANYTHING READS IT — owner ruling, 2026-08-23: a course builds ONLY behind
+      // the Course chip. The contract says so too, but "teach me" over a fat PDF read as a course
+      // order once already, and the cost was a minutes-long research pass and a canvas renamed
+      // under the learner. The prompt asks; this makes the leak unreachable (the `mayAsk` split).
+      const decision = result.decision && courseGate(result.decision, capability === "course");
       if (!decision) {
         setError(result.error ?? "Nemesis had nothing to add.");
         return null;
@@ -1183,7 +1205,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // parsing. Every refusal falls through to running `then` immediately, which is always a legal
       // reading of a clarification: going ahead is what Nemesis would have done without asking.
       if (decision.question && mayAsk && !surroundings.answerOwed) {
-        setClarifying({ question: decision.question, said });
+        // The chip rides into the parked turn — see `clarifying`'s own comment.
+        setClarifying({ capability: capability ?? null, question: decision.question, said });
         // The sentence above the card. `reply` rather than `opening` because this turn IS the
         // reply: nothing is about to transition underneath it, and the learner is being asked to
         // look at the card rather than being introduced to a lesson.
@@ -1298,8 +1321,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         onStudyDocument,
         // No staged passage on a resumed turn — the card, not a selection, is what held it.
         null,
-        // And no capability: one was consumed by the original submission if it existed at all.
-        null,
+        // 🔴 THE ORIGINAL SUBMISSION'S CAPABILITY, NOT null. This used to drop it as "consumed",
+        // which was harmless while the chip was only a hint — and fatal once `courseGate` made it
+        // the ONLY course door: the one flow that is CERTAIN to want a course (press Course, get
+        // asked "how deep?", answer) would resume without the chip and the gate would drop the
+        // build. The card paused the submission; resuming it is the same submission finishing.
+        pending.capability,
         false,
       );
     },

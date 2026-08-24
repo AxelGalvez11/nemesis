@@ -22,20 +22,28 @@ test("🔴 copy and read-aloud are reachable under an answer", () => {
   assert.match(CANVAS, /<ReplyActions/, "the row is not mounted on the canvas");
 });
 
-test("🔴🔴 every control the owner asked for is present, and each one is wired", () => {
-  // Owner: play/pause, playback speed, rewind, fast-forward, current progress, seek, and a clear
-  // indication that audio is playing. Calibration: delete any handler below and this reddens.
+test("🔴🔴 exactly the four controls the owner kept, each wired — and the three they cut stay cut", () => {
+  // Owner re-spec, 2026-08-23, looking at the full transport: *"It just needs to have the forward
+  // and rewind and the pause and the x. It doesn't really need the timer in there"* — and the
+  // scrubber's thumb ("the blue circle") removed by name. The 2026-08-20 ask this row was built
+  // from listed speed, progress and seek; the owner watched the result and cut them. Calibration:
+  // delete any handler below, or reintroduce any of the three cut controls, and this reddens.
   const wired: Array<[string, RegExp]> = [
     ["play / pause", /onClick=\{audio\.toggle\}/],
     ["rewind", /audio\.seekBy\(-SEEK_STEP_SECONDS\)/],
     ["fast-forward", /audio\.seekBy\(SEEK_STEP_SECONDS\)/],
-    ["seek", /audio\.scrub\(/],
-    ["playback speed", /onClick=\{audio\.cycleRate\}/],
-    ["progress", /progressFraction\(audio\.currentTime, audio\.reach\)/],
-    ["elapsed time", /formatClock\(audio\.currentTime\)/],
+    ["stop / dismiss", /audio\.stop\(\)/],
     ["playing indication", /audio\.playing \? "debug-pause" : "play"/],
   ];
   for (const [what, pattern] of wired) assert.match(PLAYER, pattern, `${what} is not wired`);
+  const cut: Array<[string, RegExp]> = [
+    ["the scrubber", /audio\.scrub\(|type="range"/],
+    ["the clock", /formatClock\(/],
+    ["the speed control", /cycleRate|\{audio\.rate\}×/],
+  ];
+  for (const [what, pattern] of cut) {
+    assert.ok(!pattern.test(PLAYER), `${what} is back in the bar — the owner cut it on 2026-08-23`);
+  }
 });
 
 test("🔴🔴 no player CARD — no border, no background, no toolbar under the answer", () => {
@@ -124,9 +132,10 @@ test("🔴 a refused clipboard is silent rather than an error strip", () => {
   assert.ok(!/setError|throw/.test(ACTIONS), "a clipboard refusal is being escalated");
 });
 
-test("🔴 the speed control shows its VALUE, so it needs no menu", () => {
-  assert.match(PLAYER, /\{audio\.rate\}×/);
-});
+// 🔴 The "speed shows its value" guard left with the speed control itself (owner cut, 2026-08-23
+// — see the four-controls test above). The RULE survives where the control does: the hook still
+// owns `cycleRate`, and the element-not-provider guard below still pins how any future speed
+// control must behave.
 
 // ── Where the voice is chosen ────────────────────────────────────────────────────────────────
 

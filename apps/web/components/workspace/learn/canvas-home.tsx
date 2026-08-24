@@ -28,6 +28,7 @@ import { usePoke } from "@/components/bloub/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
+import { CAPABILITY_COPY, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { ComposerSend } from "./composer-controls";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
@@ -149,9 +150,30 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    */
   const [handoff, setHandoff] = useState<{ dx: number; dy: number; k: number } | null>(null);
 
-  // 🔴 THE MENU'S STATE, ITS REF AND ITS DISMISS EFFECT WENT WITH THE MENU. Two document-level
-  // listeners kept alive for a control that no longer exists is the dead-lane shape this repo
-  // keeps finding; `+` now opens the file picker directly and there is nothing to dismiss.
+  // 🔴 THE MENU IS BACK, BECAUSE IT HAS TWO OFFERS AGAIN. It was removed on 2026-08-20 when
+  // "record a lecture" was withdrawn and upload stood alone — "a one-item menu is a second click
+  // charged for nothing". The Course capability is the second offer (owner, 2026-08-23: *"you
+  // can't access the course mode from the landing page"*), so the choice is real again and the
+  // state, the ref and the dismiss listeners return with it.
+  const [addOpen, setAddOpen] = useState(false);
+  const addMenu = useRef<HTMLDivElement>(null);
+  /** The one-shot capability staged on the NEXT send — the same contract as the session
+   *  composer's chip (§38: cleared by the send, never a persistent mode). It rides to the canvas
+   *  as `&cap=` beside `?ask=`, and the canvas's opening effect consumes both at once. */
+  const [capability, setCapability] = useState<ComposerCapability | null>(null);
+  useEffect(() => {
+    if (!addOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!addMenu.current?.contains(event.target as Node)) setAddOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setAddOpen(false); };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [addOpen]);
 
   // Dictation writes into the same box typing does — the composer has one value, whatever produced
   // it. Keyed on both flags so the final transcript still lands after recognition stops.
@@ -191,8 +213,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     // 🔴 `?new=1` WHEN THERE IS MATERIAL BUT NO TOPIC. Bare `/learn` renders this page, so files
     // staged without a word typed would have been stashed for a canvas that never mounted — and
     // `takePending` clears as it reads, so they would have been silently lost on the next visit.
+    //
+    // 🔴 THE CAPABILITY RIDES ONLY BESIDE A TOPIC. Send is disabled while a capability is staged
+    // with nothing typed (the session composer's own §3 rule, same reason), so the `?new=1` and
+    // bare branches never have one to carry — a declaration about words needs the words.
     const href = topic
-      ? `/learn?ask=${encodeURIComponent(topic)}`
+      ? `/learn?ask=${encodeURIComponent(topic)}${capability ? `&cap=${capability}` : ""}`
       : staged.length > 0
         ? "/learn?new=1"
         : "/learn";
@@ -465,27 +491,55 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             tabIndex={-1}
             type="file"
           />
-          {/* 🔴 THE MENU IS GONE BECAUSE IT HAD ONE ITEM LEFT. Owner call, 2026-08-20: "remove the
-              'record a lecture' option or just hide it." §L used to list the front door's five
-              behaviours as "type a topic · ask a question · upload material · dictate · record", and
-              upload and record shared this menu so a recording would not be confused with the
-              dictation mic on the right. With record withdrawn there is nothing to choose between,
-              and `canvas-composer.tsx` already states the rule for that case: "a one-item menu is a
-              second click charged for nothing." So `+` is the file picker, exactly as it is in the
-              canvas composer when it is given no `onRecord`.
-
-              🔴 THE RECORDER ITSELF IS UNTOUCHED. `CanvasRecorder` and its close handler are still
-              below; only the way in is withdrawn, so re-offering it is restoring a control rather
-              than rebuilding a feature. */}
-          <button
-            aria-label="Upload material"
-            className="flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)"
-            onClick={() => filePicker.current?.click()}
-            title="Upload material"
-            type="button"
-          >
-            <Codicon name="add" size="var(--composer-icon)" />
-          </button>
+          {/* 🔴 THE MENU IS BACK WITH ITS SECOND OFFER. It left on 2026-08-20 when record was
+              withdrawn and upload stood alone ("a one-item menu is a second click charged for
+              nothing"); the Course capability makes the choice real again (owner, 2026-08-23:
+              course mode must be reachable from the landing page). Same composition as the
+              session composer's `+`: rows from one list, the capability row STAGES and starts
+              nothing — §38's rule that a capability is a declaration, never a mode. */}
+          <div className="relative shrink-0" ref={addMenu}>
+            <button
+              aria-expanded={addOpen}
+              aria-haspopup="menu"
+              aria-label="Add"
+              className="flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--ui-action)"
+              onClick={() => setAddOpen((open) => !open)}
+              title="Add"
+              type="button"
+            >
+              <Codicon name="add" size="var(--composer-icon)" />
+            </button>
+            {addOpen && (
+              <div
+                className="absolute bottom-[52px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
+                role="menu"
+              >
+                <button
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
+                  Upload material
+                </button>
+                <button
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  onClick={() => { setAddOpen(false); setCapability("course"); }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Codicon className="text-(--ui-text-tertiary)" name={CAPABILITY_COPY.course.icon} size="16px" />
+                  <span className="flex min-w-0 flex-col">
+                    <span>{CAPABILITY_COPY.course.label}</span>
+                    <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                      {CAPABILITY_COPY.course.detail}
+                    </span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
           {listening ? (
             <>
               <div className="ml-[12px] flex min-w-0 flex-1 items-center">
@@ -512,6 +566,25 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             </>
           ) : (
             <>
+              {/* The staged capability, inline where the words will start — the same composition
+                  the session composer's chip uses, because it is the same declaration one screen
+                  earlier. Always-visible ×: a hover-only dismiss does not exist on touch. */}
+              {capability && (
+                <div className="ml-[var(--composer-pad-x)] flex shrink-0 items-center gap-[6px] text-(--ui-action)">
+                  <Codicon className="shrink-0" name={CAPABILITY_COPY[capability].icon} size="1rem" />
+                  {/* §46.3-exempt: shares the input's own line — 16px is the iOS-zoom threshold
+                      the input itself documents, and the label must not drift from it. */}
+                  <span className="text-[16px] font-medium">{CAPABILITY_COPY[capability].label}</span>
+                  <button
+                    aria-label={`Remove ${CAPABILITY_COPY[capability].label}`}
+                    className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                    onClick={() => setCapability(null)}
+                    type="button"
+                  >
+                    <Codicon name="close" size="0.75rem" />
+                  </button>
+                </div>
+              )}
               <input
                 // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
                 // 🔴 A LITERAL, NOT `--canvas-text-body`, EVEN THOUGH THAT TOKEN IS ALSO 16px TODAY.
@@ -534,7 +607,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                     start();
                   }
                 }}
-                placeholder="Ask Nemesis…"
+                placeholder={capability === "course" ? "What do you want to learn?" : "Ask Nemesis…"}
                 value={text}
               />
               {dictation.supported && (
@@ -553,8 +626,15 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   the primary action changed appearance between the front door and the room behind
                   it. See `ComposerSend`. */}
               {/* 🔴 MATERIAL ALONE IS ENOUGH TO SEND. Requiring text would make a staged file
-                  unsendable, which is the old behaviour with an extra step rather than a fix. */}
-              <ComposerSend disabled={!text.trim() && staged.length === 0} label="Start" onClick={start} />
+                  unsendable, which is the old behaviour with an extra step rather than a fix.
+                  🔴 EXCEPT UNDER A STAGED CAPABILITY, which is a declaration ABOUT words — the
+                  session composer's own rule, held here so the `&cap=` can only ever ride beside
+                  a real `?ask=`. */}
+              <ComposerSend
+                disabled={capability ? !text.trim() : !text.trim() && staged.length === 0}
+                label="Start"
+                onClick={start}
+              />
             </>
           )}
         </div>

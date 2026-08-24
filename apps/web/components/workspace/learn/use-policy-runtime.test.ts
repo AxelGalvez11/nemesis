@@ -106,20 +106,29 @@ test("🔴 `recording` is a DIFFERENT question from `judging`, and both are expo
 //   2. A PROMISE THAT NEVER SETTLES. A construction is one `fetch` with no timeout of its own, so a
 //      connection accepted and never answered produces nothing to catch. No `catch` reaches that
 //      one. Only a deadline does.
+//   3. A PROMISE THE DEADLINE CANNOT REACH (found 2026-08-23, owner reopening a canvas into the
+//      same eternal caption). `onlyOnceAtATime`'s module-scoped in-flight cache hands a remount
+//      the PREVIOUS mount's promise, wired to that mount's dead AbortController — this run's
+//      abort touches nothing, nothing rejects, and the catch is unreachable. Only a RACE against
+//      this run's own signal turns that hang into the visible failure the other two get.
 //
 // These are source assertions rather than a rendered hook, for the same reason the ordering guards
 // in `knowledge-coverage.test.ts` are: what matters is that the code cannot be written the old way
-// again, and both routes are structural.
+// again, and all three routes are structural.
 
 test("🔴 the resolve effect CATCHES, so a throw cannot leave the caption up for ever", async () => {
   const source = await read("./use-policy-runtime.ts");
   const effect = source.slice(source.indexOf("const knowledgeInputs = knowledgeSignature(canvas)"));
   const body = effect.slice(0, effect.indexOf("// ---------------------------------------------------------------- submit"));
 
-  const call = body.indexOf("await ensureKnowledgeForCanvas(");
+  const call = body.indexOf("await Promise.race([");
   const caught = body.indexOf("} catch (cause) {");
 
-  assert.ok(call > 0, "the resolve must still happen");
+  assert.ok(call > 0, "the resolve must still happen, raced against the deadline");
+  assert.ok(body.indexOf("ensureKnowledgeForCanvas(", call) > call, "the race must contain the resolve itself");
+  // 🔴 Route 3: the race's other leg is this run's OWN signal, so a promise borrowed from a dead
+  // mount's in-flight cache still loses to the deadline instead of standing for ever.
+  assert.ok(body.indexOf("rejectedOnAbort(deadline.signal)", call) > call, "the race must include the deadline's own rejection");
   assert.ok(caught > 0, "🔴 and it must be caught — an uncaught throw IS the infinite caption");
   assert.ok(caught > call, "the catch must cover the resolve, not something before it");
 
@@ -322,4 +331,16 @@ test("🔴 a tapped option never passes through the non-attempt guards that free
   // 🔴 NO MODALITY. A tap is not typed, spoken or written, and the column is constrained to those
   // three. Writing one would be a false claim about how the answer arrived.
   assert.doesNotMatch(body, /responseModality:/, "a tap has no input modality to record");
+});
+
+test("🔴 EVERY exit from the resolve effect settles the caption — the early return too", async () => {
+  // Route 3's quieter sibling, same owner report: `uid` goes momentarily null on an auth refresh,
+  // the effect re-runs, and the `!enabled || !uid` return used to leave a phase set by the
+  // PREVIOUS run standing over an empty canvas with nothing below it ever running. Calibration:
+  // remove `setPhase(null)` from that return and this reddens.
+  const source = await read("./use-policy-runtime.ts");
+  const effect = source.slice(source.indexOf("if (!enabled || !uid) {"));
+  const guard = effect.slice(0, effect.indexOf("let live = true"));
+  assert.match(guard, /setPhase\(null\)/, "the unavailable return leaves the caption standing");
+  assert.match(guard, /setStatus\("unavailable"\)/);
 });

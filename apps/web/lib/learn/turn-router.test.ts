@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   HISTORY_TURNS,
+  courseGate,
   decisionOrReply,
   readTurnDecision,
   stateBlock,
@@ -762,4 +763,68 @@ test("the contract tells the model when NOT to ask, and caps how much it may ask
   // wrote to introduce them ("One thing first.") arrives with nothing behind it.
   assert.match(contract, /ONLY EVER ASK ON A "study" TURN/);
   assert.match(contract, /half-life of caffeine/);
+});
+
+// ── The Course chip is the only course door ─────────────────────────────────────────────────
+//
+// Owner ruling, 2026-08-23, watching production: *"The course mode's only supposed to be for when
+// a user wants to create the actual course. It's not supposed to run the whole research from just
+// me saying, teach me this. What the heck?"* The measured incident: "teach me" over an attached
+// drug-charts PDF read as a course order — a minutes-long research pass and the canvas renamed
+// "asthma and COPD" under the learner. The contract lost its "own words" door the same day, and
+// `courseGate` enforces what the contract asks for, exactly as the `question` reply-drop does.
+
+test("🔴🔴 the contract's only course door is the chip — the 'own words' door stays gone", () => {
+  assert.match(DECISION_CONTRACT_TEXT, /attached Course to this message/);
+  assert.match(DECISION_CONTRACT_TEXT, /ONLY thing that makes this field non-null/);
+  // The sentence that turned "teach me" into a research pass. Calibration: put it back and this
+  // reddens before any browser does.
+  assert.doesNotMatch(DECISION_CONTRACT_TEXT, /their own words ask for one/);
+  // Words that want a course are redirected to the control that orders one, not built for.
+  assert.match(DECISION_CONTRACT_TEXT, /Course button under \+/);
+});
+
+test("🔴🔴 courseGate drops a course the learner never ordered, and changes nothing else", () => {
+  const decision = readTurnDecision(
+    turn({ curriculumFor: "asthma and COPD", then: "study", topic: "asthma" }, "alright."),
+  );
+  assert.ok(decision);
+  const gated = courseGate(decision, false);
+  assert.equal(gated.curriculumFor, null, "the phantom course survived the gate");
+  // Everything beside the course is byte-identical — the turn still runs exactly as decided.
+  assert.deepEqual({ ...gated, curriculumFor: decision.curriculumFor }, decision);
+});
+
+test("🔴 with the chip attached, and on turns with no course in them, the decision passes through as-is", () => {
+  const ordered = readTurnDecision(
+    turn({ curriculumFor: "organic chemistry", then: "study", topic: "orgo" }, "alright."),
+  );
+  assert.ok(ordered);
+  // Same object, not a copy: the gate only pays when it actually drops something.
+  assert.equal(courseGate(ordered, true), ordered);
+  assert.equal(ordered.curriculumFor, "organic chemistry");
+  const plain = readTurnDecision(turn({ then: "reply" }, "hey."));
+  assert.ok(plain);
+  assert.equal(courseGate(plain, false), plain);
+});
+
+test("🔴 a study topic over attached material names the whole document, and the contract says why", () => {
+  // Production, 2026-08-23: a whole-course PDF became a canvas called "asthma and COPD" — the
+  // first charts in the excerpt sample — and Nemesis later apologised for the label in its own
+  // reply. The stake (the topic IS the canvas's name) and the trap (excerpts begin where the
+  // document begins) both have to be stated, or the cheapest reading of the sample wins again.
+  assert.match(DECISION_CONTRACT_TEXT, /topic also becomes the canvas's name/);
+  assert.match(DECISION_CONTRACT_TEXT, /never the subsection the excerpts happen to begin with/);
+});
+
+test("🔴 a mid-session pick is taught as a card, not a paragraph ending 'which one do you want?'", () => {
+  // Production, 2026-08-23: seventeen drug classes listed in prose, twice, each ending with the
+  // question the card exists to ask. Owner: "that's when it should have used the chip with the
+  // multiple choice." The steering case has to be named as "study" — a reply-turn question is
+  // dropped by readTurnDecision, so without this sentence the card is unreachable exactly there.
+  assert.match(DECISION_CONTRACT_TEXT, /A session already underway can need a decision too/);
+  assert.match(DECISION_CONTRACT_TEXT, /The card is how a learner picks/);
+  // And the reconciliation with step 1 and the question-back rule is stated, or the model obeys
+  // one of those instead and the card stays unreachable.
+  assert.match(DECISION_CONTRACT_TEXT, /not what step 1 bans and not what the question-back rule/);
 });

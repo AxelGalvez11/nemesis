@@ -193,10 +193,18 @@ export interface TurnDecision {
    * surface and no engine name may ever ride here. If its effect can be described as "run the
    * policy differently", it is the arm picker this file's header forbids.
    *
-   * 🔴 SET BY THE MODEL READING THE SENTENCE, never by a scanner. The learner can reach it two
-   * ways — the composer's Course capability (an explicit declaration in the packet) or plain
-   * language ("I want to spend next month learning organic chemistry properly") — and both are the
-   * model's reading. There is no "build me a course" regex and there must never be one.
+   * 🔴🔴 ONLY BEHIND THE COURSE CHIP — owner ruling, 2026-08-23, after watching production: *"The
+   * course mode's only supposed to be for when a user wants to create the actual course. It's not
+   * supposed to run the whole research from just me saying, teach me this. What the heck?"* This
+   * field originally had a second door — the model reading plain language as wanting a course —
+   * and that door is what turned "teach me" over an attached PDF into a minutes-long web research
+   * pass and a retitled canvas the learner never asked for. A course build is the most expensive,
+   * most visible thing a turn can trigger, and the one honest signal that the learner wants it is
+   * the declaration they made at the composer: the chip. Plain words that sound like wanting a
+   * course get a SENTENCE pointing at the chip, never a build.
+   *
+   * 🔴 ENFORCED BY `courseGate`, NOT ONLY REQUESTED HERE. The contract tells the model the rule;
+   * the gate makes a leak unreachable — the same split `question` uses one field down.
    */
   curriculumFor: string | null;
   /**
@@ -668,6 +676,20 @@ const DECISION_CONTRACT = [
   + "learn it. Give it for a real question about a subject and leave it null for a greeting, a "
   + "remark or anything with no subject in it.",
   "",
+  // 🔴🔴 MEASURED ON PRODUCTION 2026-08-23, AND THE PRODUCT APOLOGISED FOR IT IN ITS OWN WORDS. A
+  // learner attached a whole-course drug-chart PDF and said, in effect, "teach me this". The
+  // excerpts the packet carries begin where the document begins, the model named the subject off
+  // the first charts it could see, and the canvas — whose name IS the study turn's topic — was
+  // retitled "asthma and COPD". Two turns later Nemesis itself had to say: *"this canvas was
+  // labeled 'asthma and COPD' when you never asked for that."* The SOURCE header has carried the
+  // document's own title the whole time; what was missing is the instruction to weigh it over the
+  // sample, and the stake — the rename — stated where the choice is made.
+  'On a "study" turn the topic also becomes the canvas\'s name. When what the learner wants taught '
+  + "IS the material they attached, the topic is what the WHOLE attachment covers — the source's "
+  + "own title above usually says it best — never the subsection the excerpts happen to begin "
+  + "with. Excerpts are a sample of the document, and a canvas named after one chapter of it is "
+  + "named wrong.",
+  "",
   // 🔴 THE BORDERLINE CASE SEARCHES, AND THAT IS AN OWNER DECISION (2026-08-21: *"make it search
   // when unsure, remove the 'costs money and time' it should be able to search web"*). This
   // sentence used to read *"Searching costs money and time, so when it is genuinely borderline, say
@@ -718,18 +740,28 @@ const DECISION_CONTRACT = [
   + "questions about the past, where a narrow window would hide the source that actually explains "
   + "it. When in doubt, null: an old page you can judge beats no page at all.",
   "",
+  // 🔴🔴 THE CHIP IS THE ONLY DOOR — owner ruling, 2026-08-23, watching production: *"The course
+  // mode's only supposed to be for when a user wants to create the actual course. It's not
+  // supposed to run the whole research from just me saying, teach me this."* This paragraph used
+  // to offer a second door ("or their own words ask for one"), and that door is what read "teach
+  // me" over an attached PDF as a course order: a minutes-long research pass and a retitled canvas
+  // out of an ordinary study turn. `courseGate` enforces what this paragraph asks for.
+  //
   // 🔴 A SUBJECT THE PLANNER CAN LOOK UP, NOT A RESTATEMENT OF THE SENTENCE. The same reason
   // `topic` is "the model's subject or nothing": a canvas called "teach me innate immunity" is the
   // measured failure this vocabulary exists to prevent.
-  '"curriculumFor" names the subject when the learner is asking for a COURSE — a persistent '
-  + "learning path through a subject over time — rather than an answer or a single lesson. Two "
-  + "ways you will see that: the canvas facts say they attached Course to this message, or their "
-  + "own words ask for one (learning something properly over weeks, preparing for a named course "
-  + 'of study, "make me a plan for…"). Name the subject the path should cover, as a subject '
-  + '("organic chemistry"), never their sentence back at them. It rides WITH your other answers: '
-  + 'a course request is usually also "study". The WHICH-SUBJECT rule applies here unchanged — a '
-  + "category with no member chosen is a question back, not a plan — and if they asked an ordinary "
-  + "question, this is null however the message arrived.",
+  '"curriculumFor" names the subject when the learner has attached Course to this message — the '
+  + "canvas facts above say so when they have. That chip is an explicit order for a persistent "
+  + "learning path through a subject over time, and it is the ONLY thing that makes this field "
+  + "non-null. Without it, this is null on every turn, however much their words sound like wanting "
+  + 'a course: "teach me X", "walk me through X properly", even "make me a plan for X" are study '
+  + "or reply turns, not course orders — do the turn, and when a full course genuinely seems to be "
+  + "what they want, say in one line that the Course button under + will build one. When the chip "
+  + 'IS attached, name the subject the path should cover, as a subject ("organic chemistry"), '
+  + 'never their sentence back at them. It rides WITH your other answers: a course request is '
+  + 'usually also "study". The WHICH-SUBJECT rule applies here unchanged — a category with no '
+  + "member chosen is a question back, not a plan — and if they asked an ordinary question, this "
+  + "is null even with the chip attached.",
   "",
   // 🔴🔴 THE GATE IS COST OF BEING WRONG, NOT VAGUENESS, AND THAT IS THE OWNER'S OWN CORRECTION
   // (2026-08-22): *"it should ask when the result is a course structure etc. ... it shouldnt always
@@ -767,6 +799,32 @@ const DECISION_CONTRACT = [
   + "the earlier turns point at one of them, take it and go ahead. Never ask about something you "
   + "could adjust later just as easily, and never ask a learner to confirm what they have already "
   + "told you.",
+  "",
+  // 🔴🔴 MEASURED ON PRODUCTION 2026-08-23, THE OTHER DIRECTION OF THE SAME GATE. Over a
+  // seventeen-section drug-chart PDF, Nemesis wrote the whole list into a reply and ended "Which
+  // one do you want to start with?" — twice — and the owner's reading was immediate: *"that's
+  // when it should have used the chip with the multiple choice."* A pick over how the session
+  // proceeds IS the structural case the card exists for; it was falling through because the ask
+  // rules above only describe the course-shaped version of it, and a reply-turn question is
+  // (rightly) dropped by `readTurnDecision`. So the steering case is named as "study", where the
+  // card is allowed — the throwaway-question drop is untouched.
+  "A session already underway can need a decision too. When the honest next move is the learner "
+  + "picking — which part of their material to take first, what order to go in, how to approach "
+  + "the session — that pick is a \"study\" turn with a \"question\": two to four real options "
+  + "drawn from their material, allowOther true, never a paragraph that lists everything and ends "
+  + "\"which one do you want?\". The card is how a learner picks; prose that asks them to type an "
+  + "option back makes them do the card's job by hand.",
+  "",
+  // 🔴 THE RECONCILIATION IS STATED, NOT LEFT TO THE MODEL. Without this sentence the steering
+  // case sits between two older rules that both push it to prose: step 1's "do not ask which part
+  // first" and the question-back rule's "asking back means reply" — and a reply-turn question is
+  // dropped by `readTurnDecision`, so a model obeying either rule makes the card unreachable
+  // exactly where the owner asked for it.
+  "That is not what step 1 bans and not what the question-back rule below bans. Step 1 bans "
+  + "interrogating someone INSTEAD of starting — when they first name a subject, you still go. The "
+  + "question-back rule bans asking in prose while taking the screen. A pick offered through "
+  + "\"question\" on a \"study\" turn does neither: the turn is parked, the card is shown, and the "
+  + "study you chose runs once they answer.",
   "",
   "\"teach me biology\" or \"create a course on biology\" is worth a question: general biology, "
   + "cell and molecular biology and human biology are different courses, and building the wrong one "
@@ -1105,6 +1163,26 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // canvas may act on rather than a fourth action smuggled around `asAction`'s whitelist.
     curriculumFor: asText(parsed.curriculumFor) || null,
   };
+}
+
+/**
+ * Drop a course request the learner never made.
+ *
+ * 🔴🔴 THE CHIP IS THE ONLY DOOR, ENFORCED — owner ruling, 2026-08-23: *"The course mode's only
+ * supposed to be for when a user wants to create the actual course. It's not supposed to run the
+ * whole research from just me saying, teach me this."* The contract says so too, but a prompt
+ * cannot make a leak unreachable (the exact argument `mayAsk` records in use-canvas-session): one
+ * enthusiastic reading of "teach me" and the canvas spends minutes researching and retitles
+ * itself. This is the same split `question` already uses — requested in the contract, enforced in
+ * code — and it is a GATE, not a parser concern: `readTurnDecision` reads what the model said,
+ * and whether the learner attached the chip is a fact about the submission the parser never sees.
+ *
+ * 🔴 EVERYTHING ELSE PASSES UNTOUCHED. The turn still runs exactly as decided — `then`, the
+ * answer, the visuals — because a wrongly-claimed course rides BESIDE a turn, never inside it.
+ */
+export function courseGate(decision: TurnDecision, courseAttached: boolean): TurnDecision {
+  if (courseAttached || !decision.curriculumFor) return decision;
+  return { ...decision, curriculumFor: null };
 }
 
 /**
