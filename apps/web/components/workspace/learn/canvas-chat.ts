@@ -54,6 +54,7 @@ import {
   type TurnDecision,
   type TurnExchange,
 } from "@/lib/learn/turn-router";
+import { loadMemory, memoryBlock } from "@/lib/learn/learner-memory";
 
 /** The non-thinking model, same choice `lib/learn/canvas-api.ts`'s own `ask()` makes for every
  *  other canvas call: a plain reply is a writing job, not a reasoning job, and `searchWeb` here is
@@ -203,6 +204,14 @@ export async function askCanvasChat(
   courseRequested = false,
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
+  // 🔴 LOADED ONCE PER TURN, NOT ONCE PER ROUND. `ask` runs again when a web search comes back,
+  // and re-reading the learner's memory for the second round would be a second query for an
+  // answer that cannot have changed in the intervening seconds.
+  //
+  // 🔴 AND IT NEVER BLOCKS THE TURN. `loadMemory` swallows its own failures and returns [] —
+  // including when the table has not been migrated yet — so a canvas still answers with no
+  // memory rather than not answering at all.
+  const memory = memoryBlock(await loadMemory(uid));
 
   /** One round of the envelope. `webContext` carries everything found so far; empty on the first. */
   const ask = (webContext: string, searchesLeft: number) => postChatCompletion(
@@ -214,6 +223,7 @@ export async function askCanvasChat(
         demonstrated: surroundings.demonstrated,
         history: surroundings.history,
         materialContext,
+        memory,
         objectives: surroundings.objectives,
         passages: canvas.blocks.length,
         sources: canvas.sources.length,

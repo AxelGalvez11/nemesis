@@ -113,6 +113,7 @@ const CONTEXT: TurnContext = {
   history: [],
   lessonInProgress: false,
   materialContext: "",
+  memory: "",
   objectives: 0,
   passages: 0,
   searchesLeft: 0,

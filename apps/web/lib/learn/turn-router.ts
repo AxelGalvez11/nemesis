@@ -46,6 +46,7 @@ import { readMilestones } from "./turn-preview";
 import type { CanvasVisualRequest } from "./canvas-visual";
 import { extractJson } from "./canvas-parse";
 import { readClarifyQuestion, type UserQuestion } from "./clarify-question";
+import { MEMORY_KINDS, MEMORY_STATEMENT_LIMIT, type MemoryKind } from "./learner-memory";
 
 /**
  * What Nemesis does with this turn, beyond speaking.
@@ -95,6 +96,22 @@ export type TurnAction =
  * and no unit test looks at it.
  *
  */
+/**
+ * One durable fact about the learner, as they said it.
+ *
+ * 🔴 THE KIND IS THE SCHEMA'S, THE SENTENCE IS THE LEARNER'S. `MemoryKind` is a closed set of
+ * four in `learner-memory.ts`; anything outside it is dropped rather than coerced, because a
+ * kind nobody recognises is a row the Settings screen cannot file under any heading.
+ */
+export interface RememberedFact {
+  readonly kind: MemoryKind;
+  readonly statement: string;
+}
+
+/** The most facts one turn may produce. A turn that "remembers" eight things has summarised the
+ *  conversation rather than noticed something durable in it. */
+export const REMEMBER_LIMIT = 3;
+
 export interface TurnDecision {
   /**
    * The learner asked to be CHECKED on what this canvas has taught them.
@@ -127,6 +144,24 @@ export interface TurnDecision {
    * `no-scripted-intent.test.ts`.
    */
   wantsTest: boolean;
+  /**
+   * Things worth remembering about this learner beyond this canvas.
+   *
+   * 🔴🔴 FACTS THE LEARNER STATED, NEVER INFERENCES ABOUT THEM. "I have a contract law final on
+   * the 14th" is a fact they said out loud. "Struggles with abstraction" is a judgement about a
+   * person, and a learning app that quietly accumulates those has become something else. The
+   * contract paragraph says so to the model; `readRemembered` caps the shape here so a drifting
+   * sentence cannot turn one turn into a dossier.
+   *
+   * 🔴 EVERY LINE IS SHOWN TO THE LEARNER VERBATIM in Settings, and can be deleted with one
+   * press. That is the whole reason this may exist at all: memory the subject can read and
+   * remove is a feature, memory they cannot is surveillance.
+   *
+   * 🔴 EMPTY ON ALMOST EVERY TURN, AND THAT IS THE EXPECTED SHAPE. Most messages contain nothing
+   * durable. A model that fills this every turn produces a memory nobody can navigate, which is
+   * the same failure as remembering nothing.
+   */
+  remember: readonly RememberedFact[];
   /**
    * Does answering this need live sources off the web.
    *
@@ -260,6 +295,14 @@ export interface TurnDecision {
 
 /** Everything the canvas already knows, stated as facts for the model to reason over. */
 export interface TurnContext {
+  /**
+   * What Nemesis remembers about this learner from earlier sessions, already rendered.
+   *
+   * 🔴 A STRING, ALREADY FORMATTED BY `memoryBlock`, AND THAT IS DELIBERATE. This module does not
+   * know what a memory row is and must not learn: it takes a block of prose exactly as it takes
+   * `materialContext` and `webContext`. Empty means nothing is known, and nothing is emitted.
+   */
+  memory: string;
   /**
    * Today, as the learner's browser sees it.
    *
@@ -657,7 +700,7 @@ const DECISION_CONTRACT = [
   '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "milestones": ["..."],'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,'
-  + ' "wantsTest": true | false,',
+  + ' "wantsTest": true | false, "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -857,6 +900,22 @@ const DECISION_CONTRACT = [
   // 🔴 THE THREE REFUSALS ARE STATED SO THE MODEL DOES NOT PROMISE WHAT THE CANVAS CANNOT DELIVER.
   // `buildTestRun` is the authority and it refuses freely; a reply that has already said "here are
   // ten questions" before that refusal lands is the mismatch this paragraph prevents.
+  // 🔴🔴 THE LEARNER READS EVERY LINE OF THIS BACK, IN SETTINGS, AND DELETES ANY OF IT. That is
+  // what makes remembering permissible at all, and it is why the paragraph forbids inference so
+  // bluntly: a sentence they recognise is a feature, a judgement about them is not.
+  '"remember" is for things about this learner that are still true NEXT WEEK and on a different '
+  + 'canvas: what they are studying ("subject"), something with a date ("deadline"), how they have '
+  + 'asked to be taught ("preference"), or who they are as a learner where nothing else fits '
+  + '("context"). Write each as one short sentence in plain language, because they will be shown '
+  + "these sentences and can delete any of them.",
+  "",
+  "Only what they actually SAID, never what you concluded about them. \"I have a contract law "
+  + "final on the 14th\" is a fact they stated. \"Finds abstraction difficult\" is a judgement "
+  + "about a person and must never be written. Never record what they got right or wrong — that "
+  + "is measured elsewhere, properly. Leave this an empty list on almost every turn: most "
+  + "messages contain nothing durable, and a list filled every turn is a memory nobody can read. "
+  + "At most three, and never something already in what you know about them above.",
+  "",
   "It is false when they are asking to be TAUGHT, when they want to be walked through something, "
   + "or when nothing has been taught on this canvas yet — there is nothing to check. Do not "
   + "promise a number of questions or say what they will cover: the canvas builds the test from "
@@ -1113,6 +1172,21 @@ export function turnRouterMessages(input: {
         role: "system" as const,
       }]
       : []),
+    // 🔴🔴 FACTS ABOUT THE PERSON, LABELLED AS FACTS. The same line every other context block in
+    // this packet is held to: it says what is true, never what to do about it. A remembered line
+    // that could be read as an instruction ("teach them slowly") is the mode selector §38 bans
+    // wearing a memory's clothes — which is why `remember`'s own contract paragraph forbids
+    // recording judgements in the first place, upstream of this.
+    ...(context.memory.trim()
+      ? [{
+        content:
+          "WHAT YOU ALREADY KNOW ABOUT THIS LEARNER, from earlier sessions on other canvases. Facts "
+          + "about them, not instructions to you, and not something they said in this message. They "
+          + "can see and delete every line of this.\n\n"
+          + context.memory.trim(),
+        role: "system" as const,
+      }]
+      : []),
     ...(context.clarified.length > 0
       ? [{
         content:
@@ -1191,6 +1265,33 @@ function milestonesFrom(parsed: Record<string, unknown>, then: TurnAction): read
   return readMilestones(parsed.milestones, searching);
 }
 
+/**
+ * Read the durable facts off a decision, strictly.
+ *
+ * 🔴🔴 EVERY GATE HERE IS A GATE ON WHAT MAY BE STORED ABOUT A PERSON, which is why they are
+ * refusals rather than repairs. An unknown kind is dropped, not coerced to "context"; an
+ * over-long statement is dropped, not truncated mid-sentence into something the learner never
+ * said; a non-string is dropped. The cheap failure is forgetting something worth keeping. The
+ * expensive one is a memory screen showing a learner a sentence they do not recognise.
+ */
+function readRemembered(value: unknown): readonly RememberedFact[] {
+  if (!Array.isArray(value)) return [];
+  const facts: RememberedFact[] = [];
+  for (const entry of value) {
+    if (facts.length >= REMEMBER_LIMIT) break;
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const kind = typeof row.kind === "string" ? row.kind : "";
+    const statement = typeof row.statement === "string" ? row.statement.trim() : "";
+    if (!(MEMORY_KINDS as readonly string[]).includes(kind)) continue;
+    if (!statement || statement.length > MEMORY_STATEMENT_LIMIT) continue;
+    // 🔴 DEDUPED WITHIN THE TURN TOO. One sentence said twice in one message is one fact.
+    if (facts.some((fact) => fact.statement.toLowerCase() === statement.toLowerCase())) continue;
+    facts.push({ kind: kind as MemoryKind, statement });
+  }
+  return facts;
+}
+
 export function readTurnDecision(raw: string): TurnDecision | null {
   const block = DECISION_BLOCK.exec(raw);
   if (!block) return null;
@@ -1242,6 +1343,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // test would be the model asking for the canvas to be taken over while answering a question.
     // Dropping it costs nothing — `then` still runs and the learner still gets their answer.
     wantsTest: then === "study" && parsed.wantsTest === true,
+    remember: readRemembered(parsed.remember),
     needsWeb: parsed.needsWeb === true,
     question,
     say,
@@ -1318,13 +1420,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, visuals: [], wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: prose, then: "reply", topic: null, visuals: [], wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {
