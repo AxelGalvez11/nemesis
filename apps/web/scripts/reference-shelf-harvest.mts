@@ -49,10 +49,15 @@ const COLLECTIONS: readonly Collection[] = [
     depth: 2,
     skipSubcats: /with labels in (?!English)/i,
   },
-  // The classic Gray's Anatomy plates (1918, public domain) — the anatomy atlas itself.
-  { category: "Gray's Anatomy plates", depth: 2 },
-  // Servier Medical Art (CC BY) — thousands of clean medical and cell-biology vectors.
-  { category: "Media from SMART-Servier Medical Art", depth: 1 },
+  // 🔴 GRAY'S ANATOMY PLATES WERE HARVESTED AND THEN REMOVED BY THE OWNER (2026-08-24): the 1918
+  // engravings read as old next to the modern product — "Gray's Anatomy looks old, keep the new
+  // one, Blausen." Blausen is the shelf's anatomy set; the live provider can still surface a
+  // Gray's plate when nothing newer matches, because removal from the shelf only removes the
+  // preference, never the licence.
+  // 🔴 SERVIER MEDICAL ART WAS HARVESTED AND THEN REMOVED BY THE OWNER (2026-08-24): too much of
+  // it is icon-grade clip art rather than teaching diagrams — "I need diagrams, I don't need
+  // random images." Do not re-add the collection wholesale; if it ever returns it returns as a
+  // hand-curated subset of its substantive figures, row by row, through the registry.
   // The CDC's Public Health Image Library uploads — micrographs and public-health photography.
   { category: "Images from the CDC Public Health Image Library", depth: 2 },
   // NHGRI's genome.gov illustrations — genetics concept art, public domain.
@@ -64,6 +69,16 @@ const TRANSLATED = /(\((?:ar|bn|ca|cs|da|de|el|es|fa|fi|fr|gu|he|hi|hr|hu|id|it|
 
 /** Meta subcategories that are queues, not collections. */
 const META_SUBCAT = /should be converted|missing|without categories|unidentified|to be checked/i;
+
+/**
+ * 🔴 THE OWNER'S CUTS, ENFORCED WHEREVER A FILE ARRIVES FROM. Removing a collection from the list
+ * above is not enough: individual Gray's plates and Servier pieces are also filed inside OTHER
+ * collections' categories, and two strays came through that side door on the first regeneration.
+ * This matches the removed provenances by the credit they carry — every Gray's plate credits its
+ * engraver — so the cut holds by author, not by folder. `reference-shelf.test.ts` asserts the
+ * same thing from the other side.
+ */
+const OWNER_REMOVED = /Servier|Vandyke Carter/i;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -123,6 +138,7 @@ async function fileTitles(root: string, depth: number, skipSubcats?: RegExp): Pr
 
 interface Stats {
   candidates: number;
+  ownerRemoved: number;
   passed: number;
   refusedLicence: number;
   notAnImage: number;
@@ -144,7 +160,7 @@ function titleStem(title: string): string {
 
 /** Harvest one collection into rows. */
 async function harvest(collection: Collection, rows: Map<string, CuratedEntry>): Promise<Stats> {
-  const stats: Stats = { candidates: 0, notAnImage: 0, passed: 0, refusedLicence: 0, unmatchable: 0 };
+  const stats: Stats = { candidates: 0, notAnImage: 0, ownerRemoved: 0, passed: 0, refusedLicence: 0, unmatchable: 0 };
   const titles = await fileTitles(collection.category, collection.depth, collection.skipSubcats);
   stats.candidates = titles.length;
 
@@ -188,6 +204,10 @@ async function harvest(collection: Collection, rows: Map<string, CuratedEntry>):
         continue;
       }
       const author = plainText(meta.Artist?.value)?.slice(0, 160);
+      if (OWNER_REMOVED.test(author ?? "") || OWNER_REMOVED.test(title)) {
+        stats.ownerRemoved += 1;
+        continue;
+      }
       const caption = (description || stem).slice(0, 280);
       const concepts = [stem, description.slice(0, 140)].filter((part) => part.length >= 4);
       const entry: CuratedEntry = {
@@ -215,7 +235,7 @@ const rows = new Map<string, CuratedEntry>();
 const report: string[] = [];
 for (const collection of COLLECTIONS) {
   const stats = await harvest(collection, rows);
-  const line = `${collection.category}: ${stats.passed} rows of ${stats.candidates} files (${stats.refusedLicence} refused by licence, ${stats.notAnImage} not images, ${stats.unmatchable} unmatchable)`;
+  const line = `${collection.category}: ${stats.passed} rows of ${stats.candidates} files (${stats.refusedLicence} refused by licence, ${stats.notAnImage} not images, ${stats.unmatchable} unmatchable, ${stats.ownerRemoved} owner-removed provenances)`;
   report.push(line);
   console.log(line);
 }

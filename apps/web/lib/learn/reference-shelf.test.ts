@@ -13,7 +13,7 @@ import { REFERENCE_SHELF } from "./reference-shelf";
 import { attributionRequired, isReusableLicence } from "./visual-provenance";
 
 test("the shelf holds the harvested collections — thousands of rows, not a gesture", () => {
-  assert.ok(REFERENCE_SHELF.length >= 3000, `expected a harvested shelf, found ${REFERENCE_SHELF.length} rows`);
+  assert.ok(REFERENCE_SHELF.length >= 4500, `expected a harvested shelf, found ${REFERENCE_SHELF.length} rows`);
 });
 
 test("🔴 every shelf row's licence is one Nemesis may reuse under", () => {
@@ -45,11 +45,18 @@ test("🔴 every shelf asset lives on the allowed host, and every row can be fou
   }
 });
 
-test("the collections the shelf claims are actually represented", () => {
-  // Spot anchors, one per major collection — a regenerated shelf that silently lost a whole
-  // collection fails here rather than in a learner's empty lesson.
-  const everything = REFERENCE_SHELF.map((row) => `${row.assetPath} ${row.caption}`).join("\n");
-  for (const marker of ["Gray", "Blausen", "Servier"]) {
+test("the collections the shelf claims are actually represented — and the removed ones stay removed", () => {
+  // Spot anchors per surviving collection — a regenerated shelf that silently lost one fails here
+  // rather than in a learner's empty lesson. And the owner's cuts are asserted from the other
+  // side: Servier (icon-grade clip art, removed 2026-08-24) and Gray's plates (1918 engravings,
+  // removed the same day — Blausen is the anatomy set) must not quietly return by re-harvest.
+  const everything = REFERENCE_SHELF.map((row) => `${row.assetPath} ${row.caption} ${row.attribution}`).join("\n");
+  for (const marker of ["Blausen", "OpenStax"]) {
     assert.ok(everything.includes(marker), `no trace of the ${marker} collection on the shelf`);
+  }
+  // By the strings those collections' rows actually carried: Servier files and credits name
+  // "Servier"; every Gray's plate credits its engraver, Henry Vandyke Carter.
+  for (const removed of ["Servier", "Vandyke Carter"]) {
+    assert.equal(everything.includes(removed), false, `${removed} is back on the shelf — the owner removed it`);
   }
 });

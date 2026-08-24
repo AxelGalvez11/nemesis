@@ -223,13 +223,35 @@ test("🔴 a specific word outweighs a generic one — measured on the shelf's o
     {
       assetPath: "registry/phage.png",
       attribution: "B",
-      caption: "A bacteriophage.",
-      concepts: ["bacteriophage micrograph"],
+      caption: "The structure of a bacteriophage.",
+      concepts: ["bacteriophage structure diagram"],
       licence: "public-domain",
       source: "x",
     },
   ];
-  // Word-count scoring tied these at one match each and let arrival order pick the DNA row.
+  // Word-count scoring tied these and let arrival order pick the DNA row; the DNA row now also
+  // fails the coverage rule outright (one generic shared word of a two-word request).
   const found = searchCurated({ concept: "bacteriophage structure" }, rows);
+  assert.equal(found.length, 1);
   assert.equal(at(found).assetPath, "registry/phage.png");
+});
+
+test("🔴 one shared word cannot win a multi-word request — the live provider gets it instead", () => {
+  const rows: readonly CuratedEntry[] = [
+    {
+      assetPath: "registry/bathtub.png",
+      attribution: "A",
+      caption: "A bathtub balance seat.",
+      concepts: ["bathtub balance seat"],
+      licence: "public-domain",
+      source: "x",
+    },
+  ];
+  // "balance" alone matched this row and, being curated, it outranked every live result for an
+  // accounting query. Two-word requests now need two matched words or most of the asked characters.
+  assert.deepEqual(searchCurated({ concept: "balance sheet" }, rows), []);
+  // The row is still perfectly findable by what it actually is.
+  assert.equal(searchCurated({ concept: "bathtub balance seat" }, rows).length, 1);
+  // And a single-word query still matches its word outright.
+  assert.equal(searchCurated({ concept: "bathtub" }, rows).length, 1);
 });

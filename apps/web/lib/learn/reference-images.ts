@@ -207,9 +207,11 @@ export async function searchCommons(query: ReferenceQuery, deps: ReferenceDeps):
     const meta = (info as { extmetadata?: Record<string, { value?: unknown }> }).extmetadata ?? {};
     const licence = normaliseLicence(plainText(meta.LicenseShortName?.value));
     // The bounded rendition when the API produced one, the original otherwise — see `commonsUrl`.
+    // The API appends analytics parameters to rendition URLs; the file serves without them.
     const thumb = (info as { thumburl?: unknown }).thumburl;
     const original = (info as { url?: unknown }).url;
-    const assetPath = typeof thumb === "string" && thumb ? thumb : original;
+    const chosen = typeof thumb === "string" && thumb ? thumb : original;
+    const assetPath = typeof chosen === "string" ? chosen.split("?")[0] : chosen;
     const pageUrl = (info as { descriptionurl?: unknown }).descriptionurl;
     if (!licence || typeof assetPath !== "string") continue;
     const author = plainText(meta.Artist?.value);
@@ -241,8 +243,22 @@ export async function searchCommons(query: ReferenceQuery, deps: ReferenceDeps):
 export function searchCurated(query: ReferenceQuery, registry: readonly CuratedEntry[]): ReferenceCandidate[] {
   const wanted = tokens(query.concept);
   if (wanted.length === 0) return [];
+  // 🔴 A CURATED ROW SHADOWS THE LIVE PROVIDER, SO A WEAK MATCH IS WORSE THAN NONE. Measured on
+  // the shelf: "balance sheet" matched a bathtub *balance* seat, and "bacteriophage structure"
+  // matched a DNA *structure* diagram — one shared word each, and being curated they outranked
+  // everything the live search would have found. So a row competes only when it matches at least
+  // TWO of the asked words, or most of the asked characters (a single-word query can still match
+  // its word; a specific word can still carry a phrase it dominates). A request this filter drops
+  // is not lost — it falls through to the live provider, which is exactly where a concept the
+  // shelf does not hold belongs.
+  const wantedMass = wanted.reduce((sum, word) => sum + word.length, 0);
   return registry
-    .map((entry) => ({ entry, score: overlap(wanted, entry.concepts.flatMap(tokens)) }))
+    .map((entry) => {
+      const have = new Set(entry.concepts.flatMap(tokens));
+      const matched = wanted.filter((word) => have.has(word));
+      return { entry, matched: matched.length, score: matched.reduce((sum, word) => sum + word.length, 0) };
+    })
+    .filter((row) => row.matched >= 2 || row.score >= wantedMass * 0.6)
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, Math.min(Math.max(query.limit ?? 4, 1), 10))
@@ -292,13 +308,8 @@ function tokens(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2);
 }
 
-function overlap(a: readonly string[], b: readonly string[]): number {
-  // 🔴 MATCHED CHARACTERS, NOT MATCHED WORDS, AND THE DIFFERENCE WAS MEASURED. Counting words
-  // scores "bacteriophage structure" the same against a bacteriophage row (matched on
-  // "bacteriophage") and a DNA-structure row (matched on "structure") — a tie the arrival order
-  // then decides, wrongly. A word's length is a cheap, dependency-free proxy for its specificity:
-  // the thirteen letters of "bacteriophage" now outweigh the nine of "structure", and generic
-  // glue words stop deciding matches they never should have.
-  const set = new Set(b);
-  return a.filter((word) => set.has(word)).reduce((score, word) => score + word.length, 0);
-}
+// The score above sums MATCHED CHARACTERS, not matched words, and the difference was measured:
+// counting words scores "bacteriophage structure" the same against a bacteriophage row and a
+// DNA-structure row — a tie that arrival order then decides, wrongly. A word's length is a cheap,
+// dependency-free proxy for its specificity: thirteen letters of "bacteriophage" outweigh nine of
+// "structure", and generic glue words stop deciding matches they never should have.
