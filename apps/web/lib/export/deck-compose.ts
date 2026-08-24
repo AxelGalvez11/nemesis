@@ -1271,7 +1271,7 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
         align: "right",
       }),
     );
-    return { background: { color: background }, items, motion: d.motion };
+    return { background: { color: background, image: p.image }, items, motion: d.motion };
   }
 
   if (d.body === "panel-title") {
@@ -1293,7 +1293,7 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     }
     items.push(...markedList(d, box(M, y, CONTENT_W * 0.86, SLIDE_H - y - 1.0), points));
     items.push(...footer(d, s, ctx, p));
-    return { background: { color: background }, items, motion: d.motion };
+    return { background: { color: background, image: p.image }, items, motion: d.motion };
   }
 
   // banner
@@ -1314,7 +1314,7 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   }
   items.push(...markedList(d, box(M, y, CONTENT_W * 0.84, SLIDE_H - y - 1.0), points));
   items.push(...footer(d, s, ctx, p));
-  return { background: { color: background }, items, motion: d.motion };
+  return { background: { color: background, image: p.image }, items, motion: d.motion };
 }
 
 // ── stat, quote, closing ─────────────────────────────────────────────────────────────────────

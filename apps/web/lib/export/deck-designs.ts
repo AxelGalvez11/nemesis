@@ -728,7 +728,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "solid-numeral",
     soft: "2e2e2e",
     stat: "block",
-    texture: { page: "/deck/textures/felt.jpg", pageScrim: 84 },
+    texture: { page: "/deck/textures/felt.jpg", pageScrim: 76 },
   },
   // ── the Keynote categories the set was still missing (owner 2026-08-24: fill every one) ────
   //
@@ -847,7 +847,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "4f4237",
     stat: "panel",
-    texture: { cover: "/deck/textures/photo-bench.jpg", dark: true, page: "/deck/textures/felt.jpg", pageScrim: 84, scrim: 58, section: "/deck/textures/photo-bench2.jpg" },
+    texture: { cover: "/deck/textures/photo-bench.jpg", dark: true, page: "/deck/textures/felt.jpg", pageScrim: 76, scrim: 58, section: "/deck/textures/photo-bench2.jpg" },
   },
   {
     accent: "7d3b3b",
