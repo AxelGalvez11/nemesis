@@ -1315,35 +1315,31 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return decision;
       }
 
-      if (decision.then === "study") {
-        // 🔴 THE LEARNER'S OWN WORDS, KEPT FOR THIS SITTING ONLY. The teaching controller needs to
-        // know the difference between "teach me glycolysis" and "quiz me on glycolysis", which the
-        // topic alone cannot carry — both reduce to "glycolysis". Not persisted and not written to
-        // the canvas: it describes how this session opened, and a stored one would still be
-        // steering the controller next week. See `TeachingContext.opening`.
+      // 🔴🔴 A TOPIC NEVER STARTS A LESSON ANY MORE — OWNER ORDER, 2026-08-24. This branch used to
+      // split on `isPreContent`: with nothing on the canvas it called `begin()`, which seized the
+      // screen, swapped the composer for an answer box and started asking template-generated recall
+      // questions. That was the "super rigid teaching flow" the owner asked to be removed, and the
+      // fix is to simply not enter it: a bare topic falls through to the reply below and gets
+      // TAUGHT there, in the conversation, with the full set of figures available.
+      //
+      // 🔴 THE DOCUMENT HALF SURVIVES, BECAUSE IT IS A DIFFERENT THING. Working through material
+      // the learner actually attached was never the complaint, and it is where the laid-out study
+      // document comes from. So `study` is honoured only when there IS something to work on.
+      //
+      // 🔴 THE GUARD IS HERE AND NOT ONLY IN THE PROMPT, WHICH IS THE WHOLE POINT. `turn-router.ts`
+      // now tells the model that a bare topic is a `reply`, but a prompt is a request and this is a
+      // rule: a model that says "study" anyway on an empty canvas gets a conversation, not a
+      // takeover. Verified by `no-rigid-lane.test.ts`.
+      if (decision.then === "study" && !isPreContent(latest.current.state)) {
+        // 🔴 THE LEARNER'S OWN WORDS, KEPT FOR THIS SITTING ONLY — the document controller needs the
+        // difference between "work through this" and "test me on this", which the topic alone
+        // cannot carry. Not persisted: a stored one would still be steering next week.
         setOpening(said);
-        // 🔴 `isPreContent` RATHER THAN `state === "empty"`, WHICH IS THE PREDICATE THE COMPOSER
-        // ALREADY USES for "this canvas has not begun". The old rule here was `=== "empty"`, so
-        // "teach me this" typed on a canvas with a file attached but no lesson yet fell through to
-        // a document command instead of starting one. One predicate, one meaning.
-        if (isPreContent(latest.current.state)) {
-          const opening = [decision.say, courseNote].filter(Boolean).join("\n\n");
-          if (opening) {
-            setAside({ blockId: null, kind: "opening", question: said, sources: [], text: opening });
-          }
-          // 🔴 THE MODEL'S SUBJECT OR NOTHING, NEVER THE RAW SENTENCE. `begin` uses this as the
-          // canvas TITLE, and falling back to `said` is what produced canvases called "teach me
-          // innate immunity" — and then a web search for that phrase, which `groundingQuery`
-          // existed to strip back down. With no subject named, this starts from the attached
-          // material; with neither, `canStart` refuses and says why.
-          begin(decision.topic ?? undefined);
-        } else {
-          // 🔴 STAMPED BEFORE THE WRITE, NOT AFTER IT. `materialOwnsAttention` compares the action
-          // that was in flight WHEN THE LEARNER ASKED against the one in flight now; reading it
-          // after the round trip would record whichever action the policy had moved on to.
-          onStudyDocument?.();
-          await command(said, staged ? [staged] : []);
-        }
+        // 🔴 STAMPED BEFORE THE WRITE, NOT AFTER IT. `materialOwnsAttention` compares the action
+        // that was in flight WHEN THE LEARNER ASKED against the one in flight now; reading it
+        // after the round trip would record whichever action the policy had moved on to.
+        onStudyDocument?.();
+        await command(said, staged ? [staged] : []);
         return decision;
       }
 
@@ -1371,7 +1367,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       });
       return decision;
     },
-    [begin, command, requireUid],
+    // 🔴 `begin` LEFT THIS LIST WHEN THE TOPIC BRANCH DID. It is still exported and still runs —
+    // but only from `learnFromAside`, where the learner deliberately asks for the laid-out lesson.
+    // Nothing a conversation says can start one any more.
+    [command, requireUid],
   );
 
   /**

@@ -187,16 +187,21 @@ test("the brief names no operation, difficulty, strategy or surface", () => {
 
 test("🔴🔴 the plan is applied BESIDE the turn, and cannot force study", () => {
   const converse = SESSION.slice(SESSION.indexOf("const converse = useCallback"));
-  assert.notEqual(converse.indexOf("\n    [begin, command"), -1, "converse's dep anchor moved");
-  const body = converse.slice(0, converse.indexOf("\n    [begin, command"));
+  // 🔴 ANCHOR UPDATED 2026-08-24 with the removal of the rigid lane: `begin` left this dependency
+  // list when a named topic stopped being allowed to start a laid-out lesson.
+  assert.notEqual(converse.indexOf("\n    [command, requireUid]"), -1, "converse's dep anchor moved");
+  const body = converse.slice(0, converse.indexOf("\n    [command, requireUid]"));
   assert.match(body, /if \(decision\.curriculumFor\) \{/, "the course request is no longer honoured");
   assert.match(body, /applyCurriculumPlan\(/, "nothing applies the plan");
   // The refusal is SHOWN — a Course press that failed silently would be a dead control.
   assert.match(body, /courseRefusalLine\(/, "a failed application says nothing to the learner");
-  // And the apply cannot reroute the turn: `begin` and `command` are still called on the same
-  // conditions as before, decided by `decision.then` alone.
-  assert.match(body, /decision\.then === "study"/);
+  // And the apply cannot reroute the turn: the document path is still entered on `decision.then`
+  // alone, and nothing else may reach it.
+  assert.match(body, /decision\.then === "study" && !isPreContent\(/);
   assert.ok(!/curriculumFor[^\n]*begin\(/.test(body), "the course request routes the turn now — that is a bypass");
+  // 🔴 AND THE COURSE CHIP CANNOT SMUGGLE THE RIGID LANE BACK IN. `begin` is absent from the whole
+  // conversational body now, so no field on the decision — `curriculumFor` included — can start one.
+  assert.ok(!/begin\(/.test(body), "something in the turn body starts the laid-out lesson again");
 });
 
 test("🔴 the session loads a stored course on open, so a refresh keeps it", () => {

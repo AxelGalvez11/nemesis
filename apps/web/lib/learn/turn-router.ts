@@ -455,13 +455,40 @@ const NEMESIS_SYSTEM = [
   // told about one kind and had one channel, so "plot this" got an honest "I can't" out of a
   // renderer that has drawn plots for weeks. A capability the model is not told about does not
   // exist, however completely it is built.
+  // 🔴🔴 FIFTEEN KINDS, AND THE LIST WAS EIGHT UNTIL 2026-08-24. The comment above dates itself
+  // "THE OTHER EIGHT ARE NEW HERE, 2026-08-20" and was never extended again — so circuits, sheet
+  // music, 3D surfaces, 3D molecules, the whole 3D body atlas and the licensed figure shelf were
+  // built, tested, merged and deployed while this sentence quietly told the model they did not
+  // exist. Measured on production that day: asked to draw a series circuit, Nemesis computed the
+  // right 320 Ω and described the diagram in words; asked to teach female anatomy it wrote
+  // "[figure: relationship diagram of the female reproductive organs…]" — a PROSE DESCRIPTION of
+  // the picture it wanted, against an atlas that resolves "uterus" in microseconds. This file's own
+  // rule, stated twice already: a capability the model is not told about does not exist, however
+  // completely it is built. Anything added to `canvas-visual.ts` or `subject-visuals.ts` must be
+  // added HERE in the same commit, and `visual-route.test.ts` now fails the build if it is not.
   "For anything with structure — a plot, a diagram, a table, a timeline, a geometric construction, "
-  + "a force diagram, an equation, a traced snippet of code — put the figure in the \"visuals\" "
-  + "array and write [figure 1], [figure 2] inline where each one belongs. Every kind takes "
-  + "\"kind\" and \"learningGoal\", plus its own fields: quantitative (series of {x,y} points, "
-  + "xLabel, yLabel), relationship (nodes, edges), table (columns, rows), timeline (events), "
-  + "construction (points, segments), vectors (vectors, bodyLabel), equation (latex), code "
-  + "(language, source, trace). At most " + String(MAX_REPLY_VISUALS) + " per answer.",
+  + "a force diagram, an equation, a traced snippet of code, a circuit, a bar of music, a 3D "
+  + "surface, a molecule, a protein, an anatomical structure, a licensed textbook figure — put the "
+  + "figure in the \"visuals\" array and write [figure 1], [figure 2] inline where each one "
+  + "belongs. Every kind takes \"kind\" and \"learningGoal\", plus its own fields: quantitative "
+  + "(series of {x,y} points or an expression, xLabel, yLabel), relationship (nodes, edges), table "
+  + "(columns, rows), timeline (events), construction (points, segments), vectors (vectors, "
+  + "bodyLabel), equation (latex), code (language, source, trace), circuit (elements as a "
+  + "series/parallel tree of parts, supply, equivalentOhms), score (abc notation with a K: header), "
+  + "surface (expression in x and y, xFrom, xTo, yFrom, yTo), structure (smiles), macromolecule "
+  + "(accession), anatomy (structure: one anatomical NAME), figure (a licensed picture requested by "
+  + "subject). At most " + String(MAX_REPLY_VISUALS) + " per answer.",
+
+  // 🔴 THE THREE THAT ARE A LOOKUP RATHER THAN A DRAWING, SAID SEPARATELY BECAUSE THE MISTAKE IS
+  // TO WRITE THEIR DATA FROM MEMORY. Each takes a NAME and trusted code fetches the real thing;
+  // a name nothing carries simply draws nothing, so the prose must stand on its own either way.
+  "Three of those take a NAME and nothing else, because the data is looked up rather than recalled: "
+  + "{\"kind\":\"anatomy\",\"structure\":\"uterus\"} shows an interactive 3D body region with that "
+  + "structure picked out and the rest ghosted — any bone, muscle, vessel, nerve or organ, male or "
+  + "female. {\"kind\":\"macromolecule\",\"accession\":\"1HHO\"} shows a rotatable protein. "
+  + "{\"kind\":\"structure\",\"notation\":\"smiles\",\"value\":\"…\"} draws a molecule, and for a "
+  + "NAMED compound prefer [compound: aspirin] so it is looked up instead. Reach for them whenever "
+  + "WHERE something sits or WHAT SHAPE it is are the thing to understand.",
 
   // 🔴🔴 §45 SHIPPED THIS AND NOTHING COULD REACH IT. The expression evaluator, the distribution
   // maths and the curve builder were built, hardened against a real sandbox-escape probe, tested
@@ -649,15 +676,33 @@ const DECISION_CONTRACT = [
   + "canvas typesets it.",
   "",
   '"then" is what happens to the canvas:',
-  '  "reply" changes nothing on the page. The learner gets your sentence and the canvas stays as it '
-  + "is. This is the right choice for almost everything: greetings, small talk, complaints, "
-  + "acknowledgements, and ordinary questions the learner just wants answered.",
-  '  "study" hands the turn to the learning system, which takes over the canvas. Choose it when the '
-  + "learner has asked to be taught, tested, quizzed, drilled or walked through something, when they "
-  + "have named material to work through, or when they have asked for the study document itself to "
-  + "be written or changed. On a canvas that has already begun this steers the existing lesson "
-  + "rather than starting a new one. Keep your answer to a few words here, since the canvas is "
-  + "about to change underneath it.",
+  // 🔴🔴 "reply" IS NOW THE TEACHING LANE, ON THE OWNER'S ORDER (2026-08-24), AND THE SENTENCE
+  // ABOVE USED TO SAY THE OPPOSITE. It read "ordinary questions the learner just wants answered",
+  // which pushed every "teach me X" into `study` — and `study` seized the screen, replaced the
+  // composer with an answer box, and asked template-generated recall questions the learner could
+  // not decline. The owner watched it happen and named it exactly: it "turns from the natural
+  // flowing conversational interface that we like, and then it just suddenly goes into this super
+  // rigid teaching flow". Teaching is not a different MODE from talking; it is what a good answer
+  // does. So a named subject is taught HERE, in the conversation, with every drawing tool
+  // available and nothing taken over.
+  '  "reply" changes nothing on the page. The learner gets your answer and the canvas stays as it '
+  + "is, so nothing is seized and nothing they were reading disappears. This is the right choice "
+  + "for almost everything: greetings, small talk, complaints, acknowledgements, ordinary "
+  + "questions — AND for teaching. When the learner asks to be taught, explained, walked through, "
+  + "tested or quizzed on a subject, do it right here as part of the conversation: explain it "
+  + "properly, draw what helps (see the figures section), and if they asked to be tested, ask them "
+  + "a question in your own words at the end and mark their next message against it. Never answer "
+  + "a request to be taught with an offer to teach; teach.",
+  // 🔴 "study" NO LONGER MEANS "start a lesson". It means "work on the material that is already
+  // here" — the document path, which the owner kept. A topic with nothing attached is a `reply`
+  // now, and `use-canvas-session.ts` refuses to start a lesson from an empty canvas even if this
+  // field says otherwise, so a stray "study" degrades into a conversation rather than a seizure.
+  '  "study" edits the study document itself, and ONLY when one already exists on the canvas or the '
+  + "learner has attached material to work through. Choose it when they ask for the document to be "
+  + "written, extended or changed, or when they have given you a file and want you to work through "
+  + "it. Do NOT choose it merely because a subject was named or because the learner asked to be "
+  + "taught, tested or quizzed — those are `reply`, and you teach them in the reply. Keep your "
+  + "answer to a few words here, since the document is about to change underneath it.",
   '  "rewrite" fixes the passage the learner is reading, in place. Choose it when they are telling '
   + "you the MATERIAL failed: it is too dense, pitched wrong, or they do not follow it. They may say "
   + "so as an instruction or as a complaint, and both mean the same thing. Do not choose it for a "
@@ -672,9 +717,13 @@ const DECISION_CONTRACT = [
   // truthfully says no material is attached, and without this sentence the only sensible reading of
   // that is "there is nothing here to teach from". `begin()` searches for material on the topic and
   // ingests it through the ordinary source door; the model simply had not been told.
-  "An empty canvas is not a reason to refuse. Choosing \"study\" with a topic makes Nemesis go and "
-  + "find material on it and build the session from that, so a named subject with nothing attached "
-  + "is still a workable study turn.",
+  // 🔴🔴 REVERSED 2026-08-24, AND THE OLD SENTENCE IS LEFT ABOVE SO THE REVERSAL IS LEGIBLE. It
+  // told the model that a bare topic was "still a workable study turn" — correct while `study` was
+  // the only way to teach, and the direct cause of every rigid takeover once it no longer was. The
+  // empty canvas still is not a reason to refuse; the answer is simply to TEACH IT HERE.
+  "An empty canvas is not a reason to refuse and not a reason to reach for \"study\". A named "
+  + "subject with nothing attached is an ordinary conversation: answer it, teach it properly, and "
+  + "draw what helps. You may search the web for it like any other question.",
   "",
   // 🔴 ON EVERY TURN THAT HAS ONE, NOT ONLY ON A STUDY TURN. It is also what the "Learn this"
   // button under a plain answer would start, and whether a turn HAS a nameable subject is the

@@ -82,12 +82,24 @@ test("🔴 both kinds of aside paint; only one of them displaces", () => {
 });
 
 test("🔴🔴 the canvas reads the KIND off the aside, and the session records it", () => {
-  // The kind cannot be re-derived from the text, so it has to be written where the two branches
-  // already differ. `use-canvas-session.ts` sets `opening` on the `study` branch and `reply` on the
-  // conversational one; anything else here would be a third classification of the same text.
+  // The kind cannot be re-derived from the text, so it has to be written where the branches differ.
+  //
+  // 🔴🔴 THERE IS ONLY ONE BRANCH NOW, AND THAT IS THE POINT OF 2026-08-24. `opening` marked the
+  // introducing sentence above a lesson a conversation was about to start — and a conversation may
+  // no longer start one, so nothing writes it. Every answer is a `reply`, which is why nothing gets
+  // displaced any more: the case the two kinds existed to tell apart cannot arise.
+  //
+  // The kind is deliberately NOT deleted from the union: `learning-canvas.tsx` and
+  // `canvas-hosting.ts` still handle it, and the deliberate start control (`session.begin`) is
+  // where an introducing line would belong if one is ever wanted again. What must not come back is
+  // a CONVERSATION writing it — that is asserted in `conversation-is-the-default.test.ts`.
   const session = readFileSync(new URL("./use-canvas-session.ts", import.meta.url), "utf8");
-  assert.match(session, /kind: "opening"/, "the study branch no longer marks its opening line");
   assert.match(session, /kind: "reply"/, "the conversational branch no longer marks its answer");
+  assert.match(
+    session,
+    /kind: "reply" \| "opening"/,
+    "the aside kind union changed — the surface rules in canvas-hosting.ts read both",
+  );
 });
 
 // ── The one thing a reply may never push off the page ────────────────────────
