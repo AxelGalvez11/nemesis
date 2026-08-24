@@ -15,7 +15,14 @@ const PDF_WORKER_FILES = [
 ];
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@nemesis/shared"],
+  // 🔴🔴 `molstar` IS TRANSPILED BECAUSE THE VIEWER DIED SILENTLY WITHOUT IT. Measured 2026-08-24:
+  // asking for haemoglobin mounted the frame, drew nothing, and never even requested the
+  // coordinates. In production the chunk threw `Cannot read properties of undefined (reading
+  // 'create')` from inside Mol*'s own task runner; locally the init promise simply never settled.
+  // Both are one shape — a module resolving to `undefined` under this bundler's interop — and the
+  // viewer's try/catch could not report either, because a promise that never resolves throws
+  // nothing. That is why this failure looked like an empty box rather than a refusal.
+  transpilePackages: ["@nemesis/shared", "molstar"],
   /**
    * 🔴 NATIVE ADDONS MUST NOT BE BUNDLED — THIS IS A BUILD-BREAKER, NOT A
    * PREFERENCE. Both ship `.node` binaries, and pulling one into a route's
