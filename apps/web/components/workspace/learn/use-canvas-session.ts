@@ -314,6 +314,12 @@ export interface CanvasSession {
   ) => Promise<TurnDecision | null>;
   /** They closed the card instead of answering. The turn is dropped, not guessed at. */
   dismissClarification: () => void;
+  /** The learner asked to be checked on this canvas (§38's phrase path). A request, not a run:
+   *  `learning-canvas.tsx` builds the questions, because the objectives live in the policy
+   *  runtime and this hook does not know what an objective is. */
+  testRequested: boolean;
+  /** The test is over, or they closed it. Nothing about it is kept. */
+  clearTest: () => void;
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
   learnFromAside: () => Promise<void>;
@@ -449,6 +455,19 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const [clarifying, setClarifying] = useState<
     { question: UserQuestion; said: string; capability: ComposerCapability | null } | null
   >(null);
+  /**
+   * The learner asked to be checked on this canvas's material (§38's phrase path).
+   *
+   * 🔴🔴 A REQUEST, NOT A RUN, AND THE SPLIT IS DELIBERATE. Building the questions needs the
+   * canvas's objectives and evidence, which live in the policy runtime and not here — this hook
+   * has never known what an objective is and should not start. So the session records only that
+   * the ask happened; `learning-canvas.tsx` holds both halves and is where `buildTestRun` runs.
+   *
+   * 🔴 IT IS A BOOLEAN, NOT A MODE. It is set by one turn, cleared the moment the test is closed
+   * or a new turn starts, and nothing persists it. §38 permits a test as a phrase precisely
+   * because it cannot become a state the learner is left sitting inside.
+   */
+  const [testRequested, setTestRequested] = useState(false);
   /**
    * Decisions already settled this sitting, phrased as facts for the packet.
    *
@@ -1225,6 +1244,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return null;
       }
 
+      // 🔴 EVERY TURN ANSWERS THIS, INCLUDING BY CLEARING IT. A test that survived into the next
+      // submission would be the mode §38 bans; setting rather than only-setting-true is what makes
+      // that structural instead of a habit. `readTurnDecision` has already dropped `wantsTest` from
+      // any turn that is not "study", so this cannot fire on a plain answer.
+      setTestRequested(decision.wantsTest);
+
       // 🔴 THE COURSE IS APPLIED BESIDE THE TURN, NEVER INSTEAD OF IT. Everything below runs
       // exactly as it does on a turn with no course in it — `begin`, `command` and the aside are
       // untouched — which is what keeps a course a SCOPE the canvas gains rather than a mode it
@@ -1406,6 +1431,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * software deciding the thing it just admitted it could not decide. The learner's next sentence
    * starts a fresh turn, which is what dismissing a question means everywhere else.
    */
+  const clearTest = useCallback(() => setTestRequested(false), []);
+
   const dismissClarification = useCallback(() => {
     setClarifying(null);
   }, []);
@@ -2081,6 +2108,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     clarified,
     answerClarification,
     dismissClarification,
+    testRequested,
+    clearTest,
     judging,
     opening,
     ready,

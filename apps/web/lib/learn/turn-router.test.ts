@@ -214,6 +214,10 @@ test("a plain decision is read", () => {
     then: "reply",
     topic: null,
     visuals: [],
+    // `wantsTest` joins the always-present set on the same argument again: the canvas reads it as
+    // the condition for building a test run, and `undefined` there is indistinguishable from "the
+    // field has not shipped yet". A greeting is exactly the turn that must say `false` out loud.
+    wantsTest: false,
     webFreshness: null,
     webQuery: null,
     webResults: null,
@@ -827,4 +831,49 @@ test("🔴 a mid-session pick is taught as a card, not a paragraph ending 'which
   // And the reconciliation with step 1 and the question-back rule is stated, or the model obeys
   // one of those instead and the card stays unreachable.
   assert.match(DECISION_CONTRACT_TEXT, /not what step 1 bans and not what the question-back rule/);
+});
+
+// ── being checked on the material is a PHRASE, never a button (§38) ─────────────────────────
+//
+// 🔴🔴 §38 bans a "test me" control by name and then says where the request belongs:
+// *"If the learner wants to say 'test me on this again', that is a phrase to the composer, not a
+// control."* `wantsTest` is that path. The absence of a chip is held in `test-run.test.ts`; what
+// these hold is that the field behaves like a fact about ONE submission and never like a mode.
+
+test("🔴 a test request is read off a study turn", () => {
+  const read = readTurnDecision(turn({ then: "study", topic: "contract law", wantsTest: true }, "alright."));
+  assert.equal(read?.wantsTest, true, "the learner asked to be checked and the canvas never heard it");
+});
+
+test("🔴🔴 a 'reply' turn can never carry a test", () => {
+  // Calibration: drop the `then === "study"` half of the guard and this reddens.
+  //
+  // Same argument as the clarify-question drop directly above it in readTurnDecision: a "reply"
+  // turn answers a question. One that also claimed to want a test would be the model asking to
+  // take the canvas over on a turn nobody handed to the learning system.
+  const read = readTurnDecision(turn({ then: "reply", wantsTest: true }, "caffeine's half-life is about five hours."));
+  assert.equal(read?.wantsTest, false, "a reply turn smuggled a test in");
+  assert.equal(read?.say, "caffeine's half-life is about five hours.", "dropping the test also dropped the answer");
+});
+
+test("🔴 a missing or junk field is false, never undefined", () => {
+  // The canvas reads this as a condition. `undefined` there is indistinguishable from "not shipped".
+  assert.equal(readTurnDecision(turn({ then: "study", topic: "x" }, "ok"))?.wantsTest, false);
+  assert.equal(readTurnDecision(turn({ then: "study", topic: "x", wantsTest: "yes" }, "ok"))?.wantsTest, false);
+  assert.equal(readTurnDecision(turn({ then: "study", topic: "x", wantsTest: 1 }, "ok"))?.wantsTest, false);
+});
+
+test("🔴🔴 the contract asks the model to read the MEANING, and promises the learner nothing", () => {
+  // Two failure modes this paragraph exists to prevent. First, a word list: this repo deleted
+  // `canvas-phrases.ts` for exactly that and `no-scripted-intent.test.ts` holds the line, so the
+  // paragraph has to tell the model to read intent rather than match strings. Second, a reply that
+  // promises "here are ten questions" before `buildTestRun` has decided whether it can honestly
+  // produce any — the mismatch the learner would experience as a broken feature.
+  const contract = turnRouterMessages({ context: EMPTY, utterance: "test me on this" }).at(-1)?.content ?? "";
+  assert.match(contract, /"wantsTest" is true when the learner is asking to be CHECKED/);
+  assert.match(contract, /Read what they mean, not the words they used/);
+  assert.match(contract, /Do not promise a number of questions/);
+  assert.match(contract, /nothing has been taught on this canvas yet/);
+  // And it must stay a phrase path: no chip, ever.
+  assert.doesNotMatch(contract, /Test button|Test chip/, "the contract started advertising a test control");
 });
