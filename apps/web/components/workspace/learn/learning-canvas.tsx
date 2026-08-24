@@ -16,6 +16,10 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
+import { useAuth } from "@/components/AuthProvider";
+import { CanvasCheck } from "./canvas-check";
+import { ensureCanvasDeck, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
+import { buildTestRun, cardsFromMisses, isTestRefusal } from "@/lib/learn/test-run";
 import { lookAt } from "@/lib/mascot/attention";
 import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
 import type { CanvasBlock } from "@/lib/learn/canvas-model";
@@ -507,6 +511,58 @@ export function LearningCanvas({
   const planRows = useMemo(
     () => (session.coursePlan ? planTerritories(session.coursePlan, policy.objectives) : null),
     [policy.objectives, session.coursePlan],
+  );
+
+  // ── the test the learner asked for (§38's phrase path) ────────────────────
+  //
+  // 🔴 BUILT HERE BECAUSE THIS IS WHERE BOTH HALVES ARE. `session` knows the ask happened;
+  // `policy` holds the objectives and the evidence. Neither alone can build a run, and giving
+  // either one the other's data to avoid this line would be the worse trade.
+  //
+  // 🔴 MEMOISED ON THE REQUEST, NOT ON EVERY RENDER. `buildTestRun` is pure, but a fresh object
+  // each render would remount `CanvasCheck` and reset the learner to question one mid-test — the
+  // component keys its progress reset on `run` identity for exactly that reason.
+  const testRun = useMemo(
+    () =>
+      session.testRequested
+        ? buildTestRun({ evidence: policy.evidence, objectives: policy.objectives })
+        : ("nothing-taught" as const),
+    [policy.evidence, policy.objectives, session.testRequested],
+  );
+  const [makingFromMisses, setMakingFromMisses] = useState(false);
+  const { session: authSession } = useAuth();
+  const uid = authSession?.user.id ?? null;
+
+  /** Turn the objectives they missed into real cards, in this canvas's own deck.
+   *
+   *  🔴 THE SAME DECK THE CANVAS ALREADY WRITES TO, NEVER A NEW ONE PER TEST. `ensureCanvasDeck`
+   *  reuses `canvas.studyDeckId` when there is one, so a learner who tests themselves three times ends
+   *  up with one deck that grew, not three decks named the same thing. */
+  const makeCardsFromMisses = useCallback(
+    async (keys: readonly string[]) => {
+      if (isTestRefusal(testRun) || makingFromMisses) return;
+      const cards = cardsFromMisses(testRun, keys);
+      if (cards.length === 0 || !uid) return;
+      setMakingFromMisses(true);
+      try {
+        const deckId = await ensureCanvasDeck(uid, canvas.title, canvas.studyDeckId);
+        if (!deckId) {
+          session.showNotice("Those cards could not be saved. Your answers are still here.");
+          return;
+        }
+        await writeRecallCards(
+          uid,
+          deckId,
+          cards.map((card, index) => ({ back: card.back, conceptId: null, front: card.front, id: `miss-${index}` })),
+          canvas.concepts,
+        );
+        session.showNotice("Cards for what you missed are in your Library.");
+        session.clearTest();
+      } finally {
+        setMakingFromMisses(false);
+      }
+    },
+    [canvas.concepts, canvas.studyDeckId, canvas.title, makingFromMisses, session, testRun, uid],
   );
 
   const converse = useCallback(
@@ -1684,6 +1740,34 @@ export function LearningCanvas({
               onAnswer={(text) => void answerClarification(text)}
               question={session.clarifying}
             />
+          </div>
+        )}
+
+        {/* 🔴🔴 THE TEST THE LEARNER ASKED FOR, IN THE CHAT (owner 2026-08-24: *"the 'tests' are
+            supposed to be in chat chips for users to click through"*). It sits here, beside the
+            clarification card, because both are the same kind of object: a card the turn produced
+            that the learner answers by tapping, with the composer below untouched.
+
+            🔴 THE REFUSAL IS SHOWN, NOT SWALLOWED. `buildTestRun` refuses freely — nothing taught
+            yet, or too little that can carry an honest question — and a request that produced
+            silence would read as a broken feature. Saying which of the two happened is the whole
+            difference between "not yet" and "something is wrong". */}
+        {session.testRequested && presence !== "preparing" && !policy.awaitingAnswer && (
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
+            {isTestRefusal(testRun) ? (
+              <p className="canvas-swap mt-5 rounded-2xl p-4 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary)">
+                {testRun === "nothing-taught"
+                  ? "There is nothing to test yet. Learn some of this first, then ask again."
+                  : "Not enough of this canvas can carry a fair question yet. Keep going a little longer and ask again."}
+              </p>
+            ) : (
+              <CanvasCheck
+                making={makingFromMisses}
+                onDismiss={session.clearTest}
+                onMakeCards={(keys) => void makeCardsFromMisses(keys)}
+                run={testRun}
+              />
+            )}
           </div>
         )}
 

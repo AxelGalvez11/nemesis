@@ -97,6 +97,37 @@ export type TurnAction =
  */
 export interface TurnDecision {
   /**
+   * The learner asked to be CHECKED on what this canvas has taught them.
+   *
+   * 🔴🔴 A PHRASE, NEVER A BUTTON, AND §38 IS THE REASON THIS FIELD EXISTS AT ALL. §38 bans
+   * learner-facing controls that steer the learning machine and names the banned ones outright —
+   * *"quiz me, test me, easier, harder"* — then says exactly where a test request DOES belong:
+   *
+   *     "If the learner wants to say 'test me on this again', that is A PHRASE TO THE COMPOSER,
+   *      not a control."
+   *
+   * So this is the phrase path made real. There is no `ComposerCapability` for a test, there is no
+   * chip in the `+` menu, and `test-run.test.ts` holds both of those absences. The owner's
+   * instruction — *"the 'tests' are supposed to be in chat chips for users to click through"* —
+   * is about how a test is ANSWERED (clickable options in the chat) and not about a button that
+   * starts one.
+   *
+   * 🔴 IT IS NOT A MODE AND CANNOT BECOME ONE. It describes THIS submission, exactly as
+   * `curriculumFor` does, and nothing carries it to the next turn. A test is one bounded run that
+   * ends in a score; it does not change what Nemesis teaches afterwards or how.
+   *
+   * 🔴 AND IT DOES NOT FORCE A TEST TO EXIST. `buildTestRun` still refuses when the material
+   * cannot carry honest questions — an objective whose wrong options would have to be invented is
+   * left off, and too few survivors means no test at all. This field says what was asked for; the
+   * material decides whether it can be given.
+   *
+   * 🔴 THE MODEL READS THE SENTENCE, A WORD LIST DOES NOT. The same argument `needsWeb` records
+   * below: "test me", "can you check I've got this", "give me some practice", and the same request
+   * in any other language are all this, and no keyword list has ever caught the third one. See
+   * `no-scripted-intent.test.ts`.
+   */
+  wantsTest: boolean;
+  /**
    * Does answering this need live sources off the web.
    *
    * 🔴 THE MODEL ANSWERS THIS NOW, WHERE A WORD LIST USED TO. `askCanvasChat` imported Sessions'
@@ -598,7 +629,8 @@ const DECISION_CONTRACT = [
   "```json",
   '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "milestones": ["..."],'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
-  + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,',
+  + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,'
+  + ' "wantsTest": true | false,',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -762,6 +794,24 @@ const DECISION_CONTRACT = [
   + 'usually also "study". The WHICH-SUBJECT rule applies here unchanged — a category with no '
   + "member chosen is a question back, not a plan — and if they asked an ordinary question, this "
   + "is null even with the chip attached.",
+  "",
+  // 🔴🔴 THIS IS §38's PHRASE PATH, WRITTEN OUT. The contract bans a "test me" BUTTON and then
+  // says the request belongs in words instead. There is no chip for this and there must never be
+  // one — `test-run.test.ts` holds that absence — so this paragraph is the only way a learner can
+  // ever ask to be checked.
+  '"wantsTest" is true when the learner is asking to be CHECKED on material this canvas has '
+  + 'already taught them, rather than taught something new: "test me on this", "can you check I '
+  + 'actually know this", "give me some practice questions", "quiz me before my exam". Read what '
+  + "they mean, not the words they used — the same request in any language, and phrased any way, "
+  + "is this. It rides WITH your other answers and is only ever true on a \"study\" turn.",
+  "",
+  // 🔴 THE THREE REFUSALS ARE STATED SO THE MODEL DOES NOT PROMISE WHAT THE CANVAS CANNOT DELIVER.
+  // `buildTestRun` is the authority and it refuses freely; a reply that has already said "here are
+  // ten questions" before that refusal lands is the mismatch this paragraph prevents.
+  "It is false when they are asking to be TAUGHT, when they want to be walked through something, "
+  + "or when nothing has been taught on this canvas yet — there is nothing to check. Do not "
+  + "promise a number of questions or say what they will cover: the canvas builds the test from "
+  + "what it can honestly ask about, and it may find too little and say so. One line is enough.",
   "",
   // 🔴🔴 THE GATE IS COST OF BEING WRONG, NOT VAGUENESS, AND THAT IS THE OWNER'S OWN CORRECTION
   // (2026-08-22): *"it should ask when the result is a course structure etc. ... it shouldnt always
@@ -1138,6 +1188,11 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   // learner gets their answer instead of a form.
   const question = then === "study" ? asked : null;
   return {
+    // 🔴 ONLY ON A "study" TURN, AND FOR THE SAME REASON `question` IS. Being checked on the
+    // material IS handing this to the learning system; a "reply" turn that also claimed to want a
+    // test would be the model asking for the canvas to be taken over while answering a question.
+    // Dropping it costs nothing — `then` still runs and the learner still gets their answer.
+    wantsTest: then === "study" && parsed.wantsTest === true,
     needsWeb: parsed.needsWeb === true,
     question,
     say,
@@ -1214,13 +1269,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, visuals: [], wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: prose, then: "reply", topic: null, visuals: [], webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: prose, then: "reply", topic: null, visuals: [], wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {
