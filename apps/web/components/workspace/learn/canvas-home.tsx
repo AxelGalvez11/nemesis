@@ -29,7 +29,9 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { CAPABILITY_COPY, type ComposerCapability } from "@/lib/learn/composer-capability";
+import { useAuth } from "@/components/AuthProvider";
 import { ComposerSend } from "./composer-controls";
+import { TodayStrip } from "./today-strip";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { putPending } from "./pending-attachment";
@@ -72,6 +74,8 @@ function canvasComposerInset(): number {
 const GREETER_SIZE = 64;
 
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
+  const { session: authSession } = useAuth();
+  const uid = authSession?.user.id ?? null;
   const router = useRouter();
   // The character's look is a device preference, the same as the theme and the scale.
   const { accent } = useTheme();
@@ -668,6 +672,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 capability the front door does not have. */}
             Type a topic, ask a question, dictate it, or drop your material in.
           </p>
+
+          {/* 🔴 UNDER THE COMPOSER, AND SILENT WHEN THERE IS NOTHING WAITING. Workstream D. The
+              composer stays the primary thing on this surface: someone arriving to type a question
+              must not have to look past a wall of status to find the box, and a learner with a
+              clear plate sees exactly what they saw before this shipped. `TodayStrip` renders null
+              unless something is genuinely due, unfinished, or dated. */}
+          <TodayStrip uid={uid} />
         </section>
 
       </div>
