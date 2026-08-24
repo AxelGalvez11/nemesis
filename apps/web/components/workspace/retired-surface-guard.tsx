@@ -2,10 +2,22 @@
 
 // Retired surfaces: send people to the Canvas home, without breaking what still points here.
 //
-// Study, Library and Chill are no longer navigable — the product is Canvas plus Calendar, and
-// everything those pages did is a capability inside a Canvas session now. But "not navigable"
-// and "not reachable" are different things, and the audit found live callers that would break
-// if they were confused:
+// Study and Chill are no longer navigable — the product is Canvas plus Calendar, and everything
+// those pages did is a capability inside a Canvas session now. But "not navigable" and "not
+// reachable" are different things, and the audit found live callers that would break if they
+// were confused:
+//
+// 🔴 LIBRARY CAME BACK, AND THIS SENTENCE USED TO SAY OTHERWISE. It was retired with the other
+// two, then reinstated as the home of OUTPUTS (owner 2026-08-25) the same day canvases moved to
+// the sidebar; `app/(workspace)/library/page.tsx` has no guard and no redirect, deliberately, or
+// the shipped extension's `?import=coursework` would break. Leaving the old sentence here was a
+// live hazard rather than untidiness: the next person to read this file would have concluded
+// Library was retired and "fixed" it by adding a redirect.
+//
+// 🔴 AND STUDY'S REMAINING DEEP LINKS NOW HAVE HOMES (workstream F, 2026-08-24). Reviewing a
+// deck, importing from Anki, and progress all exist inside the Library — see `deck-review.tsx`
+// and `study-extras.tsx`, which mount the Study tab's own screens rather than redrawing them.
+// This guard stays until the artifact cards below are re-pointed; it is not the last step.
 //
 //   • the SHIPPED browser extension opens app.enternemesis.com/library?import=coursework
 //   • /slides and the graph navigate back to /library?note=<path>
