@@ -508,7 +508,14 @@ const NEMESIS_SYSTEM = [
   // the picture it wanted, against an atlas that resolves "uterus" in microseconds. This file's own
   // rule, stated twice already: a capability the model is not told about does not exist, however
   // completely it is built. Anything added to `canvas-visual.ts` or `subject-visuals.ts` must be
-  // added HERE in the same commit, and `visual-route.test.ts` now fails the build if it is not.
+  // added HERE in the same commit.
+  //
+  // 🔴 THE GUARD IS `visuals-are-told.test.ts`, AND THIS LINE USED TO NAME THE WRONG FILE. It said
+  // `visual-route.test.ts` "now fails the build if it is not" — that file has thirty-nine tests and
+  // not one of them reads this packet, so the protection was claimed and absent. Worse than absent:
+  // the next person to add a renderer would read the sentence and trust it. The real guard reads the
+  // kind literals out of `canvas-visual.ts` and `subject-visuals.ts` and fails when one of them is
+  // not named in the sentence below.
   "For anything with structure — a plot, a diagram, a table, a timeline, a geometric construction, "
   + "a force diagram, an equation, a traced snippet of code, a circuit, a bar of music, a 3D "
   + "surface, a molecule, a protein, an anatomical structure, a licensed textbook figure — put the "
