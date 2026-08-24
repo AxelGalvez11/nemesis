@@ -1454,7 +1454,13 @@ export function LearningCanvas({
                 Plain text at full strength, in the same column and at the same 16px/26px as the
                 reference. See `canvas-document.tsx`, which keeps the rule for the genuinely
                 block-scoped case ("Explain this" on a passage), where the quotation is true. */}
-            <div className="canvas-swap text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
+            {/* 🔴 A NEW SEND FADES THE OLD ANSWER (owner 2026-08-25: "the current output did
+                not disappear… to have the mascot in the middle"). While the next turn is in
+                flight the previous reply eases out and the character takes the centre — the
+                same 220ms curve every departing preview uses — instead of the new thinking
+                happening on top of a page that still looks finished. `forwards` holds it gone;
+                the class drops when the new reply replaces the text. */}
+            <div className={`canvas-swap text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)${turnInFlight ? " canvas-preview-out" : ""}`}>
               {/* 🔴🔴 THE HIGHLIGHT TOOLBAR ONLY EVER WORKED OVER DOCUMENT BLOCKS, AND THAT WAS
                   INVISIBLE UNTIL SELECTION WENT ON EVERYWHERE. `readCanvasSelection` requires a
                   `[data-selectable-id]` ancestor, and `selectableRegion()` was called from exactly
@@ -1906,13 +1912,13 @@ export function LearningCanvas({
         // literal truth. Tied to anything broader (thinking, preparing) they would become a
         // costume, and rule 4 of the language is that every face has a reason. See face.ts.
         face={busy.kind !== null ? "reading" : undefined}
-        // 🔴🔴 EXACTLY ONE CHARACTER ON THE SURFACE, WHICH IS THE SIX-DOT RULE. `CanvasThinkingPreview`
-        // now draws its own — a resting blob standing over three dots of its own, because the
-        // engine's `thinking` pose turns the body INTO the middle dot and cannot express a blob
-        // above a row. Two mounts of one renderer on one surface is what produced six dots before;
-        // the fix then was "the dock owns the character", so a surface that draws its own has to
-        // take the dock away rather than hope the two never overlap.
-        hidden={presence === "preparing"}
+        // 🔴🔴 NEVER HIDDEN FOR THE PREVIEW ANY MORE (owner 2026-08-25: "It won't show the
+        // mascot… it would just disappear"). This carried `hidden={presence === "preparing"}`
+        // from the era when CanvasThinkingPreview drew its own character — the six-dot rule:
+        // one renderer per surface. The preview stopped drawing a character when the caption
+        // moved onto the dock, so the guard was switching off the ONLY character for the sake
+        // of one that no longer existed. The six-dot rule still holds, satisfied the other way
+        // round: the preview is announcement-only (sr-only) and the dock is the one owner.
       />
 
       {/* 🔴 ALONGSIDE THE QUESTION, NOT OVER IT. A judgement that runs long leaves the stimulus

@@ -145,15 +145,22 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption sits 
   // So the caption moved onto the dock, as a sibling of its own transform, where being beside the
   // character is structural rather than a coincidence of two layouts agreeing.
   //
-  // The wait with NO mascot still centres its own caption — there is no character to sit beside.
-  assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 1, "the mascot wait is laying out a caption again");
-  assert.match(previewCode, /className="sr-only"/, "the mascot wait is painting a caption instead of announcing one");
+  // 🔴 REVERSED A THIRD TIME, 2026-08-25, AND NOW THERE IS NOTHING VISIBLE AT ALL. The wait
+  // with no mascot used to centre its own caption; that visible wait was exactly the state in
+  // which the dock was switched off, and on production it left NO character ("It won't show
+  // the mascot… it would just disappear"). The dock now owns character AND caption in every
+  // wait; the preview is a screen-reader announcement and nothing else.
+  assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 0, "the preview is laying out a visible wait again");
+  assert.match(previewCode, /className="sr-only"/, "the preview lost its announcement");
   assert.ok(!/justify-end/.test(previewCode), "justify-end is back — in a row that means the right edge, not the foot");
-  assert.match(canvasCode, /mascot=\{turnInFlight\}/);
   assert.match(canvasCode, /caption=\{turnInFlight \|\| presence === "preparing" \? preparingLabel : null\}/, "the dock is no longer given the caption");
   // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
   // of three dots on one screen; the dock owns the character, this owns the caption.
   assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");
+  // …and the caption's PLACE depends on the station: beside the character in the corner, UNDER
+  // it at the centre (owner 2026-08-25: "the mascot on top of the thinking preview lines").
+  const dockSource = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.match(dockSource, /station === "centre" \? " left-1\/2 top-full" : " left-full top-1\/2"/);
 });
 
 // ── The composer travels to where it is about to be ─────────────────────────
@@ -240,8 +247,12 @@ test("🔴🔴 and the dock does not walk in from a corner it was never standing
   // from the corner, a journey the learner just watched the greeter make.
   //
   // Calibration: make the first placement use the journey duration and this reddens.
+  // 🔴 TIGHTENED 2026-08-25: "placed" itself now waits for the ANCHOR. The station used to
+  // place instantly against the default corner (left 22, bottom 24) before the composer had
+  // been measured, and the correction then eased in as a diagonal drift from the lower-left —
+  // the owner's "it was already on the bottom left side, moving upward", seen on production.
   const dock = code(readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8"));
-  assert.match(dock, /ms: was\.placed \? null : 0/);
+  assert.match(dock, /ms: was\.placed && anchoredRef\.current \? null : 0/);
   assert.match(dock, /visibility: travel\.placed \? undefined : "hidden"/);
 });
 
@@ -500,4 +511,42 @@ test("working is never just standing: the middle station sways, and reduced moti
   assert.ok(css.includes("@keyframes bloub-ponder"), "the sway is named but never defined");
   assert.match(css, /\.bloub-ponder,\s*\n\s*\.bloub-jump/, "reduced motion no longer switches the sway off");
   assert.match(dock, /station === "centre" \? "bloub-ponder"/, "the sway is not gated on holding the middle");
+});
+
+test("the character never vanishes while Nemesis works, and the words sit under it", () => {
+  // Owner 2026-08-25, on production: "I'll send a prompt. It won't show the mascot… it would
+  // just disappear" / "I want the mascot to be on top of the thinking preview lines."
+  const canvas = code(CANVAS);
+  assert.ok(!/hidden=\{presence/.test(canvas), "the dock is switched off for the preview again — that is the vanish");
+  const preview = readFileSync(new URL("./canvas-thinking-preview.tsx", import.meta.url), "utf8");
+  assert.ok(preview.includes("sr-only"), "the preview lost its screen-reader announcement");
+  assert.ok(!preview.includes("min-h-[70vh]"), "the preview paints a visible wait again — two owners of one moment");
+  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.match(dock, /station === "centre" \? " left-1\/2 top-full"/, "the centred caption moved back beside the character");
+});
+
+test("the first placement waits for the composer's measurements", () => {
+  // Owner 2026-08-25: the character "was already on the bottom left side, moving upward" — the
+  // station placed instantly against the DEFAULT corner, then the real measurements animated
+  // the correction as a diagonal drift. No placement counts until the anchor has measured.
+  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.ok(dock.includes("anchoredRef"), "the anchored gate is gone");
+  const gated = dock.match(/placed: anchoredRef\.current/g) ?? [];
+  assert.equal(gated.length, 2, "both stations must refuse to count a placement before the anchor measures");
+});
+
+test("the open composer menu counts as composer: the dock floats clear of the popover", () => {
+  // The contract with canvas-composer.tsx (PR #760): the + menu's popover carries
+  // data-canvas-composer-popover precisely so this measurement can see it. Renaming either
+  // side re-creates the owner's "the mascot clashes with the menu" silently.
+  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  assert.ok(dock.includes('querySelector("[data-canvas-composer-popover]")'), "the dock no longer measures the open menu");
+  assert.match(dock, /Math\.min\(r\.top, popover\.getBoundingClientRect\(\)\.top\)/, "the union lost the higher edge");
+  const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
+  assert.ok(composer.includes("data-canvas-composer-popover"), "the composer stopped stamping the popover — the dock is blind to it");
+});
+
+test("a new send fades the old answer while the character takes the centre", () => {
+  // Owner 2026-08-25: "the current output did not disappear… to have the mascot in the middle."
+  assert.match(CANVAS, /turnInFlight \? " canvas-preview-out" : ""/, "the previous reply no longer eases out under a new turn");
 });
