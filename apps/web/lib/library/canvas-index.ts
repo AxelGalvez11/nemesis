@@ -79,6 +79,7 @@ interface CanvasRowShape {
   created_at: string;
   pinned_at: string | null;
   folder_id: string | null;
+  course_title?: string | null;
 }
 
 /** Postgres `like` treats these as wildcards; a learner typing them means the characters. */
@@ -97,7 +98,7 @@ export async function searchCanvases(
 
   const search = (query.search ?? "").trim();
 
-  let builder = table().select("id,title,state,updated_at,created_at,pinned_at,folder_id", { count: "exact" });
+  let builder = table().select("id,title,state,updated_at,created_at,pinned_at,folder_id,course_title:territory->plan->>title", { count: "exact" });
   builder = builder.eq("deleted", false);
 
   // 🔴 SCOPING IS THREE-VALUED AND `null` IS NOT "NO FILTER". `undefined` means every folder;
@@ -136,6 +137,7 @@ export async function searchCanvases(
 
   const rows = (data as CanvasRowShape[]).map(
     (row): CanvasSummary => ({
+      courseTitle: row.course_title ?? null,
       createdAt: row.created_at,
       folderId: row.folder_id,
       id: row.id,

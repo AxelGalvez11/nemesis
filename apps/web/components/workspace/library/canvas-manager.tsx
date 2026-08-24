@@ -55,6 +55,7 @@ import {
   Ellipsis,
   Folder as FolderIcon,
   FolderPlus,
+  GraduationCap,
   Inbox,
   Layers,
   Pencil,
@@ -707,7 +708,10 @@ export function CanvasManager({
                     Nothing here is derived from the canvas's CONTENTS, because `canvas_sources` is
                     empty in production and a count over it would render 0 on a canvas that has
                     material attached (see the header note). */}
-                <RowIcon icon={PanelsTopLeft} />
+                {/* A course-bearing canvas swaps the glyph (owner 2026-08-25: course canvases
+                    "should be distinguished"). Derived from the territory's own plan title in
+                    the SELECT — not from canvas_sources, which stays empty in production. */}
+                <RowIcon icon={canvas.courseTitle ? GraduationCap : PanelsTopLeft} />
                 <span className="truncate text-[length:var(--list-name-size)] leading-[var(--list-name-leading)] text-(--ui-text-primary)">{canvas.title || "Untitled canvas"}</span>
                 {/* The learner's own mark, kept — the one honest per-canvas distinction there is. */}
                 {canvas.pinnedAt && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={2} />}
