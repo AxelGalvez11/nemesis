@@ -18,6 +18,7 @@ import {
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { ChatMessage, ChatOutput } from "@/lib/workspace/chat-message";
+import { composioTools, runConnectedApp } from "@/lib/workspace/composio-client";
 import { AGENT_TOOLS, executeAgentTool, loadAttachedSourceFolder, loadWorkspaceOverview, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { activityLabel } from "@/lib/workspace/chat-activity";
 import { PROGRESS_TICK_MS, WRITING_PHRASE, waitingPhrase } from "@/lib/workspace/chat-progress";
@@ -1061,6 +1062,15 @@ export async function sendChatTurn(
   // search snippets and reads as noise (owner 2026-08-04: no verbose
   // thinking previews). Between verbs it falls back to the quiet shimmer.
   const roundBudget = maxToolRounds(decision);
+  // 🔴🔴 THE LEARNER'S CONNECTED APPS, LOADED ONCE PER TURN AND ALWAYS SAFE TO FAIL. `composioTools`
+  // returns [] for every problem — no key, nothing connected, a network failure, an unexpected
+  // response shape — and [] means the model is offered exactly the tools it was offered before
+  // Composio existed. Nobody who never connected an app can be affected by this line.
+  //
+  // 🔴 ONCE, NOT PER ROUND: the catalogue cannot change between rounds of one turn, and asking
+  // again would put a network round trip in front of every tool result.
+  const connected = toolsEnabled ? await composioTools() : { index: new Map<string, string>(), tools: [] };
+  const offered = connected.tools.length > 0 ? [...AGENT_TOOLS, ...connected.tools] : AGENT_TOOLS;
   for (let round = 0; round <= roundBudget; round += 1) {
     // The last permitted round goes out without tools so it must answer in text
     // — and is TOLD so, or it emits invocation syntax as prose instead.
@@ -1090,7 +1100,7 @@ export async function sendChatTurn(
           }
           : undefined,
         signal,
-        ...(offerTools ? { tools: AGENT_TOOLS } : {}),
+        ...(offerTools ? { tools: offered } : {}),
       });
     } finally {
       // finally, not a plain call: an abort or a throw here would otherwise
@@ -1102,7 +1112,13 @@ export async function sendChatTurn(
     onActivity?.(activityLabel(calls));
     const results = await Promise.all(calls.map(async (call) => ({
       call,
-      result: await executeAgentTool(call, { askText, sourceAttached: attachedIds.length > 0, sourceFolder }),
+      // 🔴🔴 ROUTED BY WHETHER THE INDEX KNOWS THE NAME, NOT BY GUESSING AT ITS SHAPE. A name the
+      // connected-apps index minted goes to Composio; everything else goes where it always went.
+      // An unknown name therefore behaves exactly as it did before — `executeAgentTool` already
+      // answers an unrecognised tool with {error}, which the model can react to.
+      result: connected.index.has(call.name)
+        ? await runConnectedApp(call, connected.index.get(call.name) ?? "")
+        : await executeAgentTool(call, { askText, sourceAttached: attachedIds.length > 0, sourceFolder }),
     })));
     onActivity?.(null);
     for (const { result } of results) {
