@@ -24,7 +24,9 @@ import {
   verifyAngle,
   verifyBalance,
   verifyEquilibrium,
+  verifyEquivalentResistance,
   verifyTotal,
+  type ResistanceNode,
   type Verification,
 } from "./visual-verification";
 
@@ -159,9 +161,118 @@ export interface CodeVisual extends CanvasVisualBase {
   traceOrigin?: "narrated";
 }
 
+/**
+ * Music, as notation rather than as a picture of notation.
+ *
+ * 🔴 THE SMILES PATTERN, ONE ART OVER. ABC is to a melody what SMILES is to a molecule: a canonical
+ * text form the model already knows from a century of transcribed tunes, which a trusted engraving
+ * library turns into staff notation deterministically. The model supplies notation and never
+ * geometry, so a note cannot arrive on the wrong line — the engraving is computed from the string,
+ * and the string is kept so anybody can check what was asked for.
+ *
+ * 🔴 A SHAPE, NOT A MUSIC FEATURE. "Symbols positioned on a ruled staff by fixed convention" is a
+ * melody, an interval drill, a rhythm exercise and a chord voicing. Nothing here knows what a
+ * dominant seventh is, and nothing here may learn.
+ */
+export interface ScoreVisual extends CanvasVisualBase {
+  kind: "score";
+  /** The excerpt in ABC notation, headers included. Kept inspectable beside the engraving. */
+  abc: string;
+}
+
+/** Every component symbol the circuit renderer draws. Free text stays in `label` and `value`. */
+export const CIRCUIT_COMPONENTS = [
+  "ammeter",
+  "battery",
+  "capacitor",
+  "diode",
+  "inductor",
+  "lamp",
+  "resistor",
+  "switch",
+  "voltmeter",
+] as const;
+
+export type CircuitComponent = (typeof CIRCUIT_COMPONENTS)[number];
+
+export interface CircuitPart {
+  component: CircuitComponent;
+  /** "R1", "C2" — what the prose calls this part. */
+  label?: string;
+  /** "100 Ω", "10 µF", "12 V" — read by a person, never parsed. */
+  value?: string;
+  /**
+   * The resistance in ohms, as a number, when this part is a resistor with one.
+   *
+   * 🔴 SEPARATE FROM `value` BECAUSE ARITHMETIC MAY NOT PARSE PROSE. "100 Ω", "0.1 kΩ" and "100R"
+   * are one resistance and three strings; a claimed equivalent is recomputed from THIS field only,
+   * so what was checked is a number the model stated as a number.
+   */
+  ohms?: number;
+}
+
+/**
+ * Components arranged in series or parallel, nesting.
+ *
+ * 🔴 A TREE, NOT A NETLIST, AND THE RESTRICTION IS THE FEATURE. An arbitrary node-wire netlist needs
+ * an auto-router — a genuinely hard layout problem whose failures draw wires through components. A
+ * series/parallel tree lays out deterministically with school arithmetic, and it is also the shape
+ * of nearly every circuit an introductory course draws. What this cannot express (a bridge, an
+ * op-amp stage) refuses at the validator rather than rendering wrongly.
+ */
+export interface CircuitGroup {
+  arrangement: "series" | "parallel";
+  parts: readonly (CircuitPart | CircuitGroup)[];
+}
+
+export interface CircuitVisual extends CanvasVisualBase {
+  kind: "circuit";
+  /** The network between the supply's terminals. */
+  elements: CircuitGroup;
+  /** The source closing the loop, drawn at the bottom. */
+  supply?: { label?: string };
+  /**
+   * The claimed equivalent resistance of `elements`, in ohms — recomputed here.
+   *
+   * 🔴 STATING ONE IS A COMMITMENT, exactly as a table total is. It verifies only when every part
+   * is a resistor carrying `ohms`; a claim over a network with a capacitor in it cannot be
+   * recomputed and refuses rather than rendering as checked.
+   */
+  equivalentOhms?: number;
+}
+
+/**
+ * A surface z = f(x, y), drawn from a grid trusted code computed.
+ *
+ * 🔴 THE §45 CONTRACT IN THREE DIMENSIONS. The model writes a FORMULA and a domain; the server
+ * evaluates it under `expression.ts`'s allow list into `grid`; a viewer draws the numbers. The
+ * validator requires the grid because a surface with no computed points has nothing honest to draw
+ * — an uncomputed request is dropped whole, prose surviving, exactly as an uncomputable curve is.
+ *
+ * 🔴 `grid[row][column]` WITH row FOLLOWING y AND column FOLLOWING x, both from `from` to `to` in
+ * equal steps. `null` is a hole — sqrt(x·y) where the product is negative — and holes are drawn as
+ * absence rather than as zero, for the same reason a curve splits at a pole instead of bridging it.
+ */
+export interface SurfaceVisual extends CanvasVisualBase {
+  kind: "surface";
+  /** The formula, kept for the record and shown beside the drawing. Never executed client-side. */
+  expression: string;
+  xFrom: number;
+  xTo: number;
+  yFrom: number;
+  yTo: number;
+  xLabel?: string;
+  yLabel?: string;
+  zLabel?: string;
+  grid: readonly (readonly (number | null)[])[];
+}
+
 export type SubjectVisual =
+  | CircuitVisual
   | CodeVisual
   | ConstructionVisual
+  | ScoreVisual
+  | SurfaceVisual
   | TableVisual
   | TimelineVisual
   | VectorsVisual;
@@ -175,6 +286,9 @@ export type SubjectRefusal =
   | "malformed-construction"
   | "malformed-vectors"
   | "malformed-code"
+  | "malformed-score"
+  | "malformed-circuit"
+  | "malformed-surface"
   /**
    * The structure was fine and the arithmetic was not.
    *
@@ -579,10 +693,247 @@ function validateCode(value: Record<string, unknown>, common: CanvasVisualBase):
   };
 }
 
+// ── score ──────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How much ABC one excerpt may carry.
+ *
+ * 🔴 THE BOUND IS TEACHING, the same argument the code snippet makes. An excerpt a learner reads on
+ * a staff and reasons about is a phrase or a progression; past this it is a piece, and a piece is
+ * read in a score editor.
+ */
+const MAX_ABC_LENGTH = 1200;
+const MAX_ABC_LINES = 40;
+
+function validateScore(value: Record<string, unknown>, common: CanvasVisualBase): SubjectValidation {
+  const raw = typeof value.abc === "string" ? value.abc.replace(/\r\n/g, "\n").trim() : "";
+  if (!raw) return refuse("malformed-score", "the abc field is empty");
+  if (raw.length > MAX_ABC_LENGTH) {
+    return refuse("malformed-score", `${raw.length} characters, past the ${MAX_ABC_LENGTH} an excerpt may carry`);
+  }
+  const lines = raw.split("\n");
+  if (lines.length > MAX_ABC_LINES) {
+    return refuse("malformed-score", `${lines.length} lines, past the ${MAX_ABC_LINES} an excerpt may carry`);
+  }
+  // 🔴 DIRECTIVES ARE REFUSED BECAUSE THEY STEER THE ENGRAVER, NOT THE MUSIC. `%%`-lines set page
+  // sizes, fonts, MIDI programs and — in some engravers — pull in files. None of that is notation,
+  // and an excerpt has no legitimate use for any of it. Plain `%` comments go with them: a model
+  // writing commentary belongs in the prose, not hidden inside the tune.
+  const directive = lines.find((line) => line.trimStart().startsWith("%"));
+  if (directive) return refuse("malformed-score", "abc may not contain %-directive or comment lines");
+  // 🔴 A KEY HEADER IS REQUIRED BECAUSE ITS ABSENCE FAILS SILENTLY. The engraver treats everything
+  // before `K:` as headers, so a bare run of notes with no key renders as nothing at all — the
+  // classic way a well-meant fragment disappears without an error.
+  if (!lines.some((line) => /^K:/.test(line.trim()))) {
+    return refuse("malformed-score", 'abc needs a key header line such as "K:C" before the notes');
+  }
+  // The index header is bookkeeping, not content, and the engraver requires one. Supplied here so
+  // the model never fails an excerpt over a serial number.
+  const abc = lines.some((line) => /^X:/.test(line.trim())) ? raw : `X:1\n${raw}`;
+  return { ok: true, visual: { ...common, abc, kind: "score" } };
+}
+
+// ── circuit ────────────────────────────────────────────────────────────────────────────────────
+
+/** How deep groups may nest. Series-of-parallel-of-series covers the courses; past it is a maze. */
+const MAX_CIRCUIT_DEPTH = 3;
+const MAX_GROUP_PARTS = 6;
+const MAX_CIRCUIT_PARTS = 12;
+
+interface CircuitWalk {
+  leaves: number;
+  /** The network as arithmetic, or null once anything is not a resistor with a stated `ohms`. */
+  resistance: ResistanceNode | null;
+}
+
+function validateCircuitGroup(
+  value: unknown,
+  depth: number,
+  walk: CircuitWalk,
+): CircuitGroup | SubjectValidation {
+  if (!record(value)) return refuse("malformed-circuit", "a group is not an object");
+  if (depth > MAX_CIRCUIT_DEPTH) {
+    return refuse("malformed-circuit", `groups nest at most ${MAX_CIRCUIT_DEPTH} deep`);
+  }
+  const arrangement = value.arrangement;
+  if (arrangement !== "series" && arrangement !== "parallel") {
+    return refuse("malformed-circuit", 'a group\'s arrangement must be "series" or "parallel"');
+  }
+  const raw = list(value.parts, 1, MAX_GROUP_PARTS);
+  if (!raw) return refuse("malformed-circuit", `a group needs 1–${MAX_GROUP_PARTS} parts`);
+
+  const parts: Array<CircuitPart | CircuitGroup> = [];
+  const resistanceParts: ResistanceNode[] = [];
+  let checkable = true;
+  for (const item of raw) {
+    if (!record(item)) return refuse("malformed-circuit", "a part is not an object");
+    if ("arrangement" in item || "parts" in item) {
+      const nested = validateCircuitGroup(item, depth + 1, walk);
+      if ("ok" in nested) return nested;
+      parts.push(nested);
+      if (walk.resistance === null) checkable = false;
+      else resistanceParts.push(walk.resistance);
+      continue;
+    }
+    walk.leaves += 1;
+    if (walk.leaves > MAX_CIRCUIT_PARTS) {
+      return refuse("malformed-circuit", `a circuit carries at most ${MAX_CIRCUIT_PARTS} components`);
+    }
+    const component = CIRCUIT_COMPONENTS.find((candidate) => candidate === item.component);
+    if (!component) {
+      return refuse("malformed-circuit", `${JSON.stringify(item.component)} is not a component this Canvas draws`);
+    }
+    const label = item.label === undefined ? null : text(item.label, 16);
+    if (item.label !== undefined && !label) return refuse("malformed-circuit", "a part label must be 1–16 characters when present");
+    const shown = item.value === undefined ? null : text(item.value, 16);
+    if (item.value !== undefined && !shown) return refuse("malformed-circuit", "a part value must be 1–16 characters when present");
+    const ohms = item.ohms === undefined ? null : finite(item.ohms);
+    if (item.ohms !== undefined && (ohms === null || ohms < 0)) {
+      return refuse("malformed-circuit", "ohms must be a finite number of zero or more when present");
+    }
+    parts.push({
+      component,
+      ...(label ? { label } : {}),
+      ...(shown ? { value: shown } : {}),
+      ...(ohms !== null ? { ohms } : {}),
+    });
+    if (component === "resistor" && ohms !== null) resistanceParts.push({ ohms });
+    else checkable = false;
+  }
+
+  // 🔴 THE ARITHMETIC TREE IS BUILT DURING THE WALK, so a claimed equivalent is recomputed from the
+  // very structure that was validated — there is no second parse for the two to disagree across.
+  walk.resistance = checkable ? { arrangement, parts: resistanceParts } : null;
+  return { arrangement, parts };
+}
+
+function validateCircuit(value: Record<string, unknown>, common: CanvasVisualBase): SubjectValidation {
+  const walk: CircuitWalk = { leaves: 0, resistance: null };
+  const elements = validateCircuitGroup(value.elements, 1, walk);
+  if ("ok" in elements) return elements;
+
+  let supply: { label?: string } | null = null;
+  if (value.supply !== undefined) {
+    if (!record(value.supply)) return refuse("malformed-circuit", "supply must be an object when present");
+    const label = value.supply.label === undefined ? null : text(value.supply.label, 24);
+    if (value.supply.label !== undefined && !label) {
+      return refuse("malformed-circuit", "the supply label must be 1–24 characters when present");
+    }
+    supply = label ? { label } : {};
+  }
+
+  let equivalentOhms: number | null = null;
+  if (value.equivalentOhms !== undefined) {
+    const stated = finite(value.equivalentOhms);
+    if (stated === null) return refuse("malformed-circuit", "equivalentOhms must be a finite number when present");
+    const failure = fromVerification(
+      walk.resistance
+        ? verifyEquivalentResistance(walk.resistance, stated)
+        : { detail: "the network contains parts that are not resistors with a stated ohms, so the claim cannot be recomputed", ok: false, reason: "nothing-to-check" },
+      "the claimed equivalent resistance",
+    );
+    if (failure) return failure;
+    equivalentOhms = stated;
+  }
+
+  return {
+    ok: true,
+    visual: {
+      ...common,
+      elements,
+      kind: "circuit",
+      ...(supply ? { supply } : {}),
+      ...(equivalentOhms !== null ? { equivalentOhms } : {}),
+    },
+  };
+}
+
+// ── surface ────────────────────────────────────────────────────────────────────────────────────
+
+/** Grid bounds. The compute pass emits 41×41; the ceiling leaves room without inviting a payload. */
+const MIN_GRID = 2;
+const MAX_GRID = 61;
+
+function validateSurface(value: Record<string, unknown>, common: CanvasVisualBase): SubjectValidation {
+  const expression = text(value.expression, 400);
+  if (!expression) return refuse("malformed-surface", "a surface needs its formula, 1–400 characters");
+
+  const xFrom = finite(value.xFrom);
+  const xTo = finite(value.xTo);
+  const yFrom = finite(value.yFrom);
+  const yTo = finite(value.yTo);
+  if (xFrom === null || xTo === null || yFrom === null || yTo === null) {
+    return refuse("malformed-surface", "a surface needs finite xFrom, xTo, yFrom and yTo");
+  }
+  if (xFrom === xTo || yFrom === yTo) return refuse("malformed-surface", "a surface domain has no width");
+
+  // 🔴 THE GRID IS REQUIRED, AND ITS ABSENCE MEANS THE COMPUTE PASS NEVER RAN OR REFUSED. The same
+  // shape as a curve series without points: the request form is legitimate on the wire, but what
+  // reaches a renderer must carry numbers trusted code produced, or nothing renders at all.
+  if (!Array.isArray(value.grid)) {
+    return refuse("malformed-surface", "a surface draws only from a computed grid, and this one has none");
+  }
+  if (value.grid.length < MIN_GRID || value.grid.length > MAX_GRID) {
+    return refuse("malformed-surface", `a grid needs ${MIN_GRID}–${MAX_GRID} rows, received ${value.grid.length}`);
+  }
+  const grid: Array<Array<number | null>> = [];
+  let width = -1;
+  let defined = 0;
+  for (const rawRow of value.grid) {
+    if (!Array.isArray(rawRow)) return refuse("malformed-surface", "a grid row is not an array");
+    if (width === -1) {
+      width = rawRow.length;
+      if (width < MIN_GRID || width > MAX_GRID) {
+        return refuse("malformed-surface", `a grid needs ${MIN_GRID}–${MAX_GRID} columns, received ${width}`);
+      }
+    } else if (rawRow.length !== width) {
+      return refuse("malformed-surface", "every grid row must be the same length");
+    }
+    const row: Array<number | null> = [];
+    for (const cell of rawRow) {
+      if (cell === null) {
+        row.push(null);
+        continue;
+      }
+      if (typeof cell !== "number" || !Number.isFinite(cell)) {
+        return refuse("malformed-surface", "a grid cell must be a finite number or null");
+      }
+      defined += 1;
+      row.push(cell);
+    }
+    grid.push(row);
+  }
+  // Fewer than one drawable patch. sqrt(x*y) over an all-negative quadrant computes to this, and an
+  // empty box would read as a rendering failure rather than as a region where nothing exists.
+  if (defined < 4) return refuse("malformed-surface", "the surface has almost no defined points over this domain");
+
+  const labels: Partial<Record<"xLabel" | "yLabel" | "zLabel", string>> = {};
+  for (const key of ["xLabel", "yLabel", "zLabel"] as const) {
+    if (value[key] === undefined) continue;
+    const label = text(value[key], 40);
+    if (!label) return refuse("malformed-surface", `${key} must be 1–40 characters when present`);
+    labels[key] = label;
+  }
+
+  return {
+    ok: true,
+    visual: { ...common, expression, grid, kind: "surface", xFrom, xTo, yFrom, yTo, ...labels },
+  };
+}
+
 // ── entry point ────────────────────────────────────────────────────────────────────────────────
 
 /** Which kinds this module owns. `canvas-visual.ts` delegates on exactly these. */
-export const SUBJECT_KINDS: readonly string[] = ["code", "construction", "table", "timeline", "vectors"];
+export const SUBJECT_KINDS: readonly string[] = [
+  "circuit",
+  "code",
+  "construction",
+  "score",
+  "surface",
+  "table",
+  "timeline",
+  "vectors",
+];
 
 export function validateSubjectVisual(
   kind: string,
@@ -593,5 +944,8 @@ export function validateSubjectVisual(
   if (kind === "timeline") return validateTimeline(value, common);
   if (kind === "construction") return validateConstruction(value, common);
   if (kind === "vectors") return validateVectors(value, common);
+  if (kind === "score") return validateScore(value, common);
+  if (kind === "circuit") return validateCircuit(value, common);
+  if (kind === "surface") return validateSurface(value, common);
   return validateCode(value, common);
 }

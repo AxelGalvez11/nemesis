@@ -12,11 +12,13 @@ import {
   agrees,
   angleAt,
   distance,
+  equivalentResistance,
   moneyAgrees,
   resultant,
   verifyAngle,
   verifyBalance,
   verifyEquilibrium,
+  verifyEquivalentResistance,
   verifyTotal,
 } from "./visual-verification";
 
@@ -143,4 +145,46 @@ test("equilibrium over one vector, or over nothing, is nothing-to-check", () => 
   assert.equal(verifyEquilibrium([{ degrees: 0, magnitude: 5 }]).ok === false, true);
   const zero = verifyEquilibrium([{ degrees: 0, magnitude: 0 }, { degrees: 90, magnitude: 0 }]);
   assert.equal(zero.ok === false && zero.reason, "nothing-to-check");
+});
+
+// ─────────────────────────────────────────────────────────────────────── equivalent resistance
+
+test("series adds and parallel adds reciprocally, nesting", () => {
+  assert.equal(equivalentResistance({ ohms: 47 }), 47);
+  assert.equal(equivalentResistance({ arrangement: "series", parts: [{ ohms: 100 }, { ohms: 200 }] }), 300);
+  assert.equal(equivalentResistance({ arrangement: "parallel", parts: [{ ohms: 200 }, { ohms: 200 }] }), 100);
+  assert.equal(
+    equivalentResistance({
+      arrangement: "series",
+      parts: [{ ohms: 100 }, { arrangement: "parallel", parts: [{ ohms: 200 }, { ohms: 200 }] }],
+    }),
+    200,
+  );
+});
+
+test("🔴 a zero-ohm branch shorts a parallel group to zero instead of dividing by it", () => {
+  assert.equal(equivalentResistance({ arrangement: "parallel", parts: [{ ohms: 0 }, { ohms: 100 }] }), 0);
+});
+
+test("an empty group and a non-finite value cannot be reduced", () => {
+  assert.equal(equivalentResistance({ arrangement: "series", parts: [] }), null);
+  assert.equal(equivalentResistance({ ohms: Number.NaN }), null);
+  assert.equal(equivalentResistance({ ohms: -5 }), null);
+});
+
+test("🔴 a claimed equivalent is verified with hand-rounding tolerance, and a mismatch names both numbers", () => {
+  const network = { arrangement: "parallel" as const, parts: [{ ohms: 80 }, { ohms: 200 }] };
+  // 80·200/280 = 57.142857… — three significant figures must verify.
+  assert.equal(verifyEquivalentResistance(network, 57.1).ok, true);
+  const wrong = verifyEquivalentResistance(network, 70);
+  assert.equal(wrong.ok, false);
+  assert.equal(wrong.ok === false && wrong.reason, "value-mismatch");
+  assert.match(wrong.ok === false ? wrong.detail : "", /57\.143/);
+  assert.match(wrong.ok === false ? wrong.detail : "", /70/);
+});
+
+test("a network that cannot be reduced makes the claim nothing-to-check, never a silent pass", () => {
+  const result = verifyEquivalentResistance({ arrangement: "series", parts: [] }, 10);
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.reason, "nothing-to-check");
 });

@@ -35,6 +35,18 @@ export type PreviewSeed =
 
 const NOW = "2026-08-06T12:00:00.000Z";
 
+/**
+ * The saddle z = x² − y² on a 21×21 grid over [−2, 2]², exactly as the §45 surface pass would stamp
+ * it. Module-scope arithmetic: deterministic, no request, no clock.
+ */
+const SADDLE_GRID: number[][] = Array.from({ length: 21 }, (_, row) => {
+  const y = -2 + (4 * row) / 20;
+  return Array.from({ length: 21 }, (_, col) => {
+    const x = -2 + (4 * col) / 20;
+    return Math.round((x * x - y * y) * 1000) / 1000;
+  });
+});
+
 const SOURCE: CanvasSource = {
   id: "s1",
   title: "Cardiac action potentials (lecture 7).pdf",
@@ -179,6 +191,69 @@ export function lessonSeed(): LearningCanvas {
           learningGoal: "See the four-fold symmetry of the channel behind the funny current",
           resolvedFrom: { id: "5U6O", name: "HCN1 channel", provider: "rcsb" },
           title: "Structure of the human HCN1 hyperpolarization-activated cyclic nucleotide-gated ion channel",
+        },
+      },
+      { id: "b9h", type: "heading", content: "The same Canvas, other courses" },
+      {
+        id: "b9i",
+        type: "paragraph",
+        content:
+          "An electric circuits course draws its first schematic in week one: a source, a series resistor, and a parallel pair. The equivalent resistance printed under the drawing was recomputed from the tree before anything rendered.",
+        conceptIds: ["k5"],
+        // 🔴 THE §44 CIRCUIT SHAPE, WITH ITS CLAIM VERIFIED. 100 + (200·200)/(200+200) = 200 Ω —
+        // the harness proves the checked line renders under the diagram.
+        visual: {
+          elements: {
+            arrangement: "series",
+            parts: [
+              { component: "resistor", label: "R1", ohms: 100, value: "100 Ω" },
+              {
+                arrangement: "parallel",
+                parts: [
+                  { component: "resistor", label: "R2", ohms: 200, value: "200 Ω" },
+                  { component: "resistor", label: "R3", ohms: 200, value: "200 Ω" },
+                ],
+              },
+            ],
+          },
+          equivalentOhms: 200,
+          kind: "circuit",
+          learningGoal: "Read series and parallel structure off a schematic",
+          supply: { label: "12 V" },
+        },
+      },
+      {
+        id: "b9j",
+        type: "paragraph",
+        content:
+          "A music theory course needs the staff itself: here is a four-bar phrase in G major, engraved from the ABC notation kept under the drawing.",
+        conceptIds: ["k5"],
+        // 🔴 THE §44 SCORE SHAPE. The engraving is computed client-side by the trusted library from
+        // exactly this string; the harness proves both themes can read the ink.
+        visual: {
+          abc: "X:1\nT:Phrase in G\nM:4/4\nL:1/4\nK:G\nD G A B|d2 B G|A B A F|G4|",
+          kind: "score",
+          learningGoal: "Follow a phrase on the staff, not just by ear",
+        },
+      },
+      {
+        id: "b9k",
+        type: "paragraph",
+        content:
+          "And multivariable calculus finally gets its third axis: the saddle z equals x squared minus y squared, computed on a grid by the server and turned by hand in the viewer.",
+        conceptIds: ["k5"],
+        // 🔴 THE §44 SURFACE SHAPE, GRID INCLUDED, exactly as the §45 compute pass stamps one. The
+        // grid is generated below at module scope — pure arithmetic, deterministic, no request.
+        visual: {
+          expression: "x^2 - y^2",
+          grid: SADDLE_GRID,
+          kind: "surface",
+          learningGoal: "See how the surface rises along x and falls along y",
+          xFrom: -2,
+          xTo: 2,
+          yFrom: -2,
+          yTo: 2,
+          zLabel: "z",
         },
       },
       { id: "b10", type: "heading", content: "Why this matters" },

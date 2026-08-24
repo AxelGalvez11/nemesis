@@ -17,7 +17,15 @@
 // generous side: over-estimating spreads labels slightly further apart than they need to be, and
 // under-estimating puts them back on top of each other.
 
-import type { ConstructionVisual, FlowVisual, TimelineVisual } from "./canvas-visual";
+import type {
+  CircuitComponent,
+  CircuitGroup,
+  CircuitPart,
+  CircuitVisual,
+  ConstructionVisual,
+  FlowVisual,
+  TimelineVisual,
+} from "./canvas-visual";
 
 /** Every visual is drawn into the same box, so they line up down the Canvas. */
 export const VISUAL_WIDTH = 640;
@@ -670,4 +678,213 @@ function unit(x: number, y: number, fallback: { x: number; y: number }): { x: nu
 /** Which way round an SVG arc goes between two rays, so it covers the angle rather than its reflex. */
 function sweep(a: { x: number; y: number }, b: { x: number; y: number }): 0 | 1 {
   return a.x * b.y - a.y * b.x > 0 ? 1 : 0;
+}
+
+// ── circuit ────────────────────────────────────────────────────────────────────────────────────
+//
+// 🔴 A SERIES/PARALLEL TREE LAYS OUT WITH SCHOOL ARITHMETIC, WHICH IS WHY THE SPEC IS A TREE. A
+// series group is its parts left to right with wire between them; a parallel group is its parts
+// stacked between two vertical rails; the whole network sits in the top side of a rectangular loop
+// with the supply in the bottom side, which is the drawing on the first page of every circuits
+// course. An arbitrary netlist would need an auto-router, and auto-routers draw wires through
+// components — the validator refuses what this arithmetic cannot place.
+
+/** The slot one component occupies, in natural units. The glyph draws its own leads across it. */
+const PART_W = 96;
+const PART_H = 40;
+/** Wire run between series neighbours. */
+const SERIES_GAP = 18;
+/** Vertical room between parallel branches: a value line below one, a label line above the next. */
+const BRANCH_GAP = 34;
+/** Stub from a parallel group's edge to its rail. */
+const RAIL_STUB = 24;
+/** Wire from a loop corner into the network. */
+const LOOP_LEAD = 26;
+/** Between the network and the return wire the supply sits on. */
+const LOOP_DROP = 46;
+/** The supply's slot on the return wire. */
+const SUPPLY_W = 72;
+/** Frame margin, and the room under the return wire for the supply's label. */
+const CIRCUIT_MARGIN = 10;
+const SUPPLY_LABEL_ROOM = 22;
+
+interface CircuitNodeSize {
+  readonly w: number;
+  readonly h: number;
+}
+
+export interface CircuitPartBox {
+  readonly component: CircuitComponent;
+  readonly label?: string;
+  readonly value?: string;
+  /** Centre of the slot, in final pixels. */
+  readonly cx: number;
+  readonly cy: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+export interface CircuitWire {
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+}
+
+export interface CircuitPlacement {
+  readonly height: number;
+  readonly wires: readonly CircuitWire[];
+  /** Junction dots, where three or more wires meet. */
+  readonly dots: readonly { x: number; y: number }[];
+  readonly parts: readonly CircuitPartBox[];
+  readonly supply: { cx: number; cy: number; w: number; h: number; label?: string } | null;
+  /** How far the natural drawing was shrunk to fit the column. 1 for most circuits. */
+  readonly scale: number;
+}
+
+function isCircuitGroup(part: CircuitPart | CircuitGroup): part is CircuitGroup {
+  return "arrangement" in part;
+}
+
+function measureCircuit(node: CircuitPart | CircuitGroup): CircuitNodeSize {
+  if (!isCircuitGroup(node)) return { h: PART_H, w: PART_W };
+  const sizes = node.parts.map(measureCircuit);
+  if (node.arrangement === "series") {
+    return {
+      h: Math.max(...sizes.map((size) => size.h)),
+      w: sizes.reduce((sum, size) => sum + size.w, 0) + SERIES_GAP * (sizes.length - 1),
+    };
+  }
+  return {
+    h: sizes.reduce((sum, size) => sum + size.h, 0) + BRANCH_GAP * (sizes.length - 1),
+    w: Math.max(...sizes.map((size) => size.w)) + 2 * RAIL_STUB,
+  };
+}
+
+interface CircuitDraft {
+  wires: CircuitWire[];
+  dots: { x: number; y: number }[];
+  parts: Array<{ component: CircuitComponent; label?: string; value?: string; cx: number; cy: number }>;
+}
+
+/** Place a node whose entry sits at (x, yc); current flows through to (x + width, yc). */
+function placeCircuit(node: CircuitPart | CircuitGroup, x: number, yc: number, draft: CircuitDraft): void {
+  if (!isCircuitGroup(node)) {
+    draft.parts.push({
+      component: node.component,
+      cx: x + PART_W / 2,
+      cy: yc,
+      ...(node.label ? { label: node.label } : {}),
+      ...(node.value ? { value: node.value } : {}),
+    });
+    return;
+  }
+
+  const sizes = node.parts.map(measureCircuit);
+  if (node.arrangement === "series") {
+    let cursor = x;
+    node.parts.forEach((part, index) => {
+      placeCircuit(part, cursor, yc, draft);
+      cursor += sizes[index]!.w;
+      if (index < node.parts.length - 1) {
+        draft.wires.push({ x1: cursor, x2: cursor + SERIES_GAP, y1: yc, y2: yc });
+        cursor += SERIES_GAP;
+      }
+    });
+    return;
+  }
+
+  const size = measureCircuit(node);
+  const innerW = size.w - 2 * RAIL_STUB;
+  const leftRail = x + RAIL_STUB;
+  const rightRail = x + size.w - RAIL_STUB;
+  draft.wires.push({ x1: x, x2: leftRail, y1: yc, y2: yc });
+  draft.wires.push({ x1: rightRail, x2: x + size.w, y1: yc, y2: yc });
+
+  let top = yc - size.h / 2;
+  const centres: number[] = [];
+  node.parts.forEach((part, index) => {
+    const branch = sizes[index]!;
+    const by = top + branch.h / 2;
+    centres.push(by);
+    const bx = leftRail + (innerW - branch.w) / 2;
+    // The rail-to-branch runs. Zero-length when the branch fills the rails, which draws nothing.
+    if (bx > leftRail) draft.wires.push({ x1: leftRail, x2: bx, y1: by, y2: by });
+    if (bx + branch.w < rightRail) draft.wires.push({ x1: bx + branch.w, x2: rightRail, y1: by, y2: by });
+    placeCircuit(part, bx, by, draft);
+    top += branch.h + BRANCH_GAP;
+  });
+
+  const first = centres[0]!;
+  const last = centres[centres.length - 1]!;
+  draft.wires.push({ x1: leftRail, x2: leftRail, y1: first, y2: last });
+  draft.wires.push({ x1: rightRail, x2: rightRail, y1: first, y2: last });
+  for (const by of centres) {
+    draft.dots.push({ x: leftRail, y: by });
+    draft.dots.push({ x: rightRail, y: by });
+  }
+}
+
+/**
+ * Lay a validated circuit out as wires, dots and component slots.
+ *
+ * 🔴 THE WHOLE DRAWING IS SCALED, NEVER REFLOWED. A circuit wider than the column shrinks uniformly
+ * — wire joins stay joined and nothing overlaps that did not already — where a reflow would be a
+ * second layout algorithm with its own defects. Text stays at reading size because the renderer
+ * draws it at fixed font sizes AT the scaled positions, which is also why label collisions at small
+ * scales are bounded by the part count the validator already caps.
+ */
+export function layoutCircuit(visual: CircuitVisual): CircuitPlacement {
+  const network = measureCircuit(visual.elements);
+  const draft: CircuitDraft = { dots: [], parts: [], wires: [] };
+  const hasSupply = visual.supply !== undefined;
+
+  const naturalW = network.w + 2 * LOOP_LEAD;
+  const yc = network.h / 2;
+  placeCircuit(visual.elements, LOOP_LEAD, yc, draft);
+  draft.wires.push({ x1: 0, x2: LOOP_LEAD, y1: yc, y2: yc });
+  draft.wires.push({ x1: LOOP_LEAD + network.w, x2: naturalW, y1: yc, y2: yc });
+
+  let naturalH = network.h;
+  let supplyCentre: { cx: number; cy: number } | null = null;
+  if (hasSupply) {
+    const returnY = network.h / 2 + Math.max(network.h / 2, PART_H / 2) + LOOP_DROP;
+    draft.wires.push({ x1: 0, x2: 0, y1: yc, y2: returnY });
+    draft.wires.push({ x1: naturalW, x2: naturalW, y1: yc, y2: returnY });
+    const cx = naturalW / 2;
+    draft.wires.push({ x1: 0, x2: cx - SUPPLY_W / 2, y1: returnY, y2: returnY });
+    draft.wires.push({ x1: cx + SUPPLY_W / 2, x2: naturalW, y1: returnY, y2: returnY });
+    supplyCentre = { cx, cy: returnY };
+    naturalH = returnY + PART_H / 2 + SUPPLY_LABEL_ROOM;
+  }
+
+  const scale = Math.min(1, (VISUAL_WIDTH - 2 * CIRCUIT_MARGIN) / naturalW);
+  const offsetX = (VISUAL_WIDTH - naturalW * scale) / 2;
+  const sx = (value: number) => offsetX + value * scale;
+  const sy = (value: number) => CIRCUIT_MARGIN + value * scale;
+
+  return {
+    dots: draft.dots.map((dot) => ({ x: sx(dot.x), y: sy(dot.y) })),
+    height: naturalH * scale + 2 * CIRCUIT_MARGIN,
+    parts: draft.parts.map((part) => ({
+      component: part.component,
+      cx: sx(part.cx),
+      cy: sy(part.cy),
+      h: PART_H * scale,
+      w: PART_W * scale,
+      ...(part.label ? { label: part.label } : {}),
+      ...(part.value ? { value: part.value } : {}),
+    })),
+    scale,
+    supply: supplyCentre
+      ? {
+          cx: sx(supplyCentre.cx),
+          cy: sy(supplyCentre.cy),
+          h: PART_H * scale,
+          w: SUPPLY_W * scale,
+          ...(visual.supply?.label ? { label: visual.supply.label } : {}),
+        }
+      : null,
+    wires: draft.wires.map((wire) => ({ x1: sx(wire.x1), x2: sx(wire.x2), y1: sy(wire.y1), y2: sy(wire.y2) })),
+  };
 }

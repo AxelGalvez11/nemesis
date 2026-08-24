@@ -1,13 +1,13 @@
 // The one thing that happens to a model's answer before anything parses it.
 //
-// 🔴 FOUR PASSES, ONE SEAM, AND THE ORDER MATTERS ONLY WHERE STATED. Structures resolve first,
-// then plots compute, because resolving a name REWRITES the prose — `[compound: aspirin]` becomes
-// `[smiles: CC(=O)…]` — and running the plot pass over the already-rewritten text keeps there
-// being exactly one version of the answer at every point. Figures and macromolecules rewrite only
-// their own `visual` objects and touch no prose, so they run after, in a fixed order chosen once.
-// Four seams in four files would have meant four chances for a caller to wire some and forget the
-// rest, which is the failure that left the first two layers unreachable for days after they were
-// built.
+// 🔴 FIVE PASSES, ONE SEAM, AND THE ORDER MATTERS ONLY WHERE STATED. Structures resolve first,
+// then plots and surfaces compute, because resolving a name REWRITES the prose — `[compound:
+// aspirin]` becomes `[smiles: CC(=O)…]` — and running the computing passes over the already-
+// rewritten text keeps there being exactly one version of the answer at every point. Figures and
+// macromolecules rewrite only their own `visual` objects and touch no prose, so they run after, in
+// a fixed order chosen once. Five seams in five files would have meant five chances for a caller
+// to wire some and forget the rest, which is the failure that left the first two layers
+// unreachable for days after they were built.
 //
 // 🔴🔴 EVERY PASS IS FREE WHEN THERE IS NOTHING TO DO. Each begins with a substring test over the
 // raw text, before any `JSON.parse` and before any network call, so a greeting, a correction, a
@@ -20,7 +20,9 @@
 // that came with it is not.
 
 import { collectComputedSeries, mightComputePlot } from "./computed-plot";
+import { collectSurfaceRequests, mightComputeSurface } from "./computed-surface";
 import { computePlots, type PlotComputeDeps } from "./plot-compute";
+import { computeSurfaces, type SurfaceComputeDeps } from "./surface-compute";
 import { resolveFigures, type FigureLookupDeps } from "./figure-lookup";
 import { collectFigureSubjects, mightResolveFigure } from "./figure-resolve";
 import { resolveMacromolecules, type MacromoleculeLookupDeps } from "./macromolecule-lookup";
@@ -33,6 +35,7 @@ export interface AnswerDeps {
   readonly macromolecules?: MacromoleculeLookupDeps;
   readonly plots?: PlotComputeDeps;
   readonly structures?: StructureLookupDeps;
+  readonly surfaces?: SurfaceComputeDeps;
 }
 
 /**
@@ -67,8 +70,13 @@ export async function prepareAnswer(
 
   const plots = onStep ? pendingPlots(resolved) : 0;
   if (plots > 0) onStep?.(plots === 1 ? "Working out the curve" : `Working out ${plots} curves`);
-  const computed = await computePlots(resolved, deps.plots, signal);
+  const flat = await computePlots(resolved, deps.plots, signal);
   if (plots > 0) onStep?.(null);
+
+  const surfaces = onStep ? pendingSurfaces(flat) : 0;
+  if (surfaces > 0) onStep?.(surfaces === 1 ? "Working out the surface" : `Working out ${surfaces} surfaces`);
+  const computed = await computeSurfaces(flat, deps.surfaces, signal);
+  if (surfaces > 0) onStep?.(null);
 
   const figures = onStep ? pendingFigures(computed) : 0;
   if (figures > 0) onStep?.(figures === 1 ? "Finding a licensed picture" : `Finding ${figures} licensed pictures`);
@@ -99,6 +107,16 @@ function pendingPlots(text: string): number {
   if (!mightComputePlot(text)) return 0;
   try {
     return collectComputedSeries(JSON.parse(text)).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** How many surfaces this answer asks to have computed. */
+function pendingSurfaces(text: string): number {
+  if (!mightComputeSurface(text)) return 0;
+  try {
+    return collectSurfaceRequests(JSON.parse(text)).length;
   } catch {
     return 0;
   }

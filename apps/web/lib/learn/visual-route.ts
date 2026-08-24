@@ -129,7 +129,20 @@ export type VisualRepresentation =
   | "timeline"
   | "construction"
   | "vectors"
-  | "code";
+  | "code"
+  /**
+   * The three shapes the owner's feasibility audit asked for by name (2026-08-24): a circuit laid
+   * out from a series/parallel tree, staff notation engraved from ABC, and a surface drawn from a
+   * server-computed grid.
+   *
+   * 🔴 RUNG TWO, ALL THREE, FOR THE SAME REASON AS THE FIVE ABOVE. Each is computed from a stated
+   * encoding by trusted code — the tree, the notation string, the grid — every claimed number
+   * (an equivalent resistance) is recomputed before drawing, and a surface's grid was produced by
+   * our own evaluator under §45's allow list, never written by a model.
+   */
+  | "circuit"
+  | "score"
+  | "surface";
 
 /** Why no visual was chosen, when nothing was wrong. */
 export type ProseReason =

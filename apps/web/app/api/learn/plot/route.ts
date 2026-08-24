@@ -22,7 +22,7 @@
 // caller can learn that a formula is unusable and why, in a named reason, and nothing else.
 import { NextResponse } from "next/server";
 
-import { curve, distributionCurve, type Segment } from "@/lib/learn/computed-series";
+import { curve, distributionCurve, surfaceGrid, type Segment } from "@/lib/learn/computed-series";
 import type { DistributionKind, DistributionSpec } from "@/lib/learn/statistics";
 
 export const runtime = "nodejs";
@@ -36,6 +36,14 @@ export const maxDuration = 15;
  * lesson.
  */
 const MAX_SERIES = 32;
+
+/**
+ * How many surfaces one request may compute.
+ *
+ * 🔴 SMALLER THAN THE SERIES BOUND BECAUSE THE COST IS SQUARED: one surface is 1,681 evaluations
+ * against a curve's 160, so four surfaces already out-cost a full plate of curves.
+ */
+const MAX_SURFACES = 4;
 
 /** The longest formula. `expression.ts` bounds this too; stating it here stops a long body early. */
 const MAX_EXPRESSION_LENGTH = 200;
@@ -117,6 +125,35 @@ function computeOne(entry: unknown): Result {
   return computed.ok ? { ok: true, segments: computed.value } : refuse(computed.reason, computed.detail);
 }
 
+type SurfaceRouteResult =
+  | { ok: true; grid: Array<Array<number | null>> }
+  | { ok: false; reason: string; detail: string };
+
+/** One surface: a formula of x and y over a rectangle, evaluated under the same allow list. */
+function computeOneSurface(entry: unknown): SurfaceRouteResult {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    return { detail: "a surface is not an object", ok: false, reason: "malformed-request" };
+  }
+  const request = entry as Record<string, unknown>;
+  const expression = typeof request.expression === "string" ? request.expression.trim() : "";
+  if (!expression || expression.length > MAX_EXPRESSION_LENGTH) {
+    return { detail: `an expression is 1–${MAX_EXPRESSION_LENGTH} characters`, ok: false, reason: "expression-unusable" };
+  }
+  const bound = (key: string): number | null =>
+    typeof request[key] === "number" && Number.isFinite(request[key]) ? (request[key] as number) : null;
+  const xFrom = bound("xFrom");
+  const xTo = bound("xTo");
+  const yFrom = bound("yFrom");
+  const yTo = bound("yTo");
+  if (xFrom === null || xTo === null || yFrom === null || yTo === null) {
+    return { detail: "a surface needs numeric xFrom, xTo, yFrom and yTo", ok: false, reason: "domain-unusable" };
+  }
+  const computed = surfaceGrid({ expression, xFrom, xTo, yFrom, yTo });
+  return computed.ok
+    ? { grid: computed.value, ok: true }
+    : { detail: computed.detail, ok: false, reason: computed.reason };
+}
+
 /**
  * Compute every series in one go.
  *
@@ -139,14 +176,21 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "expected a JSON body" }, { status: 400 });
   }
 
-  const series =
-    typeof body === "object" && body !== null && Array.isArray((body as Record<string, unknown>).series)
-      ? ((body as Record<string, unknown>).series as unknown[])
-      : null;
-  if (!series) return NextResponse.json({ error: "expected { series: [...] }" }, { status: 400 });
-  if (series.length > MAX_SERIES) {
+  const envelope = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null;
+  const series = envelope && Array.isArray(envelope.series) ? (envelope.series as unknown[]) : null;
+  const surfaces = envelope && Array.isArray(envelope.surfaces) ? (envelope.surfaces as unknown[]) : null;
+  if (!series && !surfaces) {
+    return NextResponse.json({ error: "expected { series: [...] } or { surfaces: [...] }" }, { status: 400 });
+  }
+  if (series && series.length > MAX_SERIES) {
     return NextResponse.json({ error: `at most ${MAX_SERIES} series` }, { status: 400 });
   }
+  if (surfaces && surfaces.length > MAX_SURFACES) {
+    return NextResponse.json({ error: `at most ${MAX_SURFACES} surfaces` }, { status: 400 });
+  }
 
-  return NextResponse.json({ results: series.map(computeOne) });
+  return NextResponse.json({
+    ...(series ? { results: series.map(computeOne) } : {}),
+    ...(surfaces ? { surfaces: surfaces.map(computeOneSurface) } : {}),
+  });
 }

@@ -8,7 +8,9 @@ import { layoutFlow, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/
 
 import { ChemicalStructure } from "./chemical-structure";
 import { Macromolecule } from "./macromolecule-viewer";
-import { CodeTrace, Construction, DataTable, Timeline, VectorDiagram } from "./subject-visual";
+import { MusicScore } from "./music-score";
+import { Circuit, CodeTrace, Construction, DataTable, Timeline, VectorDiagram } from "./subject-visual";
+import { SurfacePlot } from "./surface-plot";
 
 const WIDTH = VISUAL_WIDTH;
 const PLOT_HEIGHT = VISUAL_HEIGHT;
@@ -56,6 +58,9 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
       {visual.kind === "construction" ? <Construction visual={visual} /> : null}
       {visual.kind === "vectors" ? <VectorDiagram visual={visual} /> : null}
       {visual.kind === "code" ? <CodeTrace visual={visual} /> : null}
+      {visual.kind === "score" ? <MusicScore visual={visual} /> : null}
+      {visual.kind === "circuit" ? <Circuit visual={visual} /> : null}
+      {visual.kind === "surface" ? <SurfacePlot visual={visual} /> : null}
       {visual.caption && (
         <figcaption className="mt-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
           {visual.caption}

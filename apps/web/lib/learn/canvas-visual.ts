@@ -18,9 +18,15 @@ import type { CandidateAsset } from "./visual-provenance";
 import {
   SUBJECT_KINDS,
   validateSubjectVisual,
+  type CircuitComponent,
+  type CircuitGroup,
+  type CircuitPart,
+  type CircuitVisual,
   type CodeVisual,
   type ConstructionVisual,
+  type ScoreVisual,
   type SubjectVisual,
+  type SurfaceVisual,
   type TableVisual,
   type TimelineVisual,
   type VectorsVisual,
@@ -186,9 +192,15 @@ export interface MacromoleculeVisual extends CanvasVisualBase {
 }
 
 export type {
+  CircuitComponent,
+  CircuitGroup,
+  CircuitPart,
+  CircuitVisual,
   CodeVisual,
   ConstructionVisual,
+  ScoreVisual,
   SubjectVisual,
+  SurfaceVisual,
   TableVisual,
   TimelineVisual,
   VectorsVisual,

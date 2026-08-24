@@ -213,6 +213,68 @@ export function verifyEquilibrium(vectors: readonly Vector[], relative = 0.02): 
 }
 
 
+// ── circuits ───────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A resistance network, reduced to the one thing its arithmetic needs.
+ *
+ * 🔴 A SHAPE, NOT AN ELECTRONICS LIBRARY. "Values that add in series and add reciprocally in
+ * parallel" is resistors — and it is also springs in series, thermal resistance through layered
+ * walls, and pipe networks. The vocabulary here is the recursion and a number; which component the
+ * number belongs to is the caller's business.
+ */
+export type ResistanceNode =
+  | { readonly ohms: number }
+  | { readonly arrangement: "series" | "parallel"; readonly parts: readonly ResistanceNode[] };
+
+/**
+ * The equivalent resistance of a series/parallel network, or null when it cannot be computed.
+ *
+ * 🔴 A ZERO BRANCH SHORTS A PARALLEL GROUP TO ZERO rather than dividing by it. That is the physics
+ * and also the arithmetic limit: 1/(1/0 + …) → 0, and returning NaN for a correct circuit would
+ * refuse a true claim.
+ */
+export function equivalentResistance(node: ResistanceNode): number | null {
+  if ("ohms" in node) {
+    return Number.isFinite(node.ohms) && node.ohms >= 0 ? node.ohms : null;
+  }
+  if (node.parts.length === 0) return null;
+  const parts = node.parts.map(equivalentResistance);
+  if (parts.some((value) => value === null)) return null;
+  const values = parts as number[];
+  if (node.arrangement === "series") return values.reduce((sum, value) => sum + value, 0);
+  if (values.some((value) => value === 0)) return 0;
+  const reciprocal = values.reduce((sum, value) => sum + 1 / value, 0);
+  return reciprocal === 0 ? null : 1 / reciprocal;
+}
+
+/**
+ * Does a stated equivalent resistance match the network it was stated for?
+ *
+ * 🔴 THE SAME CONTRACT AS `verifyTotal`: the model asserts, this recomputes, a mismatch refuses.
+ * A claimed equivalent is the number the learner will be graded against — "what is the total
+ * resistance of this circuit?" is the first question every circuits course asks about a drawing
+ * like this one — so an unchecked claim here is an unchecked answer key.
+ *
+ * The tolerance is looser than the general one because equivalents are usually worked to three
+ * significant figures by hand: 26.7 Ω against a computed 26.666… must verify.
+ */
+export function verifyEquivalentResistance(node: ResistanceNode, stated: number, relative = 0.005): Verification {
+  if (!Number.isFinite(stated)) return fail("not-a-number", "the stated equivalent resistance is not a finite number");
+  const computed = equivalentResistance(node);
+  if (computed === null) {
+    return fail("nothing-to-check", "the network contains something with no resistance value, so the claim cannot be recomputed");
+  }
+  return agrees(computed, stated, relative)
+    ? { ok: true }
+    : fail("value-mismatch", `the network reduces to ${roundForReport(computed)} Ω, and the stated equivalent is ${stated} Ω`);
+}
+
+/** A computed value, shortened for a refusal message a person reads. */
+function roundForReport(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
 // ── algebra ────────────────────────────────────────────────────────────────────────────────────
 //
 // 🔴 SAMPLED, NOT PROVED, AND SAYING SO IS THE WHOLE POINT. Nemesis has no symbolic prover: what
