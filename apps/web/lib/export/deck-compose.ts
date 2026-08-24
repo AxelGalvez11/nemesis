@@ -26,7 +26,7 @@
 
 import type { DeckArt } from "./deck-art";
 import { mark as drawMark, type MarkKind } from "./deck-marks";
-import type { DeckDatum, DeckPlan, DeckSlide } from "./deck-plan";
+import type { DeckDatum, DeckFigure, DeckPlan, DeckSlide } from "./deck-plan";
 import {
   box,
   cells,
@@ -323,7 +323,7 @@ interface Page {
  * the body and every exhibit are laid out against, so a design can move its own margin without
  * a single composition needing to know.
  */
-function pageFrame(d: DeckDesign, ctx: Ctx, layout: DeckSlide["layout"] = "bullets"): Page {
+function pageFrame(d: DeckDesign, ctx: Ctx, layout: DeckSlide["layout"] = "bullets", hasFigure = false): Page {
   const base: Page = {
     background: d.paper,
     headWidth: CONTENT_W * 0.88,
@@ -408,9 +408,12 @@ function pageFrame(d: DeckDesign, ctx: Ctx, layout: DeckSlide["layout"] = "bulle
       // 🔴 ONLY WHERE THERE IS ROOM. A chart, a table or a row of figures needs the width of the
       // page; squeezing an exhibit into two-thirds of a slide to make space for decoration is a
       // worse deck, not a prettier one. On those layouts this page is simply a clean one.
+      // 🔴 THE LEARNER'S OWN DIAGRAM OUTRANKS THE DESIGN'S DECORATION. When a slide carries a
+      // figure from their material, this column stands down: a stock photograph and the picture
+      // the student actually needs to read, side by side, is three columns of nothing.
       const wordy = layout === "bullets" || layout === "two_column" || layout === "agenda";
       const shots = d.texture?.gallery ?? [];
-      if (!wordy || shots.length === 0) break;
+      if (!wordy || hasFigure || shots.length === 0) break;
       const column = 4.55;
       base.image = undefined;
       base.items.push({
@@ -1138,11 +1141,61 @@ function composeSection(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   };
 }
 
+// ── the learner's own figures ────────────────────────────────────────────────────────────────
+
+/**
+ * The figure this slide asked for, if the plan actually has it.
+ *
+ * 🔴 THE RANGE CHECK LIVES HERE, because this is the first place both halves are known: the plan
+ * reader validates that the model wrote a whole positive number, and the figure list is attached
+ * afterwards by the canvas. An index past the end means NO figure — a slide losing a picture is
+ * a poorer slide, and a slide gaining the wrong lecture diagram looks deliberate and is worse.
+ */
+function figureOf(plan: DeckPlan, slide: DeckSlide): DeckFigure | undefined {
+  if (!slide.figure || slide.figure < 1) return undefined;
+  return plan.figures[slide.figure - 1];
+}
+
+/**
+ * A figure drawn into `frame`, with its caption and where it came from underneath.
+ *
+ * 🔴 THE CAPTION PRINTS WHETHER OR NOT THE PICTURE DOES. A signature expires, storage can refuse,
+ * a learner can be signed out — and in every one of those cases the slide still says which
+ * diagram belonged here and which of their own documents it came from. An empty frame with no
+ * words is the failure the whole figure-asset layer was written to stop (see figure-asset-url.ts).
+ */
+function figurePlate(d: DeckDesign, figure: DeckFigure, frame: Box): SceneItem[] {
+  const items: SceneItem[] = [];
+  const capH = figure.caption.length > 70 ? 0.62 : 0.42;
+  const picture = box(frame.x, frame.y, frame.w, Math.max(0.8, frame.h - capH - 0.16));
+  items.push(rect(picture, mix(d.paper, d.ink, 0.05)));
+  if (figure.url) {
+    items.push({ box: picture, data: figure.url, kind: "image" });
+  } else {
+    items.push(
+      text("Figure unavailable", inset(picture, 0.2), d.fonts.body, T.note, d.muted, {
+        align: "center",
+        valign: "middle",
+      }),
+    );
+  }
+  items.push(hair(box(frame.x, picture.y + picture.h + 0.09, Math.min(0.9, frame.w * 0.3), 0), d.accent, 0.02));
+  items.push(
+    text(figure.caption, box(frame.x, picture.y + picture.h + 0.2, frame.w, capH), d.fonts.body, T.note, d.soft, {
+      lineSpacing: 1.16,
+    }),
+  );
+  items.push(
+    text(`From your ${figure.source}`, box(frame.x, frame.y + frame.h - 0.2, frame.w, 0.2), d.fonts.body, 7.5, d.muted),
+  );
+  return items;
+}
+
 // ── body slides ──────────────────────────────────────────────────────────────────────────────
 
 /** A list set with the design's own mark in front of each line (deck-marks.ts). The mark sits
  *  in its own column: a marker that shares a box with the words is how text gets blocked. */
-function markedList(d: DeckDesign, area: Box, points: string[], size = T.body): SceneItem[] {
+function markedList(d: DeckDesign, area: Box, points: string[], size: number = T.body): SceneItem[] {
   const items: SceneItem[] = [];
   const lines = rows(area, Math.max(points.length, 1), 0.14);
   const m = 0.18;
@@ -1157,13 +1210,39 @@ function markedList(d: DeckDesign, area: Box, points: string[], size = T.body): 
 
 function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const points = s.points.slice(0, 5);
-  const p = pageFrame(d, ctx, s.layout);
+  const carriesFigure = Boolean(figureOf(ctx.plan, s));
+  const p = pageFrame(d, ctx, s.layout, carriesFigure);
   const items: SceneItem[] = [...p.items];
   let background = p.background;
 
   // Designs whose body treatment owns the whole page draw their own header; the rest use the
   // shared one, which is what gives the set its institutional consistency.
   const ownsPage = d.body === "rail" || d.body === "panel-title" || d.body === "banner";
+
+  const figure = figureOf(ctx.plan, s);
+
+  if (figure) {
+    // 🔴 THE PICTURE TAKES A COLUMN, NOT THE DESIGN'S TREATMENT. Whatever this design does with a
+    // list — cards, chips, marks, a hanging rule — it keeps doing in the column it has left. A
+    // figure is content the learner brought; it must not silently replace the design.
+    //
+    // 🔴 AND IT APPLIES TO EVERY DESIGN, INCLUDING THE THREE THAT BUILD THEIR OWN PAGE. A rail, a
+    // title panel or a banner is a strong treatment, and on the handful of slides that carry the
+    // learner's own diagram it stands down in favour of the shared header — the design still
+    // brings its page furniture, its marks, its palette and its type. The alternative was three
+    // bespoke integrations of the same picture, and a design silently dropping a figure the model
+    // chose is the worse failure by far: Harbor did exactly that until a test asked.
+    const head = header(d, s, ctx, p, { titleWidth: p.width * 0.62 });
+    items.push(...head.items);
+    const area = contentArea(p, head.top);
+    const [left, right] = columns(area, 2, 0.5);
+    if (left && right) {
+      items.push(...markedList(d, left, points, points.length > 3 ? 11.5 : T.body));
+      items.push(...figurePlate(d, figure, right));
+    }
+    items.push(...footer(d, s, ctx, p));
+    return { background: { color: background, image: p.image }, items, motion: d.motion };
+  }
 
   if (!ownsPage) {
     const head = header(d, s, ctx, p);

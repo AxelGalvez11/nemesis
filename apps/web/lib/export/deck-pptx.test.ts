@@ -9,6 +9,7 @@ import { buildDeckPptx } from "./deck-pptx";
 // references slide appended, the fonts the design promises actually named in the XML.
 
 const PLAN: DeckPlan = {
+  figures: [],
   references: [{ title: "OpenStax Biology 2e", url: "https://openstax.org/books/biology-2e" }],
   slides: [
     { ...EMPTY_SLIDE, layout: "cover", subtitle: "sub", title: "Deck" },
@@ -59,4 +60,39 @@ test("a design id nobody recognises still produces a deck", async () => {
   const built = (await buildDeckPptx(PLAN, { credit: "x", designId: "design-from-a-future-release" })) as Buffer;
   assert.equal(built.subarray(0, 2).toString(), "PK");
   assert.ok(built.toString("latin1").includes("Georgia"), "the fallback is not the house design");
+});
+
+test("🔴 a learner's figure becomes BYTES, and its signed link does not travel", async () => {
+  // A .pptx is a file a student hands to a professor or a classmate. The figure bucket is
+  // private and a signed URL is a live, bearer-style key to one object in it — so the picture
+  // has to be inlined, and the link must not survive into the file. (It also could not work if
+  // it did: PowerPoint cannot reference anything outside the package, and the signature expires
+  // within the hour anyway.)
+  const asked: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string) => {
+    asked.push(String(url));
+    const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    return {
+      arrayBuffer: async () => bytes.buffer,
+      headers: { get: () => "image/png" },
+      ok: true,
+    };
+  }) as unknown as typeof globalThis.fetch;
+  try {
+    const link = "https://project.supabase.co/storage/v1/object/sign/library-images/uid/figures/z.png?token=SECRET";
+    const plan: DeckPlan = {
+      ...PLAN,
+      figures: [{ caption: "Figure 3. The Z-scheme", path: "uid/figures/z.png", source: "Lecture 4.pdf", url: link }],
+      slides: PLAN.slides.map((slide) => (slide.layout === "bullets" ? { ...slide, figure: 1 } : slide)),
+    };
+    const built = (await buildDeckPptx(plan, { credit: "Made with Nemesis", designId: "studio" })) as Buffer;
+    assert.ok(asked.some((url) => url.includes("SECRET")), "the figure was never fetched, so it cannot be in the file");
+    const text = built.toString("latin1");
+    assert.ok(!text.includes("SECRET"), "🔴 a signed link into the learner's private bucket shipped inside the .pptx");
+    assert.ok(!text.includes("supabase.co"), "🔴 the storage host shipped inside the .pptx");
+    assert.ok(text.includes("ppt/media/"), "the figure never became embedded media");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

@@ -13,6 +13,7 @@ import { measureText } from "./deck-svg";
 // boxes the layout hands out.
 
 const PLAN: DeckPlan = {
+  figures: [],
   references: [{ title: "Zhu, Long & Ort, Annual Review of Plant Biology" }, { title: "OpenStax Biology 2e" }],
   slides: [
     { ...EMPTY_SLIDE, layout: "cover", subtitle: "Where the energy goes, and what that costs the plant", title: "Photosynthesis" },

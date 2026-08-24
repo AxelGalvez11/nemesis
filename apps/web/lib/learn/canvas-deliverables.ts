@@ -25,6 +25,7 @@ import { writeLibraryNote } from "@/lib/workspace/library-write";
 import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 
 import { deckSystemPrompt, readDeckJson } from "../export/deck-plan";
+import { canvasFigures, figureMenu } from "./deck-figures";
 
 import type { CanvasOutput, LearningCanvas } from "./canvas-model";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
@@ -271,9 +272,18 @@ export async function makeSlidesDeliverable(
   if (!grounded && !subject) {
     return { error: "Give the deck a topic first: type what the slides should be about." };
   }
-  const brief = grounded
-    ? canvasBrief(canvas)
-    : `Topic: ${subject}\n\nThere is no attached material. Build the deck from your own knowledge of the topic, accurately and at student level.`;
+  // The learner's own diagrams, offered as a numbered menu. Only a grounded canvas can have any:
+  // a figure lives in storage, and a canvas with no filed source has nothing stored.
+  const figures = grounded ? await canvasFigures(canvas) : [];
+  const menu = figureMenu(figures);
+  const brief = [
+    grounded
+      ? canvasBrief(canvas)
+      : `Topic: ${subject}\n\nThere is no attached material. Build the deck from your own knowledge of the topic, accurately and at student level.`,
+    menu,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   const reply = await postChatCompletion(uid, [
     { content: deckSystemPrompt(), role: "system" },
     { content: brief, role: "user" },
@@ -281,6 +291,13 @@ export async function makeSlidesDeliverable(
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const plan = readDeckJson(reply.text);
   if (!plan) return { error: "The slide plan came back unusable, so nothing was saved. Try again." };
+  // 🔴 THE FIGURE LIST IS THE CANVAS'S, AND SO IS THE RANGE. The model answered with numbers; a
+  // number past the end of the real list is dropped here rather than carried into a saved plan,
+  // so a deck reopened next week cannot suddenly resolve it against a different list.
+  plan.figures = figures;
+  for (const slide of plan.slides) {
+    if (slide.figure > figures.length) slide.figure = 0;
+  }
   // References only from what the canvas really holds — never from the model.
   plan.references = grounded
     ? canvas.sources.slice(0, 10).map((source) => ({
