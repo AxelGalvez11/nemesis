@@ -293,6 +293,12 @@ function tokens(text: string): string[] {
 }
 
 function overlap(a: readonly string[], b: readonly string[]): number {
+  // 🔴 MATCHED CHARACTERS, NOT MATCHED WORDS, AND THE DIFFERENCE WAS MEASURED. Counting words
+  // scores "bacteriophage structure" the same against a bacteriophage row (matched on
+  // "bacteriophage") and a DNA-structure row (matched on "structure") — a tie the arrival order
+  // then decides, wrongly. A word's length is a cheap, dependency-free proxy for its specificity:
+  // the thirteen letters of "bacteriophage" now outweigh the nine of "structure", and generic
+  // glue words stop deciding matches they never should have.
   const set = new Set(b);
-  return a.filter((word) => set.has(word)).length;
+  return a.filter((word) => set.has(word)).reduce((score, word) => score + word.length, 0);
 }

@@ -209,3 +209,27 @@ test("🔴 a candidate found here still passes through the ladder's own licence 
   assert.equal(chosen.ok, false);
   assert.equal(chosen.ok === false && chosen.reason, "attribution-missing");
 });
+
+test("🔴 a specific word outweighs a generic one — measured on the shelf's own failure case", () => {
+  const rows: readonly CuratedEntry[] = [
+    {
+      assetPath: "registry/dna.png",
+      attribution: "A",
+      caption: "The DNA double helix.",
+      concepts: ["dna structure", "double helix"],
+      licence: "public-domain",
+      source: "x",
+    },
+    {
+      assetPath: "registry/phage.png",
+      attribution: "B",
+      caption: "A bacteriophage.",
+      concepts: ["bacteriophage micrograph"],
+      licence: "public-domain",
+      source: "x",
+    },
+  ];
+  // Word-count scoring tied these at one match each and let arrival order pick the DNA row.
+  const found = searchCurated({ concept: "bacteriophage structure" }, rows);
+  assert.equal(at(found).assetPath, "registry/phage.png");
+});

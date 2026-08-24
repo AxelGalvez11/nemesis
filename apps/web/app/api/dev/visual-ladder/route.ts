@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { resolveStructure } from "@/lib/learn/chem-resolver";
 import { findReferenceImages } from "@/lib/learn/reference-images";
 import { REFERENCE_REGISTRY } from "@/lib/learn/reference-registry";
+import { REFERENCE_SHELF } from "@/lib/learn/reference-shelf";
 import { validateCanvasVisual } from "@/lib/learn/canvas-visual";
 import { creditLineFor } from "@/lib/learn/visual-provenance";
 import { routeVisual, type VisualRouteInput } from "@/lib/learn/visual-route";
@@ -70,9 +71,12 @@ export async function POST(req: Request) {
   const operation = body.operation === "locate" ? ("locate" as const) : ("explain" as const);
 
   const structure = await resolveStructure(concept, { fetch: nodeFetch, timeoutMs: 8000 });
-  // The SHIPPED registry rides along, so the Lab reports exactly what production resolution sees —
-  // curated rows first, the live provider behind them.
-  const candidates = await findReferenceImages({ concept, limit: 4 }, { fetch: nodeFetch, registry: REFERENCE_REGISTRY });
+  // The SHIPPED registry and shelf ride along, so the Lab reports exactly what production
+  // resolution sees — hand-picked rows first, the harvested shelf behind them, the live provider last.
+  const candidates = await findReferenceImages(
+    { concept, limit: 4 },
+    { fetch: nodeFetch, registry: [...REFERENCE_REGISTRY, ...REFERENCE_SHELF] },
+  );
 
   // 🔴 A RESOLVED STRUCTURE BECOMES A REQUEST, NOT A DECISION. The Lab does not get to say "this is
   // rung 2"; it builds the same `structure` request a teaching model would emit and lets the router

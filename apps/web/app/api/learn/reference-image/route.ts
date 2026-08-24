@@ -13,7 +13,15 @@ import { NextResponse } from "next/server";
 
 import { findReferenceImages } from "@/lib/learn/reference-images";
 import { REFERENCE_REGISTRY } from "@/lib/learn/reference-registry";
+import { REFERENCE_SHELF } from "@/lib/learn/reference-shelf";
 import { chooseAsset } from "@/lib/learn/visual-provenance";
+
+/**
+ * Hand-picked rows first, then the harvested shelf — `searchCurated` sorts by match score and
+ * keeps arrival order on ties, so a hand-checked row always shadows a harvested one for the same
+ * concept, and both shadow the live provider.
+ */
+const CURATED = [...REFERENCE_REGISTRY, ...REFERENCE_SHELF];
 
 export const runtime = "nodejs";
 export const maxDuration = 20;
@@ -62,7 +70,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
       const candidates = await findReferenceImages(
         { concept: subject.trim(), limit: 4 },
-        { fetch: repositoryFetch, registry: REFERENCE_REGISTRY },
+        { fetch: repositoryFetch, registry: CURATED },
       );
       const choice = chooseAsset({ accuracyBearing: false, candidates });
       // 🔴 ONLY THE FIELDS THE SPEC CARRIES CROSS BACK. The provider objects hold tags and provider
