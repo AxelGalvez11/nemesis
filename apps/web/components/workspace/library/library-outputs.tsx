@@ -30,6 +30,7 @@ import {
   FolderPlus,
   Folder as FolderIcon,
   GraduationCap,
+  ImagePlus,
   Layers,
   MonitorPlay,
   NotebookText,
@@ -45,6 +46,7 @@ import {
 } from "@/components/desktop-ui/dropdown-menu";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { DeckReview } from "@/components/workspace/study/deck-review";
+import { DeckOcclusion } from "./deck-occlusion";
 import { DeckShare } from "./deck-share";
 import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
 import { fileOutput, type OutputKind } from "@/lib/workspace/library-filing";
@@ -133,6 +135,13 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   // 🔴 SHARING IS PUBLISHING, so it is one deliberate press on one named deck — never a default,
   // never applied in bulk. `sharing` holds the deck whose link panel is open.
   const [sharing, setSharing] = useState<DeckRow | null>(null);
+  /**
+   * The deck having image cards added to it.
+   *
+   * 🔴 UNMOUNTED UNTIL PRESSED, for the same reason `reviewing` is: the editor reaches
+   * `useCloudStudy()`, which loads every deck, card and review on the account.
+   */
+  const [occluding, setOccluding] = useState<DeckRow | null>(null);
   // 🔴 THE SHELF FILTER AND THE OPEN FOLDER ARE INDEPENDENT, AND BOTH ARE VIEW STATE ONLY. Neither
   // refetches: every row is already in hand (200 per shelf), so narrowing is a `filter` and
   // switching back is instant. A learner who files a deck and then changes the filter must not
@@ -421,6 +430,17 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                     label={`Move ${deck.name} to a folder`}
                     onFile={(folderId) => void file("deck", deck.id, folderId)}
                   />
+                  {/* 🔴 IMAGE OCCLUSION'S ONLY DOOR — see `deck-occlusion.tsx`. The editor has
+                      worked for weeks with nothing in the product able to open it. */}
+                  <button
+                    aria-label={`Add image cards to ${deck.name}`}
+                    className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+                    onClick={() => setOccluding(deck)}
+                    title="Add image cards"
+                    type="button"
+                  >
+                    <ImagePlus size={15} strokeWidth={1.8} />
+                  </button>
                   <button
                     aria-label={`Share ${deck.name}`}
                     className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
@@ -542,6 +562,9 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           2026-08-24). `study-extras.tsx` still exports both components and neither was deleted —
           this page simply no longer offers them. */}
       {sharing && <DeckShare deck={sharing} onClose={() => setSharing(null)} userId={userId} />}
+      {occluding && (
+        <DeckOcclusion deckId={occluding.id} deckName={occluding.name} onClose={() => setOccluding(null)} />
+      )}
     </main>
   );
 }

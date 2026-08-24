@@ -86,6 +86,28 @@ test("🔴🔴 Library folders are the SIDEBAR's folders, never a second tree", 
   assert.ok(!/library_folders/.test(OUTPUTS), "a second folder tree appeared");
 });
 
+test("🔴🔴🔴 image occlusion has a door that is not on the retired page", () => {
+  // Owner 2026-08-24: *"What about image occlusion? Can I do image occlusion?"* The answer was no,
+  // and not because it was unbuilt: `OcclusionEditor`, `OcclusionCardView`, the `image_occlusion`
+  // card type, the mask-suggest API and its migration all shipped and all work. Their ONLY door was
+  // `cards-tab.tsx`, mounted by exactly one page — `/study` — which has been retired behind
+  // `RetiredSurfaceGuard` for weeks. A whole authoring surface went dark when the page above it was
+  // retired, and nothing failed loudly enough for anyone to notice.
+  //
+  // 🔴 THE GUARD IS ON THE DOOR BEING SOMEWHERE REACHABLE, not on it being in any one place. If the
+  // Library stops being the home for this, the replacement must be a page a learner can open.
+  assert.match(OUTPUTS, /<DeckOcclusion/, "image occlusion lost its only door again");
+  assert.match(OUTPUTS, /\{occluding && \(/, "the occlusion editor is mounted before it is pressed");
+
+  const door = readFileSync(new URL("./deck-occlusion.tsx", import.meta.url), "utf8");
+  assert.match(door, /<OcclusionEditor/, "the Library grew its own occlusion editor");
+  // Same rule the Anki importer and the stats page are held to, one test up: mount the real thing.
+  assert.ok(
+    !/OcclusionShape|normalizeOcclusionRect|createOcclusionCards/.test(door),
+    "the Library door started deciding what a valid mask is",
+  );
+});
+
 test("🔴 filing waits for the write, and never guesses", () => {
   // The cross-account folder trigger can refuse a move. An optimistic update would leave the
   // learner looking at a folder their deck is not in until the next reload.
