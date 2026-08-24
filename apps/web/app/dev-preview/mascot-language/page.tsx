@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { BloubBot } from "@/components/bloub/bloub-bot";
 import { BloubDock } from "@/components/bloub/bloub-dock";
 import { usePoke } from "@/components/bloub/use-poke";
-import type { FaceId, HandId } from "@/lib/character/face";
+import type { FaceId } from "@/lib/character/face";
 import type { Station } from "@/lib/character/stations";
 import { lookAt } from "@/lib/mascot/attention";
 
@@ -33,7 +33,6 @@ function Stage() {
   const [marker, setMarker] = useState<"!" | "?" | null>(null);
   const [caption, setCaption] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
-  const [hand, setHand] = useState<HandId | null>(null);
   const [typed, setTyped] = useState("");
   const [reply, setReply] = useState("");
   const [chip, setChip] = useState(false);
@@ -50,7 +49,6 @@ function Stage() {
     setMarker(null);
     setCaption(null);
     setLeaving(false);
-    setHand(null);
     lookAt(null);
   };
 
@@ -97,8 +95,8 @@ function Stage() {
     [t + 3300, () => { setCaption(null); setLeaving(false); setStation("corner"); }],
   ];
 
-  /** The answer arrives: the words write in, it turns and reads its own answer, then the
-   *  glove pops out and points at it before everything melts back to rest. */
+  /** The answer arrives: the words write in, then it turns and reads its own answer for a
+   *  beat before coming back to the learner. */
   const answerSteps = (t: number): Step[] => {
     const write: Step[] = [];
     for (let i = 3; i <= ANSWER.length; i += 3) {
@@ -110,8 +108,6 @@ function Stage() {
       [t + 1650, () => setReply(ANSWER)],
       [t + 1750, () => lookAt(replyRef.current)],
       [t + 4350, () => lookAt(null)],
-      [t + 4500, () => setHand("point")],
-      [t + 6400, () => setHand(null)],
     ];
   };
 
@@ -133,19 +129,15 @@ function Stage() {
     },
     {
       name: "The answer arrives",
-      hint: "the words write in, it reads its own answer, then points at it",
+      hint: "the words write in, and it reads its own answer for a beat",
       fire: () => run("answer", answerSteps(0)),
     },
     {
       name: "Nemesis needs an answer from you",
-      hint: "the ? pops in and bobs until you answer — answering earns a thumbs-up",
+      hint: "the ? pops in over its head and bobs until you answer",
       fire: () => {
         if (marker === "?") {
-          run("answered", [
-            [0, rest],
-            [60, () => setHand("up")],
-            [1800, () => setHand(null)],
-          ]);
+          run("answered", [[0, rest]]);
         } else {
           timers.current.forEach(window.clearTimeout);
           rest();
@@ -207,7 +199,6 @@ function Stage() {
           contain
           face={face}
           gap={10}
-          hand={hand}
           left={24}
           marker={marker}
           station={station}
@@ -281,39 +272,6 @@ function LivePokeable() {
   );
 }
 
-function GloveLive() {
-  const [pose, setPose] = useState<HandId | null>(null);
-  const timers = useRef<number[]>([]);
-  useEffect(() => () => timers.current.forEach(window.clearTimeout), []);
-  const pop = (next: HandId) => {
-    timers.current.forEach(window.clearTimeout);
-    setPose(null);
-    timers.current = [
-      window.setTimeout(() => setPose(next), 60),
-      window.setTimeout(() => setPose(null), 2800),
-    ];
-  };
-  return (
-    <figure className="flex flex-col items-center gap-3">
-      <BloubBot hand={pose} size={148} state="idle" track />
-      <figcaption className="text-xs text-(--ui-text-secondary)">The glove, up close</figcaption>
-      <div className="flex gap-2">
-        {(["point", "up", "down"] as const).map((p) => (
-          <button
-            key={p}
-            className="rounded-lg border border-(--ui-stroke-secondary) px-3 py-1 text-xs text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)"
-            data-glove={p}
-            onClick={() => pop(p)}
-            type="button"
-          >
-            {p === "point" ? "Point" : p === "up" ? "Thumbs up" : "Thumbs down"}
-          </button>
-        ))}
-      </div>
-    </figure>
-  );
-}
-
 export default function MascotLanguagePage() {
   return (
     // data-workspace: outside it, the legacy stylesheet repaints every button as an accent
@@ -331,7 +289,6 @@ export default function MascotLanguagePage() {
 
       <section className="flex flex-wrap items-end gap-14">
         <LivePokeable />
-        <GloveLive />
         <figure className="flex flex-col items-center gap-3">
           <BloubBot face="reading" size={148} state="idle" track />
           <figcaption className="text-xs text-(--ui-text-secondary)">

@@ -32,7 +32,7 @@ import type { StateId } from "@/lib/bloub/states";
 
 import { BloubBot } from "./bloub-bot";
 import { usePoke } from "./use-poke";
-import type { FaceId, HandId } from "@/lib/character/face";
+import type { FaceId } from "@/lib/character/face";
 import { speedOf, stationOf, type Station } from "@/lib/character/stations";
 
 /** How often the anchor and the attention target are re-measured. */
@@ -155,8 +155,6 @@ export interface BloubDockProps {
    * is taken in. A poke's own face (the sigma) outranks it for the poke's short hold.
    */
   face?: FaceId | null;
-  /** The glove, popped out for a moment: pointing at something, or a thumbs up or down. */
-  hand?: HandId | null;
   hidden?: boolean;
   className?: string;
 }
@@ -175,7 +173,6 @@ export function BloubDock({
   centreScale = DOCK_CENTRE_SCALE,
   contain = false,
   face = null,
-  hand = null,
   hidden = false,
   className,
 }: BloubDockProps) {
@@ -380,7 +377,6 @@ export function BloubDock({
           aimAt={aimAt}
           color={accent}
           face={pokeFace ?? face}
-          hand={hand}
           onPoke={poke}
           size={size}
           speed={speedOf(shown)}

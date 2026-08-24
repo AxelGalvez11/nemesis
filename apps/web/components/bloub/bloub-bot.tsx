@@ -34,7 +34,7 @@ import { mixHex } from "@/lib/bloub/skins";
 
 import { CHARACTER_SHAPE, aimFor, arcStops, inkFor } from "@/lib/character/look";
 import { browFrame, raisedBrow } from "@/lib/character/brow";
-import { BRIDGE, GLOVE_CUFF, GLOVE_CUFF_SMALL, GLOVE_HAND, GLOVE_STROKE, GLOVE_THUMB, HAND_IN, LENS_ARM, LENS_RING, LENS_RX, LENS_RY, SIGMA_BROW_EYE, SMIRK, annulusPath, arrival, gloveTransform, type FaceId, type HandId } from "@/lib/character/face";
+import { SIGMA_BROW_EYE, SMIRK, SPECS, annulusPath, arrival, type FaceId } from "@/lib/character/face";
 import { capsulePath } from "@/lib/bloub/shape";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
@@ -125,13 +125,6 @@ export interface BloubBotProps {
   waggle?: boolean;
   /** A face from OUR layer (reading glasses, the sigma). Omitted is the plain rest face. */
   face?: FaceId | null;
-  /**
-   * 🔴 PROTOTYPE (owner 2026-08-24: "add, like, a hand so that it can point at things").
-   * A mitt and a finger at the body's upper-right edge. Unlike the face it CANNOT be a mask
-   * hole — it reaches outside the silhouette — so it is ink drawn in front. Wired only on
-   * the review board until the owner approves the look; pointing AT things comes after.
-   */
-  hand?: HandId | null;
   /** Freeze at this many seconds into the state. Reproducible; no loop is started. */
   frozenAt?: number;
   /** Playback rate. 0 pauses the scene clock. */
@@ -150,7 +143,6 @@ export function BloubBot({
   expression = "neutre",
   waggle = false,
   face = null,
-  hand = null,
   paper,
   track = false,
   aimAt = null,
@@ -177,9 +169,7 @@ export function BloubBot({
   const browRefs = useRef<(SVGPathElement | null)[]>([]);
   const lensRefs = useRef<(SVGPathElement | null)[]>([]);
   const armRefs = useRef<(SVGPathElement | null)[]>([]);
-  const handGroupRef = useRef<SVGGElement | null>(null);
-  const handPathRef = useRef<SVGPathElement | null>(null);
-  const cuffPathRef = useRef<SVGPathElement | null>(null);
+  const specsGroupRef = useRef<SVGGElement | null>(null);
   const bridgeRef = useRef<SVGPathElement | null>(null);
   const mouthRef = useRef<SVGPathElement | null>(null);
   const notchRef = useRef<SVGCircleElement | null>(null);
@@ -207,8 +197,8 @@ export function BloubBot({
 
   // Resolved once per render and read by the loop, so the loop never re-subscribes.
   const ink = inkFor(color, typeof document !== "undefined" ? document.documentElement.dataset.theme : undefined);
-  const live = useRef({ ink, paper: paper ?? "", speed, track, aimAt, entrance, face, hand });
-  live.current = { ink, paper: paper ?? "", speed, track, aimAt, entrance, face, hand };
+  const live = useRef({ ink, paper: paper ?? "", speed, track, aimAt, entrance, face });
+  live.current = { ink, paper: paper ?? "", speed, track, aimAt, entrance, face };
 
   /**
    * Writes one frame onto the DOM.
@@ -217,21 +207,17 @@ export function BloubBot({
    * members are parked at `display: none` rather than removed, so the node count is
    * constant for the lifetime of the component.
    */
-  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null, handId: HandId | null, handAt: number | null) => {
-    const handGroup = handGroupRef.current;
-    if (handGroup) {
-      if (handId) {
-        handGroup.style.display = "";
-        handGroup.setAttribute("fill", paperHex);
-        handGroup.setAttribute("stroke", inkHex);
-        // Which drawing this pose wears — the pointing hand or the thumb fist. Set per frame
-        // for the same reason as the colours: the pose can change while the group is showing.
-        handPathRef.current?.setAttribute("d", handId === "point" ? GLOVE_HAND : GLOVE_THUMB);
-        cuffPathRef.current?.setAttribute("d", handId === "point" ? GLOVE_CUFF : GLOVE_CUFF_SMALL);
-        // The pop from behind the shoulder — same arrival easing as the faces, its own span.
-        handGroup.setAttribute("transform", gloveTransform(arrival(handAt, HAND_IN), handId));
+  const paint = (frame: BotFrame, inkHex: string, paperHex: string, browAt: number | null, faceId: FaceId | null, faceAt: number | null) => {
+    // The spectacles' front group: shown while reading, in the theme-proof pair every front
+    // feature wears — paper fill, ink edge. Colours are per-frame like the body's own.
+    const specs = specsGroupRef.current;
+    if (specs) {
+      if (faceId === "reading") {
+        specs.style.display = "";
+        specs.setAttribute("fill", paperHex);
+        specs.setAttribute("stroke", inkHex);
       } else {
-        handGroup.style.display = "none";
+        specs.style.display = "none";
       }
     }
     maskBodyRef.current?.setAttribute("d", frame.bodyPath);
@@ -249,7 +235,7 @@ export function BloubBot({
     const enter = arrival(faceAt);
     const brow = browAt !== null ? browFrame(browAt) : sigma ? raisedBrow(enter) : null;
     const browPath = brow ? capsulePath(brow.w * RAYON, brow.h * RAYON) : "";
-    const lensPath = faceId === "reading" ? annulusPath(LENS_RX * RAYON, LENS_RY * RAYON, LENS_RING * RAYON) : "";
+    const lensPath = faceId === "reading" ? annulusPath(SPECS.r * RAYON, SPECS.r * RAYON, SPECS.ring * RAYON) : "";
     const lensEnter = ` scale(${(0.75 + 0.25 * enter).toFixed(3)})`;
 
     for (let i = 0; i < 2; i += 1) {
@@ -280,7 +266,9 @@ export function BloubBot({
         } else {
           lensNode.style.display = "";
           lensNode.setAttribute("d", lensPath);
-          lensNode.setAttribute("transform", eye.matrix + lensEnter);
+          // Worn ON the face: centred just below the eye's centre, the frame crossing the
+          // eye — the eye's top showing over the rim is what says "spectacles".
+          lensNode.setAttribute("transform", `${eye.matrix} translate(0,${(SPECS.dy * RAYON).toFixed(2)})` + lensEnter);
           lensNode.setAttribute("opacity", String(eye.alpha));
         }
       }
@@ -293,10 +281,10 @@ export function BloubBot({
         } else {
           const sign = i === 0 ? -1 : 1;
           armNode.style.display = "";
-          armNode.setAttribute("d", capsulePath(LENS_ARM.len * RAYON, LENS_ARM.h * RAYON));
+          armNode.setAttribute("d", capsulePath(SPECS.arm.len * RAYON, SPECS.ring * RAYON));
           armNode.setAttribute(
             "transform",
-            `${eye.matrix} translate(${(sign * (LENS_RX + LENS_ARM.len / 2) * RAYON).toFixed(2)},${(LENS_ARM.dy * RAYON).toFixed(2)})${lensEnter}`,
+            `${eye.matrix} translate(${(sign * (SPECS.r + SPECS.arm.len / 2 + 0.02) * RAYON).toFixed(2)},${((SPECS.dy + SPECS.arm.dy) * RAYON).toFixed(2)})${lensEnter}`,
           );
           armNode.setAttribute("opacity", String(eye.alpha));
         }
@@ -339,10 +327,10 @@ export function BloubBot({
         bridge.style.display = "none";
       } else {
         bridge.style.display = "";
-        bridge.setAttribute("d", capsulePath(BRIDGE.w * RAYON, BRIDGE.h * RAYON));
+        bridge.setAttribute("d", capsulePath(SPECS.bridge.w * RAYON, SPECS.ring * RAYON));
         bridge.setAttribute(
           "transform",
-          `${anchorEye.matrix} translate(${(BRIDGE.dx * RAYON).toFixed(2)},${(BRIDGE.dy * RAYON).toFixed(2)})${lensEnter}`,
+          `${anchorEye.matrix} translate(${(SPECS.bridge.dx * RAYON).toFixed(2)},${(SPECS.bridge.dy * RAYON).toFixed(2)})${lensEnter}`,
         );
         bridge.setAttribute("opacity", String(anchorEye.alpha));
       }
@@ -472,14 +460,6 @@ export function BloubBot({
     faceSeenRef.current = face;
     faceFromRef.current = face ? clockRef.current : null;
   }
-  // The glove's own clock, for the pop — stamped the render the hand (or its pose) changes,
-  // so switching point → thumbs-up pops the new pose rather than teleporting it.
-  const handSeenRef = useRef<HandId | null>(null);
-  const handFromRef = useRef<number | null>(null);
-  if (hand !== handSeenRef.current) {
-    handSeenRef.current = hand;
-    handFromRef.current = hand ? clockRef.current : null;
-  }
   const waggledRef = useRef(false);
   if (waggle !== waggledRef.current) {
     waggledRef.current = waggle;
@@ -529,10 +509,10 @@ export function BloubBot({
     // 🔴 HELD AT ITS CHARACTERISTIC INSTANT, NOT FROZEN AT ZERO. Every animation
     // publishes the moment it reads best (`POSES`), and holding that is what keeps
     // `thinking` legible as three dots rather than as a ball caught before it split.
-    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null, face, null, hand, null);
+    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, resolvedPaper(), null, face, null);
     // Redrawn whenever the look changes, since nothing else will redraw it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [still, frozenAt, state, color, expression, paper, face, hand]);
+  }, [still, frozenAt, state, color, expression, paper, face]);
 
   useLayoutEffect(() => {
     if (still) return;
@@ -618,8 +598,6 @@ export function BloubBot({
         from === null ? null : clockRef.current - from,
         live.current.face,
         faceFromRef.current === null ? null : clockRef.current - faceFromRef.current,
-        live.current.hand,
-        handFromRef.current === null ? null : clockRef.current - handFromRef.current,
       );
     };
 
@@ -661,7 +639,9 @@ export function BloubBot({
               fill="#000"
             />
           ))}
-          {/* Our face layer: brows, lenses, mouth — holes like the eyes, parked until worn. */}
+          {/* Our face layer: brows and the mouth — holes like the eyes, parked until worn.
+              The spectacles are NOT here: they overlap the eyes, and two holes that overlap
+              melt into one shape — they are painted in front instead, below. */}
           {[0, 1].map((i) => (
             <path
               key={`brow-${i}`}
@@ -673,30 +653,6 @@ export function BloubBot({
               style={{ display: "none" }}
             />
           ))}
-          {[0, 1].map((i) => (
-            <path
-              key={`lens-${i}`}
-              ref={(el) => {
-                lensRefs.current[i] = el;
-              }}
-              d=""
-              fill="#000"
-              fillRule="evenodd"
-              style={{ display: "none" }}
-            />
-          ))}
-          {[0, 1].map((i) => (
-            <path
-              key={`arm-${i}`}
-              ref={(el) => {
-                armRefs.current[i] = el;
-              }}
-              d=""
-              fill="#000"
-              style={{ display: "none" }}
-            />
-          ))}
-          <path ref={bridgeRef} d="" fill="#000" style={{ display: "none" }} />
           <path ref={mouthRef} d="" fill="#000" style={{ display: "none" }} />
           <circle ref={notchRef} cx={0} cy={0} r={0} fill="#000" style={{ display: "none" }} />
         </mask>
@@ -761,23 +717,36 @@ export function BloubBot({
         </g>
       </g>
 
-      {/* 🔴 THE GLOVE (owner 2026-08-24: "the classic white glove, like in the cartoons, but
-          minimalist"). A drawn silhouette this time — the first attempt was three floating
-          capsules and the owner's verdict was exact ("the hand looks so weird"). The geometry
-          lives in lib/character/face.ts with the rest of the language; paper fill and ink
-          outline flip with the theme, the cuff's stroke crossing the wrist is the seam, and
-          `paint` drives its entrance transform so it POPS out from behind the body rather than
-          appearing. It reaches outside the silhouette, so it cannot be a mask hole; it is
-          painted in front. */}
-      <g
-        ref={handGroupRef}
-        strokeWidth={GLOVE_STROKE}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ display: "none" }}
-      >
-        <path ref={handPathRef} d={GLOVE_HAND} />
-        <path ref={cuffPathRef} d={GLOVE_CUFF} />
+      {/* 🔴 THE SPECTACLES, painted IN FRONT of the body (owner 2026-08-25: the hole-cut
+          rings "look a bit weird"). Worn on the face like real reading glasses — the frame
+          crosses the eyes and the eyes show over the rim — which no mask hole can do: a hole
+          overlapping the eye hole melts into it. Paper fill with an ink edge, so the frame
+          reads against the body AND against the eye it crosses, in both themes. Every part
+          still rides the eyes' own matrices (set per frame in `paint`), so the glasses turn,
+          foreshorten and vanish round the back exactly as the eyes do. */}
+      <g ref={specsGroupRef} strokeWidth={SPECS.stroke * RAYON} strokeLinejoin="round" style={{ display: "none" }}>
+        {[0, 1].map((i) => (
+          <path
+            key={`lens-${i}`}
+            ref={(el) => {
+              lensRefs.current[i] = el;
+            }}
+            d=""
+            fillRule="evenodd"
+            style={{ display: "none" }}
+          />
+        ))}
+        {[0, 1].map((i) => (
+          <path
+            key={`arm-${i}`}
+            ref={(el) => {
+              armRefs.current[i] = el;
+            }}
+            d=""
+            style={{ display: "none" }}
+          />
+        ))}
+        <path ref={bridgeRef} d="" style={{ display: "none" }} />
       </g>
 
       {/* Every other dot — the thinking trio, the tear of the "!" — sits in front. */}
