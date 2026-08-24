@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { deckArtPng, paintDeckArt, rgbToPng, type DeckArt } from "./deck-art";
+import { deckArtPng, deckArtThumb, paintDeckArt, rgbToPng, type DeckArt } from "./deck-art";
 
 // The art engine has to keep three promises: it produces a real PNG, it produces the SAME PNG
 // on every machine (the deck is a deterministic function of plan + theme, and a download that
@@ -54,4 +54,15 @@ test("grain varies DOWN a column, not just across", () => {
   const values = new Set<number>();
   for (let y = 0; y < 64; y += 1) values.add(flat[(y * 64 + column) * 3] ?? 0);
   assert.ok(values.size > 2, "every pixel down this column is identical — grain is 1-D again");
+});
+
+test("picker thumbnails are the same art, cheap enough to paint twenty when a menu opens", async () => {
+  const uri = await deckArtThumb(ART);
+  const png = Buffer.from(uri.slice(uri.indexOf(",") + 1), "base64");
+  const view = new DataView(png.buffer, png.byteOffset);
+  assert.equal(view.getUint32(16), 64, "thumbnail width changed — the picker rows will jump");
+  assert.equal(view.getUint32(20), 36, "thumbnail height changed");
+  assert.ok(png.length < 8_000, `a thumbnail grew to ${png.length} bytes`);
+  const full = await deckArtPng(ART);
+  assert.notEqual(uri, full, "the thumbnail is the full-size background — the picker will crawl");
 });

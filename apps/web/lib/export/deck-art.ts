@@ -52,6 +52,10 @@ export interface DeckArt {
 
 const ART_W = 360;
 const ART_H = 203;
+/** Thumbnails for the theme picker: the SAME painter, so what the learner browses is what the
+ *  file will look like — a hand-drawn approximation would eventually drift from the real art. */
+const THUMB_W = 64;
+const THUMB_H = 36;
 
 /** #rrggbb (or rrggbb) → [r, g, b]. */
 function rgbOf(hex: string): [number, number, number] {
@@ -272,11 +276,19 @@ export async function rgbToPng(rgb: Uint8Array, width: number, height: number): 
 const CACHE = new Map<string, Promise<string>>();
 
 /** The product's entry point: an art recipe in, a `data:image/png;base64,…` string out. */
-export function deckArtPng(art: DeckArt): Promise<string> {
-  const key = JSON.stringify(art);
+export function deckArtPng(art: DeckArt, width = ART_W, height = ART_H): Promise<string> {
+  const key = `${width}x${height}:${JSON.stringify(art)}`;
   const hit = CACHE.get(key);
   if (hit) return hit;
-  const made = rgbToPng(paintDeckArt(art), ART_W, ART_H).then((png) => `data:image/png;base64,${base64(png)}`);
+  const made = rgbToPng(paintDeckArt(art, width, height), width, height).then(
+    (png) => `data:image/png;base64,${base64(png)}`,
+  );
   CACHE.set(key, made);
   return made;
+}
+
+/** A picker-sized version of the same art — about a thousandth of the pixels, so twenty of
+ *  them paint in a few milliseconds when the menu opens. */
+export function deckArtThumb(art: DeckArt): Promise<string> {
+  return deckArtPng(art, THUMB_W, THUMB_H);
 }
