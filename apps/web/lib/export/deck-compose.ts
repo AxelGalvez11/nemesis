@@ -25,6 +25,7 @@
 // the same scene for review.
 
 import type { DeckArt } from "./deck-art";
+import { mark as drawMark, type MarkKind } from "./deck-marks";
 import type { DeckDatum, DeckPlan, DeckSlide } from "./deck-plan";
 import {
   box,
@@ -40,6 +41,7 @@ import {
   type Box,
   type Scene,
   type SceneItem,
+  type SceneMotion,
 } from "./deck-scene";
 
 export type CoverKind =
@@ -78,6 +80,55 @@ export type QuoteKind = "mark" | "band" | "rule" | "panel";
 /** How much page furniture a design wears: the institutional ones wear all of it. */
 export type ChromeKind = "full" | "light" | "none";
 
+/**
+ * The INTERIOR page's own character.
+ *
+ * 🔴 THE OWNER'S SECOND VERDICT, AND WHY THIS TYPE EXISTS (2026-08-24): *"it pretty much just
+ * looks like the same thing after the title slide… It looks pretty much like the same
+ * PowerPoint, except just with different colors."* Correct, and the cause was structural: every
+ * design shared one interior grid. The cover was recomposed thirty-four ways and then slide 4
+ * of every deck was the same white page with the same margins and the same header in a
+ * different colour.
+ *
+ * A page kind changes the GRID — where the margin is, what lives in it, what the ground is —
+ * so two designs differ on the slides a reader actually spends their time on.
+ *
+ * Every one of these lives in the MARGINS. That is not a stylistic preference: page furniture
+ * that wanders into the content column is how "the shapes are blocking the text" happens, and
+ * a decorative rail cannot be allowed to reintroduce the defect the collision tests were
+ * written to kill.
+ */
+export type PageKind =
+  | "clean"
+  | "rail"
+  | "margin"
+  | "corner"
+  | "tint"
+  | "tab"
+  | "dots"
+  | "frame"
+  | "edge"
+  | "foot";
+
+/** How an exhibit — a chart, a table, a row of figures — is dressed. The exhibits used to be
+ *  identical across every design, which is most of why the interiors read as one deck. */
+export type ExhibitKind = "open" | "framed" | "tinted" | "ruled" | "card";
+
+/**
+ * How the FIGURES THEMSELVES are drawn.
+ *
+ * 🔴 DRESSING AN IDENTICAL CHART IS NOT VARIETY. The first pass at this gave each design its
+ * own frame, tint or rule around the exhibit — and every deck still drew the same five bars in
+ * the same places, which is precisely the complaint. A plot style changes the marks on the
+ * page: a bar, a bar over its own track, a stem topped with the design's mark, a solid block
+ * with the figure set inside it, an outline.
+ *
+ * 🔴 AND IT NEVER CHANGES WHAT THE NUMBERS SAY. Every style is a faithful plot of the same
+ * values against the same maximum, with the smallest value still visible. A style that flattered
+ * the data would be a lie told in the product's own voice.
+ */
+export type PlotKind = "column" | "track" | "lollipop" | "block" | "outline";
+
 export interface DeckDesign {
   id: string;
   name: string;
@@ -100,6 +151,16 @@ export interface DeckDesign {
   stat: StatKind;
   quote: QuoteKind;
   chrome: ChromeKind;
+  /** The interior grid and its furniture — see PageKind. */
+  page: PageKind;
+  /** How charts, tables and figure rows are dressed. */
+  exhibit: ExhibitKind;
+  /** How the figures inside an exhibit are drawn. */
+  plot: PlotKind;
+  /** The design's own mark, repeated wherever a list needs a marker (deck-marks.ts). */
+  mark: MarkKind;
+  /** How the deck moves when it is presented in the app. The .pptx export is always still. */
+  motion?: SceneMotion;
   art?: { cover?: DeckArt; section?: DeckArt; closing?: DeckArt };
   /** Real material or photography, by app-relative URL. A design that sets `scrim` gets a wash
    *  of its own dark colour over the picture — the difference between a title that sits ON a
@@ -108,6 +169,16 @@ export interface DeckDesign {
     cover?: string;
     section?: string;
     closing?: string;
+    /** Material for the INTERIOR pages. Light materials only — paper, linen, canvas: the page
+     *  ink is chosen for `paper`, so a dark interior material would swallow the words. */
+    page?: string;
+    /** How much of the design's own paper is laid OVER that interior material, 0-100.
+     *  🔴 AN INTERIOR MATERIAL MUST BE A WHISPER. A cover carries six words and can take a
+     *  photograph at full strength; an interior carries a title, a takeaway, five points, a
+     *  footnote and a page number, and raw canvas at full strength buried every one of them.
+     *  Declared per design because the right amount depends entirely on the material: a faint
+     *  graph rule wants a light wash, a coarse weave wants a heavy one. */
+    pageScrim?: number;
     scrim?: number;
     /** Whether the cover picture is DARK. A composition cannot see its own background, and a
      *  cover built for paper paints its title in the page ink — which is invisible on slate.
@@ -220,6 +291,125 @@ function figure(value: number, unit: string): string {
   return unit === "%" || unit === "x" ? `${shown}${unit}` : unit ? `${shown} ${unit}` : shown;
 }
 
+// ── the interior page ────────────────────────────────────────────────────────────────────────
+
+/** The grid one design gives its interior slides, and the furniture that dresses it. */
+interface Page {
+  /** Drawn UNDER the content, always in the margins. */
+  items: SceneItem[];
+  left: number;
+  width: number;
+  /** Where the header may start. */
+  top: number;
+  /** How wide a title may run before it would reach the page's own furniture. */
+  headWidth: number;
+  background: string;
+  image?: string;
+  /** Designs whose footer sits inside a coloured band at the foot of the page. */
+  foot?: { band: Box; ink: string; rule: string };
+}
+
+/**
+ * The interior grid, per design. See PageKind for why this exists at all.
+ *
+ * Everything drawn here is margin furniture. The content column it returns is what the header,
+ * the body and every exhibit are laid out against, so a design can move its own margin without
+ * a single composition needing to know.
+ */
+function pageFrame(d: DeckDesign, ctx: Ctx): Page {
+  const base: Page = {
+    background: d.paper,
+    headWidth: CONTENT_W * 0.88,
+    image: d.texture?.page,
+    items: [],
+    left: M,
+    top: TOP,
+    width: CONTENT_W,
+  };
+  const faint = mix(d.paper, d.ink, 0.13);
+  // The wash over an interior material, before any furniture is drawn on top of it.
+  if (base.image) base.items.push(rect(box(0, 0, SLIDE_W, SLIDE_H), d.paper, 100 - (d.texture?.pageScrim ?? 72)));
+  switch (d.page) {
+    case "rail": {
+      // A rail down the binding edge. The oldest trick in report design and still the fastest
+      // way to make a page look made rather than typed.
+      base.items.push(rect(box(0, 0, 0.2, SLIDE_H), d.accent));
+      base.items.push(rect(box(0.2, 0, 0.04, SLIDE_H), mix(d.paper, d.ink, 0.1)));
+      base.left = M + 0.42;
+      base.width = CONTENT_W - 0.42;
+      break;
+    }
+    case "margin": {
+      // An editorial margin column: a rule, and the page's own number set in it. Content moves
+      // right, which is the single most legible way one design stops looking like another.
+      const railX = M + 1.15;
+      base.items.push(hair(box(railX, TOP - 0.1, 0, SLIDE_H - TOP - 1.0), faint, 0.006));
+      // The design's mark, at the size the margin gives it. Setting the page NUMBER here read
+      // as a stutter: the eyebrow two inches away already says which exhibit this is.
+      base.items.push(...drawMark(d.mark, box(railX - 0.46, TOP + 0.02, 0.34, 0.34), d.accent));
+      base.left = railX + 0.34;
+      base.width = SLIDE_W - base.left - M;
+      base.headWidth = base.width * 0.9;
+      break;
+    }
+    case "corner": {
+      // A wedge in the corner the content never reaches. The title is narrowed to guarantee it.
+      base.items.push({ box: box(SLIDE_W - 1.6, 0, 1.6, 1.6), fill: d.accent, kind: "shape", rotate: 180, shape: "rtTriangle" });
+      base.headWidth = CONTENT_W * 0.72;
+      break;
+    }
+    case "tint": {
+      // The whole page carries a breath of the accent. Warm, domestic, and completely safe:
+      // nothing is drawn, so nothing can collide.
+      base.background = mix(d.paper, d.accent, 0.07);
+      break;
+    }
+    case "tab": {
+      // A tab off the top edge, the way a printed report marks its section.
+      base.items.push(rect(box(M, 0, 1.25, 0.26), d.accent));
+      break;
+    }
+    case "dots": {
+      for (let i = 0; i < 13; i += 1) {
+        base.items.push({
+          alpha: 62,
+          box: box(SLIDE_W - 0.46, 1.05 + i * 0.42, 0.075, 0.075),
+          fill: d.accent,
+          kind: "shape",
+          shape: "ellipse",
+        });
+      }
+      base.width = CONTENT_W - 0.22;
+      base.headWidth = base.width * 0.86;
+      break;
+    }
+    case "frame": {
+      base.items.push({ box: inset(box(0, 0, SLIDE_W, SLIDE_H), 0.3), kind: "shape", line: { color: faint, width: 0.006 }, shape: "rect" });
+      base.left = M + 0.16;
+      base.width = CONTENT_W - 0.32;
+      break;
+    }
+    case "edge": {
+      base.items.push(rect(edgeBand("right", 0.3), d.accent));
+      base.width = CONTENT_W - 0.42;
+      base.headWidth = base.width * 0.86;
+      break;
+    }
+    case "foot": {
+      // The footer moves INTO a band, which is why the page has to hand it down rather than let
+      // footer() guess: the rule and the page number flip to the ink that band needs.
+      const band = crossBand("bottom", 0.54);
+      base.items.push(rect(band, d.deep));
+      base.items.push(rect(box(0, band.y, SLIDE_W, 0.05), d.accent));
+      base.foot = { band, ink: d.deepSoft, rule: mix(d.deep, d.deepInk, 0.25) };
+      break;
+    }
+    default:
+      break;
+  }
+  return base;
+}
+
 // ── page furniture ───────────────────────────────────────────────────────────────────────────
 
 interface Head {
@@ -229,10 +419,12 @@ interface Head {
 }
 
 /** Eyebrow, action title, action box and the rule under them. Returns where content begins. */
-function header(d: DeckDesign, s: DeckSlide, ctx: Ctx, opts: { eyebrow?: string; titleWidth?: number } = {}): Head {
+function header(d: DeckDesign, s: DeckSlide, ctx: Ctx, p: Page, opts: { eyebrow?: string; titleWidth?: number } = {}): Head {
   const items: SceneItem[] = [];
-  const wide = opts.titleWidth ?? CONTENT_W * 0.88;
-  let y = TOP;
+  const M = p.left;
+  const CONTENT_W = p.width;
+  const wide = opts.titleWidth ?? p.headWidth;
+  let y = p.top;
   if (d.chrome !== "none") {
     const eyebrow = opts.eyebrow ?? `Exhibit ${ordinal(ctx.index)}`;
     items.push(
@@ -273,28 +465,44 @@ function header(d: DeckDesign, s: DeckSlide, ctx: Ctx, opts: { eyebrow?: string;
  *  the most institutional detail there is, and also the easiest to fake — so it is printed only
  *  from `plan.references`, which canvas-deliverables.ts fills from the canvas's real sources.
  *  A deck built from the model's own knowledge has no references and gets no source line. */
-function footer(d: DeckDesign, s: DeckSlide, ctx: Ctx, exhibit = false): SceneItem[] {
+function footer(d: DeckDesign, s: DeckSlide, ctx: Ctx, p: Page, exhibit = false): SceneItem[] {
   if (d.chrome === "none") return [];
-  const y = SLIDE_H - FOOT - 0.18;
-  const items: SceneItem[] = [hair(box(M, y, CONTENT_W, 0), mix(d.paper, d.ink, 0.14), 0.006)];
+  const M = p.left;
+  const CONTENT_W = p.width;
+  // A design with a banded foot sets its footer INSIDE the band, in the band's own ink.
+  const y = p.foot ? p.foot.band.y + 0.15 : SLIDE_H - FOOT - 0.18;
+  const ink = p.foot ? p.foot.ink : d.muted;
+  const items: SceneItem[] = p.foot ? [] : [hair(box(M, y, CONTENT_W, 0), mix(d.paper, d.ink, 0.14), 0.006)];
   const source = exhibit && ctx.plan.references.length ? ctx.plan.references[0] : undefined;
   const sourceLine = source
     ? `Source: ${source.title}${ctx.plan.references.length > 1 ? ` and ${ctx.plan.references.length - 1} other source${ctx.plan.references.length > 2 ? "s" : ""}` : ""}`
     : "";
   const foot = [sourceLine, s.note].filter(Boolean).join("   ·   ");
   if (foot) {
-    items.push(text(foot, box(M, y + 0.1, CONTENT_W * 0.72, 0.3), d.fonts.body, T.note, d.muted));
+    items.push(text(foot, box(M, y + 0.1, CONTENT_W * 0.72, 0.3), d.fonts.body, T.note, ink));
   }
   items.push(
-    text(`${ctx.credit}  ·  ${ctx.index}`, box(SLIDE_W - M - 3, y + 0.1, 3, 0.3), d.fonts.body, T.footer, d.muted, {
+    text(`${ctx.credit}  ·  ${ctx.index}`, box(M + CONTENT_W - 3, y + 0.1, 3, 0.3), d.fonts.body, T.footer, ink, {
       align: "right",
     }),
   );
   return items;
 }
 
+/** The default grid, for the full-page compositions (stat, quote) that dress themselves and
+ *  only need the footer to know where the margins are. */
+const plainPage = (d: DeckDesign): Page => ({
+  background: d.paper,
+  headWidth: CONTENT_W * 0.88,
+  items: [],
+  left: M,
+  top: TOP,
+  width: CONTENT_W,
+});
+
 /** Where content lives on a chromed slide. */
-const contentArea = (top: number): Box => box(M, top, CONTENT_W, SLIDE_H - top - FOOT - 0.42);
+const contentArea = (p: Page, top: number): Box =>
+  box(p.left, top, p.width, SLIDE_H - top - FOOT - 0.42 - (p.foot ? 0.28 : 0));
 
 // ── covers ───────────────────────────────────────────────────────────────────────────────────
 
@@ -314,9 +522,13 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   // use the ink meant for dark ground instead.
   const pageAccent = onDark ? d.accentInk : d.accent;
   if (picture) {
-    background = d.deep;
+    // 🔴 A SCRIM IS THE PAGE'S OWN GROUND, NOT ALWAYS A DARK ONE. The first version always
+    // washed with `deep`, which is right over slate and wrong over raw canvas: a light material
+    // under dark type needs PAPER laid over it to calm the weave down, or the title fights the
+    // texture for every letter. Which one is used follows the same declaration as the ink.
+    background = onDark ? d.deep : d.paper;
     if (d.texture?.scrim && d.cover !== "photo") {
-      items.push(rect(box(0, 0, SLIDE_W, SLIDE_H), d.deep, 100 - d.texture.scrim));
+      items.push(rect(box(0, 0, SLIDE_W, SLIDE_H), onDark ? d.deep : d.paper, 100 - d.texture.scrim));
     }
   }
   type Align = "left" | "center" | "right";
@@ -481,6 +693,7 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   return {
     background: { art: d.cover === "art-glow" ? d.art?.cover : undefined, color: background, image: picture },
     items,
+    motion: d.motion,
     overlay,
   };
 }
@@ -488,11 +701,12 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
 // ── agenda ───────────────────────────────────────────────────────────────────────────────────
 
 function composeAgenda(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
-  const items: SceneItem[] = [];
+  const p = pageFrame(d, ctx);
+  const items: SceneItem[] = [...p.items];
   const entries = s.points.slice(0, 6);
-  items.push(text(s.title || "Agenda", box(M, TOP, CONTENT_W * 0.7, 0.9), d.fonts.display, T.title, d.ink, { bold: true }));
-  items.push(hair(box(M, TOP + 0.78, CONTENT_W, 0), mix(d.paper, d.ink, 0.2), 0.008));
-  const area = box(M, TOP + 1.15, CONTENT_W, SLIDE_H - TOP - 1.15 - FOOT - 0.5);
+  items.push(text(s.title || "Agenda", box(p.left, p.top, p.width * 0.7, 0.9), d.fonts.display, T.title, d.ink, { bold: true }));
+  items.push(hair(box(p.left, p.top + 0.78, p.width, 0), mix(d.paper, d.ink, 0.2), 0.008));
+  const area = box(p.left, p.top + 1.15, p.width, SLIDE_H - p.top - 1.15 - FOOT - 0.5 - (p.foot ? 0.3 : 0));
   const lines = rows(area, Math.max(entries.length, 1), 0.06);
   entries.forEach((entry, i) => {
     const r = lines[i];
@@ -501,44 +715,126 @@ function composeAgenda(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     items.push(text(entry, box(r.x + 1.0, r.y + 0.1, r.w - 1.4, r.h), d.fonts.body, 15, i === 0 ? d.ink : d.soft, { bold: i === 0 }));
     items.push(hair(box(r.x, r.y + r.h - 0.02, r.w, 0), mix(d.paper, d.ink, 0.12), 0.006));
   });
-  items.push(...footer(d, s, ctx));
-  return { background: { color: d.paper }, items };
+  items.push(...footer(d, s, ctx, p));
+  return { background: { color: p.background, image: p.image }, items, motion: d.motion };
+}
+
+// ── how an exhibit is dressed ────────────────────────────────────────────────────────────────
+
+/**
+ * The frame around a chart, a table or a row of figures.
+ *
+ * 🔴 THIS IS WHERE MOST OF "IT LOOKS LIKE THE SAME POWERPOINT" LIVED. Covers were recomposed
+ * fifteen ways while every exhibit in every design was one bare plot on white — and exhibits
+ * are most of a working deck. Returns the furniture plus the box the exhibit itself may use.
+ */
+function exhibitFrame(d: DeckDesign, area: Box): { items: SceneItem[]; inner: Box } {
+  const edge = mix(d.paper, d.ink, 0.16);
+  switch (d.exhibit) {
+    case "framed":
+      return {
+        inner: inset(area, 0.3),
+        items: [{ box: area, kind: "shape", line: { color: edge, width: 0.006 }, shape: "rect" }],
+      };
+    case "tinted":
+      return { inner: inset(area, 0.3), items: [rect(area, d.accent, 95)] };
+    case "ruled":
+      return {
+        inner: box(area.x, area.y + 0.22, area.w, area.h - 0.44),
+        items: [
+          hair(box(area.x, area.y, area.w, 0), d.accent, 0.02),
+          hair(box(area.x, area.y + area.h, area.w, 0), mix(d.paper, d.ink, 0.25), 0.008),
+        ],
+      };
+    case "card":
+      return {
+        inner: inset(area, 0.34),
+        items: [
+          { box: area, fill: d.paper, kind: "shape", radius: 0.04, shape: "roundRect" },
+          { box: area, kind: "shape", line: { color: edge, width: 0.006 }, radius: 0.04, shape: "roundRect" },
+          rect(box(area.x + 0.02, area.y, area.w - 0.04, 0.055), d.accent),
+        ],
+      };
+    default:
+      return { inner: area, items: [] };
+  }
+}
+
+/** Whether this design's exhibits carry gridlines. A tinted or carded plot reads cleaner
+ *  without them; an open one needs them or the eye has nothing to measure against. */
+const griddy = (d: DeckDesign): boolean => d.exhibit === "open" || d.exhibit === "framed" || d.exhibit === "ruled";
+
+/** A bar, in this design's idiom. */
+function barOf(d: DeckDesign, b: Box, fill: string): SceneItem {
+  return d.exhibit === "card" || d.exhibit === "tinted"
+    ? { box: b, fill, kind: "shape", radius: 0.14, shape: "roundRect" }
+    : rect(b, fill);
 }
 
 // ── exhibits: kpi, chart, table ──────────────────────────────────────────────────────────────
 
 function composeKpi(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
-  const head = header(d, s, ctx, { eyebrow: "Key figures" });
-  const items = [...head.items];
-  const area = contentArea(head.top);
+  const p = pageFrame(d, ctx);
+  const head = header(d, s, ctx, p, { eyebrow: "Key figures" });
+  const items = [...p.items, ...head.items];
+  const area = contentArea(p, head.top);
   const figures = s.data.slice(0, 4);
-  // The figures own the page: the block is as tall as it needs and sits a third down the slack,
-  // with full-height rules between columns, the way a tear sheet sets them.
+  // The figures own the page: the block is as tall as it needs and sits a third down the slack.
   const blockH = Math.min(area.h, 3.0);
   const band = box(area.x, area.y + Math.max(0, (area.h - blockH) / 3), area.w, blockH);
-  const cols = columns(band, Math.max(figures.length, 1), 0.4);
+  // Two ways to separate figures, and they look nothing alike: a tear sheet rules between its
+  // columns, a dashboard puts each one on its own card.
+  const carded = d.exhibit === "card" || d.exhibit === "tinted" || d.exhibit === "framed";
+  const cols = columns(band, Math.max(figures.length, 1), carded ? 0.26 : 0.4);
   figures.forEach((datum, i) => {
     const c = cols[i];
     if (!c) return;
-    if (i > 0) items.push(hair(box(c.x - 0.2, c.y + 0.1, 0, c.h * 0.82), mix(d.paper, d.ink, 0.16), 0.006));
+    let cell = c;
+    if (carded) {
+      if (d.exhibit === "framed") {
+        items.push({ box: c, kind: "shape", line: { color: mix(d.paper, d.ink, 0.16), width: 0.006 }, shape: "rect" });
+      } else if (d.exhibit === "tinted") {
+        items.push(rect(c, d.accent, 94));
+      } else {
+        items.push({ box: c, fill: d.paper, kind: "shape", radius: 0.04, shape: "roundRect" });
+        items.push({ box: c, kind: "shape", line: { color: mix(d.paper, d.ink, 0.14), width: 0.006 }, radius: 0.04, shape: "roundRect" });
+        items.push(rect(box(c.x + 0.02, c.y, c.w - 0.04, 0.05), d.accent));
+      }
+      cell = inset(c, 0.28);
+    } else if (i > 0) {
+      items.push(hair(box(c.x - 0.2, c.y + 0.1, 0, c.h * 0.82), mix(d.paper, d.ink, 0.16), 0.006));
+    }
     const value = figure(datum.value, s.unit);
     items.push(
-      text(value, box(c.x, c.y + 0.1, c.w, 1.3), d.fonts.display, fitNumeral(value, c.w * 0.98, 1.0), d.accent, { bold: true }),
+      text(value, box(cell.x, cell.y + 0.1, cell.w, 1.3), d.fonts.display, fitNumeral(value, cell.w * 0.98, 1.0), d.accent, {
+        bold: true,
+      }),
     );
-    items.push(hair(box(c.x, c.y + 1.35, Math.min(1.1, c.w * 0.4), 0), d.accent, 0.022));
-    items.push(text(datum.label, box(c.x, c.y + 1.6, c.w - 0.2, band.h - 1.6), d.fonts.body, T.label, d.soft, { lineSpacing: 1.2 }));
+    if (d.exhibit === "card" || d.exhibit === "tinted") {
+      items.push(...drawMark(d.mark, box(cell.x, cell.y + 1.42, 0.2, 0.2), d.accent));
+    } else {
+      items.push(hair(box(cell.x, cell.y + 1.35, Math.min(1.1, cell.w * 0.4), 0), d.accent, 0.022));
+    }
+    items.push(
+      text(datum.label, box(cell.x, cell.y + 1.72, cell.w - 0.1, cell.h - 1.72), d.fonts.body, T.label, d.soft, {
+        lineSpacing: 1.2,
+      }),
+    );
   });
-  items.push(...footer(d, s, ctx, true));
-  return { background: { color: d.paper }, items };
+  items.push(...footer(d, s, ctx, p, true));
+  return { background: { color: p.background, image: p.image }, items, motion: d.motion };
 }
 
-/** The plot area's own furniture: two faint gridlines and a baseline. */
+/** The plot area's own furniture: two faint gridlines and a baseline. Designs that dress their
+ *  exhibits in a tint or a card drop the gridlines — the panel already gives the eye an edge. */
 function plotFrame(d: DeckDesign, plot: Box): SceneItem[] {
   const grid = mix(d.paper, d.ink, 0.1);
+  const base = hair(box(plot.x, plot.y + plot.h, plot.w, 0), mix(d.paper, d.ink, 0.35), 0.008);
+  if (!griddy(d)) return [base];
   return [
     hair(box(plot.x, plot.y + plot.h * 0.34, plot.w, 0), grid, 0.005),
     hair(box(plot.x, plot.y + plot.h * 0.67, plot.w, 0), grid, 0.005),
-    hair(box(plot.x, plot.y + plot.h, plot.w, 0), mix(d.paper, d.ink, 0.35), 0.008),
+    base,
   ];
 }
 
@@ -547,7 +843,8 @@ function columnChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box):
   const plot = box(area.x, area.y + 0.3, area.w, area.h - 0.95);
   const top = Math.max(...data.map((p) => Math.abs(p.value)), 1);
   const band = plot.w / data.length;
-  const barW = Math.min(1.15, band * 0.5);
+  // A block plot fills its band; every other style leaves air around the mark.
+  const barW = d.plot === "block" ? band * 0.94 : Math.min(1.15, band * 0.5);
   items.push(...plotFrame(d, plot));
   data.forEach((point, i) => {
     // Small values still have to be visible: a bar that rounds to nothing reads as missing data.
@@ -556,12 +853,38 @@ function columnChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box):
     const y = plot.y + plot.h - h;
     // The last bar is the point of most exhibits, so it wears the accent and the rest recede.
     const last = i === data.length - 1;
-    items.push(rect(box(x, y, barW, h), last ? d.accent : d.second));
+    const fill = last ? d.accent : d.second;
+    // The track is drawn WIDER than its bar. Exactly as wide read as a rendering mistake, and
+    // it also let the tests confuse a track for a bar.
+    if (d.plot === "track") {
+      items.push(rect(box(x - 0.07, plot.y + 0.12, barW + 0.14, plot.h - 0.12), mix(d.paper, d.ink, 0.055)));
+    }
+    if (d.plot === "lollipop") {
+      // The stem runs the FULL height of the value and the mark caps it. Stopping the stem
+      // short of the mark made the smallest value a negative-height rectangle, which drew
+      // nothing at all — the one thing a plot may never do to a number it was given.
+      items.push(rect(box(x + barW / 2 - 0.022, y, 0.044, h), mix(d.paper, fill, 0.5)));
+      items.push(...drawMark(d.mark, box(x + barW / 2 - 0.15, y - 0.15, 0.3, 0.3), fill));
+    } else if (d.plot === "outline") {
+      items.push(rect(box(x, y, barW, h), fill, 86));
+      items.push({ box: box(x, y, barW, h), kind: "shape", line: { color: fill, width: 0.018 }, shape: "rect" });
+    } else {
+      items.push(barOf(d, box(x, y, barW, h), fill));
+    }
+    // A block plot sets its figure INSIDE the bar — but only where the bar is tall enough to
+    // hold it. The 4.5% bar on a 100% scale is a sliver, and a label inside it would be gone.
+    const inside = d.plot === "block" && h > 0.62;
     items.push(
-      text(figure(point.value, unit), box(x - band * 0.24, y - 0.32, barW + band * 0.48, 0.3), d.fonts.body, T.value, d.ink, {
-        align: "center",
-        bold: true,
-      }),
+      text(
+        figure(point.value, unit),
+        inside
+          ? box(x, y + 0.14, barW, 0.32)
+          : box(x - band * 0.24, y - (d.plot === "lollipop" ? 0.55 : 0.32), barW + band * 0.48, 0.3),
+        d.fonts.body,
+        T.value,
+        inside ? (last ? d.accentInk : d.ink) : d.ink,
+        { align: "center", bold: true },
+      ),
     );
     items.push(
       text(point.label, box(x - band * 0.24, plot.y + plot.h + 0.12, barW + band * 0.48, 0.5), d.fonts.body, T.label, d.soft, {
@@ -586,7 +909,14 @@ function barChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box): Sc
     const w = (Math.abs(point.value) / top) * plot.w;
     const y = r.y + (r.h - h) / 2;
     items.push(text(point.label, box(area.x, y - 0.02, labelW, h + 0.1), d.fonts.body, T.label, d.soft, { align: "right", valign: "middle" }));
-    items.push(rect(box(plot.x, y, Math.max(w, 0.04), h), i === 0 ? d.accent : d.second));
+    if (d.plot === "track") items.push(rect(box(plot.x, y - 0.05, plot.w, h + 0.1), mix(d.paper, d.ink, 0.055)));
+    const fill = i === 0 ? d.accent : d.second;
+    if (d.plot === "outline") {
+      items.push(rect(box(plot.x, y, Math.max(w, 0.04), h), fill, 86));
+      items.push({ box: box(plot.x, y, Math.max(w, 0.04), h), kind: "shape", line: { color: fill, width: 0.018 }, shape: "rect" });
+    } else {
+      items.push(barOf(d, box(plot.x, y, Math.max(w, 0.04), h), fill));
+    }
     items.push(
       text(figure(point.value, unit), box(plot.x + w + 0.12, y - 0.02, 1.0, h + 0.1), d.fonts.body, T.value, d.ink, {
         bold: true,
@@ -615,7 +945,11 @@ function lineChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box): S
   }
   data.forEach((point, i) => {
     const p = at(i, point.value);
-    items.push({ box: box(p.x - 0.075, p.y - 0.075, 0.15, 0.15), fill: d.accent, kind: "shape", shape: "ellipse" });
+    if (d.plot === "lollipop" || d.plot === "outline") {
+      items.push(...drawMark(d.mark, box(p.x - 0.115, p.y - 0.115, 0.23, 0.23), d.accent));
+    } else {
+      items.push({ box: box(p.x - 0.075, p.y - 0.075, 0.15, 0.15), fill: d.accent, kind: "shape", shape: "ellipse" });
+    }
     items.push(text(point.label, box(p.x - 0.8, plot.y + plot.h + 0.14, 1.6, 0.4), d.fonts.body, T.label, d.soft, { align: "center" }));
     if (i === 0 || i === data.length - 1) {
       items.push(
@@ -630,9 +964,12 @@ function lineChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box): S
 }
 
 function composeChart(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
-  const head = header(d, s, ctx);
-  const items = [...head.items];
-  const area = contentArea(head.top);
+  const p = pageFrame(d, ctx);
+  const head = header(d, s, ctx, p);
+  const items = [...p.items, ...head.items];
+  const dress = exhibitFrame(d, contentArea(p, head.top));
+  items.push(...dress.items);
+  const area = dress.inner;
   const data = s.data.slice(0, 8);
   if (data.length === 0) {
     items.push(text(s.points.join("  ·  "), box(area.x, area.y, area.w, area.h), d.fonts.body, T.body, d.soft));
@@ -643,14 +980,20 @@ function composeChart(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   } else {
     items.push(...columnChart(d, data, s.unit, area));
   }
-  items.push(...footer(d, s, ctx, true));
-  return { background: { color: d.paper }, items };
+  items.push(...footer(d, s, ctx, p, true));
+  return { background: { color: p.background, image: p.image }, items, motion: d.motion };
 }
 
 function composeTable(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
-  const head = header(d, s, ctx);
-  const items = [...head.items];
-  const area = contentArea(head.top);
+  const p = pageFrame(d, ctx);
+  const head = header(d, s, ctx, p);
+  const items = [...p.items, ...head.items];
+  const dress = exhibitFrame(d, contentArea(p, head.top));
+  items.push(...dress.items);
+  const area = dress.inner;
+  // Two honest ways to rule a table: a hairline under every row, or banded rows and no rules.
+  // Doing both is the look of a spreadsheet that got away from someone.
+  const zebra = d.exhibit === "tinted" || d.exhibit === "card";
   const heads = s.columns.length ? s.columns : (s.rows[0] ?? []).map((_, i) => `Column ${i + 1}`);
   const bodyRows = s.rows.slice(0, 7);
   const cols = columns(area, Math.max(heads.length, 1), 0.28);
@@ -679,6 +1022,7 @@ function composeTable(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   items.push(hair(box(area.x, top + headH, area.w, 0), d.accent, 0.022));
   bodyRows.forEach((row, r) => {
     const y = top + headH + 0.14 + r * rowH;
+    if (zebra && r % 2 === 1) items.push(rect(box(area.x - 0.12, y - 0.02, area.w + 0.24, rowH - 0.02), d.accent, 95));
     row.forEach((cell, i) => {
       const c = cols[i];
       if (!c) return;
@@ -689,10 +1033,12 @@ function composeTable(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
         }),
       );
     });
-    if (r < bodyRows.length - 1) items.push(hair(box(area.x, y + rowH - 0.06, area.w, 0), mix(d.paper, d.ink, 0.12), 0.006));
+    if (!zebra && r < bodyRows.length - 1) {
+      items.push(hair(box(area.x, y + rowH - 0.06, area.w, 0), mix(d.paper, d.ink, 0.12), 0.006));
+    }
   });
-  items.push(...footer(d, s, ctx, true));
-  return { background: { color: d.paper }, items };
+  items.push(...footer(d, s, ctx, p, true));
+  return { background: { color: p.background, image: p.image }, items, motion: d.motion };
 }
 
 // ── section breaks ───────────────────────────────────────────────────────────────────────────
@@ -700,6 +1046,10 @@ function composeTable(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
 function composeSection(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const items: SceneItem[] = [];
   let background = d.paper;
+  // Same rule as the cover: a section built on a dark picture cannot set its title in page ink.
+  // (Quarry taught this on the cover; a chalkboard section break would have repeated it.)
+  const onDark = Boolean(d.texture?.section && d.texture.dark);
+  const pageInk = onDark ? d.deepInk : d.ink;
   const title = (b: Box, color: string) =>
     text(s.title, b, d.fonts.display, fit(T.sectionTitle, s.title), color, { bold: true, lineSpacing: 1.06 });
   const part = `Part ${ordinal(ctx.index)}`;
@@ -720,7 +1070,7 @@ function composeSection(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     case "band": {
       items.push(rect(crossBand("top", 2.4), d.deep));
       items.push(text(part, box(M, 1.0, 4, 0.3), d.fonts.body, T.eyebrow, d.accent, { bold: true, caps: true, spacing: 1.7 }));
-      items.push(title(box(M, 3.05, CONTENT_W * 0.7, 2.2), d.ink));
+      items.push(title(box(M, 3.05, CONTENT_W * 0.7, 2.2), pageInk));
       break;
     }
     case "split": {
@@ -729,13 +1079,14 @@ function composeSection(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       items.push(
         text(ordinal(ctx.index), nb, d.fonts.display, fitNumeral(ordinal(ctx.index), nb.w, nb.h), d.accent, { bold: true }),
       );
-      items.push(title(box(SLIDE_W * 0.4 + 0.85, 3.1, SLIDE_W * 0.5, 2), d.ink));
+      items.push(title(box(SLIDE_W * 0.4 + 0.85, 3.1, SLIDE_W * 0.5, 2), pageInk));
       break;
     }
     case "rule": {
+      items.push(...drawMark(d.mark, box(M, 2.28, 0.42, 0.42), d.accent));
       items.push(text(part, box(M, 2.85, 4, 0.3), d.fonts.body, T.eyebrow, d.accent, { bold: true, caps: true, spacing: 1.7 }));
       items.push(hair(box(M, 3.3, CONTENT_W, 0), d.accent, 0.026));
-      items.push(title(box(M, 3.65, CONTENT_W * 0.78, 2), d.ink));
+      items.push(title(box(M, 3.65, CONTENT_W * 0.78, 2), pageInk));
       break;
     }
     default: {
@@ -745,33 +1096,50 @@ function composeSection(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     }
   }
   if (d.texture?.section && d.texture.scrim) {
-    items.unshift(rect(box(0, 0, SLIDE_W, SLIDE_H), d.deep, 100 - d.texture.scrim));
+    items.unshift(rect(box(0, 0, SLIDE_W, SLIDE_H), onDark ? d.deep : d.paper, 100 - d.texture.scrim));
   }
   return {
     background: {
       art: d.section === "art" ? d.art?.section : undefined,
-      color: d.texture?.section ? d.deep : background,
+      color: d.texture?.section ? (onDark ? d.deep : d.paper) : background,
       image: d.texture?.section,
     },
     items,
+    motion: d.motion,
   };
 }
 
 // ── body slides ──────────────────────────────────────────────────────────────────────────────
 
+/** A list set with the design's own mark in front of each line (deck-marks.ts). The mark sits
+ *  in its own column: a marker that shares a box with the words is how text gets blocked. */
+function markedList(d: DeckDesign, area: Box, points: string[], size = T.body): SceneItem[] {
+  const items: SceneItem[] = [];
+  const lines = rows(area, Math.max(points.length, 1), 0.14);
+  const m = 0.18;
+  points.forEach((point, i) => {
+    const r = lines[i];
+    if (!r) return;
+    items.push(...drawMark(d.mark, box(r.x + 0.02, r.y + 0.035, m, m), d.accent));
+    items.push(text(point, box(r.x + m + 0.26, r.y, r.w - m - 0.26, r.h), d.fonts.body, size, d.soft, { lineSpacing: 1.26 }));
+  });
+  return items;
+}
+
 function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const points = s.points.slice(0, 5);
-  const items: SceneItem[] = [];
-  let background = d.paper;
+  const p = pageFrame(d, ctx);
+  const items: SceneItem[] = [...p.items];
+  let background = p.background;
 
   // Designs whose body treatment owns the whole page draw their own header; the rest use the
   // shared one, which is what gives the set its institutional consistency.
   const ownsPage = d.body === "rail" || d.body === "panel-title" || d.body === "banner";
 
   if (!ownsPage) {
-    const head = header(d, s, ctx);
+    const head = header(d, s, ctx, p);
     items.push(...head.items);
-    const area = contentArea(head.top);
+    const area = contentArea(p, head.top);
     switch (d.body) {
       case "cards": {
         const grid = cells(area, points.length || 1, 0.3);
@@ -781,8 +1149,8 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
           if (!c) return;
           items.push({ alpha: 93, box: c, fill: d.accent, kind: "shape", radius: 0.05, shape: "roundRect" });
           items.push(rect(box(c.x, c.y, 0.055, c.h), d.accent));
-          items.push(text(ordinal(i + 1), box(c.x + 0.3, c.y + 0.22, 1, 0.35), d.fonts.display, 13, d.accent, { bold: true }));
-          items.push(text(point, box(c.x + 0.3, c.y + 0.66, c.w - 0.6, c.h - 0.85), d.fonts.body, tight ? 12 : 13.5, d.soft, { lineSpacing: 1.2 }));
+          items.push(...drawMark(d.mark, box(c.x + 0.3, c.y + 0.24, 0.3, 0.3), d.accent));
+          items.push(text(point, box(c.x + 0.3, c.y + 0.78, c.w - 0.6, c.h - 0.98), d.fonts.body, tight ? 12 : 13.5, d.soft, { lineSpacing: 1.2 }));
         });
         break;
       }
@@ -814,23 +1182,17 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
           if (!r) return;
           const h = Math.min(r.h, 0.62);
           items.push({ alpha: 94, box: box(r.x, r.y, r.w, h), fill: d.accent, kind: "shape", radius: 0.5, shape: "roundRect" });
-          items.push({ box: box(r.x + 0.34, r.y + h / 2 - 0.08, 0.16, 0.16), fill: d.accent, kind: "shape", shape: "ellipse" });
+          items.push(...drawMark(d.mark, box(r.x + 0.32, r.y + h / 2 - 0.09, 0.18, 0.18), d.accent));
           items.push(text(point, box(r.x + 0.78, r.y + h / 2 - 0.15, r.w - 1.2, h), d.fonts.body, T.body, d.soft));
         });
         break;
       }
       case "boxed": {
-        items.push({ box: inset(area, -0.06), kind: "shape", line: { color: mix(d.paper, d.ink, 0.16), width: 0.006 }, shape: "rect" });
-        items.push({
-          box: inset(area, 0.34),
-          bullet: "dash",
-          color: d.soft,
-          font: d.fonts.body,
-          gap: 12,
-          items: points,
-          kind: "bullets",
-          size: T.body,
-        });
+        // A design whose PAGE already draws a frame does not draw a second one inside it.
+        if (d.page !== "frame") {
+          items.push({ box: inset(area, -0.06), kind: "shape", line: { color: mix(d.paper, d.ink, 0.16), width: 0.006 }, shape: "rect" });
+        }
+        items.push(...markedList(d, inset(area, 0.34), points));
         break;
       }
       case "hanging-rule": {
@@ -847,20 +1209,13 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
         break;
       }
       default: {
-        items.push({
-          box: area,
-          bullet: "dash",
-          color: d.soft,
-          font: d.fonts.body,
-          gap: 13,
-          items: points,
-          kind: "bullets",
-          size: T.body,
-        });
+        // 🔴 "plain" IS NOT A DASH ANY MORE. It is the design's own mark, set in its own column.
+        // A dash is what a deck looks like when nobody chose anything.
+        items.push(...markedList(d, area, points));
       }
     }
-    items.push(...footer(d, s, ctx));
-    return { background: { color: background }, items };
+    items.push(...footer(d, s, ctx, p));
+    return { background: { color: background, image: p.image }, items, motion: d.motion };
   }
 
   // ── the three treatments that take the whole page ──
@@ -879,22 +1234,15 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     if (s.takeaway) {
       items.push(text(s.takeaway, box(0.6, SLIDE_H - 2.5, rail.w - 1.1, 1.9), d.fonts.body, 11, d.deepSoft, { lineSpacing: 1.24 }));
     }
-    items.push({
-      box: box(rail.w + 0.75, TOP + 0.3, SLIDE_W - rail.w - 0.75 - M, SLIDE_H - TOP - 1.4),
-      bullet: "dash",
-      color: d.soft,
-      font: d.fonts.body,
-      gap: 13,
-      items: points,
-      kind: "bullets",
-      size: T.body,
-    });
+    items.push(
+      ...markedList(d, box(rail.w + 0.75, TOP + 0.3, SLIDE_W - rail.w - 0.75 - M, SLIDE_H - TOP - 1.5), points),
+    );
     items.push(
       text(`${ctx.credit}  ·  ${ctx.index}`, box(SLIDE_W - M - 3, SLIDE_H - 0.62, 3, 0.3), d.fonts.body, T.footer, d.muted, {
         align: "right",
       }),
     );
-    return { background: { color: background }, items };
+    return { background: { color: background }, items, motion: d.motion };
   }
 
   if (d.body === "panel-title") {
@@ -914,18 +1262,9 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       items.push(text(s.takeaway, box(M, y, CONTENT_W * 0.78, 0.5), d.fonts.body, T.action, mix(d.ink, d.accent, 0.3), { italic: true }));
       y += 0.6;
     }
-    items.push({
-      box: box(M, y, CONTENT_W * 0.86, SLIDE_H - y - 0.9),
-      bullet: "dash",
-      color: d.soft,
-      font: d.fonts.body,
-      gap: 13,
-      items: points,
-      kind: "bullets",
-      size: T.body,
-    });
-    items.push(...footer(d, s, ctx));
-    return { background: { color: background }, items };
+    items.push(...markedList(d, box(M, y, CONTENT_W * 0.86, SLIDE_H - y - 1.0), points));
+    items.push(...footer(d, s, ctx, p));
+    return { background: { color: background }, items, motion: d.motion };
   }
 
   // banner
@@ -944,18 +1283,9 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     items.push(text(s.takeaway, box(M, y, CONTENT_W * 0.8, 0.5), d.fonts.body, T.action, d.ink, { italic: true }));
     y += 0.62;
   }
-  items.push({
-    box: box(M, y, CONTENT_W * 0.84, SLIDE_H - y - 0.9),
-    bullet: "dash",
-    color: d.soft,
-    font: d.fonts.body,
-    gap: 13,
-    items: points,
-    kind: "bullets",
-    size: T.body,
-  });
-  items.push(...footer(d, s, ctx));
-  return { background: { color: background }, items };
+  items.push(...markedList(d, box(M, y, CONTENT_W * 0.84, SLIDE_H - y - 1.0), points));
+  items.push(...footer(d, s, ctx, p));
+  return { background: { color: background }, items, motion: d.motion };
 }
 
 // ── stat, quote, closing ─────────────────────────────────────────────────────────────────────
@@ -998,8 +1328,8 @@ function composeStat(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       items.push(text(label, box(M, 4.95, CONTENT_W * 0.6, 1.4), d.fonts.body, 17, d.soft, { lineSpacing: 1.25 }));
     }
   }
-  if (d.chrome !== "none" && d.stat !== "circle" && d.stat !== "block") items.push(...footer(d, s, ctx));
-  return { background: { color: background }, items };
+  if (d.chrome !== "none" && d.stat !== "circle" && d.stat !== "block") items.push(...footer(d, s, ctx, plainPage(d)));
+  return { background: { color: background }, items, motion: d.motion };
 }
 
 function composeQuote(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
@@ -1039,17 +1369,23 @@ function composeQuote(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       if (attribution) items.push(text(`— ${attribution}`, box(left, 5.55, CONTENT_W * 0.6, 0.6), d.fonts.body, 13.5, d.muted));
     }
   }
-  if (d.chrome === "full") items.push(...footer(d, s, ctx));
-  return { background: { color: background }, items };
+  if (d.chrome === "full") items.push(...footer(d, s, ctx, plainPage(d)));
+  return { background: { color: background }, items, motion: d.motion };
 }
 
 function composeClosing(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const heading = s.title || "Thank you";
   const items: SceneItem[] = [];
-  const dark = d.cover !== "band-left" && d.cover !== "frame" && d.cover !== "editorial" && d.cover !== "stack-bars";
+  // A closing picture used to be declarable and then silently ignored. If a design names one,
+  // the last slide is built on it, on the same terms as the cover.
+  const picture = d.texture?.closing;
+  const dark = picture
+    ? Boolean(d.texture?.dark)
+    : d.cover !== "band-left" && d.cover !== "frame" && d.cover !== "editorial" && d.cover !== "stack-bars";
   const background = dark ? d.deep : d.paper;
   const ink = dark ? d.deepInk : d.ink;
   const soft = dark ? d.deepSoft : d.soft;
+  if (picture && d.texture?.scrim) items.push(rect(box(0, 0, SLIDE_W, SLIDE_H), background, 100 - d.texture.scrim));
   items.push(rect(crossBand("bottom", 0.42), d.accent));
   items.push(
     text(ctx.credit, box(M, 2.15, CONTENT_W, 0.3), d.fonts.body, T.eyebrow, d.accent, {
@@ -1071,7 +1407,11 @@ function composeClosing(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       size: T.body,
     });
   }
-  return { background: { art: d.cover === "art-glow" ? d.art?.closing : undefined, color: background }, items };
+  return {
+    background: { art: d.cover === "art-glow" ? d.art?.closing : undefined, color: background, image: picture },
+    items,
+    motion: d.motion,
+  };
 }
 
 /** The references slide: the canvas's own sources, never anything invented. */

@@ -91,6 +91,20 @@ export interface SceneImage {
 
 export type SceneItem = SceneShape | SceneText | SceneBullets | SceneImage;
 
+/**
+ * How a slide's parts arrive when the deck is PRESENTED.
+ *
+ * 🔴 DECLARED HERE, HONOURED BY ONE BACKEND. Owner 2026-08-24: *"maybe add… some animations."*
+ * The HTML deck can build a slide in; a .pptx written by pptxgenjs cannot carry entrance
+ * animations at all, and an SVG still is a still. So motion is declared on the Scene like the
+ * overlay is, and whoever can do something with it does — the .pptx simply gets the finished
+ * slide, which is the correct degradation for a file someone else will open in PowerPoint.
+ *
+ * It is also never load-bearing: a build-in that fails to run must leave the slide READABLE,
+ * not blank, which is why the animation is opt-in from the viewer and print forces it off.
+ */
+export type SceneMotion = "rise" | "fade" | "wipe" | "zoom" | "none";
+
 export interface Scene {
   background: {
     color: string;
@@ -107,6 +121,8 @@ export interface Scene {
    *  than the others: CSS and SVG have real gradients, and a .pptx gets a generated PNG with an
    *  alpha channel. Stacked translucent rectangles were the first attempt and they BANDED. */
   overlay?: { color: string; strength: number; start: number };
+  /** How this slide builds in when presented. See SceneMotion. */
+  motion?: SceneMotion;
   items: SceneItem[];
 }
 

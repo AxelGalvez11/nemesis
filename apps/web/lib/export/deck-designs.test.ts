@@ -166,10 +166,25 @@ test("a design built on a picture declares whether that picture is dark", () => 
   }
 });
 
+test("a material used on the INTERIOR pages is a light one", () => {
+  // The interior sets its type in the design's page ink, which is chosen against `paper`. A
+  // design cannot see its own material, so the rule is structural: a design that lays material
+  // under its content pages must have light paper for that ink to have been chosen correctly —
+  // and `paper` is also what the page falls back to if the asset ever fails to load.
+  for (const d of DECK_DESIGNS) {
+    if (!d.texture?.page) continue;
+    assert.ok(luminance(d.paper) > 0.75, `${d.id}: an interior material on dark paper would swallow the words`);
+    assert.ok(
+      Math.abs(luminance(d.ink) - luminance(d.paper)) > 0.5,
+      `${d.id}: page ink is not dark enough to survive a material behind it`,
+    );
+  }
+});
+
 test("a texture is an app asset, not a link to somewhere else", () => {
   // A deck must build with no network beyond our own origin: the .pptx inlines these bytes.
   for (const d of DECK_DESIGNS) {
-    for (const url of [d.texture?.cover, d.texture?.section, d.texture?.closing].filter(Boolean)) {
+    for (const url of [d.texture?.cover, d.texture?.section, d.texture?.closing, d.texture?.page].filter(Boolean)) {
       assert.match(url as string, /^\/deck\/textures\/[a-z0-9-]+\.jpg$/, `${d.id}: "${url}" is not a local deck texture`);
     }
   }

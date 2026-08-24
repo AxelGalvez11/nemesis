@@ -153,8 +153,15 @@ export function DeckView({ plan, designId, credit = "Made with Nemesis", actions
             className="shadow-[0_10px_40px_rgba(0,0,0,0.28)]"
             style={{ height: SLIDE_PX_H * scale, width: SLIDE_PX_W * scale }}
           >
+            {/* 🔴 THE KEY IS WHAT MAKES THE SLIDE BUILD. React replaces this node whenever the
+                slide changes, and a fresh node restarts the CSS animations under `dk-run` — no
+                timers, no animation library, nothing to fall out of step. `dk-run` is also the
+                ONLY place the hidden start state exists (deck-html.ts), so the printed stack
+                above and every other consumer get finished slides. */}
             <div
+              className="dk-run"
               dangerouslySetInnerHTML={{ __html: current }}
+              key={at}
               style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}
             />
           </div>
