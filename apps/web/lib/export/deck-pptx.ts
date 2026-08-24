@@ -93,7 +93,9 @@ function draw(slide: Slide, item: SceneItem): void {
     }
     default: {
       const { box: b } = item;
-      slide.addImage({ data: item.data, h: b.h, w: b.w, x: b.x, y: b.y });
+      // Fill the box and crop the overflow — see the note in deck-svg.ts. Without this a
+      // photograph in a tall column is letterboxed into a band.
+      slide.addImage({ data: item.data, h: b.h, sizing: { h: b.h, type: "cover", w: b.w }, w: b.w, x: b.x, y: b.y });
     }
   }
 }
@@ -151,7 +153,17 @@ async function paint(pptx: Pptx, scene: Scene): Promise<void> {
     const wash = await deckScrimPng(scene.overlay.color, scene.overlay.strength, scene.overlay.start);
     slide.addImage({ data: wash, h: SLIDE_H, w: SLIDE_W, x: 0, y: 0 });
   }
-  for (const item of scene.items) draw(slide, item);
+  for (const item of scene.items) {
+    // A picture placed IN the content names an app asset the same way a background does, and a
+    // .pptx cannot reference anything outside itself — so it is fetched and inlined here. A
+    // failure drops the picture and keeps the slide, which is the same bargain as a background.
+    if (item.kind === "image" && item.data.startsWith("/")) {
+      const bytes = await inlineAsset(item.data);
+      if (bytes) draw(slide, { ...item, data: bytes });
+      continue;
+    }
+    draw(slide, item);
+  }
 }
 
 /**

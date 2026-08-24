@@ -108,7 +108,8 @@ export type PageKind =
   | "dots"
   | "frame"
   | "edge"
-  | "foot";
+  | "foot"
+  | "photo-side";
 
 /** How an exhibit — a chart, a table, a row of figures — is dressed. The exhibits used to be
  *  identical across every design, which is most of why the interiors read as one deck. */
@@ -172,6 +173,12 @@ export interface DeckDesign {
     /** Material for the INTERIOR pages. Light materials only — paper, linen, canvas: the page
      *  ink is chosen for `paper`, so a dark interior material would swallow the words. */
     page?: string;
+    /** Pictures a design may use INSIDE its content, chosen by slide number so two slides in a
+     *  row are never the same photograph.
+     *  🔴 A FAMILY, NOT A PICTURE. One image repeated down a deck is what a template looks like
+     *  when nobody filled in the placeholders. A design that wants photography in its content
+     *  has to supply enough of it to keep moving. */
+    gallery?: readonly string[];
     /** How much of the design's own paper is laid OVER that interior material, 0-100.
      *  🔴 AN INTERIOR MATERIAL MUST BE A WHISPER. A cover carries six words and can take a
      *  photograph at full strength; an interior carries a title, a takeaway, five points, a
@@ -316,7 +323,7 @@ interface Page {
  * the body and every exhibit are laid out against, so a design can move its own margin without
  * a single composition needing to know.
  */
-function pageFrame(d: DeckDesign, ctx: Ctx): Page {
+function pageFrame(d: DeckDesign, ctx: Ctx, layout: DeckSlide["layout"] = "bullets"): Page {
   const base: Page = {
     background: d.paper,
     headWidth: CONTENT_W * 0.88,
@@ -393,6 +400,28 @@ function pageFrame(d: DeckDesign, ctx: Ctx): Page {
       base.items.push(rect(edgeBand("right", 0.3), d.accent));
       base.width = CONTENT_W - 0.42;
       base.headWidth = base.width * 0.86;
+      break;
+    }
+    case "photo-side": {
+      // A full-bleed picture column, and the content set beside it.
+      //
+      // 🔴 ONLY WHERE THERE IS ROOM. A chart, a table or a row of figures needs the width of the
+      // page; squeezing an exhibit into two-thirds of a slide to make space for decoration is a
+      // worse deck, not a prettier one. On those layouts this page is simply a clean one.
+      const wordy = layout === "bullets" || layout === "two_column" || layout === "agenda";
+      const shots = d.texture?.gallery ?? [];
+      if (!wordy || shots.length === 0) break;
+      const column = 4.55;
+      base.image = undefined;
+      base.items.push({
+        // Chosen by slide number: consecutive slides get different photographs.
+        box: box(0, 0, column, SLIDE_H),
+        data: shots[(ctx.index - 1) % shots.length] as string,
+        kind: "image",
+      });
+      base.left = column + 0.72;
+      base.width = SLIDE_W - base.left - M;
+      base.headWidth = base.width;
       break;
     }
     case "foot": {
@@ -701,7 +730,7 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
 // ── agenda ───────────────────────────────────────────────────────────────────────────────────
 
 function composeAgenda(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
-  const p = pageFrame(d, ctx);
+  const p = pageFrame(d, ctx, "agenda");
   const items: SceneItem[] = [...p.items];
   const entries = s.points.slice(0, 6);
   items.push(text(s.title || "Agenda", box(p.left, p.top, p.width * 0.7, 0.9), d.fonts.display, T.title, d.ink, { bold: true }));
@@ -774,7 +803,7 @@ function barOf(d: DeckDesign, b: Box, fill: string): SceneItem {
 // ── exhibits: kpi, chart, table ──────────────────────────────────────────────────────────────
 
 function composeKpi(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
-  const p = pageFrame(d, ctx);
+  const p = pageFrame(d, ctx, "kpi");
   const head = header(d, s, ctx, p, { eyebrow: "Key figures" });
   const items = [...p.items, ...head.items];
   const area = contentArea(p, head.top);
@@ -964,7 +993,7 @@ function lineChart(d: DeckDesign, data: DeckDatum[], unit: string, area: Box): S
 }
 
 function composeChart(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
-  const p = pageFrame(d, ctx);
+  const p = pageFrame(d, ctx, "chart");
   const head = header(d, s, ctx, p);
   const items = [...p.items, ...head.items];
   const dress = exhibitFrame(d, contentArea(p, head.top));
@@ -985,7 +1014,7 @@ function composeChart(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
 }
 
 function composeTable(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
-  const p = pageFrame(d, ctx);
+  const p = pageFrame(d, ctx, "table");
   const head = header(d, s, ctx, p);
   const items = [...p.items, ...head.items];
   const dress = exhibitFrame(d, contentArea(p, head.top));
@@ -1128,7 +1157,7 @@ function markedList(d: DeckDesign, area: Box, points: string[], size = T.body): 
 
 function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const points = s.points.slice(0, 5);
-  const p = pageFrame(d, ctx);
+  const p = pageFrame(d, ctx, s.layout);
   const items: SceneItem[] = [...p.items];
   let background = p.background;
 
@@ -1242,7 +1271,7 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
         align: "right",
       }),
     );
-    return { background: { color: background }, items, motion: d.motion };
+    return { background: { color: background, image: p.image }, items, motion: d.motion };
   }
 
   if (d.body === "panel-title") {
@@ -1264,7 +1293,7 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     }
     items.push(...markedList(d, box(M, y, CONTENT_W * 0.86, SLIDE_H - y - 1.0), points));
     items.push(...footer(d, s, ctx, p));
-    return { background: { color: background }, items, motion: d.motion };
+    return { background: { color: background, image: p.image }, items, motion: d.motion };
   }
 
   // banner
@@ -1285,7 +1314,7 @@ function composeBody(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   }
   items.push(...markedList(d, box(M, y, CONTENT_W * 0.84, SLIDE_H - y - 1.0), points));
   items.push(...footer(d, s, ctx, p));
-  return { background: { color: background }, items, motion: d.motion };
+  return { background: { color: background, image: p.image }, items, motion: d.motion };
 }
 
 // ── stat, quote, closing ─────────────────────────────────────────────────────────────────────

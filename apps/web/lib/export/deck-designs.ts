@@ -59,6 +59,7 @@ const HOUSE: DeckDesign = {
   section: "band",
   soft: "494650",
   stat: "panel",
+  texture: { page: "/deck/textures/rice-paper.jpg", pageScrim: 82 },
 };
 
 export const DECK_DESIGNS: readonly DeckDesign[] = [
@@ -89,7 +90,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "rule",
     soft: "4c4133",
     stat: "rule",
-    texture: { cover: "/deck/textures/paper.jpg", dark: false, scrim: 0, section: "/deck/textures/kraft.jpg" },
+    texture: { cover: "/deck/textures/paper.jpg", dark: false, page: "/deck/textures/paper.jpg", pageScrim: 80, scrim: 0, section: "/deck/textures/kraft.jpg" },
   },
   {
     accent: "4a6373",
@@ -117,7 +118,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "3c454b",
     stat: "rule",
-    texture: { cover: "/deck/textures/slate.jpg", dark: true, scrim: 34, section: "/deck/textures/concrete.jpg" },
+    texture: { cover: "/deck/textures/slate.jpg", dark: true, page: "/deck/textures/concrete.jpg", pageScrim: 86, scrim: 34, section: "/deck/textures/concrete.jpg" },
   },
   {
     accent: "a2734b",
@@ -137,7 +138,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     motion: "fade",
     muted: "8b7c6c",
     name: "Atrium",
-    page: "clean",
+    page: "photo-side",
     paper: "fdf9f4",
     plot: "track",
     quote: "mark",
@@ -145,7 +146,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "rule",
     soft: "4a4034",
     stat: "rule",
-    texture: { cover: "/deck/textures/photo-desk.jpg", dark: true, scrim: 52, section: "/deck/textures/photo-lecture.jpg" },
+    texture: { cover: "/deck/textures/photo-desk.jpg", dark: true, gallery: ["/deck/textures/photo-desk.jpg", "/deck/textures/photo-window.jpg", "/deck/textures/photo-lecture.jpg", "/deck/textures/photo-library.jpg"], scrim: 52, section: "/deck/textures/photo-lecture.jpg" },
   },
   {
     accent: "8c78f0",
@@ -173,7 +174,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "413c66",
     stat: "circle",
-    texture: { cover: "/deck/textures/field-indigo.jpg", dark: true, scrim: 22, section: "/deck/textures/field-teal.jpg" },
+    texture: { cover: "/deck/textures/field-indigo.jpg", dark: true, page: "/deck/textures/terrazzo.jpg", pageScrim: 84, scrim: 22, section: "/deck/textures/field-teal.jpg" },
   },
   {
     accent: "2f5fd0",
@@ -201,6 +202,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "split",
     soft: "3d4759",
     stat: "rule",
+    texture: { page: "/deck/textures/washi.jpg", pageScrim: 80 },
   },
   {
     accent: "c1121f",
@@ -228,6 +230,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "3f3d3a",
     stat: "block",
+    texture: { page: "/deck/textures/parchment.jpg", pageScrim: 84 },
   },
   {
     accent: "b3401f",
@@ -255,6 +258,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "rule",
     soft: "4a443d",
     stat: "rule",
+    texture: { page: "/deck/textures/rice-paper.jpg", pageScrim: 78 },
   },
   {
     accent: "c79a2e",
@@ -282,6 +286,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "solid-numeral",
     soft: "3c4a41",
     stat: "rule",
+    texture: { page: "/deck/textures/map-paper.jpg", pageScrim: 82 },
   },
   {
     accent: "0b63e5",
@@ -309,6 +314,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "3a434e",
     stat: "circle",
+    texture: { page: "/deck/textures/drafting-grid.jpg", pageScrim: 62 },
   },
   {
     accent: "d2570d",
@@ -336,6 +342,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "46403a",
     stat: "block",
+    texture: { page: "/deck/textures/stucco.jpg", pageScrim: 80 },
   },
   {
     accent: "e02020",
@@ -363,6 +370,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "split",
     soft: "343434",
     stat: "block",
+    texture: { page: "/deck/textures/terrazzo.jpg", pageScrim: 72 },
   },
   {
     accent: "9a6b3f",
@@ -390,6 +398,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "rule",
     soft: "4a4032",
     stat: "rule",
+    texture: { page: "/deck/textures/linen.jpg", pageScrim: 84 },
   },
   {
     accent: "1a4fd6",
@@ -417,6 +426,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "39435a",
     stat: "panel",
+    texture: { page: "/deck/textures/indigo-cloth.jpg", pageScrim: 86 },
   },
   {
     accent: "c07a17",
@@ -444,6 +454,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "split",
     soft: "46423c",
     stat: "rule",
+    texture: { page: "/deck/textures/concrete.jpg", pageScrim: 88 },
   },
   {
     accent: "b2477a",
@@ -471,6 +482,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "solid-numeral",
     soft: "483f4c",
     stat: "circle",
+    texture: { page: "/deck/textures/terrazzo.jpg", pageScrim: 78 },
   },
   {
     accent: "9fe870",
@@ -498,6 +510,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "rule",
     soft: "3a3e38",
     stat: "block",
+    texture: { page: "/deck/textures/tracing-paper.jpg", pageScrim: 74 },
   },
   {
     accent: "0f7d86",
@@ -525,6 +538,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "35474c",
     stat: "panel",
+    texture: { page: "/deck/textures/washi.jpg", pageScrim: 84 },
   },
   {
     accent: "b4562a",
@@ -552,6 +566,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "rule",
     soft: "4c4237",
     stat: "rule",
+    texture: { page: "/deck/textures/limestone.jpg", pageScrim: 80 },
   },
   {
     accent: "6a5ae0",
@@ -629,6 +644,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "3a3a40",
     stat: "rule",
+    texture: { page: "/deck/textures/newsprint.jpg", pageScrim: 85 },
   },
   {
     accent: "2f7d52",
@@ -656,6 +672,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "split",
     soft: "39473d",
     stat: "circle",
+    texture: { page: "/deck/textures/sage-paper.jpg", pageScrim: 84 },
   },
   {
     accent: "c2600f",
@@ -683,6 +700,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "4e4335",
     stat: "rule",
+    texture: { page: "/deck/textures/parchment.jpg", pageScrim: 80 },
   },
   {
     accent: "e8e8e8",
@@ -710,6 +728,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "solid-numeral",
     soft: "2e2e2e",
     stat: "block",
+    texture: { page: "/deck/textures/felt.jpg", pageScrim: 76 },
   },
   // ── the Keynote categories the set was still missing (owner 2026-08-24: fill every one) ────
   //
@@ -744,7 +763,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "45514a",
     stat: "rule",
-    texture: { dark: true, scrim: 30, section: "/deck/textures/chalkboard.jpg" },
+    texture: { dark: true, page: "/deck/textures/rice-paper.jpg", pageScrim: 82, scrim: 30, section: "/deck/textures/chalkboard.jpg" },
   },
   {
     accent: "1f5f8b",
@@ -792,7 +811,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     motion: "fade",
     muted: "8c8c8c",
     name: "Gallery",
-    page: "clean",
+    page: "photo-side",
     paper: "fcfcfc",
     plot: "column",
     quote: "rule",
@@ -800,7 +819,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "rule",
     soft: "4a4a4a",
     stat: "rule",
-    texture: { cover: "/deck/textures/photo-gallery.jpg", dark: true, section: "/deck/textures/photo-gallery.jpg", scrim: 55 },
+    texture: { cover: "/deck/textures/photo-gallery.jpg", dark: true, gallery: ["/deck/textures/photo-gallery.jpg", "/deck/textures/photo-stair.jpg", "/deck/textures/photo-studio.jpg", "/deck/textures/photo-window.jpg"], scrim: 55, section: "/deck/textures/photo-gallery.jpg" },
   },
   {
     accent: "9c5a2c",
@@ -828,7 +847,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "4f4237",
     stat: "panel",
-    texture: { cover: "/deck/textures/photo-bench.jpg", dark: true, scrim: 58 },
+    texture: { cover: "/deck/textures/photo-bench.jpg", dark: true, page: "/deck/textures/felt.jpg", pageScrim: 76, scrim: 58, section: "/deck/textures/photo-bench2.jpg" },
   },
   {
     accent: "7d3b3b",
@@ -856,7 +875,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "rule",
     soft: "51483c",
     stat: "rule",
-    texture: { closing: "/deck/textures/kraft-dark.jpg", cover: "/deck/textures/kraft-dark.jpg", dark: true, scrim: 28 },
+    texture: { closing: "/deck/textures/kraft-dark.jpg", cover: "/deck/textures/kraft-dark.jpg", dark: true, page: "/deck/textures/kraft.jpg", pageScrim: 86, scrim: 28 },
   },
   {
     accent: "46584a",
@@ -912,7 +931,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "44504a",
     stat: "block",
-    texture: { cover: "/deck/textures/chalkboard.jpg", dark: true, scrim: 22 },
+    texture: { cover: "/deck/textures/chalkboard.jpg", dark: true, page: "/deck/textures/stucco.jpg", pageScrim: 82, scrim: 22 },
   },
   {
     accent: "c9761a",
@@ -940,7 +959,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "split",
     soft: "544335",
     stat: "circle",
-    texture: { closing: "/deck/textures/field-amber.jpg", cover: "/deck/textures/field-amber.jpg", dark: true, scrim: 18 },
+    texture: { closing: "/deck/textures/field-amber.jpg", cover: "/deck/textures/field-amber.jpg", dark: true, page: "/deck/textures/parchment.jpg", pageScrim: 80, scrim: 18 },
   },
   {
     accent: "8e4f77",
@@ -968,7 +987,7 @@ export const DECK_DESIGNS: readonly DeckDesign[] = [
     section: "band",
     soft: "4b4150",
     stat: "circle",
-    texture: { cover: "/deck/textures/field-rose.jpg", dark: true, scrim: 20 },
+    texture: { cover: "/deck/textures/field-rose.jpg", dark: true, page: "/deck/textures/terrazzo.jpg", pageScrim: 82, scrim: 20 },
   },
   {
     accent: "33383d",

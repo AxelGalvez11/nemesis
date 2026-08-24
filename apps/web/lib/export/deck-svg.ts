@@ -186,7 +186,11 @@ export async function sceneToSvg(scene: Scene, width = 800): Promise<string> {
         case "bullets":
           return bulletsSvg(item, k);
         default:
-          return `<image height="${item.box.h * k}" href="${item.data}" width="${item.box.w * k}" x="${item.box.x * k}" y="${item.box.y * k}"/>`;
+          // 🔴 A PICTURE FILLS ITS BOX, IT DOES NOT FIT INSIDE IT. Default SVG behaviour letterboxes,
+          // so a 16:9 photograph in a tall column drew as a thin band floating in the middle of it.
+          // "slice" is the vector spelling of CSS `object-fit: cover`, which is what the HTML
+          // backend already does and what a .pptx does with sizing.type "cover".
+          return `<image height="${item.box.h * k}" href="${item.data}" preserveAspectRatio="xMidYMid slice" width="${item.box.w * k}" x="${item.box.x * k}" y="${item.box.y * k}"/>`;
       }
     })
     .join("");

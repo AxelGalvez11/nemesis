@@ -85,7 +85,9 @@ export interface SceneBullets {
 export interface SceneImage {
   kind: "image";
   box: Box;
-  /** A data URI — icons today, painted art where a design asks for it. */
+  /** A data URI, or an app-relative URL (`/deck/textures/…`) like a background image. The web
+   *  and preview backends can point at a URL directly; deck-pptx.ts turns it into bytes,
+   *  because a .pptx cannot reference anything outside itself. */
   data: string;
 }
 

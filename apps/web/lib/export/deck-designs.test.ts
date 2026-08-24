@@ -181,10 +181,68 @@ test("a material used on the INTERIOR pages is a light one", () => {
   }
 });
 
+test("a design that puts pictures IN its content brings enough of them", () => {
+  // 🔴 A FAMILY, NOT A PICTURE. The picture column is chosen by slide number, so a design with
+  // one photograph would print the same photograph down the whole deck — which is what a
+  // template looks like when nobody filled in the placeholders.
+  for (const d of DECK_DESIGNS) {
+    if (d.page !== "photo-side") continue;
+    const shots = d.texture?.gallery ?? [];
+    assert.ok(shots.length >= 3, `${d.id}: a picture column with only ${shots.length} picture(s) repeats`);
+    assert.equal(new Set(shots).size, shots.length, `${d.id}: the same picture appears twice in one family`);
+  }
+  // And a design that supplies a family must actually be able to show it.
+  for (const d of DECK_DESIGNS) {
+    if (!d.texture?.gallery?.length) continue;
+    assert.equal(d.page, "photo-side", `${d.id}: has a picture family nothing draws`);
+  }
+});
+
+test("🔴 every picture a design declares is actually DRAWN", () => {
+  // The third time this class of bug appeared. A `texture.closing` could be declared and the
+  // composer silently ignored it. Then the three body treatments that draw their own header
+  // (rail, panel-title, banner) returned the page's COLOUR and dropped its material, so three
+  // designs quietly lost the interior they had asked for. A declaration nobody reads is
+  // invisible in review and invisible in code — only exercising it finds it.
+  const plan: DeckPlan = { references: [], slides: [], subtitle: "s", title: "T" };
+  const drawn = (slide: DeckPlan["slides"][number], index: number, d: (typeof DECK_DESIGNS)[number]) =>
+    composeSlide(d, slide, { credit: "N", index, plan }).background.image;
+
+  for (const d of DECK_DESIGNS) {
+    if (d.texture?.page) {
+      // Every layout that lays out against the interior page must show it.
+      for (const layout of ["bullets", "kpi", "chart", "table", "agenda"] as const) {
+        const slide = { ...EMPTY_SLIDE, layout, points: ["one", "two"], title: "T" };
+        assert.equal(drawn(slide, 3, d), d.texture.page, `${d.id}: interior material missing from a ${layout} slide (body "${d.body}")`);
+      }
+    }
+    if (d.texture?.cover) {
+      assert.equal(drawn({ ...EMPTY_SLIDE, layout: "cover", title: "T" }, 1, d), d.texture.cover, `${d.id}: the cover picture is not drawn`);
+    }
+    if (d.texture?.section) {
+      assert.equal(drawn({ ...EMPTY_SLIDE, layout: "section", title: "T" }, 2, d), d.texture.section, `${d.id}: the section picture is not drawn`);
+    }
+    if (d.texture?.closing) {
+      assert.equal(drawn({ ...EMPTY_SLIDE, layout: "closing", title: "T" }, 9, d), d.texture.closing, `${d.id}: the closing picture is not drawn`);
+    }
+    if (d.texture?.gallery?.length) {
+      const shown = new Set(
+        [1, 2, 3, 4].map((i) => {
+          const scene = composeSlide(d, { ...EMPTY_SLIDE, layout: "bullets", points: ["one"], title: "T" }, { credit: "N", index: i, plan });
+          const picture = scene.items.find((it) => it.kind === "image");
+          return picture && "data" in picture ? picture.data : "";
+        }),
+      );
+      assert.equal(shown.size, Math.min(4, d.texture.gallery.length), `${d.id}: the picture column repeats across consecutive slides`);
+    }
+  }
+});
+
 test("a texture is an app asset, not a link to somewhere else", () => {
   // A deck must build with no network beyond our own origin: the .pptx inlines these bytes.
   for (const d of DECK_DESIGNS) {
-    for (const url of [d.texture?.cover, d.texture?.section, d.texture?.closing, d.texture?.page].filter(Boolean)) {
+    const slots = [d.texture?.cover, d.texture?.section, d.texture?.closing, d.texture?.page, ...(d.texture?.gallery ?? [])];
+    for (const url of slots.filter(Boolean)) {
       assert.match(url as string, /^\/deck\/textures\/[a-z0-9-]+\.jpg$/, `${d.id}: "${url}" is not a local deck texture`);
     }
   }
