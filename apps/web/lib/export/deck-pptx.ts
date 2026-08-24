@@ -11,7 +11,7 @@
 // so there is nothing to upload and no storage bucket to stand up. The Node path exists for
 // the tests, which unzip a real build and look inside.
 
-import { deckArtPng } from "./deck-art";
+import { deckArtPng, deckScrimPng } from "./deck-art";
 import { composeReferences, composeSlide, type DeckDesign } from "./deck-compose";
 import { deckDesign } from "./deck-designs";
 import type { DeckPlan } from "./deck-plan";
@@ -98,11 +98,47 @@ function draw(slide: Slide, item: SceneItem): void {
   }
 }
 
+/**
+ * A .pptx cannot reference a URL: every picture has to be bytes inside the file. So a design's
+ * texture or photograph is fetched and inlined at build time. It runs in the browser, where the
+ * asset is same-origin and already in the HTTP cache from the deck view the learner was just
+ * looking at; under Node the tests pass their own reader.
+ *
+ * A missing asset must never cost the learner their download, so a failure falls back to the
+ * design's own background colour — a plainer slide, not a broken one.
+ */
+async function inlineAsset(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const buffer = new Uint8Array(await response.arrayBuffer());
+    let binary = "";
+    for (const byte of buffer) binary += String.fromCharCode(byte);
+    const encode =
+      typeof btoa === "function"
+        ? btoa
+        : (raw: string) => (globalThis as { Buffer?: { from: (s: string, e: string) => { toString: (e: string) => string } } }).Buffer!.from(raw, "binary").toString("base64");
+    const type = response.headers.get("content-type") ?? "image/jpeg";
+    return `data:${type};base64,${encode(binary)}`;
+  } catch {
+    return null;
+  }
+}
+
 async function paint(pptx: Pptx, scene: Scene): Promise<void> {
   const slide = pptx.addSlide();
-  slide.background = scene.background.art
-    ? { data: await deckArtPng(scene.background.art) }
-    : { color: scene.background.color };
+  const picture = scene.background.image
+    ? await inlineAsset(scene.background.image)
+    : scene.background.art
+      ? await deckArtPng(scene.background.art)
+      : null;
+  slide.background = picture ? { data: picture } : { color: scene.background.color };
+  if (scene.overlay) {
+    // Stretched over the whole slide, under everything else: PowerPoint draws in insertion
+    // order, so this has to go on before the type does.
+    const wash = await deckScrimPng(scene.overlay.color, scene.overlay.strength, scene.overlay.start);
+    slide.addImage({ data: wash, h: SLIDE_H, w: SLIDE_W, x: 0, y: 0 });
+  }
   for (const item of scene.items) draw(slide, item);
 }
 

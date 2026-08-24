@@ -57,6 +57,7 @@ export type CoverKind =
   | "grid-dots"
   | "arc-corner"
   | "half-split"
+  | "photo"
   | "art-glow";
 
 export type BodyKind =
@@ -100,6 +101,19 @@ export interface DeckDesign {
   quote: QuoteKind;
   chrome: ChromeKind;
   art?: { cover?: DeckArt; section?: DeckArt; closing?: DeckArt };
+  /** Real material or photography, by app-relative URL. A design that sets `scrim` gets a wash
+   *  of its own dark colour over the picture — the difference between a title that sits ON a
+   *  photograph and one that disappears into it. */
+  texture?: {
+    cover?: string;
+    section?: string;
+    closing?: string;
+    scrim?: number;
+    /** Whether the cover picture is DARK. A composition cannot see its own background, and a
+     *  cover built for paper paints its title in the page ink — which is invisible on slate.
+     *  Declared by the design, checked by a test. */
+    dark?: boolean;
+  };
   kicker?: boolean;
   scale?: number;
 }
@@ -289,6 +303,22 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
   const sub = s.subtitle || ctx.plan.subtitle;
   const items: SceneItem[] = [];
   let background = d.paper;
+  let overlay: Scene["overlay"];
+  const picture = d.texture?.cover;
+  // A dark picture turns the whole cover into a dark field, so every ink on it flips.
+  const onDark = Boolean(picture && d.texture?.dark);
+  const pageInk = onDark ? d.deepInk : d.ink;
+  const pageSoft = onDark ? d.deepSoft : d.soft;
+  const pageRule = onDark ? d.deepSoft : d.ink;
+  // The accent is chosen to sit on the PAGE; on a dark picture it goes dim, so kickers there
+  // use the ink meant for dark ground instead.
+  const pageAccent = onDark ? d.accentInk : d.accent;
+  if (picture) {
+    background = d.deep;
+    if (d.texture?.scrim && d.cover !== "photo") {
+      items.push(rect(box(0, 0, SLIDE_W, SLIDE_H), d.deep, 100 - d.texture.scrim));
+    }
+  }
   type Align = "left" | "center" | "right";
   const kick = (t: string, b: Box, color: string, align?: Align) =>
     text(t, b, d.fonts.body, T.eyebrow, color, { align, bold: true, caps: d.kicker !== false, spacing: d.kicker === false ? 0 : 1.7 });
@@ -303,8 +333,8 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       items.push(rect(band, d.accent));
       items.push(kick(ctx.credit, box(M, M, band.w - M * 1.4, 0.3), d.accentInk));
       items.push(kick("Prepared for the reader", box(M, SLIDE_H - M - 0.3, band.w - M * 1.4, 0.3), mix(d.accent, d.accentInk, 0.65)));
-      items.push(titleAt(box(band.w + 0.85, 2.25, SLIDE_W - band.w - 0.85 - M, 2.6), d.ink));
-      if (sub) items.push(subAt(box(band.w + 0.85, 4.65, SLIDE_W - band.w - 1.8, 1.4), d.soft));
+      items.push(titleAt(box(band.w + 0.85, 2.25, SLIDE_W - band.w - 0.85 - M, 2.6), pageInk));
+      if (sub) items.push(subAt(box(band.w + 0.85, 4.65, SLIDE_W - band.w - 1.8, 1.4), pageSoft));
       break;
     }
     case "band-bottom": {
@@ -327,10 +357,10 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     case "frame": {
       const f = inset(box(0, 0, SLIDE_W, SLIDE_H), 0.5);
       items.push({ box: f, kind: "shape", line: { color: d.accent, width: 0.018 }, shape: "rect" });
-      items.push(kick(ctx.credit, box(M, 1.55, CONTENT_W, 0.3), d.accent, "center"));
-      items.push(titleAt(box(M + 0.7, 2.6, CONTENT_W - 1.4, 2.3), d.ink, "center", 42));
+      items.push(kick(ctx.credit, box(M, 1.55, CONTENT_W, 0.3), pageAccent, "center"));
+      items.push(titleAt(box(M + 0.7, 2.6, CONTENT_W - 1.4, 2.3), pageInk, "center", 42));
       items.push(hair(box(SLIDE_W / 2 - 0.45, 5.2, 0.9, 0), d.accent, 0.022));
-      if (sub) items.push(subAt(box(M + 1.3, 5.55, CONTENT_W - 2.6, 1), d.soft, "center"));
+      if (sub) items.push(subAt(box(M + 1.3, 5.55, CONTENT_W - 2.6, 1), pageSoft, "center"));
       break;
     }
     case "numeral": {
@@ -342,15 +372,15 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
           bold: true,
         }),
       );
-      items.push(kick(ctx.credit, box(M, M, CONTENT_W * 0.5, 0.3), d.accent));
+      items.push(kick(ctx.credit, box(M, M, CONTENT_W * 0.5, 0.3), pageAccent));
       items.push(titleAt(box(M, 4.0, CONTENT_W * 0.66, 2.2), d.deepInk));
       if (sub) items.push(subAt(box(M, 6.0, CONTENT_W * 0.55, 0.9), d.deepSoft));
       break;
     }
     case "stack-bars": {
       [4.4, 2.9, 1.6].forEach((w, i) => items.push(rect(box(M, 1.3 + i * 0.3, w, 0.14), d.accent, i * 26)));
-      items.push(titleAt(box(M, 2.85, CONTENT_W * 0.76, 2.4), d.ink));
-      if (sub) items.push(subAt(box(M, 5.25, CONTENT_W * 0.6, 1.2), d.soft));
+      items.push(titleAt(box(M, 2.85, CONTENT_W * 0.76, 2.4), pageInk));
+      if (sub) items.push(subAt(box(M, 5.25, CONTENT_W * 0.6, 1.2), pageSoft));
       items.push(kick(ctx.credit, box(M, SLIDE_H - M - 0.3, CONTENT_W, 0.3), d.muted));
       break;
     }
@@ -365,26 +395,26 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
     case "panel-right": {
       const panel = edgeBand("right", SLIDE_W * 0.36);
       items.push(rect(panel, d.deep));
-      items.push(titleAt(box(M, 2.45, SLIDE_W - panel.w - M - 0.85, 2.6), d.ink));
+      items.push(titleAt(box(M, 2.45, SLIDE_W - panel.w - M - 0.85, 2.6), pageInk));
       items.push(hair(box(M, 2.1, 1.0, 0), d.accent, 0.028));
       items.push(kick(ctx.credit, box(panel.x + 0.75, 2.45, panel.w - 1.4, 0.3), d.accent));
       if (sub) items.push(subAt(box(panel.x + 0.75, 2.95, panel.w - 1.4, 2), d.deepSoft));
       break;
     }
     case "editorial": {
-      items.push(hair(box(M, 1.75, CONTENT_W, 0), mix(d.paper, d.ink, 0.3), 0.008));
-      items.push(kick(ctx.credit, box(M, 2.05, CONTENT_W, 0.3), d.accent, "center"));
-      items.push(titleAt(box(M + 0.8, 2.8, CONTENT_W - 1.6, 2.5), d.ink, "center", 46));
-      if (sub) items.push(subAt(box(M + 1.5, 5.35, CONTENT_W - 3, 1), d.soft, "center"));
-      items.push(hair(box(M, SLIDE_H - 1.75, CONTENT_W, 0), mix(d.paper, d.ink, 0.3), 0.008));
+      items.push(hair(box(M, 1.75, CONTENT_W, 0), mix(background, pageRule, 0.45), 0.008));
+      items.push(kick(ctx.credit, box(M, 2.05, CONTENT_W, 0.3), pageAccent, "center"));
+      items.push(titleAt(box(M + 0.8, 2.8, CONTENT_W - 1.6, 2.5), pageInk, "center", 46));
+      if (sub) items.push(subAt(box(M + 1.5, 5.35, CONTENT_W - 3, 1), pageSoft, "center"));
+      items.push(hair(box(M, SLIDE_H - 1.75, CONTENT_W, 0), mix(background, pageRule, 0.45), 0.008));
       break;
     }
     case "corner-blocks": {
       items.push(rect(box(0, 0, 1.4, 1.4), d.accent));
       items.push(rect(box(SLIDE_W - 2.6, SLIDE_H - 0.5, 2.6, 0.5), d.deep));
-      items.push(kick(ctx.credit, box(M, 2.3, CONTENT_W, 0.3), d.accent));
-      items.push(titleAt(box(M, 2.85, CONTENT_W * 0.68, 2.4), d.ink));
-      if (sub) items.push(subAt(box(M, 5.25, CONTENT_W * 0.54, 1.2), d.soft));
+      items.push(kick(ctx.credit, box(M, 2.3, CONTENT_W, 0.3), pageAccent));
+      items.push(titleAt(box(M, 2.85, CONTENT_W * 0.68, 2.4), pageInk));
+      if (sub) items.push(subAt(box(M, 5.25, CONTENT_W * 0.54, 1.2), pageSoft));
       break;
     }
     case "ribbon": {
@@ -393,7 +423,7 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       items.push(rect(box(0, 2.36, SLIDE_W, 0.12), d.accent));
       items.push(titleAt(box(M, ribbon.y + 0.5, CONTENT_W * 0.78, 1.5), d.deepInk, "left", 38));
       items.push(kick(ctx.credit, box(M, 1.7, CONTENT_W, 0.3), d.muted));
-      if (sub) items.push(subAt(box(M, ribbon.y + ribbon.h + 0.4, CONTENT_W * 0.6, 1), d.soft));
+      if (sub) items.push(subAt(box(M, ribbon.y + ribbon.h + 0.4, CONTENT_W * 0.6, 1), pageSoft));
       break;
     }
     case "grid-dots": {
@@ -408,9 +438,9 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
           });
         }
       }
-      items.push(kick(ctx.credit, box(M, 2.4, CONTENT_W * 0.55, 0.3), d.accent));
-      items.push(titleAt(box(M, 2.95, CONTENT_W * 0.58, 2.3), d.ink));
-      if (sub) items.push(subAt(box(M, 5.3, CONTENT_W * 0.48, 1.2), d.soft));
+      items.push(kick(ctx.credit, box(M, 2.4, CONTENT_W * 0.55, 0.3), pageAccent));
+      items.push(titleAt(box(M, 2.95, CONTENT_W * 0.58, 2.3), pageInk));
+      if (sub) items.push(subAt(box(M, 5.3, CONTENT_W * 0.48, 1.2), pageSoft));
       break;
     }
     case "arc-corner": {
@@ -427,7 +457,18 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       items.push(kick(ctx.credit, box(M, 2.35, left.w - M * 2, 0.3), d.accentInk));
       items.push(titleAt(box(M, 2.85, left.w - M - 0.65, 2.6), d.accentInk, "left", 36));
       items.push(hair(box(left.w + 0.85, 2.7, 0.9, 0), d.accent, 0.028));
-      if (sub) items.push(subAt(box(left.w + 0.85, 3.0, SLIDE_W / 2 - 1.7, 2), d.soft));
+      if (sub) items.push(subAt(box(left.w + 0.85, 3.0, SLIDE_W / 2 - 1.7, 2), pageSoft));
+      break;
+    }
+    case "photo": {
+      // Built for a photograph and nothing else: no colour block competes with the picture, and
+      // the type sits at the bottom where a stacked scrim makes it legible whatever the image
+      // does up there. (A band-bottom cover over a photo reads as two designs arguing.)
+      background = d.deep;
+      overlay = { color: d.deep, start: 0.3, strength: 0.88 };
+      items.push(kick(ctx.credit, box(M, SLIDE_H - 3.3, CONTENT_W * 0.6, 0.3), d.accentInk));
+      items.push(titleAt(box(M, SLIDE_H - 2.85, CONTENT_W * 0.74, 1.7), d.deepInk, "left", 42));
+      if (sub) items.push(subAt(box(M, SLIDE_H - 1.15, CONTENT_W * 0.62, 0.8), d.deepSoft));
       break;
     }
     default: {
@@ -437,7 +478,11 @@ function composeCover(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       if (sub) items.push(subAt(box(M, 5.5, CONTENT_W * 0.58, 1.2), d.deepSoft));
     }
   }
-  return { background: { art: d.cover === "art-glow" ? d.art?.cover : undefined, color: background }, items };
+  return {
+    background: { art: d.cover === "art-glow" ? d.art?.cover : undefined, color: background, image: picture },
+    items,
+    overlay,
+  };
 }
 
 // ── agenda ───────────────────────────────────────────────────────────────────────────────────
@@ -699,7 +744,17 @@ function composeSection(d: DeckDesign, s: DeckSlide, ctx: Ctx): Scene {
       items.push(title(box(M, 3.35, CONTENT_W * 0.72, 2.2), d.deepInk));
     }
   }
-  return { background: { art: d.section === "art" ? d.art?.section : undefined, color: background }, items };
+  if (d.texture?.section && d.texture.scrim) {
+    items.unshift(rect(box(0, 0, SLIDE_W, SLIDE_H), d.deep, 100 - d.texture.scrim));
+  }
+  return {
+    background: {
+      art: d.section === "art" ? d.art?.section : undefined,
+      color: d.texture?.section ? d.deep : background,
+      image: d.texture?.section,
+    },
+    items,
+  };
 }
 
 // ── body slides ──────────────────────────────────────────────────────────────────────────────
