@@ -31,7 +31,6 @@ import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/de
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { LibraryAnkiImport, LibraryProgress } from "@/components/workspace/study/study-extras";
 import { DeckShare } from "./deck-share";
-import { loadCanvas } from "@/lib/learn/canvas-store";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +81,6 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   const [openDeck, setOpenDeck] = useState<string | null>(null);
   const [cards, setCards] = useState<Record<string, Card[]>>({});
   const [slides, setSlides] = useState<SlidesRow[]>([]);
-  const [fetching, setFetching] = useState<string | null>(null);
   // Which deck is being REVIEWED. Held apart from `openDeck` (which only peeks at the
   // text) because mounting DeckReview is what triggers the whole-account study load —
   // see its header. Null means nothing is mounted and nothing has been fetched.
@@ -302,26 +300,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
         ) : (
           <ul className="flex flex-col gap-0.5">
             {slides.map((row) => (
-              <SlidesShelfRow
-                busy={fetching === row.assetId}
-                key={row.assetId}
-                onDownload={(designId) =>
-                  void (async () => {
-                    if (!row.canvasId) return;
-                    setFetching(row.assetId);
-                    try {
-                      const canvas = await loadCanvas(userId, row.canvasId);
-                      const output = canvas?.outputs?.find((entry) => entry.assetId === row.assetId && entry.deck);
-                      if (!output?.deck) return;
-                      const { downloadDeck } = await import("@/lib/export/deck-download");
-                      await downloadDeck(output.deck, output.title, designId);
-                    } finally {
-                      setFetching(null);
-                    }
-                  })()
-                }
-                row={row}
-              />
+              <SlidesShelfRow key={row.assetId} row={row} />
             ))}
           </ul>
         )}
@@ -383,32 +362,22 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   );
 }
 
-function SlidesShelfRow({
-  row,
-  busy,
-  onDownload,
-}: {
-  row: SlidesRow;
-  busy: boolean;
-  onDownload: (designId: string) => void;
-}) {
+function SlidesShelfRow({ row }: { row: SlidesRow }) {
   const { choose, designId } = useDeckDesignChoice(row.assetId);
   return (
     <li className="flex items-center gap-1">
-      <button
-        className={cn(ROW, "min-w-0 flex-1 disabled:opacity-60")}
-        disabled={busy || !row.canvasId}
-        onClick={() => onDownload(designId)}
-        type="button"
+      <a
+        className={cn(ROW, "min-w-0 flex-1", !row.canvasId && "pointer-events-none opacity-60")}
+        href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
       >
         <MonitorPlay className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
         <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
           {row.title}
         </span>
         <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-          {busy ? "Building…" : `.pptx · ${when(row.createdAt)}`}
+          {when(row.createdAt)}
         </span>
-      </button>
+      </a>
       <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={row.title} />
     </li>
   );
