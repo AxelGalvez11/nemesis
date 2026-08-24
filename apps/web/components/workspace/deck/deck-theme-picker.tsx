@@ -75,8 +75,10 @@ export function DeckThemePicker({
       <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-y-auto">
         <DropdownMenuRadioGroup onValueChange={onPick} value={current.id}>
           {DECK_THEMES.map((theme) => (
-            <DropdownMenuRadioItem key={theme.id} value={theme.id}>
-              <span className="flex min-w-0 items-start gap-2">
+            // items-start + a taller row because each option carries a line of description;
+            // the check indicator the menu appends rides ml-auto, so the label must grow.
+            <DropdownMenuRadioItem className="items-start py-1.5" key={theme.id} value={theme.id}>
+              <span className="flex min-w-0 flex-1 items-start gap-2">
                 <Swatch size={18} theme={theme} />
                 <span className="min-w-0">
                   <span className="block truncate text-(--ui-text-primary)">{theme.name}</span>
