@@ -644,10 +644,16 @@ export interface RecallResult {
 export interface CanvasOutput {
   id: string;
   title: string;
-  /** "document" | "slides" | "diagram" | "export" — whatever produced it said it was. */
+  /** "flashcards" | "note" today (see canvas-deliverables.ts); the field stays a string so a
+   *  future producer does not need a schema change to add a kind. */
   kind: string;
   createdAt: string;
+  /** The §12 ledger row (`assets` + `canvas_outputs`), when the bookkeeping write landed. */
   assetId?: string;
+  /** A flashcards output opens its real deck. */
+  deckId?: string;
+  /** A note output opens in the library's own reader, by path. */
+  notePath?: string;
 }
 
 export interface LearningCanvas {

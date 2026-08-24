@@ -33,6 +33,7 @@ import { useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
+import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
@@ -120,6 +121,8 @@ export function SourcesControl({
   modelKnowledge = false,
   onFiles,
   onUrl,
+  onMakeDeliverable,
+  making = null,
 }: {
   canvas: LearningCanvas;
   /** Whether this canvas holds knowledge that provably came from the model rather than from
@@ -136,6 +139,11 @@ export function SourcesControl({
    * wire it before this control can render at all.
    */
   onUrl?: (url: string) => void;
+  /** Make a deliverable from this canvas (owner 2026-08-25) — absent while a caller has not
+   *  wired it, in which case the tab only lists. */
+  onMakeDeliverable?: (kind: DeliverableKind) => void;
+  /** Which deliverable is being made, for the busy row. */
+  making?: DeliverableKind | null;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"sources" | "outputs">("sources");
@@ -305,19 +313,75 @@ export function SourcesControl({
                 </form>
               )}
             </>
-          ) : outputs.length === 0 ? (
-            // Says what this is for rather than pretending to be broken. Nothing generates
-            // outputs yet; the tab exists because the distinction is architectural (§4).
-            <p className="px-2 py-3 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-quaternary)">
-              Things Nemesis makes for you, like a summary, slides or a document, will be kept here.
-            </p>
           ) : (
-            outputs.map((output) => (
-              <div className="px-2 py-1.5" key={output.id}>
-                <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
-                <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">{output.kind}</p>
-              </div>
-            ))
+            <>
+              {outputs.length === 0 ? (
+                <p className="px-2 py-3 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-quaternary)">
+                  {onMakeDeliverable
+                    ? "Nothing made yet. Ask below, and it lands here and in your Library."
+                    : "Things Nemesis makes for you, like a summary or flashcards, will be kept here."}
+                </p>
+              ) : (
+                outputs.map((output) => {
+                  const body = (
+                    <>
+                      <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
+                      <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                        {output.kind === "flashcards" ? "Flashcard deck · in your Library" : output.kind === "note" ? "Note · in your Library" : output.kind}
+                      </p>
+                    </>
+                  );
+                  const row = "block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary) no-underline";
+                  // 🔴 EVERY ROW OPENS THE REAL THING — the deck in the Library, the note in the
+                  // library's reader. A list of made things that cannot be opened is the sources
+                  // panel's old defect all over again.
+                  if (output.kind === "note" && output.notePath) {
+                    return (
+                      <a className={row} href={`/library/classic?note=${encodeURIComponent(output.notePath)}`} key={output.id}>
+                        {body}
+                      </a>
+                    );
+                  }
+                  if (output.kind === "flashcards" && output.deckId) {
+                    return (
+                      <a className={row} href={`/library?deck=${output.deckId}`} key={output.id}>
+                        {body}
+                      </a>
+                    );
+                  }
+                  return (
+                    <div className="px-2 py-1.5" key={output.id}>
+                      {body}
+                    </div>
+                  );
+                })
+              )}
+              {onMakeDeliverable && (
+                <div className="mt-1 border-t border-(--ui-stroke-tertiary) pt-1">
+                  {(
+                    [
+                      { kind: "flashcards", icon: "layers", idle: "Make flashcards", busy: "Making flashcards…" },
+                      { kind: "note", icon: "note", idle: "Make a summary note", busy: "Writing the note…" },
+                    ] as const
+                  ).map((action) => (
+                    <button
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary) disabled:cursor-default disabled:opacity-60"
+                      disabled={making !== null}
+                      key={action.kind}
+                      onClick={() => onMakeDeliverable(action.kind)}
+                      type="button"
+                    >
+                      <Codicon
+                        className={making === action.kind ? "animate-spin" : undefined}
+                        name={making === action.kind ? "loading" : action.icon}
+                        size="0.75rem"
+                      />
+                      {making === action.kind ? action.busy : action.idle}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
