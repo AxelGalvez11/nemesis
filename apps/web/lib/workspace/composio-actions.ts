@@ -112,6 +112,21 @@ export interface PendingAction {
   readonly action: string;
   /** One line the learner reads before deciding. Built from the arguments, never from the model. */
   readonly summary: string;
+  /**
+   * The arguments it was called with, re-invoked verbatim on approval.
+   *
+   * 🔴🔴 ADDED 2026-08-25, AND WITHOUT IT AN APPROVAL WAS UNIMPLEMENTABLE. `PendingDelete` has
+   * carried its `args` since the day it was written, for the reason stated on that field: a card
+   * that describes one thing and performs another turns a click from consent into a rubber stamp.
+   * This type was missing the same field, so the only way to act on an approval would have been to
+   * ask the model to reissue the call — which is asking the thing being gated to restate what it
+   * is allowed to do. The recipients on the card have to be the recipients in the request.
+   *
+   * 🔴 OPTIONAL ONLY FOR THE WIRE. The server echoes this object back to the browser, and a payload
+   * written by an older build has no such field; treating that as `{}` and refusing to send is
+   * safer than trusting a reconstruction. Every producer in this repo sets it.
+   */
+  readonly arguments?: Record<string, unknown>;
 }
 
 /**

@@ -37,6 +37,9 @@ const EMPTY: TurnContext = {
   searchesLeft: 0,
   sources: 0,
   stagedPassage: "",
+  toolCatalogue: "",
+  toolContext: "",
+  toolRoundsLeft: 0,
   today: "Tuesday, 18 August 2026",
   webContext: "",
 };
@@ -231,6 +234,11 @@ test("a plain decision is read", () => {
     remember: [],
     say: "hey. what are you working on?",
     then: "reply",
+    // 🔴 `tools` JOINS THE ALWAYS-PRESENT SET, 2026-08-25, and it is the one with real-world reach:
+    // the loop reads its length as a condition for touching the learner's own calendar and their
+    // connected apps. `undefined` there would throw on `.length` in the loop header, so a greeting
+    // has to say "I asked for nothing" with an empty list rather than by omission.
+    tools: [],
     topic: null,
     visuals: [],
     // `wantsTest` joins the always-present set on the same argument again: the canvas reads it as

@@ -236,7 +236,7 @@ async function execute(uid: string, body: Record<string, unknown>): Promise<Resp
 
   if (heldForApproval(action, confirmed)) {
     const app = typeof body.app === "string" ? labelFor(body.app) : "that app";
-    return Response.json(pendingActionResult({ action, app, summary: summarise(action, args) }));
+    return Response.json(pendingActionResult({ action, app, arguments: args, summary: summarise(action, args) }));
   }
 
   const res = await composio("/tools/execute/" + encodeURIComponent(action), {

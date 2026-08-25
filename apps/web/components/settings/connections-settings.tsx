@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { beginConnect, connectionStatus, disconnect, NOT_CONFIGURED, type ConnectionStatus } from "@/lib/workspace/composio-client";
+import { forgetToolCatalogue } from "@/lib/learn/canvas-tools";
 
 export function ConnectionsSettings() {
   const [status, setStatus] = useState<ConnectionStatus>(NOT_CONFIGURED);
@@ -26,6 +27,11 @@ export function ConnectionsSettings() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    // 🔴 THE CANVAS'S CACHED CATALOGUE GOES WITH EVERY REFRESH. It holds what this learner can ask
+    // Nemesis to do for up to two minutes (see canvas-tools.ts), and this screen is the only place
+    // that list changes. Without this line, connecting Gmail and going straight to a canvas to ask
+    // about your mail reads exactly like the connection not having worked.
+    forgetToolCatalogue();
     setStatus(await connectionStatus());
     setLoaded(true);
   }, []);

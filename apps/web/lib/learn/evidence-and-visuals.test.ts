@@ -39,6 +39,9 @@ const EMPTY: TurnContext = {
   searchesLeft: 3,
   sources: 0,
   stagedPassage: "",
+  toolCatalogue: "",
+  toolContext: "",
+  toolRoundsLeft: 0,
   today: "Tuesday, 25 August 2026",
   webContext: "",
 };
@@ -220,7 +223,13 @@ test("🔴 the papers fetch runs once per turn, not once per round", () => {
   // the latch, a turn with needsPapers true and needsWeb false re-runs it until the round cap.
   assert.match(CHAT, /let papersFetched = false;/, "the papers latch is gone — the fan-out can now repeat every round");
   assert.match(CHAT, /decision\.needsPapers && !papersFetched/, "the latch is no longer checked before fetching");
-  assert.match(CHAT, /\(decision\?\.needsWeb \|\| \(decision\?\.needsPapers && !papersFetched\)\)/, "a papers-only turn no longer enters the loop at all");
+  // 🔴 THE CONDITION IS READ AS A SET OF CLAUSES, NOT AS ONE LITERAL STRING. It gained a third
+  // lane on 2026-08-25 (workspace tools), and a regex pinning the exact two-clause spelling
+  // reddened over the ADDITION rather than over anything breaking. What this guard is about is
+  // that a papers-only turn can still get in, so that is what it reads.
+  const header = CHAT.slice(CHAT.indexOf("round < MAX_SEARCH_ROUNDS"), CHAT.indexOf("round += 1", CHAT.indexOf("round < MAX_SEARCH_ROUNDS")));
+  assert.match(header, /decision\?\.needsWeb/, "the loop no longer ends on the model's own answer");
+  assert.match(header, /decision\?\.needsPapers && !papersFetched/, "a papers-only turn no longer enters the loop at all");
 });
 
 test("🔴 papers join the SAME numbered list the answer cites over", () => {
