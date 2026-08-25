@@ -1,13 +1,13 @@
 // Contact sheets for the avatar. Every face, and every animation as a filmstrip.
 import { writeFileSync } from "node:fs";
-import { ANIMATIONS, AVATARS, DEFAULT_AVATAR, FACES, VIEW_BOX, animationDuration, avatarFrameAt, drawFace } from "@/lib/avatar";
+import { ANIMATIONS, AVATARS, DEFAULT_AVATAR, FACES, VIEW_SIZE, animationDuration, avatarFrameAt, drawFace } from "@/lib/avatar";
 import type { Avatar, AvatarFrame } from "@/lib/avatar";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const label = (id: string) => id.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
 
 function cell(f: AvatarFrame, a: Avatar, x: number, y: number, w: number, h: number): string {
-  const k = Math.min(w - 10, h - 10) / 300;
+  const k = Math.min(w - 10, h - 10) / VIEW_SIZE;
   const parts = [`<path d="${f.body}" fill="${a.ink}"/>`];
   if (f.leftVisible) parts.push(`<path d="${f.left}" fill="${a.eye}"/>`);
   if (f.rightVisible) parts.push(`<path d="${f.right}" fill="${a.eye}"/>`);
@@ -61,4 +61,4 @@ const out = process.argv[2] ?? ".";
 writeFileSync(`${out}/avatar-faces.svg`, facesSheet(DEFAULT_AVATAR));
 writeFileSync(`${out}/avatar-animations.svg`, stripsSheet(DEFAULT_AVATAR));
 writeFileSync(`${out}/avatar-bodies.svg`, bodiesSheet());
-console.log("wrote 3 sheets, viewBox", VIEW_BOX);
+console.log("wrote 3 sheets, viewBox size", VIEW_SIZE);

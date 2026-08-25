@@ -1,4 +1,11 @@
-// The avatar: a solid with a face on it, and 23 animations that play on any of them.
+// The avatar: a solid with a face on it, and its animations.
+//
+// 🔴 THIS IS A COPY OF apps/web/lib/avatar, AND IT HAS TO BE. This site has its own
+// pnpm-workspace.yaml, its Turbopack root is pinned to this folder, and Vercel deploys
+// `landing/` alone — anything outside it is not even uploaded. `lib/bloub` was already here
+// for the same reason. Copy it UNEDITED when it changes, so the two renderers cannot
+// disagree about what a frame means; the only thing that differs between the two copies is
+// which surfaces they are wired into.
 
 export { ANIMATIONS, ANIMATION_BY_ID } from "./animations";
 export { AVATARS, AVATAR_BY_ID, DEFAULT_AVATAR } from "./avatars";

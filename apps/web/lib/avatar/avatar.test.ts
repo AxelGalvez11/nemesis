@@ -288,6 +288,34 @@ test("reduced motion holds the authored face exactly, with no wander and no blin
   assert.deepEqual(played.eyeDrift, { x: 0, y: 0 });
 });
 
+test("🔴 tracking adds to the face's own turn rather than replacing it", () => {
+  // 🔴 THE POINT IS THAT IT COMPOSES. Two faces that already look in different directions
+  // must each move BY the same amount when the pointer moves, not both end up looking at
+  // the pointer — otherwise following the cursor flattens every authored expression into
+  // the same pose, and `farRightGlance` stops being a right glance.
+  const turn = { x: 6, y: 12 };
+  const moves: number[] = [];
+  for (const id of ["smallAttentive", "farRightGlance", "downwardGaze"]) {
+    const face = FACE_BY_ID.get(id)!;
+    const rest = box(drawFace(DEFAULT_AVATAR.surface, face).left);
+    const aimed = box(drawFace(DEFAULT_AVATAR.surface, face, { turn }).left);
+    assert.notEqual(rest.cx, aimed.cx, `${id} did not move`);
+    moves.push(aimed.cx - rest.cx);
+  }
+  // All three shift the same way. They cannot shift by exactly the same amount — the
+  // projection is not linear — but a face that jumped to a fixed pose would show up as one
+  // of these disagreeing in sign.
+  assert.ok(moves.every((m) => Math.sign(m) === Math.sign(moves[0]!)), `tracking pulled faces apart: ${moves}`);
+});
+
+test("no turn is the same frame as an explicit zero turn", () => {
+  const face = FACE_BY_ID.get("joyfulWide")!;
+  assert.deepEqual(
+    drawFace(DEFAULT_AVATAR.surface, face, { turn: { x: 0, y: 0 } }),
+    drawFace(DEFAULT_AVATAR.surface, face),
+  );
+});
+
 test("🔴 a face turned far enough takes an eye round the back", () => {
   // Not clipped — hidden. Half an eye emerging from the limb reads as a fault.
   const face = { ...FACE_BY_ID.get("smallAttentive")!, head: { x: 0, y: 88, z: 0 } };
