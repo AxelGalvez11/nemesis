@@ -18,6 +18,7 @@ import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 import type { StudyGrade } from "@/lib/workspace/study-scheduler";
 
 import type { CanvasConcept, RecallCard } from "./canvas-model";
+import { deckName } from "./deck-name";
 
 /** Marks canvas-made decks so they are recognisable in Study, and so the pilot's output can be
  *  told apart from a student's own decks later. */
@@ -29,13 +30,15 @@ export async function ensureCanvasDeck(
   existingDeckId: string | undefined,
 ): Promise<string | null> {
   if (existingDeckId) return existingDeckId;
-  const name = canvasTitle.trim() || "Learning canvas";
+  // 🔴 ONE NAMING RULE, SHARED WITH `canvas-deliverables.ts`. This used to fall back to
+  // "Learning canvas" while that file fell back to "Nemesis canvas" — two files naming a deck
+  // after the tool that built it, in two different ways. See `deck-name.ts`.
   try {
     const { data, error } = await supabase
       .from("study_decks")
       .insert({
         user_id: userId,
-        name: name.slice(0, 120),
+        name: deckName(canvasTitle),
         description: "Made while learning on a Nemesis canvas.",
       })
       .select("id")

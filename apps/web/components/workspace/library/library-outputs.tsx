@@ -28,10 +28,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
+  Download,
   FolderPlus,
   Folder as FolderIcon,
   GraduationCap,
-  ImagePlus,
   Layers,
   MonitorPlay,
   NotebookText,
@@ -47,8 +47,8 @@ import {
 } from "@/components/desktop-ui/dropdown-menu";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { DeckReview } from "@/components/workspace/study/deck-review";
-import { DeckOcclusion } from "./deck-occlusion";
 import { DeckShare } from "./deck-share";
+import { deckFileName, deckToAnkiText } from "@/lib/workspace/deck-export";
 import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
 import { fileOutput, type OutputKind } from "@/lib/workspace/library-filing";
 import { supabase } from "@/lib/supabase";
@@ -136,13 +136,8 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   // 🔴 SHARING IS PUBLISHING, so it is one deliberate press on one named deck — never a default,
   // never applied in bulk. `sharing` holds the deck whose link panel is open.
   const [sharing, setSharing] = useState<DeckRow | null>(null);
-  /**
-   * The deck having image cards added to it.
-   *
-   * 🔴 UNMOUNTED UNTIL PRESSED, for the same reason `reviewing` is: the editor reaches
-   * `useCloudStudy()`, which loads every deck, card and review on the account.
-   */
-  const [occluding, setOccluding] = useState<DeckRow | null>(null);
+  /** The deck currently being written to a file, so its button cannot be pressed twice. */
+  const [downloading, setDownloading] = useState<string | null>(null);
   // 🔴 THE SHELF FILTER AND THE OPEN FOLDER ARE INDEPENDENT, AND BOTH ARE VIEW STATE ONLY. Neither
   // refetches: every row is already in hand (200 per shelf), so narrowing is a `filter` and
   // switching back is instant. A learner who files a deck and then changes the filter must not
@@ -321,6 +316,47 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
     },
     [cards, openDeck],
   );
+
+  /**
+   * Hand a whole deck to the learner as a file.
+   *
+   * 🔴 IT FETCHES THE DECK'S OWN CARDS RATHER THAN REUSING THE PEEK. `toggleDeck` caps its read
+   * at 200 rows because it is filling a preview list nobody scrolls to the end of; downloading
+   * 200 of a 400-card deck and calling it the deck would be a silent, unrecoverable loss the
+   * learner only discovers inside Anki.
+   *
+   * 🔴 EVERY FIELD THE EXPORT NEEDS IS SELECTED HERE. `card_type` decides whether a row is an
+   * image card, and asking for it after the fact would mean a second round trip per deck.
+   */
+  const takeDeck = useCallback(async (deck: DeckRow) => {
+    setDownloading(deck.id);
+    try {
+      const { data, error } = await supabase
+        .from("study_cards")
+        .select("front,back,tags,card_type")
+        .eq("deck_id", deck.id)
+        .order("created_at", { ascending: true });
+      if (error || !data) return;
+      const text = deckToAnkiText(
+        (data as { front: string; back: string; tags: string[] | null; card_type: string }[]).map((row) => ({
+          back: row.back,
+          cardType: row.card_type,
+          front: row.front,
+          tags: row.tags ?? [],
+        })),
+      );
+      // 🔴 THE OBJECT URL IS REVOKED. Each one pins its blob in memory for the life of the
+      // document, and this button is on every row of a page a learner leaves open all day.
+      const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = deckFileName(deck.name);
+      link.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(null);
+    }
+  }, []);
 
   // Deep link: /library?deck=<id> starts reviewing that deck — the canvas's Outputs tab
   // links here, and it links here to send the learner into the cards. Read from the
@@ -519,16 +555,30 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                     label={`Move ${deck.name} to a folder`}
                     onFile={(folderId) => void file("deck", deck.id, folderId)}
                   />
-                  {/* 🔴 IMAGE OCCLUSION'S ONLY DOOR — see `deck-occlusion.tsx`. The editor has
-                      worked for weeks with nothing in the product able to open it. */}
+                  {/* 🔴🔴 A HAND-AUTHORING DOOR STOOD HERE FOR ONE DAY, AND THE OWNER REVERSED IT
+                      (2026-08-25): *"I don't want users to edit flashcards, really. Mainly just
+                      download them if they want to… similar to notebook where you don't have to
+                      edit cards. That's not what I want users to do in my app."*
+
+                      What sat here was `DeckOcclusion`, which opened the drag-your-own-boxes
+                      editor. It was added the day before to answer *"can I do image occlusion?"*
+                      — and the answer to that question is now DeepSeek making the cards itself,
+                      not the learner drawing rectangles. `OcclusionEditor` is not deleted (same
+                      as the Anki importer above it); the Library simply stopped offering it.
+
+                      🔴 IT IS REPLACED, NOT JUST REMOVED. Taking authoring away leaves a learner
+                      with cards they cannot change and cannot take elsewhere, which is a cage
+                      rather than a clean surface. Download is the way out: a deck leaves as a
+                      file Anki can import, so nothing here is a one-way door. */}
                   <button
-                    aria-label={`Add image cards to ${deck.name}`}
-                    className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
-                    onClick={() => setOccluding(deck)}
-                    title="Add image cards"
+                    aria-label={`Download ${deck.name}`}
+                    className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary) disabled:opacity-40"
+                    disabled={downloading === deck.id}
+                    onClick={() => void takeDeck(deck)}
+                    title="Download for Anki"
                     type="button"
                   >
-                    <ImagePlus size={15} strokeWidth={1.8} />
+                    <Download size={15} strokeWidth={1.8} />
                   </button>
                   <button
                     aria-label={`Share ${deck.name}`}
@@ -648,12 +698,10 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           is what stops the Library paying that cost on arrival. */}
       {reviewing && <DeckReview deckId={reviewing} onClose={() => setReviewing(null)} />}
       {/* 🔴 The Anki import and Progress dialogs were removed with their buttons (owner,
-          2026-08-24). `study-extras.tsx` still exports both components and neither was deleted —
-          this page simply no longer offers them. */}
+          2026-08-24), and the occlusion EDITOR went the same way the day after (owner,
+          2026-08-25: "I don't want users to edit flashcards, really"). In all three cases the
+          component still exists and still works — this page simply no longer offers it. */}
       {sharing && <DeckShare deck={sharing} onClose={() => setSharing(null)} userId={userId} />}
-      {occluding && (
-        <DeckOcclusion deckId={occluding.id} deckName={occluding.name} onClose={() => setOccluding(null)} />
-      )}
     </main>
   );
 }

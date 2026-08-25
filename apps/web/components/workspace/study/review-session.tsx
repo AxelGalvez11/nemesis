@@ -1,6 +1,16 @@
 "use client";
 
-import { IconDots, IconFlag, IconFlagFilled, IconPlayerPause, IconSparkles, IconWand } from "@tabler/icons-react";
+import {
+  IconDots,
+  IconFlag,
+  IconFlagFilled,
+  IconPlayerPause,
+  IconSparkles,
+  IconThumbDown,
+  IconThumbDownFilled,
+  IconThumbUp,
+  IconThumbUpFilled,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -40,7 +50,7 @@ interface ReviewSessionProps {
 }
 
 export function ReviewSession({ cards, deck, open, onOpenChange, settings }: ReviewSessionProps) {
-  const { gradeCard, undoGrade, updateCard, setCardSuspended, setCardFlag, logStudyPress, userId } = useCloudStudy();
+  const { gradeCard, undoGrade, updateCard, setCardSuspended, setCardFlag, rateCard, logStudyPress, userId } = useCloudStudy();
   const previewMode = useWorkspacePreview();
   const [passedIds, setPassedIds] = useState<string[]>([]);
   const [retryIds, setRetryIds] = useState<string[]>([]);
@@ -211,17 +221,39 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     }
   }
 
-  /** "This card is wrong" — the whole replacement for the deleted editor.
+  /**
+   * Thumbs up or thumbs down on how well this card was WRITTEN.
    *
-   *  🔴 ONE PRESS, NO FORM. The learner states that the card is bad and nothing else;
-   *  the model does the writing. Anything that asked them what to change would be the
-   *  editor again wearing a different hat.
+   * 🔴 THIS IS THE ONLY THING A LEARNER MAY TELL US ABOUT A CARD (owner 2026-08-25: "I don't
+   * want users to edit flashcards, really… Mainly just a thumbs up or a thumbs down if a card
+   * was badly generated"). It is deliberately not a grade: `grade()` says what the learner
+   * remembered, this says what Nemesis got wrong, and conflating them would poison the
+   * scheduler with opinions about prose.
    *
-   *  🔴 OCCLUSION CARDS ARE REFUSED, not silently mangled. Their content is a masked
-   *  image plus coordinates, and `parseRevisedCard` returns front/back TEXT — applying
-   *  it would blank the labels and leave the image orphaned. The menu item hides for
-   *  them rather than failing after the learner has already waited on a model call.
+   * 🔴 THUMBS DOWN ALSO REPAIRS THE CARD, because a complaint with no consequence is a
+   * suggestion box. The rewrite is the path that used to sit behind a menu item reading "This
+   * card is wrong" — same call, same prompt, one fewer decision for the learner to make. Voting
+   * it back off does not un-rewrite anything; the better card is kept.
+   *
+   * 🔴 OCCLUSION CARDS RECORD THE VOTE AND SKIP THE REWRITE, not silently mangled. Their
+   * content is a masked image plus coordinates, and `parseRevisedCard` returns front/back TEXT
+   * — applying it would blank the labels and leave the image orphaned.
    */
+  async function rate(value: 1 | -1) {
+    if (!current || saving || rewriting) return;
+    const card = current;
+    const clearing = card.quality === value;
+    setError(null);
+    try {
+      await rateCard(card.id, value);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't save that.");
+      return;
+    }
+    if (value === -1 && !clearing && card.cardType !== "image_occlusion") await rewriteCurrent();
+  }
+
+  /** Rewrite a card the learner has just called badly made. The learner never types. */
   async function rewriteCurrent() {
     if (!current || saving || rewriting) return;
     if (!userId || previewMode) {
@@ -295,14 +327,55 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
         <DialogDescription className="sr-only">Review the front of the card, reveal its answer, then grade your recall.</DialogDescription>
         {current ? (
           <div className="mx-auto grid min-h-0 w-full max-w-6xl grid-rows-[auto_minmax(0,1fr)_auto] gap-4 pt-1">
-            <div className="flex items-center justify-between pr-10">
-              <span className="min-w-0 truncate text-xs text-(--ui-text-tertiary)">{deck ? deck.name.split("::").at(-1) : "All decks"}</span>
+            {/* 🔴 NO DECK NAME ACROSS THE TOP (owner 2026-08-25: "in the flashcards, it had this
+                title called nemesis flashcards, and I don't really need that there. And kinda
+                just need the minimalist approach of Anki"). The name it printed came from
+                `canvas-deliverables.ts`, which used to append " · flashcards" to the canvas
+                title and fall back to "Nemesis canvas" — so an untitled canvas produced a deck
+                announcing itself as "Nemesis canvas · flashcards" over every card in it.
+                Both halves are fixed: the generated name is now just the topic, and the review
+                screen does not print a name at all. The learner opened this deck; they know
+                which one it is. `DialogTitle` above still carries it for screen readers, where
+                a nameless dialog is a real loss rather than clutter. */}
+            <div className="flex items-center justify-end pr-10">
               <div className="flex items-center gap-1">
                 {lastGrade && (
                   <Button className="text-xs" disabled={saving} onClick={() => void undo()} size="sm" title="Undo last grade (Z)" variant="ghost">
                     Undo
                   </Button>
                 )}
+                {/* The card-quality vote. Two icons, no menu: a complaint buried one click deep
+                    is a complaint nobody files, and this is the only channel a learner has. */}
+                <Button
+                  aria-label="This card is well made"
+                  aria-pressed={current.quality === 1}
+                  data-testid="rate-card-up"
+                  disabled={rewriting}
+                  onClick={() => void rate(1)}
+                  size="icon-xs"
+                  title="Good card"
+                  variant="ghost"
+                >
+                  {current.quality === 1 ? <IconThumbUpFilled className="text-(--ui-learner)" /> : <IconThumbUp />}
+                </Button>
+                <Button
+                  aria-label="This card was badly made"
+                  aria-pressed={current.quality === -1}
+                  data-testid="rate-card-down"
+                  disabled={rewriting}
+                  onClick={() => void rate(-1)}
+                  size="icon-xs"
+                  title={
+                    current.cardType === "image_occlusion"
+                      ? "Badly made card"
+                      : rewriting
+                        ? "Rewriting…"
+                        : "Badly made card. Nemesis will rewrite it"
+                  }
+                  variant="ghost"
+                >
+                  {current.quality === -1 ? <IconThumbDownFilled className="text-(--ui-learner)" /> : <IconThumbDown />}
+                </Button>
                 {/* Icon only (owner 2026-08-04: "the 'explain' button in
                     flashcards needs to only have the icon"). */}
                 <Button
@@ -350,11 +423,10 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                     <Button aria-label="Card actions" size="icon-xs" variant="ghost"><IconDots /></Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-44">
-                    {current.cardType !== "image_occlusion" && (
-                      <DropdownMenuItem disabled={rewriting} onSelect={() => void rewriteCurrent()}>
-                        <IconWand /> {rewriting ? "Rewriting…" : "This card is wrong"}
-                      </DropdownMenuItem>
-                    )}
+                    {/* 🔴 "This card is wrong" USED TO LIVE HERE, and it is not deleted — it is
+                        the thumbs-down button two rows up. Same call, same prompt, one fewer
+                        decision: a learner who thinks a card is bad presses the bad-card button,
+                        rather than opening a menu to find a differently-worded version of it. */}
                     <DropdownMenuItem onSelect={() => void suspendCurrent()}><IconPlayerPause /> Suspend card</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
