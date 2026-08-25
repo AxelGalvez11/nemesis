@@ -980,6 +980,8 @@ export function LearningCanvas({
     answerOwed: policy.awaitingAnswer,
     blocks: canvas.blocks.length,
     canvasState: canvas.state,
+    // 🔴 NOTHING WAS ATTACHED, SO NOTHING WAS SEARCHED. See `hasMaterial` in canvas-presence.ts.
+    hasMaterial: canvas.sources.length > 0,
     // 🔴 THE MATERIAL IS THE ACTION ONLY WHILE THAT ACTION IS STILL IN FLIGHT. Answering the
     // question lands evidence, the policy picks a different action, this flips to false and the
     // task has attention back — with no handler anywhere having to remember to clear anything.
