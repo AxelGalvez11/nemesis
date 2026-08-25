@@ -71,19 +71,48 @@ export function visionConfigured(env: VisionEnv = process.env): boolean {
 export async function readImage(
   bytes: Uint8Array,
   mimeType: string,
-  options: { env?: VisionEnv; prompt?: string; signal?: AbortSignal; spend?: VisionSpend } = {},
+  options: {
+    env?: VisionEnv;
+    prompt?: string;
+    signal?: AbortSignal;
+    spend?: VisionSpend;
+    /**
+     * Which provider to try FIRST. Defaults to DeepSeek.
+     *
+     * 🔴🔴🔴 `"gemini"` EXISTS FOR ONE MEASURED REASON: DEEPSEEK REASONS OVER DIAGRAMS, AND A
+     * DIAGRAM IS THE PATHOLOGICAL CASE. Its own header records the number — a molecular figure
+     * whose visible answer was ~150 tokens burned 18,642 output tokens and **135 seconds**,
+     * enumerating every printed residue. That is fine for a page of handwriting, where the
+     * reasoning earns its keep, and ruinous for "list the labelled boxes", where the answer is a
+     * dozen coordinates.
+     *
+     * Measured on the live nephron diagram, 2026-08-25: the DeepSeek-first ladder took 34s on a
+     * good run and blew a 38s budget on the next one. The parse lane reached the same conclusion
+     * independently and has kept figures on Gemini since 2026-08-23.
+     *
+     * 🔴 IT IS A PREFERENCE, NOT A LOCK. The other provider is still the fallback, so a Gemini
+     * outage costs latency rather than the feature.
+     */
+    prefer?: "deepseek" | "gemini";
+  } = {},
 ): Promise<ImageReadResult | null> {
   const env = options.env ?? process.env;
   const prompt = options.prompt ?? PHOTO_PROMPT;
   const started = Date.now();
 
+  const gemini = () =>
+    readWithVision(bytes, mimeType, { env, prompt, signal: options.signal }).then((seen) =>
+      seen ? ({ model: seen.model, provider: "gemini", text: seen.text, usage: null } as ImageReadResult) : null,
+    );
   // readWithDeepseekVision refuses unreadable mimes and oversize files itself, so an iPhone HEIC
   // or a PDF falls straight through to Gemini without a wasted request.
-  const deepseek = await readWithDeepseekVision(bytes, mimeType, { env, prompt, signal: options.signal });
-  const result: ImageReadResult | null = deepseek
-    ? { model: deepseek.model, provider: "deepseek", text: deepseek.text, usage: deepseek.usage }
-    : await readWithVision(bytes, mimeType, { env, prompt, signal: options.signal })
-      .then((seen) => (seen ? { model: seen.model, provider: "gemini", text: seen.text, usage: null } : null));
+  const deepseek = async (): Promise<ImageReadResult | null> => {
+    const seen = await readWithDeepseekVision(bytes, mimeType, { env, prompt, signal: options.signal });
+    return seen ? { model: seen.model, provider: "deepseek", text: seen.text, usage: seen.usage } : null;
+  };
+
+  const [first, second] = options.prefer === "gemini" ? [gemini, deepseek] : [deepseek, gemini];
+  const result: ImageReadResult | null = (await first()) ?? (await second());
 
   if (result && options.spend) {
     // 🔴 AWAITED, NOT FIRED AND FORGOTTEN — a serverless route can be frozen the moment it
