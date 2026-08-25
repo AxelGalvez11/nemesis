@@ -29,10 +29,12 @@ export default function PrivacyPage() {
           </p>
         </section>
         <section>
-          <h2>Health-related content</h2>
+          <h2>What you ask about</h2>
           <p>
-            Nemesis is educational software. Questions and answers may involve health topics, but
-            Nemesis does not provide diagnosis, treatment, prescriptions, or emergency support.
+            Nemesis is educational software and learners study every subject there is. Questions and
+            answers may touch sensitive ground, including health, law and personal circumstances.
+            Nemesis is not professional advice in any of those areas, and it is not an emergency
+            service.
           </p>
         </section>
         <section>

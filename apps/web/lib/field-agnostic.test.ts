@@ -45,12 +45,14 @@ const EXEMPT = (path: string): boolean =>
   || path.includes("/break/")
   || path.includes("/curricula/")
   || path.includes("reference-shelf")
-  || path.includes("__")
-  // 🔴 THE LEGAL PAGES ARE THE OWNER'S CALL, NOT A LINT. /legal/disclaimer is titled "Medical
-  // Disclaimer" and terms name a pharmacist, which is the loudest health-product signal the site
-  // still sends. Rewriting liability copy to satisfy a test would be the wrong way round: raised
-  // with the owner 2026-08-24, and this exemption is the marker for that decision.
-  || path.includes("/legal/");
+  || path.includes("__");
+
+// 🔴 THE `/legal/` EXEMPTION IS GONE, AND ITS REMOVAL IS THE RECORD OF A DECISION. It was here from
+// 2026-08-24 with a comment saying the legal pages were the owner's call rather than a lint, which
+// was right: /legal/disclaimer was titled "Medical Disclaimer" and rewriting liability copy to
+// satisfy a test would have been the wrong way round. The owner made the call on 2026-08-25 —
+// *"remove medical disclaimer claims, this is a general research tool not a medical tool"* — so the
+// pages are now in scope like everything else, and `legal-is-general.test.ts` holds their substance.
 
 /** Exact lines that name the old brand for a reason, each of which has to be a reason. */
 const ALLOWED = [
