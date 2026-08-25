@@ -1,9 +1,29 @@
 // Supabase Edge Function: nemesis-literature.
 //
-// The scholarly lane: seven public literature indexes, asked at once, merged into one list.
+// The scholarly lane: six public literature indexes, asked at once, merged into one list.
 //
 // Owner 2026-08-24, on being shown that the four "evidence" domains on the old thinking-preview
 // chips never searched anything: *"Applying the literature seven. Plug the literature seven."*
+//
+// 🔴🔴🔴 SIX, NOT SEVEN — bioRxiv REMOVED BY THE OWNER, 2026-08-24: *"i guess we dont need biorxiv."*
+// Said on being shown that it had been answering a property-law question with a neuroscience
+// preprint and a Thirty Years War question with a paper about worms.
+//
+// The reason it was the one to go is structural, and worth keeping written down. api.biorxiv.org
+// has NO SEARCH ENDPOINT — it serves by DOI or by recency. Every other index here answers the
+// question that was asked; bioRxiv could only be handed the ~200 newest preprints, leaving US to
+// invent what counted as relevant. That made it the single source in this lane capable of
+// fabricating relevance rather than merely failing to find any, and it did. Its matching rule has
+// since been repaired (see biorxiv.ts and biorxiv.test.ts), which is why the connector stays
+// correct in the tree even though this lane no longer calls it — the `ask` function can reach it
+// behind SCIENCE_CONNECTORS, and a dormant bug is only a bug that has not been switched on yet.
+//
+// 🔴 THIS IS NOT A PRECEDENT FOR DROPPING arXiv OR SEMANTIC SCHOLAR, which were failing at the same
+// time for an unrelated and fixable reason: HTTP 429 rate limiting, provoked by a burst of testing
+// against them. arXiv has no API key in existence — it is free and keyless and asks only to be
+// called politely — and it is the primary index for physics, mathematics and computer science, so
+// removing it would put the hole exactly where a CS or physics student stands. Semantic Scholar
+// issues a free key on request, which is the whole of its fix. Neither shares bioRxiv's defect.
 //
 // 🔴🔴🔴 ITS OWN FUNCTION, AND THAT IS A SECURITY BOUNDARY RATHER THAN TIDINESS. This began as an
 // action inside `science-search`, which imports the whole connector registry — 42 sources across
@@ -13,7 +33,7 @@
 // all, and no future edit to a gate can expose them. `science-search` is untouched and stays
 // undeployed behind `SCIENCE_SEARCH_ENABLED`.
 //
-// 🔴 THE SEVEN ARE FREE AND KEY-FREE, so this spends no search unit and needs no secret. It is
+// 🔴 THE SIX ARE FREE AND KEY-FREE, so this spends no search unit and needs no secret. It is
 // deliberately NOT on the metered path (`nemesis-search` → Brave → Tavily → …): those providers
 // bill us, these do not, and putting them on the same meter would charge a student for something
 // that cost nothing.
@@ -25,7 +45,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import type { Connector, ConnectorHit } from "../_shared/science/types.ts";
-import { arxiv, biorxiv, crossref, europepmc, openalex, pubmed, semanticScholar } from "../_shared/science/literature/index.ts";
+import { arxiv, crossref, europepmc, openalex, pubmed, semanticScholar } from "../_shared/science/literature/index.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -40,13 +60,12 @@ const ALLOWED_ORIGINS = [
 const MAX_LIMIT = 25;
 
 /**
- * 🔴 THE SEVEN, BOUND BY NAME TO THE MODULES THEMSELVES. Not `registry.get(id)` — there is no
- * registry here — so this map IS the reachable set, and adding an eighth source means importing it
+ * 🔴 THE SIX, BOUND BY NAME TO THE MODULES THEMSELVES. Not `registry.get(id)` — there is no
+ * registry here — so this map IS the reachable set, and adding a seventh source means importing it
  * on the line above and naming it here. There is no tag, flag or catalogue that can widen it.
  */
 const CONNECTORS: Record<string, Connector> = {
   arxiv,
-  biorxiv,
   crossref,
   europepmc,
   openalex,
@@ -88,23 +107,30 @@ async function verifyUser(token: string): Promise<string | null> {
 }
 
 /**
- * 🔴🔴🔴 THE SEVEN SCHOLARLY SOURCES, NAMED — AND THE ONLY ONES THIS ACTION MAY REACH.
+ * 🔴🔴🔴 THE SIX SCHOLARLY SOURCES, NAMED — AND THE ONLY ONES THIS ACTION MAY REACH.
  *
  * Owner 2026-08-24, after being shown that the four "evidence" domains on the old thinking-preview
  * chips never searched anything: *"Applying the literature seven. Plug the literature seven."*
+ * Narrowed to six the same day — *"i guess we dont need biorxiv"* — see the file header for why
+ * bioRxiv specifically, and why that reasoning does not extend to arXiv or Semantic Scholar.
  *
  * 🔴 THEY ARE A LIST, NOT `registry.byDomain("literature")`. Reading the domain would mean this
  * action's reach changes whenever someone registers a connector and tags it literature — the
  * blast radius of a one-word edit in a file nobody reviews for egress. Naming them makes widening
  * this set a visible, deliberate change to THIS line.
  *
- * 🔴 THESE SEVEN, AND NOT THE OTHER THIRTY-FIVE, BECAUSE THEY GENERALISE. Crossref, OpenAlex and
+ * 🔴 THESE SIX, AND NOT THE OTHER THIRTY-SIX, BECAUSE THEY GENERALISE. Crossref, OpenAlex and
  * Semantic Scholar index every discipline — law, history, education, engineering — and arXiv
  * carries physics, maths and computer science. CLAUDE.md's standing rule is that Nemesis is
  * field-agnostic and no feature may be scoped to one discipline, and the other folders here
  * (genomics, proteins, omics, pathways, chemistry) are life-sciences instruments: real value to a
  * pharmacy student, dead weight to everyone else, and not something to switch on for all learners.
  * PubMed and Europe PMC are in because medicine is one of the fields, not because it is the field.
+ *
+ * 🔴 EVERY ONE OF THE SIX ANSWERS THE QUESTION IT IS ASKED. That is now the entry requirement, and
+ * it is what bioRxiv could not meet: an index with no search endpoint forces this code to guess at
+ * relevance on its behalf, and a guess rendered to a learner as evidence is a fabrication. A future
+ * seventh source that only offers "here are the newest records" belongs behind the same door.
  */
 const LITERATURE_IDS = [
   "openalex",
@@ -113,17 +139,19 @@ const LITERATURE_IDS = [
   "europepmc",
   "pubmed",
   "arxiv",
-  "biorxiv",
 ] as const;
 
 /**
  * 🔴🔴🔴 ONE DEADLINE FOR THE WHOLE FAN-OUT, NOT A BUDGET EACH — AND THAT DISTINCTION IS THE
  * DIFFERENCE BETWEEN A 2-SECOND LANE AND AN 8-SECOND ONE.
  *
- * Measured 2026-08-24, all seven asked the same question:
+ * Measured 2026-08-24, all seven then in the lane asked the same question:
  *
  *     openalex 522ms   crossref 305ms   europepmc 1637ms   pubmed 587ms
  *     arxiv 654ms      biorxiv 2276ms   semantic-scholar — never returned
+ *
+ * (bioRxiv has since been removed; its number is left here because the deadline was chosen against
+ * this distribution, and silently deleting the row would make the 3s below look arbitrary.)
  *
  * Six answer inside 2.3s. Semantic Scholar rate-limits us (HTTP 429 without an API key) and then
  * consumes whatever budget it is given: with a per-connector 8s it took 8005ms, and shortening
@@ -155,13 +183,13 @@ interface LiteratureRow {
 }
 
 /**
- * Ask all seven at once and merge what answers.
+ * Ask all six at once and merge what answers.
  *
  * 🔴 ONE FAILING INDEX IS NOT A FAILED SEARCH. `allSettled`, never `all`: PubMed rate-limiting us
- * must not turn six good answers into an error. A student gets the six.
+ * must not turn five good answers into an error. A student gets the five.
  *
  * 🔴 DEDUPED ON URL, BECAUSE THE OVERLAP IS THE NORM AND NOT THE EXCEPTION. Europe PMC mirrors
- * PubMed, OpenAlex and Crossref share DOIs, and a preprint usually appears twice. Undeduped, a
+ * PubMed, OpenAlex and Crossref share DOIs, and arXiv preprints resurface in both. Undeduped, a
  * five-paper answer would cite the same study three times and read as three independent findings —
  * which is worse than showing fewer papers, because it manufactures agreement.
  */
@@ -251,7 +279,7 @@ serve(async (req) => {
     MAX_LIMIT,
   );
 
-  // Never throws: searchLiterature swallows per-index failure, and an all-seven outage is an empty
+  // Never throws: searchLiterature swallows per-index failure, and an all-six outage is an empty
   // list — which the caller treats as "no papers" rather than as a failed turn.
   const hits = await searchLiterature(query, limit);
   return json({ query, hits, sources: LITERATURE_IDS }, 200, req);

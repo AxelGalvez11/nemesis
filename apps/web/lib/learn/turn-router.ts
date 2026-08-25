@@ -999,9 +999,11 @@ const DECISION_CONTRACT = [
   // 🔴 AND THE RULE IS ABOUT THE DATA, NOT ABOUT THE PICTURE, because "never search for a visual"
   // would be its own wrong answer: a plot of this year's figures needs this year's figures. What
   // decides is whether the CONTENT is settled, exactly as it would be for prose.
-  // 🔴🔴🔴 THE EVIDENCE LANE (owner 2026-08-24: *"Applying the literature seven"*). Seven public
-  // scholarly indexes — OpenAlex, Crossref, Semantic Scholar, Europe PMC, PubMed, arXiv, bioRxiv —
-  // fanned out in parallel and merged. They cost nothing, so the only reason to gate this on a
+  // 🔴🔴🔴 THE EVIDENCE LANE (owner 2026-08-24: *"Applying the literature seven"*). Six public
+  // scholarly indexes — OpenAlex, Crossref, Semantic Scholar, Europe PMC, PubMed, arXiv — fanned
+  // out in parallel and merged. Seven until the owner cut bioRxiv the same day: it is the only one
+  // with no search endpoint, so it could not be asked the question, only handed recent records and
+  // left to us to judge — which produced a neuroscience preprint under a property-law query. They cost nothing, so the only reason to gate this on a
   // decision at all is relevance: papers on a "who won last night" turn are noise, and a numbered
   // source list padded with irrelevant studies is worse than a short one.
   //
