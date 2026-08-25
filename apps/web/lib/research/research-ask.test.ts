@@ -44,6 +44,9 @@ const EMPTY: TurnContext = {
   searchesLeft: 0,
   sources: 0,
   stagedPassage: "",
+  toolCatalogue: "",
+  toolContext: "",
+  toolRoundsLeft: 0,
   today: "Tuesday, 25 August 2026",
   webContext: "",
 };

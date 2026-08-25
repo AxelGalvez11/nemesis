@@ -126,6 +126,9 @@ const CONTEXT: TurnContext = {
   searchesLeft: 0,
   sources: 0,
   stagedPassage: "",
+  toolCatalogue: "",
+  toolContext: "",
+  toolRoundsLeft: 0,
   today: "Saturday, 23 August 2026",
   webContext: "",
 };

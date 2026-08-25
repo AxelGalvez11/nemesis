@@ -97,6 +97,9 @@ const FRESH: TurnContext = {
   searchesLeft: 0,
   sources: 0,
   stagedPassage: "",
+  toolCatalogue: "",
+  toolContext: "",
+  toolRoundsLeft: 0,
   today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
   webContext: "",
 };

@@ -112,6 +112,39 @@ export interface RememberedFact {
   readonly statement: string;
 }
 
+/**
+ * One thing the model asked to do in the learner's workspace.
+ *
+ * 🔴 THE NAME IS NOT VALIDATED HERE, DELIBERATELY. Which names exist depends on what this learner
+ * has connected, which is a fact about their account and not about the shape of a turn — and the
+ * executor already answers an unrecognised name with `{error}` the model can read and correct. A
+ * whitelist in the parser would silently drop a real tool the day the catalogue grows.
+ */
+export interface ToolAsk {
+  readonly name: string;
+  readonly arguments: Record<string, unknown>;
+}
+
+/** The most calls one envelope may carry. See MAX_CALLS_PER_ROUND in canvas-tools.ts. */
+const TOOL_ASK_LIMIT = 4;
+
+function readToolAsks(value: unknown): readonly ToolAsk[] {
+  if (!Array.isArray(value)) return [];
+  const asks: ToolAsk[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const entry = row as Record<string, unknown>;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    if (!name) continue;
+    // 🔴 A MISSING ARGUMENT OBJECT IS `{}`, NOT A REFUSAL. `list_calendar_events` legitimately takes
+    // none, and dropping the call would turn "what is on this week" into silence.
+    const args = entry.arguments;
+    asks.push({ arguments: args && typeof args === "object" && !Array.isArray(args) ? args as Record<string, unknown> : {}, name });
+    if (asks.length >= TOOL_ASK_LIMIT) break;
+  }
+  return asks;
+}
+
 /** The most facts one turn may produce. A turn that "remembers" eight things has summarised the
  *  conversation rather than noticed something durable in it. */
 export const REMEMBER_LIMIT = 3;
@@ -351,6 +384,24 @@ export interface TurnDecision {
    */
   curriculumFor: string | null;
   /**
+   * Things to DO in the learner's own workspace before answering: their calendar, and any app they
+   * have connected.
+   *
+   * 🔴🔴 IT RIDES THE ENVELOPE RATHER THAN AN OpenAI `tools` ROUND, FOR THE REASON AT THE TOP OF
+   * THIS FILE. A tool round answers with a CALL and needs a second trip to produce the sentence
+   * that goes with it, so offering tools the OpenAI way would make every "hello" pay the latency of
+   * a capability it never uses. `needsWeb` already works exactly like this — ask, run it, feed the
+   * results back, ask again — and `canvas-chat.ts` runs one loop for both.
+   *
+   * 🔴 IT IS A REQUEST, NEVER A PERMISSION. What the names mean, which executor runs them, how many
+   * rounds are left and which of them are held for a button all live in `canvas-tools.ts`. Nothing
+   * here can reach the network, and nothing the model writes can set `confirmed`.
+   *
+   * 🔴 EMPTY ON ALMOST EVERY TURN, and that is the expected shape. Most messages are not about
+   * anybody's calendar.
+   */
+  tools: readonly ToolAsk[];
+  /**
    * A decision Nemesis needs from the learner before this turn can finish, or null when it does not
    * need one. Null on nearly every turn.
    *
@@ -449,6 +500,26 @@ export interface TurnContext {
    * has, where one that is silently cut off has already wasted it.
    */
   searchesLeft: number;
+  /**
+   * What this learner's workspace can do, in prose — their calendar, and whichever apps they have
+   * connected.
+   *
+   * 🔴 BUILT PER TURN RATHER THAN HARD-CODED, because half of it is theirs: an app authorised two
+   * minutes ago has to appear, and one disconnected two minutes ago has to stop being promised.
+   * `canvas-tools.ts` builds it; empty string means there is nothing to offer, and the block is
+   * then omitted entirely rather than sent as an empty heading.
+   */
+  toolCatalogue: string;
+  /** What the tools this turn already ran came back with, verbatim. Empty on the first round. */
+  toolContext: string;
+  /**
+   * How many more rounds of tools this turn may take.
+   *
+   * 🔴 STATED, NOT ENFORCED BEHIND ITS BACK — the same argument `searchesLeft` above makes. A model
+   * told it has one round left spends it on the call that matters; one silently cut off has already
+   * spent it on a lookup it meant to follow up.
+   */
+  toolRoundsLeft: number;
   /**
    * The conversation so far, oldest first, learner and Nemesis alternating.
    *
@@ -890,7 +961,11 @@ const DECISION_CONTRACT = [
   // 🔴 SHOWN FILLED IN, for the same reason `visuals` is one line below: a field displayed as
   // `null` in the contract's highest-signal position is a field the model sends as null forever.
   + ' "checkFigure": "nephron" | null,'
-  + ' "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],',
+  + ' "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],'
+  // 🔴 SHOWN FILLED IN, like `visuals` and `checkFigure` below and above it, and for the same
+  // measured reason: a field displayed as `[]` in the contract's highest-signal position is a field
+  // the model sends as empty forever.
+  + ' "tools": [{"name": "list_calendar_events", "arguments": {"start_date": "2026-09-01", "end_date": "2026-09-07"}}],',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -1562,6 +1637,34 @@ export function turnRouterMessages(input: {
         role: "system" as const,
       }]
       : []),
+    // 🔴🔴 THE CATALOGUE IS A FACT ABOUT THEIR ACCOUNT, LABELLED AS ONE. Same rule every other
+    // block here follows: it says what is true, never what to do about it. A catalogue phrased as
+    // an instruction ("use the calendar") is a model that files an event every time somebody
+    // mentions Tuesday.
+    ...(context.toolCatalogue.trim()
+      ? [{
+        content:
+          "WHAT YOU CAN DO IN THIS LEARNER'S OWN WORKSPACE. Ask for these in the decision block's "
+          + `"tools" field and the results come back to you before you answer. You have `
+          + `${context.toolRoundsLeft} more round(s) of this on this turn; at zero, answer from what `
+          + "you already have and say plainly if something is still unknown.\n\n"
+          + context.toolCatalogue.trim(),
+        role: "system" as const,
+      }]
+      : []),
+    // 🔴 WHAT ACTUALLY CAME BACK, VERBATIM. Never a summary of it: a model reading a paraphrase of
+    // its own tool results will confidently answer about the paraphrase.
+    ...(context.toolContext.trim()
+      ? [{
+        content:
+          "WHAT YOUR TOOLS RETURNED THIS TURN. These are real results from the learner's own "
+          + "workspace. A result saying confirm_required means NOTHING HAPPENED: the learner has "
+          + "been shown a card and has not pressed it. Never say you did something that came back "
+          + "held.\n\n"
+          + context.toolContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
     // 🔴 REAL ALTERNATING TURNS, NOT A SUMMARY OF THEM. A pronoun resolves against a conversation;
     // it does not resolve against a paragraph describing one. Nemesis's own past turns go in as the
     // plain sentence the learner actually saw rather than as the envelope it arrived in, because
@@ -1751,6 +1854,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // this line runs, and nothing here can change it — which is what keeps this a request the
     // canvas may act on rather than a fourth action smuggled around `asAction`'s whitelist.
     curriculumFor: asText(parsed.curriculumFor) || null,
+    tools: readToolAsks(parsed.tools),
   };
 }
 
@@ -1803,13 +1907,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

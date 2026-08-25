@@ -82,6 +82,7 @@ import {
   type UserQuestion,
 } from "@/lib/learn/clarify-question";
 import { askCanvasChat, type TurnSurroundings } from "./canvas-chat";
+import { runConfirmed, type PendingConfirmation } from "@/lib/learn/canvas-tools";
 import { prepareWebSourcePromotion } from "./web-source-promotion";
 
 const RECALL_CARDS = 8;
@@ -180,6 +181,15 @@ type CanvasAside = {
   topic?: string;
   /** Figures this reply draws, validated, in the order its `[figure n]` markers count into. */
   visuals?: readonly CanvasVisualRequest[];
+  /**
+   * Something this turn asked to do in the learner's workspace that has NOT happened.
+   *
+   * 🔴 IT LIVES ON THE ASIDE RATHER THAN IN ITS OWN STATE BECAUSE IT BELONGS TO ONE ANSWER. The
+   * card sits under the sentence that explains it, and the next turn replaces both together — a
+   * separate state would leave yesterday's confirmation card hanging under today's answer, which is
+   * the one way a consent button can become genuinely dangerous.
+   */
+  pending?: PendingConfirmation | null;
 } | null;
 
 /**
@@ -365,6 +375,13 @@ export interface CanvasSession {
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
   learnFromAside: () => Promise<void>;
+  /**
+   * Answer the confirmation card on the current aside: `true` does the thing, `false` drops it.
+   *
+   * 🔴 A PRESS IS THE ONLY THING THAT REACHES IT. Nothing the model writes can call this, which is
+   * what makes the gate in `canvas-tools.ts` mean anything.
+   */
+  confirmPending: (approve: boolean) => Promise<void>;
   markKnown: (blockId: string, known: boolean) => void;
   toggleCollapsed: (blockId: string, collapsed: boolean) => void;
   gradeRecall: (
@@ -1599,6 +1616,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             question: said,
             consulted: result.consulted,
             sources: result.sources,
+            pending: result.pending,
             text: decision.say,
             topic: decision.topic ?? undefined,
             visuals: decision.visuals,
@@ -1681,6 +1699,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         kind: "reply",
         question: said,
         consulted: result.consulted,
+        // 🔴 THE HELD CALL RIDES THE ANSWER IT BELONGS TO. `askCanvasChat` stopped the turn the
+        // moment a tool came back held, so this is the one thing the model asked for that the
+        // learner has not yet allowed. See `canvas-tools.ts` for why it is not fed back to the model.
+        pending: result.pending,
         sources: result.sources,
         text: [decision.say, courseNote].filter(Boolean).join("\n\n"),
         topic: decision.topic ?? undefined,
@@ -2436,6 +2458,36 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   /** Throw the plan away. Nothing was spent, so there is nothing to undo. */
   const cancelResearchPlan = useCallback(() => setResearchPlan(null), []);
 
+  /**
+   * The learner's answer to a confirmation card: do it, or do not.
+   *
+   * 🔴🔴 THIS IS THE ONLY PLACE IN THE CANVAS THAT CAN SET `confirmed`, AND THAT IS THE ENTIRE
+   * SAFETY ARGUMENT OF THE FEATURE. It runs from a press and from nothing else — not from an
+   * envelope, not from a tool result, not from a sentence the model wrote. `runConfirmed` re-runs
+   * the SAME call the card described, never a reconstruction of it.
+   *
+   * 🔴 THE CARD GOES EITHER WAY, AND THE ANSWER SAYS WHICH. A card that stayed after a press is one
+   * a second click can fire again; a card that vanished silently leaves the learner unsure whether
+   * their email went. So the pending item is cleared and one short line takes its place.
+   *
+   * 🔴 NO SECOND MODEL ROUND. Reporting "Deleted." costs nothing and cannot be wrong; asking the
+   * model to narrate an outcome it did not witness is exactly how "I've sent it" gets written about
+   * a request that failed.
+   */
+  const confirmPending = useCallback(async (approve: boolean) => {
+    const held = aside?.pending;
+    if (!held) return;
+    if (!approve) {
+      setAside((current) => (current ? { ...current, pending: null } : current));
+      return;
+    }
+    const done = await runConfirmed(held);
+    const line = done.ok
+      ? held.kind === "delete" ? "Done, it is gone." : `Done, sent to ${held.pending.app}.`
+      : done.error ?? "That did not go through.";
+    setAside((current) => (current ? { ...current, pending: null, text: `${current.text}\n\n${line}` } : current));
+  }, [aside]);
+
   return {
     canvas,
     busy,
@@ -2451,6 +2503,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     researchPlan,
     startResearchPlan,
     cancelResearchPlan,
+    confirmPending,
     madeArtifact,
     /** Dismisses the receipt. The artifact itself is untouched — it stays in the outputs panel,
      *  which is what makes clearing this safe rather than destructive. */

@@ -70,6 +70,7 @@ import { CanvasHistoryView } from "./canvas-history-view";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
+import { ConfirmCard } from "./confirm-card";
 import { ReplyActions } from "./reply-actions";
 import { SpokenExample } from "./spoken-example";
 import { CanvasQuiet } from "./canvas-quiet";
@@ -1696,6 +1697,17 @@ export function LearningCanvas({
                     />
                   </div>
                 ),
+              )}
+
+              {/* 🔴🔴 THE CONFIRMATION CARD SITS UNDER THE SENTENCE THAT EXPLAINS IT, and above the
+                  copy/voice row rather than below it: what the learner has to decide must come
+                  before the controls for the answer they have finished reading. It is on the aside,
+                  so the next turn replaces the card with the answer it belonged to — a card that
+                  outlived its sentence would be a consent button attached to nothing.
+                  🔴 SAME `turnInFlight` GATE AS THE ROW BELOW. A "Delete" button under half an
+                  answer is a button under a sentence that is about to say something else. */}
+              {!turnInFlight && session.aside?.pending && (
+                <ConfirmCard onAnswer={(approve) => session.confirmPending(approve)} pending={session.aside.pending} />
               )}
 
               {/* 🔴 AFTER THE ANSWER, AND ONLY ONCE IT HAS ARRIVED. Copying half an answer copies

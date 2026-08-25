@@ -56,6 +56,12 @@ import {
   type TurnExchange,
 } from "@/lib/learn/turn-router";
 import { hostnameOf } from "@/lib/favicon";
+import {
+  loadToolCatalogue,
+  MAX_TOOL_ROUNDS,
+  runToolRound,
+  type PendingConfirmation,
+} from "@/lib/learn/canvas-tools";
 import { loadMemory, memoryBlock } from "@/lib/learn/learner-memory";
 
 /** The non-thinking model, same choice `lib/learn/canvas-api.ts`'s own `ask()` makes for every
@@ -132,6 +138,18 @@ export interface CanvasTurnReply {
    */
   consulted: readonly ChatWebResult[];
   error: string | null;
+  /**
+   * Something the turn asked to do that has NOT happened, waiting on the learner.
+   *
+   * 🔴🔴 THE TURN STOPS HERE RATHER THAN TELLING THE MODEL ABOUT IT AND CARRYING ON. A held result
+   * fed back into another round is a model being asked to narrate a permission it does not have,
+   * and the shape of that failure is well known: it writes "I've deleted it" because the sentence
+   * reads better than "I have shown you a card". The card is real UI with two buttons, and
+   * approving re-runs the SAME call with `confirmed: true` — see `canvas-tools.ts`.
+   *
+   * Null on every turn that asked for nothing dangerous, which is almost all of them.
+   */
+  pending: PendingConfirmation | null;
 }
 
 /**
@@ -272,7 +290,12 @@ export async function askCanvasChat(
   const memory = memoryBlock(await loadMemory(uid));
 
   /** One round of the envelope. `webContext` carries everything found so far; empty on the first. */
-  const ask = (webContext: string, searchesLeft: number) => postChatCompletion(
+  // 🔴 ONE LOOKUP FOR THE WHOLE TURN, AND IT CANNOT FAIL THE TURN. `composioTools()` returns an
+  // empty catalogue for every problem — no key, nothing connected, a network blip — and an empty
+  // catalogue means the packet is exactly what it was before connected apps existed.
+  const catalogue = await loadToolCatalogue();
+
+  const ask = (webContext: string, searchesLeft: number, toolContext: string, toolRoundsLeft: number) => postChatCompletion(
     uid,
     turnRouterMessages({
       context: {
@@ -292,6 +315,9 @@ export async function askCanvasChat(
         courseRequested,
         searchesLeft,
         stagedPassage,
+        toolCatalogue: catalogue.block,
+        toolContext,
+        toolRoundsLeft,
         webContext,
       },
       sourceRule: sourceDisagreementInstruction({
@@ -341,8 +367,8 @@ export async function askCanvasChat(
     return read;
   };
 
-  const first = await ask("", MAX_SEARCH_ROUNDS);
-  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [], stage };
+  const first = await ask("", MAX_SEARCH_ROUNDS, "", MAX_TOOL_ROUNDS);
+  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, pending: null, sources: [], stage };
   let decision = first.text ? await readDecision(first.text) : null;
 
   // The declaration is applied once, here, before the loop below reads `needsWeb`. `webQuery` falls
@@ -371,11 +397,41 @@ export async function askCanvasChat(
    * round cap, showing the learner a search that finds nothing new each time.
    */
   let papersFetched = false;
+  /**
+   * What the tools have returned so far, and what is still waiting on a button.
+   *
+   * 🔴 IT ACCUMULATES, LIKE `sources` ABOVE AND FOR THE SAME REASON. Round two of a calendar edit
+   * needs round one's listing — the event's id is in it — and replacing the block would make the
+   * model ask for the same listing again to get the id back.
+   */
+  const toolResults: string[] = [];
+  let toolRounds = 0;
+  let pending: PendingConfirmation | null = null;
   for (
     let round = 0;
-    round < MAX_SEARCH_ROUNDS && (decision?.needsWeb || (decision?.needsPapers && !papersFetched));
+    round < MAX_SEARCH_ROUNDS
+      && (decision?.needsWeb
+        || (decision?.needsPapers && !papersFetched)
+        || (decision?.tools.length && toolRounds < MAX_TOOL_ROUNDS && !pending));
     round += 1
   ) {
+    // 🔴🔴 THE TOOLS RUN INSIDE THE SEARCH LOOP RATHER THAN IN ONE OF THEIR OWN, AND THAT IS THE
+    // WHOLE INTEGRATION. One turn can legitimately want both — "is there anything published on
+    // this, and when is my exam" — and two loops would run them in a fixed order with two separate
+    // model rounds between. Here they are one round: whatever the envelope asked for happens, and
+    // everything it produced goes back in the next packet together.
+    if (decision.tools.length && toolRounds < MAX_TOOL_ROUNDS && !pending) {
+      toolRounds += 1;
+      enter("searching");
+      const ran = await runToolRound(decision.tools, catalogue.index, { askText: question });
+      // The strip says what is happening in the learner's words; `labelFor` never shows a slug.
+      if (ran.labels.length) onWork?.(ran.labels[0]!);
+      if (ran.context) toolResults.push(ran.context);
+      // 🔴 A HELD CALL ENDS THE TOOL HALF OF THE TURN, HERE, BEFORE ANOTHER ROUND CAN ASK AGAIN.
+      // The model is still shown the held result — it must be able to say "I need you to confirm"
+      // in its own words — but it gets no further rounds to try routing around the card.
+      if (ran.pending) pending = ran.pending;
+    }
     // 🔴 TWO BEATS, BECAUSE THE COUNT DOES NOT EXIST YET AT THE FIRST ONE. ChatGPT says "Searching
     // 54 websites" because it issues the queries and knows the number; ours comes back with the
     // results. So the first call says a search is happening (`null`) and the second says how much
@@ -431,8 +487,13 @@ export async function askCanvasChat(
     enter("reading");
     // Re-numbered over everything gathered, so the numbers the model reads are the numbers
     // `citedWebResults` resolves against.
-    const next = await ask(formatWebSearchContext(sources), MAX_SEARCH_ROUNDS - round - 1);
-    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, sources: [], stage };
+    const next = await ask(
+      formatWebSearchContext(sources),
+      MAX_SEARCH_ROUNDS - round - 1,
+      toolResults.join("\n\n"),
+      pending ? 0 : Math.max(0, MAX_TOOL_ROUNDS - toolRounds),
+    );
+    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, pending: null, sources: [], stage };
     // A failed round leaves the previous answer standing, which is better for the learner than an
     // error — and stops the loop, since a null decision cannot ask for another search.
     decision = (next.text ? await readDecision(next.text) : null) ?? decision;
@@ -451,6 +512,7 @@ export async function askCanvasChat(
   return {
     decision,
     error: null,
+    pending,
     // 🔴 AND IT IS ALSO THE HONEST FALLBACK WHEN THE MODEL CITES NOTHING. Measured in a browser on
     // 2026-08-20: "whats the latest news on ai?" returned an answer plainly built from live pages
     // with NOT ONE `[n]` in it — so `citedWebResults` returned empty, and the learner saw an answer
