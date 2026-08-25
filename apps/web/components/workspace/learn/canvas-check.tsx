@@ -65,6 +65,7 @@ import { useEffect, useState } from "react";
 // and its only reader was that screen. Rather than leave it exported with nothing rendering it, it
 // now writes the same fact into the account `describeAttempt` hands the model.
 import { describeAttempt, type TestRun } from "@/lib/learn/test-run";
+import { OcclusionCardView } from "@/components/workspace/study/occlusion-card";
 
 export function CanvasCheck({
   run,
@@ -141,6 +142,26 @@ export function CanvasCheck({
           ✕
         </button>
       </div>
+
+      {/* 🔴🔴 THE PICTURE IS THE QUESTION, SO IT SITS ABOVE THE PROMPT (owner 2026-08-25: image
+          occlusion "as part of its testing tools… similar to the multiple choice chip"). "Which
+          part is covered?" means nothing before the learner has seen which part is covered.
+
+          🔴 `revealed={false}`, ALWAYS, AND IT IS NOT A PROP THIS CARD COULD PASS DIFFERENTLY.
+          The owner's own rule for this component is that nothing is marked while the run is live
+          — *"the user does not immediately get feedback until the end"* — and a revealed mask IS
+          the answer. The reveal happens where every other verdict now happens: in the reply, from
+          `describeAttempt`. `FigureOcclusion` states the same rule for the course lane: revealing
+          before the learner commits turns retrieval into recognition.
+
+          🔴 IT IS `OcclusionCardView`, THE STUDY DECK'S OWN RENDERER, NOT A SECOND ONE. The
+          diagram a learner meets in a check and the diagram they meet in the deck afterwards are
+          the same picture with the same box on it, drawn by one component from one payload. */}
+      {question.figure && (
+        <div className="mt-3">
+          <OcclusionCardView className="max-h-72" payload={question.figure} revealed={false} />
+        </div>
+      )}
 
       <h2 className="mt-2 text-[length:var(--canvas-text-body)] font-medium leading-snug text-(--ui-text-primary)">
         {question.prompt}

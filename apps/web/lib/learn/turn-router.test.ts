@@ -211,6 +211,11 @@ test("a plain decision is read", () => {
     // more time. The canvas reads it as the fallback source of questions, and `undefined` there is
     // indistinguishable from "the field has not shipped yet". A greeting asks nothing.
     check: null,
+    // 🔴 `checkFigure` JOINS THEM, 2026-08-25 — the diagram an occlusion check is built from.
+    // Present and null on a greeting for the same reason as everything above: the session hook
+    // reads it as the condition for a PAID vision lookup, and a field that is sometimes absent is
+    // a field whose absent case nobody ever tests.
+    checkFigure: null,
     curriculumFor: null,
     milestones: [],
     // 🔴 PRESENT AND false, LIKE EVERY FIELD AROUND IT. `needsPapers` is the search loop's OTHER
