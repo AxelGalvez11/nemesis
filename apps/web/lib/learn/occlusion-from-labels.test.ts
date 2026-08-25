@@ -7,6 +7,7 @@ import type { SuggestedBox } from "@nemesis/shared";
 
 import { MAX_OPTIONS, MIN_OPTIONS } from "./chat-check";
 import {
+  answerSeat,
   canOcclude,
   hiddenShape,
   occlusionCards,
@@ -102,16 +103,39 @@ test("🔴🔴🔴 exactly one option is correct, and it is the covered part", (
   }
 });
 
-test("🔴🔴 the correct answer does not sit in the same seat every time", () => {
+test("🔴🔴🔴 the answer's seat has no runnable PATTERN, not merely more than one value", () => {
+  // 🔴 THE OWNER SPOTTED THE FIRST VERSION ON SCREEN, 2026-08-25: *"it's supposed to be random
+  // every time, not just, like, the letter b every single time."* It was `seat % optionCount` —
+  // first, second, third, fourth — which passes a naive "does it vary?" check and is still a tell:
+  // by the third question a learner who has noticed can answer without looking at the picture.
   const seats = FIGURE.boxes.map((_, index) =>
     occlusionChoices(FIGURE, hiddenShape(FIGURE, index)!, index)!.findIndex((option) => option.correct),
   );
   assert.ok(new Set(seats).size > 1, `the answer sat in seat ${seats[0]} every time`);
-  // …and it is deterministic, so a replay shows the learner the same test.
+  // 🔴 CALIBRATION: restore the rotation and this line reddens. `0,1,2,3…` is exactly what a
+  // modulo produces, and it is the thing being banned.
+  const rotating = seats.every((seat, index) => seat === index % (seats.length || 1));
+  assert.ok(!rotating, `the answer walks down the list in order: ${seats.join(",")}`);
+
+  // …and it is still DETERMINISTIC, so a session replays and this test can pin it.
   const again = FIGURE.boxes.map((_, index) =>
     occlusionChoices(FIGURE, hiddenShape(FIGURE, index)!, index)!.findIndex((option) => option.correct),
   );
   assert.deepEqual(again, seats, "the same question produced a different layout on a second call");
+});
+
+test("🔴🔴 every seat gets used across a run of questions", () => {
+  // A hash that happened to favour one position would be the old bug wearing a disguise.
+  const seen = new Set<number>();
+  for (let index = 0; index < 40; index += 1) {
+    seen.add(answerSeat(`part ${index}`, index, 4));
+  }
+  assert.equal(seen.size, 4, `only seats ${[...seen].join(",")} were ever used`);
+});
+
+test("🔴 a single-option set puts the answer in the only seat there is", () => {
+  assert.equal(answerSeat("anything", 7, 1), 0);
+  assert.ok(answerSeat("anything", 7, 3) < 3, "the seat fell outside the options");
 });
 
 test("🔴🔴 the distractors are the NEAREST parts, because neighbours are what get confused", () => {

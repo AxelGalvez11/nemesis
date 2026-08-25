@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { isAnswerableLabel, OCCLUSION_READ_WIDTH, smallerThumbnail } from "./occlusion-source";
+import { isAnswerableLabel, labelQuality, OCCLUSION_READ_WIDTH, plainLabel, smallerThumbnail } from "./occlusion-source";
 
 // The real URL the reference lane returned for `subject: "nephron"`, 2026-08-25.
 const REAL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dc/KidneyAndNephron-v4_Antares42.svg/1280px-KidneyAndNephron-v4_Antares42.svg.png";
@@ -59,6 +59,57 @@ test("🔴 an empty or blank label is refused", () => {
   for (const blank of ["", " ", "   ", "\t"]) assert.equal(isAnswerableLabel(blank), false);
 });
 
+test("🔴🔴🔴 the REAL nephron diagram is rejected, because it does not name its parts", () => {
+  // 🔴 THE OWNER'S CATCH, 2026-08-25: *"make sure the images that it uses for image occlusion
+  // actually have the content in it… the one for the nephron actually didn't even have proper
+  // labels."* He was right and the failure was mine — I filtered the unusable labels OUT and then
+  // built a question from whatever survived, instead of rejecting the PICTURE.
+  //
+  // These are the exact 20 labels the live route returned for `subject: "nephron"`. The diagram
+  // numbers its parts 1-12 and prints the names in a key beside the figure, so the box landed on a
+  // legend line and the question tested nothing about a kidney.
+  const nephron = [
+    "F: Filtration", "R: Reabsorption", "S: Secretion", "E: Excretion",
+    "Cortex", "Medulla", "to Renal Vein", "to Ureter",
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
+  ];
+  const quality = labelQuality(nephron);
+  assert.equal(quality.named, 8, "the named count changed — re-check the rule against the real data");
+  assert.equal(quality.keyed, 12);
+  assert.equal(quality.usable, false, "the picture the owner rejected is accepted again");
+});
+
+test("🔴🔴 a diagram that really does name its parts is accepted", () => {
+  const neuron = ["dendrite", "axon", "myelin sheath", "node of Ranvier", "soma", "axon terminal"];
+  const quality = labelQuality(neuron);
+  assert.equal(quality.named, 6);
+  assert.equal(quality.keyed, 0);
+  assert.equal(quality.usable, true, "a properly labelled diagram was rejected");
+});
+
+test("🔴🔴 names must OUTNUMBER keys, not merely exist", () => {
+  // A mostly-numbered diagram that happens to print two words is still a numbered diagram.
+  assert.equal(labelQuality(["Cortex", "Medulla", "aorta", "vein", "1", "2", "3", "4", "5"]).usable, false);
+  // …and four named parts is the floor, because two produces one two-option question repeated.
+  assert.equal(labelQuality(["anode", "cathode"]).usable, false, "a two-label picture was chosen over a better one");
+  assert.equal(labelQuality(["anode", "cathode", "anode wire", "electrolyte"]).usable, true);
+});
+
+test("🔴🔴 a legend key comes off the front of an answer", () => {
+  // "F: Filtration" is not how anybody says the answer, and the letter is a CUE — a learner can
+  // read "F" off the diagram and match the option without knowing what filtration is.
+  assert.equal(plainLabel("F: Filtration"), "Filtration");
+  assert.equal(plainLabel("1. Dendrite"), "Dendrite");
+  assert.equal(plainLabel("b) axon"), "axon");
+  assert.equal(plainLabel("A - soma"), "soma");
+  // 🔴 AND A REAL NAME IS NOT MANGLED. The key must be short AND followed by a separator AND a
+  // space, so ordinary names with punctuation in them survive intact.
+  assert.equal(plainLabel("Bowman's capsule"), "Bowman's capsule");
+  assert.equal(plainLabel("loop of Henle"), "loop of Henle");
+  assert.equal(plainLabel("T-cell receptor"), "T-cell receptor");
+  assert.equal(plainLabel("pH: measured at the surface"), "pH: measured at the surface");
+});
+
 test("🔴🔴🔴 a smaller rendering is PROPOSED, never asserted", () => {
   // 🔴🔴🔴 THE BUG THIS TEST WAS REWRITTEN FOR WAS MINE, AND IT BROKE THE FEATURE COMPLETELY.
   // Wikimedia only serves thumbnail widths it has ALREADY RENDERED, and which ones those are is
@@ -90,16 +141,35 @@ test("🔴🔴🔴 the route FALLS BACK when the smaller rendering is refused", 
   const route = readFileSync(new URL("../../app/api/learn/figure-occlusion/route.ts", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
-  // Two candidates, tried in order, and only running out of them is a refusal.
-  assert.match(route, /const attempts = smaller && allowedAssetUrl\(smaller\) \? \[smaller, chosenPath\] : \[chosenPath\]/, "the fallback is gone");
-  assert.match(route, /for \(const candidate of attempts\)/, "the candidates are no longer tried in turn");
-  assert.match(route, /if \(!bytes\) return refuse\(admin, key, "image-unreachable"\)/, "a total failure is no longer a refusal");
+  // Two renderings of the chosen picture, tried in order, and only running out is a failure.
+  assert.match(route, /const renderings = smaller && allowedAssetUrl\(smaller\) \? \[smaller, chosenPath\] : \[chosenPath\]/, "the fallback is gone");
+  assert.match(route, /for \(const rendering of renderings\)/, "the renderings are no longer tried in turn");
+  assert.match(route, /if \(!bytes\) \{\s*lastRefusal = "image-unreachable";/, "an unreachable picture no longer moves to the next candidate");
   // 🔴 AND THE URL THAT ANSWERED IS THE ONE SHOWN. Masks are measured against the bytes fetched;
   // reading one rendering and displaying another places every box correctly in a coordinate space
   // nobody is looking at.
-  assert.match(route, /assetPath = candidate;/, "the answering url is not the one carried forward");
+  assert.match(route, /assetPath = rendering;/, "the answering url is not the one carried forward");
   assert.match(route, /asset: \{\s*assetPath,/, "the learner is shown a different url from the one measured");
   assert.match(route, /allowedAssetUrl\(chosenPath\)/, "the original url is trusted unchecked");
+});
+
+test("🔴🔴🔴 an unsuitable picture is REJECTED and the next one is read", () => {
+  // 🔴 THE OWNER'S POINT. Reading one picture and building a question from whatever survived
+  // filtering is what produced the nephron legend question. The top hit for a subject is often a
+  // numbered-key diagram and the good one is second or third, so the route must keep looking.
+  const route = readFileSync(new URL("../../app/api/learn/figure-occlusion/route.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.match(route, /for \(const candidate of found\)/, "only one picture is considered again");
+  assert.match(route, /const quality = labelQuality\(boxes\.map\(\(box\) => box\.label\)\)/, "the picture is no longer graded");
+  assert.match(route, /if \(!quality\.usable\) \{\s*lastRefusal = "unlabelled-picture";\s*continue;/, "an unlabelled picture is accepted again");
+  // 🔴 BOUNDED IN BOTH MONEY AND TIME. Each attempt is a vision read, and three at their
+  // individual ceilings would outlast the function.
+  assert.match(route, /tried >= MAX_PICTURES \|\| Date\.now\(\) - startedAt > KEEP_TRYING_UNTIL_MS/, "the search is unbounded");
+  const budget = Number(/const VISION_BUDGET_MS = (\d+)/.exec(route)?.[1]);
+  const keepTrying = Number(/const KEEP_TRYING_UNTIL_MS = (\d+)/.exec(route)?.[1]);
+  const maxDuration = Number(/export const maxDuration = (\d+)/.exec(route)?.[1]);
+  assert.ok((keepTrying + budget) / 1000 < maxDuration, "the last attempt can start too late to finish");
 });
 
 test("🔴🔴🔴 a TRANSIENT failure is never cached, only a durable one", () => {
