@@ -16,7 +16,7 @@
 // everything else fades to a ghost, and the camera frames the named bones rather than the body —
 // which is what a teacher's pointer does on a chart, done with the camera.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 // 🔴 TYPE-ONLY, SO THE CHUNKING IS UNAFFECTED. These are erased at build; the dynamic `import()`
 // calls below are still what decide that a lesson without an anatomy visual ships none of three.
 import type { WebGLRenderTarget } from "three";
@@ -56,6 +56,33 @@ const BONE = 0xb3a184;
  * floating shape. High enough to read as context, low enough not to compete with the subject.
  */
 const FADED_OPACITY = 0.26;
+
+/**
+ * The body in layers, in the atlas's own order — the dial's whole justification.
+ *
+ * 🔴 THE ORDERING IS NOT INVENTED. Z-Anatomy numbers its top-level collections 1–9, deep to
+ * superficial: "1: Skeletal system", "3: Joints", "4: Muscular system", "5: Cardiovascular
+ * system", and so on. That numbering IS the depth, written by the atlas authors, and this table
+ * is it. Reordering these rows is a claim about anatomy, not a layout preference.
+ *
+ * 🔴 AND THEY GENUINELY STACK. Measured in world space rather than assumed: skeleton and muscle
+ * both span y 0.01–1.71, the cardiovascular system sits at 1.24–1.61 (chest height), the viscera
+ * at 0.73–1.62. One metre-scale standing body, shared across all seven files — which is the only
+ * reason overlaying them means anything. The raw accessor bounds do NOT show this, because every
+ * node carries its own transform; anyone re-checking must compose the hierarchy first.
+ *
+ * `bytes` is shown in the UI. Revealing everything is about 17 MB, so the reader is told what a
+ * notch costs before they pay for it, and nothing is fetched until the dial reaches it.
+ */
+const LAYERS: readonly { region: string; label: string; bytes: number }[] = [
+  { region: "overview-skeleton", label: "Skeleton", bytes: 1_597_000 },
+  { region: "joints", label: "Joints", bytes: 3_400_000 },
+  { region: "muscular-system", label: "Muscle", bytes: 5_760_000 },
+  { region: "cardiovascular-system", label: "Vessels", bytes: 618_000 },
+  { region: "lymphoid-organs", label: "Lymph", bytes: 411_000 },
+  { region: "nervous-system", label: "Nerves", bytes: 4_277_000 },
+  { region: "visceral-systems", label: "Organs", bytes: 1_388_000 },
+];
 
 /** The outline colour, matched to the warm orange Z-Anatomy draws its own plate lines in. */
 const LINE: readonly [number, number, number] = [0.72, 0.28, 0.1];
@@ -116,9 +143,32 @@ const OUTLINE_SHADER = {
 export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
   const frame = useRef<HTMLDivElement | null>(null);
   const [failure, setFailure] = useState(false);
+  /** How many layers of context the reader has dialled in. 0 is the lesson's own region alone. */
+  const [depth, setDepth] = useState(0);
+  const [loading, setLoading] = useState(false);
+  /**
+   * What the render effect built, handed to the layer effect.
+   *
+   * 🔴 A REF, NOT STATE. Putting the scene in state would re-run the render effect on every notch
+   * of the dial, which tears down the WebGL context and rebuilds the model to add a translucent
+   * skeleton beside it. The dial has to reach into a scene that is already standing.
+   */
+  const stage = useRef<{
+    three: typeof import("three");
+    scene: InstanceType<typeof import("three").Scene>;
+    draw: () => void;
+    load: (path: string) => Promise<InstanceType<typeof import("three").Group>>;
+    context: InstanceType<typeof import("three").Object3D>[];
+  } | null>(null);
+  const layerCache = useRef(new Map<string, InstanceType<typeof import("three").Group>>());
 
   const resolved = visual.resolved;
   const credit = anatomyCredit(resolved?.source);
+  const dialId = useId();
+  /** What the dial has actually cost so far — the lesson's own region is already paid for. */
+  const added = LAYERS.slice(0, depth)
+    .filter((layer) => layer.region !== resolved?.region)
+    .reduce((total, layer) => total + layer.bytes, 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -316,6 +366,16 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
         // ── the outline pass, and the labels that ride over it ──────────────────────────────
         const dpr = renderer.getPixelRatio();
         const hud = new three.Scene();
+        /**
+         * Context layers the dial has added.
+         *
+         * 🔴 THEY MUST BE HIDDEN FOR THE ID RENDER. Saying "they are not in `lit`" is not enough:
+         * the ID pass renders the WHOLE SCENE, so a context layer still draws — in its ordinary
+         * translucent material, not a flat id — and the edge detector finds a colour change on
+         * every rib, every muscle fibre and every seam. The result was the heart buried under a
+         * scribble of orange, with the named structure invisible inside it.
+         */
+        const contextLayers: InstanceType<typeof three.Object3D>[] = [];
         let composer: EffectComposer | null = null;
         let idTarget: WebGLRenderTarget | null = null;
         const idMaterials: InstanceType<typeof three.Material>[] = [];
@@ -408,6 +468,8 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
             return;
           }
           // The ID buffer: every structure in its own flat hue, nothing else in the frame.
+          const shown = contextLayers.map((group) => group.visible);
+          for (const group of contextLayers) group.visible = false;
           const restore = lit.map((mesh) => mesh.material);
           lit.forEach((mesh, i) => (mesh.material = idMaterials[i]!));
           renderer.setRenderTarget(idTarget);
@@ -417,6 +479,7 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
           renderer.setRenderTarget(null);
           renderer.setClearColor(0x000000, 0);
           lit.forEach((mesh, i) => (mesh.material = restore[i]!));
+          contextLayers.forEach((group, i) => (group.visible = shown[i]!));
 
           composer.render();
 
@@ -433,7 +496,8 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
           spun.target.copy(centre);
           spun.enablePan = false;
           spun.minDistance = distance * 0.3;
-          spun.maxDistance = distance * 3;
+          // Far enough to pull back to a whole body once the dial brings one in.
+          spun.maxDistance = distance * 14;
           spun.addEventListener("change", draw);
           spun.update();
           controls = spun;
@@ -441,7 +505,19 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
         draw();
         setFailure(false);
 
+        // The dial's way in. `load` reuses this component's own DRACO-configured loader, so a
+        // context layer costs one request and no second decoder.
+        stage.current = {
+          context: contextLayers,
+          draw,
+          load: async (path: string) => (await loader.loadAsync(path)).scene,
+          scene,
+          three,
+        };
+
         cleanup = () => {
+          stage.current = null;
+          layerCache.current.clear();
           controls?.dispose();
           gltf.scene.traverse((node) => {
             const mesh = node as InstanceType<typeof three.Mesh>;
@@ -483,6 +559,66 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
     };
   }, [resolved]);
 
+  /**
+   * The dial: fetch each layer the first time it is asked for, then show or hide.
+   *
+   * 🔴 SEPARATE FROM THE RENDER EFFECT ON PURPOSE. Folding this in would put `depth` in that
+   * effect's dependencies, and every notch would dispose the WebGL context and rebuild the model.
+   *
+   * 🔴 NOTHING IS FETCHED UNTIL THE DIAL REACHES IT, and once fetched it is kept. Revealing every
+   * layer is about 17 MB; a reader who never touches the dial pays none of it, and one who slides
+   * back and forth pays each layer once.
+   *
+   * 🔴 CONTEXT LAYERS NEVER ENTER THE OUTLINE PASS. They are added straight to the scene and are
+   * not in `lit`, so the ID buffer never sees them — otherwise the whole skeleton would arrive
+   * ringed in orange and the structure the lesson is actually about would be lost in it.
+   */
+  useEffect(() => {
+    const ready = stage.current;
+    if (!ready || !resolved) return;
+    let dropped = false;
+
+    void (async () => {
+      const wanted = LAYERS.slice(0, depth).filter((l) => l.region !== resolved.region);
+      for (const layer of wanted) {
+        if (layerCache.current.has(layer.region)) continue;
+        setLoading(true);
+        try {
+          const group = await ready.load(`/anatomy/${layer.region}.glb`);
+          if (dropped || !stage.current) return;
+          // Context wears its own colour, faint. A ghost in one flat grey beside a coloured
+          // subject reads as a rendering fault rather than as context.
+          group.traverse((node) => {
+            const mesh = node as InstanceType<typeof ready.three.Mesh>;
+            if (!mesh.isMesh) return;
+            const src = mesh.material as InstanceType<typeof ready.three.MeshStandardMaterial>;
+            mesh.material = new ready.three.MeshLambertMaterial({
+              color: src?.color?.clone() ?? new ready.three.Color(BONE),
+              depthWrite: false,
+              opacity: 0.16,
+              transparent: true,
+            });
+          });
+          group.visible = false;
+          ready.scene.add(group);
+          ready.context.push(group);
+          layerCache.current.set(layer.region, group);
+        } catch {
+          // A layer that will not load is not worth failing the lesson's own model over.
+        }
+      }
+      if (dropped) return;
+      setLoading(false);
+      const on = new Set(wanted.map((l) => l.region));
+      for (const [region, group] of layerCache.current) group.visible = on.has(region);
+      ready.draw();
+    })();
+
+    return () => {
+      dropped = true;
+    };
+  }, [depth, resolved]);
+
   if (!resolved) return null;
   if (failure) {
     return (
@@ -492,6 +628,40 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
   return (
     <div>
       <div ref={frame} aria-label={visual.learningGoal} role="img" />
+
+      {/* 🔴 THE DIAL STARTS AT ZERO AND STAYS THERE UNLESS TOUCHED. A lesson about the left
+          ventricle should open on the left ventricle, not on a translucent skeleton — and a
+          reader who never moves this control never downloads a byte of it. The megabyte figure is
+          shown because it is real: sliding to the end is about 17 MB. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <label
+          className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)"
+          htmlFor={dialId}
+        >
+          Layers
+        </label>
+        <input
+          className="h-1 w-40 cursor-pointer accent-(--ui-action)"
+          id={dialId}
+          max={LAYERS.length}
+          min={0}
+          onChange={(event) => setDepth(Number(event.target.value))}
+          step={1}
+          type="range"
+          value={depth}
+          // The number alone says nothing; the name of the deepest layer showing does.
+          aria-valuetext={depth === 0 ? "this structure only" : `through ${LAYERS[depth - 1]!.label}`}
+        />
+        <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+          {depth === 0
+            ? "this structure only"
+            : LAYERS.slice(0, depth)
+                .map((l) => l.label)
+                .join(" · ")}
+          {added > 0 ? ` · ${(added / 1_000_000).toFixed(1)} MB` : ""}
+          {loading ? " · loading…" : ""}
+        </span>
+      </div>
       <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
         <span className="font-mono">{visual.structure}</span>
         <span>
