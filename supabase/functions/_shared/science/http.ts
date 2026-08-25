@@ -127,14 +127,49 @@ export async function request(url: string, opts: HttpOptions = {}) {
   throw lastError instanceof Error ? lastError : new Error(`Request failed: ${url}`)
 }
 
+/** Never retry sooner than this, whatever a server's Retry-After says. */
+const MIN_BACKOFF_MS = 1_000
+/** Never park a request longer than this, whatever a server's Retry-After says. */
+const MAX_BACKOFF_MS = 15_000
+
+/**
+ * 🔴🔴🔴 Retry-After IS ADVICE TO BE CLAMPED, NOT AN INSTRUCTION TO BE OBEYED — AND BOTH ENDS BITE.
+ *
+ * This read `return seconds * 1000` for any finite value, which fails in opposite directions:
+ *
+ *   Retry-After: 0     → 0ms → RETRY IMMEDIATELY, three times, with no pause at all. Observed live
+ *                        2026-08-24: export.arxiv.org sits behind Varnish, and its 503 carries
+ *                        exactly `retry-after: 0`. So a server saying "I am overloaded" got answered
+ *                        with a burst of three instant retries. That is not a slow client being
+ *                        throttled — it is us behaving like the thing rate limits exist to stop,
+ *                        which is a plausible reason arXiv has been refusing this caller for hours
+ *                        rather than seconds. `if (retryAfter)` also treats the string "0" as
+ *                        present-and-truthy, so the header actively made things WORSE than having
+ *                        none, which would have fallen through to a 1s exponential backoff.
+ *
+ *   Retry-After: 3600  → 3_600_000ms → one sleeping hour inside a single request, holding a socket
+ *                        on a function with a wall-clock budget measured in seconds.
+ *
+ * A ceiling AND a floor. Above the ceiling the honest move is to fail now and let the caller decide;
+ * a fan-out with a 3s deadline would rather have an empty result than a held connection.
+ *
+ * 🔴 AN HTTP-DATE Retry-After ("Wed, 21 Oct 2026 07:28:00 GMT") IS LEGAL AND `Number()` MAKES IT
+ * NaN. That falls through to the exponential backoff, which is the right answer — a wrong-but-
+ * plausible parse here would produce a delay nobody could predict from the header.
+ */
 function backoffMs(res: Response | undefined, attempt: number): number {
   const retryAfter = res?.headers.get("retry-after")
   if (retryAfter) {
     const seconds = Number(retryAfter)
-    if (Number.isFinite(seconds)) return seconds * 1000
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(Math.max(seconds * 1000, MIN_BACKOFF_MS), MAX_BACKOFF_MS)
+    }
   }
-  return Math.min(1000 * 2 ** attempt, 15_000) + Math.floor(Math.random() * 250)
+  return Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS) + Math.floor(Math.random() * 250)
 }
+
+/** Exported for tests only — the retry policy is not observable any other way without a network. */
+export const __backoffMs = backoffMs
 
 function toResponse(status: number, headers: Record<string, string>, body: string) {
   return {
