@@ -241,6 +241,25 @@ export async function askCanvasChat(
    * pipeline everything else uses — it is not a second execution path.
    */
   courseRequested = false,
+  /**
+   * The learner declared Web search on this submission, so the first round searches even when the
+   * model would have answered from its own head.
+   *
+   * 🔴🔴 IT OVERRIDES THE FIRST ROUND ONLY, AND THAT LIMIT IS THE WHOLE DESIGN. The loop below ends
+   * when `needsWeb` comes back false, so a flag that pinned it true would spin to MAX_SEARCH_ROUNDS
+   * buying metered searches the model has already said it does not need. The learner asked for a
+   * search; they did not ask for four.
+   *
+   * 🔴 AND IT NEVER OVERRULES A MODEL THAT ALREADY AGREED. When the model asked for a search of its
+   * own, its query is the better one — it read the question — so this only fills the case where
+   * there would have been no search at all.
+   *
+   * 🔴 UNLIKE `courseRequested` THIS IS A BRANCH IN THIS FILE, and the difference is real. Course is
+   * a fact the model should weigh while reading the sentence, so it rides into the packet. Web
+   * search is not a thing to weigh: the learner already decided, and putting it in the packet would
+   * only give the model a way to overrule somebody who was explicit.
+   */
+  forceWeb = false,
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
   // 🔴 LOADED ONCE PER TURN, NOT ONCE PER ROUND. `ask` runs again when a web search comes back,
@@ -325,6 +344,12 @@ export async function askCanvasChat(
   const first = await ask("", MAX_SEARCH_ROUNDS);
   if (first.errorText) return { consulted: [], decision: null, error: first.errorText, sources: [], stage };
   let decision = first.text ? await readDecision(first.text) : null;
+
+  // The declaration is applied once, here, before the loop below reads `needsWeb`. `webQuery` falls
+  // back to the learner's own words, which is what a search box would have been given anyway.
+  if (forceWeb && decision && !decision.needsWeb) {
+    decision = { ...decision, needsWeb: true, webQuery: decision.webQuery || question };
+  }
 
   // 🔴 THE MODEL SEARCHES UNTIL IT SAYS IT HAS ENOUGH. It used to get exactly one search: the
   // packet told it "the search has happened, answer from them", so a first query aimed slightly

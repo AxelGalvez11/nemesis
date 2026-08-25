@@ -41,7 +41,8 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
-import { makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { isMakerCapability, type MakerCapability } from "@/lib/learn/composer-capability";
 import { planResearch } from "@/lib/research/run-research";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
@@ -417,6 +418,15 @@ export interface CanvasSession {
   clearSelectionAnswer: () => void;
   reset: () => void;
 }
+
+/** What the busy line says while each maker runs. 🔴 A `Record` over the union, so a new maker is a
+ *  compile error here rather than a blank caption at runtime. */
+const MAKER_LABELS: Record<MakerCapability, string> = {
+  document: "Writing your document",
+  pdf: "Writing your PDF",
+  sheet: "Building your spreadsheet",
+  slides: "Building your slides",
+};
 
 export function useCanvasSession(canvasId: string | null): CanvasSession {
   const { session } = useAuth();
@@ -1197,7 +1207,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ? await makeFlashcardsDeliverable(uid, latest.current)
             : kind === "slides"
               ? await makeSlidesDeliverable(uid, latest.current, topic)
-              : kind === "report"
+              : kind === "document" || kind === "pdf"
+                ? await makeDocumentDeliverable(uid, latest.current, kind, topic)
+                : kind === "sheet"
+                  ? await makeSheetDeliverable(uid, latest.current, topic)
+                  : kind === "report"
                 // 🔴 THE ONLY DELIVERABLE THAT NEEDS A TOPIC RATHER THAN LIKING ONE. The other
                 // three read the canvas; this one goes and searches for material the canvas does
                 // not have, so with nothing to research there is nothing to do. The canvas title
@@ -1290,6 +1304,25 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return null;
       }
 
+      // 🔴🔴 A DECLARED MAKER GOES STRAIGHT TO ITS MAKER, WITH NOTHING LEFT TO ROUTE. `Document`,
+      // `PDF`, `Spreadsheet` and `Presentation` each say what this submission IS, so weighing the
+      // sentence afterwards could only produce a lesson where a file was asked for. This is the
+      // declared twin of `readDeliverableAsk` below, which is the model reading an UNdeclared
+      // sentence — same destination, and the only difference is who decided.
+      //
+      // 🔴 THE LIST COMES FROM `composer-capability.ts`, NOT FROM A CHAIN OF `===` HERE. A condition
+      // spelled out in this file stops being complete the moment the union grows, silently, with
+      // the new capability falling through to an ordinary turn and appearing to do nothing.
+      if (capability && isMakerCapability(capability)) {
+        setBusy({ blockIds: [], kind: "command", label: MAKER_LABELS[capability] });
+        try {
+          await makeDeliverable(capability, said);
+        } finally {
+          setBusy({ kind: null });
+        }
+        return null;
+      }
+
       // 🔴 AN UNMISTAKABLE ARTIFACT ASK IS AN ORDER, NOT A QUESTION (owner 2026-08-25: "if you
       // ask them to make a PowerPoint, then it'll do it for you"). Routed before the policy
       // turn: the learner asked for a THING, and a lesson about the thing instead reads as a
@@ -1310,6 +1343,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
       // `thinking-phases.ts`'s rule holds: a caption is emitted by a step that is genuinely running,
       // never by a timer walking through plausible-sounding stages.
+      // 🔴 `capability === "search"` IS THE ONLY CAPABILITY LEFT BY THIS POINT THAT CHANGES THE TURN
+      // RATHER THAN REPLACING IT. Course rides in the packet, research stopped above, the makers
+      // returned above; Web search alone continues into an ordinary turn with one thing decided.
+      const forceWeb = capability === "search";
       const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "", (found, domains) => {
         // 🔴 THE HOSTS TRACK THE BEAT THEY ARRIVED ON. `[]` on the outgoing request clears the
         // previous round; the real list replaces it the moment the results land.
@@ -1344,7 +1381,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // the stage the turn is in.
       (label) => setWork(label),
       // The one-shot capability, as a FACT in the packet. Never a branch in this function.
-      capability === "course");
+      capability === "course",
+      // …and the one that IS a branch, over there rather than here: a declared Web search is the
+      // learner deciding, so it forces the first round rather than being argued for in the packet.
+      forceWeb);
       setBusy({ kind: null });
       setMilestones([]);
       setStage("decided");

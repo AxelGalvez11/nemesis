@@ -38,9 +38,39 @@
  * exactly the reason predicted: Course and Deep research are mutually exclusive declarations about
  * one submission, and a type that cannot hold both is the cheapest way to keep them so.
  */
-export type ComposerCapability = "course" | "research";
+export type ComposerCapability = "course" | "document" | "pdf" | "research" | "search" | "sheet" | "slides";
 
-export const COMPOSER_CAPABILITIES: readonly ComposerCapability[] = ["course", "research"];
+/**
+ * 🔴 THE ORDER IS THE MENU'S ORDER, AND IT IS TWO GROUPS. First what changes the SHAPE of the
+ * answer — a course, a researched report, a live search. Then the four that hand back a file. A
+ * learner scanning for "make me slides" should not have to read past "Course" twice.
+ */
+export const COMPOSER_CAPABILITIES: readonly ComposerCapability[] = [
+  "course",
+  "research",
+  "search",
+  "document",
+  "pdf",
+  "sheet",
+  "slides",
+];
+
+/**
+ * The capabilities whose whole job is to produce a file, rather than to change how the turn is
+ * answered.
+ *
+ * 🔴 IT IS A LIST HERE RATHER THAN A CONDITION AT THE CALL SITE. `use-canvas-session.ts` has to
+ * route these straight to `makeDeliverable` and route the others through the turn, and a check
+ * spelled `capability === "document" || capability === "pdf" || …` in that file is one that silently
+ * stops being complete the next time this union grows. The union and the routing live together.
+ */
+export const MAKER_CAPABILITIES = ["document", "pdf", "sheet", "slides"] as const;
+
+export type MakerCapability = (typeof MAKER_CAPABILITIES)[number];
+
+export function isMakerCapability(capability: ComposerCapability): capability is MakerCapability {
+  return (MAKER_CAPABILITIES as readonly string[]).includes(capability);
+}
 
 /** How a capability presents itself in the `+` menu and as a chip. */
 export interface CapabilityCopy {
@@ -80,6 +110,44 @@ export const CAPABILITY_COPY: Record<ComposerCapability, CapabilityCopy> = {
     icon: "telescope",
     label: "Deep research",
     prompt: "What do you want to find out?",
+  },
+  // 🔴 "WEB SEARCH" IS NOT A SMALLER DEEP RESEARCH, and the copy has to keep them apart or the two
+  // rows read as the same offer twice. This one answers the question you asked, now, from live
+  // pages; the other goes away and comes back with a document. `turn-router.ts` already draws that
+  // line for the undeclared case — *"needsWeb: the ANSWER needs live pages, answered inline, now"*
+  // — and these two rows are the declared halves of the same distinction.
+  search: {
+    detail: "Find real-time news and info",
+    icon: "globe",
+    label: "Web search",
+    prompt: "What should Nemesis look up?",
+  },
+  // 🔴 THE FOUR MAKERS NAME THE THING THE LEARNER GETS, NOT THE FORMAT'S FILE EXTENSION. "Document"
+  // rather than ".docx", because §38's copy rule is that a control says what you get — and because
+  // somebody who wants a Word file and somebody who wants "a write-up" are the same person.
+  document: {
+    detail: "Write and download a Word file",
+    icon: "file",
+    label: "Document",
+    prompt: "What should the document be about?",
+  },
+  pdf: {
+    detail: "Write and download a PDF",
+    icon: "file-pdf",
+    label: "PDF",
+    prompt: "What should the PDF be about?",
+  },
+  sheet: {
+    detail: "Build a table you can open in Excel",
+    icon: "table",
+    label: "Spreadsheet",
+    prompt: "What should the spreadsheet cover?",
+  },
+  slides: {
+    detail: "Build a slide deck",
+    icon: "device-camera-video",
+    label: "Presentation",
+    prompt: "What should the deck be about?",
   },
 };
 
@@ -121,7 +189,12 @@ export function capabilityBrief(capability: ComposerCapability): string {
   // model at all. The learner declaring it means the run happens, so there is nothing for the
   // router to weigh and nothing to say to it. `TurnDecision.wantsReport` is the OTHER path, for
   // turns where nobody declared anything and the model has to read the intent out of the words.
-  if (capability === "research") return "";
+  // 🔴 EVERY CAPABILITY EXCEPT COURSE ADDS NOTHING TO THE PACKET, AND THE EMPTY STRING IS THE POINT.
+  // Course tells the model something it should know while reading the sentence. The others never
+  // reach the turn model at all: research plans and stops, the four makers go straight to their
+  // maker, and search sets a flag the router would otherwise have had to be persuaded of. A brief
+  // for any of them would only create a way for the model to overrule somebody who was explicit.
+  if (capability !== "course") return "";
   if (capability === "course") {
     return (
       "The learner has explicitly asked for a COURSE: a persistent learning path through a subject, " +

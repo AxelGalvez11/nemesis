@@ -658,6 +658,14 @@ export interface CanvasOutput {
    *  plan + theme, rebuilt client-side at download time — nothing to upload, no storage
    *  bucket. See lib/export/deck-plan.ts. */
   deck?: import("../export/deck-plan").DeckPlan;
+  /**
+   * A document or PDF output carries its Markdown, for the same reason a deck carries its plan:
+   * the file is a deterministic function of this text plus the format, so it is rebuilt at click
+   * time and nothing is ever uploaded. See lib/export/doc-file.ts.
+   */
+  markdown?: string;
+  /** A spreadsheet output carries its table, for the same reason. */
+  sheet?: import("../export/doc-file").SheetData;
 }
 
 export interface LearningCanvas {

@@ -38,8 +38,16 @@ import { findLabelledFigure } from "./figure-occlusion-api";
 import { readFigureSubject } from "./figure-subject";
 import { occlusionCards } from "./occlusion-from-labels";
 
-/** What the canvas can make today. Reports join when they have a real home. */
-export type DeliverableKind = "flashcards" | "note" | "report" | "slides";
+/**
+ * What the canvas can make today.
+ *
+ * 🔴 `document`, `pdf` AND `sheet` ARE FILES, NOT LIBRARY ROWS, and that is the difference between
+ * them and `note`. A note is Markdown filed in the Library to be read on screen; these are things
+ * the learner takes away and opens in Word, a PDF reader or Excel. `document` and `pdf` are the
+ * SAME Markdown with two file formats — one model call, two writers — because asking the model to
+ * "write it again but as a PDF" would produce different prose for no reason.
+ */
+export type DeliverableKind = "document" | "flashcards" | "note" | "pdf" | "report" | "sheet" | "slides";
 
 export interface DeliverableResult {
   /** A line about what it cost, when the maker has one. Shown instead of the generic notice. */
@@ -334,6 +342,134 @@ export async function makeNoteDeliverable(
       kind: "note",
       notePath: saved.path,
       title: saved.title,
+    },
+  };
+}
+
+// ---------------------------------------------------------------- document, PDF and spreadsheet
+
+const DOC_SYSTEM =
+  "You write a clean, self-contained document in Markdown that a learner will open in Word or as " +
+  "a PDF. Start with a single # title line, then sections under ## headings, with short paragraphs " +
+  "and bullet lists where they genuinely help. Cover the material faithfully and compactly. Write " +
+  "no preamble, no closing remarks, and no tables or code blocks.";
+
+const SHEET_SYSTEM =
+  "You turn material into ONE table and return JSON, nothing else. Shape: " +
+  '{"title": string, "columns": [string, ...], "rows": [[string, ...], ...]}. ' +
+  "Every row must have exactly as many cells as there are columns. Choose columns that make the " +
+  "material genuinely comparable — the point is a table somebody can sort and filter, not a " +
+  "paragraph in a grid. Keep cells short. Between 2 and 8 columns. Return JSON only.";
+
+/**
+ * The prose deliverables: one model call, and the caller says which file comes out of it.
+ *
+ * 🔴 IT IS THE SAME MAKER FOR BOTH FORMATS BECAUSE IT IS THE SAME DOCUMENT. The kind is carried
+ * through so the output row knows which writer to run; nothing about the writing changes.
+ */
+export async function makeDocumentDeliverable(
+  uid: string,
+  canvas: LearningCanvas,
+  kind: "document" | "pdf",
+  topic?: string,
+): Promise<DeliverableResult | DeliverableFailure> {
+  // 🔴 GENERALIST, LIKE SLIDES AND FOR THE OWNER'S OWN REASON (2026-08-25: these "are just general
+  // things that a general chat AI should be able to do"). It refuses only when there is neither
+  // material NOR a subject — with a topic it writes from what the model knows, and with material it
+  // is grounded in that.
+  const subject = (topic ?? "").trim() || canvas.title.trim();
+  if (!canvasHasMaterial(canvas) && !subject) {
+    return { error: "Tell me what the document should be about, and I'll write it." };
+  }
+  const brief = canvasHasMaterial(canvas)
+    ? canvasBrief(canvas)
+    : `Write this document about: ${subject}`;
+  const reply = await postChatCompletion(uid, [
+    { content: DOC_SYSTEM, role: "system" },
+    { content: brief, role: "user" },
+  ]);
+  if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
+  const markdown = reply.text.trim();
+  if (markdown.length < 80) return { error: "The document came back empty, so nothing was made. Try again." };
+
+  // The model's own # title when it wrote one, because it read the material and the canvas title
+  // may still be untitled. Falls back the other way round.
+  const heading = /^#\s+(.+)$/m.exec(markdown)?.[1]?.trim();
+  const title = (heading || subject || "Document").slice(0, 120);
+  const assetId = await recordLedger(canvas.id, title);
+  return {
+    output: {
+      ...(assetId ? { assetId } : {}),
+      createdAt: new Date().toISOString(),
+      id: newId(),
+      kind,
+      markdown,
+      title,
+    },
+  };
+}
+
+/**
+ * Reads the model's table.
+ *
+ * 🔴🔴 EVERY ROW IS RESHAPED TO THE COLUMN COUNT, WHICH IS THE ONE THING A CSV CANNOT SURVIVE
+ * GETTING WRONG. A short row shifts every later cell left in the spreadsheet and a long one spills
+ * into a column with no header — both open successfully and are silently wrong, which is worse than
+ * refusing. Padding and truncating means the grid is always rectangular.
+ */
+export function readSheetJson(text: string): { columns: string[]; rows: string[][]; title?: string } | null {
+  const body = text.replace(/^```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  const start = body.indexOf("{");
+  const end = body.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const raw = parsed as { columns?: unknown; rows?: unknown; title?: unknown };
+  const columns = Array.isArray(raw.columns) ? raw.columns.map((c) => String(c ?? "").trim()).filter(Boolean) : [];
+  if (columns.length < 2 || columns.length > 12) return null;
+  const rows: string[][] = [];
+  for (const row of Array.isArray(raw.rows) ? raw.rows : []) {
+    if (!Array.isArray(row)) continue;
+    const cells = columns.map((_, index) => String(row[index] ?? "").trim());
+    if (cells.some(Boolean)) rows.push(cells);
+  }
+  if (!rows.length) return null;
+  return { columns, rows, ...(typeof raw.title === "string" && raw.title.trim() ? { title: raw.title.trim() } : {}) };
+}
+
+export async function makeSheetDeliverable(
+  uid: string,
+  canvas: LearningCanvas,
+  topic?: string,
+): Promise<DeliverableResult | DeliverableFailure> {
+  const subject = (topic ?? "").trim() || canvas.title.trim();
+  if (!canvasHasMaterial(canvas) && !subject) {
+    return { error: "Tell me what the spreadsheet should cover, and I'll build it." };
+  }
+  const brief = canvasHasMaterial(canvas) ? canvasBrief(canvas) : `Build this table about: ${subject}`;
+  const reply = await postChatCompletion(uid, [
+    { content: SHEET_SYSTEM, role: "system" },
+    { content: brief, role: "user" },
+  ]);
+  if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
+  const table = readSheetJson(reply.text);
+  if (!table) return { error: "The table came back in a shape I couldn't use. Try asking again." };
+
+  const title = (table.title || subject || "Table").slice(0, 120);
+  const assetId = await recordLedger(canvas.id, title);
+  return {
+    output: {
+      ...(assetId ? { assetId } : {}),
+      createdAt: new Date().toISOString(),
+      id: newId(),
+      kind: "sheet",
+      sheet: { columns: table.columns, rows: table.rows },
+      title,
     },
   };
 }

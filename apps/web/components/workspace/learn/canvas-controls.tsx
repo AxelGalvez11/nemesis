@@ -34,6 +34,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { deckDesign } from "@/lib/export/deck-designs";
+import { downloadDocx, downloadPdf, downloadSheet } from "@/lib/export/doc-file";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
@@ -443,7 +444,10 @@ const PANEL_ROW = "block w-full rounded-lg px-2 py-1.5 text-left transition-colo
  *  producer needs no schema change, so this map is guaranteed to be missing an entry one day and
  *  must degrade to a plausible row instead of an empty gap. */
 const OUTPUT_ICONS: Record<string, string> = {
+  document: "file",
   flashcards: "layers",
+  pdf: "file-pdf",
+  sheet: "table",
   note: "note",
   report: "book",
   slides: "device-camera-video",
@@ -566,6 +570,36 @@ function OutputRow({
   }
   if (output.kind === "slides" && output.deck) {
     return <SlidesOutputRow canvasId={canvasId} output={output} rowClass={row} />;
+  }
+  // 🔴🔴 THE FILE IS BUILT AT CLICK TIME FROM WHAT THE ROW CARRIES — the same arrangement the deck
+  // has had since it shipped, and for the same reason: a .docx, a PDF and a CSV are each a
+  // deterministic function of this content plus the format, so nothing was ever uploaded and there
+  // is nothing to fetch back. It also means a row cannot go stale against a bucket.
+  //
+  // 🔴 GUARDED ON THE PAYLOAD, NOT ON THE KIND. An output whose markdown failed to save is a row
+  // that would download an empty file, which is worse than a row that plainly does not download.
+  if ((output.kind === "document" || output.kind === "pdf") && output.markdown) {
+    const markdown = output.markdown;
+    const kind = output.kind;
+    return (
+      <button
+        className={row}
+        onClick={() => {
+          void (kind === "pdf" ? downloadPdf(markdown, output.title) : downloadDocx(markdown, output.title));
+        }}
+        type="button"
+      >
+        {body}
+      </button>
+    );
+  }
+  if (output.kind === "sheet" && output.sheet) {
+    const sheet = output.sheet;
+    return (
+      <button className={row} onClick={() => void downloadSheet(sheet, output.title)} type="button">
+        {body}
+      </button>
+    );
   }
   return <div className="px-2 py-1.5">{body}</div>;
 }
