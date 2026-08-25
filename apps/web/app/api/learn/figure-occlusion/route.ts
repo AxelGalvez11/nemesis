@@ -24,6 +24,7 @@ import { REFERENCE_REGISTRY } from "@/lib/learn/reference-registry";
 import { REFERENCE_SHELF } from "@/lib/learn/reference-shelf";
 import { chooseAsset } from "@/lib/learn/visual-provenance";
 import { imageSize } from "@/lib/notebooks/image-dimensions";
+import { readableThumbnail } from "@/lib/learn/occlusion-source";
 import { adminClient } from "@/lib/server";
 import { readImage, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
 import { jsonFrom, looksNormalized, OCCLUSION_VISION_PROMPT, parseSuggestedBoxes } from "@nemesis/shared";
@@ -39,6 +40,16 @@ const SEARCH_TIMEOUT_MS = 8000;
 
 /** How long fetching the chosen picture's bytes gets. */
 const IMAGE_TIMEOUT_MS = 10000;
+
+/**
+ * How long the vision read gets.
+ *
+ * 🔴 THE THREE BUDGETS MUST ADD UP TO LESS THAN `maxDuration`, WITH ROOM TO SPARE. 8 + 10 + 38 is
+ * 56 of 60, and the four left over are for everything that is not waiting: the JSON, the spend
+ * insert, cold start. Before this existed the read was unbounded and the PLATFORM ended the
+ * request — a 504 with an HTML body, which a client can only read as "no diagram, no reason".
+ */
+const VISION_BUDGET_MS = 38000;
 
 const USER_AGENT = "NemesisLearn/1.0 (https://enternemesis.com)";
 
@@ -86,10 +97,21 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ detail: choice.detail, ok: false, reason: choice.reason }, { status: 200 });
   }
 
-  const { assetPath } = choice.asset;
+  // 🔴🔴 A SMALLER RENDERING OF THE SAME PICTURE, BECAUSE THE BIG ONE TIMES THIS ROUTE OUT.
+  // Measured in production 2026-08-25: `subject: "neuron"` returned **504 Gateway Timeout** — a
+  // 1280px PNG regularly costs vision more than the 60s budget has left after the search and the
+  // download. Every asset here comes from `upload.wikimedia.org`, whose thumbnails carry their
+  // width in the path, so a smaller one is a string rewrite away.
+  //
+  // 🔴 THE SMALL URL IS WHAT THE LEARNER IS SHOWN TOO, and that is not incidental. Masks are
+  // measured against the bytes we fetched; reading a small rendering and displaying a large one
+  // would put every box in the right place on the wrong picture.
+  const chosenPath = choice.asset.assetPath;
+  const assetPath = readableThumbnail(chosenPath);
   // Belt and braces: `chooseAsset` already refuses anything unlicensed, and this refuses anything
-  // off the allow list before our server fetches it.
-  if (!allowedAssetUrl(assetPath)) {
+  // off the allow list before our server fetches it. Checked on the REWRITTEN url, so a rewrite
+  // that somehow produced a different host would be caught here rather than trusted.
+  if (!allowedAssetUrl(assetPath) || !allowedAssetUrl(chosenPath)) {
     return NextResponse.json({ ok: false, reason: "no-trusted-asset" }, { status: 200 });
   }
 
@@ -124,8 +146,14 @@ export async function POST(request: Request): Promise<NextResponse> {
   const size = imageSize(bytes);
   if (!size) return NextResponse.json({ ok: false, reason: "image-unreadable" }, { status: 200 });
 
+  // 🔴🔴 VISION GETS AN EXPLICIT BUDGET, NOT THE REST OF THE FUNCTION'S LIFE. Without one it runs
+  // until the PLATFORM kills the request, and the caller gets a 504 — an HTML error page rather
+  // than a JSON answer, which the client can only read as "no diagram" with no reason attached.
+  // Bounded here, an over-long read comes back as a clean `vision-slow` and everything downstream
+  // behaves the way it does for every other refusal.
   const seen = await readImage(bytes, mime, {
     prompt: OCCLUSION_VISION_PROMPT,
+    signal: AbortSignal.timeout(VISION_BUDGET_MS),
     spend: { admin: adminClient(), scope: { operation: "figure-occlusion" }, userId: check.userId },
   });
   if (!seen?.text) return NextResponse.json({ ok: false, reason: "vision-failed" }, { status: 200 });
