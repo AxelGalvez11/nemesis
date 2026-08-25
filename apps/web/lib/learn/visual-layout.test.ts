@@ -15,6 +15,7 @@ import test from "node:test";
 
 import type { ConstructionVisual, FlowVisual, TimelineVisual } from "./canvas-visual";
 import {
+  ARROW_STROKE,
   curlyArrow,
   layoutCircuit,
   layoutConstruction,
@@ -677,4 +678,79 @@ test("the arrowhead's barbs straddle the arrival point", () => {
   if (!drawn) return;
   assert.doesNotMatch(drawn.head, /NaN/);
   assert.match(drawn.head, /^M .* L .* L /, "the head is not two barbs meeting at the tip");
+});
+
+/** `M sx sy Q cx cy ex ey` as numbers. */
+const readCurve = (path: string) => {
+  const [, sx, sy, , cx, cy, ex, ey] = path.split(" ");
+  return { cx: Number(cx), cy: Number(cy), ex: Number(ex), ey: Number(ey), sx: Number(sx), sy: Number(sy) };
+};
+
+test("🔴🔴🔴 each end stands off by what THAT end needs, not by one number for both", () => {
+  // 🔴 THE OWNER SAW THIS ON SCREEN, 2026-08-25: *"it looks messy the arrows too big."* A labelled
+  // atom prints "Br" around its own point and the arrowhead landed inside the letters. Raising the
+  // single standoff instead shrank the arrow to a hook on every short bond, so the clearance has to
+  // be asked for per end.
+  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { clearance: { from: 4, to: 20 } });
+  assert.ok(drawn);
+  if (!drawn) return;
+  const { ex, sx } = readCurve(drawn.path);
+  assert.ok(Math.abs(sx - 4) < 0.01, `the tail ignored its own clearance (${sx})`);
+  assert.ok(Math.abs(ex - 80) < 0.01, `the head ignored its own clearance (${ex})`);
+});
+
+test("🔴🔴🔴 two clearances can never eat the whole arrow", () => {
+  // 🔴 THE FAILURE THIS RULE IS SHAPED TO AVOID. On a short bond the two clearances add up to more
+  // than the gap between the atoms, and the arrow collapses to a stub pointing nowhere, or inverts.
+  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 14, y: 0 }, { clearance: { from: 10, to: 10 } });
+  assert.ok(drawn, "a tight bond drew nothing at all");
+  if (!drawn) return;
+  const { ex, sx } = readCurve(drawn.path);
+  assert.ok(ex > sx, `the arrow turned back on itself (${sx} to ${ex})`);
+  assert.ok(ex - sx >= 8.9, `only ${(ex - sx).toFixed(1)} units of arrow survived, which reads as a stub`);
+});
+
+test("🔴🔴🔴 the arrow bows AWAY from the molecule, which is most of what 'messy' meant", () => {
+  // An arrow describing a bond breaking runs ALONG that bond, so a fixed bow direction lays it over
+  // the line half the time: a thick stroke on a thin one, and no way to tell annotation from
+  // structure. Curving away from the middle lifts it into the empty space outside.
+  const above = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { awayFrom: { x: 50, y: 50 } });
+  const below = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { awayFrom: { x: 50, y: -50 } });
+  assert.ok(above && below);
+  if (!above || !below) return;
+  assert.ok(readCurve(above.path).cy < 0, "the arrow bowed towards the molecule, not away from it");
+  assert.ok(readCurve(below.path).cy > 0, "the arrow bowed towards the molecule, not away from it");
+});
+
+test("🔴 with no centre to push away from, the old left-hand default still stands", () => {
+  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 });
+  assert.ok(drawn);
+  if (!drawn) return;
+  assert.notEqual(readCurve(drawn.path).cy, 0, "the curve stopped bowing at all");
+});
+
+test("🔴🔴 the bow is measured on the WHOLE journey, not on what the clearances left", () => {
+  // Taking it from the shortened span flattened the arc exactly when the ends were trimmed hardest,
+  // which is the case that needed lifting off the bond most.
+  const trimmed = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { clearance: { from: 30, to: 30 } });
+  const loose = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { clearance: { from: 2, to: 2 } });
+  assert.ok(trimmed && loose);
+  if (!trimmed || !loose) return;
+  assert.ok(
+    Math.abs(Math.abs(readCurve(trimmed.path).cy) - Math.abs(readCurve(loose.path).cy)) < 0.01,
+    "trimming the ends changed how hard the arrow bows",
+  );
+});
+
+test("🔴🔴🔴 an arrow never outweighs the molecule it annotates", () => {
+  // Measured on the rendered SVG: arrows at stroke-width 1.8 against a bond at 1.0. The annotation
+  // was heavier than the structure, which is what the owner's screenshot shows. `bondThickness: 1`
+  // is the drawer's own default, and this constant is tied to it on purpose.
+  assert.equal(ARROW_STROKE, 1, "the arrow stroke drifted away from the bond weight");
+  const renderer = readFileSync(new URL("../../components/workspace/learn/chemical-structure.tsx", import.meta.url), "utf8");
+  assert.match(renderer, /String\(ARROW_STROKE\)/, "the renderer hardcodes a stroke width again");
+  assert.ok(!/stroke-width", "1\.8"/.test(renderer), "the 1.8 stroke is back");
+  // And the clearance is asked of the DRAWER, never guessed: it already knows which atoms letter.
+  assert.match(renderer, /isDrawn === false \? ARROW_CLEAR_BARE : ARROW_CLEAR_LABEL/, "every atom gets the same clearance again");
+  assert.match(renderer, /awayFrom,/, "the arrows stopped bowing away from the structure");
 });

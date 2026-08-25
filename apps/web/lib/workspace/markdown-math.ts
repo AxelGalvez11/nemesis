@@ -24,6 +24,43 @@ const AMOUNT = /^\$\d[\d,]*(?:\.\d+)?/;
 const MATHS_AFTER_DIGITS = /^[$A-Za-z\\^_{]/;
 /** The run up to the next `$` on the same line, if there is one. */
 const SPAN_TO_NEXT_DOLLAR = /^([^$\n]*)\$/;
+/** `\pi`, `\approx`, `\frac`. Letters that belong to LaTeX rather than to English. */
+const CONTROL_SEQUENCE = /\\[A-Za-z]+/g;
+
+/**
+ * Does what sits between two `$` read as a sentence rather than as a formula?
+ *
+ * 🔴🔴🔴 THE TEST USED TO BE "DOES IT CONTAIN A LETTER", AND THAT BROKE MOST OF SCHOOL MATHS.
+ * A variable IS a letter, and so is every LaTeX command, so `$0 < r < \pi/2$` was read as a price
+ * and escaped: written correctly, by a model doing exactly what the contract asks of it, and shown
+ * to the learner as raw source. The owner photographed one on 2026-08-25. `$0 \le x \le 1$`,
+ * `$2 \pi r$` and `$5 \times 10^3$` all failed the same way, and the file's own "known limit" about
+ * `$5 \text{kg}$` was this bug seen from one angle.
+ *
+ * 🔴 WHY THE OLD RULE ONLY EVER FAILED AFTER A SPACE. `$2x` survived because the letter touches the
+ * digit and `MATHS_AFTER_DIGITS` catches it. Put one space in, and every formula beginning with a
+ * number fell through to the letter test.
+ *
+ * Three structural questions, no subject matter anywhere:
+ *
+ *   1. take the LaTeX commands out, because their letters are notation, not words
+ *   2. anything left with `^`, `_` or a brace in it is maths, full stop
+ *   3. of what remains, a run of TWO OR MORE letters is an English word; single letters are
+ *      variables. Words mean prose, which means the `$` opened a price
+ *
+ * So `0.87 to ` has the word "to" and is money, while `0 < r < \pi/2` has only `r` and is maths.
+ *
+ * 🔴 IT ALSO KEEPS THE ONE THING TODAY GETS RIGHT BY ACCIDENT. A model that wraps a whole SENTENCE
+ * in `$…$` (measured in production: `$0 < r < \pi/2: z rises smoothly to its maximum…$`) still
+ * reads as prose here, because the sentence is full of words. Rendering that as a formula would run
+ * every word together into one italic smear; leaving it as text is ugly but readable, and readable
+ * is the better of two bad outcomes.
+ */
+function readsAsProse(span: string): boolean {
+  const notation = span.replace(CONTROL_SEQUENCE, " ");
+  if (/[\^_{}]/.test(notation)) return false;
+  return /\p{L}{2,}/u.test(notation);
+}
 
 /**
  * Escape the `$` in front of a price so single-dollar math cannot swallow it.
@@ -36,11 +73,7 @@ const SPAN_TO_NEXT_DOLLAR = /^([^$\n]*)\$/;
  *
  * The test is structural, never subject-matter: what follows the digits decides. A letter,
  * `\`, `^`, `_`, `{` or a closing `$` means someone opened maths; anything else means money.
- * A `$…$` span holding only digits and operators is maths too, so `$2 + 3$` survives — words
- * inside the span are what mark it as prose.
- *
- * Known limit: `$5 \text{kg}$` reads as money, because a space then a word is the shape of a
- * price. `$$…$$` renders in every mode and is the way to write that one.
+ * Otherwise the span itself decides, and `readsAsProse` explains how.
  */
 export function escapeCurrencyDollars(markdown: string): string {
   return markdown
@@ -54,7 +87,7 @@ export function escapeCurrencyDollars(markdown: string): string {
         const afterDigits = rest.slice(amount[0].length);
         if (MATHS_AFTER_DIGITS.test(afterDigits)) return match;
         const inside = SPAN_TO_NEXT_DOLLAR.exec(afterDigits)?.[1];
-        if (inside !== undefined && !/[A-Za-z]/.test(inside)) return match;
+        if (inside !== undefined && !readsAsProse(inside)) return match;
         return "\\$";
       });
     })

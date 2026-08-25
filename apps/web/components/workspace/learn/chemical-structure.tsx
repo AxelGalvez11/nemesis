@@ -29,7 +29,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import type { StructureVisual } from "@/lib/learn/canvas-visual";
 import { statesStereochemistry } from "@/lib/learn/chem-notation";
-import { curlyArrow } from "@/lib/learn/visual-layout";
+import { ARROW_CLEAR_BARE, ARROW_CLEAR_LABEL, ARROW_STROKE, curlyArrow } from "@/lib/learn/visual-layout";
 
 /** Why nothing was drawn. Named so a blank frame is diagnosable, exactly as elsewhere. */
 type StructureFailure =
@@ -229,30 +229,52 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
  */
 function drawElectronArrows(
   element: SVGSVGElement,
-  drawer: { preprocessor?: { graph?: { vertices?: Array<{ position?: { x: number; y: number } }> } } },
+  drawer: {
+    preprocessor?: {
+      graph?: { vertices?: Array<{ position?: { x: number; y: number }; value?: { isDrawn?: boolean } }> };
+    };
+  },
   arrows: readonly { from: number; to: number }[],
 ): void {
   const vertices = drawer.preprocessor?.graph?.vertices;
   if (!vertices) return;
   const NS = "http://www.w3.org/2000/svg";
   const group = document.createElementNS(NS, "g");
+  // 🔴 THE DRAWER ALREADY KNOWS WHICH ATOMS PRINT A LABEL, so the clearance does not have to be
+  // guessed. `isDrawn` is false for the skeletal corners that show as a bare bend and true for
+  // anything with letters on it, which is exactly the distinction the arrow needs: stop outside
+  // "Br", but run right up to a corner that draws nothing.
+  const clearOf = (index: number) =>
+    vertices[index]?.value?.isDrawn === false ? ARROW_CLEAR_BARE : ARROW_CLEAR_LABEL;
+  // The middle of the drawing, so every arrow can be curved outward and away from the structure
+  // rather than across it. Averaging the atoms is enough; this only decides a sign.
+  const placed = vertices.map((vertex) => vertex.position).filter((point): point is { x: number; y: number } => Boolean(point));
+  const awayFrom = placed.length
+    ? {
+        x: placed.reduce((total, point) => total + point.x, 0) / placed.length,
+        y: placed.reduce((total, point) => total + point.y, 0) / placed.length,
+      }
+    : undefined;
   for (const arrow of arrows) {
     const from = vertices[arrow.from]?.position;
     const to = vertices[arrow.to]?.position;
     if (!from || !to) continue;
-    const drawn = curlyArrow(from, to);
+    const drawn = curlyArrow(from, to, {
+      awayFrom,
+      clearance: { from: clearOf(arrow.from), to: clearOf(arrow.to) },
+    });
     if (!drawn) continue;
     const curve = document.createElementNS(NS, "path");
     curve.setAttribute("d", drawn.path);
     curve.setAttribute("fill", "none");
     curve.setAttribute("stroke", "var(--ui-accent)");
-    curve.setAttribute("stroke-width", "1.8");
+    curve.setAttribute("stroke-width", String(ARROW_STROKE));
     curve.setAttribute("stroke-linecap", "round");
     const head = document.createElementNS(NS, "path");
     head.setAttribute("d", drawn.head);
     head.setAttribute("fill", "none");
     head.setAttribute("stroke", "var(--ui-accent)");
-    head.setAttribute("stroke-width", "1.8");
+    head.setAttribute("stroke-width", String(ARROW_STROKE));
     head.setAttribute("stroke-linecap", "round");
     head.setAttribute("stroke-linejoin", "round");
     group.append(curve, head);

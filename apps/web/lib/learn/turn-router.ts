@@ -901,7 +901,9 @@ const DECISION_CONTRACT = [
   // wrong, so this instruction is finally safe — it was removed twice for breaking whole turns.
   "Because your answer is outside the JSON, write mathematics as real LaTeX: $$ … $$ on its own "
   + "line for a displayed equation, $ … $ inline. Do not substitute Unicode symbols for it. The "
-  + "canvas typesets it.",
+  + "canvas typesets it. Wrap ONLY the formula, never a clause of English: write "
+  + "\"for $0 < r < \\pi/2$, $z$ rises to $1$\", not one pair of $ around the whole sentence. "
+  + "A sentence inside $ … $ typesets as one run of italics with every word jammed together.",
   "",
   '"then" is what happens to the canvas:',
   // 🔴🔴 "reply" IS NOW THE TEACHING LANE, ON THE OWNER'S ORDER (2026-08-24), AND THE SENTENCE
