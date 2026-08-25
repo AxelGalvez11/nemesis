@@ -92,40 +92,71 @@ test("🔴🔴 the panel is three shelves, in the reference's order and its word
   assert.ok(!/tab === "sources"/.test(CONTROLS), "the panel branches on a tab again");
 });
 
-test("🔴🔴 every shelf prints its heading, including an empty one", () => {
-  // 🔴🔴 THIS TEST USED TO ASSERT THE OPPOSITE AND THE REVERSAL IS EARNED, NOT CASUAL. It read:
+test("🔴🔴 an empty shelf does not render, and Sources is the exception that anchors the panel", () => {
+  // 🔴🔴 THIS GUARD HAS NOW SAID THREE DIFFERENT THINGS, AND THE HISTORY IS THE POINT — each turn
+  // was an owner call, not a drift.
   //
-  //     assert.match(CONTROLS, /const grouped = websites\.length > 0 && documents\.length > 0;/)
+  //   v1  no headings unless BOTH kinds of source are present. Reasoning: *"the panel's own tab
+  //       already says sources, so 'Documents' printed under it is a label restating a label."*
+  //   v2  every shelf prints its heading, empty or not. The tab was gone, so the heading became the
+  //       only label there was, and a hidden one left "read nothing from the web" indistinguishable
+  //       from "not tracked".
+  //   v3  owner, 2026-08-25: *"outputs and inputs should only appear when there are some."* An
+  //       empty shelf is noise on a panel opened to see what a canvas HAS.
   //
-  // …with the reasoning: *"the panel's own tab already says sources, so 'Documents' printed under
-  // it is a label restating a label."* That was true OF A PANEL WITH A TAB. The tab is gone, so
-  // the heading is now the only thing naming what a list is, and a section that hides its heading
-  // when empty leaves the learner unable to tell "this canvas has read nothing from the web" from
-  // "this panel does not track that" — the second reads as something having been lost.
+  // 🔴 THE RULE IS CARRIED BY THE PROP SHAPE, NOT BY A FLAG BESIDE IT. A section with both an empty
+  // sentence AND a hide flag has two answers for one state, and whichever the code checked first
+  // would win silently. No `empty` IS the instruction to disappear.
   //
-  // Calibration: make PanelSection return null when it has no rows and this reddens.
+  // Calibration: give Outputs an `empty` and this reddens; take Sources' away and it reddens.
   const start = CONTROLS.indexOf("function PanelSection");
   const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
   assert.ok(start !== -1 && section.length > 0, "PanelSection moved — this guard is pointed at nothing");
-  assert.match(section, /\{label\}/, "the shelf lost its heading");
-  assert.ok(!/rows\.length === 0[\s\S]{0,80}return null/.test(section), "an empty shelf disappears instead of saying it is empty");
-  assert.match(section, /\{empty\}/, "an empty shelf says nothing about being empty");
-  assert.ok(!/const grouped =/.test(CONTROLS), "the conditional-headings rule is back");
+  assert.match(section, /if \(rows\.length === 0 && !filled && !empty\) return null/, "an empty shelf still renders");
+  assert.match(section, /empty\?: string/, "`empty` stopped being optional, so nothing can hide");
+
+  // Outputs and Inputs pass no empty state; Sources does, and is therefore always on screen.
+  assert.match(CONTROLS, /<PanelSection label="Outputs">/, "the Outputs shelf gained an empty state and can no longer hide");
+  assert.match(CONTROLS, /<PanelSection label="Inputs" onAdd=/, "the Inputs shelf gained an empty state and can no longer hide");
+  assert.match(CONTROLS, /empty="Nothing read from the web yet\./, "the Sources shelf lost the empty state that anchors the panel");
+  assert.ok(!CONTROLS.includes("Nothing made yet"), "the Outputs description is back");
+  assert.ok(!CONTROLS.includes("Nothing attached yet"), "the Inputs description is back");
 });
 
-test("🔴🔴 every shelf folds, and a folded one still says how much is inside it", () => {
-  // Owner, 2026-08-25: *"make sure each section is collapsible."* Third time this has been asked
-  // for in some form — 2026-08-24 for the websites group specifically, and now for all three.
+test("🔴 the panel's own icon is the reference's, not the Library's", () => {
+  // Owner, 2026-08-25, with the glyph screenshotted. `library` is a stack of books, which reads as
+  // "go to the Library" — a different surface this panel is repeatedly mistaken for.
+  assert.match(CONTROLS, /name="list-unordered" size="20px"/, "the panel trigger stopped using the reference's icon");
+  assert.ok(!/name="library"/.test(CONTROLS), "the books icon is back on the panel trigger");
+});
+
+test("🔴🔴 Outputs has no `+`, because those three rows are not coming back", () => {
+  // The reference offers "Create a file or site" on its Outputs heading. This is the one place its
+  // styling is deliberately NOT copied — owner ruling, 2026-08-24: *"remove the make flash cards,
+  // make slide, make summary note from the output section."* A `+` there is those rows returning
+  // behind an icon. §38: a phrase to the composer, not a control.
+  const outputs = CONTROLS.slice(CONTROLS.indexOf('<PanelSection label="Outputs"'));
+  const heading = outputs.slice(0, outputs.indexOf("</PanelSection>"));
+  assert.ok(!/onAdd/.test(heading), "the Outputs shelf grew an add control");
+  // And the two that DO have one drive the file picker rather than making anything.
+  assert.match(CONTROLS, /onAdd=\{\(\) => filePicker\.current\?\.click\(\)\}/, "the `+` no longer opens the file picker");
+});
+
+test("🔴🔴 every shelf folds, and folding stays safe without a count", () => {
+  // Owner, 2026-08-25: *"make sure each section is collapsible."*
   //
-  // 🔴 THE COUNT IS WHAT MAKES FOLDING SAFE. A collapsed section with no number is
-  // indistinguishable from an empty one, which is exactly the moment somebody concludes their
-  // sources were lost. Calibration: drop the count and this reddens.
+  // 🔴 THE COUNT IS GONE AND THE INVARIANT IT PROTECTED IS STILL HELD — by a different mechanism,
+  // which is why this is a repoint and not a deletion. The count existed because a collapsed
+  // section with no number is indistinguishable from an empty one: the moment somebody concludes
+  // their sources were lost. Empty shelves no longer render at all, so a visible collapsed shelf
+  // always has something in it and that ambiguity cannot occur. The reference carries no count
+  // either. Calibration: make an empty shelf render again and the guard above reddens.
   const start = CONTROLS.indexOf("function PanelSection");
   const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
   assert.match(section, /const \[open, setOpen\] = useState\(true\)/, "shelves no longer fold, or no longer start open");
   assert.match(section, /aria-expanded=\{open\}/, "a screen reader is not told the shelf folds");
   assert.match(section, /open \? "chevron-down" : "chevron-right"/, "the shelf folds with no visible sign that it does");
-  assert.match(section, /\{rows\.length\}/, "a folded shelf no longer says how much is inside it");
+  assert.ok(!/\{rows\.length\}<\/span>/.test(section), "the count is back — the reference has none");
 });
 
 test("🔴 a row is ONE line — the descriptions are gone", () => {

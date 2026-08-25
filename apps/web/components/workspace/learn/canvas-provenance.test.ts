@@ -90,21 +90,26 @@ test("the Sources panel discloses model origin instead of only 'Nothing attached
     "the sources panel must state where model-sourced knowledge came from",
   );
 
-  // 🔴🔴 THE CONTRADICTION IS NOW IMPOSSIBLE BY LAYOUT, AND THAT IS WHY THIS ASSERTION CHANGED
-  // SHAPE RATHER THAN GOING AWAY. It used to require "Nothing attached yet" to sit within 400
-  // characters of a `modelKnowledge` check, because both lived in ONE list: printing the bare
-  // sentence above a model-knowledge row would have had the panel deny and disclose in the same
-  // breath. Since 2026-08-25 they are in different shelves — the sentence is the Inputs shelf's
-  // empty state, model knowledge is a row on the Sources shelf — so "Inputs: nothing attached yet"
-  // beside "Sources: Nemesis knowledge" is not a contradiction, it is the truth about a canvas
-  // started by typing a topic. What still has to hold is that the disclosure is not itself treated
-  // as empty: a shelf whose only content is that line must not print "Nothing read from the web
-  // yet" over the top of it.
-  const empty = /Nothing attached yet/.exec(source);
-  assert.ok(empty, "the genuinely-empty sentence should still exist for genuinely empty canvases");
+  // 🔴🔴 THE CONTRADICTION IS NOW IMPOSSIBLE BY LAYOUT, WHICH IS WHY THIS ASSERTION KEEPS CHANGING
+  // SHAPE RATHER THAN GOING AWAY. Three versions, one invariant — the panel must never deny and
+  // disclose in the same breath.
+  //
+  //   v1  "Nothing attached yet" had to sit within 400 characters of a `modelKnowledge` check,
+  //       because both lived in ONE list and the bare sentence could print above the disclosure.
+  //   v2  they moved to different shelves, so the pairing became `filled={modelKnowledge}` — the
+  //       Sources shelf refusing to call itself empty while it is showing where knowledge came from.
+  //   v3  owner, 2026-08-25: *"outputs and inputs should only appear when there are some."* The
+  //       Inputs sentence is gone entirely, because a shelf with nothing in it no longer renders.
+  //       So there is no denial left to contradict anything.
+  //
+  // What survives untouched is the half that matters: the disclosure exists, and the shelf carrying
+  // it cannot be overwritten by an empty state. Calibration: drop `filled` and this reddens.
   assert.match(source, /filled=\{modelKnowledge\}/, "the Sources shelf can call itself empty while disclosing model knowledge");
-  // Calibration: drop `filled` from the section and this reddens.
   assert.match(source, /filled = false/, "PanelSection lost the override that keeps the disclosure from being overwritten");
+  // 🔴 AND THE SHELF HOLDING THE DISCLOSURE MUST BE THE ONE THAT ALWAYS RENDERS. If Sources ever
+  // became conditional like the other two, a canvas taught entirely from model knowledge would
+  // disclose nothing at all — N10's original failure, arriving by a new route.
+  assert.match(source, /empty="Nothing read from the web yet\."/, "the Sources shelf can now vanish, taking the disclosure with it");
 });
 
 test("no per-sentence provenance badge is introduced inline", () => {
