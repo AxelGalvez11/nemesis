@@ -46,6 +46,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import type { Connector, ConnectorHit } from "../_shared/science/types.ts";
 import { arxiv, crossref, europepmc, openalex, pubmed, semanticScholar } from "../_shared/science/literature/index.ts";
+import { type Relevance, relevanceOf } from "../_shared/science/relevance.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -182,6 +183,9 @@ interface LiteratureRow {
   url: string;
 }
 
+/** A row plus how it was judged. Internal to the fan-out; `rel` never leaves this function. */
+type ScoredRow = LiteratureRow & { rel: Relevance };
+
 /**
  * Ask all six at once and merge what answers.
  *
@@ -192,19 +196,28 @@ interface LiteratureRow {
  * PubMed, OpenAlex and Crossref share DOIs, and arXiv preprints resurface in both. Undeduped, a
  * five-paper answer would cite the same study three times and read as three independent findings —
  * which is worse than showing fewer papers, because it manufactures agreement.
+ *
+ * 🔴🔴🔴 AND EVERY ROW CLEARS A RELEVANCE FLOOR (owner 2026-08-24: *"I need the searches to be
+ * accurate to have relevance. If it doesn't have relevance, then I don't see why we would use
+ * this."*). The six indexes each rank their own hits, so the TOP of every list is usually right —
+ * the failure is the tail. Asked for five an index returns five whether or not it has five, so a
+ * field it knows nothing about still yields its best five guesses: arXiv answered a property-law
+ * query with a sports-analytics paper about ball possession, and answered a metformin query with a
+ * paper on sample-size calculation. Neither index was wrong. Passing the tail through was. See
+ * ../_shared/science/relevance.ts for the rule, which carries no subject vocabulary.
  */
 async function searchLiterature(query: string, limit: number): Promise<LiteratureRow[]> {
   // The one clock every index races. Resolving (not rejecting) keeps a lapsed index indistinguishable
   // from one that found nothing, which is what the caller should see either way.
   let lapse: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<LiteratureRow[]>((resolve) => {
+  const deadline = new Promise<ScoredRow[]>((resolve) => {
     lapse = setTimeout(() => resolve([]), LITERATURE_TOTAL_MS);
   });
 
   const settled = await Promise.allSettled(
     LITERATURE_IDS.map(async (db) => {
       const connector = CONNECTORS[db];
-      if (!connector) return [] as LiteratureRow[];
+      if (!connector) return [] as ScoredRow[];
       // The abort still fires: racing alone would leave the losing request in flight, holding a
       // socket open on a function that is about to return.
       const ac = new AbortController();
@@ -222,9 +235,21 @@ async function searchLiterature(query: string, limit: number): Promise<Literatur
             title: hit.title,
             summary: (hit.summary ?? "").slice(0, 600),
             url: hit.url as string,
-          }));
+            rel: relevanceOf(query, hit.title ?? "", hit.summary ?? ""),
+          }))
+          // 🔴🔴🔴 THE FLOOR IS APPLIED HERE, PER INDEX, BEFORE THE MERGE — NOT TO THE MERGED LIST.
+          // Filtering after the round-robin would spend the ten slots on candidates and then throw
+          // some away, so a query that had ten good papers available could return six. Filtering
+          // first means the merge only ever chooses between papers that already qualify, and the
+          // deeper hits from each index step up to fill the slots the rejects vacated. Measured on
+          // the same four queries, this is the difference between 29 of 47 surviving and the answer
+          // staying full.
+          .filter((row) => row.rel.keep)
+          // Best first WITHIN each index, so the round-robin below takes each one's strongest
+          // remaining paper on every pass rather than whatever order it happened to reply in.
+          .sort((a, b) => b.rel.score - a.rel.score || b.rel.matched - a.rel.matched);
       } catch {
-        return [] as LiteratureRow[];
+        return [] as ScoredRow[];
       } finally {
         clearTimeout(timer);
       }
@@ -234,6 +259,7 @@ async function searchLiterature(query: string, limit: number): Promise<Literatur
   if (lapse !== undefined) clearTimeout(lapse);
 
   const seen = new Set<string>();
+  const titles = new Set<string>();
   const rows: LiteratureRow[] = [];
   // Round-robin across the indexes rather than draining one at a time, so a single source cannot
   // fill the whole answer and the merge reflects agreement between indexes rather than their order.
@@ -244,8 +270,28 @@ async function searchLiterature(query: string, limit: number): Promise<Literatur
       if (!row) continue;
       const key = row.url.replace(/^https?:\/\//, "").replace(/\/$/, "").toLowerCase();
       if (seen.has(key)) continue;
+      // 🔴🔴🔴 URL IS NOT ENOUGH, AND BELIEVING IT WAS MADE THIS FUNCTION'S OWN DEDUPE COMMENT FALSE.
+      // The same paper carries a different URL at every index that holds it — openalex.org/W…,
+      // doi.org/…, semanticscholar.org/… — so a URL set never sees them as one record. Measured
+      // 2026-08-24: "fatigue crack propagation in welded steel joints" returned "Continuum approach
+      // to fatigue crack initiation and propagation in welded steel joints" THREE times, from
+      // OpenAlex, Crossref and Semantic Scholar, and "adverse possession doctrine property law"
+      // returned "ADVERSE POSSESSION" twice.
+      //
+      // 🔴 THE RELEVANCE FLOOR IS WHAT MADE THIS VISIBLE, NOT WHAT CAUSED IT. Before the floor the
+      // duplicates were scattered through ten mixed results; concentrating the list on papers that
+      // actually answer the question put the same study next to itself. The defect was always here,
+      // and it is the exact one this function's header warns about — three citations of one study
+      // read as three independent findings, which manufactures agreement.
+      //
+      // Compared on letters and digits only, so punctuation, case and the ’/' apostrophes that
+      // differ between indexes cannot hide a match.
+      const titleKey = row.title.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      if (titleKey.length > 0 && titles.has(titleKey)) continue;
       seen.add(key);
-      rows.push(row);
+      if (titleKey.length > 0) titles.add(titleKey);
+      // `rel` is how the row was judged, not part of the answer the caller renders.
+      rows.push({ db: row.db, id: row.id, title: row.title, summary: row.summary, url: row.url });
       if (rows.length >= limit) return rows;
     }
   }
