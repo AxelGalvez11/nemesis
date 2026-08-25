@@ -26,13 +26,20 @@ import {
 
 import { Button, Chips, Field, Section, Segmented, Slider, TextField } from "./bits";
 
+/**
+ * Three arrivals, not six.
+ *
+ * 🔴 FEWER CHOICES ON PURPOSE, AND TAKEN FROM THE REFERENCE TOOL. This started as the
+ * engine's six easing names, which is the catalogue rather than a design: `outQuint` and
+ * `outSine` differ by an amount an author cannot see on a 0.4s morph, so the extra
+ * options only make the decision slower. bible-strong-avatar-lab offers exactly three —
+ * spring, smooth, snappy — and that is the right size for a control that is chosen dozens
+ * of times. The remaining easings are still in the engine for states to use.
+ */
 const EASE_OPTIONS: readonly { value: EaseName; label: string }[] = [
   { value: "outQuint", label: "Decisive" },
-  { value: "outSine", label: "Calm" },
-  { value: "inOutSine", label: "Even" },
-  { value: "inOutQuart", label: "Weighted" },
-  { value: "snap", label: "Snap" },
-  { value: "linear", label: "Flat" },
+  { value: "inOutSine", label: "Smooth" },
+  { value: "snap", label: "Snappy" },
 ];
 
 const PLAYBACK_OPTIONS: readonly { value: PlaybackMode; label: string }[] = [

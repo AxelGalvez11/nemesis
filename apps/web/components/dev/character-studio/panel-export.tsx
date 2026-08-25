@@ -86,6 +86,16 @@ export function ExportPanel({
   };
 
   const importFile = async (file: File) => {
+    // 🔴 A SIZE CAP BEFORE THE READ, NOT AFTER. `normaliseDoc` repairs anything, which is
+    // the right behaviour for a document that came from this studio and the wrong one for
+    // a file picked by hand: a 200MB JSON would be read into memory, parsed, and walked
+    // before anything noticed. The reference tool caps its definition at 256KB; this is
+    // the whole project rather than one character, so it gets more room — but a bound.
+    const MAX_BYTES = 8 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      onNotice(`That file is ${(file.size / 1024 / 1024).toFixed(1)}MB. The studio reads up to 8MB.`);
+      return;
+    }
     try {
       const text = await file.text();
       // Repaired rather than trusted — this file may have been hand-edited, or written by

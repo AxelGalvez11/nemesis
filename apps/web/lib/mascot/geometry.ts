@@ -338,3 +338,125 @@ export function capsuleEyePath(rx: number, ry: number): string {
     "Z"
   );
 }
+
+// ── The head, as a sphere ────────────────────────────────────────────────────────
+//
+// 🔴 THE FLAT FACE IS STILL THE CHARACTER; THIS IS AN OPTION ON TOP OF IT. Everything
+// above places the eyes with plain 2D offsets on the silhouette, and at zero rotation
+// this produces exactly that — same numbers, same pixels. It is off unless a caller asks.
+//
+// 🔴 WHY IT EXISTS. Both references this engine is measured against put their eyes on a
+// SPHERE: bloub positions each capsule through a tangent frame from a head yaw/pitch/roll,
+// and bible-strong-avatar-lab stores a head `{x, y, z}` with a perspective term. It is
+// the single biggest reason those characters read as alive and a flat one does not — the
+// eyes do not merely slide, they FORESHORTEN and turn as the head goes round, which is
+// the cue that says "solid object" rather than "sticker". Owner, 2026-08-25: *"we need
+// 3d rotation."*
+//
+// 🔴 ORTHOGRAPHIC, NOT PERSPECTIVE, AND THAT IS A CHOICE RATHER THAN A SHORTCUT. A
+// perspective divide needs a camera distance, which is a number nobody can judge and
+// which makes the eye's size depend on where the head is rather than on which way it
+// faces. Orthographic keeps the silhouette exactly as drawn — the body is still the flat
+// r(theta) outline — and moves only the face across it, which is what both references
+// look like in practice at these sizes.
+
+/** A head orientation, in degrees. All zero is the flat face. */
+export interface Head {
+  /** Turn left and right. Positive looks to the character's own right. */
+  readonly yaw: number;
+  /** Nod up and down. Positive looks down. */
+  readonly pitch: number;
+  /** Tip the head sideways. Positive rolls clockwise on screen. */
+  readonly roll: number;
+}
+
+export const HEAD_REST: Head = { yaw: 0, pitch: 0, roll: 0 };
+
+export const headIsRest = (h: Head | undefined): boolean =>
+  h === undefined || (h.yaw === 0 && h.pitch === 0 && h.roll === 0);
+
+/** Where one eye lands once the head has turned, and how it is squashed by the turn. */
+export interface EyeOnSphere {
+  /** Position in body-radius units: -1..1 across, -1..1 down. */
+  readonly x: number;
+  readonly y: number;
+  /** Foreshortening of the eye's own width and height, 0..1. */
+  readonly sx: number;
+  readonly sy: number;
+  /** Extra rotation the turn gives the eye, degrees. */
+  readonly tilt: number;
+  /**
+   * How much the eye faces the viewer: 1 head-on, 0 at the edge of the silhouette,
+   * negative once it has gone round the back.
+   */
+  readonly facing: number;
+}
+
+const RAD = Math.PI / 180;
+
+/**
+ * Places one eye on the head's sphere and projects it.
+ *
+ * `lon` and `lat` are where the eye sits on the head at rest, in degrees — longitude
+ * positive to the character's right, latitude positive upward. The tangent frame is what
+ * does the real work: the eye's own width shrinks with the projected length of the
+ * longitude tangent and its height with the latitude tangent, so an eye near the limb
+ * narrows rather than merely sliding. Taking only the position and leaving the size alone
+ * is the version that still reads as a sticker.
+ */
+export function eyeOnSphere(lon: number, lat: number, head: Head): EyeOnSphere {
+  const a = lon * RAD;
+  const b = lat * RAD;
+  const ca = Math.cos(a);
+  const sa = Math.sin(a);
+  const cb = Math.cos(b);
+  const sb = Math.sin(b);
+
+  // The eye's direction, and the two tangents of the sphere at that point. Screen frame:
+  // x right, y DOWN, z toward the viewer.
+  const p: [number, number, number] = [sa * cb, -sb, ca * cb];
+  const tanLon: [number, number, number] = [ca, 0, -sa];
+  const tanLat: [number, number, number] = [-sa * sb, -cb, -ca * sb];
+
+  const cy = Math.cos(head.yaw * RAD);
+  const sy = Math.sin(head.yaw * RAD);
+  const cp = Math.cos(head.pitch * RAD);
+  // 🔴 NEGATED, SO THE FIELD MEANS WHAT IT SAYS. `pitch` is documented as "positive looks
+  // down", which is the convention anyone dragging a control labelled Nod expects. The
+  // rotation about X in this frame does the opposite — a positive angle carries the face
+  // upward — so the sign is corrected once, here, rather than leaving every caller to
+  // remember it. Caught on screen: the reference's transcribed head turned the wrong way.
+  const sp = -Math.sin(head.pitch * RAD);
+  const cr = Math.cos(head.roll * RAD);
+  const sr = Math.sin(head.roll * RAD);
+
+  // Yaw about Y, then pitch about X, then roll about Z. The order is the one a neck
+  // actually does and it is why a rolled head still nods along its own axis.
+  const turn = (v: [number, number, number]): [number, number, number] => {
+    const x1 = v[0] * cy + v[2] * sy;
+    const z1 = -v[0] * sy + v[2] * cy;
+    const y2 = v[1] * cp - z1 * sp;
+    const z2 = v[1] * sp + z1 * cp;
+    return [x1 * cr - y2 * sr, x1 * sr + y2 * cr, z2];
+  };
+
+  const pr = turn(p);
+  const lonR = turn(tanLon);
+  const latR = turn(tanLat);
+
+  // Projected tangent lengths ARE the foreshortening: a tangent pointing at the viewer
+  // has no screen length, and an eye aligned with it has no width.
+  const sxRaw = Math.hypot(lonR[0], lonR[1]);
+  const syRaw = Math.hypot(latR[0], latR[1]);
+
+  return {
+    x: pr[0],
+    y: pr[1],
+    // A floor, because an eye of exactly zero width vanishes rather than turning away,
+    // and because a path scaled to 0 is a degenerate shape some renderers refuse.
+    sx: Math.max(0.04, sxRaw),
+    sy: Math.max(0.04, syRaw),
+    tilt: Math.atan2(lonR[1], lonR[0]) / RAD,
+    facing: pr[2],
+  };
+}

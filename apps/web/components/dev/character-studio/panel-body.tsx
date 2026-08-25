@@ -4,6 +4,7 @@
 
 import { SHAPE_LABEL, SHAPE_ORDER } from "@/lib/mascot/shapes";
 import type { ShapeId } from "@/lib/mascot/shapes";
+import { DEFAULT_PART, type BodyPart } from "@/lib/mascot/compound";
 import { DEFAULT_BODY, LIMITS, type StudioBody, type StudioCharacter } from "@/lib/studio/document";
 
 import { Button, Chips, ColourField, Field, Section, Segmented, Slider } from "./bits";
@@ -83,6 +84,90 @@ export function BodyPanel({
           onChange={(tilt) => write({ tilt })}
           format={(v) => `${v}°`}
         />
+      </Section>
+
+
+      <Section
+        title="Parts"
+        note={
+          character.parts.length === 0
+            ? "One catalogue silhouette. Add a part to build the body from primitives instead."
+            : `${character.parts.length} ${character.parts.length === 1 ? "primitive" : "primitives"}, unioned into one outline.`
+        }
+        actions={
+          <Button
+            onClick={() => onChange({ ...character, parts: [...character.parts, { ...DEFAULT_PART }] })}
+            disabled={character.parts.length >= 8}
+          >
+            Add part
+          </Button>
+        }
+      >
+        {character.parts.length === 0 ? (
+          <p className="cs-hint">
+            Parts union into a single outline, so the result still morphs and deforms like any
+            catalogue shape. A ray from the middle has to cross the edge once — bumps, a wider base,
+            ears and a snowman all work; a piece floating free of the body does not, and would be
+            drawn joined on rather than floating.
+          </p>
+        ) : (
+          <>
+            {character.parts.map((part, i) => {
+              const put = (patch: Partial<BodyPart>) =>
+                onChange({
+                  ...character,
+                  parts: character.parts.map((p, k) => (k === i ? { ...p, ...patch } : p)),
+                });
+              return (
+                <div key={i} className="cs-step">
+                  <div className="cs-step-head">
+                    <span className="cs-step-index">{i + 1}</span>
+                    <Chips value={part.shape} options={SHAPE_OPTIONS} onChange={(shape) => put({ shape })} />
+                    <div className="cs-step-tools">
+                      <Button
+                        onClick={() =>
+                          onChange({ ...character, parts: character.parts.filter((_, k) => k !== i) })
+                        }
+                        tone="danger"
+                        title="Remove this part"
+                      >
+                        ×
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="cs-two">
+                    <Slider label="Across" value={part.dx} range={LIMITS.partOffset} onChange={(dx) => put({ dx })} />
+                    <Slider label="Down" value={part.dy} range={LIMITS.partOffset} onChange={(dy) => put({ dy })} />
+                  </div>
+                  <div className="cs-two">
+                    <Slider label="Width" value={part.rx} range={LIMITS.partRadius} onChange={(rx) => put({ rx })} />
+                    <Slider label="Height" value={part.ry} range={LIMITS.partRadius} onChange={(ry) => put({ ry })} />
+                  </div>
+                  <Slider
+                    label="Rotate"
+                    value={part.rotate}
+                    range={LIMITS.headRoll}
+                    onChange={(rotate) => put({ rotate })}
+                    format={(v) => `${v}°`}
+                  />
+                </div>
+              );
+            })}
+            <Slider
+              label="Smooth the joins"
+              value={character.partBlend}
+              range={LIMITS.shapeMix}
+              onChange={(partBlend) => onChange({ ...character, partBlend })}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <p className="cs-dial-note">
+              Where two parts meet at a shallow angle the union creases, and at this sampling a
+              crease reads as a facet rather than a corner. At 0 the seam is crisp; turning it up
+              melts the parts together. The enclosed area is held constant either way, so this never
+              doubles as a size control.
+            </p>
+          </>
+        )}
       </Section>
 
       <Section

@@ -134,6 +134,20 @@ export interface BodyPose {
 }
 
 /**
+ * How one eye departs from the pair.
+ *
+ * `w` and `h` multiply what the pair already decided; `rise` and `tilt` are added. All
+ * four are identity at `{ w: 1, h: 1, rise: 0, tilt: 0 }`, so an absent tweak and a
+ * neutral one draw the same thing.
+ */
+export interface EyeTweak {
+  readonly w: number;
+  readonly h: number;
+  readonly rise: number;
+  readonly tilt: number;
+}
+
+/**
  * The eyes.
  *
  * Geometry is in fractions of the body's own rx / ry, so a body that stretches carries
@@ -173,6 +187,16 @@ export interface EyePose {
    * `question` read as inquisitive without an eyebrow or any other cartoon device.
    */
   readonly asym: number;
+  /**
+   * One eye departing from the pair, where `asym` cannot reach.
+   *
+   * 🔴 `asym` REMAINS THE INTENDED WAY TO MAKE THE PAIR UNEVEN, and these two are the
+   * escape hatch. `asym` is a single mirrored number, which is why it reads as one face
+   * being uneven rather than as two eyes that happen to differ; reaching for these when
+   * `asym` would do produces the second thing. See `ExpressionDef.left`.
+   */
+  readonly left?: EyeTweak;
+  readonly right?: EyeTweak;
 }
 
 /**

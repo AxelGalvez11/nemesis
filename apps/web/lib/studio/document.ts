@@ -21,6 +21,7 @@
 
 import { EXPRESSIONS, type ExpressionDef, type ExpressionId } from "@/lib/mascot/expressions";
 import type { EaseName } from "@/lib/mascot/easing";
+import { DEFAULT_PART, type BodyPart } from "@/lib/mascot/compound";
 import { SHAPE_ORDER, type ShapeId } from "@/lib/mascot/shapes";
 import { STATE_ORDER } from "@/lib/mascot/states";
 import type { MascotMode } from "@/lib/mascot/types";
@@ -75,9 +76,92 @@ export interface StudioExpression {
   readonly shape?: ShapeId | null;
   /** 0..1, how far toward `shape`. Ignored when `shape` is null. */
   readonly shapeMix?: number;
+  /**
+   * One eye departing from the pair.
+   *
+   * 🔴 MULTIPLIERS AND OFFSETS, NOT ABSOLUTES, AND THAT IS A DELIBERATE DEPARTURE FROM
+   * THE TOOL THIS RECREATES. bible-strong-avatar-lab stores each eye outright —
+   * `{ width, height, x, y, angle }` — which suits an engine whose expressions ARE the
+   * eye. Ours are a layer over whatever the state already decided, so an absolute here
+   * would erase that: `confusion` narrows the eyes and `inactive` nearly shuts them, and
+   * a face that set heights outright would give every state the same eyes.
+   *
+   * `null` on both sides means the pair is linked, which is what almost every face wants.
+   */
+  readonly left?: EyeSide | null;
+  readonly right?: EyeSide | null;
+  /**
+   * Colours this face overrides while it is showing.
+   *
+   * Kept partial and optional: a face that changes the character's colour is a strong
+   * move (a flash of red on a mistake), and one that does it by accident because the
+   * field had to be filled in is a bug.
+   */
+  readonly ink?: string | null;
+  readonly eyeInk?: string | null;
+  /** Ambient movement while this face is held. */
+  readonly motion?: MotionPlan;
+  /**
+   * How the head is turned for this face.
+   *
+   * 🔴 PER-FACE, NOT PER-CHARACTER, because which way the head is turned IS an expression
+   * — a tilt is curiosity, a turn away is reluctance — and both reference tools store it
+   * on the expression for that reason. All zero is the flat face, which is what every
+   * shipped face uses.
+   */
+  readonly head?: HeadPlan;
   /** Author's note. Becomes the engine's `note` on export. */
   readonly note: string;
 }
+
+/** One eye's departure from the pair. Identity is `{ w: 1, h: 1, rise: 0, tilt: 0 }`. */
+export interface EyeSide {
+  readonly w: number;
+  readonly h: number;
+  readonly rise: number;
+  readonly tilt: number;
+}
+
+export const EYE_SIDE_IDENTITY: EyeSide = { w: 1, h: 1, rise: 0, tilt: 0 };
+
+/**
+ * Ambient movement, as a small vocabulary rather than a pile of knobs.
+ *
+ * 🔴 NAMED MODES, NOT SLIDERS, AND THAT IS TAKEN STRAIGHT FROM THE REFERENCE TOOL. The
+ * obvious design is amplitude and frequency for body and eyes, which is four numbers that
+ * mostly produce jitter — every value is reachable and almost none of them are good.
+ * Three named settings per axis is a choice an author can actually make, and each maps to
+ * a `liveliness` the engine already knows how to drive.
+ */
+export interface MotionPlan {
+  readonly eyes: "still" | "drift" | "restless";
+  readonly body: "still" | "breathe" | "restless";
+}
+
+export const DEFAULT_MOTION: MotionPlan = { eyes: "drift", body: "breathe" };
+
+/** Head orientation, in degrees. See `eyeOnSphere`. */
+export interface HeadPlan {
+  readonly yaw: number;
+  readonly pitch: number;
+  readonly roll: number;
+}
+
+export const HEAD_FLAT: HeadPlan = { yaw: 0, pitch: 0, roll: 0 };
+
+/**
+ * What each named mode is worth as the engine's `liveliness`, 0..1.
+ *
+ * `liveliness` drives blink rate, gaze drift, saccades, the weight shift and the breath
+ * together — one number, because those things covary in a real animal and separating them
+ * produces a character that blinks like it is calm and fidgets like it is not.
+ */
+export const MOTION_LIVELINESS: Record<MotionPlan["eyes"] | MotionPlan["body"], number> = {
+  still: 0,
+  drift: 0.55,
+  breathe: 0.55,
+  restless: 1,
+};
 
 /** One step of an animation: hold this face for this long, arriving with this curve. */
 export interface StudioStep {
@@ -187,6 +271,17 @@ export interface StudioCharacter {
    * would read as two characters.
    */
   readonly eyeShape: "blob" | "capsule";
+  /**
+   * A body assembled from primitives, or an empty list for a plain catalogue silhouette.
+   *
+   * 🔴 THE PARTS ARE RESOLVED TO A PROFILE, NOT KEPT AS A SCENE. `compoundProfile` unions
+   * them and measures the union back into the same 48 radii every catalogue shape uses,
+   * so a compound body morphs, normalises and deforms exactly like any other. See that
+   * file for what the representation can and cannot draw.
+   */
+  readonly parts: readonly BodyPart[];
+  /** 0..1, how far the junctions between parts are smoothed. */
+  readonly partBlend: number;
   readonly expressions: readonly StudioExpression[];
   readonly animations: readonly StudioAnimation[];
 }
@@ -240,6 +335,12 @@ export function seedExpressions(): StudioExpression[] {
       mode: "idle" as MascotMode,
       shape: null,
       shapeMix: 0,
+      left: null,
+      right: null,
+      ink: null,
+      eyeInk: null,
+      motion: DEFAULT_MOTION,
+      head: HEAD_FLAT,
       note: e.note,
     };
   });
@@ -270,6 +371,8 @@ export function newCharacter(name: string, id: string): StudioCharacter {
     eyeDark: DEFAULT_EYE_DARK,
     body: DEFAULT_BODY,
     eyeShape: "blob",
+    parts: [],
+    partBlend: 0.3,
     expressions,
     animations: [
       {
@@ -316,6 +419,10 @@ const str = (v: unknown, fallback: string): string =>
 const colour = (v: unknown, fallback: string): string =>
   typeof v === "string" && /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : fallback;
 
+/** A hex colour, or `null` for "not overridden". */
+const colour2 = (v: unknown): string | null =>
+  typeof v === "string" && /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : null;
+
 const shapeId = (v: unknown, fallback: ShapeId): ShapeId =>
   typeof v === "string" && (SHAPE_ORDER as readonly string[]).includes(v) ? (v as ShapeId) : fallback;
 
@@ -333,6 +440,11 @@ const mode = (v: unknown): MascotMode =>
  */
 export const LIMITS = {
   h: { min: 0.05, max: 2.5, step: 0.01 },
+  // Per-eye departures, as multipliers on what the pair already decided. Wider than the
+  // pair's own ranges look, because they compose: `w` 1.5 on a pair already at 1.8 is
+  // 2.7, which is what bloub's wink needs on one side.
+  sideW: { min: 0.2, max: 2.5, step: 0.01 },
+  sideH: { min: 0.05, max: 2.5, step: 0.01 },
   // 🔴 3, NOT 2.5, AND THE REFERENCE IS WHY. bloub's `notify` eye is 0.505 wide against a
   // resting 0.186 — a multiplier of 2.72 — so a ceiling of 2.5 silently clipped the one
   // state whose whole read is a very wide, short eye. A limit that cannot express the
@@ -347,6 +459,13 @@ export const LIMITS = {
   squash: { min: 0.4, max: 1.8, step: 0.01 },
   bodyTilt: { min: -30, max: 30, step: 0.5 },
   shapeMix: { min: 0, max: 1, step: 0.01 },
+  // Head. Yaw and pitch stop short of 90 because at exactly the limb the tangent frame
+  // has no screen length and the face has nothing left to draw.
+  headTurn: { min: -75, max: 75, step: 1 },
+  headRoll: { min: -180, max: 180, step: 1 },
+  // Parts, in body-radius units.
+  partOffset: { min: -1.2, max: 1.2, step: 0.01 },
+  partRadius: { min: 0.05, max: 1.4, step: 0.01 },
   // Offsets, so the ranges are half-width: the state has already spent part of the
   // budget and a full-width offset on top of it turns the outline inside out.
   taper: { min: -0.6, max: 0.6, step: 0.01 },
@@ -363,6 +482,45 @@ export type LimitKey = keyof typeof LIMITS;
 
 const clampTo = (key: LimitKey, v: unknown, fallback: number): number =>
   num(v, fallback, LIMITS[key].min, LIMITS[key].max);
+
+function repairSide(raw: unknown): EyeSide | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  return {
+    w: clampTo("sideW", o.w, 1),
+    h: clampTo("sideH", o.h, 1),
+    rise: clampTo("rise", o.rise, 0),
+    tilt: clampTo("tilt", o.tilt, 0),
+  };
+}
+
+function repairHead(raw: unknown): HeadPlan {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  return {
+    yaw: clampTo("headTurn", o.yaw, 0),
+    pitch: clampTo("headTurn", o.pitch, 0),
+    roll: clampTo("headRoll", o.roll, 0),
+  };
+}
+
+function repairPart(raw: unknown): BodyPart {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  return {
+    shape: shapeId(o.shape, "circle"),
+    dx: clampTo("partOffset", o.dx, 0),
+    dy: clampTo("partOffset", o.dy, 0),
+    rx: clampTo("partRadius", o.rx, 0.55),
+    ry: clampTo("partRadius", o.ry, 0.55),
+    rotate: clampTo("headRoll", o.rotate, 0),
+  };
+}
+
+function repairMotion(raw: unknown): MotionPlan {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const eyes = o.eyes === "still" || o.eyes === "restless" ? o.eyes : "drift";
+  const body = o.body === "still" || o.body === "restless" ? o.body : "breathe";
+  return { eyes, body };
+}
 
 function repairExpression(raw: unknown, id: string): StudioExpression {
   const o = (raw ?? {}) as Record<string, unknown>;
@@ -381,6 +539,14 @@ function repairExpression(raw: unknown, id: string): StudioExpression {
     // the character's body for reasons nobody chose.
     shape: o.shape == null ? null : shapeId(o.shape, "blob"),
     shapeMix: o.shape == null ? 0 : clampTo("shapeMix", o.shapeMix, 1),
+    left: repairSide(o.left),
+    right: repairSide(o.right),
+    // `null` rather than a default colour: absent means "use the character's", and a
+    // repair that filled in a hex would silently pin every face to one colour.
+    ink: colour2(o.ink),
+    eyeInk: colour2(o.eyeInk),
+    motion: repairMotion(o.motion),
+    head: repairHead(o.head),
     note: typeof o.note === "string" ? o.note : "",
   };
 }
@@ -479,6 +645,12 @@ function repairCharacter(raw: unknown, id: string): StudioCharacter {
     eyeDark: colour(o.eyeDark, DEFAULT_EYE_DARK),
     body: repairBody(o.body),
     eyeShape: o.eyeShape === "capsule" ? "capsule" : "blob",
+    // 🔴 CAPPED AT EIGHT. A ray-march against every part runs on each edit, and the cost
+    // is linear in parts — but the real reason is that a body needing more than eight
+    // primitives is not star-shaped about its centre any more, so the extra ones would be
+    // silently swallowed by the representation rather than drawn.
+    parts: (Array.isArray(o.parts) ? o.parts : []).slice(0, 8).map(repairPart),
+    partBlend: clampTo("shapeMix", o.partBlend, 0.3),
     expressions: uniqueExpressions,
     animations,
   };
@@ -519,7 +691,41 @@ export function characterOf(doc: StudioDoc): StudioCharacter {
 
 /** The studio row as the engine's own type, ready for `sampleState({ expressionDef })`. */
 export function toExpressionDef(e: StudioExpression): ExpressionDef {
-  return { label: e.name, note: e.note, h: e.h, w: e.w, rise: e.rise, tilt: e.tilt, asym: e.asym, curve: e.curve };
+  return {
+    label: e.name,
+    note: e.note,
+    h: e.h,
+    w: e.w,
+    rise: e.rise,
+    tilt: e.tilt,
+    asym: e.asym,
+    curve: e.curve,
+    // `undefined` rather than `null`: the engine treats absent as the identity, and a
+    // null would have to be checked at every read site.
+    left: e.left ?? undefined,
+    right: e.right ?? undefined,
+  };
+}
+
+/** The two liveliness amounts a face's motion plan asks for. */
+export function motionOf(e: StudioExpression): { eyes: number; body: number } {
+  const plan = e.motion ?? DEFAULT_MOTION;
+  return { eyes: MOTION_LIVELINESS[plan.eyes], body: MOTION_LIVELINESS[plan.body] };
+}
+
+/** The colours a face shows in, falling back to the character's own. */
+export function inkOf(
+  character: StudioCharacter,
+  e: StudioExpression | undefined,
+  dark: boolean,
+): { ink: string; eye: string } {
+  const base = dark
+    ? { ink: character.inkDark, eye: character.eyeDark }
+    : { ink: character.ink, eye: character.eye };
+  // 🔴 ONE OVERRIDE FOR BOTH THEMES, NOT TWO. A face that flashes red is flashing red on
+  // paper and on black alike — that is the point of it — and asking an author for a
+  // second colour they will never look at is how the dark one ends up wrong.
+  return { ink: e?.ink ?? base.ink, eye: e?.eyeInk ?? base.eye };
 }
 
 /** Seconds for one full pass of an animation, morphs included. */

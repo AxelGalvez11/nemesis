@@ -123,16 +123,24 @@ function saccadeAt(t: number, axis: number): number {
  * `amount` is the pose's `liveliness`. At 0 the character is perfectly still and its
  * eyes are open — which is a stare, and `confusion` uses it deliberately.
  */
-export function liveliness(t: number, amount: number): Liveliness {
+export function liveliness(t: number, amount: number, bodyAmount = amount): Liveliness {
   const a = clamp01(amount);
-  if (a <= 0) return { dx: 0, dy: 0, shift: 0, breath: 1, lid: 1 };
+  // 🔴 TWO AMOUNTS, AND THE SECOND DEFAULTS TO THE FIRST. Every state passes one number
+  // and keeps the behaviour it always had. The studio passes two, because an author can
+  // say "eyes still, body breathing" — and the two halves of this function were already
+  // separable: dx/dy/lid belong to the eyes, shift/breath to the body.
+  const b = clamp01(bodyAmount);
+  if (a <= 0 && b <= 0) return { dx: 0, dy: 0, shift: 0, breath: 1, lid: 1 };
   return {
     dx: (drift(t, 1) * 0.12 + saccadeAt(t, 0)) * a,
     dy: (drift(t, 2) * 0.09 + saccadeAt(t, 1) * 0.6) * a,
     // 0.22 mark units on a 116-unit figure — about a third of a pixel at 64px. It is
     // meant to be below the threshold of noticing and above the threshold of dead.
-    shift: Math.sin(t * 0.61) * 0.22 * a,
-    breath: 1 + Math.sin((t / 3.4) * Math.PI * 2) * 0.005 * a,
+    shift: Math.sin(t * 0.61) * 0.22 * b,
+    breath: 1 + Math.sin((t / 3.4) * Math.PI * 2) * 0.005 * b,
+    // 🔴 THE LID FOLLOWS THE EYES, NOT THE BODY, and it never stops entirely: a rate of
+    // zero means no blink at all, which reads as switched off rather than as calm. The
+    // floor of 0.4 is the state table's own resting rate.
     lid: blinkLid(t, 0.4 + a * 0.6),
   };
 }

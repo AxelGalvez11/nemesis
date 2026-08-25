@@ -19,16 +19,63 @@ import type { Look } from "@/lib/mascot/gaze";
 import { blendRadii, SHAPES, type ShapeId } from "@/lib/mascot/shapes";
 import type { MascotFrame, MascotMode, Pose } from "@/lib/mascot/types";
 
-import { toExpressionDef, type StudioBody, type StudioCharacter, type StudioExpression } from "./document";
+import { compoundProfile } from "@/lib/mascot/compound";
+
+import {
+  motionOf,
+  toExpressionDef,
+  type HeadPlan,
+  type StudioBody,
+  type StudioCharacter,
+  type StudioExpression,
+} from "./document";
 import { sampleAnimation, type AnimationSample } from "./playback";
+
+/**
+ * The character's compound silhouette, or `undefined` when it has no parts.
+ *
+ * 🔴 MEMOISED ON THE PARTS THEMSELVES, because `compoundProfile` ray-marches 48
+ * directions against every part and the stage asks for a frame sixty times a second. The
+ * key is the parts' own values, so an edit invalidates it and nothing else does. One
+ * entry is enough in practice — the studio draws one character at a time — but the
+ * filmstrip draws every face of it, so the cache is keyed rather than a single slot.
+ */
+const assembledCache = new Map<string, readonly number[]>();
+
+export function assembledBody(character: StudioCharacter): readonly number[] | undefined {
+  if (character.parts.length === 0) return undefined;
+  const key = `${character.partBlend}|${character.parts
+    .map((p) => `${p.shape},${p.dx},${p.dy},${p.rx},${p.ry},${p.rotate}`)
+    .join(";")}`;
+  const hit = assembledCache.get(key);
+  if (hit) return hit;
+  const made = compoundProfile(character.parts, character.partBlend);
+  // Bounded, because every drag of a part slider mints a new key and an unbounded map
+  // here would grow for as long as the tab is open.
+  if (assembledCache.size > 64) assembledCache.clear();
+  assembledCache.set(key, made);
+  return made;
+}
 
 /** Clamped where the engine's own geometry expects these to live. */
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-/** Lays the character's body over the pose a state produced. */
-export function applyBody(pose: Pose, body: StudioBody): Pose {
+/**
+ * Lays the character's body over the pose a state produced.
+ *
+ * `assembled` is the compound silhouette when the character has one — resolved by the
+ * caller rather than here, because a ray-march per frame is far too much and the parts
+ * only change when the character does.
+ */
+export function applyBody(pose: Pose, body: StudioBody, assembled?: readonly number[]): Pose {
   const b = pose.body;
-  const radii = body.shapeMix > 0 ? blendRadii(b.radii, SHAPES[body.shape], body.shapeMix) : b.radii;
+  // 🔴 A COMPOUND BODY OUTRANKS THE CATALOGUE SHAPE RATHER THAN BLENDING WITH IT. Parts
+  // ARE the silhouette once there are any — mixing them with a named shape underneath
+  // produces a form that is neither, and no author could predict it. `shapeMix` still
+  // governs how far the STATE's own outline is pulled toward whichever of the two is in
+  // charge, so thinking still gathers and insight still resolves.
+  const own = assembled ?? SHAPES[body.shape];
+  const radii = body.shapeMix > 0 ? blendRadii(b.radii, own, body.shapeMix) : b.radii;
   return {
     ...pose,
     body: {
@@ -70,6 +117,10 @@ export interface StudioFrameOptions {
    */
   readonly shape?: ShapeId | null;
   readonly shapeMix?: number;
+  /** Ambient movement, as the two liveliness amounts. See `motionOf`. */
+  readonly motion?: { readonly eyes: number; readonly body: number };
+  /** How the head is turned. All zero takes the engine's flat path. */
+  readonly head?: HeadPlan;
 }
 
 /** The frame for one authored face at one instant. */
@@ -81,6 +132,8 @@ export function studioFrame(character: StudioCharacter, opts: StudioFrameOptions
     intensity: opts.intensity,
     clock: opts.t,
     ...(opts.lid === undefined ? null : { lidOverride: opts.lid }),
+    ...(opts.motion === undefined ? null : { motion: opts.motion }),
+    ...(opts.head === undefined ? null : { head: opts.head }),
   };
   // A face's own silhouette outranks the character's. Merged here rather than in
   // `applyBody` so that function stays a plain "lay this body over that pose".
@@ -88,7 +141,7 @@ export function studioFrame(character: StudioCharacter, opts: StudioFrameOptions
     opts.shape != null
       ? { ...character.body, shape: opts.shape, shapeMix: opts.shapeMix ?? 1 }
       : character.body;
-  const pose = applyBody(poseOf(opts.mode, opts.t, sample), body);
+  const pose = applyBody(poseOf(opts.mode, opts.t, sample), body, assembledBody(character));
   return renderPose(pose, sample, opts.t);
 }
 
@@ -105,6 +158,8 @@ export function expressionFrame(
     def: toExpressionDef(expression),
     shape: expression.shape ?? null,
     shapeMix: expression.shapeMix,
+    motion: motionOf(expression),
+    head: expression.head,
     ...extra,
   });
 }
@@ -140,6 +195,8 @@ export function animationFrame(
     lid: sample.lid,
     shape: face?.shape ?? null,
     shapeMix: face?.shapeMix,
+    motion: face ? motionOf(face) : undefined,
+    head: face?.head,
     ...extra,
   });
   return { frame, sample };
@@ -150,4 +207,17 @@ export function inkFor(character: StudioCharacter, dark: boolean): { ink: string
   return dark
     ? { ink: character.inkDark, eye: character.eyeDark }
     : { ink: character.ink, eye: character.eye };
+}
+
+/** Which face an animation is showing at `t`, for anything that needs it outside a frame. */
+export function faceAt(
+  character: StudioCharacter,
+  animationId: string,
+  t: number,
+): StudioExpression | undefined {
+  const anim = character.animations.find((a) => a.id === animationId);
+  if (!anim) return undefined;
+  const sample = sampleAnimation(anim, character.expressions, t);
+  const step = sample.step >= 0 ? anim.steps[sample.step] : undefined;
+  return step ? character.expressions.find((e) => e.id === step.expressionId) : undefined;
 }

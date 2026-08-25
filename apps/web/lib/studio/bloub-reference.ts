@@ -52,6 +52,26 @@ export const BLOUB_REST_W = 0.186;
 export const BLOUB_REST_H = 0.412;
 
 /**
+ * bloub's resting head — and it is NOT facing straight ahead.
+ *
+ * `face.ts`: `REST_GAZE = { yaw: 28.49, pitch: 28.62, roll: -13 }`, with the comment that
+ * it was "adjusted against the reference frames". That three-quarter view is a large part
+ * of why the character reads as a solid thing with a personality rather than as a face
+ * painted on a disc, and transcribing the eye sizes while leaving the head square-on
+ * throws it away.
+ *
+ * 🔴 THE MAGNITUDES ARE TRANSCRIBED; THE SIGNS ARE MATCHED BY EYE. bloub's rotation
+ * convention is its own — its yaw/pitch place eyes on a sphere through a tangent frame
+ * built in that file, and nothing states which way positive points. So these are the
+ * measured magnitudes in OUR convention (`eyeOnSphere`: +yaw looks to the character's
+ * right, +pitch looks down, +roll rolls clockwise on screen), with the directions chosen
+ * so the result is the same three-quarter view bloub actually renders. That is the
+ * honest description of what was done, and it is why this constant is not covered by the
+ * exact-match guards that cover the timings.
+ */
+export const BLOUB_REST_HEAD = { yaw: 28.49, pitch: 28.62, roll: -13 } as const;
+
+/**
  * One state of the reference: its timing, its eye, and its silhouette.
  *
  * `hold` is bloub's `duration`, `morph` its `morph`, `blinkIn` its `blinkIn`. `w` and `h`
@@ -136,6 +156,15 @@ function faces(): StudioExpression[] {
     asym: s.asym,
     curve: 0,
     mode: s.mode,
+    left: null,
+    right: null,
+    ink: null,
+    eyeInk: null,
+    // 🔴 STILL, NOT OUR IDLE LIFE. Same argument as the absent blink schedule: the
+    // reference is bloub's measured pose, and laying our own drift and breath over it
+    // would leave nobody able to tell which half they were looking at.
+    motion: { eyes: "still", body: "still" },
+    head: { ...BLOUB_REST_HEAD },
     shape: s.shape,
     // 1, not a blend: the reference's silhouette is the reference's silhouette. A partial
     // mix would be our character showing through a transcription.
@@ -188,6 +217,11 @@ export function bloubReferenceCharacter(id: string): StudioCharacter {
       ripple: 0,
     },
     eyeShape: "capsule",
+    // 🔴 NO COMPOUND PARTS, AND THAT IS THE TRANSCRIPTION BEING FAITHFUL. bloub's bodies
+    // are single primitives — a circle, an egg, a bar, a triangle — one per state. Giving
+    // the reference a multi-part body would be authoring something bloub does not have.
+    parts: [],
+    partBlend: 0.3,
     expressions: faces(),
     animations: animations(),
   };
