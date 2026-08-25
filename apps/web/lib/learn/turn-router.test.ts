@@ -236,6 +236,11 @@ test("a plain decision is read", () => {
     // `wantsTest` joins the always-present set on the same argument again: the canvas reads it as
     // the condition for building a test run, and `undefined` there is indistinguishable from "the
     // field has not shipped yet". A greeting is exactly the turn that must say `false` out loud.
+    // 🔴 `wantsReport` JOINS THEM, 2026-08-25, and it is the most expensive absent-field in the set:
+    // the session reads it as the condition for a run that spends a minute, several metered
+    // searches and a written file. `undefined` there is indistinguishable from "not shipped yet",
+    // and a greeting is exactly the turn that must say "no report" out loud rather than by omission.
+    wantsReport: null,
     wantsTest: false,
     webFreshness: null,
     webQuery: null,

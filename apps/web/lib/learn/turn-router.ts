@@ -220,6 +220,39 @@ export interface TurnDecision {
    * that wants both pays only for the web half it was already buying.
    */
   needsPapers: boolean;
+  /**
+   * The question to go and RESEARCH, or null. A report, not an answer.
+   *
+   * 🔴🔴 A THIRD DECISION, BECAUSE THERE ARE GENUINELY THREE QUESTIONS HERE, and conflating any two
+   * of them produces a different bad turn:
+   *
+   *     needsWeb      the ANSWER needs live pages. One search, answered inline, now.
+   *     needsPapers   the answer should also rest on published literature. Free, same source list.
+   *     wantsReport   the learner wants a DOCUMENT: a cited report they can keep, quote and hand
+   *                   in. About a minute, several searches, and it is SAVED to their Library.
+   *
+   * "What did the Court hold in Lopez" is needsWeb. "Research how the commerce power has narrowed
+   * since 1995" is a report. The first wants an answer in the chat; the second wants something to
+   * work from later, and answering it inline throws the work away the moment the canvas moves on.
+   *
+   * 🔴 THIS FIELD EXISTS BECAUSE THE FIRST VERSION WAS A REGEX, AND THAT WAS THE ONE MISTAKE THIS
+   * FILE ALREADY EXISTS TO PREVENT. It shipped as `readResearchAsk`, matching an explicit verb:
+   * research / look into / dig into / deep dive / investigate. Every objection in this file's own
+   * header applied to it immediately. A learner who wrote "I need everything on X for my essay,
+   * with sources" got no report. A learner writing in Spanish could never get one. And
+   * `chat-intent.ts` had ALREADY deleted a `RESEARCH_PATTERN` for these exact reasons, in this
+   * exact product, and its header names it in the list of what it replaced. The regex was deleted
+   * within a day of shipping. Do not bring it back.
+   *
+   * 🔴 THE STRING IS THE RESEARCH QUESTION, NOT THE LEARNER'S SENTENCE. "can you dig into whether
+   * fin spacing matters" should arrive as "does fin spacing affect natural convection performance".
+   * The run plans sub-questions off this text, so a question phrased as an aside plans badly.
+   *
+   * 🔴 EXPENSIVE, AND THE CONTRACT SAYS SO. Several metered searches and about a minute against a
+   * budget shared with ordinary chat search. A learner who wanted two lines and got a minute of
+   * spinner has been failed exactly as badly as one who wanted a report and got two lines.
+   */
+  wantsReport: string | null;
   /** What to type into a search engine, when `needsWeb`. Null otherwise. */
   webQuery: string | null;
   /**
@@ -845,6 +878,7 @@ const DECISION_CONTRACT = [
   '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "milestones": ["..."],'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
   + ' "needsPapers": true | false,'
+  + ' "wantsReport": "the question to research" | null,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,'
   + ' "wantsTest": true | false, "check": [{"prompt": "...", "options": [{"text": "...", "correct": true}, {"text": "..."}]}],'
   // 🔴 SHOWN FILLED IN, for the same reason `visuals` is one line below: a field displayed as
@@ -982,6 +1016,31 @@ const DECISION_CONTRACT = [
   + "translations, and anything answerable from the attached material. When it is genuinely "
   + "borderline, say true. An answer built on pages that exist beats one built on a memory nobody "
   + "can date, and the learner cannot tell the two apart.",
+  "",
+  // 🔴 THE THIRD DECISION, AND THE ONE THE MODEL WILL OVER-CHOOSE IF THE COST IS NOT STATED. A
+  // report is not "needsWeb but more". It is a minute of wall-clock, several metered searches from
+  // a budget shared with ordinary chat, and a file written into the learner's Library. Told only
+  // that it produces something good, a model picks it for any question with sources in it.
+  '"wantsReport" is the question to go and RESEARCH, or null. It is not a bigger version of '
+  + "needsWeb, and the difference is what the learner ends up holding. needsWeb answers them HERE, "
+  + "now, in this reply. A report is a cited DOCUMENT saved into their Library, which they can "
+  + "quote in an essay, hand in, or come back to next week.",
+  "",
+  "Set it only when the learner wants something to keep and work from: a literature review, a "
+  + "survey of what is known, sources gathered and weighed, background for an essay or a project. "
+  + "The words they use do not decide this and there is no phrase to look for. Someone who writes "
+  + '"research X" and someone who writes "I need everything on X for my paper, with sources" are '
+  + "asking for the same thing, in any language.",
+  "",
+  "Leave it null for an ordinary question, however hard, and for anything they want answered in "
+  + "the conversation. A report takes about a minute, spends several searches from a budget shared "
+  + "with ordinary search, and saves a file they did not ask for. Someone who wanted two lines and "
+  + "got a minute of waiting has been failed as badly as someone who wanted a report and got two "
+  + "lines, so when it is genuinely borderline, answer them now and offer to research it properly.",
+  "",
+  "When you do set it, write the RESEARCH QUESTION rather than repeating their sentence: "
+  + '"can you dig into whether fin spacing matters" becomes "does fin spacing affect natural '
+  + 'convection performance in a finned heatsink". The run plans its sub-questions from this text.',
   "",
   // 🔴🔴🔴 ASKING TO SEE SOMETHING IS NOT A REASON TO SEARCH. Owner, testing production
   // 2026-08-24: *"DeepSeek was running a web search when we asked it to show us a visual for a
@@ -1594,6 +1653,15 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   // of "what is the half-life of caffeine". Dropping it costs nothing: `then` still runs, so the
   // learner gets their answer instead of a form.
   const question = then === "study" ? asked : null;
+  // 🔴 A REPORT IS NOT GATED ON THE TURN'S KIND, unlike `question` and the test above it. Those two
+  // hand the CANVAS over, so they are only honoured on a study turn. A report touches nothing on
+  // the page: it goes away, searches, and writes a note into the Library. "Reply, and also go and
+  // research this properly" is a coherent turn and a common one.
+  //
+  // Trimmed and length-capped here rather than trusted: this string becomes the question a run
+  // plans its sub-questions from, and an empty or runaway one would spend a minute on nothing.
+  const reportAsk = asText(parsed.wantsReport).trim();
+  const wantsReport = reportAsk.length >= 8 ? reportAsk.slice(0, 500) : null;
   return {
     // 🔴 ONLY ON A "study" TURN, AND FOR THE SAME REASON `question` IS. Being checked on the
     // material IS handing this to the learning system; a "reply" turn that also claimed to want a
@@ -1604,6 +1672,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // me" is an ordinary reply, so the old condition made the chips unreachable — the feature
     // shipped in #773 could never fire again. It cannot become a mode either way: every turn
     // re-answers it, and nothing persists it.
+    wantsReport,
     wantsTest: parsed.wantsTest === true,
     check: readChatCheck(parsed.check),
     // 🔴 ONLY WHEN A TEST WAS ACTUALLY ASKED FOR. A `checkFigure` on a turn with `wantsTest: false`
@@ -1687,13 +1756,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {
