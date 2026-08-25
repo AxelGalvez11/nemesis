@@ -43,6 +43,7 @@ import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { readChatCheck } from "./chat-check";
 import { readFigureSubject } from "./figure-subject";
+import { stripScreenPositions } from "./screen-positions";
 import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
 import type { TestRun } from "./test-run";
 import { readMilestones } from "./turn-preview";
@@ -1658,7 +1659,13 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   // fallback for a turn that would otherwise be thrown away, not a second supported shape. LaTeX
   // written into `say` will still be mangled by JSON escaping — which is exactly why the contract
   // moved — so this recovers the turn without making the old shape safe.
-  const say = outside || asText(parsed.say);
+  // 🔴🔴🔴 THE MODEL'S GUESS ABOUT WHERE THINGS SIT ON SCREEN IS REMOVED HERE, because the
+  // contract asking it not to make one DID NOT HOLD. The owner caught "the quiz above" with the
+  // quiz below; a paragraph forbidding it outright went into the packet; the very next production
+  // run said "Now, try the questions below." Fourth prompt rule in this feature to fail, and the
+  // house answer is written down — when the model declines after several attempts, let trusted
+  // code finish the request. See `screen-positions.ts` for what it will and will not touch.
+  const say = stripScreenPositions(outside || asText(parsed.say));
   const then = asAction(parsed.then);
   // 🔴 A BLOCK WITH NO `then` AND NO ANSWER IS NOT A DECISION. Both empty means the model emitted
   // something JSON-shaped that says nothing, and treating it as a turn would blank the screen.
