@@ -11,7 +11,13 @@ import { raw, snippet } from "./shared.ts"
  */
 
 const BASE = "https://api.crossref.org/works"
-const MAILTO = "mailto=support@syntheticsciences.ai"
+// 🔴🔴 OUR CONTACT, NOT THE UPSTREAM PROJECT'S. This read support@syntheticsciences.ai — the
+// address of the open-source project these connectors were derived from, not of anyone who runs
+// this service. Crossref's polite pool treats `mailto` as WHO IS CALLING and uses it to reach an
+// operator whose traffic is misbehaving, so shipping it meant our requests were attributed to a
+// third party and any warning would have gone to people with no way to act on it. Same defect as
+// the OpenAlex fallback fixed alongside it; harmless only while the connectors were switched off.
+const MAILTO = "mailto=support@enternemesis.com"
 
 interface Author {
   given?: string
