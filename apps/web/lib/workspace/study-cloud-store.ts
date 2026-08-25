@@ -42,6 +42,14 @@ export interface StudyCard {
   suspended: boolean;
   /** Anki-style colored flag — 0 none, 1-7 per STUDY_FLAG_COLORS. */
   flag: number;
+  /**
+   * The learner's verdict on how well this card was WRITTEN: -1 bad, 0 unvoted, 1 good.
+   *
+   * 🔴 NOT STUDY STATE, AND NOT `flag`. `flag` is the learner marking a card for themselves;
+   * this is them telling us a card Nemesis generated came out wrong. Reviewing a card never
+   * changes it, and it never changes when a card is due.
+   */
+  quality: number;
   tags: string[];
   /** Present only on image-occlusion cards; everything else stores null. */
   payload: OcclusionPayload | null;
@@ -52,7 +60,7 @@ export interface StudyCard {
 export type StudyCardType = "basic" | "reversed" | "cloze" | "image_occlusion";
 
 const CARD_COLUMNS =
-  "id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,tags,payload,created_at,updated_at";
+  "id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,quality,tags,payload,created_at,updated_at";
 
 export interface StudyReview {
   id: string;
@@ -157,6 +165,7 @@ const previewCard = (id: string, deckId: string, front: string, back: string, ov
   lapses: 0,
   suspended: false,
   flag: 0,
+  quality: 0,
   tags: [],
   payload: null,
   createdAt: now,
@@ -177,6 +186,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     lapses: 0,
     suspended: false,
     flag: 1,
+    quality: 0,
     tags: ["doctrine", "tests"],
     payload: null,
     createdAt: now,
@@ -196,6 +206,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     lapses: 9,
     suspended: false,
     flag: 0,
+    quality: 0,
     tags: ["balancing"],
     payload: null,
     createdAt: now,
@@ -214,6 +225,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     lapses: 0,
     suspended: false,
     flag: 0,
+    quality: 0,
     tags: ["doctrine"],
     payload: null,
     createdAt: now,
@@ -232,6 +244,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     lapses: 0,
     suspended: true,
     flag: 0,
+    quality: 0,
     tags: ["doctrine"],
     payload: null,
     createdAt: now,
@@ -250,6 +263,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     lapses: 0,
     suspended: false,
     flag: 0,
+    quality: 0,
     tags: ["mechanics"],
     payload: PREVIEW_OCCLUSION_PAYLOAD,
     createdAt: now,
@@ -398,6 +412,16 @@ function toDeck(raw: unknown): StudyDeck | null {
   };
 }
 
+/** -1, 0 or 1 — anything else is an unvoted card.
+ *
+ *  🔴 CLAMPED HERE RATHER THAN TRUSTED FROM THE ROW. The database constraint holds for rows this
+ *  app writes, but `toCard` also parses preview fixtures and imported decks, and a `quality: 3`
+ *  arriving from either would render as neither thumb pressed while silently failing the next
+ *  write against the check constraint. */
+export function normalizeCardQuality(value: unknown): number {
+  return value === 1 || value === -1 ? value : 0;
+}
+
 function toCard(raw: unknown): StudyCard | null {
   if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.deck_id !== "string") return null;
   return {
@@ -413,6 +437,7 @@ function toCard(raw: unknown): StudyCard | null {
     lapses: number(raw.lapses),
     suspended: raw.suspended === true,
     flag: normalizeStudyFlag(raw.flag),
+    quality: normalizeCardQuality(raw.quality),
     tags: Array.isArray(raw.tags) ? normalizeStudyTags(raw.tags.filter((value): value is string => typeof value === "string")) : [],
     payload: parseOcclusionPayload(raw.payload),
     createdAt: text(raw.created_at),
@@ -636,6 +661,8 @@ export interface UseCloudStudyApi extends StoreState {
   undoGrade: (cardId: string, snapshot: StudyScheduleSnapshot) => Promise<StudyCard>;
   setCardSuspended: (cardId: string, suspended: boolean) => Promise<StudyCard>;
   setCardFlag: (cardId: string, flag: number) => Promise<StudyCard>;
+  /** Thumbs up (1), thumbs down (-1), or the same value again to clear it. */
+  rateCard: (cardId: string, quality: number) => Promise<StudyCard>;
   /** Record a session-only learning press in stats (no scheduling change). */
   logStudyPress: (cardId: string, grade: StudyGrade) => void;
   moveDeck: (deckId: string, targetGroup: string) => Promise<void>;
@@ -754,6 +781,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         lapses: 0,
         suspended: false,
         flag: 0,
+        quality: 0,
         tags,
         payload: null,
         createdAt: timestamp,
@@ -799,6 +827,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         lapses: 0,
         suspended: false,
         flag: 0,
+        quality: 0,
         tags,
         payload: { ...base, image: input.dataUrl, targetId: shape.id },
         createdAt: timestamp,
@@ -879,6 +908,8 @@ export function useCloudStudy(): UseCloudStudyApi {
               lapses: 0,
               suspended: card.suspended === true,
               flag: card.flag ?? 0,
+              // An imported card was written by somebody else, so there is nothing of ours to rate.
+              quality: 0,
               tags: normalizeStudyTags(card.tags),
               payload: null,
               createdAt: timestamp,
@@ -1116,6 +1147,32 @@ export function useCloudStudy(): UseCloudStudyApi {
     return next;
   }, [preview, userId]);
 
+  /**
+   * Say whether a card was well made. The only thing a learner may tell us about a card.
+   *
+   * 🔴 A TOGGLE, NOT A SUBMISSION. Pressing the thumb that is already lit clears the vote, the
+   * same as `setCardFlag`. A one-way control means a mis-tap is permanent, and a learner who
+   * cannot take back a verdict stops giving them.
+   *
+   * 🔴 IT DOES NOT TOUCH `updated_at`, `due_at` OR ANY SCHEDULING FIELD. This is commentary on
+   * how the card was written, not a review of it. Bumping the schedule because somebody rated
+   * the prose would move a card's next appearance for a reason that has nothing to do with
+   * whether they remembered it.
+   */
+  const rateCard = useCallback(async (cardId: string, quality: number) => {
+    const card = state.cards.find((item) => item.id === cardId);
+    if (!card) throw new Error("That card is no longer available.");
+    const next = normalizeCardQuality(card.quality === quality ? 0 : quality);
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to rate a card.");
+      const { error } = await supabase.from("study_cards").update({ quality: next }).eq("id", cardId).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    const rated: StudyCard = { ...card, quality: next };
+    setState({ ...state, cards: state.cards.map((item) => (item.id === cardId ? rated : item)) });
+    return rated;
+  }, [preview, userId]);
+
   // Session-only learning presses (no scheduler write) still count in stats —
   // Anki logs every answer. Best-effort by design: a lost row only
   // under-counts the heatmap, so a failure never interrupts the review.
@@ -1313,6 +1370,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     undoGrade,
     setCardSuspended,
     setCardFlag,
+    rateCard,
     logStudyPress,
     moveDeck,
     renameDeck,

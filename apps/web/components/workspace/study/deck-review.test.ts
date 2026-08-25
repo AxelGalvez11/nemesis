@@ -45,11 +45,17 @@ test("🔴🔴 the card editor is gone from the review screen", () => {
   assert.ok(!/from "@\/components\/desktop-ui\/input"/.test(REVIEW), "the review screen imports an Input again");
 });
 
-test("🔴🔴 'this card is wrong' replaces it, and rewrites with no typing", () => {
+test("🔴🔴 a thumbs-down replaces it, and rewrites with no typing", () => {
+  // 🔴 THE CONTROL MOVED ON 2026-08-25, THE MECHANISM DID NOT. This used to require a ⋯ menu item
+  // reading "This card is wrong". The owner asked for the plainer thing: *"Mainly just a thumbs up
+  // or a thumbs down if a card was badly generated."* Same call, same empty brief, one fewer
+  // decision — so the assertion below moved from the menu item's text to the button that replaced
+  // it, and everything about the rewrite itself is unchanged.
+  assert.match(REVIEW, /data-testid="rate-card-down"/, "the replacement for the editor is missing");
+  assert.ok(!/This card is wrong/.test(REVIEW), "the old menu item is back alongside the thumbs");
   // 🔴 THE POINT IS THE EMPTY TRANSCRIPT. `reviseCardMessages` reads an empty one as
   // "(none — improve accuracy and clarity)", which is exactly the one-press behaviour. If someone
   // later threads a text box into this call, that is the editor coming back through the side door.
-  assert.match(REVIEW, /This card is wrong/, "the replacement for the editor is missing");
   const body = after(REVIEW, "async function rewriteCurrent", 1400);
   assert.match(body, /reviseCardMessages\(\{[^}]*transcript: ""/, "the rewrite stopped asking with an empty brief");
   assert.match(body, /parseRevisedCard\(/, "the rewrite stopped parsing the model's card");
@@ -57,13 +63,21 @@ test("🔴🔴 'this card is wrong' replaces it, and rewrites with no typing", (
   assert.match(body, /setRevealed\(false\)/, "a rewritten card shows its new answer without being asked for");
 });
 
-test("🔴 an occlusion card is refused rather than blanked", () => {
+test("🔴 an occlusion card is rated but never rewritten", () => {
   // parseRevisedCard returns front/back TEXT; applying it to an image-with-masks card would
-  // destroy the payload. Hiding the item beats failing after a paid model call.
+  // destroy the payload.
+  //
+  // 🔴 THE REFUSAL MOVED FROM HIDING A CONTROL TO SKIPPING A STEP, and that is a real improvement
+  // rather than bookkeeping. Hiding the old menu item meant an image card could not be reported
+  // bad AT ALL. Now the vote is always recorded and only the text rewrite is skipped — which
+  // matters more than it used to, because the model now MAKES image cards, so image cards can be
+  // badly generated in exactly the way this vote exists to catch.
+  const rate = after(REVIEW, "async function rate(", 700);
+  assert.match(rate, /await rateCard\(/, "an image card's vote is no longer recorded");
   assert.match(
-    REVIEW,
-    /current\.cardType !== "image_occlusion" && \(\s*<DropdownMenuItem[^>]*onSelect=\{\(\) => void rewriteCurrent\(\)\}/,
-    "the rewrite item is offered on occlusion cards",
+    rate,
+    /card\.cardType !== "image_occlusion"\)\s*await rewriteCurrent\(\)/,
+    "an image card is sent through the text rewrite, which would blank its labels",
   );
 });
 

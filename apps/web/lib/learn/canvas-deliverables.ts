@@ -29,6 +29,7 @@ import { canvasFigures, figureMenu } from "./deck-figures";
 
 import type { CanvasOutput, LearningCanvas } from "./canvas-model";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
+import { deckName } from "./deck-name";
 
 /** What the canvas can make today. Reports join when they have a real home. */
 export type DeliverableKind = "flashcards" | "note" | "slides";
@@ -172,10 +173,17 @@ export async function makeFlashcardsDeliverable(
   const cards = readCardsJson(reply.text);
   if (!cards) return { error: "The cards came back unusable, so nothing was saved. Try again." };
 
-  const name = `${(canvas.title || "Nemesis canvas").slice(0, 100)} · flashcards`;
+  // 🔴 THE DECK IS NAMED AFTER THE SUBJECT, AND NOTHING ELSE (owner 2026-08-25: "in the
+  // flashcards, it had this title called nemesis flashcards, and I don't really need that
+  // there"). This line used to read `${canvas.title || "Nemesis canvas"} · flashcards`, which
+  // put the product's name and the word "flashcards" into a label that already sits on the
+  // Flashcards shelf, under a heading that says Flashcards, above a stack of flashcards. On an
+  // untitled canvas it produced "Nemesis canvas · flashcards" — a deck named after the tool
+  // that made it instead of the thing it is about.
+  const name = deckName(canvas.title);
   const { data, error } = await supabase
     .from("study_decks")
-    .insert({ description: "Made on a Nemesis canvas, at your request.", name: name.slice(0, 120), user_id: uid })
+    .insert({ description: "Made on a Nemesis canvas, at your request.", name, user_id: uid })
     .select("id")
     .single();
   if (error || !data) return { error: "Couldn't save the deck to your library." };

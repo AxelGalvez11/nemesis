@@ -106,26 +106,45 @@ test("🔴🔴 Library folders are the SIDEBAR's folders, never a second tree", 
   assert.ok(!/library_folders/.test(OUTPUTS), "a second folder tree appeared");
 });
 
-test("🔴🔴🔴 image occlusion has a door that is not on the retired page", () => {
-  // Owner 2026-08-24: *"What about image occlusion? Can I do image occlusion?"* The answer was no,
-  // and not because it was unbuilt: `OcclusionEditor`, `OcclusionCardView`, the `image_occlusion`
-  // card type, the mask-suggest API and its migration all shipped and all work. Their ONLY door was
-  // `cards-tab.tsx`, mounted by exactly one page — `/study` — which has been retired behind
-  // `RetiredSurfaceGuard` for weeks. A whole authoring surface went dark when the page above it was
-  // retired, and nothing failed loudly enough for anyone to notice.
+test("🔴🔴🔴 the learner never hand-authors a card, and can always take one away", () => {
+  // 🔴🔴🔴 REVERSED BY THE OWNER ONE DAY AFTER IT SHIPPED, 2026-08-25. THE OLD ASSERTION IS
+  // DESCRIBED HERE SO THE REVERSAL IS LEGIBLE, exactly as the Anki-import reversal is above.
   //
-  // 🔴 THE GUARD IS ON THE DOOR BEING SOMEWHERE REACHABLE, not on it being in any one place. If the
-  // Library stops being the home for this, the replacement must be a page a learner can open.
-  assert.match(OUTPUTS, /<DeckOcclusion/, "image occlusion lost its only door again");
-  assert.match(OUTPUTS, /\{occluding && \(/, "the occlusion editor is mounted before it is pressed");
+  // This test used to REQUIRE `<DeckOcclusion` on every deck row. It was written to answer
+  // *"What about image occlusion? Can I do image occlusion?"* — and the honest answer then was
+  // no, because `OcclusionEditor` had shipped with its only door on the retired `/study`. So a
+  // door was cut in the Library and this guard held it open.
+  //
+  // The owner's verdict on meeting it: *"I don't want users to edit flashcards, really. Mainly
+  // just download them if they want to… similar to notebook where you don't have to edit cards.
+  // That's not what I want users to do in my app."* And on what should make them instead:
+  // *"DeepSeek should have the image occlusion as part of its testing tools… it should also be
+  // allowable for it to use image occlusion for flash cards."*
+  //
+  // 🔴 SO THE ANSWER TO "CAN I DO IMAGE OCCLUSION?" DID NOT BECOME "NO" AGAIN — IT MOVED. The
+  // learner does not drag rectangles; the model places them. A guard demanding a hand-authoring
+  // door would now hold open the exact surface the owner asked to close.
+  assert.ok(!/<DeckOcclusion/.test(OUTPUTS), "the hand-authoring door is back on the Library");
+  assert.ok(!/OcclusionEditor/.test(OUTPUTS), "the Library mounts the box-dragging editor again");
+  assert.ok(!existsSync(new URL("./deck-occlusion.tsx", import.meta.url)), "the door component came back");
 
-  const door = readFileSync(new URL("./deck-occlusion.tsx", import.meta.url), "utf8");
-  assert.match(door, /<OcclusionEditor/, "the Library grew its own occlusion editor");
-  // Same rule the Anki importer and the stats page are held to, one test up: mount the real thing.
-  assert.ok(
-    !/OcclusionShape|normalizeOcclusionRect|createOcclusionCards/.test(door),
-    "the Library door started deciding what a valid mask is",
-  );
+  // 🔴 AND THE REPLACEMENT IS ASSERTED POSITIVELY, because removing authoring without giving the
+  // cards back would leave a learner unable to change or export their own material. Download is
+  // what keeps this a clean surface rather than a cage.
+  assert.match(OUTPUTS, /deckToAnkiText/, "a deck can no longer be downloaded");
+  assert.match(OUTPUTS, /link\.download = deckFileName\(/, "the download stopped naming its file");
+});
+
+test("🔴🔴 the occlusion machinery is NOT deleted, because the model still uses it", () => {
+  // Same rule the Anki importer and the stats page are held to: a component whose door closes is
+  // not a component that gets removed. `OcclusionCardView` renders every image card in a review,
+  // `study-occlusion.ts` owns what a valid mask is, and both are on the path a MODEL-made card
+  // takes. Deleting them along with the door would take the feature out by the roots.
+  for (const file of ["../study/occlusion-card.tsx", "../study/occlusion-editor.tsx"]) {
+    assert.ok(existsSync(new URL(file, import.meta.url)), `${file} was deleted along with its door`);
+  }
+  const review = readFileSync(new URL("../study/review-session.tsx", import.meta.url), "utf8");
+  assert.match(review, /<OcclusionCardView/, "image cards stopped rendering in a review");
 });
 
 test("🔴 filing waits for the write, and never guesses", () => {
