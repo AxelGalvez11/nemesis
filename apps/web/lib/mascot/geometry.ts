@@ -294,3 +294,47 @@ export const UNIT_BLOB = closedPath(
     return { x: r * Math.cos(theta), y: r * Math.sin(theta) };
   }),
 );
+
+/**
+ * A stadium — straight sides, exactly semicircular ends — at half-extents `rx`, `ry`.
+ *
+ * 🔴 THE OTHER EYE SHAPE, AND IT IS NOT A STYLISTIC ALTERNATIVE TO `UNIT_BLOB`. This
+ * mascot's eye is the body's own silhouette at a small scale, stood upright, and that
+ * self-similarity is the character — nothing the product ships should use this. It exists
+ * because the character studio holds a transcription of jeremy-prt/bloub, whose eyes are
+ * capsules (`capsulePath` in that engine: a rectangle with radius = half the short side).
+ * A superellipse is fuller in the corners than a capsule at the same width and height, so
+ * a reference drawn with `UNIT_BLOB` is visibly not the reference. Owner, 2026-08-25:
+ * *"why aren't the eye shapes correct?"*
+ *
+ * 🔴 A FUNCTION, NOT A UNIT-BOX CONSTANT, AND THE FIRST ATTEMPT WAS THE CONSTANT. Every
+ * other shape here is drawn once at radius 1 and scaled by `(rx, ry)` in the transform,
+ * which costs nothing — so that is what this was. It is wrong: scaling a stadium
+ * non-uniformly turns its semicircular ends into ELLIPTICAL ends, which is precisely the
+ * fuller corner that distinguishes the shape we already had. A capsule's corner radius is
+ * defined in final coordinates (`min(rx, ry)`), so the path has to know the proportions.
+ * bloub builds it per frame for the same reason.
+ *
+ * The cost is two short strings per frame, which is the same order as the transform
+ * strings the paint loop already writes.
+ */
+export function capsuleEyePath(rx: number, ry: number): string {
+  const x = Math.max(Math.abs(rx), 1e-3);
+  const y = Math.max(Math.abs(ry), 1e-3);
+  const r = Math.min(x, y);
+  const f = (n: number) => Math.round(n * 1000) / 1000;
+  // Tall: straight left and right sides, caps top and bottom. When y <= x the straight
+  // run has zero length and the two arcs meet, which is the correct degenerate case — a
+  // capsule as wide as it is tall is a circle.
+  return (
+    `M${f(-x)} ${f(-y + r)}` +
+    `A${f(r)} ${f(r)} 0 0 1 ${f(-x + r)} ${f(-y)}` +
+    `L${f(x - r)} ${f(-y)}` +
+    `A${f(r)} ${f(r)} 0 0 1 ${f(x)} ${f(-y + r)}` +
+    `L${f(x)} ${f(y - r)}` +
+    `A${f(r)} ${f(r)} 0 0 1 ${f(x - r)} ${f(y)}` +
+    `L${f(-x + r)} ${f(y)}` +
+    `A${f(r)} ${f(r)} 0 0 1 ${f(-x)} ${f(y - r)}` +
+    "Z"
+  );
+}
