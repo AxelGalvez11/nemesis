@@ -52,6 +52,12 @@ interface Band {
   readonly shot?: { readonly name: string; readonly alt: string; readonly w: number; readonly h: number };
   /** Put the character opposite the copy instead of a picture. */
   readonly mascot?: boolean;
+  /**
+   * This band's ground is an engraved figure rather than an abstract wash, so it takes its own
+   * opacity and its own mask — see the note in art.css. A face cannot survive the treatment a
+   * gradient can, because a gradient has no subject to lose.
+   */
+  readonly figureArt?: boolean;
 }
 
 /**
@@ -122,6 +128,7 @@ const BANDS: readonly Band[] = [
     id: "evidence",
     art: "/nemesis/art/evidence.webp",
     blur: EVIDENCE_BLUR,
+    figureArt: true,
     head: "Built on evidence",
     body: "Scaffolding, worked examples, retrieval practice and spaced review. Four methods with real research behind them, running under every session.",
     mascot: true,
@@ -150,6 +157,7 @@ function Feature({ band, index }: { band: Band; index: number }) {
     <section
       className="band"
       data-side={index % 2 === 1 ? "left" : "right"}
+      data-art={band.figureArt ? "figure" : undefined}
       data-figs={band.figures ? "true" : undefined}
     >
       {/* aria-hidden: it is the ground, and it carries no information a reader

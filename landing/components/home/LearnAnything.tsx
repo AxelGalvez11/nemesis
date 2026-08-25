@@ -55,7 +55,7 @@ export function LearnAnything() {
   const art = useParallax<HTMLDivElement>(0.16);
 
   return (
-    <section className="band ring-band" data-side="right">
+    <section className="band ring-band" data-art="figure" data-side="right">
       <div className="band-art" ref={art} aria-hidden="true">
         <Image
           src="/nemesis/art/learn.webp"
