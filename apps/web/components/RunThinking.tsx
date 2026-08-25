@@ -1,7 +1,6 @@
 "use client";
 
 import type { ResearchProgressStep } from "@nemesis/shared";
-import { SEARCH_DOMAINS } from "@/lib/favicon";
 import { DomainChips } from "./DomainChips";
 import { Icon } from "./icons";
 
@@ -57,7 +56,7 @@ export interface RunThinkingProps {
   /** Denser spacing (used inside the pinned dock). Right dock stays roomy. */
   compact?: boolean;
   /** Real cited/searched hostnames, shown under the Search step once available. Defaults to the
-   *  honest search surface (the databases we actually query) while the run is still gathering. */
+   *  sites this run actually reached; empty until it has reached one. */
   domains?: string[];
 }
 
@@ -68,7 +67,10 @@ export interface RunThinkingProps {
  *  `progress` array; starts no polling. */
 export function RunThinking({ progress, compact, domains }: RunThinkingProps) {
   const stage = stageFromProgress(progress);
-  const chips = domains?.length ? domains : SEARCH_DOMAINS;
+  // 🔴 NO FALLBACK LIST. This read `domains?.length ? domains : SEARCH_DOMAINS`, drawing four
+  // hardcoded medical domains as if they had been searched whenever the real list was empty. The
+  // honest answer before anything is searched is "none", and DomainChips draws none as nothing.
+  const chips = domains ?? [];
 
   return (
     <div className={`run-thinking${compact ? " run-thinking-compact" : ""}`}>

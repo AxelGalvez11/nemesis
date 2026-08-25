@@ -16,6 +16,7 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
+import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { useAuth } from "@/components/AuthProvider";
 import { CanvasCheck } from "./canvas-check";
 // 🔴 `ensureCanvasDeck` / `writeRecallCards` / `cardsFromMisses` LEFT WITH THE RESULTS SCREEN
@@ -178,6 +179,8 @@ export function LearningCanvas({
   const leave = useCallback(() => router.push(CANVAS_EXIT_ROUTE), [router]);
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
+  // A no-op outside the workspace provider, so an isolated preview of this canvas never throws.
+  const { openSettings } = useSettingsModal();
   /**
    * The judge decided a submission was not an attempt at the question on screen.
    *
@@ -1799,9 +1802,17 @@ export function LearningCanvas({
             <p className="canvas-swap mt-4 flex items-center gap-2 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary)">
               <span className="flex-1">
                 Memory updated.{" "}
-                <a className="underline" href="/settings">
+                {/* 🔴🔴 IT OPENS THE POPUP; IT DOES NOT NAVIGATE (owner 2026-08-24: settings are
+                    *"supposed to be a pop up, not supposed to be a replaced chat or the Canvas
+                    page"*). This shipped as `<a href="/settings">`, which is a full page load: a
+                    learner mid-lesson who wanted to glance at what had just been remembered lost
+                    the canvas they were reading and had to find their way back to it. Every other
+                    door into settings in the shell already calls `openSettings`; this one was the
+                    single exception, and it was the one attached to a notice that appears WHILE
+                    the learner is working — the worst possible moment to take the page away. */}
+                <button className="underline" onClick={() => openSettings("memory")} type="button">
                   See what Nemesis remembers
-                </a>
+                </button>
               </span>
               <button
                 aria-label="Dismiss"

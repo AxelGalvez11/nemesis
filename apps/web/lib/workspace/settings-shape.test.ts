@@ -114,3 +114,31 @@ test("🔴 no colour is hardcoded to match the reference — dark mode depends o
   const stray = literals.filter((value) => !allowed.has(value));
   assert.deepEqual(stray, [], "a raw colour reached the settings surface — use a --ui-* token so dark mode follows");
 });
+
+test("🔴🔴🔴 settings open as a POPUP — nothing inside the workspace navigates to /settings", () => {
+  // 🔴 OWNER, 2026-08-24, on production: settings are *"supposed to be a pop up, not supposed to
+  // be a replaced chat or the Canvas page."*
+  //
+  // The offender was the memory notice added five days earlier, which used `<a href="/settings">`.
+  // That is a full page load, and it fired at the WORST possible moment: the notice appears while
+  // a lesson is running, so a learner who wanted a glance at what had just been remembered lost
+  // the canvas they were mid-way through and had to navigate back to it. Every other door into
+  // settings in the shell already called `openSettings`; this was the single exception, and one
+  // exception is all it takes for the feature to read as "settings replace the page".
+  //
+  // 🔴 THE ROUTE ITSELF STAYS. This codebase's standing practice for retiring a surface is "the
+  // rows are removed, the pages are not" — a bookmark or a payment-provider return URL may still
+  // land on /settings, and deleting a route is a much larger blast radius than removing its doors.
+  // What must not exist is anything INSIDE the workspace that sends a learner there.
+  //
+  // Calibration: put the anchor back and this reddens.
+  const surfaces = ["../../components/workspace/learn/learning-canvas.tsx", "../../components/workspace/shell/chat-sidebar.tsx", "../../components/workspace/shell/nav-rail.tsx"];
+  for (const file of surfaces) {
+    const source = strip(readFileSync(new URL(file, import.meta.url), "utf8"));
+    assert.ok(!/href=["']\/settings/.test(source), `${file} navigates to /settings instead of opening the popup`);
+    assert.ok(!/push\(["']\/settings|replace\(["']\/settings/.test(source), `${file} routes to /settings instead of opening the popup`);
+  }
+  const canvas = strip(readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8"));
+  assert.match(canvas, /openSettings\("memory"\)/, "the memory notice stopped opening the popup at the Memory section");
+  assert.match(canvas, /useSettingsModal\(\)/, "the canvas lost the hook that opens the popup");
+});

@@ -36,6 +36,7 @@ import { ThinkingMark } from "./thinking-mark";
 import { usePoke } from "./use-poke";
 import type { FaceId } from "@/lib/character/face";
 import { speedOf, stationOf, type Station } from "@/lib/character/stations";
+import { DomainChips } from "@/components/DomainChips";
 
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;
@@ -94,11 +95,16 @@ export interface BloubDockProps {
   /**
    * The sites the turn in flight is reading, deduped, in the order the search ranked them.
    *
-   * 🔴 ACCEPTED HERE AND NOT YET DRAWN — a deliberate, agreed half-step (nemesis-5e ↔ this lane,
-   * 2026-08-24). The data half lives in `canvas-chat.ts` / `use-canvas-session.ts`; the chips are
-   * this file's to draw, and its owner asked for the prop to land first so the wiring could be
-   * finished without two sessions editing the dock at once. Rendering nothing for it is correct
-   * until then, and strictly better than the caller holding the list with nowhere to send it.
+   * 🔴 NOW DRAWN. The half-step is closed: the data half landed in #795 (`canvas-chat.ts` /
+   * `use-canvas-session.ts`), and the chips are rendered here by `DomainChips`, to geometry
+   * measured off ChatGPT rather than guessed — see that component for the numbers and for the one
+   * measurement deliberately not copied.
+   *
+   * 🔴🔴 THE LIST IS ONLY EVER SITES ALREADY READ. It rides the second `onSearching` beat, which
+   * is the first moment the hosts are a fact rather than a guess, and the render site gates it on
+   * `turnInFlight` so a stale chip is unrepresentable rather than merely cleaned up. There is no
+   * default list to fall back to; before anything is searched the honest drawing is nothing. A
+   * fabricated fallback is precisely what was found and deleted in `lib/favicon.ts`.
    *
    * 🔴 NOT TRUNCATED BY THE CALLER, BY REQUEST. The renderer decides how many chips to draw and
    * needs the real count for its "+N".
@@ -190,8 +196,7 @@ export function BloubDock({
   caption = null,
   captionLeaving: leaving = false,
   captionMark = null,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted now, drawn with the favicon proxy; see the prop's doc.
-  domains: _domains = [],
+  domains = [],
   station: stationOverride,
   marker = null,
   state = "idle",
@@ -492,11 +497,27 @@ export function BloubDock({
           character is the only thing on the page and twice its size; a word off its right
           shoulder read as mislaid. Underneath, the pair reads as one composition — the creature
           working, the step it is on. */}
-      {caption && (
+      {/* 🔴🔴 THE SHIMMER MOVED INWARDS, AND THAT IS LOAD-BEARING, NOT TIDYING.
+          `canvas-thinking-word` animates a gradient THROUGH the text by way of
+          `background-clip: text` + `color: transparent`. Both inherit. Leaving it on this outer
+          element and nesting the chips inside would paint every hostname transparent and clip the
+          favicons' own box — the row would be there, occupying space, drawing nothing. So the
+          outer element now only positions, and the shimmer sits on the word it is shimmering. */}
+      {(caption || domains.length > 0) && (
         <span
-          className={`bloub-caption pointer-events-none absolute select-none whitespace-nowrap text-[length:var(--canvas-text-small)] leading-none${
-            station === "centre" ? " left-1/2 top-full" : " left-full top-1/2"
-          }${leaving ? " canvas-preview-out" : ""}`}
+          // 🔴 THE POSITION TERNARY IS LEFT BYTE-FOR-BYTE ALONE, AND THE ALIGNMENT RIDES ITS OWN.
+          // Two guards in send-is-acknowledged.test.ts pin that exact substring — it is how they
+          // check the caption sits UNDER the character at the centre and BESIDE it in the corner,
+          // which is a real invariant with an owner ruling behind it. Folding `items-*` into that
+          // ternary broke both while changing nothing they care about. Loosening someone else's
+          // guard to fit my edit is the wrong direction when the edit can simply not disturb it.
+          //
+          // 🔴 A COLUMN NOW, BECAUSE TWO THINGS STACK HERE: the mark-and-sentence row, and the
+          // sites underneath it. `whitespace-nowrap` moved down onto the sentence — the chips are
+          // the one thing here that SHOULD wrap.
+          className={`bloub-caption pointer-events-none absolute flex select-none flex-col gap-1 text-[length:var(--canvas-text-small)] leading-none ${
+            station === "centre" ? "items-center" : "items-start"
+          }${station === "centre" ? " left-1/2 top-full" : " left-full top-1/2"}${leaving ? " canvas-preview-out" : ""}`}
           style={
             station === "centre"
               ? {
@@ -514,15 +535,22 @@ export function BloubDock({
           {/* 🔴 THE MARK RIDES THE CHARACTER TOO. The caption moved onto the dock because nothing
               static can sit beside a live transform (see above); the mark is part of the same
               claim, so it lives in the same box and counter-scales with it. */}
-          <span className="flex items-center gap-1.5">
+          {caption ? (
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               {captionMark ? <ThinkingMark kind={captionMark} /> : null}
               {/* 🔴 THE SHIMMER PAINTS TEXT, SO IT MAY ONLY WRAP TEXT. `canvas-thinking-word`
                   clips a moving gradient to glyphs, which it does by setting `color:transparent`
                   — so while it sat on the whole caption box it made the mark beside the words
-                  invisible (its strokes are `currentColor`) and would have done the same to
-                  anything else that ever joined them. It belongs on the sentence it animates. */}
-            <span className="canvas-thinking-word">{caption}</span>
-          </span>
+                  invisible (its strokes are `currentColor`) and would have done the same to the
+                  chips below, which two sessions found independently on the same day. It belongs
+                  on the sentence it animates and nothing else. */}
+              <span className="canvas-thinking-word">{caption}</span>
+            </span>
+          ) : null}
+          {/* 🔴 THE CHIPS DO NOT SHIMMER. The caption shimmers because it names a step still in
+              progress; a site already read is a settled fact, and animating it would say the
+              opposite of what it means. */}
+          <DomainChips domains={domains} />
         </span>
       )}
     </div>

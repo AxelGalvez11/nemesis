@@ -1,11 +1,24 @@
-// Domain + favicon helpers for the ChatGPT-style source chips: inline citation pills, the thinking
-// trail's "searched domains" chips, and the Sources button's stacked favicons. Favicons come from
-// Google's public s2 service (plain <img>, no key, no CORS needs); a broken icon just renders empty.
+// Domain + favicon helpers for the source chips: inline citation pills, the thinking preview's
+// searched-domain chips, and the Sources button's stacked favicons.
 
-const FAVICON_BASE = "https://www.google.com/s2/favicons";
-
-export function faviconUrl(domain: string, size = 32): string {
-  return `${FAVICON_BASE}?domain=${encodeURIComponent(domain)}&sz=${size}`;
+/**
+ * 🔴🔴🔴 OUR OWN ORIGIN, NOT GOOGLE'S. This was
+ * `https://www.google.com/s2/favicons?domain=<host>&sz=<n>` — the same service ChatGPT uses
+ * (measured 2026-08-24). An `<img>` at another origin carries the learner's IP and, in the query
+ * string, the name of a site they are reading. One request per chip, from their machine, on every
+ * web-search turn. For a study tool that is a list of what someone is researching — a diagnosis, a
+ * legal problem, an immigration process — handed to a third party as a side effect of drawing a
+ * 20px circle.
+ *
+ * It was harmless only because the one component calling it was never mounted. Drawing chips on
+ * the real thinking preview is exactly what turns it live, which is why it changes in the same
+ * commit rather than after.
+ *
+ * See app/api/favicon/route.ts for what happens on the other side, including the drawn globe that
+ * stands in when a site has no icon.
+ */
+export function faviconUrl(domain: string): string {
+  return `/api/favicon?domain=${encodeURIComponent(domain)}`;
 }
 
 export function hostnameOf(url: string | null | undefined): string | null {
@@ -43,14 +56,25 @@ export function sourceLabel(url: string | null | undefined): string | null {
   return domainLabel(hostnameOf(url));
 }
 
-// The engine's fixed search surface, shown as chips while a search is still running (the real
-// per-answer domains replace these once citations arrive).
-export const SEARCH_DOMAINS = [
-  "pubmed.ncbi.nlm.nih.gov",
-  "clinicaltrials.gov",
-  "fda.gov",
-  "medlineplus.gov",
-];
+// 🔴🔴🔴 `SEARCH_DOMAINS` WAS HERE AND IS DELETED, NOT REPLACED. It was a hardcoded list —
+// pubmed, clinicaltrials.gov, fda.gov, medlineplus.gov — described as "the engine's fixed search
+// surface, shown as chips while a search is still running". `RunThinking` drew it whenever the
+// real list was empty:
+//
+//     const chips = domains?.length ? domains : SEARCH_DOMAINS;
+//
+// Two separate wrongs, either one fatal:
+//
+//   1. IT IS A LIE WITH A LOGO ON IT. Those chips claimed four sites had been consulted when
+//      nothing had been searched. `thinking-phases.ts`'s standing rule is that a caption must name
+//      a step GENUINELY RUNNING; a favicon is the same claim in a smaller space, and a fabricated
+//      one is harder to catch because a picture of a real site reads as evidence.
+//   2. IT IS THE DEAD PHARMA IDENTITY. CLAUDE.md's standing rule (owner 2026-07-27) is that
+//      Nemesis is field-agnostic and no feature may be scoped to one discipline. A law student
+//      would have been told Nemesis checked the FDA.
+//
+// There is no "default" list to fall back to, because the honest answer to "which sites did we
+// search" before searching any is NONE — and no chips is exactly how that is drawn.
 
 // Unique source hostnames across citation lists, in first-seen order (cited before reviewed when
 // called as citationDomains(citations, reviewed)).
