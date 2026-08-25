@@ -169,6 +169,15 @@ export async function POST(request: Request): Promise<NextResponse> {
   // Bounded here, an over-long read comes back as a clean `vision-slow` and everything downstream
   // behaves the way it does for every other refusal.
   const seen = await readImage(bytes, mime, {
+    // 🔴🔴🔴 GEMINI FIRST, AND THIS IS THE LINE THAT MADE THE FEATURE WORK. DeepSeek REASONS over
+    // an image before answering — its own module records a diagram that burned 18,642 output
+    // tokens and 135 SECONDS enumerating printed labels. A labelled diagram is precisely that
+    // pathological case, and "list the labelled boxes" is precisely the question where the
+    // reasoning buys nothing. Measured live on the nephron figure: DeepSeek-first took 34s on a
+    // good run and blew the 38s budget on the next. Gemini answers the same question in a few
+    // seconds. The parse lane reached this conclusion independently in August and has kept figures
+    // on Gemini ever since.
+    prefer: "gemini",
     prompt: OCCLUSION_VISION_PROMPT,
     signal: AbortSignal.timeout(VISION_BUDGET_MS),
     spend: { admin, scope: { operation: "figure-occlusion" }, userId: check.userId },

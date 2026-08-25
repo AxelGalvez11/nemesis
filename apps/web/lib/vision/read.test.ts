@@ -73,6 +73,41 @@ test("🔴 DeepSeek answers first when both doors are open, and one token-priced
   assert.equal(meta.metadata.cost_usd, 0.000352);
 });
 
+test("🔴🔴🔴 `prefer: gemini` asks Gemini FIRST, and never wakes DeepSeek when it answers", async () => {
+  // 🔴 THIS OPTION IS THE LINE THAT MADE IMAGE OCCLUSION WORK, and the reason is latency, not
+  // quality. DeepSeek REASONS over an image before answering — `deepseek.ts` records a diagram
+  // that burned 18,642 output tokens and **135 seconds** enumerating printed labels. A labelled
+  // diagram is exactly that pathological case, and "list the labelled boxes" is exactly the
+  // question where reasoning buys nothing. Measured live on the nephron figure, 2026-08-25:
+  // DeepSeek-first took 34s on a good run and blew a 38s budget on the next one.
+  const { calls, result } = await withFetch(
+    (url) => (url.includes("api.deepseek.com") ? deepseekReply("slow one") : geminiReply("boxes")),
+    () => readImage(PNG, "image/png", { env: BOTH, prefer: "gemini", prompt: "p" }),
+  );
+  assert.equal(result?.provider, "gemini");
+  assert.equal(result?.text, "boxes");
+  assert.equal(calls.length, 1, "DeepSeek was called even though Gemini answered");
+  assert.ok(!calls[0]!.includes("api.deepseek.com"), "the slow provider was tried first anyway");
+});
+
+test("🔴🔴 `prefer` is a preference, not a lock — the other provider still catches a failure", async () => {
+  // A Gemini outage must cost latency, never the feature.
+  const { result } = await withFetch(
+    (url) => (url.includes("api.deepseek.com") ? deepseekReply("deepseek caught it") : new Response("{}", { status: 500 })),
+    () => readImage(PNG, "image/png", { env: BOTH, prefer: "gemini", prompt: "p" }),
+  );
+  assert.equal(result?.provider, "deepseek");
+  assert.equal(result?.text, "deepseek caught it");
+});
+
+test("🔴 the default is unchanged, so every existing caller reads exactly as it did", async () => {
+  const { result } = await withFetch(
+    (url) => (url.includes("api.deepseek.com") ? deepseekReply("still first") : geminiReply("no")),
+    () => readImage(PNG, "image/png", { env: BOTH, prompt: "p" }),
+  );
+  assert.equal(result?.provider, "deepseek", "omitting `prefer` changed which provider answers");
+});
+
 test("🔴 a DeepSeek failure degrades to Gemini, and the row says who actually answered", async () => {
   const rows: unknown[] = [];
   const { calls, result } = await withFetch(
