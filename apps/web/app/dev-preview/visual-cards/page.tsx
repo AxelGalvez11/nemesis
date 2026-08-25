@@ -106,6 +106,24 @@ const CARDS: readonly Card[] = [
     },
   },
   {
+    // 🔴 THE MECHANISM CASE HAD NO CARD, WHICH IS WHY NOBODY SAW THE ARROWS WERE TOO HEAVY. The
+    // owner did, on 2026-08-25: *"it looks messy the arrows too big."* A capability with no panel
+    // here is one that only ever gets judged from its source.
+    id: "mechanism",
+    note: "structure — the same drawer, with electron-pushing arrows over it",
+    visual: {
+      kind: "structure",
+      learningGoal: "Hydroxide attacks the carbon as bromide leaves, both in the same step.",
+      caption: "Hydroxide displacing bromide from bromomethane.",
+      notation: "smiles",
+      value: "[OH-].CBr",
+      // Every atom lettered, which is the picture the owner photographed and the harder case for
+      // the arrows: a bare skeletal corner needs almost no clearance, "CH3" needs real room.
+      carbons: "all",
+      arrows: [{ from: 0, to: 1 }, { from: 1, to: 2 }],
+    },
+  },
+  {
     id: "relationship",
     note: "relationship — a causal chain, laid out rather than authored",
     visual: {
