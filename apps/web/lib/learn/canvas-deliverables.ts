@@ -222,7 +222,17 @@ export async function makeFlashcardsDeliverable(
   // Flashcards shelf, under a heading that says Flashcards, above a stack of flashcards. On an
   // untitled canvas it produced "Nemesis canvas · flashcards" — a deck named after the tool
   // that made it instead of the thing it is about.
-  const name = deckName(canvas.title);
+  // 🔴 THE SUBJECT THE CARD WRITER NAMED IS ALSO THE BEST FALLBACK NAME, and reading it here
+  // rather than after the insert is the whole fix. Measured in production 2026-08-25: a nephron
+  // canvas opened from a deep link has an EMPTY title, so a deck of twenty nephron cards saved as
+  // "Untitled deck" — honest, and useless on a shelf. The model had just written `"figure":
+  // "nephron"`; that word was sitting in the reply while the deck was being named after nothing.
+  const subject = readFigureSubject(readCardsFigure(reply.text));
+  // 🔴 THE FALLBACK IS CAPITALISED, THE LEARNER'S OWN TITLE IS NOT. The model writes its subject
+  // index-style and lower case ("nephron"); a shelf of deck names wants "Nephron". A title the
+  // learner typed is theirs and is left exactly as they wrote it.
+  const named = canvas.title.trim() || (subject ? subject.charAt(0).toUpperCase() + subject.slice(1) : "");
+  const name = deckName(named);
   const { data, error } = await supabase
     .from("study_decks")
     .insert({ description: "Made on a Nemesis canvas, at your request.", name, user_id: uid })
@@ -253,7 +263,6 @@ export async function makeFlashcardsDeliverable(
   // 🔴 AND A FAILURE HERE COSTS THE PICTURES, NEVER THE DECK. No diagram, no labels, vision off,
   // an unreachable repository: every one of them leaves `figure` null and the text cards save
   // exactly as they would have. `findLabelledFigure` never throws for precisely this reason.
-  const subject = readFigureSubject(readCardsFigure(reply.text));
   if (subject) {
     const figure = await findLabelledFigure(subject);
     for (const card of figure ? occlusionCards(figure) : []) {
