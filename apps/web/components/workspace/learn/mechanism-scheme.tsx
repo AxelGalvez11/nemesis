@@ -49,7 +49,10 @@ export function MechanismScheme({ visual }: { visual: MechanismVisual }) {
           scrollbar hides the end of the reaction behind a gesture nobody makes on a page they are
           reading. Wrapping puts the later steps on the next line, which is what the printed page
           the owner sent does with exactly the same problem. */}
-      <div className="flex flex-wrap items-center justify-center gap-x-1 gap-y-3">
+      <div
+        className="flex flex-wrap items-center justify-center gap-x-1 gap-y-3"
+        title={`${visual.steps.map((step) => step.value).join("  →  ")}\nwritten from the model's own knowledge, not looked up in a database`}
+      >
         {visual.steps.map((step, index) => (
           <div className="flex items-center gap-x-1" key={`${index}-${step.value}`}>
             {/* 🔴🔴 A FRAME IN A SCHEME IS SMALLER THAN A FRAME ON ITS OWN, AND WITHOUT THIS IT IS
@@ -84,20 +87,16 @@ export function MechanismScheme({ visual }: { visual: MechanismVisual }) {
           </div>
         ))}
       </div>
-      {/* 🔴 ONE PROVENANCE LINE FOR THE WHOLE SCHEME. Each frame's own line is hidden by `compact`,
-          because five copies of "this notation was written, not looked up" under one reaction is
-          the same fact five times. */}
-      <p
-        className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)"
-        title="written from the model's own knowledge, not looked up in a database"
-      >
-        <span>{visual.steps.map((step) => step.value).join("  →  ")}</span>
-        <span className="font-sans">
-          {visual.steps.some((step) => step.arrows?.length)
-            ? "arrows show where the electrons move"
-            : "each frame is one step of the reaction"}
-        </span>
-      </p>
+      {/* 🔴🔴🔴 NO NOTATION LINE, AND MINE WAS THE WORST VERSION OF ONE THIS PRODUCT HAS SHIPPED.
+          Owner, 2026-08-25, with a screenshot of it: *"remove this."* It printed four raw SMILES
+          strings joined by arrows, plus a sentence explaining what an arrow is, under a picture that
+          already shows both.
+
+          🔴 THE SINGLE-STRUCTURE CARD LEARNED THIS IN AUGUST AND I DID NOT READ IT. He circled that
+          card's provenance line too and asked why it was there; the answer was that a structure a
+          model wrote and one a resolver returned look identical and only one can be checked. That
+          fact is real, so it moved to a TOOLTIP rather than being deleted. A scheme carries the same
+          fact, so it goes the same place: checkable on hover, not printed at a learner. */}
     </div>
   );
 }
