@@ -27,9 +27,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useTheme } from "@/components/theme-provider";
-import type { StructureVisual } from "@/lib/learn/canvas-visual";
+import { cn } from "@/lib/utils";
+import type { ArrowEnd, StructureVisual } from "@/lib/learn/canvas-visual";
 import { statesStereochemistry } from "@/lib/learn/chem-notation";
-import { ARROW_CLEAR_BARE, ARROW_CLEAR_LABEL, ARROW_STROKE, curlyArrow } from "@/lib/learn/visual-layout";
+import { lonePairCount, lonePairDots, type LonePairDots } from "@/lib/learn/lone-pairs";
+import { ARROW_CLEAR_BARE, ARROW_CLEAR_BOND, ARROW_CLEAR_LABEL, ARROW_CLEAR_PAIR, ARROW_STROKE, curlyArrow } from "@/lib/learn/visual-layout";
 
 /** Why nothing was drawn. Named so a blank frame is diagnosable, exactly as elsewhere. */
 type StructureFailure =
@@ -54,7 +56,14 @@ type StructureFailure =
    */
   | "structure-unreadable";
 
-export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
+export function ChemicalStructure({ compact = false, visual }: {
+  /**
+   * One frame of a bigger scheme, so the provenance line belongs to the scheme and not to this
+   * frame. Without it a five-step mechanism prints its own SMILES five times down the page.
+   */
+  compact?: boolean;
+  visual: StructureVisual;
+}) {
   const target = useRef<SVGSVGElement | null>(null);
   const [failure, setFailure] = useState<StructureFailure | null>(null);
   const { theme } = useTheme();
@@ -119,7 +128,9 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           // indices the spec carried is the whole of §42's "answerable-against" seam.
           drawer.draw(parsed, element, theme, null, false, visual.highlight ? [...visual.highlight] : []);
           overlap = drawer.getTotalOverlapScore();
-          if (visual.arrows?.length) drawElectronArrows(element, drawer, visual.arrows);
+          if (visual.arrows?.length || visual.lonePairs) {
+            drawElectronArrows(element, drawer, visual.arrows ?? [], visual.lonePairs !== false);
+          }
         }
 
         if (cancelled) return;
@@ -144,7 +155,7 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
     // emitted SVG attributes rather than reading CSS, so a dark-mode toggle cannot repaint this
     // drawing — it has to be drawn again. Without `theme` here, switching to dark leaves a molecule
     // in near-black strokes on a near-black ground: invisible, with nothing on screen to say why.
-  }, [theme, visual.arrows, visual.carbons, visual.conditions, visual.highlight, visual.notation, visual.reactionLabel, visual.value]);
+  }, [theme, visual.arrows, visual.carbons, visual.conditions, visual.highlight, visual.lonePairs, visual.notation, visual.reactionLabel, visual.value]);
 
   return (
     <div>
@@ -196,7 +207,10 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
           names a source. An ASSERTED one carries it on hover: still checkable, no longer shouted.
           Silence would be the one wrong answer — it is what makes the two indistinguishable. */}
       <p
-        className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)"
+        className={cn(
+          "mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)",
+          compact && "hidden",
+        )}
         title={visual.resolvedFrom ? undefined : `${visual.value}: written from the model's own knowledge, not looked up in a database`}
       >
         <span>{visual.value}</span>
@@ -227,42 +241,257 @@ export function ChemicalStructure({ visual }: { visual: StructureVisual }) {
  * 🔴 `var(--ui-accent)` RATHER THAN A BAKED COLOUR, deliberately unlike the library's own output:
  * these elements are ours, live in the page's DOM, and follow a theme switch with no redraw.
  */
+interface DrawnVertex {
+  readonly id?: number;
+  readonly position?: { x: number; y: number };
+  readonly value?: {
+    readonly element?: string;
+    readonly isDrawn?: boolean;
+    readonly bracket?: { readonly charge?: unknown } | null;
+    countImplicitHydrogens?: () => number;
+  };
+}
+
+interface DrawnGraph {
+  readonly vertices?: DrawnVertex[];
+  readonly edges?: Array<{ sourceId?: number; targetId?: number; weight?: number; isPartOfAromaticRing?: boolean }>;
+}
+
+/** A charge arrives as a number on some builds and as "+", "-", "--" on others. */
+function readCharge(bracket: { readonly charge?: unknown } | null | undefined): number {
+  const raw = bracket?.charge;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw !== "string" || !raw) return 0;
+  if (/^[+-]?\d+$/.test(raw)) return Number(raw);
+  const plus = (raw.match(/\+/g) ?? []).length;
+  const minus = (raw.match(/-/g) ?? []).length;
+  return plus - minus;
+}
+
+/** Everything about one atom that the dots and the arrows need, read off the finished depiction. */
+interface AtomFacts {
+  readonly at: { x: number; y: number };
+  readonly lettered: boolean;
+  readonly pairs: readonly LonePairDots[];
+}
+
+/**
+ * The boxes the drawer actually printed its atom labels in.
+ *
+ * 🔴 MEASURED, NOT ESTIMATED FROM THE ELEMENT NAME. "Br" is twice as wide as it is tall and "O⁻H"
+ * is three times, so a label's size cannot be guessed from its symbol: the charge and the hydrogens
+ * are drawn into the same run of text. `getBBox` is the drawer's own answer, in the drawer's own
+ * units, and it costs one pass over the text nodes.
+ */
+function labelBoxes(element: SVGSVGElement): Array<{ left: number; right: number; top: number; bottom: number }> {
+  const boxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+  // 🔴🔴 `getBBox` ANSWERS IN THE NODE'S OWN SPACE, NOT THE DRAWING'S, and the first version of this
+  // believed otherwise. Measured: the box for "Br" came back at x = -15.4 while the bromine sits at
+  // x = 128, so every label looked infinitely far from its own atom and every match silently missed.
+  // The node's matrix relative to the root is the conversion, and it costs one multiply per label.
+  const root = element.getScreenCTM();
+  for (const node of element.querySelectorAll("text")) {
+    let box: DOMRect;
+    let toRoot: DOMMatrix | null = null;
+    try {
+      box = (node as SVGTextElement).getBBox();
+      const own = (node as SVGTextElement).getScreenCTM();
+      toRoot = root && own ? root.inverse().multiply(own) : null;
+    } catch {
+      continue;
+    }
+    if (!box.width && !box.height) continue;
+    const corners = [
+      [box.x, box.y],
+      [box.x + box.width, box.y],
+      [box.x, box.y + box.height],
+      [box.x + box.width, box.y + box.height],
+    ].map(([x, y]) => (toRoot ? new DOMPoint(x, y).matrixTransform(toRoot) : { x: x!, y: y! }));
+    const xs = corners.map((point) => point.x);
+    const ys = corners.map((point) => point.y);
+    const left = Math.min(...xs);
+    const right = Math.max(...xs);
+    const top = Math.min(...ys);
+    const bottom = Math.max(...ys);
+    boxes.push({ bottom, left, right, top });
+  }
+  return boxes;
+}
+
+/**
+ * Where this atom's lone pairs may hang, and how far out.
+ *
+ * 🔴🔴🔴 THE ATOM IS NOT IN THE MIDDLE OF ITS OWN LABEL. A hydroxide prints as "O⁻H" and the oxygen
+ * is the FIRST glyph, so treating the label as a box centred on the atom threw the pairs out past
+ * the hydrogen, floating in space with nothing to belong to. Measured on the second render of this
+ * feature, after the first one had buried them in the letters.
+ *
+ * So the label's own reach is read from the atom outward, and the side it runs along is treated as
+ * OCCUPIED, exactly like a bond. Hydroxide then gets its pairs above, below and to the left of the
+ * O, which is where a textbook draws them, and the "⁻H" keeps the right-hand side to itself.
+ */
+function labelShape(
+  labels: ReturnType<typeof labelBoxes>,
+  at: { x: number; y: number },
+  lettered: boolean,
+): { reach: number; blocked: number[] } {
+  if (!lettered) return { blocked: [], reach: PAIR_RADIUS_BARE };
+  const own = labels
+    .filter((box) => at.x >= box.left - LABEL_MATCH_RADIUS && at.x <= box.right + LABEL_MATCH_RADIUS)
+    .map((box) => ({ away: Math.abs((box.top + box.bottom) / 2 - at.y), box }))
+    .sort((a, b) => a.away - b.away)[0];
+  if (!own || own.away > LABEL_MATCH_RADIUS) return { blocked: [], reach: PAIR_RADIUS_LABEL };
+
+  const height = own.box.bottom - own.box.top;
+  // The letters are about as tall as they are wide, so half the height is how far out a pair has to
+  // sit to clear a single symbol. Clamped, because a stacked label like "CH₃" measures very tall.
+  const reach = Math.max(PAIR_RADIUS_BARE, Math.min(PAIR_REACH_MAX, height / 2 + PAIR_MARGIN));
+  const blocked: number[] = [];
+  if (own.box.right - at.x > height * LABEL_TAIL) blocked.push(0);
+  if (at.x - own.box.left > height * LABEL_TAIL) blocked.push(Math.PI);
+  return { blocked, reach };
+}
+
+/**
+ * Read the drawing's own graph into the facts the overlay needs.
+ *
+ * 🔴 EVERY NUMBER HERE IS THE LIBRARY'S, NOT THE MODEL'S. Positions, elements, charges, implicit
+ * hydrogens and bond orders all come from the parsed structure, so what gets drawn cannot disagree
+ * with what was drawn. The model named a molecule; this counts what is in it.
+ */
+function readAtoms(graph: DrawnGraph, withPairs: boolean, element: SVGSVGElement): Map<number, AtomFacts> {
+  const vertices = graph.vertices ?? [];
+  const bondOrder = new Map<number, number>();
+  const angles = new Map<number, number[]>();
+  for (const edge of graph.edges ?? []) {
+    const { sourceId, targetId } = edge;
+    if (sourceId === undefined || targetId === undefined) continue;
+    const from = vertices[sourceId]?.position;
+    const to = vertices[targetId]?.position;
+    if (!from || !to) continue;
+    // 🔴 AN AROMATIC BOND IS WORTH ONE AND A HALF, which is what makes pyridine's nitrogen come out
+    // with the one lone pair that does the chemistry. Counting it as a single would give it two.
+    const order = edge.isPartOfAromaticRing ? 1.5 : (edge.weight ?? 1);
+    bondOrder.set(sourceId, (bondOrder.get(sourceId) ?? 0) + order);
+    bondOrder.set(targetId, (bondOrder.get(targetId) ?? 0) + order);
+    (angles.get(sourceId) ?? angles.set(sourceId, []).get(sourceId)!).push(Math.atan2(to.y - from.y, to.x - from.x));
+    (angles.get(targetId) ?? angles.set(targetId, []).get(targetId)!).push(Math.atan2(from.y - to.y, from.x - to.x));
+  }
+
+  const labels = labelBoxes(element);
+  const facts = new Map<number, AtomFacts>();
+  vertices.forEach((vertex, index) => {
+    const at = vertex.position;
+    if (!at) return;
+    const lettered = vertex.value?.isDrawn !== false;
+    let pairs: readonly LonePairDots[] = [];
+    if (withPairs && vertex.value?.element) {
+      const count = lonePairCount({
+        bondOrder: bondOrder.get(index) ?? 0,
+        charge: readCharge(vertex.value.bracket),
+        element: vertex.value.element,
+        hydrogens: vertex.value.countImplicitHydrogens?.() ?? 0,
+      });
+      // 🔴 THE LABEL'S OWN TAIL COUNTS AS A BOND. Nothing may hang where the letters already are.
+      const shape = labelShape(labels, at, lettered);
+      const taken = [...(angles.get(index) ?? []), ...shape.blocked];
+      pairs = lonePairDots(at, taken, count, shape.reach, PAIR_GAP);
+    }
+    facts.set(index, { at, lettered, pairs });
+  });
+  return facts;
+}
+
+/** Where an arrow end sits, and how much room the arrow must leave around it. */
+function endPoint(
+  end: ArrowEnd,
+  atoms: Map<number, AtomFacts>,
+  towards: { x: number; y: number } | null,
+): { at: { x: number; y: number }; clear: number; pair?: LonePairDots } | null {
+  // 🔴 A PAIR OF INDICES IS A BOND, AND ITS POINT IS THE MIDDLE OF THE LINE. That is where a
+  // chemist puts the tail of an arrow for a bond breaking, and where the head goes for one forming.
+  if (Array.isArray(end)) {
+    const from = atoms.get(end[0])?.at;
+    const to = atoms.get(end[1])?.at;
+    if (!from || !to) return null;
+    return { at: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, clear: ARROW_CLEAR_BOND };
+  }
+  const atom = atoms.get(end as number);
+  if (!atom) return null;
+  // 🔴🔴 THE ARROW STARTS ON THE DOTS, WHICH IS THE WHOLE POINT OF DRAWING THEM. When the atom
+  // carries lone pairs, the arrow uses the one facing the other end of the arrow, so the reader
+  // sees which pair moved rather than a line appearing out of a letter.
+  if (atom.pairs.length && towards) {
+    const nearest = [...atom.pairs].sort(
+      (a, b) => Math.hypot(a.at.x - towards.x, a.at.y - towards.y) - Math.hypot(b.at.x - towards.x, b.at.y - towards.y),
+    )[0];
+    if (nearest) return { at: nearest.at, clear: ARROW_CLEAR_PAIR, pair: nearest };
+  }
+  return { at: atom.at, clear: atom.lettered ? ARROW_CLEAR_LABEL : ARROW_CLEAR_BARE };
+}
+
+/**
+ * Overlay the mechanism's lone pairs and curly arrows on the finished depiction.
+ *
+ * 🔴 THE POSITIONS ARE THE LIBRARY'S OWN. `graph.vertices[i].position` is the coordinate the
+ * drawing placed heavy atom `i` at, in the same space the emitted SVG uses — so the arrow between
+ * two indices lands between the two drawn atoms by construction, and `fitViewBoxToInk` afterwards
+ * takes the arrows into the frame with everything else.
+ *
+ * 🔴 AN INDEX THE MOLECULE DOES NOT HAVE SKIPS THAT ARROW, exactly the semantics `highlight`
+ * already has for a stray index: the structure is still right, and a wrong claim about it draws
+ * nothing rather than something invented.
+ *
+ * 🔴 `var(--ui-accent)` RATHER THAN A BAKED COLOUR, deliberately unlike the library's own output:
+ * these elements are ours, live in the page's DOM, and follow a theme switch with no redraw.
+ */
 function drawElectronArrows(
   element: SVGSVGElement,
-  drawer: {
-    preprocessor?: {
-      graph?: { vertices?: Array<{ position?: { x: number; y: number }; value?: { isDrawn?: boolean } }> };
-    };
-  },
-  arrows: readonly { from: number; to: number }[],
+  drawer: { preprocessor?: { graph?: DrawnGraph } },
+  arrows: readonly { from: ArrowEnd; to: ArrowEnd }[],
+  withPairs: boolean,
 ): void {
-  const vertices = drawer.preprocessor?.graph?.vertices;
-  if (!vertices) return;
+  const graph = drawer.preprocessor?.graph;
+  if (!graph?.vertices) return;
   const NS = "http://www.w3.org/2000/svg";
+  const atoms = readAtoms(graph, withPairs, element);
   const group = document.createElementNS(NS, "g");
-  // 🔴 THE DRAWER ALREADY KNOWS WHICH ATOMS PRINT A LABEL, so the clearance does not have to be
-  // guessed. `isDrawn` is false for the skeletal corners that show as a bare bend and true for
-  // anything with letters on it, which is exactly the distinction the arrow needs: stop outside
-  // "Br", but run right up to a corner that draws nothing.
-  const clearOf = (index: number) =>
-    vertices[index]?.value?.isDrawn === false ? ARROW_CLEAR_BARE : ARROW_CLEAR_LABEL;
+
   // The middle of the drawing, so every arrow can be curved outward and away from the structure
   // rather than across it. Averaging the atoms is enough; this only decides a sign.
-  const placed = vertices.map((vertex) => vertex.position).filter((point): point is { x: number; y: number } => Boolean(point));
+  const placed = [...atoms.values()].map((atom) => atom.at);
   const awayFrom = placed.length
     ? {
         x: placed.reduce((total, point) => total + point.x, 0) / placed.length,
         y: placed.reduce((total, point) => total + point.y, 0) / placed.length,
       }
     : undefined;
+
+  for (const [index, atom] of atoms) {
+    for (const pair of atom.pairs) {
+      for (const dot of pair.dots) {
+        const mark = document.createElementNS(NS, "circle");
+        mark.setAttribute("cx", String(dot.x));
+        mark.setAttribute("cy", String(dot.y));
+        mark.setAttribute("r", String(PAIR_DOT));
+        mark.setAttribute("fill", "var(--ui-text-primary)");
+        // Which atom this pair belongs to, so a check can count dots per atom instead of counting
+        // circles on the whole picture and guessing.
+        mark.setAttribute("data-lone-pair", String(index));
+        group.append(mark);
+      }
+    }
+  }
+
   for (const arrow of arrows) {
-    const from = vertices[arrow.from]?.position;
-    const to = vertices[arrow.to]?.position;
+    // Each end is aimed at the other, so a lone pair can pick the one facing the way it moves.
+    const roughFrom = endPoint(arrow.from, atoms, null);
+    const roughTo = endPoint(arrow.to, atoms, null);
+    if (!roughFrom || !roughTo) continue;
+    const from = endPoint(arrow.from, atoms, roughTo.at);
+    const to = endPoint(arrow.to, atoms, roughFrom.at);
     if (!from || !to) continue;
-    const drawn = curlyArrow(from, to, {
-      awayFrom,
-      clearance: { from: clearOf(arrow.from), to: clearOf(arrow.to) },
-    });
+    const drawn = curlyArrow(from.at, to.at, { awayFrom, clearance: { from: from.clear, to: to.clear } });
     if (!drawn) continue;
     const curve = document.createElementNS(NS, "path");
     curve.setAttribute("d", drawn.path);
@@ -281,6 +510,27 @@ function drawElectronArrows(
   }
   element.append(group);
 }
+
+/**
+ * How the dots are drawn, in the drawing's own units where a bond is about 26.
+ *
+ * 🔴 SMALL AND CLOSE. Lone pairs are the quietest mark on a mechanism: they say where an arrow may
+ * begin and nothing else. Drawn any heavier they compete with the atom labels, and the picture that
+ * was already too busy gets busier.
+ */
+const PAIR_DOT = 0.9;
+const PAIR_GAP = 2.6;
+/** Fallback when a label cannot be measured, and the reach on a bare skeletal corner. */
+const PAIR_RADIUS_LABEL = 8.5;
+const PAIR_RADIUS_BARE = 5;
+/** Air between the edge of the lettering and the dots. */
+const PAIR_MARGIN = 3;
+/** How close a drawn label has to be to an atom to be that atom's label. */
+const LABEL_MATCH_RADIUS = 12;
+/** Never hang a pair further out than this, however tall a stacked label measures. */
+const PAIR_REACH_MAX = 13;
+/** A label running this much further one way than it is tall has a tail on that side. */
+const LABEL_TAIL = 0.8;
 
 const WIDTH = 480;
 const HEIGHT = 320;

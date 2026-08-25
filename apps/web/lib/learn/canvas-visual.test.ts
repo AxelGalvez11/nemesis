@@ -387,6 +387,70 @@ test("a mechanism step carries arrows in the highlight index space", () => {
   assert.equal(result.ok && result.visual.kind === "structure" && result.visual.arrows?.length, 2);
 });
 
+const mechanism = (arrows: unknown) =>
+  validateCanvasVisual({
+    arrows,
+    kind: "structure",
+    learningGoal: "Watch the nucleophile attack while the leaving group departs",
+    notation: "smiles",
+    value: "[OH-].CBr",
+  });
+
+test("🔴🔴🔴 an arrow end may be a BOND, which is what a real mechanism needs", () => {
+  // 🔴 MEASURED ON THE LIVE APP, 2026-08-25. Asked for an SNAr mechanism, Nemesis worked out its
+  // three arrows correctly and then typed them as a bulleted list, because atom-to-atom could not
+  // say "the C-Cl bond breaks". The owner sent a textbook picture and asked why ours looked
+  // nothing like it; this is most of the answer.
+  const broken = mechanism([{ from: 0, to: 1 }, { from: [1, 2], to: 2 }]);
+  assert.equal(broken.ok, true, "a bond-tailed arrow is still refused");
+  const arrows = broken.ok && broken.visual.kind === "structure" ? broken.visual.arrows : undefined;
+  assert.equal(arrows?.length, 2);
+  assert.deepEqual(arrows?.[1], { from: [1, 2], to: 2 });
+  // A pi bond shifting onto the next bond: both ends are bonds.
+  assert.equal(mechanism([{ from: [0, 1], to: [1, 2] }]).ok, true, "a bond-to-bond shift is refused");
+});
+
+test("🔴🔴 the dots come on by themselves wherever there are arrows", () => {
+  // Every curly arrow in a textbook starts on a lone pair, so a mechanism that had to ask for them
+  // separately would mostly forget to.
+  const drawn = mechanism([{ from: 0, to: 1 }]);
+  assert.equal(drawn.ok && drawn.visual.kind === "structure" && drawn.visual.lonePairs, true);
+  // ...and a plain structure card stays clean, because dots on every heteroatom is noise.
+  const plain = validateCanvasVisual({
+    kind: "structure",
+    learningGoal: "The ester is the whole difference",
+    notation: "smiles",
+    value: "CC(=O)Oc1ccccc1C(=O)O",
+  });
+  assert.equal(plain.ok && plain.visual.kind === "structure" && plain.visual.lonePairs, undefined);
+  // An explicit false still wins, for a mechanism drawn deliberately bare.
+  const bare = validateCanvasVisual({
+    arrows: [{ from: 0, to: 1 }],
+    kind: "structure",
+    learningGoal: "Bare on purpose",
+    lonePairs: false,
+    notation: "smiles",
+    value: "[OH-].CBr",
+  });
+  assert.equal(bare.ok && bare.visual.kind === "structure" && bare.visual.lonePairs, false);
+});
+
+test("🔴🔴 a bond that is not a bond refuses, rather than drawing somewhere invented", () => {
+  for (const bad of [[{ from: [1, 1], to: 2 }], [{ from: [1], to: 2 }], [{ from: [1, 2, 3], to: 0 }], [{ from: [1, -1], to: 0 }], [{ from: ["a", 2], to: 0 }]]) {
+    assert.equal(mechanism(bad).ok, false, JSON.stringify(bad));
+  }
+  // 🔴 AND THE SAME BOND TWICE IS NOT A MOVE. Electrons that end where they started are not a step.
+  assert.equal(mechanism([{ from: [1, 2], to: [1, 2] }]).ok, false, "an arrow onto its own bond");
+});
+
+test("🔴🔴🔴 atom ZERO is a real atom, and `!0` is true", () => {
+  // The reader returns an index now rather than throwing, so the obvious falsy check refused every
+  // arrow that starts at the first atom in the notation. An existing test caught it within minutes.
+  assert.equal(mechanism([{ from: 0, to: 1 }]).ok, true, "an arrow from atom 0 is refused");
+  assert.equal(mechanism([{ from: 1, to: 0 }]).ok, true, "an arrow to atom 0 is refused");
+  assert.equal(mechanism([{ from: [0, 1], to: 2 }]).ok, true, "a bond touching atom 0 is refused");
+});
+
 test("🔴 arrows on a reaction scheme refuse — sub-drawings do not share an index space", () => {
   const result = validateCanvasVisual({
     arrows: [{ from: 0, to: 1 }],

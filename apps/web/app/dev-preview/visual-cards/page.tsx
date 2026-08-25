@@ -120,7 +120,33 @@ const CARDS: readonly Card[] = [
       // Every atom lettered, which is the picture the owner photographed and the harder case for
       // the arrows: a bare skeletal corner needs almost no clearance, "CH3" needs real room.
       carbons: "all",
-      arrows: [{ from: 0, to: 1 }, { from: 1, to: 2 }],
+      // 🔴 THE TEXTBOOK PAIR, WHICH THE OLD VOCABULARY COULD NOT SAY. The hydroxide's lone pair
+      // attacks the carbon, and the C-Br BOND breaks with its pair going to bromine. The second one
+      // needs a bond as its tail, which is exactly what atom-to-atom could not express.
+      arrows: [{ from: 0, to: 1 }, { from: [1, 2], to: 2 }],
+    },
+  },
+  {
+    // 🔴 THE OWNER'S OWN REFERENCE, 2026-08-25: a Smiles rearrangement on a nitropyridine, which he
+    // sent as a textbook scheme and asked why ours looked nothing like it. Four frames, joined.
+    id: "mechanism-scheme",
+    note: "mechanism · several frames joined by reaction arrows, the way a textbook prints one",
+    visual: {
+      kind: "mechanism",
+      learningGoal: "The nitrogen attacks the ring carbon and the oxygen leaves, in one step.",
+      caption: "A Smiles rearrangement: the tether swaps oxygen for nitrogen.",
+      steps: [
+        { value: "NCCOc1ccc(cn1)[N+](=O)[O-]", label: "NaH" },
+        {
+          // Heavy atoms from zero: N is 0, the ether O is 3, and the ring carbon it sits on is 4.
+          // The amide's lone pair attacks that carbon while the C-O bond breaks onto the oxygen,
+          // which is the pair of arrows the old atom-to-atom vocabulary could not write.
+          value: "[NH-]CCOc1ccc(cn1)[N+](=O)[O-]",
+          arrows: [{ from: 0, to: 4 }, { from: [3, 4], to: 3 }],
+        },
+        { value: "[O-]CCNc1ccc(cn1)[N+](=O)[O-]", label: "H2O" },
+        { value: "OCCNc1ccc(cn1)[N+](=O)[O-]" },
+      ],
     },
   },
   {

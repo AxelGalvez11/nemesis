@@ -750,7 +750,11 @@ test("🔴🔴🔴 an arrow never outweighs the molecule it annotates", () => {
   const renderer = readFileSync(new URL("../../components/workspace/learn/chemical-structure.tsx", import.meta.url), "utf8");
   assert.match(renderer, /String\(ARROW_STROKE\)/, "the renderer hardcodes a stroke width again");
   assert.ok(!/stroke-width", "1\.8"/.test(renderer), "the 1.8 stroke is back");
-  // And the clearance is asked of the DRAWER, never guessed: it already knows which atoms letter.
-  assert.match(renderer, /isDrawn === false \? ARROW_CLEAR_BARE : ARROW_CLEAR_LABEL/, "every atom gets the same clearance again");
+  // And the clearance is asked of the DRAWER, never guessed: it already knows which atoms letter,
+  // and it knows where it printed them.
+  assert.match(renderer, /if \(!lettered\) return \{ blocked: \[\], reach: PAIR_RADIUS_BARE \};/, "a bare corner and a lettered atom hang their dots at the same distance again");
+  assert.match(renderer, /atom\.lettered \? ARROW_CLEAR_LABEL : ARROW_CLEAR_BARE/, "every atom gets the same clearance again");
   assert.match(renderer, /awayFrom,/, "the arrows stopped bowing away from the structure");
+  // 🔴 AND AN ARROW OFF A LONE PAIR STARTS ON THE DOTS. That is the whole reason for drawing them.
+  assert.match(renderer, /clear: ARROW_CLEAR_PAIR, pair: nearest/, "an arrow stopped starting on the pair that moves");
 });

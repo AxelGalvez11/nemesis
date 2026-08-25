@@ -6,6 +6,16 @@
 import type { Components } from "react-markdown";
 import { Children } from "react";
 import ReactMarkdown from "react-markdown";
+// 🔴🔴🔴 CHEMICAL EQUATIONS. `\ce{2H2 + O2 -> 2H2O}` is how anybody writes a reaction in LaTeX, and
+// KaTeX only understands it once this extension has registered itself. It sat unimported in
+// `node_modules` the whole time, so every `\ce{…}` the model wrote reached the learner as a red
+// `\ce` followed by its own scrambled contents. Measured on the live app, 2026-08-25, twice in one
+// answer about an SNAr mechanism.
+//
+// 🔴 A SIDE-EFFECT IMPORT, AND IT BELONGS BESIDE `rehype-katex`. The extension patches the KaTeX
+// singleton rather than exporting anything, so it has to reach the same instance that renders, and
+// it has to be loaded before the first render rather than on demand.
+import "katex/contrib/mhchem";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";

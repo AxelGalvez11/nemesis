@@ -96,6 +96,14 @@ export type VisualRepresentation =
    */
   | "macromolecule"
   /**
+   * A reaction mechanism as one connected scheme: several structure frames joined by arrows.
+   *
+   * 🔴 STILL RUNG TWO, AND FOR THE SAME REASON EVERY FRAME IS. Each step is canonical notation that
+   * a depiction library draws; the only thing this route adds is which frame sits beside which and
+   * what is written on the arrow between them. Nothing about the layout is retrieved or recalled.
+   */
+  | "mechanism"
+  /**
    * A picture retrieved from an openly licensed repository, shown with its credit line.
    *
    * 🔴 THE THIRD RUNG (§42), AND IT SITS BELOW EVERY DETERMINISTIC ROUTE ON PURPOSE. A retrieved

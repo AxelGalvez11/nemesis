@@ -595,7 +595,8 @@ const NEMESIS_SYSTEM = [
   // not named in the sentence below.
   "For anything with structure, a plot, a diagram, a table, a timeline, a geometric construction, "
   + "a force diagram, an equation, a traced snippet of code, a circuit, a bar of music, a 3D "
-  + "surface, a molecule, a protein, an anatomical structure, a licensed textbook figure, put the "
+  + "surface, a molecule, a whole reaction mechanism, a protein, an anatomical structure, a licensed "
+  + "textbook figure, put the "
   + "figure in the \"visuals\" array and write [figure 1], [figure 2] inline where each one "
   + "belongs. Every kind takes \"kind\" and \"learningGoal\", plus its own fields. At most "
   + String(MAX_REPLY_VISUALS) + " per answer.",
@@ -620,6 +621,10 @@ const NEMESIS_SYSTEM = [
   + "ohms}]}, supply:{label:\"9 V\"}, equivalentOhms}: `supply` is an OBJECT with a label, and an "
   + "`equivalentOhms` you state is recomputed and the whole figure refused if it disagrees. "
   + "score {abc}: ABC notation including its K: header line. "
+  + "mechanism {steps:[{value, arrows, label}]}: a whole reaction as ONE connected scheme of 2 to 6 frames "
+  + "joined by reaction arrows, which is how a textbook prints a mechanism. An arrow end is an atom index "
+  + "for that atom's lone pair, or a pair of indices for the bond between them, so a bond breaking is "
+  + "written {\"from\":[3,4],\"to\":3}. The dots are counted and drawn for you. "
   + "surface {expression, xFrom, xTo, yFrom, yTo}: the grid is computed for you.",
 
   // 🔴 THE FOUR THAT ARE A LOOKUP RATHER THAN A DRAWING, SAID SEPARATELY BECAUSE THE MISTAKE IS
