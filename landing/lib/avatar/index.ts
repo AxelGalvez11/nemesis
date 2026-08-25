@@ -1,8 +1,14 @@
-// The avatar: a solid with a face on it, and 23 animations that play on any of them.
+// 🔴 COPIED FROM apps/web — DO NOT EDIT HERE. Run `pnpm --filter @pharmaorb/web character:sync`.
+// The avatar: a solid with a face on it, and forty-nine things it can do on any of them.
+//
+// Sixteen feelings (`expressions.ts`), ten routines that change the body (`routines.ts`),
+// and twenty-three gaze patterns measured off the reference (`animations.ts`). One engine
+// draws all of them and morphs between any two — see `catalogue.ts`.
 
-export { ANIMATIONS, ANIMATION_BY_ID } from "./animations";
+export { ANIMATIONS, ANIMATION_BY_ID, FACES, FACE_BY_ID } from "./catalogue";
 export { AVATARS, AVATAR_BY_ID, DEFAULT_AVATAR } from "./avatars";
-export { FACES, FACE_BY_ID } from "./faces";
+export { EXPRESSIONS, EXPRESSION_IDS } from "./expressions";
+export { ROUTINE_IDS } from "./routines";
 export {
   animationDuration,
   blendFaces,
@@ -14,25 +20,41 @@ export {
   livenFace,
   nearestAngle,
   playedFaceAt,
+  sparkDots,
   HANDOVER_MS,
   type Playhead,
   type PlayedFace,
   type PlayOptions,
 } from "./play";
-export { SHUT_HEIGHT, VIEW_BOX, VIEW_SIZE, drawEye, drawFace } from "./render";
-export { FOCAL, RADIUS, faceToSkin, frontOfSkin, project, quatFromTurn, rotate } from "./space";
+export { REST_BODY, SHUT_HEIGHT, VIEW_BOX, VIEW_SIZE, drawEye, drawFace, posedSurface } from "./render";
+export {
+  FOCAL,
+  RADIUS,
+  bendScale,
+  faceToSkin,
+  facetScale,
+  frontOfSkin,
+  isPlain,
+  project,
+  quatFromTurn,
+  rotate,
+} from "./space";
 export type {
   Animation,
   Avatar,
   AvatarFrame,
   BlinkPlan,
   BodyMotion,
+  BodyPose,
+  Dot,
   EaseName,
   EyeMotion,
   EyeSpec,
   Face,
   HeadTurn,
+  Notch,
   PlaybackMode,
+  SparkPlan,
   Step,
   Surface,
   SurfaceType,

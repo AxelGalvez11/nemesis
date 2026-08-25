@@ -1,3 +1,4 @@
+// 🔴 COPIED FROM apps/web — DO NOT EDIT HERE. Run `pnpm --filter @pharmaorb/web character:sync`.
 // The animations, played.
 //
 // 🔴 `frameAt(animation, ms)` IS A PURE FUNCTION OF THE CLOCK. The reference this was
@@ -11,9 +12,9 @@
 
 import { hash01, hashSigned } from "./noise";
 
-import { FACE_BY_ID } from "./faces";
-import { ANIMATION_BY_ID } from "./animations";
-import type { Animation, EaseName, EyeSpec, Face, Step } from "./types";
+import { ANIMATION_BY_ID, FACE_BY_ID } from "./catalogue";
+import { REST_BODY } from "./render";
+import type { Animation, BodyPose, Dot, EaseName, EyeSpec, Face, Notch, SparkPlan, Step } from "./types";
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
@@ -54,13 +55,23 @@ export interface Cursor {
   readonly step: number;
   readonly from: number;
   readonly progress: number;
+  /**
+   * Milliseconds since this pass through the steps began.
+   *
+   * 🔴 WHAT ANYTHING TIMED FROM THE START OF THE ROUTINE MUST USE, RATHER THAN THE CLOCK.
+   * The clock never restarts — that is deliberate, and it is what stopped the character
+   * flinching every time the surface changed its mind. But a shower of sparks that lasts
+   * two seconds inside a routine that loops every two and a half has to start again with
+   * the loop, and reading the raw clock would have fired it once, ever.
+   */
+  readonly local: number;
 }
 
 export function cursorAt(a: Animation, ms: number): Cursor {
   const count = a.steps.length;
-  if (count === 0) return { step: -1, from: -1, progress: 1 };
+  if (count === 0) return { step: -1, from: -1, progress: 1, local: 0 };
   const one = a.steps.reduce((sum, s) => sum + stepMs(s), 0);
-  if (one <= 0) return { step: 0, from: 0, progress: 1 };
+  if (one <= 0) return { step: 0, from: 0, progress: 1, local: 0 };
 
   let t = Math.max(0, ms);
   let order = a.steps.map((_, i) => i);
@@ -76,6 +87,7 @@ export function cursorAt(a: Animation, ms: number): Cursor {
   } else {
     t %= one;
   }
+  const local = t;
 
   for (let i = 0; i < count; i++) {
     const index = order[i]!;
@@ -90,9 +102,9 @@ export function cursorAt(a: Animation, ms: number): Cursor {
     // rather than a jump.
     const from = order[(i - 1 + count) % count]!;
     const progress = s.transitionMs <= 0 ? 1 : ease(s.ease, t / s.transitionMs);
-    return { step: index, from, progress };
+    return { step: index, from, progress, local };
   }
-  return { step: order[count - 1]!, from: order[count - 1]!, progress: 1 };
+  return { step: order[count - 1]!, from: order[count - 1]!, progress: 1, local };
 }
 
 // ── Blending two faces ──────────────────────────────────────────────────────────
@@ -120,6 +132,63 @@ const mixEye = (a: EyeSpec, b: EyeSpec, p: number): EyeSpec => ({
   angle: mix(a.angle, nearestAngle(b.angle, a.angle), p),
 });
 
+const mixBody = (a: BodyPose, b: BodyPose, p: number): BodyPose => ({
+  scale: mix(a.scale, b.scale, p),
+  x: mix(a.x, b.x, p),
+  y: mix(a.y, b.y, p),
+  stretchX: mix(a.stretchX, b.stretchX, p),
+  stretchY: mix(a.stretchY, b.stretchY, p),
+  taper: mix(a.taper, b.taper, p),
+  straight: mix(a.straight, b.straight, p),
+  // 🔴 THE ARRIVING SIDE COUNT, THE BLENDED AMOUNT. There is no five-and-a-half-sided
+  // figure; what there is, is a body a fraction of the way toward being six-sided. So the
+  // count switches at once and the DEPTH travels — which, when the amount it travels from
+  // is zero, is a hexagon growing out of a ball rather than replacing it.
+  facets: p < 1 ? (b.facetAmount > 0 ? b.facets : a.facets) : b.facets,
+  facetAmount: mix(a.facetAmount, b.facetAmount, p),
+});
+
+/**
+ * Decor blended by index, shortest list padded with the other's dots at nothing.
+ *
+ * A dot that only one of the two poses has therefore GROWS from zero radius at exactly the
+ * place it will end up, instead of appearing whole on the frame the morph completes.
+ */
+function mixDots(a: readonly Dot[], b: readonly Dot[], p: number): readonly Dot[] {
+  if (a.length === 0 && b.length === 0) return EMPTY_DOTS;
+  const out: Dot[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const from = a[i] ?? { ...b[i]!, r: 0, opacity: 0 };
+    const to = b[i] ?? { ...a[i]!, r: 0, opacity: 0 };
+    out.push({
+      x: mix(from.x, to.x, p),
+      y: mix(from.y, to.y, p),
+      r: mix(from.r, to.r, p),
+      opacity: mix(from.opacity, to.opacity, p),
+      behind: to.behind ?? from.behind,
+    });
+  }
+  return out;
+}
+
+const mixNotch = (a: Notch | null, b: Notch | null, p: number): Notch | null => {
+  if (!a && !b) return null;
+  const from = a ?? { ...b!, r: 0 };
+  const to = b ?? { ...a!, r: 0 };
+  return { x: mix(from.x, to.x, p), y: mix(from.y, to.y, p), r: mix(from.r, to.r, p) };
+};
+
+const mixSparks = (a: SparkPlan | null, b: SparkPlan | null, p: number): SparkPlan | null => {
+  if (!a && !b) return null;
+  // Only the amount travels. Halfway between a shower of five and a shower of eight is not
+  // six and a half sparks; it is five sparks at half strength on their way out.
+  if (!a) return { ...b!, amount: mix(0, b!.amount, p) };
+  if (!b) return { ...a, amount: mix(a.amount, 0, p) };
+  return { ...b, amount: mix(a.amount, b.amount, p) };
+};
+
+const EMPTY_DOTS: readonly Dot[] = [];
+
 export function blendFaces(a: Face, b: Face, p: number): Face {
   if (p <= 0) return a;
   if (p >= 1) return b;
@@ -138,7 +207,50 @@ export function blendFaces(a: Face, b: Face, p: number): Face {
     // the morph means the new life is already running as the new face arrives.
     eyeMotion: b.eyeMotion,
     bodyMotion: b.bodyMotion,
+    body: mixBody(a.body ?? REST_BODY, b.body ?? REST_BODY, p),
+    eyeAlpha: mix(a.eyeAlpha ?? 1, b.eyeAlpha ?? 1, p),
+    dots: mixDots(a.dots ?? EMPTY_DOTS, b.dots ?? EMPTY_DOTS, p),
+    notch: mixNotch(a.notch ?? null, b.notch ?? null, p),
+    sparks: mixSparks(a.sparks ?? null, b.sparks ?? null, p),
   };
+}
+
+// ── Sparks ──────────────────────────────────────────────────────────────────────
+
+/**
+ * A spark plan, at an instant, as dots.
+ *
+ * 🔴 EVALUATED AFTER THE BLEND, NEVER BEFORE IT. Sparks are born and die on their own
+ * schedule, so the number of them alive changes from frame to frame — and blending two
+ * poses that hold different numbers of dots is meaningless. The plan blends; the dots are
+ * worked out from the blended plan.
+ *
+ * They spiral inward rather than flying outward, and they pass BEHIND the body, which is
+ * what makes a scatter read as the body pulling itself back together rather than as an
+ * explosion.
+ */
+export function sparkDots(plan: SparkPlan | null | undefined, ms: number): readonly Dot[] {
+  if (!plan || plan.amount <= 0.01 || plan.count <= 0) return EMPTY_DOTS;
+  const out: Dot[] = [];
+  for (let i = 0; i < plan.count; i++) {
+    const age = ms - i * plan.everyMs;
+    if (age < 0 || age > plan.lifeMs) continue;
+    const seconds = age / 1000;
+    // Each spark starts at its own angle and its own distance, from the index alone, so the
+    // shower is the same shower every time it plays.
+    const rho = plan.from * (0.82 + hash01(i * 2654435761 + 7) * 0.34) * Math.pow(plan.pull, seconds);
+    const angle = hash01(i * 40503 + 11) * Math.PI * 2 + seconds * plan.spinDegPerSec * (Math.PI / 180);
+    const life = age / plan.lifeMs;
+    out.push({
+      x: Math.cos(angle) * rho,
+      y: Math.sin(angle) * rho,
+      r: mix(plan.r0, plan.r1, Math.min(1, life * 1.8)),
+      // In quickly, out quickly, so nothing pops into or out of existence at full size.
+      opacity: plan.amount * clamp01(life * 11) * clamp01((1 - life) * 8),
+      behind: true,
+    });
+  }
+  return out;
 }
 
 // ── Blinking ────────────────────────────────────────────────────────────────────
@@ -345,16 +457,26 @@ export function playedFaceAt(animationId: string, ms: number, opts: PlayOptions 
   if (!to) return null;
 
   if (opts.reduced) {
-    return { face: to, blink: 1, eyeDrift: { x: 0, y: 0 }, stepFace: to.id, step: cursor.step };
+    // 🔴 NO SPARKS EITHER. A learner who has asked the system for less movement has asked
+    // for less movement; a shower of dots orbiting a still body is exactly the thing the
+    // setting exists to turn off.
+    return { face: withSparks(to, 0), blink: 1, eyeDrift: { x: 0, y: 0 }, stepFace: to.id, step: cursor.step };
   }
 
   const from = FACE_BY_ID.get(animation.steps[cursor.from]!.face) ?? to;
   const blended = blendFaces(from, to, cursor.progress);
   return {
-    face: livenFace(blended, ms),
+    face: withSparks(livenFace(blended, ms), cursor.local),
     blink: blinkAt(animation.blink, ms),
     eyeDrift: eyeDriftAt(blended, ms),
     stepFace: to.id,
     step: cursor.step,
   };
+}
+
+/** The face, with its spark plan spent into the decor it is at this instant. */
+function withSparks(face: Face, ms: number): Face {
+  const sparks = sparkDots(face.sparks, ms);
+  if (sparks.length === 0) return face;
+  return { ...face, dots: [...(face.dots ?? EMPTY_DOTS), ...sparks] };
 }

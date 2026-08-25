@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ANIMATIONS, ANIMATION_BY_ID } from "./animations";
 import { AVATARS, DEFAULT_AVATAR } from "./avatars";
-import { FACES, FACE_BY_ID } from "./faces";
+import { ANIMATIONS, ANIMATION_BY_ID, FACES, FACE_BY_ID } from "./catalogue";
+import { EXPRESSION_IDS } from "./expressions";
+import { ROUTINE_IDS } from "./routines";
 import {
   HANDOVER_MS,
   animationDuration,
@@ -15,10 +16,11 @@ import {
   nearestAngle,
   playedFaceAt,
 } from "./play";
-import { SHUT_HEIGHT, drawFace } from "./render";
-import { FOCAL, RADIUS, faceToSkin, project, quatFromTurn, rotate } from "./space";
+import { REST_BODY, SHUT_HEIGHT, drawFace } from "./render";
+import { FOCAL, RADIUS, bendScale, faceToSkin, facetScale, frontOfSkin, isPlain, project, quatFromTurn, rotate, skinPoint } from "./space";
 import { avatarFrameAt } from "./index";
-import type { Face } from "./types";
+import { sparkDots } from "./play";
+import type { Face, Surface } from "./types";
 
 /** The bounding box of every coordinate pair in a path. */
 const box = (d: string): { cx: number; cy: number; w: number; h: number } => {
@@ -174,14 +176,14 @@ test("a blink plan with no gap at all cannot hang", () => {
 // ── Timing ──────────────────────────────────────────────────────────────────────
 
 test("an animation's length is its steps, and a ping-pong is twice that", () => {
-  const a = ANIMATION_BY_ID.get("idle")!;
+  const a = ANIMATION_BY_ID.get("gaze-idle")!;
   const sum = a.steps.reduce((s, x) => s + x.transitionMs + x.holdMs, 0);
   assert.equal(animationDuration(a), sum);
   assert.equal(animationDuration({ ...a, mode: "pingPong" }), sum * 2);
 });
 
 test("🔴 the cursor walks the steps in order and wraps into a morph, not a jump", () => {
-  const a = ANIMATION_BY_ID.get("thinking")!;
+  const a = ANIMATION_BY_ID.get("gaze-thinking")!;
   const total = animationDuration(a);
   // Just inside the first step's morph: arriving at step 0, coming FROM the last one.
   const opening = cursorAt(a, 1);
@@ -195,7 +197,7 @@ test("🔴 the cursor walks the steps in order and wraps into a morph, not a jum
 });
 
 test("once stops at the end; loop does not", () => {
-  const base = ANIMATION_BY_ID.get("angry")!;
+  const base = ANIMATION_BY_ID.get("gaze-angry")!;
   const total = animationDuration(base);
   const last = base.steps.length - 1;
   assert.equal(cursorAt({ ...base, mode: "once" }, total * 4).step, last);
@@ -203,7 +205,7 @@ test("once stops at the end; loop does not", () => {
 });
 
 test("a ping-pong plays the steps back the other way", () => {
-  const base = ANIMATION_BY_ID.get("thinking")!;
+  const base = ANIMATION_BY_ID.get("gaze-thinking")!;
   const one = base.steps.reduce((s, x) => s + x.transitionMs + x.holdMs, 0);
   const forward = cursorAt({ ...base, mode: "pingPong" }, 10);
   const back = cursorAt({ ...base, mode: "pingPong" }, one + 10);
@@ -262,8 +264,22 @@ test("every animation names faces that exist, and every id is unique", () => {
     assert.ok(a.steps.length > 0, `${a.id} has no steps`);
     for (const s of a.steps) assert.ok(FACE_BY_ID.has(s.face), `${a.id} names a missing face: ${s.face}`);
   }
-  assert.equal(FACES.length, 27);
-  assert.equal(ANIMATIONS.length, 23);
+  // 🔴 THE THREE SETS, COUNTED SEPARATELY. A single total would have gone on passing when
+  // one set silently emptied and another grew — which is exactly the shape of the mistake
+  // this file exists to catch, since two of the three are produced by generators.
+  assert.equal(EXPRESSION_IDS.length, 16, "the sixteen feelings");
+  assert.equal(ROUTINE_IDS.length, 10, "the ten routines");
+  assert.equal(ANIMATIONS.filter((a) => a.id.startsWith("gaze-")).length, 23, "the reference's own");
+  assert.equal(ANIMATIONS.length, 49);
+
+  // 🔴 THE PLAIN WORDS BELONG TO THE SET THAT KEEPS THEM (owner 2026-08-25: "the bible
+  // avatar has expressions that dont match descriptions: the bloub actually matches them").
+  // Seventeen of the reference's twenty-three carry a feeling's name; asking for `happy`
+  // has to give the one that looks happy, and the only thing standing between those two
+  // sets is the prefix.
+  for (const id of EXPRESSION_IDS) {
+    assert.ok(ANIMATION_BY_ID.get(id)?.steps[0]?.face === id, `${id} is not the feeling itself`);
+  }
 });
 
 test("🔴 every animation draws something on every body, all the way through", () => {
@@ -276,15 +292,29 @@ test("🔴 every animation draws something on every body, all the way through", 
         const f = avatarFrameAt(a.id, (total * i) / 12, avatar);
         assert.ok(f, `${avatar.name} / ${a.id} produced no frame`);
         assert.ok(f.body.length > 20, `${avatar.name} / ${a.id} at ${i}/12 has no body`);
-        assert.ok(!/NaN|Infinity/.test(f.body + f.left + f.right), `${avatar.name} / ${a.id} at ${i}/12 is not a number`);
-        assert.ok(f.left.length > 20 && f.right.length > 20, `${avatar.name} / ${a.id} at ${i}/12 lost an eye`);
+        assert.ok(
+          !/NaN|Infinity/.test(f.body + f.left + f.right + f.dots + f.dotsBehind),
+          `${avatar.name} / ${a.id} at ${i}/12 is not a number`,
+        );
+        // 🔴 UNLESS THE ROUTINE HAS TAKEN THE FACE AWAY, WHICH FOUR OF THEM DO. A pause for
+        // thought turns the body into one of three dots and a scatter takes it apart; both
+        // are faceless by design. The check still has to bite everywhere else, so it asks
+        // the frame whether the face is meant to be there rather than skipping by name.
+        if (f.eyeAlpha > 0.01) {
+          assert.ok(f.left.length > 20 && f.right.length > 20, `${avatar.name} / ${a.id} at ${i}/12 lost an eye`);
+        } else {
+          assert.ok(
+            f.dots.length > 20 || f.body.length > 20,
+            `${avatar.name} / ${a.id} at ${i}/12 has neither a face nor anything else`,
+          );
+        }
       }
     }
   }
 });
 
 test("reduced motion holds the authored face exactly, with no wander and no blink", () => {
-  const played = playedFaceAt("searching", 7777, { reduced: true })!;
+  const played = playedFaceAt("gaze-searching", 7777, { reduced: true })!;
   const authored = FACE_BY_ID.get(played.stepFace)!;
   assert.deepEqual(played.face, authored);
   assert.equal(played.blink, 1);
@@ -299,21 +329,21 @@ test("🔴 changing animation is a morph, not a cut", () => {
   // clock restarted and the next frame was simply a different pose. This is the guard on
   // the fix, and it is why the bookkeeping lives in the engine rather than in a `useRef`
   // inside a requestAnimationFrame callback where nothing could reach it.
-  const head = createPlayhead("sleeping");
-  const before = head.at(4000, "sleeping")!.face;
+  const head = createPlayhead("gaze-sleeping");
+  const before = head.at(4000, "gaze-sleeping")!.face;
   // The instant of the change: still the old face, because no time has passed yet.
-  const atSwitch = head.at(4000, "excited")!.face;
+  const atSwitch = head.at(4000, "gaze-excited")!.face;
   assert.ok(near(atSwitch, before), "the handover jumped on its very first frame");
 
   // Halfway through, it is between the two and equal to neither.
-  const mid = head.at(4000 + HANDOVER_MS / 2, "excited")!.face;
-  const target = playedFaceAt("excited", 4000 + HANDOVER_MS / 2)!.face;
+  const mid = head.at(4000 + HANDOVER_MS / 2, "gaze-excited")!.face;
+  const target = playedFaceAt("gaze-excited", 4000 + HANDOVER_MS / 2)!.face;
   assert.ok(!near(mid, before), "the handover never left the old face");
   assert.ok(!near(mid, target), "the handover arrived instantly");
 
   // And past the handover it is exactly the new animation, with nothing left over.
-  const after = head.at(4000 + HANDOVER_MS + 1, "excited")!.face;
-  const clean = playedFaceAt("excited", 4000 + HANDOVER_MS + 1)!.face;
+  const after = head.at(4000 + HANDOVER_MS + 1, "gaze-excited")!.face;
+  const clean = playedFaceAt("gaze-excited", 4000 + HANDOVER_MS + 1)!.face;
   assert.ok(near(after, clean), "the handover never finished");
 });
 
@@ -321,22 +351,22 @@ test("🔴 a second change mid-handover starts from what is on screen", () => {
   // Otherwise the character snaps to the first target it never reached, and a surface that
   // changes state twice quickly — which is exactly what a busy app does — flinches harder
   // than it did before the fix.
-  const head = createPlayhead("idle");
-  head.at(0, "idle");
-  head.at(100, "angry");
-  const partway = head.at(100 + HANDOVER_MS / 3, "angry")!.face;
-  const redirected = head.at(100 + HANDOVER_MS / 3, "sleeping")!.face;
+  const head = createPlayhead("gaze-idle");
+  head.at(0, "gaze-idle");
+  head.at(100, "gaze-angry");
+  const partway = head.at(100 + HANDOVER_MS / 3, "gaze-angry")!.face;
+  const redirected = head.at(100 + HANDOVER_MS / 3, "gaze-sleeping")!.face;
   assert.ok(near(redirected, partway), "the redirect jumped instead of continuing");
 });
 
 test("the clock is the caller's, so a playhead never restarts it", () => {
   // The blink schedule is drawn from the same `ms`, so a playhead that reset time would
   // also reset blinking — the bug that hid behind the cut.
-  const head = createPlayhead("idle");
-  head.at(0, "idle");
-  head.at(30_000, "thinking");
-  const late = head.at(60_000, "thinking")!;
-  assert.deepEqual(late.blink, playedFaceAt("thinking", 60_000)!.blink);
+  const head = createPlayhead("gaze-idle");
+  head.at(0, "gaze-idle");
+  head.at(30_000, "gaze-thinking");
+  const late = head.at(60_000, "gaze-thinking")!;
+  assert.deepEqual(late.blink, playedFaceAt("gaze-thinking", 60_000)!.blink);
 });
 
 /** Two faces are the same picture if every number in them agrees. */
@@ -391,4 +421,205 @@ test("🔴 a face turned far enough takes an eye round the back", () => {
   assert.ok(!frame.leftVisible || !frame.rightVisible, "both eyes survived a 88-degree turn");
   const flat = drawFace(DEFAULT_AVATAR.surface, { ...face, head: { x: 0, y: 0, z: 0 } });
   assert.ok(flat.leftVisible && flat.rightVisible, "a face pointing at the viewer lost an eye");
+});
+
+// ── One engine, doing what the other one used to do ──────────────────────────────
+//
+// Owner 2026-08-25: "i need one shared layer and engine". Six of the ten routines change
+// the BODY, which is the part the old engine did and this one could not. These are the
+// guards on the four knobs that closed that gap.
+
+/** Widest horizontal span of a path between two heights, as a fraction of its own box. */
+function widthBetween(d: string, from: number, to: number): number {
+  const n = (d.match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i + 1 < n.length; i += 2) pts.push([n[i]!, n[i + 1]!]);
+  const ys = pts.map((p) => p[1]);
+  const top = Math.min(...ys);
+  const span = Math.max(...ys) - top;
+  const band = pts.filter((p) => p[1] >= top + span * from && p[1] <= top + span * to).map((p) => p[0]);
+  return band.length < 2 ? 0 : Math.max(...band) - Math.min(...band);
+}
+
+test("🔴 a bent body still knows where its own skin is", () => {
+  // The round trip the eyes depend on: every knob is applied when the body is drawn and
+  // undone when the body is asked where its front is. Get the order wrong in either
+  // direction and the two disagree — the outline says one thing, the face is painted at a
+  // depth that belongs to a different body, and on a narrow body the eye leaves it
+  // altogether. Checked by walking the drawn skin and asking about the point that is there.
+  const bent: Surface = {
+    ...DEFAULT_AVATAR.surface,
+    taper: -0.22,
+    straight: 0.5,
+    facets: 6,
+    facetAmount: 0.8,
+  };
+  let worst = 0;
+  for (let i = 1; i < 12; i++) {
+    for (let j = 1; j < 12; j++) {
+      const lat = -Math.PI / 2 + (i / 12) * Math.PI;
+      // Only the front half: `frontOfSkin` answers about the near side by definition.
+      const lon = -Math.PI / 2 + (j / 12) * Math.PI;
+      const [x, y, z] = skinPoint(bent, lon, lat);
+      const back = frontOfSkin(bent, x, y);
+      worst = Math.max(worst, Math.abs(back.point[2] - z));
+    }
+  }
+  assert.ok(worst < 1.5, `the drawn skin and the painted skin disagree by ${worst.toFixed(2)} units`);
+});
+
+test("🔴 the plain body is byte-for-byte what it was before there were knobs", () => {
+  // The four knobs default to nothing, and every one of the ten bodies and twenty-three
+  // gaze patterns was authored before they existed. The sphere shortcut is the sharp edge:
+  // it draws a perfect circle whatever the body is doing, so it has to be refused the
+  // moment a knob is turned, and it has to still be taken when none is.
+  const plain = DEFAULT_AVATAR.surface;
+  assert.ok(isPlain(plain), "an untouched body is not plain");
+  assert.equal(facetScale(plain, 3, 4), 1);
+  assert.equal(bendScale(plain, 0.3), 1);
+  const face = FACE_BY_ID.get("smallAttentive")!;
+  const rested = drawFace(plain, { ...face, body: REST_BODY });
+  assert.equal(rested.body, drawFace(plain, face).body, "a body at rest is not the body it was");
+  // And a circle is what it draws: one arc pair, not a hull of seventy-three samples.
+  assert.ok(/^M[^A]*A/.test(rested.body), "the sphere shortcut was lost");
+  assert.ok(!isPlain({ ...plain, taper: 0.1 }), "a tapered body still claims to be plain");
+
+  // 🔴 AND THE SHORTCUT IS REFUSED THE MOMENT A KNOB IS TURNED — a SEPARATE claim, which
+  // nothing else here was making. Every routine that bends the body also squeezes its
+  // width, and unequal width and height already send the drawing down the sampled path; so
+  // a body that keeps a ball's proportions and turns only one knob is the single case where
+  // a stale shortcut survives, and it draws a flawless circle while the engine believes it
+  // has drawn a hexagon. Found by deleting the guard and watching every other test pass.
+  //
+  // 🔴 AND ASKED THROUGH A POSE, NOT THROUGH A SURFACE. The knobs belong to what the
+  // character is DOING, so `drawFace` takes them off the pose and overwrites whatever the
+  // body carried — which means a test that sets them on the surface tests nothing at all,
+  // silently. This one made that mistake first.
+  const hexed = drawFace(plain, { ...face, body: { ...REST_BODY, facets: 6, facetAmount: 1 } });
+  assert.ok(!/^M[^A]*A/.test(hexed.body), "a faceted body took the circle shortcut");
+  assert.ok(hexed.body.length > 400, "a faceted body was not sampled");
+});
+
+test("🔴 the egg is narrow END UP and the exclamation mark is thick END UP", () => {
+  // Both are one number, both had it the wrong way round first time, and neither is
+  // catchable by anything except looking: the engine builds the solid with its own axis
+  // running downward, so the sign in body terms is the opposite of the sign on screen. The
+  // first pass drew an egg standing on its point and a "!" shaped like a traffic cone.
+  const egg = ANIMATION_BY_ID.get("egg")!;
+  const eggBody = avatarFrameAt(egg.id, animationDuration(egg) * 0.8, DEFAULT_AVATAR)!.body;
+  assert.ok(
+    widthBetween(eggBody, 0.1, 0.35) < widthBetween(eggBody, 0.65, 0.9) * 0.92,
+    "the egg is not narrower at the top",
+  );
+
+  const bar = ANIMATION_BY_ID.get("exclaim")!;
+  const barBody = avatarFrameAt(bar.id, animationDuration(bar) * 0.8, DEFAULT_AVATAR)!.body;
+  assert.ok(
+    widthBetween(barBody, 0.1, 0.35) > widthBetween(barBody, 0.65, 0.9) * 1.15,
+    "the exclamation mark is not thicker at the top",
+  );
+  // And it is the bar the reference measured: 0.264 wide over 0.842 tall, so 3.2 to 1.
+  const b = box(barBody);
+  const ratio = b.h / b.w;
+  assert.ok(ratio > 2.7 && ratio < 3.7, `the bar is ${ratio.toFixed(1)}:1 against the reference's 3.2:1`);
+});
+
+test("🔴 a hexagon has sides, and a hexagon halfway is halfway", () => {
+  // The first attempt used a single cosine, which has the right widest and narrowest radii
+  // and still draws a six-lobed blob, because a cosine bulges where a polygon has a
+  // straight edge. This asserts the DEPTH, which that version also passed — and the
+  // straightness, which it did not.
+  const sharp = { ...DEFAULT_AVATAR.surface, facets: 6, facetAmount: 1 };
+  const at = (deg: number) => facetScale(sharp, Math.cos(deg * (Math.PI / 180)), Math.sin(deg * (Math.PI / 180)));
+  const vertex = at(0);
+  const middle = at(30);
+  assert.ok(Math.abs(vertex - 1) < 0.01, `a vertex should be the full radius, got ${vertex}`);
+  assert.ok(Math.abs(middle / vertex - 0.892 / 1.023) < 0.02, `the sides are ${middle / vertex} deep`);
+  // The side is STRAIGHT, which is the part a cosine gets wrong. A third of the way from a
+  // vertex to the middle of a side, a real hexagon has come down to cos(30)/cos(20) of its
+  // radius; a cosine of the same depth has barely moved. This has to be nearer the polygon.
+  const along = at(10) / vertex;
+  const polygon = Math.cos(Math.PI / 6) / Math.cos(20 * (Math.PI / 180));
+  const cosine = (1 + 0.0684 * Math.cos(60 * (Math.PI / 180))) / (1 + 0.0684);
+  assert.ok(
+    Math.abs(along - polygon) < Math.abs(along - cosine),
+    `the side bulges: ${along.toFixed(3)}, against ${polygon.toFixed(3)} straight and ${cosine.toFixed(3)} for a cosine`,
+  );
+
+  // Half strength is halfway to it, so a body GROWS a hexagon rather than swapping to one —
+  // which is what lets an animation morph into this shape instead of cutting.
+  const full = at(30);
+  const half = facetScale({ ...sharp, facetAmount: 0.5 }, Math.cos(Math.PI / 6), Math.sin(Math.PI / 6));
+  assert.ok(Math.abs(half - (1 + (full - 1) / 2)) < 1e-9, `half a hexagon is ${half}, not halfway to ${full}`);
+});
+
+test("🔴 decor blends by index, so a dot grows rather than appearing", () => {
+  const bare = FACE_BY_ID.get("smallAttentive")!;
+  const three = FACE_BY_ID.get("think0")!;
+  assert.ok((three.dots?.length ?? 0) > 0, "the pause for thought lost its dots");
+  const half = blendFaces(bare, three, 0.5);
+  assert.equal(half.dots?.length, three.dots!.length);
+  for (let i = 0; i < half.dots!.length; i++) {
+    const to = three.dots![i]!;
+    assert.ok(half.dots![i]!.r > 0 && half.dots![i]!.r < to.r, "a dot did not grow into place");
+  }
+  // And the body travels with them rather than cutting to its new size.
+  assert.ok(half.body!.scale > three.body!.scale && half.body!.scale < 1, "the body cut instead of shrinking");
+});
+
+test("🔴 sparks are addressed from the start of the loop, not from the clock", () => {
+  // They last two thirds of a second inside a routine that repeats every two and a half,
+  // so reading the never-restarting clock would have fired the shower once, at start-up,
+  // and never again. Same instant of the loop, same shower — one loop later.
+  const burst = ANIMATION_BY_ID.get("burst")!;
+  const total = animationDuration(burst);
+  const first = playedFaceAt("burst", 300)!.face.dots ?? [];
+  const later = playedFaceAt("burst", total * 4 + 300)!.face.dots ?? [];
+  assert.ok(first.length > 0, "the scatter never scattered");
+  assert.deepEqual(later, first);
+  // They are behind the body, which is what makes it read as gathering rather than blowing up.
+  assert.ok(first.every((d) => d.behind), "the sparks flew over the body");
+  // And a plan at no strength is no dots at all, which is what makes the plan blendable.
+  assert.deepEqual(sparkDots({ ...FACE_BY_ID.get("burstIn")!.sparks!, amount: 0 }, 300), []);
+});
+
+test("🔴 a routine with no face draws no eyes, and says so", () => {
+  for (const id of ["thinking", "exclaim", "sleep"]) {
+    const a = ANIMATION_BY_ID.get(id)!;
+    const f = avatarFrameAt(id, animationDuration(a) * 0.6, DEFAULT_AVATAR)!;
+    assert.equal(f.eyeAlpha, 0, `${id} kept its face`);
+    assert.equal(f.left, "", `${id} drew an eye anyway`);
+    assert.equal(f.right, "", `${id} drew an eye anyway`);
+  }
+});
+
+/**
+ * The circles in a decor path.
+ *
+ * 🔴 NOT `box()`. A dot is two elliptical arcs, and an SVG arc carries seven numbers of
+ * which only the last two are a point — so reading the string as a list of coordinate pairs
+ * turns the radii and the sweep flags into positions and reports a dot the size of the whole
+ * drawing. That is exactly what this test measured on its first run, and the number looked
+ * plausible enough to argue with.
+ */
+function circles(d: string): Array<{ x: number; y: number; r: number }> {
+  return [...d.matchAll(/M(-?[\d.]+) (-?[\d.]+)A([\d.]+)/g)].map((m) => ({
+    x: Number(m[1]) + Number(m[3]),
+    y: Number(m[2]),
+    r: Number(m[3]),
+  }));
+}
+
+test("🔴 the badge sits outside the body, with the page showing between", () => {
+  const f = avatarFrameAt("notify", 2000, DEFAULT_AVATAR)!;
+  assert.ok(f.notch, "the notification lost its notch");
+  const found = circles(f.dots);
+  assert.equal(found.length, 1, "the notification lost its badge");
+  const badge = { cx: found[0]!.x, cy: found[0]!.y, w: found[0]!.r * 2 };
+  // The bite is concentric with the badge and bigger than it: that ring of page is the
+  // whole reason the badge reads as a badge and not as a spot painted on the character.
+  assert.ok(Math.abs(f.notch!.x - badge.cx) < 1 && Math.abs(f.notch!.y - badge.cy) < 1, "the bite missed the badge");
+  assert.ok(f.notch!.r > badge.w / 2, "the bite is smaller than the badge it is meant to separate");
+  // Upper right, on the rim.
+  assert.ok(badge.cx > 60 && badge.cy < -40, `the badge is at ${badge.cx}, ${badge.cy}`);
 });

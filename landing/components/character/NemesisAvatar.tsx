@@ -1,3 +1,4 @@
+// 🔴 COPIED FROM apps/web — DO NOT EDIT HERE. Run `pnpm --filter @pharmaorb/web character:sync`.
 "use client";
 
 // The character on screen. One component, every surface.
@@ -13,7 +14,7 @@
 // frame is written straight onto them through refs. Nothing here changes an element's size
 // or position in the document, so none of it touches layout.
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 
 import {
   ANIMATION_BY_ID,
@@ -21,6 +22,7 @@ import {
   TRACK_PITCH,
   TRACK_YAW,
   VIEW_BOX,
+  VIEW_SIZE,
   animationDuration,
   avatarFrameAt,
   createPlayhead,
@@ -95,6 +97,11 @@ export function NemesisAvatar({
   const bodyRef = useRef<SVGPathElement | null>(null);
   const leftRef = useRef<SVGPathElement | null>(null);
   const rightRef = useRef<SVGPathElement | null>(null);
+  const frontRef = useRef<SVGPathElement | null>(null);
+  const backRef = useRef<SVGPathElement | null>(null);
+  const notchRef = useRef<SVGCircleElement | null>(null);
+  const maskBodyRef = useRef<SVGPathElement | null>(null);
+  const maskId = `apv-notch-${useId()}`;
 
   // Read inside the frame loop rather than closed over, so changing an animation or a
   // colour does not tear down and restart the clock.
@@ -118,11 +125,32 @@ export function NemesisAvatar({
     const paint = (f: AvatarFrame | null) => {
       if (!f) return;
       bodyRef.current?.setAttribute("d", f.body);
+      // The mask carries the same body path, so the notch bites the shape that is actually
+      // on screen rather than one a frame behind it.
+      maskBodyRef.current?.setAttribute("d", f.body);
       // Hidden by emptying the path rather than by an opacity or a `display`: an eye that
       // has gone round the back has no geometry, and writing nothing is both the cheapest
       // way to say that and the one that cannot half-apply.
       leftRef.current?.setAttribute("d", f.leftVisible ? f.left : "");
       rightRef.current?.setAttribute("d", f.rightVisible ? f.right : "");
+      if (f.eyeAlpha < 1) {
+        leftRef.current?.setAttribute("opacity", String(f.eyeAlpha));
+        rightRef.current?.setAttribute("opacity", String(f.eyeAlpha));
+      } else {
+        leftRef.current?.removeAttribute("opacity");
+        rightRef.current?.removeAttribute("opacity");
+      }
+      frontRef.current?.setAttribute("d", f.dots);
+      backRef.current?.setAttribute("d", f.dotsBehind);
+      // 🔴 A RADIUS OF ZERO, NOT A `display: none`. The notch is in the mask, and a masked
+      // element whose geometry is removed and restored makes the browser rebuild the mask;
+      // a circle of no radius costs nothing and keeps the mask a constant shape.
+      const notch = notchRef.current;
+      if (notch) {
+        notch.setAttribute("cx", String(f.notch?.x ?? 0));
+        notch.setAttribute("cy", String(f.notch?.y ?? 0));
+        notch.setAttribute("r", String(f.notch?.r ?? 0));
+      }
     };
 
     const reduced =
@@ -268,9 +296,26 @@ export function NemesisAvatar({
       }
       focusable="false"
     >
-      <path ref={bodyRef} d="" fill={ink ?? avatar.ink} />
+      <defs>
+        {/* The body is drawn through a mask so a routine can take a bite out of it — which
+            is what puts a ring of page between the character and a badge sitting on its
+            edge, and so makes the badge read as outside the character rather than painted
+            on it. Empty for forty-eight of the forty-nine animations. */}
+        <mask id={maskId} maskUnits="userSpaceOnUse" x={-VIEW_SIZE / 2} y={-VIEW_SIZE / 2} width={VIEW_SIZE} height={VIEW_SIZE}>
+          <path ref={maskBodyRef} d="" fill="#fff" />
+          <circle ref={notchRef} cx={0} cy={0} r={0} fill="#000" />
+        </mask>
+      </defs>
+      {/* Decor that passes BEHIND the body — the sparks of a scatter, which are swallowed
+          by it rather than flying over it. Drawn first, so the body covers them. */}
+      <path ref={backRef} d="" fill={ink ?? avatar.ink} />
+      <path ref={bodyRef} d="" fill={ink ?? avatar.ink} mask={`url(#${maskId})`} />
       <path ref={leftRef} d="" fill={eye ?? avatar.eye} />
       <path ref={rightRef} d="" fill={eye ?? avatar.eye} />
+      {/* 🔴 THE SAME INK AS THE BODY. The reference paints its notification badge a fixed
+          blue; here the character IS the learner's accent, and a second colour they did not
+          choose arguing with the one they did is exactly what that rule exists to stop. */}
+      <path ref={frontRef} d="" fill={ink ?? avatar.ink} />
     </svg>
   );
 }

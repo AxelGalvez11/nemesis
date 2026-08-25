@@ -1,3 +1,4 @@
+// 🔴 COPIED FROM apps/web — DO NOT EDIT HERE. Run `pnpm --filter @pharmaorb/web character:sync`.
 // One pose to one picture.
 //
 // The whole pipeline is: build the eye flat → lay it on the skin → turn the body → push it
@@ -9,6 +10,7 @@ import {
   RAD,
   faceToSkin,
   frontOfSkin,
+  isPlain,
   project,
   quatFromTurn,
   rotate,
@@ -16,10 +18,56 @@ import {
   type Quat,
   type Vec3,
 } from "./space";
-import type { AvatarFrame, EyeSpec, Face, Surface } from "./types";
+import type { AvatarFrame, BodyPose, EyeSpec, Face, Surface } from "./types";
+
+/** Where the body sits when a routine has not moved it. */
+export const REST_BODY: BodyPose = {
+  scale: 1,
+  x: 0,
+  y: 0,
+  stretchX: 1,
+  stretchY: 1,
+  taper: 0,
+  straight: 0,
+  facets: 0,
+  facetAmount: 0,
+};
+
+/** The avatar's own body, with a routine's knobs turned on it. */
+export function posedSurface(base: Surface, pose: BodyPose = REST_BODY): Surface {
+  return {
+    ...base,
+    width: base.width * pose.scale * pose.stretchX,
+    // Depth follows the width: a body squeezed narrow is squeezed all the way round, and
+    // holding the depth would turn it into a plate that reads as flat the moment it turns.
+    depth: base.depth * pose.scale * pose.stretchX,
+    height: base.height * pose.scale * pose.stretchY,
+    taper: pose.taper,
+    straight: pose.straight,
+    facets: pose.facets,
+    facetAmount: pose.facetAmount,
+  };
+}
 
 /** Two decimals is under a device pixel at every size this is drawn at. */
 const n = (v: number): string => (Math.round(v * 100) / 100).toString();
+
+const NO_DRIFT = { x: 0, y: 0 };
+
+/**
+ * Moves a drawn point.
+ *
+ * 🔴 AFTER THE LENS, NOT BEFORE IT, SO THE DECOR TRAVELS WITH THE BODY. A routine that
+ * moves the character moves its decor too — the two outer dots of a pause for thought sit
+ * a fixed distance from the one the body has become. Sliding the body in space and the
+ * dots in the picture would drift them apart by however much the perspective divide
+ * differed, which is small, visible, and impossible to author around.
+ */
+const shift = ([x, y, z]: Vec3, by: { readonly x: number; readonly y: number }): Vec3 => [
+  x + by.x,
+  y + by.y,
+  z,
+];
 
 const polygon = (pts: readonly Vec3[]): string =>
   pts.length === 0 ? "" : `M${n(pts[0]![0])} ${n(pts[0]![1])}${pts.slice(1).map((p) => `L${n(p[0])} ${n(p[1])}`).join("")}Z`;
@@ -95,6 +143,17 @@ export function drawEye(
   spacing: number,
   blink: number,
   drift: { readonly x: number; readonly y: number },
+  /**
+   * How far the body has shrunk, and where it has moved to.
+   *
+   * 🔴 THE FACE SHRINKS WITH THE BODY, BUT ONLY UNIFORMLY. A routine that stretches the
+   * body tall and narrow authors its own eye sizes and spacing — the reference does exactly
+   * that for its egg and its hexagon — so squeezing the face by the stretch as well would
+   * apply that narrowing twice. The uniform part is different: nothing about a body at a
+   * sixth of its size makes sense with a full-size face painted on it.
+   */
+  scale = 1,
+  offset: { readonly x: number; readonly y: number } = NO_DRIFT,
 ): EyeDrawing {
   const height = SHUT_HEIGHT + (spec.height - SHUT_HEIGHT) * blink;
   const cx = (side * spacing) / 2 + spec.x + drift.x;
@@ -109,8 +168,8 @@ export function drawEye(
     const rx = lx * cos - ly * sin;
     const ry = lx * sin + ly * cos;
     const on = faceToSkin(cx + rx, cy + ry);
-    const skin = frontOfSkin(surface, on.x, on.y);
-    points.push(project(rotate(orientation, skin.point)));
+    const skin = frontOfSkin(surface, on.x * scale, on.y * scale);
+    points.push(shift(project(rotate(orientation, skin.point)), offset));
     facing += rotate(orientation, skin.normal)[2];
   }
   // Summed over the whole outline rather than tested at the centre: an eye straddling the
@@ -131,13 +190,26 @@ const LON_STEPS = 73;
  * these bodies because every one of them is convex, and a convex hull of the projected
  * skin IS the silhouette.
  */
-export function bodyPath(surface: Surface, orientation: Quat): string {
-  if (surface.type === "sphere" && closeEnough(surface.width, surface.height) && closeEnough(surface.height, surface.depth)) {
+export function bodyPath(
+  surface: Surface,
+  orientation: Quat,
+  offset: { readonly x: number; readonly y: number } = NO_DRIFT,
+): string {
+  if (
+    surface.type === "sphere" &&
+    // 🔴 AND NO KNOB TURNED. A ball's outline is a circle at every angle, which is why this
+    // shortcut exists; a ball pulled into an egg or pushed toward a hexagon is not a ball,
+    // and taking the shortcut anyway draws a perfect circle for every routine that changes
+    // the body — silently, because a circle is exactly what an untouched body looks like.
+    isPlain(surface) &&
+    closeEnough(surface.width, surface.height) &&
+    closeEnough(surface.height, surface.depth)
+  ) {
     const r = surface.width / 2;
     // The tangent-cone radius: where a ray from the eye grazes the ball. Bigger than the
     // ball's own radius, because the near side is closer to the lens than the centre is.
     const projected = (r * FOCAL) / Math.sqrt(Math.max(1e-6, FOCAL * FOCAL - r * r));
-    return circlePath(projected);
+    return circlePath(projected, offset);
   }
 
   const flat: Vec3[] = [];
@@ -145,17 +217,23 @@ export function bodyPath(surface: Surface, orientation: Quat): string {
     const lat = -Math.PI / 2 + (i / (LAT_STEPS - 1)) * Math.PI;
     for (let j = 0; j < LON_STEPS; j++) {
       const lon = -Math.PI + (j / (LON_STEPS - 1)) * Math.PI * 2;
-      flat.push(project(rotate(orientation, skinPoint(surface, lon, lat))));
+      flat.push(shift(project(rotate(orientation, skinPoint(surface, lon, lat))), offset));
     }
   }
   return smoothClosed(densify(convexHull(flat)));
 }
 
+/** A dot: the one decor primitive, and the same circle the body shortcut draws. */
+export function dotPath(x: number, y: number, r: number): string {
+  return circlePath(r, { x, y });
+}
+
 const closeEnough = (a: number, b: number): boolean => Math.abs(a - b) < 0.5;
 
-/** A circle as four arcs. Written out rather than using `<circle>` so the body is one path. */
-function circlePath(r: number): string {
-  return `M${n(-r)} 0A${n(r)} ${n(r)} 0 1 0 ${n(r)} 0A${n(r)} ${n(r)} 0 1 0 ${n(-r)} 0Z`;
+/** A circle as two arcs. Written out rather than using `<circle>` so the body is one path. */
+function circlePath(r: number, at: { readonly x: number; readonly y: number } = NO_DRIFT): string {
+  const { x, y } = at;
+  return `M${n(x - r)} ${n(y)}A${n(r)} ${n(r)} 0 1 0 ${n(x + r)} ${n(y)}A${n(r)} ${n(r)} 0 1 0 ${n(x - r)} ${n(y)}Z`;
 }
 
 /** Andrew's monotone chain. The points are already flat, so z is only carried along. */
@@ -231,8 +309,6 @@ export interface DrawOptions {
   readonly turn?: { readonly x: number; readonly y: number };
 }
 
-const NO_DRIFT = { x: 0, y: 0 };
-
 export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): AvatarFrame {
   const head = opts.turn
     ? { x: face.head.x + opts.turn.x, y: face.head.y + opts.turn.y, z: face.head.z }
@@ -240,16 +316,38 @@ export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): 
   const orientation = quatFromTurn(head);
   const blink = Math.min(1, Math.max(0, opts.blink ?? 1));
   const drift = opts.eyeDrift ?? NO_DRIFT;
-  const left = drawEye(surface, orientation, face.left, -1, face.spacing, blink, drift);
-  const right = drawEye(surface, orientation, face.right, 1, face.spacing, blink, drift);
+  const pose = face.body ?? REST_BODY;
+  const body = posedSurface(surface, pose);
+  const eyeAlpha = Math.min(1, Math.max(0, face.eyeAlpha ?? 1));
+
+  const left = drawEye(body, orientation, face.left, -1, face.spacing, blink, drift, pose.scale, pose);
+  const right = drawEye(body, orientation, face.right, 1, face.spacing, blink, drift, pose.scale, pose);
+
+  // All the front decor in ONE path string, and all the behind decor in another. The
+  // component writes `d` onto elements it made once; handing it a list whose length changes
+  // would mean creating and destroying nodes sixty times a second instead.
+  const dots = face.dots ?? EMPTY_DOTS;
+  const inFront: string[] = [];
+  const behind: string[] = [];
+  for (const dot of dots) {
+    if (dot.opacity <= 0.01 || dot.r <= 0.05) continue;
+    (dot.behind ? behind : inFront).push(dotPath(dot.x + pose.x, dot.y + pose.y, dot.r));
+  }
+
   return {
-    body: bodyPath(surface, orientation),
-    left: left.d,
-    right: right.d,
-    leftVisible: left.visible,
-    rightVisible: right.visible,
+    body: bodyPath(body, orientation, pose),
+    left: eyeAlpha > 0.01 ? left.d : "",
+    right: eyeAlpha > 0.01 ? right.d : "",
+    leftVisible: eyeAlpha > 0.01 && left.visible,
+    rightVisible: eyeAlpha > 0.01 && right.visible,
+    eyeAlpha,
+    dots: inFront.join(""),
+    dotsBehind: behind.join(""),
+    notch: face.notch ? { x: face.notch.x + pose.x, y: face.notch.y + pose.y, r: face.notch.r } : null,
   };
 }
+
+const EMPTY_DOTS: readonly never[] = [];
 
 /**
  * The box every avatar is drawn into.

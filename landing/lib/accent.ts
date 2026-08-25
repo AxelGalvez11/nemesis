@@ -1,12 +1,20 @@
 // The accent palette, as pure data.
 //
-// 🔴 A COPY OF apps/web/lib/accent.ts, TRIMMED. This site has its own workspace and Vercel
-// deploys `landing/` alone, so it cannot import from the app — the same reason the avatar
-// engine is copied beside it. What is dropped is everything only a picker needs: there is
-// no settings screen here and no stored preference, so there is no storage key, no
-// pre-paint script and no list of properties to clear. What is KEPT is the part the two
-// have to agree on — the twelve hues and the rule for making one of them legible on a
-// surface. If the palette moves in the app, copy this again.
+// Split out of components/theme-provider.tsx so it can be tested: the test runner only
+// picks up lib/*.test.ts and components/workspace/*/*.test.ts, and a "use client" React
+// module is the wrong place for a colour table anyway.
+//
+// TWELVE accents (owner 2026-08-25, with a palette screenshot): black, brown, red,
+// orange, yellow, green, teal, blue, purple, pink, grey, cream — in that order, which is
+// the order they appear in the picker.
+//
+// 🔴 "default" IS THE GREY, AND IT IS NOT IN `ACCENT_COLORS`. Choosing it REMOVES the
+// runtime override so the CSS in app/styles/desktop-ui.css applies, which is the only way
+// one choice can be a different colour in light and dark themes. Its swatch is the grey
+// from the screenshot; what it applies is the theme's own neutral graphite, which is that
+// grey adapted to the ground it sits on. Adding a separate literal grey beside it would
+// put two near-identical dots in the picker that behave differently — which is worse than
+// either alone.
 
 export type AccentPreference =
   | "black"
@@ -205,4 +213,84 @@ function relativeLuminance(hex: string): number {
     return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
   };
   return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+}
+
+/** Where the chosen accent is stored. Read by the provider AND by the pre-paint script
+ *  below, which is the whole reason it is exported rather than private to
+ *  components/theme-provider.tsx — two spellings of one key is one silent bug. */
+export const ACCENT_STORAGE_KEY = "nemesis.web.accent";
+
+/**
+ * The custom properties an accent writes onto `:root`.
+ *
+ * 🔴 IT WRITES BOTH THEMES AND LETS THE STYLESHEET CHOOSE. The obvious shape — resolve the
+ * theme here and write one value — would make this function, the pre-paint script and the
+ * theme toggle all need to agree about which theme is current, at three different moments
+ * in the page's life. Instead both renderings go on as `--accent-*-light` and
+ * `--accent-*-dark`, and desktop-ui.css maps them to `--ui-action` inside the blocks that
+ * already own light and dark. The stylesheet was always the authority on which theme is
+ * on; this keeps it that way, and it means the pre-paint script never has to read a theme.
+ *
+ * 🔴 ONE DEFINITION, TWO CALLERS. `applyAccent` in components/theme-provider.tsx runs after
+ * hydration; `accentPrePaintScript` below runs before first paint. If they disagree the
+ * accent visibly changes colour a beat after the page appears, which is the bug this pair
+ * exists to stop. Neither one owns the list.
+ */
+export function accentProperties(accent: Exclude<AccentPreference, "default">): Record<string, string> {
+  const hue = ACCENT_COLORS[accent];
+  const light = accentFill(hue, false);
+  const dark = accentFill(hue, true);
+  return {
+    // The hue as chosen. What the character wears and what the swatch shows.
+    "--accent-hue": hue,
+    "--accent-fill-light": light,
+    "--accent-fill-dark": dark,
+    "--accent-glyph-light": accentGlyph(light),
+    "--accent-glyph-dark": accentGlyph(dark),
+  };
+}
+
+/** Every property an accent can set — what "Default" has to REMOVE to hand the CSS back. */
+export const ACCENT_PROPERTIES: readonly string[] = Object.keys(accentProperties("blue"));
+
+/**
+ * The accent, resolved before the first pixel is painted.
+ *
+ * 🔴🔴 THIS IS A BUG FIX, NOT AN OPTIMISATION (owner 2026-08-21: "there is a discrepancy
+ * between the color chosen in settings and the chat composer send button"). The accent was
+ * applied ONLY from `ThemeProvider`'s mount effect, which runs after hydration — so every
+ * load painted the send button, the focus rings and the whole chrome tint in the DEFAULT
+ * accent first, then swapped them to the chosen one once React came up. On the Canvas,
+ * which is a heavy client component, that window is long enough to read as "the setting did
+ * not take": you pick Blue and the most prominent control in the product is still green.
+ *
+ * The theme and the dark tone already had this treatment — see `app/layout.tsx` — and the
+ * accent was simply left out of it. It is the same class of flash and it gets the same fix.
+ *
+ * 🔴 THE TABLE IS SERIALISED FROM `ACCENT_COLORS`, NEVER RETYPED. Hand-writing twelve hexes
+ * into a template string is how the picker and the pre-paint drift apart on the day a
+ * thirteenth accent ships, and the drift would show up as a colour that flickers on load —
+ * the hardest kind of bug to catch, because it is correct one frame later.
+ *
+ * 🔴 IT WRITES INLINE PROPERTIES, THE SAME ONES `applyAccent` WRITES. Not a class, not an
+ * attribute: inline style is what beats `@layer base`, and the provider has to be able to
+ * clear these again when someone picks Default.
+ */
+export function accentPrePaintScript(): string {
+  const table: Record<string, Record<string, string>> = {};
+  for (const id of ACCENT_PREFERENCES) {
+    if (id === "default") continue;
+    table[id] = accentProperties(id);
+  }
+  return [
+    "(function(){try{",
+    `var v=localStorage.getItem(${JSON.stringify(ACCENT_STORAGE_KEY)});`,
+    // Same normalisation the provider does — retired ids read as Default.
+    'if(v==="crimson"||v==="grey")v="default";',
+    `var t=${JSON.stringify(table)}[v];`,
+    "if(!t)return;",
+    "var s=document.documentElement.style;",
+    "for(var k in t)s.setProperty(k,t[k]);",
+    "}catch(e){}})();",
+  ].join("");
 }

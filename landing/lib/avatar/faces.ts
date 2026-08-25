@@ -1,3 +1,4 @@
+// 🔴 COPIED FROM apps/web — DO NOT EDIT HERE. Run `pnpm --filter @pharmaorb/web character:sync`.
 // The faces, in the reference's own units. Generated — see scripts/avatar-import.mts.
 //
 // 🔴 THESE ARE RAW NUMBERS ON A 120-RADIUS FACE, NOT MULTIPLIERS. The first attempt at

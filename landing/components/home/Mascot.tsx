@@ -20,17 +20,17 @@ import { ANIMATION_BY_ID, animationDuration } from "@/lib/avatar";
  *
  * ── WHAT IT PLAYS, AND WHO CHOSE IT ───────────────────────────────────────────
  *
- * 🔴 THE LIST BELOW IS THE OWNER'S, MARKED UP ON THE BLOUB GALLERY ITSELF (2026-08-24).
- * He went through the sheet tile by tile and left all sixteen resting FACES unmarked while
- * crossing out five of the animations. Those sixteen are what this list is: the same
- * sixteen moods, in his reading order, now that each one is a full animation instead of a
- * still face. Nothing was added and nothing was dropped.
+ * 🔴 THE LIST BELOW IS THE OWNER'S, MARKED UP ON THE GALLERY ITSELF (2026-08-24). He went
+ * through the sheet tile by tile and left all sixteen resting FACES unmarked. These are
+ * those sixteen, in his reading order.
  *
- * The five he crossed out — `alert`, `exclaim`, `play`, `orbit`, `comet` — plus `swirl`
- * and `burst`, which he named separately ("I don't want any rainbow swirls or animations
- * from the GitHub that we used"), were all decor: rings, particles, badges and bar shapes
- * bolted onto the body. That whole class is gone rather than curated: every animation in
- * this engine is a face on a body, so there is nothing left to cross out.
+ * 🔴 AND THEY ARE THE ONES THAT LOOK LIKE THEIR NAMES NOW (owner 2026-08-25: "the bible
+ * avatar has expressions that dont match descriptions: the bloub actually matches them").
+ * Until then this list named the reference's own animations, which are labelled for where
+ * the eyes GO rather than for what the face MEANS — its `angry` has the tops of the eyes
+ * diverging, which by the same geometry is the shape of sadness. `lib/avatar/expressions.ts`
+ * holds sixteen drawn from the feeling backwards, and they own the plain words; what used
+ * to answer to them is prefixed `gaze-` and is still there.
  *
  * ── THE RHYTHM: REST, BEAT, REST, BEAT ────────────────────────────────────────
  *
@@ -43,22 +43,22 @@ import { ANIMATION_BY_ID, animationDuration } from "@/lib/avatar";
 
 /** The sixteen the owner kept, in the gallery's reading order. */
 const MOODS: readonly string[] = [
-  "idle", // Neutral
-  "listening", // Attentive
-  "surprised", // Surprised
-  "excited", // Excited
-  "happy", // Happy
-  "laughing", // Laughing
-  "angry", // Angry
-  "sad", // Sad
-  "scared", // Scared
-  "suspicious", // Suspicious
-  "confused", // Confused
-  "curious", // Curious
-  "proud", // Proud
-  "shy", // Shy
-  "bored", // Unimpressed
-  "drowsy", // Sleepy
+  "neutral",
+  "attentive",
+  "surprised",
+  "excited",
+  "happy",
+  "laughing",
+  "angry",
+  "sad",
+  "scared",
+  "suspicious",
+  "confused",
+  "curious",
+  "proud",
+  "shy",
+  "unimpressed",
+  "sleepy",
 ];
 
 /** What it returns to between moods. */

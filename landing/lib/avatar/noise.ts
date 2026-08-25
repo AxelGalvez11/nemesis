@@ -1,3 +1,4 @@
+// 🔴 COPIED FROM apps/web — DO NOT EDIT HERE. Run `pnpm --filter @pharmaorb/web character:sync`.
 // Deterministic pseudo-randomness.
 //
 // EVERYTHING HERE IS A FUNCTION OF ITS ARGUMENTS AND NOTHING ELSE. No `Math.random`, no

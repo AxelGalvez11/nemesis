@@ -74,7 +74,14 @@ export const FACE_BY_ID: ReadonlyMap<string, Face> = new Map(FACES.map((f) => [f
 
 const EASE = { smooth: "smooth", snappy: "snappy", bouncy: "bouncy" };
 const anims = doc.sequences.map((s) => ({
-  id: key(s.semanticKey),
+  // 🔴 PREFIXED, BECAUSE THESE ARE NOT THE PRODUCT'S FEELINGS. Seventeen of the twenty-three
+  // are named for a feeling — `happy`, `sad`, `angry` — and the owner's verdict on 2026-08-25
+  // was that they do not look like it: they were measured off a video and labelled after the
+  // fact, so `angryRight` has the tops of its eyes diverging, which is the geometry of
+  // sadness. `lib/avatar/expressions.ts` holds the sixteen that do keep their promise, and
+  // it is those that own the plain words. What these are is gaze patterns; that is what they
+  // are now called.
+  id: `gaze-${key(s.semanticKey)}`,
   mode: s.playbackMode === "pingPong" ? "pingPong" : s.playbackMode === "once" ? "once" : "loop",
   steps: s.steps.map((st) => ({
     face: key(byId.get(st.expressionId).semanticKey),

@@ -1,3 +1,4 @@
+// 🔴 COPIED FROM apps/web — DO NOT EDIT HERE. Run `pnpm --filter @pharmaorb/web character:sync`.
 // The bodies. Generated — see scripts/avatar-import.mts.
 //
 // A body is a SOLID, described by its three half-extents and how square it is. The face is
