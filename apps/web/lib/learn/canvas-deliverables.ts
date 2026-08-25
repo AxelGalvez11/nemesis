@@ -27,6 +27,10 @@ import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 import { deckSystemPrompt, readDeckJson } from "../export/deck-plan";
 import { canvasFigures, figureMenu } from "./deck-figures";
 
+import { reportMarkdown, reportTitle } from "@/lib/research/report-markdown";
+import type { OnResearchStep } from "@/lib/research/research-model";
+import { runResearch } from "@/lib/research/run-research";
+
 import type { CanvasOutput, LearningCanvas } from "./canvas-model";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
 import { deckName } from "./deck-name";
@@ -35,7 +39,7 @@ import { readFigureSubject } from "./figure-subject";
 import { occlusionCards } from "./occlusion-from-labels";
 
 /** What the canvas can make today. Reports join when they have a real home. */
-export type DeliverableKind = "flashcards" | "note" | "slides";
+export type DeliverableKind = "flashcards" | "note" | "report" | "slides";
 
 export interface DeliverableResult {
   output: CanvasOutput;
@@ -433,4 +437,76 @@ export function readDeliverableAsk(text: string): DeliverableKind | null {
   if (match[1]) return "slides";
   if (match[2]) return "flashcards";
   return "note";
+}
+
+// ------------------------------------------------------------------ research
+
+/** Where research reports are filed. Their own folder rather than "Canvas outputs": a report is
+ *  something a learner comes back to and cites, not a by-product of one session. */
+export const RESEARCH_FOLDER = "Research";
+
+/**
+ * Read a request to go and RESEARCH something, and return what to research.
+ *
+ * 🔴 A SEPARATE PARSER FROM `readDeliverableAsk`, AND IT HAS TO BE. That one refuses any turn
+ * opening with how/why/what, because "how do I make a good presentation?" is a question about
+ * making rather than an instruction to make one. But a research request usually IS a question, and
+ * frequently opens with exactly those words: "why did the Roman Republic fall" is the request.
+ * Folding the two together would either break that guard or refuse the commonest research ask
+ * there is.
+ *
+ * So the signal here is an explicit research VERB, which a learner only reaches for when they mean
+ * it. A bare question is NOT a research ask: it goes to the ordinary turn and is answered at once,
+ * because spending five minutes and a dozen searches on somebody who wanted two lines is the same
+ * failure as ignoring them.
+ */
+export function readResearchAsk(text: string): string | null {
+  const said = text.trim();
+  // "how do I research X" is a question about researching, not an instruction to research.
+  if (/^(?:how|why|what|when|where|whether)\b[^?]{0,40}\bresearch\b/i.test(said)) return null;
+  const match =
+    /^(?:can you|could you|please|hey|nemesis)?[,\s]*(?:do|run|go)?\s*(?:a|an|some)?\s*(?:deep[\s-]?dive|deep research|research|look into|dig into|investigate|find out about)\b[:\s]+(.+)$/is.exec(
+      said,
+    );
+  const topic = match?.[1]?.trim().replace(/^(?:on|into|about|for)\s+/i, "").trim();
+  if (!topic || topic.length < 8) return null;
+  return topic.slice(0, 500);
+}
+
+/**
+ * Research a question on the live web and file the cited report in the library.
+ *
+ * The one deliverable that does not read the canvas. The others turn material the learner already
+ * has into another shape; this one goes and gets material they do not have, which is the whole
+ * reason it exists: the Learn lane never touches the web on its own, so a canvas with nothing on it
+ * has nothing to teach from.
+ */
+export async function makeReportDeliverable(
+  uid: string,
+  canvas: LearningCanvas,
+  question: string,
+  onStep?: OnResearchStep,
+): Promise<DeliverableResult | DeliverableFailure> {
+  const outcome = await runResearch(uid, question, { ...(onStep ? { onStep } : {}) });
+  if ("error" in outcome) return { error: outcome.error };
+
+  const title = reportTitle(outcome.question);
+  let saved: { path: string; title: string };
+  try {
+    saved = await writeLibraryNote({ content: reportMarkdown(outcome), folder: RESEARCH_FOLDER, title, userId: uid });
+  } catch {
+    return { error: "The research finished but I couldn't save it to your library." };
+  }
+
+  const assetId = await recordLedger(canvas.id, saved.title);
+  return {
+    output: {
+      ...(assetId ? { assetId } : {}),
+      createdAt: new Date().toISOString(),
+      id: newId(),
+      kind: "report",
+      notePath: saved.path,
+      title: saved.title,
+    },
+  };
 }

@@ -361,9 +361,11 @@ export function SourcesControl({
                           ? "Flashcard deck · click to review"
                           : output.kind === "note"
                             ? "Note · in your Library"
-                            : output.kind === "slides"
-                              ? "Slides · click to download .pptx"
-                              : output.kind}
+                            : output.kind === "report"
+                              ? "Research · cited, in your Library"
+                              : output.kind === "slides"
+                                ? "Slides · click to download .pptx"
+                                : output.kind}
                       </p>
                     </>
                   );
@@ -371,7 +373,12 @@ export function SourcesControl({
                   // 🔴 EVERY ROW OPENS THE REAL THING — the deck in the Library, the note in the
                   // library's reader. A list of made things that cannot be opened is the sources
                   // panel's old defect all over again.
-                  if (output.kind === "note" && output.notePath) {
+                  // 🔴 ANY OUTPUT THAT IS A NOTE OPENS AS ONE, matched on what it HAS rather than
+                  // on what it is called. Keyed to `kind === "note"` this silently broke the moment
+                  // a second note-shaped output existed: a research report carries a notePath and
+                  // would have fallen through to the plain div below, landing in the list as a row
+                  // that cannot be opened. That is the defect the comment further down names.
+                  if (output.notePath) {
                     return (
                       <a className={row} href={`/library/classic?note=${encodeURIComponent(output.notePath)}`} key={output.id}>
                         {body}
