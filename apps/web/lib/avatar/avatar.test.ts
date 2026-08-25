@@ -5,9 +5,11 @@ import { ANIMATIONS, ANIMATION_BY_ID } from "./animations";
 import { AVATARS, DEFAULT_AVATAR } from "./avatars";
 import { FACES, FACE_BY_ID } from "./faces";
 import {
+  HANDOVER_MS,
   animationDuration,
   blendFaces,
   blinkAt,
+  createPlayhead,
   cursorAt,
   ease,
   nearestAngle,
@@ -16,6 +18,7 @@ import {
 import { SHUT_HEIGHT, drawFace } from "./render";
 import { FOCAL, RADIUS, faceToSkin, project, quatFromTurn, rotate } from "./space";
 import { avatarFrameAt } from "./index";
+import type { Face } from "./types";
 
 /** The bounding box of every coordinate pair in a path. */
 const box = (d: string): { cx: number; cy: number; w: number; h: number } => {
@@ -287,6 +290,71 @@ test("reduced motion holds the authored face exactly, with no wander and no blin
   assert.equal(played.blink, 1);
   assert.deepEqual(played.eyeDrift, { x: 0, y: 0 });
 });
+
+// ── Handing over between animations ─────────────────────────────────────────────
+
+test("🔴 changing animation is a morph, not a cut", () => {
+  // Owner 2026-08-25: "the animations seem to cut abruptly". Steps INSIDE an animation
+  // always eased into each other; the seam BETWEEN two animations was a jump, because the
+  // clock restarted and the next frame was simply a different pose. This is the guard on
+  // the fix, and it is why the bookkeeping lives in the engine rather than in a `useRef`
+  // inside a requestAnimationFrame callback where nothing could reach it.
+  const head = createPlayhead("sleeping");
+  const before = head.at(4000, "sleeping")!.face;
+  // The instant of the change: still the old face, because no time has passed yet.
+  const atSwitch = head.at(4000, "excited")!.face;
+  assert.ok(near(atSwitch, before), "the handover jumped on its very first frame");
+
+  // Halfway through, it is between the two and equal to neither.
+  const mid = head.at(4000 + HANDOVER_MS / 2, "excited")!.face;
+  const target = playedFaceAt("excited", 4000 + HANDOVER_MS / 2)!.face;
+  assert.ok(!near(mid, before), "the handover never left the old face");
+  assert.ok(!near(mid, target), "the handover arrived instantly");
+
+  // And past the handover it is exactly the new animation, with nothing left over.
+  const after = head.at(4000 + HANDOVER_MS + 1, "excited")!.face;
+  const clean = playedFaceAt("excited", 4000 + HANDOVER_MS + 1)!.face;
+  assert.ok(near(after, clean), "the handover never finished");
+});
+
+test("🔴 a second change mid-handover starts from what is on screen", () => {
+  // Otherwise the character snaps to the first target it never reached, and a surface that
+  // changes state twice quickly — which is exactly what a busy app does — flinches harder
+  // than it did before the fix.
+  const head = createPlayhead("idle");
+  head.at(0, "idle");
+  head.at(100, "angry");
+  const partway = head.at(100 + HANDOVER_MS / 3, "angry")!.face;
+  const redirected = head.at(100 + HANDOVER_MS / 3, "sleeping")!.face;
+  assert.ok(near(redirected, partway), "the redirect jumped instead of continuing");
+});
+
+test("the clock is the caller's, so a playhead never restarts it", () => {
+  // The blink schedule is drawn from the same `ms`, so a playhead that reset time would
+  // also reset blinking — the bug that hid behind the cut.
+  const head = createPlayhead("idle");
+  head.at(0, "idle");
+  head.at(30_000, "thinking");
+  const late = head.at(60_000, "thinking")!;
+  assert.deepEqual(late.blink, playedFaceAt("thinking", 60_000)!.blink);
+});
+
+/** Two faces are the same picture if every number in them agrees. */
+function near(a: Face, b: Face): boolean {
+  const eye = (x: Face["left"], y: Face["left"]) =>
+    Math.abs(x.width - y.width) < 0.01 &&
+    Math.abs(x.height - y.height) < 0.01 &&
+    Math.abs(x.y - y.y) < 0.01 &&
+    Math.abs(x.angle - y.angle) < 0.01;
+  return (
+    Math.abs(a.head.x - b.head.x) < 0.01 &&
+    Math.abs(a.head.y - b.head.y) < 0.01 &&
+    Math.abs(a.head.z - b.head.z) < 0.01 &&
+    Math.abs(a.spacing - b.spacing) < 0.01 &&
+    eye(a.left, b.left) &&
+    eye(a.right, b.right)
+  );
+}
 
 test("🔴 tracking adds to the face's own turn rather than replacing it", () => {
   // 🔴 THE POINT IS THAT IT COMPOSES. Two faces that already look in different directions

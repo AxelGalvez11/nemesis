@@ -23,6 +23,8 @@ import {
   VIEW_BOX,
   animationDuration,
   avatarFrameAt,
+  createPlayhead,
+  drawFace,
   type Avatar,
   type AvatarFrame,
 } from "@/lib/avatar";
@@ -103,6 +105,8 @@ export function NemesisAvatar({
   const aim = useRef({ x: 0, y: 0, atX: 0, atY: 0, pointer: false });
   /** A poke in progress: the animation to play and when it started. */
   const poke = useRef<{ id: string; at: number } | null>(null);
+  /** One clock, any number of animations, morphing across every seam. See `createPlayhead`. */
+  const head = useRef(createPlayhead(animation));
 
   const fire = useCallback(() => {
     if (!onPoke) return;
@@ -166,7 +170,8 @@ export function NemesisAvatar({
       a.atX += (wantX - a.atX) * TRACK_EASE;
       a.atY += (wantY - a.atY) * TRACK_EASE;
 
-      let playing = state.animation;
+      // A poke outranks whatever is playing, for as long as it lasts.
+      let wanted = state.animation;
       let at = elapsed + state.offsetMs;
       const active = poke.current;
       if (active) {
@@ -174,15 +179,25 @@ export function NemesisAvatar({
         const span = anim ? animationDuration(anim) : 0;
         if (active.at === 0) active.at = elapsed;
         if (elapsed - active.at < span) {
-          playing = active.id;
+          wanted = active.id;
           at = elapsed - active.at;
         } else {
           poke.current = null;
         }
       }
 
+      // 🔴 THE CLOCK NEVER RESTARTS, AND THAT IS HALF THE FIX. Tearing the loop down when
+      // the animation prop changed took `elapsed` back to zero, so the character both
+      // snapped to a new face AND lost its place — a blink schedule that had been running
+      // for a minute began again. One clock runs for the life of the component; the
+      // playhead turns "which animation" into a morph rather than a jump.
+      const played = head.current.at(at, wanted);
+      if (!played) return;
+
       paint(
-        avatarFrameAt(playing, at, state.avatar, {
+        drawFace(state.avatar.surface, played.face, {
+          blink: played.blink,
+          eyeDrift: played.eyeDrift,
           ...(state.track ? { turn: { x: a.atX, y: a.atY } } : null),
         }),
       );
@@ -190,9 +205,12 @@ export function NemesisAvatar({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // Deliberately narrow: the loop reads everything else out of `latest`.
+    // 🔴 `animation` IS DELIBERATELY NOT A DEPENDENCY. Listing it restarts the loop every
+    // time the surface changes what the character is doing, which is what made the change
+    // a cut: the clock went back to zero and the next frame was a different pose with
+    // nothing in between. The loop reads it out of `latest` and morphs instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animation, avatar, frozenAt, offsetMs, reducedMotion]);
+  }, [avatar, frozenAt, offsetMs, reducedMotion]);
 
   // Pointer tracking lives on the window, not on the element: the character should notice
   // the cursor crossing the page, not only the cursor landing on top of it.

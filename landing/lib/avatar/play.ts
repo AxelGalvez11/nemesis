@@ -264,6 +264,78 @@ export interface PlayOptions {
   readonly reduced?: boolean;
 }
 
+/**
+ * How long one animation takes to hand over to another, in milliseconds.
+ *
+ * 🔴 SWITCHING ANIMATIONS IS A MORPH, NOT A CUT (owner 2026-08-25: "the animations seem to
+ * cut abruptly"). Every step INSIDE an animation already eases into the next — that is what
+ * `transitionMs` is — so the only place the character ever jumped was the seam BETWEEN two
+ * animations. It was also the most visible seam in the product, because it is the one the
+ * surfaces drive: every time the app changed what it was doing, the character flinched.
+ *
+ * 500ms is the reference's own step transition, so a handover takes exactly as long as a
+ * move within an animation and the two are indistinguishable to watch.
+ */
+export const HANDOVER_MS = 500;
+
+/**
+ * A playhead: one clock, any number of animations, morphing across every seam.
+ *
+ * 🔴 THIS IS STATE, AND IT IS HERE RATHER THAN IN THE COMPONENT ON PURPOSE. The bookkeeping
+ * a smooth handover needs — what is playing, what was on screen when it changed, how far
+ * through the morph we are — is exactly the part that was wrong, and a `useRef` tangle
+ * inside a `requestAnimationFrame` callback is the one place in this codebase a test cannot
+ * reach. It is a closure over four values; keeping it out here costs nothing and means the
+ * fix for the owner's complaint is a thing that can be asserted.
+ *
+ * `at(ms, animationId)` is called once a frame with a clock that NEVER restarts. Changing
+ * the id starts a morph out of whatever face was last returned — including a morph already
+ * in flight, so two changes in quick succession do not snap to the first one's target.
+ */
+export interface Playhead {
+  at(ms: number, animationId: string, opts?: PlayOptions): PlayedFace | null;
+  /** Which animation is being played toward. */
+  readonly playing: string;
+}
+
+export function createPlayhead(initial: string): Playhead {
+  let playing = initial;
+  let onScreen: Face | null = null;
+  let from: Face | null = null;
+  let startedAt = -Infinity;
+
+  return {
+    get playing() {
+      return playing;
+    },
+    at(ms: number, animationId: string, opts: PlayOptions = {}): PlayedFace | null {
+      if (animationId !== playing) {
+        from = onScreen;
+        startedAt = ms;
+        playing = animationId;
+      }
+      const target = playedFaceAt(playing, ms, opts);
+      if (!target) return null;
+
+      let face = target.face;
+      if (from && !opts.reduced) {
+        const p = (ms - startedAt) / HANDOVER_MS;
+        if (p >= 1) from = null;
+        else {
+          // 🔴 CLAMPED AT ZERO RATHER THAN SKIPPED. The first frame of a handover arrives at
+          // exactly `startedAt`, so `p` is 0 — and an `if (p > 0)` guard there falls through
+          // to the target face, which is precisely the jump this whole mechanism exists to
+          // remove. It also poisons the next handover, because the face recorded as "on
+          // screen" is then one the viewer never saw.
+          face = blendFaces(from, target.face, ease("smooth", Math.max(0, p)));
+        }
+      }
+      onScreen = face;
+      return { ...target, face };
+    },
+  };
+}
+
 /** Everything needed to draw one instant of one animation. */
 export function playedFaceAt(animationId: string, ms: number, opts: PlayOptions = {}): PlayedFace | null {
   const animation = ANIMATION_BY_ID.get(animationId);

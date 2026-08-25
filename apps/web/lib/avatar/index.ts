@@ -9,10 +9,13 @@ export {
   blinkAt,
   cursorAt,
   ease,
+  createPlayhead,
   eyeDriftAt,
   livenFace,
   nearestAngle,
   playedFaceAt,
+  HANDOVER_MS,
+  type Playhead,
   type PlayedFace,
   type PlayOptions,
 } from "./play";
