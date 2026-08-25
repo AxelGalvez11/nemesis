@@ -78,8 +78,16 @@ export function OutputPreview({ onClose, output }: { onClose: () => void; output
   };
 
   return (
+    // 🔴🔴 A SIDE PANEL, NOT A MODAL IN THE MIDDLE — owner, 2026-08-25, with the reference in frame.
+    // The difference is not decoration: a centred card covers the conversation that produced the
+    // document, so checking "does this say what I asked for" means closing it, reading, and opening
+    // it again. Docked to one side, the document and the thread that made it are on screen at once.
+    //
+    // 🔴 IT DOES NOT PUSH THE CANVAS OVER. Re-laying out the whole surface every time somebody
+    // glances at a document would reflow the text they are reading mid-sentence. It floats, and the
+    // canvas underneath is untouched.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      className="fixed inset-y-0 right-0 z-50 flex w-[min(38rem,100vw)] p-3"
       onMouseDown={(event) => {
         // The catcher, not a scrim: an outside press closes and nothing is painted over the canvas
         // — the history card's ruling, which source-preview.tsx already follows.
@@ -88,7 +96,7 @@ export function OutputPreview({ onClose, output }: { onClose: () => void; output
       role="dialog"
     >
       <div
-        className="flex max-h-[min(40rem,85vh)] w-[min(44rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-2xl bg-(--ui-bg-elevated) shadow-xl ring-1 ring-(--ui-stroke-secondary)"
+        className="flex min-h-0 w-full flex-col overflow-hidden rounded-2xl bg-(--ui-bg-elevated) shadow-xl ring-1 ring-(--ui-stroke-secondary)"
         ref={card}
       >
         <div className="flex items-center gap-2.5 px-4 py-3">
@@ -152,6 +160,11 @@ function DocBody({ markdown }: { markdown: string }) {
               {block.text}
             </p>
           );
+        }
+        if (block.kind === "table") {
+          // 🔴 THE SAME COMPONENT THE SPREADSHEET USES. A document's table and a spreadsheet are
+          // the same object on screen, and two renderers would drift.
+          return <SheetTable key={key} sheet={{ columns: block.header, rows: block.rows }} />;
         }
         if (block.kind === "bullet" || block.kind === "number") {
           return (

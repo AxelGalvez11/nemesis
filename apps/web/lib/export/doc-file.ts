@@ -46,7 +46,7 @@ export function docFilename(title: string, extension: string): string {
  * the file signature — `PK` for a .docx, `%PDF-` for a PDF — without a download dialog.
  */
 export async function docxBlob(markdown: string, title: string): Promise<Blob> {
-  const { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } = await import("docx");
+  const { AlignmentType, Document, HeadingLevel, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } = await import("docx");
   const HEADINGS = [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3] as const;
 
   const body = docBlocks(markdown).map((block) => {
@@ -55,6 +55,26 @@ export async function docxBlob(markdown: string, title: string): Promise<Blob> {
     }
     if (block.kind === "bullet") {
       return new Paragraph({ bullet: { level: 0 }, spacing: { after: 80 }, text: block.text });
+    }
+    if (block.kind === "table") {
+      // 🔴 A REAL WORD TABLE, NOT A LINE OF PIPES. Until 2026-08-25 a table fell through to the
+      // paragraph branch and came out of Word as `| Feature | What causes it |` — the model's
+      // comparison, rendered as punctuation.
+      const row = (values: readonly string[], bold: boolean) =>
+        new TableRow({
+          children: values.map(
+            (value) =>
+              new TableCell({
+                children: [new Paragraph({ children: [new TextRun({ bold, text: value })] })],
+              }),
+          ),
+          tableHeader: bold,
+        });
+      return new Table({
+        rows: [row(block.header, true), ...block.rows.map((cells) => row(cells, false))],
+        // 100% of the text column: a table sized to its content sits in a corner of the page.
+        width: { size: 100, type: WidthType.PERCENTAGE },
+      });
     }
     if (block.kind === "number") {
       // 🔴 THE NUMBER IS WRITTEN INTO THE TEXT RATHER THAN USING `numbering`. Word's numbering needs
@@ -149,6 +169,48 @@ export async function pdfBlob(markdown: string, title: string): Promise<Blob> {
       write(`•  ${block.text}`, { gap: 2, indent: 14 });
     } else if (block.kind === "number") {
       write(`${block.index}.  ${block.text}`, { gap: 2, indent: 14 });
+    } else if (block.kind === "table") {
+      // 🔴 DRAWN AS TEXT IN MEASURED COLUMNS, WITH A RULE UNDER THE HEADER. pdf-lib has no table
+      // primitive, so the choice was a real grid or dropping the block; a comparison the model
+      // wrote is usually the densest thing in the document and the worst thing to lose.
+      //
+      // 🔴 EVERY COLUMN THE SAME WIDTH. Measuring content to size them would need a second pass
+      // over every cell, and an uneven grid that guesses wrong is harder to read than an even one.
+      const columns = Math.max(1, block.header.length);
+      const columnW = WIDTH / columns;
+      const cellLines = (values: readonly string[], font: typeof body) =>
+        values.map((value) => wrap(value, font, 9.5, columnW - 8));
+      const drawRow = (values: readonly string[], font: typeof body) => {
+        const wrapped = cellLines(values, font);
+        const height = Math.max(...wrapped.map((lines) => lines.length)) * 13 + 6;
+        if (y - height < MARGIN) {
+          page = pdf.addPage([PAGE_W, PAGE_H]);
+          y = PAGE_H - MARGIN;
+        }
+        wrapped.forEach((lines, column) => {
+          lines.forEach((line, row) => {
+            page.drawText(line, {
+              color: rgb(0.05, 0.05, 0.05),
+              font,
+              size: 9.5,
+              x: MARGIN + column * columnW,
+              y: y - 11 - row * 13,
+            });
+          });
+        });
+        y -= height;
+      };
+      y -= 6;
+      drawRow(block.header, bold);
+      page.drawLine({
+        color: rgb(0.75, 0.75, 0.78),
+        end: { x: MARGIN + WIDTH, y: y + 2 },
+        start: { x: MARGIN, y: y + 2 },
+        thickness: 0.75,
+      });
+      y -= 4;
+      for (const cells of block.rows) drawRow(cells, body);
+      y -= 10;
     } else {
       write(block.text, { gap: 8 });
     }
