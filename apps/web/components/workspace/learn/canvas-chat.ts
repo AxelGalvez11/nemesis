@@ -34,7 +34,7 @@
 // in it — and it may ask again, until it says it has enough. Only web turns pay, and on those the
 // search is most of the wait anyway.
 
-import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
+import { postChatCompletion, searchLiteratureContext, searchWebContext } from "@/lib/workspace/chat-api";
 import {
   citedWebResults,
   formatWebSearchContext,
@@ -337,7 +337,20 @@ export async function askCanvasChat(
   // an inline [3] in the answer point at whatever happened to be third in the last batch.
   const seen = new Set<string>();
   const sources: ChatWebResult[] = [];
-  for (let round = 0; round < MAX_SEARCH_ROUNDS && decision?.needsWeb; round += 1) {
+  /**
+   * 🔴 THE PAPERS ARE FETCHED ONCE, AND THIS IS WHAT STOPS THE LOOP SPINNING ON THEM. `needsWeb`
+   * is re-decided every round — the model looks at what came back and says whether it needs more —
+   * but the literature fan-out has no "aim it differently" story: it is seven indexes asked the
+   * same question, so asking again returns the same papers. Without this latch a turn with
+   * `needsPapers` true and `needsWeb` false would re-run the fan-out on every round until the
+   * round cap, showing the learner a search that finds nothing new each time.
+   */
+  let papersFetched = false;
+  for (
+    let round = 0;
+    round < MAX_SEARCH_ROUNDS && (decision?.needsWeb || (decision?.needsPapers && !papersFetched));
+    round += 1
+  ) {
     // 🔴 TWO BEATS, BECAUSE THE COUNT DOES NOT EXIST YET AT THE FIRST ONE. ChatGPT says "Searching
     // 54 websites" because it issues the queries and knows the number; ours comes back with the
     // results. So the first call says a search is happening (`null`) and the second says how much
@@ -349,17 +362,41 @@ export async function askCanvasChat(
     // 🔴 THE REQUEST IS ABOUT TO GO OUT. This is the event, not a prediction of one.
     enter("searching");
     onSearching?.(null, []);
-    const found = await searchWebContext(
-      uid,
-      decision.webQuery || question,
-      signal,
-      decision.webResults,
-      decision.webFreshness,
-    );
-    for (const source of found.sources) {
-      if (seen.has(source.url)) continue;
-      seen.add(source.url);
-      sources.push(source);
+
+    // 🔴🔴 THE SCHOLARLY HALF, WHICH IS AN ADDITION AND NEVER A REPLACEMENT (owner 2026-08-24:
+    // *"Plug the literature seven"*). Seven public indexes, fanned out in parallel and merged.
+    // They cost nothing and cannot fail the turn: `searchLiteratureContext` returns [] on every
+    // error, so a literature outage leaves an answer built on the web and the learner's own
+    // material rather than an error where an answer should be.
+    //
+    // 🔴 PAPERS ENTER THE SAME NUMBERED LIST AS WEB PAGES, deliberately. The answer's inline [n]
+    // markers resolve positionally over `sources`, so a second list would need a second numbering
+    // scheme and the model would have to keep two of them straight while writing. It also puts the
+    // explainer page and the study it explains side by side, which is how a student should meet
+    // them.
+    if (decision.needsPapers && !papersFetched) {
+      papersFetched = true;
+      const papers = await searchLiteratureContext(decision.webQuery || question, signal, decision.webResults);
+      for (const paper of papers) {
+        if (seen.has(paper.url)) continue;
+        seen.add(paper.url);
+        sources.push(paper);
+      }
+    }
+
+    if (decision.needsWeb) {
+      const found = await searchWebContext(
+        uid,
+        decision.webQuery || question,
+        signal,
+        decision.webResults,
+        decision.webFreshness,
+      );
+      for (const source of found.sources) {
+        if (seen.has(source.url)) continue;
+        seen.add(source.url);
+        sources.push(source);
+      }
     }
     // 🔴 BUILT FROM `sources`, WHICH IS THE DEDUPED, ACCUMULATED LIST THE ANSWER ACTUALLY STANDS
     // ON — not `found.sources`, which is this round's haul and would make the chips flicker between

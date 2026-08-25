@@ -213,6 +213,11 @@ test("a plain decision is read", () => {
     check: null,
     curriculumFor: null,
     milestones: [],
+    // 🔴 PRESENT AND false, LIKE EVERY FIELD AROUND IT. `needsPapers` is the search loop's OTHER
+    // condition (owner 2026-08-24, "plug the literature seven"), so `undefined` here would end the
+    // loop for the wrong reason exactly as an absent `needsWeb` would — the same argument the four
+    // web fields are here for, applied to the field that joined them.
+    needsPapers: false,
     needsWeb: false,
     question: null,
     // `remember` is always a list for the same reason `visuals` and `milestones` are: a turn that

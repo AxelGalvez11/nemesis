@@ -1160,6 +1160,51 @@ export async function sendChatTurn(
   };
 }
 
+/**
+ * The scholarly half of a search: seven literature indexes, merged.
+ *
+ * Owner 2026-08-24: *"Plug the literature seven."* Returns rows in the SAME `{title,url,description}`
+ * contract as a web result, so the answer's numbered citations resolve over one list and the model
+ * never has to reason about two kinds of source.
+ *
+ * 🔴🔴 IT NEVER THROWS AND NEVER BLOCKS THE ANSWER. Papers are an ADDITION. Every failure — no
+ * session, upstream down, malformed payload — returns an empty list, because a turn that could
+ * have answered from the web and the learner's own material must not be turned into an error by
+ * the half that was a bonus. The same reason `composioTools()` returns [] on every failure.
+ */
+export async function searchLiteratureContext(
+  query: string,
+  signal?: AbortSignal,
+  wanted: number | null = null,
+): Promise<ChatWebResult[]> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return [];
+    const response = await fetch("/api/workspace/scholar", {
+      body: JSON.stringify({ action: "literature", query, ...(wanted ? { limit: wanted } : {}) }),
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      method: "POST",
+      signal,
+    });
+    if (!response.ok) return [];
+    const payload = (await response.json()) as { hits?: { title?: string; url?: string; summary?: string; db?: string }[] };
+    return (payload.hits ?? [])
+      .filter((hit) => hit.url && hit.title)
+      .map((hit) => ({
+        // 🔴 THE INDEX IS NAMED IN THE DESCRIPTION, NOT INVENTED INTO THE TITLE. The model reads
+        // these as evidence, and "which index found this" is part of weighing it — a bioRxiv
+        // preprint and a Europe PMC review are not the same claim strength. Putting it in the
+        // title instead would corrupt the paper's actual name in every citation that quotes it.
+        description: hit.db ? `${hit.db}: ${hit.summary ?? ""}`.trim() : (hit.summary ?? ""),
+        title: hit.title as string,
+        url: hit.url as string,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 export async function searchWebContext(
   uid: string,
   query: string,
