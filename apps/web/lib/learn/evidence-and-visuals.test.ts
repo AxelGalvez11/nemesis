@@ -172,7 +172,25 @@ test("🔴 papers join the SAME numbered list the answer cites over", () => {
   assert.match(block, /if \(seen\.has\(paper\.url\)\) continue;/, "a paper can now be cited twice in one answer");
 });
 
-test("🔴 the dead brand does not identify us to a third party", () => {
+test("🔴🔴 nothing identifies Nemesis to a third party as somebody else", () => {
+  // Three strings, one defect, found one at a time: OpenAlex's `mailto` fallback said
+  // support@pharmaorb.app (a brand CLAUDE.md retired), Crossref's said
+  // support@syntheticsciences.ai (the open-source project these connectors were derived from), and
+  // the shared User-Agent announced "openscience-science/1.0". Scholarly APIs read all three to set
+  // rate limits and to reach an operator whose traffic misbehaves — so each one both misattributed
+  // our traffic to someone else and left us unreachable. Harmless while the connectors were off;
+  // live the moment the lane is deployed, which is what made them worth finding.
+  const literature = ["openalex", "crossref", "pubmed", "europepmc", "arxiv", "biorxiv", "semantic-scholar"];
+  for (const name of literature) {
+    const source = strip(readFileSync(new URL(`../../../../supabase/functions/_shared/science/literature/${name}.ts`, import.meta.url), "utf8"));
+    assert.ok(!/pharmaorb|syntheticsciences/i.test(source), `${name} identifies us to its upstream as somebody else`);
+  }
+  const http = strip(readFileSync(new URL("../../../../supabase/functions/_shared/science/http.ts", import.meta.url), "utf8"));
+  assert.ok(!/syntheticsciences|openscience-science/i.test(http), "the shared User-Agent names another project again");
+  assert.match(http, /Nemesis\/1\.0/, "the User-Agent no longer names this product");
+});
+
+test("🔴 the OpenAlex polite-pool contact is a live mailbox", () => {
   // OpenAlex takes the mailto as WHO IS CALLING. It read support@pharmaorb.app — a name CLAUDE.md
   // retired — which was harmless only while the connector was switched off.
   // Stripped, because the note explaining the fix necessarily quotes the address it removed —

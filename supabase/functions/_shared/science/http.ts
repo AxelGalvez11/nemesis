@@ -13,7 +13,12 @@
  * need auth should layer it on top explicitly rather than baking it in here.
  */
 
-const USER_AGENT = "openscience-science/1.0 (+https://syntheticsciences.ai)"
+// 🔴 THE USER-AGENT NAMES US, FOR THE SAME REASON THE MAILTO DOES. It read
+// "openscience-science/1.0 (+https://syntheticsciences.ai)" — the upstream project's identity,
+// sent on every request to every index. Scholarly APIs read this string to decide rate limits and
+// to find an operator, so an inaccurate one gets someone else throttled for our traffic and leaves
+// us unreachable. The comment below still holds: no keys, all public sources.
+const USER_AGENT = "Nemesis/1.0 (+https://enternemesis.com)"
 const DEFAULT_TIMEOUT = 30_000
 const DEFAULT_RETRIES = 3
 const DEFAULT_CACHE_TTL = 5 * 60_000 // 5 minutes
