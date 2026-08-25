@@ -58,7 +58,7 @@
 // every `button` and `li` outside `[data-workspace]` a blue marketing fill and a disc bullet.
 // Same reason `canvas-clarification.tsx` states them.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // 🔴 `groundedMiss` MOVED TO `test-run.ts` AS `groundNote` WHEN THE RESULTS SCREEN WENT. It named
 // which competing model a wrong tap acted on — the whole reason multiple choice is permitted here —
@@ -124,10 +124,37 @@ export function CanvasCheck({
     else setIndex((was) => was + 1);
   };
 
+  /**
+   * The first question comes into view by itself.
+   *
+   * 🔴🔴🔴 OWNER, 2026-08-25: *"when the quiz is created, it should fit the canvas… that way users
+   * do not have to scroll down."* The check renders BELOW the turn's answer, so a quiz arrived off
+   * the bottom of the screen behind whatever Nemesis had just written, and the learner had to go
+   * looking for the thing they had asked for.
+   *
+   * 🔴 THE ANSWER IS NOT HIDDEN TO MAKE ROOM FOR THIS, and that was the first thing I tried. See
+   * `checkOwnsSurface` in `learning-canvas.tsx`: suppressing the prose reproduces a defect this
+   * codebase already has on record, where "teach me X then quiz me" showed the quiz and not the
+   * lesson. Moving the VIEW costs a scroll nobody has to make; hiding the prose costs the lesson.
+   *
+   * 🔴 ONCE, ON ARRIVAL, NOT ON EVERY QUESTION. Scrolling the page under someone between question
+   * three and question four is the surface grabbing them mid-answer, which is worse than the thing
+   * being fixed. The dependency list is deliberately empty.
+   *
+   * 🔴 IT HONOURS `prefers-reduced-motion`, because a smooth scroll is motion and somebody asked
+   * the browser not to do that.
+   */
+  const frame = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const still = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    frame.current?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
+  }, []);
+
   return (
     <section
       aria-label={`Question ${index + 1} of ${run.questions.length}`}
       className="canvas-swap mt-5 rounded-2xl p-4 ring-1 ring-(--ui-stroke-secondary)"
+      ref={frame}
     >
       <div className="flex items-start justify-between gap-3">
         <p className="text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary)">

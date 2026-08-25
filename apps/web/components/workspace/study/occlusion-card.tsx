@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 
 import { resolveStudyImageUrl } from "@/lib/workspace/study-cloud-store";
-import { occlusionMaskState, type OcclusionPayload } from "@nemesis/shared";
+import {
+  occlusionMaskState,
+  OCCLUSION_COVER_FILL,
+  OCCLUSION_COVER_STROKE,
+  OCCLUSION_TARGET_FILL,
+  OCCLUSION_TARGET_STROKE,
+  type OcclusionPayload,
+} from "@nemesis/shared";
 import { cn } from "@/lib/utils";
 
 interface OcclusionCardViewProps {
@@ -60,11 +67,14 @@ export function OcclusionCardView({ payload, revealed, className }: OcclusionCar
         const isTarget = state !== "covered";
         return (
           <rect
-            fill={state === "target-revealed" ? "none" : "#52525b"}
+            // 🔴 THE ONE BEING ASKED ABOUT IS A DIFFERENT COLOUR, NOT A HEAVIER BORDER. See
+            // OCCLUSION_TARGET_FILL: a dark red outline on a dark grey fill was invisible at the
+            // size a mask renders, and the owner could not find which part he was being asked for.
+            fill={state === "target-revealed" ? "none" : isTarget ? OCCLUSION_TARGET_FILL : OCCLUSION_COVER_FILL}
             height={shape.h}
             key={shape.id}
             rx={4 * unit}
-            stroke={isTarget ? "hsl(var(--destructive))" : "#3f3f46"}
+            stroke={isTarget ? OCCLUSION_TARGET_STROKE : OCCLUSION_COVER_STROKE}
             strokeWidth={(isTarget ? 2.5 : 1.25) * unit}
             width={shape.w}
             x={shape.x}

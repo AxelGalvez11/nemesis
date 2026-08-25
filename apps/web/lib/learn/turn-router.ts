@@ -1200,7 +1200,10 @@ const DECISION_CONTRACT = [
   + "EXACTLY ONE marked correct, up to twelve questions, three to five makes a good check. Ask "
   + "about what was actually said in this conversation, make the wrong options genuinely tempting "
   + "rather than obviously silly, and vary which seat the right answer sits in. They are shown as "
-  + "tappable chips under your answer, so do not also write them out in your prose.",
+  + "tappable chips under your answer, so do not also write them out in your prose. Do not announce "
+  + "them either: no \"here it is\", no \"five questions coming up\", no describing what the quiz "
+  + "is about to ask. The learner is looking at it. Answer whatever they actually asked, and if "
+  + "they asked for nothing but the check, one short line is the whole answer.",
 
   // 🔴🔴 THE CHIPS ACCOMPANY AN ANSWER; THEY NEVER REPLACE ONE, AND THE SENTENCE ABOVE CAUSED
   // EXACTLY THAT. "Do not also write them out in your prose" presupposes prose exists — the model

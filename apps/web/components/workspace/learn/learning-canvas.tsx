@@ -902,6 +902,32 @@ export function LearningCanvas({
    * printed one sentence and then nothing, for the rest of the session. An opening is the first
    * sentence OF what follows; an answer is a turn INSTEAD of it.
    */
+  /**
+   * A check is on screen and it is what the learner is being held to.
+   *
+   * 🔴🔴🔴 OWNER, 2026-08-25: *"when the quiz is created, it should fit the canvas, deepseek should
+   * not say anything like 'here it is'. that way users do not have to scroll down."* The quiz
+   * renders in its own block BELOW the reply, so a turn that produced one printed a paragraph of
+   * preamble first and the learner had to scroll past it to reach the first question. Measured on
+   * the live app the same week, the paragraph was *"Ready. Five questions coming up covering the
+   * main parts of a neuron… The first one will ask you to identify a labelled part on a diagram."*
+   * Every word of that is the quiz describing itself to somebody already looking at it.
+   *
+   * 🔴🔴🔴 AND HIDING THE PROSE IS THE WRONG FIX, WHICH I TRIED FIRST. This file already records
+   * what happens when a check turn's answer goes missing: 2026-08-24, *"Teach me the three branches
+   * of the US government, then quiz me on it"* returned five good chips and an EMPTY answer, and the
+   * canvas printed "Nemesis had nothing to add." above a quiz on a lesson never given. Suppressing
+   * the prose whenever a check exists reproduces exactly that, for exactly that request: the learner
+   * asked for two things and would see only the second.
+   *
+   * So the answer stays and the SURFACE moves to the check instead. A preamble above it costs a
+   * scroll the learner never has to make; a hidden lesson costs the lesson.
+   *
+   * 🔴 A REFUSAL IS NOT A CHECK. "There is nothing to test yet" is the whole answer to that turn and
+   * has no questions under it, so it does not take the surface from anything.
+   */
+  const checkOwnsSurface = session.testRequested && !policy.awaitingAnswer && !isTestRefusal(testRun);
+
   const asideOnScreen: "none" | "opening" | "reply" =
     session.aside === null || session.aside.blockId !== null ? "none" : session.aside.kind;
 
@@ -1943,7 +1969,7 @@ export function LearningCanvas({
             re-render with the same sources, so the knowledge key would be unchanged and the policy
             would NOT look again — the button would appear to work and change nothing. Re-mounting
             is the whole mechanism by which reopening from the Library recovered. */}
-        {presence === "quiet" && (
+        {presence === "quiet" && !checkOwnsSurface && (
           <CanvasQuiet
             // 🔴 `relook=1` IS WHAT MAKES THIS BUTTON DO ANYTHING. Without it the reload re-resolves
             // and a remembered empty answer short-circuits before a lane runs — the identical screen,

@@ -203,7 +203,14 @@ test("🔴🔴 the notice never prints the remembered sentence into the canvas",
   // That would put a claim about the learner on their screen mid-lesson. The place to read and
   // delete them is Settings, where all of them are together and none is a surprise.
   const canvas = strip(readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8"));
-  const notice = canvas.slice(canvas.indexOf("session.memoryNotice > 0"), canvas.indexOf("session.testRequested &&"));
+  // 🔴 THE END ANCHOR IS THE CHECK BLOCK'S OWN OPENING LINE, NOT JUST `session.testRequested &&`.
+  // That shorter string matched a NEW `checkOwnsSurface` derivation added higher up the file, so
+  // the slice ran backwards and came back empty: the guard reported "the notice moved" about a
+  // notice that had not moved. A boundary search has to name something that appears once.
+  const notice = canvas.slice(
+    canvas.indexOf("session.memoryNotice > 0"),
+    canvas.indexOf('session.testRequested && presence !== "preparing"'),
+  );
   assert.ok(notice.length > 0, "the notice moved — this guard is pointed at nothing");
   assert.ok(!/\.statement|remember\[/.test(notice), "the notice started printing the fact itself");
   assert.match(notice, /Memory updated\./);
