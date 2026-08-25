@@ -148,8 +148,13 @@ export function docBlocks(markdown: string): DocBlock[] {
     }
 
     numbering = 0;
-    // Held open: the next line may be the rest of this same sentence.
-    open.push(line);
+    // 🔴 THE SYNTAX GOES EVEN WHERE THE SHAPE IS NOT HANDLED. A block quote and a code fence are
+    // still paragraphs here — neither has a real answer in three writers yet, which is this file's
+    // bar for adding a shape — but arriving as `> Note that…` and a bare ``` puts markdown
+    // PUNCTUATION into a Word document, which is what the owner meant by *"rendering in md"*. The
+    // words survive; the marks do not.
+    if (/^```/.test(line)) continue;
+    open.push(line.replace(/^>\s?/, ""));
   }
 
   closeParagraph();

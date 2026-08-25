@@ -19,10 +19,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { docBlocks } from "@/lib/export/doc-blocks";
-import { downloadDocx, downloadPdf, downloadSheet, type SheetData } from "@/lib/export/doc-file";
+import { downloadDocx, downloadPdf, downloadSheet, pdfBlob, type SheetData } from "@/lib/export/doc-file";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { readLibraryNote } from "@/lib/workspace/library-note-read";
+
+import { PdfPages } from "./pdf-pages";
 
 /** What each artifact kind is called, and what its download button says. */
 const DOWNLOAD_LABEL: Record<string, string> = {
@@ -35,6 +38,9 @@ const DOWNLOAD_LABEL: Record<string, string> = {
 
 export function OutputPreview({ onClose, output }: { onClose: () => void; output: CanvasOutput }) {
   const card = useRef<HTMLDivElement>(null);
+  // Collapses the left sidebar to the rail while this is docked, and restores it on close without
+  // touching the learner's stored preference — see side-panel.tsx.
+  useDeclareSidePanel();
   /**
    * A note's body, fetched on open.
    *
@@ -71,6 +77,29 @@ export function OutputPreview({ onClose, output }: { onClose: () => void; output
   }, [onClose]);
 
   const markdown = output.markdown ?? fetched ?? "";
+
+  /**
+   * A PDF artifact is rendered AS A PDF, from the same bytes the download hands over.
+   *
+   * 🔴 OWNER, 2026-08-25: *"why are artifacts rendering in md and not their respective formats?"*
+   * It was showing a styled approximation of what the PDF would contain — close enough to look
+   * right, and wrong about every question a person opens a PDF to answer: where the pages break,
+   * whether the table fits, what it looks like printed.
+   *
+   * 🔴 BUILT ONCE, WHEN THERE IS SOMETHING TO BUILD FROM. Rebuilding on every render would re-run
+   * pdf-lib and re-open a pdf.js worker on each keystroke elsewhere in the tree.
+   */
+  const [pdf, setPdf] = useState<Blob | null>(null);
+  useEffect(() => {
+    if (output.kind !== "pdf" || !markdown) return;
+    let live = true;
+    void pdfBlob(markdown, output.title).then((blob) => {
+      if (live) setPdf(blob);
+    });
+    return () => {
+      live = false;
+    };
+  }, [markdown, output.kind, output.title]);
   const download = () => {
     if (output.kind === "sheet" && output.sheet) return void downloadSheet(output.sheet as SheetData, output.title);
     if (!markdown) return;
@@ -124,6 +153,12 @@ export function OutputPreview({ onClose, output }: { onClose: () => void; output
         <div className="min-h-0 overflow-auto border-t border-(--ui-stroke-tertiary) px-6 py-5">
           {output.sheet ? (
             <SheetTable sheet={output.sheet as SheetData} />
+          ) : output.kind === "pdf" ? (
+            pdf ? (
+              <PdfPages blob={pdf} />
+            ) : (
+              <p className="m-0 py-8 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Building the PDF…</p>
+            )
           ) : needsFetch && fetched === undefined ? (
             <p className="m-0 py-8 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Opening…</p>
           ) : needsFetch && fetched === null ? (

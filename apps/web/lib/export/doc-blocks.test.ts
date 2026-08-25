@@ -53,6 +53,11 @@ test("🔴 anything unrecognised survives as a paragraph rather than disappearin
   const texts = blocks.map((b) => ("text" in b ? b.text : ""));
   assert.ok(texts.some((t) => t.includes("quoted")));
   assert.ok(texts.some((t) => t.includes("let x = 1;")));
+  // 🔴 THE WORDS SURVIVE, THE MARKS DO NOT. Neither shape has a real answer in three writers yet,
+  // so both stay paragraphs — but a `>` or a bare ``` reaching a Word document is markdown
+  // punctuation in a .docx, which is exactly what "rendering in md" meant.
+  assert.ok(!texts.some((t) => t.includes(">")), "a block quote marker reached the document");
+  assert.ok(!texts.some((t) => t.includes("```")), "a code fence reached the document");
   // 🔴 A LINE OF PIPES WITH NO SEPARATOR ROW UNDER IT IS PROSE, NOT A TABLE. Recognising a table by
   // its pipes alone would silently eat any sentence containing one.
   assert.deepEqual(docBlocks("| a | b |"), [{ kind: "paragraph", text: "| a | b |" }]);

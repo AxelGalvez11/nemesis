@@ -13,6 +13,8 @@
 
 import { useState } from "react";
 
+import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
+import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import { ArtifactCard } from "@/components/workspace/learn/artifact-card";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
 import { docxBlob, downloadDocx, downloadPdf, downloadSheet, pdfBlob, sheetBlob, type SheetData } from "@/lib/export/doc-file";
@@ -68,7 +70,20 @@ const MADE: CanvasOutput[] = [
   { createdAt: "", id: "a3", kind: "sheet", sheet: SHEET, title: "Separation cases" },
 ];
 
-export default function ExportsPreview() {
+export default function ExportsPreviewPage() {
+  // 🔴 INSIDE THE REAL SHELL, because half of what this harness checks is what the shell DOES when
+  // a panel docks: the sidebar has to collapse to the rail and come back. Rendered bare, that
+  // behaviour has nowhere to happen and would have to be taken on trust.
+  return (
+    <WorkspacePreviewProvider value={{ email: "student@preview.dev" }}>
+      <WorkspaceShell>
+        <ExportsPreview />
+      </WorkspaceShell>
+    </WorkspacePreviewProvider>
+  );
+}
+
+function ExportsPreview() {
   const [report, setReport] = useState<string>("");
   const [open, setOpen] = useState<CanvasOutput | null>(null);
 
@@ -100,7 +115,7 @@ export default function ExportsPreview() {
 
   return (
     // 🔴 `data-workspace` OR THE GLOBAL BUTTON RULE LIES TO YOU — see dev-preview/research-plan.
-    <main data-workspace className="mx-auto grid min-h-dvh max-w-2xl content-start gap-4 p-8">
+    <main data-workspace className="mx-auto grid h-full max-w-2xl content-start gap-4 overflow-y-auto p-8">
       <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
         The three files a canvas can hand you, built with the real writers. Check reports each file&apos;s
         signature; the download buttons exercise the save path too.
