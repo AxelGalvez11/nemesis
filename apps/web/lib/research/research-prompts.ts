@@ -11,7 +11,7 @@
 // writing, and the owner's rule holds wherever Nemesis appears to be speaking.
 
 const NO_EM_DASH =
-  "Never use an em dash. The character — must not appear anywhere in your output. " +
+  "Never use an em dash. That punctuation mark must not appear anywhere in your output. " +
   "Use a comma, a colon, or a new sentence instead.";
 
 const RESEARCHER =

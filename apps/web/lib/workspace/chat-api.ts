@@ -36,6 +36,7 @@ import { recallBrain } from "@/lib/workspace/brain-api";
 import { ATTACHMENT_BLOCK_MARKER, ATTACHMENT_ONLY_DECISION, attachmentNames, DEFAULT_DECISION, decisionFromIntent, promptWithoutAttachments, routeInstruction, SAVE_INSTRUCTION, WORKSPACE_INSTRUCTION, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
+import { plainDashes, streamingDashes } from "@nemesis/shared";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import { safeStreamPrefix, sanitizeAssistantText } from "@/lib/workspace/chat-tool-markup";
 import { serializeToolResult } from "@/lib/workspace/chat-tool-result";
@@ -84,27 +85,27 @@ export const CHAT_TOOLS_PROMPT =
   // the model does not believe it has is the same as no capability.
   "You manage this student's Nemesis workspace through your tools. Chat is the control layer: the Library, Study, and Calendar " +
   "pages are views of state you and the student maintain together, and you can inspect and reorganize all three. " +
-  "READ before answering about their material — never guess and never claim you cannot see it: get_workspace_overview orients you; " +
+  "READ before answering about their material, never guess and never claim you cannot see it: get_workspace_overview orients you; " +
   "get_library_tree browses folders and notes with no search term; search_library and read_library_note reach content; " +
   "get_study_overview and read_study_deck carry real due counts, lapses, and scheduling; list_calendar_events returns the COMPLETE " +
-  "window it reports for any date range, past included, with recurring classes expanded. The snapshot and overview are orientation — " +
+  "window it reports for any date range, past included, with recurring classes expanded. The snapshot and overview are orientation" +
   "for anything about 'everything', a whole semester, or a reorganization, read the full tree or range first. " +
   "ORGANIZE as well as create: move and rename notes and folders (rename_library_folder, move_library_folder, move_library_note), " +
   "move decks and re-file tests (move_study_deck, move_study_artifact, rename_study_deck), and correct calendar events " +
   "(update_calendar_event). Run find_calendar_issues before reorganizing a calendar; when a newer trustworthy source disagrees with " +
   "an existing event, UPDATE that event rather than adding a copy, and when you are not confident which version is right, ask. " +
-  "FILING: material lives under the student's own courses and topics — never under folders named for who made it. When you cannot " +
+  "FILING: material lives under the student's own courses and topics, never under folders named for who made it. When you cannot " +
   "tell where something belongs, put it in the Inbox folder and say so; a wrong course is worse than an honest Inbox. Prefer " +
   "updating an existing note on a topic over creating a near-duplicate second one. " +
-  "Editing takes the item's id, which the list and read tools return — pass only the fields that should change, and leave the rest " +
+  "Editing takes the item's id, which the list and read tools return, pass only the fields that should change, and leave the rest " +
   "out so they stay as they are. " +
   // 🔴 The nearest thing to a confirmation step this lane has. There is no
   // dialog inside a chat turn, so the bar for a destructive call is the
   // student's own words: "tidy up my notes" is a request to reorganise, not a
   // licence to delete, and the cost of asking is one sentence.
-  "A delete never happens immediately: it puts a confirmation card on screen and the student has to tap it. So do not say anything has been deleted until they have — say the card is there and ask them to tap it. " +
+  "A delete never happens immediately: it puts a confirmation card on screen and the student has to tap it. So do not say anything has been deleted until they have, say the card is there and ask them to tap it. " +
   "Delete ONLY when the student has clearly asked for that specific thing to go. If the request is vague, or you are inferring which " +
-  "item they mean, ask them which one first — deleting is the one action they cannot take back from here. Never delete something as " +
+  "item they mean, ask them which one first, deleting is the one action they cannot take back from here. Never delete something as " +
   "a side effect of tidying, reorganising, or making room. " +
   // Same correction as the phone's CHAT_SYSTEM_PROMPT — see the long comment
   // there. This used to say school portals were "handled by the Mac app's
@@ -160,7 +161,7 @@ export const CHAT_NO_TOOLS_PROMPT =
 const CHAT_PROMPT_TAIL =
   "Check your own work before you answer: verify every number, unit, name, and date you are about to state, and re-read the question to confirm you " +
   "answered what was actually asked. If a step does not hold up, fix it before replying rather than hedging afterwards. " +
-  "Never invent a statistic, quotation, citation, date, or link to close a gap — a missing source is a finding to report, not a hole to fill. " +
+  "Never invent a statistic, quotation, citation, date, or link to close a gap, a missing source is a finding to report, not a hole to fill. " +
   "Where you are genuinely unsure, or the question needed context you do not have, say so plainly in your own words and say what would settle it. " +
   "Answer at the length the question deserves: a short question gets a short answer.";
 
@@ -378,12 +379,40 @@ export function chatErrorMessage(status: number, body: unknown): string {
     return message || "You've reached today's usage limit. It resets tomorrow, or upgrade for more.";
   }
   if (kind === "auth") {
-    return "This device needs to re-connect to your account. Try again — it repairs itself.";
+    return "This device needs to re-connect to your account. Try again, it repairs itself.";
   }
   if (kind === "unreachable") {
     return "The answer engine is unreachable right now. Try again in a moment.";
   }
   return message || "Something went wrong sending that. Try again.";
+}
+
+/**
+ * The same delta handler, with Nemesis's punctuation cleaned up on the way through.
+ *
+ * 🔴🔴🔴 THIS IS WHERE THE EM DASH GOES, BECAUSE THIS FILE IS THE ONE DOOR EVERY MODEL CALL IN THE
+ * PRODUCT GOES THROUGH — chat, the lesson writer, the flashcard writer, deep research, the judge,
+ * the syllabus and library imports. Owner, 2026-08-25: *"can you make sure nemesis does not use em
+ * dashes at all?"*
+ *
+ * 🔴 THE PROMPT HAD BANNED IT FOR MONTHS AND THE PROMPT WAS ARGUING WITH ITSELF. Measured on the
+ * real assembled packet: 31,605 characters carrying FORTY-NINE em dashes, one of them inside the
+ * sentence forbidding them. Those are gone now, which is the actual cure; this is the guarantee
+ * that holds regardless, and the two are only worth anything together.
+ *
+ * 🔴 THE TYPING IS CLEANED, NOT ONLY THE FINISHED ANSWER. A dash that shows while a reply streams
+ * and vanishes when it settles is a worse tell than leaving it alone.
+ *
+ * 🔴 BOTH ARGUMENTS, BECAUSE CALLERS USE BOTH. Some render the delta and some re-render from the
+ * accumulated string; a handler that cleaned one and not the other would flicker.
+ *
+ * 🔴 TOOL CALL ARGUMENTS ARE LEFT ALONE. Those are machine input, where a comma is a change of
+ * value rather than a change of punctuation.
+ */
+function spokenPlainly(handler: CompletionDeltaHandler | undefined): CompletionDeltaHandler | undefined {
+  if (!handler) return undefined;
+  const stream = streamingDashes();
+  return (delta, accumulated) => handler(stream.feed(delta), plainDashes(accumulated));
 }
 
 /** Parse a non-streaming chat/completions response body into assistant text. */
@@ -668,12 +697,13 @@ export async function postChatCompletion(
     let answeringModel: string | undefined;
     let usage: ChatReply["usage"];
     if (options.onDelta || options.onReasoning) {
-      const streamed = await readCompletionStreamFull(res.body, options.onDelta, options.onReasoning);
-      text = streamed.text.trim() ? streamed.text : null;
+      const streamed = await readCompletionStreamFull(res.body, spokenPlainly(options.onDelta), spokenPlainly(options.onReasoning));
+      text = streamed.text.trim() ? plainDashes(streamed.text) : null;
       toolCalls = streamed.toolCalls;
     } else {
       const body = (await res.json().catch(() => null)) as unknown;
-      text = completionText(body);
+      const said = completionText(body);
+      text = said === null ? null : plainDashes(said);
       toolCalls = completionToolCalls(body);
       answeringModel = completionModel(body);
       usage = completionUsage(body);
@@ -714,7 +744,7 @@ export async function postChatCompletion(
     if (err instanceof DOMException && err.name === "AbortError") throw err;
     return {
       errorKind: "unreachable",
-      errorText: "You're offline — chat needs a connection. Try again in a moment.",
+      errorText: "You're offline, chat needs a connection. Try again in a moment.",
       sources: [],
       text: null,
     };
@@ -740,7 +770,7 @@ const AGENT_MAX_WORKSPACE_TOOL_ROUNDS = 8;
  *  see chat-tool-markup.ts for the leak this pairs with. */
 export const NO_TOOLS_LEFT_INSTRUCTION: WireMsg = {
   content:
-    "You have used every tool round available for this turn. No tools are attached to this request and none can be called. Do NOT emit tool calls, DSML, XML, JSON tool syntax, invocation markup, or any imitation of them — everything you write now is shown to the student word for word. Answer from the information you have already retrieved. If part of what they asked could not be completed, say plainly which part and why, and offer to finish it in a follow-up.",
+    "You have used every tool round available for this turn. No tools are attached to this request and none can be called. Do NOT emit tool calls, DSML, XML, JSON tool syntax, invocation markup, or any imitation of them, everything you write now is shown to the student word for word. Answer from the information you have already retrieved. If part of what they asked could not be completed, say plainly which part and why, and offer to finish it in a follow-up.",
   role: "system",
 };
 
