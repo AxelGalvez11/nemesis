@@ -75,18 +75,34 @@ export function FigureOcclusion({ caption, hidden, labels, revealed = false, src
           src={src}
         />
 
-        {/* 🔴 EVERY OTHER LABEL STAYS VISIBLE, AND THAT IS THE INTERACTION. Spatial knowledge is
-            knowing where things sit RELATIVE TO EACH OTHER, so the parts that are not being asked
-            about are exactly the context the learner reasons from. Covering all of them would be a
-            blank picture and a different, much harder question nobody chose to ask. */}
-        {loaded && !revealed && (
+        {/* 🔴🔴🔴 HIDE ALL, GUESS ONE — OWNER, 2026-08-25: *"make it hide all and guess one. thats
+            how it should be."* That is Anki's own mode name, and this comment used to argue the
+            opposite at length: that every OTHER label staying visible was the interaction, because
+            spatial knowledge is knowing where things sit relative to each other.
+
+            The flaw in that argument is what the learner can READ. The options offered beside this
+            picture are the diagram's own other labels, so leaving them legible printed the wrong
+            answers on the figure — a learner could match the covered box to the one option not
+            visible and never recall anything. That is the recognition-instead-of-recall failure
+            this component's own header warns about three paragraphs up.
+
+            🔴 THE ASKED-ABOUT PART IS STILL MARKED, so the learner knows WHICH one to name: it
+            takes the accent colour while the rest are plain covers. Same distinction
+            `occlusionMaskState` draws for a study card between `target-covered` and `covered`. */}
+        {loaded && !revealed && labels.map((label) => (
           <span
             aria-hidden="true"
-            className="absolute rounded-md bg-(--ui-text-primary)"
-            data-occlusion-cover=""
-            style={coverStyle(hidden)}
+            className={cn(
+              "absolute rounded-md",
+              label.text === hidden.text
+                ? "bg-(--ui-text-primary) ring-2 ring-(--ui-learner)"
+                : "bg-(--ui-text-primary)/85",
+            )}
+            data-occlusion-cover={label.text === hidden.text ? "target" : ""}
+            key={label.text}
+            style={coverStyle(label)}
           />
-        )}
+        ))}
 
         {/* After the answer is in, the same box shows what was under it. Same position, so the eye
             does not have to search for what it was just asked about. */}

@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { isAnswerableLabel, labelQuality, OCCLUSION_READ_WIDTH, plainLabel, smallerThumbnail } from "./occlusion-source";
+import { isAnswerableLabel, labelQuality, MIN_LABEL_SPREAD, OCCLUSION_READ_WIDTH, plainLabel, smallerThumbnail } from "./occlusion-source";
+
+/** One box as vision reports it: text plus where it sits, in fractions of the picture. */
+const at = (label: string, x: number, y: number) => ({ h: 0.03, label, w: 0.08, x, y });
 
 // The real URL the reference lane returned for `subject: "nephron"`, 2026-08-25.
 const REAL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dc/KidneyAndNephron-v4_Antares42.svg/1280px-KidneyAndNephron-v4_Antares42.svg.png";
@@ -68,15 +71,62 @@ test("🔴🔴🔴 the REAL nephron diagram is rejected, because it does not nam
   // These are the exact 20 labels the live route returned for `subject: "nephron"`. The diagram
   // numbers its parts 1-12 and prints the names in a key beside the figure, so the box landed on a
   // legend line and the question tested nothing about a kidney.
+  // 🔴 THE LEGEND IS A BLOCK, and its geometry is what gives it away. The four "F:"/"R:"/"S:"/"E:"
+  // entries are four stacked lines in one corner; the numbers are scattered over the figure.
   const nephron = [
-    "F: Filtration", "R: Reabsorption", "S: Secretion", "E: Excretion",
-    "Cortex", "Medulla", "to Renal Vein", "to Ureter",
-    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
+    at("F: Filtration", 0.68, 0.42), at("R: Reabsorption", 0.68, 0.45),
+    at("S: Secretion", 0.68, 0.48), at("E: Excretion", 0.68, 0.51),
+    at("Cortex", 0.72, 0.53), at("Medulla", 0.72, 0.55),
+    at("to Renal Vein", 0.69, 0.63), at("to Ureter", 0.63, 0.69),
+    at("1", 0.35, 0.42), at("2", 0.35, 0.46), at("3", 0.35, 0.50), at("4", 0.35, 0.55),
+    at("5", 0.35, 0.60), at("6", 0.48, 0.57), at("7", 0.53, 0.39), at("8", 0.51, 0.45),
+    at("9", 0.51, 0.51), at("10", 0.51, 0.58), at("11", 0.57, 0.39), at("12", 0.60, 0.57),
   ];
   const quality = labelQuality(nephron);
   assert.equal(quality.named, 8, "the named count changed — re-check the rule against the real data");
   assert.equal(quality.keyed, 12);
   assert.equal(quality.usable, false, "the picture the owner rejected is accepted again");
+});
+
+test("🔴🔴🔴 a legend BLOCK is rejected on its geometry, even when every entry is a real name", () => {
+  // 🔴 THIS IS THE ANSWER TO "how do we know the picture really labels its parts?" Every other rule
+  // grades the TEXT vision reported, which means trusting the report. This grades WHERE that text
+  // sits — which the report cannot fake without also getting the boxes wrong, and wrong boxes are
+  // visible on screen immediately.
+  //
+  // Four stacked lines in a corner, all genuine words, all distinct, no numbers anywhere: passes
+  // every other check and is still a legend, not a labelled diagram.
+  const legend = [
+    at("Filtration", 0.70, 0.40), at("Reabsorption", 0.70, 0.44),
+    at("Secretion", 0.70, 0.48), at("Excretion", 0.70, 0.52),
+  ];
+  const quality = labelQuality(legend);
+  assert.equal(quality.named, 4, "the words themselves are fine");
+  assert.equal(quality.keyed, 0);
+  assert.ok(quality.spread < MIN_LABEL_SPREAD, `a text block spread ${quality.spread.toFixed(2)}`);
+  assert.equal(quality.usable, false, "a legend block is accepted as a labelled diagram");
+});
+
+test("🔴🔴 a LAYERED diagram is accepted, though all its labels sit in one column", () => {
+  // 🔴 WHY THE RULE IS THE DIAGONAL AND NOT BOTH AXES. Skin layers, rock strata, the atmosphere —
+  // these legitimately put every label in a single left-hand column: almost no x-spread, and a huge
+  // y-spread. Requiring spread in both axes would throw away a whole shape of good figure.
+  const layers = [
+    at("epidermis", 0.12, 0.10), at("dermis", 0.12, 0.35),
+    at("hypodermis", 0.12, 0.60), at("muscle", 0.12, 0.88),
+  ];
+  assert.equal(labelQuality(layers).usable, true, "a layered diagram was rejected for being tidy");
+});
+
+test("🔴🔴 the same word reported twice is ONE part, not two", () => {
+  // Vision sometimes reports a caption at two positions. Four copies of one word is not four parts,
+  // and the question would offer the right answer as several of its own options.
+  const doubled = [
+    at("axon", 0.2, 0.2), at("axon", 0.8, 0.8),
+    at("axon", 0.2, 0.8), at("axon", 0.8, 0.2),
+  ];
+  assert.equal(labelQuality(doubled).named, 1, "duplicate labels were counted as separate parts");
+  assert.equal(labelQuality(doubled).usable, false);
 });
 
 test("🔴🔴🔴 a multi-line text block is not a label, and its picture is rejected", () => {
@@ -100,7 +150,8 @@ test("🔴🔴🔴 a multi-line text block is not a label, and its picture is re
   }
   // The two single-line survivors ("H2O", "Urea") are fewer than four named parts, so the PICTURE
   // is rejected and the route moves on — which is the behaviour that matters.
-  assert.equal(labelQuality(solutes).usable, false, "the solute-list picture is accepted again");
+  const spread = solutes.map((label, index) => at(label, 0.2 + index * 0.08, 0.2 + index * 0.08));
+  assert.equal(labelQuality(spread).usable, false, "the solute-list picture is accepted again");
 });
 
 test("🔴 a long name survives, because real diagrams print long names", () => {
@@ -122,19 +173,36 @@ test("🔴 a short SENTENCE is a known gap, and length alone cannot close it", (
 });
 
 test("🔴🔴 a diagram that really does name its parts is accepted", () => {
-  const neuron = ["dendrite", "axon", "myelin sheath", "node of Ranvier", "soma", "axon terminal"];
+  // The nine labels the live route returned for the picture it eventually chose, spread over the
+  // figure the way labels on parts actually are.
+  const neuron = [
+    at("dendrite", 0.15, 0.20), at("axon", 0.50, 0.45), at("myelin sheath", 0.62, 0.30),
+    at("node of Ranvier", 0.70, 0.60), at("soma", 0.25, 0.55), at("axon terminal", 0.88, 0.75),
+  ];
   const quality = labelQuality(neuron);
   assert.equal(quality.named, 6);
   assert.equal(quality.keyed, 0);
+  assert.ok(quality.spread >= MIN_LABEL_SPREAD);
   assert.equal(quality.usable, true, "a properly labelled diagram was rejected");
 });
 
 test("🔴🔴 names must OUTNUMBER keys, not merely exist", () => {
   // A mostly-numbered diagram that happens to print two words is still a numbered diagram.
-  assert.equal(labelQuality(["Cortex", "Medulla", "aorta", "vein", "1", "2", "3", "4", "5"]).usable, false);
+  const mixed = [
+    at("Cortex", 0.1, 0.1), at("Medulla", 0.9, 0.9), at("aorta", 0.1, 0.9), at("vein", 0.9, 0.1),
+    at("1", 0.3, 0.3), at("2", 0.4, 0.4), at("3", 0.5, 0.5), at("4", 0.6, 0.6), at("5", 0.7, 0.7),
+  ];
+  assert.equal(labelQuality(mixed).usable, false);
   // …and four named parts is the floor, because two produces one two-option question repeated.
-  assert.equal(labelQuality(["anode", "cathode"]).usable, false, "a two-label picture was chosen over a better one");
-  assert.equal(labelQuality(["anode", "cathode", "anode wire", "electrolyte"]).usable, true);
+  assert.equal(
+    labelQuality([at("anode", 0.1, 0.1), at("cathode", 0.9, 0.9)]).usable,
+    false,
+    "a two-label picture was chosen over a better one",
+  );
+  assert.equal(
+    labelQuality([at("anode", 0.1, 0.1), at("cathode", 0.9, 0.9), at("anode wire", 0.1, 0.9), at("electrolyte", 0.9, 0.1)]).usable,
+    true,
+  );
 });
 
 test("🔴🔴 a legend key comes off the front of an answer", () => {
@@ -203,7 +271,10 @@ test("🔴🔴🔴 an unsuitable picture is REJECTED and the next one is read", 
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
   assert.match(route, /for \(const candidate of found\)/, "only one picture is considered again");
-  assert.match(route, /const quality = labelQuality\(boxes\.map\(\(box\) => box\.label\)\)/, "the picture is no longer graded");
+  // 🔴 THE WHOLE BOXES, NOT JUST THEIR TEXT. `labelQuality` grades WHERE the labels sit as well as
+  // what they say, and that geometry check is the only one that looks at the picture rather than
+  // trusting vision's report of it.
+  assert.match(route, /const quality = labelQuality\(boxes\)/, "the picture is no longer graded");
   assert.match(route, /if \(!quality\.usable\) \{\s*lastRefusal = "unlabelled-picture";\s*continue;/, "an unlabelled picture is accepted again");
   // 🔴 BOUNDED IN BOTH MONEY AND TIME. Each attempt is a vision read, and three at their
   // individual ceilings would outlast the function.

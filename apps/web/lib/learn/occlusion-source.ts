@@ -154,8 +154,11 @@ export function plainLabel(text: string): string {
  * mostly numbers IS a keyed diagram, whatever else it also prints.
  */
 export interface LabelQuality {
+  /** DISTINCT names, not named boxes. */
   readonly named: number;
   readonly keyed: number;
+  /** How far the named labels are spread, as a fraction of the picture's diagonal. */
+  readonly spread: number;
   readonly usable: boolean;
 }
 
@@ -169,15 +172,56 @@ export interface LabelQuality {
  */
 export const MIN_NAMED_PARTS = 4;
 
-export function labelQuality(labels: readonly string[]): LabelQuality {
-  let named = 0;
-  let keyed = 0;
-  for (const label of labels) {
-    if (isAnswerableLabel(label)) named += 1;
-    else keyed += 1;
-  }
-  // 🔴 NAMES MUST OUTNUMBER KEYS. The nephron scored 8 named against 12 numbers and would still
-  // fail this, which is the whole point: it is a keyed diagram that happens to also print a
-  // legend, an orientation label and two arrows.
-  return { keyed, named, usable: named >= MIN_NAMED_PARTS && named > keyed };
+/**
+ * How far apart the named labels sit, as a fraction of the picture's diagonal.
+ *
+ * 🔴🔴🔴 THIS IS THE ONE CHECK THAT LOOKS AT THE PICTURE RATHER THAN THE WORDS, AND IT IS THE
+ * ANSWER TO "how do we know the picture really labels its parts?" Everything else here grades the
+ * TEXT vision reported, which means trusting the report. This grades WHERE that text sits, which
+ * the report cannot fake without also getting the boxes wrong — and if the boxes are wrong the
+ * masks land in the wrong place, which is visible immediately.
+ *
+ * A legend is a BLOCK: four lines stacked in a corner, tight in both axes. Labels on a diagram are
+ * spread across it, because the parts are. Measured on the real nephron figure, the four legend
+ * entries ("F: Filtration" and friends) sat inside a box a few percent of the image wide and a few
+ * percent tall — while the good diagram's nine labels spanned most of it.
+ *
+ * 🔴 THE DIAGONAL, NOT EITHER AXIS ALONE. A layered diagram — skin, rock strata, the atmosphere —
+ * legitimately puts every label in a single left-hand column: tiny x-span, huge y-span. Requiring
+ * spread in BOTH axes would reject those, and they are perfectly good occlusion figures.
+ */
+export const MIN_LABEL_SPREAD = 0.35;
+
+function spreadOf(boxes: readonly LabelBox[]): number {
+  if (boxes.length < 2) return 0;
+  const xs = boxes.map((box) => box.x + box.w / 2);
+  const ys = boxes.map((box) => box.y + box.h / 2);
+  return Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+}
+
+/** What `labelQuality` needs off a box: its text and where it sits, in fractions of the picture. */
+export interface LabelBox {
+  readonly label: string;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+export function labelQuality(boxes: readonly LabelBox[]): LabelQuality {
+  const named = boxes.filter((box) => isAnswerableLabel(box.label));
+  const keyed = boxes.length - named.length;
+  // 🔴 DISTINCT NAMES, NOT JUST NAMED BOXES. Vision sometimes reports the same caption twice at two
+  // positions; four copies of one word is not four parts, and the question would offer the right
+  // answer as several of its own options.
+  const distinct = new Set(named.map((box) => plainLabel(box.label).toLowerCase())).size;
+  const spread = spreadOf(named);
+  return {
+    keyed,
+    named: distinct,
+    spread,
+    // 🔴 NAMES MUST OUTNUMBER KEYS. The nephron scored 8 named against 12 numbers, which is the
+    // whole point: a keyed diagram that happens to also print a legend and two arrows.
+    usable: distinct >= MIN_NAMED_PARTS && distinct > keyed && spread >= MIN_LABEL_SPREAD,
+  };
 }

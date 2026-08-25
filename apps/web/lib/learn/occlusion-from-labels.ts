@@ -196,11 +196,21 @@ export function hiddenShape(figure: LabelledFigure, index: number): OcclusionSha
  * 🔴 EVERY CARD CARRIES THE FULL MASK LIST, which is `study-occlusion.ts`'s own contract rather
  * than a duplication bug: `occlusionMaskState` needs the siblings to decide what to draw.
  *
- * 🔴 `hide-one` IS THE MODE, AND IT IS THE OPPOSITE OF WHAT THE HAND EDITOR DEFAULTS TO. Covering
- * every part at once asks "name all seven", a different and much harder question than the one
- * being posed, and it removes the context the learner reasons from. `FigureOcclusion` makes the
- * same call in the teaching lane and says so at length: the OTHER labels staying visible IS the
- * interaction.
+ * 🔴🔴🔴 `hide-all` — OWNER, 2026-08-25: *"make it hide all and guess one. thats how it should
+ * be."* That is Anki's own mode name, and he is right on the merits, which is why the argument
+ * this comment used to make was wrong.
+ *
+ * It used to say `hide-one`, reasoning that the OTHER labels staying visible was the interaction —
+ * spatial knowledge being knowing what sits where relative to what else. The flaw: the distractors
+ * are the diagram's own other labels, so leaving them legible printed all four wrong answers on
+ * the picture the learner is looking at. They could match the covered box to the one option NOT
+ * visible and never recall anything. That is recognition wearing recall's clothes, which is the
+ * exact failure `FigureOcclusion` warns about two files over.
+ *
+ * With every part covered, the target box is marked (`occlusionMaskState` returns `target-covered`
+ * for it and `covered` for the rest, and `OcclusionCardView` draws the target with the accent
+ * stroke), so the learner still knows WHICH part is being asked about — they just cannot read any
+ * of the answers off the page.
  */
 export function occlusionPayload(figure: LabelledFigure, hidden: OcclusionShape): OcclusionPayload | null {
   const shapes = occlusionShapes(figure);
@@ -209,7 +219,7 @@ export function occlusionPayload(figure: LabelledFigure, hidden: OcclusionShape)
     height: figure.height,
     image: figure.src,
     kind: "occlusion",
-    mode: "hide-one",
+    mode: "hide-all",
     shapes,
     targetId: hidden.id,
     width: figure.width,

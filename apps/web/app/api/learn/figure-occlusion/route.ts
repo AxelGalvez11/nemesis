@@ -235,7 +235,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     // 🔴🔴🔴 THE GATE THE OWNER ASKED FOR. A picture whose parts are numbered, or which names too
     // few of them, is not a picture you can be tested on — so it is REJECTED and the next
     // candidate is read instead.
-    const quality = labelQuality(boxes.map((box) => box.label));
+    const quality = labelQuality(boxes);
     if (!quality.usable) {
       lastRefusal = "unlabelled-picture";
       continue;
