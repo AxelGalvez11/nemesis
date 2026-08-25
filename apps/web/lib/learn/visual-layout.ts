@@ -920,6 +920,16 @@ const ARROW_MIN_SPAN = 9;
 /** What a printed atom label needs cleared around its own point, and what a bare corner needs. */
 export const ARROW_CLEAR_LABEL = 10;
 export const ARROW_CLEAR_BARE = 3.5;
+/**
+ * A lone pair is ALREADY outside the letters, so an arrow starting on one clears almost nothing.
+ *
+ * 🔴 THIS IS WHAT MAKES THE DOTS WORTH DRAWING. A textbook arrow begins on the pair that moves, and
+ * standing off from it by a label's width would leave the arrow floating in the gap beside the dots
+ * instead of coming out of them.
+ */
+export const ARROW_CLEAR_PAIR = 1.5;
+/** The middle of a bond, where an arrow for a bond breaking begins and one for a bond forming ends. */
+export const ARROW_CLEAR_BOND = 2.5;
 /** Matches the drawer's own `bondThickness` default, so an arrow reads as light as a bond. */
 export const ARROW_STROKE = 1;
 
