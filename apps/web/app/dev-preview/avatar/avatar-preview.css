@@ -1,0 +1,166 @@
+/* The avatar preview. Dev-only, so it carries its own colours rather than reaching into
+   the product's tokens — this page must keep working if those move.
+
+   🔴 EVERY CLASS IS PREFIXED, AND THE FIRST DRAFT WAS NOT. This page used `.av`, which the
+   app already owns in `app/styles/shell.css` as a 30px round avatar chip. Nothing errored:
+   the page simply rendered 58px wide in a 1440px window, because the shell's `width: 30px`
+   applied and this file never set one. Global stylesheets in one bundle means a bare class
+   name is a shared namespace, and a short one WILL already be taken. */
+
+.apv {
+  --apv-ground: #ffffff;
+  --apv-panel: #f4f5f7;
+  --apv-panel-on: #e6eaf5;
+  --apv-line: #e2e5eb;
+  --apv-ink: #14161a;
+  --apv-soft: #6b7280;
+  min-height: 100vh;
+  background: var(--apv-ground);
+  color: var(--apv-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  padding: 32px 28px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .apv {
+    --apv-ground: #0d0f12;
+    --apv-panel: #17191e;
+    --apv-panel-on: #232838;
+    --apv-line: #262a31;
+    --apv-ink: #eef0f4;
+    --apv-soft: #9aa2ad;
+  }
+}
+
+.apv-head h1 {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+}
+
+.apv-head p {
+  margin: 0;
+  color: var(--apv-soft);
+  font-size: 14px;
+}
+
+.apv-stage {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 24px;
+  background: var(--apv-panel);
+  border-radius: 20px;
+}
+
+.apv-stage-art {
+  display: grid;
+  place-items: center;
+  width: 280px;
+  height: 280px;
+  flex: none;
+}
+
+.apv-stage-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.apv-now {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.apv-sub {
+  color: var(--apv-soft);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.apv-section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--apv-soft);
+  margin: 0 0 12px;
+}
+
+.apv-bodies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.apv-chip,
+.apv-cell {
+  appearance: none;
+  border: 1px solid var(--apv-line);
+  background: var(--apv-panel);
+  color: inherit;
+  border-radius: 14px;
+  cursor: pointer;
+  font: inherit;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.apv-chip:hover,
+.apv-cell:hover {
+  border-color: var(--apv-soft);
+}
+
+.apv-chip:focus-visible,
+.apv-cell:focus-visible {
+  outline: 2px solid #5b7fe5;
+  outline-offset: 2px;
+}
+
+.apv-chip.is-on,
+.apv-cell.is-on {
+  background: var(--apv-panel-on);
+  border-color: #5b7fe5;
+}
+
+.apv-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 6px;
+  font-size: 13px;
+}
+
+.apv-grid {
+  display: grid;
+  /* minmax(0, …) so a wide cell cannot push the track past the viewport. */
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.apv-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px 8px 12px;
+}
+
+.apv-name {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.apv-len {
+  font-size: 11px;
+  color: var(--apv-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.nemesis-avatar {
+  display: block;
+  overflow: visible;
+}
