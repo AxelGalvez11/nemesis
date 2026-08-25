@@ -59,12 +59,48 @@ function Glyph({ kind }: { kind: Mark }) {
         </g>
       );
     case "searching":
-      // A magnifier. The one place a conventional shape beats an invented one: everybody already
-      // reads this as search, and a house mark here would be cleverness at the reader's expense.
+      // 🔴🔴 A GLOBE, NOT A MAGNIFIER — owner, 2026-08-25, with the caption on screen. The note that
+      // stood here argued for the magnifier because "everybody already reads this as search", which
+      // was right while the web was the ONLY thing this canvas could search. It no longer is: the
+      // same turn can now read the learner's calendar and their connected apps, and a magnifier
+      // beside "Searching the web" says the generic half of a sentence whose specific half is the
+      // point. A globe says which of the three is running, at a glance, which is the whole job of a
+      // mark sitting next to words that already say it.
       return (
         <g {...STROKE}>
-          <circle cx="7" cy="7" r="4.2" />
-          <path d="M10.2 10.2 13.5 13.5" />
+          <circle cx="8" cy="8" r="5.4" />
+          <path d="M2.6 8h10.8" />
+          {/* The meridians. Two arcs of the same ellipse, mirrored, so the sphere reads as a
+              sphere at 13px rather than as a circle with a line through it. */}
+          <path d="M8 2.6a8 8 0 0 1 0 10.8M8 2.6a8 8 0 0 0 0 10.8" />
+        </g>
+      );
+    case "calendar":
+      // A month: the block, the two hangers, and the head rule that makes it a calendar rather
+      // than a window. No dots inside — at 13px a grid of dots fills in and reads as noise.
+      return (
+        <g {...STROKE}>
+          <path d="M2.8 4.2h10.4v9.2H2.8z" />
+          <path d="M2.8 7h10.4" />
+          <path d="M5.6 2.6v2.6M10.4 2.6v2.6" />
+        </g>
+      );
+    case "apps":
+      // 🔴 A CHAIN LINK, AND IT BEAT TWO BETTER-SOUNDING IDEAS AT 13px. The grid of squares is the
+      // universal "apps" glyph and it means a LAUNCHER — a place to pick one — which is not what is
+      // happening; Nemesis is reaching into an app the learner already connected, so connection is
+      // what the shape has to say. A plug says that too and was drawn first, but three shapes
+      // stacked in 13 pixels merge into a blob (rendered side by side and compared, 2026-08-25);
+      // two overlapping panes lose against the `reading` page at the same size. The link is two
+      // strokes on a diagonal, which is the one silhouette in this set nothing else owns.
+      //
+      // 🔴 THE USUAL OBJECTION IS THAT A LINK MEANS A URL, and it is answered by what this sits
+      // next to: the web has a globe two cases up, and the caption always names the app out loud.
+      return (
+        <g {...STROKE}>
+          <path d="M6.6 9.4 9.4 6.6" />
+          <path d="M7 4.6 8.2 3.4a2.7 2.7 0 0 1 3.8 3.8l-1.2 1.2" />
+          <path d="M9 11.4l-1.2 1.2a2.7 2.7 0 0 1-3.8-3.8l1.2-1.2" />
         </g>
       );
     default:

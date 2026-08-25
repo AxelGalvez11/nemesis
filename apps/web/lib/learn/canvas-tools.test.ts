@@ -94,14 +94,45 @@ test("🔴 a connected app appears only once it is connected, and by its own slu
   assert.ok(!withApp.includes("gmail_send_email"), "the slug was rewritten on its way to the model");
 });
 
-test("🔴 the strip never shows a raw action slug", () => {
+test("🔴 the strip never shows a raw action slug, and every line brings its own mark", () => {
   // "GMAIL_FETCH_EMAILS" on screen is our plumbing showing through; the learner asked about mail.
   for (const [name, app] of [["list_calendar_events", undefined], ["GMAIL_FETCH_EMAILS", "gmail"]] as const) {
-    const label = labelFor(name, app);
-    assert.ok(!label.includes("_"), `${label} is a slug, not a sentence`);
-    assert.ok(label.length > 0);
+    const note = labelFor(name, app);
+    assert.ok(!note.label.includes("_"), `${note.label} is a slug, not a sentence`);
+    assert.ok(note.label.length > 0);
   }
-  assert.equal(labelFor("delete_calendar_event", undefined), "Checking before deleting");
+  assert.deepEqual(labelFor("delete_calendar_event", undefined), { label: "Checking before deleting", mark: "calendar" });
+  assert.equal(labelFor("GMAIL_SEND_EMAIL", "gmail").mark, "apps");
+  assert.equal(labelFor("list_calendar_events", undefined).mark, "calendar");
+});
+
+test("🔴🔴 the strip moves BEFORE each call, not after the round", () => {
+  // Owner, 2026-08-25: *"make it live"*. Handing the labels back once the round is over shows a
+  // blank shimmer through the part that takes time and then names the work for the instant before
+  // the answer replaces it — a receipt, not a status. Calibration: move `onCall` below the await
+  // and this reddens.
+  // 🔴 COMMENTS STRIPPED, for the same reason the `confirmed` guard strips them: this function's
+  // note EXPLAINS the old label-collecting shape, and a guard that reddened on the explanation
+  // would train the next person to delete it.
+  const source = code(TOOLS);
+  const round = source.slice(source.indexOf("export async function runToolRound"), source.indexOf("export async function runConfirmed"));
+  const announced = round.indexOf("options.onCall?.(labelFor(");
+  const ran = round.indexOf("await runConnectedApp");
+  assert.ok(announced > 0 && ran > announced, "the strip is told after the call rather than before it");
+  assert.ok(!/labels/.test(round), "the round still collects labels to hand back at the end");
+});
+
+test("🔴 the mark travels WITH the label, and a bare label still earns none", () => {
+  // `thinking-phases.ts` refuses to guess a kind from words, and that rule is untouched: what
+  // changed is that a caller which already KNOWS the kind may pass it. Calibration: derive
+  // `workMark` from the label's text anywhere and this reddens.
+  const PHASES = readFileSync(new URL("./thinking-phases.ts", import.meta.url), "utf8");
+  assert.match(PHASES, /if \(input\.work\) return input\.workMark \?\? null;/, "a bare work label now earns a mark");
+  assert.match(CHAT, /onCall: \(note\) => onWork\?\.\(note\.label, note\.mark\)/, "the mark is dropped between the tool and the strip");
+  assert.match(SESSION, /setWorkMark\(mark \?\? null\)/, "the session drops the mark");
+  // 🔴 AND IT IS CLEARED WITH THE LABEL. A mark left behind sits beside whatever the next step
+  // says — a picture contradicting a sentence, which is what the precedence rule exists to stop.
+  assert.match(SESSION, /setWork\(null\);\n[\s\S]{0,400}?setWorkMark\(null\);/, "the mark outlives the label it belonged to");
 });
 
 // ── The envelope ─────────────────────────────────────────────────────────────────────────────

@@ -1256,6 +1256,9 @@ export function LearningCanvas({
     phase: policy.phase,
     searching: turnInFlight && session.searchedDomains.length > 0,
     work: session.work,
+    // 🔴 THE MARK THE LABEL BROUGHT WITH IT, and nothing else. `thinkingMark` still refuses to
+    // invent one for a label that arrived bare — see the note on `workMark` there.
+    workMark: session.workMark,
   });
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
