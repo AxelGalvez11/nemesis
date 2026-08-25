@@ -87,15 +87,29 @@ test("🔴🔴 the packet says the lane covers every field, not one", () => {
   }
 });
 
-test("🔴🔴🔴 the seven are NAMED, so widening the fan-out is a visible edit", () => {
+test("🔴🔴🔴 the six are NAMED, so widening the fan-out is a visible edit", () => {
   // Reading `registry.byDomain("literature")` instead would mean this action's reach changes
   // whenever someone registers a connector and tags it literature — a one-word edit in a file
   // nobody reviews for egress silently opening a new third-party call for every learner.
+  //
+  // 🔴 THIS GUARD PINNED SEVEN UNTIL 2026-08-24, WHEN THE OWNER CUT bioRxiv: *"i guess we dont need
+  // biorxiv."* It is narrowed rather than deleted, and the reversal is written down, because the
+  // guard's real subject is "no source enters or leaves this lane without an edit to that list" —
+  // which is exactly as true at six as at seven. bioRxiv went because it is the only index with no
+  // search endpoint: relevance had to be guessed on its behalf, and it guessed a neuroscience
+  // preprint into a property-law answer.
   const list = FUNC.slice(FUNC.indexOf("const LITERATURE_IDS"), FUNC.indexOf("] as const;"));
   assert.ok(list.length > 0, "LITERATURE_IDS is gone — this guard is pointed at nothing");
-  for (const id of ["openalex", "crossref", "semantic-scholar", "europepmc", "pubmed", "arxiv", "biorxiv"]) {
+  for (const id of ["openalex", "crossref", "semantic-scholar", "europepmc", "pubmed", "arxiv"]) {
     assert.ok(list.includes(`"${id}"`), `${id} left the literature set`);
   }
+  // 🔴 AND THE INVERSE, so restoring it is a deliberate act rather than a merge artefact. Anyone
+  // putting bioRxiv back must first read why it left — and must repair the guessing, not just the
+  // list. biorxiv.test.ts holds that repair.
+  assert.ok(
+    !list.includes('"biorxiv"'),
+    "bioRxiv is back in the literature fan-out — the owner removed it 2026-08-24; it has no search endpoint, so this lane would be guessing relevance again",
+  );
   assert.ok(!/byDomain\(/.test(FUNC), "the fan-out reads a domain tag again and can widen without an edit here");
   // …and the other thirty-five stay dark.
   for (const walled of ["uniprot", "chembl", "gnomad", "alphafold", "kegg"]) {
@@ -180,6 +194,11 @@ test("🔴🔴 nothing identifies Nemesis to a third party as somebody else", ()
   // rate limits and to reach an operator whose traffic misbehaves — so each one both misattributed
   // our traffic to someone else and left us unreachable. Harmless while the connectors were off;
   // live the moment the lane is deployed, which is what made them worth finding.
+  // 🔴 biorxiv STAYS ON THIS LIST THOUGH IT LEFT THE FAN-OUT. This guard is about what the SOURCE
+  // FILES say, not about which of them this lane calls: biorxiv.ts is still in the tree and still
+  // reachable from `ask` behind SCIENCE_CONNECTORS. Dropping it here because the literature lane no
+  // longer uses it would recreate precisely the condition that let these three strings survive for
+  // months — a connector nobody checks because nobody is currently calling it.
   const literature = ["openalex", "crossref", "pubmed", "europepmc", "arxiv", "biorxiv", "semantic-scholar"];
   for (const name of literature) {
     const source = strip(readFileSync(new URL(`../../../../supabase/functions/_shared/science/literature/${name}.ts`, import.meta.url), "utf8"));

@@ -5,10 +5,15 @@ import { supabaseUrl } from "@/lib/env";
 // ── the scholarly lane: seven literature indexes, behind the same door as everything else ─────
 //
 // Owner 2026-08-24: *"Plug the literature seven."* This proxies to the `nemesis-literature` edge
-// function, which fans out across OpenAlex, Crossref, Semantic Scholar, Europe PMC, PubMed, arXiv
-// and bioRxiv and merges what answers.
+// function, which fans out across OpenAlex, Crossref, Semantic Scholar, Europe PMC, PubMed and
+// arXiv and merges what answers. bioRxiv was the seventh until the owner cut it 2026-08-24 — it is
+// the one index with no search endpoint, so relevance had to be guessed on its behalf, and a guess
+// shown to a learner as evidence is a fabrication. See the edge function header.
 //
-// 🔴 THAT FUNCTION IMPORTS THE SEVEN AND NOTHING ELSE. It began as an action inside
+// 🔴 THE SEVEN IS NOW SIX. If this comment and LITERATURE_IDS ever disagree, the function wins —
+// it is the list that decides what is actually called.
+//
+// 🔴 THAT FUNCTION IMPORTS THE SIX AND NOTHING ELSE. It began as an action inside
 // `science-search`, which pulls in the whole 42-connector registry and keeps the other 35 dark
 // behind a runtime flag. Not deploying them at all is the stronger guarantee: the code for those
 // egress paths is not present in the deployed function, so no future edit to a gate can expose
