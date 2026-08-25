@@ -100,20 +100,58 @@ export interface RunResearchOptions {
 
 export type ResearchFailure = { error: string };
 
-export async function runResearch(
+/**
+ * Just the plan: what this run WOULD go and find out, before it spends anything.
+ *
+ * 🔴🔴 SEPARATED SO THE LEARNER CAN SEE IT AND SAY NO. A run is about a minute and several metered
+ * searches, and the thing that makes an expensive action safe is not a smaller price, it is showing
+ * somebody what is about to happen while they can still stop it. So a declared Deep research
+ * submission plans FIRST, puts the sub-questions on screen with Start and Cancel, and spends
+ * nothing until the learner presses Start.
+ *
+ * Planning is one model call and no searches, which is what makes the preview affordable: the
+ * expensive half is everything after this function.
+ */
+export async function planResearch(
   uid: string,
   question: string,
   options: RunResearchOptions = {},
+): Promise<string[] | ResearchFailure> {
+  const asked = question.trim();
+  if (asked.length < 8) return { error: "Give me a question with a bit more in it to research." };
+  const io = options.io ?? liveIO(uid, options.signal);
+  options.onStep?.({ kind: "planning" });
+  const planned = readSubQuestions(await io.complete(planMessages(asked), true));
+  return planned ?? { error: "I couldn't break that question into parts to research. Try rephrasing it." };
+}
+
+export async function runResearch(
+  uid: string,
+  question: string,
+  options: RunResearchOptions & {
+    /** A plan the learner already saw and approved. Absent means plan first, as before. */
+    plan?: readonly string[];
+  } = {},
 ): Promise<ResearchReport | ResearchFailure> {
   const { onStep, signal } = options;
   const io = options.io ?? liveIO(uid, signal);
   const asked = question.trim();
   if (asked.length < 8) return { error: "Give me a question with a bit more in it to research." };
+  const startedAt = Date.now();
 
   // ---- plan ------------------------------------------------------------------------------
-  onStep?.({ kind: "planning" });
-  const subQuestions = readSubQuestions(await io.complete(planMessages(asked), true));
-  if (!subQuestions) return { error: "I couldn't break that question into parts to research. Try rephrasing it." };
+  // 🔴 AN APPROVED PLAN IS NOT RE-PLANNED. The learner read those sub-questions and pressed Start;
+  // planning again would spend a call to produce a DIFFERENT list, and the run would then go and
+  // research something they never saw. That is worse than not showing a plan at all.
+  let subQuestions: string[];
+  if (options.plan?.length) {
+    subQuestions = [...options.plan];
+  } else {
+    onStep?.({ kind: "planning" });
+    const planned = readSubQuestions(await io.complete(planMessages(asked), true));
+    if (!planned) return { error: "I couldn't break that question into parts to research. Try rephrasing it." };
+    subQuestions = planned;
+  }
 
   // ---- gather ----------------------------------------------------------------------------
   const learnings: ResearchLearning[] = [];
@@ -240,7 +278,7 @@ export async function runResearch(
     question: asked,
     sections: remapped,
     sources,
-    stats: { dropped: allPoints.length - kept, found: learnings.length, kept, searched: searchesRun },
+    stats: { dropped: allPoints.length - kept, elapsedMs: Date.now() - startedAt, found: learnings.length, kept, searched: searchesRun },
     subQuestions,
     summary: body.summary,
   };

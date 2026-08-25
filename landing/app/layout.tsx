@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { PostHogProvider } from "@/components/PostHogProvider";
+import { SITE_ORIGIN } from "@/lib/site";
 
 // Type system: two faces, with a strict division of labour.
 //
@@ -59,12 +60,22 @@ const revealScript =
 // thing better — and a tab reading the rejected phrase while the page reads the
 // new one is the same idea stated twice, badly. The verb still names the category,
 // which is the whole reason this string is not the product name alone.
-const TITLE = "Nemesis: accelerate cognition";
+// 2026-08-24 — THE TAB NOW AGREES WITH THE HEADLINE. "accelerate cognition" moved
+// to the close of the page, where the reader has been shown what it means; the
+// title followed it, because a search result is read by someone who has been shown
+// nothing at all. "Learn anything, faster" is the H1 verbatim, and a title that
+// matches the first line of the page is the one thing every result-snippet
+// guideline agrees on. The phrase is not lost — it closes the homepage.
+//
+// The description was 210 characters and Google truncates around 160, so the last
+// third of it — the part naming retrieval — was never shown. It now says what the
+// product does in one sentence and what it is built on in four words.
+const TITLE = "Nemesis: learn anything, faster";
 const DESCRIPTION =
-  "Nemesis turns lectures, textbooks and course material into an adaptive path through knowledge. It asks you to retrieve, reads what your answer shows, and changes what comes next. The machine prepares. You learn.";
+  "Nemesis turns your lectures, slides and notes into a course, then teaches it, adapting to what you already know. Built on evidence-based learning.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.enternemesis.com"),
+  metadataBase: new URL(SITE_ORIGIN),
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: "/" },

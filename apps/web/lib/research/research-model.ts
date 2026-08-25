@@ -67,8 +67,10 @@ export interface ResearchReport {
    *  as confidence nobody earned. */
   gaps: string[];
   sources: ReportSource[];
-  /** Counts, for the honest footer: how much was found, how much survived verification. */
-  stats: { searched: number; found: number; kept: number; dropped: number };
+  /** Counts, for the honest footer: how much was found, how much survived verification, and how
+   *  long it took. `elapsedMs` is wall-clock across the whole run, so it includes the searches and
+   *  the per-sentence checking — the parts a learner actually waited through. */
+  stats: { searched: number; found: number; kept: number; dropped: number; elapsedMs: number };
 }
 
 /** Progress, for the strip the learner watches. Each step names work genuinely running — the same

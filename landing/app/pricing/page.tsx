@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteChrome, APP_SIGN_UP } from "@/components/SiteChrome";
+import { PageGlow } from "@/components/PageGlow";
 import { PricingPlans } from "@/components/PricingPlans";
 
 export const metadata: Metadata = {
@@ -56,6 +57,7 @@ export default function PricingPage() {
   return (
     <SiteChrome>
       <section className="section pricing-hero" id="plans">
+        <PageGlow />
         <div className="wrap">
           <div className="section-head pricing-head" data-reveal="up">
             <p className="eyebrow">Pricing</p>

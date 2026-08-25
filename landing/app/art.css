@@ -1,0 +1,631 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Nemesis landing — the light, the screenshots, and the four blocks.
+
+   OWNER REVERSAL, 2026-08-24. globals.css opens by recording a rule from
+   2026-07-28: "purely black and white minimalism … we want focus not noise",
+   with "every gradient" listed among the things removed and not returning. The
+   owner reversed the palette half of that after looking at openai.com and asked
+   for generated gradients, background imagery and parallax.
+
+   THE REASONING SURVIVES THE REVERSAL, WHICH IS WHY THIS FILE IS SHAPED THE WAY
+   IT IS. openai.com is instructive precisely because it is not gradient-heavy:
+   read their stylesheet and there is not one CSS gradient on the page. It is
+   white with black type, and one saturated, beautifully lit ARTWORK per idea sits
+   in an otherwise silent grid. So:
+
+     - Not one `linear-gradient` or `radial-gradient` paints colour here. Colour
+       arrives only as a rendered WebP in `public/nemesis/art`. Gradients ARE used
+       as masks, which paint nothing and only decide where the artwork stops.
+     - Every token in globals.css is untouched. Type is still `--text`, rules are
+       still `--line`, the ground is still `--bg`. Nothing coloured is ever put
+       behind body copy.
+     - The art is masked to nothing before it reaches any text it could compete
+       with.
+
+   PARALLAX. `components/use-parallax.ts` writes a scalar onto the element as
+   `--p`, and the rules below decide what that scalar means in pixels. The hook
+   registers nothing at all under `prefers-reduced-motion`, so `--p` keeps the 0
+   declared here and every element sits exactly where the static design puts it.
+   The travel numbers are small on purpose — this should be felt while scrolling
+   and invisible in a screenshot.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Default so a rule is never `calc(* px)` with an empty variable, and so the
+   reduced-motion path resolves to no offset rather than to an invalid length. */
+.nhero-glow,
+.nhero-organism,
+.band-art,
+.look-desk {
+  --p: 0;
+}
+
+/* ── THE HERO LIGHT ───────────────────────────────────────────────────────────
+   Full-bleed, behind everything, pinned to the top-right so it sits under the
+   organism and runs out of energy before it reaches the headline on the left.
+
+   `position: absolute` inside `.nhero`, which is already `overflow: hidden` for
+   the organism's overflow — so this cannot widen the page either. */
+.nhero {
+  position: relative;
+  isolation: isolate;
+}
+.nhero-glow {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 50%;
+  width: min(1500px, 130vw);
+  aspect-ratio: 2400 / 1372;
+  /* Centre it, push it right and up so its bright corner lands behind the object,
+     then add the scroll offset. One transform, composed — this is why the hook
+     writes a variable instead of setting `transform` itself. */
+  transform: translate3d(calc(-50% + min(20vw, 260px)), calc(-50% - 6vh + var(--p) * 190px), 0);
+  will-change: transform;
+  pointer-events: none;
+}
+/* Absolutely positioned so it fills the glow box exactly. (This selector also
+   covered a <video> layer until 2026-08-24; the video is gone — see Hero.tsx.) */
+.nhero-glow img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* THE MASK IS THE WHOLE DESIGN. Without it this is a blue rectangle behind a
+     black headline. An ellipse centred right-of-frame reaches full strength only
+     where the organism is and is fully transparent well before the text column,
+     so no body copy is ever set on colour. Both properties: -webkit- for Safari,
+     which still needs the prefix for mask-image on some versions. */
+  -webkit-mask-image: radial-gradient(
+    ellipse 62% 58% at 68% 44%,
+    #000 0%,
+    rgba(0, 0, 0, 0.86) 38%,
+    rgba(0, 0, 0, 0.34) 66%,
+    transparent 84%
+  );
+  mask-image: radial-gradient(
+    ellipse 62% 58% at 68% 44%,
+    #000 0%,
+    rgba(0, 0, 0, 0.86) 38%,
+    rgba(0, 0, 0, 0.34) 66%,
+    transparent 84%
+  );
+  /* Light mode is a white page: the art has to sit far back or it shouts. Dark
+     mode is a black page, where the same opacity reads as almost nothing, so it
+     gets more — see the media query at the foot of this block. */
+  opacity: 0.5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .nhero-glow img { opacity: 0.72; }
+}
+:root[data-theme="dark"] .nhero-glow img { opacity: 0.72; }
+
+/* The object rides its own slower offset, so it separates from the light behind
+   it. `translateY(clamp(...))` is the static placement from home.css and has to
+   survive, which is why it is repeated here rather than overridden. */
+.nhero-organism {
+  transform: translate3d(0, calc(clamp(0px, 1.4vw, 22px) + var(--p) * 190px), 0);
+  will-change: transform;
+}
+
+/* THE HEADLINE IS THREE WORDS NOW, NOT TWO. home.css caps it at 9ch to force
+   "Accelerate / cognition." onto two lines, which is the composition that headline
+   needed. "Learn anything, faster." is three words and 23 characters; at 9ch it
+   breaks into three cramped lines. 15ch gives it two. */
+.nhero h1 {
+  max-width: 15ch;
+}
+
+/* The secondary action. A link, not a button — see Hero.tsx. */
+.nhero-alt {
+  font-size: 15px;
+  color: var(--text-2);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-2);
+  padding-bottom: 2px;
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+.nhero-alt:hover {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+@media (max-width: 880px) {
+  /* Stacked, so the light belongs to the whole block rather than to one column,
+     and the object's static offset is removed by home.css at this width. */
+  .nhero-glow {
+    width: 160vw;
+    transform: translate3d(-50%, calc(-50% - 2vh + var(--p) * 120px), 0);
+  }
+  .nhero-organism { transform: translate3d(0, calc(var(--p) * 120px), 0); }
+  .nhero h1 { max-width: 100%; }
+  .nhero-cta { flex-direction: column; gap: 18px; }
+}
+
+/* ── WHAT IT LOOKS LIKE ───────────────────────────────────────────────────────
+   Real screenshots. The section that replaced the animated mock. */
+.look {
+  padding: clamp(72px, 10vw, 148px) 0 clamp(24px, 4vw, 56px);
+  overflow: hidden;
+}
+.look-head {
+  font-family: var(--sans);
+  font-size: clamp(28px, 4.4vw, 54px);
+  font-weight: 400;
+  letter-spacing: -0.038em;
+  line-height: 1.02;
+  color: var(--text);
+  margin: 0;
+  max-width: 16ch;
+}
+.look-sub {
+  margin: clamp(16px, 1.8vw, 22px) 0 0;
+  max-width: 46ch;
+  font-size: clamp(15.5px, 1.3vw, 18px);
+  line-height: 1.6;
+  color: var(--text-2);
+}
+/* No bottom padding any more: it existed only to reserve room for the phone inset
+   that used to hang off this corner. */
+.look-stage {
+  margin-top: clamp(36px, 5vw, 68px);
+}
+.look-desk img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.look-desk {
+  border: 1px solid var(--line);
+  border-radius: clamp(10px, 1.2vw, 18px);
+  overflow: hidden;
+  transform: translate3d(0, calc(var(--p) * 90px), 0);
+  will-change: transform;
+  /* The one shadow on the site. It is here because a screenshot of a white app on
+     a white page has no edge otherwise, and a hairline alone reads as a table
+     cell. Kept nearly invisible and built from the ink channels so it inverts. */
+  box-shadow: 0 24px 60px -32px rgba(var(--fg), 0.28);
+}
+
+.look-note {
+  margin: clamp(20px, 2.4vw, 30px) 0 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+}
+
+/* ── THE FOUR BANDS ───────────────────────────────────────────────────────────
+   Full-bleed. The art is the GROUND, not a picture in a box — it lies behind the
+   whole band and is masked away before it reaches the words, which is what keeps
+   the type pure --text on pure --bg and never white-on-a-gradient.
+
+   The band alternates which edge the light burns on; the copy always sits on the
+   quiet side. */
+.bands {
+  display: grid;
+}
+.band {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  min-height: clamp(300px, 46vw, 520px);
+  padding: clamp(56px, 8vw, 104px) 0;
+}
+.band-art {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  transform: translate3d(0, calc(var(--p) * 150px), 0);
+  /* Taller than the band and offset up, so 150px of travel never drags an edge
+     into frame. `inset: 0` sets the box; this grows it symmetrically past it. */
+  scale: 1.28;
+  will-change: transform;
+  pointer-events: none;
+}
+.band-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* THE TWO MASKS ARE THE LAYOUT. Everything else about a band is padding. The
+   ellipse is pushed off the frame so only its soft shoulder is ever on screen —
+   centring it would put the bright core behind the middle of the band, which is
+   exactly where the sentence is. */
+.band[data-side="right"] .band-art img {
+  -webkit-mask-image: radial-gradient(ellipse 78% 108% at 104% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+  mask-image: radial-gradient(ellipse 78% 108% at 104% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+}
+.band[data-side="left"] .band-art img {
+  -webkit-mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+  mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+}
+
+/* Same reasoning as the hero light: a white page needs the art held back, a black
+   page needs it brought forward, or the identical file reads as garish on one and
+   absent on the other. */
+.band-art img { opacity: 0.52; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .band-art img { opacity: 0.74; }
+}
+:root[data-theme="dark"] .band-art img { opacity: 0.74; }
+
+/* ── THE BAND THAT CARRIES REAL FIGURES ───────────────────────────────────────
+   `See it` is the one claim on the page that can simply be demonstrated, so it
+   is. The four images below its copy are captures of the app's own renderer —
+   see the note in Features.tsx — and they need the full width, which means this
+   band stops being a two-up and becomes a stack. */
+.band[data-figs] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: clamp(30px, 4vw, 52px);
+}
+/* 🔴 DO NOT SHRINK `.band-in` ITSELF HERE. It carries `.wrap`, which is
+   `max-width: 1180px; margin: 0 auto; padding: 0 28px` — the page's one column.
+   Overriding its max-width and margin (which an earlier version of this rule did)
+   detaches the copy from that column: the box anchors to the SECTION's left edge
+   instead of the page's, and the heading ends up 64px left of every other heading
+   on the site while the figures below it stay correctly aligned.
+   Constrain the measure on the children instead, and leave the column alone. */
+.band[data-figs] .band-in,
+.band[data-side="left"][data-figs] .band-in {
+  max-width: 1180px;
+  margin-inline: auto;
+}
+.band[data-figs] .band-in h3,
+.band[data-figs] .band-in p {
+  max-width: 46ch;
+}
+/* Three across at desktop. It was two when there were four figures; there are nine
+   now — the full set the renderer can draw — and a 2-wide column of nine is a
+   scroll rather than a display. `align-items: start` because the figures have
+   genuinely different heights and stretching them would crop or letterbox. */
+.band-figs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(12px, 1.5vw, 20px);
+  align-items: start;
+}
+.band-figs img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: clamp(10px, 1.1vw, 15px);
+  /* The figure files carry the app's own panel colour, which is a near-neutral
+     tint of the app ground rather than pure white. An explicit background stops
+     a transparent edge from letting the gradient through underneath. */
+  background: var(--bg);
+}
+
+@media (max-width: 1000px) {
+  .band-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .band-figs { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 🔴 `.band .band-in`, NOT `.band-in`, AND THAT ONE EXTRA CLASS IS THE WHOLE RULE.
+   This element carries `.wrap`, which globals.css defines as
+   `max-width: 1180px; margin: 0 auto`. Both selectors are one class, so specificity
+   ties — and globals.css's own rules are parsed AFTER the files it @imports, because
+   @import has to come first in a stylesheet. `.wrap` therefore won, every band's copy
+   stayed 1180px wide and centred, and `data-side` moved nothing at all for a day.
+   Measured: all four headings sat at x=158 regardless of side. */
+/* 🔴 THE COLUMN STAYS; THE TEXT MOVES INSIDE IT. Narrowing `.band-in` itself and
+   pushing it with a margin does put the copy on the correct side, and it also tears
+   it off the page grid: the box then starts at the BAND's edge, so a right-side band
+   left its heading at x=28 while every other heading on the site sits at x=158.
+   Keep the 1180px column exactly where `.wrap` puts it and give the CHILDREN the
+   measure and the side. */
+.band .band-in {
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+}
+/* 🔴 A PX/PERCENT MEASURE, NOT `ch`, AND THE REASON IS FONT SIZE. `ch` is relative
+   to the element it is set on, so the same `46ch` means 390px on the paragraph and
+   1133px on the 44px heading — the heading then filled the column and no auto margin
+   could move it. One wrapper, one measure, both children inherit the position. */
+.band-copy {
+  max-width: min(560px, 50%);
+}
+/* Copy right, light left. `margin-left: auto` moves the block to the far side OF THE
+   COLUMN, never past it. */
+.band[data-side="left"] .band-copy { margin-left: auto; }
+
+/* ── THE SLOT OPPOSITE THE COPY ───────────────────────────────────────────────
+   A calendar shot or the character. `.band-in` becomes a two-column grid ONLY when
+   one is present, so bands without an aside keep the single-column behaviour above
+   and nothing about them changes. */
+.band-in:has(.band-aside) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(28px, 4vw, 64px);
+}
+/* The copy is already pushed by `margin-left: auto` in a one-column band; inside the
+   grid it must not be, or it drifts off its own cell. */
+.band-in:has(.band-aside) .band-copy {
+  max-width: none;
+  margin-left: 0;
+}
+/* Light left, copy right → the aside takes the FIRST cell so it sits under the light. */
+.band[data-side="left"] .band-in:has(.band-aside) .band-aside { order: -1; }
+
+.band-aside picture,
+.band-aside img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.band-aside img {
+  border: 1px solid var(--line);
+  border-radius: clamp(10px, 1.2vw, 16px);
+  background: var(--bg);
+  box-shadow: 0 20px 50px -30px rgba(var(--fg), 0.3);
+}
+.band-aside-mascot {
+  display: grid;
+  place-items: center;
+}
+
+@media (max-width: 900px) {
+  /* Stacked: words first, then the thing they are about. */
+  .band-in:has(.band-aside) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(24px, 5vw, 36px);
+  }
+  .band[data-side="left"] .band-in:has(.band-aside) .band-aside { order: 0; }
+  .band-aside-mascot { min-height: 180px; }
+}
+.band-in h3 {
+  font-family: var(--sans);
+  font-size: clamp(26px, 3.4vw, 44px);
+  font-weight: 400;
+  letter-spacing: -0.036em;
+  line-height: 1.05;
+  color: var(--text);
+  margin: 0;
+}
+.band-in p {
+  margin: clamp(14px, 1.6vw, 20px) 0 0;
+  max-width: 40ch;
+  font-size: clamp(15.5px, 1.3vw, 18px);
+  line-height: 1.62;
+  color: var(--text-2);
+}
+
+@media (max-width: 900px) {
+  /* No room for a quiet side at this width, so the light goes to the TOP and the
+     words sit under it on clean ground. The ellipse moves to the upper edge and
+     the copy takes the full measure. */
+  .band {
+    min-height: 0;
+    padding: clamp(52px, 12vw, 76px) 0;
+  }
+  /* Same specificity trap as the desktop rule: `.band-in` alone loses to `.wrap`,
+     so both selectors here have to carry `.band` too. */
+  .band .band-in,
+  .band[data-side="left"] .band-in {
+    max-width: 1180px;
+    margin-inline: auto;
+  }
+  .band-copy,
+  .band[data-side="left"] .band-copy {
+    max-width: 100%;
+    margin-left: 0;
+  }
+  .band[data-side="right"] .band-art img,
+  .band[data-side="left"] .band-art img {
+    -webkit-mask-image: radial-gradient(ellipse 120% 76% at 50% -6%, #000 0%, rgba(0,0,0,0.6) 38%, transparent 78%);
+    mask-image: radial-gradient(ellipse 120% 76% at 50% -6%, #000 0%, rgba(0,0,0,0.6) 38%, transparent 78%);
+  }
+  .band-in p { max-width: 100%; }
+}
+
+/* ── LEARN ANYTHING — THE SUBJECT RING ────────────────────────────────────────
+   The claim sits in the middle and twelve subjects orbit it, all equidistant.
+   That equidistance is the point: see the note in LearnAnything.tsx.
+
+   `--n` comes from the component as an inline style, so adding a thirteenth
+   subject re-spaces the ring with no change here. */
+.ring-band {
+  justify-content: center;
+  text-align: center;
+  padding: clamp(72px, 10vw, 132px) 0;
+}
+.ring-in {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(26px, 3.4vw, 40px);
+}
+
+/* 🔴 NOT `.ring`, AND THAT IS NOT A NAMING PREFERENCE. This app loads Tailwind, and
+   `ring` is one of its utilities — it paints `box-shadow: 0 0 0 1px`. A div with
+   className="ring" therefore drew a 1px square around the whole orbit that no rule
+   in this file put there, and `getComputedStyle(el).border` reported 0px because it
+   was a box-shadow, not a border. The prefixed names below (`ring-orbit`,
+   `ring-chip`, `ring-centre`) are safe: none of them is a real Tailwind utility, so
+   none of them generates anything. Only the bare word collides.
+*/
+.subject-ring {
+  --size: clamp(280px, 46vw, 480px);
+  --chip: clamp(38px, 4.4vw, 52px);
+  /* Radius stops just inside the box so a chip never clips its own edge. */
+  --r: calc(var(--size) / 2 - var(--chip) / 2 - 2px);
+  position: relative;
+  width: var(--size);
+  height: var(--size);
+  display: grid;
+  place-items: center;
+}
+
+.ring-orbit {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  animation: ring-spin 90s linear infinite;
+}
+.ring-orbit li {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: var(--chip);
+  height: var(--chip);
+  /* Rotate to the slot, push out to the radius, then rotate back so the chip
+     itself is never tilted by its placement. */
+  transform:
+    rotate(calc(var(--i) * (360deg / var(--n))))
+    translateY(calc(var(--r) * -1))
+    rotate(calc(var(--i) * (-360deg / var(--n))));
+}
+.ring-chip {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-2);
+  /* Counter-spins the orbit at the same period, so the glyph stays upright for the
+     whole ninety seconds instead of tumbling. */
+  animation: ring-spin 90s linear infinite reverse;
+}
+
+@keyframes ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* The claim, dead centre. `--size` minus two chips and a margin, so the text can
+   never grow into the ring it sits inside. */
+.ring-centre {
+  position: relative;
+  max-width: calc(var(--size) - var(--chip) * 2 - 22px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ring-centre h3 {
+  font-family: var(--sans);
+  font-size: clamp(24px, 3.4vw, 42px);
+  font-weight: 400;
+  letter-spacing: -0.036em;
+  line-height: 1.04;
+  color: var(--text);
+  margin: 0;
+}
+.ring-lede {
+  margin: 0;
+  max-width: 52ch;
+  font-size: clamp(16px, 1.4vw, 19px);
+  line-height: 1.6;
+  color: var(--text);
+  text-wrap: balance;
+}
+.ring-note {
+  margin: 0;
+  max-width: 44ch;
+  font-size: clamp(15px, 1.25vw, 17px);
+  line-height: 1.6;
+  color: var(--text-2);
+  text-wrap: balance;
+}
+
+@media (max-width: 560px) {
+  /* At this width twelve chips on the circumference start touching, and the
+     sentence in the middle has nowhere to go. The ring keeps its geometry and
+     simply gets smaller; the copy moves out from under it. */
+  .subject-ring { --size: min(300px, 82vw); --chip: 36px; }
+  .ring-centre { max-width: calc(var(--size) - var(--chip) * 2 - 10px); }
+  .ring-lede,
+  .ring-note { max-width: 100%; }
+}
+
+/* ── REDUCED MOTION ───────────────────────────────────────────────────────────
+   Belt and braces. The hook already declines to register anything, so `--p` stays
+   0 and every transform above resolves to its static placement. This block drops
+   `will-change` as well, so a visitor who asked for stillness is not also paying
+   for half a dozen promoted compositor layers they will never see move. */
+@media (prefers-reduced-motion: reduce) {
+  .nhero-glow,
+  .nhero-organism,
+  .band-art,
+  .look-desk {
+    will-change: auto;
+  }
+  /* The ring is the one thing on the page that moves on a timer rather than on
+     scroll, so the hook cannot switch it off — this rule has to. Stopping both
+     animations together leaves every chip exactly where its static transform puts
+     it, which is a complete, upright ring; killing only the orbit would freeze the
+     glyphs mid-counter-rotation and leave them tilted. */
+  .ring-orbit,
+  .ring-chip {
+    animation: none;
+  }
+}
+
+/* ── A WASH FOR ORDINARY PAGES ────────────────────────────────────────────────
+   `PageGlow`, used by /pricing. Same mechanism as the hero light: a rendered
+   image, masked with a gradient so it fades out long before it reaches any type,
+   never a CSS gradient painting colour. It sits at the top of the section and
+   drifts on `--p` like everything else. */
+.pglow {
+  --p: 0;
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: 50%;
+  width: min(1700px, 150vw);
+  aspect-ratio: 2000 / 1143;
+  transform: translate3d(-50%, calc(-42% + var(--p) * 160px), 0);
+  will-change: transform;
+  pointer-events: none;
+}
+.pglow img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  -webkit-mask-image: radial-gradient(ellipse 74% 74% at 50% 30%, #000 0%, rgba(0,0,0,0.6) 42%, rgba(0,0,0,0.2) 66%, transparent 84%);
+  mask-image: radial-gradient(ellipse 74% 74% at 50% 30%, #000 0%, rgba(0,0,0,0.6) 42%, rgba(0,0,0,0.2) 66%, transparent 84%);
+  opacity: 0.42;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pglow img { opacity: 0.66; }
+}
+:root[data-theme="dark"] .pglow img { opacity: 0.66; }
+
+/* The section has to become a positioning context, and has to clip, or the wash
+   widens the page. */
+.pricing-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/* ── THE CHARACTER ────────────────────────────────────────────────────────────
+   Two places now: the hero and `Built on evidence`. This reserves the height so a
+   section does not jump as the SVG mounts, and turns the cursor into an invitation.
+   (It closed the page too until 2026-08-24; the owner took the character and its
+   bloom back out of that section, so the close is words and a button again.) */
+.mascot {
+  display: grid;
+  place-items: center;
+  min-height: 168px;
+}
+.mascot svg { cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pglow { will-change: auto; }
+}
+

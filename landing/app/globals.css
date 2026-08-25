@@ -7,6 +7,9 @@
    irrelevant to the result. */
 @import "./mark.css";
 @import "./home.css";
+/* Last, so its hero and close rules win over the equal-specificity ones in
+   home.css they deliberately extend (the two transforms, and the h1 measure). */
+@import "./art.css";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Nemesis landing — black and white, nothing else.

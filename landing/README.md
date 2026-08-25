@@ -10,7 +10,7 @@ pricing, privacy, terms — with both calls-to-action linking out to
 
 The page no longer talks to Supabase at all (see *Waitlist* below).
 
-This app is **isolated from the parent PharmaBro pnpm workspace** (it has its own
+This app is **isolated from the parent Nemesis pnpm workspace** (it has its own
 `pnpm-workspace.yaml`), so its React 19 graph never collides with the Expo/RN app. Deploy it
 as its **own Vercel project** with **root directory `landing`**.
 

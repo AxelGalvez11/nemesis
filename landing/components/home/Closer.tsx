@@ -6,21 +6,32 @@ import { captureCtaClick } from "@/lib/posthog";
 /**
  * THE CLOSE.
  *
- * The headline is the hero's headline again, deliberately. It is the only
- * repetition left on the page and it is the one that earns its place: the visitor
- * has now watched the Canvas change representation and seen their own material go
- * in, so the phrase means something on the second reading that it could not mean
- * on the first.
+ * ── WHY "ACCELERATE COGNITION" IS DOWN HERE NOW ───────────────────────────────
  *
- * No blob here. The organism appears twice — the hero and the intake — and a third
- * showing would make it punctuation rather than a character. The page ends on the
- * words and the action.
+ * It used to open the page and close it, and opening with it was the single
+ * costliest thing on the site: a stranger met an abstraction before anything had
+ * told them what the product was. The phrase is good and the owner wants it — it
+ * just needs the page to happen first. By this point the reader has been told the
+ * job, shown the software, and given the four methods underneath it, so the line
+ * lands as a summary instead of a riddle.
+ *
+ * ── NOTHING BUT THE WORDS AND THE ACTION ──────────────────────────────────────
+ *
+ * This section has held three different objects: the stipple organism, then the
+ * character, then the character on a bloom built to light it. All three are gone at
+ * the owner's instruction, and the section is better for it — the page has already
+ * shown the reader the product, the figures and the range, and the last thing it
+ * needs is one more thing to look at instead of the button.
+ *
+ * The character still appears twice, in the hero and in `Built on evidence`.
  */
 export function Closer() {
+
   return (
     <section className="nclose" id="start">
       <div className="wrap" data-reveal="up">
         <h2>Accelerate cognition.</h2>
+
         <div className="nclose-cta">
           <a
             className="btn btn-primary"

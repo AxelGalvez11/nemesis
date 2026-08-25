@@ -24,15 +24,17 @@ export default function TermsPage() {
         <section>
           <h2>Educational use only</h2>
           <p>
-            Nemesis provides academic and cited research information. It is not a clinician,
-            pharmacist, medical device, diagnostic tool, or substitute for professional care.
+            Nemesis provides academic and cited research information for learners in any field. It
+            is not professional advice and not a substitute for a qualified person in the relevant
+            discipline.
           </p>
         </section>
         <section>
           <h2>User responsibility</h2>
           <p>
-            Do not use Nemesis for emergencies. Do not start, stop, or change medication,
-            supplement, peptide, or treatment decisions based only on Nemesis output.
+            Do not use Nemesis for emergencies. Do not make decisions that affect health, legal
+            standing, money or physical safety on the basis of Nemesis output alone. Check the
+            sources it gives you.
           </p>
         </section>
         <section>
