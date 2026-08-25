@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { fillMissingFigures } from "./figure-fallback";
+import { replySegments } from "./reply-visuals";
 
 const wrap = (decision: unknown, prose: string) => "```json\n" + JSON.stringify(decision) + "\n```\n\n" + prose;
 const REPLY = { then: "reply", topic: "nephron", milestones: [], needsWeb: false };
@@ -102,6 +103,76 @@ test("🔴🔴 the repair runs BEFORE the resolve pass, or it adds a picture nob
     /prepareAnswer\(fillMissingFigures\(text\)/,
     "the repair no longer runs inside the resolve pass's input",
   );
+});
+
+test("🔴🔴🔴 an ESCAPED marker is a marker — otherwise it renders as an equation", () => {
+  // 🔴 MEASURED ON PRODUCTION 2026-08-24, verbatim from the stored turn:
+  //
+  //     Here's the picture of meiosis … \[figure 1\] The key things to track …
+  //
+  // `\[ … \]` is LaTeX's DISPLAY-MATH delimiter, and the packet tells the model to write real LaTeX
+  // because its answer sits outside the JSON. Both patterns demanded a bare `]`, so nothing
+  // matched, no figure was requested, and the raw text reached the maths renderer — which typeset
+  // `figure1` in centred italic serif as an equation. A formula where a diagram belongs.
+  const escaped = wrap({ ...REPLY, topic: "meiosis" }, "Here's the picture of meiosis. \\[figure 1\\] The key things:");
+  const visuals = decisionIn(fillMissingFigures(escaped)).visuals as Record<string, unknown>[];
+  assert.equal(visuals?.length, 1, "an escaped marker still gets no picture");
+  assert.equal(visuals[0]?.subject, "meiosis");
+
+  // The plain spelling still works — the model uses both, sometimes on consecutive turns.
+  const plain = wrap({ ...REPLY, topic: "meiosis" }, "Here's meiosis [figure 1].");
+  assert.equal((decisionIn(fillMissingFigures(plain)).visuals as unknown[])?.length, 1, "the plain marker regressed");
+
+  // Two escaped markers is still ambiguous, and still declined.
+  const two = wrap(REPLY, "First \\[figure 1\\] then \\[figure 2\\].");
+  assert.equal(fillMissingFigures(two), two, "it guessed at which of two escaped markers to fill");
+});
+
+test("🔴🔴🔴 an escaped marker is PLACED where it was written, not appended at the end", () => {
+  // 🔴 WIDENING THE PATTERN WAS NOT ENOUGH, AND THIS IS THE HALF THAT WAS ALMOST MISSED. Once
+  // `FIGURE_RE` matched `\[figure 1\]`, the splitter still asked whether the match STARTS WITH
+  // `[figure` — and an escaped match starts with `\`. So it fell past that branch, the prose kept
+  // the literal `\[figure 1\]` for the maths renderer to typeset, and the picture was appended at
+  // the END of the answer. Both halves are needed; this asserts the outcome rather than either one.
+  const visual = {
+    asset: {
+      assetPath: "https://upload.wikimedia.org/wikipedia/commons/x.png",
+      licence: { attribution: "x", licence: "CC-BY-4.0", source: "Wikimedia Commons" },
+      provenance: "reference_image",
+    },
+    kind: "figure",
+    learningGoal: "see meiosis",
+    subject: "meiosis",
+  } as never;
+
+  for (const prose of [
+    "Here's the picture of meiosis \\[figure 1\\] The key things to track:",
+    "Here's the picture of meiosis [figure 1] The key things to track:",
+  ]) {
+    const segments = replySegments(prose, [visual]);
+    assert.deepEqual(
+      segments.map((segment) => segment.kind),
+      ["prose", "visual", "prose"],
+      "the picture was not placed where the marker was written",
+    );
+    const text = segments
+      .filter((segment): segment is { kind: "prose"; text: string } => segment.kind === "prose")
+      .map((segment) => segment.text)
+      .join("");
+    assert.ok(!/figure\s*1/.test(text), "the marker text survived into the prose, where the maths renderer will typeset it");
+  }
+});
+
+test("🔴🔴 the repair and the renderer agree on what a marker looks like", () => {
+  // 🔴 IF THESE DRIFT, A FIGURE IS EITHER FETCHED AND NEVER PLACED, OR PLACED AND NEVER FETCHED.
+  // `figure-fallback.ts` decides whether to REQUEST a picture; `reply-visuals.ts` decides where to
+  // PUT it. One matching a spelling the other does not is a silent half-failure of exactly the kind
+  // this lane keeps producing.
+  const pattern = /const FIGURE_(?:MARKER|RE) = (\/.*\/gi);/;
+  const here = pattern.exec(readFileSync(new URL("./figure-fallback.ts", import.meta.url), "utf8"));
+  const renderer = pattern.exec(readFileSync(new URL("./reply-visuals.ts", import.meta.url), "utf8"));
+  assert.ok(here?.[1] && renderer?.[1], "one of the two files stopped declaring its marker pattern");
+  assert.equal(here?.[1], renderer?.[1], "the repair and the renderer disagree about what a figure marker is");
 });
 
 test("🔴 the block it looks for is the same one everything else reads", () => {
