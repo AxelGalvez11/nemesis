@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { SuggestedBox } from "@nemesis/shared";
+import { occlusionMaskState, type SuggestedBox } from "@nemesis/shared";
 
 import { MAX_OPTIONS, MIN_OPTIONS } from "./chat-check";
 import {
@@ -196,12 +196,21 @@ test("🔴🔴 a check on one diagram asks about DIFFERENT parts", () => {
   assert.equal(new Set(asked).size, 4, `the same part was hidden more than once: ${asked.join(", ")}`);
 });
 
-test("🔴🔴🔴 a card covers ONE part and leaves the rest readable", () => {
-  // 🔴 `hide-one`, NOT `hide-all`. Covering everything asks "name all six at once", a different
-  // and much harder question, and it removes the context the learner reasons from.
+test("🔴🔴🔴 a card covers EVERY part and marks the one being asked about", () => {
+  // 🔴🔴 `hide-all` — OWNER, 2026-08-25: *"make it hide all and guess one. thats how it should
+  // be."* Anki's own mode name, and right on the merits, which is why the earlier `hide-one` was
+  // wrong: the distractors ARE the diagram's other labels, so leaving them legible printed all
+  // four wrong answers on the picture. A learner could match the covered box to the one option not
+  // visible and never recall anything.
+  //
+  // Calibration: set this back to "hide-one" and the assertion below reddens.
   const hidden = hiddenShape(FIGURE, 2)!;
   const payload = occlusionPayload(FIGURE, hidden)!;
-  assert.equal(payload.mode, "hide-one");
+  assert.equal(payload.mode, "hide-all");
+  // The target is still distinguishable, so the learner knows WHICH part is being asked.
+  assert.equal(occlusionMaskState(hidden.id, payload, false), "target-covered");
+  const sibling = payload.shapes.find((shape) => shape.id !== hidden.id)!;
+  assert.equal(occlusionMaskState(sibling.id, payload, false), "covered", "a sibling label is readable");
   assert.equal(payload.shapes.length, occlusionShapes(FIGURE).length, "a card lost the sibling masks it needs");
   assert.equal(payload.targetId, hidden.id);
   assert.equal(payload.width, 1000);
