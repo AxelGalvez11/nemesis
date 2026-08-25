@@ -41,7 +41,7 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
-import { makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSlidesDeliverable, readDeliverableAsk, readResearchAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
@@ -1239,21 +1239,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // turn: the learner asked for a THING, and a lesson about the thing instead reads as a
       // refusal. readDeliverableAsk is deliberately narrow — every ambiguous phrasing falls
       // through to the ordinary turn.
-      // 🔴 RESEARCH IS CHECKED FIRST, because the two parsers overlap on one phrasing and the
-      // wrong winner is expensive in opposite directions. "Research X and make me slides" is an
-      // order to go and find things out; answering it with a deck built from an empty canvas
-      // produces a confident presentation about nothing. The research parser needs an explicit
-      // research verb, so it fires only when the learner said one.
-      const toResearch = readResearchAsk(said);
-      if (toResearch) {
-        setBusy({ blockIds: [], kind: "command", label: "Planning the research" });
-        try {
-          await makeDeliverable("report", toResearch);
-        } finally {
-          setBusy({ kind: null });
-        }
-        return null;
-      }
       const askedFor = readDeliverableAsk(said);
       if (askedFor) {
         setBusy({ blockIds: [], kind: "command", label: askedFor === "slides" ? "Building your slides" : askedFor === "flashcards" ? "Making your flashcards" : "Writing your note" });
@@ -1336,6 +1321,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // under a third turn's ask is the "mode" shape §38 exists to prevent.
       setTestQuestions(decision.wantsTest ? decision.check : null);
       const thisTurn = (checkTurn.current += 1);
+
+      // 🔴🔴 A REPORT IS A DECISION THE MODEL MAKES, NOT A PHRASE THE CODE MATCHES. This used to be
+      // `readResearchAsk(said)` running BEFORE the router — a regex on research / look into /
+      // dig into. It is gone; `turn-router.ts` reads the sentence once and says whether this ask
+      // wants a saved cited document, in the same packet that already decides whether the turn
+      // needs the web. The three-way distinction between them is written out on `wantsReport`.
+      //
+      // 🔴 NOT AWAITED, BECAUSE THE REPLY MUST NOT WAIT ON A MINUTE OF SEARCHING. The model has
+      // already said something in `decision.say`; the run goes away, and the finished report
+      // arrives in the outputs panel and the Library when it lands. Awaiting here would hold a
+      // sentence the learner can already read hostage to a document they will read later.
+      if (decision.wantsReport) void makeDeliverable("report", decision.wantsReport);
 
       // 🔴🔴 THE DIAGRAM ARRIVES AFTER THE CHIPS, AND THAT IS DELIBERATE (owner 2026-08-25: image
       // occlusion "as part of its testing tools"). Finding a licensed diagram and having vision

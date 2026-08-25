@@ -445,33 +445,16 @@ export function readDeliverableAsk(text: string): DeliverableKind | null {
  *  something a learner comes back to and cites, not a by-product of one session. */
 export const RESEARCH_FOLDER = "Research";
 
-/**
- * Read a request to go and RESEARCH something, and return what to research.
- *
- * 🔴 A SEPARATE PARSER FROM `readDeliverableAsk`, AND IT HAS TO BE. That one refuses any turn
- * opening with how/why/what, because "how do I make a good presentation?" is a question about
- * making rather than an instruction to make one. But a research request usually IS a question, and
- * frequently opens with exactly those words: "why did the Roman Republic fall" is the request.
- * Folding the two together would either break that guard or refuse the commonest research ask
- * there is.
- *
- * So the signal here is an explicit research VERB, which a learner only reaches for when they mean
- * it. A bare question is NOT a research ask: it goes to the ordinary turn and is answered at once,
- * because spending five minutes and a dozen searches on somebody who wanted two lines is the same
- * failure as ignoring them.
- */
-export function readResearchAsk(text: string): string | null {
-  const said = text.trim();
-  // "how do I research X" is a question about researching, not an instruction to research.
-  if (/^(?:how|why|what|when|where|whether)\b[^?]{0,40}\bresearch\b/i.test(said)) return null;
-  const match =
-    /^(?:can you|could you|please|hey|nemesis)?[,\s]*(?:do|run|go)?\s*(?:a|an|some)?\s*(?:deep[\s-]?dive|deep research|research|look into|dig into|investigate|find out about)\b[:\s]+(.+)$/is.exec(
-      said,
-    );
-  const topic = match?.[1]?.trim().replace(/^(?:on|into|about|for)\s+/i, "").trim();
-  if (!topic || topic.length < 8) return null;
-  return topic.slice(0, 500);
-}
+// 🔴 THERE IS NO `readResearchAsk`, AND ITS ABSENCE IS THE POINT. It existed for one day: a regex
+// matching research / look into / dig into / deep dive / investigate. It was wrong in the way this
+// codebase has already documented twice. A learner writing "I need everything on X for my essay,
+// with sources" got nothing; a learner writing in Spanish could never get a report at all; and
+// `chat-intent.ts` had ALREADY deleted a `RESEARCH_PATTERN` for those exact reasons, in this exact
+// product, and names it in the list of things it replaced.
+//
+// Whether a turn wants a report is now `TurnDecision.wantsReport` — read from the sentence by the
+// model, once, in the same packet that already decides whether the turn needs the web. See
+// `turn-router.ts`, where the three-way distinction is written out.
 
 /**
  * Research a question on the live web and file the cited report in the library.
