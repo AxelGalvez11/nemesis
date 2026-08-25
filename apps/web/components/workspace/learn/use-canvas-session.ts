@@ -42,6 +42,7 @@ import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
 import { makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { planResearch } from "@/lib/research/run-research";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
@@ -302,6 +303,18 @@ export interface CanvasSession {
    * regenerated. See canvas-hosting.ts.
    */
   clarifying: UserQuestion | null;
+  /**
+   * A Deep research run that has been PLANNED and not yet started, or null.
+   *
+   * 🔴 IT EXISTS SO A MINUTE OF SEARCHING CANNOT BEGIN BY SURPRISE. The learner declared the
+   * capability, Nemesis planned what it would look up, and nothing else happens until they press
+   * Start. Planning is one model call and no searches; everything metered waits behind the card.
+   */
+  researchPlan: { question: string; subQuestions: readonly string[] } | null;
+  /** Run the plan the learner just read. */
+  startResearchPlan: () => void;
+  /** Discard it. Nothing was spent, so there is nothing to undo. */
+  cancelResearchPlan: () => void;
   /** Decisions already settled this sitting, as facts for the packet. Empty nearly always. */
   clarified: readonly string[];
   /**
@@ -472,6 +485,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const [clarifying, setClarifying] = useState<
     { question: UserQuestion; said: string; capability: ComposerCapability | null } | null
   >(null);
+  /**
+   * A planned Deep research run, waiting for the learner to press Start.
+   *
+   * 🔴 THE PLAN LIVES HERE RATHER THAN ON THE CANVAS DOCUMENT, because nothing has happened yet.
+   * A plan that survived a reload would be a promise to spend money that the learner made once and
+   * cannot see any more; a plan that vanishes with the session is just an offer they did not take.
+   *
+   * 🔴 AND IT IS NOT `clarifying`, THOUGH THE SHAPE RHYMES. That parks a turn because the model
+   * could not tell what was meant. Nothing is ambiguous here: the learner declared the capability,
+   * and this is Nemesis showing what it understood before it spends a minute acting on it.
+   */
+  const [researchPlan, setResearchPlan] = useState<{ question: string; subQuestions: readonly string[] } | null>(null);
   /**
    * The learner asked to be checked on this canvas's material (§38's phrase path).
    *
@@ -1157,7 +1182,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * then vanished under the write would read as a glitch rather than as an answer.
    */
   const makeDeliverable = useCallback(
-    async (kind: DeliverableKind, topic?: string) => {
+    async (kind: DeliverableKind, topic?: string, plan?: readonly string[]) => {
       // The ref, not the state: two clicks in one frame both see `making === null`.
       if (makingRef.current) return;
       if (!uid) {
@@ -1178,7 +1203,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
                 // not have, so with nothing to research there is nothing to do. The canvas title
                 // is the fallback because "research this" on an open canvas plainly means its
                 // subject.
-                ? await makeReportDeliverable(uid, latest.current, topic || latest.current.title || "")
+                ? await makeReportDeliverable(uid, latest.current, topic || latest.current.title || "", undefined, plan)
                 : await makeNoteDeliverable(uid, latest.current);
         if ("error" in result) {
           setError(result.error);
@@ -1187,7 +1212,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         update((current) => ({ ...current, outputs: [...(current.outputs ?? []), result.output] }));
         // The notice strip, deliberately — see showNotice's own comment above.
         setError(
-          kind === "flashcards"
+          // 🔴 THE MAKER'S OWN LINE WINS WHERE IT HAS ONE. A research run costs a minute and real
+          // money, and "saved to your Library" tells the learner nothing about what it did. The
+          // report carries the same sentence in its footer, so the two cannot disagree.
+          result.note
+            ? `${result.note}. Saved to your Library.`
+            : kind === "flashcards"
             ? "Flashcards saved to your Library."
             : kind === "slides"
               ? "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks."
@@ -1234,6 +1264,32 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!id) return null;
       const said = question.trim();
       if (!said) return null;
+
+      // 🔴🔴 A DECLARED DEEP RESEARCH SUBMISSION SKIPS THE ROUTER ENTIRELY, and that is the whole
+      // difference between the chip and `TurnDecision.wantsReport`. `wantsReport` is the model
+      // READING an undeclared sentence and judging that a report is wanted. The chip is the
+      // learner SAYING SO. There is nothing left to judge, so asking the router to weigh it again
+      // would only create a way for the model to overrule a person who was explicit.
+      //
+      // 🔴 IT PLANS AND STOPS. A run is about a minute and several metered searches from a budget
+      // shared with ordinary chat, so nothing is spent until the learner has seen what it intends
+      // to look up and pressed Start. Planning is one model call and no searches, which is what
+      // makes showing them affordable.
+      if (capability === "research") {
+        setBusy({ blockIds: [], kind: "command", label: "Planning the research" });
+        try {
+          const planned = await planResearch(id, said);
+          if ("error" in planned) {
+            setError(planned.error);
+            return null;
+          }
+          setResearchPlan({ question: said, subQuestions: planned });
+        } finally {
+          setBusy({ kind: null });
+        }
+        return null;
+      }
+
       // 🔴 AN UNMISTAKABLE ARTIFACT ASK IS AN ORDER, NOT A QUESTION (owner 2026-08-25: "if you
       // ask them to make a PowerPoint, then it'll do it for you"). Routed before the policy
       // turn: the learner asked for a THING, and a lesson about the thing instead reads as a
@@ -2261,6 +2317,20 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [recordEvent, update],
   );
 
+  /** Start the planned run, with the sub-questions the learner actually read. */
+  const startResearchPlan = useCallback(() => {
+    const plan = researchPlan;
+    if (!plan) return;
+    // 🔴 CLEARED BEFORE THE RUN, NOT AFTER. The card disappears the instant Start is pressed, so a
+    // second press cannot start a second run against the same plan; `makeDeliverable`'s own ref
+    // guard would catch it, but a card that stays on screen looking pressable is its own bug.
+    setResearchPlan(null);
+    void makeDeliverable("report", plan.question, plan.subQuestions);
+  }, [makeDeliverable, researchPlan]);
+
+  /** Throw the plan away. Nothing was spent, so there is nothing to undo. */
+  const cancelResearchPlan = useCallback(() => setResearchPlan(null), []);
+
   return {
     canvas,
     busy,
@@ -2272,6 +2342,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     lookedUp,
     /** The decision Nemesis is waiting on, or null. See `clarify-question.ts`. */
     clarifying: clarifying?.question ?? null,
+    /** A Deep research run that has been planned and not yet started, or null. */
+    researchPlan,
+    startResearchPlan,
+    cancelResearchPlan,
     /** Decisions already settled this sitting, as facts for the packet. */
     clarified,
     answerClarification,

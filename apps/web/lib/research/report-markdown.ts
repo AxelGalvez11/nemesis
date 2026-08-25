@@ -76,6 +76,28 @@ export function reportMarkdown(report: ResearchReport): string {
   return lines.join("\n");
 }
 
+/**
+ * "Research done in 1m 12s · 14 sources · 6 searches" — the line a learner reads when it lands.
+ *
+ * 🔴 THE SAME THREE NUMBERS THE REPORT'S OWN FOOTER CARRIES, so the notice and the document cannot
+ * disagree about what happened. What it deliberately does NOT say is "23 citations" the way the
+ * reference tool does: our count is SOURCES, and a source cited by four sentences is one source
+ * here and four citations there. Reporting the bigger number would flatter the run.
+ */
+export function researchSummaryLine(report: ResearchReport): string {
+  const seconds = Math.max(1, Math.round(report.stats.elapsedMs / 1000));
+  const took = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  // Both forms spelled out. "search" does not pluralise by adding an s, and the version of this
+  // that appended one and then patched the result with string replacement was worse than the
+  // problem it solved.
+  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  return [
+    `Research done in ${took}`,
+    count(report.sources.length, "source", "sources"),
+    count(report.stats.searched, "search", "searches"),
+  ].join(" · ");
+}
+
 /** A short title for the library, from the question. Questions make poor filenames; this keeps the
  *  first clause and drops the question mark. */
 export function reportTitle(question: string): string {
