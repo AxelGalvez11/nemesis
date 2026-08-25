@@ -4,9 +4,15 @@ import { supabaseUrl } from "@/lib/env";
 
 // ── the scholarly lane: seven literature indexes, behind the same door as everything else ─────
 //
-// Owner 2026-08-24: *"Plug the literature seven."* This proxies to the `science-search` edge
-// function's `literature` action, which fans out across OpenAlex, Crossref, Semantic Scholar,
-// Europe PMC, PubMed, arXiv and bioRxiv and merges what answers.
+// Owner 2026-08-24: *"Plug the literature seven."* This proxies to the `nemesis-literature` edge
+// function, which fans out across OpenAlex, Crossref, Semantic Scholar, Europe PMC, PubMed, arXiv
+// and bioRxiv and merges what answers.
+//
+// 🔴 THAT FUNCTION IMPORTS THE SEVEN AND NOTHING ELSE. It began as an action inside
+// `science-search`, which pulls in the whole 42-connector registry and keeps the other 35 dark
+// behind a runtime flag. Not deploying them at all is the stronger guarantee: the code for those
+// egress paths is not present in the deployed function, so no future edit to a gate can expose
+// them. `science-search` is untouched and stays undeployed.
 //
 // 🔴 A PROXY RATHER THAN A DIRECT CALL FROM THE BROWSER, for the same reason /api/workspace/search
 // is one: the function's CORS allow-list names the production origin, so a direct call works in
@@ -18,7 +24,7 @@ import { supabaseUrl } from "@/lib/env";
 // because those providers bill us; these do not, so putting them on the same meter would charge a
 // student for something that cost nothing.
 
-const LITERATURE_URL = `${supabaseUrl}/functions/v1/science-search`;
+const LITERATURE_URL = `${supabaseUrl}/functions/v1/nemesis-literature`;
 
 export async function POST(request: NextRequest) {
   // The learner's own Supabase session, which is what science-search verifies. Unlike the search

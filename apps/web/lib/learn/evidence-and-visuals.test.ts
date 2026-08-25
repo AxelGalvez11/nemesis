@@ -21,7 +21,8 @@ const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^
 const ROUTER = strip(readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8"));
 const CHAT = strip(readFileSync(new URL("../../components/workspace/learn/canvas-chat.ts", import.meta.url), "utf8"));
 const API = strip(readFileSync(new URL("../workspace/chat-api.ts", import.meta.url), "utf8"));
-const FUNC = strip(readFileSync(new URL("../../../../supabase/functions/science-search/index.ts", import.meta.url), "utf8"));
+const FUNC = strip(readFileSync(new URL("../../../../supabase/functions/nemesis-literature/index.ts", import.meta.url), "utf8"));
+const SCIENCE = strip(readFileSync(new URL("../../../../supabase/functions/science-search/index.ts", import.meta.url), "utf8"));
 const PROXY = strip(readFileSync(new URL("../../app/api/workspace/scholar/route.ts", import.meta.url), "utf8"));
 
 const EMPTY: TurnContext = {
@@ -102,20 +103,35 @@ test("🔴🔴🔴 the seven are NAMED, so widening the fan-out is a visible edi
   }
 });
 
-test("🔴🔴 the broad gate still shuts the other thirty-five", () => {
-  // `SCIENCE_SEARCH_ENABLED` exists to keep ~39 third-party egress paths dark. The honest way to
-  // ship seven of them is a second door, not flipping that flag — which would open genomics,
-  // proteomics, omics and chemistry as a side effect nobody asked for.
-  //
-  // Calibration: change the condition to `if (!enabled())` and this reddens.
-  assert.match(FUNC, /if \(action !== "literature" && !enabled\(\)\)/, "the gate no longer distinguishes the literature action from the other 42");
+test("🔴🔴🔴 the other thirty-five are not DEPLOYED, which beats being gated", () => {
+  // 🔴 THIS TEST USED TO CHECK A RUNTIME FLAG, AND THE STRONGER GUARANTEE REPLACED IT. The lane
+  // began as an action inside `science-search`, which imports the whole 42-connector registry and
+  // keeps the rest dark behind `SCIENCE_SEARCH_ENABLED`. A flag is a decent guarantee; NOT SHIPPING
+  // THE CODE is a better one. `nemesis-literature` imports the seven modules by name and never
+  // touches the registry, so the egress paths for genomics, proteomics, omics, chemistry and
+  // pathways are not present in the deployed function at all — and no future edit to a gate,
+  // anywhere, can expose them.
+  assert.ok(!/registry/.test(FUNC), "the literature function reached for the shared registry again — that imports all 42");
+  assert.ok(!/byDomain\(/.test(FUNC), "the fan-out reads a domain tag again and can widen without an edit here");
+  assert.match(FUNC, /from "\.\.\/_shared\/science\/literature\/index\.ts"/, "the seven are no longer imported by name");
+  for (const walled of ["uniprot", "chembl", "gnomad", "alphafold", "kegg", "reactome"]) {
+    assert.ok(!FUNC.includes(walled), `${walled} is reachable from the literature function`);
+  }
+
+  // …and science-search is left exactly as it was: still gated, still undeployed.
+  assert.match(SCIENCE, /if \(!enabled\(\)\) return json\(\{ error: "science_search_disabled" \}, 503, req\);/, "science-search's gate was weakened on the way past");
+  assert.ok(!/literature/i.test(SCIENCE.replace(/import literature[^\n]*/g, "")), "the literature action leaked back into the 42-connector function");
+});
+
+test("🔴🔴 the literature door authenticates before it reaches any upstream", () => {
+  // Free upstreams still make an unauthenticated door an open relay onto seven third-party APIs.
   assert.match(FUNC, /if \(!userId\) return json\(\{ error: "authentication required" \}, 401, req\);/, "the literature door lost its authentication");
-  const literatureBlock = FUNC.slice(FUNC.indexOf('if (action === "literature")'));
   assert.ok(
-    FUNC.indexOf("const userId = await verifyUser(token)") < FUNC.indexOf('if (action === "literature")'),
-    "the literature action now runs before the caller is authenticated — an open relay onto seven APIs",
+    FUNC.indexOf("const userId = await verifyUser(token)") < FUNC.indexOf("await searchLiterature("),
+    "the fan-out now runs before the caller is authenticated",
   );
-  assert.match(literatureBlock, /query too long/, "the literature action stopped bounding its query");
+  assert.match(FUNC, /query too long/, "the literature action stopped bounding its query");
+  assert.match(FUNC, /is_anonymous/, "anonymous sessions can now use the lane");
 });
 
 test("🔴🔴 one failing index is not a failed search, and papers never fail a turn", () => {
