@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useParallax } from "@/components/use-parallax";
 import { Mascot } from "@/components/home/Mascot";
 import { FigureCarousel, type CarouselItem } from "@/components/home/FigureCarousel";
-import { CALENDAR_BLUR, EVIDENCE_BLUR, EVIDENCE_FIGURE_BLUR, SEE_BLUR } from "./art-blur";
+import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR } from "./art-blur";
 
 /**
  * The four things the page claims, one band each.
@@ -25,10 +25,17 @@ import { CALENDAR_BLUR, EVIDENCE_BLUR, EVIDENCE_FIGURE_BLUR, SEE_BLUR } from "./
  *
  * ── WHY EACH BAND STILL GETS ITS OWN FILE ─────────────────────────────────────
  *
- * Four renders, one per idea: light opening outward, a beam separating, layered
- * strata, receding pulses. One image tiled four times would read as wallpaper.
- * They share a palette (indigo → azure → cyan → white) so the page holds together
- * while no two bands repeat.
+ * One ground per idea. One image tiled four times would read as wallpaper, so no two
+ * bands repeat, and they share a palette (indigo → azure → cyan → white) so the page
+ * still holds together.
+ *
+ * Two of them are RENDERS (`learn`, `calendar`) and two are COMPUTED (`see-wash`,
+ * `evidence-wash`, out of scripts/art-wash.py). The owner asked for smooth gradients
+ * on 2026-08-25 — "not the grainy ones" — and a generated render carries the
+ * generator's speckle by construction. `see` was bokeh and `evidence` was horizontal
+ * strata, and moving the evidence wash across to its own edge put those strata on
+ * show. Computing the two of them is what made them smooth; nothing else changed,
+ * they are still WebPs behind a mask.
  *
  * ── WHAT IS NOT CLAIMED HERE, DELIBERATELY ────────────────────────────────────
  *
@@ -58,6 +65,17 @@ interface Band {
    * gradient can, because a gradient has no subject to lose. See the note in art.css.
    */
   readonly figure?: { readonly src: string; readonly blur: string };
+  /**
+   * Which edge the WASH burns on, when that is not the edge `data-side` would put it on.
+   *
+   * 🔴 THE WASH AND THE ENGRAVING USED TO SHARE A SIDE, AND THAT WAS THE BUG THE OWNER
+   * SAW (2026-08-25: "make the gradients be on the opposite side of the contrast
+   * images"). `data-side` drove both, so `Built on evidence` piled a blue wash and a
+   * marble thinker onto the same half and left the other half bare white. Splitting them
+   * gives the band two lit edges and a clear middle. This attribute moves ONLY the wash;
+   * the engraving and the copy stay where `data-side` put them.
+   */
+  readonly artSide?: "left" | "right";
 }
 
 /**
@@ -118,16 +136,17 @@ const FIGURES: readonly CarouselItem[] = [
 const BANDS: readonly Band[] = [
   {
     id: "see",
-    art: "/nemesis/art/see.webp",
-    blur: SEE_BLUR,
+    art: "/nemesis/art/see-wash.webp",
+    blur: SEE_WASH_BLUR,
     head: "Visualize anything",
     body: "Anatomy and proteins in three dimensions, surfaces, plots, molecules, circuits, music, geometry, timelines and code.",
     figures: FIGURES,
   },
   {
     id: "evidence",
-    art: "/nemesis/art/evidence.webp",
-    blur: EVIDENCE_BLUR,
+    art: "/nemesis/art/evidence-wash.webp",
+    blur: EVIDENCE_WASH_BLUR,
+    artSide: "right",
     figure: { blur: EVIDENCE_FIGURE_BLUR, src: "/nemesis/art/evidence-figure.webp" },
     head: "Built on evidence",
     body: "Scaffolding, worked examples, retrieval practice and spaced review. Four methods with real research behind them, running under every session.",
@@ -160,6 +179,7 @@ function Feature({ band, index }: { band: Band; index: number }) {
       className="band"
       data-side={index % 2 === 1 ? "left" : "right"}
       data-figs={band.figures ? "true" : undefined}
+      data-art={band.artSide}
     >
       {/* aria-hidden: it is the ground, and it carries no information a reader
           would miss. The alt text that used to describe each gradient was

@@ -180,7 +180,7 @@
   to { transform: translateX(0) scale(1); }
 }
 
-/* ── The lockup: mark plus lowercase wordmark ─────────────────────────────── */
+/* ── The lockup: mark plus wordmark ───────────────────────────────────────── */
 .lockup { display: inline-flex; align-items: center; gap: 10px; }
 .lockup-word {
   font-family: var(--sans);

@@ -1,6 +1,10 @@
 "use client";
 
+import Image from "next/image";
+
 import { APP_SIGN_UP } from "@/components/SiteChrome";
+import { useParallax } from "@/components/use-parallax";
+import { CLOSE_WASH_BLUR } from "./art-blur";
 import { captureCtaClick } from "@/lib/posthog";
 
 /**
@@ -24,11 +28,37 @@ import { captureCtaClick } from "@/lib/posthog";
  * needs is one more thing to look at instead of the button.
  *
  * The character still appears twice, in the hero and in `Built on evidence`.
+ *
+ * ── THE LIGHT UNDER IT, ADDED 2026-08-25 ──────────────────────────────────────
+ *
+ * The owner asked for a smooth gradient here, and "smooth" is the whole spec: every
+ * other ground on this page is a GENERATED render and carries the generator's
+ * speckle. This one is computed — `scripts/art-wash.py` composites soft radial blobs
+ * over white, so there is no grain in it at any size.
+ *
+ * It rises from the BOTTOM edge and is masked to nothing well before the headline.
+ * The section is centred, so there is no quiet side to hide colour on; under it is
+ * the only direction that leaves the type on clean ground. That is the same rule the
+ * rest of the page keeps, applied to a symmetric block.
  */
 export function Closer() {
+  const wash = useParallax<HTMLDivElement>(0.12);
 
   return (
     <section className="nclose" id="start">
+      <div className="nclose-art" ref={wash} aria-hidden="true">
+        <Image
+          src="/nemesis/art/close-wash.webp"
+          alt=""
+          width={2000}
+          height={1100}
+          sizes="100vw"
+          placeholder="blur"
+          blurDataURL={CLOSE_WASH_BLUR}
+          quality={86}
+        />
+      </div>
+
       <div className="wrap" data-reveal="up">
         <h2>Accelerate cognition.</h2>
 

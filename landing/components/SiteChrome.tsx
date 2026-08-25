@@ -69,7 +69,7 @@ export function SiteChrome({ children }: { children: ReactNode }) {
               a trick that works only while the mark has no material of its own. */}
           <Link className="brand" href="/" aria-label="Nemesis home" onClick={close}>
             <NemesisMark state="static" size={24} />
-            <b>nemesis</b>
+            <b>Nemesis</b>
           </Link>
           <span className="spacer" />
 
@@ -145,7 +145,7 @@ export function SiteChrome({ children }: { children: ReactNode }) {
             <div className="foot-brand">
               <Link className="brand brand-foot" href="/" aria-label="Nemesis home">
                 <NemesisMark state="static" size={19} />
-                <b>nemesis</b>
+                <b>Nemesis</b>
               </Link>
               <p className="foot-tag">learn. diagnose. iterate.</p>
             </div>

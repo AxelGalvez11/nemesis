@@ -56,7 +56,11 @@ export function LearnAnything() {
   const figure = useParallax<HTMLDivElement>(0.1);
 
   return (
-    <section className="band ring-band" data-side="right">
+    /* `data-art="left"` sends the WASH to the far edge, away from the hands (owner,
+       2026-08-25). The engraving fills the right of this band, and the wash used to
+       sit on top of it while the left half stayed empty white; split, the band is lit
+       at both edges with the ring clear in the middle. See the note in art.css. */
+    <section className="band ring-band" data-side="right" data-art="left">
       <div className="band-art" ref={art} aria-hidden="true">
         <Image
           src="/nemesis/art/learn.webp"

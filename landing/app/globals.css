@@ -192,8 +192,10 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
 }
 .nav-in { display: flex; align-items: center; gap: 22px; height: 58px; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
-/* The wordmark is lowercase and tracked wide, and that is the identity rather than a
-   style preference — it is not to be sentence-cased back.
+/* 🔴 CAPITAL N. OWNER, 2026-08-25: "the 'nemesis' has 'n' in lowercase, it should be
+   uppercase". This comment used to say the opposite — that the lowercase wordmark was
+   the identity and was not to be sentence-cased back — and that instruction is now
+   retired. The wide tracking stays; only the capital changed.
    The negative right margin cancels the tracking letter-spacing adds after the FINAL
    glyph. Without it the word carries 0.3em of dead air on its right, which reads as a
    misaligned lockup everywhere the brand sits next to something else. */
@@ -217,8 +219,8 @@ h1, h2, h3 { color: var(--text); font-weight: 600; text-wrap: balance; margin: 0
    direction: the site is not written in lowercase any more, and a transform would
    have re-lowered every button on every page whatever the DOM said. The DOM text
    was always sentence-case, so no accessible name and no analytics label changes
-   — only what is drawn. The wordmark keeps its lowercase, which is a logotype
-   rather than a sentence; see .brand b. */
+   — only what is drawn. The wordmark kept its lowercase through that round and lost
+   it on 2026-08-25 at the owner's instruction; see .brand b. */
 .btn {
   display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans);
   font-size: 13px; font-weight: 500; letter-spacing: 0.08em;
