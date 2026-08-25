@@ -44,9 +44,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: denoland/setup-deno@v1
+      # 🔴 v2.x, MATCHING EVERY OTHER WORKFLOW IN THIS REPO — unit.yml, guardrail.yml and eval.yml all
+      # pin the same. This file originally pinned v1.x and the first real run died before it reached
+      # the deploy: `deno.lock` is version 5, which Deno 1 refuses to read at all. The version here is
+      # therefore not a free choice — it is set by the lockfile the repo already commits, and pinning
+      # it low breaks every step downstream while pointing at the lockfile rather than at the pin.
+      - uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       # 🔴 TYPECHECK BEFORE UPLOAD, NOT AFTER. A Deno function fails at REQUEST time, not at deploy
       # time — a broken import or a type error deploys perfectly happily and then 500s for the first
