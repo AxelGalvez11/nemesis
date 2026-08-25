@@ -1187,6 +1187,15 @@ const DECISION_CONTRACT = [
   + "first and let them follow. If the learner asks to be taught AND tested — \"explain X then quiz "
   + "me\" — the explanation is the answer and the questions are the check on it; sending questions "
   + "with an empty answer leaves them being tested on a lesson you never gave.",
+  // 🔴🔴 THE OWNER CAUGHT THIS ON SCREEN, 2026-08-25: *"it also said 'the image above', and it was
+  // actually below."* The reply had written "The quiz above will test you on these parts" with the
+  // quiz card sitting underneath it. The model cannot see the page, so any sentence it writes about
+  // WHERE something sits is a guess — and a wrong guess is read by somebody who is looking straight
+  // at the thing, which makes the whole product look broken over one word.
+  "🔴 NEVER SAY WHERE SOMETHING IS ON SCREEN. Not \"the quiz above\", not \"the diagram below\", not "
+  + "\"the image on the right\". You cannot see the page, and the layout is not yours to describe: "
+  + "chips, pictures and cards are placed by the canvas and sit differently on a phone and a laptop. "
+  + "Name things by what they ARE — \"these questions\", \"this diagram\" — never by position.",
   "",
 
   // 🔴🔴🔴 IMAGE OCCLUSION AS A TESTING TOOL (owner 2026-08-25): *"DeepSeek should have the image

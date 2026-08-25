@@ -25,7 +25,7 @@ import { REFERENCE_REGISTRY } from "@/lib/learn/reference-registry";
 import { REFERENCE_SHELF } from "@/lib/learn/reference-shelf";
 import { chooseAsset } from "@/lib/learn/visual-provenance";
 import { imageSize } from "@/lib/notebooks/image-dimensions";
-import { smallerThumbnail } from "@/lib/learn/occlusion-source";
+import { labelQuality, smallerThumbnail } from "@/lib/learn/occlusion-source";
 import { adminClient } from "@/lib/server";
 import { readImage, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
 import { jsonFrom, looksNormalized, OCCLUSION_VISION_PROMPT, parseSuggestedBoxes } from "@nemesis/shared";
@@ -50,7 +50,28 @@ const IMAGE_TIMEOUT_MS = 10000;
  * insert, cold start. Before this existed the read was unbounded and the PLATFORM ended the
  * request — a 504 with an HTML body, which a client can only read as "no diagram, no reason".
  */
-const VISION_BUDGET_MS = 38000;
+const VISION_BUDGET_MS = 20000;
+
+/**
+ * When to stop starting NEW pictures.
+ *
+ * 🔴 A WALL CLOCK, NOT A COUNT, because three attempts at their individual ceilings would blow the
+ * function. `MAX_PICTURES` bounds the money; this bounds the time. Whatever has been read by now
+ * is what the learner gets, and a subject that ran out of clock is a TRANSIENT refusal — never
+ * cached — so the next ask picks up where this one stopped.
+ */
+const KEEP_TRYING_UNTIL_MS = 38000;
+
+/**
+ * How many different pictures may be read before giving up on a subject.
+ *
+ * 🔴 THREE. Each one costs a vision read, so this is the ceiling on what a first-ever ask can
+ * spend — and with `figure_occlusion_cache` behind it, that is paid once per subject across every
+ * learner who will ever ask. One would be cheaper and is exactly what produced the nephron
+ * question the owner rejected: the top hit for a subject is often a numbered-key diagram, and the
+ * good one is second or third.
+ */
+const MAX_PICTURES = 3;
 
 const USER_AGENT = "NemesisLearn/1.0 (https://enternemesis.com)";
 
@@ -95,117 +116,149 @@ export async function POST(request: Request): Promise<NextResponse> {
   const hit = await readCache(admin, key);
   if (hit) return NextResponse.json(hit);
 
-  const candidates = await findReferenceImages(
-    { concept: subject.trim(), limit: 4 },
+  const found = await findReferenceImages(
+    { concept: subject.trim(), limit: MAX_PICTURES + 2 },
     { fetch: repositoryFetch, registry: CURATED },
   );
-  // 🔴 `accuracyBearing` IS TRUE HERE, AND IT IS NOT TRUE FOR AN ILLUSTRATION. The learner is
-  // about to be GRADED against what this picture shows — a wrong label under a box is scored as
-  // their mistake. That is the difference `visual-provenance.ts` exists to draw, so a picture
-  // good enough to look at is not automatically good enough to be marked against.
-  const choice = chooseAsset({ accuracyBearing: true, candidates });
-  if (!choice.ok) {
-    return refuse(admin, key, choice.reason, choice.detail);
-  }
 
-  const chosenPath = choice.asset.assetPath;
-  // `chooseAsset` already refuses anything unlicensed; this refuses anything off the allow list
-  // before our server fetches it.
-  if (!allowedAssetUrl(chosenPath)) return refuse(admin, key, "no-trusted-asset");
-
-  // 🔴🔴🔴 TRY THE SMALL ONE, FALL BACK TO THE ONE WE WERE GIVEN. Wikimedia only serves widths it
-  // has ALREADY RENDERED, and which ones those are is unpredictable per file — measured on this
-  // very diagram, 2026-08-25: 960px and 1280px answer, while 640, 800, 1024 and 1200 all return
-  // 400. The first cut of this rewrote every URL to a fixed 800px and returned it as fact. Every
-  // lookup then died at `image-unreachable` in 1.4 seconds, which from the outside was
-  // indistinguishable from "no diagram exists". A guess is fine; a guess treated as certainty is
-  // the bug.
+  // 🔴🔴🔴 SEVERAL PICTURES ARE TRIED, AND AN UNSUITABLE ONE IS REJECTED RATHER THAN USED.
+  // Owner 2026-08-25: *"make sure the images that it uses for image occlusion actually have the
+  // content in it… the one for the nephron actually didn't even have proper labels."* He was
+  // right, and the failure was mine: the first cut read ONE picture, filtered its unusable labels
+  // out, and built a question from whatever survived.
   //
-  // 🔴 `assetPath` ENDS UP AS WHICHEVER CANDIDATE ANSWERED, because that is the picture the masks
-  // are measured against and therefore the only one that may be displayed. Reading a small
-  // rendering and showing a large one would put every box in the right place on the wrong picture.
-  const smaller = smallerThumbnail(chosenPath);
-  const attempts = smaller && allowedAssetUrl(smaller) ? [smaller, chosenPath] : [chosenPath];
+  // The real nephron diagram labels its parts `1 2 3 … 12` and prints the names in a key beside
+  // the figure. What survived filtering was the KEY ("F: Filtration") and two orientation words —
+  // so the box covered a legend line, and the question tested nothing about a kidney. The picture
+  // was wrong for this job, and the right response was to try the next one.
+  //
+  // 🔴 EACH ATTEMPT COSTS A VISION READ, WHICH IS WHY THE CACHE MATTERS AND WHY THIS IS BOUNDED.
+  // Three at most, paid once per subject across every learner who ever asks.
+  let lastRefusal = "no-labelled-parts";
+  let tried = 0;
 
-  let bytes: Uint8Array | null = null;
-  let contentType = "";
-  let assetPath = chosenPath;
-  for (const candidate of attempts) {
-    try {
-      const picture = await fetch(candidate, {
-        headers: { "user-agent": USER_AGENT },
-        signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
-      });
-      if (!picture.ok) continue;
-      const buffer = await picture.arrayBuffer();
-      // 🔴 CHECKED AFTER THE DOWNLOAD, BECAUSE Content-Length IS OPTIONAL. A repository that
-      // streams without one would walk straight past a size gate keyed on the header. Oversize is
-      // not fatal here — trying the smaller rendering next is the entire point of the list.
-      if (buffer.byteLength > VISION_MAX_BYTES) continue;
-      bytes = new Uint8Array(buffer);
-      contentType = picture.headers.get("content-type") ?? "";
-      assetPath = candidate;
-      break;
-    } catch {
-      // Move to the next candidate. Only running out of them is a refusal.
+  const startedAt = Date.now();
+  for (const candidate of found) {
+    if (tried >= MAX_PICTURES || Date.now() - startedAt > KEEP_TRYING_UNTIL_MS) break;
+    // 🔴 `accuracyBearing` IS TRUE, AND IT IS NOT TRUE FOR AN ILLUSTRATION. The learner is about
+    // to be GRADED against what this picture shows — a wrong label under a box is scored as their
+    // mistake. `chooseAsset` runs per candidate so each is licence-checked on its own merits.
+    const choice = chooseAsset({ accuracyBearing: true, candidates: [candidate] });
+    if (!choice.ok) {
+      lastRefusal = choice.reason;
+      continue;
     }
-  }
-  if (!bytes) return refuse(admin, key, "image-unreachable");
+    const chosenPath = choice.asset.assetPath;
+    if (!allowedAssetUrl(chosenPath)) {
+      lastRefusal = "no-trusted-asset";
+      continue;
+    }
 
-  const mime = visionMime(assetPath, contentType);
-  if (!mime) return refuse(admin, key, "image-unreadable");
+    // 🔴🔴 TRY THE SMALL RENDERING, FALL BACK TO THE ONE WE WERE GIVEN. Wikimedia only serves
+    // widths it has ALREADY RENDERED, and which ones is unpredictable per file — measured on the
+    // nephron figure: 960px and 1280px answer, while 640, 800, 1024 and 1200 all return 400. An
+    // earlier cut rewrote to a fixed 800px and returned it as fact; every lookup then died at
+    // `image-unreachable` in 1.4s, which looked exactly like "no diagram exists".
+    //
+    // 🔴 `assetPath` IS WHICHEVER ONE ANSWERED, because that is the picture the masks are measured
+    // against and therefore the only one that may be displayed.
+    const smaller = smallerThumbnail(chosenPath);
+    const renderings = smaller && allowedAssetUrl(smaller) ? [smaller, chosenPath] : [chosenPath];
 
-  // 🔴🔴 THE SIZE IS MEASURED FROM THE BYTES, NEVER ASKED OF THE MODEL. `OCCLUSION_VISION_PROMPT`
-  // explicitly tells it "Do NOT report the image's size", because it does not reliably know and
-  // will confidently say 1024 for a 3024-wide picture — which puts every mask somewhere wrong in
-  // a way that reads to the learner as "this feature is broken". Reading the header costs nothing
-  // and is the only trustworthy source.
-  const size = imageSize(bytes);
-  if (!size) return refuse(admin, key, "image-unreadable");
+    let bytes: Uint8Array | null = null;
+    let contentType = "";
+    let assetPath = chosenPath;
+    for (const rendering of renderings) {
+      try {
+        const picture = await fetch(rendering, {
+          headers: { "user-agent": USER_AGENT },
+          signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
+        });
+        if (!picture.ok) continue;
+        const buffer = await picture.arrayBuffer();
+        // 🔴 CHECKED AFTER THE DOWNLOAD, BECAUSE Content-Length IS OPTIONAL. Oversize is not fatal
+        // — trying the smaller rendering next is the entire point of the list.
+        if (buffer.byteLength > VISION_MAX_BYTES) continue;
+        bytes = new Uint8Array(buffer);
+        contentType = picture.headers.get("content-type") ?? "";
+        assetPath = rendering;
+        break;
+      } catch {
+        // Next rendering.
+      }
+    }
+    if (!bytes) {
+      lastRefusal = "image-unreachable";
+      continue;
+    }
 
-  // 🔴🔴 VISION GETS AN EXPLICIT BUDGET, NOT THE REST OF THE FUNCTION'S LIFE. Without one it runs
-  // until the PLATFORM kills the request, and the caller gets a 504 — an HTML error page rather
-  // than a JSON answer, which the client can only read as "no diagram" with no reason attached.
-  // Bounded here, an over-long read comes back as a clean `vision-slow` and everything downstream
-  // behaves the way it does for every other refusal.
-  const seen = await readImage(bytes, mime, {
+    const mime = visionMime(assetPath, contentType);
+    // 🔴🔴 THE SIZE IS MEASURED FROM THE BYTES, NEVER ASKED OF THE MODEL. The prompt explicitly
+    // tells it not to report the size, because it does not reliably know and will say 1024 for a
+    // 3024-wide picture — which puts every mask somewhere wrong.
+    const size = mime ? imageSize(bytes) : null;
+    if (!mime || !size) {
+      lastRefusal = "image-unreadable";
+      continue;
+    }
+
+    tried += 1;
     // 🔴🔴🔴 GEMINI FIRST, AND THIS IS THE LINE THAT MADE THE FEATURE WORK. DeepSeek REASONS over
-    // an image before answering — its own module records a diagram that burned 18,642 output
-    // tokens and 135 SECONDS enumerating printed labels. A labelled diagram is precisely that
-    // pathological case, and "list the labelled boxes" is precisely the question where the
-    // reasoning buys nothing. Measured live on the nephron figure: DeepSeek-first took 34s on a
-    // good run and blew the 38s budget on the next. Gemini answers the same question in a few
-    // seconds. The parse lane reached this conclusion independently in August and has kept figures
-    // on Gemini ever since.
-    prefer: "gemini",
-    prompt: OCCLUSION_VISION_PROMPT,
-    signal: AbortSignal.timeout(VISION_BUDGET_MS),
-    spend: { admin, scope: { operation: "figure-occlusion" }, userId: check.userId },
-  });
-  if (!seen?.text) return refuse(admin, key, "vision-failed");
+    // an image before answering — 18,642 output tokens and 135 SECONDS on one molecular figure, by
+    // its own module's measurement. A labelled diagram is precisely that pathological case, and
+    // "list the labelled boxes" is precisely where the reasoning buys nothing. Measured live:
+    // DeepSeek-first took 34s on a good run and blew the 38s budget on the next; Gemini answers in
+    // about seven.
+    const seen = await readImage(bytes, mime, {
+      prefer: "gemini",
+      prompt: OCCLUSION_VISION_PROMPT,
+      signal: AbortSignal.timeout(VISION_BUDGET_MS),
+      spend: { admin, scope: { operation: "figure-occlusion" }, userId: check.userId },
+    });
+    if (!seen?.text) {
+      lastRefusal = "vision-failed";
+      continue;
+    }
 
-  const boxes = parseSuggestedBoxes(jsonFrom(seen.text));
-  // A real answer, not a failure: most pictures are not labelled diagrams, and saying so lets the
-  // caller fall back to showing the picture plainly rather than retrying.
-  if (boxes.length === 0) return refuse(admin, key, "no-labelled-parts");
-  // 🔴 REFUSE A WRONG-SCALE REPLY RATHER THAN RESCALING IT. Models answer this in 0-1, 0-100 and
-  // 0-1000 depending on the day, and guessing wrong puts every mask confidently in the wrong place.
-  if (!looksNormalized(boxes)) return refuse(admin, key, "wrong-scale");
+    const boxes = parseSuggestedBoxes(jsonFrom(seen.text));
+    if (boxes.length === 0) {
+      lastRefusal = "no-labelled-parts";
+      continue;
+    }
+    // 🔴 REFUSE A WRONG-SCALE REPLY RATHER THAN RESCALING IT. Models answer this in 0-1, 0-100 and
+    // 0-1000 depending on the day, and guessing wrong puts every mask confidently in the wrong
+    // place.
+    if (!looksNormalized(boxes)) {
+      lastRefusal = "wrong-scale";
+      continue;
+    }
+    // 🔴🔴🔴 THE GATE THE OWNER ASKED FOR. A picture whose parts are numbered, or which names too
+    // few of them, is not a picture you can be tested on — so it is REJECTED and the next
+    // candidate is read instead.
+    const quality = labelQuality(boxes.map((box) => box.label));
+    if (!quality.usable) {
+      lastRefusal = "unlabelled-picture";
+      continue;
+    }
 
-  const answer: FigureOcclusionAnswer = {
-    asset: {
-      assetPath,
-      ...(choice.asset.caption ? { caption: choice.asset.caption } : {}),
-      licence: choice.asset.licence,
-      provenance: choice.asset.provenance,
-    },
-    boxes,
-    height: size.height,
-    ok: true,
-    width: size.width,
-  };
-  await writeCache(admin, key, answer);
-  return NextResponse.json(answer);
+    const answer: FigureOcclusionAnswer = {
+      asset: {
+        assetPath,
+        ...(choice.asset.caption ? { caption: choice.asset.caption } : {}),
+        licence: choice.asset.licence,
+        provenance: choice.asset.provenance,
+      },
+      boxes,
+      height: size.height,
+      ok: true,
+      width: size.width,
+    };
+    await writeCache(admin, key, answer);
+    return NextResponse.json(answer);
+  }
+
+  // Every candidate was read and none of them could be asked about.
+  return refuse(admin, key, lastRefusal);
 }
 
 // ─────────────────────────────────────────────────────────────────── the cache
@@ -338,7 +391,16 @@ async function writeCache(admin: SupabaseClient, key: string, answer: FigureOccl
  * product. It nearly happened — a bad thumbnail rewrite wrote `image-unreachable` for "nephron",
  * and until that row was deleted by hand, nobody could have been asked about a kidney.
  */
-const DURABLE_REFUSALS = new Set(["no-candidates", "no-trusted-asset", "no-labelled-parts", "vision-off"]);
+const DURABLE_REFUSALS = new Set([
+  "no-candidates",
+  "no-trusted-asset",
+  "no-labelled-parts",
+  "vision-off",
+  // 🔴 "every picture for this subject is a numbered-key diagram" is a fact about what the
+  // repositories hold, not a hiccup. Re-reading three pictures on every ask to rediscover it is
+  // exactly the waste the cache exists to stop.
+  "unlabelled-picture",
+]);
 
 /** Record why no diagram, and say so. */
 async function refuse(admin: SupabaseClient, key: string, reason: string, detail?: string): Promise<NextResponse> {

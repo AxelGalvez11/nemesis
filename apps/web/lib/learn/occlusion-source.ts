@@ -90,7 +90,73 @@ export function smallerThumbnail(url: string, width = OCCLUSION_READ_WIDTH): str
  * than the one it causes (one fewer question).
  */
 export function isAnswerableLabel(text: string): boolean {
-  const label = text.trim();
+  const label = plainLabel(text);
   if (label.length < 2) return false;
   return /\p{L}/u.test(label);
+}
+
+/**
+ * A leading legend key: `F:`, `1.`, `b)`, `A -`.
+ *
+ * 🔴 STRIPPED FOR DISPLAY, because "F: Filtration" is not how anybody says the answer. The letter
+ * is also a CUE — the learner can read "F" off the diagram and match it to the option without
+ * knowing what filtration is, which is the recognition-instead-of-recall failure this whole
+ * interaction exists to avoid.
+ */
+/**
+ * 🔴 ONE LETTER, OR ONE TO TWO DIGITS — NOT "ANY TWO CHARACTERS". The first spelling allowed two
+ * letters and ate the front of `"pH: measured at the surface"`, turning a real label into
+ * "measured at the surface". A figure key is a single letter (`F:`) or a small number (`12.`);
+ * two letters is already a word in some discipline.
+ */
+const LEGEND_KEY = /^(?:\p{L}|\d{1,2})\s*[:.)\]–—-]\s+/u;
+
+/** The label as a learner would say it, with any legend key taken off the front. */
+export function plainLabel(text: string): string {
+  return text.trim().replace(LEGEND_KEY, "").trim();
+}
+
+/**
+ * How many of a picture's labels are usable as answers, and how many are legend keys.
+ *
+ * 🔴🔴🔴 THIS IS THE CHECK THE OWNER ASKED FOR, 2026-08-25: *"make sure the images that it uses
+ * for image occlusion or any visuals actually have the content in it… the one for the nephron
+ * actually didn't even have proper labels."* He was right, and the failure was mine: I filtered
+ * the unusable labels OUT and then accepted whatever was left, instead of rejecting the PICTURE.
+ *
+ * The real nephron diagram labels its parts `1 2 3 … 12` and prints the names in a key beside the
+ * figure. Covering a legend line is not occluding an anatomical part, and the question that came
+ * out of it ("F: Filtration" vs "R: Reabsorption") tested nothing about a kidney.
+ *
+ * So a picture is only suitable when it prints NAMES ON THE PARTS. Structurally that means: enough
+ * named labels to make a real question, and names outnumbering keys — because a diagram that is
+ * mostly numbers IS a keyed diagram, whatever else it also prints.
+ */
+export interface LabelQuality {
+  readonly named: number;
+  readonly keyed: number;
+  readonly usable: boolean;
+}
+
+/**
+ * The fewest named parts worth building a check from.
+ *
+ * 🔴 FOUR, NOT TWO. Two is the floor for one honest question (`MIN_LABELS_FOR_SPATIAL`), and that
+ * floor is right where a picture is all we have. But when we are CHOOSING between pictures, two
+ * named parts means a two-option question repeated — which is what the nephron produced. Four
+ * gives a four-option question and room for the check to ask about different parts.
+ */
+export const MIN_NAMED_PARTS = 4;
+
+export function labelQuality(labels: readonly string[]): LabelQuality {
+  let named = 0;
+  let keyed = 0;
+  for (const label of labels) {
+    if (isAnswerableLabel(label)) named += 1;
+    else keyed += 1;
+  }
+  // 🔴 NAMES MUST OUTNUMBER KEYS. The nephron scored 8 named against 12 numbers and would still
+  // fail this, which is the whole point: it is a keyed diagram that happens to also print a
+  // legend, an orientation label and two arrows.
+  return { keyed, named, usable: named >= MIN_NAMED_PARTS && named > keyed };
 }

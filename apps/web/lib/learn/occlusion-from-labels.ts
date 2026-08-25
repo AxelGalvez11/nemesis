@@ -35,7 +35,7 @@ import { scaleBoxes, type OcclusionPayload, type OcclusionShape, type SuggestedB
 import { MAX_OPTIONS, MIN_OPTIONS } from "./chat-check";
 import type { ChoiceOption } from "./choice-set";
 import { MIN_LABELS_FOR_SPATIAL } from "./figure-labels";
-import { isAnswerableLabel } from "./occlusion-source";
+import { isAnswerableLabel, plainLabel } from "./occlusion-source";
 
 /**
  * A picture and what vision found in it.
@@ -99,12 +99,47 @@ function distance(a: OcclusionShape, b: OcclusionShape, width: number, height: n
 }
 
 /**
- * The options for "what is under the cover?".
+ * Where the right answer sits.
  *
- * 🔴 THE ANSWER'S SEAT MOVES WITH `seat`, AND THE CALLER PASSES THE QUESTION'S INDEX. There is no
- * clock and no random in this lane, and an answer that is always first is a test of nothing after
- * the second question. Rotating by position is the only honest determinism available — the same
- * reasoning `chat-check.ts` gives when it declines to shuffle.
+ * 🔴🔴🔴 A ROTATION IS A PATTERN, AND A PATTERN IS A TELL. The first version was
+ * `seat % optionCount`, which puts the answer first, then second, then third — and the owner spotted
+ * it immediately: *"it's supposed to be random every time, not just, like, the letter b every single
+ * time."* By the third question a learner who has noticed can answer without looking at the picture,
+ * which is worse than a fixed position because it still LOOKS varied.
+ *
+ * 🔴 SO IT IS HASHED, NOT SHUFFLED. `Math.random` is banned in this lane — a session has to replay
+ * identically and a test has to be able to pin it — but determinism does not require predictability.
+ * Mixing the label's own text into the index gives a seat that is stable for a given question and
+ * has no runnable pattern across a check.
+ *
+ * FNV-1a, because it is four lines and needs no dependency; the quality bar here is "no visible
+ * pattern", not cryptography.
+ */
+export function answerSeat(label: string, index: number, seats: number): number {
+  if (seats <= 1) return 0;
+  let hash = 0x811c9dc5;
+  const mixed = `${label}#${index}`;
+  for (let at = 0; at < mixed.length; at += 1) {
+    hash ^= mixed.charCodeAt(at);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  // 🔴🔴 THE FINAL MIX IS NOT OPTIONAL, AND LEAVING IT OUT REPRODUCED THE BUG IN DISGUISE. FNV-1a
+  // ends on a multiply, so its LOW bits carry almost no entropy — and `% seats` reads exactly
+  // those. Measured over forty questions with four options, the first cut used seats 3 and 1 and
+  // never seats 0 or 2: still deterministic, still "varied", still a pattern a learner could ride.
+  // This is the standard xor-shift finaliser, which pushes the high bits down where the modulo can
+  // see them.
+  // 🔴 EVERY STEP RE-COERCES TO UNSIGNED. `^` in JavaScript works on SIGNED 32-bit integers, so a
+  // final xor without `>>> 0` hands back a negative number — and `-3 % 4` is `-3`, which indexes
+  // outside the options. The first run of this produced seats `1,-1,-3,0,-2,2,3`.
+  hash = (hash ^ (hash >>> 15)) >>> 0;
+  hash = Math.imul(hash, 0x2545f491) >>> 0;
+  hash = (hash ^ (hash >>> 13)) >>> 0;
+  return hash % seats;
+}
+
+/**
+ * The options for "what is under the cover?".
  *
  * Returns null when the figure cannot support an honest set.
  */
@@ -128,14 +163,17 @@ export function occlusionChoices(figure: LabelledFigure, hidden: OcclusionShape,
       // it is the SOURCE that declared them confusable — exactly what `neighbouring_class` means,
       // and why this path may claim it where `chat-check.ts` may not.
       ground: { kind: "neighbouring_class" },
-      text: shape.label,
+      // 🔴 THE LEGEND KEY COMES OFF. "F: Filtration" is not how anybody says an answer, and the
+      // letter is a CUE — a learner can read "F" off the diagram and match it without knowing what
+      // filtration is, which is recognition wearing recall's clothes.
+      text: plainLabel(shape.label),
     }),
   );
 
   const seats = distractors.length + 1;
-  const at = ((seat % seats) + seats) % seats;
+  const at = answerSeat(hidden.label, seat, seats);
   const options = [...distractors];
-  options.splice(at, 0, { correct: true, text: hidden.label });
+  options.splice(at, 0, { correct: true, text: plainLabel(hidden.label) });
   return options;
 }
 
