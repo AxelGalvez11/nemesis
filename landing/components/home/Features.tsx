@@ -75,7 +75,7 @@ interface Band {
  * To re-capture after a renderer change, run the web app and `node cardshot4.mjs` / `anat.mjs`.
  */
 const FIGURES: readonly CarouselItem[] = [
-  { id: "heart", file: "heart", label: "Anatomy, in 3D", w: 1416, h: 846,
+  { id: "heart", file: "heart", label: "Anatomy, in 3D", w: 1096, h: 946,
     alt: "The left ventricle picked out of a three-dimensional cardiovascular system, the rest of the vessels ghosted around it." },
   { id: "macromolecule", file: "macromolecule", label: "Protein, in 3D", w: 1416, h: 1044,
     alt: "Haemoglobin from the Protein Data Bank, its four subunits each in a different colour." },
@@ -85,7 +85,7 @@ const FIGURES: readonly CarouselItem[] = [
     alt: "A plot of plasma concentration against time at two doses, with labelled axes and a legend." },
   { id: "structure", file: "structure", label: "Molecule", w: 1416, h: 1309,
     alt: "The structure of acetylsalicylic acid, drawn from its SMILES string." },
-  { id: "nervous", file: "nervous", label: "Nervous system", w: 1416, h: 846,
+  { id: "nervous", file: "nervous", label: "Nervous system", w: 1096, h: 992,
     alt: "The nervous system and sense organs as one continuous three-dimensional model." },
   { id: "score", file: "score", label: "Music", w: 1416, h: 612,
     alt: "The opening phrase of Ode to Joy, engraved on a stave." },
@@ -95,7 +95,7 @@ const FIGURES: readonly CarouselItem[] = [
     alt: "A 3-4-5 right triangle with its three angles marked and its sides labelled." },
   { id: "vectors", file: "vectors", label: "Force diagram", w: 1416, h: 760,
     alt: "A free body diagram of a block on a thirty degree incline, with weight, normal force and friction." },
-  { id: "skeleton", file: "skeleton", label: "Skeleton", w: 1416, h: 846,
+  { id: "skeleton", file: "skeleton", label: "Skeleton", w: 1096, h: 946,
     alt: "A three-dimensional skeleton with the femur picked out." },
   { id: "relationship", file: "relationship", label: "Causal chain", w: 1416, h: 1042,
     alt: "A causal chain from action potential through calcium release to contraction." },
