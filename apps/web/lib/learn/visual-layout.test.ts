@@ -742,6 +742,21 @@ test("🔴🔴 the bow is measured on the WHOLE journey, not on what the clearan
   );
 });
 
+test("🔴🔴🔴 the atom labels are sized by the DRAWER, never by the page", () => {
+  // 🔴 `fontFamily: "inherit"` TOOK THE FONT SIZE DOWN WITH IT, AND NOTHING SAID SO. The library
+  // writes its labels as `font: 11pt ${fontFamily}`, and `inherit` is a CSS-wide keyword the `font`
+  // SHORTHAND does not accept in the family slot. One invalid token voids the WHOLE declaration, so
+  // the size went with the family. Measured on the rendered SVG: no `font-size` attribute, no inline
+  // style, computed 15.5px, against a layout the drawer had computed for 11pt (14.67px).
+  //
+  // 🔴 THE PIXELS ARE THE SMALL HALF. It meant the letters answered to the READER'S text-size
+  // setting while the bonds did not, so scaling the page up grows the labels and not the skeleton
+  // until they swallow it. Nothing inside a drawing is supposed to follow the page.
+  const renderer = readFileSync(new URL("../../components/workspace/learn/chemical-structure.tsx", import.meta.url), "utf8");
+  assert.ok(!/fontFamily: "inherit"/.test(renderer), "the atom labels are inheriting the page's font size again");
+  assert.match(renderer, /fontFamily: "var\(--font\), system-ui, sans-serif"/, "the drawer lost its font family");
+});
+
 test("🔴🔴🔴 an arrow never outweighs the molecule it annotates", () => {
   // Measured on the rendered SVG: arrows at stroke-width 1.8 against a bond at 1.0. The annotation
   // was heavier than the structure, which is what the owner's screenshot shows. `bondThickness: 1`

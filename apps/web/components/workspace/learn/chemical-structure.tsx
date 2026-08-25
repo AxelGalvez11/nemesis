@@ -97,7 +97,18 @@ export function ChemicalStructure({ compact = false, visual }: {
         // corners ARE carbons before the shorthand means anything.
         const options = {
           compactDrawing: false,
-          fontFamily: "inherit",
+          // 🔴🔴🔴 A REAL FAMILY, BECAUSE "inherit" TOOK THE FONT SIZE DOWN WITH IT. The drawer writes
+          // its labels as `font: 11pt ${fontFamily}`, and `inherit` is a CSS-wide keyword that the
+          // `font` SHORTHAND does not accept in the family slot. One invalid token voids the WHOLE
+          // declaration, so the size went with the family and every atom label fell back to whatever
+          // the page was set to. Measured on the rendered SVG: no `font-size` attribute, no inline
+          // style, computed 15.5px, against a layout the drawer had computed for 11pt.
+          //
+          // 🔴 IT IS NOT MAINLY ABOUT THOSE FEW PIXELS. It means the labels were sized by the READER'S
+          // text-size setting while the bonds were not, so a learner who scales the page up gets a
+          // molecule whose letters grow and whose skeleton does not, until the labels swallow it.
+          // Nothing in the drawing is supposed to answer to the page.
+          fontFamily: "var(--font), system-ui, sans-serif",
           height: HEIGHT,
           padding: 12,
           ...(visual.carbons === "all" ? { showCarbons: "all" } : {}),
