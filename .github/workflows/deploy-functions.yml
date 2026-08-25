@@ -1,0 +1,89 @@
+# Edge-function deploy — from the reviewed source, never from a hand-copied paste.
+#
+# WHY THIS EXISTS. Until now every Supabase function in this repo was deployed by hand. That was
+# survivable while functions changed rarely, and it broke down the moment one needed shipping as
+# part of a feature: the only routes available were (a) a CLI that needs a credential nobody had
+# loaded, or (b) pasting ~50KB of source into a deploy API call by hand.
+#
+# 🔴🔴🔴 (b) IS THE ONE THAT LOOKS FINE AND IS NOT. Everything else in this repo reaches production
+# through git: reviewed in a PR, gated by `unit`, deployed from the commit that passed. A hand-copied
+# payload has none of that. There is no diff between what was reviewed and what runs, no checksum,
+# and no test between the paste and production — so a single mistyped character inside a regex
+# deploys a function that is subtly wrong and looks correct. The deployed artifact must be provably
+# the reviewed artifact, and the only way to get that is to deploy FROM the repository.
+#
+# 🔴 IT ONLY RUNS WHEN A FUNCTION ACTUALLY CHANGED, and only on main. `_shared/**` is in the paths
+# filter because the functions import across it — a fix to `http.ts` changes what
+# `nemesis-literature` does while leaving its own file untouched, and a deploy that missed that
+# would leave production running code nobody has in front of them.
+#
+# 🔴 EACH FUNCTION IS NAMED. There is no "deploy everything that changed" glob, because
+# `science-search` is deliberately NOT deployed: it imports the whole 42-connector registry and is
+# gated off pending an owner decision. A glob would ship it the first time anyone touched a shared
+# file. Adding a function here is how it becomes deployable — a visible, reviewable line.
+
+name: deploy-functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/nemesis-literature/**"
+      - "supabase/functions/_shared/science/**"
+  # Deliberately available by hand too: a deploy that can only be triggered by a code change cannot
+  # be re-run after a transient platform failure without an empty commit.
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      # 🔴 TYPECHECK BEFORE UPLOAD, NOT AFTER. A Deno function fails at REQUEST time, not at deploy
+      # time — a broken import or a type error deploys perfectly happily and then 500s for the first
+      # learner who asks a question. `deno check` is the only gate that catches that before students do.
+      - name: Typecheck the functions being deployed
+        run: deno check supabase/functions/nemesis-literature/index.ts
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy nemesis-literature
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set. Add it in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          supabase functions deploy nemesis-literature \
+            --project-ref qyjmivntajbigjswhahb \
+            --no-verify-jwt
+
+      # The function verifies the caller itself (a Supabase user token, anonymous sessions
+      # rejected), which is why --no-verify-jwt is correct here rather than lax: platform JWT
+      # verification would reject the device-key style callers other functions use, and this one's
+      # own `verifyUser` is the check that matters. See its header.
+      - name: Confirm it answers
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "https://qyjmivntajbigjswhahb.supabase.co/functions/v1/nemesis-literature" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"literature","query":"smoke"}')
+          # 401 is the RIGHT answer to an unauthenticated smoke test: it proves the function is
+          # deployed, routing, and refusing anonymous callers. A 404 means the deploy did not land.
+          echo "unauthenticated probe returned $code"
+          if [ "$code" != "401" ]; then
+            echo "::error::expected 401 from an unauthenticated call; got $code"
+            exit 1
+          fi
