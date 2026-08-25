@@ -144,4 +144,37 @@ test("🔴🔴 the dots are COUNTED, never asked of the model", () => {
   assert.match(STRUCTURE, /countImplicitHydrogens/, "the hydrogens are no longer counted, so carbons will sprout pairs");
 });
 
+test("🔴🔴🔴 a molecule is LINE ART, not a rainbow", () => {
+  // Owner, 2026-08-25, looking at a mechanism: *"im talking about the style and design, it looks
+  // janky."* The cause was the theme we asked for. Passing the APP's theme name selects the
+  // library's own `light`/`dark` palette, which colours oxygen red, nitrogen blue and bromine
+  // orange AND SPLITS EVERY BOND DOWN THE MIDDLE, so a C-O line is half black and half red.
+  //
+  // 🔴 IT WAS ALSO THE ONLY RAINBOW IN THE PRODUCT. `surface-plot.tsx` states the house rule in its
+  // own comment: this product is deliberately monochrome. Colour is kept for the two things that
+  // MEAN something, the electron arrows and the cover over the part being asked about.
+  assert.match(STRUCTURE, /const MONOCHROME = Object\.fromEntries\(/, "the element colours came back");
+  assert.match(STRUCTURE, /themes: \{ dark: \{ \.\.\.MONOCHROME/, "the library's own palette is being used again");
+});
+
+test("🔴🔴🔴 a frame's height follows its width, or every narrow one letterboxes", () => {
+  // 🔴 MEASURED IN A SCHEME WITH FRAMES CAPPED AT 236px: content 237x124, box 236x200. An inline
+  // height beats `max-w-full`, so the width shrank to fit the column and the height stayed, leaving
+  // 77 pixels of nothing under every frame. Stacked, that was the band of white between two rows.
+  assert.match(STRUCTURE, /element\.style\.height = "auto"/, "the frame height is pinned again");
+  assert.match(STRUCTURE, /element\.style\.aspectRatio = /, "the aspect is left to be inferred from a viewBox that was just rewritten");
+});
+
+test("🔴🔴🔴 the scheme prints no notation at a learner", () => {
+  // Owner, 2026-08-25, with a screenshot of it: *"remove this."* It printed four raw SMILES strings
+  // joined by arrows, plus a sentence explaining what an arrow is, under a picture showing both.
+  //
+  // 🔴 THE SINGLE-STRUCTURE CARD LEARNED THIS IN AUGUST. He circled its provenance line too. The
+  // fact underneath is real (a structure a model wrote and one a resolver returned look identical
+  // and only one can be checked), so it moved to a TOOLTIP rather than being deleted. Same here.
+  assert.ok(!/arrows show where the electrons move/.test(SCHEME), "the scheme is explaining its own arrows again");
+  assert.ok(!/<span>\{visual\.steps\.map/.test(SCHEME), "the scheme is printing its SMILES again");
+  assert.match(SCHEME, /title=\{`\$\{visual\.steps\.map/, "the notation stopped being checkable at all");
+});
+
 console.log("mechanism-is-a-scheme.test.ts OK");

@@ -95,7 +95,29 @@ export function ChemicalStructure({ compact = false, visual }: {
         // 🔴 `showCarbons` CARRIES A TEACHING CHOICE FROM THE SPEC. Skeletal notation is what every
         // exam uses and is unreadable to somebody in their first week, who has to see that the bare
         // corners ARE carbons before the shorthand means anything.
+        // 🔴🔴🔴 LINE ART, NOT A RAINBOW. Owner, 2026-08-25, looking at a mechanism: *"im talking
+        // about the style and design, it looks janky."* He was right, and the cause is the theme we
+        // were asking for. Passing the APP's theme name selects the library's `light` or `dark`
+        // palette, which colours oxygen red, nitrogen blue and bromine orange AND SPLITS EVERY BOND
+        // DOWN THE MIDDLE so a C-O line is half black and half red. At the size a molecule renders
+        // in a column that reads as a patchy, half-finished drawing.
+        //
+        // 🔴 IT IS ALSO THE ONLY RAINBOW IN THE PRODUCT. `surface-plot.tsx` states the house rule in
+        // its own comment: this product is deliberately monochrome. Every other drawing on the
+        // canvas is ink on paper, and the chemistry lane was quietly exempt.
+        //
+        // 🔴 A TEXTBOOK MECHANISM IS BLACK LINE ART, which is what the owner's own reference is.
+        // Colour is kept for the two things that MEAN something: the electron arrows, and the cover
+        // over the part a learner is being asked to name. Spending it on "oxygen is red" leaves
+        // nothing for either.
+        const ink = theme === "dark" ? "#e8eaed" : "#111418";
+        const MONOCHROME = Object.fromEntries(
+          ["C", "O", "N", "F", "CL", "BR", "I", "P", "S", "B", "SI", "H", "F", "FOREGROUND"].map((element) => [element, ink]),
+        );
         const options = {
+          // 🔴 REGISTERED UNDER BOTH NAMES THE DRAWER MIGHT BE ASKED FOR, because the theme argument
+          // below is the APP's word ("light"/"dark") and the library looks it up by that name.
+          themes: { dark: { ...MONOCHROME, BACKGROUND: "#0b0d11" }, light: { ...MONOCHROME, BACKGROUND: "#ffffff" } },
           compactDrawing: false,
           // 🔴🔴🔴 A REAL FAMILY, BECAUSE "inherit" TOOK THE FONT SIZE DOWN WITH IT. The drawer writes
           // its labels as `font: 11pt ${fontFamily}`, and `inherit` is a CSS-wide keyword that the
@@ -196,6 +218,10 @@ export function ChemicalStructure({ compact = false, visual }: {
         // class deliberately states no height: a constant here is what made ethanol as tall as a
         // steroid. `max-w-full` still catches a wide reaction scheme, which scales uniformly rather
         // than distorting.
+        // 🔴 NO HEIGHT HERE, AND A CLASS COULD NOT SUPPLY ONE ANYWAY. `fitViewBoxToInk` writes the
+        // height as an INLINE style, which beats any class, so `h-auto` here was tried and did
+        // nothing at all: the letterbox it was meant to remove had to be fixed where the height is
+        // actually written. See the aspect-ratio note in `fitViewBoxToInk`.
         className="mx-auto block max-w-full"
         ref={target}
         role="img"
@@ -610,7 +636,19 @@ function fitViewBoxToInk(element: SVGSVGElement): void {
     // and `w-auto` with nothing to resolve against is how ethanol once rendered 60px across.
     const scale = Math.min(PX_PER_UNIT, MAX_DRAWN_HEIGHT / h);
     element.style.width = `${Math.round(w * scale)}px`;
-    element.style.height = `${Math.round(h * scale)}px`;
+    // 🔴🔴🔴 THE HEIGHT FOLLOWS THE WIDTH, AND PINNING BOTH IS WHAT LETTERBOXED EVERY NARROW FRAME.
+    // An inline height beats `max-w-full`: the width shrinks to fit the column and the height stays
+    // where it was, so the box keeps its old size around a drawing that is now smaller. Measured in
+    // a mechanism scheme with frames capped at 236px: content 237x124, box 236x200. Seventy-seven
+    // pixels of nothing under every frame, which stacked into the band of white the owner saw
+    // between two rows of a scheme and called janky.
+    //
+    // 🔴 THE ASPECT IS STATED RATHER THAN LEFT TO BE INFERRED. `height: auto` on an SVG resolves
+    // through its intrinsic ratio, and this element's ratio has just been rewritten underneath it by
+    // `setAttribute("viewBox", …)`. Saying it outright cannot be got wrong by a browser that decides
+    // to read the old one.
+    element.style.aspectRatio = `${w} / ${h}`;
+    element.style.height = "auto";
   } catch {
     // A node that is not laid out has no box to fit. Leaving the library's own viewBox is correct.
   }
