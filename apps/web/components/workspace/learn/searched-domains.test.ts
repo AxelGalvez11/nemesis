@@ -81,9 +81,15 @@ test("🔴 one host parser, shared with the pills and the sources panel", () => 
   assert.match(CHAT, /hostnameOf\(source\.url\)/, "the domains stopped using the shared host parser");
 });
 
-test("🔴 the dock accepts the prop, and undefined means the same as empty", () => {
-  // The agreed half-step: the data lands first, the chips are drawn by the dock's owner. What must
-  // hold either way is that no caller has to special-case a search that found nothing.
+test("🔴 the dock takes the prop, defaults undefined to empty, and now DRAWS it", () => {
+  // 🔴 THIS GUARD PINNED A HALF-STEP, AND THE HALF-STEP IS OVER. It asserted `domains: _domains = []`
+  // — the deliberately-ignored destructure from the agreed hand-off, when the data landed here
+  // before anyone drew it. That literal was the right thing to pin for exactly as long as "accepted
+  // and not drawn" was the intended state; keeping it would have meant a test actively forbidding
+  // the feature from being finished. So it moves forward to the same invariant in the new world:
+  // the prop exists, undefined still means empty so no caller special-cases a search that found
+  // nothing, and the chips are actually rendered.
   assert.match(DOCK, /domains\?: readonly string\[\];/, "the agreed prop is gone from the dock");
-  assert.match(DOCK, /domains: _domains = \[\]/, "the dock stopped defaulting undefined to empty");
+  assert.match(DOCK, /domains = \[\],/, "the dock stopped defaulting undefined to empty");
+  assert.match(DOCK, /<DomainChips domains=\{domains\} \/>/, "the dock accepts the list and draws nothing with it again");
 });
