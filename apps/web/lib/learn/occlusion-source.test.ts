@@ -79,6 +79,48 @@ test("🔴🔴🔴 the REAL nephron diagram is rejected, because it does not nam
   assert.equal(quality.usable, false, "the picture the owner rejected is accepted again");
 });
 
+test("🔴🔴🔴 a multi-line text block is not a label, and its picture is rejected", () => {
+  // 🔴 MEASURED ON THE LIVE ROUTE, ONE FIX LATER. Once the numbered nephron diagram was correctly
+  // rejected, the route moved to the next candidate — and THAT picture came back with these: the
+  // solute lists printed beside each tubule segment. Vision found real text in a real place; it is
+  // simply not a NAME, and "Which part is covered?" answered by a fourteen-item list is not a
+  // question.
+  const solutes = [
+    "Glucose\nAmino acids\nProtein\nVitamins\nLactate\nUrea\nUric acid\nNa+\nK+\nCa2+\nMg2+\nCl−\nHCO3−\nH2O",
+    "Na+\nCl−\nHCO3−\nH2O",
+    "H+\nK+\nNH4+",
+    "Urea\nUric acid\nCreatinine\nSome drugs\nH+\nNH4+",
+    "H2O",
+    "Na+\nK+\nCl−",
+    "Urea",
+    "H2O\nUrea",
+  ];
+  for (const blob of solutes.filter((entry) => entry.includes("\n"))) {
+    assert.equal(isAnswerableLabel(blob), false, `a text block was offered: ${blob.slice(0, 20)}…`);
+  }
+  // The two single-line survivors ("H2O", "Urea") are fewer than four named parts, so the PICTURE
+  // is rejected and the route moves on — which is the behaviour that matters.
+  assert.equal(labelQuality(solutes).usable, false, "the solute-list picture is accepted again");
+});
+
+test("🔴 a long name survives, because real diagrams print long names", () => {
+  assert.equal(isAnswerableLabel("thick ascending limb of the loop of Henle"), true);
+  assert.equal(isAnswerableLabel("left ventricular outflow tract"), true);
+  assert.equal(isAnswerableLabel("a".repeat(61)), false, "an unbounded string is offered as an answer");
+});
+
+test("🔴 a short SENTENCE is a known gap, and length alone cannot close it", () => {
+  // 🔴 AN HONEST LIMIT, WRITTEN DOWN RATHER THAN PAPERED OVER. This is 58 characters — shorter than
+  // some genuine anatomical names — so no character cap separates the two. The failure observed in
+  // production was multi-LINE text blocks, which the newline rule catches completely; a caption
+  // that happens to be one short line would still get through.
+  //
+  // If it ever bites, the honest signal is grammatical (a finite verb), not dimensional. It is NOT
+  // worth a keyword list: that is subject-matter scoping, which CLAUDE.md forbids and which never
+  // generalises past the discipline it was written for.
+  assert.equal(isAnswerableLabel("This region reabsorbs most of the filtered sodium and water"), true);
+});
+
 test("🔴🔴 a diagram that really does name its parts is accepted", () => {
   const neuron = ["dendrite", "axon", "myelin sheath", "node of Ranvier", "soma", "axon terminal"];
   const quality = labelQuality(neuron);

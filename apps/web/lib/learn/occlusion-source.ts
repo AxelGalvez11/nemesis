@@ -89,9 +89,30 @@ export function smallerThumbnail(url: string, width = OCCLUSION_READ_WIDTH): str
  * name, and the failure it prevents (a learner asked to choose between "F" and "R") is much worse
  * than the one it causes (one fewer question).
  */
+/**
+ * The longest a printed part name gets.
+ *
+ * 🔴 GENEROUS ON PURPOSE. "thick ascending limb of the loop of Henle" is 41 characters and is a
+ * name a real diagram really prints. What is being excluded is an order of magnitude bigger, so
+ * the cap does not need to be tight to catch it — and tightening it far enough to also exclude a
+ * short SENTENCE would start excluding names like that one.
+ */
+const MAX_LABEL_CHARS = 60;
+
 export function isAnswerableLabel(text: string): boolean {
+  // 🔴🔴🔴 A LABEL IS ONE LINE. Measured on the live route, 2026-08-25, one fix later: after the
+  // numbered nephron diagram was correctly rejected, the NEXT picture came back with "labels" like
+  // `"Glucose\nAmino acids\nProtein\nVitamins\nLactate\nUrea\nUric acid\nNa+\nK+\nCa2+…"` — the
+  // solute lists printed beside each tubule segment. Vision found real text in a real place; it is
+  // simply not a NAME, and "Which part is covered?" answered by a fourteen-item list is not a
+  // question.
+  //
+  // `OCCLUSION_VISION_PROMPT` already asks it to ignore body paragraphs and it does not always
+  // oblige, so the rule lives here where it is a test rather than a request. A newline is the
+  // sharpest signal available: a printed part name does not contain one.
+  if (/[\n\r]/.test(text)) return false;
   const label = plainLabel(text);
-  if (label.length < 2) return false;
+  if (label.length < 2 || label.length > MAX_LABEL_CHARS) return false;
   return /\p{L}/u.test(label);
 }
 
