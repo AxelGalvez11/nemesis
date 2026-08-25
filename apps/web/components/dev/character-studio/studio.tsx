@@ -20,8 +20,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTheme } from "@/components/theme-provider";
-import { animationDuration, characterOf, type StudioCharacter, type StudioDoc } from "@/lib/studio/document";
-import { animationFrame, expressionFrame, inkFor } from "@/lib/studio/frame";
+import { animationDuration, characterOf, inkOf, type StudioCharacter, type StudioDoc } from "@/lib/studio/document";
+import { animationFrame, expressionFrame, faceAt } from "@/lib/studio/frame";
 import { loadDoc, saveDoc } from "@/lib/studio/storage";
 
 import { Button, Segmented, Slider, Toast } from "./bits";
@@ -129,7 +129,9 @@ export function CharacterStudio() {
   const faces = character.expressions;
   const face = faces.find((f) => f.id === faceId) ?? faces[0]!;
   const anim = character.animations.find((a) => a.id === animId) ?? character.animations[0] ?? null;
-  const { ink, eye } = inkFor(character, dark);
+  // The filmstrip and the character gallery show many faces at once, so they use the
+  // character's own colours rather than any one face's override.
+  const { ink: baseInk, eye: baseEye } = inkOf(character, undefined, dark);
 
   const writeCharacter = (next: StudioCharacter) => {
     setDoc({ ...doc, characters: doc.characters.map((c) => (c.id === next.id ? next : c)) });
@@ -147,6 +149,12 @@ export function CharacterStudio() {
     expressionFrame(character, face, clock % HOLD_CYCLE, {
       look: gaze ? { x: gaze.x, y: gaze.y, mix: 1 } : undefined,
     });
+
+  // The face on the stage decides the colour, because a face may override it — see
+  // `inkOf`. Resolved here rather than above because it needs to know whether a timeline
+  // is running, and which face that timeline is on.
+  const shownFace = (onTimeline && anim ? faceAt(character, anim.id, clock) : undefined) ?? face;
+  const { ink, eye } = inkOf(character, shownFace, dark);
 
   const total = anim ? animationDuration(anim) : HOLD_CYCLE;
   const progress = total > 0 ? (clock % total) / total : 0;
@@ -270,7 +278,7 @@ export function CharacterStudio() {
                 }}
                 title={f.name}
               >
-                <Thumb character={character} expression={f} ink={ink} eye={eye} size={34} />
+                <Thumb character={character} expression={f} ink={baseInk} eye={baseEye} size={34} />
               </button>
             ))}
           </div>
@@ -310,8 +318,8 @@ export function CharacterStudio() {
                   setStageMode("face");
                 }}
                 onChange={writeCharacter}
-                ink={ink}
-                eye={eye}
+                ink={baseInk}
+                eye={baseEye}
               />
             ) : null}
             {tab === "animations" ? (

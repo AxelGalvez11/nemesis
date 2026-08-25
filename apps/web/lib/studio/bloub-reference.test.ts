@@ -221,9 +221,10 @@ test("the arrival blink is over by the time the hold begins", () => {
   }
 });
 
-test("a fresh studio opens with both characters", () => {
+test("a fresh studio opens with the shipped character and both references", () => {
   const doc = newDoc();
-  assert.equal(doc.characters.length, 2);
+  assert.equal(doc.characters.length, 3);
+  assert.ok(doc.characters.some((c) => c.name === "Bible Strong reference"), "the second reference is missing");
   const reference = doc.characters.find((c) => c.name === "Bloub reference");
   assert.ok(reference, "the reference character is missing");
   assert.equal(reference.animations.length, 15);

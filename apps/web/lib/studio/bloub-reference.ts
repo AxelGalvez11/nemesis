@@ -155,6 +155,9 @@ function faces(): StudioExpression[] {
     tilt: 0,
     asym: s.asym,
     curve: 0,
+    // bloub's eye separation is a constant `EYE_SPLIT` across every state — the pair never
+    // moves apart — so the spread is left at the identity for all fifteen.
+    spread: 1,
     mode: s.mode,
     left: null,
     right: null,

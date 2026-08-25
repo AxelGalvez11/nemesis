@@ -26,6 +26,7 @@ import { SHAPE_ORDER, type ShapeId } from "@/lib/mascot/shapes";
 import { STATE_ORDER } from "@/lib/mascot/states";
 import type { MascotMode } from "@/lib/mascot/types";
 
+import { bibleStrongReferenceCharacter } from "./bible-strong-reference";
 import { bloubReferenceCharacter } from "./bloub-reference";
 import { DEFAULT_EYE, DEFAULT_EYE_DARK, DEFAULT_INK, DEFAULT_INK_DARK } from "./ink";
 
@@ -76,6 +77,8 @@ export interface StudioExpression {
   readonly shape?: ShapeId | null;
   /** 0..1, how far toward `shape`. Ignored when `shape` is null. */
   readonly shapeMix?: number;
+  /** Multiplies how far apart the pair sits. See `ExpressionDef.spread`. */
+  readonly spread?: number;
   /**
    * One eye departing from the pair.
    *
@@ -120,9 +123,11 @@ export interface EyeSide {
   readonly h: number;
   readonly rise: number;
   readonly tilt: number;
+  /** Sideways offset for this eye alone, in rx units. See `EyeTweak.dx`. */
+  readonly dx: number;
 }
 
-export const EYE_SIDE_IDENTITY: EyeSide = { w: 1, h: 1, rise: 0, tilt: 0 };
+export const EYE_SIDE_IDENTITY: EyeSide = { w: 1, h: 1, rise: 0, tilt: 0, dx: 0 };
 
 /**
  * Ambient movement, as a small vocabulary rather than a pile of knobs.
@@ -335,6 +340,7 @@ export function seedExpressions(): StudioExpression[] {
       mode: "idle" as MascotMode,
       shape: null,
       shapeMix: 0,
+      spread: 1,
       left: null,
       right: null,
       ink: null,
@@ -403,8 +409,15 @@ export function newCharacter(name: string, id: string): StudioCharacter {
  */
 export function newDoc(): StudioDoc {
   const first = newCharacter("Nemesis", "char-1");
-  const reference = bloubReferenceCharacter("char-2");
-  return { version: DOC_VERSION, characters: [first, reference], selected: first.id };
+  return {
+    version: DOC_VERSION,
+    // Two references, because they measure different things. bloub is fifteen states with
+    // their own silhouettes and arrival timings; bible-strong is twenty-seven faces and
+    // twenty-three sequences on one body. A face you have just made is judged against
+    // whichever question you are asking.
+    characters: [first, bloubReferenceCharacter("char-2"), bibleStrongReferenceCharacter("char-3")],
+    selected: first.id,
+  };
 }
 
 // ── Repair ──────────────────────────────────────────────────────────────────────
@@ -443,8 +456,10 @@ export const LIMITS = {
   // Per-eye departures, as multipliers on what the pair already decided. Wider than the
   // pair's own ranges look, because they compose: `w` 1.5 on a pair already at 1.8 is
   // 2.7, which is what bloub's wink needs on one side.
-  sideW: { min: 0.2, max: 2.5, step: 0.01 },
-  sideH: { min: 0.05, max: 2.5, step: 0.01 },
+  sideW: { min: 0.2, max: 3, step: 0.01 },
+  sideH: { min: 0.05, max: 3, step: 0.01 },
+  sideDx: { min: -0.5, max: 0.5, step: 0.005 },
+  spread: { min: 0.3, max: 2.5, step: 0.01 },
   // 🔴 3, NOT 2.5, AND THE REFERENCE IS WHY. bloub's `notify` eye is 0.505 wide against a
   // resting 0.186 — a multiplier of 2.72 — so a ceiling of 2.5 silently clipped the one
   // state whose whole read is a very wide, short eye. A limit that cannot express the
@@ -491,6 +506,7 @@ function repairSide(raw: unknown): EyeSide | null {
     h: clampTo("sideH", o.h, 1),
     rise: clampTo("rise", o.rise, 0),
     tilt: clampTo("tilt", o.tilt, 0),
+    dx: clampTo("sideDx", o.dx, 0),
   };
 }
 
@@ -539,6 +555,7 @@ function repairExpression(raw: unknown, id: string): StudioExpression {
     // the character's body for reasons nobody chose.
     shape: o.shape == null ? null : shapeId(o.shape, "blob"),
     shapeMix: o.shape == null ? 0 : clampTo("shapeMix", o.shapeMix, 1),
+    spread: clampTo("spread", o.spread, 1),
     left: repairSide(o.left),
     right: repairSide(o.right),
     // `null` rather than a default colour: absent means "use the character's", and a
@@ -700,6 +717,7 @@ export function toExpressionDef(e: StudioExpression): ExpressionDef {
     tilt: e.tilt,
     asym: e.asym,
     curve: e.curve,
+    spread: e.spread ?? 1,
     // `undefined` rather than `null`: the engine treats absent as the identity, and a
     // null would have to be checked at every read site.
     left: e.left ?? undefined,

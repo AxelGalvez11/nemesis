@@ -78,6 +78,30 @@ const RAW = {
   triangle: (t) => polygon(t, 3, 0.42, -Math.PI / 2),
 
   /**
+   * A rounded square, and the rest of this group exist for the same reason.
+   *
+   * 🔴 THIS GROUP IS THE REFERENCE CATALOGUE, NOT THE CHARACTER'S. bible-strong-avatar-lab
+   * builds bodies from eight named 3D surfaces — sphere, cube, capsule, cylinder, cone,
+   * diamond, plus two novelty shapes — and a transcription of its avatars drawn on our own
+   * catalogue is our character wearing someone else's colours. These are the flat
+   * counterparts, chosen so each reads as the same object in silhouette. Nothing the
+   * product ships should reach for them.
+   *
+   * Their `cube` is a superellipsoid at roundness ~0.76; `n = 5` is the flat profile with
+   * the same read — square with softened corners — and it clears the spike guard with room.
+   */
+  square: (t) => superellipse(t, 5),
+
+  /** Their `capsule`: 205 wide by 270 tall, fully round-ended. */
+  capsule: (t) => superellipse(t, 5, 1.32),
+
+  /** Their `cylinder`: straight sides, flatter ends than a capsule. */
+  cylinder: (t) => superellipse(t, 3, 1.06),
+
+  /** Their `diamond`: a square stood on its corner, softened enough to survive 18px. */
+  diamond: (t) => polygon(t, 4, 0.3, Math.PI / 4),
+
+  /**
    * Organic and very slightly irregular. Two low-frequency bumps at fixed phases, so it
    * is asymmetric in a way that reads as a made thing rather than as a generated one.
    * The resting alternative to `blob` for states that should feel unguarded.
@@ -147,6 +171,10 @@ export const SHAPE_LABEL: Record<ShapeId, string> = {
   blob: "Blob",
   circle: "Circle",
   triangle: "Triangle",
+  square: "Square",
+  capsule: "Capsule",
+  cylinder: "Cylinder",
+  diamond: "Diamond",
   pebble: "Pebble",
   crystal: "Crystal",
   lens: "Lens",

@@ -19,7 +19,7 @@
 import type { EyePose, EyeTweak } from "./types";
 
 /** No per-eye departure at all. Shared, because the common case is every face. */
-export const EYES_ALIKE: EyeTweak = { w: 1, h: 1, rise: 0, tilt: 0 };
+export const EYES_ALIKE: EyeTweak = { w: 1, h: 1, rise: 0, tilt: 0, dx: 0 };
 
 /** Interpolates one eye's departure from the pair. */
 function blendTweak(a: EyeTweak | undefined, b: EyeTweak | undefined, t: number): EyeTweak | undefined {
@@ -27,7 +27,13 @@ function blendTweak(a: EyeTweak | undefined, b: EyeTweak | undefined, t: number)
   const from = a ?? EYES_ALIKE;
   const to = b ?? EYES_ALIKE;
   const m = (x: number, y: number) => x + (y - x) * t;
-  return { w: m(from.w, to.w), h: m(from.h, to.h), rise: m(from.rise, to.rise), tilt: m(from.tilt, to.tilt) };
+  return {
+    w: m(from.w, to.w),
+    h: m(from.h, to.h),
+    rise: m(from.rise, to.rise),
+    tilt: m(from.tilt, to.tilt),
+    dx: m(from.dx, to.dx),
+  };
 }
 
 export interface ExpressionDef {
@@ -49,6 +55,8 @@ export interface ExpressionDef {
    * without a mouth. Negative bows it down, which reads as concern.
    */
   readonly curve: number;
+  /** Multiplies how far apart the pair sits. `1` — or absent — leaves it alone. */
+  readonly spread?: number;
   /**
    * One eye departing from the pair, when `asym` cannot say it.
    *
@@ -120,6 +128,7 @@ export function blendExpression(a: ExpressionDef, b: ExpressionDef, t: number): 
     tilt: m(a.tilt, b.tilt),
     asym: m(a.asym, b.asym),
     curve: m(a.curve, b.curve),
+    spread: m(a.spread ?? 1, b.spread ?? 1),
     left: blendTweak(a.left, b.left, t),
     right: blendTweak(a.right, b.right, t),
   };
@@ -135,6 +144,7 @@ export function applyExpression(eye: EyePose, e: ExpressionDef): EyePose {
     tilt: eye.tilt + e.tilt,
     asym: eye.asym + e.asym,
     curve: eye.curve + e.curve,
+    split: eye.split * (e.spread ?? 1),
     wink: eye.wink,
     // Carried through rather than merged into the shared numbers: the two eyes are only
     // resolved at render time, where `side` is known.

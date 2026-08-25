@@ -145,6 +145,14 @@ export interface EyeTweak {
   readonly h: number;
   readonly rise: number;
   readonly tilt: number;
+  /**
+   * Sideways offset for this eye alone, in rx units.
+   *
+   * Separate from `split`, which moves the PAIR apart symmetrically. This is one eye
+   * sliding on its own, which is what a reference expression like `asymmetric-up-left`
+   * actually does and what `split` cannot say.
+   */
+  readonly dx: number;
 }
 
 /**
@@ -187,6 +195,16 @@ export interface EyePose {
    * `question` read as inquisitive without an eyebrow or any other cartoon device.
    */
   readonly asym: number;
+  /**
+   * Multiplies how far apart the pair sits.
+   *
+   * 🔴 A SEPARATE AXIS FROM EVERY OTHER EYE FIELD, and it was missing until a reference
+   * needed it. Widening the eyes and moving them apart are different gestures — surprise
+   * does both, a squint does the first only — and a model without this can express one of
+   * them. bible-strong-avatar-lab varies its `spacing` from 35 at rest to 71, which is the
+   * single largest change across its expression set.
+   */
+  readonly spread?: number;
   /**
    * One eye departing from the pair, where `asym` cannot reach.
    *

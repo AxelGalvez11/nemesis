@@ -202,6 +202,22 @@
 
 .cs-thumb-art { display: grid; place-items: center; pointer-events: none; }
 
+/* 🔴 THE MASCOT DEFINES ITS OWN INK ON ITSELF, SO IT HAS TO BE TOLD TO INHERIT.
+ * `mascot.css` sets `--mascot-ink` on `.nemesis-mascot` — the SVG element — which is
+ * exactly right for the product, where the character has one colour. In the studio the
+ * colour belongs to whichever character is being edited, so it is set on the wrapper; and
+ * a custom property declared ON an element beats one inherited from its parent, every
+ * time. The result was a studio where every character rendered in the shipped character's
+ * colours and the colour pickers appeared to do nothing.
+ *
+ * `inherit` is the whole fix: it makes the SVG take the wrapper's value rather than its
+ * own default, without touching the component or the product's stylesheet. */
+.cs-stage-art .nemesis-mascot,
+.cs-thumb-art .nemesis-mascot {
+  --mascot-ink: inherit;
+  --mascot-eye: inherit;
+}
+
 /* ── Inspector ───────────────────────────────────────────────────────────── */
 
 .cs-tabs {

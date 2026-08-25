@@ -229,7 +229,7 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
     const lidR = ew * 1.28;
 
     // Where the eye sits on the face, as plain offsets in body-radius units.
-    const ex = eye.split * side + u;
+    const ex = eye.split * side + only.dx + u;
     const ey = eye.rise + only.rise + v;
 
     // ── The head, when there is one ────────────────────────────────────────────
