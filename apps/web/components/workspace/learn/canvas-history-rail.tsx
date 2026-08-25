@@ -32,7 +32,8 @@
 // enforces that ONE turn owns the surface at a time (see canvas-hosting.ts — "two things may share
 // the surface, two ANSWER surfaces may not"), so there is no transcript to scroll past and no
 // pixel position to sync to. The active marker is the moment the Canvas is SHOWING, which is
-// "now" unless the learner has rewound. That also satisfies the performance requirement outright —
+// the moment the learner rewound to, and NOTHING when they have not — see the "Now" note below.
+// That also satisfies the performance requirement outright —
 // "no expensive rerender on every scroll frame" is free when nothing listens to scroll.
 //
 // 🔴 IT IS NOT A SCROLLBAR, AND THE WINDOWING IS WHY IT CANNOT BECOME ONE. A canvas may hold up to
@@ -46,6 +47,21 @@ import { cn } from "@/lib/utils";
 
 import type { CanvasHistoryEntry } from "@/lib/learn/canvas-history";
 import { TITLE_LIMIT, shortTitle } from "@/lib/learn/canvas-history";
+
+// 🔴🔴 THERE IS NO "NOW" MARK, AND ITS REMOVAL WAS SAFE FOR A REASON WORTH WRITING DOWN. Owner,
+// 2026-08-25: *"could you remove the 'now' since thats not really needed?"* It was the last mark on
+// the column and the rail's own way back to live, so deleting it would normally strand anybody who
+// had rewound — a control that walks you into the past with no way forward.
+//
+// It does not, because the exit was never only here: `canvas-history-view.tsx` renders **"Return to
+// now"** on the rewound surface itself, which is where somebody looking at an old moment actually
+// is. Two exits for one state was the redundancy the owner could see.
+//
+// 🔴 SO WHEN NOTHING IS REWOUND TO, NO MARK IS ACTIVE, and that is honest rather than a gap: the
+// learner is in the present, and the present is not one of the moments this column lists. A mark
+// lit for "you are not in history" would be the same duplicate wearing a different shape.
+//
+// `canvas-history-surface.test.ts` holds the absence, next to the ban on a second history surface.
 
 /** One component owns the interaction — the brief's own rule, and the reason this type is here.
  *  🔴 TWO STATES, NOT THREE: "expanded" left with the drawer it named (owner cut, 2026-08-23). */
@@ -120,8 +136,13 @@ export function CanvasHistoryRail({
   }, [activeMomentId, entries]);
 
   const peeking = display === "peek";
-  /** "Now" is the active marker whenever nothing has been rewound to. */
-  const live = activeMomentId === null;
+
+  // 🔴 A CANVAS WITH NO MOMENTS DRAWS NO RAIL, AND THIS GUARD ARRIVED WITH THE "NOW" MARK'S
+  // REMOVAL. Until then the column always had at least that one mark, so it was always a real
+  // object. Without it an empty history renders an empty `<nav>` — invisible, and still holding a
+  // hover target down the right edge that opens a panel with nothing in it. A control that reacts
+  // and then shows nothing reads as broken, which is worse than an edge that is simply quiet.
+  if (entries.length === 0) return null;
 
   return (
     <>
@@ -170,8 +191,6 @@ export function CanvasHistoryRail({
                 peeking={peeking}
               />
             ))}
-            {/* 🔴 "NOW" IS THE LAST MARK, BECAUSE THE COLUMN RUNS FORWARD IN TIME. */}
-            <RailMarker active={live} label="Now" onSelect={() => onSelect(null)} peeking={peeking} />
           </nav>
         </div>
       </div>
