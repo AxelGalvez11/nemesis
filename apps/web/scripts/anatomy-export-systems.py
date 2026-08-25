@@ -79,10 +79,23 @@ def export(collection_name: str, slug: str) -> None:
         filepath=path,
         export_format="GLB",
         use_selection=True,
-        # 🔴 NO MATERIALS AND NO IMAGES LEAVE THIS FILE. `anatomy-harvest.mts` strips them anyway
-        # for the licence reason recorded there; refusing to write them is faster and makes the
-        # licence act true at the earliest possible point.
-        export_materials="NONE",
+        # 🔴 MATERIALS TRAVEL, IMAGES DO NOT — AND THE DIFFERENCE IS THE WHOLE LICENCE QUESTION.
+        # This used to be "NONE", justified by the harvest's note about Open3DModel's textures
+        # being CC BY-NC-SA. That is a DIFFERENT SOURCE. This file is Z-Anatomy, CC BY-SA 4.0, and
+        # `anatomy-licence.ts` records all three sources as commercially usable — so one atlas's
+        # texture restriction was silently discarding another atlas's colours, and every organ
+        # rendered as one flat grey shape.
+        #
+        # There is nothing to lose on the image side: the .blend has 188 materials and ZERO image
+        # textures, and only 12 of 4,569 meshes carry a vertex-colour layer. Z-Anatomy is flat
+        # colour per tissue, which is what an anatomical plate is. `export_image_format="NONE"`
+        # therefore costs nothing and keeps the licence act true at the earliest point.
+        #
+        # 🔴 WHAT COMES OUT NEEDS FIXING UP, AND `anatomy-harvest.mts` DOES IT. Z-Anatomy's
+        # materials are custom node groups rather than a Principled BSDF, so this exporter cannot
+        # express them and bakes every one with `emissiveFactor: [1,1,1]` — fully self-illuminated
+        # white — plus a metallic factor near 0.5. Untouched, that renders as a white silhouette.
+        export_materials="EXPORT",
         export_image_format="NONE",
         # Modifiers applied, so what ships is the geometry the atlas actually shows.
         export_apply=True,
