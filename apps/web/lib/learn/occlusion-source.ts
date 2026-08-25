@@ -52,22 +52,28 @@ export const OCCLUSION_READ_WIDTH = 800;
 const WIKIMEDIA_THUMB = /\/(\d{2,5})px-/;
 
 /**
- * The same picture, rendered smaller — or the original when it is not a resizable thumbnail.
+ * The same picture at a smaller width, to TRY — never to trust.
  *
- * 🔴 IT NEVER WIDENS. Asking Wikimedia for a rendering LARGER than the stored file makes it
- * refuse, and a refusal here costs the whole question. `Math.min` means a 640px source stays
- * 640px.
+ * 🔴🔴🔴 WIKIMEDIA ONLY SERVES WIDTHS IT HAS ALREADY RENDERED, AND WHICH ONES THOSE ARE IS
+ * UNPREDICTABLE PER FILE. Measured on the real nephron diagram, 2026-08-25:
  *
- * 🔴 AND THE RETURNED URL IS THE ONE THE LEARNER IS SHOWN, not just the one vision reads. The
- * masks are measured against whatever was fetched, so reading a small rendering and then
- * displaying a large one would put every box in the right place on the wrong picture. One URL,
- * measured once, used for both.
+ *   1280px → 200      960px → 200
+ *    800px → 400      640px → 400      1024px → 400      1200px → 400
+ *
+ * The first version of this rewrote every URL to a fixed 800px and returned it as fact. Every
+ * lookup then died at `image-unreachable` in 1.4 seconds — the feature was completely broken, and
+ * it looked exactly like "no diagram found". So this function now proposes a candidate and the
+ * CALLER must fall back to the original when it does not answer. There is no width that is safe
+ * to assume, which is why `readableThumbnail` cannot be the last word.
+ *
+ * Returns null when there is nothing worth trying: not a thumbnail, or already small enough.
  */
-export function readableThumbnail(url: string, width = OCCLUSION_READ_WIDTH): string {
+export function smallerThumbnail(url: string, width = OCCLUSION_READ_WIDTH): string | null {
   const match = WIKIMEDIA_THUMB.exec(url);
-  if (!match) return url;
+  if (!match) return null;
   const present = Number(match[1]);
-  if (!Number.isFinite(present) || present <= width) return url;
+  // 🔴 NEVER WIDENS. Asking for a rendering larger than the one on offer is a guaranteed refusal.
+  if (!Number.isFinite(present) || present <= width) return null;
   return url.replace(WIKIMEDIA_THUMB, `/${width}px-`);
 }
 

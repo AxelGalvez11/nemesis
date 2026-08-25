@@ -25,7 +25,7 @@ import { REFERENCE_REGISTRY } from "@/lib/learn/reference-registry";
 import { REFERENCE_SHELF } from "@/lib/learn/reference-shelf";
 import { chooseAsset } from "@/lib/learn/visual-provenance";
 import { imageSize } from "@/lib/notebooks/image-dimensions";
-import { readableThumbnail } from "@/lib/learn/occlusion-source";
+import { smallerThumbnail } from "@/lib/learn/occlusion-source";
 import { adminClient } from "@/lib/server";
 import { readImage, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
 import { jsonFrom, looksNormalized, OCCLUSION_VISION_PROMPT, parseSuggestedBoxes } from "@nemesis/shared";
@@ -108,43 +108,49 @@ export async function POST(request: Request): Promise<NextResponse> {
     return refuse(admin, key, choice.reason, choice.detail);
   }
 
-  // 🔴🔴 A SMALLER RENDERING OF THE SAME PICTURE, BECAUSE THE BIG ONE TIMES THIS ROUTE OUT.
-  // Measured in production 2026-08-25: `subject: "neuron"` returned **504 Gateway Timeout** — a
-  // 1280px PNG regularly costs vision more than the 60s budget has left after the search and the
-  // download. Every asset here comes from `upload.wikimedia.org`, whose thumbnails carry their
-  // width in the path, so a smaller one is a string rewrite away.
-  //
-  // 🔴 THE SMALL URL IS WHAT THE LEARNER IS SHOWN TOO, and that is not incidental. Masks are
-  // measured against the bytes we fetched; reading a small rendering and displaying a large one
-  // would put every box in the right place on the wrong picture.
   const chosenPath = choice.asset.assetPath;
-  const assetPath = readableThumbnail(chosenPath);
-  // Belt and braces: `chooseAsset` already refuses anything unlicensed, and this refuses anything
-  // off the allow list before our server fetches it. Checked on the REWRITTEN url, so a rewrite
-  // that somehow produced a different host would be caught here rather than trusted.
-  if (!allowedAssetUrl(assetPath) || !allowedAssetUrl(chosenPath)) {
-    return refuse(admin, key, "no-trusted-asset");
-  }
+  // `chooseAsset` already refuses anything unlicensed; this refuses anything off the allow list
+  // before our server fetches it.
+  if (!allowedAssetUrl(chosenPath)) return refuse(admin, key, "no-trusted-asset");
 
-  let bytes: Uint8Array;
-  let contentType: string;
-  try {
-    const picture = await fetch(assetPath, {
-      headers: { "user-agent": USER_AGENT },
-      signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
-    });
-    if (!picture.ok) return refuse(admin, key, "image-unreachable");
-    const buffer = await picture.arrayBuffer();
-    // 🔴 CHECKED AFTER THE DOWNLOAD, BECAUSE Content-Length IS OPTIONAL. A repository that streams
-    // without one would otherwise walk straight past a size gate keyed on the header.
-    if (buffer.byteLength > VISION_MAX_BYTES) {
-      return refuse(admin, key, "image-too-large");
+  // 🔴🔴🔴 TRY THE SMALL ONE, FALL BACK TO THE ONE WE WERE GIVEN. Wikimedia only serves widths it
+  // has ALREADY RENDERED, and which ones those are is unpredictable per file — measured on this
+  // very diagram, 2026-08-25: 960px and 1280px answer, while 640, 800, 1024 and 1200 all return
+  // 400. The first cut of this rewrote every URL to a fixed 800px and returned it as fact. Every
+  // lookup then died at `image-unreachable` in 1.4 seconds, which from the outside was
+  // indistinguishable from "no diagram exists". A guess is fine; a guess treated as certainty is
+  // the bug.
+  //
+  // 🔴 `assetPath` ENDS UP AS WHICHEVER CANDIDATE ANSWERED, because that is the picture the masks
+  // are measured against and therefore the only one that may be displayed. Reading a small
+  // rendering and showing a large one would put every box in the right place on the wrong picture.
+  const smaller = smallerThumbnail(chosenPath);
+  const attempts = smaller && allowedAssetUrl(smaller) ? [smaller, chosenPath] : [chosenPath];
+
+  let bytes: Uint8Array | null = null;
+  let contentType = "";
+  let assetPath = chosenPath;
+  for (const candidate of attempts) {
+    try {
+      const picture = await fetch(candidate, {
+        headers: { "user-agent": USER_AGENT },
+        signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
+      });
+      if (!picture.ok) continue;
+      const buffer = await picture.arrayBuffer();
+      // 🔴 CHECKED AFTER THE DOWNLOAD, BECAUSE Content-Length IS OPTIONAL. A repository that
+      // streams without one would walk straight past a size gate keyed on the header. Oversize is
+      // not fatal here — trying the smaller rendering next is the entire point of the list.
+      if (buffer.byteLength > VISION_MAX_BYTES) continue;
+      bytes = new Uint8Array(buffer);
+      contentType = picture.headers.get("content-type") ?? "";
+      assetPath = candidate;
+      break;
+    } catch {
+      // Move to the next candidate. Only running out of them is a refusal.
     }
-    bytes = new Uint8Array(buffer);
-    contentType = picture.headers.get("content-type") ?? "";
-  } catch {
-    return refuse(admin, key, "image-unreachable");
   }
+  if (!bytes) return refuse(admin, key, "image-unreachable");
 
   const mime = visionMime(assetPath, contentType);
   if (!mime) return refuse(admin, key, "image-unreadable");
@@ -309,9 +315,25 @@ async function writeCache(admin: SupabaseClient, key: string, answer: FigureOccl
   }
 }
 
+/**
+ * Refusals that mean "there is nothing here", as opposed to "we did not manage it".
+ *
+ * 🔴🔴🔴 ONLY THESE ARE CACHED, AND THE DISTINCTION IS THE DIFFERENCE BETWEEN A CACHE AND A
+ * POISON. Caching a durable refusal saves a pointless search every time somebody asks about a
+ * subject that genuinely has no labelled diagram — the common case, and the whole reason refusals
+ * are stored at all.
+ *
+ * Caching a TRANSIENT one is a disaster in slow motion. A vision read that ran long, a repository
+ * that was briefly down, a thumbnail width Wikimedia declined to render: each is a momentary
+ * failure, and storing it would take that subject off the menu for a week for every learner on the
+ * product. It nearly happened — a bad thumbnail rewrite wrote `image-unreachable` for "nephron",
+ * and until that row was deleted by hand, nobody could have been asked about a kidney.
+ */
+const DURABLE_REFUSALS = new Set(["no-candidates", "no-trusted-asset", "no-labelled-parts", "vision-off"]);
+
 /** Record why no diagram, and say so. */
 async function refuse(admin: SupabaseClient, key: string, reason: string, detail?: string): Promise<NextResponse> {
   const answer: FigureOcclusionAnswer = { ok: false, reason, ...(detail ? { detail } : {}) };
-  await writeCache(admin, key, answer);
+  if (DURABLE_REFUSALS.has(reason)) await writeCache(admin, key, answer);
   return NextResponse.json(answer, { status: 200 });
 }
