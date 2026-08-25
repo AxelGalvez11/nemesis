@@ -41,6 +41,7 @@
 // is not this file's business.
 
 import type { EaseName } from "@/lib/mascot/easing";
+import { ROUND_STRETCH } from "@/lib/mascot/geometry";
 import type { ShapeId } from "@/lib/mascot/shapes";
 import type { MascotMode } from "@/lib/mascot/types";
 
@@ -212,7 +213,10 @@ export function bloubReferenceCharacter(id: string): StudioCharacter {
       shape: "circle",
       shapeMix: 1,
       scale: 1,
-      stretch: 1,
+      // bloub's body is a true circle in every state that has one. See `ROUND_STRETCH`:
+      // without it the Nemesis box draws that circle 14% wider than tall, and the eyes
+      // with it.
+      stretch: ROUND_STRETCH,
       squash: 1,
       tilt: 0,
       taper: 0,

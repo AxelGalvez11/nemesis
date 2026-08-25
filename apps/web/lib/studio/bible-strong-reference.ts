@@ -42,6 +42,8 @@
 // is taken as roll. Six-of-seven is evidence, not proof, which is why this paragraph
 // exists and why the head is not covered by the exact-match guards.
 
+import { ROUND_STRETCH } from "@/lib/mascot/geometry";
+
 import type { StudioAnimation, StudioCharacter, StudioExpression } from "./document";
 import { DEFAULT_EYE, DEFAULT_EYE_DARK, DEFAULT_INK, DEFAULT_INK_DARK } from "./ink";
 
@@ -358,7 +360,12 @@ export function bibleStrongReferenceCharacter(id: string): StudioCharacter {
       shape: "circle",
       shapeMix: 1,
       scale: 1,
-      stretch: 1,
+      // 🔴 THEIR BODY IS A SPHERE AND EVERY MEASUREMENT ABOVE ASSUMES IT. Their eye
+      // widths and spacings are fractions of a radius of 120 that is the same in both
+      // axes; ours are fractions of `rx`, which is 14% larger than `ry`. Left at 1 the
+      // conversion was consistently 14% wide — on the body, on each eye, and on the gap
+      // between them. See `ROUND_STRETCH`.
+      stretch: ROUND_STRETCH,
       squash: 1,
       tilt: 0,
       taper: 0,

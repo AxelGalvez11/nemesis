@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { BODY, EYE_H, EYE_SPLIT, EYE_W } from "@/lib/mascot/geometry";
 import { STATE_ORDER } from "@/lib/mascot/states";
 
+import { BS_EXPRESSIONS } from "./bible-strong-reference";
 import {
   BLOUB_REST_H,
   BLOUB_REST_W,
   REFERENCE,
   bloubReferenceCharacter,
 } from "./bloub-reference";
-import { animationDuration, normaliseDoc, newDoc } from "./document";
+import { animationDuration, normaliseDoc, newDoc, HEAD_FLAT } from "./document";
+import { expressionFrame } from "./frame";
 import { sampleAnimation } from "./playback";
 
 // ── The reference is a transcription, and these guards are what make that claim checkable
@@ -218,6 +221,63 @@ test("the arrival blink is over by the time the hold begins", () => {
     const anim = character.animations.find((a) => a.id === state.id)!;
     const lid = sampleAnimation(anim, character.expressions, state.morph + 0.05).lid;
     assert.ok(lid > 0.9, `${state.id}'s arrival blink is still closing into the hold: ${lid.toFixed(3)}`);
+  }
+});
+
+// ── Both references are drawn on a round body, and the shipped character is not ──
+
+test("🔴 a reference whose body is a circle draws a circle, not the Nemesis egg", () => {
+  // 🔴 THIS IS THE BUG THE OWNER SAW AND NOTHING ELSE CAUGHT. `SHAPES.circle` is
+  // r(theta) = 1 at every angle, so both references named it and both still rendered 14%
+  // wider than tall — because the profile is drawn into the mark's own 41-by-36 box. It
+  // passed every existing test: the profile WAS a circle, the area WAS normalised, the
+  // silhouette WAS inside the viewBox. Only the picture was wrong. See `ROUND_STRETCH`.
+  const doc = newDoc();
+  for (const name of ["Bloub reference", "Bible Strong reference"]) {
+    const c = doc.characters.find((x) => x.name === name)!;
+    const face = c.expressions.find((e) => (e.shape ?? c.body.shape) === "circle");
+    assert.ok(face, `${name} has no face on a circle body`);
+    const f = expressionFrame(c, face, 0.9, { reduced: true });
+    assert.ok(
+      Math.abs(f.body.rx - f.body.ry) < 0.01,
+      `${name} draws ${f.body.rx.toFixed(2)} by ${f.body.ry.toFixed(2)} — not round`,
+    );
+  }
+});
+
+test("🔴 the shipped character keeps its own box, which is NOT round", () => {
+  // The other half of the claim: `ROUND_STRETCH` is a lever a reference pulls, not a
+  // change to the mark. 41 by 36 IS Nemesis — if this ever goes round, the product's
+  // character has been quietly redrawn by a studio fixture.
+  const doc = newDoc();
+  const us = doc.characters.find((x) => x.name === "Nemesis")!;
+  const f = expressionFrame(us, us.expressions[0]!, 0.9, { reduced: true });
+  assert.ok(f.body.rx > f.body.ry * 1.1, `Nemesis drew ${f.body.rx.toFixed(2)} by ${f.body.ry.toFixed(2)}`);
+  assert.equal(us.body.stretch, 1);
+  assert.equal(BODY.rx / BODY.ry > 1.1, true);
+});
+
+test("🔴 a converted eye reaches the picture as the number it was written as", () => {
+  // 🔴 WHAT THIS PROVES, AND WHAT IT DOES NOT. It follows one number from the table all
+  // the way to the drawn frame — through `toExpressionDef`, the engine's expression
+  // layer, the containment fit — and asserts the picture still says what the table said.
+  // That is the class the 14% bug belonged to: the numbers were right and the drawing was
+  // not. It CANNOT catch a mistranscribed table, because it reads that same table; the
+  // bloub timings above are guarded by hand-restated numbers for exactly that reason, and
+  // their per-face source is a JSON export we do not carry a second copy of.
+  //
+  // Asserted with the head flat and the gaze centred: both legitimately move and
+  // foreshorten an eye, and neither is what this is measuring.
+  const c = newDoc().characters.find((x) => x.name === "Bible Strong reference")!;
+  for (const id of ["small-attentive", "upward-side-glance", "downward-gaze"]) {
+    const src = BS_EXPRESSIONS.find((e) => e.id === id)!;
+    const face = c.expressions.find((e) => e.name.toLowerCase().replace(/ /g, "-") === id)!;
+    const f = expressionFrame(c, face, 0.9, { reduced: true, head: HEAD_FLAT, look: null });
+    const R = f.body.rx;
+    const halfSeparation = Math.abs(f.eyes[1].cx - f.eyes[0].cx) / 2;
+    assert.ok(Math.abs(f.eyes[0].rx / R - EYE_W * src.w) < 1e-3, `${id}: eye width off`);
+    assert.ok(Math.abs(f.eyes[0].ry / R - EYE_H * src.h) < 5e-3, `${id}: eye height off`);
+    assert.ok(Math.abs(halfSeparation / R - EYE_SPLIT * src.spread) < 1e-3, `${id}: eye separation off`);
   }
 });
 

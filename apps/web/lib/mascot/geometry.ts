@@ -25,6 +25,24 @@ export { ANGLES, PROFILE_SAMPLES };
 export const BODY = { cx: 50, cy: 60, rx: 41, ry: 36 } as const;
 
 /**
+ * The `stretch` at which a profile drawn on a circle actually comes out circular.
+ *
+ * 🔴 THE MARK'S OWN BOX IS WIDER THAN IT IS TALL — 41 by 36 — AND EVERY PROFILE IS DRAWN
+ * INTO IT. That is right for Nemesis: the character is a slightly wide, settled form, and
+ * the whole catalogue is authored against that box. It is wrong for a transcription of
+ * someone else's character, and it was silently wrong for both of ours: `SHAPES.circle`
+ * is r(theta) = 1 at every angle, so it enclosed a perfect circle and then rendered 14%
+ * wider than tall. The body read as an egg, and — because the eyes are sized and
+ * separated in fractions of `rx` — the eyes came out 14% too wide and 14% too far apart
+ * as well. One number, three symptoms, and the owner saw all three: *"it still doesn't
+ * match the exact shape."*
+ *
+ * Reference characters set `body.stretch` to this so their circle is a circle. Nothing
+ * the product ships should: 41 by 36 IS the Nemesis mark.
+ */
+export const ROUND_STRETCH = BODY.ry / BODY.rx;
+
+/**
  * The sampling lives in shapes.ts, because it is the catalogue's contract: every shape
  * must be sampled at the same angles or none of them can morph into any other.
  *

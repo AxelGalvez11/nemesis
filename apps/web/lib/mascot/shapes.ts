@@ -30,7 +30,15 @@ function superellipse(theta: number, n: number, minor = 1): number {
   return 1 / Math.pow(Math.pow(c, n) + Math.pow(s, n), 1 / n);
 }
 
-/** Regular polygon of `sides`, softened toward a circle by `soft` (0..1). */
+/**
+ * Regular polygon of `sides`, softened toward a circle by `soft` (0..1).
+ *
+ * 🔴 A VERTEX SITS AT `theta = -phase`, NOT AT `+phase`. `r` peaks where `a` is 0 — the
+ * cell edge — not at its centre, so the corners land on `-phase + k * step`. Getting the
+ * sign backwards points the shape the other way and still draws a perfectly good polygon,
+ * which is exactly why it went unnoticed: `triangle` shipped pointing DOWN under a
+ * comment that said point up. See the orientation guard in `geometry.test.ts`.
+ */
 function polygon(theta: number, sides: number, soft: number, phase = 0): number {
   const step = TAU / sides;
   const a = ((theta + phase) % step + step) % step;
@@ -74,8 +82,13 @@ const RAW = {
    * than a corner. The guard was right and it is the shape that moved: 0.42 leaves the
    * corners 43% further out than the flats, which still reads unmistakably as a triangle,
    * with real margin under the limit.
+   *
+   * 🔴 `+PI/2`, AND IT SHIPPED AS `-PI/2`, WHICH POINTED IT DOWN. A three-sided figure is
+   * the one polygon here where up and down are different pictures — the other two are
+   * symmetric about the horizontal, so the same slip would have been invisible on them.
+   * Found by rendering the reference's `play` state and looking at it.
    */
-  triangle: (t) => polygon(t, 3, 0.42, -Math.PI / 2),
+  triangle: (t) => polygon(t, 3, 0.42, Math.PI / 2),
 
   /**
    * A rounded square, and the rest of this group exist for the same reason.
