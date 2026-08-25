@@ -10,6 +10,10 @@
  * To regenerate after re-rendering the art:
  *   cwebp -q 40 -resize 40 0 <src>.png -o <name>-blur.webp
  * then re-run the snippet in the landing README.
+ *
+ * The two `*_WASH_` entries are the exception to "downsampled render": their sources
+ * are computed rather than generated. See scripts/art-wash.py, which carries its own
+ * encode recipe at the foot of the file.
  */
 
 export const HERO_BLUR =
@@ -18,11 +22,17 @@ export const HERO_BLUR =
 export const LEARN_BLUR =
   "data:image/webp;base64,UklGRtgAAABXRUJQVlA4IMwAAABwBwCdASooACgAPt1Yp02opSOiNVgNURAbiWIAv2tKvOyWj0Ho6ocEp7FuA83tg1MJDmzcZ7Iq07/yEp7USTl5lp1RoAD+83+75wAJZaXWD5CIcbtidOHqnawe9rpRrpNkJcJ0FNHTbc/n+FX+daPYTbXqUxvxHokCQNt+K2FCKb9vLWww6ejOJKF1hq24hHTtj3QBbXwifaddRUIiJQECfhmOMcB8+SodSBYO93mLwgt36bx0eJNGug+ayU1kWruTMRwzhoYu5wO6QAA=";
 
-export const SEE_BLUR =
-  "data:image/webp;base64,UklGRuQAAABXRUJQVlA4INgAAADwBwCdASooACgAPu1kqU2ppaOiKq1RMB2JZgC1Gy+K2LACYnCDe4Z819OSbp9V6iJwRUm86ULn3dD4JiMWt4FYp1u3kHJ/LzYA/sdxLXwnGgJk4HUbSNZyG6lr0otrBx4GLSFabXygrVeTHmBGYaXzVQGXSzCg9PUT0PogrhCX980GdTYFUnOFViNrORWqzrTpMoEiZHEj200pp9SYOV2ipCLiRYYALYDpl2cQptUgZYvo3xDXMWOA/cESIVr/1oyNwhxjPpzLPtd6U/dFPVBJCPoFUcNAAAA=";
+/* The two computed washes. Everything else in this file is a downsample of a
+   GENERATED render; these two are downsamples of a gradient this repo draws
+   itself, so they have no grain in them at any size. See scripts/art-wash.py. */
+export const SEE_WASH_BLUR =
+  "data:image/webp;base64,UklGRowAAABXRUJQVlA4IIAAAABwBgCdASooACgAPtlYok2oJSMiONtoAQAbCWMAgeEY6MZlUK+IrmrwWZB1EdsGyyr3e8u+ncqJE+Q0kWAA/vV60mjAnfu+M1EMmysLls0GslIn1oolFB0gk+tCWDEZNBAxkoPPOSoXLLl55jVj+GewuGo1cmOUWA+drr20AAAAAA==";
 
-export const EVIDENCE_BLUR =
-  "data:image/webp;base64,UklGRrQAAABXRUJQVlA4IKgAAACQBgCdASooACgAPtlgqE2oJiQiNVqqqQAbCUAZtnYZkjf8F3JaGxcP8OzObcpPYyFqeG7XRxGnchYK5fwAAP72pYsZmlMC/dq5p66J6ffJL1bYyjoOKCtH4Q33iyXFr8gd0+VqT9gdReS7zDGyb9bRA1mWy50pzS99VLrKuQbq5xD1pyZpq6ighH3aDMTBO11T/73pA+QrAR+cZeRBy05rQGyWpI8AAAA=";
+export const CLOSE_WASH_BLUR =
+  "data:image/webp;base64,UklGRmoAAABXRUJQVlA4IF4AAACQBACdASooABYAPulgpk2pJaOjNVgIASAdCWMAyQehxs+ZS9sCnTjwDHovTdAA/vcAfic3BloxPylL6mAFNcnauAtDWUYYUmdzLO+Cflm/EdBpS7dB/eJ4RDmxwAAA";
+
+export const EVIDENCE_WASH_BLUR =
+  "data:image/webp;base64,UklGRogAAABXRUJQVlA4IHwAAACwBgCdASooACgAPtVco02oJaMiONtoAQAaiWMAeSgMdCzYIAq6bIVie9DvGwhCuvMpLEJtDvrYE/q4kAD0AAD+9KHL3bPbTYM05qukmOI77aU9j5lGcB9mNECJV6kgNmyqpZq+tqiAmwpK9LbGetmTlfM7Q82UHDxxAAAA";
 
 export const CALENDAR_BLUR =
   "data:image/webp;base64,UklGRrwAAABXRUJQVlA4ILAAAADwBgCdASooACgAPu1mqlCppSOiqrVdUTAdiUAXDIVAlKj9KH/+T5W13+liW9c4WgCuaU2rMrXRfm8c7GPjymsAAP705WQcx+0A+o5TkCLqo0Ex6V2GOPhdoBnnKVwbq8dR3fvpy2oQfAikLQMBpOs/wwHta58Tg/t8vhWjHbcF82Ed4tFhSxLfjGn3eeeWF+WQZ1Dqc1iasOf6TnYS13Rt6RinwcgCxzAeXAHJfkgAAA==";

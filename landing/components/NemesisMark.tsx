@@ -121,7 +121,7 @@ interface NemesisMarkProps {
   /** Rendered height in px. Width follows the ink's own aspect ratio. */
   size?: number;
   /** Give this only when the mark carries meaning on its own (the nav logo does not —
-   *  it sits next to the word "nemesis", so it stays decorative and silent). */
+   *  it sits next to the word "Nemesis", so it stays decorative and silent). */
   label?: string;
   className?: string;
 }
@@ -160,16 +160,18 @@ export function NemesisMark({
 }
 
 /**
- * Mark plus lowercase wordmark, horizontal. The nav and footer lockup.
+ * Mark plus wordmark, horizontal. The nav and footer lockup.
  *
- * "nemesis" is lowercase and tracked wide, which is the identity — not a style
- * choice a future edit gets to sentence-case back.
+ * 🔴 CAPITAL N SINCE 2026-08-25, at the owner's instruction ("the 'nemesis' has 'n' in
+ * lowercase, it should be uppercase"). This comment used to insist the lowercase was
+ * the identity and was not to be sentence-cased back; that instruction is retired, and
+ * older comments in this repo still carrying it are stale. The wide tracking stays.
  */
 export function NemesisLockup({ size = 26 }: { size?: number }) {
   return (
     <span className="lockup">
       <NemesisMark state="static" size={size} />
-      <span className="lockup-word">nemesis</span>
+      <span className="lockup-word">Nemesis</span>
     </span>
   );
 }

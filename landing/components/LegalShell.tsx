@@ -14,7 +14,7 @@ export function LegalShell({ children }: { children: ReactNode }) {
         <div className="container">
           <Link href="/" className="brand" aria-label="Nemesis home">
             <NemesisMark state="static" size={21} />
-            <b>nemesis</b>
+            <b>Nemesis</b>
           </Link>
           <Link href="/" className="legal-back">
             Back to home
