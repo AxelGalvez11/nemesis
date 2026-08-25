@@ -402,7 +402,10 @@
    the art side crops the square by a box of roughly its own proportions. */
 .band-figure {
   position: absolute;
-  z-index: -1;
+  /* 🔴 BEHIND THE WASH, NOT IN FRONT (owner: "the gradients should be on top"). Both grounds
+     sat at -1 and the figure came later in the DOM, so it won. One step further back puts the
+     colour in charge and leaves the engraving as texture underneath it. */
+  z-index: -2;
   inset: 0 auto 0 0;
   width: min(54%, 620px);
   /* Slower than the wash behind it, so the two grounds separate as the page moves
@@ -419,12 +422,12 @@
   object-fit: cover;
   object-position: center;
   display: block;
-  opacity: 0.8;
+  opacity: 0.3;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .band-figure img { opacity: 0.72; }
+  :root:not([data-theme="light"]) .band-figure img { opacity: 0.26; }
 }
-:root[data-theme="dark"] .band-figure img { opacity: 0.72; }
+:root[data-theme="dark"] .band-figure img { opacity: 0.26; }
 
 /* A linear fade across the band rather than an ellipse: the figure keeps its own
    side at full strength and dissolves before it reaches the text column. */
@@ -437,25 +440,31 @@
   mask-image: linear-gradient(to right, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
 }
 
-/* 🔴 THE RING BAND IS CENTRED, SO IT NEEDS ITS OWN NUMBERS. Every other band puts
-   its copy on one side and its ground on the other; this one puts "Learn anything"
-   and both sentences down the MIDDLE. At the shared width the headline sat directly
-   on the philosopher's cheekbone and could not be read at all. */
+/* 🔴 THE RING BAND SPANS, IT DOES NOT SIT ON ONE SIDE — BECAUSE ITS FIGURE IS WIDE.
+   Every other band puts its copy on one side and its ground on the other, and a
+   half-width box on the far side is right for a portrait. This band carries the two
+   reaching hands, which is a horizontal composition: boxed into 38% of the width it
+   would show one forearm and none of the gap, and the gap between the fingertips IS
+   the picture. So it runs the full width, centred, with the copy over it — which the
+   copy can afford because the figure is barely there.
+
+   The band is also CENTRED, so there is no clear side to hide on anyway: "Learn
+   anything" and both sentences run down the middle. */
 .ring-band .band-figure {
-  width: min(38%, 460px);
+  inset: 0;
+  width: 100%;
 }
 .ring-band .band-figure img {
-  opacity: 0.7;
-  /* 🔴 THE CROP IS OFFSET SO THE FACE LANDS IN THE PART THE MASK KEEPS. Centred, the
-     face sits in the box's left half — exactly the half the mask dissolves to protect
-     the copy — so the band showed a lot of expensive hair and no philosopher. */
-  object-position: 24% center;
-  -webkit-mask-image: linear-gradient(to left, #000 0%, rgba(0,0,0,0.7) 30%, transparent 78%);
-  mask-image: linear-gradient(to left, #000 0%, rgba(0,0,0,0.7) 30%, transparent 78%);
+  opacity: 0.22;
+  object-position: center;
+  /* Soft at both edges rather than fading to one side, so neither hand is cut off
+     by a hard boundary as it leaves the band. */
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 22%, #000 78%, transparent 100%);
 }
-:root[data-theme="dark"] .ring-band .band-figure img { opacity: 0.6; }
+:root[data-theme="dark"] .ring-band .band-figure img { opacity: 0.2; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .ring-band .band-figure img { opacity: 0.6; }
+  :root:not([data-theme="light"]) .ring-band .band-figure img { opacity: 0.2; }
 }
 
 @media (max-width: 880px) {
@@ -463,7 +472,7 @@
      to drop back or the sentence is unreadable over an engraved beard. */
   .band-figure { width: 100%; }
   .band-figure img,
-  .ring-band .band-figure img { opacity: 0.24; }
+  .ring-band .band-figure img { opacity: 0.14; }
 }
 
 /* ── THE BAND THAT CARRIES REAL FIGURES ───────────────────────────────────────

@@ -70,15 +70,16 @@ export function LearnAnything() {
         />
       </div>
 
-      {/* The engraving sits IN FRONT of the wash above, on its own slower offset, so the
-          two grounds separate as the page moves instead of sliding as one sheet. */}
+      {/* The two reaching hands, behind the wash above and on their own slower offset so the
+          grounds separate as the page moves. Full width rather than boxed to one side: the gap
+          between the fingertips is the picture, and a half-width box loses it. */}
       <div className="band-figure" ref={figure} aria-hidden="true">
         <Image
           src="/nemesis/art/learn-figure.webp"
           alt=""
-          width={1100}
-          height={1100}
-          sizes="(max-width: 900px) 100vw, 34vw"
+          width={1400}
+          height={1400}
+          sizes="100vw"
           placeholder="blur"
           blurDataURL={LEARN_FIGURE_BLUR}
           quality={84}
