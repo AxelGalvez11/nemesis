@@ -40,7 +40,7 @@ import {
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
-import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
+import { appendMoment, lastThingSaid, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
 import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import { isMakerCapability, type MakerCapability } from "@/lib/learn/composer-capability";
 import { planResearch } from "@/lib/research/run-research";
@@ -713,6 +713,28 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         if (alive && found) {
           setCanvas(found);
           latest.current = found;
+          // 🔴🔴🔴 REOPENING PUTS THE LEARNER BACK IN THEIR CONVERSATION. Owner, 2026-08-25, with a
+          // screenshot of "Nemesis hasn't found anything to ask you about yet" on a canvas he had
+          // been talking to: *"i never want to see this ever… a chatbot style interface wouldnt do
+          // this, it would just take user to where the user left off in the conversation."*
+          //
+          // 🔴 THE CONVERSATION WAS ALWAYS THERE, AND ONLY THE SURFACE FORGOT IT. `moments` carries
+          // up to 80 turns of `userText`/`assistantText` and has done since the History Rail, but
+          // the reply lane is fed ONLY by `aside`, which is React state and starts null. So a
+          // canvas whose whole content was a conversation reopened with nothing on it, fell past
+          // every branch of `canvasPresentation`, and landed on the stand-in for "we read your
+          // material and found nothing to ask" — about a canvas that had no material and had not
+          // been asked to find anything.
+          //
+          // 🔴 ONLY WHEN THERE IS NO DOCUMENT. `reply` outranks `reading` in the presence order, so
+          // seeding this on a canvas that holds a lesson would show the last chat line INSTEAD of
+          // the lesson. A canvas with blocks already reopens on the thing the learner was reading.
+          //
+          // 🔴 THE PROSE COMES BACK; THE DRAWINGS DO NOT. A moment stores what was said, not the
+          // visuals that were beside it, so a restored turn is text. Saying so here beats a future
+          // reader assuming the pictures were lost somewhere in this function.
+          const said = found.blocks.length === 0 ? lastThingSaid(found.moments) : null;
+          if (said) setAside({ blockId: null, kind: "reply", text: said });
           setReady(true);
 
           // The course rides the territory marker; a refresh must keep it (acceptance item 10).
