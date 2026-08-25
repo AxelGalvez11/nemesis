@@ -100,7 +100,14 @@ test("the menu row reads Course / Build a learning path, as specified", () => {
 });
 
 test("the chip pairs with the owner's placeholder", () => {
-  assert.match(COMPOSER, /What do you want to learn\?/);
+  // 🔴 THE SENTENCE MOVED TO THE COPY RECORD, AND THE ASSERTION HAD TO MOVE WITH IT. It used to be
+  // written into the composer as `capability === "course" ? "What do you want to learn?" : …`,
+  // which is a branch that answers correctly for Course and wrongly for every other capability —
+  // Deep research staged its chip above a box still reading "Ask Nemesis…". The question now lives
+  // on `CAPABILITY_COPY`, where the Record type demands one per capability, and both composers read
+  // it. The pairing is unchanged; only the place it is stated is.
+  assert.equal(CAPABILITY_COPY.course.prompt, "What do you want to learn?");
+  assert.match(COMPOSER, /CAPABILITY_COPY\[capability\]\.prompt/, "the composer no longer asks the capability's own question");
 });
 
 // ── the router side ─────────────────────────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ import { usePoke } from "@/components/bloub/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
-import { CAPABILITY_COPY, type ComposerCapability } from "@/lib/learn/composer-capability";
+import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { useAuth } from "@/components/AuthProvider";
 import { ComposerSend } from "./composer-controls";
 import { TodayStrip } from "./today-strip";
@@ -495,12 +495,21 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             tabIndex={-1}
             type="file"
           />
-          {/* 🔴 THE MENU IS BACK WITH ITS SECOND OFFER. It left on 2026-08-20 when record was
-              withdrawn and upload stood alone ("a one-item menu is a second click charged for
-              nothing"); the Course capability makes the choice real again (owner, 2026-08-23:
-              course mode must be reachable from the landing page). Same composition as the
-              session composer's `+`: rows from one list, the capability row STAGES and starts
-              nothing — §38's rule that a capability is a declaration, never a mode. */}
+          {/* 🔴🔴 THE ROWS COME FROM THE LIST, AND THAT IS THE DEFECT THIS FIXES. The capability
+              row used to be written out once, by name, as `setCapability("course")`. So when Deep
+              research was added to `COMPOSER_CAPABILITIES` (#824) and to the session composer, the
+              front door kept offering exactly one capability and nothing failed — the owner opened
+              the `+` on the landing page, saw Upload material and Course, and asked where Deep
+              research was. It was in the canvas, reachable only by someone already inside one.
+
+              A hard-coded row cannot be wrong about itself, which is precisely why it is dangerous:
+              it silently stops being the whole menu. `canvas-composer.tsx` already builds its `+`
+              by looping its offers for the same reason, in a comment that predicted this exact
+              shape of miss. This surface now does too, so a third capability appears in both
+              places or in neither. `front-door-capabilities.test.ts` pins it.
+
+              The capability row STAGES and starts nothing — §38's rule that a capability is a
+              declaration, never a mode. */}
           <div className="relative shrink-0" ref={addMenu}>
             <button
               aria-expanded={addOpen}
@@ -527,20 +536,23 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
                   Upload material
                 </button>
-                <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
-                  onClick={() => { setAddOpen(false); setCapability("course"); }}
-                  role="menuitem"
-                  type="button"
-                >
-                  <Codicon className="text-(--ui-text-tertiary)" name={CAPABILITY_COPY.course.icon} size="16px" />
-                  <span className="flex min-w-0 flex-col">
-                    <span>{CAPABILITY_COPY.course.label}</span>
-                    <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                      {CAPABILITY_COPY.course.detail}
+                {COMPOSER_CAPABILITIES.map((offered) => (
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                    key={offered}
+                    onClick={() => { setAddOpen(false); setCapability(offered); }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <Codicon className="text-(--ui-text-tertiary)" name={CAPABILITY_COPY[offered].icon} size="16px" />
+                    <span className="flex min-w-0 flex-col">
+                      <span>{CAPABILITY_COPY[offered].label}</span>
+                      <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                        {CAPABILITY_COPY[offered].detail}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -611,7 +623,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                     start();
                   }
                 }}
-                placeholder={capability === "course" ? "What do you want to learn?" : "Ask Nemesis…"}
+                placeholder={capability ? CAPABILITY_COPY[capability].prompt : "Ask Nemesis…"}
                 value={text}
               />
               {dictation.supported && (
