@@ -62,11 +62,20 @@ export function DomainChips({ domains, max = DEFAULT_MAX }: { domains: readonly 
     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
       {shown.map((domain) => (
         <span className="flex min-w-0 items-center gap-1" key={domain}>
+          {/* 🔴🔴 EAGER, NOT LAZY — A LAZY IMAGE IN A TRANSIENT INDICATOR MAY NEVER LOAD AT ALL.
+              This was `loading="lazy"`, copied in from the old component without thinking about
+              where it now renders. On the dock the chips ride an absolutely-positioned box carried
+              by a live transform, and in the preview that box measured at y=-339 — outside the
+              viewport, so the browser deferred every icon and all four sat at `complete: false`,
+              `naturalWidth: 0`, for as long as they were watched. Lazy loading is an optimisation
+              for images a reader may scroll to later; these exist for a few seconds during one
+              turn and then leave. If they load late they do not load. They are six 12px icons of a
+              couple of KB each, already cached for a week by the route. */}
           <img
             alt=""
             aria-hidden="true"
             className="size-[1em] shrink-0 rounded-full object-contain"
-            loading="lazy"
+            decoding="async"
             src={faviconUrl(domain)}
           />
           <span className="min-w-0 truncate">{domain}</span>

@@ -208,7 +208,14 @@ test("🔴🔴 the notice never prints the remembered sentence into the canvas",
   assert.ok(!/\.statement|remember\[/.test(notice), "the notice started printing the fact itself");
   assert.match(notice, /Memory updated\./);
   assert.match(notice, /See what Nemesis remembers/, "the notice stopped saying where to read them");
-  assert.match(notice, /href="\/settings"/, "the notice no longer links anywhere");
+  // 🔴🔴 THIS LINE USED TO PIN `href="/settings"`, AND THE OWNER REVERSED IT (2026-08-24: settings
+  // are *"supposed to be a pop up, not supposed to be a replaced chat or the Canvas page"*). The
+  // anchor was a full page load fired at the worst moment there is — the notice appears WHILE a
+  // lesson is running, so a learner glancing at what had just been remembered lost the canvas they
+  // were reading. The requirement it was really defending is "the notice says where to go", and
+  // that survives; only the mechanism changed, from navigating to opening the popup in place.
+  assert.ok(!/href="\/settings"/.test(notice), "the notice navigates away from the lesson again instead of opening the popup");
+  assert.match(notice, /openSettings\("memory"\)/, "the notice no longer opens anywhere");
 });
 
 test("🔴 the notice can be dismissed, because a notice that cannot be is an alert", () => {

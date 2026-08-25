@@ -147,6 +147,12 @@ export function SourcesControl({
   // the reply's source cards still file pages through it; only this panel's manual door closed.
   /** The source whose ORIGINAL document is open in the preview card, or null. */
   const [previewing, setPreviewing] = useState<CanvasSource | null>(null);
+  /** Which source groups the learner has folded away. Both start open: a panel that hides what is
+   *  in it until you find the control is worse than a long list. */
+  const [shutGroups, setShutGroups] = useState<{ documents: boolean; websites: boolean }>({
+    documents: false,
+    websites: false,
+  });
   // 🔴 A DECK MADE HERE IS REVIEWED HERE. Owner 2026-08-24: the cards are "an artifact
   // that the user can study", and the canvas's Outputs tab is one of the two places that
   // artifact lives. This row used to be an `<a href="/library?deck=…">`, so studying the
@@ -299,10 +305,22 @@ export function SourcesControl({
                   if (!grouped) return canvas.sources.map(renderSource);
                   return (
                     <>
-                      <SourceGroup icon="file" label="Documents" />
-                      {documents.map(renderSource)}
-                      <SourceGroup icon="globe" label="Websites" />
-                      {websites.map(renderSource)}
+                      <SourceGroup
+                        count={documents.length}
+                        icon="file"
+                        label="Documents"
+                        onToggle={() => setShutGroups((was) => ({ ...was, documents: !was.documents }))}
+                        open={!shutGroups.documents}
+                      />
+                      {!shutGroups.documents && documents.map(renderSource)}
+                      <SourceGroup
+                        count={websites.length}
+                        icon="globe"
+                        label="Websites"
+                        onToggle={() => setShutGroups((was) => ({ ...was, websites: !was.websites }))}
+                        open={!shutGroups.websites}
+                      />
+                      {!shutGroups.websites && websites.map(renderSource)}
                     </>
                   );
                 })()
@@ -408,12 +426,40 @@ export function SourcesControl({
 
 /** A heading over one kind of source. Quiet by construction: this labels a shelf, it is not a
  *  control, and it must not read as one on a panel where every other row opens something. */
-function SourceGroup({ icon, label }: { icon: string; label: string }) {
+// 🔴 THE GROUPS FOLD (owner 2026-08-24: *"the websites in the source panel are supposed to be
+// collapsible"*). A lesson that has read twenty pages pushes everything else in this panel off the
+// bottom, and the learner who wanted their own three documents has to scroll past a search's haul
+// to reach them. Folding is per-group so the two never fight: shutting Websites must not also take
+// away the documents the learner attached themselves.
+//
+// 🔴 IT IS A HEADING THAT COUNTS, so a shut group still reports what is inside it. A collapsed
+// section with no number is indistinguishable from an empty one, which is exactly the moment
+// someone concludes their sources were lost.
+function SourceGroup({
+  count,
+  icon,
+  label,
+  onToggle,
+  open,
+}: {
+  count: number;
+  icon: string;
+  label: string;
+  onToggle: () => void;
+  open: boolean;
+}) {
   return (
-    <p className="flex items-center gap-1.5 px-2 pb-0.5 pt-2 text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary)">
-      <Codicon name={icon} size="0.7rem" />
-      {label}
-    </p>
+    <button
+      aria-expanded={open}
+      className="flex w-full items-center gap-1.5 rounded-lg px-2 pb-0.5 pt-2 text-left text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary) transition-colors hover:text-(--ui-text-secondary)"
+      onClick={onToggle}
+      type="button"
+    >
+      <Codicon className="shrink-0" name={open ? "chevron-down" : "chevron-right"} size="0.7rem" />
+      <Codicon className="shrink-0" name={icon} size="0.7rem" />
+      <span className="min-w-0 truncate">{label}</span>
+      <span className="tabular-nums">{count}</span>
+    </button>
   );
 }
 

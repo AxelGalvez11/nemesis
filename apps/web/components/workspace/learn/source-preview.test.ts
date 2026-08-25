@@ -69,10 +69,16 @@ test("🔴 loadLibrarySource serves the fixtures to the preview harness, and mis
 // icon like it does in ChatGPT?"*
 
 test("🔴🔴 a mixed panel groups Documents and Websites, with a globe on the websites", () => {
-  assert.match(CONTROLS, /<SourceGroup icon="globe" label="Websites" \/>/, "the websites group is gone");
-  assert.match(CONTROLS, /<SourceGroup icon="file" label="Documents" \/>/, "the documents group is gone");
-  assert.match(CONTROLS, /\{websites\.map\(renderSource\)\}/, "websites are no longer rendered as their own group");
-  assert.match(CONTROLS, /\{documents\.map\(renderSource\)\}/, "documents are no longer rendered as their own group");
+  // Matched on the label+icon pairing rather than the whole self-closing tag: the groups gained
+  // fold props on 2026-08-24, and a guard about WHICH GROUPS EXIST should not redden because a
+  // group learned to collapse.
+  assert.match(CONTROLS, /icon="globe"\s*\n?\s*label="Websites"/, "the websites group is gone");
+  assert.match(CONTROLS, /icon="file"\s*\n?\s*label="Documents"/, "the documents group is gone");
+  // No leading `{` required: each list is now behind its own fold condition, so the brace that
+  // used to sit against `websites.map` is `{!shutGroups.websites && `. What this line cares about
+  // is that each group renders its OWN list, which is unchanged.
+  assert.match(CONTROLS, /websites\.map\(renderSource\)/, "websites are no longer rendered as their own group");
+  assert.match(CONTROLS, /documents\.map\(renderSource\)/, "documents are no longer rendered as their own group");
 });
 
 test("🔴🔴 a panel of only documents gets NO headings", () => {
@@ -95,10 +101,39 @@ test("🔴 the split uses the same host rule the rows already use", () => {
   assert.match(CONTROLS, /const documents = canvas\.sources\.filter\(\(source\) => hostnameOf\(source\.sourceUrl\) === null\)/);
 });
 
-test("🔴 a group heading is not a control", () => {
-  // Every other row in this panel opens something. A heading that looked pressable on a panel like
-  // that is this codebase's most-repeated defect.
-  const helper = CONTROLS.slice(CONTROLS.indexOf("function SourceGroup"), CONTROLS.indexOf("function SourceGroup") + 700);
-  assert.ok(helper.length > 0, "SourceGroup moved — this guard is pointed at nothing");
-  assert.ok(!/<button|onClick|href=/.test(helper), "the source group heading became pressable");
+test("🔴🔴 a group heading IS a control now, and looks like one — owner reversal 2026-08-24", () => {
+  // 🔴🔴 THIS TEST USED TO ASSERT THE OPPOSITE, AND THE REVERSAL IS THE OWNER'S OWN:
+  // *"the websites in the source panel are supposed to be collapsible."* It read:
+  //
+  //     assert.ok(!/<button|onClick|href=/.test(helper), "the source group heading became pressable");
+  //
+  // …because every other row in this panel opens something, and a heading that LOOKED pressable
+  // without being pressable is this codebase's most-repeated defect. That reasoning was never
+  // wrong; it just answered a different question. The defect is a mismatch between what a thing
+  // looks like and what it does — and the fix for "looks pressable but is not" is equally "make it
+  // pressable and look it". So the invariant is preserved by inverting the test rather than
+  // deleting it: the heading is now a real <button>, and it must ANNOUNCE that it folds.
+  //
+  // Calibration: drop the chevron and this reddens; drop aria-expanded and it reddens.
+  const start = CONTROLS.indexOf("function SourceGroup");
+  const helper = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
+  assert.ok(start !== -1 && helper.length > 0, "SourceGroup moved — this guard is pointed at nothing");
+
+  assert.match(helper, /<button/, "the group heading stopped being a real control");
+  assert.match(helper, /aria-expanded=\{open\}/, "a screen reader is no longer told the group folds");
+  assert.match(helper, /open \? "chevron-down" : "chevron-right"/, "the heading folds with no visible sign that it does");
+  assert.ok(!/<div[^>]*onClick/.test(helper), "the heading is a div pretending to be a button — not keyboard reachable");
+
+  // 🔴 AND A SHUT GROUP STILL REPORTS ITS SIZE. A collapsed section with no number is
+  // indistinguishable from an empty one, which is the moment someone concludes their sources were
+  // lost. The count is what makes folding safe.
+  assert.match(helper, /\{count\}/, "a folded group no longer says how much is inside it");
+});
+
+test("🔴 the two groups fold independently, so shutting one never hides the other", () => {
+  // Sharing one flag would mean a learner who collapsed a long list of searched websites also lost
+  // the three documents they attached themselves — which is the opposite of what folding is for.
+  assert.match(CONTROLS, /shutGroups\.documents/, "the documents group lost its own fold state");
+  assert.match(CONTROLS, /shutGroups\.websites/, "the websites group lost its own fold state");
+  assert.match(CONTROLS, /documents: false,\s*\n\s*websites: false,/, "the groups no longer start open");
 });
