@@ -62,6 +62,7 @@ import { cn } from "@/lib/utils";
 import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
+import { AddMenuRow, ADD_MENU } from "./add-menu-row";
 import { ComposerSend } from "./composer-controls";
 import { WrittenWorkSheet } from "./written-work-sheet";
 
@@ -431,10 +432,19 @@ export function CanvasComposer({
    */
   const addOffers = useMemo(() => {
     const offers: Array<{ detail?: string; icon: string; key: string; label: string; run: () => void }> = [
-      { icon: "file", key: "upload", label: "Upload material", run: () => filePicker.current?.click() },
+      // 🔴 EVERY ROW CARRIES ITS DETAIL NOW. The two built-in offers had none, so the menu mixed
+      // one-line rows with two-line ones and read as two lists that happened to share a box. With
+      // label and detail on one line (see `AddMenuRow`) a missing detail is simply a shorter row.
+      {
+        detail: "From your computer",
+        icon: "file",
+        key: "upload",
+        label: "Upload material",
+        run: () => filePicker.current?.click(),
+      },
     ];
     if (onRecord) {
-      offers.push({ icon: "record", key: "record", label: "Record a lecture", run: onRecord });
+      offers.push({ detail: "Capture it as it happens", icon: "record", key: "record", label: "Record a lecture", run: onRecord });
     }
     for (const offered of capabilities) {
       const copy = CAPABILITY_COPY[offered];
@@ -859,7 +869,7 @@ export function CanvasComposer({
 
               {addOffers.length > 1 && addOpen && (
                 <div
-                  className="absolute bottom-[46px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
+                  className={cn("absolute bottom-[46px] left-0", ADD_MENU)}
                   // 🔴 A SENTINEL FOR THE CHARACTER'S DOCK, PRESENT ONLY WHILE THE MENU IS OPEN.
                   // The popover is absolutely positioned, so `#canvas-composer`'s bounding box —
                   // the one BloubDock measures to float clear of — cannot see it, and the
@@ -873,25 +883,13 @@ export function CanvasComposer({
                       a filled circle, not a microphone — the mic on the right of this composer is
                       dictation, and the two must never look like the same offer. */}
                   {addOffers.map((offer) => (
-                    <button
-                      className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                    <AddMenuRow
+                      detail={offer.detail}
+                      icon={offer.icon}
                       key={offer.key}
+                      label={offer.label}
                       onClick={() => { setAddOpen(false); offer.run(); }}
-                      role="menuitem"
-                      type="button"
-                    >
-                      <Codicon className="text-(--ui-text-tertiary)" name={offer.icon} size="16px" />
-                      {offer.detail ? (
-                        <span className="flex min-w-0 flex-col">
-                          <span>{offer.label}</span>
-                          <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                            {offer.detail}
-                          </span>
-                        </span>
-                      ) : (
-                        offer.label
-                      )}
-                    </button>
+                    />
                   ))}
                 </div>
               )}

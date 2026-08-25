@@ -25,7 +25,11 @@ test("🔴 the paste-a-link field stays out of the sources panel", () => {
 test("🔴🔴 a document row opens the preview card, and the old library link stays dead", () => {
   // The old anchor also interpolated the canvas-local slot id (`s1`…) into a route that resolves
   // `library_sources.id`, so it 404'd everywhere — the replacement must not resurrect it.
-  assert.match(CONTROLS, /setPreviewing\(source\)/, "a document row no longer opens the preview");
+  // The row moved into a `SourceRow` component when the panel became three shelves; the press
+  // calls the prop and the panel supplies the setter. Both halves, because a prop nothing passes is
+  // a row that opens nothing.
+  assert.match(CONTROLS, /onClick=\{\(\) => onPreview\(source\)\}/, "a document row no longer opens the preview");
+  assert.match(CONTROLS, /onPreview=\{setPreviewing\}/, "the row is never given a way to open the preview");
   assert.ok(!CONTROLS.includes("/library/source/"), "the sources panel navigates to the old library again");
   assert.match(CONTROLS, /<SourcePreview /, "the preview card is not mounted");
 });
@@ -63,35 +67,84 @@ test("🔴 loadLibrarySource serves the fixtures to the preview harness, and mis
   assert.equal(await loadLibrarySource(null, "no-such-row"), null);
 });
 
-// ── websites told apart from documents (owner 2026-08-24) ───────────────────────────────────
+// ── websites told apart from documents (owner 2026-08-24, restated 2026-08-25) ───────────────
 //
 // *"can we just have it grouped under something that says websites with a websites icon or globe
-// icon like it does in ChatGPT?"*
+// icon like it does in ChatGPT?"* — and then, with screenshots of the reference's own panel:
+// *"the source panel look like that."*
+//
+// 🔴🔴 THE SPLIT SURVIVED; THE SHAPE AROUND IT CHANGED, AND THE OWNER ASKED FOR BOTH. The two asks
+// are the same ask a day apart — the second is the first with the reference actually in frame. So
+// the groups became the reference's three stacked shelves, in its words: Outputs, Sources (what
+// Nemesis went and read), Inputs (what the learner handed it). `websites`/`documents` are
+// unchanged and still feed them; only the labels and the container moved.
 
-test("🔴🔴 a mixed panel groups Documents and Websites, with a globe on the websites", () => {
-  // Matched on the label+icon pairing rather than the whole self-closing tag: the groups gained
-  // fold props on 2026-08-24, and a guard about WHICH GROUPS EXIST should not redden because a
-  // group learned to collapse.
-  assert.match(CONTROLS, /icon="globe"\s*\n?\s*label="Websites"/, "the websites group is gone");
-  assert.match(CONTROLS, /icon="file"\s*\n?\s*label="Documents"/, "the documents group is gone");
-  // No leading `{` required: each list is now behind its own fold condition, so the brace that
-  // used to sit against `websites.map` is `{!shutGroups.websites && `. What this line cares about
-  // is that each group renders its OWN list, which is unchanged.
-  assert.match(CONTROLS, /websites\.map\(renderSource\)/, "websites are no longer rendered as their own group");
-  assert.match(CONTROLS, /documents\.map\(renderSource\)/, "documents are no longer rendered as their own group");
+test("🔴🔴 the panel is three shelves, in the reference's order and its words", () => {
+  // Calibration: rename a shelf and this reddens.
+  assert.match(CONTROLS, /<PanelSection[\s\S]{0,200}?label="Outputs"/, "the Outputs shelf is gone");
+  assert.match(CONTROLS, /<PanelSection[\s\S]{0,400}?label="Sources"/, "the Sources shelf is gone");
+  assert.match(CONTROLS, /<PanelSection[\s\S]{0,200}?label="Inputs"/, "the Inputs shelf is gone");
+  assert.match(CONTROLS, /websites\.map\(/, "the Sources shelf renders no websites");
+  assert.match(CONTROLS, /documents\.map\(/, "the Inputs shelf renders no documents");
+  // 🔴 AND THE TABS MUST NOT COME BACK. They are what made this one question into two clicks: the
+  // learner checking their sources is the same learner asking whether the deck got made.
+  assert.ok(!/setTab\(/.test(CONTROLS), "the sources/outputs tabs are back");
+  assert.ok(!/tab === "sources"/.test(CONTROLS), "the panel branches on a tab again");
 });
 
-test("🔴🔴 a panel of only documents gets NO headings", () => {
-  // The panel's own tab already says "sources". "Documents" printed under it is a label restating
-  // a label, and this codebase's minimalism rules treat that as noise rather than clarity.
+test("🔴🔴 every shelf prints its heading, including an empty one", () => {
+  // 🔴🔴 THIS TEST USED TO ASSERT THE OPPOSITE AND THE REVERSAL IS EARNED, NOT CASUAL. It read:
   //
-  // Calibration: make `grouped` unconditional and this reddens.
-  assert.match(
-    CONTROLS,
-    /const grouped = websites\.length > 0 && documents\.length > 0;/,
-    "headings now appear even when there is only one kind of source",
-  );
-  assert.match(CONTROLS, /if \(!grouped\) return canvas\.sources\.map\(renderSource\);/, "the ungrouped path is gone");
+  //     assert.match(CONTROLS, /const grouped = websites\.length > 0 && documents\.length > 0;/)
+  //
+  // …with the reasoning: *"the panel's own tab already says sources, so 'Documents' printed under
+  // it is a label restating a label."* That was true OF A PANEL WITH A TAB. The tab is gone, so
+  // the heading is now the only thing naming what a list is, and a section that hides its heading
+  // when empty leaves the learner unable to tell "this canvas has read nothing from the web" from
+  // "this panel does not track that" — the second reads as something having been lost.
+  //
+  // Calibration: make PanelSection return null when it has no rows and this reddens.
+  const start = CONTROLS.indexOf("function PanelSection");
+  const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
+  assert.ok(start !== -1 && section.length > 0, "PanelSection moved — this guard is pointed at nothing");
+  assert.match(section, /\{label\}/, "the shelf lost its heading");
+  assert.ok(!/rows\.length === 0[\s\S]{0,80}return null/.test(section), "an empty shelf disappears instead of saying it is empty");
+  assert.match(section, /\{empty\}/, "an empty shelf says nothing about being empty");
+  assert.ok(!/const grouped =/.test(CONTROLS), "the conditional-headings rule is back");
+});
+
+test("🔴🔴 every shelf folds, and a folded one still says how much is inside it", () => {
+  // Owner, 2026-08-25: *"make sure each section is collapsible."* Third time this has been asked
+  // for in some form — 2026-08-24 for the websites group specifically, and now for all three.
+  //
+  // 🔴 THE COUNT IS WHAT MAKES FOLDING SAFE. A collapsed section with no number is
+  // indistinguishable from an empty one, which is exactly the moment somebody concludes their
+  // sources were lost. Calibration: drop the count and this reddens.
+  const start = CONTROLS.indexOf("function PanelSection");
+  const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
+  assert.match(section, /const \[open, setOpen\] = useState\(true\)/, "shelves no longer fold, or no longer start open");
+  assert.match(section, /aria-expanded=\{open\}/, "a screen reader is not told the shelf folds");
+  assert.match(section, /open \? "chevron-down" : "chevron-right"/, "the shelf folds with no visible sign that it does");
+  assert.match(section, /\{rows\.length\}/, "a folded shelf no longer says how much is inside it");
+});
+
+test("🔴 a row is ONE line — the descriptions are gone", () => {
+  // Owner, 2026-08-25: *"remove description for outputs, inputs and sources."* Three shelves of
+  // two-line rows is a wall, and each second line was either a restatement of the icon
+  // ("Flashcard deck") or bookkeeping about how Nemesis read something ("· 12 excerpts") rather
+  // than an answer to "what is this".
+  //
+  // Calibration: put any of these back and the matching line reddens.
+  assert.ok(!/excerpt\{source\.excerpts\.length === 1/.test(CONTROLS), "the excerpt count is back under every source");
+  assert.ok(!CONTROLS.includes("Flashcard deck · click to review"), "the flashcards description is back");
+  assert.ok(!CONTROLS.includes("Note · in your Library"), "the note description is back");
+  assert.ok(!CONTROLS.includes("Slides · click to download .pptx"), "the slides description is back");
+  // 🔴 AND THE ONE SECOND LINE THAT IS NOT A DESCRIPTION MUST SURVIVE. A source Nemesis could only
+  // half read has to say so where the source is named; dropping this with the rest would have the
+  // panel quietly claim a partial read was a whole one.
+  assert.match(CONTROLS, /source\.coverageNote/, "a half-read source no longer says so");
+  // What kind of output a row is moved onto the icon, which is where it costs no line at all.
+  assert.match(CONTROLS, /const OUTPUT_ICONS: Record<string, string>/, "output rows lost the icon that says what they are");
 });
 
 test("🔴 the split uses the same host rule the rows already use", () => {
@@ -101,39 +154,38 @@ test("🔴 the split uses the same host rule the rows already use", () => {
   assert.match(CONTROLS, /const documents = canvas\.sources\.filter\(\(source\) => hostnameOf\(source\.sourceUrl\) === null\)/);
 });
 
-test("🔴🔴 a group heading IS a control now, and looks like one — owner reversal 2026-08-24", () => {
-  // 🔴🔴 THIS TEST USED TO ASSERT THE OPPOSITE, AND THE REVERSAL IS THE OWNER'S OWN:
-  // *"the websites in the source panel are supposed to be collapsible."* It read:
+test("🔴🔴 a heading is not pressable, and the thing that IS pressable looks it", () => {
+  // 🔴🔴 THIS GUARD HAS NOW BEEN INVERTED TWICE, AND THE INVARIANT UNDERNEATH NEVER MOVED: nothing
+  // may look pressable without being pressable, and nothing may be pressable without looking it.
+  // That is this codebase's most-repeated defect.
   //
-  //     assert.ok(!/<button|onClick|href=/.test(helper), "the source group heading became pressable");
+  //   v1  the heading is a <span> — it opens nothing, so it must not look like the rows that do.
+  //   v2  owner: *"the websites in the source panel are supposed to be collapsible."* The heading
+  //       became a real <button> with a chevron and a count, so it looked like what it did.
+  //   v3  the fold is gone; a long shelf caps at six and offers the rest. The heading opens
+  //       nothing again, so it is an <h3> again — and the tail, which DOES do something, is a real
+  //       button that reads as one.
   //
-  // …because every other row in this panel opens something, and a heading that LOOKED pressable
-  // without being pressable is this codebase's most-repeated defect. That reasoning was never
-  // wrong; it just answered a different question. The defect is a mismatch between what a thing
-  // looks like and what it does — and the fix for "looks pressable but is not" is equally "make it
-  // pressable and look it". So the invariant is preserved by inverting the test rather than
-  // deleting it: the heading is now a real <button>, and it must ANNOUNCE that it folds.
-  //
-  // Calibration: drop the chevron and this reddens; drop aria-expanded and it reddens.
-  const start = CONTROLS.indexOf("function SourceGroup");
-  const helper = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
-  assert.ok(start !== -1 && helper.length > 0, "SourceGroup moved — this guard is pointed at nothing");
-
-  assert.match(helper, /<button/, "the group heading stopped being a real control");
-  assert.match(helper, /aria-expanded=\{open\}/, "a screen reader is no longer told the group folds");
-  assert.match(helper, /open \? "chevron-down" : "chevron-right"/, "the heading folds with no visible sign that it does");
-  assert.ok(!/<div[^>]*onClick/.test(helper), "the heading is a div pretending to be a button — not keyboard reachable");
-
-  // 🔴 AND A SHUT GROUP STILL REPORTS ITS SIZE. A collapsed section with no number is
-  // indistinguishable from an empty one, which is the moment someone concludes their sources were
-  // lost. The count is what makes folding safe.
-  assert.match(helper, /\{count\}/, "a folded group no longer says how much is inside it");
+  // Calibration: make the heading a <button> and this reddens; make the tail a <div> and it reddens.
+  const start = CONTROLS.indexOf("function PanelSection");
+  const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
+  const heading = section.slice(section.indexOf("<h3"), section.indexOf("</h3>"));
+  assert.ok(!/onClick|role="button"|cursor-pointer/.test(heading), "the shelf heading looks or behaves like a control");
+  assert.match(section, /<button[\s\S]{0,400}?Show \$\{hidden\} more/, "the tail is not a real button");
+  assert.match(section, /"Show less"/, "a shelf that expands cannot be put back");
 });
 
-test("🔴 the two groups fold independently, so shutting one never hides the other", () => {
-  // Sharing one flag would mean a learner who collapsed a long list of searched websites also lost
-  // the three documents they attached themselves — which is the opposite of what folding is for.
-  assert.match(CONTROLS, /shutGroups\.documents/, "the documents group lost its own fold state");
-  assert.match(CONTROLS, /shutGroups\.websites/, "the websites group lost its own fold state");
-  assert.match(CONTROLS, /documents: false,\s*\n\s*websites: false,/, "the groups no longer start open");
+test("🔴 each shelf caps on its own, so opening one never lengthens another", () => {
+  // 🔴 THE OLD RULE, PRESERVED THROUGH A CHANGE OF MECHANISM. It read: *"the two groups fold
+  // independently, so shutting one never hides the other"* — sharing one flag would mean the
+  // learner who collapsed a long list of searched websites also lost the three documents they
+  // attached themselves. The cap inherits the requirement exactly: shelf state lives INSIDE
+  // `PanelSection`, so each instance has its own and there is no shared flag to get wrong.
+  const start = CONTROLS.indexOf("function PanelSection");
+  const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
+  assert.match(section, /const \[all, setAll\] = useState\(false\)/, "shelf state left the component and can now be shared");
+  assert.ok(!/shutGroups/.test(CONTROLS), "the old shared fold state is back");
+  // 🔴 AND THE COUNT COMES OFF THE RENDERED ROWS. A caller passing its own length could filter its
+  // list, forget the count, and print a tail that reveals nothing — with nothing to catch it.
+  assert.match(section, /Children\.toArray\(children\)/, "the tail counts something other than the rows it hides");
 });
