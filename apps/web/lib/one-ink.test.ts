@@ -14,8 +14,18 @@ import { inkFor } from "./character/look";
 const CSS = readFileSync(new URL("../app/styles/desktop-ui.css", import.meta.url), "utf8");
 
 test("🔴🔴 the default action IS the character's ink, in both themes", () => {
-  assert.match(CSS, new RegExp(`--ui-action:\\s*${inkFor("default", "light")};`), "light default drifted from inkFor");
-  assert.match(CSS, new RegExp(`--ui-action:\\s*${inkFor("default", "dark")};`), "dark default drifted from inkFor");
+  // 🔴 THE INK IS THE FALLBACK NOW, NOT THE VALUE, AND THAT IS THE SAME CLAIM. Since the
+  // twelve-colour palette the accent writes `--accent-fill-light` / `--accent-fill-dark`
+  // rather than `--ui-action` itself, and the theme blocks read whichever belongs to them.
+  // "Default" is precisely the case where no variable is set — so what this test is
+  // checking, that the character's ink is what the send button falls back to, is now
+  // spelled as the fallback in `var(--accent-fill-*, …)`. Written as one regexp so a
+  // future change that drops the fallback entirely reddens rather than passing on a
+  // partial match.
+  for (const theme of ["light", "dark"] as const) {
+    const pattern = new RegExp(`--ui-action:\\s*var\\(--accent-fill-${theme},\\s*${inkFor("default", theme)}\\);`);
+    assert.match(CSS, pattern, `${theme} default drifted from inkFor`);
+  }
 });
 
 test("🔴 the retired green is gone, not lingering somewhere for one surface to rediscover", () => {

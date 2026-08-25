@@ -10,7 +10,7 @@ import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { SecuritySettings } from "@/components/workspace/shell/security-settings";
 import { VoiceSettings } from "@/components/workspace/shell/voice-settings";
-import { ACCENT_COLORS, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type DarkTone, type ThemePreference } from "@/components/theme-provider";
+import { ACCENT_COLORS, ACCENT_LABELS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type DarkTone, type ThemePreference } from "@/components/theme-provider";
 import { BloubBot } from "@/components/bloub/bloub-bot";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
 import { cn } from "@/lib/utils";
@@ -94,19 +94,22 @@ const DARK_TONE_OPTIONS: { id: DarkTone; label: string; color: string }[] = [
   { id: "charcoal", label: "Charcoal", color: "#212121" },
 ];
 
-// Order and names come from the owner's screenshot (2026-07-28). The swatches
-// are the same values the accent actually applies, so the dot never lies about
-// what you are picking — except "Default", whose real accent is a light/dark
-// pair of greys that one dot cannot show.
-const ACCENT_OPTIONS: { id: AccentPreference; label: string; color: string }[] = [
-  { id: "default", label: "Default", color: DEFAULT_ACCENT_SWATCH },
-  { id: "blue", label: "Blue", color: ACCENT_COLORS.blue },
-  { id: "green", label: "Green", color: ACCENT_COLORS.green },
-  { id: "yellow", label: "Yellow", color: ACCENT_COLORS.yellow },
-  { id: "pink", label: "Pink", color: ACCENT_COLORS.pink },
-  { id: "orange", label: "Orange", color: ACCENT_COLORS.orange },
-  { id: "purple", label: "Purple", color: ACCENT_COLORS.purple },
-];
+// 🔴 BUILT FROM THE PALETTE, NOT RETYPED BESIDE IT. This list used to name each accent and
+// its hex by hand, so the picker was a second copy of the table in lib/accent.ts and the
+// day a colour moved they disagreed — with the dot showing one thing and the button doing
+// another. Twelve entries is enough hand-typing to guarantee that eventually. Order comes
+// from ACCENT_PREFERENCES, which is the owner's screenshot order (2026-08-25).
+//
+// The swatch is the hue AS CHOSEN, never the adjusted fill: `accentFill` nudges three of
+// the twelve so they can carry a control, and a picker that showed the nudged value would
+// be answering a question nobody asked. "Default" is the exception it always was — its
+// real accent is a light/dark pair one dot cannot show, so it gets the grey swatch.
+const ACCENT_OPTIONS: { id: AccentPreference; label: string; color: string }[] =
+  ACCENT_PREFERENCES.map((id) => ({
+    id,
+    label: ACCENT_LABELS[id],
+    color: id === "default" ? DEFAULT_ACCENT_SWATCH : ACCENT_COLORS[id],
+  }));
 
 // 🔴 TWO CONTROL SHAPES, NOT ONE — AND SPLITTING THEM IS WHY THE CHOOSER CAN GO BARE.
 // Measured off ChatGPT's settings 2026-08-24 (owner: "look at the ChatGPT settings… the spacing,

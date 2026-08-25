@@ -11,7 +11,7 @@
 // other is worse than either alone. It reads the accent now, so one choice paints the send
 // button and the character together.
 
-import { ACCENT_COLORS, isAccent } from "@/lib/accent";
+import { ACCENT_COLORS, accentFill, isAccent } from "@/lib/accent";
 import { SHAPE_BY_ID, mixHex } from "@/lib/bloub/skins";
 
 /** The resting silhouette. Not a preference. */
@@ -26,7 +26,14 @@ export const CHARACTER_SHAPE: number[] = SHAPE_BY_ID.get("cercle")!.radii;
  * chrome went graphite would make Default look broken.
  */
 export function inkFor(accent: string | undefined, theme: string | undefined): string {
-  if (accent && isAccent(accent) && accent !== "default") return ACCENT_COLORS[accent];
+  // 🔴 THE SAME RENDERING THE SEND BUTTON GETS, WHICH IS THE WHOLE POINT OF THE PAIR. The
+  // character and the action control wear one colour; if this returned the raw hue while
+  // the button took the adjusted one, picking Black would put a visible button next to an
+  // invisible character on the dark theme, and picking Cream the other way round on light.
+  // `accentFill` returns nine of the twelve untouched, so for most choices this IS the hue.
+  if (accent && isAccent(accent) && accent !== "default") {
+    return accentFill(ACCENT_COLORS[accent], theme === "dark");
+  }
   return theme === "dark" ? "#f2f2f4" : "#0a0a0c";
 }
 

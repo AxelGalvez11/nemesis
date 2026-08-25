@@ -6,7 +6,7 @@ import { ACCENT_PROPERTIES, ACCENT_STORAGE_KEY, accentProperties, isAccent, norm
 
 // Re-exported so every existing `from "@/components/theme-provider"` import
 // keeps working; lib/accent.ts is the definition.
-export { ACCENT_COLORS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, type AccentPreference } from "@/lib/accent";
+export { ACCENT_COLORS, ACCENT_LABELS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, type AccentPreference } from "@/lib/accent";
 
 type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
