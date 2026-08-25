@@ -963,7 +963,7 @@ export function LearningCanvas({
    * and the learner would hear the beginning of the answer over and over. It is the same signal the
    * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
    */
-  const voice = useCanvasVoice(policy, policy.judging, turnInFlight ? null : spokenReply);
+  const voice = useCanvasVoice(policy, turnInFlight ? null : spokenReply);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -1402,6 +1402,7 @@ export function LearningCanvas({
         making={session.making}
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
         onMakeDeliverable={(kind) => void session.makeDeliverable(kind)}
+        replyAudio={voice.replyAudio}
         transcript={transcript}
         voice={voice.header}
         // 🔴 THE NARROW SLICE, NOT `policy` ITSELF — see the prop's own comment in
@@ -2181,7 +2182,6 @@ export function LearningCanvas({
           // safe ternary only because ownership was all-or-nothing. `sink` is a union that cannot
           // name two receivers, so there is no combination of states in which both branches are
           // live — see canvas-hosting.ts.
-          listenSignal={voice.listenSignal}
           onAnswer={(text, via, tookMs) => {
             acknowledgeAttachments();
             // 🔴 NEMESIS STOPS TALKING THE MOMENT THE LEARNER ANSWERS. Speech that outlives the

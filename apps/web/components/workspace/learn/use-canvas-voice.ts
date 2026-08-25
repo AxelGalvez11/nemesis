@@ -17,18 +17,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { shouldSpeakAction, speechChunks, SPEECH_CHAR_LIMIT, type SpokenMoment } from "@/lib/learn/canvas-speech";
 import { ANSWER_SPEED, LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
 import {
-  type AutoDictation,
   DEFAULT_VOICE_MODE,
-  readAutoDictation,
   readVoiceMode,
-  shouldOpenDictation,
   type VoiceMode,
-  writeAutoDictation,
   writeVoiceMode,
 } from "@/lib/learn/voice-preferences";
 
 import { correctionLead } from "./correction-copy";
-import { speechRecognitionSupported } from "./use-canvas-dictation";
 import {
   DEFAULT_READING_VOICE,
   READING_VOICE_KEY,
@@ -43,11 +38,8 @@ export interface CanvasVoice {
   /** Straight onto `<CanvasHeader voice={…}>`. */
   header: {
     mode: VoiceMode;
-    autoDictation: AutoDictation;
-    dictationSupported: boolean;
     speaking: boolean;
     onToggle: (next: VoiceMode) => void;
-    onSetAutoDictation: (next: AutoDictation) => void;
   };
   /**
    * The audio of the answer on screen: fetch, playback, and every control over it.
@@ -71,8 +63,6 @@ export interface CanvasVoice {
   speakExample: (key: string, locale: string, text: string) => void;
   /** The `key` passed to `speakExample` for the row currently playing, or null. */
   speakingExample: string | null;
-  /** Straight onto `<CanvasComposer listenSignal={…}>`. Changes when the microphone should open. */
-  listenSignal: number | null;
   /** Called when the learner starts answering. 🔴 NOT AN OPTIMISATION — Nemesis must not still be
    *  talking while somebody is composing a reply to it. */
   stopSpeaking: () => void;
@@ -175,11 +165,8 @@ export interface SpokenReply {
   text: string;
 }
 
-export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, reply: SpokenReply | null = null): CanvasVoice {
+export function useCanvasVoice(runtime: PolicyRuntime, reply: SpokenReply | null = null): CanvasVoice {
   const [mode, setMode] = useState<VoiceMode>(DEFAULT_VOICE_MODE);
-  const [autoDictation, setAutoDictation] = useState<AutoDictation>("unasked");
-  const [dictationSupported, setDictationSupported] = useState(false);
-  const [listenSignal, setListenSignal] = useState<number | null>(null);
   /** Counts presses of the on-demand Speak control, so each one is a new utterance key. */
   const aloudPress = useRef(0);
   /**
@@ -251,8 +238,6 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
   useEffect(() => {
     const storage = typeof window === "undefined" ? null : window.localStorage;
     setMode(readVoiceMode(storage));
-    setAutoDictation(readAutoDictation(storage));
-    setDictationSupported(speechRecognitionSupported());
     setReadingVoice(readReadingVoice(storage));
   }, []);
 
@@ -275,12 +260,6 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     };
   }, []);
 
-  /** The latest values, for the post-speech decision. 🔴 READ AT THE MOMENT OF USE, NEVER LATCHED
-   *  WHEN SPEECH BEGAN — a learner who switched voice off mid-sentence is telling us not to open a
-   *  microphone a second later, and a closure capturing the old value would do it anyway. */
-  const live = useRef({ autoDictation, composerBusy, dictationSupported, mode });
-  live.current = { autoDictation, composerBusy, dictationSupported, mode };
-
   const onToggle = useCallback((next: VoiceMode) => {
     setMode(next);
     writeVoiceMode(typeof window === "undefined" ? null : window.localStorage, next);
@@ -289,11 +268,6 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     // not working; the player is dismissed with the narration.
     if (next === "off") { speech.stop(); replyAudio.stop(); }
   }, [replyAudio, speech]);
-
-  const onSetAutoDictation = useCallback((next: AutoDictation) => {
-    setAutoDictation(next);
-    writeAutoDictation(typeof window === "undefined" ? null : window.localStorage, next);
-  }, []);
 
   /**
    * The answer that has already been started, so it is never started twice.
@@ -338,45 +312,21 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
     // language session exists it passes the other purpose and a target locale here.
     const route = routeSpeech({ key: spokenMoment.key, moment: spokenMoment.moment, purpose: "canvas" });
     // A refusal is a real outcome: notation, or too long. The screen still shows it; Nemesis simply
-    // does not read it aloud, and no microphone opens for something that was never said.
+    // does not read it aloud.
     if (route.decision !== "speak") return;
 
-    let cancelled = false;
+    // 🔴 NOTHING FOLLOWS THE UTTERANCE ANY MORE, AND THAT IS THE OWNER'S CALL OF 2026-08-25:
+    // *"remove … the 'open mic after each question' option"*. A `.then()` used to sit here and open
+    // the microphone once Nemesis stopped talking, gated on a preference whose only switch was that
+    // menu row. With the row gone the gate could never open, so the whole lane went rather than
+    // being left in the file unable to run. The composer's own microphone button is untouched.
     void speech
       // 🔴 THE ROUTER STILL DECIDES THE TEXT, THE LOCALE AND THE PACE; THE LEARNER DECIDES WHO SAYS
       // IT (§48). `route.provider` is the right answer for the target-language lane, where the
       // variety is the material and Azure's catalogue is the only thing that can name it. It is the
       // wrong answer here: the Canvas lane reads instruction aloud, and which voice reads it is a
       // preference the learner set in Settings.
-      .speak(route.utterance.key, route.utterance.text, utteranceVoice(readingVoice, route.locale, route.speed))
-      .then(() => {
-      if (cancelled) return;
-      const now = live.current;
-      if (
-        !shouldOpenDictation({
-          autoDictation: now.autoDictation,
-          composerBusy: now.composerBusy,
-          dictationSupported: now.dictationSupported,
-          // 🔴 NARROWED RATHER THAN CAST. `shouldOpenDictation` only accepts the two moments a
-          // microphone may follow, and `target_language` is deliberately not one of them — opening a
-          // microphone after an example sentence would be listening for an answer to something that
-          // was not a question. Widening the parameter would have deleted that rule; this keeps it and
-          // makes the third kind unreachable here, which it already is (the route above refuses a
-          // target_language moment outside a language session, and no caller opens one).
-          moment: spokenMoment.moment.kind === "correction" ? "correction" : "question",
-          voiceMode: now.mode,
-        })
-      ) {
-        return;
-      }
-      // A nonce rather than a boolean, so the composer treats this as an EVENT. See its own
-      // `listenSignal` comment for why a latched flag reopens the microphone on every render.
-      setListenSignal((current) => (current ?? 0) + 1);
-    });
-
-    return () => {
-      cancelled = true;
-    };
+      .speak(route.utterance.key, route.utterance.text, utteranceVoice(readingVoice, route.locale, route.speed));
     // Keyed on the MOMENT, not on `speech`: the hook's own identity changes as its state does, and
     // depending on it would restart the utterance every time `speaking` flipped.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -384,14 +334,10 @@ export function useCanvasVoice(runtime: PolicyRuntime, composerBusy: boolean, re
 
   return {
     header: {
-      autoDictation,
-      dictationSupported,
       mode,
-      onSetAutoDictation,
       onToggle,
       speaking: speech.speaking,
     },
-    listenSignal,
     replyAudio,
     // 🔴 THE PLAYER YIELDS TO A REPLAY PRESS, like every other cross-lane start. Delegates the
     // repeat itself to the speech lane, which owns the fresh-key rule.

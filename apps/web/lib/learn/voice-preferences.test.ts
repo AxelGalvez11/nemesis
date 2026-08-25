@@ -3,14 +3,23 @@ import test from "node:test";
 
 import {
   DEFAULT_VOICE_MODE,
-  readAutoDictation,
   readVoiceMode,
-  shouldAskAboutAutoDictation,
-  shouldOpenDictation,
-  writeAutoDictation,
   writeVoiceMode,
-  type AutoDictation,
 } from "./voice-preferences";
+
+// 🔴🔴 THE AUTO-DICTATION HALF OF THIS FILE IS GONE, 2026-08-25. It covered `AutoDictation`,
+// `readAutoDictation`/`writeAutoDictation`, `shouldAskAboutAutoDictation` and `shouldOpenDictation`
+// — five tests pinning a microphone that opened by itself after Nemesis finished speaking. The
+// owner removed the menu row that turned that on (*"remove … the 'open mic after each question'
+// option"*), which was the only switch it had, so the lane could no longer run at all and was
+// deleted rather than left in the file untestable-by-design.
+//
+// 🔴 WHAT THOSE TESTS WERE PROTECTING IS STILL WORTH KNOWING, and is why this note stays instead of
+// a silent deletion: unreadable storage had to read as "unasked" and never as "off" (silently
+// deciding a learner refused is worse than asking twice), the microphone was allowed to open after
+// a QUESTION and never after a correction, and every condition was read at the moment of use rather
+// than latched when speech began — because someone who switches voice off mid-sentence is telling
+// you not to open a microphone a second later. Any future auto-listen feature owes all four.
 
 /** A localStorage stand-in. The real one is unavailable to this runner. */
 function fakeStorage(seed: Record<string, string> = {}) {
@@ -38,24 +47,7 @@ test("voice mode is OFF until the learner turns it on", () => {
   assert.equal(readVoiceMode(null), "off");
 });
 
-test("auto-dictation starts UNASKED, which is not the same as refused", () => {
-  assert.equal(readAutoDictation(fakeStorage()), "unasked");
-  assert.equal(readAutoDictation(null), "unasked");
-});
-
-test("🔴 an unreadable or unknown stored value reads as unasked, never as 'off'", () => {
-  // The safe direction is asking again. Treating a value written by an older build as a refusal
-  // silently decides on the learner's behalf that they said no.
-  assert.equal(readAutoDictation(fakeStorage({ "nemesis.voice.autoDictation": "yes" })), "unasked");
-  assert.equal(readAutoDictation(hostileStorage), "unasked");
-});
-
-test("both preferences round-trip", () => {
-  for (const value of ["on", "off", "unasked"] as AutoDictation[]) {
-    const storage = fakeStorage();
-    writeAutoDictation(storage, value);
-    assert.equal(readAutoDictation(storage), value);
-  }
+test("the voice-mode preference round-trips", () => {
   const storage = fakeStorage();
   writeVoiceMode(storage, "on");
   assert.equal(readVoiceMode(storage), "on");
@@ -64,57 +56,8 @@ test("both preferences round-trip", () => {
 });
 
 test("a storage that throws loses the preference and never the lesson", () => {
-  assert.doesNotThrow(() => writeAutoDictation(hostileStorage, "on"));
   assert.doesNotThrow(() => writeVoiceMode(hostileStorage, "on"));
-  assert.doesNotThrow(() => writeAutoDictation(null, "on"));
-});
-
-test("the ask appears exactly once, and only where it means something", () => {
-  const supported = { autoDictation: "unasked" as AutoDictation, dictationSupported: true };
-  assert.equal(shouldAskAboutAutoDictation({ ...supported, voiceMode: "on" }), true);
-  // Meaningless with voice off: Nemesis never finishes speaking, so there is no moment to open at.
-  assert.equal(shouldAskAboutAutoDictation({ ...supported, voiceMode: "off" }), false);
-  // Answered — either way — is not asked again.
-  assert.equal(shouldAskAboutAutoDictation({ ...supported, autoDictation: "on", voiceMode: "on" }), false);
-  assert.equal(shouldAskAboutAutoDictation({ ...supported, autoDictation: "off", voiceMode: "on" }), false);
-  // Offering to auto-open a microphone that cannot listen is a promise we cannot keep.
-  assert.equal(
-    shouldAskAboutAutoDictation({ ...supported, dictationSupported: false, voiceMode: "on" }),
-    false,
-  );
-});
-
-test("the microphone opens only after a question, and only when asked for", () => {
-  const base = {
-    autoDictation: "on" as AutoDictation,
-    composerBusy: false,
-    dictationSupported: true,
-    moment: "question" as const,
-    voiceMode: "on" as const,
-  };
-  assert.equal(shouldOpenDictation(base), true);
-  // 🔴 Never after a correction: that would be listening for an answer to something the learner
-  // was just told.
-  assert.equal(shouldOpenDictation({ ...base, moment: "correction" }), false);
-  assert.equal(shouldOpenDictation({ ...base, autoDictation: "off" }), false);
-  assert.equal(shouldOpenDictation({ ...base, autoDictation: "unasked" }), false);
-  assert.equal(shouldOpenDictation({ ...base, voiceMode: "off" }), false);
-  assert.equal(shouldOpenDictation({ ...base, dictationSupported: false }), false);
-  // Already listening, or already holding text being worked on — reopening interrupts them.
-  assert.equal(shouldOpenDictation({ ...base, composerBusy: true }), false);
-});
-
-test("🔴 switching voice mode off mid-utterance stops the microphone opening after it", () => {
-  // Every condition is read at the moment of use rather than latched when speech began. A learner
-  // who switched voice off one second ago is telling us not to open a microphone now.
-  const listening = {
-    autoDictation: "on" as AutoDictation,
-    composerBusy: false,
-    dictationSupported: true,
-    moment: "question" as const,
-  };
-  assert.equal(shouldOpenDictation({ ...listening, voiceMode: "on" }), true);
-  assert.equal(shouldOpenDictation({ ...listening, voiceMode: "off" }), false);
+  assert.doesNotThrow(() => writeVoiceMode(null, "on"));
 });
 
 // ── How fast Nemesis reads ───────────────────────────────────────────────────────────────────
