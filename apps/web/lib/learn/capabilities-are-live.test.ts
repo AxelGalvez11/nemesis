@@ -196,3 +196,39 @@ test("🔴🔴 nothing routes to the old Library", () => {
   // in flight — a 0-byte .docx downloads exactly as happily as a good one.
   assert.match(preview, /disabled=\{!markdown && !output\.sheet\}/, "the download can fire before there is anything to write");
 });
+
+test("🔴🔴 an artifact renders in its own format, not as markdown", () => {
+  // Owner, 2026-08-25: *"why are artifacts rendering in md and not their respective formats?"* A
+  // PDF opened as a styled approximation of what the PDF would contain — close enough to look
+  // right, and wrong about every question a person opens a PDF to answer: where the pages break,
+  // whether the table fits, what it looks like printed.
+  //
+  // Calibration: send `pdf` down the DocBody branch again and this reddens.
+  const preview = code("../../components/workspace/learn/output-preview.tsx");
+  assert.match(preview, /output\.kind === "pdf" \? \(/, "a PDF artifact no longer takes its own branch");
+  assert.match(preview, /<PdfPages blob=\{pdf\} \/>/, "the PDF is not rendered from its bytes");
+  assert.match(preview, /pdfBlob\(markdown, output\.title\)/, "the rendered PDF is not built by the writer that hands over the download");
+
+  // 🔴 THE SAME pdf.js DOOR THE READER AND THE SOURCE PREVIEW USE. A second one means a second
+  // worker, a second copy of the library in the bundle, and two versions to drift apart.
+  const pages = code("../../components/workspace/learn/pdf-pages.tsx");
+  assert.match(pages, /from "@\/lib\/reader\/pdfjs"/, "a second pdf.js door was opened");
+  // And the worker's copy is freed with the panel, as source-preview.tsx already requires.
+  assert.match(pages, /close\?\.\(\)/, "the pdf.js document is never closed");
+  // 🔴 A CONTAINER THAT MEASURES ZERO MUST NOT PRODUCE A ZERO-SIZED PAGE. `??` only catches null,
+  // so a parent still laying out gives `scale = 0` and pdf.js renders a 0x0 canvas — a blank space
+  // where the document is, with no error anywhere. Found in a browser, not by reading the code.
+  assert.match(pages, /element\.parentElement\?\.clientWidth \|\| 560/, "a zero-width container renders a zero-sized page");
+});
+
+test("🔴 the docked panel collapses the sidebar without writing the preference", () => {
+  // The obvious implementation — calling setSidebarOpen(false) — persists to
+  // `nemesis.web.nav-rail`, so a learner who likes their sidebar open loses it permanently the
+  // first time they read a document. responsive-sidebar.ts records that exact bug already.
+  const preview = code("../../components/workspace/learn/output-preview.tsx");
+  assert.match(preview, /useDeclareSidePanel\(\)/, "the panel does not declare itself");
+  assert.ok(!/setSidebarOpen|nav-rail/.test(preview), "🔴 the panel writes the learner's sidebar preference");
+  const registry = code("../../components/workspace/shell/side-panel.tsx");
+  assert.ok(!/localStorage/.test(registry), "🔴 the side-panel claim reaches storage — it must be transient");
+  assert.match(registry, /return \(\) => registry\.release\(id\)/, "the claim is not released on unmount");
+});

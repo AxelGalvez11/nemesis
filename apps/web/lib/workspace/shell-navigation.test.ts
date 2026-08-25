@@ -231,3 +231,36 @@ test("🔴 the rail draws the same destinations the sidebar does", () => {
     "the rail is declaring nav items of its own again; it must map SIDEBAR_NAV so the two cannot drift",
   );
 });
+
+test("🔴🔴 a docked side panel collapses the sidebar to the rail, and never past it", () => {
+  // Owner, 2026-08-25: *"when the 'sidebar' opens the left sidebar should collapse automatically,
+  // so the right sidebar and canvas stay."*
+  const open = { libraryFullScreen: false, narrowViewport: false, pathname: "/library", sidebarOpen: true };
+  const before = shellNavigation(open);
+  assert.equal(before.sidebarVisible, true);
+
+  const during = shellNavigation({ ...open, sidePanelOpen: true });
+  assert.equal(during.sidebarVisible, false, "the sidebar did not collapse for the docked panel");
+  // 🔴 TO THE RAIL, NOT TO NOTHING. Focus mode takes navigation away entirely, which is right for a
+  // canvas carrying its own `×`; a document open beside the page must not also remove the way out
+  // of the page. Calibration: fold `sidePanelOpen` into `focusMode` instead and this reddens.
+  assert.equal(during.railVisible, true, "collapsing the sidebar left no way to navigate");
+  assert.equal(during.focusMode, false, "a side panel should not put the shell in focus mode");
+
+  // And it is transient: with the panel closed the learner's own preference decides again.
+  assert.deepEqual(shellNavigation({ ...open, sidePanelOpen: false }), before);
+});
+
+test("🔴 a phone keeps its exit when a panel docks", () => {
+  // On a narrow viewport the sidebar is an overlay and there is no rail, so the floating toggle is
+  // the only way back. Suppressing the sidebar there must still leave that toggle.
+  const narrow = shellNavigation({
+    libraryFullScreen: false,
+    narrowViewport: true,
+    pathname: "/library",
+    sidebarOpen: true,
+    sidePanelOpen: true,
+  });
+  assert.equal(narrow.sidebarVisible, false);
+  assert.equal(narrow.navToggleShowing, true, "a phone with a docked panel has no way back to navigation");
+});
