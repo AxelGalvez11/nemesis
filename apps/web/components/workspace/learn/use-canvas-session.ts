@@ -41,7 +41,7 @@ import {
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
-import { makeFlashcardsDeliverable, makeNoteDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSlidesDeliverable, readDeliverableAsk, readResearchAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
@@ -1158,7 +1158,14 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ? await makeFlashcardsDeliverable(uid, latest.current)
             : kind === "slides"
               ? await makeSlidesDeliverable(uid, latest.current, topic)
-              : await makeNoteDeliverable(uid, latest.current);
+              : kind === "report"
+                // 🔴 THE ONLY DELIVERABLE THAT NEEDS A TOPIC RATHER THAN LIKING ONE. The other
+                // three read the canvas; this one goes and searches for material the canvas does
+                // not have, so with nothing to research there is nothing to do. The canvas title
+                // is the fallback because "research this" on an open canvas plainly means its
+                // subject.
+                ? await makeReportDeliverable(uid, latest.current, topic || latest.current.title || "")
+                : await makeNoteDeliverable(uid, latest.current);
         if ("error" in result) {
           setError(result.error);
           return;
@@ -1170,7 +1177,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ? "Flashcards saved to your Library."
             : kind === "slides"
               ? "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks."
-              : "Note saved to your Library.",
+              : kind === "report"
+                ? "Research saved to your Library, with its sources."
+                : "Note saved to your Library.",
         );
       } finally {
         makingRef.current = false;
@@ -1216,6 +1225,21 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // turn: the learner asked for a THING, and a lesson about the thing instead reads as a
       // refusal. readDeliverableAsk is deliberately narrow — every ambiguous phrasing falls
       // through to the ordinary turn.
+      // 🔴 RESEARCH IS CHECKED FIRST, because the two parsers overlap on one phrasing and the
+      // wrong winner is expensive in opposite directions. "Research X and make me slides" is an
+      // order to go and find things out; answering it with a deck built from an empty canvas
+      // produces a confident presentation about nothing. The research parser needs an explicit
+      // research verb, so it fires only when the learner said one.
+      const toResearch = readResearchAsk(said);
+      if (toResearch) {
+        setBusy({ blockIds: [], kind: "command", label: "Planning the research" });
+        try {
+          await makeDeliverable("report", toResearch);
+        } finally {
+          setBusy({ kind: null });
+        }
+        return null;
+      }
       const askedFor = readDeliverableAsk(said);
       if (askedFor) {
         setBusy({ blockIds: [], kind: "command", label: askedFor === "slides" ? "Building your slides" : askedFor === "flashcards" ? "Making your flashcards" : "Writing your note" });
