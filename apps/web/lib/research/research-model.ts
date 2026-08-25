@@ -89,8 +89,24 @@ export const RESEARCH_LIMITS = {
    *  searches overlap so heavily that the extra breadth is spent re-reading the same pages. */
   maxSubQuestions: 5,
   minSubQuestions: 3,
-  /** Search queries per sub-question, first pass. */
-  queriesPerSubQuestion: 2,
+  /** Search queries per sub-question. */
+  queriesPerSubQuestion: 1,
+  /**
+   * 🔴 A HARD TOTAL, AND IT IS A COST CEILING RATHER THAN A QUALITY KNOB.
+   *
+   * Web search is metered by the valve in units, and the binding limit is MONTHLY, not daily: the
+   * paid plan carries 150 units a month (checked against plan_entitlements, 2026-08-25) and every
+   * search in a research run spends one of them. At two queries per sub-question a run cost ten,
+   * so fifteen runs would have left a paying student with NO web search for the rest of the month,
+   * including in ordinary chat, with nothing telling them why. That is not a thin report, it is a
+   * broken product for three weeks.
+   *
+   * Six keeps a run at roughly a twenty-fifth of the month and leaves chat its share. Breadth is
+   * barely touched, because each search returns up to `resultsPerQuery` pages: six searches can
+   * still surface thirty-six distinct sources, and the real probe produced a usable report from
+   * six pages.
+   */
+  maxSearches: 6,
   /** Results kept per query. The provider's own ceiling still applies above this. */
   resultsPerQuery: 6,
   /** Facts one source may contribute. More than this from a single page and the report is a

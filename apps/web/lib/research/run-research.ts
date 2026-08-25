@@ -132,6 +132,10 @@ export async function runResearch(
 
     for (const query of toSearch) {
       if (signal?.aborted || learnings.length >= RESEARCH_LIMITS.maxLearnings) break;
+      // The cost ceiling, checked before spending rather than after. See RESEARCH_LIMITS.maxSearches:
+      // the month's search budget is shared with ordinary chat, and a run that quietly ate it would
+      // break web search for weeks with nothing saying why.
+      if (searchesRun >= RESEARCH_LIMITS.maxSearches) break;
       searchesRun += 1;
       let results;
       try {

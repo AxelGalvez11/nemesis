@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { reportMarkdown } from "./report-markdown";
+import { RESEARCH_LIMITS } from "./research-model";
 import type { ResearchIO } from "./run-research";
 import { runResearch } from "./run-research";
 
@@ -180,6 +181,30 @@ test("progress steps only ever name work that is actually running", async () => 
   assert.ok(seen.includes("searching") && seen.includes("reading"));
   assert.ok(seen.indexOf("writing") < seen.indexOf("checking"), "it claimed to be checking before it had written");
   assert.equal(seen[seen.length - 1], "checking", "the run stopped reporting before it finished");
+});
+
+test("🔴 a run can never spend more searches than its budget, even running concurrently", async () => {
+  // Web search is metered per unit and the binding cap is MONTHLY. The paid plan carries 150 a
+  // month, shared with ordinary chat. A run that quietly ate ten of them would leave a student with
+  // no web search for weeks and nothing telling them why, so the ceiling is a correctness property
+  // rather than a tuning preference.
+  //
+  // Sub-questions are searched by three concurrent workers. The check and the increment sit in one
+  // synchronous stretch with no await between them, which is what makes the counter safe here; this
+  // test fails the moment somebody puts an await in the middle of it.
+  const io = stubIO({
+    plan: '{"subQuestions":["a?","b?","c?","d?","e?"]}',
+    queries: '{"queries":["q1"]}',
+    search: async (query) => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return [{ description: "p".repeat(200), title: "T", url: `https://example.edu/${encodeURIComponent(query)}` }];
+    },
+  });
+  let searches = 0;
+  const counted = { ...io, search: async (q: string, n: number) => { searches += 1; return io.search(q, n); } };
+  const report = ok(await runResearch("u1", "A long enough question to research", { io: counted }));
+  assert.ok(searches <= RESEARCH_LIMITS.maxSearches, `spent ${searches} searches against a budget of ${RESEARCH_LIMITS.maxSearches}`);
+  assert.equal(report.stats.searched, searches, "the report under-reported what it spent");
 });
 
 test("a question too short to research is refused without spending a call", async () => {
