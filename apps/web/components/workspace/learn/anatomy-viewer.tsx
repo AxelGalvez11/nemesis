@@ -25,9 +25,33 @@ import { anatomyCredit } from "@/lib/learn/anatomy-licence";
 
 const HEIGHT = 380;
 
-/** The atlas's own ivory, near enough; a bone chart is one of the few theme-independent objects. */
-const BONE = 0xe0d9c8;
-const FADED_OPACITY = 0.14;
+/**
+ * The atlas's own ivory, darkened — and the darkening is a fix, not a preference.
+ *
+ * 🔴 THIS USED TO BE 0xe0d9c8 AND IT RENDERED AS A FEATURELESS WHITE BLOB. Lambert shading
+ * multiplies the base colour by the light, and the ambient term alone was 1.4. In the linear
+ * working space three renders in, 0xe0d9c8 is about 0.75, so 0.75 x 1.4 = 1.05 — over 1.0, i.e.
+ * clipped to pure white, BEFORE the directional light added anything at all. Every facet that was
+ * not in deep shadow came out the same flat white, which is why the models read as smooth lumps
+ * with no anatomy in them rather than as structures.
+ *
+ * Two numbers have to move together to fix that, and moving only one puts it straight back:
+ * the base has to sit low enough that the brightest facet lands under 1.0, and the lights have to
+ * sum to something that leaves a range rather than saturating. At 0.45 linear against a 0.62 +
+ * 0.9 = 1.52 ceiling, the lit side reaches ~0.85 sRGB and the shadowed side ~0.57 — a real
+ * gradient across the surface, which is the only thing carrying the form.
+ *
+ * Still theme-independent: a bone chart is one of the few objects that looks wrong inverted.
+ */
+const BONE = 0xb3a184;
+
+/**
+ * 🔴 0.14 WAS INVISIBLE. The ghost exists to say WHERE the named structure sits — a ventricle with
+ * no heart around it is a bean. At 14% of a pale colour against a white canvas there was nothing
+ * left to see, so the isolate-and-frame move lost its second half and the picture became one
+ * floating shape. High enough to read as context, low enough not to compete with the subject.
+ */
+const FADED_OPACITY = 0.26;
 
 export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
   const frame = useRef<HTMLDivElement | null>(null);
@@ -136,12 +160,23 @@ export function AnatomyViewer({ visual }: { visual: AnatomyVisual }) {
         else box.setFromObject(gltf.scene);
         const centre = box.getCenter(new three.Vector3());
         const sphere = box.getBoundingSphere(new three.Sphere());
-        const distance = Math.max(0.05, (sphere.radius / Math.tan((camera.fov * Math.PI) / 360)) * 1.25);
-        camera.position.set(centre.x + distance * 0.72, centre.y + distance * 0.35, centre.z + distance * 0.72);
+        // 🔴 THE OFFSET IS NORMALISED, AND IT WAS NOT. `distance` is the range that fits the
+        // subject in the vertical field of view, but it was then used as three separate
+        // components — (0.72, 0.35, 0.72) — and that vector is 1.077 long, not 1. So the camera
+        // always sat ~8% further back than the fit it had just computed, on top of a 1.25 padding
+        // factor, and the subject came out noticeably small in a large empty frame. Scaling a unit
+        // direction makes the number mean what it says, and the padding can then be the modest
+        // margin it was meant to be.
+        const distance = Math.max(0.05, (sphere.radius / Math.tan((camera.fov * Math.PI) / 360)) * 1.12);
+        const eye = new three.Vector3(0.72, 0.35, 0.72).normalize().multiplyScalar(distance);
+        camera.position.copy(centre).add(eye);
         camera.lookAt(centre);
 
-        scene.add(new three.AmbientLight(0xffffff, 1.4));
-        const sun = new three.DirectionalLight(0xffffff, 1.8);
+        // 🔴 THESE TWO SUM TO THE EXPOSURE, AND THEY WERE 1.4 + 1.8. See the note on BONE: at
+        // those levels the surface saturates and the shading that describes the shape is thrown
+        // away. Raising either one back without darkening BONE restores the white blob.
+        scene.add(new three.AmbientLight(0xffffff, 0.62));
+        const sun = new three.DirectionalLight(0xffffff, 0.9);
         sun.position.set(2, 4, 3);
         scene.add(sun);
 

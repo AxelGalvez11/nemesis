@@ -409,9 +409,12 @@
    thumbnails you scrolled past. As a track you meet them one at a time, and the
    3D ones lead.
 
-   The scroller is the platform's, not a JS slider: `scroll-snap-type` plus
-   `overflow-x` gives touch swipe, trackpad swipe, a scrollbar, arrow keys and iOS
-   momentum for free. See FigureCarousel.tsx. */
+   It drifts on its own, left to right, and never comes to rest — hovering slows it
+   rather than stopping it. The movement is written to `scrollLeft` from a rAF loop
+   rather than run as a CSS animation, because the speed has to change smoothly on
+   hover and `animation-play-state` can only run or pause. The element stays a real
+   `overflow-x` scroller underneath, so swipe, trackpad and arrow keys still work and
+   only the scrollbar is hidden. See FigureCarousel.tsx. */
 .carou {
   display: flex;
   flex-direction: column;
@@ -425,7 +428,10 @@
   list-style: none;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory;
+  /* 🔴 NO `scroll-snap-type`. The strip drifts continuously now, and snapping fights
+     that directly: every fractional scroll the loop writes gets pulled back to the
+     nearest card, so the movement turns into a stutter or stops dead. Snapping is right
+     for a carousel you page through and wrong for one that never comes to rest. */
   /* The track is focusable so the arrow keys work; a focus ring on a 1100px-wide
      scroller is ugly, so it gets a soft one that follows the cards' radius. */
   border-radius: clamp(12px, 1.4vw, 18px);
@@ -450,10 +456,6 @@
      never see one card whole. `vw` has no such ambiguity. */
   flex: 0 0 auto;
   width: min(460px, 78vw);
-  /* `start`, not `center`: with several cards in view, centre-snapping puts card two
-     under the middle at scrollLeft 0, so the track opens on the wrong card. See the
-     note in FigureCarousel.tsx. */
-  scroll-snap-align: start;
   display: flex;
   flex-direction: column;
   gap: 9px;
