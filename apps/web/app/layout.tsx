@@ -42,7 +42,7 @@ export const metadata: Metadata = {
 // prominent control. `accentPrePaintScript` serialises the real colour table rather than repeating
 // it; see lib/accent.ts.
 const themeScript =
-  `(function(){try{var p=localStorage.getItem('pharmaorb-theme');if(p==='grey')p='dark';var s=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var t=(p==='light'||p==='dark')?p:s;document.documentElement.setAttribute('data-theme',t);var dt=localStorage.getItem('nemesis.web.dark-tone');document.documentElement.setAttribute('data-dark-tone',dt==='charcoal'?'charcoal':'black');}catch(e){document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-dark-tone','black');}})();` +
+  `(function(){try{var p=localStorage.getItem('nemesis.web.theme')||localStorage.getItem('pharmaorb-theme');if(p==='grey')p='dark';var s=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var t=(p==='light'||p==='dark')?p:s;document.documentElement.setAttribute('data-theme',t);var dt=localStorage.getItem('nemesis.web.dark-tone');document.documentElement.setAttribute('data-dark-tone',dt==='charcoal'?'charcoal':'black');}catch(e){document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-dark-tone','black');}})();` +
   accentPrePaintScript();
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

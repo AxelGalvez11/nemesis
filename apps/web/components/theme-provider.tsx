@@ -10,7 +10,13 @@ export { ACCENT_COLORS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, type AccentPr
 
 type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
-const STORAGE_KEY = "pharmaorb-theme";
+const STORAGE_KEY = "nemesis.web.theme";
+// 🔴 READ-ONLY, AND IT HAS TO STAY. The key was "pharmaorb-theme" for the whole PharmaOrb era.
+// Renaming it without this fallback would not have been a cosmetic change: every student who
+// had ever chosen light or dark would silently lose that choice on their next visit, because a
+// missing key falls through to the system preference. Read old, write new; a student who
+// changes their theme once is migrated for good, and one who never does keeps what they picked.
+const LEGACY_STORAGE_KEY = "pharmaorb-theme";
 // v2, and the bump is load-bearing: SCALE_FACTOR below changes what a stored
 // number MEANS, so reading a v1 value would render it 25% larger than the
 // student chose. A new key retires those cleanly onto the new default.
@@ -164,7 +170,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // (the old behavior) inherited that stale value; instead we recompute from the preference and
     // write it through, which corrects the DOM regardless of what hydration left behind.
     // Normalize legacy "grey" (pre-removal stored value) to "dark" before validating.
-    const stored = normalizeStoredPreference(typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null);
+    const stored = normalizeStoredPreference(
+      typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY) : null,
+    );
     const pref: ThemePreference = isPreference(stored) ? stored : "system";
     const resolved: Theme = pref === "system" ? systemTheme() : pref;
     setPreferenceState(pref);

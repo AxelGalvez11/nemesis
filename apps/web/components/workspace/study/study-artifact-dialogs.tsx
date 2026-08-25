@@ -195,7 +195,7 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
           )}
           <label className="grid gap-1.5 text-xs font-medium">
             Group (optional)
-            <Input onChange={(event) => setGroupName(event.target.value)} placeholder="Pharmacy School::Exam 7" value={groupName} />
+            <Input onChange={(event) => setGroupName(event.target.value)} placeholder="Thermodynamics::Unit 3" value={groupName} />
           </label>
           {error ? <p className="text-xs text-(--theme-primary)">{error}</p> : null}
         </div>

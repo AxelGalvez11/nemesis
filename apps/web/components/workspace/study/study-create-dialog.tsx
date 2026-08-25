@@ -155,7 +155,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
                 Group <span className="font-normal text-muted-foreground">optional</span>
-                <Input onChange={(event) => setGroup(event.target.value)} placeholder="Pharmacy School::Exam 7" value={group} />
+                <Input onChange={(event) => setGroup(event.target.value)} placeholder="Contract law::Midterm 2" value={group} />
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
                 Description <span className="font-normal text-muted-foreground">optional</span>

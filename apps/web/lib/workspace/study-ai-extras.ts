@@ -186,8 +186,13 @@ export function buildAutoTagMessages(cards: AutoTagCard[]): WireMsg[] {
     { content: AUTOTAG_SYSTEM, role: "system" },
     {
       content:
-        "Tag each flashcard below with 1-3 topic tags: lowercase, hyphenated, concept-level " +
-        '(drug class, organ system, mechanism, exam topic - e.g. "beta-blockers", "renal", "adverse-effects"). ' +
+        // 🔴 NO SUBJECT-MATTER CATEGORIES. This used to ask for "drug class, organ system,
+        // mechanism" with medical examples, so the model knew what field it was working in
+        // before it had read a single card, and a law deck came back tagged against a taxonomy
+        // that does not exist in law. Structure generalises; a category list never does.
+        "Tag each flashcard below with 1-3 topic tags: lowercase, hyphenated, and concept-level. " +
+        "A tag names the idea, process or category a card is about, in the vocabulary the cards " +
+        "themselves use. Do not assume a subject: read the cards and tag what they actually cover. " +
         "Reuse the same tag across related cards so filters stay useful. " +
         'Return JSON shaped {"tags":{"<card id>":["tag1","tag2"]}} covering every card id given.\n\n' +
         `Cards (id, front, back - tab separated, one per line):\n${list}`,
