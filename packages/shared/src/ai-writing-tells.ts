@@ -39,19 +39,19 @@
  * reasoning is what this file's header is for.
  */
 export const SAVED_WRITING_TELLS = [
-  "WRITING THAT GETS SAVED — habits to avoid, because this becomes what they revise from:",
+  "WRITING THAT GETS SAVED. Habits to avoid, because this becomes what they revise from:",
   // The most damaging one, and the least discussed. It is a direct consequence
   // of the repetition penalty that makes models reach for synonyms.
-  "Name each thing ONE way and keep that name for the whole document. Do not vary a term for elegance — if it is the sodium-potassium pump on page one, it is not 'the ion transporter' on page two. A student revising from this will think they are two things, and a flashcard made from it will be wrong.",
+  "Name each thing ONE way and keep that name for the whole document. Do not vary a term for elegance. If it is the sodium-potassium pump on page one, it is not 'the ion transporter' on page two. A student revising from this will think they are two things, and a flashcard made from it will be wrong.",
   // Fabrication-by-hedging. EVIDENCE_HONESTY covers inventing a citation; this
   // covers inventing the CONTENT and labelling the invention as a gap.
-  "If the material does not cover something, leave it out. Never write around a gap with 'while specific details are limited', 'this likely reflects', 'though not extensively documented' and then guess anyway — a guess wearing a hedge is still a guess, and it is the hardest kind for a student to catch.",
+  "If the material does not cover something, leave it out. Never write around a gap with 'while specific details are limited', 'this likely reflects', 'though not extensively documented' and then guess anyway. A guess wearing a hedge is still a guess, and it is the hardest kind for a student to catch.",
   // Padding shapes. These are the outline habits from the source guide.
   "No filler sections. Do not end with 'Challenges', 'Future Directions', 'Significance', or a 'Conclusion' that restates the document. If a topic has real open questions, name them specifically; otherwise stop when the material stops.",
-  "Do not open sections by announcing them ('In this section we will explore...'), and do not tell the reader something is important instead of showing why. Cut 'it is important to note that' entirely — either the point earns its place or it does not.",
+  "Do not open sections by announcing them ('In this section we will explore...'), and do not tell the reader something is important instead of showing why. Cut 'it is important to note that' entirely: either the point earns its place or it does not.",
   // Artifacts that are pure embarrassment when they reach a saved file.
   "Never leave a placeholder in saved work: no '[insert date]', no 'XX', no 'add source here', no bracketed instructions to yourself. If you do not have the value, write the sentence without it or leave the line out.",
-  "No conversational asides in a saved document — no 'Certainly!', no 'Here's a breakdown', no 'Would you like me to expand this?', no sign-off. The note is the deliverable; talk to the student in chat, not inside the file.",
+  "No conversational asides in a saved document: no 'Certainly!', no 'Here's a breakdown', no 'Would you like me to expand this?', no sign-off. The note is the deliverable; talk to the student in chat, not inside the file.",
   // Structure, kept short because the always-on voice already covers bold,
   // Title Case, em dashes and emoji.
   "Structure by what the material actually contains, not by a template. A heading with one line under it should have been a sentence in the section above.",

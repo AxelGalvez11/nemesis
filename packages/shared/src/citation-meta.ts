@@ -31,11 +31,17 @@ export function sourceTypeLabel(t: string): string {
   return SOURCE_TYPE_LABEL[t] ?? t.replace(/_/g, " ");
 }
 
-/** Best-known publication year for a citation: explicit year, else the published_date year, else "—". PURE. */
+/**
+ * Best-known publication year for a citation: explicit year, else the published_date year, else "n.d.".
+ *
+ * 🔴 "n.d." RATHER THAN A DASH. Owner, 2026-08-25: *"make sure nemesis does not use em dashes at
+ * all."* A bare dash in a table cell is also the reader guessing what it means; "n.d." is what a
+ * citation actually says for an undated source. PURE.
+ */
 export function citationYear(c: Citation): string {
   if (typeof c.year === "string" && /^\d{4}/.test(c.year)) return c.year.slice(0, 4);
   const m = /^(\d{4})/.exec(c.published_date ?? "");
-  return m?.[1] ?? "—";
+  return m?.[1] ?? "n.d.";
 }
 
 /** Build the evidence-base table rows in numeric tag order. PURE. */
@@ -45,7 +51,7 @@ export function evidenceRows(citations: Citation[]): EvidenceRow[] {
     .map((c) => ({
       tag: c.chunk_tag.replace(/\D/g, ""),
       type: sourceTypeLabel(c.source_type),
-      title: (c.title ?? "").trim() || "—",
+      title: (c.title ?? "").trim() || "Untitled",
       year: citationYear(c),
     }));
 }

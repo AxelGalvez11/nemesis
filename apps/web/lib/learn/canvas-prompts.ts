@@ -46,7 +46,7 @@ import {
  *  Written as an escape rather than the literal character so the rule is greppable and so this
  *  file does not itself become the counter-example. */
 const NO_EM_DASH =
-  "Never use an em dash. The character — must not appear anywhere in your output. " +
+  "Never use an em dash. That punctuation mark must not appear anywhere in your output. " +
   "Use a comma, a colon, or a new sentence instead.";
 
 const CANVAS_SYSTEM =
@@ -77,7 +77,7 @@ const CITATION_RULE =
 const TERMS_RULE =
   '"terms" names the vocabulary THIS block introduces that a learner at this level probably has not met yet: ' +
   'each entry is {"term":"…","conceptId":"k1"}. Name at most 3 per block, fewest first, and leave the list empty ' +
-  "when the block introduces no new vocabulary — most blocks should. Each term MUST appear in that block's content " +
+  "when the block introduces no new vocabulary, most blocks should. Each term MUST appear in that block's content " +
   "spelled exactly as you write it here. Name a term only if a learner who did not know it would be unable to follow " +
   "the sentence containing it. Do not name ordinary words, words the document has already introduced, or words that " +
   "are merely long.";
@@ -85,7 +85,7 @@ const TERMS_RULE =
 /** The contract every selection answer follows, identical on every selection. */
 const SELECTION_ANSWER_RULE =
   "If the attached material defines this itself, prefer that meaning and set \"fromSource\" to the source title. " +
-  "If it does not, answer from established knowledge and leave \"fromSource\" empty — never imply the learner's " +
+  "If it does not, answer from established knowledge and leave \"fromSource\" empty, never imply the learner's " +
   "own material said something it did not.\n\n" +
   'Return JSON: {"answer":"…","fromSource":"…"}';
 
@@ -134,38 +134,38 @@ const EXPLAIN_BLOCK_RULE =
 const VISUAL_RULE =
   '"visual" is optional and is a SEMANTIC REQUEST, never rendering code. Use it only when a visual makes a relationship materially easier to understand than the prose. ' +
   'Allowed shapes are: {"kind":"equation","latex":"…"}; ' +
-  '{"kind":"relationship","nodes":[{"id":"n1","label":"…"}],"edges":[{"from":"n1","to":"n2","label":"…","polarity":"increases"|"decreases"}]} — use polarity when one thing drives or blocks another; ' +
-  '{"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}]} — and a series may give a FORMULA instead of points, as {"label":"…","expression":"sin(x)","from":0,"to":6.28} or {"label":"…","distribution":{"shape":"normal","mean":100,"sd":15},"from":55,"to":145}, which trusted code evaluates and draws; write the formula rather than listing points whenever the shape comes from one; ' +
-  '{"kind":"structure","notation":"smiles"|"reaction-smiles","value":"CC(=O)Oc1ccccc1C(=O)O","highlight":[0,1],"carbons":"skeletal"|"all","conditions":"…"} — a molecule or a reaction, given ONLY as canonical notation; never coordinates, never a drawing; an open attachment point is "*", so a generic alcohol is "*O", a carboxylic acid "*C(=O)O" and an amide "*C(=O)N" — "R" is not a SMILES atom and a value containing one draws nothing at all. For a compound that HAS A NAME, give {"kind":"structure","compound":"aspirin"} with no value: the structure is looked up from a chemical database and drawn from what it returns, which is more trustworthy than notation written from memory. Use "value" only for a generic group or a fragment no database holds. For a MECHANISM STEP add "arrows":[{"from":0,"to":1}] — each arrow pushes an electron pair from one heavy atom toward another, indices counting heavy atoms from zero in the value; put both species in one value separated by "." so they share one index space ("[OH-].CBr" makes O atom 0, C atom 1, Br atom 2), and give each step of a mechanism its own structure visual in sequence. Arrows work only on "smiles", never on "reaction-smiles"; ' +
+  '{"kind":"relationship","nodes":[{"id":"n1","label":"…"}],"edges":[{"from":"n1","to":"n2","label":"…","polarity":"increases"|"decreases"}]}: use polarity when one thing drives or blocks another; ' +
+  '{"kind":"quantitative","xLabel":"…","yLabel":"…","series":[{"label":"…","points":[{"x":0,"y":1}]}]}: and a series may give a FORMULA instead of points, as {"label":"…","expression":"sin(x)","from":0,"to":6.28} or {"label":"…","distribution":{"shape":"normal","mean":100,"sd":15},"from":55,"to":145}, which trusted code evaluates and draws; write the formula rather than listing points whenever the shape comes from one; ' +
+  '{"kind":"structure","notation":"smiles"|"reaction-smiles","value":"CC(=O)Oc1ccccc1C(=O)O","highlight":[0,1],"carbons":"skeletal"|"all","conditions":"…"}: a molecule or a reaction, given ONLY as canonical notation; never coordinates, never a drawing; an open attachment point is "*", so a generic alcohol is "*O", a carboxylic acid "*C(=O)O" and an amide "*C(=O)N": "R" is not a SMILES atom and a value containing one draws nothing at all. For a compound that HAS A NAME, give {"kind":"structure","compound":"aspirin"} with no value: the structure is looked up from a chemical database and drawn from what it returns, which is more trustworthy than notation written from memory. Use "value" only for a generic group or a fragment no database holds. For a MECHANISM STEP add "arrows":[{"from":0,"to":1}]: each arrow pushes an electron pair from one heavy atom toward another, indices counting heavy atoms from zero in the value; put both species in one value separated by "." so they share one index space ("[OH-].CBr" makes O atom 0, C atom 1, Br atom 2), and give each step of a mechanism its own structure visual in sequence. Arrows work only on "smiles", never on "reaction-smiles"; ' +
   // 🔴 TWO RETRIEVAL SHAPES, AND IN BOTH THE MODEL NAMES A THING AND STOPS THERE. The figure's
   // subject goes to a licence-gated image lane (curated registry first, then a live repository
   // whose per-file licences are read); the macromolecule's name goes to the Protein Data Bank's
   // own search. Neither accepts a URL, an accession, or pixels — the same boundary "compound"
   // holds for chemistry, stated in the vocabulary so the capability is reachable (the §44 lesson:
   // a capability nobody is told about is indistinguishable from one that was never built).
-  '{"kind":"figure","subject":"mitosis stages labelled diagram"} — a REAL photograph or diagram retrieved from openly licensed repositories and shown with its licence and credit. Use it when the learner needs to see the actual thing — a micrograph, a labelled anatomical diagram, an organism, an apparatus, a historical photograph — and none of the drawable shapes above can show it. "subject" is a short noun phrase naming what must be visible, never a sentence and never a URL; if no licensed picture exists nothing is shown, so the prose must stand on its own; ' +
-  '{"kind":"macromolecule","molecule":"haemoglobin"} — an interactive 3D structure of a protein or nucleic acid, looked up in the worldwide Protein Data Bank by NAME and drawn by a trusted viewer from the database\'s own coordinates. Give the molecule\'s name; never write a PDB accession from memory — a remembered id draws the wrong structure with full confidence. Use it when the three-dimensional shape is itself the thing to understand (a binding site, a double helix, a folded domain), and prefer "structure" with SMILES for any molecule small enough to read flat; ' +
-  '{"kind":"anatomy","structure":"sacrum"} — an interactive 3D view of a named anatomical structure, found in a licensed anatomy atlas and shown inside its body region with the named part picked out and the rest ghosted. Give one anatomical NAME (a bone, a group like "cervical vertebrae", or a whole region like "skeleton"); a name the atlas does not carry shows nothing, so the prose must stand on its own. Use it when where something SITS in the body is the thing to understand; ' +
+  '{"kind":"figure","subject":"mitosis stages labelled diagram"}: a REAL photograph or diagram retrieved from openly licensed repositories and shown with its licence and credit. Use it when the learner needs to see the actual thing, a micrograph, a labelled anatomical diagram, an organism, an apparatus, a historical photograph, and none of the drawable shapes above can show it. "subject" is a short noun phrase naming what must be visible, never a sentence and never a URL; if no licensed picture exists nothing is shown, so the prose must stand on its own; ' +
+  '{"kind":"macromolecule","molecule":"haemoglobin"}: an interactive 3D structure of a protein or nucleic acid, looked up in the worldwide Protein Data Bank by NAME and drawn by a trusted viewer from the database\'s own coordinates. Give the molecule\'s name; never write a PDB accession from memory, a remembered id draws the wrong structure with full confidence. Use it when the three-dimensional shape is itself the thing to understand (a binding site, a double helix, a folded domain), and prefer "structure" with SMILES for any molecule small enough to read flat; ' +
+  '{"kind":"anatomy","structure":"sacrum"}: an interactive 3D view of a named anatomical structure, found in a licensed anatomy atlas and shown inside its body region with the named part picked out and the rest ghosted. Give one anatomical NAME (a bone, a group like "cervical vertebrae", or a whole region like "skeleton"); a name the atlas does not carry shows nothing, so the prose must stand on its own. Use it when where something SITS in the body is the thing to understand; ' +
   '{"kind":"table","columns":[{"key":"c1","label":"…","numeric":true}],"rows":[{"cells":{"c1":100}}],"totals":[{"column":"c1","value":100}],"balance":{"left":"c1","right":"c2"},"hidden":{"column":"c1","row":0}}; ' +
-  '{"kind":"timeline","unit":"years","events":[{"at":-49,"atLabel":"49 BCE","label":"…","until":-44,"lane":"…","uncertain":true}],"hidden":0} — "at" is a plain number on any scale you choose and "atLabel" is what a human reads, so eras, geological time and seconds all work without a date format; ' +
+  '{"kind":"timeline","unit":"years","events":[{"at":-49,"atLabel":"49 BCE","label":"…","until":-44,"lane":"…","uncertain":true}],"hidden":0}: "at" is a plain number on any scale you choose and "atLabel" is what a human reads, so eras, geological time and seconds all work without a date format; ' +
   '{"kind":"construction","points":[{"id":"A","x":0,"y":0,"label":"A"}],"segments":[{"from":"A","to":"B","label":"4"}],"circles":[{"centre":"A","through":"B"}],"angles":[{"at":"A","from":"B","to":"C","degrees":90}]}; ' +
   '{"kind":"vectors","bodyLabel":"…","axesDegrees":30,"vectors":[{"label":"Weight","magnitude":98,"degrees":270,"unit":"N"}],"equilibrium":true}; ' +
   '{"kind":"code","language":"python","source":"…","trace":[{"line":1,"note":"…","variables":[{"name":"total","value":"0"}]}]}; ' +
   // 🔴 THE THREE SHAPES THE OWNER'S AUDIT ASKED FOR (2026-08-24), STATED THE SAME WAY: a canonical
   // encoding in, trusted drawing out. ABC is music's SMILES; the circuit tree is a netlist the
   // layout arithmetic can always place; the surface is §45's computed channel with one more axis.
-  '{"kind":"score","abc":"X:1\\nT:…\\nM:4/4\\nL:1/4\\nK:C\\nC D E F|G2 G2|"} — real staff notation engraved from ABC, for a melody, a rhythm, an interval or a chord voicing. Standard ABC with headers, K: required; no %%-directive or comment lines. Keep it an excerpt a learner reads at a glance, not a whole piece; ' +
-  '{"kind":"circuit","supply":{"label":"12 V"},"elements":{"arrangement":"series","parts":[{"component":"resistor","label":"R1","value":"100 Ω","ohms":100},{"arrangement":"parallel","parts":[{"component":"resistor","label":"R2","value":"200 Ω","ohms":200},{"component":"lamp","label":"L1"}]}]},"equivalentOhms":…} — a schematic drawn from series/parallel structure alone, never coordinates. Components: resistor, capacitor, inductor, battery, switch, lamp, diode, ammeter, voltmeter. Give a resistor its "ohms" as a number whenever the lesson works with values; "equivalentOhms" is RECOMPUTED from the tree and verifies only when every part is a resistor with ohms, so state it only then and only after working it out; ' +
-  'or {"kind":"surface","expression":"x^2 - y^2","xFrom":-2,"xTo":2,"yFrom":-2,"yTo":2,"zLabel":"z"} — a rotatable 3D surface z = f(x,y). Write the FORMULA in x and y with the domain; trusted code evaluates it on a grid and draws it, exactly as a series expression becomes a curve. Never write grid values yourself. ' +
+  '{"kind":"score","abc":"X:1\\nT:…\\nM:4/4\\nL:1/4\\nK:C\\nC D E F|G2 G2|"}: real staff notation engraved from ABC, for a melody, a rhythm, an interval or a chord voicing. Standard ABC with headers, K: required; no %%-directive or comment lines. Keep it an excerpt a learner reads at a glance, not a whole piece; ' +
+  '{"kind":"circuit","supply":{"label":"12 V"},"elements":{"arrangement":"series","parts":[{"component":"resistor","label":"R1","value":"100 Ω","ohms":100},{"arrangement":"parallel","parts":[{"component":"resistor","label":"R2","value":"200 Ω","ohms":200},{"component":"lamp","label":"L1"}]}]},"equivalentOhms":…}: a schematic drawn from series/parallel structure alone, never coordinates. Components: resistor, capacitor, inductor, battery, switch, lamp, diode, ammeter, voltmeter. Give a resistor its "ohms" as a number whenever the lesson works with values; "equivalentOhms" is RECOMPUTED from the tree and verifies only when every part is a resistor with ohms, so state it only then and only after working it out; ' +
+  'or {"kind":"surface","expression":"x^2 - y^2","xFrom":-2,"xTo":2,"yFrom":-2,"yTo":2,"zLabel":"z"}: a rotatable 3D surface z = f(x,y). Write the FORMULA in x and y with the domain; trusted code evaluates it on a grid and draws it, exactly as a series expression becomes a curve. Never write grid values yourself. ' +
   'Every shape also takes "learningGoal" and "caption". ' +
-  "A stated total, balance, angle, equilibrium or equivalent resistance is RECOMPUTED from the data you supply, and a claim that does not hold produces no visual at all — so state one only when you have worked it out. " +
+  "A stated total, balance, angle, equilibrium or equivalent resistance is RECOMPUTED from the data you supply, and a claim that does not hold produces no visual at all, so state one only when you have worked it out. " +
   // 🔴 THE FUNCTION LIST IS THE PARSER'S OWN ALLOW LIST (`expression.ts`), NOT A SELECTION. Naming
   // them stops the model reaching for `gamma(x)` or `integrate(...)`, discovering nothing was
   // drawn, and concluding the channel does not work — the same silent-failure shape that cost
   // chemistry three reports before `*` was written down.
   "A formula may use + - * / ^ ( ), the constants pi and e, and these functions: abs acos asin atan cbrt ceil cos cosh exp floor ln log log2 max min round sign sin sinh sqrt tan tanh. Distributions are normal (mean, sd), uniform (from, to), binomial (trials, probability) and poisson (rate). Nothing else runs, and anything else draws no curve. " +
   '"hidden" covers one cell or one event so the learner has something to retrieve rather than only read; use it when the visual is being taught rather than merely shown. ' +
-  "A code trace is your account of what the code would do — nothing here executes it, and the learner is told so on screen. " +
+  "A code trace is your account of what the code would do, nothing here executes it, and the learner is told so on screen. " +
   "Leave it absent when text is clearer. Never emit HTML, SVG, Mermaid, JavaScript, React, renderer names, styling, or arbitrary code. " +
   "The prose must still explain the idea; the visual is a representation of it, not a replacement for teaching.\n\n" +
   // 🔴 THIS PARAGRAPH REPLACED TWO CODE RULES, AND THE SWAP IS THE POINT. `visual-route.ts` used to
@@ -180,7 +180,7 @@ const VISUAL_RULE =
   // plot with no range. Those are facts about the request. Whether a picture helps is this:
   "WHETHER A PICTURE IS WORTH IT IS YOUR JUDGEMENT, and it belongs to the idea rather than to how " +
   "much of it there is. Two things with an arrow between them is a real diagram when the arrow is " +
-  "the point — that one drives, blocks or converts into the other — and is noise when the sentence " +
+  "the point (that one drives, blocks or converts into the other) and is noise when the sentence " +
   "already said it as plainly. An arbitrary pairing with nothing to explain is usually prose, but " +
   "not when one side of it is a shape: a molecule beside its name, a term beside where it sits in " +
   "a figure, a character beside the part it is built from. There the picture IS what makes the " +
@@ -189,7 +189,7 @@ const VISUAL_RULE =
 
 const BLOCK_SHAPE =
   'A block is {"type":"heading"|"paragraph"|"concept"|"example"|"callout","content":"…","conceptIds":["k1"],"sourceRefs":[…],"terms":[…],"visual":{…}}. ' +
-  `Do not include an id — ids are assigned by the application.\n\n${TERMS_RULE}\n\n${VISUAL_RULE}`;
+  `Do not include an id, ids are assigned by the application.\n\n${TERMS_RULE}\n\n${VISUAL_RULE}`;
 
 /**
  * The system message for one canvas job: the identity, then this job's INVARIANT rules.
@@ -300,7 +300,7 @@ export function lessonMessages(input: {
             "time it is used, and do not pad with background nobody asked for. What they know will " +
             "be established by what they demonstrate, not by an assumption made before they " +
             "answered anything.\n\n") +
-        "First decide the 5-12 CONCEPTS this material actually turns on — the ideas a learner must hold to understand it. " +
+        "First decide the 5-12 CONCEPTS this material actually turns on, the ideas a learner must hold to understand it. " +
         'Give each an id ("k1", "k2", …) and a short plain label naming the idea, not the section.\n\n' +
         "Then write 8-25 blocks. Open with a heading, then the single idea everything else depends on, then the substance, " +
         "then why it matters. Each block covers one thing. Use conceptIds to say which concepts a block teaches; every " +
@@ -351,7 +351,7 @@ export function commandMessages(input: {
         'Permitted operation: replace_canvas ({"operation":"replace_canvas","blocks":[…]}). ' +
         "Write only what was asked for, at the length it deserves, and nothing else."
       : "Permitted operations: replace_block, insert_before, insert_after, delete_block, annotate_block, collapse_block. " +
-        "Change as little as possible — edit the blocks the request is about and leave the rest alone.";
+        "Change as little as possible, edit the blocks the request is about and leave the rest alone.";
 
   return [
     canvasSystem(BLOCK_SHAPE, CITATION_RULE),
@@ -401,7 +401,7 @@ export function recallMessages(input: {
         `Write ${input.count} retrieval prompts from the study document below, on "${input.canvasTitle}".\n\n` +
         "These are flashcards, not exam questions. Keep them SHORT. The front asks one specific thing; the back is the " +
         "answer in a few words, then at most one sentence of why. Do not write a miniature lesson on the back.\n\n" +
-        "Cover the concepts evenly — one card per concept before any concept gets a second. Each card names the concept " +
+        "Cover the concepts evenly, one card per concept before any concept gets a second. Each card names the concept " +
         "it tests, and carries the sourceRefs of the block it came from.\n\n" +
         'Return JSON: {"cards":[{"front":"…","back":"…","conceptId":"k1","sourceRefs":[…]}]}\n\n' +
         `Concepts: ${input.concepts.map((c) => `${c.id}=${c.label}`).join(", ")}\n\n` +
@@ -481,8 +481,8 @@ export function territoryMessages(input: {
         'If this subject is a language and the learner has not said which regional variety they want, ' +
         'do not choose one. Return {"needsVariety":"<the language subtag, such as es or pt>"} instead ' +
         'of pairs, and nothing else.\n\n' +
-        'If a side is written IN a language the learner is studying — the foreign word itself, not a ' +
-        'description of it — add its language tag as "leftLocale" or "rightLocale", with the regional ' +
+        'If a side is written IN a language the learner is studying (the foreign word itself, not a ' +
+        'description of it), add its language tag as "leftLocale" or "rightLocale", with the regional ' +
         'variety the material uses ("es-MX", "pt-BR", "ja-JP"). Give it for that side only. Most ' +
         'subjects are not languages and most pairs need neither: leave both out unless the words ' +
         'themselves are what is being learned.\n\n' +
@@ -532,7 +532,7 @@ export function regionClarificationRule(input: {
   return (
     `The learner has asked to learn ${input.language} and has not said which variety. ` +
     "Ask them, in one short sentence of your own, before producing anything else. " +
-    "Say briefly why it matters — the varieties differ in sounds and words they will be learning — " +
+    "Say briefly why it matters, the varieties differ in sounds and words they will be learning, " +
     "and offer the choices plainly.\n\n" +
     `The varieties available are exactly these, and you may not offer any other: ${options}. ` +
     "Do not invent a variety that is not on that list, however commonly it is spoken: a variety " +
@@ -617,7 +617,7 @@ export function testMessages(input: {
     : input.concepts;
 
   const scope = input.onlyConceptIds?.length
-    ? "This is a RETEST. Ask only about the concepts listed below — the ones the learner got wrong. Do not test anything else.\n\n"
+    ? "This is a RETEST. Ask only about the concepts listed below, the ones the learner got wrong. Do not test anything else.\n\n"
     : "Spread the questions across the concepts below.\n\n";
   const conceptList = `Concepts to test: ${focus.map((c) => `${c.id}=${c.label}`).join(", ")}\n\n`;
 
@@ -629,11 +629,11 @@ export function testMessages(input: {
           `Write ${input.count} retrieval prompts on "${input.canvasTitle}" that the learner answers IN THEIR OWN WORDS.\n\n` +
           "These are not multiple choice and must not be answerable with yes/no or a single word. Each one asks the " +
           "learner to say something back: an explanation, a comparison, a sequence, or an application. Ask about one " +
-          "thing at a time — a prompt with three questions in it produces an answer that cannot be judged.\n\n" +
+          "thing at a time, a prompt with three questions in it produces an answer that cannot be judged.\n\n" +
           `Choose a kind for each prompt:\n${FREE_KIND_RULES}\n\n` +
           `${scope}${conceptList}` +
           'Return JSON: {"questions":[{"kind":"explain","q":"…","expected":["…","…"],"why":"…","conceptId":"k1","sourceRefs":[…]}]}\n\n' +
-          "`expected` is the list of points a complete answer has to make — 2 to 4 short, checkable statements, each " +
+          "`expected` is the list of points a complete answer has to make, 2 to 4 short, checkable statements, each " +
           "one thing. These are what a judge will check the learner's answer against, so write them as claims, not as " +
           "topics: \"says the pressure drops before the valve opens\", not \"pressure\". `why` is the full model answer, " +
           "shown only after they have committed to their own. `conceptId` MUST be one of the ids above.\n\n" +
@@ -652,7 +652,7 @@ export function testMessages(input: {
         // the craft improves all three at once (see item-writing.ts).
         `Follow these rules:\n${EXAM_ITEM_RULES}\n\n` +
         `${scope}${conceptList}` +
-        'Return JSON: {"questions":[{"q":"…","options":["…","…","…","…"],"answer":<index>,"why":"…","conceptId":"k1","sourceRefs":[…]}]} — ' +
+        'Return JSON: {"questions":[{"q":"…","options":["…","…","…","…"],"answer":<index>,"why":"…","conceptId":"k1","sourceRefs":[…]}]}: ' +
         "4 options each, answer is the 0-based index of the correct option, why explains what makes the wrong options wrong, " +
         "and conceptId MUST be one of the ids above. A question with no concept is useless here.\n\n" +
         `Document:\n${documentText(input.blocks)}`,
@@ -782,7 +782,7 @@ const WRITTEN_WORK_GUIDANCE =
  * "don't ever send essay-length responses."
  */
 const MOVE_CHOICE =
-  "Now decide what should happen next, and put it in `next_move`. You are choosing, not reporting — " +
+  "Now decide what should happen next, and put it in `next_move`. You are choosing, not reporting. " +
   "nothing downstream re-decides this.\n\n" +
   '- "advance": they have it, or this is not worth more of their attention right now. Something ' +
   "unresolved comes back later on its own, so moving on is not giving up.\n" +
@@ -791,11 +791,11 @@ const MOVE_CHOICE =
   '- "correct": wrong, and you can see exactly where. The smallest fix that lands, then ask again ' +
   "a different way.\n" +
   '- "repair_misconception": they hold a specific false belief you can state in one sentence. ' +
-  "This is NOT a bigger gap — more detail does not dislodge a wrong model. Name the false " +
+  "This is NOT a bigger gap, more detail does not dislodge a wrong model. Name the false " +
   "relationship, say plainly it does not hold, put the right one in its place, and have them " +
   "rebuild it in their own words. Only choose this if `misconceptions` is non-empty.\n" +
   '- "retry": wrong, and you genuinely cannot see where. Teach the idea again from a different ' +
-  "angle, then a fresh attempt. Prefer a sharper reading over this — `retry` is what you pick " +
+  "angle, then a fresh attempt. Prefer a sharper reading over this, `retry` is what you pick " +
   "when the reading itself is the thing that failed.\n\n" +
   "Every move except `advance` ends with them attempting something again. Explaining and moving on " +
   "is the one thing that does not work.\n\n" +
@@ -817,7 +817,7 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
       ? `Watch for these specific wrong beliefs:\n${expected.commonMisconceptions.map((m) => `- ${m}`).join("\n")}`
       : "",
     expected.referenceAnswer
-      ? `A reference answer, for your judgement only — do NOT require its wording or its level of detail:\n${expected.referenceAnswer}`
+      ? `A reference answer, for your judgement only, do NOT require its wording or its level of detail:\n${expected.referenceAnswer}`
       : "",
   ]
     .filter(Boolean)
@@ -853,13 +853,13 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
           ? `They used ${input.context?.hintsUsed} hint(s) before answering, so this is assisted rather than unaided recall.\n\n`
           : "") +
         "Judge MEANING, not vocabulary. If they express the right idea in everyday language, that is a correct " +
-        "answer — do not require the term the material used. Do not reward a confident answer that says nothing.\n\n" +
+        "answer, do not require the term the material used. Do not reward a confident answer that says nothing.\n\n" +
         "Choose one verdict:\n" +
-        '- "strong": everything expected is there, and expressed with room to spare — they could clearly go further.\n' +
+        '- "strong": everything expected is there, and expressed with room to spare, they could clearly go further.\n' +
         '- "understood": everything expected is there, in substance.\n' +
         '- "partial": going the right way, but something expected is missing or vague.\n' +
         '- "incorrect": does not get there, or is mostly off the point.\n' +
-        '- "misconception": reveals a specific, nameable false belief — not merely a gap. Use this only when you can ' +
+        '- "misconception": reveals a specific, nameable false belief, not merely a gap. Use this only when you can ' +
         "state the wrong belief in one sentence.\n" +
         // 🔴🔴 THE ONLY VERDICT THAT IS NOT A GRADE, AND THE REASON IT EXISTS. The composer is the
         // one input, so while a question is up EVERY sentence arrives here — including sentences
@@ -879,7 +879,7 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         '- "not_an_attempt": they were not trying to answer THIS question at all. A question of their own, an aside, ' +
         "a remark about how it is going, or a request to do something else. This is not a grade and nothing is " +
         "recorded: their words are answered as conversation and the question stays on screen. A confused, partial or " +
-        "plainly wrong attempt at the question is NOT this — it is an attempt, and it gets one of the verdicts above. " +
+        "plainly wrong attempt at the question is NOT this, it is an attempt, and it gets one of the verdicts above. " +
         "If you can read it as an attempt at all, it is an attempt.\n\n" +
         // 🔴 SAYING "I DON'T KNOW" IS NOT A WRONG ANSWER, AND UNTIL NOW A WORD LIST SAID SO INSTEAD
         // OF YOU. `isAdmissionOfNotKnowing` held twenty-one English phrases — idk, dunno, no clue,
@@ -888,7 +888,7 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         // graded WRONG, which is exactly the harm that list existed to prevent, failing for anyone
         // not answering in English. The list's own header said so and named this as the fix.
         "An ADMISSION is also not an attempt: the learner aimed at the question and told you they " +
-        "have nothing — in any language, in any words, however brief. Nothing is recorded, because " +
+        "have nothing, in any language, in any words, however brief. Nothing is recorded, because " +
         "\"we still do not know\" must never be stored as \"they got it wrong\". But a HEDGED answer " +
         "is an attempt, and the difference is whether anything was actually produced: if they named " +
         "something, guessed, or described part of it, grade what they produced however unsure they " +
@@ -913,7 +913,7 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         '"misconceptions":["…"],"errorType":"conceptual","feedback":"…","alsoWeakConceptIds":["k3"],' +
         '"next_move":"clarify_missing","move_reason":"…"}\n\n' +
         "`confidence` is 0 to 1: how much this performance actually settled. A short answer to a broad task can be " +
-        "right and still tell you little — say so with a low number rather than a confident verdict. " +
+        "right and still tell you little, say so with a low number rather than a confident verdict. " +
         "`demonstrated` and `missing` are for the teaching engine, not for the learner to read. " +
         "`misconceptions` is a list, empty unless a specific false belief is visible. " +
         "`feedback` is the ONE thing the page shows them: at most two sentences, addressed to them as \"you\", " +
@@ -924,7 +924,7 @@ export function evaluationMessages(input: EvaluationInput): WireMsg[] {
         // correct answer — and the validator used to discard the whole evaluation over it, losing a
         // demonstration the learner had genuinely given. Both ends now agree that empty is RIGHT for
         // a pass, and the page prints its own confirmation.
-        "If nothing was missing, leave `feedback` as an empty string — the page confirms a correct answer itself. " +
+        "If nothing was missing, leave `feedback` as an empty string, the page confirms a correct answer itself. " +
         "`alsoWeakConceptIds` is for OTHER concepts on the page this performance showed to be shaky; use ids from " +
         "the list above and no others, and leave it out if there are none.",
       role: "user",
@@ -970,7 +970,7 @@ export function teachingMessages(input: {
         return (
           `They already demonstrated: ${input.demonstrated.join("; ") || "part of this"}.\n` +
           `What was missing: ${input.action.missing.join("; ")}\n\n` +
-          "Teach ONLY the missing piece. Do not restate what they already showed — they have it, and " +
+          "Teach ONLY the missing piece. Do not restate what they already showed, they have it, and " +
           "repeating it back is how a page stops feeling adaptive. Write one short block that supplies the " +
           "gap and connects it to what they already had, and put it next to the block that covers this idea. " +
           "Then ask them to explain how the missing piece relates to the part they got right."
@@ -978,7 +978,7 @@ export function teachingMessages(input: {
       case "correct":
         return (
           `What went wrong: ${input.action.missing.join("; ")}\n\n` +
-          "Write the smallest correction that fixes this specific thing — two or three sentences, not a " +
+          "Write the smallest correction that fixes this specific thing, two or three sentences, not a " +
           "re-teach of the topic. Replace the block that misled them if there is one, otherwise insert the " +
           "correction beside it. Then ask them the same idea again, in a different way than it was asked " +
           "the first time."
@@ -986,7 +986,7 @@ export function teachingMessages(input: {
       case "repair_misconception":
         return (
           `They hold a specific false belief: ${input.action.misconceptions.join("; ")}\n\n` +
-          "🔴 This is not a gap, it is a wrong model, so filling in more detail will not help — the belief " +
+          "🔴 This is not a gap. It is a wrong model, so filling in more detail will not help: the belief " +
           "itself has to be replaced. Rewrite the block that teaches this idea so it names the false " +
           "relationship explicitly, says plainly that it does not hold, and puts the correct relationship " +
           "in its place. Be concrete about what causes what. Then ask them to reconstruct the corrected " +
@@ -996,7 +996,7 @@ export function teachingMessages(input: {
       default:
         return (
           "Their answer did not get there, and the reading is not precise enough to correct a specific point. " +
-          "Re-teach this idea slightly more completely than the page does now — a different angle, or a " +
+          "Re-teach this idea slightly more completely than the page does now, a different angle, or a " +
           "concrete example, rather than the same sentences again. Then ask for it once more."
         );
     }
@@ -1011,15 +1011,15 @@ export function teachingMessages(input: {
         `They answered:\n"${input.said}"\n\n` +
         `${instruction}\n\n` +
         (input.level ? `${LEVEL_INSTRUCTIONS[input.level]}\n\n` : "") +
-        `You may ONLY change these blocks: ${input.scope.map((b) => b.id).join(", ") || "(none — insert only)"}. ` +
+        `You may ONLY change these blocks: ${input.scope.map((b) => b.id).join(", ") || "(none, insert only)"}. ` +
         "Permitted operations: replace_block, insert_before, insert_after, annotate_block. " +
         "Any operation naming another block, or attempting to rewrite the whole page, will be discarded.\n\n" +
         'Return JSON: {"operations":[…],"followUp":{"task":"explain","q":"…","expected":["…","…"],"why":"…","conceptId":"' +
         `${input.objectiveId}"}}\n\n` +
         "`followUp` is the next thing you ask them, and it must be answerable in their own words. `expected` " +
-        "is 2-3 short checkable claims a complete answer makes — this is what the answer will be judged " +
+        "is 2-3 short checkable claims a complete answer makes. This is what the answer will be judged " +
         `against, so write claims and not topics. conceptId MUST be "${input.objectiveId}".\n\n` +
-        `The blocks that currently teach this idea:\n${scopeText || "(none — the page has no block for it yet)"}\n\n` +
+        `The blocks that currently teach this idea:\n${scopeText || "(none, the page has no block for it yet)"}\n\n` +
         // 🔴 THE MATERIAL FOR THIS OBJECTIVE, NOT FOR THE LECTURE. The scope blocks already declare
         // which excerpts they were built from, so the evidence that grounds this correction is
         // named by the page itself; the objective, the question and the learner's own answer add
@@ -1076,11 +1076,11 @@ export function relearnMessages(input: {
         (input.misses.length
           ? `What they actually got wrong:\n${input.misses.map(describeMiss).join("\n")}\n\n`
           : "") +
-        "Rewrite the document so it teaches ONLY these ideas. This is a short, targeted correction — aim for a fifth of " +
+        "Rewrite the document so it teaches ONLY these ideas. This is a short, targeted correction, aim for a fifth of " +
         "the original length. Do not re-explain anything they already understood. Address the specific misunderstanding " +
         "each wrong answer reveals, rather than restating the original explanation.\n\n" +
         (input.level ? `${LEVEL_INSTRUCTIONS[input.level]}\n\n` : "") +
-        'Return JSON: {"operations":[{"operation":"replace_canvas","blocks":[…]}]} — one replace_canvas holding the ' +
+        'Return JSON: {"operations":[{"operation":"replace_canvas","blocks":[…]}]}: one replace_canvas holding the ' +
         "short focused document. Use only the concept ids listed above.\n\n" +
         `The parts of the original document that covered these ideas:\n${documentText(input.relevantBlocks)}\n\n` +
         // §14's hypothesis applied to the material as well as to the document: the relearn already
@@ -1169,14 +1169,14 @@ export function documentText(blocks: readonly CanvasBlock[]): string {
 // same fix without the rule, and it also covers plurals, cases and conjugations no strip list would
 // have reached.
 const LOOK_THROUGH_INFLECTION =
-  "If the highlighted text is an inflected form — a possessive, a plural, a conjugation, a case ending — " +
+  "If the highlighted text is an inflected form, a possessive, a plural, a conjugation, a case ending, " +
   "treat it as the underlying term it is a form OF. Never explain the grammar; the learner highlighted a word " +
   "because they did not know the thing, not because they did not know the ending.";
 
 const DEFINE_INTENT =
   "Say what this term means HERE, in this context, in one or two short sentences. " +
-  "Use plainer words than the sentence it came from. Keep the technical term itself — the learner needs the word, " +
-  "not a replacement for it — and explain it rather than swapping it out. " +
+  "Use plainer words than the sentence it came from. Keep the technical term itself, the learner needs the word, " +
+  "not a replacement for it, and explain it rather than swapping it out. " +
   LOOK_THROUGH_INFLECTION;
 
 /**
@@ -1200,14 +1200,14 @@ const SELECTION_REQUEST_RULE =
   "The learner highlighted part of what they are reading and asked you for something. Do exactly what they asked, " +
   "about THAT text, and nothing else.\n\n" +
   "Choose one of two things:\n" +
-  '· "answer" — say something back, beside the passage, without changing it. This is the right choice for a question, ' +
+  '· "answer": say something back, beside the passage, without changing it. This is the right choice for a question, ' +
   "for anything they want to understand, and whenever you are unsure. At most four short sentences.\n" +
-  '· "rewrite" — they asked for the passage itself to be different: put more simply, reworded, expanded, shortened, ' +
+  '· "rewrite": they asked for the passage itself to be different: put more simply, reworded, expanded, shortened, ' +
   "or with something added. Return the WHOLE passage as it should now read, keeping every claim the original made " +
   "and every technical term the learner needs. Do not write a heading, do not comment on the change.\n\n" +
   `${LOOK_THROUGH_INFLECTION}\n\n` +
   "If the attached material covers this itself, prefer what it says and set \"fromSource\" to that source's title. " +
-  "If it does not, answer from established knowledge and leave \"fromSource\" empty — never imply the learner's own " +
+  "If it does not, answer from established knowledge and leave \"fromSource\" empty, never imply the learner's own " +
   "material said something it did not.\n\n" +
   'Return JSON: {"do":"answer","answer":"…","fromSource":"…"} or {"do":"rewrite","content":"…"}';
 

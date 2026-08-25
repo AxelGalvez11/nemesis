@@ -63,7 +63,7 @@ test("the char budget is never exceeded", () => {
 test("every catalog skill fits the budget on its own and is well formed", () => {
   for (const skill of CHAT_SKILLS) {
     assert.ok(skill.instructions.length <= SKILL_CHAR_BUDGET, `${skill.id} exceeds the budget alone`);
-    assert.ok(skill.instructions.startsWith("SKILL — "), `${skill.id} is missing its header`);
+    assert.ok(skill.instructions.startsWith("SKILL: "), `${skill.id} is missing its header`);
     assert.ok(skill.name.length > 0);
     assert.ok(skill.when.length > 0, `${skill.id} must say when it applies, or the model cannot pick it`);
   }

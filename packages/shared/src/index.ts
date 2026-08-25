@@ -21,6 +21,8 @@ export * from "./search.ts";
 // How the product writes, shared so the web prompt and the phone prompt cannot
 // drift apart. See writing-voice.ts for why this is not a chat skill.
 export * from "./writing-voice.ts";
+// The one rule of that voice a prompt could not hold on its own, so trusted code finishes it.
+export * from "./plain-dashes.ts";
 // What a student MEANT, read once for the whole product. The phone used to carry its own copy of
 // the classifier this replaced, with one of the thirteen regexes already drifted between them.
 export * from "./chat-intent.ts";
