@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { isAnswerableLabel, OCCLUSION_READ_WIDTH, readableThumbnail } from "./occlusion-source";
+import { isAnswerableLabel, OCCLUSION_READ_WIDTH, smallerThumbnail } from "./occlusion-source";
 
 // The real URL the reference lane returned for `subject: "nephron"`, 2026-08-25.
 const REAL = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dc/KidneyAndNephron-v4_Antares42.svg/1280px-KidneyAndNephron-v4_Antares42.svg.png";
@@ -59,43 +59,64 @@ test("🔴 an empty or blank label is refused", () => {
   for (const blank of ["", " ", "   ", "\t"]) assert.equal(isAnswerableLabel(blank), false);
 });
 
-test("🔴🔴🔴 a big picture is asked for smaller, because the big one 504s the route", () => {
-  // 🔴 THE MEASURED FAILURE, the second one: `subject: "neuron"` returned **504 Gateway Timeout**.
-  // A 1280px PNG regularly costs vision more than the 60s budget has left after the search and the
-  // download, and the platform ends the request with an HTML error the client cannot read.
-  const small = readableThumbnail(REAL);
-  assert.match(small, new RegExp(`/${OCCLUSION_READ_WIDTH}px-`), "the rendering was not made smaller");
-  assert.ok(!small.includes("1280px-"), "the original width survived the rewrite");
-  // Same file, same host, same licence — only the rendering changed.
-  assert.equal(new URL(small).hostname, "upload.wikimedia.org");
-  assert.ok(small.includes("KidneyAndNephron-v4_Antares42"), "the rewrite pointed at a different file");
+test("🔴🔴🔴 a smaller rendering is PROPOSED, never asserted", () => {
+  // 🔴🔴🔴 THE BUG THIS TEST WAS REWRITTEN FOR WAS MINE, AND IT BROKE THE FEATURE COMPLETELY.
+  // Wikimedia only serves thumbnail widths it has ALREADY RENDERED, and which ones those are is
+  // unpredictable per file. Measured on this exact diagram, 2026-08-25:
+  //
+  //     1280px → 200      960px → 200
+  //      800px → 400      640px → 400      1024px → 400      1200px → 400
+  //
+  // The first version rewrote to a fixed 800px and RETURNED IT AS FACT. Every lookup then died at
+  // `image-unreachable` in 1.4 seconds, which from the outside looked exactly like "no diagram
+  // exists". So this returns a candidate to TRY, and the route must fall back.
+  const small = smallerThumbnail(REAL);
+  assert.ok(small, "nothing was proposed for a 1280px source");
+  assert.match(small, new RegExp(`/${OCCLUSION_READ_WIDTH}px-`), "the proposal is not smaller");
+  assert.equal(new URL(small).hostname, "upload.wikimedia.org", "the proposal changed host");
+  assert.ok(small.includes("KidneyAndNephron-v4_Antares42"), "the proposal points at a different file");
 });
 
-test("🔴🔴 it never asks for a LARGER rendering than the source", () => {
-  // Wikimedia refuses an upscale, and a refusal here costs the whole question.
-  const already = REAL.replace("1280px-", "640px-");
-  assert.equal(readableThumbnail(already), already, "a 640px source was upscaled to 800px");
-  assert.equal(readableThumbnail(REAL.replace("1280px-", "800px-")), REAL.replace("1280px-", "800px-"));
+test("🔴🔴 null means 'nothing worth trying', which the caller must handle", () => {
+  // Not a thumbnail, or already small enough. A caller that treated null as a URL would fetch
+  // "null" and refuse every picture.
+  assert.equal(smallerThumbnail(REAL.replace("1280px-", "640px-")), null, "a 640px source was upscaled");
+  assert.equal(smallerThumbnail(REAL.replace("1280px-", `${OCCLUSION_READ_WIDTH}px-`)), null);
+  assert.equal(smallerThumbnail("https://upload.wikimedia.org/wikipedia/commons/d/dc/Kidney.svg.png"), null);
+  assert.equal(smallerThumbnail(""), null);
 });
 
-test("🔴 a URL that is not a resizable thumbnail is left exactly alone", () => {
-  // Original-file URLs have no width in the path. Rewriting one would 404 the picture.
-  const original = "https://upload.wikimedia.org/wikipedia/commons/d/dc/KidneyAndNephron.svg.png";
-  assert.equal(readableThumbnail(original), original);
-  assert.equal(readableThumbnail(""), "");
-});
-
-test("🔴🔴 the route reads and shows the SAME url, or every box is on the wrong picture", () => {
-  // Masks are measured against the bytes fetched. Reading a small rendering and displaying a large
-  // one would place every box correctly in a coordinate space nobody is looking at.
+test("🔴🔴🔴 the route FALLS BACK when the smaller rendering is refused", () => {
   const route = readFileSync(new URL("../../app/api/learn/figure-occlusion/route.ts", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
-  assert.match(route, /const assetPath = readableThumbnail\(chosenPath\)/, "the route stopped shrinking the picture");
-  assert.match(route, /await fetch\(assetPath,/, "vision reads a different url from the one it measures");
+  // Two candidates, tried in order, and only running out of them is a refusal.
+  assert.match(route, /const attempts = smaller && allowedAssetUrl\(smaller\) \? \[smaller, chosenPath\] : \[chosenPath\]/, "the fallback is gone");
+  assert.match(route, /for \(const candidate of attempts\)/, "the candidates are no longer tried in turn");
+  assert.match(route, /if \(!bytes\) return refuse\(admin, key, "image-unreachable"\)/, "a total failure is no longer a refusal");
+  // 🔴 AND THE URL THAT ANSWERED IS THE ONE SHOWN. Masks are measured against the bytes fetched;
+  // reading one rendering and displaying another places every box correctly in a coordinate space
+  // nobody is looking at.
+  assert.match(route, /assetPath = candidate;/, "the answering url is not the one carried forward");
   assert.match(route, /asset: \{\s*assetPath,/, "the learner is shown a different url from the one measured");
-  // …and the allow list is checked on BOTH, so a rewrite cannot smuggle in another host.
-  assert.match(route, /allowedAssetUrl\(assetPath\) \|\| !allowedAssetUrl\(chosenPath\)/, "the rewritten url is trusted unchecked");
+  assert.match(route, /allowedAssetUrl\(chosenPath\)/, "the original url is trusted unchecked");
+});
+
+test("🔴🔴🔴 a TRANSIENT failure is never cached, only a durable one", () => {
+  // 🔴 THIS NEARLY POISONED THE PRODUCT. The bad thumbnail rewrite above wrote
+  // `image-unreachable` for "nephron" into the cache; until that row was deleted by hand, no
+  // learner anywhere could have been asked about a kidney for a week. A momentary failure must
+  // never become a stored fact.
+  const route = readFileSync(new URL("../../app/api/learn/figure-occlusion/route.ts", import.meta.url), "utf8");
+  const durable = /const DURABLE_REFUSALS = new Set\(\[([^\]]*)\]\)/.exec(route);
+  assert.ok(durable, "the durable/transient split is gone");
+  for (const transient of ["image-unreachable", "vision-failed", "wrong-scale", "image-too-large", "image-unreadable"]) {
+    assert.ok(!durable[1]!.includes(transient), `"${transient}" is cached, and it is not durable`);
+  }
+  for (const real of ["no-candidates", "no-labelled-parts"]) {
+    assert.ok(durable[1]!.includes(real), `"${real}" is no longer cached, so it costs a full search every time`);
+  }
+  assert.match(route, /if \(DURABLE_REFUSALS\.has\(reason\)\) await writeCache/, "every refusal is cached again");
 });
 
 test("🔴🔴 vision has a budget, so the caller gets JSON rather than a 504", () => {
