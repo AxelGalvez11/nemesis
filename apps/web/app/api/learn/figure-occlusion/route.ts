@@ -17,6 +17,7 @@
 // A second prompt for "find the labelled parts" would be a second definition of what a label is,
 // and the two would answer differently on the same picture.
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 import { allowedAssetUrl, findReferenceImages } from "@/lib/learn/reference-images";
@@ -84,6 +85,16 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "expected { subject: string }" }, { status: 400 });
   }
 
+  // 🔴🔴 THE CACHE IS WHAT MAKES THIS QUICK (owner 2026-08-25: *"I need image occlusion and
+  // diagrams to come clean and quick"*). The work below is a repository search, an image download
+  // and a vision read: tens of seconds, genuinely. But it is the SAME work every time — "nephron"
+  // resolves to one Commons diagram whose printed labels sit where they sat yesterday — so the
+  // second learner to ask, and the first one asking again, pay nothing.
+  const admin = adminClient();
+  const key = cacheKey(subject);
+  const hit = await readCache(admin, key);
+  if (hit) return NextResponse.json(hit);
+
   const candidates = await findReferenceImages(
     { concept: subject.trim(), limit: 4 },
     { fetch: repositoryFetch, registry: CURATED },
@@ -94,7 +105,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   // good enough to look at is not automatically good enough to be marked against.
   const choice = chooseAsset({ accuracyBearing: true, candidates });
   if (!choice.ok) {
-    return NextResponse.json({ detail: choice.detail, ok: false, reason: choice.reason }, { status: 200 });
+    return refuse(admin, key, choice.reason, choice.detail);
   }
 
   // 🔴🔴 A SMALLER RENDERING OF THE SAME PICTURE, BECAUSE THE BIG ONE TIMES THIS ROUTE OUT.
@@ -112,7 +123,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   // off the allow list before our server fetches it. Checked on the REWRITTEN url, so a rewrite
   // that somehow produced a different host would be caught here rather than trusted.
   if (!allowedAssetUrl(assetPath) || !allowedAssetUrl(chosenPath)) {
-    return NextResponse.json({ ok: false, reason: "no-trusted-asset" }, { status: 200 });
+    return refuse(admin, key, "no-trusted-asset");
   }
 
   let bytes: Uint8Array;
@@ -122,21 +133,21 @@ export async function POST(request: Request): Promise<NextResponse> {
       headers: { "user-agent": USER_AGENT },
       signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
     });
-    if (!picture.ok) return NextResponse.json({ ok: false, reason: "image-unreachable" }, { status: 200 });
+    if (!picture.ok) return refuse(admin, key, "image-unreachable");
     const buffer = await picture.arrayBuffer();
     // 🔴 CHECKED AFTER THE DOWNLOAD, BECAUSE Content-Length IS OPTIONAL. A repository that streams
     // without one would otherwise walk straight past a size gate keyed on the header.
     if (buffer.byteLength > VISION_MAX_BYTES) {
-      return NextResponse.json({ ok: false, reason: "image-too-large" }, { status: 200 });
+      return refuse(admin, key, "image-too-large");
     }
     bytes = new Uint8Array(buffer);
     contentType = picture.headers.get("content-type") ?? "";
   } catch {
-    return NextResponse.json({ ok: false, reason: "image-unreachable" }, { status: 200 });
+    return refuse(admin, key, "image-unreachable");
   }
 
   const mime = visionMime(assetPath, contentType);
-  if (!mime) return NextResponse.json({ ok: false, reason: "image-unreadable" }, { status: 200 });
+  if (!mime) return refuse(admin, key, "image-unreadable");
 
   // 🔴🔴 THE SIZE IS MEASURED FROM THE BYTES, NEVER ASKED OF THE MODEL. `OCCLUSION_VISION_PROMPT`
   // explicitly tells it "Do NOT report the image's size", because it does not reliably know and
@@ -144,7 +155,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   // a way that reads to the learner as "this feature is broken". Reading the header costs nothing
   // and is the only trustworthy source.
   const size = imageSize(bytes);
-  if (!size) return NextResponse.json({ ok: false, reason: "image-unreadable" }, { status: 200 });
+  if (!size) return refuse(admin, key, "image-unreadable");
 
   // 🔴🔴 VISION GETS AN EXPLICIT BUDGET, NOT THE REST OF THE FUNCTION'S LIFE. Without one it runs
   // until the PLATFORM kills the request, and the caller gets a 504 — an HTML error page rather
@@ -154,19 +165,19 @@ export async function POST(request: Request): Promise<NextResponse> {
   const seen = await readImage(bytes, mime, {
     prompt: OCCLUSION_VISION_PROMPT,
     signal: AbortSignal.timeout(VISION_BUDGET_MS),
-    spend: { admin: adminClient(), scope: { operation: "figure-occlusion" }, userId: check.userId },
+    spend: { admin, scope: { operation: "figure-occlusion" }, userId: check.userId },
   });
-  if (!seen?.text) return NextResponse.json({ ok: false, reason: "vision-failed" }, { status: 200 });
+  if (!seen?.text) return refuse(admin, key, "vision-failed");
 
   const boxes = parseSuggestedBoxes(jsonFrom(seen.text));
   // A real answer, not a failure: most pictures are not labelled diagrams, and saying so lets the
   // caller fall back to showing the picture plainly rather than retrying.
-  if (boxes.length === 0) return NextResponse.json({ ok: false, reason: "no-labelled-parts" }, { status: 200 });
+  if (boxes.length === 0) return refuse(admin, key, "no-labelled-parts");
   // 🔴 REFUSE A WRONG-SCALE REPLY RATHER THAN RESCALING IT. Models answer this in 0-1, 0-100 and
   // 0-1000 depending on the day, and guessing wrong puts every mask confidently in the wrong place.
-  if (!looksNormalized(boxes)) return NextResponse.json({ ok: false, reason: "wrong-scale" }, { status: 200 });
+  if (!looksNormalized(boxes)) return refuse(admin, key, "wrong-scale");
 
-  return NextResponse.json({
+  const answer: FigureOcclusionAnswer = {
     asset: {
       assetPath,
       ...(choice.asset.caption ? { caption: choice.asset.caption } : {}),
@@ -177,5 +188,130 @@ export async function POST(request: Request): Promise<NextResponse> {
     height: size.height,
     ok: true,
     width: size.width,
-  });
+  };
+  await writeCache(admin, key, answer);
+  return NextResponse.json(answer);
+}
+
+// ─────────────────────────────────────────────────────────────────── the cache
+
+/** What crosses back, hit or miss. */
+type FigureOcclusionAnswer =
+  | {
+      ok: true;
+      asset: { assetPath: string; caption?: string; licence: unknown; provenance: string };
+      boxes: unknown[];
+      width: number;
+      height: number;
+    }
+  | { ok: false; reason: string; detail?: string };
+
+/**
+ * The cache key.
+ *
+ * 🔴 CASE AND SPACING ONLY. "Nephron", "nephron" and "  nephron " are one subject; "kidney" is a
+ * different one and must stay different. Anything cleverer — stemming, synonyms, dropping "the" —
+ * would start MERGING subjects, and a merge here serves one diagram under another's name.
+ */
+function cacheKey(subject: string): string {
+  return subject.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
+}
+
+/**
+ * How long a stored answer stands.
+ *
+ * 🔴 A REFUSAL EXPIRES SOONER THAN A HIT, because the two age differently. A diagram's printed
+ * labels do not move, so a hit is good for a long time. A refusal often means the repositories had
+ * nothing *yet*, or a provider was briefly down — retrying that next month is worth one read.
+ */
+const HIT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const REFUSAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * A stored answer, or null.
+ *
+ * 🔴 IT NEVER THROWS AND NEVER BLOCKS. A cache that can fail the request it was added to speed up
+ * is a downgrade. Every error path here returns null, which costs one re-read and nothing else.
+ */
+async function readCache(admin: SupabaseClient, key: string): Promise<FigureOcclusionAnswer | null> {
+  try {
+    const { data, error } = await admin
+      .from("figure_occlusion_cache")
+      .select("ok,reason,asset_path,width,height,boxes,licence,caption,created_at,hits")
+      .eq("subject", key)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as Record<string, unknown>;
+    const age = Date.now() - new Date(String(row.created_at)).getTime();
+    const fresh = row.ok === true ? age < HIT_TTL_MS : age < REFUSAL_TTL_MS;
+    if (!Number.isFinite(age) || !fresh) return null;
+
+    // Counted, not awaited: the number is for a later look at what is worth keeping warm, and a
+    // learner must never wait on bookkeeping.
+    void admin
+      .from("figure_occlusion_cache")
+      .update({ hits: (typeof row.hits === "number" ? row.hits : 0) + 1 })
+      .eq("subject", key)
+      .then(() => undefined);
+
+    if (row.ok !== true) {
+      return { ok: false, reason: typeof row.reason === "string" ? row.reason : "unknown" };
+    }
+    // 🔴 A STORED ROW IS RE-CHECKED LIKE ANY OTHER INPUT. It was written by an earlier version of
+    // this route, which is a different program: a row missing its width would otherwise reach the
+    // renderer as `viewBox="0 0 undefined undefined"` and draw the empty framed box this codebase
+    // has already shipped once.
+    const assetPath = typeof row.asset_path === "string" ? row.asset_path : "";
+    const width = typeof row.width === "number" ? row.width : 0;
+    const height = typeof row.height === "number" ? row.height : 0;
+    if (!assetPath || !allowedAssetUrl(assetPath) || width <= 0 || height <= 0 || !Array.isArray(row.boxes)) return null;
+    return {
+      asset: {
+        assetPath,
+        ...(typeof row.caption === "string" && row.caption ? { caption: row.caption } : {}),
+        licence: row.licence,
+        provenance: "reference_image",
+      },
+      boxes: row.boxes,
+      height,
+      ok: true,
+      width,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Store an answer. Swallows its own failures, for the same reason `readCache` does. */
+async function writeCache(admin: SupabaseClient, key: string, answer: FigureOcclusionAnswer): Promise<void> {
+  try {
+    // 🔴 ONE ROW SHAPE FOR BOTH OUTCOMES, WITH NULLS RATHER THAN ABSENCES. A refusal upserted over
+    // an older hit must CLEAR that hit's picture — omitting the columns would leave the stale
+    // asset in place beside `ok: false`, which is a row that contradicts itself.
+    await admin.from("figure_occlusion_cache").upsert(
+      {
+        asset_path: answer.ok ? answer.asset.assetPath : null,
+        boxes: answer.ok ? answer.boxes : null,
+        caption: answer.ok ? answer.asset.caption ?? null : null,
+        created_at: new Date().toISOString(),
+        height: answer.ok ? answer.height : null,
+        hits: 0,
+        licence: answer.ok ? answer.asset.licence : null,
+        ok: answer.ok,
+        reason: answer.ok ? null : answer.reason,
+        subject: key,
+        width: answer.ok ? answer.width : null,
+      },
+      { onConflict: "subject" },
+    );
+  } catch {
+    // A cache that cannot be written is a slow product, not a broken one.
+  }
+}
+
+/** Record why no diagram, and say so. */
+async function refuse(admin: SupabaseClient, key: string, reason: string, detail?: string): Promise<NextResponse> {
+  const answer: FigureOcclusionAnswer = { ok: false, reason, ...(detail ? { detail } : {}) };
+  await writeCache(admin, key, answer);
+  return NextResponse.json(answer, { status: 200 });
 }
