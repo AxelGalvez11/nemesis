@@ -75,16 +75,54 @@ test("🔴 every maker has a maker, and every made thing has a way out", () => {
     // once, when a report row fell through to a plain div.
     assert.match(CONTROLS, new RegExp(`${maker}: "`), `${maker} outputs have no icon, so the row renders a gap`);
   }
-  for (const download of ["downloadDocx", "downloadPdf", "downloadSheet"]) {
-    assert.match(CONTROLS, new RegExp(`${download}\\(`), `${download} is imported but never wired to a row`);
-  }
+  // 🔴 THE DOWNLOADS MOVED INTO THE ARTIFACT CARD, so this asserts they are reachable from THERE.
+  // Left pointed at the panel it would have gone red for the right change, which is how a guard
+  // teaches the next person to delete it rather than move it. The card's own test is below.
 });
 
-test("🔴 the file writers are guarded on the payload, not on the kind", () => {
-  // An output whose markdown failed to save is a row that would download an empty file, which is
-  // worse than a row that plainly does not download.
-  assert.match(CONTROLS, /output\.kind === "document" \|\| output\.kind === "pdf"\) && output\.markdown/);
-  assert.match(CONTROLS, /output\.kind === "sheet" && output\.sheet/);
+test("🔴 the file rows are guarded on the payload, not on the kind", () => {
+  // An output whose content failed to save is a row that would open an empty card, which is the
+  // same dead end wearing a nicer coat.
+  assert.match(CONTROLS, /\(output\.markdown \|\| output\.sheet\)/, "a row can open an artifact with nothing in it");
+});
+
+test("🔴🔴 a made file is an ARTIFACT you open, not a download the row fires", () => {
+  // Owner, 2026-08-25: *"it should create an artifact as 'output' not just straight download."* A
+  // row whose only action is to put a file in Downloads is a link that happens to be listed: you
+  // cannot read what Nemesis wrote before deciding you want it, and seeing your own document again
+  // means downloading it twice.
+  //
+  // Calibration: put `downloadDocx` back on the row's onClick and this reddens.
+  assert.match(CONTROLS, /onClick=\{\(\) => onOpen\(output\)\}/, "the row does not open the artifact");
+  assert.match(CONTROLS, /<OutputPreview /, "the artifact card is never mounted");
+  assert.ok(!/downloadDocx|downloadPdf|downloadSheet/.test(CONTROLS), "🔴 the outputs panel downloads on click again");
+
+  // …and the download is still reachable, one click further in. A preview with no way out would be
+  // the opposite defect.
+  const preview = code("../../components/workspace/learn/output-preview.tsx");
+  for (const download of ["downloadDocx", "downloadPdf", "downloadSheet"]) {
+    assert.match(preview, new RegExp(`${download}\\(`), `${download} is unreachable from the artifact card`);
+  }
+  // 🔴 THE CARD RENDERS THROUGH THE SAME PARSER THE WRITERS USE. A preview built from a second
+  // interpretation would show a table the .docx silently drops, and the reader would find out
+  // after opening Word.
+  assert.match(preview, /docBlocks\(/, "the preview renders markdown by some other route than the writers do");
+});
+
+test("🔴 the finished notice is a Record, because the chain it replaced was already lying", () => {
+  // It ended `: "Note saved to your Library."` — the branch every unnamed kind fell into. Making a
+  // spreadsheet therefore announced a note, saved somewhere it had never been. A chain of ternaries
+  // has no missing case for a compiler to find; a Record over the union does.
+  const session = code("../../components/workspace/learn/use-canvas-session.ts");
+  assert.match(session, /const MADE_NOTICE: Record<DeliverableKind, string>/, "the notice can fall through to the wrong kind again");
+  assert.match(session, /MADE_NOTICE\[kind\]/, "the notice is not read from the record");
+  // 🔴 AND IT MUST NOT SEND ANYBODY TO THE LIBRARY FOR A FILE THAT IS NOT THERE. Documents, PDFs
+  // and spreadsheets live on the canvas as artifacts; only the other three are filed.
+  const notice = session.slice(session.indexOf("const MADE_NOTICE"), session.indexOf("};", session.indexOf("const MADE_NOTICE")));
+  for (const kind of ["document", "pdf", "sheet"]) {
+    const line = notice.split("\n").find((l) => l.trim().startsWith(`${kind}:`)) ?? "";
+    assert.ok(!/Library/.test(line), `🔴 the ${kind} notice sends the learner to the Library, where it is not`);
+  }
 });
 
 test("only Course reaches the turn model; the rest are decisions already made", () => {
@@ -126,4 +164,35 @@ test("🔴 a spreadsheet row is always rectangular, whatever the model returned"
   // A short row shifts every later cell left in the spreadsheet; a long one spills into a column
   // with no header. Both open successfully and are silently wrong.
   assert.match(deliverables, /columns\.map\(\(_, index\) => String\(row\[index\] \?\? ""\)\.trim\(\)\)/);
+});
+
+test("🔴🔴 nothing routes to the old Library", () => {
+  // Owner, 2026-08-25, with a screenshot of `/library/classic` reading "Couldn't reach your notes":
+  // *"i dont want anything to route to this old library."*
+  //
+  // Two links went: the canvas's outputs row and the Library's own documents list — the second
+  // being a navigation OFF the Library to read one of the Library's own documents. Both now open
+  // `OutputPreview`, which fetches the note by path and renders it through the same parser the file
+  // writers use, so a document reads identically wherever it is opened from.
+  //
+  // 🔴 THE ROUTE ITSELF IS NOT DELETED, and this guard does not ask for that. `/library/classic` is
+  // still reachable by typing it, and `library-v2` is untouched — what the owner objected to is
+  // being SENT there. Scanning for the href rather than for the string keeps that distinction, and
+  // keeps this test from reddening on the comments that explain it.
+  const LINKED = /href=\{?[`"'][^`"']*\/library\/classic/;
+  for (const [name, text] of [
+    ["the canvas outputs panel", CONTROLS],
+    ["the Library's documents list", code("../../components/workspace/library/library-outputs.tsx")],
+    ["the artifact card", code("../../components/workspace/learn/output-preview.tsx")],
+  ] as const) {
+    assert.ok(!LINKED.test(text), `🔴 ${name} still links to the old Library`);
+  }
+
+  // And the replacement genuinely opens something: a path alone is not a document.
+  const preview = code("../../components/workspace/learn/output-preview.tsx");
+  assert.match(preview, /readLibraryNote\(notePath\)/, "the card cannot turn a note path into anything to read");
+  assert.match(preview, /Couldn&apos;t open this one/, "a note that fails to load shows an empty card instead of saying so");
+  // 🔴 AND IT MUST NOT OFFER A DOWNLOAD THAT WOULD PRODUCE AN EMPTY FILE while the body is still
+  // in flight — a 0-byte .docx downloads exactly as happily as a good one.
+  assert.match(preview, /disabled=\{!markdown && !output\.sheet\}/, "the download can fire before there is anything to write");
 });

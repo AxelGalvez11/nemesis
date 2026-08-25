@@ -419,6 +419,19 @@ export interface CanvasSession {
   reset: () => void;
 }
 
+/** What the learner is told once a thing exists, and where to find it. 🔴 A `Record` over the whole
+ *  union, so a new deliverable is a compile error here rather than a sentence about the wrong kind
+ *  of artifact in the wrong place. */
+const MADE_NOTICE: Record<DeliverableKind, string> = {
+  document: "Document ready. Open it from the outputs panel to read it or download the Word file.",
+  flashcards: "Flashcards saved to your Library.",
+  note: "Note saved to your Library.",
+  pdf: "PDF ready. Open it from the outputs panel to read it or download the file.",
+  report: "Research saved to your Library, with its sources.",
+  sheet: "Spreadsheet ready. Open it from the outputs panel to see the table or download the CSV.",
+  slides: "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks.",
+};
+
 /** What the busy line says while each maker runs. 🔴 A `Record` over the union, so a new maker is a
  *  compile error here rather than a blank caption at runtime. */
 const MAKER_LABELS: Record<MakerCapability, string> = {
@@ -1229,15 +1242,17 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // 🔴 THE MAKER'S OWN LINE WINS WHERE IT HAS ONE. A research run costs a minute and real
           // money, and "saved to your Library" tells the learner nothing about what it did. The
           // report carries the same sentence in its footer, so the two cannot disagree.
-          result.note
-            ? `${result.note}. Saved to your Library.`
-            : kind === "flashcards"
-            ? "Flashcards saved to your Library."
-            : kind === "slides"
-              ? "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks."
-              : kind === "report"
-                ? "Research saved to your Library, with its sources."
-                : "Note saved to your Library.",
+          // 🔴🔴 A `Record` OVER THE KINDS, AND THE TERNARY CHAIN IT REPLACES WAS ALREADY WRONG. It
+          // ended `: "Note saved to your Library."`, which is the branch every kind it did not name
+          // fell into — so making a spreadsheet said a note had been saved to a place it was not
+          // in. Two lies in one sentence, and nothing could catch it because a chain of ternaries
+          // has no missing case. A Record over `DeliverableKind` is a compile error instead.
+          //
+          // 🔴 AND IT SAYS WHERE THE THING ACTUALLY IS. Notes, flashcards and reports are filed in
+          // the Library. A document, a PDF and a spreadsheet are NOT — they live on the canvas as
+          // artifacts you open from the outputs panel, and telling somebody to look in the Library
+          // for one would send them somewhere it has never been.
+          result.note ? `${result.note}. Saved to your Library.` : MADE_NOTICE[kind],
         );
       } finally {
         makingRef.current = false;

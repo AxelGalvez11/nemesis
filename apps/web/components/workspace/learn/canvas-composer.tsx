@@ -431,7 +431,7 @@ export function CanvasComposer({
    * thing it runs is the thing the list contains.
    */
   const addOffers = useMemo(() => {
-    const offers: Array<{ detail?: string; icon: string; key: string; label: string; run: () => void }> = [
+    const offers: Array<{ detail?: string; icon: string; key: string; label: string; run: () => void; tint?: string }> = [
       // 🔴 EVERY ROW CARRIES ITS DETAIL NOW. The two built-in offers had none, so the menu mixed
       // one-line rows with two-line ones and read as two lists that happened to share a box. With
       // label and detail on one line (see `AddMenuRow`) a missing detail is simply a shorter row.
@@ -453,6 +453,7 @@ export function CanvasComposer({
         icon: copy.icon,
         key: offered,
         label: copy.label,
+        tint: copy.tint,
         // 🔴 SELECTING IS ALL IT DOES. It stages a declaration on the next submission; it starts
         // nothing, calls no model, and changes nothing on the page. That is what keeps it a
         // capability rather than the mode selector §38 bans.
@@ -889,6 +890,7 @@ export function CanvasComposer({
                       key={offer.key}
                       label={offer.label}
                       onClick={() => { setAddOpen(false); offer.run(); }}
+                      tint={offer.tint}
                     />
                   ))}
                 </div>

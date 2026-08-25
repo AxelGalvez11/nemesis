@@ -10,7 +10,8 @@
 //
 // 🔴 EVERY ROW OPENS THE REAL THING. A deck starts an actual review (the same
 // study_decks/study_cards rows the grading RPC schedules); a note opens in the library's own
-// reader at /library/classic. Nothing here is a picture of an artifact.
+// reader — `OutputPreview`, the same card the canvas opens (owner 2026-08-25: nothing routes to
+// the old library any more). Nothing here is a picture of an artifact.
 //
 // 🔴🔴 PRESSING A DECK REVIEWS IT. IT USED TO JUST UNROLL THE TEXT. Owner 2026-08-24, on
 // what a deck in here is for: "I kinda just want … the cards as an artifact that the user can
@@ -51,6 +52,8 @@ import { DeckShare } from "./deck-share";
 import { deckFileName, deckToAnkiText } from "@/lib/workspace/deck-export";
 import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
 import { fileOutput, type OutputKind } from "@/lib/workspace/library-filing";
+import { OutputPreview } from "@/components/workspace/learn/output-preview";
+import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +122,8 @@ function when(iso: string): string {
 export function LibraryOutputs({ userId }: { userId: string | null }) {
   const [decks, setDecks] = useState<DeckRow[]>([]);
   const [notes, setNotes] = useState<NoteRow[]>([]);
+  /** The document open on screen, as the shape the shared card takes. */
+  const [readingNote, setReadingNote] = useState<CanvasOutput | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [openDeck, setOpenDeck] = useState<string | null>(null);
   const [cards, setCards] = useState<Record<string, Card[]>>({});
@@ -661,9 +666,19 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           <ul className="flex flex-col gap-0.5">
             {shownNotes.map((note) => (
               <li className="flex items-center gap-0.5" key={note.path}>
-                {/* The library's own reader, deep-linked — the same route the canvas panel and
-                    /slides already use. */}
-                <a className={cn(ROW, "min-w-0 flex-1 no-underline")} href={`/library/classic?note=${encodeURIComponent(note.path)}`}>
+                {/* 🔴🔴 IT OPENS HERE, NOT AT `/library/classic`. Owner, 2026-08-25: *"i dont want
+                    anything to route to this old library."* This was the last link into it, and it
+                    was a navigation OFF the Library to read one of the Library's own documents —
+                    the surface the owner screenshotted showing "Couldn't reach your notes".
+
+                    🔴 THE SAME CARD THE CANVAS USES, not a second reader. `OutputPreview` takes a
+                    `notePath` and fetches the body itself, so a document reads identically wherever
+                    it is opened from, and there is one place to fix when it is wrong. */}
+                <button
+                  className={cn(ROW, "min-w-0 flex-1 text-left")}
+                  onClick={() => setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })}
+                  type="button"
+                >
                   <NotebookText className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
                   <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
                     {note.title}
@@ -671,7 +686,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                   <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
                     {when(note.updatedAt)}
                   </span>
-                </a>
+                </button>
                 <FolderPicker
                   current={note.folderId}
                   folders={folders}
@@ -684,6 +699,8 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
         )}
       </section>
       )}
+
+      {readingNote && <OutputPreview onClose={() => setReadingNote(null)} output={readingNote} />}
 
       <footer className="flex items-start gap-2 rounded-xl border border-(--ui-stroke-tertiary) px-4 py-3">
         <GraduationCap className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" size={15} strokeWidth={1.8} />

@@ -541,6 +541,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                     key={offered}
                     label={CAPABILITY_COPY[offered].label}
                     onClick={() => { setAddOpen(false); setCapability(offered); }}
+                    tint={CAPABILITY_COPY[offered].tint}
                   />
                 ))}
               </div>

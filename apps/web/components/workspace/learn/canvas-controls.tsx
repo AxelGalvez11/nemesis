@@ -34,7 +34,6 @@ import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { deckDesign } from "@/lib/export/deck-designs";
-import { downloadDocx, downloadPdf, downloadSheet } from "@/lib/export/doc-file";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
@@ -42,6 +41,7 @@ import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/can
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { DeckReview } from "@/components/workspace/study/deck-review";
+import { OutputPreview } from "./output-preview";
 import { SourcePreview } from "./source-preview";
 import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
@@ -157,6 +157,10 @@ export function SourcesControl({
   // Library mounts opens over the canvas; the Library link still works for anyone who
   // wants the shelf. Null until pressed — mounting it is what triggers the study load.
   const [reviewingDeck, setReviewingDeck] = useState<string | null>(null);
+  /** The made artifact open on screen, or null. Mounted beside the panel rather than inside it, so
+   *  closing the panel does not tear the document down mid-read — the same arrangement
+   *  `SourcePreview` has. */
+  const [openedOutput, setOpenedOutput] = useState<CanvasOutput | null>(null);
   const { session } = useAuth();
   const holder = useDismiss(open, () => setOpen(false));
 
@@ -235,7 +239,7 @@ export function SourcesControl({
               three rows returning behind an icon. `outputs-have-no-make-buttons.test.ts` holds it. */}
           <PanelSection label="Outputs">
             {outputs.map((output) => (
-              <OutputRow canvasId={canvas.id} key={output.id} onReviewDeck={setReviewingDeck} output={output} />
+              <OutputRow canvasId={canvas.id} key={output.id} onOpen={setOpenedOutput} onReviewDeck={setReviewingDeck} output={output} />
             ))}
           </PanelSection>
 
@@ -298,6 +302,7 @@ export function SourcesControl({
         <SourcePreview onClose={() => setPreviewing(null)} source={previewing} uid={session?.user.id ?? null} />
       )}
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
+      {openedOutput && <OutputPreview onClose={() => setOpenedOutput(null)} output={openedOutput} />}
     </div>
   );
 }
@@ -534,10 +539,12 @@ function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) =>
  */
 function OutputRow({
   canvasId,
+  onOpen,
   onReviewDeck,
   output,
 }: {
   canvasId: string;
+  onOpen: (output: CanvasOutput) => void;
   onReviewDeck: (deckId: string) => void;
   output: CanvasOutput;
 }) {
@@ -553,11 +560,19 @@ function OutputRow({
   );
   const row = cn(PANEL_ROW, "no-underline");
 
+  // 🔴🔴 A NOTE OPENS THE ARTIFACT CARD, NOT THE OLD LIBRARY. Owner, 2026-08-25, with a screenshot
+  // of `/library/classic` showing "Couldn't reach your notes": *"i dont want anything to route to
+  // this old library."* This was an `<a href="/library/classic?note=…">` — a navigation off the
+  // canvas, to a surface being retired, for the question "what did you just write for me".
+  //
+  // The card fetches the note's body by path (the lists carry titles, not text) and renders it
+  // through the same parser the writers use, so a note is now the same kind of object as a document
+  // or a spreadsheet: something you open where you are.
   if (output.notePath) {
     return (
-      <a className={row} href={`/library/classic?note=${encodeURIComponent(output.notePath)}`}>
+      <button className={row} onClick={() => onOpen(output)} type="button">
         {body}
-      </a>
+      </button>
     );
   }
   if (output.kind === "flashcards" && output.deckId) {
@@ -578,25 +593,18 @@ function OutputRow({
   //
   // 🔴 GUARDED ON THE PAYLOAD, NOT ON THE KIND. An output whose markdown failed to save is a row
   // that would download an empty file, which is worse than a row that plainly does not download.
-  if ((output.kind === "document" || output.kind === "pdf") && output.markdown) {
-    const markdown = output.markdown;
-    const kind = output.kind;
+  // 🔴🔴 THE ROW OPENS THE ARTIFACT; IT NO LONGER DOWNLOADS IT. Owner, 2026-08-25: *"it should
+  // create an artifact as 'output' not just straight download."* A row whose only action is to put
+  // a file in Downloads is a link that happens to be listed — you cannot read what Nemesis wrote
+  // before deciding you want it, and seeing your own document again means downloading it twice.
+  // `OutputPreview` shows it and carries the download button; the file is still built at click
+  // time, one click further in.
+  //
+  // 🔴 STILL GUARDED ON THE PAYLOAD, NOT THE KIND. An output whose content failed to save would
+  // open an empty card, which is the same dead end wearing a nicer coat.
+  if ((output.kind === "document" || output.kind === "pdf" || output.kind === "sheet") && (output.markdown || output.sheet)) {
     return (
-      <button
-        className={row}
-        onClick={() => {
-          void (kind === "pdf" ? downloadPdf(markdown, output.title) : downloadDocx(markdown, output.title));
-        }}
-        type="button"
-      >
-        {body}
-      </button>
-    );
-  }
-  if (output.kind === "sheet" && output.sheet) {
-    const sheet = output.sheet;
-    return (
-      <button className={row} onClick={() => void downloadSheet(sheet, output.title)} type="button">
+      <button className={row} onClick={() => onOpen(output)} type="button">
         {body}
       </button>
     );

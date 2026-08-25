@@ -81,6 +81,15 @@ export interface CapabilityCopy {
   /** A codicon name. `Codicon` is the only icon set on this surface. */
   readonly icon: string;
   /**
+   * The icon's colour, as a CSS custom property name.
+   *
+   * 🔴 A TOKEN NAME RATHER THAN A CLASS, so the one place that renders these rows composes the
+   * utility and nothing else can invent a colour off-palette. The tints and the reason they are
+   * their own tokens live in `desktop-ui.css`; the short version is that `--ui-learner` means
+   * "this came from you" (§35.1) and `--ui-blue` has no dark value.
+   */
+  readonly tint: string;
+  /**
    * What the composer's placeholder asks once this capability is staged.
    *
    * 🔴 IT LIVES ON THE RECORD SO THE TYPE FORCES ONE FOR EVERY CAPABILITY. Both composers used to
@@ -97,7 +106,13 @@ export const CAPABILITY_COPY: Record<ComposerCapability, CapabilityCopy> = {
   // learner gets, never what the system does with it.
   // "What do you want to learn?" is the owner-specified pairing, 2026-08-23: the chip names the
   // capability, the placeholder asks the one question a course needs answered.
-  course: { detail: "Build a learning path", icon: "map", label: "Course", prompt: "What do you want to learn?" },
+  course: {
+    detail: "Build a learning path",
+    icon: "map",
+    label: "Course",
+    prompt: "What do you want to learn?",
+    tint: "--ui-kind-purple",
+  },
   // 🔴 "Get a detailed report" NAMES WHAT THE LEARNER GETS, which is §38's copy rule and also the
   // only honest description: they get a document, not a faster answer. "Search harder" or
   // "Thorough mode" would both describe the machine, and both would be chosen by people who wanted
@@ -110,6 +125,7 @@ export const CAPABILITY_COPY: Record<ComposerCapability, CapabilityCopy> = {
     icon: "telescope",
     label: "Deep research",
     prompt: "What do you want to find out?",
+    tint: "--ui-kind-cyan",
   },
   // 🔴 "WEB SEARCH" IS NOT A SMALLER DEEP RESEARCH, and the copy has to keep them apart or the two
   // rows read as the same offer twice. This one answers the question you asked, now, from live
@@ -121,6 +137,7 @@ export const CAPABILITY_COPY: Record<ComposerCapability, CapabilityCopy> = {
     icon: "globe",
     label: "Web search",
     prompt: "What should Nemesis look up?",
+    tint: "--ui-kind-blue",
   },
   // 🔴 THE FOUR MAKERS NAME THE THING THE LEARNER GETS, NOT THE FORMAT'S FILE EXTENSION. "Document"
   // rather than ".docx", because §38's copy rule is that a control says what you get — and because
@@ -130,24 +147,28 @@ export const CAPABILITY_COPY: Record<ComposerCapability, CapabilityCopy> = {
     icon: "file",
     label: "Document",
     prompt: "What should the document be about?",
+    tint: "--ui-kind-blue",
   },
   pdf: {
     detail: "Write and download a PDF",
     icon: "file-pdf",
     label: "PDF",
     prompt: "What should the PDF be about?",
+    tint: "--ui-kind-red",
   },
   sheet: {
     detail: "Build a table you can open in Excel",
     icon: "table",
     label: "Spreadsheet",
     prompt: "What should the spreadsheet cover?",
+    tint: "--ui-kind-green",
   },
   slides: {
     detail: "Build a slide deck",
     icon: "device-camera-video",
     label: "Presentation",
     prompt: "What should the deck be about?",
+    tint: "--ui-kind-amber",
   },
 };
 
