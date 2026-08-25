@@ -43,14 +43,23 @@ import { buildCanvasHistory, reconstructMoment } from "@/lib/learn/canvas-histor
 import type { TurnSurroundings } from "./canvas-chat";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
-import type { ComposerCapability } from "@/lib/learn/composer-capability";
+import { COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { planTerritories } from "@/lib/learn/curriculum-plan";
 
-/** The capabilities this surface offers. Module-level so the array's identity is stable. */
-// 🔴 TWO NOW, AND THE ORDER IS THE MENU'S ORDER. Course first because it is the one that changes
-// what the canvas BECOMES; Deep research second because it produces a document beside the canvas
-// rather than steering it.
-const CANVAS_CAPABILITIES: readonly ComposerCapability[] = ["course", "research"];
+/**
+ * The capabilities this surface offers: all of them.
+ *
+ * 🔴🔴 IT IS THE LIST ITSELF NOW, AND THE HAND-WRITTEN VERSION HAD ALREADY GONE WRONG ONCE. This
+ * read `["course", "research"]`, which was complete on the day it was written and silently stopped
+ * being so the moment `COMPOSER_CAPABILITIES` grew — the canvas offered two while the front door
+ * offered seven, and nothing failed. That is the SAME defect #831 fixed on the front door, in a
+ * second spelling: a hard-coded list cannot be wrong about itself, which is exactly what makes it
+ * dangerous.
+ *
+ * 🔴 STILL MODULE-LEVEL, because `CanvasComposer` takes it as a prop and a fresh array on every
+ * render would re-run the `useMemo` that builds the menu.
+ */
+const CANVAS_CAPABILITIES: readonly ComposerCapability[] = COMPOSER_CAPABILITIES;
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";

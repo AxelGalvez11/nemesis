@@ -57,6 +57,25 @@ test("🔴 the session composer builds its menu from the list too", () => {
   assert.match(composer, /for \(const offered of capabilities\)/, "the session composer's `+` does not iterate");
 });
 
+test("🔴🔴 and the canvas HANDS it the whole list, which is where the second copy hid", () => {
+  // 🔴 THE COMPOSER ITERATED CORRECTLY AND STILL SHOWED TWO ROWS, because what it was handed was a
+  // hand-written `["course", "research"]` in `learning-canvas.tsx`. Iterating a list that is itself
+  // a stale copy is the same defect one level up — and this guard is the half that was missing when
+  // five capabilities were added on 2026-08-25 and only the front door showed them.
+  //
+  // Calibration: write the array out by name again and this reddens.
+  const canvas = code("../../components/workspace/learn/learning-canvas.tsx");
+  assert.match(
+    canvas,
+    /const CANVAS_CAPABILITIES: readonly ComposerCapability\[\] = COMPOSER_CAPABILITIES;/,
+    "the canvas hands the composer its own copy of the capability list",
+  );
+  assert.ok(
+    !/CANVAS_CAPABILITIES[^=]*=\s*\[/.test(canvas),
+    "🔴 the canvas builds a literal capability list — it will go stale the next time the union grows",
+  );
+});
+
 test("both surfaces read the same copy record, so the two menus cannot disagree", () => {
   for (const path of [HOME, COMPOSER]) {
     const text = code(path);
