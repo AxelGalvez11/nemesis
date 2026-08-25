@@ -197,6 +197,82 @@ const CARDS: readonly Card[] = [
       ],
     },
   },
+  {
+    id: "surface",
+    note: "surface \u00b7 a 3D plot, sampled and rendered",
+    visual: {
+      kind: "surface",
+      learningGoal: "A product of two waves is a surface with alternating peaks and troughs, not a single hill.",
+      caption: "z = sin(x) cos(y) over a six-by-six square.",
+      expression: "sin(x)*cos(y)",
+      xFrom: -3, xTo: 3, yFrom: -3, yTo: 3,
+      xLabel: "x", yLabel: "y", zLabel: "z",
+      grid: [
+        [0.1397, 0.489, 0.7703, 0.9445, 0.9875, 0.8932, 0.6748, 0.3626, -0.0, -0.3626, -0.6748, -0.8932, -0.9875, -0.9445, -0.7703, -0.489, -0.1397],
+        [0.1227, 0.4295, 0.6765, 0.8296, 0.8673, 0.7845, 0.5927, 0.3185, -0.0, -0.3185, -0.5927, -0.7845, -0.8673, -0.8296, -0.6765, -0.4295, -0.1227],
+        [0.0886, 0.3103, 0.4888, 0.5993, 0.6266, 0.5668, 0.4282, 0.2301, -0.0, -0.2301, -0.4282, -0.5668, -0.6266, -0.5993, -0.4888, -0.3103, -0.0886],
+        [0.0423, 0.1479, 0.2331, 0.2858, 0.2988, 0.2703, 0.2042, 0.1097, -0.0, -0.1097, -0.2042, -0.2703, -0.2988, -0.2858, -0.2331, -0.1479, -0.0423],
+        [-0.01, -0.0349, -0.055, -0.0675, -0.0706, -0.0638, -0.0482, -0.0259, 0.0, 0.0259, 0.0482, 0.0638, 0.0706, 0.0675, 0.055, 0.0349, 0.01],
+        [-0.0608, -0.213, -0.3355, -0.4114, -0.4301, -0.389, -0.2939, -0.1579, 0.0, 0.1579, 0.2939, 0.389, 0.4301, 0.4114, 0.3355, 0.213, 0.0608],
+        [-0.1033, -0.3614, -0.5693, -0.6981, -0.7299, -0.6602, -0.4987, -0.268, 0.0, 0.268, 0.4987, 0.6602, 0.7299, 0.6981, 0.5693, 0.3614, 0.1033],
+        [-0.1313, -0.4596, -0.724, -0.8878, -0.9282, -0.8396, -0.6343, -0.3408, 0.0, 0.3408, 0.6343, 0.8396, 0.9282, 0.8878, 0.724, 0.4596, 0.1313],
+        [-0.1411, -0.4939, -0.7781, -0.9541, -0.9975, -0.9023, -0.6816, -0.3663, 0.0, 0.3663, 0.6816, 0.9023, 0.9975, 0.9541, 0.7781, 0.4939, 0.1411],
+        [-0.1313, -0.4596, -0.724, -0.8878, -0.9282, -0.8396, -0.6343, -0.3408, 0.0, 0.3408, 0.6343, 0.8396, 0.9282, 0.8878, 0.724, 0.4596, 0.1313],
+        [-0.1033, -0.3614, -0.5693, -0.6981, -0.7299, -0.6602, -0.4987, -0.268, 0.0, 0.268, 0.4987, 0.6602, 0.7299, 0.6981, 0.5693, 0.3614, 0.1033],
+        [-0.0608, -0.213, -0.3355, -0.4114, -0.4301, -0.389, -0.2939, -0.1579, 0.0, 0.1579, 0.2939, 0.389, 0.4301, 0.4114, 0.3355, 0.213, 0.0608],
+        [-0.01, -0.0349, -0.055, -0.0675, -0.0706, -0.0638, -0.0482, -0.0259, 0.0, 0.0259, 0.0482, 0.0638, 0.0706, 0.0675, 0.055, 0.0349, 0.01],
+        [0.0423, 0.1479, 0.2331, 0.2858, 0.2988, 0.2703, 0.2042, 0.1097, -0.0, -0.1097, -0.2042, -0.2703, -0.2988, -0.2858, -0.2331, -0.1479, -0.0423],
+        [0.0886, 0.3103, 0.4888, 0.5993, 0.6266, 0.5668, 0.4282, 0.2301, -0.0, -0.2301, -0.4282, -0.5668, -0.6266, -0.5993, -0.4888, -0.3103, -0.0886],
+        [0.1227, 0.4295, 0.6765, 0.8296, 0.8673, 0.7845, 0.5927, 0.3185, -0.0, -0.3185, -0.5927, -0.7845, -0.8673, -0.8296, -0.6765, -0.4295, -0.1227],
+        [0.1397, 0.489, 0.7703, 0.9445, 0.9875, 0.8932, 0.6748, 0.3626, -0.0, -0.3626, -0.6748, -0.8932, -0.9875, -0.9445, -0.7703, -0.489, -0.1397],
+      ],
+    },
+  },
+  {
+    id: "macromolecule",
+    note: "macromolecule \u00b7 a real structure, spun in 3D",
+    visual: {
+      kind: "macromolecule",
+      learningGoal: "Haemoglobin is four subunits, each holding one haem group, which is what lets one molecule carry four oxygens.",
+      caption: "Haemoglobin.",
+      accession: "4HHB",
+      title: "Haemoglobin",
+    },
+  },
+  {
+    id: "score",
+    note: "score \u00b7 music notation, engraved from ABC",
+    visual: {
+      kind: "score",
+      learningGoal: "The tune rises through the first phrase and answers it by falling back to the tonic.",
+      caption: "Ode to Joy, opening phrase.",
+      abc: "X:1\nT:Ode to Joy\nM:4/4\nL:1/4\nK:D\nFF G A | A G F E | D D E F | F3/2 E1/2 E2 |",
+    },
+  },
+  {
+    id: "circuit",
+    note: "circuit \u00b7 the claimed equivalent resistance is recomputed",
+    visual: {
+      kind: "circuit",
+      learningGoal: "Two equal resistors in parallel halve, so the pair behaves as one 50 ohm resistor in series with the rest.",
+      caption: "A 25 ohm resistor in series with two 100 ohm resistors in parallel.",
+      supply: { label: "9 V" },
+      elements: {
+        arrangement: "series",
+        parts: [
+          { component: "resistor", label: "R1", value: "25 \u03a9", ohms: 25 },
+          {
+            arrangement: "parallel",
+            parts: [
+              { component: "resistor", label: "R2", value: "100 \u03a9", ohms: 100 },
+              { component: "resistor", label: "R3", value: "100 \u03a9", ohms: 100 },
+            ],
+          },
+        ],
+      },
+      equivalentOhms: 75,
+    },
+  },
 ];
 
 export default function VisualCardsPreview() {

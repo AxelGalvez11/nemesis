@@ -86,9 +86,40 @@ export function SurfacePlot({ visual }: { visual: SurfaceVisual }) {
           }
           return typeof probe.fillStyle === "string" ? probe.fillStyle : fallback;
         };
+        /**
+         * Is this a colour that actually covers what is behind it? `getComputedStyle` answers
+         * `rgba(0, 0, 0, 0)` for an unpainted element, which is not black — it is nothing.
+         */
+        const opaque = (value: string): boolean => {
+          const channels = /^rgba?\(([^)]+)\)/.exec(value);
+          if (!channels) return Boolean(value) && value !== "transparent";
+          const parts = channels[1]!.split(/[,/]/).map((part) => part.trim());
+          return parts.length < 4 || Number(parts[3]) > 0.9;
+        };
+
+        /** The ground under the sheet: the nearest ancestor that actually paints one. */
+        const paperOf = (from: HTMLElement): string => {
+          for (let node: HTMLElement | null = from; node; node = node.parentElement) {
+            const value = getComputedStyle(node).backgroundColor;
+            if (opaque(value)) return value;
+          }
+          return theme === "dark" ? "#0b0d11" : "#ffffff";
+        };
+
+        // 🔴 THE RAMP RUNS FROM THE PAGE TOWARDS THE INK. IT USED TO READ `--ui-accent`, WHICH IS
+        // NOT AN ACCENT. desktop-ui.css calls that token "the CHROME TINT" in its own comment and
+        // resolves it to #404040 in light mode; the low end was then that same tint lerped 60%
+        // further towards the text colour. Both ends therefore landed in near-black, the sheet
+        // rendered as one flat dark shape, and the relief the drawing exists to show was gone.
+        //
+        // There is no colour to swap in, either: this product is deliberately monochrome, and
+        // `--ui-action` — the real accent — is #0a0a0c. So relief has to be carried by VALUE.
+        // The sheet spans paper-to-ink with troughs dark and peaks light, which is the direction
+        // a lit surface actually runs and so the one the eye reads without being told.
         const ink = new three.Color(normalise(styles.color, "#444444"));
-        const accent = new three.Color(normalise(styles.getPropertyValue("--ui-accent").trim(), "#6e6e6e"));
-        const low = accent.clone().lerp(ink, 0.6);
+        const paper = new three.Color(normalise(paperOf(element), theme === "dark" ? "#0b0d11" : "#ffffff"));
+        const valley = paper.clone().lerp(ink, 0.42);
+        const peak = paper.clone().lerp(ink, 0.08);
 
         const rows = visual.grid.length;
         const cols = visual.grid[0]?.length ?? 0;
@@ -110,7 +141,7 @@ export function SurfacePlot({ visual }: { visual: SurfaceVisual }) {
             positions[at] = -1 + (2 * col) / (cols - 1);
             positions[at + 1] = cell === null ? 0 : (-0.5 + t) * 2 * Z_RELIEF * 0.5;
             positions[at + 2] = 1 - (2 * row) / (rows - 1);
-            shade.copy(low).lerp(accent, t);
+            shade.copy(valley).lerp(peak, t);
             colours[at] = shade.r;
             colours[at + 1] = shade.g;
             colours[at + 2] = shade.b;
@@ -133,17 +164,65 @@ export function SurfacePlot({ visual }: { visual: SurfaceVisual }) {
         geometry.setAttribute("position", new three.BufferAttribute(positions, 3));
         geometry.setAttribute("color", new three.BufferAttribute(colours, 3));
         geometry.setIndex(indices);
-        geometry.computeVertexNormals();
+        // No normals: nothing in this scene is lit, so computing and uploading them is pure cost.
 
-        const material = new three.MeshLambertMaterial({ side: three.DoubleSide, vertexColors: true });
+        // 🔴 UNLIT, AND OFFSET IN DEPTH UNDER THE LATTICE. Lambert shading multiplied the height
+        // ramp by the lights, which is a second signal fighting the first — flat vertex colour
+        // keeps the ramp exactly as computed, and the ramp is the thing carrying the relief.
+        //
+        // The sheet still earns its place, because it does the one job a bare wireframe cannot: it
+        // OCCLUDES the lattice behind it. Hidden lines are what separate a peak from a trough; a
+        // wireframe you can see straight through is famously ambiguous in both directions. The
+        // polygon offset pushes the sheet a hair further from the camera so the lines drawn on top
+        // of it come out solid rather than stitching in and out of the surface they lie on.
+        const material = new three.MeshBasicMaterial({
+          side: three.DoubleSide,
+          vertexColors: true,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
         const mesh = new three.Mesh(geometry, material);
         scene.add(mesh);
 
-        // The wire over the sheet is the pedagogy: a calculus text draws surfaces as grids because
-        // the grid lines ARE the traces x = c and y = c the course reasons about.
+        // 🔴 THE LATTICE IS BUILT BY HAND RATHER THAN FROM `WireframeGeometry`. That helper draws
+        // every edge of every triangle, so it also draws the diagonal each quad happened to be
+        // split along — the viewer then sees a triangulated mesh, which is an artefact of how the
+        // surface was tessellated and not something any course reasons about.
+        //
+        // What a calculus text draws is the traces: hold x and walk y, hold y and walk x. Those
+        // are precisely the rows and columns of the grid, so they are emitted directly. Segments
+        // touching a hole are dropped for the same reason the triangles around it were.
+        const lattice: number[] = [];
+        const solid = (row: number, col: number) => (visual.grid[row]?.[col] ?? null) !== null;
+        const span = (rowA: number, colA: number, rowB: number, colB: number) => {
+          if (!solid(rowA, colA) || !solid(rowB, colB)) return;
+          const from = (rowA * cols + colA) * 3;
+          const to = (rowB * cols + colB) * 3;
+          lattice.push(
+            positions[from]!,
+            positions[from + 1]!,
+            positions[from + 2]!,
+            positions[to]!,
+            positions[to + 1]!,
+            positions[to + 2]!,
+          );
+        };
+        for (let row = 0; row < rows; row += 1) {
+          for (let col = 0; col < cols - 1; col += 1) span(row, col, row, col + 1);
+        }
+        for (let col = 0; col < cols; col += 1) {
+          for (let row = 0; row < rows - 1; row += 1) span(row, col, row + 1, col);
+        }
         const wire = new three.LineSegments(
-          new three.WireframeGeometry(geometry),
-          new three.LineBasicMaterial({ color: ink, opacity: 0.18, transparent: true }),
+          new three.BufferGeometry().setAttribute(
+            "position",
+            new three.BufferAttribute(new Float32Array(lattice), 3),
+          ),
+          // 🔴 NOT 0.18, WHICH IS WHERE THIS STARTED. Ink at that alpha over a sheet that was also
+          // ink is not a faint lattice, it is no lattice: the plot read as a solid dark shape with
+          // no depth in it. The lattice is the drawing, so it is weighted like one.
+          new three.LineBasicMaterial({ color: ink, opacity: 0.55, transparent: true }),
         );
         scene.add(wire);
 
@@ -185,10 +264,8 @@ export function SurfacePlot({ visual }: { visual: SurfaceVisual }) {
           make(visual.zLabel ?? "z", -1, floor + 2 * Z_RELIEF * 0.5 + 0.38, 1);
         }
 
-        scene.add(new three.AmbientLight(0xffffff, 1.1));
-        const sun = new three.DirectionalLight(0xffffff, 1.6);
-        sun.position.set(2, 3, 1.5);
-        scene.add(sun);
+        // No lights: every material in this scene is unlit by choice (see the sheet above), so a
+        // light here would cost a uniform upload per draw and change nothing on screen.
 
         const draw = () => renderer.render(scene, camera);
         let controls: { dispose: () => void } | null = null;

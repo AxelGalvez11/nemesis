@@ -78,18 +78,25 @@
      so no body copy is ever set on colour. Both properties: -webkit- for Safari,
      which still needs the prefix for mask-image on some versions. */
   -webkit-mask-image: radial-gradient(
-    ellipse 62% 58% at 68% 44%,
+    /* 🔴 THE VERTICAL RADIUS HAS TO REACH TRANSPARENT INSIDE THE BOX. At 60% from a
+       centre of 44%, the fade finished at -7.6% — i.e. above the top of the image —
+       so the mask was still fully opaque where the picture stopped, and the wash
+       ended in a hard horizontal line straight across the hero. It was invisible only
+       while the art was a pale blue nothing; with real colour in it, it cut across the
+       lede on a phone. 52% from 48% lands the fade at 3.3% and 92.7%, inside the box
+       at both ends. Change these two numbers together or the edge comes back. */
+    ellipse 62% 52% at 68% 48%,
     #000 0%,
-    rgba(0, 0, 0, 0.86) 38%,
-    rgba(0, 0, 0, 0.34) 66%,
-    transparent 84%
+    #000 46%,
+    rgba(0, 0, 0, 0.55) 70%,
+    transparent 86%
   );
   mask-image: radial-gradient(
-    ellipse 62% 58% at 68% 44%,
+    ellipse 62% 52% at 68% 48%,
     #000 0%,
-    rgba(0, 0, 0, 0.86) 38%,
-    rgba(0, 0, 0, 0.34) 66%,
-    transparent 84%
+    #000 46%,
+    rgba(0, 0, 0, 0.55) 70%,
+    transparent 86%
   );
   /* Light mode is a white page: the art has to sit far back or it shouts. Dark
      mode is a black page, where the same opacity reads as almost nothing, so it
@@ -102,11 +109,110 @@
 :root[data-theme="dark"] .nhero-glow img { opacity: 0.72; }
 
 /* The object rides its own slower offset, so it separates from the light behind
-   it. `translateY(clamp(...))` is the static placement from home.css and has to
-   survive, which is why it is repeated here rather than overridden. */
+   it. The static placement from home.css has to survive the parallax, which is why
+   it is repeated inside the calc rather than overridden — and it is a much larger
+   push down now, for the reason set out under the crop below. */
 .nhero-organism {
-  transform: translate3d(0, calc(clamp(0px, 1.4vw, 22px) + var(--p) * 190px), 0);
+  /* 🔴 `align-self: start` IS LOAD-BEARING. The grid centres its items, so an object
+     taller than the row overflows it EQUALLY at both ends — the first version of this
+     crop quietly took the top off the head as well, which is the one part that has to
+     survive. Anchored to the top of the row, everything past the cap leaves at the
+     bottom, and the offset below decides how much. */
+  align-self: start;
+  transform: translate3d(0, calc(clamp(60px, 12vw, 190px) + var(--p) * 190px), 0);
   will-change: transform;
+}
+
+/* ── THE CHARACTER IS BIG NOW, AND THE FRAME CUTS IT OFF ──────────────────────
+
+   The owner's reference is x.ai's bot: the body is not a small round mark placed
+   politely inside its column, it is a presence LEANING INTO the frame with its lower
+   edge running off the bottom of the section.
+
+   🔴 THE SIZE WAS NEVER COMING FROM WHERE IT LOOKED LIKE IT WAS COMING FROM.
+   home.css sizes `.nhero-organism > *`, which is the `.mascot` wrapper — but
+   `BloubBot` writes `width`/`height` ATTRIBUTES on its own `<svg>` from its `size`
+   prop, and `.mascot` centres it. So the wrapper grew to 680px while the body stayed
+   at the 300 the prop asked for, centred in all that empty space. Sizing the svg is
+   what actually makes the character bigger.
+
+   Scaling in CSS rather than by raising the prop keeps it fluid and costs nothing in
+   behaviour: the gaze maths reads `getBoundingClientRect()`, so the eyes track
+   correctly at whatever size the box ends up.
+
+   🔴 IT IS OUT OF FLOW, AND THAT IS THE WHOLE TRICK. Two earlier versions of this
+   failed for the same underlying reason: while the body is a normal flow item, it is
+   the tallest thing in the hero, so it SETS the height it is supposed to be cropped
+   by. Grow it and the section grows with it and nothing is ever cut — it only looked
+   cropped on a 900px window because the extra height fell below the fold, which
+   reverses on a taller screen. Capping the section then cuts the TOP of the head off
+   too, because both the flex line and the grid row centre their contents.
+
+   Taking it out of flow ends the argument: the row height comes from `min-height`
+   below, the copy decides how tall the hero is, and the body is free to be any size
+   at all and overflow. `.nhero` is already `overflow: hidden` (home.css put it there
+   for the column overflow), so the section edge does the cutting — no new wrapper,
+   and no panel for the character to sit in, which home.css is explicit about.
+
+   🔴 THE CUT LANDS BELOW THE EYES AND MUST STAY THERE. It takes the bottom of the
+   body and a slice of the right. Pushing further — the obvious way to show "more of
+   the upper left" — takes the face with it, and a character whose eyes are outside
+   the frame is not a character, it is a black circle. */
+.nhero-organism {
+  position: relative;
+  /* What the row is worth WITHOUT the character in it. The copy is usually taller
+     than this on desktop; it matters on the short-and-wide windows where it is not. */
+  min-height: min(52vw, 68svh, 600px);
+  margin-right: 0;
+}
+.nhero-organism .mascot {
+  position: absolute;
+  /* 🔴 NEGATIVE, AND MEASURED AGAINST THE BODY RATHER THAN THE BOX. The svg's
+     viewBox carries a wide empty margin so decor states have somewhere to spray, so
+     the body is only about two thirds of the box and sits centred in it. Positioning
+     by the box therefore puts the face far lower in the frame than the number
+     suggests, and the margin grows with the size — make the character bigger without
+     touching this and the face moves DOWN. */
+  top: clamp(-170px, -7vw, -24px);
+  /* Right of centre and running out through the right edge of the section. */
+  left: clamp(-40px, 4vw, 90px);
+  width: min(78vw, 136svh, 1180px) !important;
+  height: min(78vw, 136svh, 1180px) !important;
+  min-height: 0;
+}
+.nhero-organism .mascot svg {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 880px) {
+  /* 🔴 WHOLE ON A PHONE, DELIBERATELY. Stacked, the character sits between the copy
+     and nothing else, so a crop has no frame edge to read against — it just looks
+     like a picture that failed to load. It gets the extra size without the cut, which
+     means going back into normal flow. */
+  .nhero-organism {
+    min-height: 0;
+  }
+  .nhero-organism .mascot {
+    position: static;
+    width: clamp(260px, 86vw, 520px) !important;
+    height: clamp(260px, 86vw, 520px) !important;
+    margin-inline: auto;
+  }
+}
+
+@media (max-width: 880px) {
+  /* 🔴 WHOLE ON A PHONE, DELIBERATELY. Stacked, the character sits between the
+     copy and nothing else, so a crop has no frame edge to read against — it just
+     looks like a picture that failed to load. It gets the extra size without the
+     cut. */
+  .nhero-organism {
+    margin-right: 0;
+  }
+  .nhero-organism > * {
+    width: clamp(260px, 86vw, 520px) !important;
+    height: clamp(260px, 86vw, 520px) !important;
+  }
 }
 
 /* THE HEADLINE IS THREE WORDS NOW, NOT TWO. home.css caps it at 9ch to force
@@ -215,6 +321,23 @@
   min-height: clamp(300px, 46vw, 520px);
   padding: clamp(56px, 8vw, 104px) 0;
 }
+/* 🔴 A FLEX ITEM WITH NO `width` DOES NOT FILL ITS CONTAINER, IT SIZES TO CONTENT.
+   `.band` is a flex row and `.wrap` (globals.css) only sets `max-width: 1180px`, so
+   inside a band the wrapper takes its MAX-CONTENT width — 1180px — and then refuses
+   to shrink below its min-content, because `min-width` defaults to `auto` on a flex
+   item. On a 390px phone that left the figures band 1124px wide inside a 390px
+   section, with `overflow: hidden` quietly swallowing the missing 734px: cards
+   scrolled away into a region that was clipped rather than off-screen, and the track
+   the finger was dragging was three times wider than the phone.
+
+   `.band-in` already carries `width: 100%` for exactly this reason; this covers the
+   figures band, which uses `.wrap` on its own, and any band added later. `min-width`
+   has to come with it — `width: 100%` alone still loses to the automatic minimum. */
+.band > .wrap {
+  width: 100%;
+  min-width: 0;
+}
+
 .band-art {
   position: absolute;
   z-index: -1;
@@ -281,34 +404,92 @@
 .band[data-figs] .band-in p {
   max-width: 46ch;
 }
-/* Three across at desktop. It was two when there were four figures; there are nine
-   now — the full set the renderer can draw — and a 2-wide column of nine is a
-   scroll rather than a display. `align-items: start` because the figures have
-   genuinely different heights and stretching them would crop or letterbox. */
-.band-figs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(12px, 1.5vw, 20px);
-  align-items: start;
+/* ── THE CAROUSEL ─────────────────────────────────────────────────────────────
+   Sixteen figures is far too many to lay out as a grid — as one it was a wall of
+   thumbnails you scrolled past. As a track you meet them one at a time, and the
+   3D ones lead.
+
+   The scroller is the platform's, not a JS slider: `scroll-snap-type` plus
+   `overflow-x` gives touch swipe, trackpad swipe, a scrollbar, arrow keys and iOS
+   momentum for free. See FigureCarousel.tsx. */
+.carou {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 1.6vw, 20px);
 }
-.band-figs img {
+.carou-track {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 0 0 4px;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  /* The track is focusable so the arrow keys work; a focus ring on a 1100px-wide
+     scroller is ugly, so it gets a soft one that follows the cards' radius. */
+  border-radius: clamp(12px, 1.4vw, 18px);
+  /* 🔴 HIDDEN, NOT DISABLED (owner: "remove the scroll bar and arrows for it"). The
+     element is still a scroller — swipe, trackpad and arrow keys all still move it,
+     and on a phone that is the ONLY way left to reach card nine. Both properties are
+     needed: `scrollbar-width` covers Firefox, the pseudo-element covers WebKit. */
+  scrollbar-width: none;
+}
+.carou-track::-webkit-scrollbar {
+  display: none;
+}
+.carou-track:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 4px;
+}
+.carou-card {
+  /* 🔴 AN EXPLICIT WIDTH, NOT A PERCENTAGE INSIDE `flex-basis`. `flex: 0 0 clamp(260px,
+     44%, 460px)` looks right and is not: a percentage in a flex-basis clamp resolves
+     against an indefinite main size in a scrolling flex container, so every card stayed
+     460px wide — wider than the whole 334px track on a 390px phone, where you could
+     never see one card whole. `vw` has no such ambiguity. */
+  flex: 0 0 auto;
+  width: min(460px, 78vw);
+  /* `start`, not `center`: with several cards in view, centre-snapping puts card two
+     under the middle at scrollLeft 0, so the track opens on the wrong card. See the
+     note in FigureCarousel.tsx. */
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.carou-card picture { display: block; }
+.carou-card img {
   display: block;
   width: 100%;
-  height: auto;
+  /* A FIXED BOX, NOT THE IMAGE'S OWN RATIO. The figures range from a 1416x350
+     equation to a 1416x1309 molecule; letting each set its own height makes the
+     track jump by hundreds of pixels as it scrolls. One box, and `contain` so no
+     figure is ever cropped — a cropped diagram is a wrong diagram. */
+  height: clamp(200px, 27vw, 300px);
+  object-fit: contain;
+  object-position: center;
   border: 1px solid var(--line);
   border-radius: clamp(10px, 1.1vw, 15px);
-  /* The figure files carry the app's own panel colour, which is a near-neutral
-     tint of the app ground rather than pure white. An explicit background stops
-     a transparent edge from letting the gradient through underneath. */
   background: var(--bg);
+  /* NO PADDING. Each capture was already shot with 26px of its own around the figure,
+     so a padded card padded it twice and left every diagram floating small in a large
+     empty box. */
+}
+.carou-label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 
-@media (max-width: 1000px) {
-  .band-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .carou-track { scroll-behavior: auto; }
 }
-@media (max-width: 640px) {
-  .band-figs { grid-template-columns: minmax(0, 1fr); }
-}
+
 
 /* 🔴 `.band .band-in`, NOT `.band-in`, AND THAT ONE EXTRA CLASS IS THE WHOLE RULE.
    This element carries `.wrap`, which globals.css defines as
