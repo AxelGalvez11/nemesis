@@ -352,7 +352,9 @@ const DOC_SYSTEM =
   "You write a clean, self-contained document in Markdown that a learner will open in Word or as " +
   "a PDF. Start with a single # title line, then sections under ## headings, with short paragraphs " +
   "and bullet lists where they genuinely help. Cover the material faithfully and compactly. Write " +
-  "no preamble, no closing remarks, and no tables or code blocks.";
+  "and a Markdown table wherever the material is genuinely a comparison — Nemesis renders those " +
+  "properly in both the Word file and the PDF. Write no preamble, no closing remarks and no code " +
+  "blocks.";
 
 const SHEET_SYSTEM =
   "You turn material into ONE table and return JSON, nothing else. Shape: " +

@@ -6,10 +6,15 @@
 // So the text is reduced HERE to four shapes, and everything unrecognised becomes a paragraph —
 // which is always renderable and never a crash.
 //
-// 🔴 DELIBERATELY SMALL. It knows headings, bullets, numbered items and paragraphs, because that is
-// what a study document is made of. Tables, images, code fences and block quotes are NOT handled:
+// 🔴 DELIBERATELY SMALL. It knows headings, bullets, numbered items, tables and paragraphs, because
+// that is what a study document is made of. Images, code fences and block quotes are NOT handled:
 // each would need a real answer in three writers, and a half-answer in one of them is how a file
 // comes out looking broken in Word but fine in the preview. They arrive as paragraphs, intact.
+//
+// 🔴 TABLES EARNED THEIR PLACE BY BEING ANSWERED IN ALL THREE. They were a paragraph until
+// 2026-08-25 — a comparison the model wrote came out of Word as a line of pipes — and they are here
+// now because the .docx, the PDF and the reader each grew a real renderer in the same pass. That is
+// the bar for the next shape somebody wants to add.
 //
 // PURE. No I/O, no dependencies.
 
@@ -17,7 +22,8 @@ export type DocBlock =
   | { kind: "heading"; level: 1 | 2 | 3; text: string }
   | { kind: "bullet"; text: string }
   | { kind: "number"; index: number; text: string }
-  | { kind: "paragraph"; text: string };
+  | { kind: "paragraph"; text: string }
+  | { kind: "table"; header: string[]; rows: string[][] };
 
 /** Strips the inline marks the writers apply as style, or drop. Runs last, so a literal `**` that
  *  survives is a `**` the model meant. */
@@ -29,6 +35,18 @@ function plain(text: string): string {
     // A markdown link keeps the words and loses the brackets; the URL would be dead ink on paper.
     .replace(/\[(.+?)\]\((.+?)\)/g, "$1")
     .trim();
+}
+
+/** A GitHub-flavoured separator row: `|---|:--:|` and its variations. */
+const SEPARATOR = /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/;
+
+/** The cells of one `| a | b |` row, with the outer pipes dropped. */
+function cells(line: string): string[] {
+  return line
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => plain(cell.trim()));
 }
 
 export function docBlocks(markdown: string): DocBlock[] {
@@ -53,7 +71,13 @@ export function docBlocks(markdown: string): DocBlock[] {
     if (text) blocks.push({ kind: "paragraph", text });
   };
 
-  for (const raw of markdown.split("\n")) {
+  const lines = markdown.split("\n");
+  /** Set when a table has consumed rows this loop must not re-read. */
+  let skipTo = -1;
+  const next = (index: number) => (lines[index + 1] ?? "").trim();
+
+  for (const [index, raw] of lines.entries()) {
+    if (index < skipTo) continue;
     const line = raw.trim();
     if (!line) {
       closeParagraph();
@@ -77,6 +101,30 @@ export function docBlocks(markdown: string): DocBlock[] {
     if (/^([-*_])\1{2,}$/.test(line)) {
       closeParagraph();
       numbering = 0;
+      continue;
+    }
+
+    // 🔴🔴 A TABLE IS RECOGNISED BY ITS SEPARATOR ROW, NOT BY ITS PIPES. A single line of prose
+    // containing a `|` is not a table, and treating it as one would silently eat the sentence.
+    // GitHub-flavoured markdown requires `|---|---|` under the header, so that is what is matched:
+    // present means the model meant a table, absent means it did not.
+    if (line.startsWith("|") && SEPARATOR.test(next(index))) {
+      closeParagraph();
+      numbering = 0;
+      const header = cells(line);
+      const rows: string[][] = [];
+      // Consume the separator, then every row until the shape ends.
+      let cursor = index + 2;
+      while (cursor < lines.length && lines[cursor]!.trim().startsWith("|")) {
+        const row = cells(lines[cursor]!.trim());
+        // 🔴 RESHAPED TO THE HEADER, the same rule the spreadsheet maker applies: a short row shifts
+        // every later cell left and a long one spills past the last column. Both render as a table
+        // that is quietly wrong, which is worse than one that refuses.
+        rows.push(header.map((_, cell) => row[cell] ?? ""));
+        cursor += 1;
+      }
+      skipTo = cursor;
+      if (header.length) blocks.push({ header, kind: "table", rows });
       continue;
     }
 

@@ -16,6 +16,8 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
+import { ArtifactCard } from "./artifact-card";
+import { OutputPreview } from "./output-preview";
 import { ResearchPlanCard } from "./research-plan-card";
 import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { useAuth } from "@/components/AuthProvider";
@@ -28,7 +30,7 @@ import { CanvasCheck } from "./canvas-check";
 import { buildTestRun, isTestRefusal } from "@/lib/learn/test-run";
 import { lookAt } from "@/lib/mascot/attention";
 import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
-import type { CanvasBlock } from "@/lib/learn/canvas-model";
+import type { CanvasBlock, CanvasOutput } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
 import type { TeachingStrategyId } from "@/lib/learn/teaching-strategy";
@@ -242,6 +244,9 @@ export function LearningCanvas({
     return buildTranscript(policy.evidence, (key) => byKey.get(key) ?? null);
   }, [policy.evidence, policy.territories]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  /** The artifact open in the side panel, or null. Canvas-level rather than inside the card, so the
+   *  panel survives the card being replaced by the next make mid-read. */
+  const [openArtifact, setOpenArtifact] = useState<CanvasOutput | null>(null);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
   const [recording, setRecording] = useState(false);
@@ -1798,7 +1803,19 @@ export function LearningCanvas({
             the turn produced, answered by tapping, with the composer below untouched. What it is
             NOT is a clarification — nothing was ambiguous, the learner declared the capability, and
             this is Nemesis showing what it understood rather than asking what they meant. */}
-        {session.researchPlan && presence !== "preparing" && (
+        {/* 🔴 THE FILE, HANDED BACK IN THE FLOW. Owner, 2026-08-25, with screenshots of the
+            reference: a finished document arrives in the conversation as an object with a name on
+            it, not as a line of notice text pointing at a panel. It sits in the same slot as the
+            plan card and the clarification because it is the same kind of thing — something this
+            turn produced, sitting above an untouched composer. */}
+        {session.madeArtifact && presence !== "preparing" && (
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
+            <ArtifactCard onOpen={() => setOpenArtifact(session.madeArtifact)} output={session.madeArtifact} />
+          </div>
+        )}
+{/* The reader, docked to the right. Mounted at canvas level so it outlives the card. */}
+        {openArtifact && <OutputPreview onClose={() => setOpenArtifact(null)} output={openArtifact} />}
+                {session.researchPlan && presence !== "preparing" && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
             <ResearchPlanCard
               onCancel={session.cancelResearchPlan}

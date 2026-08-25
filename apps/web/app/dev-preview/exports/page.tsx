@@ -13,7 +13,10 @@
 
 import { useState } from "react";
 
+import { ArtifactCard } from "@/components/workspace/learn/artifact-card";
+import { OutputPreview } from "@/components/workspace/learn/output-preview";
 import { docxBlob, downloadDocx, downloadPdf, downloadSheet, pdfBlob, sheetBlob, type SheetData } from "@/lib/export/doc-file";
+import type { CanvasOutput } from "@/lib/learn/canvas-model";
 
 const MARKDOWN = `# Boundary layer separation
 
@@ -33,7 +36,15 @@ When the pressure gradient turns adverse, the slowest fluid nearest the wall sto
 2. Wall shear falls to zero
 3. Separation
 
-Unrecognised markdown, such as | a table | row |, still arrives as prose rather than vanishing.
+## Compared
+
+| Feature | What causes it | What you observe |
+| --- | --- | --- |
+| Spherical shape | Surface area minimisation | A free bubble rounds itself |
+| Rainbow colours | Thin-film interference | Bands shift with angle |
+| Higher pressure | Curved surface under tension | Small bubbles are high-pressure |
+
+A line of pipes with no separator under it, such as | this |, is still prose.
 `;
 
 const SHEET: SheetData = {
@@ -51,8 +62,15 @@ async function signature(blob: Blob, length = 5): Promise<string> {
   return Array.from(head, (byte) => (byte >= 32 && byte < 127 ? String.fromCharCode(byte) : `\\x${byte.toString(16)}`)).join("");
 }
 
+const MADE: CanvasOutput[] = [
+  { createdAt: "", id: "a1", kind: "pdf", markdown: MARKDOWN, title: "The hidden physics of soap bubbles" },
+  { createdAt: "", id: "a2", kind: "document", markdown: MARKDOWN, title: "Soap bubbles, written up" },
+  { createdAt: "", id: "a3", kind: "sheet", sheet: SHEET, title: "Separation cases" },
+];
+
 export default function ExportsPreview() {
   const [report, setReport] = useState<string>("");
+  const [open, setOpen] = useState<CanvasOutput | null>(null);
 
   const check = async () => {
     const docx = await docxBlob(MARKDOWN, "Boundary layer separation");
@@ -69,6 +87,10 @@ export default function ExportsPreview() {
       `csv   ${csv.size} bytes  ${(await signature(csv, 3)) === "\\xef\\xbb\\xbf" ? "OK (BOM present)" : "BROKEN (no BOM — Excel will mojibake)"}`,
     ];
     setReport(lines.join("\n"));
+    // 🔴 THE PDF IS ALSO OPENED, because a byte count proves the table changed the file and nothing
+    // about whether it is READABLE. A blob URL renders in the browser's own viewer, which is the
+    // same renderer the learner's machine will use.
+    (window as unknown as { __pdfUrl?: string }).__pdfUrl = URL.createObjectURL(pdf);
     return lines;
   };
 
@@ -108,6 +130,13 @@ export default function ExportsPreview() {
           </button>
         ))}
       </div>
+      {/* The hand-over card, as it appears in the canvas flow, and the reader it opens. */}
+      <div className="grid gap-2 border-t border-(--ui-stroke-tertiary) pt-6">
+        {MADE.map((output) => (
+          <ArtifactCard key={output.id} onOpen={() => setOpen(output)} output={output} />
+        ))}
+      </div>
+      {open && <OutputPreview onClose={() => setOpen(null)} output={open} />}
       {report && (
         <pre className="m-0 overflow-x-auto rounded-xl bg-(--ui-bg-tertiary) p-4 text-[length:var(--canvas-text-meta)] text-(--ui-text-primary)">
           {report}

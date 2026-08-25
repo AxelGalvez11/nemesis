@@ -316,6 +316,17 @@ export interface CanvasSession {
   startResearchPlan: () => void;
   /** Discard it. Nothing was spent, so there is nothing to undo. */
   cancelResearchPlan: () => void;
+  /**
+   * The artifact this turn just made, handed back IN the conversation rather than only filed in the
+   * outputs panel (owner 2026-08-25, with screenshots of the reference).
+   *
+   * 🔴 THE LAST ONE, NOT A LIST — the panel is the list. This is the receipt for what just
+   * happened, and the next make replaces it.
+   */
+  madeArtifact: CanvasOutput | null;
+  /** Dismiss the receipt. The artifact stays in the outputs panel, which is what makes clearing it
+   *  safe rather than destructive. */
+  clearMadeArtifact: () => void;
   /** Decisions already settled this sitting, as facts for the packet. Empty nearly always. */
   clarified: readonly string[];
   /**
@@ -520,6 +531,20 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * and this is Nemesis showing what it understood before it spends a minute acting on it.
    */
   const [researchPlan, setResearchPlan] = useState<{ question: string; subQuestions: readonly string[] } | null>(null);
+  /**
+   * The artifact this turn just made, so it can be handed back IN THE CONVERSATION.
+   *
+   * 🔴🔴 THE PANEL WAS NOT ENOUGH, AND THE OWNER SHOWED WHY WITH SCREENSHOTS (2026-08-25, *"should
+   * work like this btw"*). A finished file announced itself with one line of notice text and then
+   * lived behind a control the learner had to know to open. In the reference the file arrives where
+   * the work happened: a card in the thread, with its name and its kind on it.
+   *
+   * 🔴 IT IS THE LAST ONE, NOT A LIST. The outputs panel is the list — it already keeps everything
+   * this canvas has made, and a second growing list in the flow would be the same information twice
+   * with two places to fix. This is the receipt for what just happened, and the next make replaces
+   * it.
+   */
+  const [madeArtifact, setMadeArtifact] = useState<CanvasOutput | null>(null);
   /**
    * The learner asked to be checked on this canvas's material (§38's phrase path).
    *
@@ -1237,6 +1262,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           return;
         }
         update((current) => ({ ...current, outputs: [...(current.outputs ?? []), result.output] }));
+        // 🔴 IN THE FLOW AS WELL AS IN THE PANEL. Both, not either: the panel is the canvas's
+        // record and this is the hand-over.
+        setMadeArtifact(result.output);
         // The notice strip, deliberately — see showNotice's own comment above.
         setError(
           // 🔴 THE MAKER'S OWN LINE WINS WHERE IT HAS ONE. A research run costs a minute and real
@@ -2401,6 +2429,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     researchPlan,
     startResearchPlan,
     cancelResearchPlan,
+    madeArtifact,
+    /** Dismisses the receipt. The artifact itself is untouched — it stays in the outputs panel,
+     *  which is what makes clearing this safe rather than destructive. */
+    clearMadeArtifact: useCallback(() => setMadeArtifact(null), []),
     /** Decisions already settled this sitting, as facts for the packet. */
     clarified,
     answerClarification,
