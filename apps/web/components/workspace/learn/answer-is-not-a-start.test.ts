@@ -102,7 +102,12 @@ test("🔴 and the Sources panel is still where they are drawn", () => {
   // Removing them from the composer is only correct because there is somewhere honest they DO
   // appear. If this ever stops being true, the fix above becomes a disappearance.
   const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
-  assert.match(controls, /canvas\.sources\.map/, "the Sources panel no longer lists the sources");
+  // 🔴 TWO LISTS NOW, NOT ONE. The panel stopped mapping `canvas.sources` wholesale on 2026-08-25:
+  // the reference's shape splits what Nemesis went and read (Sources) from what the learner handed
+  // it (Inputs), and this file already computed that split. Both must draw, or half the sources
+  // vanished and this guard would have watched it happen.
+  assert.match(controls, /websites\.map\(/, "the Sources shelf no longer lists what Nemesis read");
+  assert.match(controls, /documents\.map\(/, "the Inputs shelf no longer lists what the learner attached");
   assert.match(controls, /faviconUrl\(host\)/, "the panel stopped showing where a source came from");
 });
 

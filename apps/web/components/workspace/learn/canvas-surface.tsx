@@ -31,8 +31,11 @@
 // children re-enabled, so the invisible strip cannot swallow clicks on the content underneath it.
 
 import type * as React from "react";
+import { useState } from "react";
 
 import { useDeclareImmersiveSurface } from "@/components/workspace/shell/immersive-surface";
+
+import { FileDropOverlay } from "./file-drop-overlay";
 
 /** The reading measure every part of the canvas is set to — document, question, diagnosis and
  *  composer — so the page reads as one column rather than four things that happen to be centred. */
@@ -56,6 +59,12 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
   // toggle. This is what makes the exit below load-bearing rather than decorative, which is why
   // the two live in the same component: you cannot take the claim without taking the `×` with it.
   useDeclareImmersiveSurface();
+  // 🔴 THE CANVAS ACCEPTED DROPS AND SHOWED NOTHING, which is a worse bug than refusing them. The
+  // handlers below landed on 2026-08-20 and were correct; the surface simply never said it was a
+  // target, so a learner holding a PDF over a canvas saw a page that looked inert and had no way
+  // to know the drop would work until they let go. The front door has drawn a highlight since it
+  // was built. This is that half arriving.
+  const [draggingOver, setDraggingOver] = useState(false);
 
   return (
     <main
@@ -72,12 +81,35 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
       // 🔴 `preventDefault` ON DRAGOVER IS THE LOAD-BEARING HALF. Without it the drop event never
       // fires at all: the browser's default is to navigate, and it wins unless the dragover is
       // cancelled first. That is why both handlers are here rather than only the one that acts.
-      onDragOver={onDropFiles ? (event) => { event.preventDefault(); } : undefined}
+      // 🔴 GUARDED BY `currentTarget`, the same rule the front door already carries. Dragging
+      // across a child fires dragleave on the parent, so an unguarded handler strobes the overlay
+      // off and on for the whole traversal of a page this dense.
+      onDragLeave={
+        onDropFiles
+          ? (event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+              setDraggingOver(false);
+            }
+          : undefined
+      }
+      onDragOver={
+        onDropFiles
+          ? (event) => {
+              // 🔴 ONLY A FILE DRAG RAISES IT. The canvas is `data-selectable-text`, so dragging a
+              // highlighted sentence across it is an ordinary thing to do here — and offering to
+              // ingest the learner's own selection is both wrong and alarming.
+              if (!event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault();
+              setDraggingOver(true);
+            }
+          : undefined
+      }
       onDrop={
         onDropFiles
           ? (event) => {
               if (!event.dataTransfer?.files?.length) return;
               event.preventDefault();
+              setDraggingOver(false);
               onDropFiles(event.dataTransfer.files);
             }
           : undefined
@@ -115,6 +147,8 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
           out — which is what the reference does too, and is the price of text that is never
           half-erased. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[56px] bg-(--ui-bg-editor)" />
+
+      {draggingOver && <FileDropOverlay note="Drop any file here to add it to this canvas" />}
 
       {/* 🔴🔴 36px TALL — BACK UP FROM 32, AND THE SENTENCE THAT USED TO END THIS NOTE IS WHY. It
           read: "not measured against anything external, this row has no ChatGPT equivalent to

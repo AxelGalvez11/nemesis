@@ -120,6 +120,10 @@ test("🔴 a canvas linking to a deck means 'go study this'", () => {
   const arrival = after(OUTPUTS, 'get("deck")', 200);
   assert.match(arrival, /setReviewing\(id\)/, "arriving with ?deck= no longer starts the review");
   assert.ok(!/toggleDeck\(id\)/.test(arrival), "arriving with ?deck= only unrolls the text again");
-  assert.match(CANVAS_CONTROLS, /onClick=\{\(\) => setReviewingDeck\(deckId\)\}/, "the canvas output row stopped opening the review");
+  // The row moved into an `OutputRow` component when the panel became three stacked shelves, so
+  // the press calls the prop and the panel supplies the setter. Both halves are asserted: a prop
+  // that nothing passes is a row that opens nothing, and that is the failure this guards.
+  assert.match(CANVAS_CONTROLS, /onClick=\{\(\) => onReviewDeck\(deckId\)\}/, "the canvas output row stopped opening the review");
+  assert.match(CANVAS_CONTROLS, /onReviewDeck=\{setReviewingDeck\}/, "the output row is never given a way to open the review");
   assert.ok(!CANVAS_CONTROLS.includes("/library?deck="), "the canvas navigates away to review a deck it just made");
 });

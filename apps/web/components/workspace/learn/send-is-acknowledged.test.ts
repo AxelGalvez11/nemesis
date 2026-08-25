@@ -308,7 +308,17 @@ test("🔴🔴 a file dropped anywhere on the canvas is attached", () => {
   // 🔴 THE DRAGOVER IS THE LOAD-BEARING HALF: without preventDefault there the drop event never
   // fires, because the browser's navigate-to-file default wins. A guard that only checked onDrop
   // would pass against a handler that can never run.
-  assert.match(surface, /onDragOver=\{[\s\S]{0,120}?preventDefault/, "dragover is not cancelled, so onDrop can never fire");
+  // 🔴 THE WINDOW IS 600, NOT 120, AND THAT IS A FIX TO THE GUARD RATHER THAN TO THE CODE. The
+  // handler grew a `types.includes("Files")` check and the reasoning for it, and a character budget
+  // measured off whatever the handler happened to look like the day it was written reddens on a
+  // comment. What this line cares about is that dragover IS cancelled somewhere inside the handler.
+  assert.match(surface, /onDragOver=\{[\s\S]{0,600}?preventDefault/, "dragover is not cancelled, so onDrop can never fire");
+  // 🔴 AND THE CANVAS NOW SAYS SO WHILE THE FILE IS STILL IN THE AIR. It accepted drops silently
+  // from 2026-08-20 until 2026-08-25: correct, and indistinguishable from inert. A target nobody
+  // can see is a feature nobody finds.
+  assert.match(surface, /<FileDropOverlay /, "the canvas gives no sign it accepts the drop");
+  assert.match(surface, /setDraggingOver\(true\)/, "nothing raises the overlay");
+  assert.match(surface, /setDraggingOver\(false\)/, "the overlay never comes down");
   assert.match(canvasCode, /onDropFiles=\{\(files\) => void session\.attachFiles\(files\)\}/, "the canvas does not hand dropped files to the session");
 });
 

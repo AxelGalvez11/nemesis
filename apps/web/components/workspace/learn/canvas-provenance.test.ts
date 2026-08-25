@@ -90,16 +90,21 @@ test("the Sources panel discloses model origin instead of only 'Nothing attached
     "the sources panel must state where model-sourced knowledge came from",
   );
 
-  // And the sentence it replaces must be CONDITIONAL on there being no model knowledge either —
-  // otherwise both could render and the panel would contradict itself.
+  // 🔴🔴 THE CONTRADICTION IS NOW IMPOSSIBLE BY LAYOUT, AND THAT IS WHY THIS ASSERTION CHANGED
+  // SHAPE RATHER THAN GOING AWAY. It used to require "Nothing attached yet" to sit within 400
+  // characters of a `modelKnowledge` check, because both lived in ONE list: printing the bare
+  // sentence above a model-knowledge row would have had the panel deny and disclose in the same
+  // breath. Since 2026-08-25 they are in different shelves — the sentence is the Inputs shelf's
+  // empty state, model knowledge is a row on the Sources shelf — so "Inputs: nothing attached yet"
+  // beside "Sources: Nemesis knowledge" is not a contradiction, it is the truth about a canvas
+  // started by typing a topic. What still has to hold is that the disclosure is not itself treated
+  // as empty: a shelf whose only content is that line must not print "Nothing read from the web
+  // yet" over the top of it.
   const empty = /Nothing attached yet/.exec(source);
   assert.ok(empty, "the genuinely-empty sentence should still exist for genuinely empty canvases");
-  const guard = source.slice(Math.max(0, empty.index - 400), empty.index);
-  assert.match(
-    guard,
-    /modelKnowledge/,
-    "'Nothing attached yet' must be guarded by the model-knowledge check, not reachable whenever sources are empty",
-  );
+  assert.match(source, /filled=\{modelKnowledge\}/, "the Sources shelf can call itself empty while disclosing model knowledge");
+  // Calibration: drop `filled` from the section and this reddens.
+  assert.match(source, /filled = false/, "PanelSection lost the override that keeps the disclosure from being overwritten");
 });
 
 test("no per-sentence provenance badge is introduced inline", () => {
