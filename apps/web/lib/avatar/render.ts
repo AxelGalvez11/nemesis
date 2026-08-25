@@ -9,7 +9,6 @@ import {
   RAD,
   faceToSkin,
   frontOfSkin,
-  isPlain,
   project,
   quatFromTurn,
   rotate,
@@ -17,35 +16,36 @@ import {
   type Quat,
   type Vec3,
 } from "./space";
+import { radiusAtAngle } from "./vendor/silhouettes";
 import type { AvatarFrame, BodyPose, EyeSpec, Face, Surface } from "./types";
 
 /** Where the body sits when a routine has not moved it. */
-export const REST_BODY: BodyPose = {
-  scale: 1,
-  x: 0,
-  y: 0,
-  stretchX: 1,
-  stretchY: 1,
-  taper: 0,
-  straight: 0,
-  facets: 0,
-  facetAmount: 0,
-};
+export const REST_BODY: BodyPose = { scale: 1, x: 0, y: 0, profile: null };
 
-/** The avatar's own body, with a routine's knobs turned on it. */
+/** The avatar's own body at a routine's size. The SHAPE is applied later; see `reshape`. */
 export function posedSurface(base: Surface, pose: BodyPose = REST_BODY): Surface {
+  if (pose.scale === 1) return base;
   return {
     ...base,
-    width: base.width * pose.scale * pose.stretchX,
-    // Depth follows the width: a body squeezed narrow is squeezed all the way round, and
-    // holding the depth would turn it into a plate that reads as flat the moment it turns.
-    depth: base.depth * pose.scale * pose.stretchX,
-    height: base.height * pose.scale * pose.stretchY,
-    taper: pose.taper,
-    straight: pose.straight,
-    facets: pose.facets,
-    facetAmount: pose.facetAmount,
+    width: base.width * pose.scale,
+    height: base.height * pose.scale,
+    depth: base.depth * pose.scale,
   };
+}
+
+/**
+ * A drawn point, pushed out to an exact silhouette.
+ *
+ * 🔴 AFTER THE LENS, IN THE PICTURE, WHICH IS WHERE THE SOURCE PUTS IT. Its silhouette is a
+ * flat shape with the face painted on a ball behind it; ours is a solid that turns. Applying
+ * the shape in the body's own frame — which the first version did — tips the egg over as the
+ * head rolls, and the only way to make it look upright was to halve the reference's own gaze
+ * numbers. Applied here, those numbers work exactly as written.
+ */
+function reshape([x, y, z]: Vec3, profile: readonly number[] | null | undefined): Vec3 {
+  if (!profile) return [x, y, z];
+  const k = radiusAtAngle(profile as number[], Math.atan2(y, x));
+  return [x * k, y * k, z];
 }
 
 /** Two decimals is under a device pixel at every size this is drawn at. */
@@ -153,6 +153,7 @@ export function drawEye(
    */
   scale = 1,
   offset: { readonly x: number; readonly y: number } = NO_DRIFT,
+  profile: readonly number[] | null = null,
 ): EyeDrawing {
   const height = SHUT_HEIGHT + (spec.height - SHUT_HEIGHT) * blink;
   const cx = (side * spacing) / 2 + spec.x + drift.x;
@@ -161,6 +162,16 @@ export function drawEye(
   const cos = Math.cos(a);
   const sin = Math.sin(a);
 
+  // 🔴 THE WHOLE EYE MOVES, IT IS NOT RESHAPED POINT BY POINT. The silhouette is a radial
+  // push, and pushing every point of an eye by its own angle would stretch the eye into the
+  // shape of the body. The source moves the eye's CENTRE out to wherever the outline is in
+  // that direction and leaves the eye itself alone; anything else and a hexagon's face comes
+  // out with six-sided eyes.
+  const middle = shift(project(rotate(orientation, frontOfSkin(surface, faceToSkin(cx, cy).x * scale, faceToSkin(cx, cy).y * scale).point)), offset);
+  const ride = profile ? radiusAtAngle(profile as number[], Math.atan2(middle[1], middle[0])) - 1 : 0;
+  const rideX = middle[0] * ride;
+  const rideY = middle[1] * ride;
+
   const points: Vec3[] = [];
   let facing = 0;
   for (const [lx, ly] of eyeOutline(spec.width, height)) {
@@ -168,12 +179,99 @@ export function drawEye(
     const ry = lx * sin + ly * cos;
     const on = faceToSkin(cx + rx, cy + ry);
     const skin = frontOfSkin(surface, on.x * scale, on.y * scale);
-    points.push(shift(project(rotate(orientation, skin.point)), offset));
+    const p = shift(project(rotate(orientation, skin.point)), offset);
+    points.push([p[0] + rideX, p[1] + rideY, p[2]]);
     facing += rotate(orientation, skin.normal)[2];
   }
   // Summed over the whole outline rather than tested at the centre: an eye straddling the
   // limb has points on both sides, and the sum is what says which side most of it is on.
   return { d: polygon(points), visible: facing > 0 };
+}
+
+// ── Where an eye IS, for anything drawn on top of it ────────────────────────────
+
+/**
+ * An eye's own frame on screen: where its centre landed, and which way its axes point.
+ *
+ * 🔴 THIS IS HOW NEMESIS PUTS THINGS ON THE FACE WITHOUT PUTTING THEM IN THE ENGINE. The
+ * product draws features the reference has no notion of — reading glasses, a raised brow, a
+ * smirk — and every one of them has to ride the eye: turn with it, foreshorten with it, and
+ * leave with it when the head goes far enough round. Given this matrix they are ordinary
+ * flat shapes drawn in the eye's own coordinates, which is what keeps them out of here.
+ *
+ * `matrix(a, b, c, d, x, y)` in SVG's own order. It takes FACE units in and gives screen
+ * units out, so a feature authored as a fraction of the face is written as that fraction
+ * times `RADIUS` and needs no other conversion.
+ */
+export interface EyeFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly a: number;
+  readonly b: number;
+  readonly c: number;
+  readonly d: number;
+  /** Greater than zero when this eye is on the near side of the body. */
+  readonly depth: number;
+}
+
+/** One face unit, for the difference that measures the tangent. */
+const NUDGE = 1;
+
+export function eyeFrames(surface: Surface, face: Face, opts: DrawOptions = {}): readonly [EyeFrame, EyeFrame] {
+  const head = opts.turn
+    ? { x: face.head.x + opts.turn.x, y: face.head.y + opts.turn.y, z: face.head.z }
+    : face.head;
+  const orientation = quatFromTurn(head);
+  const pose = face.body ?? REST_BODY;
+  const body = posedSurface(surface, pose);
+  const drift = opts.eyeDrift ?? NO_DRIFT;
+
+  // The same ride the eye itself takes, so a feature drawn through this frame stays on the
+  // eye when the body is pushed out into a shape.
+  const plain = (x: number, y: number): Vec3 => {
+    const on = faceToSkin(x, y);
+    const skin = frontOfSkin(body, on.x * pose.scale, on.y * pose.scale);
+    return shift(project(rotate(orientation, skin.point)), pose);
+  };
+
+  const one = (spec: EyeSpec, side: -1 | 1): EyeFrame => {
+    const cx = (side * face.spacing) / 2 + spec.x + drift.x;
+    const cy = spec.y + drift.y;
+    const angle = spec.angle * RAD;
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const middle = plain(cx, cy);
+    const ride = pose.profile
+      ? radiusAtAngle(pose.profile as number[], Math.atan2(middle[1], middle[0])) - 1
+      : 0;
+    const at = (x: number, y: number): Vec3 => {
+      const p = plain(x, y);
+      return [p[0] + middle[0] * ride, p[1] + middle[1] * ride, p[2]];
+    };
+    const here = at(cx, cy);
+    // 🔴 MEASURED, NOT DERIVED. The skin is a superellipsoid turned in space and pushed
+    // through a lens; writing its derivative out by hand would be several pages that have to
+    // be kept in step with `skinPoint` for ever. A central difference either side of the
+    // eye's centre is the same answer to within a rounding error, in four lines, and it
+    // cannot fall out of step because it asks the very function that draws.
+    const alongX = at(cx + ux * NUDGE, cy + uy * NUDGE);
+    const backX = at(cx - ux * NUDGE, cy - uy * NUDGE);
+    const alongY = at(cx - uy * NUDGE, cy + ux * NUDGE);
+    const backY = at(cx + uy * NUDGE, cy - ux * NUDGE);
+    const on = faceToSkin(cx, cy);
+    const normal = frontOfSkin(body, on.x * pose.scale, on.y * pose.scale).normal;
+    return {
+      x: here[0],
+      y: here[1],
+      a: (alongX[0] - backX[0]) / (2 * NUDGE),
+      b: (alongX[1] - backX[1]) / (2 * NUDGE),
+      c: (alongY[0] - backY[0]) / (2 * NUDGE),
+      d: (alongY[1] - backY[1]) / (2 * NUDGE),
+      depth: rotate(orientation, normal)[2],
+    };
+  };
+
+  return [one(face.left, -1), one(face.right, 1)];
 }
 
 // ── The body ────────────────────────────────────────────────────────────────────
@@ -193,14 +291,15 @@ export function bodyPath(
   surface: Surface,
   orientation: Quat,
   offset: { readonly x: number; readonly y: number } = NO_DRIFT,
+  profile: readonly number[] | null = null,
 ): string {
   if (
     surface.type === "sphere" &&
-    // 🔴 AND NO KNOB TURNED. A ball's outline is a circle at every angle, which is why this
-    // shortcut exists; a ball pulled into an egg or pushed toward a hexagon is not a ball,
-    // and taking the shortcut anyway draws a perfect circle for every routine that changes
-    // the body — silently, because a circle is exactly what an untouched body looks like.
-    isPlain(surface) &&
+    // 🔴 AND NO SILHOUETTE. A ball's outline is a circle at every angle, which is why this
+    // shortcut exists; a ball pushed out into an egg is not a ball, and taking the shortcut
+    // anyway draws a perfect circle for every routine that changes the body — silently,
+    // because a circle is exactly what an untouched body looks like.
+    !profile &&
     closeEnough(surface.width, surface.height) &&
     closeEnough(surface.height, surface.depth)
   ) {
@@ -216,7 +315,7 @@ export function bodyPath(
     const lat = -Math.PI / 2 + (i / (LAT_STEPS - 1)) * Math.PI;
     for (let j = 0; j < LON_STEPS; j++) {
       const lon = -Math.PI + (j / (LON_STEPS - 1)) * Math.PI * 2;
-      flat.push(shift(project(rotate(orientation, skinPoint(surface, lon, lat))), offset));
+      flat.push(shift(reshape(project(rotate(orientation, skinPoint(surface, lon, lat))), profile), offset));
     }
   }
   return smoothClosed(densify(convexHull(flat)));
@@ -319,8 +418,8 @@ export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): 
   const body = posedSurface(surface, pose);
   const eyeAlpha = Math.min(1, Math.max(0, face.eyeAlpha ?? 1));
 
-  const left = drawEye(body, orientation, face.left, -1, face.spacing, blink, drift, pose.scale, pose);
-  const right = drawEye(body, orientation, face.right, 1, face.spacing, blink, drift, pose.scale, pose);
+  const left = drawEye(body, orientation, face.left, -1, face.spacing, blink, drift, pose.scale, pose, pose.profile);
+  const right = drawEye(body, orientation, face.right, 1, face.spacing, blink, drift, pose.scale, pose, pose.profile);
 
   // All the front decor in ONE path string, and all the behind decor in another. The
   // component writes `d` onto elements it made once; handing it a list whose length changes
@@ -334,7 +433,7 @@ export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): 
   }
 
   return {
-    body: bodyPath(body, orientation, pose),
+    body: bodyPath(body, orientation, pose, pose.profile),
     left: eyeAlpha > 0.01 ? left.d : "",
     right: eyeAlpha > 0.01 ? right.d : "",
     leftVisible: eyeAlpha > 0.01 && left.visible,

@@ -294,3 +294,34 @@ export function accentPrePaintScript(): string {
     "}catch(e){}})();",
   ].join("");
 }
+
+// ── The character's own ink ───────────────────────────────────────────────────
+//
+// 🔴 ONE COLOUR CONTROL, NOT TWO. The character used to carry its own twelve-colour palette
+// beside the app's accent picker, so a learner could set them to disagree and nothing would
+// tell them which one they had just changed. It reads the accent now, so one choice paints
+// the send button and the character together.
+//
+// 🔴 AND IT LIVES HERE RATHER THAN BESIDE THE CHARACTER, because the marketing site draws
+// the same character and has this file but not that one. A second copy of this rule is a
+// second answer to "what colour is Nemesis".
+
+/**
+ * Ink for an accent choice.
+ *
+ * `"default"` deliberately resolves to the near-black/near-white pair rather than to a colour:
+ * choosing Default in the app REMOVES the accent override so the theme's own neutral applies,
+ * and the character has to say the same thing. A character that went blue while the rest of the
+ * chrome went graphite would make Default look broken.
+ */
+export function characterInk(accent: string | undefined, dark: boolean): string {
+  // 🔴 THE SAME RENDERING THE SEND BUTTON GETS, WHICH IS THE WHOLE POINT OF THE PAIR. The
+  // character and the action control wear one colour; if this returned the raw hue while
+  // the button took the adjusted one, picking Black would put a visible button next to an
+  // invisible character on the dark theme, and picking Cream the other way round on light.
+  // `accentFill` returns nine of the twelve untouched, so for most choices this IS the hue.
+  if (accent && isAccent(accent) && accent !== "default") {
+    return accentFill(ACCENT_COLORS[accent], dark);
+  }
+  return dark ? "#f2f2f4" : "#0a0a0c";
+}

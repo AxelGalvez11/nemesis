@@ -1,19 +1,19 @@
 /* The character's two colour tokens, and the shell it travels in.
  *
- * 🔴 `--bloub-paper` IS NOT DECORATION. The eyes are holes cut through the body and the
+ * 🔴 `--character-paper` IS NOT DECORATION. The eyes are holes cut through the body and the
  * orbit rings pass behind it, so the body is backed by an opaque shape in exactly the
  * page's colour. If this token does not match what is actually behind the character, a
  * ring shows through its eyes and the backing reads as a plate it is standing on. */
 
 :root {
-  --bloub-paper: #f9f9f9;
+  --character-paper: #f9f9f9;
 }
 
 :root[data-theme="dark"] {
-  --bloub-paper: #0b0b0d;
+  --character-paper: #0b0b0d;
 }
 
-.bloub {
+.nemesis-avatar {
   /* The rings reach 1.4× the body radius; the viewBox already allows for them, but
      nothing may be clipped by an ancestor that happens to be smaller. */
   overflow: visible;
@@ -23,11 +23,11 @@
   display: block;
 }
 
-/* 🔴 TWO CLASSES, AND THE SECOND ONE IS NOT DECORATION. This lived ABOVE `.bloub` with a single
-   class selector, so `.bloub`'s `pointer-events: none` — same specificity, later in the file —
+/* 🔴 TWO CLASSES, AND THE SECOND ONE IS NOT DECORATION. This lived ABOVE `.nemesis-avatar` with a single
+   class selector, so `.nemesis-avatar`'s `pointer-events: none` — same specificity, later in the file —
    won every time and the character silently ignored every click. Owner: "clicking on the mascot
    doesn't do anything". Doubling the class outranks it regardless of order. */
-.bloub.bloub-pokeable {
+.nemesis-avatar.nemesis-avatar-pokeable {
   pointer-events: auto;
   cursor: pointer;
 }
@@ -37,29 +37,29 @@
  * 🔴 THE JOURNEY IS A `transform`, NOT A CHANGE OF OFFSETS. The corner→centre walk
  * animates only a composited property, so a 680ms trip across the surface costs no
  * layout. Animating `left`/`bottom` instead would lay the page out on every frame of it. */
-.bloub-dock {
+.character-dock {
   pointer-events: none;
   z-index: 30;
   will-change: transform;
   /* How long a CHANGE OF STATION takes — the walk to the middle and the walk back. It is a
      variable rather than a literal so `prefers-reduced-motion` below can shorten the journey
      without JavaScript having to ask about it. */
-  --bloub-travel: 680ms;
-  /* 🔴 `--bloub-travel-ms` IS AN OVERRIDE THE DOCK SETS PER MOVE, and it is unset most of the
+  --character-travel: 680ms;
+  /* 🔴 `--character-travel-ms` IS AN OVERRIDE THE DOCK SETS PER MOVE, and it is unset most of the
      time. Not every move is a journey: following the composer as it grows under the character
      wants ~140ms, and the very first placement wants none at all so a canvas that opens
      already thinking does not slide in from a corner it was never standing in. Falling back
-     to `--bloub-travel` keeps the reduced-motion rule below authoritative over the one move
-     that carries meaning. See bloub-dock.tsx. */
-  transition: transform var(--bloub-travel-ms, var(--bloub-travel)) cubic-bezier(0.22, 1, 0.36, 1);
+     to `--character-travel` keeps the reduced-motion rule below authoritative over the one move
+     that carries meaning. See character-dock.tsx. */
+  transition: transform var(--character-travel-ms, var(--character-travel)) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bloub-dock {
+  .character-dock {
     /* 🔴 SHORTER, NOT CANCELLED. Where the character is standing IS the message — that
        the system has taken the floor to think. Removing the travel would remove the
        information, not just the motion. */
-    --bloub-travel: 220ms;
+    --character-travel: 220ms;
   }
 }
 
@@ -83,8 +83,8 @@
  * lands harder than it left (gravity is not symmetrical with a jump's push-off), and a small
  * squash on landing. `translateY` is negative upward.
  */
-.bloub-jump {
-  animation: bloub-jump var(--bloub-jump-ms, 620ms) cubic-bezier(0.33, 0, 0.2, 1) both;
+.character-jump {
+  animation: character-jump var(--character-jump-ms, 620ms) cubic-bezier(0.33, 0, 0.2, 1) both;
   /* Squash reads as weight only if the body flattens against the floor, not about its middle.
      Without this the character shrinks symmetrically and looks like it is being scaled rather
      than landing on something. */
@@ -92,7 +92,7 @@
   will-change: transform;
 }
 
-@keyframes bloub-jump {
+@keyframes character-jump {
   0% { transform: translateY(0) scale(1, 1); }
   /* The crouch. Small — a deep one on a 52px character reads as a glitch. */
   12% { transform: translateY(2%) scale(1.07, 0.9); }
@@ -117,13 +117,13 @@
  * behind rainbow arcs; this turns the CREATURE, once, with a lean in and a jelly settle,
  * and draws nothing that is not the body. Origin sits at the visual centre of mass.
  */
-.bloub-spin {
-  animation: bloub-spin var(--bloub-spin-ms, 760ms) cubic-bezier(0.3, 0.05, 0.22, 1) both;
+.character-spin {
+  animation: character-spin var(--character-spin-ms, 760ms) cubic-bezier(0.3, 0.05, 0.22, 1) both;
   transform-origin: 50% 55%;
   will-change: transform;
 }
 
-@keyframes bloub-spin {
+@keyframes character-spin {
   0% { transform: rotate(0deg) scale(1); }
   /* The wind-up: a small counter-lean before committing, like any turn with weight in it. */
   12% { transform: rotate(-16deg) scale(0.95); }
@@ -142,20 +142,20 @@
  * overshoot — same spring family as the poke gestures — then bobs gently for as long as
  * the state holds, so a waiting question keeps feeling alive without shouting.
  */
-.bloub-mark {
+.character-mark {
   transform: translateX(-50%);
   animation:
-    bloub-mark-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
-    bloub-mark-bob 2200ms ease-in-out 380ms infinite;
+    character-mark-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    character-mark-bob 2200ms ease-in-out 380ms infinite;
   will-change: transform;
 }
 
-@keyframes bloub-mark-in {
+@keyframes character-mark-in {
   0% { opacity: 0; transform: translateX(-50%) translateY(35%) scale(0.4); }
   100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
-@keyframes bloub-mark-bob {
+@keyframes character-mark-bob {
   0%, 100% { transform: translateX(-50%) translateY(0); }
   50% { transform: translateX(-50%) translateY(-9%); }
 }
@@ -165,10 +165,10 @@
      information — where the character stands says whether Nemesis has taken the floor — so it
      is only made quicker. A hop carries none: it is a reply to a poke, and the wink in the
      same cycle still answers one. */
-  .bloub-ponder,
-  .bloub-jump,
-  .bloub-spin,
-  .bloub-mark {
+  .character-ponder,
+  .character-jump,
+  .character-spin,
+  .character-mark {
     animation: none;
   }
 }
@@ -180,16 +180,16 @@
  * the hop wrapper: a slow shift of weight, side to side and slightly up on the crossing,
  * the way anyone stands when they are working something out. Physics, not effects (rule 2),
  * and pointed at itself, not the learner (rule 3). The wander of the eyes is the dock's —
- * see the attention interval in bloub-dock.tsx; this is only the body.
+ * see the attention interval in character-dock.tsx; this is only the body.
  *
  * 🔴 SLOWER THAN EVERY GESTURE. A poke's jump is 620ms and reads as an event; this is
  * 2900ms and must read as a state. If it ever reads as an event on a loop, it is wrong.
  */
-.bloub-ponder {
-  animation: bloub-ponder 2900ms ease-in-out infinite;
+.character-ponder {
+  animation: character-ponder 2900ms ease-in-out infinite;
   transform-origin: 50% 82%;
 }
-@keyframes bloub-ponder {
+@keyframes character-ponder {
   0%,
   100% {
     transform: translateY(0) rotate(-1.7deg);

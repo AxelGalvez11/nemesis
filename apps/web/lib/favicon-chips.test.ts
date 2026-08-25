@@ -18,7 +18,7 @@ const FAVICON = strip(readFileSync(new URL("./favicon.ts", import.meta.url), "ut
 const CHIPS = strip(readFileSync(new URL("../components/DomainChips.tsx", import.meta.url), "utf8"));
 const RUN = strip(readFileSync(new URL("../components/RunThinking.tsx", import.meta.url), "utf8"));
 const ROUTE = strip(readFileSync(new URL("../app/api/favicon/route.ts", import.meta.url), "utf8"));
-const DOCK = strip(readFileSync(new URL("../components/bloub/bloub-dock.tsx", import.meta.url), "utf8"));
+const DOCK = strip(readFileSync(new URL("../components/character/character-dock.tsx", import.meta.url), "utf8"));
 
 test("🔴🔴🔴 a chip never asks a third party for the icon — that request names what the learner is reading", () => {
   // This is the whole reason the proxy exists. `faviconUrl` used to return
@@ -113,9 +113,9 @@ test("🔴🔴 the shimmer wraps the WORD, never the box the chips sit in", () =
   // transparent and clips the favicons' own box: the row occupies space and draws nothing.
   // Verified in the browser after the fix — the caption box computes a real colour and the
   // shimmer span computes rgba(0,0,0,0), which is the correct split.
-  const box = DOCK.slice(DOCK.indexOf("bloub-caption"), DOCK.indexOf("</span>", DOCK.indexOf("bloub-caption")));
+  const box = DOCK.slice(DOCK.indexOf("character-caption"), DOCK.indexOf("</span>", DOCK.indexOf("character-caption")));
   assert.ok(box.length > 0, "the caption block moved — this guard is pointed at nothing");
-  assert.ok(!/bloub-caption[^`"]*canvas-thinking-word/.test(DOCK), "the shimmer is back on the caption box and will erase the chips");
+  assert.ok(!/character-caption[^`"]*canvas-thinking-word/.test(DOCK), "the shimmer is back on the caption box and will erase the chips");
   assert.match(DOCK, /<span className="canvas-thinking-word[^"]*">\{caption\}<\/span>/, "the shimmer left the word it animates");
   assert.match(DOCK, /<DomainChips domains=\{domains\} \/>/, "the dock stopped drawing the chips");
   assert.ok(!/domains: _domains/.test(DOCK), "the dock is ignoring the prop again");

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { ACCENT_COLORS, ACCENT_LABELS, ACCENT_PREFERENCES, ACCENT_PROPERTIES, accentFill, accentGlyph, accentPrePaintScript, DEFAULT_ACCENT_SWATCH, isAccent, normalizeStoredAccent } from "./accent";
-import { inkFor } from "./character/look";
+import { characterInk } from "./accent";
 
 test("the palette is the owner's twelve, in the screenshot's order", () => {
   // Two rows of six, reading left to right. Grey is eleventh and is "default".
@@ -175,11 +175,11 @@ test("🔴 the character and the send button wear exactly the same colour", () =
   // colour." The two are computed in different files — lib/accent.ts for the control,
   // lib/character/look.ts for the character — and this is what stops them drifting. It
   // matters more now than it did with six flat hues, because `accentFill` moves three of
-  // them and a version of `inkFor` that skipped that step would put a visible button beside
+  // them and a version of `characterInk` that skipped that step would put a visible button beside
   // an invisible character.
   for (const [accent, hue] of Object.entries(ACCENT_COLORS)) {
     for (const theme of ["light", "dark"] as const) {
-      assert.equal(inkFor(accent, theme), accentFill(hue, theme === "dark"), `${accent} on ${theme}`);
+      assert.equal(characterInk(accent, theme === "dark"), accentFill(hue, theme === "dark"), `${accent} on ${theme}`);
     }
   }
 });
@@ -247,7 +247,7 @@ test("🔴🔴🔴 the character is the accent, and there is no second colour pr
   // accent id in, accent hex out, the theme's neutral pair on Default — is pinned in
   // lib/character/character.test.ts; what THIS guards is the wiring around it: the body is
   // painted from that one mapping, and no second stored colour grows back beside it.
-  assert.match(read("../components/bloub/bloub-bot.tsx"), /inkFor\(color/);
+  assert.match(read("../components/avatar/nemesis-avatar.tsx"), /characterInk\(state\.accent, dark\)/);
   for (const file of ["../components/theme-provider.tsx", "../components/SettingsSurface.tsx"]) {
     assert.ok(!/bloubColor/.test(read(file)), `${file} still carries a second colour preference`);
   }

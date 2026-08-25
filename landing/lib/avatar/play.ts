@@ -14,6 +14,7 @@ import { hash01, hashSigned } from "./noise";
 
 import { ANIMATION_BY_ID, FACE_BY_ID } from "./catalogue";
 import { REST_BODY } from "./render";
+import { PROFILE_SAMPLES } from "./vendor/silhouettes";
 import type { Animation, BodyPose, Dot, EaseName, EyeSpec, Face, Notch, SparkPlan, Step } from "./types";
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
@@ -136,17 +137,29 @@ const mixBody = (a: BodyPose, b: BodyPose, p: number): BodyPose => ({
   scale: mix(a.scale, b.scale, p),
   x: mix(a.x, b.x, p),
   y: mix(a.y, b.y, p),
-  stretchX: mix(a.stretchX, b.stretchX, p),
-  stretchY: mix(a.stretchY, b.stretchY, p),
-  taper: mix(a.taper, b.taper, p),
-  straight: mix(a.straight, b.straight, p),
-  // 🔴 THE ARRIVING SIDE COUNT, THE BLENDED AMOUNT. There is no five-and-a-half-sided
-  // figure; what there is, is a body a fraction of the way toward being six-sided. So the
-  // count switches at once and the DEPTH travels — which, when the amount it travels from
-  // is zero, is a hexagon growing out of a ball rather than replacing it.
-  facets: p < 1 ? (b.facetAmount > 0 ? b.facets : a.facets) : b.facets,
-  facetAmount: mix(a.facetAmount, b.facetAmount, p),
+  profile: mixProfile(a.profile, b.profile, p),
 });
+
+/**
+ * Two silhouettes, halfway.
+ *
+ * 🔴 EVERY PROFILE IS SAMPLED AT THE SAME ANGLES, WHICH IS WHY THIS IS ONE LINE. That is the
+ * source's own trick and the reason its shapes morph without any path-morphing machinery:
+ * point i of one shape corresponds to point i of every other, so a blend is an average.
+ * A missing profile is a round body — a table of ones — so a ball GROWS into an egg.
+ */
+function mixProfile(
+  a: readonly number[] | null,
+  b: readonly number[] | null,
+  p: number,
+): readonly number[] | null {
+  if (!a && !b) return null;
+  const from = a ?? ROUND;
+  const to = b ?? ROUND;
+  return from.map((r, i) => mix(r, to[i] ?? 1, p));
+}
+
+const ROUND: readonly number[] = new Array(PROFILE_SAMPLES).fill(1);
 
 /**
  * Decor blended by index, shortest list padded with the other's dots at nothing.

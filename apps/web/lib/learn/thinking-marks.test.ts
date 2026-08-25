@@ -75,7 +75,7 @@ test("the two doors onto the naming rule agree", () => {
 });
 
 test("🔴 the dock draws the mark from the prop, not from the caption's words", () => {
-  const dock = readFileSync(new URL("../../components/bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../components/character/character-dock.tsx", import.meta.url), "utf8");
   assert.match(dock, /captionMark \? <ThinkingMark kind=\{captionMark\} \/> : null/, "the mark is not drawn");
   const canvas = readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8");
   assert.match(canvas, /const preparingMark = thinkingMark\(\{/, "the canvas no longer derives a mark");
@@ -88,13 +88,13 @@ test("🔴 the shimmer wraps the WORDS, so it cannot paint the mark out", () => 
   // drawn perfectly and painted in nothing — measured in a browser, `getComputedStyle(svg).color`
   // came back `rgba(0,0,0,0)`. Anything else that ever joins the caption would have met the same
   // fate, so the class belongs on the sentence it animates.
-  const dock = readFileSync(new URL("../../components/bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../components/character/character-dock.tsx", import.meta.url), "utf8");
   assert.match(dock, /<span className="canvas-thinking-word">\{caption\}<\/span>/, "the shimmer left the words");
   assert.ok(
-    !/bloub-caption canvas-thinking-word/.test(dock),
+    !/character-caption canvas-thinking-word/.test(dock),
     "🔴 the shimmer is back on the caption BOX, which paints everything that is not text transparent",
   );
-  const mark = readFileSync(new URL("../../components/bloub/thinking-mark.tsx", import.meta.url), "utf8");
+  const mark = readFileSync(new URL("../../components/character/thinking-mark.tsx", import.meta.url), "utf8");
   assert.match(mark, /text-\(--ui-text-tertiary\)/, "the mark inherits a colour it cannot rely on");
   assert.ok(!/height="1em"/.test(mark), "the mark is sized in em inside a counter-scaled box");
 });

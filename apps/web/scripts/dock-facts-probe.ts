@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   await page.waitForTimeout(3_000);
 
   const facts = await page.evaluate(`(() => {
-    const dock = document.querySelector(".bloub-dock");
+    const dock = document.querySelector(".character-dock");
     const anchor = document.querySelector("#canvas-composer");
     const parent = dock && dock.offsetParent;
     const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), left: Math.round(b.left), h: Math.round(b.height) }; };

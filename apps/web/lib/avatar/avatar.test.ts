@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { AVATARS, DEFAULT_AVATAR } from "./avatars";
@@ -16,8 +17,9 @@ import {
   nearestAngle,
   playedFaceAt,
 } from "./play";
-import { REST_BODY, SHUT_HEIGHT, drawFace } from "./render";
-import { FOCAL, RADIUS, bendScale, faceToSkin, facetScale, frontOfSkin, isPlain, project, quatFromTurn, rotate, skinPoint } from "./space";
+import { REST_BODY, SHUT_HEIGHT, drawFace, eyeFrames } from "./render";
+import { FOCAL, RADIUS, faceToSkin, project, quatFromTurn, rotate } from "./space";
+import { PROFILE_SAMPLES, TRACED, radiusAtAngle } from "./vendor/silhouettes";
 import { avatarFrameAt } from "./index";
 import { sparkDots } from "./play";
 import type { Face, Surface } from "./types";
@@ -441,116 +443,98 @@ function widthBetween(d: string, from: number, to: number): number {
   return band.length < 2 ? 0 : Math.max(...band) - Math.min(...band);
 }
 
-test("🔴 a bent body still knows where its own skin is", () => {
-  // The round trip the eyes depend on: every knob is applied when the body is drawn and
-  // undone when the body is asked where its front is. Get the order wrong in either
-  // direction and the two disagree — the outline says one thing, the face is painted at a
-  // depth that belongs to a different body, and on a narrow body the eye leaves it
-  // altogether. Checked by walking the drawn skin and asking about the point that is there.
-  const bent: Surface = {
-    ...DEFAULT_AVATAR.surface,
-    taper: -0.22,
-    straight: 0.5,
-    facets: 6,
-    facetAmount: 0.8,
-  };
-  let worst = 0;
-  for (let i = 1; i < 12; i++) {
-    for (let j = 1; j < 12; j++) {
-      const lat = -Math.PI / 2 + (i / 12) * Math.PI;
-      // Only the front half: `frontOfSkin` answers about the near side by definition.
-      const lon = -Math.PI / 2 + (j / 12) * Math.PI;
-      const [x, y, z] = skinPoint(bent, lon, lat);
-      const back = frontOfSkin(bent, x, y);
-      worst = Math.max(worst, Math.abs(back.point[2] - z));
-    }
+test("🔴 the shapes are the reference's own, not a description of them", () => {
+  // 🔴 THE FIRST VERSION MODELLED THESE AND THE OWNER SAW IT IMMEDIATELY (2026-08-25: "they
+  // dont perfectly match, did you even check the bloub github? its MIT license"). It carried
+  // a taper for the egg and a rounded-polygon generator for the hexagon — parameters of mine,
+  // fitted by eye to shapes somebody had already traced at the pixel, under a licence that
+  // permits copying them outright. This asserts the tables ARE those tables.
+  for (const name of ["egg", "hexagon"] as const) {
+    const traced = TRACED[name];
+    assert.equal(traced.length, PROFILE_SAMPLES, `${name} is not a full profile`);
+    assert.ok(traced.every((r) => r > 0.5 && r < 1.3), `${name} has a radius that is not a radius`);
   }
-  assert.ok(worst < 1.5, `the drawn skin and the painted skin disagree by ${worst.toFixed(2)} units`);
+  // The measured footprints, from the source's own comments: 1.647 x 2.000 and 1.826 x 2.011.
+  const across = (profile: readonly number[], at: number) => radiusAtAngle([...profile], at);
+  const wide = (profile: readonly number[]) => across(profile, 0) + across(profile, Math.PI);
+  const tall = (profile: readonly number[]) => across(profile, Math.PI / 2) + across(profile, -Math.PI / 2);
+  assert.ok(Math.abs(wide(TRACED.egg) - 1.647) < 0.02, `the egg is ${wide(TRACED.egg).toFixed(3)} wide`);
+  assert.ok(Math.abs(tall(TRACED.egg) - 2.0) < 0.02, `the egg is ${tall(TRACED.egg).toFixed(3)} tall`);
+  assert.ok(Math.abs(wide(TRACED.hexagon) - 1.826) < 0.02, `the hexagon is ${wide(TRACED.hexagon).toFixed(3)} wide`);
+
+  // 🔴 AND THE NOTICE TRAVELS WITH THEM. MIT permits the copy and requires this.
+  const licence = readFileSync(new URL("./vendor/LICENSE.bloub", import.meta.url), "utf8");
+  assert.match(licence, /MIT License/);
+  assert.match(licence, /Jérémy Perret/);
+  const vendored = readFileSync(new URL("./vendor/silhouettes.ts", import.meta.url), "utf8");
+  assert.match(vendored, /LICENSE\.bloub/, "the vendored tables do not say where they came from");
 });
 
-test("🔴 the plain body is byte-for-byte what it was before there were knobs", () => {
-  // The four knobs default to nothing, and every one of the ten bodies and twenty-three
-  // gaze patterns was authored before they existed. The sphere shortcut is the sharp edge:
-  // it draws a perfect circle whatever the body is doing, so it has to be refused the
-  // moment a knob is turned, and it has to still be taken when none is.
-  const plain = DEFAULT_AVATAR.surface;
-  assert.ok(isPlain(plain), "an untouched body is not plain");
-  assert.equal(facetScale(plain, 3, 4), 1);
-  assert.equal(bendScale(plain, 0.3), 1);
-  const face = FACE_BY_ID.get("smallAttentive")!;
-  const rested = drawFace(plain, { ...face, body: REST_BODY });
-  assert.equal(rested.body, drawFace(plain, face).body, "a body at rest is not the body it was");
-  // And a circle is what it draws: one arc pair, not a hull of seventy-three samples.
-  assert.ok(/^M[^A]*A/.test(rested.body), "the sphere shortcut was lost");
-  assert.ok(!isPlain({ ...plain, taper: 0.1 }), "a tapered body still claims to be plain");
-
-  // 🔴 AND THE SHORTCUT IS REFUSED THE MOMENT A KNOB IS TURNED — a SEPARATE claim, which
-  // nothing else here was making. Every routine that bends the body also squeezes its
-  // width, and unequal width and height already send the drawing down the sampled path; so
-  // a body that keeps a ball's proportions and turns only one knob is the single case where
-  // a stale shortcut survives, and it draws a flawless circle while the engine believes it
-  // has drawn a hexagon. Found by deleting the guard and watching every other test pass.
-  //
-  // 🔴 AND ASKED THROUGH A POSE, NOT THROUGH A SURFACE. The knobs belong to what the
-  // character is DOING, so `drawFace` takes them off the pose and overwrites whatever the
-  // body carried — which means a test that sets them on the surface tests nothing at all,
-  // silently. This one made that mistake first.
-  const hexed = drawFace(plain, { ...face, body: { ...REST_BODY, facets: 6, facetAmount: 1 } });
-  assert.ok(!/^M[^A]*A/.test(hexed.body), "a faceted body took the circle shortcut");
-  assert.ok(hexed.body.length > 400, "a faceted body was not sampled");
+test("🔴 a silhouette is applied in the PICTURE, so a roll leans the face and not the body", () => {
+  // The source draws its shapes flat, with the face painted on a ball behind them, and its
+  // egg wears 17 degrees of roll while standing perfectly upright. Applied in the body's own
+  // frame — which the first version did — that roll tips the whole egg over, and the only way
+  // to make it look right was to halve the reference's own numbers. This is the guard on not
+  // doing that again.
+  const upright = ANIMATION_BY_ID.get("egg")!;
+  const frame = avatarFrameAt(upright.id, animationDuration(upright) * 0.9, DEFAULT_AVATAR)!;
+  const b = box(frame.body);
+  // An egg standing up is taller than it is wide, and its widest point is level.
+  assert.ok(b.h > b.w * 1.12, `the egg is ${(b.h / b.w).toFixed(2)}:1, which is not standing up`);
+  const face = FACE_BY_ID.get("egg")!;
+  assert.ok(Math.abs(face.head.z) > 10, "the egg's roll was removed rather than being made to work");
+  // The same body drawn with no roll has the same outline: the shape does not turn with it.
+  const level = drawFace(DEFAULT_AVATAR.surface, { ...face, head: { ...face.head, z: 0 } });
+  const l = box(level.body);
+  assert.ok(Math.abs(l.w - b.w) < 1 && Math.abs(l.h - b.h) < 1, "the silhouette turned with the head");
 });
 
-test("🔴 the egg is narrow END UP and the exclamation mark is thick END UP", () => {
-  // Both are one number, both had it the wrong way round first time, and neither is
-  // catchable by anything except looking: the engine builds the solid with its own axis
-  // running downward, so the sign in body terms is the opposite of the sign on screen. The
-  // first pass drew an egg standing on its point and a "!" shaped like a traffic cone.
-  const egg = ANIMATION_BY_ID.get("egg")!;
-  const eggBody = avatarFrameAt(egg.id, animationDuration(egg) * 0.8, DEFAULT_AVATAR)!.body;
-  assert.ok(
-    widthBetween(eggBody, 0.1, 0.35) < widthBetween(eggBody, 0.65, 0.9) * 0.92,
-    "the egg is not narrower at the top",
-  );
-
+test("🔴 the exclamation mark is a glyph, and the egg is not a ball", () => {
   const bar = ANIMATION_BY_ID.get("exclaim")!;
   const barBody = avatarFrameAt(bar.id, animationDuration(bar) * 0.8, DEFAULT_AVATAR)!.body;
+  const b = box(barBody);
+  const ratio = b.h / b.w;
+  assert.ok(ratio > 2.7 && ratio < 3.7, `the bar is ${ratio.toFixed(1)}:1 against the reference's 3.2:1`);
   assert.ok(
     widthBetween(barBody, 0.1, 0.35) > widthBetween(barBody, 0.65, 0.9) * 1.15,
     "the exclamation mark is not thicker at the top",
   );
-  // And it is the bar the reference measured: 0.264 wide over 0.842 tall, so 3.2 to 1.
-  const b = box(barBody);
-  const ratio = b.h / b.w;
-  assert.ok(ratio > 2.7 && ratio < 3.7, `the bar is ${ratio.toFixed(1)}:1 against the reference's 3.2:1`);
+
+  const egg = ANIMATION_BY_ID.get("egg")!;
+  const eggBody = avatarFrameAt(egg.id, animationDuration(egg) * 0.9, DEFAULT_AVATAR)!.body;
+  assert.ok(
+    widthBetween(eggBody, 0.1, 0.35) < widthBetween(eggBody, 0.65, 0.9) * 0.94,
+    "the egg is not narrower at the top",
+  );
 });
 
-test("🔴 a hexagon has sides, and a hexagon halfway is halfway", () => {
-  // The first attempt used a single cosine, which has the right widest and narrowest radii
-  // and still draws a six-lobed blob, because a cosine bulges where a polygon has a
-  // straight edge. This asserts the DEPTH, which that version also passed — and the
-  // straightness, which it did not.
-  const sharp = { ...DEFAULT_AVATAR.surface, facets: 6, facetAmount: 1 };
-  const at = (deg: number) => facetScale(sharp, Math.cos(deg * (Math.PI / 180)), Math.sin(deg * (Math.PI / 180)));
-  const vertex = at(0);
-  const middle = at(30);
-  assert.ok(Math.abs(vertex - 1) < 0.01, `a vertex should be the full radius, got ${vertex}`);
-  assert.ok(Math.abs(middle / vertex - 0.892 / 1.023) < 0.02, `the sides are ${middle / vertex} deep`);
-  // The side is STRAIGHT, which is the part a cosine gets wrong. A third of the way from a
-  // vertex to the middle of a side, a real hexagon has come down to cos(30)/cos(20) of its
-  // radius; a cosine of the same depth has barely moved. This has to be nearer the polygon.
-  const along = at(10) / vertex;
-  const polygon = Math.cos(Math.PI / 6) / Math.cos(20 * (Math.PI / 180));
-  const cosine = (1 + 0.0684 * Math.cos(60 * (Math.PI / 180))) / (1 + 0.0684);
-  assert.ok(
-    Math.abs(along - polygon) < Math.abs(along - cosine),
-    `the side bulges: ${along.toFixed(3)}, against ${polygon.toFixed(3)} straight and ${cosine.toFixed(3)} for a cosine`,
-  );
+test("🔴 the plain body still takes the circle shortcut, and a shaped one never does", () => {
+  // A ball's outline is a circle at every angle, which is why the shortcut exists — and it
+  // draws a flawless circle whatever the body is doing, so it has to be refused the moment a
+  // silhouette is applied. Found by deleting that guard and watching every other test pass.
+  const plain = DEFAULT_AVATAR.surface;
+  const face = FACE_BY_ID.get("smallAttentive")!;
+  const rested = drawFace(plain, { ...face, body: REST_BODY });
+  assert.equal(rested.body, drawFace(plain, face).body, "a body at rest is not the body it was");
+  assert.ok(/^M[^A]*A/.test(rested.body), "the sphere shortcut was lost");
 
-  // Half strength is halfway to it, so a body GROWS a hexagon rather than swapping to one —
-  // which is what lets an animation morph into this shape instead of cutting.
-  const full = at(30);
-  const half = facetScale({ ...sharp, facetAmount: 0.5 }, Math.cos(Math.PI / 6), Math.sin(Math.PI / 6));
-  assert.ok(Math.abs(half - (1 + (full - 1) / 2)) < 1e-9, `half a hexagon is ${half}, not halfway to ${full}`);
+  const shaped = drawFace(plain, { ...face, body: { ...REST_BODY, profile: [...TRACED.hexagon] } });
+  assert.ok(!/^M[^A]*A/.test(shaped.body), "a shaped body took the circle shortcut");
+  assert.ok(shaped.body.length > 400, "a shaped body was not sampled");
+});
+
+test("🔴 an eye rides the silhouette rather than being stretched by it", () => {
+  // The shape is a radial push. Pushing every point of an eye by its own angle would stretch
+  // the eye into the shape of the body — a hexagon would come out with six-sided eyes. The
+  // source moves the eye's CENTRE and leaves the eye alone, and so does this.
+  const face = FACE_BY_ID.get("hexagon")!;
+  const shaped = box(drawFace(DEFAULT_AVATAR.surface, face).left);
+  const round = box(drawFace(DEFAULT_AVATAR.surface, { ...face, body: REST_BODY }).left);
+  assert.ok(Math.abs(shaped.w - round.w) < 1.5, `the eye's width changed by ${(shaped.w - round.w).toFixed(2)}`);
+  assert.ok(Math.abs(shaped.h - round.h) < 1.5, `the eye's height changed by ${(shaped.h - round.h).toFixed(2)}`);
+  // And it did move, or the ride is not happening at all.
+  const moved = Math.hypot(shaped.cx - round.cx, shaped.cy - round.cy);
+  assert.ok(moved > 0.5, "the eye ignored the silhouette entirely");
 });
 
 test("🔴 decor blends by index, so a dot grows rather than appearing", () => {
@@ -622,4 +606,35 @@ test("🔴 the badge sits outside the body, with the page showing between", () =
   assert.ok(f.notch!.r > badge.w / 2, "the bite is smaller than the badge it is meant to separate");
   // Upper right, on the rim.
   assert.ok(badge.cx > 60 && badge.cy < -40, `the badge is at ${badge.cx}, ${badge.cy}`);
+});
+
+test("🔴 a feature drawn through an eye's frame lands ON that eye", () => {
+  // This is the whole contract `lib/avatar/features.ts` rests on: reading glasses, a raised
+  // brow and a smirk are flat shapes drawn in an eye's own coordinates, and the frame is what
+  // carries them onto a turning head. If the frame's origin drifts from where the eye is
+  // actually drawn, every feature drifts with it — and the symptom is spectacles floating
+  // beside a face, which is precisely what a 40px character in a corner hides.
+  const face = FACE_BY_ID.get("neutral")!;
+  for (const turn of [{ x: 0, y: -26 }, { x: 0, y: 0 }, { x: 0, y: 26 }, { x: -15, y: 14 }]) {
+    const drawn = drawFace(DEFAULT_AVATAR.surface, face, { turn });
+    const frames = eyeFrames(DEFAULT_AVATAR.surface, face, { turn });
+    for (const [i, path] of [drawn.left, drawn.right].entries()) {
+      const middle = box(path);
+      const frame = frames[i]!;
+      const off = Math.hypot(frame.x - middle.cx, frame.y - middle.cy);
+      // The eye is a curved patch on a ball, so its bounding box's middle is not exactly its
+      // centre. A couple of units out of a hundred and twenty is that; ten would be a drift.
+      assert.ok(off < 4, `eye ${i} at turn ${JSON.stringify(turn)} is ${off.toFixed(1)} from its frame`);
+    }
+  }
+
+  // And the frame FORESHORTENS, which is what makes a feature belong rather than sit on top.
+  const ahead = eyeFrames(DEFAULT_AVATAR.surface, { ...face, head: { x: 0, y: 0, z: 0 } })[1]!;
+  const away = eyeFrames(DEFAULT_AVATAR.surface, { ...face, head: { x: 0, y: 55, z: 0 } })[1]!;
+  const area = (f: typeof ahead) => Math.abs(f.a * f.d - f.b * f.c);
+  assert.ok(area(away) < area(ahead) * 0.8, "an eye near the limb is drawn at full size");
+
+  // A roll turns the frame with the head, so a brow leans with the eye it belongs to.
+  const rolled = eyeFrames(DEFAULT_AVATAR.surface, { ...face, head: { x: 0, y: 0, z: 30 } })[1]!;
+  assert.ok(Math.abs(rolled.b) > Math.abs(ahead.b) + 0.2, "the frame ignores the head's roll");
 });

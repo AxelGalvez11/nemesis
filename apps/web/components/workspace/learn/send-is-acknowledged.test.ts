@@ -159,7 +159,7 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption sits 
   assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");
   // …and the caption's PLACE depends on the station: beside the character in the corner, UNDER
   // it at the centre (owner 2026-08-25: "the mascot on top of the thinking preview lines").
-  const dockSource = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  const dockSource = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
   assert.match(dockSource, /station === "centre" \? " left-1\/2 top-full" : " left-full top-1\/2"/);
 });
 
@@ -221,7 +221,7 @@ test("🔴🔴 the composer SIDESTEPS as well as drops, because the canvas has n
 test("🔴🔴🔴 the character walks to the exact spot the canvas will stand it on", () => {
   // Owner 2026-08-21: "the mascot should move toward the center smoothly not jaggedly".
   //
-  // These are two components on two surfaces — this greeter unmounts and `BloubDock` mounts —
+  // These are two components on two surfaces — this greeter unmounts and `CharacterDock` mounts —
   // so the hand-off is invisible only while the two agree about the point and the size. It was
   // not agreeing about either: the greeter held its place while the dock mounted in the
   // lower-left corner and crawled to the middle, which the learner reads as two characters.
@@ -235,7 +235,7 @@ test("🔴🔴 and it takes those numbers FROM the dock, so they cannot drift ap
   // subtly wrong, which is harder to see than one that is obviously wrong.
   //
   // Calibration: inline any of the three as a literal and this reddens.
-  assert.match(homeCode, /from "@\/components\/bloub\/bloub-dock"/);
+  assert.match(homeCode, /from "@\/components\/character\/character-dock"/);
   for (const name of ["centreStation", "DOCK_SIZE", "DOCK_CENTRE_SCALE"]) {
     assert.match(homeCode, new RegExp(name), `${name} is not read from the dock`);
   }
@@ -251,7 +251,7 @@ test("🔴🔴 and the dock does not walk in from a corner it was never standing
   // place instantly against the default corner (left 22, bottom 24) before the composer had
   // been measured, and the correction then eased in as a diagonal drift from the lower-left —
   // the owner's "it was already on the bottom left side, moving upward", seen on production.
-  const dock = code(readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8"));
+  const dock = code(readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8"));
   assert.match(dock, /ms: was\.placed && anchoredRef\.current \? null : 0/);
   assert.match(dock, /visibility: travel\.placed \? undefined : "hidden"/);
 });
@@ -265,33 +265,35 @@ test("🔴🔴 the WALK is one eased property, and layout never eases", () => {
   //
   // Calibration: add left or bottom to the stylesheet's transition, or write setOffset inside
   // the station effect, and this reddens.
-  const dockRaw = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
-  const cssRaw = readFileSync(new URL("../../bloub/bloub.css", import.meta.url), "utf8");
-  assert.match(cssRaw, /transition: transform var\(--bloub-travel-ms, var\(--bloub-travel\)\)/);
+  const dockRaw = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
+  const cssRaw = readFileSync(new URL("../../character/character.css", import.meta.url), "utf8");
+  assert.match(cssRaw, /transition: transform var\(--character-travel-ms, var\(--character-travel\)\)/);
   assert.ok(!/transition:[^;]*(left|bottom|all)/.test(cssRaw), "layout properties have gained a transition");
   const stationEffect = dockRaw.slice(dockRaw.indexOf("Where it stands"), dockRaw.indexOf("What it is looking at"));
   assert.ok(stationEffect.includes("setTravel"), "the walk no longer goes through the transform");
   assert.ok(!/setOffset|setInset/.test(stationEffect), "the walk writes layout properties");
 });
 
-// ── The vendored engine keeps its licence ───────────────────────────────────
+// ── What is vendored, and the notice that has to travel with it ─────────────
 
-test("🔴🔴 bloub's MIT licence travels with the code that needs it", () => {
-  // The engine in `lib/bloub/` is Jérémy Perret's, copied verbatim. MIT permits that and requires
-  // the notice; a vendored copy with the licence left behind is the one way this goes wrong
-  // quietly.
-  const licence = readFileSync(new URL("../../../lib/bloub/LICENSE", import.meta.url), "utf8");
+test("🔴🔴 the traced silhouettes keep the licence that lets us use them", () => {
+  // 🔴 THE PRODUCT USED TO VENDOR A WHOLE ENGINE; NOW IT VENDORS THREE TABLES. Until
+  // 2026-08-25 there were two engines — one copied verbatim from jeremy-prt/bloub (MIT, which
+  // permits the copy and requires the notice) and one written from a reading of
+  // smontlouis/bible-strong-avatar-lab (AGPL, which does not permit a copy at all). They are
+  // one engine now, and it is ours.
+  //
+  // 🔴 WHAT SURVIVES IS THE MEASUREMENTS, AND TAKING THEM WAS THE RIGHT CALL. The egg and the
+  // hexagon were traced off a video at the pixel; the first attempt at this modelled them
+  // instead, with a taper and a polygon generator, and the owner saw the difference on sight
+  // — *"they dont perfectly match, did you even check the bloub github? its MIT license"*.
+  // The licence is the reason that is a fair question, and this is the obligation it carries.
+  const licence = readFileSync(new URL("../../../lib/avatar/vendor/LICENSE.bloub", import.meta.url), "utf8");
   assert.match(licence, /MIT License/);
   assert.match(licence, /Jérémy Perret/);
-  // 🔴 REPOINTED 2026-08-20: the renderer moved from `learn/bloub.tsx` to `components/bloub/`, and
-  // this test went red pointing at a file that no longer exists rather than at a missing notice.
-  // Derived from whoever actually imports the engine, so the next move cannot break it either —
-  // and so the check keeps meaning "the code using this says where it came from" rather than "this
-  // one path still exists".
-  const users = readdirSync(new URL("../../bloub/", import.meta.url)).filter((f) => f.endsWith(".tsx"));
-  assert.ok(users.length > 0, "nothing renders the vendored engine any more");
-  const attributed = users.some((f) => /MIT/.test(readFileSync(new URL(`../../bloub/${f}`, import.meta.url), "utf8")));
-  assert.ok(attributed, `none of ${users.join(", ")} says where the engine came from`);
+  const vendored = readFileSync(new URL("../../../lib/avatar/vendor/silhouettes.ts", import.meta.url), "utf8");
+  assert.match(vendored, /jeremy-prt\/bloub/, "the tables no longer say where they came from");
+  assert.match(vendored, /LICENSE\.bloub/, "the tables no longer point at their notice");
 });
 
 // ── Attachments: dropped anywhere, carried inside the composer ────────────────────────────────
@@ -397,12 +399,12 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
   // all, the mascot should have an exclamation mark or question mark appear above its head for
   // those kinds of things."* `lib/bloub` ships `exclaim` and `alert` states that deform the
   // character itself; the character stays itself and something appears near it instead.
-  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
   assert.match(dock, /marker \?: "!" \| "\?" \| null;|marker\?: "!" \| "\?" \| null;/, "the dock takes no marker");
   assert.match(dock, /\{marker && \(/, "the marker is accepted and never drawn");
   // 🔴 OUTSIDE THE ENGINE. lib/bloub is vendored whole and not edited, and its loop writes SVG
   // attributes every frame — a glyph pushed through it would be a fourth thing to keep in sync.
-  assert.match(dock, /className="bloub-mark /, "the mark is not a sibling of the character");
+  assert.match(dock, /className="character-mark /, "the mark is not a sibling of the character");
 
   // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
   // the question is already rendered in full, in words, in the middle of the page.
@@ -429,10 +431,10 @@ test("🔴🔴 the mascot wears a mark above its head, and does not deform into 
   // 🔴 THE BADGE IS THE CHARACTER'S OWN COLOUR, NOT THE PAGE'S. Reported 2026-08-21: *"the mascot
   // has a random question mark that isnt in purple like the mascot."* It was `--ui-text-tertiary`,
   // so the one thing sitting ON the character was the one thing that did not belong to it.
-  // `inkFor` is what `BloubBot` paints its body with, so the badge cannot drift from the body it
+  // `characterInk` is what `NemesisAvatar` paints its body with, so the badge cannot drift from the body it
   // sits on — not across themes, and not across the accents a learner can choose.
-  assert.match(dock, /color: inkFor\(accent, theme\)/, "the mark no longer carries the character's own ink");
-  assert.ok(!/backgroundColor: inkFor/.test(dock), "the coin is back behind the mark");
+  assert.match(dock, /color: characterInk\(accent, theme === "dark"\)/, "the mark no longer carries the character's own ink");
+  assert.ok(!/backgroundColor: characterInk/.test(dock), "the coin is back behind the mark");
   // 🔴 AND IT DOES NOT GROW WITH THE DOCK. The character scales to `centreScale` coming forward;
   // a badge that scaled with it became a page-sized glyph over the middle of an empty screen.
   assert.match(dock, /travel\.k/, "the badge is no longer counter-scaled");
@@ -485,11 +487,11 @@ test("🔴 the mark is an animation, not a sticker", () => {
   // It POPS in (spring overshoot) and BOBS while the state holds; reduced motion stills it.
   //
   // Calibration: drop either keyframe block, or the class off the span, and this reddens.
-  const cssRaw = readFileSync(new URL("../../bloub/bloub.css", import.meta.url), "utf8");
-  const dockRaw = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
-  assert.ok(cssRaw.includes("@keyframes bloub-mark-in"), "the pop-in is gone");
-  assert.ok(cssRaw.includes("@keyframes bloub-mark-bob"), "the bob is gone");
-  assert.match(dockRaw, /className="bloub-mark /, "the span no longer wears the animation class");
+  const cssRaw = readFileSync(new URL("../../character/character.css", import.meta.url), "utf8");
+  const dockRaw = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
+  assert.ok(cssRaw.includes("@keyframes character-mark-in"), "the pop-in is gone");
+  assert.ok(cssRaw.includes("@keyframes character-mark-bob"), "the bob is gone");
+  assert.match(dockRaw, /className="character-mark /, "the span no longer wears the animation class");
 });
 
 test("🔴 a fresh reply sends the eyes to the words, and lets them go again", () => {
@@ -506,11 +508,11 @@ test("working is never just standing: the middle station sways, and reduced moti
   // Owner 2026-08-25: "when it's thinking… not just staring — have some movements as well."
   // The sway is a state, not an event: it lives on the hop wrapper only while the station is
   // the centre, and prefers-reduced-motion removes it along with the other gestures.
-  const css = readFileSync(new URL("../../bloub/bloub.css", import.meta.url), "utf8");
-  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
-  assert.ok(css.includes("@keyframes bloub-ponder"), "the sway is named but never defined");
-  assert.match(css, /\.bloub-ponder,\s*\n\s*\.bloub-jump/, "reduced motion no longer switches the sway off");
-  assert.match(dock, /station === "centre" \? "bloub-ponder"/, "the sway is not gated on holding the middle");
+  const css = readFileSync(new URL("../../character/character.css", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
+  assert.ok(css.includes("@keyframes character-ponder"), "the sway is named but never defined");
+  assert.match(css, /\.character-ponder,\s*\n\s*\.character-jump/, "reduced motion no longer switches the sway off");
+  assert.match(dock, /station === "centre" \? "character-ponder"/, "the sway is not gated on holding the middle");
 });
 
 test("the character never vanishes while Nemesis works, and the words sit under it", () => {
@@ -521,7 +523,7 @@ test("the character never vanishes while Nemesis works, and the words sit under 
   const preview = readFileSync(new URL("./canvas-thinking-preview.tsx", import.meta.url), "utf8");
   assert.ok(preview.includes("sr-only"), "the preview lost its screen-reader announcement");
   assert.ok(!preview.includes("min-h-[70vh]"), "the preview paints a visible wait again — two owners of one moment");
-  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
   assert.match(dock, /station === "centre" \? " left-1\/2 top-full"/, "the centred caption moved back beside the character");
 });
 
@@ -529,7 +531,7 @@ test("the first placement waits for the composer's measurements", () => {
   // Owner 2026-08-25: the character "was already on the bottom left side, moving upward" — the
   // station placed instantly against the DEFAULT corner, then the real measurements animated
   // the correction as a diagonal drift. No placement counts until the anchor has measured.
-  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
   assert.ok(dock.includes("anchoredRef"), "the anchored gate is gone");
   const gated = dock.match(/placed: anchoredRef\.current/g) ?? [];
   assert.equal(gated.length, 2, "both stations must refuse to count a placement before the anchor measures");
@@ -539,7 +541,7 @@ test("the open composer menu counts as composer: the dock floats clear of the po
   // The contract with canvas-composer.tsx (PR #760): the + menu's popover carries
   // data-canvas-composer-popover precisely so this measurement can see it. Renaming either
   // side re-creates the owner's "the mascot clashes with the menu" silently.
-  const dock = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+  const dock = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
   assert.ok(dock.includes('querySelector("[data-canvas-composer-popover]")'), "the dock no longer measures the open menu");
   assert.match(dock, /Math\.min\(r\.top, popover\.getBoundingClientRect\(\)\.top\)/, "the union lost the higher edge");
   const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");

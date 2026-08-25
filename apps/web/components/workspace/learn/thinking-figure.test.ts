@@ -18,9 +18,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const STATIONS = readFileSync(new URL("../../../lib/character/stations.ts", import.meta.url), "utf8");
-const DOCK = readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8");
+const DOCK = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
 const CANVAS = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
-const BOT = readFileSync(new URL("../../bloub/bloub-bot.tsx", import.meta.url), "utf8");
+const BOT = readFileSync(new URL("../../avatar/nemesis-avatar.tsx", import.meta.url), "utf8");
 const CSS = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 
 test("🔴 the character keeps its face while it works", () => {
@@ -57,7 +57,7 @@ test("🔴 the words are lit left to right, at the rate everything else moves at
 // words themselves carrying the light is what says "this is being worked through", and a background
 // defeats `background-clip: text` outright.
 test("🔴 the caption is words, not a pill", () => {
-  const caption = DOCK.slice(DOCK.indexOf("bloub-caption"), DOCK.indexOf("bloub-caption") + 400);
+  const caption = DOCK.slice(DOCK.indexOf("character-caption"), DOCK.indexOf("character-caption") + 400);
   assert.ok(!/bg-\(--ui-bg-tertiary\)/.test(caption), "the caption is a filled badge again");
   assert.ok(!/rounded-full/.test(caption), "the caption is a filled badge again");
 });

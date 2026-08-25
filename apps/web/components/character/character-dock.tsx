@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useTheme } from "@/components/theme-provider";
-import { inkFor } from "@/lib/character/look";
+import { characterInk } from "@/lib/accent";
 import {
   ATTENTION_ATTR,
   getAttention,
@@ -28,15 +28,22 @@ import {
   subscribeAttention,
   type AttentionTarget,
 } from "@/lib/mascot/attention";
-import type { StateId } from "@/lib/bloub/states";
+
 import type { ThinkingMark as ThinkingMarkKind } from "@/lib/learn/thinking-phases";
 
-import { BloubBot } from "./bloub-bot";
+import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { ThinkingMark } from "./thinking-mark";
 import { usePoke } from "./use-poke";
-import type { FaceId } from "@/lib/character/face";
-import { speedOf, stationOf, type Station } from "@/lib/character/stations";
+import type { FeatureFace } from "@/lib/avatar/features";
+import { speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
 import { DomainChips } from "@/components/DomainChips";
+
+// 🔴 THE STYLESHEET COMES IN HERE NOW, AND FORGETTING IT COST AN AFTERNOON. It used to be
+// imported by the renderer, which lived in this folder; the renderer moved to
+// `components/avatar` when the two engines became one, and the import went with the file
+// that was deleted. Nothing failed — `--character-paper` simply stopped resolving, the eyes
+// fell back to near-white on a dark page, and the character rendered as a blank white disc.
+import "./character.css";
 
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;
@@ -62,7 +69,7 @@ export function centreStation(surface: { left: number; top: number; width: numbe
   return { x: surface.left + surface.width / 2, y: surface.top + surface.height * CENTRE_Y_FRACTION };
 }
 
-export interface BloubDockProps {
+export interface CharacterDockProps {
   /** Which animation is playing. Its station decides corner or centre. */
   state?: StateId;
   /** A mark above the character's head: "!" when something went wrong, "?" when it needs something
@@ -187,12 +194,12 @@ export interface BloubDockProps {
    * A face from our own layer for the surface's ACTIVITY — reading glasses while material
    * is taken in. A poke's own face (the sigma) outranks it for the poke's short hold.
    */
-  face?: FaceId | null;
+  face?: FeatureFace | null;
   hidden?: boolean;
   className?: string;
 }
 
-export function BloubDock({
+export function CharacterDock({
   caption = null,
   captionLeaving: leaving = false,
   captionMark = null,
@@ -210,7 +217,7 @@ export function BloubDock({
   face = null,
   hidden = false,
   className,
-}: BloubDockProps) {
+}: CharacterDockProps) {
   const { accent, theme } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   // `motion` is the half the engine has no pose for — the hop. See `use-poke.ts`.
@@ -224,7 +231,7 @@ export function BloubDock({
    * opens already thinking mounts this dock straight onto the middle station, and animating that
    * first placement would walk the character in from a corner it was never standing in —
    * replaying, badly, the journey the front door's greeter just made. `ms` is the per-move
-   * override for `--bloub-travel-ms` (see bloub.css); null means the stylesheet's journey time.
+   * override for `--character-travel-ms` (see character.css); null means the stylesheet's journey time.
    */
   const [travel, setTravel] = useState<{ dx: number; dy: number; k: number; ms: number | null; placed: boolean }>({ dx: 0, dy: 0, k: 1, ms: null, placed: false });
   /**
@@ -271,7 +278,7 @@ export function BloubDock({
       // the composer's own rect never grows when it opens — the character sat on the menu. The
       // popover carries data-canvas-composer-popover for exactly this measurement (stamped by
       // canvas-composer.tsx; renaming either side re-creates the clash silently — pinned by
-      // bloub-dock.test.ts).
+      // character-dock.test.ts).
       const popover = document.querySelector("[data-canvas-composer-popover]");
       const top = popover ? Math.min(r.top, popover.getBoundingClientRect().top) : r.top;
       // Measured against whatever the dock is positioned within. Using the window's
@@ -341,7 +348,7 @@ export function BloubDock({
   // ── What it is looking at ────────────────────────────────────────────────────
   //
   // In order of precedence: whatever `lookAt()` was last given, then the focused field,
-  // then — by falling through to null — the pointer, which BloubBot handles itself.
+  // then — by falling through to null — the pointer, which NemesisAvatar handles itself.
   useEffect(() => {
     const unsubscribe = subscribeAttention((t) => {
       targetRef.current = t;
@@ -400,14 +407,14 @@ export function BloubDock({
   return (
     <div
       ref={hostRef}
-      className={["bloub-dock", className].filter(Boolean).join(" ")}
+      className={["character-dock", className].filter(Boolean).join(" ")}
       style={{
         position: contain ? "absolute" : "fixed",
         left: inset,
         bottom: offset,
         transform: `translate3d(${travel.dx}px, ${travel.dy}px, 0) scale(${travel.k})`,
         // Instant only while `ms` says so; every later move takes the stylesheet's journey.
-        ...(travel.ms !== null ? ({ "--bloub-travel-ms": `${travel.ms}ms` } as React.CSSProperties) : {}),
+        ...(travel.ms !== null ? ({ "--character-travel-ms": `${travel.ms}ms` } as React.CSSProperties) : {}),
         // Nothing stands anywhere until the first measurement has said where.
         visibility: travel.placed ? undefined : "hidden",
       }}
@@ -421,7 +428,7 @@ export function BloubDock({
           ever travels, and neither has to know about the other.
 
           🔴 NOT KEYED, AND IT MUST NOT BE. Re-mounting to restart the animation is the obvious
-          trick and it would take `BloubBot` down with it — the engine, its clock and the gaze's
+          trick and it would take `NemesisAvatar` down with it — the engine, its clock and the gaze's
           entry turn all live in that subtree, so every second poke would restart the character
           rather than move it. It does not need the trick: `usePoke` alternates jump → wink and
           always returns to null between reactions, so the class really is removed and re-added,
@@ -430,15 +437,15 @@ export function BloubDock({
           staring — have some movements as well"). At the middle station the wrapper carries a
           slow sway — weight shifting foot to foot — and the eyes wander (below). Both are
           physics, both melt away the moment it walks back. A poke's own motion outranks it. */}
-      <div className={motion === "jump" ? "bloub-jump" : motion === "spin" ? "bloub-spin" : station === "centre" ? "bloub-ponder" : undefined}>
-        <BloubBot
+      <div className={motion === "jump" ? "character-jump" : motion === "spin" ? "character-spin" : station === "centre" ? "character-ponder" : undefined}>
+        <NemesisAvatar
           aimAt={aimAt}
-          color={accent}
+          accent={accent}
           face={pokeFace ?? face}
           onPoke={poke}
           size={size}
           speed={speedOf(shown)}
-          state={shown}
+          animation={shown}
           track
           waggle={motion === "waggle"}
         />
@@ -449,24 +456,24 @@ export function BloubDock({
           and the owner was asked and chose neither: the character stays itself and something
           appears near it, which is how a mascot has always signalled.
 
-          🔴 ADDITIVE, AND DELIBERATELY OUTSIDE THE ENGINE. `lib/bloub/*` is vendored whole and not
-          edited (see bloub-bot.tsx), and the animation loop writes SVG attributes every frame — a
+          🔴 ADDITIVE, AND DELIBERATELY OUTSIDE THE ENGINE. `lib/avatar/*` models a solid with a face
+          on it and nothing else, and the animation loop writes SVG attributes every frame — a
           glyph pushed through it would be a fourth thing to keep in sync at 60fps for no gain.
           This is a sibling that inherits the dock's own transform, so it travels with the character
           without the character knowing about it. */}
       {marker && (
         <span
           aria-hidden="true"
-          className="bloub-mark pointer-events-none absolute left-1/2 bottom-full font-extrabold leading-none select-none"
+          className="character-mark pointer-events-none absolute left-1/2 bottom-full font-extrabold leading-none select-none"
           style={{
             // 🔴🔴 A GLYPH IN THE CHARACTER'S OWN INK, NOT A COIN (owner 2026-08-24: "I didn't
             // want a circle around the exclamation mark or the question mark"). The filled disc
-            // read as a badge stuck onto the scene; the bare glyph in `inkFor` — the same
+            // read as a badge stuck onto the scene; the bare glyph in `characterInk` — the same
             // function the body is painted with — reads as the creature itself signalling, and
             // it cannot drift from the body across themes or accents. Its ARRIVAL is the
             // animation (owner: "it's supposed to be an animation"): pop in with a small
-            // overshoot, then bob gently while the state holds — see `.bloub-mark` in bloub.css.
-            color: inkFor(accent, theme),
+            // overshoot, then bob gently while the state holds — see `.character-mark` in character.css.
+            color: characterInk(accent, theme === "dark"),
             // 🔴 COUNTER-SCALED, the same reason the caption is. The dock grows to `centreScale`
             // when the character comes forward to think, and a mark that grew with it became a
             // page-sized question mark floating above the middle of the screen.
@@ -515,7 +522,7 @@ export function BloubDock({
           // 🔴 A COLUMN NOW, BECAUSE TWO THINGS STACK HERE: the mark-and-sentence row, and the
           // sites underneath it. `whitespace-nowrap` moved down onto the sentence — the chips are
           // the one thing here that SHOULD wrap.
-          className={`bloub-caption pointer-events-none absolute flex select-none flex-col gap-1 text-[length:var(--canvas-text-small)] leading-none ${
+          className={`character-caption pointer-events-none absolute flex select-none flex-col gap-1 text-[length:var(--canvas-text-small)] leading-none ${
             station === "centre" ? "items-center" : "items-start"
           }${station === "centre" ? " left-1/2 top-full" : " left-full top-1/2"}${leaving ? " canvas-preview-out" : ""}`}
           style={

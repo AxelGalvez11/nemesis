@@ -12,22 +12,13 @@
 // The measurements are the reference's own, in body radii and seconds, converted once here.
 
 import { RADIUS } from "./space";
+import { TRACED, hullOfCircles, profileFromPolygon } from "./vendor/silhouettes";
 import type { Animation, BodyPose, Dot, Face } from "./types";
 
 /** Body radii to mark units. The body this was authored against has a radius of `RADIUS`. */
 const R = RADIUS;
 
-const REST: BodyPose = {
-  scale: 1,
-  x: 0,
-  y: 0,
-  stretchX: 1,
-  stretchY: 1,
-  taper: 0,
-  straight: 0,
-  facets: 0,
-  facetAmount: 0,
-};
+const REST: BodyPose = { scale: 1, x: 0, y: 0, profile: null };
 
 const body = (over: Partial<BodyPose>): BodyPose => ({ ...REST, ...over });
 
@@ -109,7 +100,7 @@ const WINK: Pose = { head: [-5.37, 4.55, 6.7], split: 16.25, eyes: [[0.236, 0.46
  * The badge, and the bite taken out of the body behind it.
  *
  * 🔴 THE BADGE IS THE SAME COLOUR AS THE BODY, WHICH IS NOT WHAT THE REFERENCE DOES. There
- * it is a fixed blue. Here the character IS the accent (see `lib/character/look.ts`), and a
+ * it is a fixed blue. Here the character IS the accent (see `characterInk` in lib/accent.ts), and a
  * second colour that the learner did not choose, arguing with the one they did, is exactly
  * what that rule exists to prevent. The notch is what makes it read as a badge without one:
  * a disc taken out of the body leaves a ring of page between them, so the dot is plainly
@@ -138,42 +129,27 @@ const notifFace = (id: string, size: number): Face =>
   });
 
 /**
- * The bar of an exclamation mark, as knobs rather than as a drawing.
+ * The bar of an exclamation mark, built exactly as the source builds it.
  *
- * The reference builds it as the hull of two circles — radius 0.132 at the top, 0.075 at
- * the bottom, so the glyph is thicker at the top the way a printed one is. Every one of
- * those numbers survives the translation:
- *
- *   · the round ends are `straight`: the two caps take 0.207 of the 0.842 total height,
- *     so the barrel is the remaining three quarters;
- *   · the thick-over-thin is `taper`: a ratio of 1.76 between top and bottom;
- *   · the rest is a body squeezed to a tenth of its width and half its height.
+ * 🔴 THE SOURCE'S OWN GEOMETRY, NOT A DESCRIPTION OF IT. It is the convex hull of two
+ * circles — radius 0.132 at the top and 0.075 at the bottom, so the glyph is thicker at the
+ * top the way a printed one is — turned into a radial profile. The first version restated
+ * that as a taper and a straight-sidedness of my own devising and came out close but wrong.
+ * The builders are MIT and are vendored beside the traced tables.
  */
 const BAR_TOP = 0.132;
 const BAR_BOTTOM = 0.075;
-const BAR_HEIGHT = 0.505 + BAR_TOP + (0.13 + BAR_BOTTOM);
-const BAR_CENTRE = (0.13 + BAR_BOTTOM - (0.505 + BAR_TOP)) / 2;
-/** Positive is thicker at the TOP of the picture, which is where a "!" carries its weight. */
-const BAR_TAPER = (BAR_TOP / BAR_BOTTOM - 1) / (BAR_TOP / BAR_BOTTOM + 1);
+/** Where the profile is measured from. The source's own centre for this shape. */
+const BAR_CENTRE = -0.1875;
 
 const EXCLAIM: BodyPose = body({
-  stretchX: (BAR_TOP + BAR_BOTTOM) / 2,
-  stretchY: BAR_HEIGHT / 2,
+  profile: profileFromPolygon(hullOfCircles(0, -0.505, BAR_TOP, 0, 0.13, BAR_BOTTOM), 0, BAR_CENTRE),
   y: BAR_CENTRE * R,
-  taper: BAR_TAPER,
-  straight: 1 - (BAR_TOP + BAR_BOTTOM) / BAR_HEIGHT,
 });
 
-/**
- * The egg: full height, four fifths of the width, and narrow END UP.
- *
- * The footprint is the reference's own measurement, 1.647 by 2.000, and the shape reaches
- * further above the centre than below it, which is why it is nudged up as well as narrowed.
- */
-const EGG: BodyPose = body({ stretchX: 0.8235, stretchY: 1.002, y: -0.046 * R, taper: -0.14 });
-
-/** The hexagon: a point at the top, and corners as round as the reference's own. */
-const HEX: BodyPose = body({ stretchX: 0.913, stretchY: 1.0055, facets: 6, facetAmount: 1 });
+/** The egg and the hexagon: traced off the reference video, frame by frame. Not modelled. */
+const EGG: BodyPose = body({ profile: [...TRACED.egg] });
+const HEX: BodyPose = body({ profile: [...TRACED.hexagon] });
 
 const SLEEP_R = 0.1585;
 const SLEEP_MID = 0.11;
@@ -213,19 +189,16 @@ const FACES: readonly Face[] = [
   act("sleepHigh", null, { body: body({ scale: SLEEP_R, y: (SLEEP_MID - SLEEP_SWING) * R }), eyeAlpha: 0 }),
   act("sleepLow", null, { body: body({ scale: SLEEP_R, y: (SLEEP_MID + SLEEP_SWING) * R }), eyeAlpha: 0 }),
 
-  // 🔴 THE HEAD ANGLES ARE HALVED ON THESE TWO, AND ONLY ON THESE TWO. In the source, the
-  // head angles move the eyes and nothing else — the silhouette carries its own separate
-  // rotation, which for both of these is zero. In this engine the head IS the body, which is
-  // the whole reason an eye foreshortens as it goes round the side; so the source's 26° of
-  // pitch and 17° of roll, which there only lean two eye capsules, here tip the entire egg
-  // over like a skittle. Kept at what a body can carry and still look like it is standing
-  // up: the face plainly looks up and to one side, and the egg is plainly an egg.
-  act("egg", { head: [15, 12, -6], split: 11.07, eyes: [[0.164, 0.385], [0.164, 0.385]] }, {
+  // 🔴 THE SOURCE'S OWN ANGLES, UNCHANGED. An earlier pass halved them, because the
+  // silhouette was then being shaped in the body's own frame and 17° of roll tipped the whole
+  // egg over. The shape is applied in the picture now — where the source applies it — so the
+  // roll leans the FACE and leaves the egg standing, and these are the measured numbers.
+  act("egg", { head: [19.97, 26.01, -17.1], split: 11.07, eyes: [[0.164, 0.385], [0.164, 0.385]] }, {
     body: EGG,
     bodyMotion: "slowDrift",
   }),
 
-  act("hexagon", { head: [17, 12, -5], split: 13.37, eyes: [[0.177, 0.411], [0.177, 0.411]] }, {
+  act("hexagon", { head: [23.11, 24.42, -13.3], split: 13.37, eyes: [[0.177, 0.411], [0.177, 0.411]] }, {
     body: HEX,
     bodyMotion: "slowDrift",
   }),

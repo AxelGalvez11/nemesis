@@ -701,7 +701,7 @@ export function CanvasComposer({
           "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
         )}
       >
-        {/* 🔴 THE ID IS LOAD-BEARING, NOT A HOOK FOR STYLING. `BloubDock` measures this box
+        {/* 🔴 THE ID IS LOAD-BEARING, NOT A HOOK FOR STYLING. `CharacterDock` measures this box
             and floats clear of its TOP edge, so the character holds its place while the
             composer grows downward as an answer is typed. Renaming it fails quietly — the
             dock falls back to a fixed offset and the character starts overlapping it. */}
@@ -862,7 +862,7 @@ export function CanvasComposer({
                   className="absolute bottom-[46px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
                   // 🔴 A SENTINEL FOR THE CHARACTER'S DOCK, PRESENT ONLY WHILE THE MENU IS OPEN.
                   // The popover is absolutely positioned, so `#canvas-composer`'s bounding box —
-                  // the one BloubDock measures to float clear of — cannot see it, and the
+                  // the one CharacterDock measures to float clear of — cannot see it, and the
                   // character sat on top of the open menu (owner report, 2026-08-23). The dock
                   // measures the union of the composer and this element; agreed with the mascot
                   // lane 2026-08-23, and renaming it re-creates the clash silently.

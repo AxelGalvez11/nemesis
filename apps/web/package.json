@@ -20,10 +20,10 @@
     "lint": "next lint",
     "parse-thread": "node scripts/build-parse-thread.mjs",
     "mascot:board": "tsx scripts/mascot-board.mts",
-    "character:board": "tsx scripts/bloub-board.mts",
     "brand:raster": "tsx scripts/brand-raster.mts",
     "research-probe": "tsx --env-file=.env.local scripts/research-probe.ts",
-    "character:sync": "tsx scripts/sync-landing-character.mts"
+    "character:sync": "tsx scripts/sync-landing-character.mts",
+    "character:faces": "tsx scripts/character-faces.mts"
   },
   "dependencies": {
     "3d-force-graph": "^1.79.0",

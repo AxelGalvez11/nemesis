@@ -457,7 +457,7 @@ a { color: inherit; text-decoration: none; }
  *
  * WHY 240ms AND THIS CURVE. It is the distance that sets the duration: 260px to 52px is a short
  * trip, and past about 300ms a control the learner pressed starts to feel like it is thinking.
- * The curve is the one `bloub.css` already uses for the mascot's walk, so the two pieces of
+ * The curve is the one `character.css` already uses for the mascot's walk, so the two pieces of
  * chrome that move on their own move alike.
  *
  * 🔴 THE ATTRIBUTE IS THE GATE, NOT THE SELECTOR. `[data-pane-shell]` alone would also animate the

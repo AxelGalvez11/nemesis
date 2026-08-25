@@ -22,12 +22,12 @@
 //
 // The five, in the order repeated clicks walk them:
 //   jump   — leaves the ground and LANDS SQUISHY (owner's word): the body flattens wide on
-//            impact and rebounds. CSS on the wrapper; see `.bloub-jump` in bloub.css.
+//            impact and rebounds. CSS on the wrapper; see `.character-jump` in character.css.
 //   waggle — both brows rise and fall twice. Drawn as holes in the body's own mask through
 //            the eye matrices, so they turn with the head; see `lib/character/brow.ts`.
 //   spin   — one clean pirouette, body only. 🔴 THIS IS NOT THE OLD SWIRL: no arcs, no
 //            colour trails, no eyes orbiting the body — the creature simply turns once,
-//            with a lean in and a settle out. CSS on the wrapper; see `.bloub-spin`.
+//            with a lean in and a settle out. CSS on the wrapper; see `.character-spin`.
 //   sigma  — one raised brow, half-lidded stare, lopsided smirk, held still and staring
 //            straight ahead (the gaze is deliberately suppressed while it holds). The
 //            owner asked for "a funny one, like a sigma emoji type"; the joke is that it
@@ -37,8 +37,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { FaceId } from "@/lib/character/face";
-import { STATE_BY_ID, type StateId } from "@/lib/bloub/states";
+import { ANIMATION_BY_ID, animationDuration } from "@/lib/avatar";
+import type { FeatureFace } from "@/lib/avatar/features";
+import type { StateId } from "@/lib/character/stations";
 
 /** Movement the engine does not know about, drawn over whatever pose is playing. */
 export type PokeMotion = "jump" | "waggle" | "spin" | null;
@@ -48,19 +49,25 @@ interface Reaction {
   readonly state: StateId;
   readonly motion: PokeMotion;
   /** A face from our own layer, worn for the reaction's whole hold. */
-  readonly face: FaceId | null;
+  readonly face: FeatureFace | null;
   /** How long to hold it, ms. Engine states use the animation's own published duration. */
   readonly hold: number;
 }
 
-/** How long the hop takes, start to landing. Must match `--bloub-jump-ms` in bloub.css. */
+/** How long the hop takes, start to landing. Must match `--character-jump-ms` in character.css. */
 export const JUMP_MS = 620;
-/** Up, down, up, down, gone. Must match WAGGLE_TIME in lib/character/brow.ts (seconds). */
+/** Up, down, up, down, gone. Must match WAGGLE_MS in lib/avatar/features.ts. */
 export const WAGGLE_MS = 900;
-/** One full turn, lean-in to settle. Must match `--bloub-spin-ms` in bloub.css. */
+/** One full turn, lean-in to settle. Must match `--character-spin-ms` in character.css. */
 export const SPIN_MS = 760;
 /** How long the sigma face holds. Long enough to be seen, short enough to stay a joke. */
 export const SIGMA_MS = 1600;
+
+/** One pass of the wink, from the catalogue, so the hold and the animation cannot disagree. */
+function winkMs(): number {
+  const wink = ANIMATION_BY_ID.get("wink");
+  return wink ? animationDuration(wink) : 1600;
+}
 
 /**
  * Reactions a poke can draw, in order.
@@ -77,13 +84,13 @@ const REACTIONS: readonly Reaction[] = [
   { state: "idle", motion: "waggle", face: null, hold: WAGGLE_MS },
   { state: "idle", motion: "spin", face: null, hold: SPIN_MS },
   { state: "idle", motion: null, face: "sigma", hold: SIGMA_MS },
-  { state: "wink", motion: null, face: null, hold: (STATE_BY_ID.get("wink")?.duration ?? 1.6) * 1000 },
+  { state: "wink", motion: null, face: null, hold: winkMs() },
 ];
 
 export function usePoke(base: StateId): {
   state: StateId;
   motion: PokeMotion;
-  face: FaceId | null;
+  face: FeatureFace | null;
   poke: () => void;
   poking: boolean;
 } {

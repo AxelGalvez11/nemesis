@@ -25,15 +25,22 @@ export {
   type PlayedFace,
   type PlayOptions,
 } from "./play";
-export { REST_BODY, SHUT_HEIGHT, VIEW_BOX, VIEW_SIZE, drawEye, drawFace, posedSurface } from "./render";
+export {
+  REST_BODY,
+  SHUT_HEIGHT,
+  VIEW_BOX,
+  VIEW_SIZE,
+  drawEye,
+  drawFace,
+  eyeFrames,
+  posedSurface,
+  type EyeFrame,
+} from "./render";
 export {
   FOCAL,
   RADIUS,
-  bendScale,
   faceToSkin,
-  facetScale,
   frontOfSkin,
-  isPlain,
   project,
   quatFromTurn,
   rotate,
@@ -91,7 +98,7 @@ export function avatarFrameAt(
  * 🔴 SMALL, AND SMALLER VERTICALLY. The character sits beside dense reading material; a
  * head that swings the full range of the engine reads as a toy watching you rather than as
  * a thing paying attention. These are the same numbers the previous character used
- * (lib/character/look.ts), kept so the swap does not also change how attentive it feels.
+ * the previous character used, kept so the swap does not also change how attentive it feels.
  */
 export const TRACK_YAW = 26;
 export const TRACK_PITCH = 15;

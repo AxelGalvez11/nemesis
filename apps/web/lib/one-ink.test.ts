@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { inkFor } from "./character/look";
+import { characterInk } from "./accent";
 
 // 🔴🔴 ONE COLOUR, TWO SURFACES — OWNER, 2026-08-23: "the send button and the mascot should be
 // following the same accent color." A chosen accent already reaches both through one table
-// (accent.ts writes --ui-action inline; inkFor returns the same hex — accent.test.ts guards that
+// (accent.ts writes --ui-action inline; characterInk returns the same hex — accent.test.ts guards that
 // pair). This file pins the DEFAULT, which used to disagree: the character wore its neutral ink
 // while the send button kept a green of its own (#37614a / #9fc4ae, retired). The stylesheet
-// cannot import inkFor, so this is the only place the two definitions meet.
+// cannot import characterInk, so this is the only place the two definitions meet.
 
 const CSS = readFileSync(new URL("../app/styles/desktop-ui.css", import.meta.url), "utf8");
 
@@ -23,8 +23,8 @@ test("🔴🔴 the default action IS the character's ink, in both themes", () =>
   // future change that drops the fallback entirely reddens rather than passing on a
   // partial match.
   for (const theme of ["light", "dark"] as const) {
-    const pattern = new RegExp(`--ui-action:\\s*var\\(--accent-fill-${theme},\\s*${inkFor("default", theme)}\\);`);
-    assert.match(CSS, pattern, `${theme} default drifted from inkFor`);
+    const pattern = new RegExp(`--ui-action:\\s*var\\(--accent-fill-${theme},\\s*${characterInk("default", theme === "dark")}\\);`);
+    assert.match(CSS, pattern, `${theme} default drifted from characterInk`);
   }
 });
 

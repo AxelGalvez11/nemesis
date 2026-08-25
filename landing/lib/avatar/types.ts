@@ -69,14 +69,22 @@ export interface BodyPose {
   /** Moves the body AND the face AND the decor together, in mark units. */
   readonly x: number;
   readonly y: number;
-  /** Widens or narrows against the body's own width and height. 1 is unchanged. */
-  readonly stretchX: number;
-  readonly stretchY: number;
-  /** See `Surface.taper`, `Surface.straight`, `Surface.facets`. */
-  readonly taper: number;
-  readonly straight: number;
-  readonly facets: number;
-  readonly facetAmount: number;
+  /**
+   * An exact silhouette: a radius per angle in the PICTURE, 64 samples, or nothing.
+   *
+   * 🔴 MEASURED, NOT MODELLED, AND THE FIRST VERSION OF THIS WAS THE OTHER WAY ROUND. It
+   * carried four parameters of my own — a taper for the egg, a rounded-polygon generator for
+   * the hexagon — which produced shapes that were close and were not the reference's. They
+   * had already been traced at the pixel, and the licence on them is MIT. See
+   * `vendor/silhouettes.ts`.
+   *
+   * 🔴 AND IT IS IN THE PICTURE PLANE, NOT THE BODY'S. Applied in the body's own frame, the
+   * head's roll would tip the egg over like a skittle — which is what the parametric version
+   * did, and why it needed the head angles halved to look upright. The source treats the
+   * silhouette as a flat shape with the face painted on a ball behind it; doing the same
+   * means the reference's own gaze numbers work unchanged.
+   */
+  readonly profile: readonly number[] | null;
 }
 
 /** A disc bitten out of the body, so something can sit just outside it and read as apart. */
@@ -182,46 +190,6 @@ export interface Surface {
   /** Cone only: how far the point and the base are rounded off, 0..2 each. */
   readonly tipRoundness?: number;
   readonly baseRoundness?: number;
-
-  // ── The four knobs a routine can turn ─────────────────────────────────────────
-  //
-  // 🔴 KNOBS, NOT SHAPES, AND THAT IS WHAT MAKES ONE ENGINE POSSIBLE. The character has to
-  // become an egg, a hexagon, an upright bar and a small dot, and it has to become them by
-  // MELTING rather than by cutting. A set of named silhouettes cannot do that: there is no
-  // halfway between "egg" and "hexagon" to draw on the frames in between. Four numbers that
-  // are all zero for the plain body can, because halfway is just halfway.
-  //
-  // They compose in this order, and `frontOfSkin` undoes them in the same order, which is
-  // why the eyes stay on the body however far it is bent.
-
-  /**
-   * Fatter at the TOP OF THE PICTURE than at the bottom, -1..1.
-   *
-   * This is what makes an egg an egg rather than an ellipse, and what makes an exclamation
-   * mark's bar thicker at the top. 🔴 THE SIGN IS IN SCREEN TERMS, WHICH IS THE OPPOSITE OF
-   * the body's own axis — the solid is built with `y` running downward, so its own zero end
-   * is the top of the picture. Read the other way round it drew an egg standing on its
-   * point and an exclamation mark shaped like a traffic cone, which is exactly what the
-   * first pass shipped.
-   */
-  readonly taper?: number;
-  /**
-   * How much of the height is a straight barrel rather than a curve, 0..1.
-   *
-   * 0 is an ellipsoid and 1 is a capsule: round ends with parallel sides in between. The
-   * bar of an exclamation mark is nearly 1.
-   */
-  readonly straight?: number;
-  /**
-   * How many flat sides the SILHOUETTE has, and how far toward them it goes, 0..1.
-   *
-   * 🔴 MEASURED IN THE SCREEN PLANE, NOT AROUND THE BODY'S AXIS. A hexagonal prism seen
-   * head-on is a rectangle, not a hexagon — faceting a body around its vertical axis would
-   * have drawn wavy sides and no hexagon at all. So the radius is scaled by the angle in
-   * the picture, which deforms the solid outward toward its own outline.
-   */
-  readonly facets?: number;
-  readonly facetAmount?: number;
 }
 
 export interface Avatar {

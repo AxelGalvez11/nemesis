@@ -21,10 +21,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { BloubBot } from "@/components/bloub/bloub-bot";
-import { DOCK_CENTRE_SCALE, DOCK_SIZE, centreStation } from "@/components/bloub/bloub-dock";
+import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
+import { DOCK_CENTRE_SCALE, DOCK_SIZE, centreStation } from "@/components/character/character-dock";
 import { stateForCanvas } from "@/lib/character/stations";
-import { usePoke } from "@/components/bloub/use-poke";
+import { usePoke } from "@/components/character/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
@@ -137,13 +137,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    *
    * 🔴🔴 IT TRAVELS TO WHERE THE CANVAS'S CHARACTER WILL BE, TO THE PIXEL (owner 2026-08-21:
    * "the mascot should move toward the center smoothly not jaggedly"). These are two different
-   * components on two different surfaces — this greeter unmounts and `BloubDock` mounts — so
+   * components on two different surfaces — this greeter unmounts and `CharacterDock` mounts — so
    * the only thing that makes the swap invisible is the two of them agreeing about where the
    * character stands and how big it is. Anything less and the learner watches one character
    * vanish and another appear somewhere else, which is what "jaggedly" was describing.
    *
    * 🔴 SO THE NUMBERS COME FROM THE DOCK, NOT FROM HERE. `centreStation`, `DOCK_SIZE` and
-   * `DOCK_CENTRE_SCALE` are exported by bloub-dock.tsx precisely so this cannot drift: retuning
+   * `DOCK_CENTRE_SCALE` are exported by character-dock.tsx precisely so this cannot drift: retuning
    * the middle station moves both ends of the hand-off at once. A literal `0.42` copied into
    * this file would look right today and come apart on the first tweak.
    *
@@ -369,11 +369,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               This is also the one place the entrance turn belongs — the eyes go right round the
               body and come back, which is a real arrival and costs a beat. It is off everywhere
               else precisely because it would then happen on every appearance. */}
-          {/* 🔴 THE HOP GETS ITS OWN ELEMENT HERE TOO, AND FOR THE SAME REASON AS IN `BloubDock`:
+          {/* 🔴 THE HOP GETS ITS OWN ELEMENT HERE TOO, AND FOR THE SAME REASON AS IN `CharacterDock`:
               the wrapper above already carries the greeting's own margin and its departure, so a
               jump written onto it would have to share a transform with the transition. Nested
               elements multiply, so each keeps one job. See `use-poke.ts` for what a poke draws. */}
-          {/* 🔴 `z-30` MATCHES `.bloub-dock`'s, so the character passes OVER the composer on its
+          {/* 🔴 `z-30` MATCHES `.character-dock`'s, so the character passes OVER the composer on its
               way to the middle rather than under it — the composer is travelling the other way
               and the two cross. `relative` is what makes the z-index apply at all. */}
           <div
@@ -391,14 +391,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 : undefined
             }
           >
-            <div className={greeter.motion === "jump" ? "bloub-jump" : greeter.motion === "spin" ? "bloub-spin" : undefined}>
-              <BloubBot
-                color={accent}
+            <div className={greeter.motion === "jump" ? "character-jump" : greeter.motion === "spin" ? "character-spin" : undefined}>
+              <NemesisAvatar
+                accent={accent}
                 entrance
                 face={greeter.face}
                 onPoke={greeter.poke}
                 size={GREETER_SIZE}
-                state={greeter.state}
+                animation={greeter.state}
                 track
                 waggle={greeter.motion === "waggle"}
               />

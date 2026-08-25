@@ -1,8 +1,7 @@
 // What Nemesis is doing → which animation plays, and where the character stands.
 //
-// 🔴 THIS FILE IS THE ONLY NEMESIS OPINION ABOUT BLOUB. `lib/bloub/*` is vendored
-// upstream code and is not edited, so that re-vendoring a newer version stays a plain
-// copy. Everything this product decides — which of its own states map onto which
+// 🔴 THIS FILE IS THE ONLY NEMESIS OPINION ABOUT THE CATALOGUE. `lib/avatar/*` decides
+// what each animation LOOKS like and nothing else; everything this product decides — which of its own states map onto which
 // animation, and which of them are worth walking to the middle of the screen for —
 // lives here.
 //
@@ -11,7 +10,16 @@
 // about whether searching counts, and the character would behave differently on two
 // screens for no reason a learner could explain.
 
-import type { StateId } from "@/lib/bloub/states";
+/**
+ * An animation's name, from the one catalogue.
+ *
+ * 🔴 A PLAIN STRING RATHER THAN A UNION, AND THAT IS A DELIBERATE LOOSENING. The catalogue
+ * now holds forty-nine — sixteen feelings, ten routines and twenty-three gaze patterns —
+ * and a union of all of them here would be a second list to keep in step with the first.
+ * `lib/avatar/catalogue.ts` refuses an unknown name at load, and `character.test.ts` checks
+ * that every id this file names exists, which is the same guarantee without the duplicate.
+ */
+export type StateId = string;
 
 /** Where the character stands while an animation plays. */
 export type Station = "corner" | "centre";
@@ -24,7 +32,7 @@ export type Station = "corner" | "centre";
  * waiting for it. Coming forward is how the character says the wait is real work, and
  * it is worth nothing if a wink does it too.
  */
-const CENTRE: ReadonlySet<StateId> = new Set<StateId>(["thinking", "orbit", "comet"]);
+const CENTRE: ReadonlySet<StateId> = new Set<StateId>(["thinking"]);
 
 export function stationOf(state: StateId): Station {
   return CENTRE.has(state) ? "centre" : "corner";
@@ -64,12 +72,12 @@ export type NemesisActivity =
 export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   // 🔴🔴 `waiting`, NOT `thinking`, AND THE NAMES ARE THE OPPOSITE WAY ROUND FROM WHAT THEY LOOK.
   // Owner, 2026-08-21: *"remove the three dots animation, i just want the mascot and the words lit
-  // left to right."* The catalogue's `thinking` pose IS the three dots — `lib/bloub/states.ts` says
+  // left to right."* The catalogue's `thinking` pose IS the three dots — `lib/avatar/routines.ts` says
   // so outright, *"la boule DEVIENT le point du milieu"* — and it fades the eyes to zero while it
   // does. So for weeks the character was not standing beside a caption while it worked; it had
   // dissolved into the dots, which is why every screenshot showed dots and no face.
   //
-  // 🔴 THE WORDS CARRY THE MOTION NOW. `BloubDock`'s caption is lit left to right, so the character
+  // 🔴 THE WORDS CARRY THE MOTION NOW. `CharacterDock`'s caption is lit left to right, so the character
   // is free to stay a character: present, eyes open, tracking the pointer, beside a line that says
   // what is happening. `idle` is that pose.
   //
@@ -77,7 +85,7 @@ export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   // decide corner or centre, and it could while the working poses were unique to working. `idle` is
   // also how the character rests, so the same id now means two opposite places — and a resting
   // character dragged to the middle of the page would be far worse than dots. The station is passed
-  // explicitly by the surface that knows (see `BloubDock`'s `station`), and `stationOf` remains the
+  // explicitly by the surface that knows (see the dock's `station`), and `stationOf` remains the
   // default for every caller that has no opinion.
   thinking: "idle",
   // 🔴 THE SAME POSE (owner 2026-08-20: "why is it only doing swirl?"). Both waits are one
@@ -89,7 +97,7 @@ export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   // name ("remove the big eyes"); `notify` bolts a badge onto the body, which our language
   // forbids outright — a creature, never an icon. What replaces them is not another pose but
   // OUR OWN layer: while material is being taken in, the character puts its reading glasses
-  // on (see `FaceId` in face.ts and the `face` prop on BloubDock) and stays a creature doing
+  // on (see `FeatureFace` in lib/avatar/features.ts and the `face` prop on the dock) and stays a creature doing
   // something, instead of becoming a different drawing.
   retrieving: "idle",
   ingesting: "idle",
@@ -105,19 +113,17 @@ export function stateFor(activity: NemesisActivity): StateId {
 /**
  * Per-animation playback rate. 1 is the measured speed; below 1 is slower.
  *
- * 🔴 IT LIVES HERE AND NOT IN THE STATE TABLE. The vendored timings are measured off a
- * reference recording and re-vendoring must stay a plain copy, so a taste decision about
- * pace cannot be an edit to `lib/bloub/states.ts`. The engine's clock is scaled instead,
- * which slows the whole animation coherently — rings, gaze sweep and body morph together
- * — rather than stretching one term and leaving the others behind.
+ * 🔴 IT LIVES HERE AND NOT IN THE CATALOGUE. Every timing in `lib/avatar` is measured off a
+ * reference, and a taste decision about pace is not a correction to a measurement. The
+ * clock is scaled instead, which slows a whole animation coherently — body morph, gaze and
+ * blink together — rather than stretching one term and leaving the others behind.
  *
- * `swirl` at 0.55 (owner 2026-08-20: "i want the swirl animation to not be so fast").
- * Its full-tilt sibling `orbit` keeps the measured 1.25 turns per second, because that
- * one is the flourish; if it wants slowing too, it is the number below.
+ * 🔴 AND IT IS EMPTY, WHICH IS THE HONEST STATE. The one entry it ever held retimed `swirl`,
+ * an animation that no longer exists: the owner cut every rainbow gesture on 2026-08-23.
+ * The mechanism stays because the next taste decision about pace will want it, and because
+ * a caller asking `speedOf` should not have to know whether anything is retimed today.
  */
-export const SPEED: Partial<Record<StateId, number>> = {
-  swirl: 0.55,
-};
+export const SPEED: Record<string, number> = {};
 
 export function speedOf(state: StateId): number {
   return SPEED[state] ?? 1;

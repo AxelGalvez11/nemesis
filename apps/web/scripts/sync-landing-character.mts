@@ -33,12 +33,24 @@ const to = join(landing, "lib", "avatar");
 mkdirSync(to, { recursive: true });
 
 let copied = 0;
-for (const name of readdirSync(from)) {
-  if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;
-  const body = readFileSync(join(from, name), "utf8");
-  writeFileSync(join(to, name), NOTE + body);
-  copied++;
-}
+const carry = (dir: string, into: string, stamp: boolean) => {
+  mkdirSync(into, { recursive: true });
+  for (const name of readdirSync(dir)) {
+    if (name === "vendor") {
+      // 🔴 THE VENDORED TABLES AND THEIR LICENCE, WHICH IS NOT OPTIONAL. MIT permits the copy
+      // and requires the notice, and the marketing site is a separate deployment — so the
+      // notice has to be in it too, not only in the app it was copied into first.
+      carry(join(dir, name), join(into, name), false);
+      continue;
+    }
+    if (name.endsWith(".test.ts")) continue;
+    if (!name.endsWith(".ts") && name !== "LICENSE.bloub") continue;
+    const body = readFileSync(join(dir, name), "utf8");
+    writeFileSync(join(into, name), stamp && name.endsWith(".ts") ? NOTE + body : body);
+    copied++;
+  }
+};
+carry(from, to, true);
 
 const component = join(landing, "components", "character", "NemesisAvatar.tsx");
 mkdirSync(dirname(component), { recursive: true });

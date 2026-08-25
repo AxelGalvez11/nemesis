@@ -69,7 +69,7 @@ import { CanvasHeader } from "./canvas-header";
 import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
-import { BloubDock } from "@/components/bloub/bloub-dock";
+import { CharacterDock } from "@/components/character/character-dock";
 import { stateForCanvas } from "@/lib/character/stations";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
@@ -1139,7 +1139,7 @@ export function LearningCanvas({
         <div className="flex h-full items-center justify-center">
           {/* Nothing is docked yet — there is no composer to stand above — so the character
               simply holds the middle, which is where it would have walked to anyway. */}
-          <BloubDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
+          <CharacterDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
           {/* This branch is one database read long and shows no caption, so the dock's own
               animation is the whole of what says "working" here. Nothing draws a second one. */}
           {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
@@ -2021,7 +2021,7 @@ export function LearningCanvas({
           🔴 IT TAKES NO SPACE AND NO CLICKS. Absolutely positioned, `pointer-events: none`,
           outside the flow — it cannot reflow the lesson it is sitting on, and it cannot swallow
           a press meant for the composer behind it. */}
-      <BloubDock
+      <CharacterDock
         anchor="#canvas-composer"
         // 🔴 THE CAPTION RIDES THE CHARACTER. It used to be its own box on the page and ended up
         // against the right edge of the window, hundreds of pixels from the mascot it was meant to

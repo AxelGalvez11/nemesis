@@ -5,7 +5,7 @@
 // Owner 2026-08-24: *"can you actually just show me the animation? It will play when an exact
 // event happens — that'll help me more than just looking at stills."* So this board has no
 // stills. The stage below is a mock slice of the learn canvas — a composer, a reply area, the
-// SAME BloubDock the product mounts — and every row in the event list is a button that fires
+// SAME CharacterDock the product mounts — and every row in the event list is a button that fires
 // that exact product moment through the same props and the same attention wiring the app uses.
 //
 // Same convention as the other dev-preview routes: plain client page, no auth gate, not
@@ -13,10 +13,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { BloubBot } from "@/components/bloub/bloub-bot";
-import { BloubDock } from "@/components/bloub/bloub-dock";
-import { usePoke } from "@/components/bloub/use-poke";
-import type { FaceId } from "@/lib/character/face";
+import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
+import { CharacterDock } from "@/components/character/character-dock";
+import { usePoke } from "@/components/character/use-poke";
+import type { FeatureFace } from "@/lib/avatar/features";
 import type { Station } from "@/lib/character/stations";
 import type { ThinkingMark } from "@/lib/learn/thinking-phases";
 import { lookAt } from "@/lib/mascot/attention";
@@ -29,7 +29,7 @@ const ANSWER =
   "Read the summary first, then take the examples backwards: answer, then method.";
 
 function Stage() {
-  const [face, setFace] = useState<FaceId | null>(null);
+  const [face, setFace] = useState<FeatureFace | null>(null);
   const [station, setStation] = useState<Station>("corner");
   const [marker, setMarker] = useState<"!" | "?" | null>(null);
   const [caption, setCaption] = useState<string | null>(null);
@@ -210,7 +210,7 @@ function Stage() {
             value={typed}
           />
         </div>
-        <BloubDock
+        <CharacterDock
           anchor=".stage-composer"
           bottom={24}
           caption={caption}
@@ -263,14 +263,14 @@ function LivePokeable() {
     <figure className="flex flex-col items-center gap-3">
       <div
         className={
-          poke.motion === "jump" ? "bloub-jump" : poke.motion === "spin" ? "bloub-spin" : undefined
+          poke.motion === "jump" ? "character-jump" : poke.motion === "spin" ? "character-spin" : undefined
         }
       >
-        <BloubBot
+        <NemesisAvatar
           face={poke.face}
           onPoke={poke.poke}
           size={148}
-          state={poke.state}
+          animation={poke.state}
           track
           waggle={poke.motion === "waggle"}
         />
@@ -310,7 +310,7 @@ export default function MascotLanguagePage() {
       <section className="flex flex-wrap items-end gap-14">
         <LivePokeable />
         <figure className="flex flex-col items-center gap-3">
-          <BloubBot face="reading" size={148} state="idle" track />
+          <NemesisAvatar face="reading" size={148} animation="idle" track />
           <figcaption className="text-xs text-(--ui-text-secondary)">
             Reading, live — the glasses ride the gaze. Move your cursor.
           </figcaption>

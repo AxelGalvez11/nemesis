@@ -11,7 +11,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { SecuritySettings } from "@/components/workspace/shell/security-settings";
 import { VoiceSettings } from "@/components/workspace/shell/voice-settings";
 import { ACCENT_COLORS, ACCENT_LABELS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type DarkTone, type ThemePreference } from "@/components/theme-provider";
-import { BloubBot } from "@/components/bloub/bloub-bot";
+import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
 import { cn } from "@/lib/utils";
 
@@ -301,7 +301,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
                   The preview is the real engine frozen, not a picture of it. */}
               <div className="flex items-center gap-4">
                 <div className="grid size-[92px] shrink-0 place-items-center rounded-2xl border border-(--ui-stroke-secondary)">
-                  <BloubBot color={accent} frozenAt={1} size={76} state="idle" />
+                  <NemesisAvatar accent={accent} animation="idle" frozenAt={900} size={76} />
                 </div>
                 <p className="text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">
                   It sits above the composer while you work, comes forward to the middle of the page
