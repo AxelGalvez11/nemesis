@@ -517,7 +517,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
                 })()}
               </DialogDescription>
             </DialogHeader>
-            <label className="grid gap-1.5 text-xs font-medium">Group name<Input autoFocus onChange={(event) => setMergeName(event.target.value)} placeholder="Cardio decks" value={mergeName} /></label>
+            <label className="grid gap-1.5 text-xs font-medium">Group name<Input autoFocus onChange={(event) => setMergeName(event.target.value)} placeholder="Week 1 decks" value={mergeName} /></label>
             <DialogFooter><Button onClick={() => setMerge(null)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroupPath(mergeName)} type="submit" variant="secondary">Create group</Button></DialogFooter>
           </form>
         </DialogContent>
@@ -526,7 +526,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
         <DialogContent className="max-w-sm">
           <form className="grid gap-4" onSubmit={createGroup}>
             <DialogHeader><DialogTitle>New folder</DialogTitle><DialogDescription>Folders can contain decks or other folders.</DialogDescription></DialogHeader>
-            <Input autoFocus onChange={(event) => setGroupName(event.target.value)} placeholder="Pharmacy School::Exam 7" value={groupName} />
+            <Input autoFocus onChange={(event) => setGroupName(event.target.value)} placeholder="Art history::Final" value={groupName} />
             <DialogFooter><Button onClick={() => setGroupDialogOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroupPath(groupName)} type="submit" variant="secondary">Create group</Button></DialogFooter>
           </form>
         </DialogContent>

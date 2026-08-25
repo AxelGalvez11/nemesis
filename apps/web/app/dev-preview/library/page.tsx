@@ -15,19 +15,23 @@ import type { CanvasTable } from "@/lib/library/canvas-index";
 // `createdAt` is present here for the same reason the canvas rows carry one: without it the
 // preview renders an em dash where production renders a date, and a preview that is missing a
 // column is exactly the kind of screenshot that gets read as "the column is broken".
+// The shelf is deliberately SPREAD ACROSS FIELDS. It used to be a pharmacy student's library, and
+// a preview is what everyone screenshots, demos and remembers, so it was quietly teaching the wrong
+// audience. One real pharmacy course stays, because pharmacy students are welcome; what is gone is
+// the impression that they are the only ones.
 const FOLDERS = [
   { createdAt: "2026-07-28T09:00:00.000Z", id: "f-fall", name: "Fall 2026", parentId: null },
   { createdAt: "2026-08-02T09:00:00.000Z", id: "f-phcy", name: "PHCY 2105", parentId: "f-fall" },
-  { createdAt: "2025-11-14T09:00:00.000Z", id: "f-pharm", name: "Pharmacology", parentId: null },
+  { createdAt: "2025-11-14T09:00:00.000Z", id: "f-law", name: "Constitutional law", parentId: null },
 ];
 
 const TITLES = [
-  "Hypertension pharmacotherapy",
-  "Diabetes pharmacotherapy",
+  "Supply, demand and price ceilings",
+  "Fourier transforms, first pass",
   "How a four-stroke diesel engine works",
   "Contract formation — offer and acceptance",
   "Beam deflection under distributed load",
-  "Community IPPE exam prep",
+  "The Roman Republic: the Gracchi",
   "Renal physiology — the nephron",
   "Statistical power and sample size",
 ];
