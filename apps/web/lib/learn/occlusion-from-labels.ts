@@ -35,6 +35,7 @@ import { scaleBoxes, type OcclusionPayload, type OcclusionShape, type SuggestedB
 import { MAX_OPTIONS, MIN_OPTIONS } from "./chat-check";
 import type { ChoiceOption } from "./choice-set";
 import { MIN_LABELS_FOR_SPATIAL } from "./figure-labels";
+import { isAnswerableLabel } from "./occlusion-source";
 
 /**
  * A picture and what vision found in it.
@@ -70,12 +71,21 @@ export function occlusionShapes(figure: LabelledFigure): OcclusionShape[] {
  *  surviving mask cannot ask a question, and asking the raw list would have said it could. */
 export function canOcclude(figure: LabelledFigure): boolean {
   if (!(figure.width > 0) || !(figure.height > 0) || !figure.src.trim()) return false;
-  return occlusionShapes(figure).filter((shape) => shape.label.trim()).length >= MIN_LABELS_FOR_SPATIAL;
+  return askable(figure).length >= MIN_LABELS_FOR_SPATIAL;
 }
 
-/** Masks worth asking about: an unlabelled one has no answer to reveal. */
+/**
+ * Masks worth asking about.
+ *
+ * 🔴🔴 AN UNLABELLED MASK HAS NO ANSWER, AND A NUMBERED ONE HAS NO MEANING. This filtered only on
+ * `.trim()` until production said otherwise: a real Commons nephron diagram came back with the
+ * labels `1 2 3 … 12 F R S E Cortex Medulla`, because it is a numbered-key figure whose names live
+ * in a legend. Every one of those passed a non-empty check, and the question they produced was
+ * "Which part is covered? — 3 / 7 / 11 / F". `isAnswerableLabel` is the rule; see
+ * `occlusion-source.ts` for what it costs.
+ */
 function askable(figure: LabelledFigure): OcclusionShape[] {
-  return occlusionShapes(figure).filter((shape) => shape.label.trim());
+  return occlusionShapes(figure).filter((shape) => isAnswerableLabel(shape.label));
 }
 
 /**

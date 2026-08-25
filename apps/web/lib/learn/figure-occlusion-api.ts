@@ -19,13 +19,17 @@ import type { LabelledFigure } from "./occlusion-from-labels";
 export const FIGURE_OCCLUSION_ROUTE = "/api/learn/figure-occlusion";
 
 /**
- * A repository search plus a vision read on whatever it finds.
+ * How long the client waits.
  *
- * 🔴 GENEROUS, AND STILL BOUNDED. The server's own `maxDuration` is 60s; a client that gave up at
- * ten would abandon reads it had already paid for, and the learner would see no diagram while the
- * bill arrived anyway.
+ * 🔴 IT MUST OUTLAST THE SERVER, NOT UNDERCUT IT. The route budgets 8s of search + 10s of download
+ * + 38s of vision inside a 60s function; a client giving up at 45 would abandon a vision read we
+ * had already paid for and show no diagram anyway — the worst of both. This sits past the
+ * function's own ceiling so the only thing that ends the wait is the server answering.
+ *
+ * 🔴 AND ALMOST NOBODY WAITS THIS LONG. `figure_occlusion_cache` serves a subject that has been
+ * asked before in a single query, so the full cost is paid once per diagram across every learner.
  */
-export const FIGURE_OCCLUSION_TIMEOUT_MS = 45000;
+export const FIGURE_OCCLUSION_TIMEOUT_MS = 65000;
 
 export interface FigureOcclusionDeps {
   readonly fetch: typeof globalThis.fetch;
