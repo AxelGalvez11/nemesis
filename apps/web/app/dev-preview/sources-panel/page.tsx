@@ -99,9 +99,14 @@ export default function SourcesPanelPreview() {
           </button>
         ))}
       </div>
-      {/* Right-aligned, because the panel opens `-right-2 top-full` off its own button — pinned to
-          the left of a wide page it hangs off the edge and looks like a bug it does not have. */}
-      <div className="flex justify-end pr-[22rem]">
+      {/* 🔴 THE BUTTON SITS WHERE THE PANEL HAS ROOM, AND THE FIRST TRY GOT THIS WRONG. The panel
+          opens `-right-2 top-full` off its own button, so a button at the page's left edge throws
+          it off screen entirely — which is exactly what the first version of this harness did at
+          800px, and it read as a broken panel rather than a badly-placed button. A fixed
+          `pr-[22rem]` only moved the failure to a different width. `ml-auto` on a box the panel's
+          own width keeps the whole thing on screen at any size, which is what the real canvas gets
+          for free by putting this control in its top-right strip. */}
+      <div className="ml-auto w-[21rem]">
         <WorkspacePreviewProvider value={{ email: "student@preview.dev" }}>
           <SourcesControl canvas={canvas} modelKnowledge onFiles={() => {}} />
         </WorkspacePreviewProvider>
