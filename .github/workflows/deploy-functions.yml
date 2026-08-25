@@ -1,0 +1,121 @@
+# Edge-function deploy — from the reviewed source, never from a hand-copied paste.
+#
+# WHY THIS EXISTS. Until now every Supabase function in this repo was deployed by hand. That was
+# survivable while functions changed rarely, and it broke down the moment one needed shipping as
+# part of a feature: the only routes available were (a) a CLI that needs a credential nobody had
+# loaded, or (b) pasting ~50KB of source into a deploy API call by hand.
+#
+# 🔴🔴🔴 (b) IS THE ONE THAT LOOKS FINE AND IS NOT. Everything else in this repo reaches production
+# through git: reviewed in a PR, gated by `unit`, deployed from the commit that passed. A hand-copied
+# payload has none of that. There is no diff between what was reviewed and what runs, no checksum,
+# and no test between the paste and production — so a single mistyped character inside a regex
+# deploys a function that is subtly wrong and looks correct. The deployed artifact must be provably
+# the reviewed artifact, and the only way to get that is to deploy FROM the repository.
+#
+# 🔴 IT ONLY RUNS WHEN A FUNCTION ACTUALLY CHANGED, and only on main. `_shared/**` is in the paths
+# filter because the functions import across it — a fix to `http.ts` changes what
+# `nemesis-literature` does while leaving its own file untouched, and a deploy that missed that
+# would leave production running code nobody has in front of them.
+#
+# 🔴 EACH FUNCTION IS NAMED. There is no "deploy everything that changed" glob, because
+# `science-search` is deliberately NOT deployed: it imports the whole 42-connector registry and is
+# gated off pending an owner decision. A glob would ship it the first time anyone touched a shared
+# file. Adding a function here is how it becomes deployable — a visible, reviewable line.
+
+name: deploy-functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/nemesis-literature/**"
+      - "supabase/functions/_shared/science/**"
+  # Deliberately available by hand too: a deploy that can only be triggered by a code change cannot
+  # be re-run after a transient platform failure without an empty commit.
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      # 🔴 TYPECHECK BEFORE UPLOAD, NOT AFTER. A Deno function fails at REQUEST time, not at deploy
+      # time — a broken import or a type error deploys perfectly happily and then 500s for the first
+      # learner who asks a question. `deno check` is the only gate that catches that before students do.
+      - name: Typecheck the functions being deployed
+        run: deno check supabase/functions/nemesis-literature/index.ts
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # 🔴🔴🔴 AN EXPIRED TOKEN IS NOT A MISSING TOKEN, AND ONLY ONE OF THOSE FAILS LEGIBLY BY DEFAULT.
+      # The owner created this credential 2026-08-24 with the 30-day expiry Supabase's form offered,
+      # so it stops working around 2026-09-23 — this is a scheduled failure, not a hypothetical one.
+      # A MISSING secret is empty and the check below names it in one line. An EXPIRED secret is
+      # present, non-empty, correctly spelled, and refused by the API, so the run would die on a bare
+      # CLI auth error weeks after anyone remembers a token was involved. Whoever reads that log will
+      # not be whoever created the token, so the failure has to introduce itself.
+      #
+      # Replacing it with a longer-lived token needs no change here: generate, overwrite the secret,
+      # re-run. Only the date in the message below goes stale, and a stale date still points at the
+      # right page.
+      - name: Deploy nemesis-literature
+        # 🔴 TWO NAMES, ONE CREDENTIAL, AND ONLY ONE OF THEM IS OURS TO CHOOSE. The repository secret
+        # is NEMESIS_DEPLOY — the owner's name for it, and the one to look for in Settings. The
+        # environment variable must be SUPABASE_ACCESS_TOKEN because that is the name the Supabase
+        # CLI reads; renaming it here would leave the CLI seeing no credential at all. So this line
+        # is a deliberate bridge, not a copy-paste slip: do not "fix" either side to match the other.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.NEMESIS_DEPLOY }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::The NEMESIS_DEPLOY secret is not set (or is empty). Generate a token at https://supabase.com/dashboard/account/tokens and add it under Settings → Secrets and variables → Actions, named exactly NEMESIS_DEPLOY."
+            exit 1
+          fi
+          # Captured rather than streamed so the failure can be classified below. The deploy is a
+          # single short upload; there is no long-running output being withheld from the log.
+          set +e
+          out=$(supabase functions deploy nemesis-literature \
+            --project-ref qyjmivntajbigjswhahb \
+            --no-verify-jwt 2>&1)
+          status=$?
+          set -e
+          echo "$out"
+          if [ $status -ne 0 ]; then
+            # 🔴 MATCHES THE SHAPE OF A REFUSAL, NOT ONE EXACT SENTENCE. The CLI's wording for a
+            # rejected token has changed between versions, and this hint is only ever read on a run
+            # that is already failing — so a false positive costs a slightly wrong suggestion, while
+            # a miss costs the entire reason this block exists.
+            if echo "$out" | grep -qiE 'unauthorized|401|invalid access token|token .*(expired|invalid)|expired'; then
+              echo "::error::Supabase refused the access token — it has most likely EXPIRED. The token in the NEMESIS_DEPLOY secret was created 2026-08-24 with a 30-day expiry (about 2026-09-23). Generate a new one at https://supabase.com/dashboard/account/tokens, overwrite the NEMESIS_DEPLOY secret with it, and re-run this workflow."
+            fi
+            exit $status
+          fi
+
+      # The function verifies the caller itself (a Supabase user token, anonymous sessions
+      # rejected), which is why --no-verify-jwt is correct here rather than lax: platform JWT
+      # verification would reject the device-key style callers other functions use, and this one's
+      # own `verifyUser` is the check that matters. See its header.
+      - name: Confirm it answers
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "https://qyjmivntajbigjswhahb.supabase.co/functions/v1/nemesis-literature" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"literature","query":"smoke"}')
+          # 401 is the RIGHT answer to an unauthenticated smoke test: it proves the function is
+          # deployed, routing, and refusing anonymous callers. A 404 means the deploy did not land.
+          echo "unauthenticated probe returned $code"
+          if [ "$code" != "401" ]; then
+            echo "::error::expected 401 from an unauthenticated call; got $code"
+            exit 1
+          fi
