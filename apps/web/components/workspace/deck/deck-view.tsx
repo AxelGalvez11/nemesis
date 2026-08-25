@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { composeSlide, composeReferences } from "@/lib/export/deck-compose";
 import { deckDesign } from "@/lib/export/deck-designs";
+import { signDeckFigures } from "@/lib/learn/deck-figures";
 import { DECK_CSS, SLIDE_PX_H, SLIDE_PX_W, sceneToHtml } from "@/lib/export/deck-html";
 import type { DeckPlan } from "@/lib/export/deck-plan";
 
@@ -42,8 +43,11 @@ export function DeckView({ plan, designId, credit = "Made with Nemesis", actions
     let alive = true;
     void (async () => {
       const design = deckDesign(designId);
-      const scenes = plan.slides.map((slide, i) => composeSlide(design, slide, { credit, index: i + 1, plan }));
-      if (plan.references.length) scenes.push(composeReferences(design, plan.references));
+      // The learner's own figures live in a private bucket, so each render mints its own signed
+      // links (deck-figures.ts). A failure leaves the caption and drops the picture.
+      const shown = plan.figures.length ? { ...plan, figures: await signDeckFigures(plan.figures) } : plan;
+      const scenes = shown.slides.map((slide, i) => composeSlide(design, slide, { credit, index: i + 1, plan: shown }));
+      if (shown.references.length) scenes.push(composeReferences(design, shown.references));
       const html: string[] = [];
       for (const [i, scene] of scenes.entries()) html.push(await sceneToHtml(scene, i + 1));
       if (alive) setSlides(html);

@@ -157,7 +157,10 @@ async function paint(pptx: Pptx, scene: Scene): Promise<void> {
     // A picture placed IN the content names an app asset the same way a background does, and a
     // .pptx cannot reference anything outside itself — so it is fetched and inlined here. A
     // failure drops the picture and keeps the slide, which is the same bargain as a background.
-    if (item.kind === "image" && item.data.startsWith("/")) {
+    // Anything that is not already bytes: an app asset (`/deck/textures/…`) or a signed link to
+    // one of the learner's own figures. Both have to become bytes, because a .pptx cannot
+    // reference anything outside itself.
+    if (item.kind === "image" && !item.data.startsWith("data:")) {
       const bytes = await inlineAsset(item.data);
       if (bytes) draw(slide, { ...item, data: bytes });
       continue;

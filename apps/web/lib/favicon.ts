@@ -21,14 +21,26 @@ export function hostnameOf(url: string | null | undefined): string | null {
 // reads "Wikipedia" instead of "En".
 const GENERIC_HOST_LABELS = new Set(["www", "en", "m", "amp", "mobile"]);
 
-/** Short display name for a source pill: fifa.com -> "Fifa", en.wikipedia.org -> "Wikipedia",
- *  pubmed.ncbi.nlm.nih.gov -> "Pubmed". Falls back to null when the URL has no usable host. */
-export function sourceLabel(url: string | null | undefined): string | null {
-  const host = hostnameOf(url);
+/**
+ * Short display name for a bare HOSTNAME: fifa.com -> "Fifa", en.wikipedia.org -> "Wikipedia",
+ * pubmed.ncbi.nlm.nih.gov -> "Pubmed".
+ *
+ * 🔴 ONE NAMING RULE, BECAUSE TWO SURFACES SHOW THE SAME SOURCE AT ONCE. The searched-domain
+ * chips are handed bare hostnames and the source cards are handed URLs; if each spelled a host
+ * its own way, one search would read as "Pubmed" in the cards and "pubmed.ncbi.nlm.nih.gov" in
+ * the chips a few pixels above them, and a reader would have to work out they were the same
+ * place. So the rule lives here and `sourceLabel` is the URL-shaped door onto it.
+ */
+export function domainLabel(host: string | null | undefined): string | null {
   if (!host) return null;
   const name = host.split(".").filter((part) => !GENERIC_HOST_LABELS.has(part))[0];
   if (!name) return null;
   return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/** The same name, from a URL. Null when the URL has no usable host. */
+export function sourceLabel(url: string | null | undefined): string | null {
+  return domainLabel(hostnameOf(url));
 }
 
 // The engine's fixed search surface, shown as chips while a search is still running (the real

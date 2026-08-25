@@ -18,6 +18,7 @@ import { BloubDock } from "@/components/bloub/bloub-dock";
 import { usePoke } from "@/components/bloub/use-poke";
 import type { FaceId } from "@/lib/character/face";
 import type { Station } from "@/lib/character/stations";
+import type { ThinkingMark } from "@/lib/learn/thinking-phases";
 import { lookAt } from "@/lib/mascot/attention";
 
 type Step = readonly [at: number, run: () => void];
@@ -36,6 +37,9 @@ function Stage() {
   const [typed, setTyped] = useState("");
   const [reply, setReply] = useState("");
   const [chip, setChip] = useState(false);
+  // The thinking preview's own two halves (owner 2026-08-24): the mark beside the caption, and
+  // the sites a search has actually read. Both ride the dock, so both are played here.
+  const [captionMark, setCaptionMark] = useState<ThinkingMark | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
 
   const chipRef = useRef<HTMLDivElement | null>(null);
@@ -48,6 +52,7 @@ function Stage() {
     setStation("corner");
     setMarker(null);
     setCaption(null);
+    setCaptionMark(null);
     setLeaving(false);
     lookAt(null);
   };
@@ -89,10 +94,19 @@ function Stage() {
 
   /** Nemesis works: it walks to the middle, grows, and the words light up beside it. */
   const thinkSteps = (t: number): Step[] => [
-    [t, () => { setTyped(""); composerRef.current?.blur(); setStation("centre"); setCaption("reading the sources…"); }],
-    [t + 1600, () => setCaption("lining up an answer…")],
+    [t, () => { setTyped(""); composerRef.current?.blur(); setStation("centre"); setCaption("Reading your material"); setCaptionMark("reading"); }],
+    [t + 1600, () => { setCaption("Mapping what you know"); setCaptionMark("mapping"); }],
     [t + 2900, () => setLeaving(true)],
-    [t + 3300, () => { setCaption(null); setLeaving(false); setStation("corner"); }],
+    [t + 3300, () => { setCaption(null); setCaptionMark(null); setLeaving(false); setStation("corner"); }],
+  ];
+
+  /** A turn that buys a web search: the caption's mark becomes the magnifier, which is the most
+   *  specific true thing while one is running. The favicon chips that will sit under it land with
+   *  the same-origin proxy being built in the lane that owns them. */
+  const searchSteps = (t: number): Step[] => [
+    [t, () => { setTyped(""); composerRef.current?.blur(); setStation("centre"); setCaption("Searching the web"); setCaptionMark("searching"); }],
+    [t + 2600, () => setLeaving(true)],
+    [t + 3000, () => { setCaption(null); setCaptionMark(null); setLeaving(false); setStation("corner"); }],
   ];
 
   /** The answer arrives: the words write in, then it turns and reads its own answer for a
@@ -126,6 +140,11 @@ function Stage() {
       name: "Nemesis thinks",
       hint: "it walks to the middle, grows, sways while it works, and its eyes search",
       fire: () => run("think", thinkSteps(0)),
+    },
+    {
+      name: "Nemesis searches the web",
+      hint: "the caption gets a magnifier — the most specific true thing while a search runs",
+      fire: () => run("search", searchSteps(0)),
     },
     {
       name: "The answer arrives",
@@ -196,6 +215,7 @@ function Stage() {
           bottom={24}
           caption={caption}
           captionLeaving={leaving}
+          captionMark={captionMark}
           contain
           face={face}
           gap={10}

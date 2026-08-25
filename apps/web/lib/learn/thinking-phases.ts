@@ -131,3 +131,72 @@ export const KNOWLEDGE_DEADLINE_MS = 60_000;
  * Still long enough that a fast judgement never flickers.
  */
 export const COMPOSER_ACTIVITY_AFTER_MS = 320;
+
+/**
+ * A small drawn mark beside the caption (owner 2026-08-24: *"for thinking previews, can we add
+ * like icons like it does in ChatGPT?"*).
+ *
+ * 🔴 A MARK IS A CLAIM, EXACTLY LIKE A CAPTION. Everything at the top of this file applies
+ * unchanged: a mark that appeared on a timer, or that named a kind of work nobody could confirm
+ * was running, would be the same theatre in a smaller space — and harder to catch, because a
+ * glyph is read faster than a sentence and questioned less. So a mark exists only where the
+ * runtime can already name the KIND of work, and `thinkingMark` returns null everywhere else.
+ *
+ * 🔴 AND THEY ARE MARKS, NOT PICTURES. Drawn from a few strokes rather than imported from an
+ * icon set — the same conclusion the deck work reached after a stock glyph per slide read as
+ * clip art, and the same reason: four shapes do not justify a dependency, and a house mark can
+ * be made to match the type it sits beside.
+ */
+export type ThinkingMark = "reading" | "mapping" | "finding" | "checking" | "searching" | "writing";
+
+/** The mark for each phase that can report itself. One per phase, no gaps: a phase this file
+ *  admits exists is a phase whose work is genuinely running. */
+export const THINKING_MARK: Record<ThinkingPhase, ThinkingMark> = {
+  finding_gap: "finding",
+  mapping_knowledge: "mapping",
+  reading_answer: "checking",
+  reading_source: "reading",
+};
+
+/**
+ * The mark for a scoped busy state, or null when its kind does not name a kind of WORK.
+ *
+ * 🔴 TAKES A STRING, NOT THE UNION, ON PURPOSE. `BusyState` lives in a React hook; importing it
+ * here would drag a component module into a file the pure tests load. An unrecognised kind
+ * returns null, which is the same answer this file gives to everything it cannot vouch for.
+ */
+export function markForBusy(kind: string | null | undefined): ThinkingMark | null {
+  if (kind === "source") return "reading";
+  if (kind === "test" || kind === "recall") return "checking";
+  if (kind === "lesson" || kind === "command" || kind === "rewrite" || kind === "relearn") return "writing";
+  return null;
+}
+
+/**
+ * The mark that belongs beside the caption — derived from the SAME facts, in the SAME order.
+ *
+ * 🔴🔴 THE PRECEDENCE MIRRORS `systemLabel` IN learning-canvas.tsx, AND THAT IS THE WHOLE POINT.
+ * A mark chosen by a different rule from the words it sits next to would eventually show a
+ * magnifier beside "Reading your material" — a picture contradicting a sentence, both claiming
+ * to describe the same instant. Ordered here so one function can be tested against that.
+ *
+ * 🔴 SEARCHING OUTRANKS EVERYTHING, because it is the most specific thing that is true: a web
+ * search really is running inside whatever else is. It is passed in rather than inferred, and
+ * the caller passes it only while a turn is in flight AND real hostnames came back — the same
+ * gate that decides whether any chips are drawn at all.
+ *
+ * 🔴 A FREE-TEXT `work` LABEL EARNS NO MARK. It is a sentence with no kind attached, and
+ * guessing one from its words would be exactly the keyword-matching this codebase refuses
+ * elsewhere. No mark is the honest answer, and the caption still says what is happening. PURE.
+ */
+export function thinkingMark(input: {
+  readonly searching?: boolean;
+  readonly busyKind?: string | null;
+  readonly work?: string | null;
+  readonly phase?: ThinkingPhase | null;
+}): ThinkingMark | null {
+  if (input.searching) return "searching";
+  if (input.busyKind) return markForBusy(input.busyKind);
+  if (input.work) return null;
+  return input.phase ? THINKING_MARK[input.phase] : null;
+}
