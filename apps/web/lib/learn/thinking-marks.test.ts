@@ -56,9 +56,15 @@ test("an unknown busy kind draws nothing rather than guessing", () => {
   assert.equal(markForBusy("recall"), "checking");
 });
 
-test("🔴 a chip and a source card spell the same host the same way", () => {
-  // Both can be on screen at once, a few pixels apart, describing one search. Two spellings would
-  // make a reader work out they were the same place.
+test("the two doors onto the naming rule agree", () => {
+  // `domainLabel` takes a bare hostname and `sourceLabel` takes a URL, and they must be the same
+  // rule — one delegates to the other, and this is what says so.
+  //
+  // 🔴 A FUNCTION-LEVEL INVARIANT, NOT A CLAIM ABOUT ANY SURFACE. It was written as "a chip and a
+  // source card spell a host the same way", which stopped being true the same day: the searched-
+  // domain chips print the BARE HOSTNAME instead, because title-casing a host invents misspellings
+  // of real organisations — "Bbc", "Jstor" — and does it hardest to the most recognisable sources.
+  // The functions still have to agree with each other; what reads them is their own decision.
   for (const host of ["pubmed.ncbi.nlm.nih.gov", "en.wikipedia.org", "www.bbc.co.uk", "fifa.com"]) {
     assert.equal(domainLabel(host), sourceLabel(`https://${host}/some/path`), `${host} reads two ways`);
   }
