@@ -42,6 +42,7 @@
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { readChatCheck } from "./chat-check";
+import { readFigureSubject } from "./figure-subject";
 import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
 import type { TestRun } from "./test-run";
 import { readMilestones } from "./turn-preview";
@@ -155,6 +156,22 @@ export interface TurnDecision {
    * and `chat-check.ts` decides what usable means.
    */
   check: TestRun | null;
+  /**
+   * A diagram this turn wants to be tested on, as the SHORTEST NAME for the thing (§46.6).
+   *
+   * 🔴🔴 A SUBJECT, NOT A PICTURE AND NOT A QUESTION. The model has never seen the diagram: code
+   * finds a licensed one, has vision locate its labelled parts, hides one, and builds the options
+   * from the diagram's OWN other labels. Asking the model where to put a box would be asking it to
+   * describe something it was not shown, and the box would land on the wrong structure.
+   *
+   * 🔴 IT IS THE SAME FIELD SHAPE AS A `figure` VISUAL'S `subject`, AND IT CARRIES THE SAME SCAR.
+   * "the stages of meiosis" returned *Naegleria fowleri*; "diagram of meiosis showing both
+   * divisions" returned human skin. Generic caption words outvote the identifying word, so the
+   * contract demands an index-style name and `readCheckFigure` refuses anything longer.
+   *
+   * Null on almost every turn: most material is not a labelled diagram.
+   */
+  checkFigure: string | null;
   /**
    * Things worth remembering about this learner beyond this canvas.
    *
@@ -830,6 +847,9 @@ const DECISION_CONTRACT = [
   + ' "needsPapers": true | false,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,'
   + ' "wantsTest": true | false, "check": [{"prompt": "...", "options": [{"text": "...", "correct": true}, {"text": "..."}]}],'
+  // 🔴 SHOWN FILLED IN, for the same reason `visuals` is one line below: a field displayed as
+  // `null` in the contract's highest-signal position is a field the model sends as null forever.
+  + ' "checkFigure": "nephron" | null,'
   + ' "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
@@ -1106,6 +1126,31 @@ const DECISION_CONTRACT = [
   + "first and let them follow. If the learner asks to be taught AND tested — \"explain X then quiz "
   + "me\" — the explanation is the answer and the questions are the check on it; sending questions "
   + "with an empty answer leaves them being tested on a lesson you never gave.",
+  "",
+
+  // 🔴🔴🔴 IMAGE OCCLUSION AS A TESTING TOOL (owner 2026-08-25): *"DeepSeek should have the image
+  // occlusion as part of its testing tools. So similar to the multiple choice chip for tests, it
+  // should be able to use this image occlusion as part of its testing."*
+  //
+  // 🔴 THE MODEL NAMES A SUBJECT AND NOTHING ELSE — THE HOUSE RULE, AGAIN. It does not choose which
+  // part to hide, does not write the options, does not place a box and never sees the picture. Code
+  // finds a licensed diagram, has vision locate its labelled parts, hides one, and builds the
+  // options FROM THE DIAGRAM'S OTHER LABELS. Asking the model for coordinates would be asking it to
+  // describe a picture it was never shown, which is how you get a box over the wrong structure and
+  // a learner marked wrong for reading the diagram correctly.
+  //
+  // 🔴 AND THE SUBJECT RULE IS THE ONE THE FIGURE LANE LEARNED THE HARD WAY. "the stages of
+  // meiosis" fetched *Naegleria fowleri*; "diagram of meiosis showing both divisions" fetched human
+  // skin layers. Generic caption words outvote the identifying word, every time.
+  '"checkFigure" is a diagram to be tested on, written ONLY when "wantsTest" is true and the '
+  + "material has a diagram worth knowing the parts of: anatomy, a circuit, a cell, a map, an "
+  + "engine, a plant, a piece of apparatus. Give the SHORTEST NAME for the thing, the way an index "
+  + 'would list it — "nephron", "neuron", "chloroplast", "four-stroke engine" — never a phrase and '
+  + "never a request. Nemesis finds a licensed diagram, covers one labelled part, and asks the "
+  + "learner to name it, using the diagram's other labels as the wrong answers. Leave it out for "
+  + "anything that is not a labelled diagram: a topic with no picture, a formula, a date, a "
+  + "definition. Your own \"check\" questions are still written as usual and appear after the "
+  + "picture ones.",
   "",
   // 🔴 THE THREE REFUSALS ARE STATED SO THE MODEL DOES NOT PROMISE WHAT THE CANVAS CANNOT DELIVER.
   // `buildTestRun` is the authority and it refuses freely; a reply that has already said "here are
@@ -1559,6 +1604,9 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // re-answers it, and nothing persists it.
     wantsTest: parsed.wantsTest === true,
     check: readChatCheck(parsed.check),
+    // 🔴 ONLY WHEN A TEST WAS ACTUALLY ASKED FOR. A `checkFigure` on a turn with `wantsTest: false`
+    // would buy a vision read for a picture nothing is going to show.
+    checkFigure: parsed.wantsTest === true ? readFigureSubject(parsed.checkFigure) : null,
     remember: readRemembered(parsed.remember),
     needsWeb: parsed.needsWeb === true,
     question,
@@ -1637,13 +1685,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

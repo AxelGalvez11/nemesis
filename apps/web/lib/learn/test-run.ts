@@ -33,6 +33,8 @@
 //
 // PURE. No React, no I/O, no clock.
 
+import type { OcclusionPayload } from "@nemesis/shared";
+
 import { type ChoiceOption, type DistractorGround, MIN_OPTIONS } from "./choice-set";
 import type { KnowledgeObject } from "./knowledge-types";
 import type { LearnerEvidence } from "./learner-evidence";
@@ -65,6 +67,20 @@ export interface TestQuestion {
   readonly prompt: string;
   /** In display order, already balanced so the answer is not always in the same seat. */
   readonly options: readonly ChoiceOption[];
+  /**
+   * A diagram with one part covered, when the question is about a picture (§46.6).
+   *
+   * 🔴 OPTIONAL, AND ITS ABSENCE IS THE NORMAL CASE. Owner 2026-08-25: *"DeepSeek should have the
+   * image occlusion as part of its testing tools. So similar to the multiple choice chip for
+   * tests."* Similar is the operative word — this is the SAME question shape with a picture above
+   * it, not a second kind of test with its own scoring, its own progress and its own results path.
+   * `scoreAttempt`, `describeAttempt` and `cardsFromMisses` are untouched and cannot tell the
+   * difference, which is what stops an occlusion question becoming a mode.
+   *
+   * 🔴 THE PAYLOAD IS THE STUDY CARD'S OWN, so the picture the learner meets in a check and the
+   * picture they meet in the deck afterwards are drawn by one component from one shape.
+   */
+  readonly figure?: OcclusionPayload;
 }
 
 export interface TestRun {

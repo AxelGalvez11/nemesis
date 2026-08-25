@@ -30,6 +30,9 @@ import { canvasFigures, figureMenu } from "./deck-figures";
 import type { CanvasOutput, LearningCanvas } from "./canvas-model";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
 import { deckName } from "./deck-name";
+import { findLabelledFigure } from "./figure-occlusion-api";
+import { readFigureSubject } from "./figure-subject";
+import { occlusionCards } from "./occlusion-from-labels";
 
 /** What the canvas can make today. Reports join when they have a real home. */
 export type DeliverableKind = "flashcards" | "note" | "slides";
@@ -158,7 +161,40 @@ const newId = (): string =>
 const CARDS_SYSTEM =
   "You write flashcards from study material. Reply with ONLY a JSON array of objects, each " +
   'with exactly two string fields: "front" (a question or prompt) and "back" (the answer). ' +
-  "Write 10 to 16 cards that cover the material's core ideas. No markdown fences, no commentary.";
+  "Write 10 to 16 cards that cover the material's core ideas. No markdown fences, no commentary. " +
+  // 🔴 THE OPTIONAL OBJECT FORM IS BACKWARDS COMPATIBLE BY CONSTRUCTION. `readCardsJson` slices
+  // from the first "[" to the last "]", so it reads the cards array out of either shape without
+  // knowing this field exists — which is why adding it cannot break a deck.
+  'If the material has a LABELLED DIAGRAM worth knowing the parts of — anatomy, a circuit, a ' +
+  "cell, a map, an engine, a piece of apparatus — you may instead reply with an object: " +
+  '{"cards": [...], "figure": "nephron"}. "figure" is the SHORTEST NAME for the thing, the way ' +
+  'an index would list it: "nephron", "chloroplast", "four-stroke engine". Never a phrase, never ' +
+  'a request, never "diagram of ...". Nemesis finds a licensed diagram and makes one image card ' +
+  "per labelled part, in addition to your written cards. Leave it out for anything that is not a " +
+  "labelled diagram.";
+
+/**
+ * The diagram the card writer named, if it used the object form.
+ *
+ * 🔴 IT PARSES THE WHOLE REPLY OR NOTHING, WHICH IS WHAT MAKES IT SAFE ALONGSIDE `readCardsJson`.
+ * On the ordinary array reply, the first "{" is the first CARD and the last "}" is the last card,
+ * so the slice between them is `{…}, {…}` — not valid JSON, so this returns null and the deck is
+ * built from the array exactly as before. Only a genuine object reply parses.
+ */
+export function readCardsFigure(text: string): string | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const figure = (parsed as { figure?: unknown }).figure;
+  return typeof figure === "string" && figure.trim() ? figure.trim() : null;
+}
 
 export async function makeFlashcardsDeliverable(
   uid: string,
@@ -189,7 +225,7 @@ export async function makeFlashcardsDeliverable(
   if (error || !data) return { error: "Couldn't save the deck to your library." };
   const deckId = (data as { id: string }).id;
 
-  const rows = cards.map((card) => ({
+  const rows: Record<string, unknown>[] = cards.map((card) => ({
     back: card.back,
     card_type: "basic",
     deck_id: deckId,
@@ -197,6 +233,36 @@ export async function makeFlashcardsDeliverable(
     tags: normalizeStudyTags([CANVAS_DECK_TAG]),
     user_id: uid,
   }));
+
+  // 🔴🔴 IMAGE CARDS, WHEN THE MATERIAL HAS A DIAGRAM WORTH KNOWING THE PARTS OF (owner
+  // 2026-08-25: *"it should also be allowable for it to use image occlusion for flash cards.
+  // Similar to Anki."*). The model names the subject and nothing else — it never sees the picture,
+  // never places a box and never chooses what to hide. Code finds a licensed diagram, has vision
+  // locate the labelled parts, and makes one card per part.
+  //
+  // 🔴 THEY ARE ADDED TO THE TEXT CARDS, NEVER INSTEAD OF THEM. A deck of nothing but "what is the
+  // covered part?" tests where things sit and nothing about what they do, and the learner asked
+  // for flashcards on the material rather than on one picture.
+  //
+  // 🔴 AND A FAILURE HERE COSTS THE PICTURES, NEVER THE DECK. No diagram, no labels, vision off,
+  // an unreachable repository: every one of them leaves `figure` null and the text cards save
+  // exactly as they would have. `findLabelledFigure` never throws for precisely this reason.
+  const subject = readFigureSubject(readCardsFigure(reply.text));
+  if (subject) {
+    const figure = await findLabelledFigure(subject);
+    for (const card of figure ? occlusionCards(figure) : []) {
+      rows.push({
+        back: card.back,
+        card_type: "image_occlusion",
+        deck_id: deckId,
+        front: card.front,
+        payload: card.payload,
+        tags: normalizeStudyTags([CANVAS_DECK_TAG]),
+        user_id: uid,
+      });
+    }
+  }
+
   const { error: cardsError } = await supabase.from("study_cards").insert(rows);
   if (cardsError) return { error: "Couldn't save the cards to your library." };
 

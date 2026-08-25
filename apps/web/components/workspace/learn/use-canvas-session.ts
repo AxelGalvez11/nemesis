@@ -72,6 +72,8 @@ import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/
 
 import { isPreContent } from "@/lib/learn/canvas-hosting";
 import type { TestRun } from "@/lib/learn/test-run";
+import { findLabelledFigure } from "@/lib/learn/figure-occlusion-api";
+import { withFigureQuestions } from "@/lib/learn/occlusion-check";
 import {
   clarifyAnswerFact,
   readClarifyAnswer,
@@ -501,6 +503,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    */
   const [searchedDomains, setSearchedDomains] = useState<readonly string[]>([]);
   const [testQuestions, setTestQuestions] = useState<TestRun | null>(null);
+  /**
+   * Which turn's check is on screen.
+   *
+   * 🔴🔴 A COUNTER, BECAUSE THE OBVIOUS GUARD IS WRONG. The diagram behind an occlusion check
+   * arrives seconds after the chips do — a repository search plus a vision read — and in that gap
+   * the learner may have sent another turn. The first version of this guarded on
+   * `current === null`, reasoning that a cleared check means the turn is over. That is false in
+   * the one case the feature exists for: a turn may ask for a picture check and write NO text
+   * questions, so `current` is legitimately null and the diagram would have been thrown away
+   * every time. Comparing turns says what was actually meant.
+   */
+  const checkTurn = useRef(0);
   /**
    * Decisions already settled this sitting, phrased as facts for the packet.
    *
@@ -1297,6 +1311,30 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 CLEARED ON EVERY TURN, LIKE THE REQUEST ITSELF. Questions from two turns ago answering
       // under a third turn's ask is the "mode" shape §38 exists to prevent.
       setTestQuestions(decision.wantsTest ? decision.check : null);
+      const thisTurn = (checkTurn.current += 1);
+
+      // 🔴🔴 THE DIAGRAM ARRIVES AFTER THE CHIPS, AND THAT IS DELIBERATE (owner 2026-08-25: image
+      // occlusion "as part of its testing tools"). Finding a licensed diagram and having vision
+      // locate its labelled parts is a repository search plus a paid model call — seconds, not
+      // milliseconds. Awaiting it before showing the check would hold the whole reply hostage to
+      // a picture that may not exist, so the text questions go up immediately and the picture
+      // questions join them when they land.
+      //
+      // 🔴 IT NEVER THROWS AND NEVER BLOCKS. `findLabelledFigure` returns null for every failure —
+      // no picture, no labels, vision off, wrong scale — and `withFigureQuestions` then returns
+      // the run untouched. A check that could have had a diagram and does not is a smaller check;
+      // a check that crashed is no check.
+      if (decision.wantsTest && decision.checkFigure) {
+        void findLabelledFigure(decision.checkFigure).then((figure) => {
+          if (!figure) return;
+          // 🔴 THE TURN GUARD IS THE WHOLE REASON THIS IS SAFE. Between the request and the reply
+          // the learner may have sent another turn. Applying now would put this turn's diagram
+          // under the next turn's questions — the cross-turn bleed the clearing above exists to
+          // prevent, arriving through the back door of an async result.
+          if (checkTurn.current !== thisTurn) return;
+          setTestQuestions((current) => withFigureQuestions(current, figure));
+        });
+      }
 
       // 🔴🔴 REMEMBERED BESIDE THE TURN, NEVER INSTEAD OF IT, AND NEVER AWAITED BY IT. Everything
       // below runs exactly as it would on a turn that noticed nothing durable; a memory write that
@@ -1534,6 +1572,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   const clearTest = useCallback(() => {
     setTestRequested(false);
     setTestQuestions(null);
+    // 🔴 A DISMISSAL INVALIDATES A DIAGRAM STILL IN FLIGHT. Without this, closing a check and then
+    // waiting a few seconds re-opens it with picture questions in it — a test the learner has
+    // already declined reappearing on its own.
+    checkTurn.current += 1;
   }, []);
 
   const clearMemoryNotice = useCallback(() => setMemoryNotice(0), []);
