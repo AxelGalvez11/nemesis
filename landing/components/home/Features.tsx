@@ -4,6 +4,7 @@ import Image from "next/image";
 
 import { useParallax } from "@/components/use-parallax";
 import { Mascot } from "@/components/home/Mascot";
+import { FigureCarousel, type CarouselItem } from "@/components/home/FigureCarousel";
 import { CALENDAR_BLUR, EVIDENCE_BLUR, SEE_BLUR } from "./art-blur";
 
 /**
@@ -46,44 +47,66 @@ interface Band {
   readonly head: string;
   readonly body: string;
   /** Real figures to lay under the copy. Only `see` has them — see FIGURES. */
-  readonly figures?: readonly Figure[];
+  readonly figures?: readonly CarouselItem[];
   /** A product shot to sit opposite the copy, light/dark pair by basename. */
   readonly shot?: { readonly name: string; readonly alt: string; readonly w: number; readonly h: number };
   /** Put the character opposite the copy instead of a picture. */
   readonly mascot?: boolean;
 }
 
-interface Figure {
-  readonly id: string;
-  readonly alt: string;
-  readonly w: number;
-  readonly h: number;
-}
-
 /**
- * 🔴 THESE ARE THE PRODUCT'S OWN RENDERER, NOT DRAWINGS OF IT.
+ * 🔴 THESE ARE THE PRODUCT'S OWN RENDERERS, NOT DRAWINGS OF THEM.
  *
- * Each one was captured from `/dev-preview/visual-cards` in the web app, which mounts
- * `SemanticVisual` — the exact component the Canvas mounts — against a hand-written spec, with no
- * model and no network in the loop. So the plot really is the app's plot renderer, and the aspirin
- * ring really was computed from its SMILES string rather than positioned by hand.
+ * Every frame was captured from a dev-preview harness that mounts the SAME component the Canvas
+ * mounts, fed a hand-written spec, with no model and no network deciding anything:
  *
- * That distinction is the entire reason the animated Canvas mock came off this page. Replacing one
- * drawing of the product with another drawing of the product would have changed nothing.
+ *   /dev-preview/visual-cards   -> SemanticVisual, all thirteen semantic kinds
+ *   /dev-preview/anatomy-cards  -> AnatomyViewer, real GLB meshes from the atlas
  *
- * To re-capture after a renderer change: run the web app, then
- * `node cardshot.mjs` against /dev-preview/visual-cards?only=<id>, and re-encode at q88.
+ * So the haemoglobin really came from the PDB and was posed by Mol*, the surface really is a
+ * sampled grid rendered in three dimensions, the score really was engraved from ABC, and the
+ * ventricle really is the atlas mesh with that one structure picked out. Nothing here was drawn
+ * by hand to look like the product.
+ *
+ * 🔴 ORDER IS DELIBERATE: THE THREE-DIMENSIONAL ONES LEAD. A carousel is judged on its first
+ * card, and "we can draw a table" is a much weaker opening than a rotating heart. The flat and
+ * useful kinds are all still here, further in.
+ *
+ * To re-capture after a renderer change, run the web app and `node cardshot4.mjs` / `anat.mjs`.
  */
-const FIGURES: readonly Figure[] = [
-  { id: "plot", alt: "A plot of plasma concentration against time at two doses, with labelled axes and a legend.", w: 1416, h: 800 },
-  { id: "structure", alt: "The structure of acetylsalicylic acid, drawn from its SMILES string.", w: 1416, h: 712 },
-  { id: "construction", alt: "A 3-4-5 right triangle with its three angles marked and its sides labelled.", w: 1416, h: 842 },
-  { id: "vectors", alt: "A free body diagram of a block resting on a thirty degree incline, with weight, normal force and friction.", w: 1416, h: 884 },
-  { id: "relationship", alt: "A causal chain from action potential through calcium release to contraction.", w: 1416, h: 1042 },
-  { id: "table", alt: "A table of current assets with a recomputed total.", w: 1416, h: 606 },
-  { id: "timeline", alt: "A timeline of the American revolutionary period, showing moments and one span.", w: 1416, h: 496 },
-  { id: "code", alt: "Python source for summing a list, with a stepped trace of the accumulator.", w: 1416, h: 746 },
-  { id: "equation", alt: "First order elimination, type-set as an equation.", w: 1416, h: 350 },
+const FIGURES: readonly CarouselItem[] = [
+  { id: "heart", file: "heart", label: "Anatomy, in 3D", w: 1416, h: 846,
+    alt: "The left ventricle picked out of a three-dimensional cardiovascular system, the rest of the vessels ghosted around it." },
+  { id: "macromolecule", file: "macromolecule", label: "Protein, in 3D", w: 1416, h: 1044,
+    alt: "Haemoglobin from the Protein Data Bank, its four subunits each in a different colour." },
+  { id: "surface", file: "surface", label: "3D surface", w: 1416, h: 912,
+    alt: "A three-dimensional surface of z equals sin x times cos y, with labelled axes." },
+  { id: "plot", file: "plot", label: "Plot", w: 1416, h: 800,
+    alt: "A plot of plasma concentration against time at two doses, with labelled axes and a legend." },
+  { id: "structure", file: "structure", label: "Molecule", w: 1416, h: 1309,
+    alt: "The structure of acetylsalicylic acid, drawn from its SMILES string." },
+  { id: "nervous", file: "nervous", label: "Nervous system", w: 1416, h: 846,
+    alt: "The nervous system and sense organs as one continuous three-dimensional model." },
+  { id: "score", file: "score", label: "Music", w: 1416, h: 612,
+    alt: "The opening phrase of Ode to Joy, engraved on a stave." },
+  { id: "circuit", file: "circuit", label: "Circuit", w: 1416, h: 804,
+    alt: "A circuit with one resistor in series with two more in parallel, and the equivalent resistance stated." },
+  { id: "construction", file: "construction", label: "Geometry", w: 1416, h: 760,
+    alt: "A 3-4-5 right triangle with its three angles marked and its sides labelled." },
+  { id: "vectors", file: "vectors", label: "Force diagram", w: 1416, h: 760,
+    alt: "A free body diagram of a block on a thirty degree incline, with weight, normal force and friction." },
+  { id: "skeleton", file: "skeleton", label: "Skeleton", w: 1416, h: 846,
+    alt: "A three-dimensional skeleton with the femur picked out." },
+  { id: "relationship", file: "relationship", label: "Causal chain", w: 1416, h: 1042,
+    alt: "A causal chain from action potential through calcium release to contraction." },
+  { id: "timeline", file: "timeline", label: "Timeline", w: 1416, h: 748,
+    alt: "A timeline of the American revolutionary period, showing moments and one span." },
+  { id: "table", file: "table", label: "Table", w: 1416, h: 606,
+    alt: "A table of current assets with a recomputed total." },
+  { id: "code", file: "code", label: "Code trace", w: 1416, h: 680,
+    alt: "Python source for summing a list, with a stepped trace of the accumulator." },
+  { id: "equation", file: "equation", label: "Equation", w: 1416, h: 350,
+    alt: "First order elimination, type-set as an equation." },
 ];
 
 const BANDS: readonly Band[] = [
@@ -91,8 +114,8 @@ const BANDS: readonly Band[] = [
     id: "see",
     art: "/nemesis/art/see.webp",
     blur: SEE_BLUR,
-    head: "See it",
-    body: "Plots and molecules, geometry and force diagrams, tables, timelines, code traces.",
+    head: "Visualize anything",
+    body: "Anatomy and proteins in three dimensions, surfaces, plots, molecules, circuits, music, geometry, timelines and code.",
     figures: FIGURES,
   },
   {
@@ -178,34 +201,14 @@ function Feature({ band, index }: { band: Band; index: number }) {
 
         {band.mascot ? (
           <div className="band-aside band-aside-mascot">
-            <Mascot size={210} tone="lit" />
+            <Mascot size={210} />
           </div>
         ) : null}
       </div>
 
       {band.figures ? (
         <div className="wrap band-figs" data-reveal="up">
-          {band.figures.map((fig) => (
-            /* <picture> rather than next/image: each figure ships a light file and a
-               dark file and picks between them on prefers-color-scheme, which is the
-               convention every product shot on this site follows and which
-               next/image has no art-direction API for. They are already WebP and
-               already sized. */
-            <picture key={fig.id}>
-              <source
-                media="(prefers-color-scheme: dark)"
-                srcSet={`/nemesis/figures/${fig.id}-dark.webp`}
-              />
-              <img
-                src={`/nemesis/figures/${fig.id}-light.webp`}
-                alt={fig.alt}
-                width={fig.w}
-                height={fig.h}
-                decoding="async"
-                loading="lazy"
-              />
-            </picture>
-          ))}
+          <FigureCarousel items={band.figures} />
         </div>
       ) : null}
     </section>

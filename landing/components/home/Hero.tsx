@@ -108,7 +108,7 @@ export function Hero() {
         {/* Not aria-hidden any more: unlike the stipple object this replaced, the
             character is something you can click, so it announces itself. */}
         <div className="nhero-organism reveal r2" ref={orb}>
-          <Mascot size={300} tone="lit" />
+          <Mascot size={300} />
         </div>
       </div>
     </header>
