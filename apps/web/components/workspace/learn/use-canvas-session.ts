@@ -1428,7 +1428,29 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // never replaces the answer, which is what produced the empty `say` the owner kept meeting.
       // This stops the leftover case from shouting; it does not hide a failed request, which
       // arrives as `result.error` above and is still shown.
-      if (!decision.say) return null;
+      //
+      // 🔴🔴🔴 BUT SILENCE IS ONLY CORRECT WHEN SOMETHING ELSE IS ACTUALLY ON SCREEN, AND THE FIRST
+      // VERSION OF THIS DID NOT CHECK. `if (!decision.say) return null` traded an annoying sentence
+      // for a BLANK CANVAS: measured on production minutes later, "Show me a diagram of meiosis"
+      // came back with no prose and the learner watched an empty page for a minute — no error, no
+      // picture, nothing to retry. Stored canvas e5e484dd: moment kind `user`, assistantText null.
+      // That is WORSE than the message it replaced, because the message at least said the turn was
+      // over.
+      //
+      // So the question is whether the turn PRODUCED anything, not whether it spoke:
+      //   • prose           → render it, with whatever it drew
+      //   • no prose, drew  → render the drawing. The picture IS the answer, which is exactly the
+      //                       "show me a diagram" case this lane exists for.
+      //   • no prose, asked → the chips are their own surface and are already mounted; stay quiet.
+      //   • none of those   → nothing happened, and saying so is the honest outcome. The sentence
+      //                       describes THEIR request rather than Nemesis's state, which is what
+      //                       was actually wrong with "Nemesis had nothing to add".
+      const drew = decision.visuals.length > 0;
+      const asked = (decision.check?.questions.length ?? 0) > 0;
+      if (!decision.say && !drew) {
+        if (!asked) setError("That came back empty. Ask again and it will retry.");
+        return null;
+      }
       setAside({
         // Under the passage when they staged one, at the top of the canvas when they did not.
         blockId: staged?.id ?? null,
