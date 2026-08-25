@@ -1062,9 +1062,11 @@ const DECISION_CONTRACT = [
   // scholarly indexes — OpenAlex, Crossref, Semantic Scholar, Europe PMC, PubMed, arXiv — fanned
   // out in parallel and merged. Seven until the owner cut bioRxiv the same day: it is the only one
   // with no search endpoint, so it could not be asked the question, only handed recent records and
-  // left to us to judge — which produced a neuroscience preprint under a property-law query. They cost nothing, so the only reason to gate this on a
-  // decision at all is relevance: papers on a "who won last night" turn are noise, and a numbered
-  // source list padded with irrelevant studies is worse than a short one.
+  // left to us to judge — which produced a neuroscience preprint under a property-law query.
+  //
+  // They cost nothing, so the only reason to gate this on a decision at all is relevance: papers on
+  // a "who won last night" turn are noise, and a numbered source list padded with irrelevant
+  // studies is worse than a short one.
   //
   // 🔴 IT IS NOT `needsWeb` UNDER ANOTHER NAME, AND THE INSTRUCTION HAS TO SAY SO OR THE MODEL WILL
   // TREAT IT AS ONE. "What changed this year" and "what has been shown" pull in opposite
