@@ -30,6 +30,8 @@
 
 import { WEB_WORKSPACE_AGENT_TOOL_NAMES, toolDescription, type PendingDelete } from "@nemesis/shared";
 
+import type { ThinkingMark } from "@/lib/learn/thinking-phases";
+
 import { EXAM_ITEM_RULES_SHORT } from "@/lib/workspace/item-writing";
 
 import { executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
@@ -72,8 +74,12 @@ export interface ToolRoundResult {
   readonly context: string;
   /** Set when something is waiting on the learner. The loop stops when this appears. */
   readonly pending: PendingConfirmation | null;
-  /** One short line per call, for the thinking strip. */
-  readonly labels: readonly string[];
+}
+
+/** What the strip says while one call runs, and which mark sits beside it. */
+export interface WorkNote {
+  readonly label: string;
+  readonly mark: ThinkingMark;
 }
 
 /**
@@ -146,17 +152,25 @@ export async function loadToolCatalogue(): Promise<{ block: string; index: Compo
 }
 
 /**
- * A short line for the thinking strip, in the learner's terms.
+ * What the strip says while one call runs, and the mark that goes with it.
  *
  * 🔴 NEVER THE RAW SLUG. "GMAIL_FETCH_EMAILS" on screen is our plumbing showing through; the
  * learner asked about their mail.
+ *
+ * 🔴🔴 THE MARK TRAVELS WITH THE LABEL, AND THAT IS WHAT MAKES IT LEGAL. `thinking-phases.ts` holds
+ * a rule that a free-text work label earns no mark, because guessing a kind from words is the
+ * keyword-matching this codebase refuses everywhere. That rule is about GUESSING. Here the caller
+ * is not reading a sentence, it is naming the call it is about to make — so the kind is a fact it
+ * already has, and it is carried rather than re-derived downstream.
  */
-export function labelFor(name: string, app: string | undefined): string {
-  if (name.startsWith("list_calendar") || name === "find_calendar_issues") return "Reading the calendar";
-  if (name.startsWith("add_calendar")) return "Adding to the calendar";
-  if (name.startsWith("update_calendar")) return "Changing the calendar";
-  if (name.startsWith("delete_calendar")) return "Checking before deleting";
-  return app ? `Working in ${app}` : "Working in a connected app";
+export function labelFor(name: string, app: string | undefined): WorkNote {
+  if (name.startsWith("list_calendar") || name === "find_calendar_issues") {
+    return { label: "Reading the calendar", mark: "calendar" };
+  }
+  if (name.startsWith("add_calendar")) return { label: "Adding to the calendar", mark: "calendar" };
+  if (name.startsWith("update_calendar")) return { label: "Changing the calendar", mark: "calendar" };
+  if (name.startsWith("delete_calendar")) return { label: "Checking before deleting", mark: "calendar" };
+  return { label: app ? `Working in ${app}` : "Working in a connected app", mark: "apps" };
 }
 
 function readPending(result: unknown): PendingConfirmation | null {
@@ -187,16 +201,28 @@ function readPending(result: unknown): PendingConfirmation | null {
 export async function runToolRound(
   asks: readonly ToolAsk[],
   index: ComposioToolIndex,
-  options: { askText: string },
+  options: {
+    askText: string;
+    /**
+     * Called BEFORE each call runs, never after.
+     *
+     * 🔴🔴 BEFORE, AND THAT IS THE DIFFERENCE BETWEEN A STATUS AND A RECEIPT (owner, 2026-08-25:
+     * *"make it live"*). The first version of this collected the labels and handed them back when
+     * the whole round was over, so the learner watched a blank shimmer through the part that
+     * actually takes time and then read "Reading the calendar" for the instant before the answer
+     * replaced it. A line that appears once the work is finished is not telling them what is
+     * happening; it is telling them what happened, in the one moment they no longer need to know.
+     */
+    onCall?: (note: WorkNote) => void;
+  },
 ): Promise<ToolRoundResult> {
   const capped = asks.slice(0, MAX_CALLS_PER_ROUND);
-  const labels: string[] = [];
   const lines: string[] = [];
   let pending: PendingConfirmation | null = null;
 
   for (const ask of capped) {
     const app = index.get(ask.name);
-    labels.push(labelFor(ask.name, app));
+    options.onCall?.(labelFor(ask.name, app));
     const call: AgentToolCall = { arguments: JSON.stringify(ask.arguments ?? {}), id: ask.name, name: ask.name };
     const result = app !== undefined
       ? await runConnectedApp(call, app)
@@ -208,7 +234,7 @@ export async function runToolRound(
     lines.push(`${ask.name}(${JSON.stringify(ask.arguments ?? {})}) -> ${serializeToolResult(result)}`);
   }
 
-  return { context: lines.join("\n\n"), labels, pending };
+  return { context: lines.join("\n\n"), pending };
 }
 
 /**
