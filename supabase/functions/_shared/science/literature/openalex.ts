@@ -17,7 +17,13 @@ const BASE = "https://api.openalex.org/works"
 
 // Read at call time so credentials saved mid-session apply without a restart.
 function politeParams(): string {
-  const email = Deno.env.get("OPENALEX_MAILTO")?.trim() || "support@pharmaorb.app"
+  // 🔴 THE FALLBACK CONTACT IS NEMESIS, NOT THE DEAD BRAND. This read support@pharmaorb.app — a
+  // name CLAUDE.md retired — and it is not an internal string: OpenAlex's polite pool takes this
+  // address as WHO IS CALLING, so every request identified us to a third party under a product
+  // that no longer exists, and any rate-limit mail would have gone to a dead mailbox. Harmless
+  // while the connector was switched off; live the moment the literature action is wired up, which
+  // is this same change.
+  const email = Deno.env.get("OPENALEX_MAILTO")?.trim() || "support@enternemesis.com"
   const parts = [`mailto=${encodeURIComponent(email)}`]
   const key = Deno.env.get("OPENALEX_API_KEY")?.trim()
   if (key) parts.push(`api_key=${encodeURIComponent(key)}`)

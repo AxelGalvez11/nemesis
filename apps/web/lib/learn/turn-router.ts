@@ -188,6 +188,21 @@ export interface TurnDecision {
    * itself dominates the wait.
    */
   needsWeb: boolean;
+  /**
+   * Whether the answer should also rest on published research.
+   *
+   * 🔴🔴 A SEPARATE DECISION FROM `needsWeb`, BECAUSE THEY ANSWER DIFFERENT QUESTIONS. The web
+   * answers "what is true NOW" — prices, guidelines, releases, events. The literature answers
+   * "what has been SHOWN", which is a claim about evidence and is often not current at all: the
+   * trial that settled a question may be twenty years old, and the ranker that surfaces this
+   * week's blog post about it will not surface the trial. Folding the two into one flag would mean
+   * a student asking "what does the evidence say" got whatever the open web ranked that morning.
+   *
+   * 🔴 IT IS AN ADDITION, NEVER A REPLACEMENT. Papers merge into the same numbered source list as
+   * web pages, and the literature lane costs nothing (seven public, key-free indexes), so a turn
+   * that wants both pays only for the web half it was already buying.
+   */
+  needsPapers: boolean;
   /** What to type into a search engine, when `needsWeb`. Null otherwise. */
   webQuery: string | null;
   /**
@@ -812,6 +827,7 @@ const DECISION_CONTRACT = [
   "```json",
   '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "milestones": ["..."],'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
+  + ' "needsPapers": true | false,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,'
   + ' "wantsTest": true | false, "check": [{"prompt": "...", "options": [{"text": "...", "correct": true}, {"text": "..."}]}],'
   + ' "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],',
@@ -946,6 +962,56 @@ const DECISION_CONTRACT = [
   + "translations, and anything answerable from the attached material. When it is genuinely "
   + "borderline, say true. An answer built on pages that exist beats one built on a memory nobody "
   + "can date, and the learner cannot tell the two apart.",
+  "",
+  // 🔴🔴🔴 ASKING TO SEE SOMETHING IS NOT A REASON TO SEARCH. Owner, testing production
+  // 2026-08-24: *"DeepSeek was running a web search when we asked it to show us a visual for a
+  // topic we were on. It shouldn't run website searches when it has a visual to use — web searches
+  // are for having up-to-date information, or evidence, sources."*
+  //
+  // 🔴 THE CAUSE IS THE TIE-BREAK, NOT A BAD JUDGEMENT. The false list above names explanations,
+  // definitions, calculations and translations — a request for a PICTURE is none of those, so it
+  // fell through to the residue, where the standing instruction is "when genuinely borderline, say
+  // true". So "draw me the Krebs cycle" bought a Brave search on the way to a drawing the
+  // renderers make from the model's own knowledge. The search cannot improve the picture: the
+  // fifteen computed kinds are built from data the model supplies, and `figure` is fetched from
+  // OUR licensed repository, not from the open web. It was pure cost and pure latency.
+  //
+  // 🔴 AND THE RULE IS ABOUT THE DATA, NOT ABOUT THE PICTURE, because "never search for a visual"
+  // would be its own wrong answer: a plot of this year's figures needs this year's figures. What
+  // decides is whether the CONTENT is settled, exactly as it would be for prose.
+  // 🔴🔴🔴 THE EVIDENCE LANE (owner 2026-08-24: *"Applying the literature seven"*). Seven public
+  // scholarly indexes — OpenAlex, Crossref, Semantic Scholar, Europe PMC, PubMed, arXiv, bioRxiv —
+  // fanned out in parallel and merged. They cost nothing, so the only reason to gate this on a
+  // decision at all is relevance: papers on a "who won last night" turn are noise, and a numbered
+  // source list padded with irrelevant studies is worse than a short one.
+  //
+  // 🔴 IT IS NOT `needsWeb` UNDER ANOTHER NAME, AND THE INSTRUCTION HAS TO SAY SO OR THE MODEL WILL
+  // TREAT IT AS ONE. "What changed this year" and "what has been shown" pull in opposite
+  // directions: the second is frequently answered by an OLD paper, and a freshness-ranked web
+  // search is the wrong instrument for it. This is also the honest replacement for the four
+  // hardcoded medical domains that used to be DRAWN as if they had been searched — the difference
+  // being that these are actually queried, and they cover every discipline rather than one.
+  '"needsPapers" is true when the answer should rest on published research: the learner asks what '
+  + "the evidence or the literature says, wants studies, trials, a systematic review or a "
+  + "meta-analysis, asks how strong the evidence is or how something was established, or asks about "
+  + "a claim where a paper settles it better than a web page. It works for every field — law, "
+  + "history, engineering and education are indexed alongside medicine and physics — so reach for "
+  + "it whenever scholarship rather than journalism is the right source.",
+  "",
+  "It is independent of needsWeb, and often true when needsWeb is false: what has been SHOWN is "
+  + "usually not a question about what is current, and the study that settles it may be decades "
+  + "old. Set both when the learner wants current practice AND the evidence under it. Set neither "
+  + "for settled textbook knowledge you can simply teach — a definition, a mechanism, a worked "
+  + "example — because a student asking what an enzyme does is not asking to read a paper.",
+  "",
+  "Being asked to SHOW, draw or diagram something is not by itself a reason to search. Every "
+  + "picture Nemesis draws is built either from what you already know or from our own licensed "
+  + "figure repository — never from a web page — so a search cannot improve the drawing and only "
+  + "delays it. \"Draw the Krebs cycle\", \"show me a diagram of meiosis\", \"graph y = x squared\" "
+  + "and \"what does this molecule look like\" are all needsWeb false. Judge the DATA, not the "
+  + "picture: search only when the numbers or facts to be drawn are themselves current — this "
+  + "year's figures, a live standing, a price history — which is the same test you would apply if "
+  + "the learner had asked for those in words.",
   "",
   // 🔴 THE MODEL DECIDES WHEN IT HAS ENOUGH, WHICH MEANS IT HAS TO BE ABLE TO SAY "NOT YET". A
   // single upfront count was still a guess made blind: nothing has been read at the moment it is
@@ -1506,6 +1572,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // Refused figures are dropped here, never repaired — see `replyVisuals`.
     visuals: replyVisuals(parsed.visuals),
     // A query without a search is dropped: the half that spends money loses the contradiction.
+    needsPapers: parsed.needsPapers === true,
     webQuery: parsed.needsWeb === true ? asText(parsed.webQuery) || null : null,
     webResults: parsed.needsWeb === true && typeof parsed.webResults === "number"
       && Number.isFinite(parsed.webResults) && parsed.webResults >= 1
@@ -1570,13 +1637,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], check: null, wantsTest: false, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

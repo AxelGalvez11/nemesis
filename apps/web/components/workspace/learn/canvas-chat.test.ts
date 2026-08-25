@@ -19,12 +19,23 @@ const chat = code(readFileSync(new URL("./canvas-chat.ts", import.meta.url), "ut
 // so. Owner: *"deepseek should decide itself when it has enough information to answer."*
 
 test("the search runs in a loop, and its condition is the model's answer", () => {
-  const loop = chat.slice(chat.indexOf("for (let round = 0"));
-  assert.ok(loop.length > 0, "the search loop was replaced by a single pass again");
-  assert.match(loop.slice(0, 120), /decision\?\.needsWeb/, "the loop no longer ends on the model's own answer");
+  // 🔴 ANCHORED ON THE CONDITION, NOT ON THE `for` LINE OR A CHARACTER COUNT. This read
+  // `chat.indexOf("for (let round = 0")` and then `slice(0, 120)` — both of which encoded the
+  // assumption that the header fits on one line. Adding the papers lane (2026-08-24) wrapped it
+  // across four, so the anchor missed entirely and the slice cut the condition in half: a guard
+  // about WHAT ENDS THE LOOP reddened over how the line was formatted. The condition is what this
+  // test is about, so the condition is what it reads, at any width.
+  const start = chat.indexOf("round < MAX_SEARCH_ROUNDS");
+  assert.notEqual(start, -1, "the search loop was replaced by a single pass again");
+  const header = chat.slice(start, chat.indexOf("round += 1", start));
+  assert.match(header, /decision\?\.needsWeb/, "the loop no longer ends on the model's own answer");
   // The bound is a backstop, not the decision. If `needsWeb` ever stops being in the condition,
   // the turn would search a fixed number of times whatever the model said.
-  assert.match(loop.slice(0, 120), /round < MAX_SEARCH_ROUNDS/);
+  assert.match(header, /round < MAX_SEARCH_ROUNDS/);
+  // 🔴 AND THE PAPERS LANE IS IN THE CONDITION TOO, because `needsPapers` can be true while
+  // `needsWeb` is false — what has been SHOWN is usually not a question about what is current. A
+  // loop gated on `needsWeb` alone would silently never fetch papers on exactly those turns.
+  assert.match(header, /decision\?\.needsPapers && !papersFetched/, "a papers-only turn cannot enter the search loop");
 });
 
 test("what each search finds accumulates rather than replacing what came before", () => {
