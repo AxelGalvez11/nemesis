@@ -147,6 +147,8 @@ export function SourcesControl({
   // the reply's source cards still file pages through it; only this panel's manual door closed.
   /** The source whose ORIGINAL document is open in the preview card, or null. */
   const [previewing, setPreviewing] = useState<CanvasSource | null>(null);
+  /** The one file input both `+` buttons drive. */
+  const filePicker = useRef<HTMLInputElement>(null);
   // 🔴 A DECK MADE HERE IS REVIEWED HERE. Owner 2026-08-24: the cards are "an artifact
   // that the user can study", and the canvas's Outputs tab is one of the two places that
   // artifact lives. This row used to be an `<a href="/library?deck=…">`, so studying the
@@ -182,7 +184,11 @@ export function SourcesControl({
         title="Sources and outputs"
         type="button"
       >
-        <Codicon name="library" size="20px" />
+        {/* 🔴 THE REFERENCE'S OWN GLYPH, PICKED OFF A SCREENSHOT THE OWNER SENT (2026-08-25). It
+            was `library` — a stack of books, which reads as "go to the Library", a different
+            surface this panel is repeatedly mistaken for. `list-unordered` says "the things in
+            this canvas, listed", which is what opening it gets you. */}
+        <Codicon name="list-unordered" size="20px" />
         {/* §46: a dot, not a count. The number is not the point and a badge reading "3" on every
             screen is noise the eye stops seeing anyway. */}
         {/* Model knowledge counts here too. The dot means "there is something in this panel",
@@ -214,25 +220,34 @@ export function SourcesControl({
               printed under it is a label restating a label."* True — of a panel with a tab. With
               the tab gone the heading is the only label there is, and a section with no heading is
               a list of files with nothing saying what they are. */}
-          <PanelSection
-            empty="Nothing made yet. Ask below, and it lands here and in your Library."
-            label="Outputs"
-          >
+          {/* 🔴🔴 OUTPUTS AND INPUTS APPEAR ONLY WHEN THEY HOLD SOMETHING — owner, 2026-08-25:
+              *"outputs and inputs should only appear when there are some."* They pass no `empty`,
+              which is what hides them; Sources passes one and is therefore the shelf that is always
+              on screen. That is deliberate and not an accident of the prop: Sources is the panel's
+              anchor and carries the `+`, so a canvas with nothing in it still has a door.
+
+              🔴 OUTPUTS HAS NO `+`, AND THIS IS THE ONE PLACE THE REFERENCE IS NOT COPIED. Its
+              panel offers "Create a file or site" there. Owner ruling, 2026-08-24: *"remove the
+              make flash cards, make slide, make summary note from the output section"* — this panel
+              LISTS what a canvas produced, it is not where you produce it, and asking in words is
+              the way (§38: *"a phrase to the composer, not a control"*). A `+` here would be those
+              three rows returning behind an icon. `outputs-have-no-make-buttons.test.ts` holds it. */}
+          <PanelSection label="Outputs">
             {outputs.map((output) => (
               <OutputRow canvasId={canvas.id} key={output.id} onReviewDeck={setReviewingDeck} output={output} />
             ))}
           </PanelSection>
 
-          {/* 🔴 MODEL KNOWLEDGE IS A SOURCE, WHICH IS WHY IT IS COUNTED HERE (N10). A canvas started
-              by typing a topic holds no files and a great deal of knowledge, and this section
-              answering "no sources yet" while fifty model-minted facts sit behind it is true about
+          {/* 🔴 MODEL KNOWLEDGE IS A SOURCE, WHICH IS WHY IT SITS HERE (N10). A canvas started by
+              typing a topic holds no files and a great deal of knowledge, and this shelf answering
+              "nothing read from the web" while fifty model-minted facts sit behind it is true about
               web pages and false about provenance — on the one surface a learner opens to ask where
-              something came from. It carries NO count: the territory rebuilds on open and does not
-              converge, so a number here would grow every time they looked. */}
+              something came from. `filled` is what stops the empty sentence printing over it. */}
           <PanelSection
             empty="Nothing read from the web yet."
             filled={modelKnowledge}
             label="Sources"
+            onAdd={() => filePicker.current?.click()}
           >
             {modelKnowledge && (
               // 🔴 ONE LINE, AND IT IS THE DISCLOSURE RATHER THAN A LABEL WITH THE DISCLOSURE UNDER
@@ -251,27 +266,27 @@ export function SourcesControl({
             ))}
           </PanelSection>
 
-          <PanelSection empty="Nothing attached yet." label="Inputs">
+          <PanelSection label="Inputs" onAdd={() => filePicker.current?.click()}>
             {documents.map((source) => (
               <SourceRow key={source.id} onPreview={setPreviewing} source={source} />
             ))}
           </PanelSection>
 
-          <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
-            <Codicon name="add" size="0.75rem" />
-            Add source
-            {/* `sr-only` keeps this reachable by keyboard; `hidden` would not. */}
-            <input
-              accept={ACCEPTED_MATERIAL}
-              className="sr-only"
-              multiple
-              onChange={(event) => {
-                if (event.target.files) onFiles(event.target.files);
-                setOpen(false);
-              }}
-              type="file"
-            />
-          </label>
+          {/* 🔴 THE "ADD SOURCE" ROW MOVED ONTO THE HEADINGS AS THE REFERENCE'S `+`, so the picker
+              is opened by two buttons now and the input can no longer live inside either of them.
+              `sr-only` rather than `hidden`: a hidden input is not keyboard reachable, and the
+              buttons above are what focus travels to anyway. */}
+          <input
+            accept={ACCEPTED_MATERIAL}
+            className="sr-only"
+            multiple
+            onChange={(event) => {
+              if (event.target.files) onFiles(event.target.files);
+              setOpen(false);
+            }}
+            ref={filePicker}
+            type="file"
+          />
         </div>
       )}
 
@@ -312,51 +327,88 @@ function PanelSection({
   empty,
   filled = false,
   label,
+  onAdd,
 }: {
   children: React.ReactNode;
-  /** Shown in place of the rows when there are none. Says what is missing, in the learner's terms. */
-  empty: string;
+  /**
+   * What to say in place of the rows when there are none.
+   *
+   * 🔴🔴 OMITTING IT HIDES THE WHOLE SECTION, AND THAT IS THE PROP'S REAL JOB — owner, 2026-08-25:
+   * *"outputs and inputs should only appear when there are some."* The rule lives in the prop shape
+   * rather than as a `hideWhenEmpty` boolean beside it, because the two would be able to disagree:
+   * a section with an empty sentence AND the hide flag has two answers for one state, and whichever
+   * the code happened to check first would win silently.
+   */
+  empty?: string;
   /** Treat the section as non-empty even though it has no rows of its own — the Sources shelf
-   *  carries a model-knowledge line that is a child rather than a row, and "no sources yet" printed
-   *  above it would contradict the thing directly beneath it. */
+   *  carries a model-knowledge line that is a child rather than a row, and an empty sentence
+   *  printed above it would contradict the thing directly beneath it. */
   filled?: boolean;
   label: string;
+  /** Adds the reference's `+`. Absent on Outputs, deliberately — see the note at the call site. */
+  onAdd?: () => void;
 }) {
   // 🔴 EVERY SHELF FOLDS, AND EACH KEEPS ITS OWN FLAG — owner, 2026-08-25: *"make sure each section
   // is collapsible."* State lives INSIDE this component, so there is no shared flag to get wrong:
-  // shutting a long Sources list must never also take away the three documents the learner attached
+  // shutting a long Sources list must never also take away the documents the learner attached
   // themselves, which is the opposite of what folding is for.
   const [open, setOpen] = useState(true);
   const [all, setAll] = useState(false);
   // 🔴 COUNTED OFF THE RENDERED CHILDREN, NOT OFF A LENGTH THE CALLER PASSES. A caller that
-  // filtered its list and forgot to update its count would print a count and a tail that both
-  // reveal nothing, and nothing would catch it — the number and the rows come from one array.
+  // filtered its list and forgot to update its count would print a tail that reveals nothing, and
+  // nothing would catch it — the number and the rows come from one array.
   const rows = Children.toArray(children).filter(Boolean);
   const hidden = Math.max(0, rows.length - SECTION_ROWS);
   const shown = all ? rows : rows.slice(0, SECTION_ROWS);
 
+  // A shelf with nothing in it and nothing to say about that is not a shelf.
+  if (rows.length === 0 && !filled && !empty) return null;
+
   return (
-    <section className="pb-1">
-      {/* 🔴🔴 THE HEADING IS A REAL BUTTON, WHICH IS THE SAME INVARIANT THE OLD `SourceGroup` HELD:
-          nothing may look pressable without being pressable, and nothing may be pressable without
-          looking it. So it carries a chevron and `aria-expanded` rather than folding invisibly. */}
-      <button
-        aria-expanded={open}
-        className="flex w-full items-center gap-1.5 rounded-lg px-2 pb-0.5 pt-2 text-left text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary) transition-colors hover:text-(--ui-text-secondary)"
-        onClick={() => setOpen((was) => !was)}
-        type="button"
-      >
-        <Codicon className="shrink-0" name={open ? "chevron-down" : "chevron-right"} size="0.7rem" />
-        <span className="min-w-0 truncate">{label}</span>
-        {/* 🔴 A SHUT SHELF STILL REPORTS ITS SIZE. A collapsed section with no number is
-            indistinguishable from an empty one, which is exactly the moment somebody concludes
-            their sources were lost. Hidden at zero, where the empty sentence says it better. */}
-        {rows.length > 0 && <span className="tabular-nums">{rows.length}</span>}
-      </button>
+    // 🔴 THE DIVIDER IS `first:border-t-0`, NOT A SEPARATOR THE PARENT PLACES BETWEEN SIBLINGS. Two
+    // of the three shelves can vanish, so a parent counting gaps would draw a line above whichever
+    // one happened to be first that day. Letting the DOM decide means the rule is "not above the
+    // first one", which is what it actually is.
+    <section className="border-t border-(--ui-stroke-secondary) pb-1.5 first:border-t-0">
+      <div className="flex items-center gap-1">
+        {/* 🔴🔴 THE HEADING IS A REAL BUTTON, WHICH IS THE INVARIANT THE OLD `SourceGroup` HELD:
+            nothing may look pressable without being pressable, and nothing may be pressable without
+            looking it. So it carries a chevron and `aria-expanded` rather than folding invisibly.
+
+            🔴 SENTENCE CASE AT BODY SIZE, CHEVRON AFTER THE WORD — the reference's own composition,
+            copied rather than approximated (owner, 2026-08-25: *"copy the exact styling of the
+            reference i gave you"*). It was 12px uppercase with the chevron in front, which is a
+            table header; the reference reads as a section of a document. */}
+        <button
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[length:var(--canvas-text-body)] text-(--ui-text-secondary) transition-colors hover:text-(--ui-text-primary)"
+          onClick={() => setOpen((was) => !was)}
+          type="button"
+        >
+          <span className="min-w-0 truncate">{label}</span>
+          {/* 🔴 THE COUNT IS GONE, AND HIDING EMPTY SHELVES IS WHAT PAID FOR IT. It was here because
+              a collapsed section with no number is indistinguishable from an empty one — the moment
+              somebody concludes their sources were lost. A shelf that is empty no longer renders at
+              all, so a visible collapsed one always has something in it and the ambiguity the count
+              answered cannot occur. The reference carries no count either. */}
+          <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={open ? "chevron-down" : "chevron-right"} size="0.75rem" />
+        </button>
+        {onAdd && (
+          <button
+            aria-label={`Add to ${label}`}
+            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+            onClick={onAdd}
+            title={`Add to ${label}`}
+            type="button"
+          >
+            <Codicon name="add" size="0.9rem" />
+          </button>
+        )}
+      </div>
       {open && (
         <>
           {rows.length === 0 && !filled ? (
-            <p className="m-0 px-2 py-1.5 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-quaternary)">{empty}</p>
+            <p className="m-0 px-2 pb-1 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-quaternary)">{empty}</p>
           ) : (
             shown
           )}
@@ -364,8 +416,8 @@ function PanelSection({
             // Quiet, and not a row: it opens nothing, so it must not look like the things above it
             // that do. 🔴 A SECOND CONTROL, AND DELIBERATELY A DIFFERENT ONE — the heading takes the
             // whole shelf away, this reveals the rest of one you are already reading. Folding alone
-            // means a search's twenty pages push the other two shelves off the bottom unless you
-            // shut them; capping alone means a long shelf can never be got out of the way.
+            // means a search's twenty pages push the other shelves off the bottom unless you shut
+            // them; capping alone means a long shelf can never be got out of the way.
             <button
               className="mt-0.5 block w-full rounded-lg px-2 py-1 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
               onClick={() => setAll((was) => !was)}
