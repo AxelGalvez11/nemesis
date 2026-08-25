@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useParallax } from "@/components/use-parallax";
 import { Mascot } from "@/components/home/Mascot";
 import { FigureCarousel, type CarouselItem } from "@/components/home/FigureCarousel";
-import { CALENDAR_BLUR, EVIDENCE_BLUR, SEE_BLUR } from "./art-blur";
+import { CALENDAR_BLUR, EVIDENCE_BLUR, EVIDENCE_FIGURE_BLUR, SEE_BLUR } from "./art-blur";
 
 /**
  * The four things the page claims, one band each.
@@ -53,11 +53,11 @@ interface Band {
   /** Put the character opposite the copy instead of a picture. */
   readonly mascot?: boolean;
   /**
-   * This band's ground is an engraved figure rather than an abstract wash, so it takes its own
-   * opacity and its own mask — see the note in art.css. A face cannot survive the treatment a
-   * gradient can, because a gradient has no subject to lose.
+   * An engraved figure laid OVER the wash, not instead of it — two grounds, one behind the other.
+   * It takes its own opacity, mask and parallax rate: a face cannot survive the treatment a
+   * gradient can, because a gradient has no subject to lose. See the note in art.css.
    */
-  readonly figureArt?: boolean;
+  readonly figure?: { readonly src: string; readonly blur: string };
 }
 
 /**
@@ -128,7 +128,7 @@ const BANDS: readonly Band[] = [
     id: "evidence",
     art: "/nemesis/art/evidence.webp",
     blur: EVIDENCE_BLUR,
-    figureArt: true,
+    figure: { blur: EVIDENCE_FIGURE_BLUR, src: "/nemesis/art/evidence-figure.webp" },
     head: "Built on evidence",
     body: "Scaffolding, worked examples, retrieval practice and spaced review. Four methods with real research behind them, running under every session.",
     mascot: true,
@@ -152,12 +152,13 @@ function Feature({ band, index }: { band: Band; index: number }) {
   // Alternating depth so neighbouring bands never drift in lockstep — two grounds
   // moving identically read as one sheet sliding behind the whole page.
   const art = useParallax<HTMLDivElement>(index % 2 === 0 ? 0.16 : 0.21);
+  // Its own, slower rate: two grounds moving identically read as one sheet.
+  const figure = useParallax<HTMLDivElement>(0.1);
 
   return (
     <section
       className="band"
       data-side={index % 2 === 1 ? "left" : "right"}
-      data-art={band.figureArt ? "figure" : undefined}
       data-figs={band.figures ? "true" : undefined}
     >
       {/* aria-hidden: it is the ground, and it carries no information a reader
@@ -175,6 +176,21 @@ function Feature({ band, index }: { band: Band; index: number }) {
           quality={82}
         />
       </div>
+
+      {band.figure ? (
+        <div className="band-figure" ref={figure} aria-hidden="true">
+          <Image
+            src={band.figure.src}
+            alt=""
+            width={1100}
+            height={1100}
+            sizes="(max-width: 900px) 100vw, 40vw"
+            placeholder="blur"
+            blurDataURL={band.figure.blur}
+            quality={84}
+          />
+        </div>
+      ) : null}
 
       <div className="wrap band-in" data-reveal="up">
         {/* The measure and the side live on this wrapper, not on the heading. `ch`

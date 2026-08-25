@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import { useParallax } from "@/components/use-parallax";
-import { LEARN_BLUR } from "./art-blur";
+import { LEARN_BLUR, LEARN_FIGURE_BLUR } from "./art-blur";
 
 /**
  * "Learn anything", centred, inside a ring of subjects.
@@ -53,9 +53,10 @@ const SUBJECTS = [
 
 export function LearnAnything() {
   const art = useParallax<HTMLDivElement>(0.16);
+  const figure = useParallax<HTMLDivElement>(0.1);
 
   return (
-    <section className="band ring-band" data-art="figure" data-side="right">
+    <section className="band ring-band" data-side="right">
       <div className="band-art" ref={art} aria-hidden="true">
         <Image
           src="/nemesis/art/learn.webp"
@@ -66,6 +67,21 @@ export function LearnAnything() {
           placeholder="blur"
           blurDataURL={LEARN_BLUR}
           quality={82}
+        />
+      </div>
+
+      {/* The engraving sits IN FRONT of the wash above, on its own slower offset, so the
+          two grounds separate as the page moves instead of sliding as one sheet. */}
+      <div className="band-figure" ref={figure} aria-hidden="true">
+        <Image
+          src="/nemesis/art/learn-figure.webp"
+          alt=""
+          width={1100}
+          height={1100}
+          sizes="(max-width: 900px) 100vw, 34vw"
+          placeholder="blur"
+          blurDataURL={LEARN_FIGURE_BLUR}
+          quality={84}
         />
       </div>
 

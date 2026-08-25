@@ -378,81 +378,92 @@
 }
 :root[data-theme="dark"] .band-art img { opacity: 0.74; }
 
-/* ── THE TWO BANDS WHOSE GROUND IS A FIGURE ───────────────────────────────────
-   `Learn anything` and `Built on evidence` carry engraved classical sculpture
-   instead of an abstract wash — a philosopher and a thinker, tone-mapped through
-   the same cobalt-to-pale palette the hero gradient uses, so they read as the
-   same page rather than as stock imagery dropped in.
+/* ── THE TWO BANDS WITH A FIGURE OVER THE WASH ────────────────────────────────
+   `Learn anything` and `Built on evidence` carry an engraved classical sculpture —
+   a philosopher and a thinker — ON TOP OF the abstract gradient, not instead of it.
+   Two grounds, one behind the other: the wash keeps doing what it does for every
+   other band, and the figure sits in front of it on its own side.
 
-   🔴 THEY CANNOT TAKE THE ABSTRACT TREATMENT, AND THAT IS THE WHOLE RULE HERE. A
-   gradient survives 52% opacity behind an ellipse that only shows its shoulder,
-   because a gradient has no subject to lose. A face at 52% behind the same mask is
-   a smudge — the contrast the engraving exists for is exactly what gets thrown
-   away. So these get their own opacity and their own mask, and the mask fades
-   toward the COPY rather than around a core, so the figure stays whole on its own
-   side and the sentence is never set over a cheekbone. */
-/* 🔴 A HALF-WIDTH BOX, NOT FULL BLEED — AND THIS IS WHAT MAKES THE FIGURE LEGIBLE.
-   The abstract art fills the whole band, which is right for a gradient and ruinous
-   for a picture of something: a 1100x1100 engraving stretched across a 1440x360
-   band and cropped to `cover` shows the middle QUARTER of it, so the thinker
-   arrived as an anonymous fragment of forearm. Constraining the box to the art
-   side means the square is cropped by a box of roughly its own proportions, and
-   the figure stays a figure. */
-.band[data-art="figure"] .band-art {
-  scale: 1;
+   The engravings are tone-mapped through the same cobalt-to-pale palette the hero
+   gradient uses, so the two layers are the same family of blue and read as one
+   image rather than as a photo pasted onto a background.
+
+   🔴 A FIGURE CANNOT TAKE THE WASH'S TREATMENT, WHICH IS WHY THIS IS A SEPARATE
+   LAYER RATHER THAN A SECOND `background-image`. A gradient survives 52% opacity
+   behind an ellipse that shows only its shoulder, because a gradient has no subject
+   to lose. A face at 52% behind that same mask is a smudge — the contrast the
+   engraving exists for is exactly what goes. So it gets its own opacity, its own
+   mask, and its own parallax rate.
+
+   🔴 A HALF-WIDTH BOX, NOT FULL BLEED. `.band-art` fills the band, which is right
+   for a wash and ruinous for a picture of something: a 1100x1100 engraving stretched
+   across a 1440x360 band and cropped to `cover` shows the middle QUARTER of it, so
+   the thinker arrived as an anonymous fragment of forearm. Constraining the box to
+   the art side crops the square by a box of roughly its own proportions. */
+.band-figure {
+  position: absolute;
+  z-index: -1;
+  inset: 0 auto 0 0;
   width: min(54%, 620px);
+  /* Slower than the wash behind it, so the two grounds separate as the page moves
+     instead of sliding as one sheet. */
+  transform: translate3d(0, calc(var(--p) * 96px), 0);
+  will-change: transform;
+  pointer-events: none;
+  overflow: hidden;
 }
-.band[data-art="figure"][data-side="right"] .band-art { inset: 0 0 0 auto; }
-.band[data-art="figure"][data-side="left"] .band-art { inset: 0 auto 0 0; }
-.band[data-art="figure"] .band-art img {
-  opacity: 0.8;
+.band[data-side="right"] .band-figure { inset: 0 0 0 auto; }
+.band-figure img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   object-position: center;
+  display: block;
+  opacity: 0.8;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .band[data-art="figure"] .band-art img { opacity: 0.8; }
+  :root:not([data-theme="light"]) .band-figure img { opacity: 0.72; }
 }
-:root[data-theme="dark"] .band[data-art="figure"] .band-art img { opacity: 0.8; }
+:root[data-theme="dark"] .band-figure img { opacity: 0.72; }
 
 /* A linear fade across the band rather than an ellipse: the figure keeps its own
-   half at full strength and dissolves before it reaches the text column. */
-.band[data-art="figure"][data-side="right"] .band-art img {
+   side at full strength and dissolves before it reaches the text column. */
+.band[data-side="right"] .band-figure img {
   -webkit-mask-image: linear-gradient(to left, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
   mask-image: linear-gradient(to left, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
 }
-.band[data-art="figure"][data-side="left"] .band-art img {
+.band[data-side="left"] .band-figure img {
   -webkit-mask-image: linear-gradient(to right, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
   mask-image: linear-gradient(to right, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
 }
 
 /* 🔴 THE RING BAND IS CENTRED, SO IT NEEDS ITS OWN NUMBERS. Every other band puts
    its copy on one side and its ground on the other; this one puts "Learn anything"
-   and both sentences down the MIDDLE. At the shared width and opacity the headline
-   sat directly on the philosopher's cheekbone and could not be read at all. The
-   figure is pushed to the outer third and taken down in strength. */
-.band[data-art="figure"].ring-band .band-art {
+   and both sentences down the MIDDLE. At the shared width the headline sat directly
+   on the philosopher's cheekbone and could not be read at all. */
+.ring-band .band-figure {
   width: min(38%, 460px);
 }
-.band[data-art="figure"].ring-band .band-art img {
+.ring-band .band-figure img {
   opacity: 0.7;
   /* 🔴 THE CROP IS OFFSET SO THE FACE LANDS IN THE PART THE MASK KEEPS. Centred, the
-     face sits in the box's left half — which is exactly the half the mask dissolves
-     to protect the copy — so the band showed a lot of expensive hair and no
-     philosopher. Pulling the window left puts the face under the solid edge. */
+     face sits in the box's left half — exactly the half the mask dissolves to protect
+     the copy — so the band showed a lot of expensive hair and no philosopher. */
   object-position: 24% center;
   -webkit-mask-image: linear-gradient(to left, #000 0%, rgba(0,0,0,0.7) 30%, transparent 78%);
   mask-image: linear-gradient(to left, #000 0%, rgba(0,0,0,0.7) 30%, transparent 78%);
 }
-:root[data-theme="dark"] .band[data-art="figure"].ring-band .band-art img { opacity: 0.5; }
+:root[data-theme="dark"] .ring-band .band-figure img { opacity: 0.6; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .band[data-art="figure"].ring-band .band-art img { opacity: 0.5; }
+  :root:not([data-theme="light"]) .ring-band .band-figure img { opacity: 0.6; }
 }
 
 @media (max-width: 880px) {
-  /* Stacked, the copy sits ON the art rather than beside it, so the figure has to
-     drop back or the sentence is unreadable over an engraved beard. */
-  .band[data-art="figure"] .band-art { width: 100%; }
-  .band[data-art="figure"] .band-art img { opacity: 0.26; }
-  :root[data-theme="dark"] .band[data-art="figure"] .band-art img { opacity: 0.34; }
+  /* Stacked, the copy sits ON both grounds rather than beside them, so the figure has
+     to drop back or the sentence is unreadable over an engraved beard. */
+  .band-figure { width: 100%; }
+  .band-figure img,
+  .ring-band .band-figure img { opacity: 0.24; }
 }
 
 /* ── THE BAND THAT CARRIES REAL FIGURES ───────────────────────────────────────
