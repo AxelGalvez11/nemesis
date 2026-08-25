@@ -27,7 +27,7 @@ import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 import { deckSystemPrompt, readDeckJson } from "../export/deck-plan";
 import { canvasFigures, figureMenu } from "./deck-figures";
 
-import { reportMarkdown, reportTitle } from "@/lib/research/report-markdown";
+import { reportMarkdown, reportTitle, researchSummaryLine } from "@/lib/research/report-markdown";
 import type { OnResearchStep } from "@/lib/research/research-model";
 import { runResearch } from "@/lib/research/run-research";
 
@@ -42,6 +42,8 @@ import { occlusionCards } from "./occlusion-from-labels";
 export type DeliverableKind = "flashcards" | "note" | "report" | "slides";
 
 export interface DeliverableResult {
+  /** A line about what it cost, when the maker has one. Shown instead of the generic notice. */
+  note?: string;
   output: CanvasOutput;
 }
 
@@ -469,8 +471,13 @@ export async function makeReportDeliverable(
   canvas: LearningCanvas,
   question: string,
   onStep?: OnResearchStep,
+  /** The sub-questions the learner approved on the plan card, when they were shown one. */
+  plan?: readonly string[],
 ): Promise<DeliverableResult | DeliverableFailure> {
-  const outcome = await runResearch(uid, question, { ...(onStep ? { onStep } : {}) });
+  const outcome = await runResearch(uid, question, {
+    ...(onStep ? { onStep } : {}),
+    ...(plan?.length ? { plan } : {}),
+  });
   if ("error" in outcome) return { error: outcome.error };
 
   const title = reportTitle(outcome.question);
@@ -483,6 +490,11 @@ export async function makeReportDeliverable(
 
   const assetId = await recordLedger(canvas.id, saved.title);
   return {
+    // 🔴 THE NUMBERS TRAVEL WITH THE RESULT so the notice can say what actually happened —
+    // "Research done in 1m 14s · 6 sources · 6 searches" — rather than the same cheerful sentence
+    // whatever the run cost. It is the identical line printed inside the report's own footer, so a
+    // learner reading both cannot find two accounts of one run.
+    note: researchSummaryLine(outcome),
     output: {
       ...(assetId ? { assetId } : {}),
       createdAt: new Date().toISOString(),

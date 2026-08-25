@@ -57,7 +57,7 @@ export default function CoursePreviewPage() {
 
           <CanvasComposer
             busy={false}
-            capabilities={["course"]}
+            capabilities={["course", "research"]}
             capability={capability}
             intent={intent}
             onAnswer={() => undefined}

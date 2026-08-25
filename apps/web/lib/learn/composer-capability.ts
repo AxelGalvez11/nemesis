@@ -31,14 +31,16 @@
 /**
  * The capabilities the composer can attach to one submission.
  *
- * 🔴 ONE MEMBER, AND THE UNION IS STILL RIGHT. A bare `course: boolean` prop would be the same
- * information, and the second capability would arrive as a second boolean, and then a third — at
- * which point two could be set at once and nothing would say what that means. A union cannot hold
- * two, which is the same argument `ComposerIntent` and `AnswerSink` are both built on.
+ * 🔴 THE UNION WAS BUILT FOR THE SECOND MEMBER AND THIS IS IT. The note that used to sit here said
+ * a bare `course: boolean` would be the same information until the second capability arrived as a
+ * second boolean, at which point two could be set at once and nothing would say what that means.
+ * `research` is that second member, and it arrives as a union member rather than a flag for
+ * exactly the reason predicted: Course and Deep research are mutually exclusive declarations about
+ * one submission, and a type that cannot hold both is the cheapest way to keep them so.
  */
-export type ComposerCapability = "course";
+export type ComposerCapability = "course" | "research";
 
-export const COMPOSER_CAPABILITIES: readonly ComposerCapability[] = ["course"];
+export const COMPOSER_CAPABILITIES: readonly ComposerCapability[] = ["course", "research"];
 
 /** How a capability presents itself in the `+` menu and as a chip. */
 export interface CapabilityCopy {
@@ -55,6 +57,11 @@ export const CAPABILITY_COPY: Record<ComposerCapability, CapabilityCopy> = {
   // has no reason to know the word the schema uses. §38's own copy rule: a control names what the
   // learner gets, never what the system does with it.
   course: { detail: "Build a learning path", icon: "map", label: "Course" },
+  // 🔴 "Get a detailed report" NAMES WHAT THE LEARNER GETS, which is §38's copy rule and also the
+  // only honest description: they get a document, not a faster answer. "Search harder" or
+  // "Thorough mode" would both describe the machine, and both would be chosen by people who wanted
+  // an answer in the chat.
+  research: { detail: "Get a detailed report", icon: "telescope", label: "Deep research" },
 };
 
 /**
@@ -90,6 +97,12 @@ export function clearsOnSubmit(_capability: ComposerCapability): boolean {
  * learner wanted; it does not remove the model's judgement about whether it can be done.
  */
 export function capabilityBrief(capability: ComposerCapability): string {
+  // 🔴 RESEARCH ADDS NOTHING TO THE PACKET, AND THE EMPTY STRING IS THE POINT. Course tells the
+  // model something it should know while reading the sentence; research does not go to the turn
+  // model at all. The learner declaring it means the run happens, so there is nothing for the
+  // router to weigh and nothing to say to it. `TurnDecision.wantsReport` is the OTHER path, for
+  // turns where nobody declared anything and the model has to read the intent out of the words.
+  if (capability === "research") return "";
   if (capability === "course") {
     return (
       "The learner has explicitly asked for a COURSE: a persistent learning path through a subject, " +

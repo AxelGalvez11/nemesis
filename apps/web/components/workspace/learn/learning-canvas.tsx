@@ -16,6 +16,7 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
+import { ResearchPlanCard } from "./research-plan-card";
 import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { useAuth } from "@/components/AuthProvider";
 import { CanvasCheck } from "./canvas-check";
@@ -46,7 +47,10 @@ import type { ComposerCapability } from "@/lib/learn/composer-capability";
 import { planTerritories } from "@/lib/learn/curriculum-plan";
 
 /** The capabilities this surface offers. Module-level so the array's identity is stable. */
-const COURSE_CAPABILITY: readonly ComposerCapability[] = ["course"];
+// 🔴 TWO NOW, AND THE ORDER IS THE MENU'S ORDER. Course first because it is the one that changes
+// what the canvas BECOMES; Deep research second because it produces a document beside the canvas
+// rather than steering it.
+const CANVAS_CAPABILITIES: readonly ComposerCapability[] = ["course", "research"];
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
@@ -1776,6 +1780,27 @@ export function LearningCanvas({
           </div>
         )}
 
+        {/* 🔴🔴 THE PLAN, BEFORE ANY OF IT IS PAID FOR. A Deep research run is about a minute and
+            several metered searches from a budget shared with ordinary chat search, so the learner
+            sees what it intends to look up and presses Start. Planning is one model call and no
+            searches, which is what makes showing them affordable.
+
+            🔴 IT SITS BESIDE THE CLARIFICATION CARD BECAUSE IT IS THE SAME KIND OF OBJECT: a card
+            the turn produced, answered by tapping, with the composer below untouched. What it is
+            NOT is a clarification — nothing was ambiguous, the learner declared the capability, and
+            this is Nemesis showing what it understood rather than asking what they meant. */}
+        {session.researchPlan && presence !== "preparing" && (
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
+            <ResearchPlanCard
+              onCancel={session.cancelResearchPlan}
+              onStart={session.startResearchPlan}
+              question={session.researchPlan.question}
+              starting={session.making === "report"}
+              subQuestions={session.researchPlan.subQuestions}
+            />
+          </div>
+        )}
+
         {/* 🔴🔴 THE TEST THE LEARNER ASKED FOR, IN THE CHAT (owner 2026-08-24: *"the 'tests' are
             supposed to be in chat chips for users to click through"*). It sits here, beside the
             clarification card, because both are the same kind of object: a card the turn produced
@@ -2212,7 +2237,7 @@ export function LearningCanvas({
           // 2026-08-23) permits one-shot capabilities that declare what the next submission IS;
           // Course is the first. The state lives above so the submission handlers receive it as an
           // argument — same pipeline as the text.
-          capabilities={COURSE_CAPABILITY}
+          capabilities={CANVAS_CAPABILITIES}
           capability={capability}
           onCapability={setCapability}
         />

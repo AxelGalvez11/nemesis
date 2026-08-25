@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { reportMarkdown, reportTitle } from "./report-markdown";
+import { reportMarkdown, reportTitle, researchSummaryLine } from "./report-markdown";
 import type { ResearchReport } from "./research-model";
 
 const REPORT: ResearchReport = {
@@ -22,7 +22,7 @@ const REPORT: ResearchReport = {
     { rank: "reference", title: "Commerce Clause", url: "https://en.wikipedia.org/wiki/Commerce_Clause" },
     { rank: "ordinary", title: "A law blog", url: "https://blog.example/commerce" },
   ],
-  stats: { dropped: 4, found: 12, kept: 3, searched: 9 },
+  stats: { dropped: 4, elapsedMs: 74_000, found: 12, kept: 3, searched: 9 },
   subQuestions: ["What are the categories?", "What did Lopez decide?", "What did Morrison add?"],
   summary: "It falls outside when the activity is not economic and the link to interstate commerce is a chain of inferences.",
 };
@@ -58,7 +58,7 @@ test("🔴 the footer says how much of the draft failed its own check", () => {
 test("the footer counts in English, not in \"(s)\"", () => {
   // The learner reads this line, and sometimes so does whoever they hand the report to. "1 were
   // removed" undercuts every careful sentence above it.
-  const one = reportMarkdown({ ...REPORT, stats: { dropped: 1, found: 3, kept: 1, searched: 2 } });
+  const one = reportMarkdown({ ...REPORT, stats: { dropped: 1, elapsedMs: 8_000, found: 3, kept: 1, searched: 2 } });
   assert.match(one, /1 was confirmed against the cited sources and 1 was removed/);
 });
 
@@ -92,4 +92,21 @@ test("a question becomes a filename without becoming a stub", () => {
   assert.equal(reportTitle("Why, exactly, does the second law hold?"), "Why, exactly, does the second law hold");
   assert.equal(reportTitle("   "), "Research");
   assert.ok(reportTitle("x".repeat(400)).length <= 110);
+});
+
+test("the completion line reads like a sentence at both ends of the range", () => {
+  // Shown to the learner the moment a run lands, so it has to be right for "8 seconds, one source"
+  // as well as for the minutes-long case.
+  assert.equal(researchSummaryLine(REPORT), "Research done in 1m 14s · 3 sources · 9 searches");
+  const tiny = { ...REPORT, sources: [REPORT.sources[0]!], stats: { ...REPORT.stats, elapsedMs: 8_000, searched: 1 } };
+  assert.equal(researchSummaryLine(tiny), "Research done in 8s · 1 source · 1 search");
+});
+
+test("🔴 the line counts SOURCES, not citations", () => {
+  // The reference tool reports "23 citations", which counts each time a sentence points at a page.
+  // Ours would be the bigger number for the same work, so reporting it would flatter the run. A
+  // source cited four times is one source.
+  const line = researchSummaryLine(REPORT);
+  assert.ok(line.includes("3 sources"), `sources should be ${REPORT.sources.length}: ${line}`);
+  assert.ok(!/citation/i.test(line));
 });
