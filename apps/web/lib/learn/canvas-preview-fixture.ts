@@ -121,6 +121,40 @@ export function lessonSeed(): LearningCanvas {
         conceptIds: ["k2", "k3"],
         sourceRefs: [{ sourceId: "s1", excerptId: "s1:e2" }],
       },
+      {
+        // 🔴 THE ONE BLOCK IN THIS FIXTURE THAT CARRIES A VISUAL, AND IT IS LOAD-BEARING.
+        // Until 2026-08-24 nothing here had a `visual`, so /dev-preview/learn exercised the
+        // whole canvas EXCEPT `RoutedVisual` — the lane most likely to break silently, and the
+        // one a marketing screenshot most needs to show. The curve below is a real ventricular
+        // action potential: rest near -90 mV, a phase 0 upstroke past 0, the phase 1 notch, the
+        // long phase 2 plateau, then phase 3 back to rest. Every number is the value the
+        // surrounding prose already states, so the figure and the paragraphs cannot drift.
+        id: "b6a",
+        type: "paragraph",
+        content:
+          "Plotted against time, the five phases are obvious: the upstroke is almost vertical, the plateau is what makes cardiac muscle different from skeletal muscle, and repolarisation takes two hundred times longer than depolarisation.",
+        conceptIds: ["k2", "k3"],
+        sourceRefs: [{ sourceId: "s1", excerptId: "s1:e2" }],
+        visual: {
+          kind: "quantitative",
+          learningGoal:
+            "The plateau is the whole difference: a ventricular action potential lasts hundreds of milliseconds where a nerve impulse lasts one.",
+          caption: "Ventricular action potential, membrane voltage against time.",
+          xLabel: "ms",
+          yLabel: "mV",
+          series: [
+            {
+              label: "ventricular myocyte",
+              points: [
+                { x: 0, y: -90 }, { x: 1, y: -85 }, { x: 2, y: 20 }, { x: 5, y: 5 },
+                { x: 10, y: 8 }, { x: 50, y: 10 }, { x: 100, y: 8 }, { x: 150, y: 5 },
+                { x: 200, y: 0 }, { x: 250, y: -30 }, { x: 280, y: -60 },
+                { x: 300, y: -85 }, { x: 350, y: -90 }, { x: 400, y: -90 },
+              ],
+            },
+          ],
+        },
+      },
       { id: "b7", type: "heading", content: "Nodal cells" },
       {
         id: "b8",

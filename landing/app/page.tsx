@@ -1,57 +1,62 @@
 import { SiteChrome } from "@/components/SiteChrome";
 import { Hero } from "@/components/home/Hero";
-import { CanvasShowcase } from "@/components/showcase/CanvasShowcase";
-import { Sources } from "@/components/home/Sources";
+import { LearnAnything } from "@/components/home/LearnAnything";
+import { Features } from "@/components/home/Features";
 import { Closer } from "@/components/home/Closer";
 
 /**
  * The homepage.
  *
- * ── WHY IT IS FOUR SECTIONS ───────────────────────────────────────────────────
+ * ── THE ORDER, AND WHY IT IS THIS ORDER ───────────────────────────────────────
  *
- * The previous version was seven sections and explained, in order: the preparation
- * tax, the learning loop, resolution, diagnosis, progress, the learner model,
- * sources, recording, ingestion, retrieval, calendar, memory, six tenets, control,
- * uncertainty and exportability. All of it true, and all of it standing between a
- * first-time visitor and the product.
+ *   hero      the job, in the reader's words, with the identity on lit ground
+ *   learn     the range, drawn as a ring rather than argued as a list
+ *   features  see it / built on evidence / calendar, one noun heading each
+ *   close     "accelerate cognition", now that it means something
  *
- * Nemesis is one adaptive Canvas. A site for it should be about as complicated as
- * that sentence:
+ * `learn` is its own component rather than a fourth entry in `Features` because it
+ * is the only claim on the page whose SHAPE is the argument: a centred sentence
+ * inside a ring of twelve subjects says "no field comes first" in a way no ordered
+ * list can. See LearnAnything.tsx.
  *
- *   hero          the claim, and the organism making it
- *   showcase      one Canvas changing what it renders, four times, while pinned
- *   sources       what you bring, and that you can trace it back
- *   close         the claim again, now that it means something
+ * The page states what it does, shows what it looks like, says what is underneath
+ * it, and asks. That is the owner's brief almost verbatim: describe what it does,
+ * how it looks, and the purpose.
  *
- * ── WHY THERE IS ONE SHOWCASE AND NOT TWO SECTIONS ────────────────────────────
+ * ── WHAT WAS REMOVED, 2026-08-24 ──────────────────────────────────────────────
  *
- * There used to be a Canvas mock that cycled on a timer, and beneath it three
- * separate demonstrations of three representations. Both were arguing the same
- * point, which meant the page made it twice and proved it neither time — three
- * demonstrations side by side show three surfaces, and the entire claim is that
- * there is only ever one. They are now a single pinned Canvas that changes what
- * it renders as you scroll.
+ * `Look` — the "This is the whole thing" section — came out at the owner's
+ * instruction. It carried one screenshot of the app, and the nine real figures in
+ * the `See it` band already do the same job better: they show what the renderer
+ * DRAWS rather than what the page around it looks like. `Look.tsx` and the shots it
+ * used are left on disk, unimported, in case a product-shot section returns.
  *
- * ── WHERE THE REST WENT ───────────────────────────────────────────────────────
+ * `CanvasShowcase` — the animated mock of a Canvas session — is gone at the
+ * owner's instruction. It was a drawing of the product standing in the place a
+ * picture of the product should stand, and real screenshots were already sitting
+ * unused in `public/nemesis/shots`. The component and its scene files are left on
+ * disk rather than deleted: the choreography is good work and nothing else
+ * imports it, so it costs nothing to keep and would cost a day to rebuild.
  *
- * Not deleted — moved to /principles, intact. The thinking in those sections is
- * good and some visitors will want it; it just is not what a stranger needs in the
- * first thirty seconds. The nav's "Tenets" link now points there.
+ * `Sources` is gone too. Its subject — what you can bring in, and tracing an idea
+ * back to the original — was the best writing on the old page, but the owner does
+ * not count sources as a differentiator. What it carried that still matters, the
+ * list of things you can bring, now sits inside the `Learn anything` block.
  *
- * ── THE TWO CHARACTERS ────────────────────────────────────────────────────────
+ * ── WHAT IS DELIBERATELY NOT HERE ─────────────────────────────────────────────
  *
- * The three beads are the MARK: identity, in the nav and the footer, static. The
- * organism is its living form and appears exactly twice — at rest in the hero, and
- * drawing inward in the sources section. It deliberately does not travel down the
- * page through the showcase: the thing that persists there is the Canvas, and two
- * persistent objects competing for the same scroll would be one too many.
+ * No "connect your apps" section. The only route to a university LMS today is a
+ * browser extension the owner considers glitchy, and the plugins surface itself
+ * marks LMS import as "Coming soon" with the button disabled. Nothing on this page
+ * may promise it. No AP or licensure exam scaffolds either — that work is planned,
+ * not built, and `scaffold-rung.ts` is deliberately subject-agnostic today.
  */
 export default function Home() {
   return (
     <SiteChrome>
       <Hero />
-      <CanvasShowcase />
-      <Sources />
+      <LearnAnything />
+      <Features />
       <Closer />
     </SiteChrome>
   );
