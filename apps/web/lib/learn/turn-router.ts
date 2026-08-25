@@ -1062,9 +1062,11 @@ const DECISION_CONTRACT = [
   // scholarly indexes — OpenAlex, Crossref, Semantic Scholar, Europe PMC, PubMed, arXiv — fanned
   // out in parallel and merged. Seven until the owner cut bioRxiv the same day: it is the only one
   // with no search endpoint, so it could not be asked the question, only handed recent records and
-  // left to us to judge — which produced a neuroscience preprint under a property-law query. They cost nothing, so the only reason to gate this on a
-  // decision at all is relevance: papers on a "who won last night" turn are noise, and a numbered
-  // source list padded with irrelevant studies is worse than a short one.
+  // left to us to judge — which produced a neuroscience preprint under a property-law query.
+  //
+  // They cost nothing, so the only reason to gate this on a decision at all is relevance: papers on
+  // a "who won last night" turn are noise, and a numbered source list padded with irrelevant
+  // studies is worse than a short one.
   //
   // 🔴 IT IS NOT `needsWeb` UNDER ANOTHER NAME, AND THE INSTRUCTION HAS TO SAY SO OR THE MODEL WILL
   // TREAT IT AS ONE. "What changed this year" and "what has been shown" pull in opposite
@@ -1072,12 +1074,31 @@ const DECISION_CONTRACT = [
   // search is the wrong instrument for it. This is also the honest replacement for the four
   // hardcoded medical domains that used to be DRAWN as if they had been searched — the difference
   // being that these are actually queried, and they cover every discipline rather than one.
-  '"needsPapers" is true when the answer should rest on published research: the learner asks what '
-  + "the evidence or the literature says, wants studies, trials, a systematic review or a "
-  + "meta-analysis, asks how strong the evidence is or how something was established, or asks about "
-  + "a claim where a paper settles it better than a web page. It works for every field — law, "
-  + "history, engineering and education are indexed alongside medicine and physics — so reach for "
-  + "it whenever scholarship rather than journalism is the right source.",
+  // 🔴🔴🔴 THE TRIGGER IS AN INTENT, AND THE EXAMPLES MUST NOT QUIETLY BECOME A VOCABULARY. Nothing
+  // in this file matches the learner's words — there is no regex, no keyword list, no `includes()`
+  // anywhere in the decision path, and the header records that a regex version was deleted within a
+  // day of shipping. But an instruction can smuggle in the same failure without any code: this read
+  // *"wants studies, trials, a systematic review or a meta-analysis"*, and those three named forms
+  // are CLINICAL RESEARCH ARTEFACTS. A model handed only those examples generalises toward medicine
+  // and under-fires for the learner who asks "what's the authority for that" or "which
+  // historiography backs this" — the exact discipline-scoped failure CLAUDE.md's design test exists
+  // to catch, arriving through prose rather than through a pattern.
+  //
+  // So the rule below names the SHAPE OF THE ASK, and the examples deliberately span fields and
+  // then say out loud that they are one intent in several phrasings. Any future edit that adds an
+  // example should add it from a different discipline than the last one.
+  '"needsPapers" is true when the answer should rest on scholarship rather than journalism: the '
+  + "learner asks what the research says, how strong the evidence is, how a claim was established, "
+  + "what the field currently holds, or raises a contested claim that a published work settles "
+  + "better than a web page can.",
+  "",
+  "Judge what the learner is ASKING FOR, never the words they used. Every field publishes and each "
+  + "names its work differently — a law review article, a historiographical essay, an engineering "
+  + "paper, an education study and a clinical trial are all published literature, and all of them "
+  + "are indexed here. \"Is there any research on this\", \"what do the studies say\", \"what's the "
+  + "authority for that\", \"has anyone actually tested it\" and \"where does that claim come from\" "
+  + "are one intent in five phrasings. It also arrives in every language, so match the intent and "
+  + "never a vocabulary.",
   "",
   "It is independent of needsWeb, and often true when needsWeb is false: what has been SHOWN is "
   + "usually not a question about what is current, and the study that settles it may be decades "
