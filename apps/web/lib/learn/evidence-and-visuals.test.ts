@@ -76,15 +76,60 @@ test("🔴🔴🔴 the literature lane is a SEPARATE decision from the web", () 
   assert.match(ROUTER, /needsPapers: parsed\.needsPapers === true,/, "the decision stopped being read off the model's answer");
 });
 
-test("🔴🔴 the packet says the lane covers every field, not one", () => {
+test("🔴🔴🔴 the evidence trigger is an INTENT, and its examples are not one field's vocabulary", () => {
   // CLAUDE.md, owner 2026-07-27: Nemesis is field-agnostic and no feature may be scoped to one
   // discipline. This lane REPLACES four hardcoded medical domains that were drawn as if searched,
   // so an instruction that quietly re-scoped it to medicine would reintroduce the same defect with
   // a working backend behind it.
-  assert.match(PACKET, /works for every field/i, "the packet no longer says the lane is field-agnostic");
-  for (const field of ["law", "history", "engineering"]) {
-    assert.ok(PACKET.includes(field), `${field} is no longer named as a field the literature covers`);
-  }
+  //
+  // 🔴 STRENGTHENED 2026-08-24 AFTER THE OWNER ASKED "are these hardcoded keywords? it needs to be
+  // by intent". The code answer was already yes-by-intent — there is no matcher anywhere near the
+  // learner's text, guarded below. But the INSTRUCTION was leaking the same failure in prose: it
+  // read "wants studies, trials, a systematic review or a meta-analysis", and all three named forms
+  // are clinical-research artefacts. A model given only those examples generalises toward medicine
+  // and under-fires for the learner asking "what's the authority for that". This guard used to
+  // check for the sentence "works for every field", which a re-scoped instruction could keep while
+  // meaning the opposite; it now checks the two things that actually make the trigger field-neutral.
+  const clause = PACKET.slice(
+    PACKET.indexOf('"needsPapers" is true'),
+    PACKET.indexOf("It is independent of needsWeb"),
+  );
+  assert.ok(clause.length > 0, "the needsPapers instruction is gone — this guard is pointed at nothing");
+
+  // 1. It says outright that the words are not the trigger.
+  assert.match(clause, /never the words they used/i, "the packet stopped telling the model to judge the ask rather than the wording");
+  assert.match(clause, /never a vocabulary/i, "the packet stopped warning against matching a vocabulary");
+
+  // 2. Its worked examples span disciplines, so no single field's phrasing is the pattern. Four,
+  //    not one: a lone counter-example beside three medical ones still reads as a medical rule.
+  const disciplines = ["law", "historiographical", "engineering", "education", "clinical"];
+  const named = disciplines.filter((d) => clause.includes(d));
+  assert.ok(
+    named.length >= 4,
+    `the evidence examples now span only ${named.length} discipline(s) (${named.join(", ")}) — a model reading them will generalise to that field`,
+  );
+});
+
+test("🔴🔴🔴 nothing in the router matches the learner's WORDS — the decision is the model's", () => {
+  // Owner 2026-08-24: *"are these hardcoded keywords? it needs to be by intent."*
+  //
+  // The header already records that the first version of a sibling decision WAS a regex
+  // (`readResearchAsk`) and was deleted within a day, and that `chat-intent.ts` had deleted a
+  // `RESEARCH_PATTERN` before that for the same reasons — a learner writing "I need everything on X
+  // for my essay, with sources" got nothing, and a learner writing in Spanish could never match at
+  // all. This asserts the property directly rather than trusting that history.
+  const onUtterance = ROUTER.match(/utterance[^\n;]*?(\.includes\(|\.match\(|\.search\(|\.test\(|RegExp)/g) ?? [];
+  assert.deepEqual(
+    onUtterance,
+    [],
+    `the router inspects the learner's text again: ${onUtterance.join(" | ")} — routing must be the model's judgement, not a pattern`,
+  );
+  const patternOnText = ROUTER.match(/\/[^\n/]+\/[a-z]*\.(test|exec)\(\s*(utterance|question)\b/g) ?? [];
+  assert.deepEqual(
+    patternOnText,
+    [],
+    `a regex is being run against the learner's text: ${patternOnText.join(" | ")}`,
+  );
 });
 
 test("🔴🔴🔴 the six are NAMED, so widening the fan-out is a visible edit", () => {
