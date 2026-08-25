@@ -50,18 +50,37 @@ export interface CapabilityCopy {
   readonly detail: string;
   /** A codicon name. `Codicon` is the only icon set on this surface. */
   readonly icon: string;
+  /**
+   * What the composer's placeholder asks once this capability is staged.
+   *
+   * 🔴 IT LIVES ON THE RECORD SO THE TYPE FORCES ONE FOR EVERY CAPABILITY. Both composers used to
+   * spell this as `capability === "course" ? … : <the generic ask>`, which is not a default — it is
+   * a wrong answer for every capability except the one named. Deep research shipped straight into
+   * that branch and asked "Ask Nemesis…" while a Deep research chip sat above the box.
+   */
+  readonly prompt: string;
 }
 
 export const CAPABILITY_COPY: Record<ComposerCapability, CapabilityCopy> = {
   // 🔴 "Build a learning path", NOT "Build a curriculum". The learner is not writing a syllabus and
   // has no reason to know the word the schema uses. §38's own copy rule: a control names what the
   // learner gets, never what the system does with it.
-  course: { detail: "Build a learning path", icon: "map", label: "Course" },
+  // "What do you want to learn?" is the owner-specified pairing, 2026-08-23: the chip names the
+  // capability, the placeholder asks the one question a course needs answered.
+  course: { detail: "Build a learning path", icon: "map", label: "Course", prompt: "What do you want to learn?" },
   // 🔴 "Get a detailed report" NAMES WHAT THE LEARNER GETS, which is §38's copy rule and also the
   // only honest description: they get a document, not a faster answer. "Search harder" or
   // "Thorough mode" would both describe the machine, and both would be chosen by people who wanted
   // an answer in the chat.
-  research: { detail: "Get a detailed report", icon: "telescope", label: "Deep research" },
+  // 🔴 "RESEARCH" IS THE VERB, AND IT IS THE HONEST ONE. A report answers a question that takes
+  // reading to settle, so the box asks for that question rather than for a subject — "What do you
+  // want researched?" invites a noun, and a noun is the input this run is worst at.
+  research: {
+    detail: "Get a detailed report",
+    icon: "telescope",
+    label: "Deep research",
+    prompt: "What do you want to find out?",
+  },
 };
 
 /**

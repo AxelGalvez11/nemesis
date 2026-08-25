@@ -999,10 +999,13 @@ export function CanvasComposer({
                         // THINKING_COPY's captions are Runtime's copy and may or may not end in "…"
                         // (see thinking-phases.ts); doubling it up reads as a typo, not as emphasis.
                         `${(busyLabel ?? "Working").replace(/…$/, "")}…`
-                      : capability === "course"
-                        ? // The chip names the capability; the placeholder asks the one question a
-                          // course needs answered. Owner-specified pairing, 2026-08-23.
-                          "What do you want to learn?"
+                      : capability
+                        ? // The chip names the capability; the placeholder asks the one question
+                          // that capability needs answered. 🔴 KEYED OFF THE CAPABILITY, NOT OFF
+                          // `=== "course"`, because the named form silently sent every other
+                          // capability down the generic branch — which is how Deep research came to
+                          // show a Deep research chip above a box reading "Ask Nemesis…".
+                          CAPABILITY_COPY[capability].prompt
                         : selected.length > 0
                         ? "What should Nemesis do with this?"
                         : // Material is staged and nothing has started — say that sending with
