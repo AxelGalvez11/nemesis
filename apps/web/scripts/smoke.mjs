@@ -96,7 +96,7 @@ redirectCheck("/app/profile", "/");
 redirectCheck("/app/billing", "/");
 htmlCheck("/legal/privacy", ["Privacy Policy", "Service providers"]);
 htmlCheck("/legal/terms", ["Terms of Use", "Subscriptions and billing"]);
-htmlCheck("/legal/disclaimer", ["Medical Disclaimer", "Not medical advice"]);
+htmlCheck("/legal/disclaimer", ["Disclaimer", "not professional advice"]);
 
 postStatusCheck("/api/stripe/checkout", 401);
 postStatusCheck("/api/stripe/portal", 401);

@@ -78,7 +78,7 @@ export function ProfilePanel() {
         <Card>
           <h2 style={{ marginBottom: 6 }}>Account</h2>
           <p style={{ margin: "0 0 4px", fontWeight: 500 }}>{session?.user.email}</p>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>Educational information only. Not medical advice.</p>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>Educational information only. Not professional advice.</p>
         </Card>
         <Card>
           <div className="row" style={{ marginBottom: 10 }}>
