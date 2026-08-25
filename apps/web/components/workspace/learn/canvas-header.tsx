@@ -21,8 +21,8 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
+import { CanvasAudioBar } from "./canvas-audio-bar";
 import { MinimapControl, OptionsControl, SourcesControl } from "./canvas-controls";
-import type { AutoDictation, VoiceMode } from "@/lib/learn/voice-preferences";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
 import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
@@ -72,6 +72,15 @@ interface CanvasHeaderProps {
    * files.
    */
   voice?: CanvasVoiceState["header"];
+  /**
+   * The audio of the answer on screen, so the top row can carry its transport.
+   *
+   * 🔴 THE SAME CONTROLLER THE ANSWER'S OWN ROW READS, NEVER A SECOND ONE. `useResponseAudio` is
+   * called once, by the voice hook; handing this row its own would give one answer two playheads
+   * and a pause button that pauses nothing. See `canvas-audio-bar.tsx` for why the transport lives
+   * up here and the start button stays down there.
+   */
+  replyAudio?: CanvasVoiceState["replyAudio"];
 }
 
 export function CanvasHeader({
@@ -86,6 +95,7 @@ export function CanvasHeader({
   minimap,
   transcript = [],
   voice,
+  replyAudio,
 }: CanvasHeaderProps) {
   return (
     <>
@@ -126,6 +136,11 @@ export function CanvasHeader({
               Objectives, the session record and voice moved INSIDE `OptionsControl`; none of them
               was deleted, and voice especially could not be, because that button was the only way
               into voice mode. */}
+          {/* 🔴 BEFORE THE ICONS, WHICH IS WHERE THE OWNER PUT IT (2026-08-25, choosing between the
+              two edges of this row). It takes no width at all while nothing is playing — see the
+              `grid-cols-[0fr]` note in canvas-audio-bar.tsx — so the canvas title keeps every pixel
+              it has today and this row does not reflow when the audio ends. */}
+          {replyAudio && <CanvasAudioBar audio={replyAudio} />}
           <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} />
           {/* 🔴🔴 THE MAP APPEARS ONLY WHERE THERE IS SOMETHING TO MAP — owner, 2026-08-24: "the map
               icon should only appear if there is a course active." On an ordinary conversation there

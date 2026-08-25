@@ -48,10 +48,7 @@ import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import { entrySummary, groupByDay, type TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
-import {
-  type AutoDictation,
-  type VoiceMode,
-} from "@/lib/learn/voice-preferences";
+import { type VoiceMode } from "@/lib/learn/voice-preferences";
 import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 import { cn } from "@/lib/utils";
 
@@ -1231,7 +1228,6 @@ export function OptionsControl({
   });
 
   const voiceOn = voice?.mode === "on";
-  const listenOn = voice?.autoDictation === "on";
 
   return (
     <div className="pointer-events-auto relative shrink-0" ref={holder}>
@@ -1281,20 +1277,22 @@ export function OptionsControl({
                       was a SYNTHESIS argument — pressing it threw away a paid MP3 and bought
                       another at a different rate. Speed is now a property of listening, on the
                       player under the answer, where changing it is instant and free. */}
+                  {/* 🔴🔴 NO HINT LINE, AND THE MIC ROW IS GONE — owner, 2026-08-25, with the menu
+                      on screen: *"also remove this description and the 'open mic after each
+                      question' option"*. The hint explained a toggle whose own label already says
+                      what it does, in three lines of grey under a one-line row.
+
+                      🔴 THE MIC OPTION WAS REMOVED END TO END, NOT JUST HIDDEN. This row was the
+                      ONLY way to set `autoDictation`, so leaving the preference behind would have
+                      left `shouldOpenDictation` permanently false — a lane that can never run,
+                      which is this codebase's most-repeated defect wearing the other face. The
+                      preference, its storage, the post-speech effect and the composer's
+                      `listenSignal` all went with it (see use-canvas-voice.ts). Dictation itself is
+                      untouched: the composer's own microphone button is unaffected. */}
                   <ToggleItem
                     checked={voiceOn}
-                    hint="Nemesis starts reading each answer as soon as it is finished. You can always press play yourself."
                     label="Read responses aloud"
                     onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
-                  />
-                  {/* Offering to open a microphone that cannot listen is a promise the product
-                      cannot keep — the same refusal `VoiceControl` made, kept. */}
-                  <ToggleItem
-                    checked={listenOn}
-                    disabled={!voice.dictationSupported}
-                    hint={voice.dictationSupported ? undefined : "This browser cannot listen"}
-                    label="Open the mic after each question"
-                    onClick={() => voice.onSetAutoDictation(listenOn ? "off" : "on")}
                   />
                   <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
                 </>
