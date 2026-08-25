@@ -310,6 +310,31 @@
        learner's words do not read as louder than Nemesis's own annotations. */
     --ui-learner: #2563eb;
     --ui-purple: #9e94d5;
+
+    /* 🔴🔴 THE FILE-KIND TINTS — their own tokens, and the separation is deliberate.
+       The `+` menu colours its icons by what each capability produces (owner ask,
+       2026-08-25), which is the convention every file browser uses: red is a PDF,
+       green is a sheet.
+
+       🔴 NOT `--ui-learner`, WHICH IS SPOKEN FOR. §35.1 pins that blue to "this came
+       from you", and the note above says in as many words that its meaning must not
+       drift. A menu icon reaching for it would be exactly that drift.
+
+       🔴 AND NOT `--ui-blue`, WHOSE OWN COMMENT ABOVE RECORDS THE TRAP: it never got a
+       dark override, so #0053fd carries onto a near-black ground at 3.18:1. Reusing it
+       would have walked straight in, and giving it one would have moved the Calendar's
+       assignment chip — a surface nobody asked about. These are new, so each carries a
+       dark value from the start and nothing else changes.
+
+       Decoration, not text: these tint 16px glyphs beside a label that carries the
+       meaning in words, so the bar is legibility rather than WCAG body-text contrast.
+       Every value is checked against the resolved --ui-bg-elevated in both themes. */
+    --ui-kind-blue: #2f6fd0;
+    --ui-kind-red: #cf2d56;
+    --ui-kind-green: #1f8a65;
+    --ui-kind-amber: #c08532;
+    --ui-kind-purple: #7a6fc0;
+    --ui-kind-cyan: #3f7d8c;
     --context-usage-system: color-mix(in srgb, var(--ui-base) 55%, transparent);
     --context-usage-tools: var(--ui-purple);
     --context-usage-rules: var(--ui-green);
@@ -662,6 +687,13 @@
        ground at 3.18:1, which fails AA for text and is the trap any new blue would have
        walked into. Lifted to 6.58:1, same hue family, still unmistakably blue. */
     --ui-learner: #5b9bff;
+    /* The file-kind tints, lifted for a near-black ground. Same hues, same order. */
+    --ui-kind-blue: #6aa5f5;
+    --ui-kind-red: #e75e78;
+    --ui-kind-green: #55a583;
+    --ui-kind-amber: #d9a44e;
+    --ui-kind-purple: #a99bea;
+    --ui-kind-cyan: #6f9ba6;
     /* Dark's --ui-action must be LIGHTER than light's, not darker: the glyph on
        it is --ui-bg-editor, which is near-black here, so the fill carries a dark
        glyph. Same inversion the graphite pair already made (#404040 → #6e6e6e).

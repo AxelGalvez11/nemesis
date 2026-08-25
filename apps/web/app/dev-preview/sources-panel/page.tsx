@@ -62,10 +62,45 @@ const SOURCES: CanvasSource[] = [
   page("w2", "Commerce Clause", "https://www.law.cornell.edu/wex/commerce_clause"),
 ];
 
+const DOC_MARKDOWN = `# Promissory estoppel, compared
+
+## Where it applies
+
+A promise is enforceable without consideration when the promisor should reasonably expect it to
+induce action, and injustice can be avoided only by enforcement.
+
+- Reliance must be actual
+- Reliance must be reasonable
+- The remedy may be limited as justice requires
+
+## Order of analysis
+
+1. Was there a promise?
+2. Was reliance foreseeable?
+3. Is enforcement the only way to avoid injustice?
+`;
+
 const OUTPUTS = [
   { createdAt: "", id: "o1", kind: "flashcards", title: "Consideration — 24 cards", deckId: "deck-1" },
   { createdAt: "", id: "o2", kind: "note", notePath: "Research/estoppel.md", title: "Promissory estoppel, compared" },
   { createdAt: "", id: "o3", kind: "report", notePath: "Research/boundary-layers.md", title: "Boundary layer separation: a review" },
+  // The three artifact kinds, so the card that opens them can be looked at without a model call.
+  { createdAt: "", id: "o4", kind: "document", markdown: DOC_MARKDOWN, title: "Promissory estoppel, compared" },
+  { createdAt: "", id: "o5", kind: "pdf", markdown: DOC_MARKDOWN, title: "Estoppel — one-pager" },
+  {
+    createdAt: "",
+    id: "o6",
+    kind: "sheet",
+    sheet: {
+      columns: ["Case", "Year", "Held"],
+      rows: [
+        ["Ricketts v Scothorn", "1898", "Promise enforced, note paid"],
+        ["Feinberg v Pfeiffer", "1959", 'Pension enforced — "reliance"'],
+        ["Hoffman v Red Owl", "1965", "Reliance damages, no contract"],
+      ],
+    },
+    title: "Estoppel cases",
+  },
 ];
 
 type Shelf = "everything" | "empty" | "no-sources";

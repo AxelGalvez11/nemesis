@@ -35,9 +35,28 @@ export function docBlocks(markdown: string): DocBlock[] {
   const blocks: DocBlock[] = [];
   let numbering = 0;
 
+  /**
+   * 🔴🔴 A WRAPPED PARAGRAPH IS ONE PARAGRAPH, WHICH IS MARKDOWN'S OWN RULE AND WAS NOT WHAT THIS
+   * DID. Every line became its own block, so a paragraph the model hard-wrapped at 100 characters
+   * came out of Word as four stubby paragraphs with a gap between each — in the FILE, not just on
+   * screen. It only surfaced because the artifact card renders through this same parser and the
+   * broken spacing was visible there; the .docx had been doing it since it shipped.
+   *
+   * Only prose joins. A heading, a bullet and a numbered item are each one line by definition, and
+   * every one of them closes whatever was open.
+   */
+  const open: string[] = [];
+  const closeParagraph = () => {
+    if (!open.length) return;
+    const text = plain(open.join(" "));
+    open.length = 0;
+    if (text) blocks.push({ kind: "paragraph", text });
+  };
+
   for (const raw of markdown.split("\n")) {
     const line = raw.trim();
     if (!line) {
+      closeParagraph();
       // A blank line ends a numbered run, so two separate lists do not continue each other's count.
       numbering = 0;
       continue;
@@ -45,6 +64,7 @@ export function docBlocks(markdown: string): DocBlock[] {
 
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
+      closeParagraph();
       numbering = 0;
       const text = plain(heading[2] ?? "");
       // 🔴 CLAMPED TO THREE. `docx` and the PDF writer each have three heading styles; a `####`
@@ -55,12 +75,14 @@ export function docBlocks(markdown: string): DocBlock[] {
 
     // A horizontal rule carries no words, so there is nothing to render and nothing to lose.
     if (/^([-*_])\1{2,}$/.test(line)) {
+      closeParagraph();
       numbering = 0;
       continue;
     }
 
     const bullet = /^[-*+]\s+(.*)$/.exec(line);
     if (bullet) {
+      closeParagraph();
       numbering = 0;
       const text = plain(bullet[1] ?? "");
       if (text) blocks.push({ kind: "bullet", text });
@@ -69,6 +91,7 @@ export function docBlocks(markdown: string): DocBlock[] {
 
     const numbered = /^\d+[.)]\s+(.*)$/.exec(line);
     if (numbered) {
+      closeParagraph();
       const text = plain(numbered[1] ?? "");
       // 🔴 THE COUNT IS OURS, NOT THE MODEL'S. A model that writes "1. 2. 2. 4." would otherwise
       // print exactly that; renumbering means the list is always coherent on paper.
@@ -77,9 +100,10 @@ export function docBlocks(markdown: string): DocBlock[] {
     }
 
     numbering = 0;
-    const text = plain(line);
-    if (text) blocks.push({ kind: "paragraph", text });
+    // Held open: the next line may be the rest of this same sentence.
+    open.push(line);
   }
 
+  closeParagraph();
   return blocks;
 }

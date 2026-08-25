@@ -14,6 +14,7 @@
 // PRESENTATION ONLY. It renders what it is handed and runs what it is given.
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { cn } from "@/lib/utils";
 
 export interface AddMenuRowProps {
   /** A codicon name. */
@@ -23,10 +24,19 @@ export interface AddMenuRowProps {
   /** The quiet half-sentence beside it. Optional: a row whose label is already complete should
    *  not be given filler to justify a second column. */
   detail?: string;
+  /**
+   * A CSS custom property name for the icon's colour (owner ask, 2026-08-25).
+   *
+   * 🔴 OPTIONAL, AND THE DEFAULT IS THE OLD GREY. `Upload material` and `Record a lecture` are not
+   * capabilities and produce no file, so there is no kind for a colour to mean — tinting them
+   * anyway would make the colour decorative, and once it is decorative it stops telling you
+   * anything about the rows that earned it.
+   */
+  tint?: string;
   onClick: () => void;
 }
 
-export function AddMenuRow({ detail, icon, label, onClick }: AddMenuRowProps) {
+export function AddMenuRow({ detail, icon, label, onClick, tint }: AddMenuRowProps) {
   return (
     <button
       // 🔴 `whitespace-nowrap`, WITH THE MENU SIZED TO ITS CONTENT. Two phrases on one line wrap
@@ -37,7 +47,16 @@ export function AddMenuRow({ detail, icon, label, onClick }: AddMenuRowProps) {
       role="menuitem"
       type="button"
     >
-      <Codicon className="shrink-0 text-(--ui-text-tertiary)" name={icon} size="16px" />
+      {/* 🔴 THE COLOUR IS AN INLINE `color`, NOT A TAILWIND ARBITRARY CLASS. `text-(--var)` needs
+          the token name at build time, and Tailwind cannot see one that arrives as a prop — the
+          class would simply not be generated, and the icon would render in the inherited colour
+          with nothing to show that anything was wrong. */}
+      <Codicon
+        className={cn("shrink-0", !tint && "text-(--ui-text-tertiary)")}
+        name={icon}
+        size="16px"
+        style={tint ? { color: `var(${tint})` } : undefined}
+      />
       <span>{label}</span>
       {detail && <span className="text-(--ui-text-quaternary)">{detail}</span>}
     </button>

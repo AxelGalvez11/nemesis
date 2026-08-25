@@ -56,6 +56,34 @@ test("🔴 anything unrecognised survives as a paragraph rather than disappearin
   assert.ok(texts.some((t) => t.includes("let x = 1;")));
 });
 
+test("🔴🔴 a wrapped paragraph is ONE paragraph, which is markdown's own rule", () => {
+  // Found by looking at the artifact card, which renders through this same parser: a paragraph the
+  // model hard-wrapped came out as four stubby paragraphs with a gap between each — in the .docx
+  // and the PDF, not only on screen. Calibration: split on every newline again and this reddens.
+  assert.deepEqual(docBlocks("A promise is enforceable\nwhen the promisor should\nexpect reliance."), [
+    { kind: "paragraph", text: "A promise is enforceable when the promisor should expect reliance." },
+  ]);
+  // A blank line still separates them.
+  assert.equal(docBlocks("one\ntwo\n\nthree").length, 2);
+});
+
+test("🔴 every other shape closes the paragraph it interrupts", () => {
+  // Without this, prose immediately before a heading or a bullet would swallow it into the run.
+  assert.deepEqual(docBlocks("prose\n## Heading\nmore"), [
+    { kind: "paragraph", text: "prose" },
+    { kind: "heading", level: 2, text: "Heading" },
+    { kind: "paragraph", text: "more" },
+  ]);
+  assert.deepEqual(docBlocks("prose\n- a bullet"), [
+    { kind: "paragraph", text: "prose" },
+    { kind: "bullet", text: "a bullet" },
+  ]);
+  assert.deepEqual(docBlocks("prose\n1. an item"), [
+    { kind: "paragraph", text: "prose" },
+    { index: 1, kind: "number", text: "an item" },
+  ]);
+});
+
 test("a horizontal rule carries no words, so it leaves nothing behind", () => {
   assert.deepEqual(docBlocks("a\n\n---\n\nb"), [
     { kind: "paragraph", text: "a" },
