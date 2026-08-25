@@ -10,6 +10,7 @@ import { AnatomyViewer } from "./anatomy-viewer";
 import { ChemicalStructure } from "./chemical-structure";
 import { Macromolecule } from "./macromolecule-viewer";
 import { MusicScore } from "./music-score";
+import { ReferenceFigure } from "./reference-figure";
 import { Circuit, CodeTrace, Construction, DataTable, Timeline, VectorDiagram } from "./subject-visual";
 import { SurfacePlot } from "./surface-plot";
 
@@ -18,6 +19,25 @@ const PLOT_HEIGHT = VISUAL_HEIGHT;
 const COLOURS = ["var(--ui-accent)", "var(--ui-text-primary)", "#d97706", "#7c3aed"];
 
 export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
+  // 🔴🔴🔴 `figure` WAS THE ONE KIND THIS COMPONENT DID NOT HANDLE, AND IT RENDERED AS AN EMPTY BOX.
+  // Every other kind below has a branch; `figure` had none, so a retrieved picture in a REPLY fell
+  // through all fifteen tests and produced the wrapper with no child — measured on production
+  // 2026-08-25, `<figure class="my-4 …">` with `innerHTML: ""`, 38px tall, sitting in the middle of
+  // a meiosis answer. Zero `<img>` on the page. `ReferenceFigure` existed and worked the whole
+  // time; its only caller was `canvas-document.tsx`, the DOCUMENT lane. The conversation lane never
+  // mounted it. Same shape as the occlusion editor with no door: built, correct, unreachable.
+  //
+  // 🔴 IT RETURNS BEFORE THE WRAPPER, because `ReferenceFigure` brings its own `<figure>` and its
+  // own credit line. Nesting one inside the other would frame the frame, and a `<figure>` inside a
+  // `<figure>` is not what either of them means.
+  //
+  // 🔴 AND NO ASSET RENDERS NOTHING AT ALL — not an empty frame. A figure whose lookup found no
+  // licensed picture is the ordinary refusal every other visual already degrades to: the prose
+  // stands on its own. Drawing a bordered box around the absence is strictly worse than silence.
+  if (visual.kind === "figure") {
+    if (!visual.asset) return null;
+    return <ReferenceFigure asset={visual.asset} {...(visual.caption ? { caption: visual.caption } : {})} />;
+  }
   return (
     // 🔴 NO FILL, REPORTED 2026-08-20: *"why does it have a blue gray background instead of a
     // transparent background?"* It was `bg-(--ui-bg-secondary)`, which resolves to
