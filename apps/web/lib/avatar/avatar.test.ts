@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { AVATARS, DEFAULT_AVATAR } from "./avatars";
 import { ANIMATIONS, ANIMATION_BY_ID, FACES, FACE_BY_ID } from "./catalogue";
 import { EXPRESSION_IDS } from "./expressions";
+import { GESTURE_IDS } from "./gestures";
 import { ROUTINE_IDS } from "./routines";
 import {
   HANDOVER_MS,
@@ -272,7 +273,8 @@ test("every animation names faces that exist, and every id is unique", () => {
   assert.equal(EXPRESSION_IDS.length, 16, "the sixteen feelings");
   assert.equal(ROUTINE_IDS.length, 10, "the ten routines");
   assert.equal(ANIMATIONS.filter((a) => a.id.startsWith("gaze-")).length, 23, "the reference's own");
-  assert.equal(ANIMATIONS.length, 49);
+  assert.equal(GESTURE_IDS.length, 7, "the seven gestures");
+  assert.equal(ANIMATIONS.length, 56);
 
   // 🔴 THE PLAIN WORDS BELONG TO THE SET THAT KEEPS THEM (owner 2026-08-25: "the bible
   // avatar has expressions that dont match descriptions: the bloub actually matches them").

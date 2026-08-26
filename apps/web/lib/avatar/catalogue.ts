@@ -14,15 +14,26 @@
 import { ANIMATIONS as GAZE_ANIMATIONS } from "./animations";
 import { FACES as GAZE_FACES } from "./faces";
 import { EXPRESSIONS, EXPRESSION_ANIMATIONS } from "./expressions";
+import { GESTURES, GESTURE_FACES } from "./gestures";
 import { ROUTINES, ROUTINE_FACES } from "./routines";
 import type { Animation, Face } from "./types";
 
-export const FACES: readonly Face[] = [...GAZE_FACES, ...EXPRESSIONS, ...ROUTINE_FACES];
+export const FACES: readonly Face[] = [
+  ...GAZE_FACES,
+  ...EXPRESSIONS,
+  ...ROUTINE_FACES,
+  ...GESTURE_FACES,
+];
 
 export const ANIMATIONS: readonly Animation[] = [
   ...EXPRESSION_ANIMATIONS,
   ...ROUTINES,
   ...GAZE_ANIMATIONS,
+  // 🔴 IN THE CATALOGUE, DELIBERATELY NOT IN THE SCHEDULE. The seven gestures are drawable
+  // and reviewable from the day they are written; what makes one LIVE is a row in
+  // `lib/character/stations.ts` pointing at it, and there is none yet (owner 2026-08-25:
+  // *"make the new animation and show me before implementing to live"*).
+  ...GESTURES,
 ];
 
 export const FACE_BY_ID: ReadonlyMap<string, Face> = new Map(FACES.map((f) => [f.id, f]));

@@ -1,12 +1,14 @@
-// The avatar: a solid with a face on it, and forty-nine things it can do on any of them.
+// The avatar: a solid with a face on it, and fifty-six things it can do on any of them.
 //
 // Sixteen feelings (`expressions.ts`), ten routines that change the body (`routines.ts`),
-// and twenty-three gaze patterns measured off the reference (`animations.ts`). One engine
-// draws all of them and morphs between any two — see `catalogue.ts`.
+// twenty-three gaze patterns measured off the reference (`animations.ts`), and seven
+// gestures of our own that are timing rather than drawing (`gestures.ts`). One engine draws
+// all of them and morphs between any two — see `catalogue.ts`.
 
 export { ANIMATIONS, ANIMATION_BY_ID, FACES, FACE_BY_ID } from "./catalogue";
 export { AVATARS, AVATAR_BY_ID, DEFAULT_AVATAR } from "./avatars";
 export { EXPRESSIONS, EXPRESSION_IDS } from "./expressions";
+export { GESTURE_IDS } from "./gestures";
 export { ROUTINE_IDS } from "./routines";
 export {
   animationDuration,
