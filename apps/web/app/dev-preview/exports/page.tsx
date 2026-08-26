@@ -64,10 +64,54 @@ async function signature(blob: Blob, length = 5): Promise<string> {
   return Array.from(head, (byte) => (byte >= 32 && byte < 127 ? String.fromCharCode(byte) : `\\x${byte.toString(16)}`)).join("");
 }
 
+/** Every field a DeckSlide needs, so the fixtures below only state what they are about. */
+const SLIDE = {
+  chart: "column" as const,
+  columns: [],
+  data: [],
+  figure: 0,
+  layout: "bullets" as const,
+  leftHeading: "",
+  note: "",
+  points: [],
+  quoteAttribution: "",
+  rightHeading: "",
+  rightPoints: [],
+  rows: [],
+  statLabel: "",
+  statValue: "",
+  subtitle: "",
+  takeaway: "",
+  title: "",
+  unit: "",
+};
+
 const MADE: CanvasOutput[] = [
   { createdAt: "", id: "a1", kind: "pdf", markdown: MARKDOWN, title: "The hidden physics of soap bubbles" },
   { createdAt: "", id: "a2", kind: "document", markdown: MARKDOWN, title: "Soap bubbles, written up" },
   { createdAt: "", id: "a3", kind: "sheet", sheet: SHEET, title: "Separation cases" },
+  {
+    createdAt: "",
+    deck: {
+      figures: [],
+      references: [],
+      slides: [
+        { ...SLIDE, layout: "cover", subtitle: "How a cell gets energy out of glucose", title: "Glycolysis" },
+        {
+          ...SLIDE,
+          points: ["Glucose is phosphorylated twice", "The six-carbon sugar is split in two", "Each half is oxidised to pyruvate"],
+          takeaway: "Two ATP are spent before any are made.",
+          title: "The pathway in three moves",
+        },
+        { ...SLIDE, layout: "closing", points: ["Net: 2 ATP, 2 NADH, 2 pyruvate"], title: "What to remember" },
+      ],
+      subtitle: "",
+      title: "Glycolysis",
+    },
+    id: "a4",
+    kind: "slides",
+    title: "Glycolysis",
+  },
 ];
 
 export default function ExportsPreviewPage() {

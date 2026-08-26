@@ -1858,7 +1858,7 @@ export function LearningCanvas({
           </div>
         )}
 {/* The reader, docked to the right. Mounted at canvas level so it outlives the card. */}
-        {openArtifact && <OutputPreview onClose={() => setOpenArtifact(null)} output={openArtifact} />}
+        {openArtifact && <OutputPreview canvasId={canvas.id} onClose={() => setOpenArtifact(null)} output={openArtifact} />}
                 {session.researchPlan && presence !== "preparing" && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
             <ResearchPlanCard

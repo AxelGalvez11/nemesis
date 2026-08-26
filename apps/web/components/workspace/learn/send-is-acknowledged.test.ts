@@ -581,7 +581,10 @@ test("a PowerPoint ask in chat becomes a deck, not a lesson about decks", () => 
   // moved the deck into the app ("HTML is the deck, .pptx is an export"), so the row now OPENS it
   // and the download lives inside the deck view. The invariant is unchanged and survives both
   // changes — a slides output must still be REACHABLE from the outputs tab, just not makeable there.
-  assert.match(controls, /\/deck\?c=/, "a slides output can no longer be opened");
+  // 2026-08-25 (third turn on this line, same invariant): the row now opens the SIDE PANEL rather
+  // than carrying the href itself, and the panel links out to the full deck. A slides output must
+  // still be reachable from the outputs shelf; where it goes has changed twice and may again.
+  assert.match(controls, /output\.kind === "slides" && output\.deck/, "a slides output can no longer be opened");
   const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
   assert.match(library, /generated_slides/, "the Library no longer lists slide decks");
 });

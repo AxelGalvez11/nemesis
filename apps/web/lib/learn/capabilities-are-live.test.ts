@@ -194,7 +194,11 @@ test("🔴🔴 nothing routes to the old Library", () => {
   assert.match(preview, /Couldn&apos;t open this one/, "a note that fails to load shows an empty card instead of saying so");
   // 🔴 AND IT MUST NOT OFFER A DOWNLOAD THAT WOULD PRODUCE AN EMPTY FILE while the body is still
   // in flight — a 0-byte .docx downloads exactly as happily as a good one.
-  assert.match(preview, /disabled=\{!markdown && !output\.sheet\}/, "the download can fire before there is anything to write");
+  assert.match(
+    preview,
+    /disabled=\{!markdown && !output\.sheet && !deck\}/,
+    "the download can fire before there is anything to write",
+  );
 });
 
 test("🔴🔴 an artifact renders in its own format, not as markdown", () => {
@@ -230,7 +234,21 @@ test("🔴 the docked panel collapses the sidebar without writing the preference
   assert.ok(!/setSidebarOpen|nav-rail/.test(preview), "🔴 the panel writes the learner's sidebar preference");
   const registry = code("../../components/workspace/shell/side-panel.tsx");
   assert.ok(!/localStorage/.test(registry), "🔴 the side-panel claim reaches storage — it must be transient");
-  assert.match(registry, /return \(\) => registry\.release\(id\)/, "the claim is not released on unmount");
+  assert.match(registry, /return \(\) => actions\.release\(id\)/, "the claim is not released on unmount");
+
+  // 🔴🔴 THE CLAIMING EFFECT'S DEPENDENCY MUST NEVER CHANGE IDENTITY, and this is a real bug fixed
+  // rather than a hypothetical. The first version put `{ claim, open, release }` in one memoised
+  // value; the claiming effect depends on that value, and its identity changed every time `open`
+  // did — so claiming changed it, the effect re-ran, its CLEANUP released, that changed it again,
+  // and React reported "Maximum update depth exceeded" with the page dead. Shipped in #849, found
+  // by opening a deck in the panel.
+  //
+  // Calibration: put `open` back in the same context value as the actions and this reddens.
+  assert.match(registry, /const SidePanelActionsContext/, "the actions share a context with the boolean again");
+  assert.match(registry, /const SidePanelOpenContext/, "the open flag shares a context with the actions again");
+  assert.match(registry, /\[actions, id\]/, "the claiming effect depends on something that changes");
+  const memo = registry.slice(registry.indexOf("useMemo<SidePanelActions>"));
+  assert.match(memo.slice(0, memo.indexOf("}")), /setIds\(\(current\)/, "the actions read the set instead of the updater");
 });
 
 test("🔴🔴 a long artifact is not thrown away for running long", () => {

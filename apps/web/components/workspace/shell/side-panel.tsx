@@ -25,42 +25,67 @@
 
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
 
-interface SidePanelRegistry {
-  readonly open: boolean;
+/**
+ * 🔴🔴 TWO CONTEXTS, NOT ONE, AND THAT SPLIT IS A BUG FIX RATHER THAN A TIDY-UP.
+ *
+ * The first version put `{ claim, open, release }` in a single memoised value. `useDeclareSidePanel`
+ * depended on that value — it has to, to call `claim` — so the value's identity changing re-ran the
+ * effect, and the value's identity changed every time `open` did. The result is an infinite loop:
+ *
+ *     claim → ids change → context identity changes → effect re-runs → CLEANUP RELEASES →
+ *     ids change → context identity changes → effect re-runs → claim → …
+ *
+ * React reports it as "Maximum update depth exceeded" and the page stops rendering. I shipped that
+ * in #849 and found it here, opening a deck in the panel.
+ *
+ * 🔴 THE ACTIONS MUST NEVER CHANGE IDENTITY. They are `useCallback`s with no dependencies, in their
+ * own context, so the claiming effect has a stable dependency and runs exactly once per mount. The
+ * boolean lives in a second context that only the shell reads — and the shell re-rendering when it
+ * changes is the entire point.
+ */
+interface SidePanelActions {
   claim(id: string): void;
   release(id: string): void;
 }
 
-const SidePanelContext = createContext<SidePanelRegistry | null>(null);
+const SidePanelActionsContext = createContext<SidePanelActions | null>(null);
+const SidePanelOpenContext = createContext(false);
 
 export function SidePanelProvider({ children }: { children: React.ReactNode }) {
   const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
 
-  const claim = useCallback((id: string) => {
-    setIds((current) => {
-      if (current.has(id)) return current;
-      const next = new Set(current);
-      next.add(id);
-      return next;
-    });
-  }, []);
+  // 🔴 NO DEPENDENCIES, DELIBERATELY. The updater form reads the current set, so neither callback
+  // needs to close over it — which is what keeps their identity stable for the effect above.
+  const actions = useMemo<SidePanelActions>(
+    () => ({
+      claim: (id: string) =>
+        setIds((current) => {
+          if (current.has(id)) return current;
+          const next = new Set(current);
+          next.add(id);
+          return next;
+        }),
+      release: (id: string) =>
+        setIds((current) => {
+          if (!current.has(id)) return current;
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        }),
+    }),
+    [],
+  );
 
-  const release = useCallback((id: string) => {
-    setIds((current) => {
-      if (!current.has(id)) return current;
-      const next = new Set(current);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const value = useMemo<SidePanelRegistry>(() => ({ claim, open: ids.size > 0, release }), [claim, ids, release]);
-  return <SidePanelContext.Provider value={value}>{children}</SidePanelContext.Provider>;
+  return (
+    <SidePanelActionsContext.Provider value={actions}>
+      <SidePanelOpenContext.Provider value={ids.size > 0}>{children}</SidePanelOpenContext.Provider>
+    </SidePanelActionsContext.Provider>
+  );
 }
 
 /** Whether anything is docked. Read by the shell. */
 export function useSidePanelOpen(): boolean {
-  return useContext(SidePanelContext)?.open ?? false;
+  return useContext(SidePanelOpenContext);
 }
 
 /**
@@ -71,11 +96,11 @@ export function useSidePanelOpen(): boolean {
  * would leave the sidebar collapsed with nothing on screen explaining why.
  */
 export function useDeclareSidePanel(): void {
-  const registry = useContext(SidePanelContext);
+  const actions = useContext(SidePanelActionsContext);
   const id = useId();
   useEffect(() => {
-    if (!registry) return;
-    registry.claim(id);
-    return () => registry.release(id);
-  }, [id, registry]);
+    if (!actions) return;
+    actions.claim(id);
+    return () => actions.release(id);
+  }, [actions, id]);
 }
