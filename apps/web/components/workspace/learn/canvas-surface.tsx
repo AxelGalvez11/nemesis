@@ -34,6 +34,7 @@ import type * as React from "react";
 import { useState } from "react";
 
 import { useDeclareImmersiveSurface } from "@/components/workspace/shell/immersive-surface";
+import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
 
 import { FileDropOverlay } from "./file-drop-overlay";
 
@@ -65,6 +66,20 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
   // to know the drop would work until they let go. The front door has drawn a highlight since it
   // was built. This is that half arriving.
   const [draggingOver, setDraggingOver] = useState(false);
+  // 🔴🔴 THE SURFACE IS PUSHED BY THE DOCKED READER, WHICH IS THE REFERENCE'S OWN BEHAVIOUR. Measured
+  // in the owner's browser: the chat column's right edge sits at 474 and the panel begins at 490, so
+  // the conversation genuinely reflows into what is left. A panel that floats over the thread hides
+  // the half you are checking the artifact against, which is the half you opened it to compare.
+  //
+  // 🔴🔴 WIDTH, NOT PADDING, AND THE DIFFERENCE IS THE COMPOSER. Padding was the obvious choice and
+  // it moved the document and left the composer sitting under the panel. An absolutely positioned
+  // child — and the composer's layer is `absolute inset-x-0 bottom-0` — is laid out against its
+  // containing block's PADDING BOX, which includes the padding. So `inset-x-0` spanned the full
+  // width no matter how much padding this element carried. Narrowing the element itself moves
+  // everything inside it, in flow or not.
+  //
+  // Seen on screen, not reasoned about: the document reflowed and the composer did not.
+  const inset = useSidePanelInset();
 
   return (
     <main
@@ -128,7 +143,13 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
       // 🔴 SCOPED TO THE CANVAS, NOT LIFTED GLOBALLY. Turning selection on at `[data-workspace]`
       // would reach every other surface in the app, none of which was asked about.
       data-selectable-text="true"
-      style={{ ["--canvas-column" as string]: CANVAS_COLUMN_PX }}
+      // The transition is what makes the push read as the panel arriving rather than the page jumping.
+      style={{
+        ["--canvas-column" as string]: CANVAS_COLUMN_PX,
+        // The transition is what makes the push read as the panel arriving rather than the page jumping.
+        transition: "width 200ms ease-out",
+        width: inset ? `calc(100% - ${inset}px)` : undefined,
+      }}
     >
       {/* A masthead the page scrolls under, NOT a fade over it — owner call, 2026-08-19.
           🔴🔴 THE GRADIENT WAS FADING THE LETTERS, NOT THE BACKGROUND, AND ONLY DARK MODE SHOWED IT.

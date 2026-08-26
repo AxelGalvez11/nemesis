@@ -230,7 +230,19 @@ test("🔴 the docked panel collapses the sidebar without writing the preference
   // `nemesis.web.nav-rail`, so a learner who likes their sidebar open loses it permanently the
   // first time they read a document. responsive-sidebar.ts records that exact bug already.
   const preview = code("../../components/workspace/learn/output-preview.tsx");
-  assert.match(preview, /useDeclareSidePanel\(\)/, "the panel does not declare itself");
+  // 🔴 IT NOW DECLARES ITS WIDTH TOO, so the surface can be PUSHED by exactly that much rather than
+  // covered — the reference's own behaviour, measured. Zero while full screen: a reader covering
+  // everything has nothing to push.
+  assert.match(preview, /useDeclareSidePanel\(mode === "docked" \? dock : 0\)/, "the panel does not declare itself");
+  // 🔴 WIDTH, NOT PADDING, AND THE COMPOSER IS WHY. Padding was the obvious choice and it moved the
+  // document while leaving the composer under the panel: an absolutely positioned child is laid out
+  // against its containing block's PADDING box, which includes the padding. Narrowing the element
+  // moves everything inside it, in flow or not. Seen on screen, not reasoned about.
+  assert.match(
+    code("../../components/workspace/learn/canvas-surface.tsx"),
+    /width: inset \? `calc\(100% - \$\{inset\}px\)` : undefined/,
+    "the canvas is covered by the reader instead of pushed by it",
+  );
   assert.ok(!/setSidebarOpen|nav-rail/.test(preview), "🔴 the panel writes the learner's sidebar preference");
   const registry = code("../../components/workspace/shell/side-panel.tsx");
   assert.ok(!/localStorage/.test(registry), "🔴 the side-panel claim reaches storage — it must be transient");
@@ -246,7 +258,7 @@ test("🔴 the docked panel collapses the sidebar without writing the preference
   // Calibration: put `open` back in the same context value as the actions and this reddens.
   assert.match(registry, /const SidePanelActionsContext/, "the actions share a context with the boolean again");
   assert.match(registry, /const SidePanelOpenContext/, "the open flag shares a context with the actions again");
-  assert.match(registry, /\[actions, id\]/, "the claiming effect depends on something that changes");
+  assert.match(registry, /\[actions, id, inset\]/, "the claiming effect depends on something that changes");
   const memo = registry.slice(registry.indexOf("useMemo<SidePanelActions>"));
   assert.match(memo.slice(0, memo.indexOf("}")), /setIds\(\(current\)/, "the actions read the set instead of the updater");
 });

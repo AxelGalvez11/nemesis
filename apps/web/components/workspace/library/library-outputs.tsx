@@ -700,7 +700,11 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
       </section>
       )}
 
-      {readingNote && <OutputPreview onClose={() => setReadingNote(null)} output={readingNote} />}
+      {/* 🔴 FULL WIDTH HERE, DOCKED IN A CANVAS, and the difference is what is beside it. In a
+          conversation the reader docks so the thread that asked for the artifact stays on screen to
+          check it against. On this page there is no thread, so the reference gives the reader the
+          whole surface with the close on the left beside a breadcrumb — measured at x=193. */}
+      {readingNote && <OutputPreview initialMode="full" onClose={() => setReadingNote(null)} output={readingNote} />}
 
       <footer className="flex items-start gap-2 rounded-xl border border-(--ui-stroke-tertiary) px-4 py-3">
         <GraduationCap className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" size={15} strokeWidth={1.8} />
