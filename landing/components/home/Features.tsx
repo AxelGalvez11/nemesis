@@ -3,7 +3,6 @@
 import Image from "next/image";
 
 import { useParallax } from "@/components/use-parallax";
-import { Mascot } from "@/components/home/Mascot";
 import { FigureCarousel, type CarouselItem } from "@/components/home/FigureCarousel";
 import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR } from "./art-blur";
 
@@ -57,8 +56,6 @@ interface Band {
   readonly figures?: readonly CarouselItem[];
   /** A product shot to sit opposite the copy, light/dark pair by basename. */
   readonly shot?: { readonly name: string; readonly alt: string; readonly w: number; readonly h: number };
-  /** Put the character opposite the copy instead of a picture. */
-  readonly mascot?: boolean;
   /**
    * An engraved figure laid OVER the wash, not instead of it — two grounds, one behind the other.
    * It takes its own opacity, mask and parallax rate: a face cannot survive the treatment a
@@ -150,7 +147,6 @@ const BANDS: readonly Band[] = [
     figure: { blur: EVIDENCE_FIGURE_BLUR, src: "/nemesis/art/evidence-figure.webp" },
     head: "Built on evidence",
     body: "Scaffolding, worked examples, retrieval practice and spaced review. Four methods with real research behind them, running under every session.",
-    mascot: true,
   },
   {
     id: "calendar",
@@ -223,7 +219,12 @@ function Feature({ band, index }: { band: Band; index: number }) {
         </div>
 
         {/* The slot opposite the copy. A band has at most one of these, and it sits on
-            whichever side the light is on, so the two never fight for the same half. */}
+            whichever side the light is on, so the two never fight for the same half.
+            🔴 THE CHARACTER IS NOT ONE OF THEM ANY MORE (owner, 2026-08-25: "remove the
+            mascot from the 'built on evidence section'"). It sat here opposite the copy,
+            which put it on the same half as the engraved thinker's wash and gave the band
+            three things to look at. The hero keeps it; this band is the claim and its
+            evidence. Do not re-add a `mascot` slot without him asking. */}
         {band.shot ? (
           <div className="band-aside">
             <picture>
@@ -240,12 +241,6 @@ function Feature({ band, index }: { band: Band; index: number }) {
                 loading="lazy"
               />
             </picture>
-          </div>
-        ) : null}
-
-        {band.mascot ? (
-          <div className="band-aside band-aside-mascot">
-            <Mascot size={210} />
           </div>
         ) : null}
       </div>

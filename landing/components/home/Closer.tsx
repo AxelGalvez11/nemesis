@@ -27,7 +27,8 @@ import { captureCtaClick } from "@/lib/posthog";
  * shown the reader the product, the figures and the range, and the last thing it
  * needs is one more thing to look at instead of the button.
  *
- * The character still appears twice, in the hero and in `Built on evidence`.
+ * The character now appears once, in the hero. It came out of `Built on evidence` on
+ * 2026-08-25 for the same reason it came out of here.
  *
  * ── THE LIGHT UNDER IT, ADDED 2026-08-25 ──────────────────────────────────────
  *
