@@ -160,7 +160,19 @@ const SHELVES: readonly { id: Shelf; label: string }[] = [
  * 🔴 THE GAP IS ON THE ICON, NOT ON THE FLEX CONTAINER. A `gap-3` on the row would put 12px
  * between every pair of columns, and the measured columns (368 / 160 / 88) butt straight up
  * against each other — a table's columns include their own padding. With the gap where it belongs
- * the Name column lands on exactly 368px: 768 − 8 (right pad) − 32 (icon) − 160 − 88 − 112.
+ * the whole row closes on the container width, measured off its own children:
+ *
+ *   32 lead (20px icon + 12px gap) + 616 cells (368 + 160 + 88) + 112 tail + 8 right pad = 768
+ *
+ * 🔴 MEASURE EVERY TERM, THEN STATE THEM AS A SUM THAT CLOSES — never as a remainder. Both halves
+ * carry weight and the closed form is the WEAKER one. The shared reference doc once carried
+ * `368 + 160 + 88 + 16 = 632`; the 16 is the third column's `padding-left`, already inside its 88,
+ * so it was the one term nobody had measured, and it cleared a doc, a code comment and a test
+ * comment because a remainder absorbs a spare term and still looks plausible. A closed sum catches
+ * that. It does NOT catch a wrong model: icon-outside (32 + 368 + 160 + 88 + 112 + 8) and
+ * icon-inside (368 + 160 + 88 + 144 + 8) BOTH close to 768, and only measuring the row's own
+ * children said which one this page is. The wrong model is the expensive one — it put this page
+ * and Projects 32px apart, and no arithmetic would have found it.
  */
 const COL_ICON = "mr-[12px] shrink-0 text-(--ui-text-secondary)";
 /** Reference: `Modified` column, 160px. */
@@ -184,9 +196,15 @@ const COL_COUNT = "w-[88px] shrink-0 pl-[16px]";
 /**
  * The trailing controls sit in a fixed slot so the columns line up with their own header.
  *
- * 🔴 112px IS DERIVED FROM THE REFERENCE, NOT PICKED. 768 (row) − 8 (right pad) − 368 (Name)
- * − 32 (20px icon + 12px gap) − 160 (Modified) − 88 (Size) = 112 — the space their hover menu
- * lives in. Four 28px controls fit it exactly, which is why the row buttons are `size-[28px]`.
+ * 🔴 112px IS THE REFERENCE'S OWN TRAILING SPACE, NOT A NUMBER SOMEBODY PICKED. Its cells pack
+ * from the left and stop, so every row ends in deliberate emptiness — the space its hover menu
+ * lives in. Measured on this page, the row closes:
+ *
+ *   32 lead (20px icon + 12px gap) + 616 cells (368 + 160 + 88) + 112 tail + 8 right pad = 768
+ *
+ * Four 28px controls fill the 112 exactly, which is why the row buttons are `size-[28px]`. The
+ * count column is 88 INCLUDING its 16px inset (the reference's `Size` column carries the inset
+ * inside its width); adding the 16 again is what put a phantom term in the doc's arithmetic.
  */
 const COL_ACTIONS = "flex w-[112px] shrink-0 items-center justify-end";
 

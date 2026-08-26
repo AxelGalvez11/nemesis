@@ -32,6 +32,7 @@ import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from 
 import { useAuth } from "@/components/AuthProvider";
 import { cn } from "@/lib/utils";
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
+import { AttachmentCard, AttachmentRow } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 import { FileDropOverlay } from "./file-drop-overlay";
 import { TodayStrip } from "./today-strip";
@@ -472,33 +473,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 
             🔴 AND THEY ONLY EXIST WHILE SOMETHING IS STAGED, so the resting front door is byte for
             byte what it was — one greeting, one composer, one line of help. */}
-        {!recording && staged.length > 0 && (
-          <div className="pointer-events-auto mb-2 flex w-full max-w-[var(--composer-max-width)] flex-wrap gap-1.5">
-            {staged.map((file) => (
-              <span
-                className="flex items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary)"
-                key={`${file.name}:${file.size}`}
-              >
-                <Codicon name="file" size="14px" />
-                {/* A long filename must not stretch the row off the column. */}
-                <span className="max-w-[220px] truncate">{file.name}</span>
-                <button
-                  aria-label={`Remove ${file.name}`}
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                  onClick={() =>
-                    setStaged((current) =>
-                      current.filter((entry) => entry.name !== file.name || entry.size !== file.size),
-                    )
-                  }
-                  title="Remove"
-                  type="button"
-                >
-                  <Codicon name="close" size="12px" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
         {recording ? (
           <div className="pointer-events-auto w-full max-w-[var(--composer-max-width)]">
             <CanvasRecorder
@@ -511,7 +485,33 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         ) : (
         // Was 770 × 54 at radius 27, hand-tuned within 2px of the reference's 768 × 52 at 28.
         // Reading the tokens instead is what keeps it aligned with the Library frame below it.
-        <div className="pointer-events-auto flex w-full max-w-[var(--composer-max-width)] min-h-[var(--composer-min-height)] items-center gap-0 rounded-[var(--composer-radius)] bg-(--ui-bg-elevated) px-[var(--composer-pad-x)] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)">
+        <div className="pointer-events-auto flex w-full max-w-[var(--composer-max-width)] flex-col rounded-[var(--composer-radius)] bg-(--ui-bg-elevated) shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)">
+          {/* 🔴🔴 INSIDE THE BOX, LIKE THE CANVAS COMPOSER AND LIKE THE REFERENCE. These were a row
+              of detached pills floating ABOVE the composer — which is both what the owner said he
+              did not want on 2026-08-20 and what does not match. The pill became a card because a
+              pill says "tag" and a card with a type line under the name says "file"; the geometry
+              is measured off a real ChatGPT file card, see `attachment-card.tsx`.
+              🔴 AND THE BOX IS A COLUMN NOW, WHICH IS THE ONLY STRUCTURAL CHANGE. It was a single
+              centred row, so there was nowhere inside it for anything to sit above the input. The
+              row's own classes moved unchanged onto the inner element below, so the composer's
+              shape, height and padding are exactly what they were. */}
+          {!recording && staged.length > 0 && (
+            <AttachmentRow>
+              {staged.map((file) => (
+                <AttachmentCard
+                  className="max-w-[260px] shrink-0"
+                  key={`${file.name}:${file.size}`}
+                  name={file.name}
+                  onRemove={() =>
+                    setStaged((current) =>
+                      current.filter((entry) => entry.name !== file.name || entry.size !== file.size),
+                    )
+                  }
+                />
+              ))}
+            </AttachmentRow>
+          )}
+          <div className="flex min-h-[var(--composer-min-height)] items-center gap-0 px-[var(--composer-pad-x)]">
           {/* 🔴 A REAL FILE INPUT, NOT A BUTTON THAT ROUTES. `sr-only`, never `hidden`: a hidden
               input leaves the tab order and the accessibility tree, which makes the label wrapping
               it unreachable by keyboard — the same rule the session composer's attach control
@@ -673,6 +673,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               />
             </>
           )}
+          </div>
         </div>
         )}
         {/* 🔴 A DENIED MICROPHONE HAS TO SAY SO. Without this the mic button is pressed, nothing
