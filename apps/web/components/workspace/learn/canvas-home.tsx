@@ -354,7 +354,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         setDraggingOver(false);
         stageFiles(event.dataTransfer.files);
       }}
-      style={{ ["--canvas-column" as string]: "680px" }}
+      style={{ ["--canvas-column" as string]: "822px" }}
     >
       {/* 🔴 THE RING NOW COMES WITH A SENTENCE. It used to be the whole feedback — a 2px accent
           outline and nothing else, which says "this is a target" and never says what dropping

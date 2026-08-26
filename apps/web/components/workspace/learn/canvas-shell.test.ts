@@ -73,8 +73,18 @@ test("the shell reserves clearance with padding rather than a header element", (
   // floats over this column and took no space in it, so the end of every answer was unreachable.
   assert.match(shell, /overflow-y-auto[^"]*pt-\[64px\]/, "the scrolling column lost its header offset");
   assert.match(shell, /overflow-y-auto[^"]*pb-\[160px\]/, "the scrolling column cannot scroll past the composer");
-  // Two measurements of two different things, both taken off the references: the reading
-  // column is 680, the composer pill is 768. Neither is a rounding of the other.
+  // 🔴🔴 ONE MEASUREMENT NOW, NOT TWO. This used to read "the reading column is 680, the composer
+  // pill is 768. Neither is a rounding of the other" — and it was wrong about the first. Measured
+  // side by side on 2026-08-26 at a 1470px viewport, same request in both:
+  //
+  //             reference   Nemesis (before)
+  //   text      768px       626px
+  //   composer  768px       768px
+  //
+  // The reference sets its prose to exactly the width of its composer. Ours had the lesson at 626
+  // under a composer at 768, which is one column drawn as two. 822 is the OUTSIDE of the reading
+  // box: every part of the canvas wears `max-w-(--canvas-column) px-6`, and `px-6` is 27px a side
+  // against this app's 112.5% root, so 822 - 54 = 768 of text.
   //
   // 🔴 768, WAS 770 — MEASURED, NOT TIDIED (UX brief §27.2). The owner measured ChatGPT's composer
   // form at exactly 768px wide in their own browser at a 1440px viewport, against our 770. Two
@@ -87,7 +97,7 @@ test("the shell reserves clearance with padding rather than a header element", (
   // composer's max width, is 756px and not 672. See canvas-composer.tsx's header.
   // The sheet and its measure moved to canvas-surface.tsx with the <main> the exit had to sit on.
   assert.match(read("canvas-surface.tsx"), /"--canvas-column" as string\]: CANVAS_COLUMN_PX/);
-  assert.match(read("canvas-surface.tsx"), /CANVAS_COLUMN_PX = "680px"/);
+  assert.match(read("canvas-surface.tsx"), /CANVAS_COLUMN_PX = "822px"/, "the reading column is no longer 768 of text");
   // 🔴 THE NUMBER MOVED INTO A TOKEN, SO THE GUARD FOLLOWS IT AND STILL CHECKS THE VALUE. The
   // composer now reads `--composer-max-width` so Library, Canvas and the composer share one
   // content frame instead of each spelling 768 separately. Asserting only that the class reads

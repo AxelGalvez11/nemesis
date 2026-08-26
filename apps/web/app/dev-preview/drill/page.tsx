@@ -66,7 +66,7 @@ export default function DrillPreviewPage() {
       <WorkspaceShell>
         <main
           className="relative h-full min-h-0 bg-(--ui-bg-editor)"
-          style={{ ["--canvas-column" as string]: "680px" }}
+          style={{ ["--canvas-column" as string]: "822px" }}
         >
           <div className="relative h-full overflow-y-auto pt-[72px]">
             {step ? (

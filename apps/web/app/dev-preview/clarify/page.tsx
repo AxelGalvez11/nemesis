@@ -76,13 +76,13 @@ export default function ClarifyPreviewPage() {
       <WorkspaceShell>
         <main
           className="relative h-full min-h-0 bg-(--ui-bg-editor)"
-          style={{ ["--canvas-column" as string]: "680px" }}
+          style={{ ["--canvas-column" as string]: "822px" }}
         >
           <div className="relative h-full overflow-y-auto pt-[72px]">
             {/* 🔴 `pb-40` IS THE COMPOSER'S HEIGHT, THE SAME NUMBER THE REAL CANVAS USES. Without
                 it the card's own Submit sits underneath the composer, which is precisely the defect
                 this preview caught. */}
-            <div className="mx-auto flex w-full max-w-[680px] flex-col gap-6 px-6 pt-4 pb-40">
+            <div className="mx-auto flex w-full max-w-[822px] flex-col gap-6 px-6 pt-4 pb-40">
       <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
         Nemesis said: “One thing first, so I build the right course.”
       </p>
