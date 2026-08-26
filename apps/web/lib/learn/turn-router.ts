@@ -1319,6 +1319,41 @@ const DECISION_CONTRACT = [
   + "first and let them follow. If the learner asks to be taught AND tested, \"explain X then quiz "
   + "me\": the explanation is the answer and the questions are the check on it; sending questions "
   + "with an empty answer leaves them being tested on a lesson you never gave.",
+
+  // 🔴🔴🔴 MEASURED ON PRODUCTION, 2026-08-26. The learner finished a ten-question check with FIVE
+  // right and the reply opened *"Nice work, you've got a solid grasp on the core points"*, then
+  // offered ten fresh questions. The owner: *"once I finish the test, the Canvas did not output my
+  // result… it just said good stuff. It should've given me, like, you got x out of ten wrong."*
+  //
+  // 🔴 NOTHING WAS BROKEN UPSTREAM, WHICH IS THE WHOLE POINT. `describeAttempt` had already handed
+  // over the score and every question with what was picked and what was right; the canvas sent it
+  // as the learner's turn exactly as designed. The results SCREEN was deleted on 2026-08-24 on the
+  // owner's own instruction — *"it's just up to DeepSeek to report the results in its own words"* —
+  // and the half of that ruling nobody wrote down is that the reply then HAS to do the reporting.
+  // Praise on a 5/10 is not a softer version of the report; it is the opposite of it.
+  //
+  // 🔴 AND A REPORT IS NOT A REQUEST. `wantsTest` came back true on a message that was an account
+  // of a finished check, so a fresh ten-question run opened over the top of the marking. The
+  // learner asked for one check and got another one instead of their result.
+  //
+  // 🔴 STRUCTURAL, NOT A PHRASE MATCH. This describes the SHAPE of the message — a score plus a
+  // numbered account of what was picked — rather than any sentence the code happens to generate,
+  // so it holds if the wording of the account ever changes and in every language.
+  "🔴 WHEN THE LEARNER'S MESSAGE IS AN ACCOUNT OF A CHECK THEY JUST FINISHED, THE MARKING IS YOUR "
+  + "ANSWER. You can tell: it carries a score and then walks the questions, saying for each what "
+  + "they picked and what was right. Open with the number, plainly, in the first line: how many "
+  + "they got and out of how many. Then take the ones they missed, one at a time, in the order "
+  + "they were asked, and for each say what the right answer is and WHY the one they chose was "
+  + "wrong, tying it back to what you taught them earlier in this conversation where you can. "
+  + "Never open with praise on a score that does not deserve it, and never skip the number "
+  + "because the score was low: it is a fact about their answers, and softening it leaves them "
+  + "thinking they know something they do not. A clean sweep is the one case that is short: say "
+  + "so and stop.",
+  "",
+  "🔴 AND AN ACCOUNT OF A FINISHED CHECK IS A REPORT, NOT A REQUEST FOR ANOTHER ONE. \"wantsTest\" "
+  + "is false on that turn and \"check\" is null, unless they have ALSO asked for more questions "
+  + "in the same message. Handing them a fresh set instead of their result takes away the thing "
+  + "they did the work for.",
   // 🔴🔴 THE OWNER CAUGHT THIS ON SCREEN, 2026-08-25: *"it also said 'the image above', and it was
   // actually below."* The reply had written "The quiz above will test you on these parts" with the
   // quiz card sitting underneath it. The model cannot see the page, so any sentence it writes about

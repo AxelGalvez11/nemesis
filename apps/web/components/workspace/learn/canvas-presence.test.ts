@@ -323,3 +323,52 @@ test("the presence union and the sweep agree", () => {
       `${presence} is produced but is not in CANVAS_PRESENCES`,
     );
 });
+
+// ── the receipt is content ─────────────────────────────────────────────────────────────────────
+
+test("🔴🔴🔴 a canvas that has just handed something back is NOT quiet", () => {
+  // Measured on production, 2026-08-26, and the owner sent the screenshot. *"make me flashcards"*
+  // on a canvas with material produced the deck, put its card in the conversation, and painted
+  // "Nemesis hasn't found anything to ask you about yet. Tell it what you want to work on, or try
+  // again." directly underneath it.
+  //
+  // 🔴 THE REPORT IS FALSE TWICE OVER. Nothing was searched for on that turn, and the thing the
+  // learner asked for is on the screen. `quiet` is for a canvas that looked and found nothing.
+  const made = { blocks: 0, canvasState: "learn" as CanvasState, handedArtifact: true, policyPresenting: false, working: false };
+  assert.equal(canvasPresentation(made).presence, "reply", "the quiet screen paints over a deck the learner just asked for");
+  assert.equal(
+    canvasPresentation({ ...made, handedArtifact: false }).presence,
+    "quiet",
+    "the quiet screen is gone entirely — this must only cover the case where something WAS handed over",
+  );
+});
+
+test("🔴 the receipt is LAST in the chain, so it can never outrank live content", () => {
+  // Placed higher it would let a card from three turns ago sit on top of a question or a document,
+  // which is the opposite defect: the receipt is the newest thing on the surface only while
+  // nothing else is.
+  const held = { blocks: 0, canvasState: "learn" as CanvasState, handedArtifact: true };
+  assert.equal(canvasPresentation({ ...held, policyPresenting: true, working: false }).presence, "task", "a receipt now outranks a question");
+  assert.equal(canvasPresentation({ ...held, blocks: 3, policyPresenting: false, working: false }).presence, "reading", "a receipt now outranks the material");
+  assert.equal(canvasPresentation({ ...held, policyPresenting: false, working: true }).presence, "preparing", "a receipt now outranks a running step");
+});
+
+test("🔴 the default is false, so a caller that never heard of it behaves exactly as before", () => {
+  // Every existing call site in this file omits it. A default of `true` would have silently turned
+  // the quiet screen off everywhere, which is the bug this prevents, not the one it fixes.
+  assert.equal(
+    canvasPresentation({ blocks: 0, canvasState: "learn", policyPresenting: false, working: false }).presence,
+    "quiet",
+  );
+});
+
+test("🔴🔴 and the canvas actually TELLS it — a pure function nobody passes the fact to fixes nothing", () => {
+  // This is the shape #874's `place="under"` shipped in: the arithmetic was right, tested and
+  // inert, because the one caller never reached the branch. A derivation is only as true as its
+  // inputs.
+  const canvas = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  assert.match(canvas, /handedArtifact: session\.madeArtifact !== null,/, "the canvas stopped telling the derivation that something was handed over");
+  // And the card it refers to is still rendered, or the presence would be lying in the other
+  // direction: "not quiet" with nothing on the surface is the blank page this whole file exists for.
+  assert.match(canvas, /<ArtifactCard/, "the receipt card is gone, so `handedArtifact` now promises something nobody paints");
+});

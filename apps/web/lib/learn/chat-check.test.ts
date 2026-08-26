@@ -11,8 +11,16 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { MAX_OPTIONS, MIN_OPTIONS, readChatCheck } from "./chat-check";
-import { cardsFromMisses, MAX_QUESTIONS } from "./test-run";
+import { cardsFromMisses, describeAttempt, MAX_QUESTIONS, type TestRun } from "./test-run";
 import { turnRouterMessages, type TurnContext } from "./turn-router";
+
+/** Two questions, one answered wrongly and one skipped, so `describeAttempt` shows every branch. */
+const RUN_FOR_ACCOUNT: TestRun = {
+  questions: [
+    { objectiveIdentityKey: "a", options: [{ correct: true, text: "right" }, { correct: false, text: "wrong" }], prompt: "Q1?" },
+    { objectiveIdentityKey: "b", options: [{ correct: true, text: "yes" }, { correct: false, text: "no" }], prompt: "Q2?" },
+  ],
+};
 
 /** An empty canvas, so the packet under test is the contract itself and not one turn's state. */
 const EMPTY_CONTEXT: TurnContext = {
@@ -179,4 +187,40 @@ test("🔴🔴 the contract forbids questions in prose, and says what to do inst
     /Material the learner uploaded and has just been taught from counts as material they have been taught/,
     "a quiz on uploaded material is outside the rule again",
   );
+});
+
+test("🔴🔴🔴 a finished check is MARKED in the reply: the score first, then every miss", () => {
+  // Measured on production, 2026-08-26. A ten-question check came back FIVE right and the reply
+  // opened *"Nice work, you've got a solid grasp on the core points"*, then offered ten fresh
+  // questions. Owner: *"once I finish the test, the Canvas did not output my result… it just said
+  // good stuff. It should've given me, like, you got x out of ten wrong."*
+  //
+  // 🔴 EVERY PIECE UPSTREAM WAS ALREADY CORRECT, which is why this is a packet test and not a wiring
+  // one. `describeAttempt` had handed over the score and each question with what was picked and
+  // what was right; `finishCheck` had sent it as the learner's turn. The results SCREEN was deleted
+  // on 2026-08-24 on the owner's own instruction — *"it's just up to DeepSeek to report the results
+  // in its own words"* — and the unwritten half of that ruling is that the reply then has to do the
+  // reporting. Praise on a 5/10 is not a gentler report; it is the absence of one.
+  const packet = turnRouterMessages({ context: EMPTY_CONTEXT, utterance: "I finished the check you gave me: 5 out of 10." })
+    .map((message) => message.content)
+    .join("\n")
+    .replace(/\s+/g, " ");
+  assert.match(packet, /THE MARKING IS YOUR ANSWER/, "nothing tells the reply to mark a finished check");
+  assert.match(packet, /Open with the number, plainly, in the first line/, "the score can be buried or dropped again");
+  assert.match(packet, /never skip the number because the score was low/, "a bad score can be softened away again");
+
+  // 🔴 AND A REPORT IS NOT A REQUEST. `wantsTest` came back true on that turn, so a fresh
+  // ten-question run opened over the top of the marking: the learner asked for one check and got
+  // another one instead of their result.
+  assert.match(packet, /an account of a finished check is a REPORT, not a request for another one/i, "a finished check can start a new one again");
+});
+
+test("🔴 the account the card hands over carries the two things the reply has to say back", () => {
+  // The prompt rule above is only honest if the material is actually in the message. `describeAttempt`
+  // is the whole input the model gets about the run, so if the score or the right answers were not
+  // in it, no instruction could recover them.
+  const account = describeAttempt(RUN_FOR_ACCOUNT, ["wrong", null]);
+  assert.match(account, /1 out of 2|0 out of 2/, "the account no longer opens with a score");
+  assert.match(account, /the answer was "right"/, "a wrong answer no longer carries what the right one was");
+  assert.match(account, /I skipped this one/, "a skipped question is no longer distinguishable from a wrong one");
 });

@@ -5,6 +5,7 @@
 // opening a browser — and a placement that is obviously wrong on screen is invisible in a diff.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { placeBeside, placeUnder } from "./character-place";
@@ -95,4 +96,32 @@ test("a cramped container still yields a placement rather than a negative one", 
   const at = placeUnder({ ...UNDER, floor: 40 });
   assert.ok(Number.isFinite(at.offset) && at.offset >= 0, `offset was ${at.offset}`);
   assert.ok(at.inset >= 8, "the character is outside the left edge of its container");
+});
+
+test("🔴🔴🔴 nothing empty sits between the answer and the marker the character stands under", () => {
+  // Measured on production, 2026-08-26: a three-line answer, then a 180px gap, then the character.
+  // Everything about the character was right — it rested exactly 24px under `#canvas-answer-end`,
+  // which is what #874 asked of it. What was wrong is what the marker was standing at the bottom of.
+  //
+  // 🔴 THE SPACER WAS `CanvasDocument`'s BOTTOM PADDING ON A DOCUMENT WITH NO BLOCKS. `pb-40` (180px
+  // at this app's 112.5% root) exists so a last block can clear the composer. §24 made "a reading
+  // state with zero blocks" the ORDINARY case, so the document reserved the composer's height for
+  // material that does not exist, and the marker — the LAST child of the scroller — went down with
+  // it.
+  //
+  // 🔴 WHY THIS GUARD LIVES BESIDE THE ARITHMETIC RATHER THAN IN THE DOCUMENT'S OWN TESTS: the
+  // failure is not visible from either file alone. `placeUnder` was right, `CanvasDocument` was
+  // right about its own job, and the bug lived in the sentence connecting them.
+  const doc = readFileSync(new URL("../workspace/learn/canvas-document.tsx", import.meta.url), "utf8");
+  assert.match(
+    doc,
+    /cn\("mx-auto w-full max-w-\(--canvas-column\) px-6", visible\.length > 0 && "pb-40"\)/,
+    "an empty document reserves the composer's height again, and the character stands under the spacer",
+  );
+
+  // And the marker is still the last thing in the scroller, which is what makes "under the answer"
+  // mean "under whatever painted" rather than "under one named region".
+  const canvas = readFileSync(new URL("../workspace/learn/learning-canvas.tsx", import.meta.url), "utf8");
+  assert.match(canvas, /id="canvas-answer-end"/, "the marker is gone; the character has nothing to stand under");
+  assert.match(canvas, /max-w-\(--canvas-column\) px-6" id="canvas-answer-end"/, "the marker lost the width that lines it up with the text rather than the window");
 });

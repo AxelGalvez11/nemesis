@@ -13,6 +13,17 @@ import { test } from "node:test";
 // rule that existed only in the code: nothing on screen told a learner the top rows were the
 // pinned ones, and a folder sat in the same undifferentiated column as a canvas. These guards
 // pin the grouping, and — more importantly — which groups are allowed to disappear.
+//
+// 🔴🔴 THE MIDDLE HEADER READ "Folders" UNTIL 2026-08-26, WHEN THE OWNER RENAMED IT: *"the
+// projects in Sidebar are still called folders, and not projects."* These guards moved with it.
+// The thing they protect never changed — an unconditional middle group carrying the only create
+// button, in second place — so they are repointed at the new label rather than rewritten, and the
+// old one is named here so a `git log -S` on either word finds this file.
+//
+// 🔴 THE CODE STILL SAYS `folder` EVERYWHERE AND THAT IS DELIBERATE. `Folder`, `folderId` and
+// `createFolder` are the data layer's names and a rename there would be a migration. What the
+// learner READS is what moved, which is why these assertions read labels and the ones about
+// `rootFolders` and `newFolderButton` do not.
 
 const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const SIDEBAR = strip(readFileSync(new URL("./sidebar-canvases.tsx", import.meta.url), "utf8"));
@@ -26,43 +37,62 @@ const at = (haystack: string, needle: string): number => {
 };
 
 test("🔴 the list is three named groups, not one run of rows", () => {
-  for (const label of ['label="Pinned"', 'label="Folders"', 'label="Canvases"']) {
+  for (const label of ['label="Pinned"', 'label="Projects"', 'label="Canvases"']) {
     assert.ok(SIDEBAR.includes(label), `${label} is gone — the groups collapsed back into one list`);
   }
 });
 
-test("🔴🔴🔴 the Folders header is UNCONDITIONAL, because it carries the only way to make a folder", () => {
-  // The failure this prevents is a dead end, not a cosmetic one. The "New folder" button lives in
-  // this header and nowhere else. Hide the header until a folder exists and a learner with no
-  // folders can never create the first one — and a learner who has filed every canvas away loses
+test("🔴🔴🔴 the Projects header is UNCONDITIONAL, because it carries the only way to make one", () => {
+  // The failure this prevents is a dead end, not a cosmetic one. The "New project" button lives in
+  // this header and nowhere else. Hide the header until a project exists and a learner with no
+  // projects can never create the first one — and a learner who has filed every canvas away loses
   // the button too, because `unfiled` is empty and the Canvases group is gone as well.
   //
   // Calibration: wrap the header in `{rootFolders.length > 0 ? (` and this reddens, because the
   // conditional then opens BEFORE the label instead of after it.
-  const header = at(SIDEBAR, 'label="Folders"');
+  const header = at(SIDEBAR, 'label="Projects"');
   const list = at(SIDEBAR, "{rootFolders.length > 0 ? (");
-  assert.ok(header < list, "the Folders header moved inside its own conditional — the New folder button can now be unreachable");
+  assert.ok(header < list, "the Projects header moved inside its own conditional — the New project button can now be unreachable");
 
   const buttons = SIDEBAR.match(/action=\{newFolderButton\}/g) ?? [];
-  assert.equal(buttons.length, 1, "the New folder action is no longer on exactly one header");
+  assert.equal(buttons.length, 1, "the New project action is no longer on exactly one header");
   const folderHeaderStart = SIDEBAR.lastIndexOf("<SidebarSectionHeader", header);
   assert.match(
     SIDEBAR.slice(folderHeaderStart, header),
     /action=\{newFolderButton\}/,
-    "the New folder button left the Folders header",
+    "the New project button left the Projects header",
   );
+});
+
+test("🔴 nothing a learner READS in this sidebar calls a project a folder", () => {
+  // Owner 2026-08-26. The product had two names for one object: a `Projects` row in the nav, a
+  // `/projects` route and a `ProjectsPage`, with this list calling the same thing a folder. Both
+  // words were on screen at once.
+  //
+  // 🔴 IT READS ONLY THE STRINGS A PERSON SEES, which is why the whole file cannot simply be
+  // grepped: `folderId`, `createFolder` and `kind: "folder"` are still correct and still there.
+  const visible = [
+    ...SIDEBAR.matchAll(/(?:aria-label|title|label|confirmLabel)=?[:=]?\s*"([^"]+)"/g),
+  ].map((match) => match[1] ?? "");
+  const menuText = [...SIDEBAR.matchAll(/>([A-Z][^<>{}]*?)<\/DropdownMenuItem>/g)].map((match) => (match[1] ?? "").trim());
+  for (const phrase of [...visible, ...menuText]) {
+    assert.ok(!/folder/i.test(phrase), `"${phrase}" still says folder to the learner`);
+  }
+  // And the create flow names the new row after the object it makes, not after the table it
+  // lives in: an untitled project used to arrive on screen called "New folder".
+  assert.ok(SIDEBAR.includes('createFolder(userId, "New project"'), "a new project is named after the table again");
 });
 
 test("🔴 Pinned and Canvases ARE conditional — no heading over nothing", () => {
   // A header with no rows under it reads as a list that failed to load, which is a worse lie than
-  // an absent section. Both of these open their conditional BEFORE their label; Folders does not.
+  // an absent section. Both of these open their conditional BEFORE their label; Projects does not.
   assert.ok(at(SIDEBAR, "{pinned.length > 0 ? (") < at(SIDEBAR, 'label="Pinned"'), "an empty Pinned header can now render");
   assert.ok(at(SIDEBAR, "{unfiled.length > 0 ? (") < at(SIDEBAR, 'label="Canvases"'), "an empty Canvases header can now render");
 });
 
-test("🔴 the groups keep the reference's order: pinned, then folders, then loose canvases", () => {
+test("🔴 the groups keep the reference's order: pinned, then projects, then loose canvases", () => {
   const pinned = at(SIDEBAR, 'label="Pinned"');
-  const folders = at(SIDEBAR, 'label="Folders"');
+  const folders = at(SIDEBAR, 'label="Projects"');
   const canvases = at(SIDEBAR, 'label="Canvases"');
   assert.ok(pinned < folders && folders < canvases, "the groups are out of order against the reference");
 });

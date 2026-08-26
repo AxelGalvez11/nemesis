@@ -1043,6 +1043,9 @@ export function LearningCanvas({
     answerOwed: policy.awaitingAnswer,
     blocks: canvas.blocks.length,
     canvasState: canvas.state,
+    // 🔴 THE RECEIPT IS CONTENT. Without this the canvas reports itself quiet directly under the
+    // deck it just made. See `handedArtifact` in canvas-presence.ts.
+    handedArtifact: session.madeArtifact !== null,
     // 🔴 NOTHING WAS ATTACHED, SO NOTHING WAS SEARCHED. See `hasMaterial` in canvas-presence.ts.
     hasMaterial: canvas.sources.length > 0,
     // 🔴 THE MATERIAL IS THE ACTION ONLY WHILE THAT ACTION IS STILL IN FLIGHT. Answering the

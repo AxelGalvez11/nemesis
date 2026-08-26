@@ -123,7 +123,16 @@ export function CanvasDocument({
   const sourceBlock = openSource ? (visible.find((block) => block.id === openSource.blockId) ?? null) : null;
 
   return (
-    <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40" ref={root}>
+    // 🔴🔴 THE BOTTOM PADDING IS ONLY THERE FOR A LAST BLOCK TO CLEAR THE COMPOSER, SO WITH NO
+    // BLOCKS IT IS 180px OF NOTHING. §24 made "a reading state with zero blocks" the ORDINARY case,
+    // and this document then reserved the composer's height for material that does not exist.
+    //
+    // 🔴 MEASURED ON PRODUCTION, 2026-08-26: an empty document sat under a three-line answer and
+    // pushed `#canvas-answer-end` — the marker the character anchors to — 180px down the page. The
+    // character was doing exactly what #874 asked of it, resting 24px under the marker, while
+    // looking like it had drifted halfway down an empty screen. Nothing about the character was
+    // wrong; it was standing under a spacer.
+    <div className={cn("mx-auto w-full max-w-(--canvas-column) px-6", visible.length > 0 && "pb-40")} ref={root}>
       {visible.map((block) => (
         <BlockView
           aside={aside?.blockId === block.id ? aside.text : null}

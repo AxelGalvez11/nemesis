@@ -216,12 +216,31 @@ export function canvasPresentation(input: {
    * With no material, an empty surface is simply an empty surface, and the invitation says so.
    */
   hasMaterial?: boolean;
+  /**
+   * Nemesis has just handed something back in the conversation: a deck, a document, a report.
+   *
+   * 🔴🔴 MEASURED ON PRODUCTION, 2026-08-26. *"make me flashcards"* on a canvas with material
+   * produced the deck, put its card in the conversation, and then painted *"Nemesis hasn't found
+   * anything to ask you about yet. Tell it what you want to work on, or try again."* directly
+   * underneath it. The owner screenshotted exactly that screen.
+   *
+   * 🔴 THE MECHANISM IS THE ONE `reply` ALREADY DOCUMENTS, ONE DOOR ALONG. Making an artifact does
+   * not go through the chat lane, so it clears the previous answer (contract rule 2, correctly) and
+   * writes no new one. Nothing is left in `regions`, nothing is running by the time the card lands,
+   * and the chain falls through to `quiet` — which reports a SEARCH THAT NEVER HAPPENED, over the
+   * top of the thing the learner just asked for and got.
+   *
+   * The argument is `reply`'s, verbatim: *"An answer is content; a surface holding one is not
+   * quiet."* A deck is an answer that happens to be an object rather than a sentence.
+   */
+  handedArtifact?: boolean;
 }): CanvasPresentation {
   const {
     answerOwed = false,
     aside = "none",
     blocks,
     canvasState,
+    handedArtifact = false,
     hasMaterial = true,
     materialIsTheAction = false,
     policyPresenting,
@@ -280,7 +299,12 @@ export function canvasPresentation(input: {
             ? "preparing"
             : hasNotBegun(canvasState) || !hasMaterial
               ? "invitation"
-              : "quiet";
+              // 🔴 LAST, SO IT ONLY EVER PREVENTS A FALSE REPORT. Placed higher it would let a card
+              // from three turns ago outrank a document or a question, which is the opposite defect:
+              // the receipt is the newest thing on the surface only while nothing else is.
+              : handedArtifact
+                ? "reply"
+                : "quiet";
 
   // 🔴 REPORTED SEPARATELY RATHER THAN FOLDED INTO THE PRESENCE, which is the point of the
   // reversal above: the surface must be able to say "something is running" without that being the

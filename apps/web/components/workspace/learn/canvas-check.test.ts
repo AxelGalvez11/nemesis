@@ -154,3 +154,41 @@ test("🔴 a question with no correct option produces no card rather than a blan
   };
   assert.deepEqual(cardsFromMisses(broken, ["a"]), [], "a card with an empty back reached the deck");
 });
+
+// ── one question giving way to the next ────────────────────────────────────────────────────────
+
+test("🔴🔴 the next question FADES UP; the card it sits in does not move", () => {
+  // Owner 2026-08-26: *"I want there to be a smoother animation when a user clicks an answer, so it
+  // fades into the next question."* The swap was instantaneous before this: the words under the
+  // learner's cursor were replaced between two frames.
+  //
+  // 🔴 THE KEY IS THE MECHANISM, NOT DECORATION. A CSS animation runs when an element is CREATED.
+  // Without `key={index}` React edits the same nodes in place, the class stays put, and the
+  // animation never runs again after the card first arrives — the feature would look implemented
+  // and do nothing, which is exactly how the `place="under"` anchor shipped inert on #874.
+  const wrapper = /<div className="canvas-question-in" key=\{index\}>/;
+  assert.match(CHECK, wrapper, "the per-question fade wrapper is gone, or lost the key that makes it run");
+
+  // 🔴 AND IT WRAPS ONLY THE QUESTION. The pips say where you are and the ✕ leaves; re-mounting
+  // them on every tap would blink the frame the learner is working inside and reset focus.
+  const opened = CHECK.indexOf('<div className="canvas-question-in"');
+  assert.ok(CHECK.indexOf("</ol>") < opened, "the progress pips moved inside the fading block");
+  assert.ok(CHECK.indexOf("onClick={onDismiss}") < opened, "the dismiss control moved inside the fading block");
+  assert.ok(CHECK.indexOf("{question.prompt}") > opened, "the question itself is no longer inside the fading block");
+});
+
+test("🔴 the fade is CSS the reduced-motion block already covers, and it costs the advance nothing", () => {
+  const CSS = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+  assert.match(CSS, /@keyframes canvas-question-in/, "the keyframes are gone; the class now names nothing");
+  // Somebody who asked the browser to stop moving things gets a plain swap, like every other
+  // animation in this file.
+  const reduced = CSS.slice(CSS.indexOf("@media (prefers-reduced-motion: reduce)"));
+  assert.ok(reduced.includes(".canvas-question-in"), "the question fade is not in the reduced-motion block");
+
+  // 🔴 NO TIMER, WHICH IS THE POINT. A cross-fade would have to hold the old question up while the
+  // new one arrives, and every millisecond of that lands on somebody who has already decided. The
+  // owner's 2026-08-24 rule is that one tap answers AND advances, without friction.
+  const answer = CHECK.slice(CHECK.indexOf("const answer = (text: string)"), CHECK.indexOf("const frame = useRef"));
+  assert.ok(answer.length > 0, "the answer handler is gone — this guard is pointed at nothing");
+  assert.ok(!/setTimeout|requestAnimationFrame|await /.test(answer), "the advance now waits on a timer");
+});

@@ -1,34 +1,26 @@
 "use client";
 
 import {
-  IconDots,
-  IconFlag,
-  IconFlagFilled,
-  IconPlayerPause,
-  IconSparkles,
   IconThumbDown,
   IconThumbDownFilled,
   IconThumbUp,
   IconThumbUpFilled,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/desktop-ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
-import { explainCardContext, explainTranscript, parseRevisedCard, reviseCardMessages } from "@/lib/workspace/study-ai-extras";
+import { parseRevisedCard, reviseCardMessages } from "@/lib/workspace/study-ai-extras";
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/workspace/study-cloze";
 import { type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStudy } from "@/lib/workspace/study-cloud-store";
-import { STUDY_FLAG_COLORS, studyFlagColor } from "@/lib/workspace/study-flags";
 import { buildReviewQueue } from "@/lib/workspace/study-review-queue";
 import type { StudyGrade } from "@/lib/workspace/study-scheduler";
 import { decideSessionGrade } from "@/lib/workspace/study-session-steps";
 import { cn } from "@/lib/utils";
 
-import { ExplainChat, type ExplainTurn } from "./explain-chat";
 import { OcclusionCardView } from "./occlusion-card";
 import type { StudyReviewSettings } from "./study-chrome";
 
@@ -50,7 +42,18 @@ interface ReviewSessionProps {
 }
 
 export function ReviewSession({ cards, deck, open, onOpenChange, settings }: ReviewSessionProps) {
-  const { gradeCard, undoGrade, updateCard, setCardSuspended, setCardFlag, rateCard, logStudyPress, userId } = useCloudStudy();
+  // 🔴🔴 THREE CONTROLS LEFT THIS ROW ON 2026-08-26, AND THEIR STORE WRITES LEFT WITH THEM. Owner:
+  // *"remove the [have] nemesis explain this card… and remove the flag function for cards. Pretty
+  // much just hide it. And also the suspend card, which is… the three dots icon inside the
+  // flashcards."* `setCardFlag` and `setCardSuspended` are still in `study-cloud-store` and still
+  // reachable from the Study browser, which is where a learner manages a collection rather than
+  // works through one. What is gone is the reviewing screen offering them: a person mid-recall has
+  // one job, and every control that is not "did I know this" is a decision taken during it.
+  //
+  // 🔴 THE EXPLAIN PANEL IS PARKED, NOT DELETED. `explain-chat.tsx` stays, `study-artifact-dialogs`
+  // still mounts it, and `reviseCardMessages` / `parseRevisedCard` are still live HERE, because the
+  // thumbs-down rewrite runs on them. Only the door from this screen is gone.
+  const { gradeCard, undoGrade, updateCard, rateCard, logStudyPress, userId } = useCloudStudy();
   const previewMode = useWorkspacePreview();
   const [passedIds, setPassedIds] = useState<string[]>([]);
   const [retryIds, setRetryIds] = useState<string[]>([]);
@@ -80,8 +83,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   // The Explain side chat: transcripts cache per card for the sitting, so
   // reopening a card never bills twice; the panel itself lives to the RIGHT
   // of the card (owner 2026-08-04) and streams into explain-chat.tsx.
-  const explainCache = useRef(new Map<string, ExplainTurn[]>());
-  const [explainOpen, setExplainOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -100,7 +101,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     [cards, deck?.id, passedIds, retryIds, priorityId],
   );
   const current = queue[0] ?? null;
-  const currentId = current?.id ?? null;
 
   // Anki-style remaining counts for the footer: cards failed this sitting
   // count as learning, untouched cards as new, the rest as due reviews.
@@ -118,12 +118,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const currentBucket = current
     ? retryIds.includes(current.id) || (progressById[current.id] ?? 0) > 0 ? "learn" : current.repetitions === 0 ? "new" : "due"
     : null;
-
-  // A new card on deck closes the panel — opening it is a deliberate ask per
-  // card, so advancing through a deck never quietly bills every card.
-  useEffect(() => {
-    setExplainOpen(false);
-  }, [currentId]);
 
   // Occlusion cards render their image with masks; the payload is only ever
   // non-null when it validated, so anything malformed falls back to text.
@@ -194,33 +188,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     }
   }
 
-  async function setFlag(value: number) {
-    if (!current || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await setCardFlag(current.id, value);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn't update the card.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function suspendCurrent() {
-    if (!current || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await setCardSuspended(current.id, true);
-      setRevealed(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn't suspend the card.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   /**
    * Thumbs up or thumbs down on how well this card was WRITTEN.
    *
@@ -285,8 +252,8 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     }
   }
 
-  // Keyboard review: Space/Enter reveals then grades Good, 1-4 grade, Z undoes,
-  // F flags. Re-subscribed every render so the closures stay fresh.
+  // Keyboard review: Space/Enter reveals then grades Good, 1-4 grade, Z undoes.
+  // Re-subscribed every render so the closures stay fresh.
   useEffect(() => {
     if (!open || rewriting) return;
     const onKey = (event: KeyboardEvent) => {
@@ -306,14 +273,11 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
         void grade(byDigit);
         return;
       }
+      // 🔴 `F` WENT WITH THE FLAG BUTTON. A hotkey for a control that is not on screen is a hidden
+      // feature, and this one wrote to the card silently.
       if (event.key === "z" || event.key === "Z" || event.code === "KeyZ") {
         event.preventDefault();
         void undo();
-        return;
-      }
-      if (event.key === "f" || event.key === "F" || event.code === "KeyF") {
-        event.preventDefault();
-        void setFlag(current.flag > 0 ? 0 : 1);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -376,66 +340,28 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 >
                   {current.quality === -1 ? <IconThumbDownFilled className="text-(--ui-learner)" /> : <IconThumbDown />}
                 </Button>
-                {/* Icon only (owner 2026-08-04: "the 'explain' button in
-                    flashcards needs to only have the icon"). */}
-                <Button
-                  aria-label="Have Nemesis explain this card"
-                  aria-pressed={explainOpen}
-                  data-testid="explain-card"
-                  onClick={() => setExplainOpen((open) => !open)}
-                  size="icon-xs"
-                  title="Have Nemesis explain this card"
-                  variant="ghost"
-                >
-                  <IconSparkles />
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-label={current.flag > 0 ? `Flagged ${studyFlagColor(current.flag)?.name ?? ""}` : "Flag card"}
-                      aria-pressed={current.flag > 0}
-                      disabled={saving}
-                      size="icon-xs"
-                      title={current.flag > 0 ? `Flagged ${studyFlagColor(current.flag)?.name ?? ""} (F clears)` : "Flag card (F)"}
-                      variant="ghost"
-                    >
-                      {current.flag > 0 ? <IconFlagFilled className={studyFlagColor(current.flag)?.className} /> : <IconFlag />}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-40">
-                    {STUDY_FLAG_COLORS.map((color) => (
-                      <DropdownMenuItem
-                        className={cn(current.flag === color.value && "bg-black/[0.055] dark:bg-white/[0.08]")}
-                        key={color.value}
-                        onSelect={() => void setFlag(current.flag === color.value ? 0 : color.value)}
-                      >
-                        <IconFlagFilled className={color.className} /> {color.name}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem disabled={current.flag === 0} onSelect={() => void setFlag(0)}>
-                      <IconFlag /> Remove flag
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button aria-label="Card actions" size="icon-xs" variant="ghost"><IconDots /></Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-44">
-                    {/* 🔴 "This card is wrong" USED TO LIVE HERE, and it is not deleted — it is
-                        the thumbs-down button two rows up. Same call, same prompt, one fewer
-                        decision: a learner who thinks a card is bad presses the bad-card button,
-                        rather than opening a menu to find a differently-worded version of it. */}
-                    <DropdownMenuItem onSelect={() => void suspendCurrent()}><IconPlayerPause /> Suspend card</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {/* 🔴🔴 THE ROW ENDS HERE: TWO THUMBS, AND NOTHING ELSE. Three controls were cut on
+                    2026-08-26 on the owner's instruction, and each had a defensible reason to exist:
+                    ✨ opened a side chat that explained the card, 🚩 flagged it a colour, and ⋯ held
+                    "Suspend card".
+
+                    🔴 WHAT THEY HAD IN COMMON IS THE ARGUMENT FOR CUTTING THEM. Every one of them is
+                    a decision ABOUT the card, taken in the one moment the learner is supposed to be
+                    trying to remember what is on it. The vote below is the exception because it is
+                    the same gesture as the recall itself ("this card is bad") and because a
+                    complaint with nowhere to go is a complaint nobody files.
+
+                    🔴 DO NOT RE-ADD ONE BECAUSE IT SEEMS HARMLESS. The Study browser manages a
+                    collection; this screen works through one. That is the line. */}
               </div>
             </div>
             {/* The Explain side chat rides to the RIGHT of the card (owner
                 2026-08-04) — the card column narrows instead of the panel
                 covering it; on small screens the panel stacks below. */}
-            <div className={cn("grid min-h-0 grid-cols-1 gap-4", explainOpen && "lg:grid-cols-[minmax(0,1fr)_minmax(0,19rem)]")}>
+            {/* 🔴 ONE COLUMN, ALWAYS. This used to narrow to make room for the Explain panel on the
+                right; that panel's door is gone (see the toolbar above), so the card gets the width
+                back on every screen. */}
+            <div className="grid min-h-0 grid-cols-1 gap-4">
               <section className={cn("grid min-h-0 place-items-start overflow-y-auto bg-background px-4 py-12 text-center", settings.flashcardOutline && "rounded-3xl border border-(--ui-stroke-secondary) shadow-sm")}>
                 <div className={cn("mx-auto w-full max-w-5xl", settings.flipAnimation && "animate-in fade-in-0 duration-300")}>
                   {occlusionPayload ? (
@@ -450,42 +376,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                   )}
                 </div>
               </section>
-              {explainOpen && (
-                <ExplainChat
-                  cache={explainCache.current}
-                  className="max-h-80 lg:max-h-none"
-                  context={explainCardContext(current)}
-                  contextKey={current.id}
-                  onClose={() => setExplainOpen(false)}
-                  previewMode={Boolean(previewMode)}
-                  // Owner 2026-08-04: the Explain chat can REWRITE the card it
-                  // is explaining — the conversation is the brief, the store
-                  // write is the same one the Edit dialog uses.
-                  revise={
-                    !previewMode && userId
-                      ? {
-                          apply: async (turns) => {
-                            const reply = await postChatCompletion(
-                              userId,
-                              reviseCardMessages({ back: current.back, front: current.front, transcript: explainTranscript(turns) }),
-                              { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
-                            );
-                            const revised = reply.text ? parseRevisedCard(reply.text) : null;
-                            if (!revised) return reply.errorText ?? "The engine couldn't produce a clean rewrite — tell it what to change and try again.";
-                            try {
-                              await updateCard({ back: revised.back, cardType: current.cardType, flag: current.flag, front: revised.front, id: current.id, tags: current.tags });
-                            } catch {
-                              return "Couldn't save the rewritten card — try again.";
-                            }
-                            return null;
-                          },
-                          noun: "card",
-                        }
-                      : undefined
-                  }
-                  userId={userId}
-                />
-              )}
             </div>
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
             {/* A rewrite is a model call, so it takes seconds. Saying so beats a menu

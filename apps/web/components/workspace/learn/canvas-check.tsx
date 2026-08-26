@@ -217,79 +217,101 @@ export function CanvasCheck({
         </button>
       </div>
 
-      {/* 🔴🔴 THE PICTURE IS THE QUESTION, SO IT SITS ABOVE THE PROMPT (owner 2026-08-25: image
-          occlusion "as part of its testing tools… similar to the multiple choice chip"). "Which
-          part is covered?" means nothing before the learner has seen which part is covered.
+      {/* 🔴🔴 ONE TAP ENDS A QUESTION AND THE NEXT ONE FADES UP IN ITS PLACE (owner 2026-08-26: *"I
+          want there to be a smoother animation when a user clicks an answer, so it fades into the
+          next question"*). Before this the swap was instantaneous: the words under the learner's
+          cursor were replaced between two frames, which reads as a jump-cut rather than as a card
+          turning over.
 
-          🔴 `revealed={false}`, ALWAYS, AND IT IS NOT A PROP THIS CARD COULD PASS DIFFERENTLY.
-          The owner's own rule for this component is that nothing is marked while the run is live
-          — *"the user does not immediately get feedback until the end"* — and a revealed mask IS
-          the answer. The reveal happens where every other verdict now happens: in the reply, from
-          `describeAttempt`. `FigureOcclusion` states the same rule for the course lane: revealing
-          before the learner commits turns retrieval into recognition.
+          🔴 THE KEY IS WHAT MAKES IT RUN. A CSS animation fires when an element is CREATED, and
+          this block's contents were previously edited in place — same elements, new text, no
+          animation. Keying on the index makes React build a fresh subtree per question, so the
+          entrance replays. It is also why the key must be the INDEX and not the question: `Back`
+          returns to a question already seen, and that transition deserves the same fade.
 
-          🔴 IT IS `OcclusionCardView`, THE STUDY DECK'S OWN RENDERER, NOT A SECOND ONE. The
-          diagram a learner meets in a check and the diagram they meet in the deck afterwards are
-          the same picture with the same box on it, drawn by one component from one payload. */}
-      {question.figure && (
-        <div className="mt-3">
-          <OcclusionCardView className="max-h-72" payload={question.figure} revealed={false} />
-        </div>
-      )}
+          🔴 IT WRAPS ONLY WHAT CHANGES. The pips, the ✕ and the card's own frame sit OUTSIDE it and
+          stay put, so what moves is the question and nothing else — the frame is the thing the
+          learner is working inside, and blinking it would undo the point.
 
-      {/* 🔴 22px ON A 28px LINE, MEASURED. It was `--canvas-text-body` (16px), the same size as the
-          options under it, so the question read as the first item in a list of five rather than as
-          the thing being asked. §46.3 exempt: this is a measured value from the reference.
-          §46.3-exempt: measured off claude.ai, 2026-08-26. */}
-      <h2 className="mt-[18px] text-[22px] font-medium leading-[28px] text-(--ui-text-primary)">
-        {question.prompt}
-      </h2>
+          🔴 NO TIMER, AND NO CROSS-FADE. Holding the old question up while the new one arrives
+          would mean delaying the advance by the length of the fade, and every one of those delays
+          lands on somebody who has already decided. The advance stays instant; only the arrival is
+          eased. */}
+      <div className="canvas-question-in" key={index}>
+        {/* 🔴🔴 THE PICTURE IS THE QUESTION, SO IT SITS ABOVE THE PROMPT (owner 2026-08-25: image
+            occlusion "as part of its testing tools… similar to the multiple choice chip"). "Which
+            part is covered?" means nothing before the learner has seen which part is covered.
 
-      <ul className="mt-[18px] flex list-none flex-col gap-[8px]">
-        {question.options.map((option) => {
-          // 🔴 NOTHING HERE KNOWS WHICH OPTION IS CORRECT, AND THAT IS THE POINT OF THE CHANGE.
-          // `option.correct` is deliberately not read on this screen: styling that varies with it
-          // is exactly the immediate feedback the owner asked to remove, and it leaks through
-          // hover, opacity and ring just as loudly as a sentence would. The only state a row
-          // shows is whether it is the one currently selected.
-          const isPick = option.text === picked;
-          return (
-            <li key={option.text}>
-              <button
-                aria-pressed={isPick}
-                className={[
-                  // 46px tall and a hairline round the row, both measured. A bare hover-fill row
-                  // reads as a menu item; a bordered row reads as a thing you choose.
-                  "flex min-h-[46px] w-full items-center gap-3 rounded-[8px] px-[14px] py-[10px] text-left transition-colors",
-                  "bg-transparent ring-1 hover:bg-(--ui-bg-quaternary)",
-                  isPick ? "bg-(--ui-bg-tertiary) ring-(--ui-stroke-primary)" : "ring-(--ui-stroke-tertiary)",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => answer(option.text)}
-                type="button"
-              >
-                {/* 🔴 A RADIO, AND IT SAYS "PICK ONE" BEFORE ANYTHING IS PICKED. The old row had no
-                    mark at all, so an untouched card gave no clue that the rows were choices rather
-                    than links. It is decoration for the mouse and nothing else: `aria-pressed` on
-                    the button is what a screen reader reads. */}
-                <span
-                  aria-hidden="true"
+            🔴 `revealed={false}`, ALWAYS, AND IT IS NOT A PROP THIS CARD COULD PASS DIFFERENTLY.
+            The owner's own rule for this component is that nothing is marked while the run is live
+            — *"the user does not immediately get feedback until the end"* — and a revealed mask IS
+            the answer. The reveal happens where every other verdict now happens: in the reply, from
+            `describeAttempt`. `FigureOcclusion` states the same rule for the course lane: revealing
+            before the learner commits turns retrieval into recognition.
+
+            🔴 IT IS `OcclusionCardView`, THE STUDY DECK'S OWN RENDERER, NOT A SECOND ONE. The
+            diagram a learner meets in a check and the diagram they meet in the deck afterwards are
+            the same picture with the same box on it, drawn by one component from one payload. */}
+        {question.figure && (
+          <div className="mt-3">
+            <OcclusionCardView className="max-h-72" payload={question.figure} revealed={false} />
+          </div>
+        )}
+
+        {/* 🔴 22px ON A 28px LINE, MEASURED. It was `--canvas-text-body` (16px), the same size as the
+            options under it, so the question read as the first item in a list of five rather than as
+            the thing being asked. §46.3 exempt: this is a measured value from the reference.
+            §46.3-exempt: measured off claude.ai, 2026-08-26. */}
+        <h2 className="mt-[18px] text-[22px] font-medium leading-[28px] text-(--ui-text-primary)">
+          {question.prompt}
+        </h2>
+
+        <ul className="mt-[18px] flex list-none flex-col gap-[8px]">
+          {question.options.map((option) => {
+            // 🔴 NOTHING HERE KNOWS WHICH OPTION IS CORRECT, AND THAT IS THE POINT OF THE CHANGE.
+            // `option.correct` is deliberately not read on this screen: styling that varies with it
+            // is exactly the immediate feedback the owner asked to remove, and it leaks through
+            // hover, opacity and ring just as loudly as a sentence would. The only state a row
+            // shows is whether it is the one currently selected.
+            const isPick = option.text === picked;
+            return (
+              <li key={option.text}>
+                <button
+                  aria-pressed={isPick}
                   className={[
-                    "flex size-[18px] shrink-0 items-center justify-center rounded-full ring-1 transition-colors",
-                    isPick ? "ring-(--ui-text-primary)" : "ring-(--ui-stroke-primary)",
-                  ].join(" ")}
+                    // 46px tall and a hairline round the row, both measured. A bare hover-fill row
+                    // reads as a menu item; a bordered row reads as a thing you choose.
+                    "flex min-h-[46px] w-full items-center gap-3 rounded-[8px] px-[14px] py-[10px] text-left transition-colors",
+                    "bg-transparent ring-1 hover:bg-(--ui-bg-quaternary)",
+                    isPick ? "bg-(--ui-bg-tertiary) ring-(--ui-stroke-primary)" : "ring-(--ui-stroke-tertiary)",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onClick={() => answer(option.text)}
+                  type="button"
                 >
-                  {isPick ? <span className="size-[9px] rounded-full bg-(--ui-text-primary)" /> : null}
-                </span>
-                <span className="block text-[length:var(--canvas-text-small)] leading-normal text-(--ui-text-primary)">
-                  {option.text}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                  {/* 🔴 A RADIO, AND IT SAYS "PICK ONE" BEFORE ANYTHING IS PICKED. The old row had no
+                      mark at all, so an untouched card gave no clue that the rows were choices rather
+                      than links. It is decoration for the mouse and nothing else: `aria-pressed` on
+                      the button is what a screen reader reads. */}
+                  <span
+                    aria-hidden="true"
+                    className={[
+                      "flex size-[18px] shrink-0 items-center justify-center rounded-full ring-1 transition-colors",
+                      isPick ? "ring-(--ui-text-primary)" : "ring-(--ui-stroke-primary)",
+                    ].join(" ")}
+                  >
+                    {isPick ? <span className="size-[9px] rounded-full bg-(--ui-text-primary)" /> : null}
+                  </span>
+                  <span className="block text-[length:var(--canvas-text-small)] leading-normal text-(--ui-text-primary)">
+                    {option.text}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
       {/* 🔴 THE "Back" BUTTON IS GONE, AND ITS JOB MOVED UP. It appeared once you were past the
           first question and did one thing: step back one. The numbered pips in the header do that
