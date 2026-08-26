@@ -46,5 +46,39 @@ export function placeBeside(input: {
   return { inset: Math.max(EDGE, anchor.left), offset: Math.max(bottom, floor - coveredTop + gap), beside: false };
 }
 
+/**
+ * Where the character rests UNDER the last thing Nemesis said.
+ *
+ * 🔴🔴 THE REFERENCE IS CLAUDE, MEASURED (owner 2026-08-26: *"the claude has their mascot below
+ * answers so could we do the same?"*). At a 1470px viewport their mark is 32 x 32, sits at the
+ * left edge of the answer's own text column, and its row carries `margin-top: 24px`. Ours is
+ * bigger, so it takes the same 24px gap and the same left alignment and nothing else.
+ *
+ * 🔴 CLAMPED INTO THE ROOM IT HAS, BOTH WAYS. The anchor is inside a scroller, so it can be
+ * anywhere including off the top or under the composer. Without the clamp the character rides the
+ * scroll straight out of its container and is simply gone, which reads as a bug rather than as a
+ * character that has scrolled away with its answer.
+ */
+export function placeUnder(input: {
+  /** The end of the answer, in the dock's own coordinate space. */
+  readonly anchor: { readonly left: number; readonly bottom: number };
+  /** Bottom edge of the container the dock sits in. */
+  readonly floor: number;
+  readonly size: number;
+  readonly gap: number;
+  /** Floor for `offset`, from the caller's `bottom` prop: never lower than the composer's shoulder. */
+  readonly bottom: number;
+}): { readonly inset: number; readonly offset: number } {
+  const { anchor, floor, size, gap, bottom } = input;
+  // `offset` is a CSS `bottom`, so it grows upwards: the character's own bottom edge sits `gap`
+  // below where the answer ended.
+  const under = floor - anchor.bottom - gap - size;
+  const ceiling = floor - size - EDGE;
+  return {
+    inset: Math.max(EDGE, anchor.left),
+    offset: Math.min(Math.max(bottom, under), Math.max(bottom, ceiling)),
+  };
+}
+
 /** Closest the character is allowed to get to the edge of its container, px. */
 const EDGE = 8;
