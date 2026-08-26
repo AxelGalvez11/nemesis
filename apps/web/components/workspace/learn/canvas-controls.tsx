@@ -1198,118 +1198,47 @@ function MenuItem({
  * rows, both show their current state, and a learner who wants to change their mind has somewhere
  * to go rather than having to remember what they answered once.
  */
+/**
+ * Read responses aloud: one button, no menu.
+ *
+ * 🔴🔴 THE `⋮` IS GONE — owner, 2026-08-25, circling it on screen. What made removing it safe is
+ * that the menu behind it had been reduced to a SINGLE row: Objectives and the session record left
+ * on 2026-08-20, the mic option and its hint line left on 2026-08-25, and what remained was one
+ * toggle behind a click that existed only to reveal it. This file already states the rule, about
+ * the composer's `+`: *a one-item menu is a second click charged for nothing.*
+ *
+ * 🔴 SO THE TOGGLE MOVED OUT, IT WAS NOT DELETED. Removing the button and its one row would have
+ * taken read-aloud with it — a feature reachable from nowhere, which is this codebase's
+ * most-repeated defect wearing the other face. The control is now what the menu contained.
+ *
+ * 🔴 THE GLYPH REPORTS STATE, AND IT HAS TO. Voice is the one thing on this surface that acts on
+ * its own, afterwards — a learner who left it on deserves to see that without opening anything.
+ * Speaking, on-but-quiet and off are three distinct marks.
+ */
 export function OptionsControl({
-  canvas,
-  activeTaskId,
-  entries,
-  locale,
   voice,
 }: {
-  canvas: LearningCanvas;
-  activeTaskId?: string | null;
-  entries: readonly TranscriptEntry[];
-  locale?: string;
   /**
    * 🔴 THE HOOK'S OWN TYPE, NOT A THIRD COPY OF IT. This shape was written out by hand here AND in
-   * the sibling that passes it through, so `useCanvasVoice` gaining a field left two declarations
-   * behind and the compiler pointed at the consumer rather than at the omission. Referencing the
-   * source means adding a control to the voice hook can never again require remembering two other
-   * files.
+   * the sibling that passes it through, so `useCanvasVoice` gaining a field left two hand-written
+   * copies to update and no compiler complaint when only one of them was.
    */
   voice?: CanvasVoiceState["header"];
 }) {
-  const [open, setOpen] = useState(false);
-  // Which face the menu is showing. Sub-views render IN PLACE rather than as a second floating
-  // panel: a panel hanging off a panel is two things to dismiss and two places to mis-click.
-  const [view, setView] = useState<"menu" | "objectives" | "record">("menu");
-  const holder = useDismiss(open, () => {
-    setOpen(false);
-    setView("menu");
-  });
-
-  const voiceOn = voice?.mode === "on";
+  if (!voice) return null;
+  const voiceOn = voice.mode === "on";
 
   return (
-    <div className="pointer-events-auto relative shrink-0" ref={holder}>
-      <button
-        aria-expanded={open}
-        aria-label="Options"
-        className={cn(CONTROL, voiceOn && "text-(--ui-action) hover:text-(--ui-action)")}
-        onClick={() => {
-          setOpen((current) => !current);
-          setView("menu");
-        }}
-        title="Options"
-        type="button"
-      >
-        {/* 🔴 THE GLYPH REPORTS VOICE, BECAUSE VOICE IS THE ONE OPTION IN HERE THAT MAKES NOISE.
-            Everything else behind this button is something the learner goes and looks at; voice
-            acts on its own, afterwards, and a learner who left it on deserves to see that from the
-            closed menu rather than by being spoken to. */}
-        <Codicon name={voice?.speaking ? "unmute" : "kebab-vertical"} size="20px" />
-      </button>
-
-      {open && (
-        <div className={cn(PANEL, view === "menu" ? "w-[15rem]" : "w-[22rem]")}>
-          {view !== "menu" && (
-            <button
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary)"
-              onClick={() => setView("menu")}
-              type="button"
-            >
-              <Codicon name="chevron-left" size="0.6875rem" />
-              {view === "objectives" ? "Objectives" : "Session record"}
-            </button>
-          )}
-
-          {view === "menu" && (
-            <>
-              {voice && (
-                <>
-                  {/* 🔴🔴 ONE VOICE DECISION LIVES ON THE CANVAS, AND IT IS NOT "WHICH VOICE" (§48).
-                      Owner, 2026-08-22: *"Canvas should not make the user repeatedly choose a
-                      voice… Canvas should have a simple option for: Automatically read responses
-                      aloud."* The speaker, and whether to preview it, moved to Settings — they are
-                      properties of the person, asked once. What is left here is the only voice
-                      question that belongs to a session: should Nemesis start talking by itself.
-
-                      🔴 THE READING SPEED WENT WITH THEM, AND IT DID NOT REAPPEAR AS A SETTING. It
-                      was a SYNTHESIS argument — pressing it threw away a paid MP3 and bought
-                      another at a different rate. Speed is now a property of listening, on the
-                      player under the answer, where changing it is instant and free. */}
-                  {/* 🔴🔴 NO HINT LINE, AND THE MIC ROW IS GONE — owner, 2026-08-25, with the menu
-                      on screen: *"also remove this description and the 'open mic after each
-                      question' option"*. The hint explained a toggle whose own label already says
-                      what it does, in three lines of grey under a one-line row.
-
-                      🔴 THE MIC OPTION WAS REMOVED END TO END, NOT JUST HIDDEN. This row was the
-                      ONLY way to set `autoDictation`, so leaving the preference behind would have
-                      left `shouldOpenDictation` permanently false — a lane that can never run,
-                      which is this codebase's most-repeated defect wearing the other face. The
-                      preference, its storage, the post-speech effect and the composer's
-                      `listenSignal` all went with it (see use-canvas-voice.ts). Dictation itself is
-                      untouched: the composer's own microphone button is unaffected. */}
-                  <ToggleItem
-                    checked={voiceOn}
-                    label="Read responses aloud"
-                    onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
-                  />
-                  <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
-                </>
-              )}
-              {/* 🔴 OBJECTIVES AND SESSION RECORD ARE GONE FROM THIS MENU (owner 2026-08-20:
-                  "the menu has a objectives tab, which I don't want... and assessment record,
-                  which I also don't want"). Both panels remain in the file and are still
-                  reachable by setting `view` — they are a developer's window into what the
-                  runtime thinks, not something a learner asked to be shown mid-lesson. */}
-            </>
-          )}
-
-          {view === "objectives" && <ObjectivesPanel activeTaskId={activeTaskId} canvas={canvas} />}
-          {view === "record" && <SessionRecordPanel entries={entries} locale={locale} />}
-        </div>
-      )}
-    </div>
+    <button
+      aria-label={voiceOn ? "Stop reading responses aloud" : "Read responses aloud"}
+      aria-pressed={voiceOn}
+      className={cn(CONTROL, voiceOn && "text-(--ui-action) hover:text-(--ui-action)")}
+      onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
+      title={voiceOn ? "Stop reading responses aloud" : "Read responses aloud"}
+      type="button"
+    >
+      <Codicon name={voice.speaking ? "unmute" : voiceOn ? "unmute" : "mute"} size="20px" />
+    </button>
   );
 }
 

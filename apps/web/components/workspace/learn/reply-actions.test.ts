@@ -176,7 +176,19 @@ test("🔴🔴 the Canvas no longer asks which voice, and no longer asks how fas
 
 test("🔴🔴 the ONE voice decision left on the Canvas is autoplay", () => {
   // Owner: *"Canvas should have a simple option for: Automatically read responses aloud."*
-  assert.match(CONTROLS, /label="Read responses aloud"/, "autoplay is not offered on the canvas");
+  // 🔴 THE ROW BECAME THE BUTTON (2026-08-25). Owner circled the `⋮` and asked for it gone; what
+  // the click revealed was this single toggle, so the toggle moved out and the menu went. The
+  // invariant is unchanged — autoplay is offered on the canvas — only its shape moved, so this
+  // matches the control rather than the menu row it used to be.
+  assert.match(CONTROLS, /aria-pressed=\{voiceOn\}/, "autoplay is not offered on the canvas");
+  assert.match(CONTROLS, /"Read responses aloud"/, "the control no longer says what it does");
+  // 🔴 SCOPED TO THE COMPONENT, because the canvas has a SECOND `⋮` — Session options, by the
+  // title — which the owner did not ask about and which is still a real menu. A file-wide search
+  // for the glyph reddens on that one, which my first version of this line did.
+  const control = CONTROLS.slice(CONTROLS.indexOf("export function OptionsControl"));
+  const body = control.slice(0, control.indexOf("\n}"));
+  assert.ok(!/kebab-vertical/.test(body), "the `⋮` is back on the read-aloud control");
+  assert.ok(!/useState/.test(body), "the read-aloud control grew a menu again");
   assert.match(VOICE_HOOK, /if \(mode !== "on"\) return;\n    replyAudio\.start\(reply\.text\)/, "autoplay does not start the audio");
 });
 
