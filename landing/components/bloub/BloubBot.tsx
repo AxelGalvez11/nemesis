@@ -42,6 +42,7 @@ import { capsulePath } from "@/lib/bloub/shape";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 import { browFrame } from "@/lib/character/brow";
+import { spinTour } from "@/lib/character/spin";
 import { restingFace } from "@/lib/character/face";
 import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@/lib/character/pool";
 
@@ -151,6 +152,22 @@ export interface BloubBotProps {
    * Ignored on a still (`frozenAt`, or reduced motion): there is no loop to animate it.
    */
   waggle?: boolean;
+  /**
+   * Turn the character all the way round, once.
+   *
+   * 🔴 THE SAME MECHANISM THE ENTRANCE USES, NOT A SECOND ONE. `lookTarget` already carries a
+   * full `SPIN` that fades to nothing as its `tour` runs 0 to 1; this simply drives that tour
+   * from its own stamp, on its own curve (`lib/character/spin.ts`). So a spin is the arrival
+   * gesture replayed on demand, and the body is no more touched by it than by the arrival.
+   *
+   * 🔴 A BOOLEAN ON THE SCENE CLOCK, exactly like `waggle` above and for the same reason: a turn
+   * driven by its own wall-clock timer would keep going on a paused character and run at full
+   * speed on a slowed one.
+   *
+   * Only the resting-face states are steerable, so a caller that wants this to be visible has to
+   * be resting while it runs — see `Mascot.tsx`, which holds `idle` for the duration.
+   */
+  spin?: boolean;
   /** Freeze at this many seconds into the state. Reproducible; no loop is started. */
   frozenAt?: number;
   /** Playback rate. 0 pauses the scene clock. */
@@ -187,6 +204,7 @@ export function BloubBot({
   entrance = false,
   onPoke,
   waggle = false,
+  spin = false,
   frozenAt,
   speed = 1,
   reducedMotion,
@@ -402,6 +420,14 @@ export function BloubBot({
     waggledRef.current = waggle;
     waggleFromRef.current = waggle ? clockRef.current : null;
   }
+  /** Scene-clock instant the current turn was asked for, or null when none is running. Stamped
+   *  during render for the same first-frame reason as the waggle above. */
+  const spinFromRef = useRef<number | null>(null);
+  const spunRef = useRef(false);
+  if (spin !== spunRef.current) {
+    spunRef.current = spin;
+    spinFromRef.current = spin ? clockRef.current : null;
+  }
   /**
    * 🔴 THE GAZE'S BOOKKEEPING OUTLIVES THE LOOP, AND THAT IS THE WHOLE POINT.
    *
@@ -545,9 +571,16 @@ export function BloubBot({
         lookTarget({
           nx: at ? clamp((at.x - (box.left + box.width / 2)) / halfW, -1, 1) : 0,
           ny: at ? clamp((at.y - (box.top + box.height / 2)) / halfH, -1, 1) : 0,
-          tour: live.current.entrance
-            ? easings.easeOutQuint(clamp((clockRef.current - turnSinceRef.current) / TURN_TIME))
-            : 1,
+          // 🔴 A REQUESTED TURN OUTRANKS THE ARRIVAL'S, and it has to: they are the same
+          // `tour` channel, so without this the entrance's long-finished `1` would hold the
+          // spin at "already over". When it ends, `turnSinceRef` is far enough in the past that
+          // the arrival expression is 1 too, so handing back is not a jump.
+          tour:
+            spinFromRef.current !== null
+              ? spinTour(clockRef.current - spinFromRef.current)
+              : live.current.entrance
+                ? easings.easeOutQuint(clamp((clockRef.current - turnSinceRef.current) / TURN_TIME))
+                : 1,
           pointer: at !== null,
         }),
         clockRef.current,
