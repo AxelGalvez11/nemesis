@@ -2163,6 +2163,23 @@ export function LearningCanvas({
                whole surface is busy rather than one region of it. */
             <div className="pointer-events-none absolute inset-0 bg-(--ui-bg-editor)/70" />
           )}
+
+        {/* 🔴🔴 WHERE THE ANSWER ENDS, WHICH IS WHERE THE CHARACTER STANDS (owner 2026-08-26: *"make
+            the mascot sit under the answer"*). A zero-height marker rather than a ref on any one
+            region, because "the answer" is whichever region painted: a reply, a document, a policy
+            question, the quiet state. All of them end here, so this is the one place that is right
+            for every one of them without anybody enumerating them.
+
+            🔴 IT IS THE LAST CHILD OF THE SCROLLER, so it moves with the content. `CharacterDock`
+            re-measures it on a frame-throttled scroll listener, which is why the character scrolls
+            away with its answer instead of hovering over the page. The id is load-bearing: the dock
+            finds it with `document.querySelector`, and renaming one side silently returns the
+            character to its fallback corner. */}
+        {/* 🔴 IT WEARS THE READING COLUMN, AND THAT IS NOT DECORATION. Measured: as a bare `h-0`
+            div it stretched the full width of the scroller, so its `left` was 0 and the character
+            lined up with the edge of the WINDOW instead of the edge of the text. Claude's mark sits
+            on the answer's own left edge; this is the element that decides ours does too. */}
+        <div aria-hidden="true" className="mx-auto h-0 w-full max-w-(--canvas-column) px-6" id="canvas-answer-end" />
       </div>
 
       {/* 🔴 THE POLICY'S ERROR WINS ONLY WHEN THE POLICY IS ON SCREEN. Both runtimes can now hold an
@@ -2197,7 +2214,12 @@ export function LearningCanvas({
           outside the flow — it cannot reflow the lesson it is sitting on, and it cannot swallow
           a press meant for the composer behind it. */}
       <CharacterDock
-        anchor="#canvas-composer"
+        // 🔴 THE ANSWER, NOT THE COMPOSER. It stood on the composer's shoulder for the whole
+        // session; it now rests at the end of whatever Nemesis last put on the page, and travels to
+        // the centre while it works exactly as before. `gap` is Claude's measured 24px.
+        anchor="#canvas-answer-end"
+        gap={24}
+        place="under"
         // 🔴🔴 ONE CHARACTER ON SCREEN, EVER. A policy judgement draws its own — small, at the foot
         // of the page, beside the step it is narrating (see `CanvasThinking`, which explains why it
         // cannot simply be this dock moved to the centre). Without this the learner would get two:

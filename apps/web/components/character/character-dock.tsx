@@ -35,7 +35,7 @@ import { ThinkingMark } from "./thinking-mark";
 import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
 import { speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
-import { placeBeside } from "./character-place";
+import { placeBeside, placeUnder } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
 
 // 🔴 THE STYLESHEET COMES IN HERE NOW, AND FORGETTING IT COST AN AFTERNOON. It used to be
@@ -186,6 +186,16 @@ export interface CharacterDockProps {
    */
   anchor?: string;
   /**
+   * How the character stands relative to `anchor`.
+   *
+   * 🔴 "under" IS CLAUDE'S ARRANGEMENT, MEASURED (owner 2026-08-26: *"make the mascot sit under the
+   * answer"*). "beside" is the composer's shoulder, which is where it stood before and where it
+   * still stands on the front door. The mode is a prop rather than a second component because
+   * everything else — the travel, the caption, the poke, the gaze, the centre station it takes
+   * while thinking — is identical, and two components would be two characters.
+   */
+  place?: "beside" | "under";
+  /**
    * Distance from the left edge, px — used only when the anchor cannot be measured.
    *
    * 🔴 NORMALLY THE ANCHOR DECIDES, NOT THIS (owner 2026-08-20: "can we have the blob be just
@@ -245,6 +255,7 @@ export function CharacterDock({
   state = "idle",
   size = DOCK_SIZE,
   anchor,
+  place = "beside",
   left = 22,
   bottom = 24,
   gap = 14,
@@ -310,7 +321,14 @@ export function CharacterDock({
         return;
       }
       const r = el.getBoundingClientRect();
-      if (r.height === 0) {
+      // 🔴🔴 "NOT LAID OUT YET" IS A DIFFERENT MEASUREMENT FOR EACH MODE, AND CONFLATING THEM COST
+      // an hour. A composer that has not been laid out has height 0, so `beside` treats that as
+      // "fall back to the corner". The `under` anchor is a DELIBERATELY zero-height marker at the
+      // end of the answer — it has no height by design — so the same test sent the character
+      // straight back to the fallback corner on every measurement, and the whole feature was inert
+      // while looking implemented. A marker that has not been laid out has no WIDTH; it wears the
+      // reading column, so width is the honest emptiness test for it.
+      if (place === "under" ? r.width === 0 : r.height === 0) {
         setOffset(bottom);
         setInset(left);
         return;
@@ -342,25 +360,48 @@ export function CharacterDock({
       // with its left edge and floating a gap above it — which put it in the text column, over
       // the last line of whatever the learner was reading. The arithmetic lives in
       // `placeBeside` so it can be checked without a browser.
-      const at = placeBeside({
-        anchor: { left: r.left - originX, top: r.top, height: r.height },
-        coveredTop: top,
-        floor,
-        size,
-        gap,
-        bottom,
-      });
+      const at =
+        place === "under"
+          ? // 🔴 THE ANCHOR IS INSIDE A SCROLLER, WHICH IS WHY THE LISTENER BELOW EXISTS. Its rect
+            // changes on every scroll frame, not only when the layout changes, and a 120ms interval
+            // alone samples that at roughly 8fps — the character visibly stepping down the page
+            // behind the text. See the rAF-throttled scroll handler.
+            placeUnder({ anchor: { left: r.left - originX, bottom: r.bottom }, floor, size, gap, bottom })
+          : placeBeside({
+              anchor: { left: r.left - originX, top: r.top, height: r.height },
+              coveredTop: top,
+              floor,
+              size,
+              gap,
+              bottom,
+            });
       setInset(at.inset);
       setOffset(at.offset);
     };
     measure();
     const timer = window.setInterval(measure, MEASURE_MS);
     window.addEventListener("resize", measure);
+    // 🔴 ONE MEASUREMENT PER FRAME WHILE SCROLLING, AND NOT ONE PER EVENT. Scroll fires far faster
+    // than the screen repaints, and `measure` reads a rect — an unthrottled handler would force
+    // synchronous layout dozens of times between paints for a decorative character. `capture: true`
+    // because the element that actually scrolls is the canvas's inner column, not the window, and a
+    // capturing window listener hears every scroller without having to be told which one.
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    window.addEventListener("scroll", onScroll, { capture: true, passive: true });
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", onScroll, { capture: true });
+      if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [anchor, bottom, gap, contain, left, size]);
+  }, [anchor, bottom, gap, contain, left, place, size]);
 
   // ── Where it stands ──────────────────────────────────────────────────────────
   const station = stationOverride ?? stationOf(shown);
@@ -584,7 +625,17 @@ export function CharacterDock({
           // 🔴 A COLUMN NOW, BECAUSE TWO THINGS STACK HERE: the mark-and-sentence row, and the
           // sites underneath it. `whitespace-nowrap` moved down onto the sentence — the chips are
           // the one thing here that SHOULD wrap.
-          className={`character-caption pointer-events-none absolute flex select-none flex-col gap-1 text-[length:var(--canvas-text-small)] leading-none ${
+          // 🔴🔴 16px ON A 24px LINE, WAS 14px ON `leading-none` (owner 2026-08-26: *"the thinking
+          // preview is a bit small compared to the mascot… compare with ChatGPT or Claude for the
+          // sizing"*). Measured on claude.ai at the same 1470px viewport: their thinking caption is
+          // 14px on a 20px line beside a 20px mark. Theirs reads right because the whole pair is
+          // small together; ours sits beside a 76px character, so matching their TYPE SIZE would
+          // have kept exactly the mismatch the owner is pointing at. Matching their RATIO is the
+          // useful thing, and the type scale's next step up is `--canvas-text-body`.
+          //
+          // 🔴 AND A REAL LINE-HEIGHT. `leading-none` is 1em, which at 14px is survivable and at
+          // 16px puts the mark and the words in a box tighter than either of them.
+          className={`character-caption pointer-events-none absolute flex select-none flex-col gap-1.5 text-[length:var(--canvas-text-body)] leading-6 ${
             station === "centre" ? "items-center" : "items-start"
           }${station === "centre" ? " left-1/2 top-full" : " left-full top-1/2"}${leaving ? " canvas-preview-out" : ""}`}
           style={
@@ -605,7 +656,7 @@ export function CharacterDock({
               static can sit beside a live transform (see above); the mark is part of the same
               claim, so it lives in the same box and counter-scales with it. */}
           {caption ? (
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
+            <span className="flex items-center gap-2 whitespace-nowrap">
               {captionMark ? <ThinkingMark kind={captionMark} /> : null}
               {/* 🔴 THE SHIMMER PAINTS TEXT, SO IT MAY ONLY WRAP TEXT. `canvas-thinking-word`
                   clips a moving gradient to glyphs, which it does by setting `color:transparent`
