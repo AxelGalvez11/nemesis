@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { SPIN_TIME, spinTour } from "./spin";
+import { SPIN_STEP, SPIN_TIME, spinTour } from "./spin";
 
 describe("the poke turn", () => {
   it("starts at nothing and finishes the full circuit", () => {
@@ -47,6 +47,16 @@ describe("the poke turn", () => {
     expect(middle).toBeGreaterThan(opening);
     expect(middle).toBeGreaterThan(closing);
     expect(opening).toBeCloseTo(closing, 5);
+  });
+
+  // 🔴 THE NaN GUARD, AND IT IS NOT PEDANTRY. `BotEngine.lookAtTime` divides by this, and on the
+  // frame a look is set the numerator is zero too. A zero here makes that 0/0, and one NaN in the
+  // gaze is permanent — the engine refuses every later target and the character stops looking
+  // anywhere for the life of the page.
+  it("gives the engine a non-zero step shorter than a frame", () => {
+    expect(SPIN_STEP).toBeGreaterThan(0);
+    // 1/120s, the shortest frame worth planning for.
+    expect(SPIN_STEP).toBeLessThan(1 / 120);
   });
 
   it("takes longer than the entrance's arrival, which is the point of having its own", () => {
