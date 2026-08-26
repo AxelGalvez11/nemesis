@@ -111,8 +111,16 @@ test("🔴 a mis-tap is recoverable, because deferred marking is what made it in
   // While each tap was marked instantly, hitting the wrong row was obvious immediately. Deferring
   // the marking removes that signal, so the way back has to be explicit — otherwise this change
   // quietly turns a slip into a wrong answer the learner cannot see until the results.
-  assert.match(CHECK, /index > 0 && \(/, "Back is offered on the first question, where there is nothing behind");
-  assert.match(CHECK, />\s*Back\s*</, "there is no way back after a mis-tap");
+  // 🔴 REPOINTED 2026-08-26 FROM THE BUTTON TO THE PROPERTY. This pinned a control literally
+  // labelled `Back`, which was the way back until the card took Claude's numbered pips (owner:
+  // *"they should both bring up a proper component like in Claude code or like in Claude dot AI
+  // did"*). The pips ARE the way back, and they also say where you are, so one control replaced
+  // one-and-a-half. What must never go is the ability to return to a question already answered.
+  assert.match(CHECK, /onClick=\{\(\) => setIndex\(at\)\}/, "there is no way back after a mis-tap");
+  // 🔴 AND ONLY BACKWARDS. Jumping ahead lets a learner read question eight before answering one,
+  // which is not a navigation preference — it is reading the whole test before committing to any
+  // of it.
+  assert.match(CHECK, /disabled=\{at >= index\}/, "the learner can skip ahead and read the test before answering it");
 });
 
 test("🔴 no deck is written behind the learner's back when a check ends", () => {

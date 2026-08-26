@@ -260,11 +260,17 @@ export function LearningCanvas({
    * Canvas."* Making a thing and then leaving a card to be clicked is one step too many — you asked
    * for the document, so the document arrives.
    *
-   * 🔴 FLASHCARDS GO FULL SCREEN INSTEAD, BY NAME. Owner: *"flashcards should be different. They
-   * should be one that can be full screen just like an Anki with an x on it."* A deck is not a
-   * document you read beside the conversation; it is a thing you sit down and do, and `ReviewSession`
-   * is already a `100dvh` surface with a close. So the one kind that is not a reader is routed away
-   * from the reader rather than squeezed into it.
+   * 🔴🔴 FLASHCARDS ARE THE EXCEPTION, AND THE EXCEPTION CHANGED ON 2026-08-26: *"flash cards
+   * should be output as a artifact."* They used to seize the screen the moment they were made —
+   * `setReviewingDeck` here, straight into a 100dvh review — which is not what "made you something"
+   * looks like anywhere else in the product. Nothing is lost: `artifact-card.tsx` already draws a
+   * flashcards card with its own icon and tint, it already sits in the conversation beside every
+   * other output, and pressing it still opens the full-screen review with the × the owner asked for
+   * on 2026-08-25. What changed is that the learner presses it.
+   *
+   * 🔴 SO IT IS STILL NOT ROUTED TO THE READER EITHER. A deck is not a document you read beside the
+   * conversation; it is a thing you sit down and do. Making nothing open is the honest third
+   * option, and it is the one the two owner rulings agree on.
    *
    * 🔴 KEYED ON THE ARTIFACT'S ID SO IT OPENS ONCE. Without the latch, closing the reader on an
    * artifact still held in `madeArtifact` would re-open it on the next render — a panel that cannot
@@ -275,8 +281,8 @@ export function LearningCanvas({
     const made = session.madeArtifact;
     if (!made || openedArtifactId.current === made.id) return;
     openedArtifactId.current = made.id;
-    if (made.kind === "flashcards" && made.deckId) setReviewingDeck(made.deckId);
-    else setOpenArtifact(made);
+    if (made.kind === "flashcards") return;
+    setOpenArtifact(made);
   }, [session.madeArtifact]);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
