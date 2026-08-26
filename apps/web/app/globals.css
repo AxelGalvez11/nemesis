@@ -908,6 +908,41 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-passage-enter { from { opacity: 0; } to { opacity: 1; } }
 .canvas-passage-enter { animation: canvas-passage-enter 180ms ease-out both; }
 
+/* An ANSWER arriving, block by block (owner 2026-08-26: "make sure that the output of DeepSeek
+   fades in nicely").
+
+   🔴 A SEPARATE CLASS FROM `.canvas-swap`, WHICH IT MUST NOT TOUCH. The rule written above this —
+   opacity only, and short — is about the DRILL boundary, where someone doing fifty facts crosses it
+   fifty times and anything richer becomes the dominant experience of the surface. An answer is the
+   opposite case: it is read once, it is the thing the learner asked for, and it currently appeared
+   fully formed in a single 140ms opacity step, which reads as a paste rather than as a reply. The
+   drill keeps its 140ms; only the answer gets this.
+
+   🔴 THE ANSWER DOES NOT STREAM, AND THAT IS WHY THIS IS NEEDED AT ALL. `canvas-chat.ts` calls the
+   model door with no `onDelta`, so `chat-api.ts` never sets `stream: true` and the whole reply
+   lands in one `setState`. Until that changes, this stagger is what gives the arrival any shape.
+
+   🔴 STAGGERED BY BLOCK, NEVER BY WORD. `lib/reveal-text.tsx` and `.rv-w` above do word-by-word and
+   are the obvious reach; on a long answer they take seconds and hold the learner at reading speed
+   the model does not actually have. Blocks give the same sense of arrival in a fixed budget.
+
+   🔴 AND THE BUDGET IS CAPPED ON PURPOSE. Past the eighth block every remaining one shares the last
+   delay, so a forty-paragraph answer finishes in the same 300ms a three-paragraph one does. An
+   uncapped stagger is a wait that grows with the quality of the reply. */
+@keyframes canvas-answer-block {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.canvas-answer-in > * { animation: canvas-answer-block 240ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.canvas-answer-in > :nth-child(1) { animation-delay: 0ms; }
+.canvas-answer-in > :nth-child(2) { animation-delay: 40ms; }
+.canvas-answer-in > :nth-child(3) { animation-delay: 80ms; }
+.canvas-answer-in > :nth-child(4) { animation-delay: 120ms; }
+.canvas-answer-in > :nth-child(5) { animation-delay: 155ms; }
+.canvas-answer-in > :nth-child(6) { animation-delay: 190ms; }
+.canvas-answer-in > :nth-child(7) { animation-delay: 220ms; }
+.canvas-answer-in > :nth-child(n+8) { animation-delay: 250ms; }
+
 /* The thinking state's caption, changing as the real step changes. Slower than
    the swap: this is ambient, and a fast flicker between phases reads as churn. */
 @keyframes canvas-phrase-in { from { opacity: 0; } to { opacity: 1; } }
@@ -1040,6 +1075,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
    cannot reach outside it. */
 @media (prefers-reduced-motion: reduce) {
   .canvas-swap,
+  .canvas-answer-in > *,
   .canvas-passage-enter,
   .canvas-phrase,
   .canvas-chrome-in,

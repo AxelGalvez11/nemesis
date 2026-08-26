@@ -36,6 +36,7 @@ import {
   Layers,
   MonitorPlay,
   NotebookText,
+  Search,
   Share2,
 } from "lucide-react";
 
@@ -108,9 +109,131 @@ const SHELVES: readonly { id: Shelf; label: string }[] = [
   { id: "note", label: "Documents" },
 ];
 
-const SECTION_TITLE = "px-1 pb-2 text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-secondary)";
+/* ── THE GEOMETRY BELOW WAS MEASURED, NOT CHOSEN ─────────────────────────────────────────────
+ *
+ * 🔴🔴 EVERY LITERAL PIXEL VALUE IN THIS FILE COMES OFF A LIVE, SIGNED-IN CHATGPT LIBRARY PAGE
+ * (`getComputedStyle` / `getBoundingClientRect`, viewport 1456px, 2026-08-26). The owner's
+ * acceptance condition for this page is "pixel, sizing, spacing and colouring 1 to 1", so an
+ * approximation is a failure, not a near miss. Where this app already owns a token that carries
+ * the measured value — 14px text, the primary/secondary text colours — the token is used. Where
+ * it does not (the page ground, the divider, the row hover) the measured value is written as a
+ * literal, because rounding it to the nearest token we happened to have is exactly how a 1:1
+ * brief turns into "close enough".
+ *
+ *   page ground     #fcfcfc (their `--component-sidebar-bg`) — which our `--ui-bg-sidebar`
+ *                   already IS in light; NOT white, and copying #fff is the most visible miss
+ *   column          768px, centred
+ *   title           28px / 500 / 34px line, top edge at y=116
+ *   pills           36px tall, padding 0 16px, rounded full, 14px / 500 / 20px line, top at y=204
+ *   search          36px tall, 240px wide, 14px, rounded full, leading magnifier
+ *   row             60px tall, padding 10px 8px 10px 0, NO radius, NO box, NO shadow
+ *   divider         1px bottom, rgba(0,0,0,0.05) light / rgba(255,255,255,0.05) dark
+ *   row hover       rgba(0,0,0,0.05) light / rgba(255,255,255,0.10) dark
+ *   leading icon    20x20, `--icon-secondary`
+ *   name            14px / 400 / `--text-primary`, truncating
+ *   meta            14px / `--text-secondary`
+ *   column headers  14px / 400 / `--text-secondary`, 20px tall
+ *   columns         Name 368 / Modified 160 / Size 88 (Size has padding-left 16px)
+ *
+ * 🔴🔴🔴 EVERY SIZE AND SPACE ON THIS PAGE IS AN EXPLICIT PX VALUE, BECAUSE ONE REM IS 18px HERE.
+ * `globals.css` sets `html { font-size: 112.5% }` to scale the whole desktop-parity UI, so EVERY
+ * rem-based Tailwind utility renders 12.5% larger than its name says. `px-4` is 18px, not 16.
+ * `h-9` is 40.5px, not 36. `leading-5` is 22.5px, not 20. `size-7` is 31.5px, not 28. `gap-3` is
+ * 13.5px, not 12. `max-w-3xl` is 864px, NOT the 768 it is famous for.
+ *
+ * The first draft of this page used `h-9`, `px-4` and `leading-5` and measured 40.5 / 18 / 22.5 in
+ * real Chrome while the source read exactly like the reference. That is the worst shape a bug can
+ * take on a 1:1 brief: every class name is the right number and every pixel is wrong, and there is
+ * nothing for a reviewer to see. So there is no judgement call here and no "this one is close
+ * enough" — anything with a size or a space is written `h-[36px]`, `px-[16px]`, `mr-[12px]`, and a
+ * test bans the rem-based steps from this file by name. `globals.css` says it outright too:
+ * *"WRITE THESE IN PX, NEVER REM"*.
+ *
+ * 🔴 THE ROWS ARE DIVIDERS, NOT CARDS. This page used to draw `rounded-xl` boxes with their own
+ * hover; the reference draws a flat 60px band whose ONLY separator is a hairline underneath it.
+ * A rounded hover on a 60px band reads as a list of buttons, which is a different object.
+ */
+
+/**
+ * Reference: the 20x20 leading icon plus its 12px gap — 32px before the Name column starts.
+ *
+ * 🔴 THE GAP IS ON THE ICON, NOT ON THE FLEX CONTAINER. A `gap-3` on the row would put 12px
+ * between every pair of columns, and the measured columns (368 / 160 / 88) butt straight up
+ * against each other — a table's columns include their own padding. With the gap where it belongs
+ * the Name column lands on exactly 368px: 768 − 8 (right pad) − 32 (icon) − 160 − 88 − 112.
+ */
+const COL_ICON = "mr-[12px] shrink-0 text-(--ui-text-secondary)";
+/** Reference: `Modified` column, 160px. */
+const COL_MODIFIED = "w-[160px] shrink-0";
+/**
+ * Reference: the third column (`Size`) is 88px with `padding-left:16px`.
+ *
+ * 🔴 WE DO NOT HAVE A SIZE, SO WE DO NOT PRINT ONE. A deck's card count is a real number we
+ * actually hold, so the deck shelf spends this column on it and labels it "Cards". Slides and
+ * documents have nothing to put here, so the column stays EMPTY AND UNLABELLED on those shelves —
+ * a header word over nothing, or a column of em dashes forever, would be a promise the page can
+ * never keep.
+ *
+ * 🔴 EMPTY, BUT STILL THERE, AND THAT IS THE POINT. Dropping the column on the shelves without a
+ * count moved their `Modified` 88px left, so the three shelves printed their dates in three
+ * different places and the page read as three unrelated tables. Holding the space keeps one set
+ * of column stops down the whole page AND puts `Name` on the reference's measured 368px on every
+ * shelf rather than only on one.
+ */
+const COL_COUNT = "w-[88px] shrink-0 pl-[16px]";
+/**
+ * The trailing controls sit in a fixed slot so the columns line up with their own header.
+ *
+ * 🔴 112px IS DERIVED FROM THE REFERENCE, NOT PICKED. 768 (row) − 8 (right pad) − 368 (Name)
+ * − 32 (20px icon + 12px gap) − 160 (Modified) − 88 (Size) = 112 — the space their hover menu
+ * lives in. Four 28px controls fit it exactly, which is why the row buttons are `size-[28px]`.
+ */
+const COL_ACTIONS = "flex w-[112px] shrink-0 items-center justify-end";
+
+/**
+ * A shelf's name. 14px / 500 / `--text-primary` — the reference's own section-header type.
+ *
+ * 🔴 500 HERE, 400 ON `COLUMN_HEAD`, AND THE TWO ARE DIFFERENT OBJECTS. The reference measures a
+ * section header at weight 500 and a column header at weight 400; this page has both, stacked,
+ * because it has three shelves where the reference has one list.
+ *
+ * 🔴 24px OF AIR UNDER IT, AS A MARGIN, NOT AS PADDING. Two 14px lines 8px apart read as one
+ * block, so the shelf name and the `Name / Modified / Cards` line beneath it ran together. The
+ * gap is a margin because padding would sit INSIDE the heading's own box: with `pb-[24px]` the
+ * h2's rect ended 20px above the first row, so anything reading the page geometrically — a
+ * measuring harness, a screen reader walking boxes — saw a 500-weight heading where the
+ * 400-weight column header is. Same pixels on screen, and one of the two is honest about which
+ * element is which.
+ */
+const SECTION_TITLE = "mb-[24px] text-[14px] font-medium text-(--ui-text-primary)";
+/**
+ * Reference: 14px / weight 400 / `--text-secondary`, 20px tall, sitting above the list.
+ *
+ * 🔴 `leading-[20px]` IS PART OF THE 20px, NOT DECORATION. The app's body line-height is 1.6, so
+ * 14px text draws a 22.4px line box — inside a 20px row that overflows by 1.2px at each end, and
+ * the header's own words then hang BELOW the box that is supposed to be 20 tall. Everything reads
+ * fine on screen and nothing that measures the page agrees with it.
+ */
+const COLUMN_HEAD =
+  "flex h-[20px] items-center pr-[8px] text-[14px] leading-[20px] font-normal text-(--ui-text-secondary)";
+/**
+ * One row band: 60px tall, `10px 8px 10px 0`, and a hairline underneath. Hover and divider live
+ * HERE, on the whole 768px band, rather than on the clickable part — a row whose trailing controls
+ * do not light up with it is two objects pretending to be one.
+ */
 const ROW =
-  "flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:bg-(--ui-control-hover-background)";
+  "flex h-[60px] items-center border-b border-b-black/[0.05] py-[10px] pr-[8px] text-left transition-colors hover:bg-black/[0.05] dark:border-b-white/[0.05] dark:hover:bg-white/[0.10]";
+/** The clickable part of a row: fills the band's 40px content box, never paints its own ground. */
+const ROW_MAIN = "flex h-full min-w-0 flex-1 items-center bg-transparent text-left";
+/** Name cell: 14px / 400 / `--text-primary`, truncating. */
+const ROW_NAME = "min-w-0 flex-1 truncate text-[14px] font-normal text-(--ui-text-primary)";
+/** Meta cell (dates, counts): 14px / `--text-secondary` — NOT the 12px quaternary this used. */
+const ROW_META = "text-[14px] text-(--ui-text-secondary)";
+/** A trailing control: 28x28, four of which fill `COL_ACTIONS` exactly. */
+const ROW_ACTION =
+  "flex size-[28px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-secondary) transition-colors hover:bg-black/[0.05] hover:text-(--ui-text-primary) disabled:opacity-40 dark:hover:bg-white/[0.10]";
+/** Empty-state and loading copy, at the same 14px the rows use. */
+const ROW_EMPTY = "py-[12px] text-[14px] text-(--ui-text-secondary)";
 
 function when(iso: string): string {
   const date = new Date(iso);
@@ -119,15 +242,35 @@ function when(iso: string): string {
   return date.toLocaleDateString(undefined, { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) });
 }
 
-export function LibraryOutputs({ userId }: { userId: string | null }) {
-  const [decks, setDecks] = useState<DeckRow[]>([]);
-  const [notes, setNotes] = useState<NoteRow[]>([]);
+/**
+ * Rows handed in instead of read from the database, for the dev-only preview route.
+ *
+ * 🔴🔴 IT SUBSTITUTES THE ROWS, NOT THE COMPONENT, and that is the only thing that makes a
+ * measurement of the preview mean anything about the real page. Every class, every column and
+ * every control below is the shipped one; the sole difference is where four arrays came from.
+ * A preview that re-assembled the surface would prove nothing — see `/dev-preview/library`, which
+ * set this rule for the canvas manager, and `/dev-preview/projects`, which follows it.
+ *
+ * 🔴 IT EXISTS BECAUSE THE 1:1 CLAIM HAS TO BE MEASURED RATHER THAN ASSERTED. The real route is
+ * behind a Supabase session, so nothing headless reaches a single row of it, and the row geometry
+ * is most of what the owner is accepting.
+ */
+export interface LibraryPreview {
+  readonly decks: readonly DeckRow[];
+  readonly notes: readonly NoteRow[];
+  readonly slides: readonly SlidesRow[];
+  readonly folders: readonly Folder[];
+}
+
+export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; userId: string | null }) {
+  const [decks, setDecks] = useState<DeckRow[]>(() => [...(preview?.decks ?? [])]);
+  const [notes, setNotes] = useState<NoteRow[]>(() => [...(preview?.notes ?? [])]);
   /** The document open on screen, as the shape the shared card takes. */
   const [readingNote, setReadingNote] = useState<CanvasOutput | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(preview !== undefined);
   const [openDeck, setOpenDeck] = useState<string | null>(null);
   const [cards, setCards] = useState<Record<string, Card[]>>({});
-  const [slides, setSlides] = useState<SlidesRow[]>([]);
+  const [slides, setSlides] = useState<SlidesRow[]>(() => [...(preview?.slides ?? [])]);
   // Which deck is being REVIEWED. Held apart from `openDeck` (which only peeks at the
   // text) because mounting DeckReview is what triggers the whole-account study load —
   // see its header. Null means nothing is mounted and nothing has been fetched.
@@ -148,12 +291,25 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   // switching back is instant. A learner who files a deck and then changes the filter must not
   // watch the page reload to show them something it already had.
   const [shelf, setShelf] = useState<Shelf>("all");
-  const [folders, setFolders] = useState<Folder[]>([]);
+  /**
+   * What the search box holds.
+   *
+   * 🔴 IT NARROWS, IT DOES NOT FETCH. The reference puts a 240px search on the title row, and a
+   * search that went to the server would be a different page — every row is already in hand (200
+   * per shelf), so this is the same `filter` the shelf pills are, over the names the learner can
+   * already see. An empty box means "everything", exactly like the "All" pill.
+   */
+  const [query, setQuery] = useState("");
+  const [folders, setFolders] = useState<Folder[]>(() => [...(preview?.folders ?? [])]);
   /** null means "everything, wherever it is filed" — the arrival view. */
   const [openFolder, setOpenFolder] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!userId) {
+    // 🔴 THE PREVIEW ROUTE NEVER REACHES THE DATABASE. Its rows are already in state (seeded at
+    // mount), and letting the fetch run would overwrite them with the empty results a
+    // credential-less environment returns — which is exactly the "no rows to measure" hole this
+    // seam exists to close.
+    if (preview || !userId) {
       setLoaded(true);
       return;
     }
@@ -234,6 +390,9 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
     return () => {
       alive = false;
     };
+    // `preview` is a dev-only constant for the life of the route, so it is deliberately not a
+    // dependency: the shelves still load on the account and nothing else.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   /**
@@ -291,9 +450,24 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
     [openFolder],
   );
 
-  const shownDecks = useMemo(() => inFolder(decks), [decks, inFolder]);
-  const shownNotes = useMemo(() => inFolder(notes), [notes, inFolder]);
-  const shownSlides = useMemo(() => inFolder(slides), [slides, inFolder]);
+  /**
+   * The search box, applied the same way the folder test is: one predicate, all three shelves.
+   *
+   * 🔴 IT MATCHES THE NAME THE ROW PRINTS, and nothing else. Searching hidden fields (a path, an
+   * id) would show the learner rows whose visible text does not contain what they typed, which
+   * reads as a broken filter rather than a clever one.
+   */
+  const matches = useCallback(
+    (name: string): boolean => {
+      const needle = query.trim().toLowerCase();
+      return needle === "" || name.toLowerCase().includes(needle);
+    },
+    [query],
+  );
+
+  const shownDecks = useMemo(() => inFolder(decks).filter((row) => matches(row.name)), [decks, inFolder, matches]);
+  const shownNotes = useMemo(() => inFolder(notes).filter((row) => matches(row.title)), [notes, inFolder, matches]);
+  const shownSlides = useMemo(() => inFolder(slides).filter((row) => matches(row.title)), [slides, inFolder, matches]);
 
   /** How many outputs of any kind sit in each folder — a folder chip that never says 0 is a lie. */
   const folderCounts = useMemo(() => {
@@ -374,12 +548,95 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
   }, []);
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-10">
-      <header className="pb-8">
+    // 🔴🔴 THE PAGE GROUND IS NOT WHITE, and getting this wrong is the single most visible 1:1
+    // miss on the page: the reference paints its page `--component-sidebar-bg` (#fcfcfc), and a
+    // pure-white surface beside a tinted sidebar reads as a seam down the middle of the app.
+    //
+    // 🔴 THE TOKEN, NOT A `#fcfcfc` LITERAL. Our light theme was calibrated against the same app,
+    // so `--ui-bg-sidebar` ALREADY resolves to #fcfcfc — the measured value and our token are the
+    // same colour, and freezing it as a literal would opt this one page out of the theme system.
+    // In dark it deliberately diverges: the reference paints #181818, ours is pure black by an
+    // explicit owner decision (2026-08-05), and one page on a different dark ground from every
+    // other screen would be a worse failure than the 1:1 miss. The Projects page resolves it the
+    // same way, and the two are meant to be indistinguishable when opened back to back.
+    //
+    // 🔴 AND IT IS THE SCROLLER. The shell hands every route a fixed-height, `overflow-hidden`
+    // box (workspace-shell.tsx), so a page that does not scroll itself is simply clipped at the
+    // fold — the settings page already solves it exactly this way.
+    <div className="scrollbar-dt h-full min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain bg-(--ui-bg-sidebar) px-[24px]">
+      {/* 🔴 768px, CENTRED — and written as the literal because `max-w-3xl` IS NOT 768px HERE.
+          It is 48rem, and one rem is 18px on this app, so it renders 864. This page shipped
+          `max-w-3xl` for months and was 96px too wide the whole time.
+          🔴 THE GUTTER IS ON THE SCROLLER, NOT ON THIS COLUMN. Padding here would eat into the 768
+          and put every measured column width (368 / 160 / 88) out by the same amount. */}
+      <main className="mx-auto w-full max-w-[768px] pb-[96px]">
+        {/* 🔴 THE TITLE'S TOP EDGE LANDS ON y=116, measured. The row is 36px tall (the search box
+            sets it) and the 34px title centres inside it, so 115px of padding puts the title's own
+            box at 116 — and the pills' 53px margin below puts their top edge on the measured 204. */}
+        <header className="pt-[115px] pb-[24px]">
         {/* 🔴 NO SUBTITLE — owner, 2026-08-24: *"remove the description under the library heading."*
             The shelves say what the page holds, and a sentence explaining a page the learner has
             already opened is the kind of chrome §41 refuses. It also went stale twice in one day. */}
-        <h1 className="text-xl font-semibold text-(--ui-text-primary)">Library</h1>
+        <div className="flex items-center gap-[8px]">
+          {/* Reference: 28px / weight 500 / 34px line-height / `--text-primary`. The `mr-auto` is
+              what pushes the search and the primary button to the right of the same row, which is
+              where the reference's shared frame puts them on every one of its pages. */}
+          <h1 className="mr-auto text-[28px] font-medium leading-[34px] text-(--ui-text-primary)">Library</h1>
+          {/* 🔴 36px TALL, 240px WIDE, ROUNDED FULL, WITH A LEADING MAGNIFIER — measured off the
+              reference's own title row.
+
+              🔴 THE FILL IS THE ONE UNMEASURED VALUE HERE. The reference publishes the field's box
+              but not its ground, so this is an outlined pill on the reference's own
+              `--border-default` (10% black / 15% white) rather than a guessed grey. It is the same
+              string the Projects page uses, because a search box that differed between two pages
+              of one frame would be the first thing anyone noticed. */}
+          <div className="relative h-[36px] w-[240px] shrink-0">
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute top-1/2 left-[12px] -translate-y-1/2 text-(--ui-text-secondary)"
+              size={16}
+              strokeWidth={1.8}
+            />
+            <input
+              aria-label="Search the library"
+              className="h-full w-full rounded-full border border-black/[0.10] bg-transparent pl-[36px] pr-[12px] text-[14px] text-(--ui-text-primary) placeholder:text-(--ui-text-secondary) focus:outline-none dark:border-white/[0.15]"
+              onChange={(event) => setQuery(event.target.value)}
+              // 🔴 `text`, NOT `search`. WebKit gives `type="search"` its own clear affordance and
+              // its own metrics, which is a control the reference does not draw and a box whose
+              // height stops being ours. The Projects page's field is `text` for the same reason.
+              placeholder="Search library"
+              type="text"
+              value={query}
+            />
+          </div>
+          {/* 🔴 ONLY AT THE TOP LEVEL. Folders nest two deep in the database and the sidebar already
+            spends that second level; offering "New folder" from inside one would either make a
+            third level the trigger refuses, or quietly make a sibling, and neither is what the
+            button says.
+
+            🔴🔴 IT IS THE SOLID PRIMARY BUTTON THE REFERENCE'S FRAME HAS, not the faint text
+            link this used to be. The reference puts one filled pill on every page of this frame
+            (its black "New"), and the Library's equivalent is this. It had been drawn in
+            `--ui-text-secondary` on transparent, which in dark mode is a control you have to
+            hunt for.
+
+            🔴 `--ui-action`, NOT THE REFERENCE'S `#0d0d0d`. The two are three units apart and
+            indistinguishable on screen, but `--ui-action` is the product's accent — the owner
+            ruled 2026-08-23 that the send button and the mascot follow one colour, and the
+            Settings picker writes this token. A literal here would be the one button in the app
+            that ignores the learner's chosen accent. The Projects page's "New" is this exact
+            string, deliberately: the two pages are meant to be indistinguishable side by side. */}
+          {openFolder === null && naming === null && (
+            <button
+              className="flex h-[36px] shrink-0 items-center gap-[6px] rounded-full bg-(--ui-action) px-[16px] text-[14px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-80"
+              onClick={() => setNaming("")}
+              type="button"
+            >
+              <FolderPlus size={16} strokeWidth={1.8} />
+              New folder
+            </button>
+          )}
+        </div>
         {/* 🔴🔴 BOTH DOORS REMOVED — owner, 2026-08-24: "the library page has an import from Anki
             button that I don't want. The library also has a progress button that I did not ask for.
             I mainly just want buttons for slides, flash cards, and documents." They arrived here
@@ -403,45 +660,28 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
             🔴 IT ALSO MAKES THE COUNT HONEST. A chip reading "Fall 2026 · 3" was counted across all
             three kinds while these pills might be showing only one of them. A folder you OPEN just
             shows what is in it. */}
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {SHELVES.map((option) => (
-              <button
-                aria-pressed={shelf === option.id}
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-[length:var(--canvas-text-small)] transition-colors",
-                  shelf === option.id
-                    ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary)"
-                    : "bg-transparent text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
-                )}
-                key={option.id}
-                onClick={() => setShelf(option.id)}
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          {/* 🔴 ONLY AT THE TOP LEVEL. Folders nest two deep in the database and the sidebar already
-              spends that second level; offering "New folder" from inside one would either make a
-              third level the trigger refuses, or quietly make a sibling, and neither is what the
-              button says.
-
-              🔴 `--ui-text-secondary`, NOT `--ui-text-quaternary`. Measured against the reference
-              in dark mode: quaternary resolves to white at 36% on a pure-black ground, which is a
-              control you have to hunt for. ChatGPT's equivalent is a solid, prominent button;
-              secondary (74%) is this app's nearest honest equivalent and reads in both themes. The
-              unselected filter pills use the same token, so the row speaks with one voice. */}
-          {openFolder === null && naming === null && (
+        {/* 🔴 THE PILL ROW'S TOP EDGE LANDS ON y=204 — 53px below a title row that ends at 151. */}
+        <div className="mt-[53px] flex flex-wrap items-center gap-[6px]">
+          {SHELVES.map((option) => (
             <button
-              className="flex shrink-0 items-center gap-1.5 rounded-full bg-transparent px-3 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-primary)"
-              onClick={() => setNaming("")}
+              aria-pressed={shelf === option.id}
+              // Reference: 36px tall, padding `0 16px`, rounded full, 14px / 500 / 20px line.
+              // 🔴 WEIGHT 500 IN BOTH STATES. Bolding only the selected pill makes the row's
+              // labels change width as you press them, which is a wobble the reference has not
+              // got — there, selection is carried by the ground and the text colour alone.
+              className={cn(
+                "flex h-[36px] items-center rounded-full px-[16px] text-[14px] font-medium leading-[20px] transition-colors",
+                shelf === option.id
+                  ? "bg-[#f3f3f3] text-(--ui-text-primary) dark:bg-[#414141]"
+                  : "bg-transparent text-(--ui-text-secondary) hover:bg-black/[0.05] dark:hover:bg-white/[0.10]",
+              )}
+              key={option.id}
+              onClick={() => setShelf(option.id)}
               type="button"
             >
-              <FolderPlus size={14} strokeWidth={1.8} />
-              New folder
+              {option.label}
             </button>
-          )}
+          ))}
         </div>
 
         {/* 🔴🔴 THERE IS NO SECOND ROW OF PILLS, AND REMOVING IT WAS THE OWNER'S CATCH: *"why is
@@ -461,28 +701,41 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           filtered by the kind pills: a folder holds decks, slides and notes at once, so hiding it
           because the learner is looking at slides would hide the slides inside it too. */}
       {openFolder === null && (folders.length > 0 || naming !== null) && (
-        <section className="pb-6">
-          <ul className="flex flex-col gap-0.5">
+        <section className="pb-[24px]">
+          <h2 className={SECTION_TITLE}>Folders</h2>
+          <ul className="flex flex-col">
+            {/* 🔴 A COUNT IS NOT A DATE, SO IT DOES NOT SIT IN THE DATE COLUMN. This printed
+                "3 items" in the same column position where all three shelves below print a
+                Modified date, under no header at all — one column saying two different kinds of
+                thing. It lives in the count column now, beside the deck shelf's card counts, and
+                the Modified column stays empty because a folder genuinely has no modified date.
+                An empty cell says "not applicable"; a borrowed `createdAt` under a header reading
+                "Modified" would say something false. */}
+            <li className={COLUMN_HEAD}>
+              <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
+              <span className="min-w-0 flex-1">Name</span>
+              <span aria-hidden className={COL_MODIFIED} />
+              <span className={COL_COUNT}>Items</span>
+              <span aria-hidden className={COL_ACTIONS} />
+            </li>
             {folders.map((folder) => (
               <li key={folder.id}>
                 <button className={cn(ROW, "w-full")} onClick={() => setOpenFolder(folder.id)} type="button">
-                  <FolderIcon className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
-                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
-                    {folder.name}
-                  </span>
-                  <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                    {folderCounts.get(folder.id) ?? 0} item{(folderCounts.get(folder.id) ?? 0) === 1 ? "" : "s"}
-                  </span>
+                  <FolderIcon className={COL_ICON} size={20} strokeWidth={1.8} />
+                  <span className={ROW_NAME}>{folder.name}</span>
+                  <span aria-hidden className={COL_MODIFIED} />
+                  <span className={cn(COL_COUNT, ROW_META)}>{folderCounts.get(folder.id) ?? 0}</span>
+                  <span aria-hidden className={COL_ACTIONS} />
                 </button>
               </li>
             ))}
             {naming !== null && (
-              <li className={cn(ROW, "gap-3")}>
-                <FolderIcon className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
+              <li className={ROW}>
+                <FolderIcon className={COL_ICON} size={20} strokeWidth={1.8} />
                 <input
                   aria-label="Name the new folder"
                   autoFocus
-                  className="min-w-0 flex-1 bg-transparent text-[length:var(--canvas-text-small)] text-(--ui-text-primary) outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-[14px] text-(--ui-text-primary) outline-none"
                   maxLength={120}
                   // Enter commits, clicking away commits, Escape abandons.
                   onBlur={(event) => void addFolder(event.currentTarget.value)}
@@ -500,6 +753,9 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                   placeholder="Folder name"
                   value={naming}
                 />
+                <span aria-hidden className={COL_MODIFIED} />
+                <span aria-hidden className={COL_COUNT} />
+                <span aria-hidden className={COL_ACTIONS} />
               </li>
             )}
           </ul>
@@ -510,11 +766,11 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           two decks in it is indistinguishable from an account with two decks in it. */}
       {openFolder !== null && (
         <button
-          className="mb-4 flex items-center gap-2 rounded-xl bg-transparent px-3 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background)"
+          className="mb-[16px] -ml-[12px] flex h-[36px] items-center gap-[8px] rounded-full bg-transparent px-[12px] text-[14px] font-medium leading-[20px] text-(--ui-text-secondary) transition-colors hover:bg-black/[0.05] hover:text-(--ui-text-primary) dark:hover:bg-white/[0.10]"
           onClick={() => setOpenFolder(null)}
           type="button"
         >
-          <ChevronLeft size={15} strokeWidth={1.8} />
+          <ChevronLeft size={16} strokeWidth={1.8} />
           {folders.find((folder) => folder.id === openFolder)?.name ?? "Library"}
         </button>
       )}
@@ -522,35 +778,45 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
       {/* 🔴 A SHELF THE FILTER HAS HIDDEN IS NOT RENDERED AT ALL, heading included. Keeping the
           heading over an empty list would make a filtered-out shelf look like an emptied one. */}
       {showing("deck") && (
-      <section className="pb-10">
+      <section className="pb-[40px]">
         <h2 className={SECTION_TITLE}>Flashcard decks</h2>
         {shownDecks.length === 0 ? (
-          <p className="px-1 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+          <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
-              : openFolder !== null
-                ? "No decks in this folder."
-                : "No decks yet. Ask Nemesis for flashcards in any conversation."}
+              : query.trim() !== ""
+                ? "No decks match that."
+                : openFolder !== null
+                  ? "No decks in this folder."
+                  : "No decks yet. Ask Nemesis for flashcards in any conversation."}
           </p>
         ) : (
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col">
+            {/* 🔴 THE COLUMN HEADER THE REFERENCE HAS AND THIS PAGE DID NOT. Third column is a
+                card COUNT, not a byte size: we do not hold a size for a deck, and a column of em
+                dashes forever would say "this is broken" rather than "this does not apply". */}
+            <li className={COLUMN_HEAD}>
+              <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
+              <span className="min-w-0 flex-1">Name</span>
+              <span className={COL_MODIFIED}>Modified</span>
+              <span className={COL_COUNT}>Cards</span>
+              <span aria-hidden className={COL_ACTIONS} />
+            </li>
             {shownDecks.map((deck) => (
               <li key={deck.id}>
-                <div className="flex items-center gap-0.5">
+                <div className={ROW}>
                   <button
                     aria-label={`Review ${deck.name}`}
-                    className={cn(ROW, "min-w-0 flex-1")}
+                    className={ROW_MAIN}
                     onClick={() => setReviewing(deck.id)}
                     type="button"
                   >
-                    <Layers className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
-                    <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
-                      {deck.name}
-                    </span>
-                    <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                      {deck.cards} card{deck.cards === 1 ? "" : "s"} · {when(deck.createdAt)}
-                    </span>
+                    <Layers className={COL_ICON} size={20} strokeWidth={1.8} />
+                    <span className={ROW_NAME}>{deck.name}</span>
+                    <span className={cn(COL_MODIFIED, ROW_META)}>{when(deck.createdAt)}</span>
+                    <span className={cn(COL_COUNT, ROW_META)}>{deck.cards}</span>
                   </button>
+                  <span className={COL_ACTIONS}>
                   {/* The peek. Deliberately secondary and deliberately still here: reading
                       the answers is sometimes what you want (checking what Nemesis made
                       before trusting it), it just must not be what pressing a deck does. */}
@@ -577,7 +843,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                       file Anki can import, so nothing here is a one-way door. */}
                   <button
                     aria-label={`Download ${deck.name}`}
-                    className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary) disabled:opacity-40"
+                    className={ROW_ACTION}
                     disabled={downloading === deck.id}
                     onClick={() => void takeDeck(deck)}
                     title="Download for Anki"
@@ -587,7 +853,7 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                   </button>
                   <button
                     aria-label={`Share ${deck.name}`}
-                    className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+                    className={ROW_ACTION}
                     onClick={() => setSharing(deck)}
                     type="button"
                   >
@@ -596,26 +862,25 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                   <button
                     aria-expanded={openDeck === deck.id}
                     aria-label={openDeck === deck.id ? `Hide the cards in ${deck.name}` : `Show the cards in ${deck.name}`}
-                    className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
+                    className={ROW_ACTION}
                     onClick={() => void toggleDeck(deck.id)}
                     type="button"
                   >
                     <ChevronDown className={cn("transition-transform", openDeck === deck.id && "rotate-180")} size={15} strokeWidth={1.8} />
                   </button>
+                  </span>
                 </div>
                 {openDeck === deck.id && (
-                  <div className="mb-2 ml-8 mr-2 max-h-80 overflow-y-auto rounded-xl border border-(--ui-stroke-tertiary)">
+                  <div className="mb-[8px] ml-[32px] mr-[8px] max-h-[320px] overflow-y-auto border-b border-b-black/[0.05] dark:border-b-white/[0.05]">
                     {(cards[deck.id] ?? []).map((card) => (
-                      <div className="border-b border-(--ui-stroke-tertiary)/60 px-3 py-2 last:border-b-0" key={card.id}>
-                        <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{card.front}</p>
-                        <p className="mt-0.5 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-secondary)">
+                      <div className="border-b border-b-black/[0.05] px-[12px] py-[8px] last:border-b-0 dark:border-b-white/[0.05]" key={card.id}>
+                        <p className="text-[14px] text-(--ui-text-primary)">{card.front}</p>
+                        <p className="mt-[2px] text-[14px] leading-relaxed text-(--ui-text-secondary)">
                           {card.back}
                         </p>
                       </div>
                     ))}
-                    {!cards[deck.id] && (
-                      <p className="px-3 py-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Loading…</p>
-                    )}
+                    {!cards[deck.id] && <p className="px-[12px] py-[8px] text-[14px] text-(--ui-text-secondary)">Loading…</p>}
                   </div>
                 )}
               </li>
@@ -626,18 +891,29 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
       )}
 
       {showing("slides") && (
-      <section className="pb-10">
+      <section className="pb-[40px]">
         <h2 className={SECTION_TITLE}>Slides</h2>
         {shownSlides.length === 0 ? (
-          <p className="px-1 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+          <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
-              : openFolder !== null
-                ? "No slide decks in this folder."
-                : "No slide decks yet. Ask Nemesis for a PowerPoint in any conversation."}
+              : query.trim() !== ""
+                ? "No slide decks match that."
+                : openFolder !== null
+                  ? "No slide decks in this folder."
+                  : "No slide decks yet. Ask Nemesis for a PowerPoint in any conversation."}
           </p>
         ) : (
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col">
+            {/* Two columns here, not three: a slide deck has no count worth a column, and the
+                reference's third column is a size we do not hold. */}
+            <li className={COLUMN_HEAD}>
+              <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
+              <span className="min-w-0 flex-1">Name</span>
+              <span className={COL_MODIFIED}>Modified</span>
+              <span aria-hidden className={COL_COUNT} />
+              <span aria-hidden className={COL_ACTIONS} />
+            </li>
             {shownSlides.map((row) => (
               <SlidesShelfRow
                 folders={folders}
@@ -652,20 +928,29 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
       )}
 
       {showing("note") && (
-      <section className="pb-10">
+      <section className="pb-[40px]">
         <h2 className={SECTION_TITLE}>Documents</h2>
         {shownNotes.length === 0 ? (
-          <p className="px-1 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+          <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
-              : openFolder !== null
-                ? "No documents in this folder."
-                : "No documents yet. Ask Nemesis for a summary or a write-up in any conversation."}
+              : query.trim() !== ""
+                ? "No documents match that."
+                : openFolder !== null
+                  ? "No documents in this folder."
+                  : "No documents yet. Ask Nemesis for a summary or a write-up in any conversation."}
           </p>
         ) : (
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col">
+            <li className={COLUMN_HEAD}>
+              <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
+              <span className="min-w-0 flex-1">Name</span>
+              <span className={COL_MODIFIED}>Modified</span>
+              <span aria-hidden className={COL_COUNT} />
+              <span aria-hidden className={COL_ACTIONS} />
+            </li>
             {shownNotes.map((note) => (
-              <li className="flex items-center gap-0.5" key={note.path}>
+              <li className={ROW} key={note.path}>
                 {/* 🔴🔴 IT OPENS HERE, NOT AT `/library/classic`. Owner, 2026-08-25: *"i dont want
                     anything to route to this old library."* This was the last link into it, and it
                     was a navigation OFF the Library to read one of the Library's own documents —
@@ -675,24 +960,23 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
                     `notePath` and fetches the body itself, so a document reads identically wherever
                     it is opened from, and there is one place to fix when it is wrong. */}
                 <button
-                  className={cn(ROW, "min-w-0 flex-1 text-left")}
+                  className={ROW_MAIN}
                   onClick={() => setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })}
                   type="button"
                 >
-                  <NotebookText className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
-                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
-                    {note.title}
-                  </span>
-                  <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                    {when(note.updatedAt)}
-                  </span>
+                  <NotebookText className={COL_ICON} size={20} strokeWidth={1.8} />
+                  <span className={ROW_NAME}>{note.title}</span>
+                  <span className={cn(COL_MODIFIED, ROW_META)}>{when(note.updatedAt)}</span>
+                  <span aria-hidden className={COL_COUNT} />
                 </button>
-                <FolderPicker
-                  current={note.folderId}
-                  folders={folders}
-                  label={`Move ${note.title} to a folder`}
-                  onFile={(folderId) => void file("note", note.id, folderId)}
-                />
+                <span className={COL_ACTIONS}>
+                  <FolderPicker
+                    current={note.folderId}
+                    folders={folders}
+                    label={`Move ${note.title} to a folder`}
+                    onFile={(folderId) => void file("note", note.id, folderId)}
+                  />
+                </span>
               </li>
             ))}
           </ul>
@@ -702,9 +986,12 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
 
       {readingNote && <OutputPreview onClose={() => setReadingNote(null)} output={readingNote} />}
 
-      <footer className="flex items-start gap-2 rounded-xl border border-(--ui-stroke-tertiary) px-4 py-3">
-        <GraduationCap className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" size={15} strokeWidth={1.8} />
-        <p className="text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-secondary)">
+      {/* 🔴 NO CARD, NO SHADOW — the reference draws neither anywhere on this page. The hint keeps
+          its hairline, at the measured divider colour, so it belongs to the same drawing as the
+          rows above it. */}
+      <footer className="flex items-start gap-[8px] border-t border-t-black/[0.05] pt-[16px] dark:border-t-white/[0.05]">
+        <GraduationCap className="mt-[2px] shrink-0 text-(--ui-text-secondary)" size={16} strokeWidth={1.8} />
+        <p className="text-[14px] leading-relaxed text-(--ui-text-secondary)">
           Your canvases live in the sidebar. Everything they make for you is kept here, and both
           use the same folders.
         </p>
@@ -719,7 +1006,8 @@ export function LibraryOutputs({ userId }: { userId: string | null }) {
           2026-08-25: "I don't want users to edit flashcards, really"). In all three cases the
           component still exists and still works — this page simply no longer offers it. */}
       {sharing && <DeckShare deck={sharing} onClose={() => setSharing(null)} userId={userId} />}
-    </main>
+      </main>
+    </div>
   );
 }
 
@@ -749,10 +1037,7 @@ function FolderPicker({
   if (folders.length === 0) return null;
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={label}
-        className="shrink-0 rounded-lg p-2 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
-      >
+      <DropdownMenuTrigger aria-label={label} className={ROW_ACTION}>
         <FolderIcon size={15} strokeWidth={1.8} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -781,21 +1066,27 @@ function SlidesShelfRow({
 }) {
   const { choose, designId } = useDeckDesignChoice(row.assetId);
   return (
-    <li className="flex items-center gap-1">
+    <li className={ROW}>
       <a
-        className={cn(ROW, "min-w-0 flex-1", !row.canvasId && "pointer-events-none opacity-60")}
+        className={cn(ROW_MAIN, !row.canvasId && "pointer-events-none opacity-60")}
         href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
       >
-        <MonitorPlay className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
-        <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
-          {row.title}
-        </span>
-        <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-          {when(row.createdAt)}
-        </span>
+        <MonitorPlay className={COL_ICON} size={20} strokeWidth={1.8} />
+        <span className={ROW_NAME}>{row.title}</span>
+        <span className={cn(COL_MODIFIED, ROW_META)}>{when(row.createdAt)}</span>
+        <span aria-hidden className={COL_COUNT} />
       </a>
-      <FolderPicker current={row.folderId} folders={folders} label={`Move ${row.title} to a folder`} onFile={onFile} />
-      <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={row.title} />
+      {/* 🔴 THE DESIGN CHIP IS THE ONE CONTROL THE REFERENCE HAS NO EQUIVALENT OF, and it is a
+          label rather than an icon, so it is the only thing that can outgrow the measured 112px
+          trailing slot. It is made shrinkable here rather than widened for everyone: its own
+          label already truncates, so it gives up width instead of pushing the Modified column
+          out of the one place all three shelves agree on. */}
+      <span className={cn(COL_ACTIONS, "gap-[4px]")}>
+        <FolderPicker current={row.folderId} folders={folders} label={`Move ${row.title} to a folder`} onFile={onFile} />
+        <span className="flex min-w-0 shrink [&>button>span]:min-w-0 [&>button]:min-w-0 [&>button]:shrink">
+          <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={row.title} />
+        </span>
+      </span>
     </li>
   );
 }

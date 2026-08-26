@@ -170,7 +170,12 @@ test("🔴🔴 the distance is MEASURED, never a constant", () => {
   // greeting's height, the window's height and the length of the Library list below it. A
   // hard-coded translate would be correct at exactly one window size.
   assert.match(homeCode, /getBoundingClientRect\(\)/);
-  assert.match(homeCode, /window\.innerHeight - canvasComposerInset\(\) - rect\.height/);
+  // 🔴 AGAINST THE SURFACE, NOT THE WINDOW, AND THAT CHANGE IS THE POINT RATHER THAN AN EDIT TO IT.
+  // The height is still read rather than assumed; what moved is WHICH box it is read from. The
+  // canvas's `CharacterDock` measures its `offsetParent` — the surface in the shell's second grid
+  // column — so a target computed from `window` disagreed with the arrival point by the nav rail's
+  // width on every send. Same rule, one shared rectangle.
+  assert.match(homeCode, /surface\.bottom - canvasComposerInset\(\) - rect\.height/);
 });
 
 test("🔴🔴 the clearance under the canvas composer is READ, not typed", () => {
@@ -206,14 +211,31 @@ test("🔴 it moves with a transform, so nothing under it reflows", () => {
   assert.ok(!/marginTop: departing/.test(homeCode), "the move animates layout instead of a transform");
 });
 
-test("🔴🔴 the composer SIDESTEPS as well as drops, because the canvas has no rail", () => {
-  // The canvas is immersive — it takes the nav rail away — so a composer centred inside a railed
-  // column here is centred 26px right of where the canvas will centre its own. Travelling only
-  // downward meant the route swap corrected the horizontal in one frame, and a move that ends
-  // with a jump reads as a broken move.
+test("🔴🔴 the composer lands where the canvas's composer BEGINS, not where it ends up", () => {
+  // 🔴🔴 THIS TEST USED TO PIN THE OPPOSITE, AND THE OPPOSITE WAS AIMING AT THE RIGHT PLACE AT THE
+  // WRONG TIME. The canvas is immersive — it takes the nav rail away — so this page's composer,
+  // centred inside a railed column, sits 26px right of where the canvas's composer eventually
+  // settles. The old `x` term therefore travelled 26px LEFT on the way down, to land on that
+  // eventual position, and this test pinned that term against `window.innerWidth`.
   //
-  // Calibration: drop the `x` term and this reddens.
-  assert.match(homeCode, /x: Math\.round\(window\.innerWidth \/ 2 - \(rect\.left \+ rect\.width \/ 2\)\)/);
+  // "Eventually" is not "on arrival". The rail is not taken away until `CanvasSurface` mounts and
+  // claims the immersive surface in an EFFECT — a frame after the route swap — and the column then
+  // animates 52px→0 over 240ms. So at the instant of the swap the canvas's own composer was still
+  // centred in a railed column at +26, while this one had just finished travelling to 0: the
+  // learner saw it arrive, jump 26px right as the page changed, then slide 26px left again as the
+  // chrome caught up. Two corrections for an offset that was never wrong.
+  //
+  // Both ends now measure the SAME rectangle, so the composer lands exactly where the canvas's
+  // composer begins and the swap shows nothing; the rail then carries both away together.
+  //
+  // Calibration: point either target back at `window` and the numbers disagree by the rail again.
+  assert.match(homeCode, /const surface = scroller\.current\?\.getBoundingClientRect\(\)/);
+  assert.match(homeCode, /x: Math\.round\(surface\.left \+ surface\.width \/ 2 - \(rect\.left \+ rect\.width \/ 2\)\)/);
+  assert.equal(
+    /window\.innerWidth \/ 2 - \(rect\.left/.test(homeCode),
+    false,
+    "the composer is aiming at the viewport again, which is not the box it lands in",
+  );
 });
 
 // ── And the character travels with it ───────────────────────────────────────
@@ -251,8 +273,19 @@ test("🔴🔴 and the dock does not walk in from a corner it was never standing
   // place instantly against the default corner (left 22, bottom 24) before the composer had
   // been measured, and the correction then eased in as a diagonal drift from the lower-left —
   // the owner's "it was already on the bottom left side, moving upward", seen on production.
+  //
+  // 🔴 THE SAME RULE, NOW WITH A THIRD CASE BETWEEN THE TWO IT USED TO HAVE. The expression this
+  // pinned — `was.placed && anchoredRef.current ? null : 0` — could only ever say "be there
+  // already" (0) or "take the stylesheet's 680ms walk" (null). There was no way to say "the
+  // surface moved a few pixels under you, keep up", so every micro-correction — the composer
+  // growing a line, the nav rail collapsing, a resize — eased over two thirds of a second and read
+  // as the character lagging its anchor. `character.css` had documented ~140ms for exactly this
+  // since the override was added, and nothing had ever passed it.
+  //
+  // The first placement is still instant, which is what this test is actually about.
   const dock = code(readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8"));
-  assert.match(dock, /ms: was\.placed && anchoredRef\.current \? null : 0/);
+  assert.match(dock, /if \(!placed \|\| !anchoredRef\.current\) return 0;/);
+  assert.match(dock, /return from === null \|\| from === station \? FOLLOW_MS : null;/);
   assert.match(dock, /visibility: travel\.placed \? undefined : "hidden"/);
 });
 

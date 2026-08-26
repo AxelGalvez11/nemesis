@@ -30,6 +30,15 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   // created by pressing this, only by beginning.
   { id: "new-canvas", label: "New canvas", codicon: "add", route: "/learn" },
   { id: "library", label: "Library", codicon: "library", route: "/library" },
+  // A project IS a folder holding canvases — the same `folders` row the sidebar groups under
+  // "Projects" and the Library filters by. The page is a place to see them all at once; the
+  // sidebar group stays the place to jump into one. Named after the reference's destination
+  // because the owner asked for the reference's shape, and "folder" is what the object is
+  // called everywhere else in this codebase, so the page does not rename it.
+  { id: "projects", label: "Projects", codicon: "folder", route: "/projects" },
+  // Where connected apps live. The Composio door already existed (`/api/composio`) with its only
+  // surface a card buried in Settings; this promotes it to a destination.
+  { id: "plugins", label: "Plugins", codicon: "plug", route: "/plugins" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
 ];
 
