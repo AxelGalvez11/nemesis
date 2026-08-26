@@ -106,7 +106,20 @@ export function DeckView({ plan, designId, credit = "Made with Nemesis", actions
   const current = slides[at] ?? "";
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-(--ui-bg-secondary)">
+    // 🔴🔴 THE ROOM IS NEUTRAL, NOT AN ACCENT FILL (owner 2026-08-26: *"opening documents, pdf, or
+    // pptx in library does not match chatgpt. the background is green and not white"*).
+    //
+    // It was `--ui-bg-secondary`, and every `--ui-bg-*` fill is the LEARNER'S CHOSEN ACCENT mixed
+    // over a translucent base: measured with the green accent it resolves to
+    // `color(srgb 0.174 0.537 0.374 / 0.1723)`, which over the page is rgb(219, 235, 227) — a pale
+    // green wash behind the slide. Those fills are for CONTROLS sitting on a page (a hovered row, a
+    // chip, an input), where a hint of the accent is the point. A room is not a control.
+    //
+    // `--ui-bg-editor` is the app's neutral page ground — the same one the document reader resolves
+    // `--reader-room` to and the same one the canvas paints — and it measures rgb(253, 253, 253)
+    // against the reference's rgb(252, 252, 252). Named directly rather than through
+    // `--reader-room`, which is scoped to `.nemesis-reader` and undefined here.
+    <div className="flex h-full min-h-0 flex-col bg-(--ui-bg-editor)">
       <style>{DECK_CSS}</style>
       {/* Every slide, stacked, for printing. The screen shows one at a time. */}
       <div aria-hidden="true" className="dk-print-only hidden" dangerouslySetInnerHTML={{ __html: slides.join("") }} />
