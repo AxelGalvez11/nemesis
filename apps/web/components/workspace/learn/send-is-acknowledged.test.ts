@@ -620,3 +620,38 @@ test("a deck's design is the learner's to choose, in both places it lives", () =
   const deck = readFileSync(new URL("../../../app/(workspace)/deck/page.tsx", import.meta.url), "utf8");
   assert.match(deck, /downloadDeck\(plan, output\.title, designId\)/, "the deck view exports without the chosen design");
 });
+
+test("🔴 the character wears no costume, and its sway does not lift it off the line", () => {
+  // Owner 2026-08-26, on production after adding documents: *"the mascot still has 'glasses' which
+  // is not what we worked on. and the mascot moves up and down which i dont want."*
+  //
+  // 🔴 THE GLASSES WERE TRUE AND STILL WRONG. They went on only while material was being taken in,
+  // which is the one moment "reading" is literal. A prop appearing on the character is still a
+  // second thing happening on a screen where something is already happening, and the ingestion
+  // already says so in words. `lib/avatar/features.ts` keeps the face so the character studio can
+  // draw it; the app does not hand it one.
+  //
+  // 🔴 AND THE SWAY LEANS RATHER THAN RISING. The 50% frame carried `translateY(-4px)` beside the
+  // rotation, so every crossing lifted the whole body. A repeating vertical move on a page of text
+  // reads as something bobbing for attention, which is the opposite of a state. The lean stays —
+  // the owner asked for movement while it thinks on 2026-08-25 — and nothing rises.
+  const canvas = code(CANVAS);
+  assert.ok(!/face=\{busy/.test(canvas), "the reading glasses are back on the canvas's character");
+  const css = readFileSync(new URL("../../character/character.css", import.meta.url), "utf8");
+  const ponder = css.slice(css.indexOf("@keyframes character-ponder"));
+  const body = ponder.slice(0, ponder.indexOf("}\n}") + 3);
+  assert.ok(!/translateY/.test(body), "the sway lifts the character off its line again");
+  assert.match(body, /rotate\(-?1\.7deg\)/, "the sway lost the lean that replaced the lift");
+});
+
+test("🔴 the character's two surfaces grow together", () => {
+  // Owner 2026-08-26: "make the mascot bigger in the app." 60 -> 76 at the composer, 64 -> 80 on
+  // the front door. They are different components and the hand-off between them is only invisible
+  // while the ratio holds; growing one alone makes the character change size mid-flight.
+  const dock = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
+  const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
+  const dockSize = Number(/export const DOCK_SIZE = (\d+)/.exec(dock)?.[1]);
+  const greeter = Number(/const GREETER_SIZE = (\d+)/.exec(home)?.[1]);
+  assert.ok(dockSize >= 76, `the character shrank at the composer (${dockSize})`);
+  assert.ok(Math.abs(greeter / dockSize - 64 / 60) < 0.06, `the two surfaces drifted apart (${greeter} vs ${dockSize})`);
+});

@@ -78,7 +78,7 @@ interface Travel {
  *  the front door has to aim its own character at the exact point this one will occupy.
  *  See `canvas-home.tsx`: the two surfaces are different components and the hand-off between
  *  them is only invisible while they agree to the pixel. */
-export const DOCK_SIZE = 60; // was 52; owner 2026-08-25: "the mascot looks a little bit small"
+export const DOCK_SIZE = 76; // 52 -> 60 (owner 2026-08-25 "a little bit small") -> 76 (owner 2026-08-26 "make the mascot bigger in the app")
 export const DOCK_CENTRE_SCALE = 2.1;
 
 /** How far down the surface the middle station sits.

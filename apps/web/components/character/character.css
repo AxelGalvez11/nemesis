@@ -169,12 +169,19 @@
   animation: character-ponder 2900ms ease-in-out infinite;
   transform-origin: 50% 82%;
 }
+/* 🔴 THE WEIGHT SHIFTS, THE CHARACTER DOES NOT RISE (owner 2026-08-26: *"the mascot moves up
+ * and down which i dont want"*). The 50% frame carried `translateY(-4px)` alongside the lean, so
+ * every crossing lifted the whole body off its line. On a page of text the eye reads a repeating
+ * vertical move as something bobbing FOR ATTENTION, which is the opposite of a state.
+ *
+ * The lean stays: the owner asked for movement while it thinks on 2026-08-25 and a rotation about
+ * a low origin still reads as shifting weight. Nothing rises. */
 @keyframes character-ponder {
   0%,
   100% {
-    transform: translateY(0) rotate(-1.7deg);
+    transform: rotate(-1.7deg);
   }
   50% {
-    transform: translateY(-4px) rotate(1.7deg);
+    transform: rotate(1.7deg);
   }
 }

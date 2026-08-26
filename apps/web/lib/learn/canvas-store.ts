@@ -25,6 +25,7 @@ import { validateEvaluation } from "./canvas-judge";
 import { isEvidenceStage } from "./canvas-hosting";
 import { stateAfterSourceAttached } from "./canvas-state";
 import { readTerritory, type CanvasTerritory } from "./canvas-territory";
+import { documentTitle } from "./document-title";
 
 const TABLE = "learning_canvases";
 const LOCAL_PREFIX = "nemesis.learn.canvas.v1.";
@@ -664,7 +665,17 @@ export function mergeSourceIntoCanvas(canvas: LearningCanvas, source: CanvasSour
     sources,
     // The first source names the canvas; later ones never rename it, and neither ever
     // overwrites a title the learner typed.
-    title: canvas.title || source.title,
+    //
+    // 🔴 AND IT HAS TO PASS THE SHAPE TESTS FIRST (owner 2026-08-26: *"the title of the canvas
+    // became really long after adding the docs"*). A source arriving through the upload door is
+    // already named by `documentTitle`, but this is not the only door — a source restored from a
+    // canvas written before that existed, or attached by a lane that names itself, reaches here
+    // too. A second check costs nothing and closes the whole class rather than one entrance.
+    //
+    // 🔴 AN UNUSABLE NAME LEAVES THE CANVAS UNNAMED, and that is deliberate: the header reads
+    // "New canvas", which is honest, and the learner can rename it. Putting a row of column names
+    // in the sidebar for ever is not the safer failure.
+    title: canvas.title || documentTitle(source.title),
     state: stateAfterSourceAttached(canvas),
     updatedAt: new Date().toISOString(),
   };
