@@ -17,8 +17,11 @@
 // function of plan + design, so nothing was uploaded and there is nothing to fetch: the same plan
 // the download builds from is the plan on screen.
 
+import { useEffect, useState } from "react";
+
 import { Codicon } from "@/components/desktop-ui/codicon";
-import type { DeckPlan } from "@/lib/export/deck-plan";
+import { structurePng } from "@/lib/export/structure-image";
+import type { DeckPlan, DeckStructure } from "@/lib/export/deck-plan";
 
 export function DeckPreview({ canvasId, outputId, plan }: { canvasId: string; outputId: string; plan: DeckPlan }) {
   return (
@@ -65,6 +68,7 @@ export function DeckPreview({ canvasId, outputId, plan }: { canvasId: string; ou
               <span>{point}</span>
             </p>
           ))}
+          {slide.structure && <StructurePlate structure={slide.structure} />}
           {slide.figure > 0 && (
             // 🔴 SAYS A PICTURE IS THERE RATHER THAN DRAWING IT. The figures are signed at download
             // time and their links expire within the hour; rendering them here would mean minting a
@@ -76,6 +80,55 @@ export function DeckPreview({ canvasId, outputId, plan }: { canvasId: string; ou
           )}
         </section>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The molecule or reaction on a slide, drawn here as it will be drawn there.
+ *
+ * 🔴 THE SAME RENDERER THE .pptx USES, deliberately. A preview built from a second drawing path
+ * would answer a different question from the one the panel is opened to ask — *what will be on this
+ * slide* — and would disagree the first time either changed.
+ *
+ * 🔴 IT DRAWS ON DEMAND AND KEEPS NOTHING. `smiles-drawer` is ~190KB and most decks contain no
+ * chemistry at all, so the import is inside the effect that needs it.
+ */
+function StructurePlate({ structure }: { structure: DeckStructure }) {
+  const [png, setPng] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    // Scale 1 here: this is a thumbnail beside some bullets, not the export.
+    void structurePng(structure.notation, structure.value, 1).then((data) => {
+      if (!live) return;
+      if (data) setPng(data);
+      else setFailed(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [structure.notation, structure.value]);
+
+  return (
+    <div className="mt-1 grid gap-1 pl-5">
+      {png ? (
+        // eslint-disable-next-line @next/next/no-img-element -- a data URI drawn in this browser, not an asset.
+        <img alt={structure.caption || structure.value} className="max-w-full rounded-lg bg-white" src={png} />
+      ) : (
+        <p className="m-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+          {failed ? "This structure could not be drawn; the slide keeps its points." : "Drawing…"}
+        </p>
+      )}
+      {/* 🔴 THE NOTATION STAYS INSPECTABLE (§42). A learner, and anybody debugging a wrong-looking
+          molecule, can read the exact string the drawing was computed from — and a resolved
+          structure visibly differs from one a model asserted. */}
+      <p className="m-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+        {structure.caption ? `${structure.caption} · ` : ""}
+        <span className="font-mono">{structure.value}</span>
+        {structure.resolvedFrom ? ` · PubChem: ${structure.resolvedFrom.name}` : ""}
+      </p>
     </div>
   );
 }

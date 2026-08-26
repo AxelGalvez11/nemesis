@@ -16,6 +16,7 @@
 // theme rasterised from a 97KB baked module. The designs draw their own furniture now — rules,
 // numerals, cards, rails — and a stock glyph dropped into a composed slide read as clip art
 // every time. If iconography returns it will be drawn by the composer, not chosen by the model.
+import { validateStructure, type ChemNotation } from "../learn/chem-notation";
 import { readModelJson } from "../model-json";
 
 export const DECK_LAYOUTS = [
@@ -62,6 +63,38 @@ export interface DeckDatum {
   value: number;
 }
 
+/**
+ * A molecule or a reaction, drawn on a slide.
+ *
+ * 🔴🔴 THE MODEL NAMES THE COMPOUND; IT DOES NOT WRITE THE STRUCTURE. §42's rule, and the reason
+ * `structure-resolve.ts` exists: *"a model asked for the SMILES of aspirin will produce one,
+ * fluently, and it will usually be right — which is exactly what makes it dangerous."* A wrong plot
+ * looks wrong; a wrong molecule looks like chemistry. So a slide asks for a LOOKUP, the resolver
+ * answers from PubChem, and `resolvedFrom` is the stamp saying which happened.
+ *
+ * 🔴 A GENERIC GROUP HAS NO NAME AND IS STILL ALLOWED. `*O` is an alcohol — every alcohol — and
+ * PubChem has no compound called "any alcohol". Notation written directly is accepted and simply
+ * arrives without provenance, which is the honest difference rather than a refusal.
+ *
+ * 🔴 THE SMILES IS STORED, NOT THE PICTURE. A drawn molecule is a deterministic function of its
+ * notation, so the plan keeps the short string and the image is made at render time — the same
+ * bargain the deck itself makes with the .pptx. Baking base64 PNGs into a saved plan would put
+ * tens of kilobytes per slide into a canvas record that has to load on every visit.
+ */
+/** How many compounds may appear on one side of an arrow. More than this is a pathway, not a
+ *  slide — and glycolysis as one scheme is unreadable at any size a slide allows. */
+const MAX_STRUCTURE_PARTS = 4;
+
+export interface DeckStructure {
+  /** `smiles` for one molecule, `reaction-smiles` for `A.B>>C.D`. */
+  notation: ChemNotation;
+  value: string;
+  /** What it shows, printed under the drawing. */
+  caption: string;
+  /** Present only when a resolver was asked for a name and answered. */
+  resolvedFrom?: { name: string; provider: "pubchem"; id: string };
+}
+
 export interface DeckSlide {
   layout: DeckLayout;
   title: string;
@@ -75,6 +108,17 @@ export interface DeckSlide {
   /** Column headings for two_column. */
   leftHeading: string;
   rightHeading: string;
+  /** A molecule or reaction beside the points. Absent on most slides. */
+  structure?: DeckStructure;
+  /**
+   * A concept to illustrate from the shared reference shelf.
+   *
+   * 🔴 A CONCEPT, NEVER A FILENAME OR A URL. The same border-control rule `figure` follows: the
+   * model says WHAT it wants a picture of, and trusted code decides which licensed file that is.
+   * A model naming a file would be a model choosing an asset, which is how an unlicensed or
+   * unrelated image reaches a slide with nothing able to catch it.
+   */
+  illustration?: string;
   /** stat only: the big number and its label. */
   statValue: string;
   statLabel: string;
@@ -168,6 +212,69 @@ const cellRows = (value: unknown): string[][] =>
     : [];
 
 /** The model's reply, read strictly into a plan — or null when nothing deck-shaped survived. */
+/**
+ * A slide's chemistry, assembled from what the resolver returned.
+ *
+ * 🔴🔴 REACTIONS REUSE THE MOLECULE LANE RATHER THAN GROWING A SECOND RESOLVER. `structure-resolve.ts`
+ * walks ARRAYS as well as objects, so a slide states its reactants and its products as two lists of
+ * `{"kind":"structure","compound":"…"}` requests, each one resolved independently by the code the
+ * canvas already uses. This function is the only new part: it joins the answers into the
+ * reaction SMILES that `chem-notation.ts` already validates and `smiles-drawer` already draws.
+ *
+ * 🔴 TWO LISTS, NOT ONE. A flat list of names cannot say which side of the arrow a compound is on,
+ * and a scheme that puts the product on the left is worse than no scheme.
+ *
+ * 🔴 AN UNRESOLVED COMPOUND LOSES ITS PICTURE, NEVER ITS SLIDE. The resolver returns null for a name
+ * PubChem could not find and the array filter drops it; if that leaves no reactants, there is no
+ * structure and the points stand alone. Falling back to a model-written SMILES would run the least
+ * trustworthy path exactly when the trustworthy one found nothing — §42's whole subject.
+ */
+function readStructure(value: unknown): DeckStructure | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+
+  /** The resolved SMILES in one side of the arrow, in the order the model listed them. */
+  const side = (list: unknown): string[] =>
+    (Array.isArray(list) ? list : [])
+      .map((item) => {
+        if (typeof item !== "object" || item === null) return "";
+        const entry = item as Record<string, unknown>;
+        const text = typeof entry.value === "string" ? entry.value.trim() : "";
+        // Each part is validated on its own before anything is joined: one bad member must not be
+        // able to smuggle characters into the assembled string.
+        return text && validateStructure("smiles", text).ok ? text : "";
+      })
+      .filter(Boolean)
+      .slice(0, MAX_STRUCTURE_PARTS);
+
+  const from = side(raw.from);
+  const to = side(raw.to);
+  if (from.length === 0) return null;
+
+  const notation: ChemNotation = to.length > 0 ? "reaction-smiles" : "smiles";
+  const assembled = to.length > 0 ? `${from.join(".")}>>${to.join(".")}` : from.join(".");
+  // 🔴 THE ASSEMBLED STRING IS VALIDATED TOO, not just its parts. Joining valid SMILES with `.` and
+  // `>>` should always be valid, and "should always" is exactly the kind of claim that is worth one
+  // cheap check at the boundary rather than a broken drawing on a slide.
+  if (!validateStructure(notation, assembled).ok) return null;
+
+  // Provenance from the first resolved member: enough to say a lookup happened, and the field's own
+  // contract is "a resolver was asked for this name and returned this string".
+  const first = (Array.isArray(raw.from) ? raw.from : []).find(
+    (item) => typeof item === "object" && item !== null && (item as Record<string, unknown>).resolvedFrom,
+  ) as Record<string, unknown> | undefined;
+  const stamp = first?.resolvedFrom as { id?: unknown; name?: unknown } | undefined;
+
+  return {
+    caption: str(raw.caption, 120),
+    notation,
+    value: assembled,
+    ...(stamp && typeof stamp.name === "string"
+      ? { resolvedFrom: { id: String(stamp.id ?? ""), name: stamp.name, provider: "pubchem" as const } }
+      : {}),
+  };
+}
+
 export function readDeckJson(text: string): DeckPlan | null {
   // 🔴🔴 A DECK THAT RAN LONG KEEPS THE SLIDES THAT ARRIVED WHOLE. This used to be a plain
   // `JSON.parse` between the first `{` and the last `}`, so an answer cut off mid-object threw and
@@ -207,6 +314,8 @@ export function readDeckJson(text: string): DeckPlan | null {
       quoteAttribution: str(s.quoteAttribution, 120),
       rightHeading: str(s.rightHeading, 60),
       rightPoints: strList(s.rightPoints, 220),
+      ...(readStructure(s.structure) ? { structure: readStructure(s.structure)! } : {}),
+      ...(str(s.illustration, 80) ? { illustration: str(s.illustration, 80) } : {}),
       statLabel: str(s.statLabel, 160),
       statValue: str(s.statValue, 24),
       subtitle: str(s.subtitle, 160),
@@ -289,6 +398,23 @@ export function deckSystemPrompt(): string {
     "slide, and never write a filename, a path or a figure that is not in the list. Most slides " +
     "should have no picture: one that illustrates the point earns its place, one that decorates " +
     "does not. " +
+    // 🔴 THE MODEL NAMES THE COMPOUND AND STOPS. §42, and the same instruction the canvas gives:
+    // the string that reaches the depiction library comes from PubChem, not from memory. The
+    // request shape is exactly what `structure-resolve.ts` walks for, so the deck reuses that whole
+    // lane rather than growing a second resolver.
+    "🔴 CHEMISTRY IS LOOKED UP, NEVER WRITTEN FROM MEMORY. To put a molecule on a slide, set " +
+    '"structure" to {"caption":"<what it shows>","from":[{"kind":"structure","compound":"<name>"}]}. ' +
+    'For a reaction, add "to" with the products the same way: ' +
+    '{"caption":"Hexokinase traps glucose in the cell","from":[{"kind":"structure","compound":"glucose"}],' +
+    '"to":[{"kind":"structure","compound":"glucose 6-phosphate"}]}. Name real compounds; at most ' +
+    "four a side. Do NOT write SMILES yourself — a wrong molecule looks like correct chemistry, and " +
+    "the lookup is what makes it right. A slide showing the compound under discussion earns its " +
+    "structure; a decorative one does not. " +
+    // 🔴 A CONCEPT, NOT A FILE. Trusted code picks the licensed image; the model only says what it
+    // wants a picture of.
+    '🔴 TO ILLUSTRATE A CONCEPT, set "illustration" to a short phrase naming what a diagram should ' +
+    'show ("the pyruvate dehydrogenase complex"). Nemesis finds a licensed figure if one exists and ' +
+    "leaves the slide alone if not. Never name a file, a URL or a source. " +
     "Structure: one cover first, then an agenda, then 6-12 body slides with a section slide " +
     "introducing each part, one closing last. Prefer concrete facts from the provided material, " +
     "and never invent references. No markdown fences, no commentary."
