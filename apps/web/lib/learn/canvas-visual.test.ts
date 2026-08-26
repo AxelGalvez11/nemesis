@@ -373,103 +373,92 @@ test("a macromolecule stamp naming any provider but rcsb refuses", () => {
   assert.equal(result.ok === false && result.reason, "malformed-macromolecule");
 });
 
-// ───────────────────────────────────────────── §42: electron-pushing arrows (owner, 2026-08-24)
+// ─────────────────────────── §42: what a step points at (owner, 2026-08-26)
+//
+// 🔴🔴🔴 THIS BLOCK USED TO TEST ELECTRON-PUSHING ARROWS. The owner withdrew them: *"bad mechanism
+// arrows are worse than no arrows because they teach the chemistry incorrectly while also consuming
+// engineering time."* The vocabulary survived on `highlight`, which is now how a mechanism step
+// points at the atom being attacked and the bond that breaks while the prose says what moves.
 
-test("a mechanism step carries arrows in the highlight index space", () => {
-  const result = validateCanvasVisual({
-    arrows: [{ from: 0, to: 1 }, { from: 1, to: 2 }],
-    kind: "structure",
-    learningGoal: "Watch the nucleophile attack while the leaving group departs",
-    notation: "smiles",
-    value: "[OH-].CBr",
-  });
-  assert.equal(result.ok, true);
-  assert.equal(result.ok && result.visual.kind === "structure" && result.visual.arrows?.length, 2);
-});
-
-const mechanism = (arrows: unknown) =>
+const marked = (highlight: unknown) =>
   validateCanvasVisual({
-    arrows,
+    highlight,
     kind: "structure",
     learningGoal: "Watch the nucleophile attack while the leaving group departs",
     notation: "smiles",
     value: "[OH-].CBr",
   });
 
-test("🔴🔴🔴 an arrow end may be a BOND, which is what a real mechanism needs", () => {
-  // 🔴 MEASURED ON THE LIVE APP, 2026-08-25. Asked for an SNAr mechanism, Nemesis worked out its
-  // three arrows correctly and then typed them as a bulleted list, because atom-to-atom could not
-  // say "the C-Cl bond breaks". The owner sent a textbook picture and asked why ours looked
-  // nothing like it; this is most of the answer.
-  const broken = mechanism([{ from: 0, to: 1 }, { from: [1, 2], to: 2 }]);
-  assert.equal(broken.ok, true, "a bond-tailed arrow is still refused");
-  const arrows = broken.ok && broken.visual.kind === "structure" ? broken.visual.arrows : undefined;
-  assert.equal(arrows?.length, 2);
-  assert.deepEqual(arrows?.[1], { from: [1, 2], to: 2 });
-  // A pi bond shifting onto the next bond: both ends are bonds.
-  assert.equal(mechanism([{ from: [0, 1], to: [1, 2] }]).ok, true, "a bond-to-bond shift is refused");
+test("a step marks the atoms and bonds it is about", () => {
+  const result = marked([0, [1, 2]]);
+  assert.equal(result.ok, true);
+  const highlight = result.ok && result.visual.kind === "structure" ? result.visual.highlight : undefined;
+  assert.equal(highlight?.length, 2);
+  assert.equal(highlight?.[0], 0, "the attacking atom was dropped");
+  assert.deepEqual(highlight?.[1], [1, 2], "the breaking bond was dropped");
 });
 
-test("🔴🔴 the dots come on by themselves wherever there are arrows", () => {
-  // Every curly arrow in a textbook starts on a lone pair, so a mechanism that had to ask for them
-  // separately would mostly forget to.
-  const drawn = mechanism([{ from: 0, to: 1 }]);
-  assert.equal(drawn.ok && drawn.visual.kind === "structure" && drawn.visual.lonePairs, true);
-  // ...and a plain structure card stays clean, because dots on every heteroatom is noise.
-  const plain = validateCanvasVisual({
-    kind: "structure",
-    learningGoal: "The ester is the whole difference",
-    notation: "smiles",
-    value: "CC(=O)Oc1ccccc1C(=O)O",
-  });
-  assert.equal(plain.ok && plain.visual.kind === "structure" && plain.visual.lonePairs, undefined);
-  // An explicit false still wins, for a mechanism drawn deliberately bare.
-  const bare = validateCanvasVisual({
-    arrows: [{ from: 0, to: 1 }],
-    kind: "structure",
-    learningGoal: "Bare on purpose",
-    lonePairs: false,
-    notation: "smiles",
-    value: "[OH-].CBr",
-  });
-  assert.equal(bare.ok && bare.visual.kind === "structure" && bare.visual.lonePairs, false);
+test("🔴🔴🔴 a highlight may be a BOND, which the depiction library cannot mark at all", () => {
+  // 🔴 THIS IS THE HALF OF THE ARROW VOCABULARY WORTH KEEPING. A mechanism step is almost always
+  // about a bond breaking or forming, and `smiles-drawer` has no bond-highlight path whatsoever —
+  // its own `highlight_atoms` is atoms only, and matches on SMILES atom CLASS rather than position.
+  assert.equal(marked([[1, 2]]).ok, true, "a bare bond highlight is refused");
+  assert.equal(marked([0, 1, 2]).ok, true, "plain atom indices stopped working");
 });
 
-test("🔴🔴 a bond that is not a bond refuses, rather than drawing somewhere invented", () => {
-  for (const bad of [[{ from: [1, 1], to: 2 }], [{ from: [1], to: 2 }], [{ from: [1, 2, 3], to: 0 }], [{ from: [1, -1], to: 0 }], [{ from: ["a", 2], to: 0 }]]) {
-    assert.equal(mechanism(bad).ok, false, JSON.stringify(bad));
+test("🔴🔴 a bond that is not a bond refuses, rather than marking somewhere invented", () => {
+  for (const bad of [[[1, 1]], [[1]], [[1, 2, 3]], [[1, -1]], [["a", 2]], [0.5], [-1], [301]]) {
+    assert.equal(marked(bad).ok, false, JSON.stringify(bad));
   }
-  // 🔴 AND THE SAME BOND TWICE IS NOT A MOVE. Electrons that end where they started are not a step.
-  assert.equal(mechanism([{ from: [1, 2], to: [1, 2] }]).ok, false, "an arrow onto its own bond");
+  assert.equal(marked([]).ok, false, "an empty highlight is not a highlight");
+  assert.equal(marked(Array.from({ length: 41 }, (_, i) => i)).ok, false, "41 highlights");
 });
 
 test("🔴🔴🔴 atom ZERO is a real atom, and `!0` is true", () => {
-  // The reader returns an index now rather than throwing, so the obvious falsy check refused every
-  // arrow that starts at the first atom in the notation. An existing test caught it within minutes.
-  assert.equal(mechanism([{ from: 0, to: 1 }]).ok, true, "an arrow from atom 0 is refused");
-  assert.equal(mechanism([{ from: 1, to: 0 }]).ok, true, "an arrow to atom 0 is refused");
-  assert.equal(mechanism([{ from: [0, 1], to: 2 }]).ok, true, "a bond touching atom 0 is refused");
+  // The reader returns an index rather than throwing, so the obvious falsy check refused every
+  // highlight on the first atom in the notation. This caught it once already, on the arrows.
+  assert.equal(marked([0]).ok, true, "a highlight on atom 0 is refused");
+  assert.equal(marked([[0, 1]]).ok, true, "a bond touching atom 0 is refused");
 });
 
-test("🔴 arrows on a reaction scheme refuse — sub-drawings do not share an index space", () => {
-  const result = validateCanvasVisual({
-    arrows: [{ from: 0, to: 1 }],
+test("🔴 a BOND highlight on a reaction scheme refuses — sub-drawings do not share an index space", () => {
+  const bond = validateCanvasVisual({
+    highlight: [[0, 1]],
     kind: "structure",
     learningGoal: "This cannot mean one thing",
     notation: "reaction-smiles",
     value: "CCO>>CC=O",
   });
-  assert.equal(result.ok, false);
-  assert.equal(result.ok === false && result.reason, "malformed-structure");
-  assert.match(result.ok === false ? result.detail : "", /dot-separated/);
+  assert.equal(bond.ok, false);
+  assert.equal(bond.ok === false && bond.reason, "malformed-structure");
+  assert.match(bond.ok === false ? bond.detail : "", /one frame/);
+  // 🔴 AN ATOM highlight is still fine there: only the PAIR form needs a shared index space.
+  assert.equal(
+    validateCanvasVisual({
+      highlight: [0],
+      kind: "structure",
+      learningGoal: "Marking one atom of a scheme is unambiguous",
+      notation: "reaction-smiles",
+      value: "CCO>>CC=O",
+    }).ok,
+    true,
+  );
 });
 
-test("an arrow from an atom to itself, a fractional index, and a ninth arrow all refuse", () => {
-  const base = { kind: "structure", learningGoal: "Bounds", notation: "smiles", value: "CCO" };
-  assert.equal(validateCanvasVisual({ ...base, arrows: [{ from: 1, to: 1 }] }).ok, false);
-  assert.equal(validateCanvasVisual({ ...base, arrows: [{ from: 0.5, to: 1 }] }).ok, false);
-  assert.equal(
-    validateCanvasVisual({ ...base, arrows: Array.from({ length: 9 }, (_, i) => ({ from: 0, to: i + 1 })) }).ok,
-    false,
-  );
+test("🔴🔴🔴 the withdrawn fields are GONE, not merely undocumented", () => {
+  // 🔴 A FIELD THAT VALIDATES BUT NEVER RENDERS IS THIS REPO'S MOST EXPENSIVE RECURRING DEFECT.
+  // `arrows` and `lonePairs` no longer reach a renderer, so they must not survive validation
+  // either: a visual that carries them would be a promise nothing keeps.
+  const legacy = validateCanvasVisual({
+    arrows: [{ from: 0, to: 1 }],
+    kind: "structure",
+    learningGoal: "The old vocabulary, sent by an older prompt",
+    lonePairs: true,
+    notation: "smiles",
+    value: "[OH-].CBr",
+  });
+  assert.equal(legacy.ok, true, "an unknown extra field should be ignored, not fatal");
+  if (!legacy.ok || legacy.visual.kind !== "structure") return;
+  assert.ok(!("arrows" in legacy.visual), "arrows survived validation with nothing to draw them");
+  assert.ok(!("lonePairs" in legacy.visual), "lonePairs survived validation with nothing to draw it");
 });

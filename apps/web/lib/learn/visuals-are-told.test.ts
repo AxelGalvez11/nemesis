@@ -92,7 +92,11 @@ const SHAPE_FOR_KIND: Record<string, RegExp> = {
   equation: /equation \{latex\}/,
   figure: /"kind":"figure","subject"/,
   macromolecule: /"kind":"macromolecule","accession"/,
-  mechanism: /mechanism \{steps:\[\{value, arrows, label\}\]\}/,
+  // 🔴 `arrows` BECAME `highlight` ON 2026-08-26, when the curly arrows were withdrawn. This guard
+  // reddened the moment the router changed and this line did not, which is exactly what pinning the
+  // literal string is for: a packet advertising a field the validator has stopped accepting is a
+  // capability the model keeps writing for and silently losing.
+  mechanism: /mechanism \{steps:\[\{value, highlight, label\}\]\}/,
   quantitative: /quantitative \{xLabel, yLabel, series/,
   relationship: /relationship \{nodes:\[\{id,label\}\], edges/,
   score: /score \{abc\}/,

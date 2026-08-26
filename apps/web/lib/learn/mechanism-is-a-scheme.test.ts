@@ -70,7 +70,7 @@ const SMILES_REARRANGEMENT = {
   learningGoal: "The nitrogen attacks the ring carbon as the oxygen leaves.",
   steps: [
     { label: "NaH", value: "NCCOc1ccc(cn1)[N+](=O)[O-]" },
-    { arrows: [{ from: 0, to: 4 }, { from: [3, 4], to: 3 }], value: "[NH-]CCOc1ccc(cn1)[N+](=O)[O-]" },
+    { highlight: [0, [3, 4]], value: "[NH-]CCOc1ccc(cn1)[N+](=O)[O-]" },
     { value: "OCCNc1ccc(cn1)[N+](=O)[O-]" },
   ],
 };
@@ -80,12 +80,23 @@ test("🔴🔴🔴 link 1: the model is TOLD a whole reaction can be one picture
   assert.match(PACKET, /connected scheme/i, "nothing says what makes it different from separate cards");
 });
 
-test("🔴🔴🔴 link 2: an arrow end is stated as a BOND as well as an atom", () => {
+test("🔴🔴🔴 link 2: a highlight is stated as a BOND as well as an atom", () => {
   // 🔴 THE EXACT MISTAKE THAT KILLED `visuals`: a field shown empty in the contract's highest-signal
-  // position arrives empty on every turn. A bond end shown only in prose would be a bond end never
+  // position arrives empty on every turn. A bond written only in prose would be a bond never
   // written, so the packet carries a real one.
-  assert.match(PACKET, /\{"from":\[3,4\],"to":3\}|\\"from\\":\[3,4\]/, "the bond-tailed arrow is never shown written out");
-  assert.match(PACKET, /lone pair/i, "nothing says a bare index means the lone pair");
+  assert.match(PACKET, /"highlight":\[0,\[3,4\]\]|\\"highlight\\":\[0,\[3,4\]\]/, "the bond highlight is never shown written out");
+  assert.match(PACKET, /pair of numbers is the bond|PAIR of numbers is the bond/i, "nothing says a pair of indices means a bond");
+});
+
+test("🔴🔴🔴 link 2b: the model is told IN CAPITALS not to draw electron movement", () => {
+  // 🔴 THE OWNER WITHDREW THE ARROWS, 2026-08-26, AND A PROMPT THAT STILL OFFERED THEM WOULD BE
+  // WORSE THAN ONE THAT NEVER HAD THEM: the model would keep emitting a field that now validates
+  // away to nothing, and the turn would silently lose the only thing it said about the electrons.
+  assert.match(PACKET, /NEVER DRAW ELECTRON MOVEMENT/, "the ban on drawing electron movement is gone");
+  assert.match(PACKET, /no curly arrows|no lone-pair dots/i, "nothing names what was withdrawn");
+  assert.match(PACKET, /own sentences|ordinary sentences/i, "nothing tells it to explain the step in words instead");
+  // And the old vocabulary is not still sitting there being offered.
+  assert.ok(!/"arrows":\[\{"from"/.test(PACKET), "the packet still shows an arrows example");
 });
 
 test("🔴🔴🔴 link 3: the schema accepts the owner's own reaction", () => {
@@ -93,8 +104,8 @@ test("🔴🔴🔴 link 3: the schema accepts the owner's own reaction", () => {
   assert.equal(result.ok, true, "the mechanism his textbook prints is refused");
   if (!result.ok || result.visual.kind !== "mechanism") return;
   assert.equal(result.visual.steps.length, 3);
-  assert.deepEqual(result.visual.steps[1]?.arrows?.[1], { from: [3, 4], to: 3 }, "the bond tail was lost");
-  assert.equal(result.visual.steps[1]?.lonePairs, true, "the dots did not come on with the arrows");
+  assert.deepEqual(result.visual.steps[1]?.highlight?.[1], [3, 4], "the breaking bond was lost");
+  assert.equal(result.visual.steps[1]?.highlight?.[0], 0, "the attacking atom was lost");
   assert.equal(result.visual.steps[0]?.label, "NaH", "what rides on the reaction arrow was dropped");
 });
 
@@ -105,7 +116,7 @@ test("🔴🔴 link 3b: it refuses what it cannot draw, rather than drawing some
   assert.equal(bad([]), false, "no steps");
   assert.equal(bad(Array.from({ length: 7 }, () => ({ value: "CCO" }))), false, "seven frames");
   assert.equal(bad([{ value: "CCO" }, { value: "not a smiles ((" }]), false, "an unparsable step");
-  assert.equal(bad([{ value: "CCO" }, { arrows: [{ from: [1, 1], to: 0 }], value: "CCO" }]), false, "a bond to itself");
+  assert.equal(bad([{ value: "CCO" }, { highlight: [[1, 1]], value: "CCO" }]), false, "a bond to itself");
 });
 
 test("🔴🔴 link 4: the router carries it as its own representation", () => {
@@ -136,12 +147,33 @@ test("🔴🔴🔴 link 6: it is one SCHEME, and every frame is the SAME rendere
   assert.match(SCHEME, /step\.label \?/, "what is written on the reaction arrow was dropped");
 });
 
-test("🔴🔴 the dots are COUNTED, never asked of the model", () => {
-  // A model stating dot counts would be a model drawing, and it would be confidently wrong on
-  // exactly the charged intermediates that matter.
-  assert.match(STRUCTURE, /lonePairCount\(\{/, "the lone pairs stopped being counted from the graph");
-  assert.ok(!/lonePairCount: /.test(PACKET), "the packet started asking the model for dot counts");
-  assert.match(STRUCTURE, /countImplicitHydrogens/, "the hydrogens are no longer counted, so carbons will sprout pairs");
+test("🔴🔴🔴 the dots and the curly arrows are GONE, in every layer at once", () => {
+  // 🔴 OWNER, 2026-08-26: *"bad mechanism arrows are worse than no arrows because they teach the
+  // chemistry incorrectly."* A half-removal is the worse outcome of the two: a renderer that still
+  // draws while the contract has stopped describing, or a contract that still promises while the
+  // renderer has stopped drawing. So all four layers are checked in one place.
+  assert.ok(!/lonePairCount|lonePairDots|drawElectronArrows|curlyArrow/.test(STRUCTURE), "the renderer still draws electrons");
+  assert.ok(!/lonePairs|arrows/.test(SCHEME), "the scheme still passes electron fields down");
+  assert.ok(!/"arrows"|lonePairs/.test(PACKET), "the packet still offers arrows or dots");
+});
+
+test("🔴🔴🔴 a charge reads LAST, because OH⁻ is not O⁻H", () => {
+  // 🔴 OWNER, 2026-08-26: *"the electron 'OH⁻' is not correct… charges are part of normal molecular
+  // depiction, not an optional mechanism feature."* The bug is in the drawer: `drawText` welds the
+  // charge onto the element symbol BEFORE appending the hydrogens, so the pieces can only ever be
+  // ["O⁻", "H"] and `OH⁻` is not expressible. Fixed in our own pass over the finished drawing.
+  assert.match(STRUCTURE, /function chargesReadLast/, "the charge fix is gone");
+  assert.match(STRUCTURE, /chargesReadLast\(element\)/, "the charge fix is never called");
+});
+
+test("🔴🔴🔴 a highlight is DRAWN BY US, because the library's own highlight paints everything", () => {
+  // 🔴 MEASURED ON ASPIRIN WITH `highlight: [0, 2]`: 26 highlight circles, one per atom, in the
+  // library's fallback green. `drawAtomHighlights` matches `atom.class === highlight[0]` — a SMILES
+  // atom CLASS, not a position — and wants [class, colour] pairs. Bare indices made every atom
+  // match `undefined === undefined`. It had never once worked.
+  assert.match(STRUCTURE, /function drawHighlights/, "we stopped drawing our own highlights");
+  assert.match(STRUCTURE, /drawer\.draw\(parsed, element, theme, null, false, \[\]\)/, "the library's own highlight argument is being fed again");
+  assert.match(STRUCTURE, /data-highlight/, "a highlight can no longer be found in the output");
 });
 
 test("🔴🔴🔴 a molecule is LINE ART, not a rainbow", () => {

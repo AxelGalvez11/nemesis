@@ -692,10 +692,13 @@ const NEMESIS_SYSTEM = [
   + "ohms}]}, supply:{label:\"9 V\"}, equivalentOhms}: `supply` is an OBJECT with a label, and an "
   + "`equivalentOhms` you state is recomputed and the whole figure refused if it disagrees. "
   + "score {abc}: ABC notation including its K: header line. "
-  + "mechanism {steps:[{value, arrows, label}]}: a whole reaction as ONE connected scheme of 2 to 6 frames "
-  + "joined by reaction arrows, which is how a textbook prints a mechanism. An arrow end is an atom index "
-  + "for that atom's lone pair, or a pair of indices for the bond between them, so a bond breaking is "
-  + "written {\"from\":[3,4],\"to\":3}. The dots are counted and drawn for you. "
+  + "mechanism {steps:[{value, highlight, label}]}: a whole reaction as ONE connected scheme of 2 to 6 frames "
+  + "joined by reaction arrows, which is how a textbook prints a mechanism, as "
+  + "{\"value\":\"[NH-]CCOc1ccc(cn1)[N+](=O)[O-]\",\"highlight\":[0,[3,4]]}. `highlight` names what a step is "
+  + "ABOUT, counting heavy atoms from zero: a number is an atom, and a PAIR of numbers is the bond between "
+  + "them, so [0,[3,4]] marks atom 0 and the breaking 3-4 bond. NEVER DRAW ELECTRON MOVEMENT: there are no "
+  + "curly arrows, no fishhook arrows and no lone-pair dots, and asking for one draws nothing. Highlight the "
+  + "atom attacked and the bond that breaks, then say what the electrons do in your own sentences. "
   + "surface {expression, xFrom, xTo, yFrom, yTo}: the grid is computed for you.",
 
   // 🔴 THE FOUR THAT ARE A LOOKUP RATHER THAN A DRAWING, SAID SEPARATELY BECAUSE THE MISTAKE IS
