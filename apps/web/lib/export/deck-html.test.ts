@@ -86,8 +86,16 @@ test("the deck is a route, and both shelves open it rather than downloading", ()
   const view = readFileSync(new URL("../../components/workspace/deck/deck-view.tsx", import.meta.url), "utf8");
   assert.match(view, /requestFullscreen/, "present mode is gone");
   assert.match(view, /window\.print\(\)/, "the PDF path is gone — printing IS the PDF export");
+  // 🔴 THE LINK MOVED, THE INVARIANT DID NOT. On 2026-08-25 a deck row stopped navigating away and
+  // started opening the side panel like every other artifact (owner: *"the artifacts like
+  // documents, presentations, and pdf etc. should open as a right sidebar"*). The full deck page is
+  // still reachable — it holds the twenty designs and the real geometry, which a 38rem column
+  // cannot — and the panel links out to it. So this points at the panel's own view rather than at
+  // the row that used to carry the href.
+  const deckPreview = readFileSync(new URL("../../components/workspace/learn/deck-preview.tsx", import.meta.url), "utf8");
+  assert.match(deckPreview, /\/deck\?c=/, "the deck panel no longer links out to the full deck");
   const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
-  assert.match(controls, /\/deck\?c=/, "the canvas outputs panel no longer opens the deck");
+  assert.match(controls, /output\.kind === "slides" && output\.deck/, "the canvas outputs panel no longer opens the deck");
   const library = readFileSync(new URL("../../components/workspace/library/library-outputs.tsx", import.meta.url), "utf8");
   assert.match(library, /\/deck\?c=/, "the Library's Slides shelf no longer opens the deck");
 });

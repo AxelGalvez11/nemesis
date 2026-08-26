@@ -21,14 +21,17 @@ import { useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { docBlocks } from "@/lib/export/doc-blocks";
+import { downloadDeck } from "@/lib/export/deck-download";
 import { downloadDocx, downloadPdf, downloadSheet, pdfBlob, type SheetData } from "@/lib/export/doc-file";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { readLibraryNote } from "@/lib/workspace/library-note-read";
 
+import { DeckPreview } from "./deck-preview";
 import { PdfPages } from "./pdf-pages";
 
 /** What each artifact kind is called, and what its download button says. */
 const DOWNLOAD_LABEL: Record<string, string> = {
+  slides: "Download .pptx",
   document: "Download .docx",
   note: "Download .docx",
   pdf: "Download .pdf",
@@ -36,7 +39,16 @@ const DOWNLOAD_LABEL: Record<string, string> = {
   sheet: "Download .csv",
 };
 
-export function OutputPreview({ onClose, output }: { onClose: () => void; output: CanvasOutput }) {
+export function OutputPreview({
+  canvasId = "",
+  onClose,
+  output,
+}: {
+  /** Needed only by a deck, whose full-page view is addressed by canvas. */
+  canvasId?: string;
+  onClose: () => void;
+  output: CanvasOutput;
+}) {
   const card = useRef<HTMLDivElement>(null);
   // Collapses the left sidebar to the rail while this is docked, and restores it on close without
   // touching the learner's stored preference — see side-panel.tsx.
@@ -77,6 +89,7 @@ export function OutputPreview({ onClose, output }: { onClose: () => void; output
   }, [onClose]);
 
   const markdown = output.markdown ?? fetched ?? "";
+  const deck = output.kind === "slides" ? output.deck : undefined;
 
   /**
    * A PDF artifact is rendered AS A PDF, from the same bytes the download hands over.
@@ -101,6 +114,10 @@ export function OutputPreview({ onClose, output }: { onClose: () => void; output
     };
   }, [markdown, output.kind, output.title]);
   const download = () => {
+    // 🔴 THE DECK IS BUILT BY ITS OWN DOWNLOADER, which signs the learner's figures first — see
+    // deck-download.ts. Rebuilding it here would be a second copy of that step, and the copy that
+    // forgets the signatures ships a deck with captions where the pictures should be.
+    if (output.kind === "slides" && output.deck) return void downloadDeck(output.deck, output.title);
     if (output.kind === "sheet" && output.sheet) return void downloadSheet(output.sheet as SheetData, output.title);
     if (!markdown) return;
     void (output.kind === "pdf" ? downloadPdf(markdown, output.title) : downloadDocx(markdown, output.title));
@@ -134,7 +151,7 @@ export function OutputPreview({ onClose, output }: { onClose: () => void; output
           </span>
           <button
             className="shrink-0 rounded-full bg-(--ui-action) px-3.5 py-1.5 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
-            disabled={!markdown && !output.sheet}
+            disabled={!markdown && !output.sheet && !deck}
             onClick={download}
             type="button"
           >
@@ -151,7 +168,9 @@ export function OutputPreview({ onClose, output }: { onClose: () => void; output
         </div>
 
         <div className="min-h-0 overflow-auto border-t border-(--ui-stroke-tertiary) px-6 py-5">
-          {output.sheet ? (
+          {deck ? (
+            <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} />
+          ) : output.sheet ? (
             <SheetTable sheet={output.sheet as SheetData} />
           ) : output.kind === "pdf" ? (
             pdf ? (

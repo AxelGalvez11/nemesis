@@ -299,7 +299,7 @@ export function SourcesControl({
         <SourcePreview onClose={() => setPreviewing(null)} source={previewing} uid={session?.user.id ?? null} />
       )}
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
-      {openedOutput && <OutputPreview onClose={() => setOpenedOutput(null)} output={openedOutput} />}
+      {openedOutput && <OutputPreview canvasId={canvas.id} onClose={() => setOpenedOutput(null)} output={openedOutput} />}
     </div>
   );
 }
@@ -580,8 +580,16 @@ function OutputRow({
       </button>
     );
   }
+  // 🔴 A DECK OPENS BESIDE THE CANVAS NOW, LIKE EVERY OTHER ARTIFACT (owner, 2026-08-25). It was
+  // the last row that navigated away, so checking what Nemesis had made meant leaving the canvas
+  // that made it. The full page is still there and the panel links out to it — it holds the twenty
+  // designs and the real geometry, which a 38rem column cannot.
   if (output.kind === "slides" && output.deck) {
-    return <SlidesOutputRow canvasId={canvasId} output={output} rowClass={row} />;
+    return (
+      <button className={row} onClick={() => onOpen(output)} type="button">
+        {body}
+      </button>
+    );
   }
   // 🔴🔴 THE FILE IS BUILT AT CLICK TIME FROM WHAT THE ROW CARRIES — the same arrangement the deck
   // has had since it shipped, and for the same reason: a .docx, a PDF and a CSV are each a
@@ -644,33 +652,10 @@ const MEANING: Record<ObjectiveState, string> = {
   untouched: "Not covered yet",
 };
 
-/**
- * What Nemesis is working on, as a panel body.
- *
- * 🔴 NO LONGER ITS OWN HEADER BUTTON — owner call, 2026-08-19. The header is down to three glyphs
- * (`\u00d7`, Sources and outputs, Progress) plus `\u22ef`, and this moved inside the last of them. The
- * BODY is what mattered and it is unchanged; only the way in did.
- */
-/** A slides output: click the row to OPEN the deck; the .pptx download lives inside it.
- *
- *  Owner 2026-08-24: "HTML is the deck, .pptx is an export." A deck that could only be
- *  downloaded made the learner leave the app to see what they had made. */
-function SlidesOutputRow({ canvasId, output, rowClass }: { canvasId: string; output: CanvasOutput; rowClass: string }) {
-  const { choose, designId } = useDeckDesignChoice(output.assetId ?? output.id);
-  const design = deckDesign(designId);
-  if (!output.deck) return null;
-  return (
-    <div className="flex items-center gap-1">
-      <a className={cn(rowClass, "min-w-0 flex-1")} href={`/deck?c=${canvasId}&o=${encodeURIComponent(output.assetId ?? output.id)}`}>
-        <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
-        <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-          Slides · {output.deck.slides.length} in {design.name}
-        </p>
-      </a>
-      <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={output.title} />
-    </div>
-  );
-}
+// 🔴 `SlidesOutputRow` IS GONE, AND ITS DESIGN PICKER WITH IT. The row it drew was the last
+// artifact row that navigated away, replaced on 2026-08-25 by the side panel; what remained was a
+// component nothing rendered. The picker is not lost — the full deck page carries its own, which is
+// where twenty designs belong and where the panel links out to.
 
 function ObjectivesPanel({
   canvas,
