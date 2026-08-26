@@ -19,13 +19,16 @@
 // still has the deck or the note; if the CONTENT write fails, the whole deliverable failed
 // and says so.
 
+import { REFERENCE_SHELF } from "./reference-shelf";
+import { searchCurated } from "./reference-images";
+import { resolveStructures } from "./structure-lookup";
 import { readModelJson } from "../model-json";
 import { supabase } from "@/lib/supabase";
 import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 
-import { deckSystemPrompt, readDeckJson } from "../export/deck-plan";
+import { deckSystemPrompt, readDeckJson, type DeckPlan } from "../export/deck-plan";
 import { canvasFigures, figureMenu } from "./deck-figures";
 
 import { reportMarkdown, reportTitle, researchSummaryLine } from "@/lib/research/report-markdown";
@@ -527,6 +530,31 @@ export async function makeSheetDeliverable(
   };
 }
 
+// ---------------------------------------------------------------- the shared figure shelf
+
+/**
+ * Fills each slide's `illustration` request from the reference shelf, in place.
+ *
+ * 🔴 THE ATTRIBUTION AND LICENCE TRAVEL WITH THE PICTURE. Every row on the shelf was harvested with
+ * its licence read through the repository API; a figure printed without its credit is the one way
+ * this lane could turn a correctly licensed image into an incorrectly used one.
+ */
+function illustrate(plan: DeckPlan): void {
+  for (const slide of plan.slides) {
+    const concept = slide.illustration?.trim();
+    if (!concept) continue;
+    const [best] = searchCurated({ concept, limit: 1 }, REFERENCE_SHELF);
+    if (!best?.assetPath) continue;
+    plan.figures.push({
+      caption: best.caption || concept,
+      path: "",
+      source: best.licence ? `${best.licence}` : "Reference shelf",
+      url: best.assetPath,
+    });
+    slide.figure = plan.figures.length;
+  }
+}
+
 // ---------------------------------------------------------------- slides
 
 /**
@@ -576,7 +604,15 @@ export async function makeSlidesDeliverable(
     { maxTokens: DECK_MAX_TOKENS },
   );
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
-  const plan = readDeckJson(reply.text);
+  // 🔴🔴 EVERY NAMED COMPOUND BECOMES A LOOKUP BEFORE ANYTHING IS PARSED (§42). The model wrote
+  // `{"kind":"structure","compound":"glucose"}`; this replaces it with what PubChem returned, and
+  // `readDeckJson` drops any request that is still a request — a name that did not resolve loses
+  // its picture, never its slide.
+  //
+  // 🔴 THE SAME LANE THE CANVAS USES, called on the raw reply text exactly as `canvas-chat.ts`
+  // calls it. A second resolver for decks would be a second place for §42's rule to rot.
+  const resolved = await resolveStructures(reply.text);
+  const plan = readDeckJson(resolved);
   if (!plan) return { error: "The slide plan came back unusable, so nothing was saved. Try again." };
   // 🔴 THE FIGURE LIST IS THE CANVAS'S, AND SO IS THE RANGE. The model answered with numbers; a
   // number past the end of the real list is dropped here rather than carried into a saved plan,
@@ -585,6 +621,19 @@ export async function makeSlidesDeliverable(
   for (const slide of plan.slides) {
     if (slide.figure > figures.length) slide.figure = 0;
   }
+  // 🔴🔴 A CONCEPT BECOMES A LICENSED FIGURE, OR NOTHING. Owner, 2026-08-25: *"also pull in corpus
+  // figures."* The model named what it wanted a picture OF; `searchCurated` decides which file that
+  // is, from the checked-in shelf whose every row carries a licence that normalised. A model naming
+  // a file would be a model choosing an asset, which is how an unlicensed or unrelated image
+  // reaches a slide with nothing able to catch it.
+  //
+  // 🔴 THE SHELF'S OWN TWO-WORD FLOOR DOES THE REFUSING. It records what a weak match cost:
+  // *"balance sheet matched a bathtub balance seat"*. A slide with no good figure keeps its points,
+  // which is the same bargain an unresolved compound makes.
+  //
+  // 🔴 APPENDED AFTER THE LEARNER'S OWN, for the reason the figure clamp above exists: the model
+  // chose its `figure` numbers against the list it was shown.
+  illustrate(plan);
   // References only from what the canvas really holds — never from the model.
   plan.references = grounded
     ? canvas.sources.slice(0, 10).map((source) => ({
