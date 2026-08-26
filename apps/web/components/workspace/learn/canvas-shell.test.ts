@@ -113,8 +113,23 @@ test("the shell reserves clearance with padding rather than a header element", (
   // MEASURED number, 26px, is what this test exists to pin and it is unchanged — what is dropped is
   // the assertion that a second, now-unreachable one is still spelled out beside it.
   const composer = read("canvas-composer.tsx");
-  assert.match(composer, /min-h-\[52px\] items-center/, "the input row is no longer 52px tall");
-  assert.match(composer, /"rounded-\[26px\]"/, "the composer radius is no longer measured");
+  // 🔴 THE TOKEN NOW, AND THE MEASURED NUMBER MOVED RATHER THAN LEFT. The literal `min-h-[52px]`
+  // was one of three shape values the canvas composer held privately while the FRONT DOOR's
+  // composer — the one that flies into this one's place on every send — read them from
+  // `--composer-*`. Two of the three had already drifted (26px vs 28px radius, 12px vs 8px side
+  // padding), which is a 2px corner pop and a 4px control shift at the exact instant of the route
+  // swap. So this asserts the same 52px, one level up: the class points at the token, and the
+  // token's own value is pinned in globals.css beside the rest of the composer's geometry.
+  assert.match(composer, /min-h-\[var\(--composer-min-height\)\] items-center/, "the input row stopped using the shared height");
+  assert.match(read("../../../app/globals.css"), /--composer-min-height: 52px;/, "the input row is no longer 52px tall");
+  // 🔴 AND THE RADIUS WENT THE SAME WAY, WITH ONE REAL CORRECTION ON THE WAY. This pinned a private
+  // 26px while the front door's composer — the one that flies into this one's place — had been on
+  // `--composer-radius: 28px` all along. Two pills that are one object to a learner were two
+  // pixels apart, and the difference only ever showed for the single frame of the route swap,
+  // which is precisely where nobody looks for it. The token wins because globals.css records that
+  // its values are the ones measured off the reference.
+  assert.match(composer, /"rounded-\[var\(--composer-radius\)\]"/, "the composer radius stopped using the shared token");
+  assert.match(read("../../../app/globals.css"), /--composer-radius: 28px;/, "the composer radius is no longer measured");
 });
 
 test("there is exactly one answer surface on the canvas", () => {

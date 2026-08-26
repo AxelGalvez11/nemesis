@@ -17,7 +17,7 @@
 // every frame of a 680ms trip across the surface, which is the easiest way for something
 // decorative to make a real interface feel slow.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useTheme } from "@/components/theme-provider";
 import { characterInk } from "@/lib/accent";
@@ -48,6 +48,32 @@ import "./character.css";
 
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;
+/**
+ * How long a correction takes when the character is ALREADY at its station and the thing it
+ * stands beside has moved — the composer growing a line, the rail collapsing, a resize.
+ *
+ * 🔴 `character.css` HAS DOCUMENTED THIS NUMBER SINCE THE DAY THE OVERRIDE WAS ADDED, AND NOTHING
+ * EVER PASSED IT. `--character-travel-ms` was only ever written as `0ms` (place instantly) or left
+ * unset (the stylesheet's 680ms walk), so every micro-correction eased over 680ms — two thirds of a
+ * second to travel a handful of pixels. That is what made the character look like it was lagging
+ * its anchor and rubber-banding after the front door handed it over: the correction is small, but
+ * it was being played at the speed of a walk across the whole surface.
+ *
+ * A walk between stations is a journey and keeps the 680ms. A correction is not a journey.
+ */
+const FOLLOW_MS = 140;
+/** Sub-pixel jitter is not a move; without a floor the 120ms tick re-renders for ever. */
+const SETTLED_PX = 0.5;
+
+/** Where the character stands relative to its corner, and whether a measurement has landed yet. */
+interface Travel {
+  readonly dx: number;
+  readonly dy: number;
+  readonly k: number;
+  /** Per-move override for `--character-travel-ms`; null means the stylesheet's journey time. */
+  readonly ms: number | null;
+  readonly placed: boolean;
+}
 
 /** The dock's rendered size, and how much bigger it gets in the middle — as values, because
  *  the front door has to aim its own character at the exact point this one will occupy.
@@ -234,7 +260,13 @@ export function CharacterDock({
    * replaying, badly, the journey the front door's greeter just made. `ms` is the per-move
    * override for `--character-travel-ms` (see character.css); null means the stylesheet's journey time.
    */
-  const [travel, setTravel] = useState<{ dx: number; dy: number; k: number; ms: number | null; placed: boolean }>({ dx: 0, dy: 0, k: 1, ms: null, placed: false });
+  const [travel, setTravel] = useState<Travel>({ dx: 0, dy: 0, k: 1, ms: null, placed: false });
+  /**
+   * 🔴 A REF, NOT AN EFFECT-LOCAL. The station effect re-runs whenever `station` itself changes, so
+   * anything scoped inside it is reset by exactly the event it needs to remember — and a walk from
+   * corner to centre would be mistaken for a correction and played at 140ms instead of 680ms.
+   */
+  const placedAtRef = useRef<Station | null>(null);
   /**
    * 🔴 THE ANCHOR MEASURES BEFORE ANY PLACEMENT COUNTS (owner 2026-08-25, on production: the
    * character "was already on the bottom left side, moving upward"). The station effect and the
@@ -253,7 +285,7 @@ export function CharacterDock({
   const stationRef = useRef<Station>("corner");
 
   // ── Where the dock sits ──────────────────────────────────────────────────────
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!anchor) {
       anchoredRef.current = true;
       setOffset(bottom);
@@ -324,12 +356,43 @@ export function CharacterDock({
   // ── Where it stands ──────────────────────────────────────────────────────────
   const station = stationOverride ?? stationOf(shown);
   stationRef.current = station;
-  useEffect(() => {
+  useLayoutEffect(() => {
+    /**
+     * How long this move takes: null = the stylesheet's 680ms walk, 0 = be there already,
+     * FOLLOW_MS = keep up with an anchor that shifted under a character already at its station.
+     *
+     * 🔴 `from` IS READ ONCE PER MEASUREMENT, NOT INSIDE THE UPDATER. A `setState` updater must be
+     * pure — React is free to call it twice — so the ref is read here and written after the call,
+     * never mutated from within it.
+     */
+    const durationFor = (placed: boolean, from: Station | null) => {
+      if (!placed || !anchoredRef.current) return 0;
+      return from === null || from === station ? FOLLOW_MS : null;
+    };
+    const settled = (was: Travel, dx: number, dy: number, k: number, ms: number | null, placed: boolean) =>
+      Math.abs(was.dx - dx) < SETTLED_PX &&
+      Math.abs(was.dy - dy) < SETTLED_PX &&
+      was.k === k &&
+      was.ms === ms &&
+      was.placed === placed;
     const measure = () => {
       const host = hostRef.current;
       if (!host) return;
       if (station === "corner") {
-        setTravel((was) => ({ dx: 0, dy: 0, k: 1, ms: was.placed && anchoredRef.current ? null : 0, placed: anchoredRef.current }));
+        const from = placedAtRef.current;
+        setTravel((was) => {
+          const ms = durationFor(was.placed, from);
+          // 🔴 THE SAME OBJECT BACK WHEN NOTHING MOVED. `setTravel` allocated a fresh object every
+          // 120ms whether or not any number in it had changed, so React could never bail out and
+          // this component — with `NemesisAvatar` and its whole engine underneath it — re-rendered
+          // eight times a second for the life of the session, each time forcing synchronous layout.
+          // Returning `was` unchanged is what makes the ticker free when the character is standing
+          // still, which is almost always.
+          return settled(was, 0, 0, 1, ms, anchoredRef.current)
+            ? was
+            : { dx: 0, dy: 0, k: 1, ms, placed: anchoredRef.current };
+        });
+        placedAtRef.current = station;
         return;
       }
       const parent =
@@ -342,13 +405,24 @@ export function CharacterDock({
       const cornerX = pr.left + inset + size / 2;
       const cornerY = pr.bottom - offset - size / 2;
       const middle = centreStation(pr);
-      setTravel((was) => ({
-        dx: middle.x - cornerX,
-        dy: middle.y - cornerY,
-        k: centreScale,
-        ms: was.placed && anchoredRef.current ? null : 0,
-        placed: anchoredRef.current,
-      }));
+      const dx = middle.x - cornerX;
+      const dy = middle.y - cornerY;
+      const from = placedAtRef.current;
+      // 🔴 A SNAP WAS TRIED HERE AND MEASURED WORSE, WHICH IS WHY THE EASE STAYS. The nav rail
+      // collapses over 240ms and the centre station is derived from the surface, so for those
+      // 240ms the destination itself is sliding and the 140ms catch-up leaves the character a
+      // fraction behind it. Placing instantly instead looks like the obvious fix and is not: the
+      // station is re-measured on a 120ms interval, so "instant" quantises the whole journey to
+      // roughly 8fps and the character visibly stutters between samples. Measured both ways —
+      // eased, it settles at the centre by ~+560ms; snapped, it held two positions and arrived at
+      // ~+900ms. The ease is doing real work: it smooths over the sampling rate.
+      setTravel((was) => {
+        const ms = durationFor(was.placed, from);
+        return settled(was, dx, dy, centreScale, ms, anchoredRef.current)
+          ? was
+          : { dx, dy, k: centreScale, ms, placed: anchoredRef.current };
+      });
+      placedAtRef.current = station;
     };
     measure();
     const timer = window.setInterval(measure, MEASURE_MS);

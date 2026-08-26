@@ -61,7 +61,14 @@ test("🔴 the character keeps its face while it works", async () => {
 test("🔴 the surface says where the character stands, because the pose no longer can", () => {
   assert.match(DOCK, /station\?: Station;/, "the dock cannot be told where to stand");
   assert.match(DOCK, /const station = stationOverride \?\? stationOf\(shown\)/);
-  assert.match(CANVAS, /station=\{turnInFlight \|\| presence === "preparing" \? "centre" : "corner"\}/);
+  // 🔴 A THIRD TERM, BECAUSE TWO WERE NOT ENOUGH TO COVER THE HANDOVER. `turnInFlight` is the
+  // SESSION's busy flag and `presence === "preparing"` is the surface's; between the canvas becoming
+  // ready and the opening ask actually starting, BOTH are false. The front door had just flown the
+  // character to the middle, so that gap put it in the corner and walked it back — measured on the
+  // real page at (493, 648) arriving at the surface centre (728, 378). `handedOver` is exactly
+  // "this canvas was opened by pressing send on the front door", and it clears the moment anything
+  // real happens.
+  assert.match(CANVAS, /station=\{handedOver \|\| turnInFlight \|\| presence === "preparing" \? "centre" : "corner"\}/);
   // 🔴 AND THE DERIVED DEFAULT SURVIVES FOR EVERY CALLER WITH NO OPINION. A prop that silently
   // became mandatory would move the character on surfaces nobody had looked at.
   assert.match(STATIONS, /export function stationOf/);

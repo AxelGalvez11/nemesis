@@ -1053,6 +1053,39 @@ export function LearningCanvas({
   });
 
   /**
+   * The phase a policy judgement is narrating, or null when none is.
+   *
+   * 🔴 NAMED ONCE BECAUSE TWO THINGS DEPEND ON IT AND THEY MUST NOT DISAGREE. `CanvasThinking`
+   * draws the character while this holds a phase, and the dock stands down for exactly that span.
+   * Computed in two places, the day one of them changed would be the day the canvas has two
+   * characters or none, and neither failure announces itself.
+   *
+   * 🔴 IT CARRIES THE PHASE RATHER THAN A BOOLEAN so the narrowing survives to the render — a
+   * `boolean` would leave `policy.phase` possibly-null at the call site and force a second check
+   * that could drift from this one.
+   */
+  const judgingPhase = regions.policy && policy.thinking ? policy.phase : null;
+
+  /**
+   * The front door just handed the character over, and no turn has started yet.
+   *
+   * 🔴🔴 THE GAP THIS CLOSES IS SMALL, REAL, AND THE WHOLE REMAINING GLITCH. `CanvasHome` flies the
+   * character to the middle of the surface and pushes the route on the same beat, so the canvas's
+   * first painted frame has to show it already standing there. It did not: the dock's station reads
+   * `turnInFlight || presence === "preparing"`, `turnInFlight` is `busy.kind !== null`, and `busy`
+   * is not set until the opening effect below runs `beginOrAnswer` — which is itself gated on
+   * `session.ready`. Between "ready" and "busy" both terms are false, so the dock scored `corner`,
+   * placed itself beside the composer, and then walked 680ms back to the middle the moment the turn
+   * began. Measured on the real page: the character appeared at (493, 648) and arrived at the
+   * centre (728, 378) around 120ms later, having travelled there in full view.
+   *
+   * `openingAsk` is exactly the fact "this canvas was opened by someone pressing send on the front
+   * door", which is exactly when a handover is in progress. It is cleared the moment anything real
+   * happens, and from then on the ordinary terms decide.
+   */
+  const [handedOver, setHandedOver] = useState(Boolean(openingAsk));
+
+  /**
    * What is on screen, as one string — the identity `CanvasFade` swaps on.
    *
    * 🔴 COMPOSED FROM THE THREE THINGS THAT CAN OCCUPY THE SURFACE, and from nothing else. `presence`
@@ -1090,6 +1123,13 @@ export function LearningCanvas({
    * a narrowing across it — and the honest fix is a value, not a `!`. A non-null assertion here
    * would be asserting exactly the thing that has gone wrong on this surface before. */
   const replyText = session.aside?.blockId === null ? session.aside.text : "";
+  useEffect(() => {
+    // 🔴 CLEARED ON THE TURN, NOT ON A TIMER. Once `turnInFlight` is true the station's own first
+    // term holds the centre, so dropping this changes nothing visible — it just stops this flag
+    // outliving the handover it describes. A reply or an error ends it too, for the paths where a
+    // turn never starts at all.
+    if (turnInFlight || replyText || session.error) setHandedOver(false);
+  }, [turnInFlight, replyText, session.error]);
   const replyConsulted = session.aside?.blockId === null ? session.aside.consulted : undefined;
   /** Hoisted for the same narrowing reason as the two above: `session.aside` is re-read per line. */
   const replyVisualList = session.aside?.blockId === null ? session.aside.visuals ?? [] : [];
@@ -1211,8 +1251,17 @@ export function LearningCanvas({
       <CanvasSurface onExit={leave}>
         <div className="flex h-full items-center justify-center">
           {/* Nothing is docked yet — there is no composer to stand above — so the character
-              simply holds the middle, which is where it would have walked to anyway. */}
-          <CharacterDock bottom={0} contain left={0} state={stateForCanvas({ thinking: true, preparing: true })} />
+              simply holds the middle, which is where it would have walked to anyway.
+              🔴🔴 `station` IS PASSED, AND THE COMMENT ABOVE WAS A LIE WITHOUT IT. The dock falls back
+              to `stationOf(shown)`, which reads the POSE — and `stations.ts` says in its own header
+              that the derived station broke on purpose the day the working poses stopped being
+              unique to working. `stateForCanvas({thinking:true})` resolves to `curious`, which is not
+              in the `CENTRE` set, so this dock stood in the bottom-LEFT corner at scale 1. The front
+              door hands a 126px character over at the middle of the surface and this branch put a
+              60px one in the corner on the very next frame — the teleport the learner sees on every
+              deep link, hard refresh and fresh sign-in. Every surface that knows where the character
+              belongs says so out loud; this one had forgotten to. */}
+          <CharacterDock bottom={0} contain left={0} station="centre" state={stateForCanvas({ thinking: true, preparing: true })} />
           {/* This branch is one database read long and shows no caption, so the dock's own
               animation is the whole of what says "working" here. Nothing draws a second one. */}
           {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
@@ -1713,9 +1762,16 @@ export function LearningCanvas({
                     text={segment.text}
                   />
                 ) : (
-                  <div key={`p${index}`} {...selectableRegion(index === 0 ? "reply" : `reply-${index}`)}>
+                  /* 🔴 KEYED ON THE ANSWER, NOT ONLY ON THE POSITION. `canvas-answer-in` staggers
+                     the reply's blocks as they arrive, and a CSS animation runs when its element
+                     mounts — so with a key of `p0` alone React reused the same nodes for every
+                     reply and the reveal played exactly once per session. The text IS the identity
+                     of an answer here: there is no turn id on `aside`, and two different replies
+                     can share a length, a question and a block index. It is one element, not a
+                     list, so the long key costs nothing. */
+                  <div key={`p${index}:${replyText}`} {...selectableRegion(index === 0 ? "reply" : `reply-${index}`)}>
                     <AssistantMarkdown
-                      className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
+                      className="canvas-answer-in text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
                       namedCitations
                       // 🔴 INLINE `$x$` IS MATHS ON THIS SURFACE, WHICH IS THE OPPOSITE OF THE
                       // CHAT DEFAULT AND DELIBERATE. The flag is off globally because of an owner
@@ -2094,12 +2150,18 @@ export function LearningCanvas({
         {!regions.policy &&
           (busy.kind === "lesson" || busy.kind === "recall" || busy.kind === "test" || busy.kind === "relearn") &&
           canvas.state !== "orient" && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-(--ui-bg-editor)/70">
-              <p className="flex items-center gap-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
-                <Codicon name="loading" size="0.875rem" spinning />
-                {busy.label}…
-              </p>
-            </div>
+            /* 🔴🔴 THE DIMMING STAYS, THE SPINNER AND THE LABEL GO, BECAUSE THE CHARACTER IS ALREADY
+               SAYING BOTH (owner 2026-08-26: the mascot should be the thing that shows it is
+               thinking). A whole-page job runs with `busy.kind` set, which makes `turnInFlight`
+               true — so the dock is at the centre station with `preparingLabel`, and
+               `previewWorthShowing` cannot suppress that caption because `systemLabel` falls back
+               to this very `busy.label`. The scrim therefore printed the SAME sentence a second
+               time, with a spinning glyph beside it, a few pixels under a character that was
+               already standing there saying it. `.character-dock` is z-30 and this has no
+               z-index, so the two were stacked, not side by side.
+               What is left is the one thing the character cannot do: grey the page out to say the
+               whole surface is busy rather than one region of it. */
+            <div className="pointer-events-none absolute inset-0 bg-(--ui-bg-editor)/70" />
           )}
       </div>
 
@@ -2136,6 +2198,14 @@ export function LearningCanvas({
           a press meant for the composer behind it. */}
       <CharacterDock
         anchor="#canvas-composer"
+        // 🔴🔴 ONE CHARACTER ON SCREEN, EVER. A policy judgement draws its own — small, at the foot
+        // of the page, beside the step it is narrating (see `CanvasThinking`, which explains why it
+        // cannot simply be this dock moved to the centre). Without this the learner would get two:
+        // a 60px one resting in the bottom-left corner, because a judgement scores `corner` on both
+        // terms of the station below, and a working one down by the caption. `hidden` returns null
+        // after every hook, so this dock keeps its measurements and its place and does not walk in
+        // from the corner when the judgement ends.
+        hidden={judgingPhase !== null}
         // 🔴 THE CAPTION RIDES THE CHARACTER. It used to be its own box on the page and ended up
         // against the right edge of the window, hundreds of pixels from the mascot it was meant to
         // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
@@ -2155,7 +2225,7 @@ export function LearningCanvas({
         // 🔴 THE SURFACE KNOWS, BECAUSE THE POSE NO LONGER DOES. The character works in `idle` now
         // that the dots are gone, and `idle` is also how it rests — so "come forward" has to be
         // said by whoever knows a turn is in flight rather than inferred from the animation.
-        station={turnInFlight || presence === "preparing" ? "centre" : "corner"}
+        station={handedOver || turnInFlight || presence === "preparing" ? "centre" : "corner"}
         contain
         // 🔴 "!" WHEN SOMETHING WENT WRONG, "?" WHEN NEMESIS IS WAITING ON THE LEARNER, and null on
         // nearly every render — a mascot that is always signalling is a mascot nobody looks at.
@@ -2223,7 +2293,7 @@ export function LearningCanvas({
           exactly where it was — the learner keeps the thing they just answered in view, so nothing
           has to be reconstructed when the verdict lands. This is the replacement for the 70% scrim,
           which is why that overlay lives inside the legacy arm and can never paint here. */}
-      {regions.policy && policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
+      {judgingPhase && <CanvasThinking phase={judgingPhase} />}
 
       {pointed && (
         <CanvasSelectionMenu

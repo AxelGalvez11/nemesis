@@ -781,13 +781,21 @@ export function CanvasComposer({
         <div
           className={cn(
             "flex flex-col bg-(--ui-bg-elevated)",
-            "rounded-[26px]",
+            // 🔴 THE TOKEN, NOT A LITERAL — THE FRONT DOOR FLIES ITS COMPOSER INTO THIS ONE'S PLACE.
+            // These two pills are the same object to a learner: the front door's composer travels
+            // down and the route swaps under it, so any difference between the two shapes is a pop
+            // at the exact instant the swap happens. This was `rounded-[26px]` against the front
+            // door's `--composer-radius` of 28px, and the row below was `px-[12px]` against a
+            // `--composer-pad-x` of 8px — a 2px corner and a 4px control shift, arriving together.
+            // The tokens carry the measured values (see globals.css, which records that 8px is what
+            // the reference measures); a literal here is a copy that drifts and never fails a test.
+            "rounded-[var(--composer-radius)]",
             "shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)",
             selected.length > 0 && !listening && "ring-(--ui-action)/50",
           )}
         >
-          {/* The input row. 52px tall and 12px of side padding, measured off the reference. */}
-          <div className="flex min-h-[52px] items-center gap-0 px-[12px]">
+          {/* The input row, on the same tokens the front door's composer uses. */}
+          <div className="flex min-h-[var(--composer-min-height)] items-center gap-0 px-[var(--composer-pad-x)]">
             {/* Stays put through every state, including dictation: spatial continuity is the
                 reason there is one composer at all. Subdued, not moved, while listening.
                 🔴 Absent once a session is underway — see `inSession`. */}

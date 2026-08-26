@@ -125,13 +125,26 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   /**
    * Where the composer travels, in px. Measured at the moment of the send; see `start`.
    *
-   * 🔴 IT SIDESTEPS AS WELL AS DROPS, AND THE SIDESTEP IS NOT A FLOURISH. The canvas is an
-   * immersive surface: it takes the nav rail away. So the composer this page centres inside a
-   * railed column is 26px to the RIGHT of where the canvas's composer will be centred inside
-   * the whole window — and travelling straight down landed it 26px off, which the route swap
-   * then corrected in a single frame. A move that ends with a jump is not a move; the learner
-   * sees the jump and reads the whole transition as broken. Measured rather than assumed,
-   * because the rail can be open or collapsed and the offset is zero in one of those cases.
+   * 🔴🔴 IT DROPS STRAIGHT DOWN, AND THE SIDESTEP THAT USED TO BE HERE WAS AIMING AT THE RIGHT
+   * PLACE AT THE WRONG TIME. The canvas is an immersive surface: it takes the nav rail away, so
+   * this page's composer — centred inside a railed column — sits 26px right of where the canvas's
+   * composer eventually settles inside the whole window. The old code therefore travelled 26px
+   * LEFT on the way down, to land on that eventual position.
+   *
+   * The flaw is that "eventually" is not "on arrival". The rail is not taken away until
+   * `CanvasSurface` mounts and claims the immersive surface in an EFFECT — a frame after the route
+   * swap — and the column then animates 52px→0 over 240ms (`[data-pane-shell-animate]`, globals.css).
+   * So at the instant of the swap the canvas's own composer is still centred in a railed column, at
+   * +26, while this one had just finished travelling to 0. The learner saw the composer arrive,
+   * jump 26px right as the page changed, and then slide 26px left again as the chrome caught up.
+   * Two corrections to fix an offset that was never wrong.
+   *
+   * Both ends now measure the SAME rectangle — the surface this page fills, which is the same
+   * column the canvas's `<main>` will fill (see `start`). The composer lands exactly where the
+   * canvas's composer begins, so the swap shows nothing at all; the rail then slides away and
+   * carries both the composer and the character with it, as one deliberate movement of chrome
+   * rather than as a correction. `x` is kept because the two rectangles can still differ — a
+   * scrollbar, a narrow viewport — and zero is the common case rather than the assumption.
    */
   const [travel, setTravel] = useState({ x: 0, y: 0 });
   const greeterBox = useRef<HTMLDivElement>(null);
@@ -238,16 +251,32 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
       return;
     }
     const rect = box.getBoundingClientRect();
+    // 🔴🔴 THE SURFACE, NOT THE VIEWPORT, AND THAT DISTINCTION WAS THE WHOLE GLITCH. Both halves of
+    // this handoff aim at a centre, and they were aiming at two different ones. This page measured
+    // against `window` while the canvas's `CharacterDock` measures against its `offsetParent` —
+    // `CanvasSurface`'s `<main>`, which lives in the shell's SECOND grid column. Those two
+    // rectangles differ by exactly the nav rail's width (`--nav-rail-width`, 52px) whenever the
+    // rail is on screen, which it always is on the front door, because nothing here claims the
+    // immersive surface. So the composer and the character were each sent 26px past where the
+    // canvas was about to put them, and both then slid back once the canvas had mounted and the
+    // rail had collapsed. A move that ends with a correction is not a move.
+    //
+    // The scroller is `h-full` inside the same column the canvas `<main>` will fill, so its
+    // rectangle IS the arrival rectangle, whatever the rail is doing. Measuring it costs one more
+    // `getBoundingClientRect` and makes the two surfaces agree by construction rather than by both
+    // happening to be full-width.
+    const surface = scroller.current?.getBoundingClientRect() ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
     // Where the canvas composer sits: `bottom-0` with `pb-4`, so 16px of clearance under it.
-    const target = window.innerHeight - canvasComposerInset() - rect.height;
+    const target = surface.bottom - canvasComposerInset() - rect.height;
     setTravel({
-      x: Math.round(window.innerWidth / 2 - (rect.left + rect.width / 2)),
+      x: Math.round(surface.left + surface.width / 2 - (rect.left + rect.width / 2)),
       y: Math.max(0, Math.round(target - rect.top)),
     });
     // The character's own trip, on the same beat as the composer's — one departure, not two.
     const bot = greeterBox.current?.getBoundingClientRect();
     if (bot) {
-      const middle = centreStation({ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight });
+      // The identical call the dock makes on the far side, against the identical rectangle.
+      const middle = centreStation(surface);
       setHandoff({
         dx: Math.round(middle.x - (bot.left + bot.width / 2)),
         dy: Math.round(middle.y - (bot.top + bot.height / 2)),
@@ -662,6 +691,19 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           <p className="mt-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}
           </div>
+          {/* 🔴 THESE TWO LEAVE WITH THE GREETING, BECAUSE THEY HAVE NOWHERE TO TRAVEL TO. They sit
+              OUTSIDE `composerBox`, so the departure did not carry them and did not fade them: the
+              help line and the day's strip stayed at full opacity while the composer flew out from
+              between them, and then vanished on the route swap. A hard cut at the end of a move the
+              learner was watching is the exact abruptness the rest of this sequence exists to
+              avoid. Same fade and same timing as the greeting above — one departure, not three. */}
+          <div
+            className="flex w-full flex-col items-center"
+            style={{
+              opacity: departing ? 0 : 1,
+              transition: `opacity ${Math.round(DOCK_MS * 0.55)}ms ease-out`,
+            }}
+          >
           <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
             {/* 🔴 THIS NO LONGER PROMISES RECORDING, BECAUSE THIS SURFACE CANNOT DO IT. The line
                 used to read "Type it, drop a file in, or record a lecture." Recording is started by
@@ -682,6 +724,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               clear plate sees exactly what they saw before this shipped. `TodayStrip` renders null
               unless something is genuinely due, unfinished, or dated. */}
           <TodayStrip uid={uid} />
+          </div>
         </section>
 
       </div>
