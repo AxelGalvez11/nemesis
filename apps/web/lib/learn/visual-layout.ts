@@ -889,136 +889,16 @@ export function layoutCircuit(visual: CircuitVisual): CircuitPlacement {
   };
 }
 
-// ── electron-pushing arrows ────────────────────────────────────────────────────────────────────
-
-/**
- * How far an arrow stands off its atoms, how far its curve bows, and how big its head is, all in
- * the drawing's own units.
- *
- * 🔴🔴🔴 THE OWNER SAW THESE ON SCREEN, 2026-08-25: *"it looks messy the arrows too big."*
- * Measured on the rendered SVG, the arrows were drawn at stroke-width 1.8 against a BOND drawn at
- * 1.0, so the annotation outweighed the structure it was annotating. The head was 6 units across a
- * molecule only 28 units tall, which is a quarter of the picture per arrowhead.
- *
- * 🔴 AN ARROW IS AN ANNOTATION AND MUST NOT OUTWEIGH THE MOLECULE. The stroke now matches the
- * bond exactly (`bondThickness: 1` is the drawer's default and the number this is tied to), and the
- * head is a little over a tenth of a bond length rather than a quarter of the frame.
- *
- * 🔴 THE STANDOFF CLEARS THE ATOM LABEL, NOT THE ATOM CENTRE. At 7 the head landed inside the
- * letters of "Br" and "O", which is most of what read as messy: two dark shapes fighting for the
- * same pixels. Labels are drawn around the vertex, so the arrow has to stop outside them.
- *
- * 🔴 THE BOW LIFTS THE CURVE OFF THE BOND IT IS ABOUT. An arrow describing what happens to a
- * bond runs alongside that bond, and at 0.32 it lay close enough to be read as part of the
- * structure. Curving harder separates the two, which is what a textbook does for the same reason.
- */
-const ARROW_STANDOFF = 11;
-const ARROW_BOW = 0.42;
-const ARROW_HEAD = 3.2;
-/** However tight the atoms are, this much arrow always survives, so it still reads as an arrow. */
-const ARROW_MIN_SPAN = 9;
-/** What a printed atom label needs cleared around its own point, and what a bare corner needs. */
-export const ARROW_CLEAR_LABEL = 10;
-export const ARROW_CLEAR_BARE = 3.5;
-/**
- * A lone pair is ALREADY outside the letters, so an arrow starting on one clears almost nothing.
- *
- * 🔴 THIS IS WHAT MAKES THE DOTS WORTH DRAWING. A textbook arrow begins on the pair that moves, and
- * standing off from it by a label's width would leave the arrow floating in the gap beside the dots
- * instead of coming out of them.
- */
-export const ARROW_CLEAR_PAIR = 1.5;
-/** The middle of a bond, where an arrow for a bond breaking begins and one for a bond forming ends. */
-export const ARROW_CLEAR_BOND = 2.5;
-/** Matches the drawer's own `bondThickness` default, so an arrow reads as light as a bond. */
-export const ARROW_STROKE = 1;
-
-/**
- * A curly arrow between two atom positions, as SVG path data.
- *
- * 🔴 PURE ARITHMETIC OVER TWO POINTS THE DEPICTION LIBRARY COMPUTED, which is what keeps the §42
- * promise on mechanisms: the model names atoms, the library places them, and this bends a quadratic
- * between the placements. The curve bows perpendicular to the line joining them — the convention
- * every mechanism drawing uses — and both ends stand off the atoms so the arrow points AT an atom
- * without sitting ON its label.
- *
- * Returns null when the two positions coincide, because electrons pushed nowhere have no direction
- * to draw.
- */
-export function curlyArrow(
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  options?: { clearance?: { from: number; to: number }; awayFrom?: { x: number; y: number } },
-): { path: string; head: string } | null {
-  const clearance = options?.clearance;
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const length = Math.hypot(dx, dy);
-  if (length < 1e-6) return null;
-
-  const ux = dx / length;
-  const uy = dy / length;
-  // Perpendicular, to the left of travel by default so two arrows along one bond mirror sensibly.
-  let px = -uy;
-  let py = ux;
-
-  // 🔴🔴🔴 IT BOWS AWAY FROM THE MOLECULE, AND THIS IS MOST OF WHAT "MESSY" MEANT. An arrow that
-  // describes a bond breaking runs ALONG that bond, so a fixed bow direction puts it on top of the
-  // line half the time: the learner sees a thick stroke lying over a thin one and cannot tell which
-  // is the structure and which is the annotation. Curving away from the middle of the molecule
-  // lifts every arrow into the empty space outside it, which is where a textbook draws them and for
-  // the same reason. Without a centre to push away from, the old left-hand default stands.
-  const centre = options?.awayFrom;
-  if (centre) {
-    const midX = (from.x + to.x) / 2;
-    const midY = (from.y + to.y) / 2;
-    if (px * (midX - centre.x) + py * (midY - centre.y) < 0) {
-      px = -px;
-      py = -py;
-    }
-  }
-
-  // 🔴🔴 EACH END STANDS OFF BY WHAT THAT END ACTUALLY NEEDS. A labelled atom prints "Br" or
-  // "O" around its own point and needs the arrow to stop outside the letters; a bare skeletal
-  // corner prints nothing and needs almost none. One number for both was what put arrowheads inside
-  // the lettering, and raising that one number instead shrank the arrow to a hook.
-  //
-  // 🔴 AND THE TWO ENDS TOGETHER CANNOT EAT THE ARROW. On a short bond the clearances can add
-  // up to more than the distance between the atoms, which leaves a stub pointing nowhere. When that
-  // happens both are scaled back in proportion so a recognisable arrow always survives.
-  const wantFrom = clearance?.from ?? ARROW_STANDOFF;
-  const wantTo = clearance?.to ?? ARROW_STANDOFF;
-  const room = Math.max(0, length - ARROW_MIN_SPAN);
-  const shrink = wantFrom + wantTo > room ? room / (wantFrom + wantTo || 1) : 1;
-  const offFrom = wantFrom * shrink;
-  const offTo = wantTo * shrink;
-
-  const start = { x: from.x + ux * offFrom, y: from.y + uy * offFrom };
-  const end = { x: to.x - ux * offTo, y: to.y - uy * offTo };
-  // 🔴 THE BOW IS MEASURED ON THE WHOLE JOURNEY, NOT ON WHAT IS LEFT AFTER THE CLEARANCES. Taking
-  // it from the shortened span made the arc flatten exactly when the ends were trimmed most, which
-  // is the case that needed lifting off the bond the hardest.
-  const bow = Math.min(40, length * ARROW_BOW);
-  const control = {
-    x: (start.x + end.x) / 2 + px * bow,
-    y: (start.y + end.y) / 2 + py * bow,
-  };
-
-  // The head follows the curve's ACTUAL arrival direction — the tangent at the end of the
-  // quadratic, which is the line from the control point — rather than the straight chord, so the
-  // barbs sit symmetrically about the stroke however hard it bows.
-  const tx = end.x - control.x;
-  const ty = end.y - control.y;
-  const tLength = Math.hypot(tx, ty) || 1;
-  const hx = tx / tLength;
-  const hy = ty / tLength;
-  const hpx = -hy;
-  const hpy = hx;
-  const barb = (side: 1 | -1) =>
-    `${end.x - hx * ARROW_HEAD + side * hpx * ARROW_HEAD * 0.6},${end.y - hy * ARROW_HEAD + side * hpy * ARROW_HEAD * 0.6}`;
-
-  return {
-    head: `M ${barb(1)} L ${end.x},${end.y} L ${barb(-1)}`,
-    path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`,
-  };
-}
+// ── electron-pushing arrows: REMOVED 2026-08-26 ────────────────────────────────────────────────
+//
+// 🔴🔴🔴 `curlyArrow` AND ITS CLEARANCES LIVED HERE AND THE OWNER WITHDREW THEM. *"Bad mechanism
+// arrows are worse than no arrows because they teach the chemistry incorrectly while also consuming
+// engineering time like a small electrical fire."* Measured on the live page the day before: two of
+// six lone-pair dots on a bromine sat INSIDE the letters, because clearance was one radius in every
+// direction while an atom's label is a rectangle up to two and a half times wider than it is tall.
+//
+// 🔴 DO NOT RESTORE THIS FROM GIT WITHOUT A RENDERER THAT CAN BE TRUSTED WITH IT. The geometry was
+// never the hard part; deciding where an arrow may run without crossing the structure it annotates
+// is, and no library in the ecosystem solves it (Kekule.js models curly arrows as first-class
+// objects but stores them as raw coordinates a human drags into place). A mechanism is now taught
+// as clean structures plus `highlight` plus prose. See `canvas-visual.ts`.

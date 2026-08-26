@@ -9,14 +9,14 @@
 // never as one reaction going somewhere.
 //
 // 🔴 THIS ADDS LAYOUT AND NOTHING ELSE. Every frame is `ChemicalStructure`, the same component the
-// single-structure card mounts, with the same counted lone pairs and the same electron-pushing
-// arrows over it. A second molecule renderer would be a second place for "what does a mechanism
-// look like" to drift, and the drift would show up first in exactly this lane.
+// single-structure card mounts. A second molecule renderer would be a second place for "what does a
+// mechanism look like" to drift, and the drift would show up first in exactly this lane.
 //
-// 🔴 THE ARROWS BETWEEN FRAMES ARE NOT ELECTRON ARROWS. A curly arrow inside a frame says where a
-// pair moved; the straight arrow between frames says the reaction moved on. Drawing them alike
-// would merge two different statements into one symbol, so this one is straight, plain, and
-// carries the step's label above it.
+// 🔴🔴🔴 THE ONLY ARROW LEFT IS THE REACTION ARROW, BY THE OWNER'S DECISION, 2026-08-26: *"bad
+// mechanism arrows are worse than no arrows because they teach the chemistry incorrectly."* The
+// curly electron arrows and the lone-pair dots that used to sit inside each frame are gone. What a
+// step does to the electrons is now said in the turn's own prose, with `highlight` marking the atoms
+// and bonds it is about. See `canvas-visual.ts` for the measurements behind that call.
 
 import { ChemicalStructure } from "./chemical-structure";
 import type { MechanismVisual, StructureVisual } from "@/lib/learn/canvas-visual";
@@ -36,9 +36,8 @@ function frameOf(step: MechanismVisual["steps"][number], learningGoal: string): 
     learningGoal,
     notation: "smiles",
     value: step.value,
-    ...(step.arrows ? { arrows: step.arrows } : {}),
+    ...(step.highlight ? { highlight: step.highlight } : {}),
     ...(step.carbons ? { carbons: step.carbons } : {}),
-    ...(step.lonePairs === undefined ? {} : { lonePairs: step.lonePairs }),
   };
 }
 

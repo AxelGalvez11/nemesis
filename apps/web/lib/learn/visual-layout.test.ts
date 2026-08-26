@@ -15,8 +15,6 @@ import test from "node:test";
 
 import type { ConstructionVisual, FlowVisual, TimelineVisual } from "./canvas-visual";
 import {
-  ARROW_STROKE,
-  curlyArrow,
   layoutCircuit,
   layoutConstruction,
   layoutFlow,
@@ -652,124 +650,14 @@ test("a fragment with no supply draws no loop, just the network with open leads"
   assert.ok(fragment.height < 100, "a one-part fragment should be shallow");
 });
 
-// ─────────────────────────────────────────────────────────────── electron-pushing arrows
-
-test("a curly arrow bows perpendicular to the line between its atoms and stands off both", () => {
-  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 });
-  assert.ok(drawn, "two distinct atoms drew nothing");
-  if (!drawn) return;
-  const [, sx, sy, , cx, cy, ex, ey] = drawn.path.split(" ");
-  assert.ok(Number(sx) > 0, "the tail sits on the source atom");
-  assert.ok(Number(ex) < 100, "the head sits on the target atom");
-  assert.equal(Number(sy), 0);
-  assert.equal(Number(ey), 0);
-  assert.notEqual(Number(cy), 0, "the curve does not bow, so it reads as a bond");
-  assert.ok(Number(cx) > Number(sx) && Number(cx) < Number(ex), "the bow is not between the atoms");
-  assert.ok(Number.isFinite(Number(cy)));
-});
-
-test("🔴 coincident atoms draw no arrow, never a NaN path", () => {
-  assert.equal(curlyArrow({ x: 5, y: 5 }, { x: 5, y: 5 }), null);
-});
-
-test("the arrowhead's barbs straddle the arrival point", () => {
-  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 0, y: 80 });
-  assert.ok(drawn);
-  if (!drawn) return;
-  assert.doesNotMatch(drawn.head, /NaN/);
-  assert.match(drawn.head, /^M .* L .* L /, "the head is not two barbs meeting at the tip");
-});
-
-/** `M sx sy Q cx cy ex ey` as numbers. */
-const readCurve = (path: string) => {
-  const [, sx, sy, , cx, cy, ex, ey] = path.split(" ");
-  return { cx: Number(cx), cy: Number(cy), ex: Number(ex), ey: Number(ey), sx: Number(sx), sy: Number(sy) };
-};
-
-test("🔴🔴🔴 each end stands off by what THAT end needs, not by one number for both", () => {
-  // 🔴 THE OWNER SAW THIS ON SCREEN, 2026-08-25: *"it looks messy the arrows too big."* A labelled
-  // atom prints "Br" around its own point and the arrowhead landed inside the letters. Raising the
-  // single standoff instead shrank the arrow to a hook on every short bond, so the clearance has to
-  // be asked for per end.
-  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { clearance: { from: 4, to: 20 } });
-  assert.ok(drawn);
-  if (!drawn) return;
-  const { ex, sx } = readCurve(drawn.path);
-  assert.ok(Math.abs(sx - 4) < 0.01, `the tail ignored its own clearance (${sx})`);
-  assert.ok(Math.abs(ex - 80) < 0.01, `the head ignored its own clearance (${ex})`);
-});
-
-test("🔴🔴🔴 two clearances can never eat the whole arrow", () => {
-  // 🔴 THE FAILURE THIS RULE IS SHAPED TO AVOID. On a short bond the two clearances add up to more
-  // than the gap between the atoms, and the arrow collapses to a stub pointing nowhere, or inverts.
-  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 14, y: 0 }, { clearance: { from: 10, to: 10 } });
-  assert.ok(drawn, "a tight bond drew nothing at all");
-  if (!drawn) return;
-  const { ex, sx } = readCurve(drawn.path);
-  assert.ok(ex > sx, `the arrow turned back on itself (${sx} to ${ex})`);
-  assert.ok(ex - sx >= 8.9, `only ${(ex - sx).toFixed(1)} units of arrow survived, which reads as a stub`);
-});
-
-test("🔴🔴🔴 the arrow bows AWAY from the molecule, which is most of what 'messy' meant", () => {
-  // An arrow describing a bond breaking runs ALONG that bond, so a fixed bow direction lays it over
-  // the line half the time: a thick stroke on a thin one, and no way to tell annotation from
-  // structure. Curving away from the middle lifts it into the empty space outside.
-  const above = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { awayFrom: { x: 50, y: 50 } });
-  const below = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { awayFrom: { x: 50, y: -50 } });
-  assert.ok(above && below);
-  if (!above || !below) return;
-  assert.ok(readCurve(above.path).cy < 0, "the arrow bowed towards the molecule, not away from it");
-  assert.ok(readCurve(below.path).cy > 0, "the arrow bowed towards the molecule, not away from it");
-});
-
-test("🔴 with no centre to push away from, the old left-hand default still stands", () => {
-  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 });
-  assert.ok(drawn);
-  if (!drawn) return;
-  assert.notEqual(readCurve(drawn.path).cy, 0, "the curve stopped bowing at all");
-});
-
-test("🔴🔴 the bow is measured on the WHOLE journey, not on what the clearances left", () => {
-  // Taking it from the shortened span flattened the arc exactly when the ends were trimmed hardest,
-  // which is the case that needed lifting off the bond most.
-  const trimmed = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { clearance: { from: 30, to: 30 } });
-  const loose = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 }, { clearance: { from: 2, to: 2 } });
-  assert.ok(trimmed && loose);
-  if (!trimmed || !loose) return;
-  assert.ok(
-    Math.abs(Math.abs(readCurve(trimmed.path).cy) - Math.abs(readCurve(loose.path).cy)) < 0.01,
-    "trimming the ends changed how hard the arrow bows",
-  );
-});
-
-test("🔴🔴🔴 the atom labels are sized by the DRAWER, never by the page", () => {
-  // 🔴 `fontFamily: "inherit"` TOOK THE FONT SIZE DOWN WITH IT, AND NOTHING SAID SO. The library
-  // writes its labels as `font: 11pt ${fontFamily}`, and `inherit` is a CSS-wide keyword the `font`
-  // SHORTHAND does not accept in the family slot. One invalid token voids the WHOLE declaration, so
-  // the size went with the family. Measured on the rendered SVG: no `font-size` attribute, no inline
-  // style, computed 15.5px, against a layout the drawer had computed for 11pt (14.67px).
-  //
-  // 🔴 THE PIXELS ARE THE SMALL HALF. It meant the letters answered to the READER'S text-size
-  // setting while the bonds did not, so scaling the page up grows the labels and not the skeleton
-  // until they swallow it. Nothing inside a drawing is supposed to follow the page.
-  const renderer = readFileSync(new URL("../../components/workspace/learn/chemical-structure.tsx", import.meta.url), "utf8");
-  assert.ok(!/fontFamily: "inherit"/.test(renderer), "the atom labels are inheriting the page's font size again");
-  assert.match(renderer, /fontFamily: "var\(--font\), system-ui, sans-serif"/, "the drawer lost its font family");
-});
-
-test("🔴🔴🔴 an arrow never outweighs the molecule it annotates", () => {
-  // Measured on the rendered SVG: arrows at stroke-width 1.8 against a bond at 1.0. The annotation
-  // was heavier than the structure, which is what the owner's screenshot shows. `bondThickness: 1`
-  // is the drawer's own default, and this constant is tied to it on purpose.
-  assert.equal(ARROW_STROKE, 1, "the arrow stroke drifted away from the bond weight");
-  const renderer = readFileSync(new URL("../../components/workspace/learn/chemical-structure.tsx", import.meta.url), "utf8");
-  assert.match(renderer, /String\(ARROW_STROKE\)/, "the renderer hardcodes a stroke width again");
-  assert.ok(!/stroke-width", "1\.8"/.test(renderer), "the 1.8 stroke is back");
-  // And the clearance is asked of the DRAWER, never guessed: it already knows which atoms letter,
-  // and it knows where it printed them.
-  assert.match(renderer, /if \(!lettered\) return \{ blocked: \[\], reach: PAIR_RADIUS_BARE \};/, "a bare corner and a lettered atom hang their dots at the same distance again");
-  assert.match(renderer, /atom\.lettered \? ARROW_CLEAR_LABEL : ARROW_CLEAR_BARE/, "every atom gets the same clearance again");
-  assert.match(renderer, /awayFrom,/, "the arrows stopped bowing away from the structure");
-  // 🔴 AND AN ARROW OFF A LONE PAIR STARTS ON THE DOTS. That is the whole reason for drawing them.
-  assert.match(renderer, /clear: ARROW_CLEAR_PAIR, pair: nearest/, "an arrow stopped starting on the pair that moves");
-});
+// ────────────────────────────────────── electron-pushing arrows: REMOVED 2026-08-26
+//
+// 🔴🔴🔴 `curlyArrow` AND EVERY TEST FOR IT WERE DELETED ON THE OWNER'S CALL: *"bad mechanism
+// arrows are worse than no arrows because they teach the chemistry incorrectly while also consuming
+// engineering time like a small electrical fire."* The geometry was sound in isolation and wrong on
+// a real molecule: measured the day before, two of six lone-pair dots on a bromine sat INSIDE the
+// letters, because clearance was computed as one radius in every direction while an atom's label is
+// a rectangle up to two and a half times wider than it is tall.
+//
+// 🔴 A MECHANISM IS NOW CLEAN STRUCTURES, `highlight`, AND PROSE. Read `canvas-visual.ts` before
+// restoring any of this from git: the geometry was never the hard part.
