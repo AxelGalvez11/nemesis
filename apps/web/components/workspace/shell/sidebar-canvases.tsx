@@ -187,9 +187,9 @@ export function SidebarCanvases({
 
   const removeFolder = async (folder: Folder) => {
     const sure = await confirm({
-      title: "Delete this folder?",
+      title: "Delete this project?",
       body: `Canvases inside “${folder.name}” are kept — they go back to your recents.`,
-      confirmLabel: "Delete folder",
+      confirmLabel: "Delete project",
     });
     if (!sure) return;
     await deleteFolder(userId, folder.id);
@@ -203,7 +203,7 @@ export function SidebarCanvases({
   };
 
   const newFolder = async (parentId?: string | null) => {
-    const folder = await createFolder(userId, "New folder", parentId ?? null);
+    const folder = await createFolder(userId, "New project", parentId ?? null);
     if (!folder) return;
     setOpenFolders((was) => new Set(was).add(folder.id));
     setEditing({ kind: "folder", id: folder.id, value: folder.name });
@@ -287,7 +287,7 @@ export function SidebarCanvases({
                   <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuItem disabled={!canvas.folderId} onClick={() => void fileInto(canvas.id, null)}>
-                      No folder
+                      No project
                     </DropdownMenuItem>
                     {folders.length > 0 && <DropdownMenuSeparator />}
                     {rootFolders.map((folder) => (
@@ -311,7 +311,7 @@ export function SidebarCanvases({
                       </div>
                     ))}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => void newFolder()}>New folder…</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void newFolder()}>New project…</DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 <DropdownMenuSeparator />
@@ -361,7 +361,7 @@ export function SidebarCanvases({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    aria-label="Folder actions"
+                    aria-label="Project actions"
                     className="absolute right-1 grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
                     type="button"
                   >
@@ -373,11 +373,11 @@ export function SidebarCanvases({
                     Rename
                   </DropdownMenuItem>
                   {depth === 0 ? (
-                    <DropdownMenuItem onClick={() => void newFolder(folder.id)}>New subfolder</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void newFolder(folder.id)}>New sub-project</DropdownMenuItem>
                   ) : null}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void removeFolder(folder)} variant="destructive">
-                    Delete folder
+                    Delete project
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -410,17 +410,27 @@ export function SidebarCanvases({
   // Measured off the reference the same day: `Pinned`, `Projects`, `Chats`, each a quiet grey
   // label over its own rows, which is what makes the order legible instead of merely present.
   //
-  // The names are Nemesis's own objects — a folder is a folder here, and the thing it holds is a
-  // canvas — because copying the reference's *structure* is the ask; copying its vocabulary would
-  // rename the product's objects after another product's.
+  // 🔴🔴 THE SECOND HALF OF THAT PARAGRAPH USED TO READ "a folder is a folder here… copying its
+  // vocabulary would rename the product's objects after another product's", AND THE OWNER REVERSED
+  // IT ON 2026-08-26: *"the projects in Sidebar are still called folders, and not projects."* The
+  // argument was sound and the premise was wrong — "project" is not the reference's word borrowed,
+  // it is already NEMESIS's word. There is a `Projects` row in the nav above this list, a
+  // `/projects` route, and a `ProjectsPage` that has said "Projects" since it shipped. This header
+  // was the one surface still calling the same object a folder, so the product had two names for
+  // one thing and the learner met both in the same sidebar.
+  //
+  // 🔴 THE COPY MOVED; THE DATA LAYER DID NOT. `Folder`, `folderId`, `createFolder` and the
+  // `canvas_folders` table keep their names — a rename that reached the schema would be a migration
+  // and a week of churn to change a word nobody sees. The line is: everything a learner READS says
+  // project, everything the code CALLS ITSELF stays folder, and this comment is why.
   const isEmpty = canvases.length === 0 && folders.length === 0;
 
   const newFolderButton = (
     <button
-      aria-label="New folder"
+      aria-label="New project"
       className="grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100"
       onClick={() => void newFolder()}
-      title="New folder"
+      title="New project"
       type="button"
     >
       <Codicon name="new-folder" size="0.875rem" />
@@ -445,14 +455,14 @@ export function SidebarCanvases({
               </>
             ) : null}
 
-            {/* 🔴 FOLDERS ALWAYS SHOWS, BECAUSE IT CARRIES THE ONLY WAY TO MAKE ONE. Hiding the
-                header until a folder exists would hide the button that creates the first folder,
-                and a learner with every canvas already filed would have no way back to it. */}
+            {/* 🔴 PROJECTS ALWAYS SHOWS, BECAUSE IT CARRIES THE ONLY WAY TO MAKE ONE. Hiding the
+                header until a project exists would hide the button that creates the first one, and
+                a learner with every canvas already filed would have no way back to it. */}
             <SidebarSectionHeader
               action={newFolderButton}
               className={pinned.length > 0 ? "pt-4" : undefined}
               collapsible={false}
-              label="Folders"
+              label="Projects"
               onToggle={() => {}}
               open
             />

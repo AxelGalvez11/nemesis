@@ -214,3 +214,50 @@ test("🔴 the conversational turn is recorded, because it exists nowhere else",
     "a turn that acted rather than spoke is recorded as an answer",
   );
 });
+
+// ── going back reads as a conversation ─────────────────────────────────────────────────────────
+
+test("🔴🔴 a rewound moment shows the learner's OWN words, in the learner's own treatment", () => {
+  // Owner 2026-08-26: *"the Canvas should pretty much just be like a regular conversation in
+  // ChatGPT. We're pretty much just gonna hide the messaging bubble except when user goes back with
+  // the rail. And then it pretty much just makes it easier to navigate."*
+  //
+  // 🔴 THE LIVE SURFACE IS UNCHANGED AND MUST STAY UNCHANGED. Contract rule 2 keeps one exchange on
+  // the canvas with the learner's sentence unrendered; that rule is about ATTENTION, and it has
+  // nothing to say about a moment somebody has deliberately gone back to READ. There, the question
+  // is what makes the answer legible at all.
+  //
+  // 🔴 `LearnerUtterance`, NOT A SECOND TREATMENT. §46.2: a learner must "distinguish instantly:
+  // This came from me / This came from Nemesis", which only holds if their words look the same
+  // every time they appear. What was here was a grey left-bordered quote invented for this screen.
+  const VIEW = readFileSync(new URL("./canvas-history-view.tsx", import.meta.url), "utf8");
+  assert.match(VIEW, /import \{ LearnerUtterance \}/, "the rewound view stopped using the learner's own treatment");
+  assert.match(VIEW, /<LearnerUtterance via=\{null\}>\{moment\.asked\}<\/LearnerUtterance>/, "what the learner asked is no longer in their bubble");
+  assert.match(VIEW, /<LearnerUtterance via=\{null\}>\{moment\.answer\}<\/LearnerUtterance>/, "what the learner answered is no longer in their bubble");
+
+  // 🔴 `via={null}` IS NOT A DETAIL. `LearnerUtterance` defaults to `"typed"`, and a moment on the
+  // record does not keep how the words arrived — stamping every rewound sentence as typed would put
+  // a claim in the DOM that nothing established.
+  assert.ok(!/<LearnerUtterance>/.test(VIEW), "a rewound sentence is being stamped with a modality nobody observed");
+
+  // 🔴 AND THE STAGE DIRECTIONS WENT WITH IT. "YOU ASKED" over the learner's own sentence and
+  // "NEMESIS" over the answer are labels a chat interface does not need: the bubble says whose
+  // words those are, which is the entire argument `LearnerUtterance` was written on.
+  //
+  // 🔴 COMMENTS ARE STRIPPED FIRST, because the file cannot explain what it removed without naming
+  // it. `canvas-policy-view.test.ts` learned the same lesson: a guard that cannot tell rendered copy
+  // from a comment about it gets "fixed" by deleting the explanation.
+  const rendered = VIEW.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  for (const label of ["You asked", "You answered", "<Label>Nemesis</Label>", 'label="Nemesis"']) {
+    assert.ok(!rendered.includes(label), `"${label}" is back — the exchange reads as a record again, not as a conversation`);
+  }
+  // Question and Correction keep theirs: they come from the policy lane and are not chat answers,
+  // and an unlabelled correction reads as a second answer.
+  assert.match(VIEW, /label="Correction"/, "a correction lost the word that tells it apart from an answer");
+});
+
+test("🔴 the banner survives all of it, because the dangerous state is not knowing this is old", () => {
+  const VIEW = readFileSync(new URL("./canvas-history-view.tsx", import.meta.url), "utf8");
+  assert.ok(VIEW.includes("Viewing earlier moment"), "the history banner is gone");
+  assert.ok(VIEW.includes("Return to now"), "the way back to the live canvas is gone");
+});

@@ -951,6 +951,28 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-passage-enter { from { opacity: 0; } to { opacity: 1; } }
 .canvas-passage-enter { animation: canvas-passage-enter 180ms ease-out both; }
 
+/* One QUESTION of a check giving way to the next (owner 2026-08-26: "I want there to be a
+   smoother animation when a user clicks an answer, so it fades into the next question").
+
+   🔴 A SEPARATE CLASS FROM `.canvas-swap`, WHICH SITS ON THE WHOLE CARD AND FIRES ONCE ON ARRIVAL.
+   The card stays put between questions — its ring, its padding and its row of pips are continuous
+   — so re-running the card's own entrance would blink the frame the learner is working inside.
+   Only the contents change, so only the contents move.
+
+   🔴 220ms AND A 3px RISE, WHICH IS LONGER AND RICHER THAN THE DRILL'S 140ms OPACITY STEP, AND THE
+   EXCEPTION IS EARNED THE SAME WAY THE ANSWER'S IS. `.canvas-swap`'s rule is written for a fifty-
+   fact drill where the boundary is crossed fifty times and any flourish becomes the surface. A
+   check is three to twelve questions, each one read and considered, and the tap that ends one is a
+   decision rather than a keystroke. The drill keeps its 140ms.
+
+   🔴 NOTHING TRANSLATES SIDEWAYS AND NOTHING SCALES. A slide would say "there is a stack of these
+   and you are moving through it", which is a claim the pips already make honestly and precisely. */
+@keyframes canvas-question-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.canvas-question-in { animation: canvas-question-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+
 /* An ANSWER arriving, block by block (owner 2026-08-26: "make sure that the output of DeepSeek
    fades in nicely").
 
@@ -1152,6 +1174,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .canvas-swap,
   .canvas-answer-in > *,
   .canvas-passage-enter,
+  .canvas-question-in,
   .canvas-phrase,
   .canvas-chrome-in,
   .canvas-forming,
