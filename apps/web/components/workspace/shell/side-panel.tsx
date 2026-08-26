@@ -44,31 +44,43 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useS
  * changes is the entire point.
  */
 interface SidePanelActions {
-  claim(id: string): void;
+  claim(id: string, inset: number): void;
   release(id: string): void;
 }
 
 const SidePanelActionsContext = createContext<SidePanelActions | null>(null);
 const SidePanelOpenContext = createContext(false);
+/**
+ * How much room on the right the docked panel is taking, in pixels.
+ *
+ * 🔴🔴 THE SURFACE IS PUSHED, NOT COVERED, AND THAT IS THE REFERENCE'S OWN BEHAVIOUR. Measured in
+ * the owner's browser: the chat column's right edge sits at 474 and the panel begins at 490, so the
+ * conversation genuinely reflows into what is left rather than sliding underneath. A floating panel
+ * hides the half of the thread that asked for the artifact, which is the half you look at while
+ * reading it.
+ *
+ * 🔴 ZERO WHILE FULL SCREEN. A reader covering the whole surface has nothing to push.
+ */
+const SidePanelInsetContext = createContext(0);
 
 export function SidePanelProvider({ children }: { children: React.ReactNode }) {
-  const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [ids, setIds] = useState<ReadonlyMap<string, number>>(() => new Map());
 
   // 🔴 NO DEPENDENCIES, DELIBERATELY. The updater form reads the current set, so neither callback
   // needs to close over it — which is what keeps their identity stable for the effect above.
   const actions = useMemo<SidePanelActions>(
     () => ({
-      claim: (id: string) =>
+      claim: (id: string, inset: number) =>
         setIds((current) => {
-          if (current.has(id)) return current;
-          const next = new Set(current);
-          next.add(id);
+          if (current.get(id) === inset) return current;
+          const next = new Map(current);
+          next.set(id, inset);
           return next;
         }),
       release: (id: string) =>
         setIds((current) => {
           if (!current.has(id)) return current;
-          const next = new Set(current);
+          const next = new Map(current);
           next.delete(id);
           return next;
         }),
@@ -78,7 +90,9 @@ export function SidePanelProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SidePanelActionsContext.Provider value={actions}>
-      <SidePanelOpenContext.Provider value={ids.size > 0}>{children}</SidePanelOpenContext.Provider>
+      <SidePanelOpenContext.Provider value={ids.size > 0}>
+        <SidePanelInsetContext.Provider value={Math.max(0, ...ids.values())}>{children}</SidePanelInsetContext.Provider>
+      </SidePanelOpenContext.Provider>
     </SidePanelActionsContext.Provider>
   );
 }
@@ -88,6 +102,11 @@ export function useSidePanelOpen(): boolean {
   return useContext(SidePanelOpenContext);
 }
 
+/** How much room to leave on the right, in pixels. Read by the surface being pushed. */
+export function useSidePanelInset(): number {
+  return useContext(SidePanelInsetContext);
+}
+
 /**
  * Declare that this component is a docked side panel, for as long as it is mounted.
  *
@@ -95,12 +114,12 @@ export function useSidePanelOpen(): boolean {
  * change or an error rather than by its own close button. A panel that could leave the claim behind
  * would leave the sidebar collapsed with nothing on screen explaining why.
  */
-export function useDeclareSidePanel(): void {
+export function useDeclareSidePanel(inset = 0): void {
   const actions = useContext(SidePanelActionsContext);
   const id = useId();
   useEffect(() => {
     if (!actions) return;
-    actions.claim(id);
+    actions.claim(id, inset);
     return () => actions.release(id);
-  }, [actions, id]);
+  }, [actions, id, inset]);
 }

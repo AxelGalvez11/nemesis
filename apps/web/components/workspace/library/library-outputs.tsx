@@ -984,7 +984,11 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
       </section>
       )}
 
-      {readingNote && <OutputPreview onClose={() => setReadingNote(null)} output={readingNote} />}
+      {/* 🔴 FULL WIDTH HERE, DOCKED IN A CANVAS, and the difference is what is beside it. In a
+          conversation the reader docks so the thread that asked for the artifact stays on screen to
+          check it against. On this page there is no thread, so the reference gives the reader the
+          whole surface with the close on the left beside a breadcrumb — measured at x=193. */}
+      {readingNote && <OutputPreview initialMode="full" onClose={() => setReadingNote(null)} output={readingNote} />}
 
       {/* 🔴 NO CARD, NO SHADOW — the reference draws neither anywhere on this page. The hint keeps
           its hairline, at the measured divider colour, so it belongs to the same drawing as the
