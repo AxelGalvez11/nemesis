@@ -24,30 +24,36 @@ function code(name: string): string {
     .replace(/^[^\S\n]*(?:[?:][^\S\n]*)?\/\/.*$/gm, "");
 }
 
-test("the writing sheet is the composer's writing surface, and there is only one", () => {
+test("🔴🔴 THE PAGE TO WORK ON IS PARKED: no door in the composer, every part of it still here", () => {
+  // Owner 2026-08-26, two messages apart: *"the pencil should be available so users can draw in
+  // canvas not inside a box"*, then *"remove pencil mode for now"*. The second wins, and "for now"
+  // is their word, so this file changed from guarding the WIRING to guarding the PARKING.
+  //
+  // 🔴 SIX GUARDS WERE REVERSED INTO THIS ONE, and what they asserted is recorded here because it
+  // is what has to come back, in this order, if the door is restored:
+  //   1. `<WrittenWorkSheet` rendered from the composer, and never a second drawing surface.
+  //   2. the control that opens it present for the WHOLE session, not only while answering — you
+  //      reach for paper before you have an answer.
+  //   3. `promptId={answering ? taskId : null}` — the one prop that is the whole lifecycle rule:
+  //      with a question open the sheet grows a submit control, without one it is scratch paper.
+  //   4. `onAnswer(value, "written", Date.now() - startedAt.current)` — one answer path, so
+  //      nothing downstream ever learns that written work exists.
+  //   5. the `ink` ref ABOVE the prompt-changed effect, and no `setDrawing(false)` inside it.
+  //   6. reachability and the submit control as two SEPARATE gates reading one decision.
+  //
+  // The tests below this one are untouched and still run: they guard the sheet, the reading gate,
+  // the review step and the capture hook, none of which were deleted. That is deliberate. A parked
+  // feature whose guards are deleted is a feature that quietly rots until nobody can restore it.
   const composer = code("canvas-composer.tsx");
-  assert.match(composer, /<WrittenWorkSheet/, "the composer opens the sheet");
-  assert.doesNotMatch(
-    composer,
-    /<HandwritingPad/,
-    "two drawing surfaces with different submit rules is the second answer box this file exists to prevent",
-  );
-});
+  assert.ok(!/<WrittenWorkSheet/.test(composer), "the composer renders the sheet again");
+  assert.ok(!/setDrawing\(true\)/.test(composer), "the door back into the sheet is open again");
+  assert.ok(!/written-work-sheet/.test(composer), "the composer imports the sheet again");
 
-test("🔴 the sheet is reachable while thinking, not only while a question is open", () => {
-  // The owner's framing: you reach for paper BEFORE you have an answer. Gated on `answering`, this
-  // is a second answer box with a pencil on it rather than somewhere to work.
-  const composer = code("canvas-composer.tsx");
-  const control = composer.match(/\{inSession && \([\s\S]{0,600}?setDrawing\(true\)[\s\S]{0,400}?\)\}/);
-  assert.ok(control, "the control that opens the sheet must be present for the whole session, not only while answering");
-});
-
-test("🔴 the sheet is told which question is open, and is told `null` when none is", () => {
-  // This one prop is the entire lifecycle rule. With a question open the sheet grows a submit
-  // control; without one it is scratch paper and grows none, because evidence about no question is
-  // a durable claim no prompt supports (objective-task.ts).
-  const composer = code("canvas-composer.tsx");
-  assert.match(composer, /promptId=\{answering \? taskId : null\}/);
+  // 🔴 AND THE MACHINERY IS ALL STILL THERE. Calibration: delete any of these files and this
+  // reddens, which is the point of parking rather than removing.
+  for (const file of ["written-work-sheet.tsx", "written-work-review.tsx", "use-written-work-capture.ts"]) {
+    assert.ok(read(file).length > 0, `${file} was deleted rather than parked`);
+  }
 });
 
 test("🔴 the sheet renders no submit control when nothing is being asked", () => {
@@ -56,26 +62,6 @@ test("🔴 the sheet renders no submit control when nothing is being asked", () 
   assert.ok(submit, "the hand-in control must be ABSENT rather than disabled when there is nothing to answer");
   // Absent, not disabled: a greyed control still advertises that pressing it is an option.
   assert.doesNotMatch(sheet, /disabled=\{!promptId/, "a disabled control is not the same claim as no control");
-});
-
-test("🔴 handing work in goes through the one answer path, marked `written`", () => {
-  // Not a second route into the evidence log. It calls the same `onAnswer` a typed and a spoken
-  // answer call, with the elapsed time the composer already tracks, so nothing downstream has to
-  // learn that written work exists.
-  const composer = code("canvas-composer.tsx");
-  assert.match(composer, /onAnswer\(value, "written", Date\.now\(\) - startedAt\.current\)/);
-});
-
-test("🔴 the ink survives a prompt change; the READING is what must not", () => {
-  // The pad this replaced closed itself whenever the question changed, which was right for a
-  // one-answer capture surface and is wrong for scratch paper: someone working a problem out over
-  // several minutes must not lose it because the page advanced. The risk that closing covered is
-  // now held by identity instead.
-  const composer = code("canvas-composer.tsx");
-  const promptEffect = composer.match(/useEffect\(\(\) => \{\s*setText\(""\)[\s\S]*?\}, \[taskId\]\);/);
-  assert.ok(promptEffect, "expected the prompt-changed effect to still exist");
-  assert.doesNotMatch(promptEffect[0], /setDrawing\(false\)/, "closing the sheet on every prompt change interrupts the work it hosts");
-  assert.match(composer, /const ink = useRef<string \| null>\(null\)/, "the ink is held above the effect that resets everything else");
 });
 
 test("🔴 every reading is checked against the question that was open when it was taken", () => {
@@ -112,32 +98,6 @@ test("🔴 the review step owns the only submit control that a low-confidence re
   // uncertainty is that the learner cannot see WHICH part we were unsure of.
   assert.match(review, /work\.marks\.map\(\(mark, index\)/, "the correction is per mark, not one text blob");
   assert.match(review, /mark\.legible \? mark\.text : ""/, "a gap must not be seeded with our description of it as if they wrote it");
-});
-
-test("🔴 the sheet's reachability and its submit control are two different gates", () => {
-  // 🔴 THE PREVIOUS VERSION OF THIS TEST ASSERTED A GAP THAT DOES NOT EXIST, BY MATCHING SOURCE
-  // STRINGS. It read `inSession={sink.kind === "policy"}` out of the canvas and the literal
-  // `const answering = Boolean(task && !task.answered && task.placeholder);` out of the composer,
-  // and concluded from the two SPELLINGS that `inSession` was broader — "reading feedback after an
-  // answer is one state in the gap". It is not: `use-policy-runtime` hosts no task while feedback
-  // is on screen, so the sink is `none` and `inSession` is false there too. A hosted policy task is
-  // always `answered: false` with a placeholder, so the two conditions coincide at runtime. The
-  // guard passed because the strings differed, not because the behaviour did.
-  //
-  // What is genuinely load-bearing, and is what this now checks: they are SEPARATE gates reading
-  // one decision, so widening the session gate later cannot silently hand someone a submit control
-  // over a question that is not open. `promptId={answering ? taskId : null}` is asserted above.
-  const composer = code("canvas-composer.tsx");
-  assert.match(
-    composer,
-    /const answering = intent\.kind === "answer";/,
-    "answering must come from the one intent, not be re-derived from a task shape",
-  );
-  assert.match(
-    composer,
-    /const inSession = intent\.kind === "answer" && intent\.sink === "policy";/,
-    "the session gate must be its own expression, or the two collapse into one and cannot diverge",
-  );
 });
 
 test("🔴 the sheet cannot hand in or save a page it has not finished painting back", () => {

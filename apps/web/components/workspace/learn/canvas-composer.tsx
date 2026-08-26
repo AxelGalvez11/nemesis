@@ -65,7 +65,6 @@ import { useCanvasDictation } from "./use-canvas-dictation";
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
 import { AttachmentCard, AttachmentRow } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
-import { WrittenWorkSheet } from "./written-work-sheet";
 
 interface CanvasComposerProps {
   selected: readonly CanvasBlock[];
@@ -254,19 +253,10 @@ export function CanvasComposer({
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  /** The page is open. Takes the WHOLE pill's place while true, the same as `listening` does —
-   *  see written-work-sheet.tsx's file header. */
-  const [drawing, setDrawing] = useState(false);
-  /**
-   * The learner's scratch work, held here so it survives the sheet being put away and reopened.
-   *
-   * 🔴 A REF ABOVE THE PROMPT-CHANGED EFFECT, WHICH IS THE POINT. Everything else in this
-   * component resets when the question moves on, and for the composer's text that is right. Ink is
-   * different: someone working a problem out over several minutes must not lose it because the
-   * page advanced. What must not survive a prompt change is a READING of that ink, and that is
-   * guarded by `answersTheSameQuestion` inside the sheet rather than by discarding their work.
-   */
-  const ink = useRef<string | null>(null);
+  /* 🔴 THE `ink` REF WENT WITH THE PAGE (owner 2026-08-26, "remove pencil mode for now"). It held
+   * the learner's scratch work above the prompt-changed effect so that reopening the sheet did not
+   * lose several minutes of working out. With no door there is nothing to reopen. Restoring the
+   * page restores this ref, and the reason it sat ABOVE the effect below rather than inside it. */
   const input = useRef<HTMLTextAreaElement>(null);
   /** The file input is triggered from a menu item now, so it needs a handle rather than a wrapping
    *  label. It stays `sr-only` rather than `hidden` — a hidden input is out of the accessibility
@@ -314,32 +304,32 @@ export function CanvasComposer({
   // used to live here, which meant two files each deciding whether a task was answerable — and the
   // one that mattered for ROUTING was neither of them, it was whether `onStart` happened to be
   // non-null. There is one decision now and it was made before this component rendered.
-  const answering = intent.kind === "answer";
   const taskId = intent.kind === "answer" ? intent.task.id : null;
-  /** A learning session is underway: the policy is waiting on a performance.
+  /* 🔴🔴 THERE IS NO `inSession`, AND THE COMPOSER HAS NO MODES (owner 2026-08-26: *"remove the
+   * 'answer state', the canvas is supposed to be a conversation"*).
    *
-   * 🔴 REMOVES THE ATTACH CONTROL, NOT THE ABILITY TO ATTACH. Mid-session is not an ingestion
-   * state: the learner is producing an answer, and a `+` sitting to the left of the cursor is a
-   * second affordance in the one place there should be exactly one. Adding material is still how a
-   * canvas starts — the control lives on the home and pre-session composer, where it is the point.
+   * It was `intent.kind === "answer" && intent.sink === "policy"`, and three things branched on it:
+   * the `+` was removed, the page-to-work-on button was ADDED, and the placeholder and send label
+   * changed to "Type your answer…" / "Submit answer". Each had a reason. Together they turned a
+   * conversation into a form the moment Nemesis asked anything, and a learner who wanted to attach
+   * a file or change the subject found the control for it had gone.
    *
-   * 🔴 DERIVED, NOT A PROP. It was `inSession={sink.kind === "policy"}` passed in beside `task` and
-   * `onStart`; three props saying overlapping things about one state is how they came apart. */
-  const inSession = intent.kind === "answer" && intent.sink === "policy";
+   * 🔴 THE ROUTING IS UNTOUCHED, AND THAT DISTINCTION IS THE WHOLE OF THIS CHANGE. `intent` still
+   * decides what a submission MEANS — an answer still reaches the judge and still lands in
+   * `learner_evidence` — see `composer-intent.ts`, whose header documents the defect that ordering
+   * exists to prevent. What is gone is the composer LOOKING different while that is true. A mode
+   * is a claim about what you may do; the intent is a fact about what you are doing. */
 
   useEffect(() => {
     setText("");
     modalityEvent({ kind: "prompt_changed" });
     typedBefore.current = "";
     startedAt.current = Date.now();
-    // 🔴 THE SHEET IS NOT CLOSED HERE, AND THAT IS A CHANGE FROM THE PAD IT REPLACED. The pad was
-    // a capture surface for one answer, so a pad left open from the previous prompt was answering
-    // a question that no longer existed. The sheet is somewhere to think, reachable before a
-    // question is on screen and useful across several of them, and shutting it on every prompt
-    // change would interrupt exactly the work it exists to host. The risk that closing it used to
-    // cover — a reading taken for one question landing as the answer to another — is now held by
-    // `answersTheSameQuestion`, which refuses that submission by identity instead of by hoping the
-    // surface was dismissed in time.
+    // 🔴 THIS EFFECT STILL KEYS ON `taskId`, WHICH IS THE POINT OF KEEPING IT. The composer clears
+    // its text and restarts its timing whenever the thing being asked changes, and that is true
+    // whether or not the composer looks any different while it is true — see the note on the
+    // missing `inSession` above. The page to work on used to be deliberately NOT closed here; that
+    // rationale now lives with the page, in written-work-sheet.tsx.
   }, [taskId]);
 
   useEffect(() => {
@@ -558,7 +548,11 @@ export function CanvasComposer({
     };
     const onDown = (event: KeyboardEvent) => {
       if (!startsPushToTalk(event, {
-        drawing,
+        // 🔴 ALWAYS FALSE NOW: the page to work on has no door (see the note by the send button).
+        // The parameter stays on `startsPushToTalk` because that pure function still documents the
+        // rule — you must not start dictating over a page somebody is writing on — and the rule has
+        // to survive the door coming back.
+        drawing: false,
         listening,
         supported: dictation.supported,
         typing: isTypingTarget(document.activeElement),
@@ -591,7 +585,7 @@ export function CanvasComposer({
     // above makes: it is redefined every render, and depending on it would rebind four listeners
     // on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dictation.supported, dictation.stop, drawing, listening]);
+  }, [dictation.supported, dictation.stop, listening]);
 
   // ── §I: the composer is the only progression control ────────────────────────
   //
@@ -619,60 +613,8 @@ export function CanvasComposer({
   });
   const showSend = control === "send";
 
-  // The page itself. Held as a value rather than written inline because it is now rendered in
-  // the canvas's free space, ABOVE this component's own bottom-docked pill — see the note at
-  // the top of the return.
-  const sheet = (
-        <WrittenWorkSheet
-          busy={busy}
-          initialInk={ink.current}
-          onClose={() => setDrawing(false)}
-          onInkChange={(value) => {
-            ink.current = value;
-          }}
-          onSubmit={(value) => {
-            modalityEvent({ kind: "captured", via: "written" });
-            onAnswer(value, "written", Date.now() - startedAt.current);
-            modalityEvent({ kind: "submitted" });
-            setText("");
-            typedBefore.current = "";
-            setDrawing(false);
-          }}
-          // 🔴 NULL WHENEVER NOTHING IS BEING ASKED, WHICH IS WHAT MAKES THE SHEET SCRATCH PAPER
-          // REST OF THE TIME. `answering` is the composer's own positive signal that the policy
-          // is waiting for a performance; without one there is no prompt for written work to be
-          // evidence about, and the sheet renders no submit control at all.
-          promptId={answering ? taskId : null}
-        />
-  );
-
   return (
     <>
-      {/* 🔴🔴 THE SHEET IS THE CANVAS'S FREE SPACE, NOT THE COMPOSER'S — owner call, 2026-08-19:
-          "the drawing should not be inside a chat composer box, the chat composer should stay same
-          size, user should be able to draw in the free space in canvas".
-
-          It used to REPLACE the composer's contents, inside the composer's own
-          `max-w-[var(--composer-max-width)]` pill at the bottom of the screen. The reasoning for
-          that was real and is written up in written-work-sheet.tsx: one place you interact with
-          Nemesis, and no second card stacked over the input. But it made the page you work on as
-          wide as a chat box and as tall as whatever was left under it, which is the wrong shape for
-          working something out — and it took the composer away while you did, so there was no way
-          to say anything while a page was open.
-
-          Now it fills the room between the masthead and the composer, and the composer below is
-          untouched. The single-surface property it was protecting survives in the place it actually
-          matters: submission. `onSubmit` is unchanged, still routes through the same `onAnswer` with
-          the same modality and elapsed time, so written work is still one answer on one path and
-          not a second route into the evidence log. */}
-      {drawing && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[136px] top-[64px] z-20 flex justify-center px-4">
-          <div className="pointer-events-auto flex w-full max-w-(--canvas-column) flex-col justify-center">
-            {sheet}
-          </div>
-        </div>
-      )}
-
       {/* The pill FLOATS: no footer container, no top border, canvas visible all around it. The
           gradient is a scrim so text scrolling underneath does not collide with the input — page
           colour fading to nothing, which draws no edge of its own.
@@ -796,7 +738,8 @@ export function CanvasComposer({
           <div className="flex min-h-[var(--composer-min-height)] items-center gap-0 px-[var(--composer-pad-x)]">
             {/* Stays put through every state, including dictation: spatial continuity is the
                 reason there is one composer at all. Subdued, not moved, while listening.
-                🔴 Absent once a session is underway — see `inSession`. */}
+                🔴 ALWAYS PRESENT since 2026-08-26: it used to vanish once the policy was
+                waiting on an answer, which took away the only way to attach anything mid-lesson. */}
             {/* 🔴 ONE INPUT, TRIGGERED FROM TWO PLACES. `sr-only`, NOT `hidden` — a hidden input is
                 out of the tab order and out of the accessibility tree. It sits outside the
                 conditional below so that a menu closing mid-pick cannot unmount the element the
@@ -821,7 +764,7 @@ export function CanvasComposer({
               type="file"
             />
 
-            {!inSession && (
+            {(
             <div className="relative shrink-0" ref={addMenu}>
               <button
                 aria-expanded={addOffers.length > 1 ? addOpen : undefined}
@@ -956,7 +899,7 @@ export function CanvasComposer({
                     "transition-[height] duration-90 ease-out motion-reduce:transition-none",
                     // The attach control used to supply this gap. Without it the text would start
                     // hard against the pill's edge.
-                    capability ? "ml-[8px]" : inSession ? "ml-[4px]" : "ml-[12px]",
+                    capability ? "ml-[8px]" : "ml-[12px]",
                   )}
                   disabled={busy}
                   onChange={(event) => {
@@ -993,9 +936,13 @@ export function CanvasComposer({
                           // nothing typed is a real option, because §3 makes it one.
                           canStartFromAttachment
                           ? START_WITH_MATERIAL_PLACEHOLDER
-                          : intent.kind === "answer"
-                            ? (intent.task.placeholder || ASK_PLACEHOLDER)
-                            : // 🔴 IT SAYS WHAT SENDING DOES RIGHT NOW. The card above already asks
+                          : // 🔴 THE PLACEHOLDER NO LONGER SWAPS TO THE TASK'S. It read
+                            // `intent.task.placeholder || ASK_PLACEHOLDER`, which put "Type your
+                            // answer…" in the box the moment the policy staged anything — the most
+                            // visible half of the mode the owner removed on 2026-08-26. The question
+                            // is already on the page in words; the box does not need to restate that
+                            // it is the place you reply, because it is the only place.
+                             // 🔴 IT SAYS WHAT SENDING DOES RIGHT NOW. The card above already asks
                               // the question, so repeating it here would be the same sentence twice;
                               // what the learner cannot see is that this box is wired to it.
                               intent.kind === "clarify"
@@ -1009,39 +956,24 @@ export function CanvasComposer({
 
                 {dictation.supported && (
                   <button
-                    aria-label={answering ? "Answer out loud" : "Dictate"}
+                    aria-label="Dictate"
                     className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
                     disabled={busy}
                     onClick={startDictation}
-                    title={answering ? "Answer out loud" : "Dictate"}
+                    title="Dictate"
                     type="button"
                   >
                     <Codicon name="mic" size="20px" />
                   </button>
                 )}
 
-                {/* 🔴 WHENEVER A SESSION IS UNDERWAY, NOT ONLY WHILE A QUESTION IS OPEN — the owner's
-                    own framing, and a change from the pad this replaced. You reach for paper BEFORE
-                    you have an answer; a writing surface that only appears once a question is on
-                    screen is not somewhere to think, it is a second answer box with a pencil on it.
-                    What the sheet does with the page still depends entirely on whether anything is
-                    being asked, which is `promptId` above and not this button.
-
-                    🔴 STILL NOT A WAY TO ASK NEMESIS SOMETHING. Speaking a free-form question is
-                    ordinary; drawing one is not a case this product has, so nothing on the sheet
-                    reaches `onAsk`. */}
-                {inSession && (
-                  <button
-                    aria-label="Open a page to work on"
-                    className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                    disabled={busy}
-                    onClick={() => setDrawing(true)}
-                    title="Open a page to work on"
-                    type="button"
-                  >
-                    <Codicon name="edit" size="20px" />
-                  </button>
-                )}
+                {/* 🔴🔴 THERE IS NO PAGE-TO-WORK-ON BUTTON (owner 2026-08-26: *"remove pencil mode
+                    for now"*). It sat here, opened `WrittenWorkSheet` over the canvas's free space,
+                    and handed its reading to the same `onAnswer` every typed and spoken answer uses.
+                    "for now" is the owner's own word: the sheet, `use-written-work-capture.ts`,
+                    `lib/handwriting/*` and `written-response.ts` are all untouched and none of it is
+                    deleted. What is gone is the door. Putting it back is this button and the
+                    `{drawing && …}` branch above the pill, nothing else. */}
 
                 {/* 🔴 FILLED AND COLOURED, NOT A GREY GLYPH -- MEASURED, not chosen. A grey arrow
                     reads as disabled even when it isn't; ChatGPT's own idle-composer action button
@@ -1055,7 +987,7 @@ export function CanvasComposer({
                 <ComposerSend
                   busy={busy}
                   disabled={!showSend}
-                  label={answering ? "Submit answer" : "Send"}
+                  label="Send"
                   onClick={submit}
                 />
 

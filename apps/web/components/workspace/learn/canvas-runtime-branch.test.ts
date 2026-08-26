@@ -190,18 +190,23 @@ test("🔴 removing the 'I don't know' CONTROL did not remove the meaning", asyn
   assert.ok(admissionAt !== -1 && admissionAt < judgeAt, "the admission check must come BEFORE the judge");
 });
 
-test("the session composer drops the attach control but keeps answering", async () => {
+test("🔴🔴 the composer keeps every control while answering, and announces no mode", async () => {
+  // 🔴 REVERSED 2026-08-26. This used to be "the session composer DROPS the attach control", and
+  // asserted `{!inSession && (` around the `+`. Owner: *"remove the 'answer state', the canvas is
+  // supposed to be a conversation."* Taking the attach control away mid-lesson removed the only
+  // way to add material at the exact moment a learner reaches for one.
   const composer = await readFile(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
-  assert.match(composer, /\{!inSession && \(/, "the attach control is no longer conditional");
+  assert.ok(!/\{!inSession && \(/.test(composer), "the attach control is conditional on a mode again");
+  assert.ok(!/\binSession\b\s*=/.test(composer), "the composer computed a mode flag again");
   // 🔴 The mic and submit are NOT conditional — dropping them would remove ways to answer, which is
-  // the opposite of the point.
-  assert.match(composer, /aria-label=\{answering \? "Answer out loud" : "Dictate"\}/);
+  // the opposite of the point. They also no longer RENAME themselves mid-answer.
+  assert.match(composer, /aria-label="Dictate"/);
   // 🔴 REPOINTED 2026-08-19. The send control moved into `ComposerSend` so the front door and the
   // session composer stop drawing two different buttons for the same action, so the literal
   // `aria-label={...}` is no longer written here — it is passed as `label`. The property is
   // unchanged and is still the one that matters: the way to submit is never conditional on being
   // mid-answer.
-  assert.match(composer, /label=\{answering \? "Submit answer" : "Send"\}/);
+  assert.match(composer, /label="Send"/, "the send button renames itself mid-answer again");
   assert.match(composer, /<ComposerSend/, "the composer no longer uses the shared send control");
   // A permanently painted scrollbar track inside a one-line control.
   assert.match(composer, /overflow-hidden/);

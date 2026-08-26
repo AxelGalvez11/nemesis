@@ -62,10 +62,31 @@ async function render(intent: ComposerIntent, attachedCount = 0) {
 
 // ── The intent reaches the surface ──────────────────────────────────────────
 
-test("🔴 an ANSWER intent puts the task's own placeholder in the composer", async () => {
+test("🔴🔴 an ANSWER intent looks EXACTLY like any other: the composer has no modes", async () => {
+  // 🔴 THIS GUARD IS REVERSED (owner 2026-08-26: *"remove the 'answer state', the canvas is
+  // supposed to be a conversation"*). It used to assert the opposite: that an answer intent put
+  // "Type your answer…" in the box and removed the ask placeholder.
+  //
+  // Three things branched on the answer intent — the attach control was removed, a page-to-work-on
+  // button appeared, and the placeholder and send label changed. Each had a reason. Together they
+  // turned a conversation into a form the moment Nemesis asked anything, and a learner who wanted
+  // to attach a file mid-lesson found the control gone.
+  //
+  // 🔴 THE ROUTING IS UNTOUCHED AND MUST STAY UNTOUCHED — the tests above this one hold it. An
+  // answer still reaches the judge and still lands as evidence. What is gone is the composer
+  // LOOKING different while that is true. A mode is a claim about what you may do; the intent is a
+  // fact about what you are doing, and only one of those belongs on screen.
+  // 🔴 MATCHED ON THE PREFIX, NOT THE CONSTANT. `ASK_PLACEHOLDER` carries an apostrophe and
+  // `renderToStaticMarkup` writes it as `&#x27;`, so `html.includes(ASK_PLACEHOLDER)` is false for
+  // a composer that is rendering it perfectly. The test two below this one has always compared the
+  // prefix for the same reason.
+  const head = ASK_PLACEHOLDER.slice(0, ASK_PLACEHOLDER.indexOf("'"));
   const html = await render({ kind: "answer", sink: "policy", task: TASK });
-  assert.ok(html.includes("Type your answer"), "the composer is not labelled as the answer surface");
-  assert.ok(!html.includes(ASK_PLACEHOLDER), "it still reads as a place to ask questions");
+  assert.ok(html.includes(head), "the composer stopped reading as an ordinary conversation");
+  assert.ok(!html.includes("Type your answer"), "the answer mode is back in the placeholder");
+  // And it is the same box an ASK intent gets, not a lookalike.
+  const ask = await render({ kind: "ask" });
+  assert.equal(html.includes(head), ask.includes(head), "an answer and an ask are drawn differently again");
 });
 
 test("a START intent with material says that sending is enough on its own", async () => {
