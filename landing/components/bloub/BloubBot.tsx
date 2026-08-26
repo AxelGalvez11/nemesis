@@ -34,7 +34,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { NOTIF_BLUE } from "@/lib/bloub/decor";
 import { BotEngine, type BotFrame } from "@/lib/bloub/engine";
-import { TURN_TIME, lookTarget } from "@/lib/bloub/gaze";
+import { SPIN, TURN_TIME, lookTarget } from "@/lib/bloub/gaze";
 import { clamp, easings } from "@/lib/bloub/math";
 import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
 import { SHAPE_BY_ID, mixHex } from "@/lib/bloub/skins";
@@ -42,7 +42,7 @@ import { capsulePath } from "@/lib/bloub/shape";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 import { browFrame } from "@/lib/character/brow";
-import { spinTour } from "@/lib/character/spin";
+import { SPIN_STEP, spinTour } from "@/lib/character/spin";
 import { restingFace } from "@/lib/character/face";
 import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@/lib/character/pool";
 
@@ -567,24 +567,36 @@ export function BloubBot({
       if (!aimingRef.current) turnSinceRef.current = clockRef.current;
       const halfW = Math.max(1, window.innerWidth / 2);
       const halfH = Math.max(1, window.innerHeight / 2);
-      engine.setLook(
-        lookTarget({
-          nx: at ? clamp((at.x - (box.left + box.width / 2)) / halfW, -1, 1) : 0,
-          ny: at ? clamp((at.y - (box.top + box.height / 2)) / halfH, -1, 1) : 0,
-          // 🔴 A REQUESTED TURN OUTRANKS THE ARRIVAL'S, and it has to: they are the same
-          // `tour` channel, so without this the entrance's long-finished `1` would hold the
-          // spin at "already over". When it ends, `turnSinceRef` is far enough in the past that
-          // the arrival expression is 1 too, so handing back is not a jump.
-          tour:
-            spinFromRef.current !== null
-              ? spinTour(clockRef.current - spinFromRef.current)
-              : live.current.entrance
-                ? easings.easeOutQuint(clamp((clockRef.current - turnSinceRef.current) / TURN_TIME))
-                : 1,
-          pointer: at !== null,
-        }),
-        clockRef.current,
-      );
+      const look = lookTarget({
+        nx: at ? clamp((at.x - (box.left + box.width / 2)) / halfW, -1, 1) : 0,
+        ny: at ? clamp((at.y - (box.top + box.height / 2)) / halfH, -1, 1) : 0,
+        tour: live.current.entrance
+          ? easings.easeOutQuint(clamp((clockRef.current - turnSinceRef.current) / TURN_TIME))
+          : 1,
+        pointer: at !== null,
+      });
+
+      // 🔴🔴 A REQUESTED TURN WRITES `spin` AND NOTHING ELSE. It used to drive `tour`, which was
+      // wrong in a way that only shows on a character that is ALREADY looking somewhere: `tour`
+      // feeds `mix` as well, and dropping `mix` to 0 hands the head back to the pose's own built-in
+      // gaze. So a click abandoned wherever the character was pointing, snapped to that fixed
+      // orientation, and spun from THERE — owner, 2026-08-26: "the spin cuts off to a predetermined
+      // point, the spin should be able to spin him from where he is oriented currently". Measured on
+      // the shipped page: the inner eye jumped from x=-64 to x=+54 within two frames of the click.
+      //
+      // Leaving `mix` where the arrival left it means the turn is a pure offset about whatever
+      // direction the head is already holding, which is what was asked for.
+      const spinning = spinFromRef.current;
+      if (spinning !== null) look.spin = SPIN * (1 - spinTour(clockRef.current - spinning));
+
+      // 🔴 AND IT IS SET INSTANTLY, NOT MORPHED, WHICH IS THE OTHER HALF OF THE SAME BUG. A full
+      // turn's two ends are the same angle but not the same NUMBER: `spin` has to leave 0, travel
+      // 360, and arrive back at 0. The engine's default 0.24s catch-up would interpolate across
+      // that opening step and play an extra whole revolution in a quarter of a second before the
+      // real one began. Stepping under a frame makes the 360 land in one go — invisible, because
+      // -360 degrees is the same angle as 0 — and lets the eased curve be the only thing anybody
+      // sees. It cannot be `0`: `lookAtTime` divides by the morph, and 0/0 is NaN.
+      engine.setLook(look, clockRef.current, spinning !== null ? SPIN_STEP : undefined);
       aimingRef.current = true;
     };
 
