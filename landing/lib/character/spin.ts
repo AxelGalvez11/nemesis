@@ -23,17 +23,34 @@
 // vendored (`lib/bloub/gaze.ts`). Pure and DOM-free so it can be tested, for the same reason
 // `brow.ts` is.
 
+import { SPIN } from "../bloub/gaze";
 import { clamp, easings } from "../bloub/math";
 
 /**
- * How long one poke-turn takes, in scene seconds.
+ * How many revolutions one poke is worth. Owner, 2026-08-26: *"actually just make him double
+ * spin"*.
  *
- * 🔴 LONGER THAN THE ENTRANCE'S `TURN_TIME` (1.1s), DELIBERATELY. The entrance is an arrival —
- * it wants to be over, so the page can get on. This is a reply to somebody's click, and a
- * revolution that is finished before they have registered it starting reads as a glitch rather
- * than as a turn. At 1.5s the whole circuit is legible without becoming a wait.
+ * 🔴 IT IS A COUNT, NOT A BIGGER ANGLE, and that distinction is what keeps the landing exact.
+ * The turn works because its two ends are the same angle: any WHOLE number of revolutions still
+ * puts the eyes back precisely where they set off, so going from one to two costs nothing and
+ * needs no re-tuning. A non-integer here would leave the character facing somewhere new every
+ * time it was clicked.
  */
-export const SPIN_TIME = 1.5;
+export const SPIN_TURNS = 2;
+
+/**
+ * How long the whole gesture takes, in scene seconds.
+ *
+ * 🔴 NOT DOUBLE THE SINGLE TURN'S 1.5s. Two revolutions at the old rate would run 3s, which stops
+ * being a reply to a click and starts being something to wait out. 2.4s gives each revolution
+ * 1.2s — a touch quicker than the single spin was, which is right: a double spin should read as
+ * livelier than one, not as one played twice.
+ *
+ * 🔴 STILL LONGER THAN THE ENTRANCE'S `TURN_TIME` (1.1s), which is the floor. The entrance is an
+ * arrival and wants to be over; a revolution finished before anybody registers it starting reads
+ * as a glitch rather than as a turn.
+ */
+export const SPIN_TIME = 2.4;
 
 /**
  * How much of the turn is done, 0 to 1, `elapsed` scene-seconds in.
@@ -47,6 +64,19 @@ export const SPIN_TIME = 1.5;
  */
 export function spinTour(elapsed: number): number {
   return easings.easeInOutCubic(clamp(elapsed / SPIN_TIME));
+}
+
+/**
+ * The yaw offset to subtract, in degrees, `elapsed` scene-seconds into a turn.
+ *
+ * 🔴 IT COUNTS DOWN TO ZERO RATHER THAN UP FROM IT, and that is not arbitrary. Zero is the value
+ * the character rests at, so finishing there means the hand-back to normal tracking is exactly
+ * continuous — nothing to smooth, nothing to wrap. The whole discontinuity is therefore at the
+ * START, where it is free: `SPIN_TURNS * 360` is the same angle as 0, so landing it in one step
+ * (see `SPIN_STEP`) is invisible.
+ */
+export function spinDegrees(elapsed: number): number {
+  return SPIN_TURNS * SPIN * (1 - spinTour(elapsed));
 }
 
 /**
