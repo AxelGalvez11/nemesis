@@ -31,7 +31,6 @@ const ANSWER =
 function Stage() {
   const [face, setFace] = useState<FeatureFace | null>(null);
   const [station, setStation] = useState<Station>("corner");
-  const [marker, setMarker] = useState<"!" | "?" | null>(null);
   const [caption, setCaption] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [typed, setTyped] = useState("");
@@ -50,7 +49,6 @@ function Stage() {
   const rest = () => {
     setFace(null);
     setStation("corner");
-    setMarker(null);
     setCaption(null);
     setCaptionMark(null);
     setLeaving(false);
@@ -151,28 +149,9 @@ function Stage() {
       hint: "the words write in, and it reads its own answer for a beat",
       fire: () => run("answer", answerSteps(0)),
     },
-    {
-      name: "Nemesis needs an answer from you",
-      hint: "the ? pops in over its head and bobs until you answer",
-      fire: () => {
-        if (marker === "?") {
-          run("answered", [[0, rest]]);
-        } else {
-          timers.current.forEach(window.clearTimeout);
-          rest();
-          setPlaying(null);
-          setMarker("?");
-        }
-      },
-    },
-    {
-      name: "Heads-up (proposed)",
-      hint: "the ! pops in, bobs, and leaves on its own — an animation, not a sticker",
-      fire: () => run("headsup", [
-        [0, () => setMarker("!")],
-        [3200, () => setMarker(null)],
-      ]),
-    },
+    // 🔴 "Nemesis needs an answer from you" AND "Heads-up" ARE GONE FROM THIS BOARD because the
+    // thing they played is gone from the product (owner 2026-08-26). Both did nothing but set the
+    // "?"/"!" over the character's head; see the `marker` note in character-dock.tsx.
     {
       name: "Play the whole loop",
       hint: "ask → think → answer → read → point, chained end to end",
@@ -220,7 +199,6 @@ function Stage() {
           face={face}
           gap={10}
           left={24}
-          marker={marker}
           station={station}
           state="idle"
         />
@@ -231,7 +209,7 @@ function Stage() {
           <li key={ev.name}>
             <button
               className={`w-full rounded-xl border px-4 py-3 text-left transition-colors hover:bg-(--ui-control-hover-background) ${
-                playing !== null && ev.name !== "Nemesis needs an answer from you"
+                playing !== null
                   ? "border-(--ui-stroke-secondary) opacity-80"
                   : "border-(--ui-stroke-secondary)"
               }`}
@@ -239,7 +217,7 @@ function Stage() {
               type="button"
             >
               <span className="block text-sm font-medium text-(--ui-text-primary)">
-                {ev.name === "Nemesis needs an answer from you" && marker === "?" ? "Answer it" : ev.name}
+                {ev.name}
               </span>
               <span className="mt-0.5 block text-xs text-(--ui-text-secondary)">{ev.hint}</span>
             </button>

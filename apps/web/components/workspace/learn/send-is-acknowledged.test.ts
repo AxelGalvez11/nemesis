@@ -437,50 +437,42 @@ test("🔴 the composer's drop is longer than it was, and lands softer", () => {
   assert.match(home, /cubic-bezier\(0\.32, 0\.72, 0, 1\)/, "the drop is back on the brisker curve");
 });
 
-test("🔴🔴 the mascot wears a mark above its head, and does not deform into one", () => {
-  // Owner, 2026-08-20, asked directly and chose this over the engine's own poses: *"do not fire at
-  // all, the mascot should have an exclamation mark or question mark appear above its head for
-  // those kinds of things."* `lib/bloub` ships `exclaim` and `alert` states that deform the
-  // character itself; the character stays itself and something appears near it instead.
+test("🔴🔴🔴 the character wears no punctuation, anywhere", () => {
+  // 🔴 THIS GUARD IS REVERSED, AND THE REVERSAL IS THE POINT. It used to assert the mark EXISTED.
+  //
+  // The history, because a future reader will otherwise re-add this in good faith:
+  //   · 2026-08-20 the owner asked for it in as many words — *"the mascot should have an
+  //     exclamation mark or question mark appear above its head for those kinds of things"* — and
+  //     chose it over `exclaim`/`alert`, the engine poses that deform the character into a glyph.
+  //   · 2026-08-21 (twice) *"a random question mark"* / *"the mascot randomly gets a question mark
+  //     on its head"*. Narrowed twice: not through Nemesis's own thinking, and not while the
+  //     question it referred to was off screen (`regions.policy`, not just the policy's belief).
+  //   · 2026-08-24 *"I didn't want a circle around the exclamation mark or the question mark"* and
+  //     *"it's supposed to be an animation"*. The coin went; a pop-and-bob arrived.
+  //   · 2026-08-26 *"remove the random question mark, exclamation mark above the mascot"*.
+  //
+  // Four narrowings, each true, none of them the reason. The mark was never carrying a fact: the
+  // question is printed in full, in words, in the middle of the same page, and a failure already
+  // renders its own banner. A glyph that restates what is already on screen reads as noise no
+  // matter how precisely it is timed, which is why a fifth condition was not the answer.
+  //
+  // Calibration: restore any ONE of the four pieces below and this reddens.
   const dock = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
-  assert.match(dock, /marker \?: "!" \| "\?" \| null;|marker\?: "!" \| "\?" \| null;/, "the dock takes no marker");
-  assert.match(dock, /\{marker && \(/, "the marker is accepted and never drawn");
-  // 🔴 OUTSIDE THE ENGINE. lib/bloub is vendored whole and not edited, and its loop writes SVG
-  // attributes every frame — a glyph pushed through it would be a fourth thing to keep in sync.
-  assert.match(dock, /className="character-mark /, "the mark is not a sibling of the character");
+  const cssRaw = readFileSync(new URL("../../character/character.css", import.meta.url), "utf8");
 
-  // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once, and only the failure is news —
-  // the question is already rendered in full, in words, in the middle of the page.
-  // Whitespace-tolerant: this guards the ORDER (a failure outranks a question), not the line
-  // breaks. Written tight, it reddened the moment the condition was reformatted onto four lines.
-  assert.match(canvasCode, /session\.error\s*\?\s*"!"\s*:/, "the error no longer outranks the question");
-  // 🔴 EVERY GUARD ON THE "?", ASSERTED SEPARATELY. This matched the whole condition as one
-  // string, so tightening it — which is what the owner's repeat report on 2026-08-21 required —
-  // reddened the test for doing the right thing, while a future edit that DROPPED a guard and
-  // reformatted would slip past. Each clause is now its own claim.
-  const mark = canvasCode.slice(canvasCode.indexOf("marker={"), canvasCode.indexOf("marker={") + 320);
-  for (const [clause, why] of [
-    ["awaitingDemonstration", "the mark no longer waits on the policy actually wanting an answer"],
-    // 🔴 THE REST OF "RANDOM". `awaitingAnswer` is the policy's belief; `regions.policy` is whether
-    // the question is on screen. They come apart on every surface that withholds the policy region,
-    // and the mark then sat over a page with no question anywhere on it.
-    ["regions.policy", "the mark can appear while the question it refers to is off screen"],
-    ["!turnInFlight", "the mark is back on the mascot's head while Nemesis is working"],
-    ['presence !== "preparing"', "the mark is back during preparation"],
-  ] as const) {
-    assert.ok(mark.includes(clause), why);
-  }
-
-  // 🔴 THE BADGE IS THE CHARACTER'S OWN COLOUR, NOT THE PAGE'S. Reported 2026-08-21: *"the mascot
-  // has a random question mark that isnt in purple like the mascot."* It was `--ui-text-tertiary`,
-  // so the one thing sitting ON the character was the one thing that did not belong to it.
-  // `characterInk` is what `NemesisAvatar` paints its body with, so the badge cannot drift from the body it
-  // sits on — not across themes, and not across the accents a learner can choose.
-  assert.match(dock, /color: characterInk\(accent, theme === "dark"\)/, "the mark no longer carries the character's own ink");
-  assert.ok(!/backgroundColor: characterInk/.test(dock), "the coin is back behind the mark");
-  // 🔴 AND IT DOES NOT GROW WITH THE DOCK. The character scales to `centreScale` coming forward;
-  // a badge that scaled with it became a page-sized glyph over the middle of an empty screen.
-  assert.match(dock, /travel\.k/, "the badge is no longer counter-scaled");
+  // 1. The dock cannot be handed one.
+  assert.ok(!/\bmarker\?:/.test(dock), "the dock takes a marker prop again");
+  assert.ok(!/\{marker && \(/.test(dock), "the dock draws a marker again");
+  // 2. Nothing wears the animation class.
+  assert.ok(!/className="character-mark/.test(dock), "the mark's span is back on the dock");
+  // 3. The animation itself is gone, not merely unused — a live keyframe is an invitation.
+  assert.ok(!cssRaw.includes("@keyframes character-mark-in"), "the mark's pop-in is back in the stylesheet");
+  assert.ok(!cssRaw.includes("@keyframes character-mark-bob"), "the mark's bob is back in the stylesheet");
+  // 4. And the canvas does not try to pass one.
+  assert.ok(!/\bmarker=\{/.test(canvasCode), "the canvas is wiring a marker into the dock again");
+  // The removal is recorded where the prop used to be declared, so the next person to want this
+  // reads the four reports before re-adding it rather than after.
+  assert.match(dock, /2026-08-26/, "the dock no longer records why the mark went");
 });
 
 test("🔴🔴 the mascot comes forward for a TURN, never for background work", () => {
@@ -523,18 +515,6 @@ test("🔴🔴🔴 every hook runs before the not-ready gate, so a loading canva
     lastHook.index! < gate,
     `a hook call (${lastHook[0]}…) sits below the not-ready gate again`,
   );
-});
-
-test("🔴 the mark is an animation, not a sticker", () => {
-  // Owner 2026-08-24: "I need an animation for it… not like a thing that stays on there."
-  // It POPS in (spring overshoot) and BOBS while the state holds; reduced motion stills it.
-  //
-  // Calibration: drop either keyframe block, or the class off the span, and this reddens.
-  const cssRaw = readFileSync(new URL("../../character/character.css", import.meta.url), "utf8");
-  const dockRaw = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
-  assert.ok(cssRaw.includes("@keyframes character-mark-in"), "the pop-in is gone");
-  assert.ok(cssRaw.includes("@keyframes character-mark-bob"), "the bob is gone");
-  assert.match(dockRaw, /className="character-mark /, "the span no longer wears the animation class");
 });
 
 test("🔴 a fresh reply sends the eyes to the words, and lets them go again", () => {

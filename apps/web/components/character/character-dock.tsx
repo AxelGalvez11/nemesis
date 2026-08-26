@@ -20,7 +20,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useTheme } from "@/components/theme-provider";
-import { characterInk } from "@/lib/accent";
 import {
   ATTENTION_ATTR,
   getAttention,
@@ -99,10 +98,21 @@ export function centreStation(surface: { left: number; top: number; width: numbe
 export interface CharacterDockProps {
   /** Which animation is playing. Its station decides corner or centre. */
   state?: StateId;
-  /** A mark above the character's head: "!" when something went wrong, "?" when it needs something
-   *  from the learner. Absent on nearly every render — a mascot that is always signalling is a
-   *  mascot nobody looks at. */
-  marker?: "!" | "?" | null;
+  /* 🔴🔴 THERE IS NO `marker` PROP, AND ITS ABSENCE IS THE DECISION (owner 2026-08-26: *"remove
+   * the random question mark, exclamation mark above the mascot"*).
+   *
+   * It was added 2026-08-20 on the owner's own wording — *"the mascot should have an exclamation
+   * mark or question mark appear above its head"* — and then narrowed four times as they kept
+   * seeing it where they did not expect it: not during a turn, not while preparing, not while the
+   * question it referred to was off screen, and in the character's own ink rather than a coin.
+   * Each narrowing was correct and none of them fixed the report, because the complaint was never
+   * about WHEN it fired. A glyph over a character that is already beside a composer holding the
+   * question, on a page that prints the question in full, adds no fact the learner does not have.
+   *
+   * So the answer is not a fifth condition. It is that the character does not wear punctuation.
+   * Restoring this means restoring the prop, the span, `.character-mark` in character.css and the
+   * wiring in learning-canvas.tsx — and it means overturning a call the owner has now made three
+   * times. `send-is-acknowledged.test.ts` holds all four pieces down. */
   /**
    * The step that is running, printed beside the character.
    *
@@ -112,8 +122,8 @@ export interface CharacterDockProps {
    * had meant "push to the bottom" while the container was a column, and silently became "push to
    * the right" when it became a row (owner, 2026-08-21: *"why is the 'thinking' so far off"*).
    *
-   * No static box can sit beside a character whose position is a live transform. This is a sibling
-   * of the marker, so it inherits that transform and is beside the character by construction —
+   * No static box can sit beside a character whose position is a live transform. This is a child
+   * of the dock, so it inherits that transform and is beside the character by construction —
    * there is no alignment left to get wrong.
    */
   caption?: string | null;
@@ -232,7 +242,6 @@ export function CharacterDock({
   captionMark = null,
   domains = [],
   station: stationOverride,
-  marker = null,
   state = "idle",
   size = DOCK_SIZE,
   anchor,
@@ -245,7 +254,7 @@ export function CharacterDock({
   hidden = false,
   className,
 }: CharacterDockProps) {
-  const { accent, theme } = useTheme();
+  const { accent } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   // `motion` is the half the engine has no pose for — the hop. See `use-poke.ts`.
   const { state: shown, motion, face: pokeFace, poke } = usePoke(state);
@@ -538,41 +547,6 @@ export function CharacterDock({
           waggle={motion === "waggle"}
         />
       </div>
-      {/* 🔴 A MARK ABOVE THE HEAD, NOT A BODY STATE — owner's own wording, 2026-08-20: *"the mascot
-          should have an exclamation mark or question mark appear above its head for those kinds of
-          things."* The engine ships `exclaim` and `alert` poses that deform the character itself,
-          and the owner was asked and chose neither: the character stays itself and something
-          appears near it, which is how a mascot has always signalled.
-
-          🔴 ADDITIVE, AND DELIBERATELY OUTSIDE THE ENGINE. `lib/avatar/*` models a solid with a face
-          on it and nothing else, and the animation loop writes SVG attributes every frame — a
-          glyph pushed through it would be a fourth thing to keep in sync at 60fps for no gain.
-          This is a sibling that inherits the dock's own transform, so it travels with the character
-          without the character knowing about it. */}
-      {marker && (
-        <span
-          aria-hidden="true"
-          className="character-mark pointer-events-none absolute left-1/2 bottom-full font-extrabold leading-none select-none"
-          style={{
-            // 🔴🔴 A GLYPH IN THE CHARACTER'S OWN INK, NOT A COIN (owner 2026-08-24: "I didn't
-            // want a circle around the exclamation mark or the question mark"). The filled disc
-            // read as a badge stuck onto the scene; the bare glyph in `characterInk` — the same
-            // function the body is painted with — reads as the creature itself signalling, and
-            // it cannot drift from the body across themes or accents. Its ARRIVAL is the
-            // animation (owner: "it's supposed to be an animation"): pop in with a small
-            // overshoot, then bob gently while the state holds — see `.character-mark` in character.css.
-            color: characterInk(accent, theme === "dark"),
-            // 🔴 COUNTER-SCALED, the same reason the caption is. The dock grows to `centreScale`
-            // when the character comes forward to think, and a mark that grew with it became a
-            // page-sized question mark floating above the middle of the screen.
-            fontSize: `${Math.round(size * 0.46) / travel.k}px`,
-            marginBottom: `${4 / travel.k}px`,
-          }}
-        >
-          {marker}
-        </span>
-      )}
-
       {/* 🔴 COUNTER-SCALED, because the dock grows to `centreScale` when the character comes
           forward to think and a caption that grew with it would be enormous type on the page. The
           gap is divided too: a margin here is measured in the parent's scaled space, so a constant

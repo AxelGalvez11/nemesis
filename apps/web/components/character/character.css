@@ -135,30 +135,11 @@
   100% { transform: rotate(360deg) scale(1); }
 }
 
-/*
- * The mark over its head — ? while Nemesis waits on an answer, ! for a heads-up.
- *
- * 🔴 A GLYPH THAT ARRIVES, NOT A STICKER (owner 2026-08-24). It pops in with a small
- * overshoot — same spring family as the poke gestures — then bobs gently for as long as
- * the state holds, so a waiting question keeps feeling alive without shouting.
- */
-.character-mark {
-  transform: translateX(-50%);
-  animation:
-    character-mark-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
-    character-mark-bob 2200ms ease-in-out 380ms infinite;
-  will-change: transform;
-}
-
-@keyframes character-mark-in {
-  0% { opacity: 0; transform: translateX(-50%) translateY(35%) scale(0.4); }
-  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
-}
-
-@keyframes character-mark-bob {
-  0%, 100% { transform: translateX(-50%) translateY(0); }
-  50% { transform: translateX(-50%) translateY(-9%); }
-}
+/* 🔴 THERE IS NO `.character-mark` HERE ANY MORE (owner 2026-08-26: "remove the random question
+ * mark, exclamation mark above the mascot"). It animated a "!"/"?" glyph over the character's
+ * head — a pop-in with overshoot, then a slow bob. The whole signal is gone, not just its
+ * motion; see the `marker` note in character-dock.tsx for why a fifth firing condition was not
+ * the answer. */
 
 @media (prefers-reduced-motion: reduce) {
   /* 🔴 REMOVED, NOT SHORTENED, AND THAT DIFFERS FROM THE DOCK ABOVE. The dock's travel carries
@@ -167,8 +148,7 @@
      same cycle still answers one. */
   .character-ponder,
   .character-jump,
-  .character-spin,
-  .character-mark {
+  .character-spin {
     animation: none;
   }
 }

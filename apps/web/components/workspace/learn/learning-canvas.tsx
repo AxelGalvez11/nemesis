@@ -2227,36 +2227,18 @@ export function LearningCanvas({
         // said by whoever knows a turn is in flight rather than inferred from the animation.
         station={handedOver || turnInFlight || presence === "preparing" ? "centre" : "corner"}
         contain
-        // 🔴 "!" WHEN SOMETHING WENT WRONG, "?" WHEN NEMESIS IS WAITING ON THE LEARNER, and null on
-        // nearly every render — a mascot that is always signalling is a mascot nobody looks at.
+        // 🔴🔴 NO `marker` IS PASSED, AND THAT IS THE WHOLE OF IT (owner 2026-08-26: *"remove the
+        // random question mark, exclamation mark above the mascot"*).
         //
-        // 🔴 THE ERROR OUTRANKS THE QUESTION. Both can be true at once (a question on screen and a
-        // turn that just failed), and of the two only the failure is news: the question is already
-        // rendered in full, in words, in the middle of the page.
-        // 🔴 AND NOT WHILE NEMESIS IS WORKING. `awaitingAnswer` stays true across a turn, so the
-        // "?" sat on the mascot's head THROUGH its own thinking — scaled up with it, in the middle
-        // of an otherwise empty page (owner, 2026-08-21: "a random question mark"). The mark means
-        // "Nemesis needs something from you", and while it is thinking it does not: it needs to
-        // finish. This is the same distinction the dock's own `state` already draws, applied to
-        // the badge that sits on top of it.
-        // 🔴🔴 AND NOT WHILE THE QUESTION IS OFF SCREEN, WHICH IS THE REST OF "RANDOM" (owner
-        // 2026-08-21, still seeing it after the narrowing above: "the mascot randomly gets a
-        // question mark on its head"). `awaitingAnswer` is the POLICY's state — it stays true
-        // whenever the runtime believes it has asked for something — while `regions.policy` is
-        // whether that question is actually PAINTING. The two come apart on every surface that
-        // withholds the policy region: a reply, a document, a lesson held back. So the mark sat
-        // over a page with no question anywhere on it, which from the learner's side is exactly
-        // a mark appearing for no reason.
+        // A `marker` prop used to sit on this line, carrying "!" on `session.error` and "?" on
+        // `awaitingDemonstration && regions.policy && !turnInFlight && presence !== "preparing"` —
+        // four guards, each added after the owner reported seeing the mark where it did not belong
+        // (2026-08-21, twice; 2026-08-24). Every guard was a true statement about when the mark was
+        // wrong, and none of them was the reason it was wrong: the question is already on the page
+        // in words, so the glyph never carried a fact the learner did not already have.
         //
-        // The mark means "Nemesis needs something from you". If the thing it needs is not on
-        // screen, the mark is not a signal — it is a puzzle. Gated on the region that renders it.
-        marker={
-          session.error
-            ? "!"
-            : awaitingDemonstration && regions.policy && !turnInFlight && presence !== "preparing"
-              ? "?"
-              : null
-        }
+        // The dock no longer accepts the prop at all, so this cannot come back by accident — only
+        // by a deliberate reversal of a call the owner has now made three times.
         // 🔴🔴 `turnInFlight`, NOT `policy.thinking` — AND THIS IS THE SAME MISTAKE THE THINKING
         // SCREEN ALREADY FIXED, MADE AGAIN ONE COMPONENT OVER.
         //

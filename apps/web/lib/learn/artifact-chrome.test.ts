@@ -101,3 +101,28 @@ test("🔴🔴 the portal carries `data-workspace`, or every control in it goes 
   assert.match(PREVIEW, /createPortal\(/, "the reader is not portalled — `fixed` will resolve against the canvas");
   assert.match(PREVIEW, /data-workspace/, "the portal left the workspace scope and the global button rule owns it");
 });
+
+test("🔴🔴 the room an artifact sits in is neutral, never an accent fill", () => {
+  // Owner 2026-08-26: *"opening documents, pdf, or pptx in library does not match chatgpt. the
+  // background is green and not white."*
+  //
+  // 🔴 MEASURED ON BOTH SIDES, WITH THE ACCENT ON. Every `--ui-bg-*` fill is the learner's chosen
+  // accent mixed over a translucent base, so with the green accent `--ui-bg-secondary` resolves to
+  // `color(srgb 0.174 0.537 0.374 / 0.1723)` — rgb(219, 235, 227) once the page shows through.
+  // The reference's artifact room is rgb(252, 252, 252). `--ui-bg-editor` is the app's neutral page
+  // ground and measures rgb(253, 253, 253) whatever accent is chosen, which is one unit away.
+  //
+  // 🔴 THE DISTINCTION IS CONTROL vs ROOM, and it is worth stating because it will come up again.
+  // `--ui-bg-*` are for things sitting ON a page — a hovered row, a chip, an input — where a trace
+  // of the accent is the point. A surface an artifact is READ on is not a control, and tinting it
+  // colours the artifact along with it.
+  //
+  // Calibration: put any `--ui-bg-*` fill back on either room and this reddens.
+  const deck = code("../../components/workspace/deck/deck-view.tsx");
+  assert.match(deck, /flex h-full min-h-0 flex-col bg-\(--ui-bg-editor\)/, "the deck room is not the neutral ground");
+  assert.ok(!/flex-col bg-\(--ui-bg-(primary|secondary|tertiary|quaternary)\)/.test(deck), "the deck room is an accent fill again");
+  // The document/PDF reader was already neutral and has to stay that way: measured
+  // `color(srgb 0.9915 …)` = rgb(253, 253, 253) for the panel, pure white for the sheet.
+  assert.match(PREVIEW, /flex flex-col bg-\(--ui-bg-elevated\)/, "the reader panel is no longer the neutral elevated ground");
+  assert.match(PREVIEW, /mx-auto w-full bg-white /, "the sheet is no longer white");
+});
