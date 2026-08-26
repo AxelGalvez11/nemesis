@@ -4,7 +4,7 @@
 // non-streaming v1 wire recipe — fenced code renders as a plain mono block).
 
 import type { Components } from "react-markdown";
-import { Children } from "react";
+import { Children, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 // 🔴🔴🔴 CHEMICAL EQUATIONS. `\ce{2H2 + O2 -> 2H2O}` is how anybody writes a reaction in LaTeX, and
 // KaTeX only understands it once this extension has registered itself. It sat unimported in
@@ -33,13 +33,21 @@ const MARKDOWN_CONTAINER_CLASS_NAME =
   "prose-headings:text-foreground prose-strong:text-foreground " +
   "prose-a:break-words prose-p:[overflow-wrap:anywhere] " +
   "prose-li:marker:text-muted-foreground/70 " +
-  "prose-code:rounded-[0.25rem] prose-code:px-[0.1875rem] prose-code:py-px prose-code:font-mono " +
-  "prose-code:text-[0.9em] prose-code:font-normal prose-code:before:content-none prose-code:after:content-none " +
+  "prose-code:font-mono prose-code:font-normal " +
+  "prose-code:before:content-none prose-code:after:content-none " +
   // Inline code was typography-plugin default — in dark mode that computes to
   // near-black on black (owner 2026-08-04: "dark mode has some text that isnt
   // legible"). Pin it to the app's own tokens in both themes.
   "prose-code:text-foreground prose-code:bg-(--ui-bg-quaternary) " +
-  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>*+*]:mt-(--paragraph-gap)";
+  // 🔴 SIZE, RADIUS, PADDING AND EVERY BLOCK GAP LIVE IN desktop-chrome.css NOW, under
+  // `.aui-md.aui-md`, because they are measured against the reference and a measurement belongs
+  // beside the note that records it. Four utilities were removed from this string rather than left
+  // to lose a specificity fight in silence: `prose-code:rounded-[0.25rem]`,
+  // `prose-code:px-[0.1875rem]`, `prose-code:text-[0.9em]` and `[&>*+*]:mt-(--paragraph-gap)`.
+  // Every one of them was ALSO wrong by the rem trap — this app's root font is 18px, so
+  // `0.25rem` drew a 4.5px corner where the reference has 4, and `--paragraph-gap: 0.89rem`
+  // drew 16.02px. The two first/last-child resets stay: they are structural, not measured.
+  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
 
 const CODE_BLOCK_LANGUAGE_RE = /language-/;
 
@@ -366,10 +374,38 @@ export function AssistantMarkdown({
   // "$0.87 to $3.96" into one italic run — the owner's screenshot, twice. Guarding here rather
   // than turning the flag off keeps `$k$` and `$x^2$` working on the surfaces that asked for them.
   const guarded = singleDollarMath ? escapeCurrencyDollars(linked) : linked;
+
+  // 🔴🔴 MEMOISED, NOT REBUILT EVERY RENDER — THIS IS WHY VOICE PLAYBACK MADE THE ANSWER FLICKER
+  // (owner, 2026-08-26: "turning on read out loud makes the text flicker on and off"). Verified in
+  // `hast-util-to-jsx-runtime` (what `ReactMarkdown` renders through): for a tag like `p` it does
+  // `type = state.components.p ?? "p"`, then creates the element as `jsx(type, props, key)` —
+  // the exact FUNCTION REFERENCE becomes the element's `type`. Every entry `markdownComponents`
+  // returns (`p`, `a`, `li`, `h1`…) was a fresh closure on every call, and this call sat inline in
+  // the JSX below, so every render of `AssistantMarkdown` built a brand new one. React remounts
+  // rather than updates when an element's `type` changes, even at an unchanged `key` — so every
+  // paragraph and heading in an answer was torn down and rebuilt on every render of whatever
+  // renders this component.
+  //
+  // On the Canvas that happens continuously while an answer is playing: `useResponseAudio`'s
+  // `<audio>` fires `ontimeupdate`/`onprogress` several times a second, those handlers live in the
+  // same component that renders the reply, and each tick re-rendered this markdown and remounted
+  // it — replaying `.canvas-answer-in`'s fade-in (`globals.css`, `canvas-answer-block`) on every
+  // node, over and over, for as long as the audio kept ticking. That reads as the text blinking on
+  // and off. Memoising on the inputs that should actually change the output means an unrelated
+  // re-render (a playback tick, a composer keystroke) reuses the same function references, so React
+  // updates the existing nodes in place instead of replacing them — and the fade-in, which is
+  // `animation: … both` and already holds at its end state, is never told to start over. A genuinely
+  // new answer still mounts fresh and still fades in: the key on the wrapping `<div>` in
+  // `learning-canvas.tsx` is unchanged, and mounting is exactly when this animation is meant to run.
+  const components = useMemo(
+    () => markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations),
+    [onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations],
+  );
+
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown
-        components={markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations)}
+        components={components}
         rehypePlugins={[rehypeKatex]}
         remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: singleDollarMath }]]}
       >

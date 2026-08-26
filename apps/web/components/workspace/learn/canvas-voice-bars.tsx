@@ -16,8 +16,25 @@ import { useEffect, useRef, useState } from "react";
 import { subscribeMicLevel } from "@/lib/workspace/mic-level";
 
 /** Sampling cadence. Slow enough that the strip is readable rather than hyperactive — the
- *  reference has restrained motion, and a bar per frame is noise, not information. */
-const SAMPLE_MS = 55;
+ *  reference has restrained motion, and a bar per frame is noise, not information.
+ *
+ *  🔴 100ms, NOT THE ORIGINAL 55ms (owner, 2026-08-26: "the dictation animation needs to be a
+ *  little bit slower... a bit too fast right now"). 55ms is ~18 steps/second, which at the 6px
+ *  step below is 109px/s of scroll. 100ms is not a guess: it is the integration window a
+ *  broadcast PPM (peak programme meter) uses for exactly this judgement call — how often a level
+ *  meter should refresh so it reads as calm evidence of loudness rather than jitter. At 100ms the
+ *  strip scrolls at 60px/s, a 45% slowdown that reads as "a little slower" rather than sluggish,
+ *  and it still updates at 10Hz — comfortably above the ~8Hz floor where a stepped strip stops
+ *  reading as motion and starts reading as a series of jumps.
+ *
+ *  🔴 AND IT IS ALREADY THIS APP'S OWN ANSWER TO THE SAME QUESTION. `WAVEFORM_SAMPLE_MS` in
+ *  `@/lib/workspace/waveform-history.ts` — the recorder's rolling waveform, a different feature
+ *  sampling the same kind of live mic level for a visual — is independently 100. Not imported
+ *  from here (the two strips are unrelated features and should not become coupled by sharing a
+ *  literal), but landing on the same number the recorder already uses is a second, independent
+ *  confirmation that 100ms is this app's settled answer for "how often should a live level
+ *  reading move," not a one-off guess for this file alone. */
+const SAMPLE_MS = 100;
 const MIN_BAR = 4;
 const MAX_BAR = 41;
 /** Height of a dot in the not-yet-spoken run. */
@@ -53,7 +70,17 @@ export function CanvasVoiceBars({ live }: { live: boolean }) {
       level = value;
     });
     const timer = window.setInterval(() => {
-      smoothed.current = smoothed.current * 0.6 + level * 0.4;
+      // 🔴 RE-DERIVED FOR THE NEW CADENCE, NOT CARRIED OVER FROM IT. This line is a discrete
+      // first-order low-pass filter — `y = y*(1-a) + level*a`, run once per SAMPLE_MS — and a
+      // filter like that has a real, wall-clock time constant: `tau = -SAMPLE_MS / ln(1-a)`. At
+      // the old 55ms tick with a=0.4, tau is ~108ms. Slowing SAMPLE_MS to 100ms while leaving
+      // a=0.4 untouched would have nearly doubled tau to ~216ms — the strip would take almost
+      // twice as long to show a real word arriving, which is exactly the "responsiveness
+      // accidentally halved" this constant's coupling to the sample rate warns about. Only the
+      // strip's own step rate should slow down, not how fast it notices you speaking. Solving
+      // `1-a' = exp(-SAMPLE_MS / tau)` for the new 100ms cadence holds tau at ~108ms again, so a
+      // real amplitude change surfaces on the bars exactly as fast as it did before this fix.
+      smoothed.current = smoothed.current * 0.395 + level * 0.605;
       // Below this the room is quiet; recording it as a tall bar would claim speech that did
       // not happen. The pre-speech run stays dots until something is actually said.
       if (smoothed.current > 0.06) heard.current = true;

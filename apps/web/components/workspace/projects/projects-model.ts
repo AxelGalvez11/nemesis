@@ -107,6 +107,24 @@ function byRecency(a: ProjectNode, b: ProjectNode): number {
   return b.modifiedAt.localeCompare(a.modifiedAt);
 }
 
+/**
+ * One project, at any depth — the project PAGE's own lookup (`/projects/<id>`).
+ *
+ * 🔴 SAFE TO RECURSE PLAINLY, UNLIKE `buildProjects`. A ring in `folders.parent_id` cannot make
+ * this loop forever, because `buildProjects` already turned whatever the database holds into a
+ * genuine tree: its own `seen` set guarantees a folder is `child` of at most one node in the
+ * output, so walking that OUTPUT can never revisit a node. The cycle guard belongs at the one
+ * place the cycle can actually happen — the build — not at every place the built tree is read.
+ */
+export function findProject(nodes: readonly ProjectNode[], id: string): ProjectNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = findProject(node.children, id);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** Does this project, or any project nested in it, answer to what was typed? */
 export function matchesQuery(node: ProjectNode, query: string): boolean {
   const needle = query.trim().toLowerCase();

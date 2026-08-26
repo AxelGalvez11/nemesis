@@ -187,3 +187,133 @@ them as ChatGPT's behaviour.
 - Dividers are `rgba(0,0,0,0.05)` — much lighter than a default Tailwind border.
 - Rows have NO horizontal padding on the right edge and NO card/box; the divider does all the work.
 - Nothing on these three pages uses a shadow.
+
+---
+
+## The conversation surface — answer prose and composer
+
+Measured 2026-08-26, signed in, **1470px viewport, light theme**. Method: clone the reference's own
+`.markdown` container (`element.cloneNode(false)`, so every class and every inherited rule comes
+with it), inject an identical HTML fragment into that clone and into ours, and read back
+`getBoundingClientRect()` gaps and `getComputedStyle`. Same fragment, same viewport, both sides.
+
+Owner's ask, that day: *"compare the font, spacing and coloring of the output, also the chat
+composer, because it just feels a bit too wide right now. compare with ChatGPT."*
+
+### Body text — already identical, and worth recording as such
+
+| | reference | Nemesis |
+|---|---|---|
+| font size | 16px | 16px |
+| line height | 26px | 26px |
+| weight | 400 | 400 |
+| colour | `rgb(13, 13, 13)` | `#0d0d0d` |
+| column | 768px | 768px |
+
+### Block spacing — where the whole difference lived
+
+Rendered gap between adjacent blocks, in px:
+
+| pair | reference | Nemesis (before) |
+|---|---|---|
+| paragraph → paragraph | **16** | 20 |
+| paragraph → heading | **16** | 20 |
+| heading → paragraph | **8** | 24 |
+| paragraph → list | **4** | 20 |
+| list → paragraph | **8** | 20 |
+| bullet → bullet | **0** | 8 |
+
+Lists indent identically on both: `padding-left: 26px` on the list, `6px` on the item.
+
+### Heading scale
+
+| | size / weight / line-height | margin |
+|---|---|---|
+| h1 | 24 / 600 / 32 | `0 0 8px` (first child) |
+| h2 | 20 / 600 / 28 | `16px 0 4px` |
+| h3 | 18 / 600 / 28 | `16px 0 4px` |
+| h4 | 16 / 600 / 24 | `16px 0 0` |
+
+Ours ran a step large and a weight heavy: h2 at **24 / 700 / 32**.
+
+### The rest of the prose
+
+- `strong` **600**, same colour as body (not a colour change)
+- link `rgb(41, 100, 170)`, **no underline**, weight 400
+- inline code **14px**, fill `rgb(236, 236, 236)`, radius **4px**, padding **2.4px 4.8px**, mono stack
+- `pre` transparent, radius 6px, 14px, margins `8px / 4px`
+- blockquote `padding-left: 24px`, **no visible left border**, margins `0 / 8px`
+- `hr` `1px solid rgba(0, 0, 0, 0.15)`, margins **28px / 28px**
+- `th` 14 / 600, padding `8px 0`, bottom border `1px solid rgba(0, 0, 0, 0.15)`
+- `td` 14, padding `10px 0 24px`
+- user's own message: right aligned, `max-width: 70%`, padding `10px 16px`, radius **22px**,
+  16px / 24px. Its fill is **accent-tinted** (measured `rgb(222, 243, 229)` on a green account),
+  which is the same idea as our `--ui-learner`.
+- gap between a user turn and the answer under it: **80px**
+
+### Composer
+
+| | reference | Nemesis (before) |
+|---|---|---|
+| width | **768px** | 768px |
+| height | **52px** (`min-height: 52px`) | 52px |
+| radius | **28px** | 28px |
+| fill | `#ffffff` (dark `#212121`) | `#fdfdfd` |
+| control inset | **8px** each side | 8px |
+| controls | **36 x 36**, circular | 36 x 36 |
+| distance to viewport bottom | **24px** | — |
+| editor | 16 / 26, margin `16px 0 0`, padding `0 0 16px` | — |
+
+🔴 **The width already matched exactly.** Both composers measure 768px at the same viewport, so
+"feels a bit too wide" is not a width fault. The difference is the EDGE:
+
+```
+reference light   0 0 0 1px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04), 0 4px 80px 8px rgba(0,0,0,.024)
+reference dark    inset 0 0 1px 0 rgba(255,255,255,.2)      ← no drop shadow at all
+Nemesis (before)  0 1px 2px rgba(0,0,0,.03), 0 8px 24px rgba(0,0,0,.05)
+                  PLUS ring-1 ring-(--ui-stroke-tertiary) = rgba(13,13,13,.08)
+```
+
+Our hairline was **twice** the reference's, and drawn by a second mechanism (`ring-1`) that painted
+over the shadow's own first layer, so the composite edge was darker than either number implied. A
+hairline at double weight reads as a drawn box rather than a floating pill, and a drawn box
+announces its full width. Now one token, `--composer-edge`, carries all three layers.
+
+Measured after the change, same method, both themes:
+
+| | light | dark |
+|---|---|---|
+| width / height / radius | 768 / 52 / 28px | 768 / 52 / 28px |
+| fill | `rgb(255, 255, 255)` | `rgb(33, 33, 33)` |
+| shadow | `0 0 0 1px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04), 0 4px 80px 8px rgba(0,0,0,.024)` | `inset 0 0 1px rgba(255,255,255,.2)` |
+
+Every value equals the reference. Two tokens carry it: `--composer-edge` and `--composer-fill`.
+
+---
+
+## The project page (`/g/g-p-<id>/project`)
+
+Measured 2026-08-26, signed in, 1470px viewport, light theme. A project in the reference is its own
+page, not a row that expands.
+
+| | value |
+|---|---|
+| content column | 768px, page background `#fcfcfc` |
+| title | folder glyph + `h1` **28 / 500 / line-height 34 / `#0d0d0d`**, top at **y=116** |
+| trailing controls | `Share` and an overflow `…` on the title's row |
+| composer | directly under the title, top **y=176** (24px below the title row), **768 x 52, radius 28**, same fill and edge as every other composer; placeholder `New chat in <project>` |
+| tabs | `Chats` / `Sources`, top **y=260** (32px below the composer). Pill **38px tall, padding `9px 16px`**, fully rounded, **14 / 500**. Selected `rgba(0,0,0,.05)` on `#0d0d0d`; unselected `rgb(143,143,143)` |
+| rows | start **y=326** (28px below the tabs). Each **40px tall**, no divider, no fill, no radius |
+| row line 1 | canvas title, **14 / 500 / line-height 20 / `#0d0d0d`** |
+| row line 2 | snippet, **14 / 400 / line-height 20 / `rgb(93,93,93)`** |
+| row gap | 🔴 **25px between rows** — title-to-title pitch **65px** |
+
+🔴 **THE ROW GAP WAS MEASURED SECOND, AND THE FIRST PASS SHIPPED WITHOUT IT.** The project used for
+the first measurement held exactly ONE chat, so there was no second row to measure a gap against.
+The spec handed over a row height and, silently, no rhythm — and the page came back with its rows
+almost touching, so two 40px two-line rows read as one four-line block. Re-measured on a project
+with two chats: rows at 326/366 and 391/431, gap 25, pitch 65, confirmed independently by
+title-to-title distance. **A single-instance list cannot tell you its own rhythm; find a second row
+before writing the spec.**
+
+Ours now measures 326/366 and 391/431, gap 25, pitch 65, title top 116 at 28/500/34 — identical.

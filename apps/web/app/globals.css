@@ -208,6 +208,49 @@
   --composer-max-width: 768px;     /* same frame, so they align exactly */
   --composer-radius: 28px;
   --composer-min-height: 52px;
+  /* 🔴🔴 THE PILL'S WHOLE EDGE, IN ONE TOKEN, AND EVERY LAYER IS MEASURED. Read off the reference's
+     composer while signed in, 2026-08-26, at a 1470px viewport:
+
+         0 0 0 1px  rgba(0, 0, 0, 0.04)
+         0 2px 8px  rgba(0, 0, 0, 0.04)
+         0 4px 80px 8px rgba(0, 0, 0, 0.024)
+
+     Ours was `0 1px 2px rgba(0,0,0,.03), 0 8px 24px rgba(0,0,0,.05)` PLUS a separate
+     `ring-1 ring-(--ui-stroke-tertiary)`, and that ring computes to rgba(13,13,13,0.08) — twice
+     the reference's edge. A hairline at double weight is what turns a floating pill into a drawn
+     box, and a drawn box announces its full width. The owner's report was *"the chat composer …
+     just feels a bit too wide right now"*, and the width is not the difference: both composers
+     measure exactly 768px. The EDGE was.
+
+     🔴 IT IS `--composer-edge` AND NOT `--composer-shadow` BECAUSE THAT NAME IS ALREADY TAKEN, by
+     the legacy `.box` composer in app/styles/shell.css. Declaring it twice in one `:root` would
+     have silently retimed a surface nobody was looking at — the second declaration simply wins.
+     Checked before writing, not after.
+
+     🔴 THE RING IS A SHADOW LAYER, NOT A `ring-1` UTILITY, and that is deliberate rather than
+     tidy. Two mechanisms drawing the same 1px edge cannot be kept in step — the ring paints at
+     full alpha over the shadow's own first layer, so the composite was always darker than either
+     number suggested. One list, one edge.
+
+     🔴 DARK HAS NO DROP AT ALL. The reference switches to a single inset hairline in dark, because
+     a drop shadow on a near-black surface is invisible where it is meant to be soft and a smear
+     where it is not. Measured the same way, in the same session. */
+  --composer-edge:
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 2px 8px 0 rgba(0, 0, 0, 0.04),
+    0 4px 80px 8px rgba(0, 0, 0, 0.024);
+  /* 🔴 PURE WHITE, AND THE THREE UNITS MATTER MORE THAN THEY LOOK. The reference fills its composer
+     with `#ffffff` on a `#fcfcfc` page. Ours read `--ui-bg-elevated`, which computes to `#fdfdfd` —
+     ONE unit off the page instead of three. A pill that is barely lighter than the ground behind it
+     stops reading as a raised object and starts reading as a marked-out region, and a region is
+     read by its outline, which is exactly the reading the owner reported as "too wide". Together
+     with the halved hairline above, this is what turns it back into a floating pill.
+
+     🔴 ITS OWN TOKEN RATHER THAN `bg-white`, because a literal white is a light-mode-only answer
+     and both composers are theme-aware. Dark is `#212121`, which is BOTH the reference's own
+     `--bg-primary` in dark (see docs/chatgpt-reference.md) and what `--ui-bg-elevated` already
+     computed to here — so dark is unchanged and light is corrected. */
+  --composer-fill: #ffffff;
   /* The composer's controls are the SAME hit target and glyph as the sidebar header's, because
      they are the same kind of object — a bare icon button on a surface. They were 28px boxes
      holding 0.875rem (15.75px) glyphs against the reference's 36 and 20: the identical
@@ -983,6 +1026,38 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-chrome-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .canvas-chrome-in { animation: canvas-chrome-in 320ms 120ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
 
+/* The canvas LEAVING for the front door — see canvas-surface.tsx's `beginExit`.
+ *
+ * 🔴🔴 THE REVERSE OF THE ARRIVAL ABOVE, LITERALLY, NOT A NEW EFFECT INVENTED TO MATCH A BRIEF.
+ * `canvas-home.tsx` flies the composer and the character IN on `cubic-bezier(0.22, 0.61, 0.36, 1)`
+ * — a curve that starts fast and spends its second half settling, because it is arriving somewhere.
+ * Time-reversing a bezier is mechanical (the two control points swap and each becomes `1 -` itself:
+ * `(x1,y1,x2,y2) → (1-x2, 1-y2, 1-x1, 1-y1)`), and running THAT curve is what a thing leaving wants
+ * instead of a hand-picked new one: `cubic-bezier(0.64, 0, 0.78, 0.39)` starts slow and leaves fast.
+ * Owner brief (2026-08-26): *"the exit should read as the reverse of the arrival."* This is that,
+ * worked out rather than eyeballed.
+ *
+ * 🔴 THE WHOLE SURFACE, ONE UNIT, NOT A SECOND CROSS-ROUTE HANDOFF. The arrival can compute an exact
+ * pixel target because the CANVAS's resting layout is deterministic (the composer always docks at
+ * `bottom-0`, the character always resolves through `centreStation`) — `canvas-home.tsx` measures
+ * real rectangles and animates toward them. The front door's composer has no such fixed target: it
+ * centres itself with `my-auto` against whatever the viewport and the learner's own canvas list
+ * happen to be that day, unmeasurable from here because it has not mounted yet. So this does not
+ * try to fly the character back to a guessed greeter position — it recedes as it stands, in
+ * whatever pose the surface was already in, which reads as "put away" without staging a walk this
+ * file cannot aim.
+ *
+ * 🔴🔴 200ms, AND THAT NUMBER IS A CEILING ON HOW LONG THE PRESS IS ALLOWED TO WAIT, NOT A TASTE
+ * CHOICE. The `×` must still feel instant: this is why the character's own station change
+ * (`--character-travel`, character.css) — 680ms — is never triggered here. A 680ms budget spent on
+ * a 200ms departure would show a walk cut off at 29% of the way, which is worse than not walking at
+ * all. Scale and fade are what is left that finishes cleanly inside the budget. */
+@keyframes canvas-exit-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.985); }
+}
+.canvas-exit-out { animation: canvas-exit-out 200ms cubic-bezier(0.64, 0, 0.78, 0.39) forwards; }
+
 /* Material being read, concepts being mapped, a first question being chosen —
    shown as content FORMING rather than as a wait (UX brief §5, §20, §21).
    🔴 LEFT TO RIGHT, AND THAT DIRECTION IS THE PRODUCT'S ONE MOTION SYSTEM. §20:
@@ -1112,6 +1187,14 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
      removing the animation entirely would leave the preview on screen over the answer for
      ever — the one case where "animation: none" is not the safe reading of the preference. */
   .canvas-preview-out { animation-duration: 1ms; }
+  /* 🔴 SAME REASON AS `.canvas-preview-out`, ONE LINE UP: `forwards` holds the faded-out end
+     state, so `animation: none` would leave the canvas sitting at full opacity while
+     `beginExit`'s timer still fires the navigation underneath it — a route change with no
+     visible cause. In practice `beginExit` never even applies this class under reduced motion
+     (it checks the same media query in JS and exits immediately); this is the belt this file
+     already wears everywhere else in this block, for whoever's query evaluates a frame apart
+     from React's. */
+  .canvas-exit-out { animation-duration: 1ms; }
   /* 🔴 THE CAPTION STOPS SWEEPING AND GOES BACK TO BEING TEXT. Held mid-animation it
      would keep whatever slice of the gradient it stopped on, and `color: transparent`
      means a badly-timed stop is an invisible sentence. */
@@ -1132,4 +1215,11 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
      The dimmed wording is what says "this paragraph is being rewritten", and it
      is not motion, so it stays. */
   .canvas-rewriting { background-image: none; }
+}
+
+/* See `--composer-edge` above: the reference drops the drop shadow entirely in dark and keeps a
+   single inset hairline. */
+:root[data-theme='dark'] {
+  --composer-edge: inset 0 0 1px 0 rgba(255, 255, 255, 0.2);
+  --composer-fill: #212121;
 }

@@ -35,6 +35,7 @@ import { ThinkingMark } from "./thinking-mark";
 import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
 import { speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
+import { POINTER_MEMORY_MS, glanceOffset } from "@/lib/character/gaze";
 import { placeBeside, placeUnder } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
 
@@ -47,6 +48,9 @@ import "./character.css";
 
 /** How often the anchor and the attention target are re-measured. */
 const MEASURE_MS = 120;
+
+/** How far the thing being watched has to move before the dock re-renders to follow it. */
+const AIM_SETTLED_PX = 1;
 /**
  * How long a correction takes when the character is ALREADY at its station and the thing it
  * stands beside has moved — the composer growing a line, the rail collapsing, a resize.
@@ -301,6 +305,16 @@ export function CharacterDock({
   const [aimAt, setAimAt] = useState<{ x: number; y: number } | null>(null);
   const targetRef = useRef<AttentionTarget>(getAttention());
   const focusedRef = useRef<Element | null>(null);
+  /**
+   * When the pointer last moved.
+   *
+   * 🔴 THE DOCK HAS TO KNOW THIS EVEN THOUGH THE AVATAR ALREADY TRACKS THE POINTER ITSELF, because
+   * the two facts are different: the avatar knows WHERE the pointer is, and this needs to know
+   * whether it is still worth watching. Supplying `aimAt` at all overrides the pointer inside the
+   * avatar, so the choice between "follow the cursor" and "watch the page" has to be made out
+   * here, and it can only be made from the time.
+   */
+  const pointerAtRef = useRef(-Infinity);
   // The station, readable from inside the attention interval without re-arming it.
   const stationRef = useRef<Station>("corner");
 
@@ -509,34 +523,93 @@ export function CharacterDock({
     document.addEventListener("focusin", onFocus);
     document.addEventListener("focusout", onBlur);
 
+    // Passive, and it records a TIME rather than a position: where the pointer is, is the
+    // avatar's business; whether it is still worth watching is this one's.
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      pointerAtRef.current = performance.now();
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+
+    /**
+     * 🔴 A SETTLE CHECK, AND IT IS NOT AN OPTIMISATION — IT IS THE SAME DEFECT THIS FILE ALREADY
+     * FIXED ONCE FOR `travel`. Before this, the resting branch set `aimAt(null)` every tick, and
+     * `Object.is(null, null)` let React bail out, so a still character re-rendered never. Aiming at
+     * the composer instead means handing React a FRESH OBJECT eight times a second, and the whole
+     * avatar engine hangs off this component: it would force synchronous layout ~8×/sec forever,
+     * for a target that has not moved a pixel. One pixel is well under anything the eased head can
+     * express, so nothing visible is lost.
+     */
+    const aimTo = (next: { x: number; y: number } | null) =>
+      setAimAt((was) => {
+        if (!next) return was === null ? was : null;
+        if (was && Math.abs(was.x - next.x) < AIM_SETTLED_PX && Math.abs(was.y - next.y) < AIM_SETTLED_PX) return was;
+        return next;
+      });
+
     const timer = window.setInterval(() => {
-      const point =
+      const now = performance.now();
+      // The glance rides on TOP of whatever is being watched, so the character looks away from the
+      // composer and back to the composer rather than away from and back to a fixed direction.
+      const glance = glanceOffset(now, size);
+      const claimed =
         resolveAttention(targetRef.current) ??
         (focusedRef.current ? resolveAttention({ kind: "element", el: focusedRef.current }) : null);
       // 🔴 THINKING EYES SEARCH, THEY DO NOT FOLLOW (owner 2026-08-25: working must not be
       // "just staring"). At the middle, with nothing explicitly claiming the gaze, the eyes
       // drift on two slow, unsynchronised arcs — mostly upward, the way anyone's do when
-      // recalling — rather than falling through to the pointer. Corner stations fall through
-      // exactly as before.
-      if (!point && stationRef.current === "centre" && hostRef.current) {
+      // recalling — rather than falling through to the pointer.
+      //
+      // 🔴 THE ARCS ARE UNCHANGED AND THEY NOW MEAN SOMETHING DIFFERENT, which is the point. They
+      // are ±1.6 character-widths, and the avatar normalises an aim against 2.5 widths, so this
+      // sweep is ±16.6° of yaw. It used to be added to `curious`'s own 16° and so ran from level
+      // to 33° off — a sweep that spent its whole time on one side and reached far enough round to
+      // read as looking away. Levelled (`facing="forward"` below) the identical arithmetic swings
+      // ±16.6° AROUND FORWARD, which is what "searching" was always supposed to look like.
+      if (!claimed && stationRef.current === "centre" && hostRef.current) {
         const r = hostRef.current.getBoundingClientRect();
-        const t = performance.now();
-        setAimAt({
-          x: r.left + r.width / 2 + Math.sin(t / 1700) * r.width * 1.6,
-          y: r.top + r.height / 2 - r.height * 0.9 + Math.sin(t / 1150) * r.height * 0.55,
+        aimTo({
+          x: r.left + r.width / 2 + Math.sin(now / 1700) * r.width * 1.6,
+          y: r.top + r.height / 2 - r.height * 0.9 + Math.sin(now / 1150) * r.height * 0.55,
         });
         return;
       }
-      setAimAt(point);
+      if (claimed) {
+        aimTo({ x: claimed.x + glance.x, y: claimed.y + glance.y });
+        return;
+      }
+      // 🔴🔴 NOTHING HAS CLAIMED THE GAZE, AND THIS IS THE BRANCH THE OWNER WAS LOOKING AT. It used
+      // to hand straight back to the pointer — and the avatar releases the head to `turn = 0` as
+      // soon as the pointer stops crossing the window, which meant the authored three-quarter pose.
+      // So the commonest state on this surface, a learner reading with their hand off the mouse,
+      // was also the one state where the character stared away from the page.
+      //
+      // Now: a pointer that is genuinely moving still wins, because following the cursor is alive
+      // and the learner is plainly the thing worth watching. A pointer that has been still for a
+      // few seconds stops counting, and the gaze falls to the composer — `anchor` is already the
+      // composer's selector, measured every tick by the placement effect above, so there is no
+      // second idea of where the composer is to keep in step.
+      if (now - pointerAtRef.current < POINTER_MEMORY_MS) {
+        aimTo(null);
+        return;
+      }
+      const watching = anchor ? document.querySelector(anchor) : null;
+      const box = watching?.getBoundingClientRect();
+      if (!box || box.height === 0) {
+        aimTo(null);
+        return;
+      }
+      aimTo({ x: box.left + box.width / 2 + glance.x, y: box.top + box.height / 2 + glance.y });
     }, MEASURE_MS);
 
     return () => {
       unsubscribe();
       document.removeEventListener("focusin", onFocus);
       document.removeEventListener("focusout", onBlur);
+      window.removeEventListener("pointermove", onPointerMove);
       window.clearInterval(timer);
     };
-  }, []);
+  }, [anchor, size]);
 
   // 🔴 AFTER EVERY HOOK, NEVER BEFORE ONE. An early return above the effects would change the hook
   // count between renders the moment `hidden` flips, which React treats as a different component.
@@ -584,6 +657,7 @@ export function CharacterDock({
           size={size}
           speed={speedOf(shown)}
           animation={shown}
+          facing="forward"
           track
           waggle={motion === "waggle"}
         />

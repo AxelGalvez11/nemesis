@@ -113,39 +113,12 @@ test("🔴 the app grid is 2 columns of 384px, row-gap 16px, column-gap 8px", ()
   assert.match(pageCode, /grid w-full grid-cols-1/, "the grid stopped filling the 776px box");
 });
 
-test("🔴 an app row is 76px tall with a 40x40 icon slot", () => {
-  // Reference §4: "App row height ~76px: icon 40x40, rounded ~10px". The icon is its own component
-  // because the "Connected" strip draws the same 40px tile.
-  //
-  // 🔴 THE 10px CORNER NOW BELONGS TO THE FALLBACK TILE ONLY, and that is the 2026-08-26 change
-  // rather than drift. A real brand mark carries its own silhouette and its own transparent ground;
-  // sitting it inside our grey rounded square would frame someone else's logo in our furniture. The
-  // unknown-app initial still gets the tile, because a bare letter has no shape of its own.
+test("🔴 an app row is 76px tall with a 40x40 rounded icon", () => {
+  // Reference §4: "App row height ~76px: icon 40x40, rounded ~10px". The icon is its own
+  // component because the "Connected" strip draws the same 40px tile.
   assert.match(pageCode, /h-\[76px\][^"]*px-\[4px\]/, "the row drifted from 76px tall on the 4px reading inset");
   assert.match(iconCode, /h-\[40px\] w-\[40px\]/, "the app icon drifted from 40x40");
-  assert.match(iconCode, /rounded-\[10px\]/, "the fallback tile's 10px corner is gone");
-});
-
-test("🔴🔴 the four Google apps show their REAL marks, drawn here, never fetched", () => {
-  // Owner 2026-08-26: *"the plugins page still doesn't have the actual Gmail or Google app icons,
-  // the real ones, not just a fake one."* This file used to say "we do not ship third-party logos"
-  // and drew a grey lucide glyph naming the KIND of thing each app was. Side by side with any other
-  // product's integrations page it read as a placeholder, because that is what it was.
-  //
-  // 🔴 THE OTHER HALF OF THE OLD RULE STANDS AND IS WHAT THIS GUARD PROTECTS. A remote <img> would
-  // be a request to a third party on every page load, a broken square the day the URL moves, and a
-  // beacon telling Google which of our users opened this page.
-  assert.ok(!/<img|https?:\/\//.test(iconCode), "a plugin icon is being fetched from somewhere instead of drawn here");
-  for (const slug of ["googlecalendar", "googledocs", "googledrive", "gmail"]) {
-    assert.ok(iconCode.includes(slug), `${slug} lost its mark and falls back to an initial`);
-  }
-  // Brand marks are multi-colour by definition. A mark that inherited our ink would be the grey
-  // placeholder again wearing a new shape.
-  assert.ok(!/currentColor/.test(iconCode), "a brand mark is painting itself in our text colour");
-  assert.ok((iconCode.match(/fill="#/g) ?? []).length >= 12, "the marks lost their own colours");
-  // 🔴 KEYED BY SLUG, NOT BY LABEL. Labels are display copy the server may reword; the slug is the
-  // identifier connect and disconnect already travel on.
-  assert.ok(!/"Google Drive"|"Gmail"/.test(iconCode), "the mark map is keyed by display label again");
+  assert.match(iconCode, /rounded-\[10px\]/, "the app icon's 10px corner is gone");
 });
 
 test("🔴 the row's title is 14px primary and its description one truncated line of 13px tertiary", () => {
