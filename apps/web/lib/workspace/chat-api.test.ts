@@ -23,14 +23,14 @@ test("the base prompt always carries the self-check rule", () => {
 
 test("a matched skill reaches the wire as its own system message", () => {
   const wire = buildWireMessages([], "explain first-pass metabolism", decide({ mode: "learning" }), true, "", "", "", ["teaching"]);
-  const skill = wire.find((entry) => entry.role === "system" && entry.content.startsWith("SKILL — "));
+  const skill = wire.find((entry) => entry.role === "system" && entry.content.startsWith("SKILL: "));
   assert.ok(skill, "expected a skill system message");
   assert.match(skill.content, /teaching, not lecturing/);
 });
 
 test("skills sit after the base prompt and before the conversation", () => {
   const wire = buildWireMessages([message("user", "earlier"), message("assistant", "ok")], "cite your sources", decide({}), true, "", "", "", ["evidence-honesty"]);
-  const skillIndex = wire.findIndex((entry) => entry.content.startsWith("SKILL — "));
+  const skillIndex = wire.findIndex((entry) => entry.content.startsWith("SKILL: "));
   const firstNonSystem = wire.findIndex((entry) => entry.role !== "system");
   assert.ok(skillIndex > 0, "skill must follow the base prompt");
   assert.ok(skillIndex < firstNonSystem, "skill must precede the conversation");
@@ -38,7 +38,7 @@ test("skills sit after the base prompt and before the conversation", () => {
 
 test("an ordinary turn adds no skill message at all", () => {
   const wire = buildWireMessages([], "thanks!");
-  assert.equal(wire.filter((entry) => entry.content.startsWith("SKILL — ")).length, 0);
+  assert.equal(wire.filter((entry) => entry.content.startsWith("SKILL: ")).length, 0);
   assert.equal(wire.filter((entry) => entry.role === "system").length, 1);
 });
 

@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { figureAssetUrl } from "@/lib/learn/figure-asset-url";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { cn } from "@/lib/utils";
+import { OCCLUSION_TARGET_FILL, OCCLUSION_TARGET_STROKE } from "@nemesis/shared";
 
 export interface FigureOcclusionProps {
   /** A URL the browser can load. NOT a parser's figure key — see `StoredFigureOcclusion`. */
@@ -86,23 +87,33 @@ export function FigureOcclusion({ caption, hidden, labels, revealed = false, src
             visible and never recall anything. That is the recognition-instead-of-recall failure
             this component's own header warns about three paragraphs up.
 
-            🔴 THE ASKED-ABOUT PART IS STILL MARKED, so the learner knows WHICH one to name: it
-            takes the accent colour while the rest are plain covers. Same distinction
-            `occlusionMaskState` draws for a study card between `target-covered` and `covered`. */}
-        {loaded && !revealed && labels.map((label) => (
-          <span
-            aria-hidden="true"
-            className={cn(
-              "absolute rounded-md",
-              label.text === hidden.text
-                ? "bg-(--ui-text-primary) ring-2 ring-(--ui-learner)"
-                : "bg-(--ui-text-primary)/85",
-            )}
-            data-occlusion-cover={label.text === hidden.text ? "target" : ""}
-            key={label.text}
-            style={coverStyle(label)}
-          />
-        ))}
+            🔴🔴🔴 THE ASKED-ABOUT PART IS A DIFFERENT COLOUR, NOT A RING AROUND THE SAME ONE. Owner,
+            2026-08-25, looking at a labelled heart under fourteen identical dark covers: *"it should
+            be yellow or more distinctive because i had trouble finding which part it was covering."*
+            A ring in the accent has to be FOUND before it can be read; an amber rectangle is seen
+            without looking. It is opaque, so the part underneath is as hidden as any other: the
+            colour says "this one", never "here is the answer". Shared with the study deck through
+            OCCLUSION_TARGET_FILL so the two lanes cannot drift, which they already had. */}
+        {loaded && !revealed && labels.map((label) => {
+          const isTarget = label.text === hidden.text;
+          return (
+            <span
+              aria-hidden="true"
+              className={cn("absolute rounded-md", !isTarget && "bg-(--ui-text-primary)/85")}
+              data-occlusion-cover={isTarget ? "target" : ""}
+              key={label.text}
+              style={
+                isTarget
+                  ? {
+                      ...coverStyle(label),
+                      background: OCCLUSION_TARGET_FILL,
+                      boxShadow: `inset 0 0 0 1.5px ${OCCLUSION_TARGET_STROKE}`,
+                    }
+                  : coverStyle(label)
+              }
+            />
+          );
+        })}
 
         {/* After the answer is in, the same box shows what was under it. Same position, so the eye
             does not have to search for what it was just asked about. */}

@@ -16,6 +16,8 @@
 // theme rasterised from a 97KB baked module. The designs draw their own furniture now — rules,
 // numerals, cards, rails — and a stock glyph dropped into a composed slide read as clip art
 // every time. If iconography returns it will be drawn by the composer, not chosen by the model.
+import { readModelJson } from "../model-json";
+
 export const DECK_LAYOUTS = [
   "cover",
   "agenda",
@@ -167,15 +169,15 @@ const cellRows = (value: unknown): string[][] =>
 
 /** The model's reply, read strictly into a plan — or null when nothing deck-shaped survived. */
 export function readDeckJson(text: string): DeckPlan | null {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return null;
-  }
+  // 🔴🔴 A DECK THAT RAN LONG KEEPS THE SLIDES THAT ARRIVED WHOLE. This used to be a plain
+  // `JSON.parse` between the first `{` and the last `}`, so an answer cut off mid-object threw and
+  // twelve slides of real work became "the slide plan came back unusable" — the owner's own
+  // glycolysis deck. `readModelJson` repairs the STRUCTURE only: it cuts at the last complete
+  // element and closes what was open, never inventing a field or finishing a sentence.
+  //
+  // 🔴 IT IS THE SECOND FIX, NOT THE FIRST. The first is `maxTokens` on the call that produces
+  // this, because recovering nine slides out of twelve is a consolation, not a deck.
+  const parsed = readModelJson(text);
   if (typeof parsed !== "object" || parsed === null) return null;
   const raw = parsed as Record<string, unknown>;
   const rawSlides = Array.isArray(raw.slides) ? raw.slides : [];

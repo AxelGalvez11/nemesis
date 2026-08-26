@@ -35,6 +35,7 @@
 .nhero-glow,
 .nhero-organism,
 .band-art,
+.nclose-art,
 .look-desk {
   --p: 0;
 }
@@ -369,6 +370,46 @@
   mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
 }
 
+/* ── WHEN THE WASH CROSSES SIDES ──────────────────────────────────────────────
+   OWNER, 2026-08-25: "make the gradients be on the opposite side of the contrast
+   images". `data-side` used to drive the wash AND the engraving, so the two bands
+   that carry a figure stacked both on one half and left the other bare — a pile of
+   blue marble on the left of `Built on evidence`, nothing at all on the right.
+
+   `data-art` moves ONLY the wash. The engraving and the copy stay put. Written
+   before the mobile block on purpose: these selectors and the mobile ones weigh the
+   same, so source order is what decides, and at 900px the mask must still go to the
+   top edge for every band. */
+.band[data-art="left"] .band-art img {
+  -webkit-mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+  mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+}
+.band[data-art="right"] .band-art img {
+  -webkit-mask-image: radial-gradient(ellipse 78% 108% at 104% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+  mask-image: radial-gradient(ellipse 78% 108% at 104% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+}
+
+/* 🔴 A CORNER, NOT A SIDE, WHEN THE WASH LANDS ON THE COPY'S OWN SIDE. `Built on
+   evidence` is the only band where that happens: the engraving took the left edge, so
+   the wash crossed to the right, which is where the words already are.
+
+   The standard mask puts its bright core at 50% height — exactly the copy's line. The
+   fix is to lift the same ellipse into the top corner, and it is not a compromise:
+   MEASURED, light mode, 1440px, background behind the tail of the longest line goes
+   from rgb(238,244,250) to rgb(243,248,252) (--text-2 contrast 5.5:1 → 5.6:1, against
+   5.7:1 on the bare page), while the corner itself goes from rgb(213,226,240) to
+   rgb(194,213,234). MORE colour in the band and LESS behind the sentence, from one
+   change — because a corner reads as a light source and a stripe down the rim reads
+   as a printing fault.
+
+   Only this one combination gets it. `Learn anything` sends its wash left into an
+   edge nothing else wants, and there the generous mask above is right — the corner
+   variant made it so faint the band looked unlit on that side. */
+.band[data-side="left"][data-art="right"] .band-art img {
+  -webkit-mask-image: radial-gradient(ellipse 62% 88% at 110% 16%, #000 0%, rgba(0,0,0,0.7) 26%, rgba(0,0,0,0.26) 58%, transparent 82%);
+  mask-image: radial-gradient(ellipse 62% 88% at 110% 16%, #000 0%, rgba(0,0,0,0.7) 26%, rgba(0,0,0,0.26) 58%, transparent 82%);
+}
+
 /* Same reasoning as the hero light: a white page needs the art held back, a black
    page needs it brought forward, or the identical file reads as garish on one and
    absent on the other. */
@@ -377,6 +418,120 @@
   :root:not([data-theme="light"]) .band-art img { opacity: 0.74; }
 }
 :root[data-theme="dark"] .band-art img { opacity: 0.74; }
+
+/* The corner mask above hands back roughly a fifth of the wash's area, so this band
+   gets a fifth of it back in strength — otherwise the change the owner asked for is
+   invisible, and "the gradient moved to the other side" reads as "the gradient went
+   away". It buys real colour where it counts (the corner goes rgb(194,213,234) →
+   rgb(182,205,231)) and costs almost nothing where it must not (the background behind
+   the copy's longest line goes rgb(243,248,252) → rgb(241,247,251), contrast 5.6:1). */
+.band[data-side="left"][data-art="right"] .band-art img { opacity: 0.62; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .band[data-side="left"][data-art="right"] .band-art img { opacity: 0.84; }
+}
+:root[data-theme="dark"] .band[data-side="left"][data-art="right"] .band-art img { opacity: 0.84; }
+
+/* ── THE TWO BANDS WITH A FIGURE OVER THE WASH ────────────────────────────────
+   `Learn anything` and `Built on evidence` carry an engraved classical sculpture —
+   a philosopher and a thinker — ON TOP OF the abstract gradient, not instead of it.
+   Two grounds, one behind the other: the wash keeps doing what it does for every
+   other band, and the figure sits in front of it on its own side.
+
+   The engravings are tone-mapped through the same cobalt-to-pale palette the hero
+   gradient uses, so the two layers are the same family of blue and read as one
+   image rather than as a photo pasted onto a background.
+
+   🔴 A FIGURE CANNOT TAKE THE WASH'S TREATMENT, WHICH IS WHY THIS IS A SEPARATE
+   LAYER RATHER THAN A SECOND `background-image`. A gradient survives 52% opacity
+   behind an ellipse that shows only its shoulder, because a gradient has no subject
+   to lose. A face at 52% behind that same mask is a smudge — the contrast the
+   engraving exists for is exactly what goes. So it gets its own opacity, its own
+   mask, and its own parallax rate.
+
+   🔴 A HALF-WIDTH BOX, NOT FULL BLEED. `.band-art` fills the band, which is right
+   for a wash and ruinous for a picture of something: a 1100x1100 engraving stretched
+   across a 1440x360 band and cropped to `cover` shows the middle QUARTER of it, so
+   the thinker arrived as an anonymous fragment of forearm. Constraining the box to
+   the art side crops the square by a box of roughly its own proportions. */
+.band-figure {
+  position: absolute;
+  /* 🔴 BEHIND THE WASH, NOT IN FRONT (owner: "the gradients should be on top"). Both grounds
+     sat at -1 and the figure came later in the DOM, so it won. One step further back puts the
+     colour in charge and leaves the engraving as texture underneath it. */
+  z-index: -2;
+  inset: 0 auto 0 0;
+  width: min(54%, 620px);
+  /* Slower than the wash behind it, so the two grounds separate as the page moves
+     instead of sliding as one sheet. */
+  transform: translate3d(0, calc(var(--p) * 96px), 0);
+  will-change: transform;
+  pointer-events: none;
+  overflow: hidden;
+}
+.band[data-side="right"] .band-figure { inset: 0 0 0 auto; }
+.band-figure img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  opacity: 0.3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .band-figure img { opacity: 0.26; }
+}
+:root[data-theme="dark"] .band-figure img { opacity: 0.26; }
+
+/* A linear fade across the band rather than an ellipse: the figure keeps its own
+   side at full strength and dissolves before it reaches the text column. */
+.band[data-side="right"] .band-figure img {
+  -webkit-mask-image: linear-gradient(to left, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
+  mask-image: linear-gradient(to left, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
+}
+.band[data-side="left"] .band-figure img {
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
+  mask-image: linear-gradient(to right, #000 0%, #000 26%, rgba(0,0,0,0.55) 48%, transparent 74%);
+}
+
+/* 🔴 THE RING BAND SPANS, IT DOES NOT SIT ON ONE SIDE — BECAUSE ITS FIGURE IS WIDE.
+   Every other band puts its copy on one side and its ground on the other, and a
+   half-width box on the far side is right for a portrait. This band carries the two
+   reaching hands, which is a horizontal composition: boxed into 38% of the width it
+   would show one forearm and none of the gap, and the gap between the fingertips IS
+   the picture. So it runs the full width, centred, with the copy over it — which the
+   copy can afford because the figure is barely there.
+
+   The band is also CENTRED, so there is no clear side to hide on anyway: "Learn
+   anything" and both sentences run down the middle. */
+.ring-band .band-figure {
+  inset: 0;
+  width: 100%;
+}
+.ring-band .band-figure img {
+  opacity: 0.22;
+  object-position: center;
+  /* 🔴 IT LETS GO OF THE LEFT THIRD, AND THAT IS WHAT MAKES ROOM FOR THE WASH. The
+     engraving is a NAVY square with white hands cut out of it, so at any opacity it
+     paints a field, not a silhouette — full width, it covered the whole band in grey
+     and the wash had nowhere to land whichever side it was sent to. Fading it out by
+     20% gives the left edge back to the colour, and costs only the far wrist: both
+     fingertips and the gap between them sit at 46%–52% and stay solid.
+     The right edge keeps its soft exit so the near hand is not cut by a boundary. */
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.16) 20%, #000 44%, #000 86%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.16) 20%, #000 44%, #000 86%, transparent 100%);
+}
+:root[data-theme="dark"] .ring-band .band-figure img { opacity: 0.2; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ring-band .band-figure img { opacity: 0.2; }
+}
+
+@media (max-width: 880px) {
+  /* Stacked, the copy sits ON both grounds rather than beside them, so the figure has
+     to drop back or the sentence is unreadable over an engraved beard. */
+  .band-figure { width: 100%; }
+  .band-figure img,
+  .ring-band .band-figure img { opacity: 0.14; }
+}
 
 /* ── THE BAND THAT CARRIES REAL FIGURES ───────────────────────────────────────
    `See it` is the one claim on the page that can simply be demonstrated, so it
@@ -409,9 +564,12 @@
    thumbnails you scrolled past. As a track you meet them one at a time, and the
    3D ones lead.
 
-   The scroller is the platform's, not a JS slider: `scroll-snap-type` plus
-   `overflow-x` gives touch swipe, trackpad swipe, a scrollbar, arrow keys and iOS
-   momentum for free. See FigureCarousel.tsx. */
+   It drifts on its own, left to right, and never comes to rest — hovering slows it
+   rather than stopping it. The movement is written to `scrollLeft` from a rAF loop
+   rather than run as a CSS animation, because the speed has to change smoothly on
+   hover and `animation-play-state` can only run or pause. The element stays a real
+   `overflow-x` scroller underneath, so swipe, trackpad and arrow keys still work and
+   only the scrollbar is hidden. See FigureCarousel.tsx. */
 .carou {
   display: flex;
   flex-direction: column;
@@ -425,7 +583,10 @@
   list-style: none;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory;
+  /* 🔴 NO `scroll-snap-type`. The strip drifts continuously now, and snapping fights
+     that directly: every fractional scroll the loop writes gets pulled back to the
+     nearest card, so the movement turns into a stutter or stops dead. Snapping is right
+     for a carousel you page through and wrong for one that never comes to rest. */
   /* The track is focusable so the arrow keys work; a focus ring on a 1100px-wide
      scroller is ugly, so it gets a soft one that follows the cards' radius. */
   border-radius: clamp(12px, 1.4vw, 18px);
@@ -450,10 +611,6 @@
      never see one card whole. `vw` has no such ambiguity. */
   flex: 0 0 auto;
   width: min(460px, 78vw);
-  /* `start`, not `center`: with several cards in view, centre-snapping puts card two
-     under the middle at scrollLeft 0, so the track opens on the wrong card. See the
-     note in FigureCarousel.tsx. */
-  scroll-snap-align: start;
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -551,11 +708,6 @@
   background: var(--bg);
   box-shadow: 0 20px 50px -30px rgba(var(--fg), 0.3);
 }
-.band-aside-mascot {
-  display: grid;
-  place-items: center;
-}
-
 @media (max-width: 900px) {
   /* Stacked: words first, then the thing they are about. */
   .band-in:has(.band-aside) {
@@ -563,7 +715,6 @@
     gap: clamp(24px, 5vw, 36px);
   }
   .band[data-side="left"] .band-in:has(.band-aside) .band-aside { order: 0; }
-  .band-aside-mascot { min-height: 180px; }
 }
 .band-in h3 {
   font-family: var(--sans);
@@ -602,8 +753,14 @@
     max-width: 100%;
     margin-left: 0;
   }
+  /* 🔴 THE `data-art` PAIR HAS TO BE LISTED HERE TOO, AND SPECIFICITY IS WHY. A
+     two-attribute selector outweighs a one-attribute one whatever the media query
+     says, so without the third line here `Built on evidence` would keep its desktop
+     CORNER mask on a phone — light in the top-right of a stacked band while every
+     other band lights the whole top edge. Sides stop existing at this width. */
   .band[data-side="right"] .band-art img,
-  .band[data-side="left"] .band-art img {
+  .band[data-side="left"] .band-art img,
+  .band[data-side="left"][data-art="right"] .band-art img {
     -webkit-mask-image: radial-gradient(ellipse 120% 76% at 50% -6%, #000 0%, rgba(0,0,0,0.6) 38%, transparent 78%);
     mask-image: radial-gradient(ellipse 120% 76% at 50% -6%, #000 0%, rgba(0,0,0,0.6) 38%, transparent 78%);
   }
@@ -795,16 +952,70 @@
 }
 
 /* ── THE CHARACTER ────────────────────────────────────────────────────────────
-   Two places now: the hero and `Built on evidence`. This reserves the height so a
-   section does not jump as the SVG mounts, and turns the cursor into an invitation.
-   (It closed the page too until 2026-08-24; the owner took the character and its
-   bloom back out of that section, so the close is words and a button again.) */
+   ONE PLACE: the hero. This reserves the height so a section does not jump as the SVG
+   mounts, and turns the cursor into an invitation.
+
+   It has been taken out of two sections by the owner, on the same reasoning both times:
+   the close on 2026-08-24 ("the close is words and a button"), and `Built on evidence`
+   on 2026-08-25. A band that is making a claim does not also need something to look at. */
 .mascot {
   display: grid;
   place-items: center;
   min-height: 168px;
 }
 .mascot svg { cursor: pointer; }
+
+/* ── THE LIGHT UNDER THE CLOSE ────────────────────────────────────────────────
+   OWNER, 2026-08-25: a smooth gradient in `Accelerate cognition`. The section had no
+   ground at all — black type on white, then the footer.
+
+   🔴 THE FILE IS COMPUTED, NOT GENERATED, AND THAT IS THE POINT. `see-wash.webp` and
+   `close-wash.webp` come out of `scripts/art-wash.py`: soft radial blobs composited
+   over white in the hero's own blues. Every other file in `public/nemesis/art` is a
+   render and carries the generator's speckle — which is exactly what the owner ruled
+   out here ("not the grainy ones"). Nothing about the delivery changes: it is still a
+   WebP behind a mask, so the rule at the top of this file still holds.
+
+   🔴 IT RISES FROM THE BOTTOM BECAUSE THE SECTION IS CENTRED. Every band on this page
+   hides its colour on the side the words are not on. This block has no such side —
+   headline, button and note all run down the middle — so the only direction that
+   leaves type on clean ground is underneath it. The mask reaches nothing by 42% of
+   the height, which is below the headline's baseline at every width. */
+.nclose {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.nclose-art {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  /* Smaller travel than a band's: this is the last thing on the page, so it is on
+     screen at the very end of the scroll and has little runway left to move in. */
+  transform: translate3d(0, calc(var(--p) * 70px), 0);
+  scale: 1.12;
+  will-change: transform;
+  pointer-events: none;
+}
+.nclose-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center bottom;
+  display: block;
+  /* 🔴 IT COMES BACK DOWN AT THE VERY BOTTOM. Run to full strength at 0% and the
+     colour is at its brightest exactly where the section stops and the white footer
+     starts, which draws a hard horizontal line across the page. Peaking at 11% and
+     easing off below it puts the brightest part just ABOVE the boundary, so the light
+     looks like it is rising out of the edge rather than being cut off by it. */
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,0.5) 0%, #000 11%, rgba(0,0,0,0.68) 24%, rgba(0,0,0,0.22) 34%, transparent 44%);
+  mask-image: linear-gradient(to top, rgba(0,0,0,0.5) 0%, #000 11%, rgba(0,0,0,0.68) 24%, rgba(0,0,0,0.22) 34%, transparent 44%);
+  opacity: 0.5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .nclose-art img { opacity: 0.6; }
+}
+:root[data-theme="dark"] .nclose-art img { opacity: 0.6; }
 
 @media (prefers-reduced-motion: reduce) {
   .pglow { will-change: auto; }

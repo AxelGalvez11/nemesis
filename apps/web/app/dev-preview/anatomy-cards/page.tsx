@@ -46,16 +46,25 @@ const CARDS: readonly Card[] = [
     id: "nervous",
     visual: {
       kind: "anatomy",
-      structure: "nervous system",
-      learningGoal: "Central and peripheral nervous tissue, shown as one continuous system.",
-      caption: "Nervous system and sense organs.",
+      structure: "hippocampus",
+      learningGoal:
+        "The hippocampus sits deep in the temporal lobe on each side, and is where new episodic memories are first laid down.",
+      caption: "The hippocampus, in the nervous system.",
       resolved: {
         region: "nervous-system",
         regionTitle: "Nervous system and sense organs",
         assetPath: "/anatomy/nervous-system.glb",
         source: "z-anatomy",
-        // Empty means: show the whole region rather than pick anything out.
-        structures: [],
+        // 🔴 NAMED, NOT THE WHOLE REGION. Empty structures frames everything, and this region is
+        // brain plus the entire spinal cord — a tall thin object that arrives at a landscape card
+        // as a thread. Naming a structure puts the camera on it and gives the ghost something to
+        // be context FOR, which is the point of the isolate-and-frame move.
+        // 🔴 A LEAF, NOT A GROUPING NODE. "White matter of telencephalon" looks like the better
+        // pick — it is the biggest mesh in the region — and it is a PARENT: the viewer lights a
+        // parent's whole subtree, so it picked up corpus callosum, fornix, stria terminalis and
+        // the rest, produced eight overlapping labels, and grew the framed box until the spinal
+        // cord pulled the camera back. The hippocampus is a leaf and frames the brain cleanly.
+        structures: ["Hippocampus.l", "Hippocampus.r"],
       },
     },
   },

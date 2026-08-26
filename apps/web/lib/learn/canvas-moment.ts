@@ -227,3 +227,26 @@ export function sameMoment(a: CanvasMoment | undefined, b: NewCanvasMoment): boo
     && a.responseId === b.responseId
   );
 }
+
+/**
+ * The last thing Nemesis actually said, for putting a reopened canvas back where it was.
+ *
+ * 🔴🔴 THE REPLY LANE HAS NO MEMORY OF ITS OWN, which is the whole defect this exists for. `aside`
+ * is React state and starts null, so a canvas whose content was a conversation reopened empty and
+ * fell through to the stand-in for "we read your material and found nothing to ask you about" —
+ * about a canvas with no material. Owner, 2026-08-25: *"i never want to see this ever."*
+ *
+ * 🔴 THE LAST ONE, NOT ALL OF THEM. The canvas surface holds ONE reply, not a scrollback, so this
+ * answers "where was I" rather than rebuilding a transcript. The whole conversation is still in the
+ * History Rail, which is the surface built for reading back through it.
+ */
+export function lastThingSaid(moments: readonly CanvasMoment[]): string | null {
+  for (let at = moments.length - 1; at >= 0; at -= 1) {
+    const moment = moments[at];
+    // `user` moments started a lesson and have no answer of their own; only `assistant` carries one.
+    if (moment?.kind !== "assistant") continue;
+    const said = moment.assistantText?.trim();
+    if (said) return said;
+  }
+  return null;
+}

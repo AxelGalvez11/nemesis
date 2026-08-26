@@ -106,6 +106,50 @@ const CARDS: readonly Card[] = [
     },
   },
   {
+    // 🔴 A CAPABILITY WITH NO PANEL HERE ONLY EVER GETS JUDGED FROM ITS SOURCE, which is how the
+    // arrows shipped too heavy, and how `highlight` shipped painting every atom in the molecule a
+    // green nobody chose. Both were found by looking at this board.
+    id: "mechanism",
+    note: "structure — a charged ion, and the parts a step points at",
+    visual: {
+      kind: "structure",
+      learningGoal: "Hydroxide attacks the carbon as bromide leaves, both in the same step.",
+      caption: "Hydroxide displacing bromide from bromomethane.",
+      notation: "smiles",
+      value: "[OH-].CBr",
+      // Every atom lettered, which is the picture the owner photographed and the harder case for
+      // the charge: this has to read "OH⁻" and the drawer's own output is "O⁻H".
+      carbons: "all",
+      // 🔴 THE TWO THINGS THE STEP IS ABOUT, WHICH IS ALL THE PICTURE CLAIMS NOW. Atom 0 is the
+      // attacking oxygen and [1,2] is the C-Br bond that breaks. What the electrons DO is said in
+      // prose beside it, never drawn: see `canvas-visual.ts` for why the arrows were withdrawn.
+      highlight: [0, [1, 2]],
+    },
+  },
+  {
+    // 🔴 THE OWNER'S OWN REFERENCE, 2026-08-25: a Smiles rearrangement on a nitropyridine, which he
+    // sent as a textbook scheme and asked why ours looked nothing like it. Four frames, joined.
+    id: "mechanism-scheme",
+    note: "mechanism · several frames joined by reaction arrows, the way a textbook prints one",
+    visual: {
+      kind: "mechanism",
+      learningGoal: "The nitrogen attacks the ring carbon and the oxygen leaves, in one step.",
+      caption: "A Smiles rearrangement: the tether swaps oxygen for nitrogen.",
+      steps: [
+        { value: "NCCOc1ccc(cn1)[N+](=O)[O-]", label: "NaH" },
+        {
+          // Heavy atoms from zero: N is 0, the ether O is 3, and the ring carbon it sits on is 4.
+          // The step is about the attacking nitrogen and the C-O bond that breaks, so those are
+          // what the frame marks; the turn's prose says which way the electrons went.
+          value: "[NH-]CCOc1ccc(cn1)[N+](=O)[O-]",
+          highlight: [0, [3, 4]],
+        },
+        { value: "[O-]CCNc1ccc(cn1)[N+](=O)[O-]", label: "H2O" },
+        { value: "OCCNc1ccc(cn1)[N+](=O)[O-]" },
+      ],
+    },
+  },
+  {
     id: "relationship",
     note: "relationship — a causal chain, laid out rather than authored",
     visual: {

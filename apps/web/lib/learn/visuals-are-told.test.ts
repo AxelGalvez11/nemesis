@@ -55,6 +55,7 @@ const PHRASE_FOR_KIND: Record<string, RegExp> = {
   equation: /an equation/,
   figure: /a licensed textbook figure/,
   macromolecule: /a protein/,
+  mechanism: /a whole reaction mechanism/,
   quantitative: /a plot/,
   relationship: /a diagram/,
   score: /a bar of music/,
@@ -91,6 +92,11 @@ const SHAPE_FOR_KIND: Record<string, RegExp> = {
   equation: /equation \{latex\}/,
   figure: /"kind":"figure","subject"/,
   macromolecule: /"kind":"macromolecule","accession"/,
+  // 🔴 `arrows` BECAME `highlight` ON 2026-08-26, when the curly arrows were withdrawn. This guard
+  // reddened the moment the router changed and this line did not, which is exactly what pinning the
+  // literal string is for: a packet advertising a field the validator has stopped accepting is a
+  // capability the model keeps writing for and silently losing.
+  mechanism: /mechanism \{steps:\[\{value, highlight, label\}\]\}/,
   quantitative: /quantitative \{xLabel, yLabel, series/,
   relationship: /relationship \{nodes:\[\{id,label\}\], edges/,
   score: /score \{abc\}/,
@@ -115,6 +121,9 @@ const EMPTY: TurnContext = {
   searchesLeft: 0,
   sources: 0,
   stagedPassage: "",
+  toolCatalogue: "",
+  toolContext: "",
+  toolRoundsLeft: 0,
   today: "Tuesday, 18 August 2026",
   webContext: "",
 };

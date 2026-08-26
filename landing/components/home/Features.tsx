@@ -3,9 +3,8 @@
 import Image from "next/image";
 
 import { useParallax } from "@/components/use-parallax";
-import { Mascot } from "@/components/home/Mascot";
 import { FigureCarousel, type CarouselItem } from "@/components/home/FigureCarousel";
-import { CALENDAR_BLUR, EVIDENCE_BLUR, SEE_BLUR } from "./art-blur";
+import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR } from "./art-blur";
 
 /**
  * The four things the page claims, one band each.
@@ -25,10 +24,17 @@ import { CALENDAR_BLUR, EVIDENCE_BLUR, SEE_BLUR } from "./art-blur";
  *
  * ── WHY EACH BAND STILL GETS ITS OWN FILE ─────────────────────────────────────
  *
- * Four renders, one per idea: light opening outward, a beam separating, layered
- * strata, receding pulses. One image tiled four times would read as wallpaper.
- * They share a palette (indigo → azure → cyan → white) so the page holds together
- * while no two bands repeat.
+ * One ground per idea. One image tiled four times would read as wallpaper, so no two
+ * bands repeat, and they share a palette (indigo → azure → cyan → white) so the page
+ * still holds together.
+ *
+ * Two of them are RENDERS (`learn`, `calendar`) and two are COMPUTED (`see-wash`,
+ * `evidence-wash`, out of scripts/art-wash.py). The owner asked for smooth gradients
+ * on 2026-08-25 — "not the grainy ones" — and a generated render carries the
+ * generator's speckle by construction. `see` was bokeh and `evidence` was horizontal
+ * strata, and moving the evidence wash across to its own edge put those strata on
+ * show. Computing the two of them is what made them smooth; nothing else changed,
+ * they are still WebPs behind a mask.
  *
  * ── WHAT IS NOT CLAIMED HERE, DELIBERATELY ────────────────────────────────────
  *
@@ -50,8 +56,23 @@ interface Band {
   readonly figures?: readonly CarouselItem[];
   /** A product shot to sit opposite the copy, light/dark pair by basename. */
   readonly shot?: { readonly name: string; readonly alt: string; readonly w: number; readonly h: number };
-  /** Put the character opposite the copy instead of a picture. */
-  readonly mascot?: boolean;
+  /**
+   * An engraved figure laid OVER the wash, not instead of it — two grounds, one behind the other.
+   * It takes its own opacity, mask and parallax rate: a face cannot survive the treatment a
+   * gradient can, because a gradient has no subject to lose. See the note in art.css.
+   */
+  readonly figure?: { readonly src: string; readonly blur: string };
+  /**
+   * Which edge the WASH burns on, when that is not the edge `data-side` would put it on.
+   *
+   * 🔴 THE WASH AND THE ENGRAVING USED TO SHARE A SIDE, AND THAT WAS THE BUG THE OWNER
+   * SAW (2026-08-25: "make the gradients be on the opposite side of the contrast
+   * images"). `data-side` drove both, so `Built on evidence` piled a blue wash and a
+   * marble thinker onto the same half and left the other half bare white. Splitting them
+   * gives the band two lit edges and a clear middle. This attribute moves ONLY the wash;
+   * the engraving and the copy stay where `data-side` put them.
+   */
+  readonly artSide?: "left" | "right";
 }
 
 /**
@@ -75,7 +96,7 @@ interface Band {
  * To re-capture after a renderer change, run the web app and `node cardshot4.mjs` / `anat.mjs`.
  */
 const FIGURES: readonly CarouselItem[] = [
-  { id: "heart", file: "heart", label: "Anatomy, in 3D", w: 1416, h: 846,
+  { id: "heart", file: "heart", label: "Anatomy, in 3D", w: 1576, h: 946,
     alt: "The left ventricle picked out of a three-dimensional cardiovascular system, the rest of the vessels ghosted around it." },
   { id: "macromolecule", file: "macromolecule", label: "Protein, in 3D", w: 1416, h: 1044,
     alt: "Haemoglobin from the Protein Data Bank, its four subunits each in a different colour." },
@@ -85,8 +106,8 @@ const FIGURES: readonly CarouselItem[] = [
     alt: "A plot of plasma concentration against time at two doses, with labelled axes and a legend." },
   { id: "structure", file: "structure", label: "Molecule", w: 1416, h: 1309,
     alt: "The structure of acetylsalicylic acid, drawn from its SMILES string." },
-  { id: "nervous", file: "nervous", label: "Nervous system", w: 1416, h: 846,
-    alt: "The nervous system and sense organs as one continuous three-dimensional model." },
+  { id: "nervous", file: "nervous", label: "Nervous system", w: 1576, h: 946,
+    alt: "A three-dimensional brain with the hippocampus picked out on each side and named, the rest of the nervous system ghosted around it." },
   { id: "score", file: "score", label: "Music", w: 1416, h: 612,
     alt: "The opening phrase of Ode to Joy, engraved on a stave." },
   { id: "circuit", file: "circuit", label: "Circuit", w: 1416, h: 804,
@@ -95,7 +116,7 @@ const FIGURES: readonly CarouselItem[] = [
     alt: "A 3-4-5 right triangle with its three angles marked and its sides labelled." },
   { id: "vectors", file: "vectors", label: "Force diagram", w: 1416, h: 760,
     alt: "A free body diagram of a block on a thirty degree incline, with weight, normal force and friction." },
-  { id: "skeleton", file: "skeleton", label: "Skeleton", w: 1416, h: 846,
+  { id: "skeleton", file: "skeleton", label: "Skeleton", w: 1576, h: 946,
     alt: "A three-dimensional skeleton with the femur picked out." },
   { id: "relationship", file: "relationship", label: "Causal chain", w: 1416, h: 1042,
     alt: "A causal chain from action potential through calcium release to contraction." },
@@ -112,19 +133,20 @@ const FIGURES: readonly CarouselItem[] = [
 const BANDS: readonly Band[] = [
   {
     id: "see",
-    art: "/nemesis/art/see.webp",
-    blur: SEE_BLUR,
+    art: "/nemesis/art/see-wash.webp",
+    blur: SEE_WASH_BLUR,
     head: "Visualize anything",
     body: "Anatomy and proteins in three dimensions, surfaces, plots, molecules, circuits, music, geometry, timelines and code.",
     figures: FIGURES,
   },
   {
     id: "evidence",
-    art: "/nemesis/art/evidence.webp",
-    blur: EVIDENCE_BLUR,
+    art: "/nemesis/art/evidence-wash.webp",
+    blur: EVIDENCE_WASH_BLUR,
+    artSide: "right",
+    figure: { blur: EVIDENCE_FIGURE_BLUR, src: "/nemesis/art/evidence-figure.webp" },
     head: "Built on evidence",
     body: "Scaffolding, worked examples, retrieval practice and spaced review. Four methods with real research behind them, running under every session.",
-    mascot: true,
   },
   {
     id: "calendar",
@@ -145,12 +167,15 @@ function Feature({ band, index }: { band: Band; index: number }) {
   // Alternating depth so neighbouring bands never drift in lockstep — two grounds
   // moving identically read as one sheet sliding behind the whole page.
   const art = useParallax<HTMLDivElement>(index % 2 === 0 ? 0.16 : 0.21);
+  // Its own, slower rate: two grounds moving identically read as one sheet.
+  const figure = useParallax<HTMLDivElement>(0.1);
 
   return (
     <section
       className="band"
       data-side={index % 2 === 1 ? "left" : "right"}
       data-figs={band.figures ? "true" : undefined}
+      data-art={band.artSide}
     >
       {/* aria-hidden: it is the ground, and it carries no information a reader
           would miss. The alt text that used to describe each gradient was
@@ -168,6 +193,21 @@ function Feature({ band, index }: { band: Band; index: number }) {
         />
       </div>
 
+      {band.figure ? (
+        <div className="band-figure" ref={figure} aria-hidden="true">
+          <Image
+            src={band.figure.src}
+            alt=""
+            width={1100}
+            height={1100}
+            sizes="(max-width: 900px) 100vw, 40vw"
+            placeholder="blur"
+            blurDataURL={band.figure.blur}
+            quality={84}
+          />
+        </div>
+      ) : null}
+
       <div className="wrap band-in" data-reveal="up">
         {/* The measure and the side live on this wrapper, not on the heading. `ch`
             resolves against the element's OWN font size, so a 46ch cap on a 44px h3
@@ -179,7 +219,12 @@ function Feature({ band, index }: { band: Band; index: number }) {
         </div>
 
         {/* The slot opposite the copy. A band has at most one of these, and it sits on
-            whichever side the light is on, so the two never fight for the same half. */}
+            whichever side the light is on, so the two never fight for the same half.
+            🔴 THE CHARACTER IS NOT ONE OF THEM ANY MORE (owner, 2026-08-25: "remove the
+            mascot from the 'built on evidence section'"). It sat here opposite the copy,
+            which put it on the same half as the engraved thinker's wash and gave the band
+            three things to look at. The hero keeps it; this band is the claim and its
+            evidence. Do not re-add a `mascot` slot without him asking. */}
         {band.shot ? (
           <div className="band-aside">
             <picture>
@@ -196,12 +241,6 @@ function Feature({ band, index }: { band: Band; index: number }) {
                 loading="lazy"
               />
             </picture>
-          </div>
-        ) : null}
-
-        {band.mascot ? (
-          <div className="band-aside band-aside-mascot">
-            <Mascot size={210} />
           </div>
         ) : null}
       </div>

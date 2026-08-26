@@ -11,6 +11,9 @@ import { test } from "node:test";
 
 const ACTIONS = readFileSync(new URL("./reply-actions.tsx", import.meta.url), "utf8");
 const PLAYER = readFileSync(new URL("./response-audio-controls.tsx", import.meta.url), "utf8");
+// The transport, which lives in the canvas's top row since 2026-08-25 — see the split below.
+const BAR = readFileSync(new URL("./canvas-audio-bar.tsx", import.meta.url), "utf8");
+const HEADER = readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8");
 const CANVAS = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
 const VOICE_HOOK = readFileSync(new URL("./use-canvas-voice.ts", import.meta.url), "utf8");
 const CONTROLS = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
@@ -22,36 +25,58 @@ test("🔴 copy and read-aloud are reachable under an answer", () => {
   assert.match(CANVAS, /<ReplyActions/, "the row is not mounted on the canvas");
 });
 
-test("🔴🔴 exactly the four controls the owner kept, each wired — and the three they cut stay cut", () => {
-  // Owner re-spec, 2026-08-23, looking at the full transport: *"It just needs to have the forward
-  // and rewind and the pause and the x. It doesn't really need the timer in there"* — and the
-  // scrubber's thumb ("the blue circle") removed by name. The 2026-08-20 ask this row was built
-  // from listed speed, progress and seek; the owner watched the result and cut them. Calibration:
-  // delete any handler below, or reintroduce any of the three cut controls, and this reddens.
+test("🔴🔴 exactly the five controls the owner asked for, each wired — and the two they cut stay cut", () => {
+  // Owner re-spec, 2026-08-25, moving the transport into the canvas's top row: *"dont add the
+  // 'audio time' just 'x' forward and back, the speed, and the pause"*. Calibration: delete any
+  // handler below and this reddens.
   const wired: Array<[string, RegExp]> = [
     ["play / pause", /onClick=\{audio\.toggle\}/],
+    ["speed", /onClick=\{audio\.cycleRate\}/],
     ["rewind", /audio\.seekBy\(-SEEK_STEP_SECONDS\)/],
     ["fast-forward", /audio\.seekBy\(SEEK_STEP_SECONDS\)/],
     ["stop / dismiss", /audio\.stop\(\)/],
     ["playing indication", /audio\.playing \? "debug-pause" : "play"/],
   ];
-  for (const [what, pattern] of wired) assert.match(PLAYER, pattern, `${what} is not wired`);
+  for (const [what, pattern] of wired) assert.match(BAR, pattern, `${what} is not wired`);
+  // 🔴 THE SPEED CONTROL SHOWS ITS VALUE. A dial glyph says "speed exists"; `1.25×` says what it is
+  // set to, which is the only question anyone has about a speed control they did not just press.
+  assert.match(BAR, /rateLabel\(audio\.rate\)/, "the speed control does not show the current rate");
   const cut: Array<[string, RegExp]> = [
     ["the scrubber", /audio\.scrub\(|type="range"/],
-    ["the clock", /formatClock\(/],
-    ["the speed control", /cycleRate|\{audio\.rate\}×/],
+    ["the clock", /formatClock\(|audio\.currentTime/],
   ];
   for (const [what, pattern] of cut) {
-    assert.ok(!pattern.test(PLAYER), `${what} is back in the bar — the owner cut it on 2026-08-23`);
+    assert.ok(!pattern.test(BAR), `${what} is back in the bar — the owner cut it, twice`);
   }
+});
+
+test("🔴🔴 the transport is in the CANVAS HEADER, and the answer keeps only the start button", () => {
+  // Owner, 2026-08-25: *"when user has voice to speak responses outloud could the popup be in the
+  // upper left either next to the upper left icons in canvas?"* — and, shown both edges of that
+  // row, they chose the right, beside the existing icons.
+  //
+  // The split is: start belongs to an ANSWER ("read me THIS"), transport belongs to what is
+  // PLAYING — which outlives the scroll position. Calibration: put pause back under the answer, or
+  // drop the bar from the header, and this reddens.
+  assert.match(HEADER, /<CanvasAudioBar audio=\{replyAudio\} \/>/, "the bar is not mounted in the canvas header");
+  const beforeIcons = HEADER.indexOf("<CanvasAudioBar") < HEADER.indexOf("<SourcesControl");
+  assert.ok(beforeIcons, "the bar is not beside the icons the owner pointed at");
+  for (const gone of [/audio\.toggle/, /audio\.seekBy/, /audio\.cycleRate/]) {
+    assert.ok(!gone.test(PLAYER), "a transport control is back under the answer");
+  }
+  // 🔴 ONE CONTROLLER, TWO PLACES. Two `useResponseAudio` calls would give one answer two playheads
+  // and a pause button in the header that pauses nothing.
+  assert.match(CANVAS, /replyAudio=\{voice\.replyAudio\}/, "the header is not reading the one shared controller");
 });
 
 test("🔴🔴 no player CARD — no border, no background, no toolbar under the answer", () => {
   // Owner: *"quiet, compact, only prominent while relevant… no unnecessary borders/cards/toolbars.
   // The main content should remain the focus."* Calibration: wrap the controls in a bordered panel
   // and this reddens.
-  assert.ok(!/\bborder-\(/.test(PLAYER), "the playback controls have drawn themselves a border");
-  assert.ok(!/\brounded-2xl|\bshadow-|\bbg-\(--ui-bg-(secondary|elevated)\)/.test(PLAYER), "the controls have become a card");
+  for (const [where, file] of [["under the answer", PLAYER], ["in the header", BAR]] as const) {
+    assert.ok(!/\bborder-\(/.test(file), `the playback controls have drawn themselves a border ${where}`);
+    assert.ok(!/\brounded-2xl|\bshadow-|\bbg-\(--ui-bg-(secondary|elevated)\)/.test(file), `the controls have become a card ${where}`);
+  }
   // And they are inside the SAME row as Copy rather than a second surface below it.
   // 🔴 `text={spoken}`, NOT `text={text}`: the player is handed the RAW reply so `replySpeechPlan`
   // can read the `[say: …]` marks and route each sentence to the voice that must say it. The
@@ -60,11 +85,13 @@ test("🔴🔴 no player CARD — no border, no background, no toolbar under the
 });
 
 test("🔴 the controls exist only while there is audio, and the transition is on the whole group", () => {
-  // Five dead buttons under every paragraph is this codebase's most-repeated defect made into a
-  // design. Idle is one speaker glyph.
-  assert.match(PLAYER, /const open = audio\.status !== "idle"/);
-  assert.match(PLAYER, /open \? "grid-cols-\[1fr\] opacity-100" : "grid-cols-\[0fr\] opacity-0"/);
-  assert.match(PLAYER, /transition-\[grid-template-columns,opacity\]/);
+  // Five dead buttons sitting in the canvas chrome is this codebase's most-repeated defect made
+  // into a design. Idle is no bar at all, and `0fr` means it takes no width from the title either.
+  assert.match(BAR, /const open = audio\.status !== "idle"/);
+  assert.match(BAR, /open \? "grid-cols-\[1fr\] opacity-100" : "grid-cols-\[0fr\] opacity-0"/);
+  assert.match(BAR, /transition-\[grid-template-columns,opacity\]/);
+  // And the one control that IS per-answer says which of its two things it is doing.
+  assert.match(PLAYER, /open \? "Stop reading" : "Read aloud"/);
 });
 
 test("🔴🔴 ONE player for the whole response, never one per block", () => {
@@ -149,7 +176,19 @@ test("🔴🔴 the Canvas no longer asks which voice, and no longer asks how fas
 
 test("🔴🔴 the ONE voice decision left on the Canvas is autoplay", () => {
   // Owner: *"Canvas should have a simple option for: Automatically read responses aloud."*
-  assert.match(CONTROLS, /label="Read responses aloud"/, "autoplay is not offered on the canvas");
+  // 🔴 THE ROW BECAME THE BUTTON (2026-08-25). Owner circled the `⋮` and asked for it gone; what
+  // the click revealed was this single toggle, so the toggle moved out and the menu went. The
+  // invariant is unchanged — autoplay is offered on the canvas — only its shape moved, so this
+  // matches the control rather than the menu row it used to be.
+  assert.match(CONTROLS, /aria-pressed=\{voiceOn\}/, "autoplay is not offered on the canvas");
+  assert.match(CONTROLS, /"Read responses aloud"/, "the control no longer says what it does");
+  // 🔴 SCOPED TO THE COMPONENT, because the canvas has a SECOND `⋮` — Session options, by the
+  // title — which the owner did not ask about and which is still a real menu. A file-wide search
+  // for the glyph reddens on that one, which my first version of this line did.
+  const control = CONTROLS.slice(CONTROLS.indexOf("export function OptionsControl"));
+  const body = control.slice(0, control.indexOf("\n}"));
+  assert.ok(!/kebab-vertical/.test(body), "the `⋮` is back on the read-aloud control");
+  assert.ok(!/useState/.test(body), "the read-aloud control grew a menu again");
   assert.match(VOICE_HOOK, /if \(mode !== "on"\) return;\n    replyAudio\.start\(reply\.text\)/, "autoplay does not start the audio");
 });
 
@@ -215,5 +254,21 @@ test("🔴🔴 the ANSWER is never waiting on the audio", () => {
 test("🔴🔴 autoplay fires ONCE, at the end of the turn, not on every streamed chunk", () => {
   // `spokenReply`'s key is derived from the text, and the text GROWS while an answer streams — so an
   // ungated autoplay would buy a fresh synthesis per chunk and replay the opening over and over.
-  assert.match(CANVAS, /useCanvasVoice\(policy, policy\.judging, turnInFlight \? null : spokenReply\)/);
+  assert.match(CANVAS, /useCanvasVoice\(policy, turnInFlight \? null : spokenReply\)/);
+});
+
+test("🔴🔴 the canvas menu asks ONE voice question, with no explanation under it", () => {
+  // Owner, 2026-08-25, with the menu open: *"also remove this description and the 'open mic after
+  // each question' option"*. The hint explained a toggle whose own label already said what it did.
+  assert.ok(!/Nemesis starts reading each answer/.test(CONTROLS), "the description is back under the toggle");
+  assert.ok(!/Open the mic after each question/.test(CONTROLS), "the mic option is back in the menu");
+  // 🔴 AND IT WENT END TO END, NOT JUST OUT OF SIGHT. That row was the only switch `autoDictation`
+  // had, so leaving the preference behind would leave a lane that can never run — this codebase's
+  // most-repeated defect wearing the other face.
+  const PREFS = readFileSync(new URL("../../../lib/learn/voice-preferences.ts", import.meta.url), "utf8");
+  const COMPOSER = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
+  assert.ok(!/export (type AutoDictation|function (read|write)AutoDictation|function should(Ask|Open)Dictation)/.test(PREFS), "the auto-dictation preference outlived its only switch");
+  assert.ok(!/listenSignal\?:|\[listenSignal\]/.test(COMPOSER), "the composer still listens for a signal nothing can send");
+  // 🔴 DICTATION ITSELF IS UNTOUCHED — the button, and hold-space-to-talk.
+  assert.match(COMPOSER, /startDictation/, "the microphone button went with the preference");
 });

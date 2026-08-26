@@ -43,6 +43,7 @@ import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { readChatCheck } from "./chat-check";
 import { readFigureSubject } from "./figure-subject";
+import { stripScreenPositions } from "./screen-positions";
 import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
 import type { TestRun } from "./test-run";
 import { readMilestones } from "./turn-preview";
@@ -109,6 +110,39 @@ export type TurnAction =
 export interface RememberedFact {
   readonly kind: MemoryKind;
   readonly statement: string;
+}
+
+/**
+ * One thing the model asked to do in the learner's workspace.
+ *
+ * 🔴 THE NAME IS NOT VALIDATED HERE, DELIBERATELY. Which names exist depends on what this learner
+ * has connected, which is a fact about their account and not about the shape of a turn — and the
+ * executor already answers an unrecognised name with `{error}` the model can read and correct. A
+ * whitelist in the parser would silently drop a real tool the day the catalogue grows.
+ */
+export interface ToolAsk {
+  readonly name: string;
+  readonly arguments: Record<string, unknown>;
+}
+
+/** The most calls one envelope may carry. See MAX_CALLS_PER_ROUND in canvas-tools.ts. */
+const TOOL_ASK_LIMIT = 4;
+
+function readToolAsks(value: unknown): readonly ToolAsk[] {
+  if (!Array.isArray(value)) return [];
+  const asks: ToolAsk[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const entry = row as Record<string, unknown>;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    if (!name) continue;
+    // 🔴 A MISSING ARGUMENT OBJECT IS `{}`, NOT A REFUSAL. `list_calendar_events` legitimately takes
+    // none, and dropping the call would turn "what is on this week" into silence.
+    const args = entry.arguments;
+    asks.push({ arguments: args && typeof args === "object" && !Array.isArray(args) ? args as Record<string, unknown> : {}, name });
+    if (asks.length >= TOOL_ASK_LIMIT) break;
+  }
+  return asks;
 }
 
 /** The most facts one turn may produce. A turn that "remembers" eight things has summarised the
@@ -350,6 +384,24 @@ export interface TurnDecision {
    */
   curriculumFor: string | null;
   /**
+   * Things to DO in the learner's own workspace before answering: their calendar, and any app they
+   * have connected.
+   *
+   * 🔴🔴 IT RIDES THE ENVELOPE RATHER THAN AN OpenAI `tools` ROUND, FOR THE REASON AT THE TOP OF
+   * THIS FILE. A tool round answers with a CALL and needs a second trip to produce the sentence
+   * that goes with it, so offering tools the OpenAI way would make every "hello" pay the latency of
+   * a capability it never uses. `needsWeb` already works exactly like this — ask, run it, feed the
+   * results back, ask again — and `canvas-chat.ts` runs one loop for both.
+   *
+   * 🔴 IT IS A REQUEST, NEVER A PERMISSION. What the names mean, which executor runs them, how many
+   * rounds are left and which of them are held for a button all live in `canvas-tools.ts`. Nothing
+   * here can reach the network, and nothing the model writes can set `confirmed`.
+   *
+   * 🔴 EMPTY ON ALMOST EVERY TURN, and that is the expected shape. Most messages are not about
+   * anybody's calendar.
+   */
+  tools: readonly ToolAsk[];
+  /**
    * A decision Nemesis needs from the learner before this turn can finish, or null when it does not
    * need one. Null on nearly every turn.
    *
@@ -448,6 +500,26 @@ export interface TurnContext {
    * has, where one that is silently cut off has already wasted it.
    */
   searchesLeft: number;
+  /**
+   * What this learner's workspace can do, in prose — their calendar, and whichever apps they have
+   * connected.
+   *
+   * 🔴 BUILT PER TURN RATHER THAN HARD-CODED, because half of it is theirs: an app authorised two
+   * minutes ago has to appear, and one disconnected two minutes ago has to stop being promised.
+   * `canvas-tools.ts` builds it; empty string means there is nothing to offer, and the block is
+   * then omitted entirely rather than sent as an empty heading.
+   */
+  toolCatalogue: string;
+  /** What the tools this turn already ran came back with, verbatim. Empty on the first round. */
+  toolContext: string;
+  /**
+   * How many more rounds of tools this turn may take.
+   *
+   * 🔴 STATED, NOT ENFORCED BEHIND ITS BACK — the same argument `searchesLeft` above makes. A model
+   * told it has one round left spends it on the call that matters; one silently cut off has already
+   * spent it on a lookup it meant to follow up.
+   */
+  toolRoundsLeft: number;
   /**
    * The conversation so far, oldest first, learner and Nemesis alternating.
    *
@@ -549,8 +621,8 @@ const NEMESIS_SYSTEM = [
   // point, the same kind of fact as `\frac` being how LaTeX spells a fraction. Nothing here names
   // chemistry as a discipline Nemesis favours; it tells the model how to write the thing it is
   // already allowed to draw.
-  "A group with an open attachment point — a functional group, a side chain, a monomer, any "
-  + "fragment a chemist would write with an R — uses \"*\" where the rest of the molecule would "
+  "A group with an open attachment point, a functional group, a side chain, a monomer, any "
+  + "fragment a chemist would write with an R, uses \"*\" where the rest of the molecule would "
   + "continue: [smiles: *O] is an alcohol, [smiles: *C(=O)O] a carboxylic acid, [smiles: *C(=O)N] "
   + "an amide, [smiles: *C#N] a nitrile. \"R\" is not a SMILES atom, so [smiles: R-OH] draws "
   + "nothing at all. When the learner asks to see a family of groups, draw each one.",
@@ -592,9 +664,10 @@ const NEMESIS_SYSTEM = [
   // the next person to add a renderer would read the sentence and trust it. The real guard reads the
   // kind literals out of `canvas-visual.ts` and `subject-visuals.ts` and fails when one of them is
   // not named in the sentence below.
-  "For anything with structure — a plot, a diagram, a table, a timeline, a geometric construction, "
+  "For anything with structure, a plot, a diagram, a table, a timeline, a geometric construction, "
   + "a force diagram, an equation, a traced snippet of code, a circuit, a bar of music, a 3D "
-  + "surface, a molecule, a protein, an anatomical structure, a licensed textbook figure — put the "
+  + "surface, a molecule, a whole reaction mechanism, a protein, an anatomical structure, a licensed "
+  + "textbook figure, put the "
   + "figure in the \"visuals\" array and write [figure 1], [figure 2] inline where each one "
   + "belongs. Every kind takes \"kind\" and \"learningGoal\", plus its own fields. At most "
   + String(MAX_REPLY_VISUALS) + " per answer.",
@@ -611,15 +684,22 @@ const NEMESIS_SYSTEM = [
   + "quantitative {xLabel, yLabel, series:[{label, points:[{x,y}]}]}, or a formula instead of the "
   + "points (see below). relationship {nodes:[{id,label}], edges:[{from,to,label}]}. "
   + "table {columns:[{key,label}], rows:[{key, cells:{<columnKey>: \"…\"}}]}. "
-  + "timeline {unit, events:[{label, at:<number>}]} — `at` is a NUMBER on that unit's scale, never a "
-  + "date string. vectors {bodyLabel, vectors:[{label, magnitude:<number>, degrees:<number>}]} — a "
+  + "timeline {unit, events:[{label, at:<number>}]}: `at` is a NUMBER on that unit's scale, never a "
+  + "date string. vectors {bodyLabel, vectors:[{label, magnitude:<number>, degrees:<number>}]}: a "
   + "length and a bearing, never components. construction {points:[{id,x,y}], segments:[{from,to}]}. "
   + "equation {latex}. code {language, source, trace}. "
   + "circuit {elements:{arrangement:\"series\"|\"parallel\", parts:[{component:\"resistor\", label, "
-  + "ohms}]}, supply:{label:\"9 V\"}, equivalentOhms} — `supply` is an OBJECT with a label, and an "
+  + "ohms}]}, supply:{label:\"9 V\"}, equivalentOhms}: `supply` is an OBJECT with a label, and an "
   + "`equivalentOhms` you state is recomputed and the whole figure refused if it disagrees. "
-  + "score {abc} — ABC notation including its K: header line. "
-  + "surface {expression, xFrom, xTo, yFrom, yTo} — the grid is computed for you.",
+  + "score {abc}: ABC notation including its K: header line. "
+  + "mechanism {steps:[{value, highlight, label}]}: a whole reaction as ONE connected scheme of 2 to 6 frames "
+  + "joined by reaction arrows, which is how a textbook prints a mechanism, as "
+  + "{\"value\":\"[NH-]CCOc1ccc(cn1)[N+](=O)[O-]\",\"highlight\":[0,[3,4]]}. `highlight` names what a step is "
+  + "ABOUT, counting heavy atoms from zero: a number is an atom, and a PAIR of numbers is the bond between "
+  + "them, so [0,[3,4]] marks atom 0 and the breaking 3-4 bond. NEVER DRAW ELECTRON MOVEMENT: there are no "
+  + "curly arrows, no fishhook arrows and no lone-pair dots, and asking for one draws nothing. Highlight the "
+  + "atom attacked and the bond that breaks, then say what the electrons do in your own sentences. "
+  + "surface {expression, xFrom, xTo, yFrom, yTo}: the grid is computed for you.",
 
   // 🔴 THE FOUR THAT ARE A LOOKUP RATHER THAN A DRAWING, SAID SEPARATELY BECAUSE THE MISTAKE IS
   // TO WRITE THEIR DATA FROM MEMORY. Each takes a NAME and trusted code fetches the real thing;
@@ -641,12 +721,12 @@ const NEMESIS_SYSTEM = [
   // the model actually write one?"
   "Four of those take a NAME and nothing else, because the data is looked up rather than recalled: "
   + "{\"kind\":\"anatomy\",\"structure\":\"uterus\"} shows an interactive 3D body region with that "
-  + "structure picked out and the rest ghosted — any bone, muscle, vessel, nerve or organ, male or "
+  + "structure picked out and the rest ghosted, any bone, muscle, vessel, nerve or organ, male or "
   + "female. {\"kind\":\"macromolecule\",\"accession\":\"1HHO\"} shows a rotatable protein. "
   + "{\"kind\":\"structure\",\"notation\":\"smiles\",\"value\":\"…\"} draws a molecule, and for a "
   + "NAMED compound prefer [compound: aspirin] so it is looked up instead. "
   + "{\"kind\":\"figure\",\"subject\":\"the stages of meiosis\"} finds a real licensed diagram or "
-  + "photograph and shows it with its credit — thousands of them, across biology, biochemistry, "
+  + "photograph and shows it with its credit, thousands of them, across biology, biochemistry, "
   + "microbiology, anatomy, chemistry, physics and astronomy. Reach for them whenever WHERE "
   + "something sits or WHAT SHAPE it is are the thing to understand.",
 
@@ -658,8 +738,8 @@ const NEMESIS_SYSTEM = [
   // reads the shape list, finds nothing it can compute for meiosis, and writes prose.
   "A figure is the right answer whenever the thing to understand is a real picture rather than "
   + "computed data: a process with stages, a cycle, a cross-section, a piece of apparatus, a "
-  + "specimen, a map. If a learner asks to SEE a process — meiosis, glycolysis, the nitrogen cycle, "
-  + "how a four-stroke engine fires — reach for {\"kind\":\"figure\"} rather than describing the "
+  + "specimen, a map. If a learner asks to SEE a process, meiosis, glycolysis, the nitrogen cycle, "
+  + "how a four-stroke engine fires, reach for {\"kind\":\"figure\"} rather than describing the "
   + "picture in words. Nothing is invented: a subject that finds no licensed picture simply draws "
   + "nothing, so keep the prose standing on its own.",
 
@@ -737,7 +817,7 @@ const NEMESIS_SYSTEM = [
   // clause was true and aimed at the wrong container — where the characters sit was never the
   // point. So this names the ACT, in any container, and then names the one case that has to be
   // unambiguous rather than merely discouraged.
-  "Never draw a picture out of text characters, anywhere in your answer — not in a code fence, not "
+  "Never draw a picture out of text characters, anywhere in your answer, not in a code fence, not "
   + "in the prose, not indented. No ASCII diagrams, no molecules built from dashes and pipes, no "
   + "plots made of spaces. A code fence is for code and notation, never for a drawing.",
 
@@ -756,7 +836,7 @@ const NEMESIS_SYSTEM = [
   // trying to describe every way a picture can be turned into prose.
   "Never DESCRIBE a picture you could draw. Saying where notes sit on a staff, which atoms bond to "
   + "which, or what a curve does between two points is the same refusal as drawing it in "
-  + "characters: the learner asked to SEE it. And never offer one as a follow-up — no \"if you "
+  + "characters: the learner asked to SEE it. And never offer one as a follow-up, no \"if you "
   + "like, I can show this as…\", no \"say the word and I'll draw it\". If a picture is worth "
   + "offering, it was worth putting in \"visuals\" in this same answer, so put it there instead.",
 
@@ -803,7 +883,7 @@ const NEMESIS_SYSTEM = [
   // that knows what it is.
   "You can make a sentence HEARD, not only written. Write [say: es-MX | Buenos días] inline and the "
   + "canvas mounts that sentence with a play button, spoken by a voice chosen for that exact "
-  + "variety. The tag is BCP-47 — language then region: es-MX, es-ES, fr-FR, de-DE, ja-JP. Name the "
+  + "variety. The tag is BCP-47, language then region: es-MX, es-ES, fr-FR, de-DE, ja-JP. Name the "
   + "variety you are actually teaching, because es-MX and es-ES differ in precisely the things a "
   + "pronunciation drill is about and the learner has no way to hear that they got the wrong one.",
 
@@ -813,14 +893,14 @@ const NEMESIS_SYSTEM = [
   // discipline hardcoded into a prompt.
   "Use it whenever how something SOUNDS is part of what you are teaching: a phrase in a language "
   + "being learned, a term the learner asked how to pronounce, two words that differ only in "
-  + "stress. This is not a language-lesson feature — a case name, a drug name, an anatomical term "
+  + "stress. This is not a language-lesson feature, a case name, a drug name, an anatomical term "
   + "or a foreign phrase in any field all qualify.",
 
   // 🔴 A SYNTHESISER READS WHAT IS BETWEEN THE PIPE AND THE BRACKET, LITERALLY. Quotation marks are
   // said aloud, a parenthesised translation is said aloud, and a phonetic respelling is said as
   // nonsense. `canvas-speech.ts` already refuses notation for exactly this reason; this is the same
   // rule stated where the text is written rather than where it is rejected.
-  "Only the utterance goes inside the token — no quotation marks, no translation, no notes, no "
+  "Only the utterance goes inside the token, no quotation marks, no translation, no notes, no "
   + "phonetic respelling. The translation, the gloss and your own explanation belong in the prose "
   + "beside it, where the learner reads them. Do not use it for a sentence they only need to read, "
   + "and never for your own explanation: Nemesis already speaks that in its own voice.",
@@ -844,8 +924,8 @@ const NEMESIS_SYSTEM = [
   + "genuinely has that shape. Answer a small question in a sentence.",
 
   "No closing offer to help further, no restating the question back, no unearned enthusiasm, no "
-  + "summary of what you are about to say. Never use an em dash character; use a comma, a colon, "
-  + "or a new sentence instead.",
+  + "summary of what you are about to say. Never use an em dash. That punctuation mark must not "
+  + "appear anywhere in your output. Use a comma, a colon, or a new sentence instead.",
 ].join("\n\n");
 
 /**
@@ -884,7 +964,11 @@ const DECISION_CONTRACT = [
   // 🔴 SHOWN FILLED IN, for the same reason `visuals` is one line below: a field displayed as
   // `null` in the contract's highest-signal position is a field the model sends as null forever.
   + ' "checkFigure": "nephron" | null,'
-  + ' "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],',
+  + ' "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],'
+  // 🔴 SHOWN FILLED IN, like `visuals` and `checkFigure` below and above it, and for the same
+  // measured reason: a field displayed as `[]` in the contract's highest-signal position is a field
+  // the model sends as empty forever.
+  + ' "tools": [{"name": "list_calendar_events", "arguments": {"start_date": "2026-09-01", "end_date": "2026-09-07"}}],',
   // 🔴 THE FIELD IS SHOWN FILLED IN, AND THAT IS THE FIX RATHER THAN A FLOURISH. It read
   // `"visuals": []` — an empty array, in the highest-signal position in the whole contract — and
   // the model obliged on every single turn. Measured: asked to plot y = x², it wrote the answer,
@@ -900,7 +984,9 @@ const DECISION_CONTRACT = [
   // wrong, so this instruction is finally safe — it was removed twice for breaking whole turns.
   "Because your answer is outside the JSON, write mathematics as real LaTeX: $$ … $$ on its own "
   + "line for a displayed equation, $ … $ inline. Do not substitute Unicode symbols for it. The "
-  + "canvas typesets it.",
+  + "canvas typesets it. Wrap ONLY the formula, never a clause of English: write "
+  + "\"for $0 < r < \\pi/2$, $z$ rises to $1$\", not one pair of $ around the whole sentence. "
+  + "A sentence inside $ … $ typesets as one run of italics with every word jammed together.",
   "",
   '"then" is what happens to the canvas:',
   // 🔴🔴 "reply" IS NOW THE TEACHING LANE, ON THE OWNER'S ORDER (2026-08-24), AND THE SENTENCE
@@ -915,7 +1001,7 @@ const DECISION_CONTRACT = [
   '  "reply" changes nothing on the page. The learner gets your answer and the canvas stays as it '
   + "is, so nothing is seized and nothing they were reading disappears. This is the right choice "
   + "for almost everything: greetings, small talk, complaints, acknowledgements, ordinary "
-  + "questions — AND for teaching. When the learner asks to be taught, explained, walked through, "
+  + "questions, AND for teaching. When the learner asks to be taught, explained, walked through, "
   + "tested or quizzed on a subject, do it right here as part of the conversation: explain it "
   + "properly, draw what helps (see the figures section), and if they asked to be tested, ask them "
   + "a question in your own words at the end and mark their next message against it. Never answer "
@@ -928,7 +1014,7 @@ const DECISION_CONTRACT = [
   + "learner has attached material to work through. Choose it when they ask for the document to be "
   + "written, extended or changed, or when they have given you a file and want you to work through "
   + "it. Do NOT choose it merely because a subject was named or because the learner asked to be "
-  + "taught, tested or quizzed — those are `reply`, and you teach them in the reply. Keep your "
+  + "taught, tested or quizzed, those are `reply`, and you teach them in the reply. Keep your "
   + "answer to a few words here, since the document is about to change underneath it.",
   '  "rewrite" fixes the passage the learner is reading, in place. Choose it when they are telling '
   + "you the MATERIAL failed: it is too dense, pitched wrong, or they do not follow it. They may say "
@@ -993,8 +1079,8 @@ const DECISION_CONTRACT = [
   // document's own title the whole time; what was missing is the instruction to weigh it over the
   // sample, and the stake — the rename — stated where the choice is made.
   'On a "study" turn the topic also becomes the canvas\'s name. When what the learner wants taught '
-  + "IS the material they attached, the topic is what the WHOLE attachment covers — the source's "
-  + "own title above usually says it best — never the subsection the excerpts happen to begin "
+  + "IS the material they attached, the topic is what the WHOLE attachment covers, the source's "
+  + "own title above usually says it best, never the subsection the excerpts happen to begin "
   + "with. Excerpts are a sample of the document, and a canvas named after one chapter of it is "
   + "named wrong.",
   "",
@@ -1093,7 +1179,7 @@ const DECISION_CONTRACT = [
   + "better than a web page can.",
   "",
   "Judge what the learner is ASKING FOR, never the words they used. Every field publishes and each "
-  + "names its work differently — a law review article, a historiographical essay, an engineering "
+  + "names its work differently, a law review article, a historiographical essay, an engineering "
   + "paper, an education study and a clinical trial are all published literature, and all of them "
   + "are indexed here. \"Is there any research on this\", \"what do the studies say\", \"what's the "
   + "authority for that\", \"has anyone actually tested it\" and \"where does that claim come from\" "
@@ -1103,16 +1189,16 @@ const DECISION_CONTRACT = [
   "It is independent of needsWeb, and often true when needsWeb is false: what has been SHOWN is "
   + "usually not a question about what is current, and the study that settles it may be decades "
   + "old. Set both when the learner wants current practice AND the evidence under it. Set neither "
-  + "for settled textbook knowledge you can simply teach — a definition, a mechanism, a worked "
-  + "example — because a student asking what an enzyme does is not asking to read a paper.",
+  + "for settled textbook knowledge you can simply teach, a definition, a mechanism, a worked "
+  + "example, because a student asking what an enzyme does is not asking to read a paper.",
   "",
   "Being asked to SHOW, draw or diagram something is not by itself a reason to search. Every "
   + "picture Nemesis draws is built either from what you already know or from our own licensed "
-  + "figure repository — never from a web page — so a search cannot improve the drawing and only "
+  + "figure repository, never from a web page, so a search cannot improve the drawing and only "
   + "delays it. \"Draw the Krebs cycle\", \"show me a diagram of meiosis\", \"graph y = x squared\" "
   + "and \"what does this molecule look like\" are all needsWeb false. Judge the DATA, not the "
-  + "picture: search only when the numbers or facts to be drawn are themselves current — this "
-  + "year's figures, a live standing, a price history — which is the same test you would apply if "
+  + "picture: search only when the numbers or facts to be drawn are themselves current, this "
+  + "year's figures, a live standing, a price history, which is the same test you would apply if "
   + "the learner had asked for those in words.",
   "",
   // 🔴 THE MODEL DECIDES WHEN IT HAS ENOUGH, WHICH MEANS IT HAS TO BE ABLE TO SAY "NOT YET". A
@@ -1156,17 +1242,17 @@ const DECISION_CONTRACT = [
   // 🔴 A SUBJECT THE PLANNER CAN LOOK UP, NOT A RESTATEMENT OF THE SENTENCE. The same reason
   // `topic` is "the model's subject or nothing": a canvas called "teach me innate immunity" is the
   // measured failure this vocabulary exists to prevent.
-  '"curriculumFor" names the subject when the learner has attached Course to this message — the '
+  '"curriculumFor" names the subject when the learner has attached Course to this message, the '
   + "canvas facts above say so when they have. That chip is an explicit order for a persistent "
   + "learning path through a subject over time, and it is the ONLY thing that makes this field "
   + "non-null. Without it, this is null on every turn, however much their words sound like wanting "
   + 'a course: "teach me X", "walk me through X properly", even "make me a plan for X" are study '
-  + "or reply turns, not course orders — do the turn, and when a full course genuinely seems to be "
+  + "or reply turns, not course orders, do the turn, and when a full course genuinely seems to be "
   + "what they want, say in one line that the Course button under + will build one. When the chip "
   + 'IS attached, name the subject the path should cover, as a subject ("organic chemistry"), '
   + 'never their sentence back at them. It rides WITH your other answers: a course request is '
-  + 'usually also "study". The WHICH-SUBJECT rule applies here unchanged — a category with no '
-  + "member chosen is a question back, not a plan — and if they asked an ordinary question, this "
+  + 'usually also "study". The WHICH-SUBJECT rule applies here unchanged, a category with no '
+  + "member chosen is a question back, not a plan, and if they asked an ordinary question, this "
   + "is null even with the chip attached.",
   "",
   // 🔴🔴 THIS IS §38's PHRASE PATH, WRITTEN OUT. The contract bans a "test me" BUTTON and then
@@ -1174,9 +1260,9 @@ const DECISION_CONTRACT = [
   // one — `test-run.test.ts` holds that absence — so this paragraph is the only way a learner can
   // ever ask to be checked.
   '"wantsTest" is true when the learner is asking to be CHECKED on material they have already been '
-  + 'taught — here in the conversation, or earlier in this canvas — rather than taught something '
+  + 'taught, here in the conversation, or earlier in this canvas, rather than taught something '
   + 'new: "test me on this", "can you check I actually know this", "give me some practice '
-  + 'questions", "quiz me before my exam". Read what they mean, not the words they used — the same '
+  + 'questions", "quiz me before my exam". Read what they mean, not the words they used, the same '
   + "request in any language, and phrased any way, is this. It rides WITH your other answers.",
   "",
   // 🔴🔴 THE QUESTIONS THEMSELVES, BECAUSE THE POOL THEY CAME FROM NO LONGER EXISTS HERE.
@@ -1189,10 +1275,13 @@ const DECISION_CONTRACT = [
   // wrote them.
   '"check" is the questions themselves, written whenever "wantsTest" is true: [{"prompt": "…", '
   + '"options": [{"text": "…", "correct": true}, {"text": "…"}]}]. Two to five options each, '
-  + "EXACTLY ONE marked correct, up to twelve questions — three to five makes a good check. Ask "
+  + "EXACTLY ONE marked correct, up to twelve questions, three to five makes a good check. Ask "
   + "about what was actually said in this conversation, make the wrong options genuinely tempting "
   + "rather than obviously silly, and vary which seat the right answer sits in. They are shown as "
-  + "tappable chips under your answer, so do not also write them out in your prose.",
+  + "tappable chips under your answer, so do not also write them out in your prose. Do not announce "
+  + "them either: no \"here it is\", no \"five questions coming up\", no describing what the quiz "
+  + "is about to ask. The learner is looking at it. Answer whatever they actually asked, and if "
+  + "they asked for nothing but the check, one short line is the whole answer.",
 
   // 🔴🔴 THE CHIPS ACCOMPANY AN ANSWER; THEY NEVER REPLACE ONE, AND THE SENTENCE ABOVE CAUSED
   // EXACTLY THAT. "Do not also write them out in your prose" presupposes prose exists — the model
@@ -1205,8 +1294,8 @@ const DECISION_CONTRACT = [
   // the prose promised a picture that was missing, here the chips test prose that is missing. Both
   // are the model treating one half of a two-part answer as the whole of it.
   "🔴 A check NEVER replaces your answer. The chips sit UNDER what you said, so write the teaching "
-  + "first and let them follow. If the learner asks to be taught AND tested — \"explain X then quiz "
-  + "me\" — the explanation is the answer and the questions are the check on it; sending questions "
+  + "first and let them follow. If the learner asks to be taught AND tested, \"explain X then quiz "
+  + "me\": the explanation is the answer and the questions are the check on it; sending questions "
   + "with an empty answer leaves them being tested on a lesson you never gave.",
   // 🔴🔴 THE OWNER CAUGHT THIS ON SCREEN, 2026-08-25: *"it also said 'the image above', and it was
   // actually below."* The reply had written "The quiz above will test you on these parts" with the
@@ -1216,7 +1305,7 @@ const DECISION_CONTRACT = [
   "🔴 NEVER SAY WHERE SOMETHING IS ON SCREEN. Not \"the quiz above\", not \"the diagram below\", not "
   + "\"the image on the right\". You cannot see the page, and the layout is not yours to describe: "
   + "chips, pictures and cards are placed by the canvas and sit differently on a phone and a laptop. "
-  + "Name things by what they ARE — \"these questions\", \"this diagram\" — never by position.",
+  + "Name things by what they ARE, \"these questions\", \"this diagram\": never by position.",
   "",
 
   // 🔴🔴🔴 IMAGE OCCLUSION AS A TESTING TOOL (owner 2026-08-25): *"DeepSeek should have the image
@@ -1236,7 +1325,7 @@ const DECISION_CONTRACT = [
   '"checkFigure" is a diagram to be tested on, written ONLY when "wantsTest" is true and the '
   + "material has a diagram worth knowing the parts of: anatomy, a circuit, a cell, a map, an "
   + "engine, a plant, a piece of apparatus. Give the SHORTEST NAME for the thing, the way an index "
-  + 'would list it — "nephron", "neuron", "chloroplast", "four-stroke engine" — never a phrase and '
+  + 'would list it, "nephron", "neuron", "chloroplast", "four-stroke engine": never a phrase and '
   + "never a request. Nemesis finds a licensed diagram, covers one labelled part, and asks the "
   + "learner to name it, using the diagram's other labels as the wrong answers. Leave it out for "
   + "anything that is not a labelled diagram: a topic with no picture, a formula, a date, a "
@@ -1257,13 +1346,13 @@ const DECISION_CONTRACT = [
   "",
   "Only what they actually SAID, never what you concluded about them. \"I have a contract law "
   + "final on the 14th\" is a fact they stated. \"Finds abstraction difficult\" is a judgement "
-  + "about a person and must never be written. Never record what they got right or wrong — that "
+  + "about a person and must never be written. Never record what they got right or wrong: that "
   + "is measured elsewhere, properly. Leave this an empty list on almost every turn: most "
   + "messages contain nothing durable, and a list filled every turn is a memory nobody can read. "
   + "At most three, and never something already in what you know about them above.",
   "",
   "It is false when they are asking to be TAUGHT, when they want to be walked through something, "
-  + "or when nothing has been taught on this canvas yet — there is nothing to check. Do not "
+  + "or when nothing has been taught on this canvas yet, because there is nothing to check. Do not "
   + "promise a number of questions or say what they will cover: the canvas builds the test from "
   + "what it can honestly ask about, and it may find too little and say so. One line is enough.",
   "",
@@ -1313,8 +1402,8 @@ const DECISION_CONTRACT = [
   // (rightly) dropped by `readTurnDecision`. So the steering case is named as "study", where the
   // card is allowed — the throwaway-question drop is untouched.
   "A session already underway can need a decision too. When the honest next move is the learner "
-  + "picking — which part of their material to take first, what order to go in, how to approach "
-  + "the session — that pick is a \"study\" turn with a \"question\": two to four real options "
+  + "picking, which part of their material to take first, what order to go in, how to approach "
+  + "the session, that pick is a \"study\" turn with a \"question\": two to four real options "
   + "drawn from their material, allowOther true, never a paragraph that lists everything and ends "
   + "\"which one do you want?\". The card is how a learner picks; prose that asks them to type an "
   + "option back makes them do the card's job by hand.",
@@ -1325,7 +1414,7 @@ const DECISION_CONTRACT = [
   // dropped by `readTurnDecision`, so a model obeying either rule makes the card unreachable
   // exactly where the owner asked for it.
   "That is not what step 1 bans and not what the question-back rule below bans. Step 1 bans "
-  + "interrogating someone INSTEAD of starting — when they first name a subject, you still go. The "
+  + "interrogating someone INSTEAD of starting. When they first name a subject, you still go. The "
   + "question-back rule bans asking in prose while taking the screen. A pick offered through "
   + "\"question\" on a \"study\" turn does neither: the turn is parked, the card is shown, and the "
   + "study you chose runs once they answer.",
@@ -1439,7 +1528,7 @@ const DECISION_CONTRACT = [
   // thing a reply may not push off the canvas (see `composeSurface`), so the lesson screen and the
   // question stack on one surface and the composer now points at two different things at once.
   "This holds whatever you chose above: if you are asking the learner a question back, \"then\" is "
-  + "\"reply\". You cannot ask someone what they want and take the screen over in the same turn — "
+  + "\"reply\". You cannot ask someone what they want and take the screen over in the same turn, "
   + "they would be looking at a lesson you started and a question you asked, with one box to answer "
   + "both.",
 ].join("\n");
@@ -1551,6 +1640,34 @@ export function turnRouterMessages(input: {
         role: "system" as const,
       }]
       : []),
+    // 🔴🔴 THE CATALOGUE IS A FACT ABOUT THEIR ACCOUNT, LABELLED AS ONE. Same rule every other
+    // block here follows: it says what is true, never what to do about it. A catalogue phrased as
+    // an instruction ("use the calendar") is a model that files an event every time somebody
+    // mentions Tuesday.
+    ...(context.toolCatalogue.trim()
+      ? [{
+        content:
+          "WHAT YOU CAN DO IN THIS LEARNER'S OWN WORKSPACE. Ask for these in the decision block's "
+          + `"tools" field and the results come back to you before you answer. You have `
+          + `${context.toolRoundsLeft} more round(s) of this on this turn; at zero, answer from what `
+          + "you already have and say plainly if something is still unknown.\n\n"
+          + context.toolCatalogue.trim(),
+        role: "system" as const,
+      }]
+      : []),
+    // 🔴 WHAT ACTUALLY CAME BACK, VERBATIM. Never a summary of it: a model reading a paraphrase of
+    // its own tool results will confidently answer about the paraphrase.
+    ...(context.toolContext.trim()
+      ? [{
+        content:
+          "WHAT YOUR TOOLS RETURNED THIS TURN. These are real results from the learner's own "
+          + "workspace. A result saying confirm_required means NOTHING HAPPENED: the learner has "
+          + "been shown a card and has not pressed it. Never say you did something that came back "
+          + "held.\n\n"
+          + context.toolContext.trim(),
+        role: "system" as const,
+      }]
+      : []),
     // 🔴 REAL ALTERNATING TURNS, NOT A SUMMARY OF THEM. A pronoun resolves against a conversation;
     // it does not resolve against a paragraph describing one. Nemesis's own past turns go in as the
     // plain sentence the learner actually saw rather than as the envelope it arrived in, because
@@ -1658,7 +1775,13 @@ export function readTurnDecision(raw: string): TurnDecision | null {
   // fallback for a turn that would otherwise be thrown away, not a second supported shape. LaTeX
   // written into `say` will still be mangled by JSON escaping — which is exactly why the contract
   // moved — so this recovers the turn without making the old shape safe.
-  const say = outside || asText(parsed.say);
+  // 🔴🔴🔴 THE MODEL'S GUESS ABOUT WHERE THINGS SIT ON SCREEN IS REMOVED HERE, because the
+  // contract asking it not to make one DID NOT HOLD. The owner caught "the quiz above" with the
+  // quiz below; a paragraph forbidding it outright went into the packet; the very next production
+  // run said "Now, try the questions below." Fourth prompt rule in this feature to fail, and the
+  // house answer is written down — when the model declines after several attempts, let trusted
+  // code finish the request. See `screen-positions.ts` for what it will and will not touch.
+  const say = stripScreenPositions(outside || asText(parsed.say));
   const then = asAction(parsed.then);
   // 🔴 A BLOCK WITH NO `then` AND NO ANSWER IS NOT A DECISION. Both empty means the model emitted
   // something JSON-shaped that says nothing, and treating it as a turn would blank the screen.
@@ -1734,6 +1857,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // this line runs, and nothing here can change it — which is what keeps this a request the
     // canvas may act on rather than a fourth action smuggled around `asAction`'s whitelist.
     curriculumFor: asText(parsed.curriculumFor) || null,
+    tools: readToolAsks(parsed.tools),
   };
 }
 
@@ -1786,13 +1910,13 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {

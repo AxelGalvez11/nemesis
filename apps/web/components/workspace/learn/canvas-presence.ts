@@ -203,12 +203,26 @@ export function canvasPresentation(input: {
    * stays ambient and reports itself the way it always did.
    */
   turnInFlight?: boolean;
+  /**
+   * The learner attached something for Nemesis to read.
+   *
+   * 🔴🔴🔴 IT IS WHAT SEPARATES "WE FOUND NOTHING IN YOUR MATERIAL" FROM AN ACCUSATION. `quiet`
+   * says *"Nemesis hasn't found anything to ask you about yet"*, which is an honest report about a
+   * lecture that produced no questions and a nonsense one about a canvas that was only ever a
+   * conversation: nothing was attached, so nothing was searched, so there is nothing to have failed
+   * to find. The owner reopened a chat canvas and read it as the product going looking for
+   * something to teach him, unasked. He was right.
+   *
+   * With no material, an empty surface is simply an empty surface, and the invitation says so.
+   */
+  hasMaterial?: boolean;
 }): CanvasPresentation {
   const {
     answerOwed = false,
     aside = "none",
     blocks,
     canvasState,
+    hasMaterial = true,
     materialIsTheAction = false,
     policyPresenting,
     turnInFlight = false,
@@ -264,7 +278,7 @@ export function canvasPresentation(input: {
           ? "reading"
           : turnInFlight || working
             ? "preparing"
-            : hasNotBegun(canvasState)
+            : hasNotBegun(canvasState) || !hasMaterial
               ? "invitation"
               : "quiet";
 

@@ -40,8 +40,9 @@ import {
 } from "@/lib/learn/canvas-api";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
-import { appendMoment, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
-import { makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { appendMoment, lastThingSaid, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
+import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { isMakerCapability, type MakerCapability } from "@/lib/learn/composer-capability";
 import { planResearch } from "@/lib/research/run-research";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
@@ -81,6 +82,8 @@ import {
   type UserQuestion,
 } from "@/lib/learn/clarify-question";
 import { askCanvasChat, type TurnSurroundings } from "./canvas-chat";
+import { runConfirmed, type PendingConfirmation } from "@/lib/learn/canvas-tools";
+import type { ThinkingMark } from "@/lib/learn/thinking-phases";
 import { prepareWebSourcePromotion } from "./web-source-promotion";
 
 const RECALL_CARDS = 8;
@@ -179,6 +182,15 @@ type CanvasAside = {
   topic?: string;
   /** Figures this reply draws, validated, in the order its `[figure n]` markers count into. */
   visuals?: readonly CanvasVisualRequest[];
+  /**
+   * Something this turn asked to do in the learner's workspace that has NOT happened.
+   *
+   * 🔴 IT LIVES ON THE ASIDE RATHER THAN IN ITS OWN STATE BECAUSE IT BELONGS TO ONE ANSWER. The
+   * card sits under the sentence that explains it, and the next turn replaces both together — a
+   * separate state would leave yesterday's confirmation card hanging under today's answer, which is
+   * the one way a consent button can become genuinely dangerous.
+   */
+  pending?: PendingConfirmation | null;
 } | null;
 
 /**
@@ -228,6 +240,8 @@ export interface CanvasSession {
   stage: TurnStage;
   /** A real step running inside the turn — the caption's fallback when no milestone covers it. */
   work: string | null;
+  /** The mark that belongs beside `work`, or null when its author had none to give. */
+  workMark: ThinkingMark | null;
   /** Words the learner has already asked the meaning of, for `lookedUpMarks`. Sitting-scoped. */
   lookedUp: readonly string[];
   /** The id of the prompt whose answer is being read, or null. */
@@ -315,6 +329,17 @@ export interface CanvasSession {
   startResearchPlan: () => void;
   /** Discard it. Nothing was spent, so there is nothing to undo. */
   cancelResearchPlan: () => void;
+  /**
+   * The artifact this turn just made, handed back IN the conversation rather than only filed in the
+   * outputs panel (owner 2026-08-25, with screenshots of the reference).
+   *
+   * 🔴 THE LAST ONE, NOT A LIST — the panel is the list. This is the receipt for what just
+   * happened, and the next make replaces it.
+   */
+  madeArtifact: CanvasOutput | null;
+  /** Dismiss the receipt. The artifact stays in the outputs panel, which is what makes clearing it
+   *  safe rather than destructive. */
+  clearMadeArtifact: () => void;
   /** Decisions already settled this sitting, as facts for the packet. Empty nearly always. */
   clarified: readonly string[];
   /**
@@ -353,6 +378,13 @@ export interface CanvasSession {
   /** Turn the current conversational answer into an active learning session. Cited web pages are
    *  promoted through the ordinary source-ingestion door before the existing Canvas policy starts. */
   learnFromAside: () => Promise<void>;
+  /**
+   * Answer the confirmation card on the current aside: `true` does the thing, `false` drops it.
+   *
+   * 🔴 A PRESS IS THE ONLY THING THAT REACHES IT. Nothing the model writes can call this, which is
+   * what makes the gate in `canvas-tools.ts` mean anything.
+   */
+  confirmPending: (approve: boolean) => Promise<void>;
   markKnown: (blockId: string, known: boolean) => void;
   toggleCollapsed: (blockId: string, collapsed: boolean) => void;
   gradeRecall: (
@@ -418,6 +450,28 @@ export interface CanvasSession {
   reset: () => void;
 }
 
+/** What the learner is told once a thing exists, and where to find it. 🔴 A `Record` over the whole
+ *  union, so a new deliverable is a compile error here rather than a sentence about the wrong kind
+ *  of artifact in the wrong place. */
+const MADE_NOTICE: Record<DeliverableKind, string> = {
+  document: "Document ready. Open it from the outputs panel to read it or download the Word file.",
+  flashcards: "Flashcards saved to your Library.",
+  note: "Note saved to your Library.",
+  pdf: "PDF ready. Open it from the outputs panel to read it or download the file.",
+  report: "Research saved to your Library, with its sources.",
+  sheet: "Spreadsheet ready. Open it from the outputs panel to see the table or download the CSV.",
+  slides: "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks.",
+};
+
+/** What the busy line says while each maker runs. 🔴 A `Record` over the union, so a new maker is a
+ *  compile error here rather than a blank caption at runtime. */
+const MAKER_LABELS: Record<MakerCapability, string> = {
+  document: "Writing your document",
+  pdf: "Writing your PDF",
+  sheet: "Building your spreadsheet",
+  slides: "Building your slides",
+};
+
 export function useCanvasSession(canvasId: string | null): CanvasSession {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
@@ -451,6 +505,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * two different questions and had been sharing one answer.
    */
   const [work, setWork] = useState<string | null>(null);
+  /** The kind that arrived WITH `work`, when its author knew one. Null for a label that did not
+   *  bring one, which is what keeps a mark from ever being guessed from words. */
+  const [workMark, setWorkMark] = useState<ThinkingMark | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** What the learner said to open this sitting, when a canvas began from an utterance rather than
    *  from a file. Read by the teaching controller; see `TeachingContext.opening`. */
@@ -497,6 +554,20 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * and this is Nemesis showing what it understood before it spends a minute acting on it.
    */
   const [researchPlan, setResearchPlan] = useState<{ question: string; subQuestions: readonly string[] } | null>(null);
+  /**
+   * The artifact this turn just made, so it can be handed back IN THE CONVERSATION.
+   *
+   * 🔴🔴 THE PANEL WAS NOT ENOUGH, AND THE OWNER SHOWED WHY WITH SCREENSHOTS (2026-08-25, *"should
+   * work like this btw"*). A finished file announced itself with one line of notice text and then
+   * lived behind a control the learner had to know to open. In the reference the file arrives where
+   * the work happened: a card in the thread, with its name and its kind on it.
+   *
+   * 🔴 IT IS THE LAST ONE, NOT A LIST. The outputs panel is the list — it already keeps everything
+   * this canvas has made, and a second growing list in the flow would be the same information twice
+   * with two places to fix. This is the receipt for what just happened, and the next make replaces
+   * it.
+   */
+  const [madeArtifact, setMadeArtifact] = useState<CanvasOutput | null>(null);
   /**
    * The learner asked to be checked on this canvas's material (§38's phrase path).
    *
@@ -665,6 +736,28 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         if (alive && found) {
           setCanvas(found);
           latest.current = found;
+          // 🔴🔴🔴 REOPENING PUTS THE LEARNER BACK IN THEIR CONVERSATION. Owner, 2026-08-25, with a
+          // screenshot of "Nemesis hasn't found anything to ask you about yet" on a canvas he had
+          // been talking to: *"i never want to see this ever… a chatbot style interface wouldnt do
+          // this, it would just take user to where the user left off in the conversation."*
+          //
+          // 🔴 THE CONVERSATION WAS ALWAYS THERE, AND ONLY THE SURFACE FORGOT IT. `moments` carries
+          // up to 80 turns of `userText`/`assistantText` and has done since the History Rail, but
+          // the reply lane is fed ONLY by `aside`, which is React state and starts null. So a
+          // canvas whose whole content was a conversation reopened with nothing on it, fell past
+          // every branch of `canvasPresentation`, and landed on the stand-in for "we read your
+          // material and found nothing to ask" — about a canvas that had no material and had not
+          // been asked to find anything.
+          //
+          // 🔴 ONLY WHEN THERE IS NO DOCUMENT. `reply` outranks `reading` in the presence order, so
+          // seeding this on a canvas that holds a lesson would show the last chat line INSTEAD of
+          // the lesson. A canvas with blocks already reopens on the thing the learner was reading.
+          //
+          // 🔴 THE PROSE COMES BACK; THE DRAWINGS DO NOT. A moment stores what was said, not the
+          // visuals that were beside it, so a restored turn is text. Saying so here beats a future
+          // reader assuming the pictures were lost somewhere in this function.
+          const said = found.blocks.length === 0 ? lastThingSaid(found.moments) : null;
+          if (said) setAside({ blockId: null, kind: "reply", text: said });
           setReady(true);
 
           // The course rides the territory marker; a refresh must keep it (acceptance item 10).
@@ -1197,7 +1290,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ? await makeFlashcardsDeliverable(uid, latest.current)
             : kind === "slides"
               ? await makeSlidesDeliverable(uid, latest.current, topic)
-              : kind === "report"
+              : kind === "document" || kind === "pdf"
+                ? await makeDocumentDeliverable(uid, latest.current, kind, topic)
+                : kind === "sheet"
+                  ? await makeSheetDeliverable(uid, latest.current, topic)
+                  : kind === "report"
                 // 🔴 THE ONLY DELIVERABLE THAT NEEDS A TOPIC RATHER THAN LIKING ONE. The other
                 // three read the canvas; this one goes and searches for material the canvas does
                 // not have, so with nothing to research there is nothing to do. The canvas title
@@ -1210,20 +1307,25 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           return;
         }
         update((current) => ({ ...current, outputs: [...(current.outputs ?? []), result.output] }));
+        // 🔴 IN THE FLOW AS WELL AS IN THE PANEL. Both, not either: the panel is the canvas's
+        // record and this is the hand-over.
+        setMadeArtifact(result.output);
         // The notice strip, deliberately — see showNotice's own comment above.
         setError(
           // 🔴 THE MAKER'S OWN LINE WINS WHERE IT HAS ONE. A research run costs a minute and real
           // money, and "saved to your Library" tells the learner nothing about what it did. The
           // report carries the same sentence in its footer, so the two cannot disagree.
-          result.note
-            ? `${result.note}. Saved to your Library.`
-            : kind === "flashcards"
-            ? "Flashcards saved to your Library."
-            : kind === "slides"
-              ? "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks."
-              : kind === "report"
-                ? "Research saved to your Library, with its sources."
-                : "Note saved to your Library.",
+          // 🔴🔴 A `Record` OVER THE KINDS, AND THE TERNARY CHAIN IT REPLACES WAS ALREADY WRONG. It
+          // ended `: "Note saved to your Library."`, which is the branch every kind it did not name
+          // fell into — so making a spreadsheet said a note had been saved to a place it was not
+          // in. Two lies in one sentence, and nothing could catch it because a chain of ternaries
+          // has no missing case. A Record over `DeliverableKind` is a compile error instead.
+          //
+          // 🔴 AND IT SAYS WHERE THE THING ACTUALLY IS. Notes, flashcards and reports are filed in
+          // the Library. A document, a PDF and a spreadsheet are NOT — they live on the canvas as
+          // artifacts you open from the outputs panel, and telling somebody to look in the Library
+          // for one would send them somewhere it has never been.
+          result.note ? `${result.note}. Saved to your Library.` : MADE_NOTICE[kind],
         );
       } finally {
         makingRef.current = false;
@@ -1290,6 +1392,25 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         return null;
       }
 
+      // 🔴🔴 A DECLARED MAKER GOES STRAIGHT TO ITS MAKER, WITH NOTHING LEFT TO ROUTE. `Document`,
+      // `PDF`, `Spreadsheet` and `Presentation` each say what this submission IS, so weighing the
+      // sentence afterwards could only produce a lesson where a file was asked for. This is the
+      // declared twin of `readDeliverableAsk` below, which is the model reading an UNdeclared
+      // sentence — same destination, and the only difference is who decided.
+      //
+      // 🔴 THE LIST COMES FROM `composer-capability.ts`, NOT FROM A CHAIN OF `===` HERE. A condition
+      // spelled out in this file stops being complete the moment the union grows, silently, with
+      // the new capability falling through to an ordinary turn and appearing to do nothing.
+      if (capability && isMakerCapability(capability)) {
+        setBusy({ blockIds: [], kind: "command", label: MAKER_LABELS[capability] });
+        try {
+          await makeDeliverable(capability, said);
+        } finally {
+          setBusy({ kind: null });
+        }
+        return null;
+      }
+
       // 🔴 AN UNMISTAKABLE ARTIFACT ASK IS AN ORDER, NOT A QUESTION (owner 2026-08-25: "if you
       // ask them to make a PowerPoint, then it'll do it for you"). Routed before the policy
       // turn: the learner asked for a THING, and a lesson about the thing instead reads as a
@@ -1310,6 +1431,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
       // `thinking-phases.ts`'s rule holds: a caption is emitted by a step that is genuinely running,
       // never by a timer walking through plausible-sounding stages.
+      // 🔴 `capability === "search"` IS THE ONLY CAPABILITY LEFT BY THIS POINT THAT CHANGES THE TURN
+      // RATHER THAN REPLACING IT. Course rides in the packet, research stopped above, the makers
+      // returned above; Web search alone continues into an ordinary turn with one thing decided.
+      const forceWeb = capability === "search";
       const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "", (found, domains) => {
         // 🔴 THE HOSTS TRACK THE BEAT THEY ARRIVED ON. `[]` on the outgoing request clears the
         // previous round; the real list replaces it the moment the results land.
@@ -1342,13 +1467,25 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 A REAL STEP, REPORTED WHILE IT RUNS, AND IT DOES NOT LOCK THE COMPOSER. The preview
       // prefers a milestone over it, so this shows only where the model had nothing to say about
       // the stage the turn is in.
-      (label) => setWork(label),
+      // 🔴 THE MARK IS STORED BESIDE THE LABEL, NEVER DERIVED FROM IT LATER. See `thinkingMark`:
+      // a label that arrives with a kind may show it; one that arrives without stays unmarked.
+      (label, mark) => {
+        setWork(label);
+        setWorkMark(mark ?? null);
+      },
       // The one-shot capability, as a FACT in the packet. Never a branch in this function.
-      capability === "course");
+      capability === "course",
+      // …and the one that IS a branch, over there rather than here: a declared Web search is the
+      // learner deciding, so it forces the first round rather than being argued for in the packet.
+      forceWeb);
       setBusy({ kind: null });
       setMilestones([]);
       setStage("decided");
       setWork(null);
+      // 🔴 CLEARED WITH THE LABEL IT BELONGS TO. A mark left behind would sit beside whatever the
+      // NEXT step says, which is a picture contradicting a sentence — the exact failure
+      // `thinkingMark`'s precedence rule exists to prevent.
+      setWorkMark(null);
       // 🔴🔴 GATED BEFORE ANYTHING READS IT — owner ruling, 2026-08-23: a course builds ONLY behind
       // the Course chip. The contract says so too, but "teach me" over a fat PDF read as a course
       // order once already, and the cost was a minutes-long research pass and a canvas renamed
@@ -1494,6 +1631,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             question: said,
             consulted: result.consulted,
             sources: result.sources,
+            pending: result.pending,
             text: decision.say,
             topic: decision.topic ?? undefined,
             visuals: decision.visuals,
@@ -1576,6 +1714,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         kind: "reply",
         question: said,
         consulted: result.consulted,
+        // 🔴 THE HELD CALL RIDES THE ANSWER IT BELONGS TO. `askCanvasChat` stopped the turn the
+        // moment a tool came back held, so this is the one thing the model asked for that the
+        // learner has not yet allowed. See `canvas-tools.ts` for why it is not fed back to the model.
+        pending: result.pending,
         sources: result.sources,
         text: [decision.say, courseNote].filter(Boolean).join("\n\n"),
         topic: decision.topic ?? undefined,
@@ -2331,6 +2473,36 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   /** Throw the plan away. Nothing was spent, so there is nothing to undo. */
   const cancelResearchPlan = useCallback(() => setResearchPlan(null), []);
 
+  /**
+   * The learner's answer to a confirmation card: do it, or do not.
+   *
+   * 🔴🔴 THIS IS THE ONLY PLACE IN THE CANVAS THAT CAN SET `confirmed`, AND THAT IS THE ENTIRE
+   * SAFETY ARGUMENT OF THE FEATURE. It runs from a press and from nothing else — not from an
+   * envelope, not from a tool result, not from a sentence the model wrote. `runConfirmed` re-runs
+   * the SAME call the card described, never a reconstruction of it.
+   *
+   * 🔴 THE CARD GOES EITHER WAY, AND THE ANSWER SAYS WHICH. A card that stayed after a press is one
+   * a second click can fire again; a card that vanished silently leaves the learner unsure whether
+   * their email went. So the pending item is cleared and one short line takes its place.
+   *
+   * 🔴 NO SECOND MODEL ROUND. Reporting "Deleted." costs nothing and cannot be wrong; asking the
+   * model to narrate an outcome it did not witness is exactly how "I've sent it" gets written about
+   * a request that failed.
+   */
+  const confirmPending = useCallback(async (approve: boolean) => {
+    const held = aside?.pending;
+    if (!held) return;
+    if (!approve) {
+      setAside((current) => (current ? { ...current, pending: null } : current));
+      return;
+    }
+    const done = await runConfirmed(held);
+    const line = done.ok
+      ? held.kind === "delete" ? "Done, it is gone." : `Done, sent to ${held.pending.app}.`
+      : done.error ?? "That did not go through.";
+    setAside((current) => (current ? { ...current, pending: null, text: `${current.text}\n\n${line}` } : current));
+  }, [aside]);
+
   return {
     canvas,
     busy,
@@ -2339,6 +2511,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     milestones,
     stage,
     work,
+    workMark,
     lookedUp,
     /** The decision Nemesis is waiting on, or null. See `clarify-question.ts`. */
     clarifying: clarifying?.question ?? null,
@@ -2346,6 +2519,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     researchPlan,
     startResearchPlan,
     cancelResearchPlan,
+    confirmPending,
+    madeArtifact,
+    /** Dismisses the receipt. The artifact itself is untouched — it stays in the outputs panel,
+     *  which is what makes clearing this safe rather than destructive. */
+    clearMadeArtifact: useCallback(() => setMadeArtifact(null), []),
     /** Decisions already settled this sitting, as facts for the packet. */
     clarified,
     answerClarification,

@@ -47,10 +47,10 @@ export function buildRecordingNoteMessages(transcript: string, context?: string)
       content:
         "You are turning a recording into the notes a student will revise from. Any subject or profession; never assume a biomedical one. " +
         "Write markdown. Open with one short paragraph saying what this session covered and what the listener should be able to do afterwards. " +
-        "Then organise BY IDEA, not by chronology — group what belongs together even if it was said twenty minutes apart. Use headings. " +
+        "Then organise BY IDEA, not by chronology: group what belongs together even if it was said twenty minutes apart. Use headings. " +
         "For each idea give the point, the reasoning or mechanism behind it, and whatever example, number, or case the speaker used to make it. Prose and short lists both fine; a page of bare bullets is not. " +
         "Mark explicitly anything the speaker called examinable, important, or likely to appear on a test, and anything they were openly unsure about. " +
-        "Keep every figure, unit, name, and definition exactly as spoken. Never add material that was not said — if the transcript is too fragmentary to support a section, leave it out rather than padding it. " +
+        "Keep every figure, unit, name, and definition exactly as spoken. Never add material that was not said. If the transcript is too fragmentary to support a section, leave it out rather than padding it. " +
         "Finish with a short 'Open questions' list of what was raised but not resolved. " +
         // The title rides on this same call rather than a second round-trip
         // (owner 2026-07-28: "can the note title also be renamed instead of
@@ -59,7 +59,7 @@ export function buildRecordingNoteMessages(transcript: string, context?: string)
         // splitRecordingNote strips this line back off before the body is saved,
         // and the caller falls back to the dated title when the model skips it.
         "Start your reply with one line in exactly this form: Title: <4 to 8 words naming what was actually discussed>. " +
-        "Make it specific enough to recognise a month later — never the word 'Recording', never a date, never 'Lecture Notes'. " +
+        "Make it specific enough to recognise a month later, never the word 'Recording', never a date, never 'Lecture Notes'. " +
         "Then a blank line, then the markdown body only: no title heading, no code fences, no preamble.",
     },
     {

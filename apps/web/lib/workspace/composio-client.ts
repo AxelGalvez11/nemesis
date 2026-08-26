@@ -176,6 +176,8 @@ export async function runAction(input: {
     const pending: PendingAction = {
       action: input.action,
       app: input.app,
+      // Carried so an approval re-runs THIS, not a reissue of it. See the field's own note.
+      arguments: input.arguments,
       summary: summarise(input.action, input.arguments),
     };
     // Built through the shared helper so the phrasing the model sees is identical on both sides.

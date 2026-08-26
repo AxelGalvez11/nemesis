@@ -1686,7 +1686,7 @@
 /* ── 4. SOURCES ──────────────────────────────────────────────────────────── */
 
 .srcs { padding: clamp(90px, 13vw, 170px) 0; }
-/* Wide enough for "nemesis builds the path." to sit on ONE line. The headline
+/* Wide enough for "Nemesis builds the path." to sit on ONE line. The headline
    carries its own <br>, so the measure must not add a second break inside the
    second sentence — which turned a two-line statement into a ragged three. */
 .srcs .chead { max-width: 26ch; }

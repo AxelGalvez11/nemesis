@@ -22,7 +22,6 @@
     "mascot:board": "tsx scripts/mascot-board.mts",
     "brand:raster": "tsx scripts/brand-raster.mts",
     "research-probe": "tsx --env-file=.env.local scripts/research-probe.ts",
-    "character:sync": "tsx scripts/sync-landing-character.mts",
     "character:faces": "tsx scripts/character-faces.mts"
   },
   "dependencies": {

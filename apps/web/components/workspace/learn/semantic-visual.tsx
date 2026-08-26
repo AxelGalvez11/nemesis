@@ -8,6 +8,7 @@ import { layoutFlow, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/
 
 import { AnatomyViewer } from "./anatomy-viewer";
 import { ChemicalStructure } from "./chemical-structure";
+import { MechanismScheme } from "./mechanism-scheme";
 import { Macromolecule } from "./macromolecule-viewer";
 import { MusicScore } from "./music-score";
 import { ReferenceFigure } from "./reference-figure";
@@ -73,6 +74,10 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
       {visual.kind === "relationship" ? <Relationship visual={visual} /> : null}
       {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
       {visual.kind === "structure" ? <ChemicalStructure visual={visual} /> : null}
+      {/* 🔴 THE LINK THAT KILLED `figure` FOR WEEKS: a capability that parses, routes and renders
+          nowhere. A mechanism is several structure frames joined by reaction arrows, and this is
+          the one place the scheme is mounted. */}
+      {visual.kind === "mechanism" ? <MechanismScheme visual={visual} /> : null}
       {visual.kind === "macromolecule" ? <Macromolecule visual={visual} /> : null}
       {visual.kind === "anatomy" ? <AnatomyViewer visual={visual} /> : null}
       {visual.kind === "table" ? <DataTable visual={visual} /> : null}

@@ -19,7 +19,12 @@ test("🔴 a report row in the outputs panel actually opens", () => {
     !/output\.kind === "note" && output\.notePath/.test(source),
     "🔴 the row only opens for one named kind, so any other note-shaped output is a dead row",
   );
-  assert.match(source, /Research · cited, in your Library/, "a report row does not say what it is");
+  // 🔴 THE SENTENCE MOVED ONTO THE ICON — owner, 2026-08-25: *"remove description for outputs,
+  // inputs and sources."* Every output row is one line now, so "Research · cited, in your Library"
+  // is gone with the other second lines. What this guard actually cares about survives: a report is
+  // still distinguishable from a note at a glance, and it still opens. `report: "book"` is that
+  // distinction, and `notePath` is what makes the row openable.
+  assert.match(source, /report: "book"/, "a report row is no longer told apart from a note");
 });
 
 test("🔴 there is still no button that makes a report", () => {

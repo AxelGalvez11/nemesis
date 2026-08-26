@@ -19,8 +19,9 @@
 // still has the deck or the note; if the CONTENT write fails, the whole deliverable failed
 // and says so.
 
+import { readModelJson } from "../model-json";
 import { supabase } from "@/lib/supabase";
-import { postChatCompletion } from "@/lib/workspace/chat-api";
+import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 
@@ -38,8 +39,16 @@ import { findLabelledFigure } from "./figure-occlusion-api";
 import { readFigureSubject } from "./figure-subject";
 import { occlusionCards } from "./occlusion-from-labels";
 
-/** What the canvas can make today. Reports join when they have a real home. */
-export type DeliverableKind = "flashcards" | "note" | "report" | "slides";
+/**
+ * What the canvas can make today.
+ *
+ * 🔴 `document`, `pdf` AND `sheet` ARE FILES, NOT LIBRARY ROWS, and that is the difference between
+ * them and `note`. A note is Markdown filed in the Library to be read on screen; these are things
+ * the learner takes away and opens in Word, a PDF reader or Excel. `document` and `pdf` are the
+ * SAME Markdown with two file formats — one model call, two writers — because asking the model to
+ * "write it again but as a PDF" would produce different prose for no reason.
+ */
+export type DeliverableKind = "document" | "flashcards" | "note" | "pdf" | "report" | "sheet" | "slides";
 
 export interface DeliverableResult {
   /** A line about what it cost, when the maker has one. Shown instead of the generic notice. */
@@ -50,6 +59,21 @@ export interface DeliverableResult {
 export interface DeliverableFailure {
   error: string;
 }
+
+/**
+ * Output headroom for the makers whose answer a PARSER reads.
+ *
+ * 🔴🔴 THESE EXIST BECAUSE NOTHING IN THIS APP EVER SET ONE, and the default cap is well below what
+ * a full deck costs. A truncated sentence is still readable; a truncated JSON object is not, so the
+ * whole answer was discarded and the learner told it "came back unusable" — a message that blames
+ * the model for a limit we never raised. The owner hit it asking for a glycolysis deck.
+ *
+ * Sized to the artifact: a twelve-slide deck with notes and takeaways is the largest, a table of
+ * short cells the smallest.
+ */
+const DECK_MAX_TOKENS = 8192;
+const CARDS_MAX_TOKENS = 8192;
+const TABLE_MAX_TOKENS = 4096;
 
 /** How much of the canvas the model sees. Enough for a study artifact; not the whole
  *  transcript of a long session. */
@@ -115,18 +139,23 @@ export function canvasHasMaterial(canvas: LearningCanvas): boolean {
  *  preamble tolerated, anything else refused. Exported for its tests — this is the seam
  *  where a chatty model turns into bad rows. */
 export function readCardsJson(text: string): { front: string; back: string }[] | null {
-  const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start === -1 || end <= start) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(parsed)) return null;
+  // Structure-only repair, so a long pack that ran past the cap keeps the cards that arrived whole.
+  // A half-written card survives the repair and is dropped by the front/back check below, which is
+  // where that judgement belongs. See lib/model-json.ts.
+  const parsed = readModelJson(text);
+  // 🔴🔴 TWO REPLY SHAPES, AND THE SECOND ONE IS EASY TO LOSE. The model answers either with a bare
+  // array of cards or with `{"cards": [...], "figure": "..."}` when it wants a figure occluded. The
+  // old parser sliced from the first `[` to the last `]`, which read the array out of BOTH by
+  // accident. `readModelJson` returns the real root, so the object form has to be unwrapped on
+  // purpose — and a guard caught this the moment it was not.
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as { cards?: unknown } | null)?.cards)
+      ? ((parsed as { cards: unknown[] }).cards)
+      : null;
+  if (!list) return null;
   const cards: { front: string; back: string }[] = [];
-  for (const entry of parsed) {
+  for (const entry of list) {
     if (typeof entry !== "object" || entry === null) continue;
     const front = String((entry as { front?: unknown }).front ?? "").trim();
     const back = String((entry as { back?: unknown }).back ?? "").trim();
@@ -207,10 +236,14 @@ export async function makeFlashcardsDeliverable(
   canvas: LearningCanvas,
 ): Promise<DeliverableResult | DeliverableFailure> {
   if (!canvasHasMaterial(canvas)) return { error: "There's nothing on the canvas to make cards from yet." };
-  const reply = await postChatCompletion(uid, [
-    { content: CARDS_SYSTEM, role: "system" },
-    { content: canvasBrief(canvas), role: "user" },
-  ]);
+  const reply = await postChatCompletion(
+    uid,
+    [
+      { content: CARDS_SYSTEM, role: "system" },
+      { content: canvasBrief(canvas), role: "user" },
+    ],
+    { maxTokens: CARDS_MAX_TOKENS },
+  );
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const cards = readCardsJson(reply.text);
   if (!cards) return { error: "The cards came back unusable, so nothing was saved. Try again." };
@@ -222,7 +255,17 @@ export async function makeFlashcardsDeliverable(
   // Flashcards shelf, under a heading that says Flashcards, above a stack of flashcards. On an
   // untitled canvas it produced "Nemesis canvas · flashcards" — a deck named after the tool
   // that made it instead of the thing it is about.
-  const name = deckName(canvas.title);
+  // 🔴 THE SUBJECT THE CARD WRITER NAMED IS ALSO THE BEST FALLBACK NAME, and reading it here
+  // rather than after the insert is the whole fix. Measured in production 2026-08-25: a nephron
+  // canvas opened from a deep link has an EMPTY title, so a deck of twenty nephron cards saved as
+  // "Untitled deck" — honest, and useless on a shelf. The model had just written `"figure":
+  // "nephron"`; that word was sitting in the reply while the deck was being named after nothing.
+  const subject = readFigureSubject(readCardsFigure(reply.text));
+  // 🔴 THE FALLBACK IS CAPITALISED, THE LEARNER'S OWN TITLE IS NOT. The model writes its subject
+  // index-style and lower case ("nephron"); a shelf of deck names wants "Nephron". A title the
+  // learner typed is theirs and is left exactly as they wrote it.
+  const named = canvas.title.trim() || (subject ? subject.charAt(0).toUpperCase() + subject.slice(1) : "");
+  const name = deckName(named);
   const { data, error } = await supabase
     .from("study_decks")
     .insert({ description: "Made on a Nemesis canvas, at your request.", name, user_id: uid })
@@ -253,7 +296,6 @@ export async function makeFlashcardsDeliverable(
   // 🔴 AND A FAILURE HERE COSTS THE PICTURES, NEVER THE DECK. No diagram, no labels, vision off,
   // an unreachable repository: every one of them leaves `figure` null and the text cards save
   // exactly as they would have. `findLabelledFigure` never throws for precisely this reason.
-  const subject = readFigureSubject(readCardsFigure(reply.text));
   if (subject) {
     const figure = await findLabelledFigure(subject);
     for (const card of figure ? occlusionCards(figure) : []) {
@@ -329,6 +371,162 @@ export async function makeNoteDeliverable(
   };
 }
 
+// ---------------------------------------------------------------- what the model is working from
+
+/**
+ * Pages from the web, when the canvas has nothing of its own to build from.
+ *
+ * 🔴🔴 OWNER, 2026-08-25: *"it should be able to use websearch to build documents or other
+ * artifacts if it needs information."* A maker on an empty canvas was writing entirely from the
+ * model's own memory — which is fine for what a model knows well and silently thin for anything
+ * recent, contested or specific. One search costs what an ordinary chat turn that searches costs,
+ * and the learner already asked for the artifact.
+ *
+ * 🔴 ONLY WHEN THERE IS NOTHING ATTACHED, AND THAT LIMIT IS THE POINT. A canvas WITH material has
+ * already been told what to build from: the learner's own lecture, their own slides. Searching
+ * anyway would spend a metered unit to add pages nobody asked for, and would let the web argue
+ * with the source somebody uploaded. Grounded canvases are untouched.
+ *
+ * 🔴 IT CANNOT FAIL THE ARTIFACT. `searchWebContext` swallows its own errors and returns an empty
+ * context, so a search outage means a deck built from model knowledge — exactly what happened
+ * before this existed — rather than an error where a deck should be.
+ */
+async function webContextForTopic(uid: string, subject: string): Promise<string> {
+  if (!subject.trim()) return "";
+  const found = await searchWebContext(uid, subject);
+  if (!found.context.trim()) return "";
+  return `Recent pages on this topic, to build from where they are useful:\n\n${found.context}`;
+}
+
+// ---------------------------------------------------------------- document, PDF and spreadsheet
+
+const DOC_SYSTEM =
+  "You write a clean, self-contained document in Markdown that a learner will open in Word or as " +
+  "a PDF. Start with a single # title line, then sections under ## headings, with short paragraphs " +
+  "and bullet lists where they genuinely help. Cover the material faithfully and compactly. Write " +
+  "and a Markdown table wherever the material is genuinely a comparison — Nemesis renders those " +
+  "properly in both the Word file and the PDF. Write no preamble, no closing remarks and no code " +
+  "blocks.";
+
+const SHEET_SYSTEM =
+  "You turn material into ONE table and return JSON, nothing else. Shape: " +
+  '{"title": string, "columns": [string, ...], "rows": [[string, ...], ...]}. ' +
+  "Every row must have exactly as many cells as there are columns. Choose columns that make the " +
+  "material genuinely comparable — the point is a table somebody can sort and filter, not a " +
+  "paragraph in a grid. Keep cells short. Between 2 and 8 columns. Return JSON only.";
+
+/**
+ * The prose deliverables: one model call, and the caller says which file comes out of it.
+ *
+ * 🔴 IT IS THE SAME MAKER FOR BOTH FORMATS BECAUSE IT IS THE SAME DOCUMENT. The kind is carried
+ * through so the output row knows which writer to run; nothing about the writing changes.
+ */
+export async function makeDocumentDeliverable(
+  uid: string,
+  canvas: LearningCanvas,
+  kind: "document" | "pdf",
+  topic?: string,
+): Promise<DeliverableResult | DeliverableFailure> {
+  // 🔴 GENERALIST, LIKE SLIDES AND FOR THE OWNER'S OWN REASON (2026-08-25: these "are just general
+  // things that a general chat AI should be able to do"). It refuses only when there is neither
+  // material NOR a subject — with a topic it writes from what the model knows, and with material it
+  // is grounded in that.
+  const subject = (topic ?? "").trim() || canvas.title.trim();
+  if (!canvasHasMaterial(canvas) && !subject) {
+    return { error: "Tell me what the document should be about, and I'll write it." };
+  }
+  const brief = canvasHasMaterial(canvas)
+    ? canvasBrief(canvas)
+    : [`Write this document about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
+  const reply = await postChatCompletion(uid, [
+    { content: DOC_SYSTEM, role: "system" },
+    { content: brief, role: "user" },
+  ]);
+  if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
+  const markdown = reply.text.trim();
+  if (markdown.length < 80) return { error: "The document came back empty, so nothing was made. Try again." };
+
+  // The model's own # title when it wrote one, because it read the material and the canvas title
+  // may still be untitled. Falls back the other way round.
+  const heading = /^#\s+(.+)$/m.exec(markdown)?.[1]?.trim();
+  const title = (heading || subject || "Document").slice(0, 120);
+  const assetId = await recordLedger(canvas.id, title);
+  return {
+    output: {
+      ...(assetId ? { assetId } : {}),
+      createdAt: new Date().toISOString(),
+      id: newId(),
+      kind,
+      markdown,
+      title,
+    },
+  };
+}
+
+/**
+ * Reads the model's table.
+ *
+ * 🔴🔴 EVERY ROW IS RESHAPED TO THE COLUMN COUNT, WHICH IS THE ONE THING A CSV CANNOT SURVIVE
+ * GETTING WRONG. A short row shifts every later cell left in the spreadsheet and a long one spills
+ * into a column with no header — both open successfully and are silently wrong, which is worse than
+ * refusing. Padding and truncating means the grid is always rectangular.
+ */
+export function readSheetJson(text: string): { columns: string[]; rows: string[][]; title?: string } | null {
+  // Structure-only repair, so a long table that ran past the cap keeps the rows that arrived
+  // whole rather than becoming nothing. See lib/model-json.ts.
+  const parsed = readModelJson(text);
+  if (!parsed || typeof parsed !== "object") return null;
+  const raw = parsed as { columns?: unknown; rows?: unknown; title?: unknown };
+  const columns = Array.isArray(raw.columns) ? raw.columns.map((c) => String(c ?? "").trim()).filter(Boolean) : [];
+  if (columns.length < 2 || columns.length > 12) return null;
+  const rows: string[][] = [];
+  for (const row of Array.isArray(raw.rows) ? raw.rows : []) {
+    if (!Array.isArray(row)) continue;
+    const cells = columns.map((_, index) => String(row[index] ?? "").trim());
+    if (cells.some(Boolean)) rows.push(cells);
+  }
+  if (!rows.length) return null;
+  return { columns, rows, ...(typeof raw.title === "string" && raw.title.trim() ? { title: raw.title.trim() } : {}) };
+}
+
+export async function makeSheetDeliverable(
+  uid: string,
+  canvas: LearningCanvas,
+  topic?: string,
+): Promise<DeliverableResult | DeliverableFailure> {
+  const subject = (topic ?? "").trim() || canvas.title.trim();
+  if (!canvasHasMaterial(canvas) && !subject) {
+    return { error: "Tell me what the spreadsheet should cover, and I'll build it." };
+  }
+  const brief = canvasHasMaterial(canvas)
+    ? canvasBrief(canvas)
+    : [`Build this table about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
+  const reply = await postChatCompletion(
+    uid,
+    [
+      { content: SHEET_SYSTEM, role: "system" },
+      { content: brief, role: "user" },
+    ],
+    { maxTokens: TABLE_MAX_TOKENS },
+  );
+  if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
+  const table = readSheetJson(reply.text);
+  if (!table) return { error: "The table came back in a shape I couldn't use. Try asking again." };
+
+  const title = (table.title || subject || "Table").slice(0, 120);
+  const assetId = await recordLedger(canvas.id, title);
+  return {
+    output: {
+      ...(assetId ? { assetId } : {}),
+      createdAt: new Date().toISOString(),
+      id: newId(),
+      kind: "sheet",
+      sheet: { columns: table.columns, rows: table.rows },
+      title,
+    },
+  };
+}
+
 // ---------------------------------------------------------------- slides
 
 /**
@@ -360,14 +558,23 @@ export async function makeSlidesDeliverable(
     grounded
       ? canvasBrief(canvas)
       : `Topic: ${subject}\n\nThere is no attached material. Build the deck from your own knowledge of the topic, accurately and at student level.`,
+    grounded ? "" : await webContextForTopic(uid, subject),
     menu,
   ]
     .filter(Boolean)
     .join("\n\n");
-  const reply = await postChatCompletion(uid, [
-    { content: deckSystemPrompt(), role: "system" },
-    { content: brief, role: "user" },
-  ]);
+  // 🔴 THE HEADROOM IS THE FIRST FIX FOR "the slide plan came back unusable". A twelve-slide deck
+  // is a large JSON object and every call in this app ran at the provider's default output cap, so
+  // the answer was cut off mid-object and the parser could only report failure. See
+  // `ChatCompletionOptions.maxTokens`.
+  const reply = await postChatCompletion(
+    uid,
+    [
+      { content: deckSystemPrompt(), role: "system" },
+      { content: brief, role: "user" },
+    ],
+    { maxTokens: DECK_MAX_TOKENS },
+  );
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const plan = readDeckJson(reply.text);
   if (!plan) return { error: "The slide plan came back unusable, so nothing was saved. Try again." };

@@ -74,11 +74,11 @@ export const WORKSPACE_TOOL_DESCRIPTIONS: Record<WebWorkspaceAgentToolName, stri
   find_calendar_issues:
     "Audit the calendar before reorganizing it. Reports, separately: exact_duplicates (same title, same "
     + "date), probable_duplicates (near-identical titles on one date), conflicting_versions (the same exam or "
-    + "assignment on two different dates — the sources disagree about when it is), and overlaps (two different "
-    + "events at the same time — NOT duplicates). Repeating classes are expanded into the dates they actually "
+    + "assignment on two different dates: the sources disagree about when it is), and overlaps (two different "
+    + "events at the same time, NOT duplicates). Repeating classes are expanded into the dates they actually "
     + "meet first, so a one-off event landing on top of one meeting is found; a problem that repeats every week "
     + "is reported once with a `repeats` count. Defaults to every record the student has, and `coverage` says "
-    + "exactly which dates that turned out to be — repeat that rather than implying years you have no records "
+    + "exactly which dates that turned out to be, repeat that rather than implying years you have no records "
     + "for came back clean. Never resolve a conflicting version without the student choosing which date wins.",
 };
 

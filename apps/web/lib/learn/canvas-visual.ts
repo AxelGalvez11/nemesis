@@ -87,6 +87,66 @@ export interface PlotVisual extends CanvasVisualBase {
  * structure cannot arrive with atoms in the wrong places — the depiction is computed from the
  * string, and the string is kept so anybody can check what was asked for.
  */
+/**
+ * One thing a step can point at: an atom, or the bond between two atoms.
+ *
+ * 🔴🔴🔴 THIS VOCABULARY OUTLIVED THE ARROWS IT WAS BUILT FOR, ON THE OWNER'S CALL, 2026-08-26:
+ * *"bad mechanism arrows are worse than no arrows, because they teach the chemistry incorrectly
+ * while also consuming engineering time."* Curly arrows and lone-pair dots are gone until there is a
+ * renderer that can be trusted with them. What survives is the useful half: naming the part of a
+ * structure a step is ABOUT, so the picture can point while the prose does the explaining.
+ *
+ * A bare number is an atom. A pair is the bond between those two atoms. Both count heavy atoms from
+ * zero in the notation.
+ */
+export type HighlightTarget = number | readonly [number, number];
+
+/** The highest heavy-atom index a highlight may name. */
+const MAX_ATOM_INDEX = 300;
+
+const atomIndex = (value: unknown): number | null =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_ATOM_INDEX ? value : null;
+
+/**
+ * Read one highlight target, or null when it is neither an atom nor a bond.
+ *
+ * 🔴 BOUNDS DISCIPLINE, because these indices are handed to a renderer that will look them up in
+ * somebody else's graph. A bond naming one atom twice is not a bond.
+ */
+function highlightTarget(value: unknown): HighlightTarget | null {
+  const single = atomIndex(value);
+  if (single !== null) return single;
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const from = atomIndex(value[0]);
+  const to = atomIndex(value[1]);
+  if (from === null || to === null || from === to) return null;
+  return [from, to] as const;
+}
+
+/**
+ * Read a whole `highlight` array, or say why it is not one.
+ *
+ * 🔴 SHARED BY `structure` AND `mechanism` BECAUSE A STEP IS A STRUCTURE. Two copies of this would
+ * be two places for what a highlight may say to drift apart, and the mechanism lane is exactly
+ * where a divergence would go unnoticed longest.
+ */
+function readHighlight(value: unknown): { highlight: HighlightTarget[] } | { detail: string } {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 40) {
+    return { detail: "highlight must be 1–40 atoms or bonds when present" };
+  }
+  const highlight: HighlightTarget[] = [];
+  for (const item of value) {
+    const target = highlightTarget(item);
+    // 🔴 `null`, NOT FALSY. Atom 0 is a real atom and `!0` is true, so the obvious check refuses
+    // every highlight on the first atom in the notation. An existing test caught this once already.
+    if (target === null) {
+      return { detail: "every highlight is a heavy-atom index 0 to 300, or a bond written as a pair of them" };
+    }
+    highlight.push(target);
+  }
+  return { highlight };
+}
+
 export interface StructureVisual extends CanvasVisualBase {
   kind: "structure";
   /** Which canonical form `value` is written in. A molecule, or a reaction scheme. */
@@ -103,9 +163,9 @@ export interface StructureVisual extends CanvasVisualBase {
    */
   resolvedFrom?: { name: string; provider: "pubchem"; id: string };
   /**
-   * Atoms to pick out, by their position in the notation, counting heavy atoms from zero.
+   * Atoms and bonds to pick out, counting heavy atoms from zero in the notation.
    *
-   * 🔴 INDICES, NOT COLOURS OR SHAPES. The model says WHICH atoms matter; trusted code decides how
+   * 🔴 INDICES, NOT COLOURS OR SHAPES. The model says WHICH parts matter; trusted code decides how
    * "matters" looks, exactly as it decides where every bond goes. A `highlight` carrying a hex
    * colour would be the model supplying rendering instructions, which is the one thing §41 forbids
    * across every representation.
@@ -113,8 +173,13 @@ export interface StructureVisual extends CanvasVisualBase {
    * 🔴 THIS IS WHAT MAKES A STRUCTURE ANSWERABLE-AGAINST. Without it a drawn molecule can only be
    * looked at; with it a lesson can ask "which part of aspirin is the ester?" and mark the answer,
    * which is the difference §41 draws between a learning object and decoration.
+   *
+   * 🔴🔴🔴 AND SINCE 2026-08-26 IT CARRIES THE WEIGHT THE ARROWS USED TO. With curly arrows dropped,
+   * this is how a mechanism step points: highlight the attacking atom and the bond that breaks,
+   * and say in prose what moves where. A pair of indices is the BOND between them, which the
+   * depiction library cannot mark at all and which a step almost always needs.
    */
-  highlight?: readonly number[];
+  highlight?: readonly HighlightTarget[];
   /**
    * Whether carbon atoms are labelled.
    *
@@ -133,27 +198,28 @@ export interface StructureVisual extends CanvasVisualBase {
    */
   conditions?: string;
   reactionLabel?: string;
-  /**
-   * Electron-pushing arrows — the owner's "can we just add the arrows?", 2026-08-24.
-   *
-   * 🔴 THE SAME INDEX SPACE AS `highlight`, AND THAT IS THE WHOLE DESIGN. Each arrow runs from the
-   * heavy atom the electron pair leaves to the heavy atom it moves toward, counting heavy atoms
-   * from zero in the notation. The model states indices; trusted code reads the depiction's own
-   * computed atom positions and draws the curve between them, so an arrow cannot point somewhere
-   * the drawing does not have.
-   *
-   * 🔴 ATOM-TO-ATOM, STATED PLAINLY, AND BOND-ORIGIN ARROWS ARE THE RECORDED GAP. A chemist draws
-   * some arrows from the middle of a bond; this vocabulary approximates that as "from the atom the
-   * pair leaves". It teaches the mechanism conversation; it does not yet draw the exam-perfect
-   * bond-tail, and saying so here beats implying otherwise.
-   *
-   * 🔴 ONLY ON `smiles`, BECAUSE A MECHANISM STEP IS ONE FRAME. Dot-separated species share one
-   * index space, so a nucleophile attacking across "[OH-].CBr" is drawable; `reaction-smiles` lays
-   * out several sub-drawings with per-molecule indices and refuses arrows rather than guessing
-   * which molecule an index meant. Sequence steps as separate structure visuals.
-   */
-  arrows?: readonly { from: number; to: number }[];
 }
+
+/**
+ * 🔴🔴🔴 THERE IS NO `arrows` AND NO `lonePairs`, AND THAT IS A DECISION RATHER THAN AN OMISSION.
+ * Both shipped on 2026-08-25 and were withdrawn by the owner the next day:
+ *
+ *   *"bad mechanism arrows are worse than no arrows because they teach the chemistry incorrectly
+ *    while also consuming engineering time like a small electrical fire… I'd rather have superb
+ *    explanations plus clean structures plus highlighting than a mediocre ChemDraw imitation."*
+ *
+ * The measured state at withdrawal, on the live page: two of six lone-pair dots on a bromine sat
+ * INSIDE the letters, because the clearance was computed as one radius in every direction while an
+ * atom's label is a rectangle up to two and a half times wider than it is tall. That is fixable.
+ * What is not cheaply fixable is that nothing else in the ecosystem solves it either: the one
+ * library that models curly arrows as real objects, Kekule.js, stores them as raw coordinates a
+ * human drags into place, so it hands over the vocabulary and none of the geometry.
+ *
+ * 🔴 SO A MECHANISM IS NOW TAUGHT THE WAY THE OWNER SPECIFIED: clean structures, the reaction arrow
+ * and its conditions between them, `highlight` pointing at the atoms and bonds that change, and the
+ * electron movement stated EXPLICITLY IN PROSE beside the picture. Do not restore arrows or dots
+ * without a renderer that can be trusted with them.
+ */
 
 /**
  * A REAL picture, retrieved from an openly licensed repository — §42's rung three, as a request.
@@ -218,9 +284,45 @@ export type CanvasVisualRequest =
   | FigureVisual
   | FlowVisual
   | MacromoleculeVisual
+  | MechanismVisual
   | PlotVisual
   | StructureVisual
   | SubjectVisual;
+
+/**
+ * A mechanism as one connected scheme: several frames, joined by reaction arrows.
+ *
+ * 🔴🔴🔴 THE OWNER SENT A TEXTBOOK MECHANISM AND ASKED WHY OURS DID NOT LOOK LIKE IT, 2026-08-25.
+ * His picture is ONE diagram: five structures flowing across the page and wrapping onto the next
+ * line, each arrow carrying the change. Ours was five separate framed cards stacked down the page
+ * with paragraphs between them, which reads as five pictures of five molecules rather than as one
+ * reaction going somewhere.
+ *
+ * 🔴 A STEP IS A `structure`, NOT A NEW DRAWING LANE. Each frame is the same SMILES the same drawer
+ * already draws. The only thing this kind adds is the LAYOUT: what sits beside what, and what is
+ * written on the arrow between them. Anything else would be a second renderer for molecules, and
+ * two of those is two places for "what does a mechanism look like" to drift apart.
+ *
+ * 🔴🔴🔴 WHAT THE ELECTRONS DO IS SAID IN PROSE, NOT DRAWN. Owner, 2026-08-26. The frames show the
+ * species, `highlight` points at the atom being attacked and the bond that breaks, and the turn's
+ * own text says "the oxygen lone pair attacks the carbonyl carbon; the pi electrons move onto
+ * oxygen". See the note on `StructureVisual` for why, and for what would have to exist first.
+ *
+ * 🔴 THE MODEL STILL NEVER DRAWS. It names the species at each step and which atoms and bonds
+ * matter; every coordinate on screen is computed here.
+ */
+export interface MechanismVisual extends CanvasVisualBase {
+  kind: "mechanism";
+  steps: readonly {
+    /** The species at this step, as SMILES. Dot-separated for several molecules in one frame. */
+    value: string;
+    /** The atoms and bonds THIS step is about, in this step's own index space. */
+    highlight?: readonly HighlightTarget[];
+    /** What is written on the reaction arrow LEAVING this step: a reagent, a condition, a name. */
+    label?: string;
+    carbons?: "skeletal" | "all";
+  }[];
+}
 
 /**
  * A macromolecule — a protein, a nucleic acid — named by its structure-database accession (§42).
@@ -540,18 +642,21 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
     // 🔴 BOUNDED AND INTEGER, because these indices are handed to a renderer that will look them
     // up. A negative, fractional or absurd index is not a highlight that misses — it is an array
     // access in somebody else's library on a number a model chose.
-    let highlight: number[] | null = null;
+    let highlight: HighlightTarget[] | null = null;
     if (value.highlight !== undefined) {
-      if (!Array.isArray(value.highlight) || value.highlight.length === 0 || value.highlight.length > 40) {
-        return refuse("malformed-structure", "highlight must be 1–40 atom indices");
+      // 🔴 A BOND HIGHLIGHT NEEDS ONE FRAME, exactly as an arrow did. Dot-separated species inside a
+      // single `smiles` value share one index space; `reaction-smiles` lays out several sub-drawings
+      // with per-molecule indices, so a pair of numbers there would be a guess about which molecule
+      // was meant. Atom highlights are fine either way, so only the bond form is refused.
+      const read = readHighlight(value.highlight);
+      if ("detail" in read) return refuse("malformed-structure", read.detail);
+      if (notation !== "smiles" && read.highlight.some((target) => Array.isArray(target))) {
+        return refuse(
+          "malformed-structure",
+          "a bond highlight needs one frame: use dot-separated species in a single smiles value",
+        );
       }
-      highlight = [];
-      for (const index of value.highlight) {
-        if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 300) {
-          return refuse("malformed-structure", "every highlight index must be a whole number from 0 to 300");
-        }
-        highlight.push(index);
-      }
+      highlight = read.highlight;
     }
 
     const carbons = value.carbons === undefined ? null : value.carbons;
@@ -563,33 +668,6 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
     const reactionLabel = value.reactionLabel === undefined ? null : boundedText(value.reactionLabel, 60);
     if ((value.conditions !== undefined && !conditions) || (value.reactionLabel !== undefined && !reactionLabel)) {
       return refuse("text-out-of-bounds", "reaction arrow text must be 1–60 characters when present");
-    }
-
-    // 🔴 THE SAME BOUNDS DISCIPLINE AS `highlight`, because these indices are also handed to a
-    // renderer that will look them up in somebody else's graph.
-    let arrows: Array<{ from: number; to: number }> | null = null;
-    if (value.arrows !== undefined) {
-      if (notation !== "smiles") {
-        return refuse(
-          "malformed-structure",
-          "arrows draw on a single frame: use dot-separated species in one smiles value, and separate visuals for separate steps",
-        );
-      }
-      if (!Array.isArray(value.arrows) || value.arrows.length === 0 || value.arrows.length > 8) {
-        return refuse("malformed-structure", "arrows must be 1–8 entries when present");
-      }
-      arrows = [];
-      for (const item of value.arrows) {
-        if (!record(item)) return refuse("malformed-structure", "an arrow is not an object");
-        const { from, to } = item;
-        for (const index of [from, to]) {
-          if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 300) {
-            return refuse("malformed-structure", "every arrow end must be a heavy-atom index from 0 to 300");
-          }
-        }
-        if (from === to) return refuse("malformed-structure", "an arrow cannot push electrons from an atom to itself");
-        arrows.push({ from: from as number, to: to as number });
-      }
     }
 
     return {
@@ -604,9 +682,47 @@ export function validateCanvasVisual(value: unknown): VisualValidation {
         ...(carbons && carbons !== "skeletal" ? { carbons } : {}),
         ...(conditions ? { conditions } : {}),
         ...(reactionLabel ? { reactionLabel } : {}),
-        ...(arrows ? { arrows } : {}),
       },
     };
+  }
+
+  if (value.kind === "mechanism") {
+    // 🔴 A STEP IS A STRUCTURE, so everything a structure refuses, a step refuses in the same words.
+    if (!Array.isArray(value.steps) || value.steps.length < 2 || value.steps.length > 6) {
+      return refuse("malformed-structure", "a mechanism is 2–6 steps: one frame each, joined by arrows");
+    }
+    const steps: MechanismVisual["steps"][number][] = [];
+    for (const item of value.steps) {
+      if (!record(item)) return refuse("malformed-structure", "a step is not an object");
+      const structure = validateStructure("smiles", item.value);
+      if (!structure.ok) return refuse("malformed-structure", `${structure.reason}: ${structure.detail}`);
+
+      let highlight: HighlightTarget[] | null = null;
+      if (item.highlight !== undefined) {
+        const read = readHighlight(item.highlight);
+        if ("detail" in read) return refuse("malformed-structure", read.detail);
+        highlight = read.highlight;
+      }
+
+      // What rides on the reaction arrow LEAVING this step: a reagent, a condition, a name.
+      const label = item.label === undefined ? null : boundedText(item.label, 60);
+      if (item.label !== undefined && !label) {
+        return refuse("text-out-of-bounds", "a step label must be 1–60 characters when present");
+      }
+      const carbons = item.carbons === undefined ? null : item.carbons;
+      if (carbons !== null && carbons !== "all" && carbons !== "skeletal") {
+        return refuse("malformed-structure", 'carbons must be "skeletal" or "all"');
+      }
+
+      steps.push({
+        value: item.value as string,
+        ...(highlight ? { highlight } : {}),
+        ...(label ? { label } : {}),
+        ...(carbons && carbons !== "skeletal" ? { carbons: carbons as "all" } : {}),
+      });
+    }
+
+    return { ok: true, visual: { ...common, kind: "mechanism", steps } };
   }
 
   if (value.kind === "figure") {

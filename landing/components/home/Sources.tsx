@@ -34,7 +34,7 @@ export function Sources() {
         <h2 className="chead reveal">
           bring the material.
           <br />
-          nemesis builds the path.
+          Nemesis builds the path.
         </h2>
 
         <div className="srcs-flow reveal r2">

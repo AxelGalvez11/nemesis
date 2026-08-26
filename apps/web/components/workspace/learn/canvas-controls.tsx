@@ -28,7 +28,7 @@
 // two different truths that happen to sit in the same corner. Do not "unify" them here — ask
 // Brain, this is a substrate question, not a presentation one.
 
-import { useEffect, useRef, useState } from "react";
+import { Children, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -41,16 +41,14 @@ import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/can
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { DeckReview } from "@/components/workspace/study/deck-review";
+import { OutputPreview } from "./output-preview";
 import { SourcePreview } from "./source-preview";
 import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import { entrySummary, groupByDay, type TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
-import {
-  type AutoDictation,
-  type VoiceMode,
-} from "@/lib/learn/voice-preferences";
+import { type VoiceMode } from "@/lib/learn/voice-preferences";
 import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 import { cn } from "@/lib/utils";
 
@@ -147,12 +145,8 @@ export function SourcesControl({
   // the reply's source cards still file pages through it; only this panel's manual door closed.
   /** The source whose ORIGINAL document is open in the preview card, or null. */
   const [previewing, setPreviewing] = useState<CanvasSource | null>(null);
-  /** Which source groups the learner has folded away. Both start open: a panel that hides what is
-   *  in it until you find the control is worse than a long list. */
-  const [shutGroups, setShutGroups] = useState<{ documents: boolean; websites: boolean }>({
-    documents: false,
-    websites: false,
-  });
+  /** The one file input both `+` buttons drive. */
+  const filePicker = useRef<HTMLInputElement>(null);
   // 🔴 A DECK MADE HERE IS REVIEWED HERE. Owner 2026-08-24: the cards are "an artifact
   // that the user can study", and the canvas's Outputs tab is one of the two places that
   // artifact lives. This row used to be an `<a href="/library?deck=…">`, so studying the
@@ -160,24 +154,27 @@ export function SourcesControl({
   // Library mounts opens over the canvas; the Library link still works for anyone who
   // wants the shelf. Null until pressed — mounting it is what triggers the study load.
   const [reviewingDeck, setReviewingDeck] = useState<string | null>(null);
+  /** The made artifact open on screen, or null. Mounted beside the panel rather than inside it, so
+   *  closing the panel does not tear the document down mid-read — the same arrangement
+   *  `SourcePreview` has. */
+  const [openedOutput, setOpenedOutput] = useState<CanvasOutput | null>(null);
   const { session } = useAuth();
   const holder = useDismiss(open, () => setOpen(false));
 
   const outputs = canvas.outputs ?? [];
 
-  // 🔴🔴 GROUPED ONLY WHEN THERE IS SOMETHING TO GROUP — owner 2026-08-24, asking for ChatGPT's
-  // shape: *"can we just have it grouped under something that says websites with a websites icon
-  // or globe icon".* A canvas built from three PDFs and nothing else gets NO headings: the panel's
-  // own tab already says "sources", and "Documents" printed under it is a label restating a label.
-  // The moment a web page joins them the two kinds genuinely need telling apart, and both headings
-  // appear together.
+  // 🔴🔴 THE SPLIT THE PANEL IS BUILT ON, owner 2026-08-24 asking for the reference's shape: *"can
+  // we just have it grouped under something that says websites with a websites icon or globe
+  // icon".* It used to decide only WHETHER to print headings — both, or neither. It now decides
+  // which shelf a source lands on, and both shelves are always labelled: what Nemesis went and read
+  // is a different thing from what the learner handed it, and that stays true on a canvas that
+  // happens to have only one of them.
   //
-  // 🔴 THE HOST DECIDES, exactly as the row rendering below already decides. `sourceUrl` is
-  // documented as absent for every upload and present only for a page, so one idea stays spelled
-  // once — see `source-pill.ts` and the composer chips, which follow the same rule.
+  // 🔴 THE HOST DECIDES, exactly as `SourceRow` below decides. `sourceUrl` is documented as absent
+  // for every upload and present only for a page, so one idea stays spelled once — see
+  // `source-pill.ts` and the composer chips, which follow the same rule.
   const websites = canvas.sources.filter((source) => hostnameOf(source.sourceUrl) !== null);
   const documents = canvas.sources.filter((source) => hostnameOf(source.sourceUrl) === null);
-  const grouped = websites.length > 0 && documents.length > 0;
 
   return (
     <div className="pointer-events-auto relative shrink-0" ref={holder}>
@@ -189,7 +186,11 @@ export function SourcesControl({
         title="Sources and outputs"
         type="button"
       >
-        <Codicon name="library" size="20px" />
+        {/* 🔴 THE REFERENCE'S OWN GLYPH, PICKED OFF A SCREENSHOT THE OWNER SENT (2026-08-25). It
+            was `library` — a stack of books, which reads as "go to the Library", a different
+            surface this panel is repeatedly mistaken for. `list-unordered` says "the things in
+            this canvas, listed", which is what opening it gets you. */}
+        <Codicon name="list-unordered" size="20px" />
         {/* §46: a dot, not a count. The number is not the point and a badge reading "3" on every
             screen is noise the eye stops seeing anyway. */}
         {/* Model knowledge counts here too. The dot means "there is something in this panel",
@@ -200,223 +201,94 @@ export function SourcesControl({
       </button>
 
       {open && (
-        <div className={cn(PANEL, "w-[19rem]")}>
-          <div className="flex items-center gap-1 px-1 pb-1.5">
-            {(["sources", "outputs"] as const).map((name) => (
-              <button
-                className={cn(
-                  "rounded-md px-2 py-1 text-[length:var(--canvas-text-meta)] capitalize transition-colors",
-                  tab === name
-                    ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
-                    : "text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)",
-                )}
-                key={name}
-                onClick={() => setTab(name)}
-                type="button"
-              >
-                {name}
-              </button>
+        <div className={cn(PANEL, "w-[21rem]")}>
+          {/* 🔴🔴 THREE STACKED SECTIONS, NOT TWO TABS — owner ask, 2026-08-25, with screenshots of
+              the reference's panel: Outputs, Sources, Inputs, all on one scroll.
+
+              The tabs were not a styling choice and neither is this. A tab hides one half of the
+              answer behind a click, and the question this panel exists to answer — *where did this
+              come from, and what has it made* — is one question. The learner who opens it to check
+              their sources is the same learner who wants to know whether the deck got made. Under
+              tabs they had to know which word to press first.
+
+              🔴 THE THIRD SECTION IS NOT NEW INFORMATION, IT IS A SPLIT THIS FILE ALREADY MADE.
+              `websites` and `documents` were computed here to decide whether to print headings; the
+              reference names them Sources and Inputs and prints both always. What Nemesis went and
+              read is genuinely a different thing from what the learner handed it, and the old
+              conditional grouping said so only when both happened to be present.
+
+              🔴 SO THE "NO HEADINGS WHEN THERE IS ONLY ONE KIND" RULE IS GONE, AND ITS REASONING IS
+              WHY IT COULD GO. It read: *"the panel's own tab already says sources, and Documents
+              printed under it is a label restating a label."* True — of a panel with a tab. With
+              the tab gone the heading is the only label there is, and a section with no heading is
+              a list of files with nothing saying what they are. */}
+          {/* 🔴🔴 OUTPUTS AND INPUTS APPEAR ONLY WHEN THEY HOLD SOMETHING — owner, 2026-08-25:
+              *"outputs and inputs should only appear when there are some."* They pass no `empty`,
+              which is what hides them; Sources passes one and is therefore the shelf that is always
+              on screen. That is deliberate and not an accident of the prop: Sources is the panel's
+              anchor and carries the `+`, so a canvas with nothing in it still has a door.
+
+              🔴 OUTPUTS HAS NO `+`, AND THIS IS THE ONE PLACE THE REFERENCE IS NOT COPIED. Its
+              panel offers "Create a file or site" there. Owner ruling, 2026-08-24: *"remove the
+              make flash cards, make slide, make summary note from the output section"* — this panel
+              LISTS what a canvas produced, it is not where you produce it, and asking in words is
+              the way (§38: *"a phrase to the composer, not a control"*). A `+` here would be those
+              three rows returning behind an icon. `outputs-have-no-make-buttons.test.ts` holds it. */}
+          <PanelSection label="Outputs">
+            {outputs.map((output) => (
+              <OutputRow canvasId={canvas.id} key={output.id} onOpen={setOpenedOutput} onReviewDeck={setReviewingDeck} output={output} />
             ))}
-          </div>
+          </PanelSection>
 
-          {tab === "sources" ? (
-            <>
-              {/* 🔴 WHERE THE KNOWLEDGE CAME FROM, WHEN THERE IS NO FILE TO POINT AT (N10).
-                  A canvas started by typing a topic holds no sources and a great deal of
-                  knowledge. This panel used to report only the files, so it said "Nothing
-                  attached yet." while fifty model-minted facts sat behind it — true about
-                  attachments, false about provenance, on the one surface a learner opens to ask
-                  where something came from.
+          {/* 🔴 MODEL KNOWLEDGE IS A SOURCE, WHICH IS WHY IT SITS HERE (N10). A canvas started by
+              typing a topic holds no files and a great deal of knowledge, and this shelf answering
+              "nothing read from the web" while fifty model-minted facts sit behind it is true about
+              web pages and false about provenance — on the one surface a learner opens to ask where
+              something came from. `filled` is what stops the empty sentence printing over it. */}
+          <PanelSection
+            empty="Nothing read from the web yet."
+            filled={modelKnowledge}
+            label="Sources"
+            onAdd={() => filePicker.current?.click()}
+          >
+            {modelKnowledge && (
+              // 🔴 ONE LINE, AND IT IS THE DISCLOSURE RATHER THAN A LABEL WITH THE DISCLOSURE UNDER
+              // IT. It used to read "Nemesis knowledge" over "Generated from model knowledge",
+              // which is the same fact stated twice, the second time in grey. Collapsed to the
+              // sentence that actually answers the question this shelf is opened to ask.
+              <div className={cn(PANEL_ROW, "flex items-center gap-1.5")}>
+                <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="lightbulb" size="0.75rem" />
+                <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
+                  Generated from model knowledge
+                </span>
+              </div>
+            )}
+            {websites.map((source) => (
+              <SourceRow key={source.id} onPreview={setPreviewing} source={source} />
+            ))}
+          </PanelSection>
 
-                  It sits in the list, in the same shape as a source row, because it IS one of
-                  the things this canvas was built from. It carries NO count: the territory
-                  rebuilds on open and does not yet converge, so any number here would grow every
-                  time the learner looked at it. A sparse line that is always true beats a rich
-                  one that is sometimes wrong. */}
-              {modelKnowledge && (
-                <div className="px-2 py-1.5">
-                  <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">Nemesis knowledge</p>
-                  <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Generated from model knowledge</p>
-                </div>
-              )}
+          <PanelSection label="Inputs" onAdd={() => filePicker.current?.click()}>
+            {documents.map((source) => (
+              <SourceRow key={source.id} onPreview={setPreviewing} source={source} />
+            ))}
+          </PanelSection>
 
-              {canvas.sources.length === 0 ? (
-                // Guarded by `modelKnowledge`, and that guard is the whole fix: this sentence is
-                // only honest when there is genuinely nothing behind the canvas at all.
-                !modelKnowledge && (
-                  <p className="px-2 py-3 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">Nothing attached yet.</p>
-                )
-              ) : (
-                (() => {
-                  const renderSource = (source: CanvasSource) => {
-                  // 🔴🔴 THE ROWS OPEN NOW. Owner, 2026-08-20: *"the sources box should be more the
-                  // right and have the actual sources clickable in there."* This panel is the one
-                  // place a learner goes to ask "where did that come from", and it answered with
-                  // text they could not follow — a list of things that look like links and are not
-                  // is worse than a list that plainly is not one.
-                  //
-                  // 🔴 THE HOST DECIDES THE ROW, NOT A FLAG — the same rule `source-pill.ts` states
-                  // and the composer chips follow. `sourceUrl` is documented as absent for every
-                  // file upload and present only for a page, so its presence IS the question "can
-                  // this be opened, and where?". One idea, spelled once, in three places.
-                  const host = hostnameOf(source.sourceUrl);
-                  const body = (
-                    <>
-                      <span className="flex items-center gap-1.5">
-                        {host ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
-                          <img alt="" className="shrink-0 rounded-full" height={14} src={faviconUrl(host)} width={14} />
-                        ) : (
-                          <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
-                        )}
-                        <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{source.title}</span>
-                      </span>
-                      <span className="mt-0.5 block pl-[22px] text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                        {host ?? source.kind} · {source.excerpts.length} excerpt{source.excerpts.length === 1 ? "" : "s"}
-                      </span>
-                      {/* A source Nemesis could only half read says so here, not silently. */}
-                      {source.coverageNote && (
-                        <span className="mt-1 block pl-[22px] text-[length:var(--canvas-text-meta)] leading-relaxed text-amber-500">
-                          {source.coverageNote.replace(/^\[|\]$/g, "")}
-                        </span>
-                      )}
-                    </>
-                  );
-                  const row = "block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)";
-                  return host && source.sourceUrl ? (
-                    <a className={cn(row, "no-underline")} href={source.sourceUrl} key={source.id} rel="noopener noreferrer" target="_blank" title={source.title}>
-                      {body}
-                    </a>
-                  ) : (
-                    // 🔴🔴 A DOCUMENT OPENS A PREVIEW CARD, NOT THE LIBRARY — owner, 2026-08-23,
-                    // after clicking one: *"it took me to the old library. It's supposed to take
-                    // me to a small preview of it, a pop up."* The old anchor's reasoning ("the
-                    // reader already exists, a preview would be a second answer") lost to the
-                    // learner's actual context: they are mid-canvas, and a navigation to another
-                    // surface for "what did I attach?" costs them the room they were in. The old
-                    // link was also quietly broken — it interpolated the canvas-local slot id
-                    // (`s1`, `s2`…) into a route that resolves `library_sources.id`, so it 404'd
-                    // on every canvas regardless.
-                    <button className={row} key={source.id} onClick={() => setPreviewing(source)} title={source.title} type="button">
-                      {body}
-                    </button>
-                  );
-                  };
-                  if (!grouped) return canvas.sources.map(renderSource);
-                  return (
-                    <>
-                      <SourceGroup
-                        count={documents.length}
-                        icon="file"
-                        label="Documents"
-                        onToggle={() => setShutGroups((was) => ({ ...was, documents: !was.documents }))}
-                        open={!shutGroups.documents}
-                      />
-                      {!shutGroups.documents && documents.map(renderSource)}
-                      <SourceGroup
-                        count={websites.length}
-                        icon="globe"
-                        label="Websites"
-                        onToggle={() => setShutGroups((was) => ({ ...was, websites: !was.websites }))}
-                        open={!shutGroups.websites}
-                      />
-                      {!shutGroups.websites && websites.map(renderSource)}
-                    </>
-                  );
-                })()
-              )}
-
-              <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) has-[:focus-visible]:bg-(--ui-bg-tertiary) has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-(--ui-accent)">
-                <Codicon name="add" size="0.75rem" />
-                Add source
-                {/* `sr-only` keeps this reachable by keyboard; `hidden` would not. */}
-                <input
-                  accept={ACCEPTED_MATERIAL}
-                  className="sr-only"
-                  multiple
-                  onChange={(event) => {
-                    if (event.target.files) onFiles(event.target.files);
-                    setOpen(false);
-                  }}
-                  type="file"
-                />
-              </label>
-
-            </>
-          ) : (
-            <>
-              {outputs.length === 0 ? (
-                <p className="px-2 py-3 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-quaternary)">
-                  {onMakeDeliverable
-                    ? "Nothing made yet. Ask below, and it lands here and in your Library."
-                    : "Things Nemesis makes for you, like a summary or flashcards, will be kept here."}
-                </p>
-              ) : (
-                outputs.map((output) => {
-                  const body = (
-                    <>
-                      <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
-                      <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                        {output.kind === "flashcards"
-                          ? "Flashcard deck · click to review"
-                          : output.kind === "note"
-                            ? "Note · in your Library"
-                            : output.kind === "report"
-                              ? "Research · cited, in your Library"
-                              : output.kind === "slides"
-                                ? "Slides · click to download .pptx"
-                                : output.kind}
-                      </p>
-                    </>
-                  );
-                  const row = "block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary) no-underline";
-                  // 🔴 EVERY ROW OPENS THE REAL THING — the deck in the Library, the note in the
-                  // library's reader. A list of made things that cannot be opened is the sources
-                  // panel's old defect all over again.
-                  // 🔴 ANY OUTPUT THAT IS A NOTE OPENS AS ONE, matched on what it HAS rather than
-                  // on what it is called. Keyed to `kind === "note"` this silently broke the moment
-                  // a second note-shaped output existed: a research report carries a notePath and
-                  // would have fallen through to the plain div below, landing in the list as a row
-                  // that cannot be opened. That is the defect the comment further down names.
-                  if (output.notePath) {
-                    return (
-                      <a className={row} href={`/library/classic?note=${encodeURIComponent(output.notePath)}`} key={output.id}>
-                        {body}
-                      </a>
-                    );
-                  }
-                  if (output.kind === "flashcards" && output.deckId) {
-                    const deckId = output.deckId;
-                    return (
-                      <button className={row} key={output.id} onClick={() => setReviewingDeck(deckId)} type="button">
-                        {body}
-                      </button>
-                    );
-                  }
-                  if (output.kind === "slides" && output.deck) {
-                    return <SlidesOutputRow canvasId={canvas.id} key={output.id} output={output} rowClass={row} />;
-                  }
-                  return (
-                    <div className="px-2 py-1.5" key={output.id}>
-                      {body}
-                    </div>
-                  );
-                })
-              )}
-              {/* 🔴🔴 THE THREE "MAKE …" ROWS ARE GONE — owner, 2026-08-24: "remove the make flash
-                  cards, make slide, make summary note from the output section." This panel LISTS
-                  what a canvas has produced; it is not where you produce it. Asking in words is now
-                  the way — "make me flashcards from this" works from any conversation since the
-                  deliverables stopped requiring lesson blocks — and that is also exactly what §38
-                  already required of every other learning request: *"a phrase to the composer, not
-                  a control."* Three buttons that steered the machine were the last survivors of the
-                  older shape.
-
-                  🔴 `makeDeliverable` ITSELF IS UNTOUCHED and still reached from the composer, so
-                  this deletes a door and not a feature. `outputs-have-no-make-buttons.test.ts`
-                  holds the absence. */}
-            </>
-          )}
+          {/* 🔴 THE "ADD SOURCE" ROW MOVED ONTO THE HEADINGS AS THE REFERENCE'S `+`, so the picker
+              is opened by two buttons now and the input can no longer live inside either of them.
+              `sr-only` rather than `hidden`: a hidden input is not keyboard reachable, and the
+              buttons above are what focus travels to anyway. */}
+          <input
+            accept={ACCEPTED_MATERIAL}
+            className="sr-only"
+            multiple
+            onChange={(event) => {
+              if (event.target.files) onFiles(event.target.files);
+              setOpen(false);
+            }}
+            ref={filePicker}
+            type="file"
+          />
         </div>
       )}
 
@@ -427,48 +299,331 @@ export function SourcesControl({
         <SourcePreview onClose={() => setPreviewing(null)} source={previewing} uid={session?.user.id ?? null} />
       )}
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
+      {openedOutput && <OutputPreview canvasId={canvas.id} onClose={() => setOpenedOutput(null)} output={openedOutput} />}
     </div>
   );
 }
 
-/** A heading over one kind of source. Quiet by construction: this labels a shelf, it is not a
- *  control, and it must not read as one on a panel where every other row opens something. */
-// 🔴 THE GROUPS FOLD (owner 2026-08-24: *"the websites in the source panel are supposed to be
-// collapsible"*). A lesson that has read twenty pages pushes everything else in this panel off the
-// bottom, and the learner who wanted their own three documents has to scroll past a search's haul
-// to reach them. Folding is per-group so the two never fight: shutting Websites must not also take
-// away the documents the learner attached themselves.
-//
-// 🔴 IT IS A HEADING THAT COUNTS, so a shut group still reports what is inside it. A collapsed
-// section with no number is indistinguishable from an empty one, which is exactly the moment
-// someone concludes their sources were lost.
-function SourceGroup({
-  count,
-  icon,
+/**
+ * One labelled shelf in the sources panel, with its own tail.
+ *
+ * 🔴🔴 IT ALWAYS PRINTS ITS HEADING, INCLUDING WHEN IT IS EMPTY, and that is the point of a stacked
+ * panel rather than tabs. A section that vanishes when empty means the learner cannot tell "this
+ * canvas has read nothing from the web" from "this panel does not track that" — the second reads
+ * as something being lost. The reference does the same: *Sources — No sources yet*, in place,
+ * between two sections that do have contents.
+ *
+ * 🔴 A LONG SHELF IS CAPPED, NOT FOLDED, AND THIS REPLACES A CONTROL THE OWNER ASKED FOR. The old
+ * headings collapsed to nothing (2026-08-24: *"the websites in the source panel are supposed to be
+ * collapsible"*), which solved a real problem — a lesson that has read twenty pages pushes the
+ * learner's own three documents off the bottom. Capping at six with a tail solves the same problem
+ * and is what the reference the owner is now pointing at does, so the fold goes rather than sitting
+ * beside a second control that does almost the same thing. What is given up: you can no longer take
+ * a section to zero. What is gained: the first six of every section are always on screen, which is
+ * the case the fold made worse, because folding Websites to reach Documents also hid the websites.
+ *
+ * 🔴 THE TAIL COUNTS WHAT IS HIDDEN, NOT WHAT EXISTS. "Show 12 more" is a promise about what
+ * pressing it does; "Show 18" would be a fact about the list and a lie about the button.
+ */
+function PanelSection({
+  children,
+  empty,
+  filled = false,
   label,
-  onToggle,
-  open,
+  onAdd,
 }: {
-  count: number;
-  icon: string;
+  children: React.ReactNode;
+  /**
+   * What to say in place of the rows when there are none.
+   *
+   * 🔴🔴 OMITTING IT HIDES THE WHOLE SECTION, AND THAT IS THE PROP'S REAL JOB — owner, 2026-08-25:
+   * *"outputs and inputs should only appear when there are some."* The rule lives in the prop shape
+   * rather than as a `hideWhenEmpty` boolean beside it, because the two would be able to disagree:
+   * a section with an empty sentence AND the hide flag has two answers for one state, and whichever
+   * the code happened to check first would win silently.
+   */
+  empty?: string;
+  /** Treat the section as non-empty even though it has no rows of its own — the Sources shelf
+   *  carries a model-knowledge line that is a child rather than a row, and an empty sentence
+   *  printed above it would contradict the thing directly beneath it. */
+  filled?: boolean;
   label: string;
-  onToggle: () => void;
-  open: boolean;
+  /** Adds the reference's `+`. Absent on Outputs, deliberately — see the note at the call site. */
+  onAdd?: () => void;
 }) {
+  // 🔴 EVERY SHELF FOLDS, AND EACH KEEPS ITS OWN FLAG — owner, 2026-08-25: *"make sure each section
+  // is collapsible."* State lives INSIDE this component, so there is no shared flag to get wrong:
+  // shutting a long Sources list must never also take away the documents the learner attached
+  // themselves, which is the opposite of what folding is for.
+  const [open, setOpen] = useState(true);
+  const [all, setAll] = useState(false);
+  // 🔴 COUNTED OFF THE RENDERED CHILDREN, NOT OFF A LENGTH THE CALLER PASSES. A caller that
+  // filtered its list and forgot to update its count would print a tail that reveals nothing, and
+  // nothing would catch it — the number and the rows come from one array.
+  const rows = Children.toArray(children).filter(Boolean);
+  const hidden = Math.max(0, rows.length - SECTION_ROWS);
+  const shown = all ? rows : rows.slice(0, SECTION_ROWS);
+
+  // A shelf with nothing in it and nothing to say about that is not a shelf.
+  if (rows.length === 0 && !filled && !empty) return null;
+
   return (
-    <button
-      aria-expanded={open}
-      className="flex w-full items-center gap-1.5 rounded-lg px-2 pb-0.5 pt-2 text-left text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary) transition-colors hover:text-(--ui-text-secondary)"
-      onClick={onToggle}
-      type="button"
-    >
-      <Codicon className="shrink-0" name={open ? "chevron-down" : "chevron-right"} size="0.7rem" />
-      <Codicon className="shrink-0" name={icon} size="0.7rem" />
-      <span className="min-w-0 truncate">{label}</span>
-      <span className="tabular-nums">{count}</span>
+    // 🔴 THE DIVIDER IS `first:border-t-0`, NOT A SEPARATOR THE PARENT PLACES BETWEEN SIBLINGS. Two
+    // of the three shelves can vanish, so a parent counting gaps would draw a line above whichever
+    // one happened to be first that day. Letting the DOM decide means the rule is "not above the
+    // first one", which is what it actually is.
+    <section className="border-t border-(--ui-stroke-secondary) pb-1.5 first:border-t-0">
+      <div className="flex items-center gap-1">
+        {/* 🔴🔴 THE HEADING IS A REAL BUTTON, WHICH IS THE INVARIANT THE OLD `SourceGroup` HELD:
+            nothing may look pressable without being pressable, and nothing may be pressable without
+            looking it. So it carries a chevron and `aria-expanded` rather than folding invisibly.
+
+            🔴 SENTENCE CASE AT BODY SIZE, CHEVRON AFTER THE WORD — the reference's own composition,
+            copied rather than approximated (owner, 2026-08-25: *"copy the exact styling of the
+            reference i gave you"*). It was 12px uppercase with the chevron in front, which is a
+            table header; the reference reads as a section of a document. */}
+        <button
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[length:var(--canvas-text-body)] text-(--ui-text-secondary) transition-colors hover:text-(--ui-text-primary)"
+          onClick={() => setOpen((was) => !was)}
+          type="button"
+        >
+          <span className="min-w-0 truncate">{label}</span>
+          {/* 🔴 THE COUNT IS GONE, AND HIDING EMPTY SHELVES IS WHAT PAID FOR IT. It was here because
+              a collapsed section with no number is indistinguishable from an empty one — the moment
+              somebody concludes their sources were lost. A shelf that is empty no longer renders at
+              all, so a visible collapsed one always has something in it and the ambiguity the count
+              answered cannot occur. The reference carries no count either. */}
+          <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={open ? "chevron-down" : "chevron-right"} size="0.75rem" />
+        </button>
+        {onAdd && (
+          <button
+            aria-label={`Add to ${label}`}
+            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+            onClick={onAdd}
+            title={`Add to ${label}`}
+            type="button"
+          >
+            <Codicon name="add" size="0.9rem" />
+          </button>
+        )}
+      </div>
+      {open && (
+        <>
+          {rows.length === 0 && !filled ? (
+            <p className="m-0 px-2 pb-1 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-quaternary)">{empty}</p>
+          ) : (
+            shown
+          )}
+          {hidden > 0 && (
+            // Quiet, and not a row: it opens nothing, so it must not look like the things above it
+            // that do. 🔴 A SECOND CONTROL, AND DELIBERATELY A DIFFERENT ONE — the heading takes the
+            // whole shelf away, this reveals the rest of one you are already reading. Folding alone
+            // means a search's twenty pages push the other shelves off the bottom unless you shut
+            // them; capping alone means a long shelf can never be got out of the way.
+            <button
+              className="mt-0.5 block w-full rounded-lg px-2 py-1 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+              onClick={() => setAll((was) => !was)}
+              type="button"
+            >
+              {all ? "Show less" : `Show ${hidden} more`}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** How many rows a section shows before it offers the rest. Six is the reference's own count and
+ *  fits all three shelves plus the Add row on one screen at this panel's height. */
+const SECTION_ROWS = 6;
+
+const PANEL_ROW = "block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)";
+
+/** What kind of thing an output row is, as the icon rather than as a second line of text.
+ *  🔴 `?? "file"` IS THE POINT OF THE LOOKUP. `CanvasOutput.kind` is deliberately a string so a new
+ *  producer needs no schema change, so this map is guaranteed to be missing an entry one day and
+ *  must degrade to a plausible row instead of an empty gap. */
+const OUTPUT_ICONS: Record<string, string> = {
+  document: "file",
+  flashcards: "layers",
+  pdf: "file-pdf",
+  sheet: "table",
+  note: "note",
+  report: "book",
+  slides: "device-camera-video",
+};
+
+/**
+ * One source, as a row that opens the thing it names.
+ *
+ * 🔴🔴 THE ROWS OPEN. Owner, 2026-08-20: *"the sources box should be more the right and have the
+ * actual sources clickable in there."* This panel is the one place a learner goes to ask "where did
+ * that come from", and it used to answer with text they could not follow — a list of things that
+ * look like links and are not is worse than a list that plainly is not one.
+ *
+ * 🔴 THE HOST DECIDES THE ROW, NOT A FLAG — the same rule `source-pill.ts` states and the composer
+ * chips follow. `sourceUrl` is documented as absent for every file upload and present only for a
+ * page, so its presence IS the question "can this be opened, and where?". One idea, spelled once,
+ * in three places.
+ */
+function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) => void; source: CanvasSource }) {
+  const host = hostnameOf(source.sourceUrl);
+  // 🔴 ONE LINE, AND THE SECOND ONE IS GONE ON PURPOSE — owner, 2026-08-25: *"remove description
+  // for outputs, inputs and sources."* It read `en.wikipedia.org · 1 excerpt` under every row, and
+  // three shelves of two-line rows is a wall. Nothing is actually lost: the favicon already says
+  // which site a page came from, and an excerpt count is bookkeeping about how Nemesis read
+  // something rather than an answer to "what is this". `title` still carries the full name for a
+  // hover, which is what a truncated row needs.
+  const body = (
+    <span className="flex items-center gap-1.5">
+      {host ? (
+        // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+        <img alt="" className="shrink-0 rounded-full" height={14} src={faviconUrl(host)} width={14} />
+      ) : (
+        <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+      )}
+      <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{source.title}</span>
+      {/* 🔴 THE ONE SECOND LINE THAT STAYS, AND IT IS NOT A DESCRIPTION. A source Nemesis could only
+          half read has to say so where the source is named; dropping this with the rest would make
+          the panel quietly claim a partial read was a whole one. It renders on almost nothing. */}
+      {source.coverageNote && (
+        <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-amber-500">
+          {source.coverageNote.replace(/^\[|\]$/g, "")}
+        </span>
+      )}
+    </span>
+  );
+
+  if (host && source.sourceUrl) {
+    return (
+      <a
+        className={cn(PANEL_ROW, "no-underline")}
+        href={source.sourceUrl}
+        rel="noopener noreferrer"
+        target="_blank"
+        title={source.title}
+      >
+        {body}
+      </a>
+    );
+  }
+  // 🔴🔴 A DOCUMENT OPENS A PREVIEW CARD, NOT THE LIBRARY — owner, 2026-08-23, after clicking one:
+  // *"it took me to the old library. It's supposed to take me to a small preview of it, a pop up."*
+  // The old anchor's reasoning ("the reader already exists, a preview would be a second answer")
+  // lost to the learner's actual context: they are mid-canvas, and a navigation to another surface
+  // for "what did I attach?" costs them the room they were in. The old link was also quietly
+  // broken — it interpolated the canvas-local slot id (`s1`, `s2`…) into a route that resolves
+  // `library_sources.id`, so it 404'd on every canvas regardless.
+  return (
+    <button className={PANEL_ROW} onClick={() => onPreview(source)} title={source.title} type="button">
+      {body}
     </button>
   );
 }
+
+/**
+ * One thing this canvas made.
+ *
+ * 🔴 EVERY ROW OPENS THE REAL THING — the deck in review, the note in the Library's reader. A list
+ * of made things that cannot be opened is the sources panel's old defect all over again.
+ *
+ * 🔴 ANYTHING THAT IS A NOTE OPENS AS ONE, matched on what it HAS rather than on what it is called.
+ * Keyed to `kind === "note"` this silently broke the moment a second note-shaped output existed: a
+ * research report carries a notePath and fell through to the plain div, landing in the list as a
+ * row that cannot be opened.
+ */
+function OutputRow({
+  canvasId,
+  onOpen,
+  onReviewDeck,
+  output,
+}: {
+  canvasId: string;
+  onOpen: (output: CanvasOutput) => void;
+  onReviewDeck: (deckId: string) => void;
+  output: CanvasOutput;
+}) {
+  // 🔴 ONE LINE, SAME OWNER CUT (2026-08-25). The second line said "Flashcard deck · click to
+  // review" — half a restatement of the icon and half an instruction to click a thing that is
+  // visibly clickable. What KIND of output this is moves onto the icon, which is where the
+  // reference puts it and costs no line at all.
+  const body = (
+    <span className="flex items-center gap-1.5">
+      <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={OUTPUT_ICONS[output.kind] ?? "file"} size="0.75rem" />
+      <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</span>
+    </span>
+  );
+  const row = cn(PANEL_ROW, "no-underline");
+
+  // 🔴🔴 A NOTE OPENS THE ARTIFACT CARD, NOT THE OLD LIBRARY. Owner, 2026-08-25, with a screenshot
+  // of `/library/classic` showing "Couldn't reach your notes": *"i dont want anything to route to
+  // this old library."* This was an `<a href="/library/classic?note=…">` — a navigation off the
+  // canvas, to a surface being retired, for the question "what did you just write for me".
+  //
+  // The card fetches the note's body by path (the lists carry titles, not text) and renders it
+  // through the same parser the writers use, so a note is now the same kind of object as a document
+  // or a spreadsheet: something you open where you are.
+  if (output.notePath) {
+    return (
+      <button className={row} onClick={() => onOpen(output)} type="button">
+        {body}
+      </button>
+    );
+  }
+  if (output.kind === "flashcards" && output.deckId) {
+    const deckId = output.deckId;
+    return (
+      <button className={row} onClick={() => onReviewDeck(deckId)} type="button">
+        {body}
+      </button>
+    );
+  }
+  // 🔴 A DECK OPENS BESIDE THE CANVAS NOW, LIKE EVERY OTHER ARTIFACT (owner, 2026-08-25). It was
+  // the last row that navigated away, so checking what Nemesis had made meant leaving the canvas
+  // that made it. The full page is still there and the panel links out to it — it holds the twenty
+  // designs and the real geometry, which a 38rem column cannot.
+  if (output.kind === "slides" && output.deck) {
+    return (
+      <button className={row} onClick={() => onOpen(output)} type="button">
+        {body}
+      </button>
+    );
+  }
+  // 🔴🔴 THE FILE IS BUILT AT CLICK TIME FROM WHAT THE ROW CARRIES — the same arrangement the deck
+  // has had since it shipped, and for the same reason: a .docx, a PDF and a CSV are each a
+  // deterministic function of this content plus the format, so nothing was ever uploaded and there
+  // is nothing to fetch back. It also means a row cannot go stale against a bucket.
+  //
+  // 🔴 GUARDED ON THE PAYLOAD, NOT ON THE KIND. An output whose markdown failed to save is a row
+  // that would download an empty file, which is worse than a row that plainly does not download.
+  // 🔴🔴 THE ROW OPENS THE ARTIFACT; IT NO LONGER DOWNLOADS IT. Owner, 2026-08-25: *"it should
+  // create an artifact as 'output' not just straight download."* A row whose only action is to put
+  // a file in Downloads is a link that happens to be listed — you cannot read what Nemesis wrote
+  // before deciding you want it, and seeing your own document again means downloading it twice.
+  // `OutputPreview` shows it and carries the download button; the file is still built at click
+  // time, one click further in.
+  //
+  // 🔴 STILL GUARDED ON THE PAYLOAD, NOT THE KIND. An output whose content failed to save would
+  // open an empty card, which is the same dead end wearing a nicer coat.
+  if ((output.kind === "document" || output.kind === "pdf" || output.kind === "sheet") && (output.markdown || output.sheet)) {
+    return (
+      <button className={row} onClick={() => onOpen(output)} type="button">
+        {body}
+      </button>
+    );
+  }
+  return <div className="px-2 py-1.5">{body}</div>;
+}
+
+// 🔴🔴 THE THREE "MAKE …" ROWS ARE NOT COMING BACK — owner, 2026-08-24: "remove the make flash
+// cards, make slide, make summary note from the output section." This panel LISTS what a canvas has
+// produced; it is not where you produce it. Asking in words is the way — "make me flashcards from
+// this" works from any conversation since the deliverables stopped requiring lesson blocks — and
+// that is what §38 already required of every other learning request: *"a phrase to the composer,
+// not a control."* `makeDeliverable` itself is untouched and still reached from the composer, so
+// that deleted a door and not a feature. `outputs-have-no-make-buttons.test.ts` holds the absence.
 
 // ---------------------------------------------------------------- objectives
 
@@ -497,33 +652,10 @@ const MEANING: Record<ObjectiveState, string> = {
   untouched: "Not covered yet",
 };
 
-/**
- * What Nemesis is working on, as a panel body.
- *
- * 🔴 NO LONGER ITS OWN HEADER BUTTON — owner call, 2026-08-19. The header is down to three glyphs
- * (`\u00d7`, Sources and outputs, Progress) plus `\u22ef`, and this moved inside the last of them. The
- * BODY is what mattered and it is unchanged; only the way in did.
- */
-/** A slides output: click the row to OPEN the deck; the .pptx download lives inside it.
- *
- *  Owner 2026-08-24: "HTML is the deck, .pptx is an export." A deck that could only be
- *  downloaded made the learner leave the app to see what they had made. */
-function SlidesOutputRow({ canvasId, output, rowClass }: { canvasId: string; output: CanvasOutput; rowClass: string }) {
-  const { choose, designId } = useDeckDesignChoice(output.assetId ?? output.id);
-  const design = deckDesign(designId);
-  if (!output.deck) return null;
-  return (
-    <div className="flex items-center gap-1">
-      <a className={cn(rowClass, "min-w-0 flex-1")} href={`/deck?c=${canvasId}&o=${encodeURIComponent(output.assetId ?? output.id)}`}>
-        <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{output.title}</p>
-        <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-          Slides · {output.deck.slides.length} in {design.name}
-        </p>
-      </a>
-      <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={output.title} />
-    </div>
-  );
-}
+// 🔴 `SlidesOutputRow` IS GONE, AND ITS DESIGN PICKER WITH IT. The row it drew was the last
+// artifact row that navigated away, replaced on 2026-08-25 by the side panel; what remained was a
+// component nothing rendered. The picker is not lost — the full deck page carries its own, which is
+// where twenty designs belong and where the panel links out to.
 
 function ObjectivesPanel({
   canvas,
@@ -1051,117 +1183,47 @@ function MenuItem({
  * rows, both show their current state, and a learner who wants to change their mind has somewhere
  * to go rather than having to remember what they answered once.
  */
+/**
+ * Read responses aloud: one button, no menu.
+ *
+ * 🔴🔴 THE `⋮` IS GONE — owner, 2026-08-25, circling it on screen. What made removing it safe is
+ * that the menu behind it had been reduced to a SINGLE row: Objectives and the session record left
+ * on 2026-08-20, the mic option and its hint line left on 2026-08-25, and what remained was one
+ * toggle behind a click that existed only to reveal it. This file already states the rule, about
+ * the composer's `+`: *a one-item menu is a second click charged for nothing.*
+ *
+ * 🔴 SO THE TOGGLE MOVED OUT, IT WAS NOT DELETED. Removing the button and its one row would have
+ * taken read-aloud with it — a feature reachable from nowhere, which is this codebase's
+ * most-repeated defect wearing the other face. The control is now what the menu contained.
+ *
+ * 🔴 THE GLYPH REPORTS STATE, AND IT HAS TO. Voice is the one thing on this surface that acts on
+ * its own, afterwards — a learner who left it on deserves to see that without opening anything.
+ * Speaking, on-but-quiet and off are three distinct marks.
+ */
 export function OptionsControl({
-  canvas,
-  activeTaskId,
-  entries,
-  locale,
   voice,
 }: {
-  canvas: LearningCanvas;
-  activeTaskId?: string | null;
-  entries: readonly TranscriptEntry[];
-  locale?: string;
   /**
    * 🔴 THE HOOK'S OWN TYPE, NOT A THIRD COPY OF IT. This shape was written out by hand here AND in
-   * the sibling that passes it through, so `useCanvasVoice` gaining a field left two declarations
-   * behind and the compiler pointed at the consumer rather than at the omission. Referencing the
-   * source means adding a control to the voice hook can never again require remembering two other
-   * files.
+   * the sibling that passes it through, so `useCanvasVoice` gaining a field left two hand-written
+   * copies to update and no compiler complaint when only one of them was.
    */
   voice?: CanvasVoiceState["header"];
 }) {
-  const [open, setOpen] = useState(false);
-  // Which face the menu is showing. Sub-views render IN PLACE rather than as a second floating
-  // panel: a panel hanging off a panel is two things to dismiss and two places to mis-click.
-  const [view, setView] = useState<"menu" | "objectives" | "record">("menu");
-  const holder = useDismiss(open, () => {
-    setOpen(false);
-    setView("menu");
-  });
-
-  const voiceOn = voice?.mode === "on";
-  const listenOn = voice?.autoDictation === "on";
+  if (!voice) return null;
+  const voiceOn = voice.mode === "on";
 
   return (
-    <div className="pointer-events-auto relative shrink-0" ref={holder}>
-      <button
-        aria-expanded={open}
-        aria-label="Options"
-        className={cn(CONTROL, voiceOn && "text-(--ui-action) hover:text-(--ui-action)")}
-        onClick={() => {
-          setOpen((current) => !current);
-          setView("menu");
-        }}
-        title="Options"
-        type="button"
-      >
-        {/* 🔴 THE GLYPH REPORTS VOICE, BECAUSE VOICE IS THE ONE OPTION IN HERE THAT MAKES NOISE.
-            Everything else behind this button is something the learner goes and looks at; voice
-            acts on its own, afterwards, and a learner who left it on deserves to see that from the
-            closed menu rather than by being spoken to. */}
-        <Codicon name={voice?.speaking ? "unmute" : "kebab-vertical"} size="20px" />
-      </button>
-
-      {open && (
-        <div className={cn(PANEL, view === "menu" ? "w-[15rem]" : "w-[22rem]")}>
-          {view !== "menu" && (
-            <button
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary)"
-              onClick={() => setView("menu")}
-              type="button"
-            >
-              <Codicon name="chevron-left" size="0.6875rem" />
-              {view === "objectives" ? "Objectives" : "Session record"}
-            </button>
-          )}
-
-          {view === "menu" && (
-            <>
-              {voice && (
-                <>
-                  {/* 🔴🔴 ONE VOICE DECISION LIVES ON THE CANVAS, AND IT IS NOT "WHICH VOICE" (§48).
-                      Owner, 2026-08-22: *"Canvas should not make the user repeatedly choose a
-                      voice… Canvas should have a simple option for: Automatically read responses
-                      aloud."* The speaker, and whether to preview it, moved to Settings — they are
-                      properties of the person, asked once. What is left here is the only voice
-                      question that belongs to a session: should Nemesis start talking by itself.
-
-                      🔴 THE READING SPEED WENT WITH THEM, AND IT DID NOT REAPPEAR AS A SETTING. It
-                      was a SYNTHESIS argument — pressing it threw away a paid MP3 and bought
-                      another at a different rate. Speed is now a property of listening, on the
-                      player under the answer, where changing it is instant and free. */}
-                  <ToggleItem
-                    checked={voiceOn}
-                    hint="Nemesis starts reading each answer as soon as it is finished. You can always press play yourself."
-                    label="Read responses aloud"
-                    onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
-                  />
-                  {/* Offering to open a microphone that cannot listen is a promise the product
-                      cannot keep — the same refusal `VoiceControl` made, kept. */}
-                  <ToggleItem
-                    checked={listenOn}
-                    disabled={!voice.dictationSupported}
-                    hint={voice.dictationSupported ? undefined : "This browser cannot listen"}
-                    label="Open the mic after each question"
-                    onClick={() => voice.onSetAutoDictation(listenOn ? "off" : "on")}
-                  />
-                  <div className="my-1 border-t border-(--ui-stroke-tertiary)" />
-                </>
-              )}
-              {/* 🔴 OBJECTIVES AND SESSION RECORD ARE GONE FROM THIS MENU (owner 2026-08-20:
-                  "the menu has a objectives tab, which I don't want... and assessment record,
-                  which I also don't want"). Both panels remain in the file and are still
-                  reachable by setting `view` — they are a developer's window into what the
-                  runtime thinks, not something a learner asked to be shown mid-lesson. */}
-            </>
-          )}
-
-          {view === "objectives" && <ObjectivesPanel activeTaskId={activeTaskId} canvas={canvas} />}
-          {view === "record" && <SessionRecordPanel entries={entries} locale={locale} />}
-        </div>
-      )}
-    </div>
+    <button
+      aria-label={voiceOn ? "Stop reading responses aloud" : "Read responses aloud"}
+      aria-pressed={voiceOn}
+      className={cn(CONTROL, voiceOn && "text-(--ui-action) hover:text-(--ui-action)")}
+      onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
+      title={voiceOn ? "Stop reading responses aloud" : "Read responses aloud"}
+      type="button"
+    >
+      <Codicon name={voice.speaking ? "unmute" : voiceOn ? "unmute" : "mute"} size="20px" />
+    </button>
   );
 }
 

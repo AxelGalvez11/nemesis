@@ -147,7 +147,18 @@ export const COMPOSER_ACTIVITY_AFTER_MS = 320;
  * clip art, and the same reason: four shapes do not justify a dependency, and a house mark can
  * be made to match the type it sits beside.
  */
-export type ThinkingMark = "reading" | "mapping" | "finding" | "checking" | "searching" | "writing";
+export type ThinkingMark =
+  | "reading"
+  | "mapping"
+  | "finding"
+  | "checking"
+  /** A live web search. Drawn as a GLOBE rather than a magnifier since 2026-08-25 — see below. */
+  | "searching"
+  /** The learner's own calendar, being read or changed. */
+  | "calendar"
+  /** An app they connected: their mail, their drive. */
+  | "apps"
+  | "writing";
 
 /** The mark for each phase that can report itself. One per phase, no gaps: a phase this file
  *  admits exists is a phase whose work is genuinely running. */
@@ -193,10 +204,21 @@ export function thinkingMark(input: {
   readonly searching?: boolean;
   readonly busyKind?: string | null;
   readonly work?: string | null;
+  /**
+   * The kind the work label ARRIVED WITH, when its author knew one.
+   *
+   * 🔴🔴 THIS IS THE EXCEPTION TO THE RULE ABOVE, AND IT IS NARROW ON PURPOSE. "A free-text label
+   * earns no mark" is about GUESSING a kind from words, which is the keyword-matching this
+   * codebase refuses everywhere else. It says nothing about a caller that already knows: when
+   * `canvas-tools.ts` writes "Reading the calendar" it is not describing a sentence it found, it is
+   * naming a call it is about to make. The kind travels WITH the label, from the one place that can
+   * vouch for it, and a label arriving without one still earns nothing.
+   */
+  readonly workMark?: ThinkingMark | null;
   readonly phase?: ThinkingPhase | null;
 }): ThinkingMark | null {
   if (input.searching) return "searching";
   if (input.busyKind) return markForBusy(input.busyKind);
-  if (input.work) return null;
+  if (input.work) return input.workMark ?? null;
   return input.phase ? THINKING_MARK[input.phase] : null;
 }

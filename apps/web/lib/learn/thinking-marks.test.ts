@@ -48,6 +48,31 @@ test("🔴 a free-text label earns no mark", () => {
   }
 });
 
+test("🔴🔴 a label that BROUGHT its kind may show it, and that is not the same rule", () => {
+  // The rule above forbids GUESSING a kind from words. It says nothing about a caller that already
+  // knows: `canvas-tools.ts` writing "Reading the calendar" is naming the call it is about to make,
+  // not reading a sentence it found. Calibration: drop `workMark` from `thinkingMark` and this
+  // reddens, while the guess-refusing test above stays green — which is the pair working.
+  assert.equal(thinkingMark({ work: "Reading the calendar", workMark: "calendar" }), "calendar");
+  assert.equal(thinkingMark({ work: "Working in gmail", workMark: "apps" }), "apps");
+  assert.equal(thinkingMark({ work: "Reading the calendar" }), null, "a bare label earned a mark");
+  // 🔴 AND IT STILL LOSES TO EVERYTHING MORE SPECIFIC, in the same order the caption uses.
+  assert.equal(thinkingMark({ searching: true, work: "Reading the calendar", workMark: "calendar" }), "searching");
+  assert.equal(thinkingMark({ busyKind: "source", work: "Reading the calendar", workMark: "calendar" }), "reading");
+});
+
+test("🔴🔴 every mark in the union is DRAWN, or it silently becomes the writing nib", () => {
+  // `thinking-mark.tsx` is a switch with a `default`, so a kind added to the union and forgotten in
+  // the switch does not fail to compile and does not throw — it quietly renders a pen. That is a
+  // picture contradicting a sentence, arriving through an omission rather than through a decision.
+  const GLYPHS = readFileSync(new URL("../../components/character/thinking-mark.tsx", import.meta.url), "utf8");
+  const drawn = new Set([...GLYPHS.matchAll(/case "([a-z]+)":/g)].map((hit) => hit[1]));
+  // `writing` is the deliberate default and has no `case` of its own.
+  for (const kind of ["reading", "mapping", "finding", "checking", "searching", "calendar", "apps"]) {
+    assert.ok(drawn.has(kind), `${kind} is in the union with no glyph — it renders as the writing nib`);
+  }
+});
+
 test("an unknown busy kind draws nothing rather than guessing", () => {
   assert.equal(markForBusy("something-new"), null);
   assert.equal(markForBusy(null), null);

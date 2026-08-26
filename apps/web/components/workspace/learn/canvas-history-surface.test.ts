@@ -123,15 +123,30 @@ test("🔴 rewinding never calls the session's writer", () => {
 
 // ── the rail's stated behaviours ────────────────────────────────────────────────────────────
 
-test("🔴🔴 time runs downwards: oldest at the top, Now last", () => {
+test("🔴🔴 time runs downwards: oldest at the top, newest at the bottom", () => {
   // Owner's screenshot: the bright marker is at the BOTTOM and the rows above it run back through
-  // the session. The first version reversed the list and put Now at the top, which is how a chat
-  // sidebar is ordered — it makes the column a stack of documents rather than a path.
+  // the session. The first version reversed the list, which is how a chat sidebar is ordered — it
+  // makes the column a stack of documents rather than a path.
   // Calibration: add `.reverse()` back and this reddens.
   assert.ok(!/entries\]\.reverse\(\)/.test(RAIL_CODE), "the rail reverses the history");
-  const railNow = RAIL_CODE.indexOf('label="Now"');
-  const railRows = RAIL_CODE.indexOf("shown.map(");
-  assert.ok(railNow > railRows && railRows > 0, "Now is not the last mark on the rail");
+  assert.ok(RAIL_CODE.indexOf("shown.map(") > 0, "the rail no longer draws its moments");
+});
+
+test("🔴🔴 there is no 'Now' mark, and the way back to live is still there", () => {
+  // Owner, 2026-08-25: *"could you remove the 'now' since thats not really needed?"*
+  //
+  // 🔴 THIS IS THE HALF THAT MAKES THE DELETION SAFE, AND IT IS WHY THE ASSERTION IS A PAIR. "Now"
+  // was the rail's own way back to live, so removing it alone would strand anybody who had rewound
+  // — a control that walks you into the past with no way forward. It does not, because the exit
+  // was never only there: the rewound surface carries "Return to now", which is where somebody
+  // looking at an old moment actually is. Delete that button and this test must redden.
+  assert.ok(!/label="Now"/.test(RAIL_CODE), "the Now mark is back on the rail");
+  // 🔴 AND AN EMPTY HISTORY NOW DRAWS NOTHING. "Now" used to guarantee the column had at least one
+  // mark; without it, a canvas with no moments rendered an empty `<nav>` — invisible, and still
+  // holding a hover target down the right edge that opened a panel with nothing in it.
+  assert.match(RAIL_CODE, /if \(entries\.length === 0\) return null;/, "an empty history still paints a rail");
+  const view = readFileSync(new URL("./canvas-history-view.tsx", import.meta.url), "utf8");
+  assert.match(view, /Return to now/, "🔴 nothing returns the learner to live — the rail's Now is gone too");
 });
 
 test("🔴 with more moments than the rail can draw, an un-rewound rail holds the newest end", () => {

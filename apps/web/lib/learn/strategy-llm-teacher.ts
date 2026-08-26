@@ -105,7 +105,7 @@ const TEACHER_SYSTEM = [
   "  which is what every competent explanation does. Recording what they then produce is still the only evidence.",
   "",
   "Your entire output is the JSON object requested: no greeting, no commentary, no explanation outside the JSON.",
-  "Never use an em dash. The character - must not appear anywhere in your output.",
+  "Never use an em dash. That punctuation mark must not appear anywhere in your output. Use a comma, a colon, or a new sentence instead.",
 ].join("\n");
 
 /**

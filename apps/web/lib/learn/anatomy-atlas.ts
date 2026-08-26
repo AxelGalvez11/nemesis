@@ -2071,7 +2071,6 @@ export const ANATOMY_ATLAS: readonly AnatomyRegion[] = [
       "Multifidus lumborum muscle.r",
       "Multifidus thoracis muscle.l",
       "Multifidus thoracis muscle.r",
-      "Muscular system.g",
       "Mylohyoid muscle.l",
       "Mylohyoid muscle.r",
       "Nasalis muscle.l",
@@ -2788,7 +2787,6 @@ export const ANATOMY_ATLAS: readonly AnatomyRegion[] = [
       "Motor root of trigeminal nerve.r",
       "Nasolacrimal duct.l",
       "Nasolacrimal duct.r",
-      "Nervous system & Sense organs.g",
       "Nodule of vermis",
       "Nucleus ambiguus.l",
       "Nucleus ambiguus.r",
@@ -3220,8 +3218,8 @@ export const ANATOMY_ATLAS: readonly AnatomyRegion[] = [
       "Transverse colon",
       "Urinary bladder",
       "Uvula of palate",
-      "Vermiform appendix",
-      "Visceral systems.g"
+      "Vermiform appendix"
+
     ],
     "title": "Internal organs"
   },
@@ -3373,7 +3371,6 @@ export const ANATOMY_ATLAS: readonly AnatomyRegion[] = [
       "Lateral vesical nodes.r",
       "Left colic nodes",
       "Left lobe of thymus",
-      "Lymphoid organs.g",
       "Mandibular node.l",
       "Mandibular node.r",
       "Mastoid nodes.l",
@@ -3729,7 +3726,6 @@ export const ANATOMY_ATLAS: readonly AnatomyRegion[] = [
       "Intra-articular ligament of head of rib.r",
       "Ischiofemoral ligament.l",
       "Ischiofemoral ligament.r",
-      "Joints.g",
       "Lateral meniscus.l",
       "Lateral meniscus.r",
       "Lateral talocalcaneal ligament.l",

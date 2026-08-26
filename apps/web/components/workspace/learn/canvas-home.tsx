@@ -30,7 +30,10 @@ import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { useAuth } from "@/components/AuthProvider";
+import { cn } from "@/lib/utils";
+import { AddMenuRow, ADD_MENU } from "./add-menu-row";
 import { ComposerSend } from "./composer-controls";
+import { FileDropOverlay } from "./file-drop-overlay";
 import { TodayStrip } from "./today-strip";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
@@ -319,11 +322,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
       }}
       style={{ ["--canvas-column" as string]: "680px" }}
     >
-      {/* A ring on the surface, not a modal over it: the page stays readable underneath, and
-          nothing has to be dismissed if the learner changes their mind mid-drag. */}
-      {draggingOver && (
-        <div className="pointer-events-none absolute inset-3 z-50 rounded-2xl ring-2 ring-(--ui-action)" />
-      )}
+      {/* 🔴 THE RING NOW COMES WITH A SENTENCE. It used to be the whole feedback — a 2px accent
+          outline and nothing else, which says "this is a target" and never says what dropping
+          does. `FileDropOverlay` keeps the ring and adds the answer. Not a modal: the page stays
+          readable underneath and nothing has to be dismissed if the learner changes their mind
+          mid-drag. */}
+      {draggingOver && <FileDropOverlay note="Drop your material here and Nemesis will start from it" />}
       {/* 🔴 ONE SCREEN, AND THE CANVASES ARE ON IT (owner 2026-08-14: "remove the scrolldown to see
           canvases list"). This was a full-viewport first screen with the learner's own canvases
           underneath, so their work was invisible until they scrolled — and the previous pass tried
@@ -523,35 +527,22 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               <Codicon name="add" size="var(--composer-icon)" />
             </button>
             {addOpen && (
-              <div
-                className="absolute bottom-[52px] left-0 z-50 w-[220px] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) py-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)"
-                role="menu"
-              >
-                <button
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+              <div className={cn("absolute bottom-[52px] left-0", ADD_MENU)} role="menu">
+                <AddMenuRow
+                  detail="From your computer"
+                  icon="file"
+                  label="Upload material"
                   onClick={() => { setAddOpen(false); filePicker.current?.click(); }}
-                  role="menuitem"
-                  type="button"
-                >
-                  <Codicon className="text-(--ui-text-tertiary)" name="file" size="16px" />
-                  Upload material
-                </button>
+                />
                 {COMPOSER_CAPABILITIES.map((offered) => (
-                  <button
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary)"
+                  <AddMenuRow
+                    detail={CAPABILITY_COPY[offered].detail}
+                    icon={CAPABILITY_COPY[offered].icon}
                     key={offered}
+                    label={CAPABILITY_COPY[offered].label}
                     onClick={() => { setAddOpen(false); setCapability(offered); }}
-                    role="menuitem"
-                    type="button"
-                  >
-                    <Codicon className="text-(--ui-text-tertiary)" name={CAPABILITY_COPY[offered].icon} size="16px" />
-                    <span className="flex min-w-0 flex-col">
-                      <span>{CAPABILITY_COPY[offered].label}</span>
-                      <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                        {CAPABILITY_COPY[offered].detail}
-                      </span>
-                    </span>
-                  </button>
+                    tint={CAPABILITY_COPY[offered].tint}
+                  />
                 ))}
               </div>
             )}

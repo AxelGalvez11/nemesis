@@ -27,6 +27,7 @@ import { shellNavigation } from "@/lib/workspace/shell-navigation";
 import { NAV_ICON_PX } from "@/lib/workspace/sidebar-nav";
 
 import { useResponsiveSidebar } from "./use-responsive-sidebar";
+import { SidePanelProvider, useSidePanelOpen } from "./side-panel";
 
 // SIDEBAR_COLLAPSE_BREAKPOINT_PX = 768 (desktop app/layout-constants.ts).
 const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
@@ -84,7 +85,12 @@ const SHELL_VARS: React.CSSProperties = {
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   return (
     <ImmersiveSurfaceProvider>
-      <WorkspaceChrome>{children}</WorkspaceChrome>
+      {/* 🔴 OUTSIDE `WorkspaceChrome`, because the chrome is what READS the claim. A provider
+          mounted inside the component that consumes it is a context nobody can see, and the
+          symptom is silent: the sidebar simply never collapses and nothing errors. */}
+      <SidePanelProvider>
+        <WorkspaceChrome>{children}</WorkspaceChrome>
+      </SidePanelProvider>
     </ImmersiveSurfaceProvider>
   );
 }
@@ -133,12 +139,16 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
   // claim comes from `CanvasSurface`, which is also what guarantees the `×` that replaces it; see
   // immersive-surface.tsx for why this is a declaration rather than a route or a query read.
   const immersiveClaimed = useImmersiveClaimed();
+  // A document docked on the right collapses the sidebar to the rail while it is open. Transient:
+  // the learner's stored preference is neither read nor written — see side-panel.tsx.
+  const sidePanelOpen = useSidePanelOpen();
   const { focusMode, navToggleShowing, railVisible, sidebarVisible } = shellNavigation({
     immersiveClaimed,
     libraryFullScreen,
     narrowViewport,
     pathname,
     sidebarOpen,
+    sidePanelOpen,
   });
 
   // 🔴🔴 THE TRANSITION IS OFF UNTIL AFTER THE FIRST PAINT, AND THAT IS NOT BELT AND BRACES.

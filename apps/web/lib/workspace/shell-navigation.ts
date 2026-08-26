@@ -61,6 +61,9 @@ export interface ShellNavigationInput {
    * that unconditionally renders one; `CanvasSurface` is the only such caller today.
    */
   readonly immersiveClaimed?: boolean;
+  /** Something is docked on the right — see side-panel.tsx. Collapses the sidebar to the rail for
+   *  as long as it is open, and never touches the stored preference. */
+  sidePanelOpen?: boolean;
 }
 
 export interface ShellNavigation {
@@ -97,6 +100,7 @@ export function shellNavigation({
   narrowViewport,
   libraryFullScreen,
   immersiveClaimed = false,
+  sidePanelOpen = false,
 }: ShellNavigationInput): ShellNavigation {
   const route = normalizePathname(pathname);
   // Narrow viewports are exempt from focus mode: there both rails are overlays, so there is nothing
@@ -111,7 +115,17 @@ export function shellNavigation({
     immersiveClaimed ||
     IMMERSIVE_ROUTES.has(route) ||
     (libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(route));
-  const sidebarVisible = sidebarOpen && !focusMode;
+  // 🔴🔴 A DOCKED PANEL COLLAPSES THE SIDEBAR AND LEAVES THE RAIL — owner, 2026-08-25: *"when the
+  // 'sidebar' opens the left sidebar should collapse automatically, so the right sidebar and canvas
+  // stay."* Folded in HERE rather than by writing `sidebarOpen`, because writing it would persist
+  // to the learner's stored preference and they would never get their sidebar back; see
+  // side-panel.tsx, and responsive-sidebar.ts for the same bug the narrow-viewport effect once had.
+  //
+  // 🔴 IT IS NOT `focusMode`. Focus mode takes the navigation away entirely, which is right for a
+  // canvas carrying its own `×`. A document open beside the page must not also remove the way out
+  // of the page — so this suppresses only the expanded sidebar, and `railVisible` below, computed
+  // from `sidebarVisible`, brings the 56px rail back on its own.
+  const sidebarVisible = sidebarOpen && !focusMode && !sidePanelOpen;
   // 🔴 A PHONE GETS NO RAIL. On a narrow viewport the sidebar is an OVERLAY, so a permanent
   // 56px column would eat screen width from a surface that has none to spare and would sit under
   // the overlay it is supposed to replace. The floating toggle stays the right answer there, which

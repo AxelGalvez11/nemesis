@@ -15,7 +15,6 @@ import test from "node:test";
 
 import type { ConstructionVisual, FlowVisual, TimelineVisual } from "./canvas-visual";
 import {
-  curlyArrow,
   layoutCircuit,
   layoutConstruction,
   layoutFlow,
@@ -651,30 +650,14 @@ test("a fragment with no supply draws no loop, just the network with open leads"
   assert.ok(fragment.height < 100, "a one-part fragment should be shallow");
 });
 
-// ─────────────────────────────────────────────────────────────── electron-pushing arrows
-
-test("a curly arrow bows perpendicular to the line between its atoms and stands off both", () => {
-  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 100, y: 0 });
-  assert.ok(drawn, "two distinct atoms drew nothing");
-  if (!drawn) return;
-  const [, sx, sy, , cx, cy, ex, ey] = drawn.path.split(" ");
-  assert.ok(Number(sx) > 0, "the tail sits on the source atom");
-  assert.ok(Number(ex) < 100, "the head sits on the target atom");
-  assert.equal(Number(sy), 0);
-  assert.equal(Number(ey), 0);
-  assert.notEqual(Number(cy), 0, "the curve does not bow, so it reads as a bond");
-  assert.ok(Number(cx) > Number(sx) && Number(cx) < Number(ex), "the bow is not between the atoms");
-  assert.ok(Number.isFinite(Number(cy)));
-});
-
-test("🔴 coincident atoms draw no arrow, never a NaN path", () => {
-  assert.equal(curlyArrow({ x: 5, y: 5 }, { x: 5, y: 5 }), null);
-});
-
-test("the arrowhead's barbs straddle the arrival point", () => {
-  const drawn = curlyArrow({ x: 0, y: 0 }, { x: 0, y: 80 });
-  assert.ok(drawn);
-  if (!drawn) return;
-  assert.doesNotMatch(drawn.head, /NaN/);
-  assert.match(drawn.head, /^M .* L .* L /, "the head is not two barbs meeting at the tip");
-});
+// ────────────────────────────────────── electron-pushing arrows: REMOVED 2026-08-26
+//
+// 🔴🔴🔴 `curlyArrow` AND EVERY TEST FOR IT WERE DELETED ON THE OWNER'S CALL: *"bad mechanism
+// arrows are worse than no arrows because they teach the chemistry incorrectly while also consuming
+// engineering time like a small electrical fire."* The geometry was sound in isolation and wrong on
+// a real molecule: measured the day before, two of six lone-pair dots on a bromine sat INSIDE the
+// letters, because clearance was computed as one radius in every direction while an atom's label is
+// a rectangle up to two and a half times wider than it is tall.
+//
+// 🔴 A MECHANISM IS NOW CLEAN STRUCTURES, `highlight`, AND PROSE. Read `canvas-visual.ts` before
+// restoring any of this from git: the geometry was never the hard part.

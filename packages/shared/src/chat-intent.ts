@@ -275,7 +275,7 @@ export interface IntentExchange {
  * on every skill for exactly this reason, and a test holds it.
  */
 export function skillMenu(catalog: readonly IntentSkill[]): string {
-  return catalog.map((skill) => `  ${skill.id} — ${skill.when}`).join("\n");
+  return catalog.map((skill) => `  ${skill.id}: ${skill.when}`).join("\n");
 }
 
 const INTENT_SYSTEM = [
@@ -309,22 +309,22 @@ export function intentContract(catalog: readonly IntentSkill[]): string {
     + '"webFreshness": "pd"|"pw"|"pm"|"py"|null}',
     "",
     '"mode" is what kind of answer this turn wants:',
-    '  "conversation" — small talk, a remark, a complaint, a question about Nemesis itself, or a '
+    '  "conversation": small talk, a remark, a complaint, a question about Nemesis itself, or a '
     + "short question that just wants answering.",
-    '  "learning" — the student wants to understand, practise, or be walked through something. '
+    '  "learning": the student wants to understand, practise, or be walked through something. '
     + "This is the ordinary case for real academic work, and it is the one that buys the deeper "
     + "thinking model. Choose it whenever the answer is worth thinking about, including when the "
     + "student expressed it as frustration rather than as a question.",
-    '  "current" — the answer turns on something happening now or recently.',
-    '  "research" — the student asked for sources, a literature review, evidence weighed, or a '
+    '  "current": the answer turns on something happening now or recently.',
+    '  "research": the student asked for sources, a literature review, evidence weighed, or a '
     + "report with citations. The most expensive mode; do not choose it for an ordinary question "
     + "that merely has an answer somewhere.",
     "",
     '"workspace" is what this turn needs from the student\'s OWN files, calendar and study decks:',
-    '  "none" — nothing. Most turns.',
-    '  "read" — answering means looking at what they have: what is due, what is in their Library, '
+    '  "none": nothing. Most turns.',
+    '  "read": answering means looking at what they have: what is due, what is in their Library, '
     + "what they should study next, what a folder holds, how their semester is laid out.",
-    '  "write" — they asked Nemesis to CREATE or CHANGE something of theirs: save flashcards, '
+    '  "write": they asked Nemesis to CREATE or CHANGE something of theirs: save flashcards, '
     + "build a practice test, write a note into their Library, put a date on their calendar, move "
     + "or rename or tidy something.",
     "",
@@ -334,7 +334,7 @@ export function intentContract(catalog: readonly IntentSkill[]): string {
     'Getting "workspace" wrong is the worst mistake available here. Only a "read" or "write" turn '
     + "is given the tools that touch the student's data. Without them Nemesis cannot save a deck "
     + "and cannot see a calendar, and it will write the deck into the chat or say it has no access "
-    + "— both of which the student experiences as the product being broken. When a turn plausibly "
+    + ", both of which the student experiences as the product being broken. When a turn plausibly "
     + 'needs their own data, say so: "read" costs almost nothing and being wrong the other way '
     + "costs the whole turn.",
     "",

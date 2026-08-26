@@ -129,7 +129,7 @@ export function pendingDeleteInstruction(target: string, recoverable: boolean): 
   return (
     `NOTHING HAS BEEN DELETED. ${target} is still there. The student has been shown a card asking them to `
     + "confirm, and only their tap can carry this out.\n"
-    + "Do NOT call this tool again for this item — calling it again will not get past this, it will only show a "
+    + "Do NOT call this tool again for this item. Calling it again will not get past this, it will only show a "
     + "second card. Do NOT say it is deleted, done, or removed, and do not use the past tense.\n"
     + "Reply with ONE short line telling them to tap the card to confirm"
     + (recoverable

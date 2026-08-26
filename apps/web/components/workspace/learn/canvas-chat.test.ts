@@ -51,7 +51,12 @@ test("the model is told how much rope is left, rather than being cut off silentl
   // A model that knows it has one search left spends it on its best query. One that is cut off
   // mid-thought has already wasted it, and answers as though it had looked everywhere.
   assert.match(chat, /MAX_SEARCH_ROUNDS - round - 1/, "searchesLeft is no longer counted down");
-  assert.match(chat, /ask\("", MAX_SEARCH_ROUNDS\)/, "the first pass no longer states the full budget");
+  assert.match(chat, /ask\("", MAX_SEARCH_ROUNDS, "", MAX_TOOL_ROUNDS\)/, "the first pass no longer states the full budget");
+  // 🔴 THE SAME RULE NOW COVERS THE WORKSPACE TOOLS (2026-08-25). A model told it has one tool
+  // round left spends it on the call that matters; one silently cut off has already spent it on a
+  // lookup it meant to follow up. Calibration: stop counting either budget down and this reddens.
+  assert.match(chat, /Math\.max\(0, MAX_TOOL_ROUNDS - toolRounds\)/, "toolRoundsLeft is no longer counted down");
+  assert.match(chat, /pending \? 0 :/, "a held call does not close the tool budget");
 });
 
 test("a failed round leaves the previous answer standing and stops", () => {

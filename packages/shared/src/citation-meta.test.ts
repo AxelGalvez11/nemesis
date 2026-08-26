@@ -28,9 +28,11 @@ Deno.test("citationYear falls back to the published_date year", () => {
   assertEquals(citationYear({ ...base, published_date: "2019-05-01" }), "2019");
 });
 
-Deno.test("citationYear returns an em dash when no year is known", () => {
-  assertEquals(citationYear(base), "—");
-  assertEquals(citationYear({ ...base, published_date: "not-a-date" }), "—");
+Deno.test("citationYear says n.d. when no year is known, and never a dash", () => {
+  // 🔴 OWNER RULE, 2026-08-25: Nemesis does not print an em dash anywhere, including in a table
+  // cell standing in for a missing value. "n.d." is what a citation says for an undated source.
+  assertEquals(citationYear(base), "n.d.");
+  assertEquals(citationYear({ ...base, published_date: "not-a-date" }), "n.d.");
 });
 
 Deno.test("evidenceRows is sorted by numeric tag and carries label/title/year", () => {
@@ -44,9 +46,9 @@ Deno.test("evidenceRows is sorted by numeric tag and carries label/title/year", 
   ]);
 });
 
-Deno.test("evidenceRows renders a missing title as an em dash", () => {
+Deno.test("evidenceRows names a missing title rather than printing a dash", () => {
   assertEquals(
     evidenceRows([{ ...base, chunk_tag: "5", source_type: "faers", title: null }]),
-    [{ tag: "5", type: "Adverse-event report", title: "—", year: "—" }],
+    [{ tag: "5", type: "Adverse-event report", title: "Untitled", year: "n.d." }],
   );
 });

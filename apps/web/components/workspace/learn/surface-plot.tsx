@@ -70,38 +70,70 @@ export function SurfacePlot({ visual }: { visual: SurfaceVisual }) {
         camera.lookAt(0, -0.1, 0);
 
         const styles = getComputedStyle(element);
-        // 🔴 NORMALISED THROUGH A 2D CANVAS, BECAUSE THE BROWSER SPEAKS A NEWER CSS THAN three.js
-        // PARSES. `getComputedStyle` here returns `color(srgb 1 1 1)`, which `three.Color` cannot
-        // read — it silently keeps its default white, which happens to be right in dark mode and is
-        // an invisible drawing in light mode. Assigning to a 2D context's `fillStyle` and reading
-        // it back yields plain `#rrggbb` for any colour the page can express.
-        const normalise = (value: string, fallback: string): string => {
-          const probe = document.createElement("canvas").getContext("2d");
-          if (!probe || !value) return fallback;
-          probe.fillStyle = fallback;
+        // 🔴 THE COLOUR IS MEASURED, NOT PARSED, AND THE PARSING VERSION SHIPPED BROKEN FOR MONTHS.
+        // Every theme token in `desktop-ui.css` is a `color-mix(in srgb, …)`, which `getComputedStyle`
+        // resolves to `color(srgb 0.96 0.96 0.97)`. `three.Color` cannot read that form: it warns and
+        // keeps its DEFAULT, which is white. So ink, paper, valley and peak were all white — the plot
+        // drew as a solid white blob with no lattice in it, which is exactly what the owner
+        // photographed in dark mode and could not see at all in light mode.
+        //
+        // 🔴 THE PREVIOUS FIX WAS THE RIGHT IDEA AND THE WRONG READ-BACK. It assigned the value to a
+        // 2D context's `fillStyle` and read the string back, believing that yields `#rrggbb`. It does
+        // for `rgb(…)`; for `color(srgb …)` Chrome round-trips the modern form UNCHANGED, so the
+        // string handed to three.js was the same one it could not parse. Measured here: `fillStyle`
+        // in, `color(srgb 0.960784 0.964706 0.972549)` out.
+        //
+        // Painting one pixel and reading it back cannot have this failure mode. Whatever the browser
+        // can display, it can display into a 1×1 canvas, and `getImageData` answers in plain bytes.
+        const probe = (() => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 1;
+          canvas.height = 1;
+          return canvas.getContext("2d", { willReadFrequently: true });
+        })();
+        /** Any colour the page can express, as channels in 0–1, or null if the browser refused it. */
+        const readColour = (value: string): { r: number; g: number; b: number; a: number } | null => {
+          if (!probe || !value) return null;
+          // 🔴 TWO SENTINELS, BECAUSE `fillStyle` FAILS SILENTLY. Assigning a value the browser
+          // cannot parse leaves the property at whatever it already held — so a value that "sticks"
+          // to black and to white is a value that was never applied at all.
+          probe.fillStyle = "#000000";
           try {
             probe.fillStyle = value;
           } catch {
-            return fallback;
+            return null;
           }
-          return typeof probe.fillStyle === "string" ? probe.fillStyle : fallback;
+          const overBlack = probe.fillStyle;
+          probe.fillStyle = "#ffffff";
+          try {
+            probe.fillStyle = value;
+          } catch {
+            return null;
+          }
+          if (probe.fillStyle !== overBlack) return null;
+          probe.clearRect(0, 0, 1, 1);
+          probe.fillRect(0, 0, 1, 1);
+          const pixel = probe.getImageData(0, 0, 1, 1).data;
+          return { a: (pixel[3] ?? 0) / 255, b: (pixel[2] ?? 0) / 255, g: (pixel[1] ?? 0) / 255, r: (pixel[0] ?? 0) / 255 };
         };
-        /**
-         * Is this a colour that actually covers what is behind it? `getComputedStyle` answers
-         * `rgba(0, 0, 0, 0)` for an unpainted element, which is not black — it is nothing.
-         */
-        const opaque = (value: string): boolean => {
-          const channels = /^rgba?\(([^)]+)\)/.exec(value);
-          if (!channels) return Boolean(value) && value !== "transparent";
-          const parts = channels[1]!.split(/[,/]/).map((part) => part.trim());
-          return parts.length < 4 || Number(parts[3]) > 0.9;
+        const toColour = (value: string, fallback: string): InstanceType<typeof three.Color> => {
+          const measured = readColour(value) ?? readColour(fallback);
+          return measured
+            ? new three.Color().setRGB(measured.r, measured.g, measured.b, three.SRGBColorSpace)
+            : new three.Color(fallback);
         };
 
-        /** The ground under the sheet: the nearest ancestor that actually paints one. */
+        /**
+         * The ground under the sheet: the nearest ancestor that actually paints one.
+         *
+         * 🔴 ALPHA COMES FROM THE SAME PIXEL. The old test matched `rgba(…)` with a regex and treated
+         * anything else as opaque, so a fully transparent `color(srgb 0 0 0 / 0)` ancestor counted as
+         * black paper and the ramp was built against a ground nobody can see.
+         */
         const paperOf = (from: HTMLElement): string => {
           for (let node: HTMLElement | null = from; node; node = node.parentElement) {
             const value = getComputedStyle(node).backgroundColor;
-            if (opaque(value)) return value;
+            if ((readColour(value)?.a ?? 0) > 0.9) return value;
           }
           return theme === "dark" ? "#0b0d11" : "#ffffff";
         };
@@ -114,12 +146,18 @@ export function SurfacePlot({ visual }: { visual: SurfaceVisual }) {
         //
         // There is no colour to swap in, either: this product is deliberately monochrome, and
         // `--ui-action` — the real accent — is #0a0a0c. So relief has to be carried by VALUE.
-        // The sheet spans paper-to-ink with troughs dark and peaks light, which is the direction
-        // a lit surface actually runs and so the one the eye reads without being told.
-        const ink = new three.Color(normalise(styles.color, "#444444"));
-        const paper = new three.Color(normalise(paperOf(element), theme === "dark" ? "#0b0d11" : "#ffffff"));
-        const valley = paper.clone().lerp(ink, 0.42);
-        const peak = paper.clone().lerp(ink, 0.08);
+        const ink = toColour(styles.color, "#444444");
+        const paper = toColour(paperOf(element), theme === "dark" ? "#0b0d11" : "#ffffff");
+
+        // 🔴 VALLEYS DARK AND PEAKS LIGHT MEANS THE MIX FLIPS WITH THE PAGE, AND IT DID NOT. Both
+        // ends were stated as a distance from paper towards ink, which reads "darker" only when the
+        // paper is the lighter of the two. On a dark page ink IS the light colour, so the same two
+        // numbers put the peaks at near-black and the troughs at mid-grey: a surface lit from
+        // underneath. Which end takes more ink is therefore decided by the paper's own luminance.
+        const bright = 0.2126 * paper.r + 0.7152 * paper.g + 0.0722 * paper.b >= 0.5;
+        const [lowMix, highMix] = bright ? [0.44, 0.1] : [0.12, 0.46];
+        const valley = paper.clone().lerp(ink, lowMix);
+        const peak = paper.clone().lerp(ink, highMix);
 
         const rows = visual.grid.length;
         const cols = visual.grid[0]?.length ?? 0;
@@ -226,54 +264,141 @@ export function SurfacePlot({ visual }: { visual: SurfaceVisual }) {
         );
         scene.add(wire);
 
+        // 🔴 THE BOX IS THE DEPTH CUE, AND A SINGLE FLOOR RECTANGLE WAS NOT ONE. What used to be here
+        // was one outline on the ground and one upright stick for z. Against that, a sheet floating
+        // in space has nothing to be measured by: how high a peak is, and how far back it sits, are
+        // both unanswerable, so the drawing reads flat however good the shading is.
+        //
+        // What every plotting tool draws instead is three ruled panes — a floor and two back walls —
+        // and the reason is that a grid line has a KNOWN spacing. Seeing the far squares smaller than
+        // the near ones is what tells the eye how deep the box is, and seeing where a peak lands
+        // against the wall rulings is what tells it how high the peak is.
+        //
+        // 🔴 THE BACK WALLS ARE THE ONES FURTHEST FROM THE CAMERA, RECOMPUTED ON EVERY TURN OF THE
+        // SCENE. Drawing all four is a cage that the surface hides inside; drawing two fixed ones
+        // puts a wall in front of the drawing as soon as the learner orbits past a corner. So all
+        // four are built once and two are shown, chosen by which side of the box the camera is on.
         const floor = -Z_RELIEF * 0.5 - 0.12;
-        const outline = new three.LineLoop(
-          new three.BufferGeometry().setFromPoints([
-            new three.Vector3(-1, floor, -1),
-            new three.Vector3(1, floor, -1),
-            new three.Vector3(1, floor, 1),
-            new three.Vector3(-1, floor, 1),
-          ]),
-          new three.LineBasicMaterial({ color: ink, opacity: 0.4, transparent: true }),
-        );
-        scene.add(outline);
-        const zAxis = new three.Line(
-          new three.BufferGeometry().setFromPoints([
-            new three.Vector3(-1, floor, 1),
-            new three.Vector3(-1, floor + 2 * Z_RELIEF * 0.5 + 0.24, 1),
-          ]),
-          new three.LineBasicMaterial({ color: ink, opacity: 0.4, transparent: true }),
-        );
-        scene.add(zAxis);
+        const ceiling = Z_RELIEF * 0.5 + 0.12;
+        const DIVISIONS = 4;
+        const at = (index: number) => -1 + (2 * index) / DIVISIONS;
+        const level = (index: number) => floor + ((ceiling - floor) * index) / DIVISIONS;
+
+        const ruling = new three.LineBasicMaterial({ color: ink, opacity: 0.15, transparent: true });
+        const edging = new three.LineBasicMaterial({ color: ink, opacity: 0.32, transparent: true });
+        const panes: InstanceType<typeof three.LineSegments>[] = [];
+        const pane = (points: number[], material: InstanceType<typeof three.LineBasicMaterial>) => {
+          const built = new three.LineSegments(
+            new three.BufferGeometry().setAttribute(
+              "position",
+              new three.BufferAttribute(new Float32Array(points), 3),
+            ),
+            material,
+          );
+          // Behind the sheet in every sense: the surface is the subject and the box is the paper it
+          // is drawn on, so a ruling that reaches the camera first would read as part of the shape.
+          built.renderOrder = -1;
+          scene.add(built);
+          panes.push(built);
+          return built;
+        };
+
+        const groundGrid: number[] = [];
+        for (let i = 0; i <= DIVISIONS; i += 1) {
+          groundGrid.push(at(i), floor, -1, at(i), floor, 1);
+          groundGrid.push(-1, floor, at(i), 1, floor, at(i));
+        }
+        pane(groundGrid, ruling);
+        pane([-1, floor, -1, 1, floor, -1, 1, floor, -1, 1, floor, 1, 1, floor, 1, -1, floor, 1, -1, floor, 1, -1, floor, -1], edging);
+
+        /** One upright wall, ruled the same way the floor is, at `x = side` or `z = side`. */
+        const wall = (axis: "x" | "z", side: -1 | 1) => {
+          const rulings: number[] = [];
+          for (let i = 0; i <= DIVISIONS; i += 1) {
+            if (axis === "x") {
+              rulings.push(side, floor, at(i), side, ceiling, at(i));
+              rulings.push(side, level(i), -1, side, level(i), 1);
+            } else {
+              rulings.push(at(i), floor, side, at(i), ceiling, side);
+              rulings.push(-1, level(i), side, 1, level(i), side);
+            }
+          }
+          const ruled = pane(rulings, ruling);
+          const outline =
+            axis === "x"
+              ? [side, floor, -1, side, ceiling, -1, side, ceiling, -1, side, ceiling, 1, side, ceiling, 1, side, floor, 1]
+              : [-1, floor, side, -1, ceiling, side, -1, ceiling, side, 1, ceiling, side, 1, ceiling, side, 1, floor, side];
+          const framed = pane(outline, edging);
+          // 🔴 NOT WRAPPED IN A `Group`. `add` REPARENTS: putting both lines in a group that is never
+          // itself added to the scene takes them straight back out of it, and the walls vanish.
+          return { framed, ruled };
+        };
+        const wallXLow = wall("x", -1);
+        const wallXHigh = wall("x", 1);
+        const wallZLow = wall("z", -1);
+        const wallZHigh = wall("z", 1);
 
         const sprites: Array<InstanceType<NonNullable<typeof sprite>["default"]>> = [];
-        if (sprite) {
-          const inkText = `#${ink.getHexString()}`;
-          const make = (text: string, x: number, y: number, z: number) => {
-            const label = new sprite!.default(text, 0.13, inkText);
-            label.position.set(x, y, z);
-            // An axis label the sheet can occlude is an axis label that vanishes from half the
-            // camera angles. Labels draw over everything, which is what paper diagrams do too.
-            label.material.depthTest = false;
-            label.renderOrder = 2;
-            scene.add(label);
-            sprites.push(label);
-          };
-          make(visual.xLabel ?? "x", 1.3, floor, 1.15);
-          make(visual.yLabel ?? "y", 1.15, floor, -1.3);
-          make(visual.zLabel ?? "z", -1, floor + 2 * Z_RELIEF * 0.5 + 0.38, 1);
-        }
+        const inkText = `#${ink.getHexString()}`;
+        const label = (text: string) => {
+          if (!sprite) return null;
+          const made = new sprite.default(text, 0.13, inkText);
+          // An axis label the sheet can occlude is an axis label that vanishes from half the
+          // camera angles. Labels draw over everything, which is what paper diagrams do too.
+          made.material.depthTest = false;
+          made.renderOrder = 2;
+          scene.add(made);
+          sprites.push(made);
+          return made;
+        };
+        const xLabel = label(visual.xLabel ?? "x");
+        const yLabel = label(visual.yLabel ?? "y");
+        const zLabel = label(visual.zLabel ?? "z");
+
+        /**
+         * Show the two walls the camera is looking AT, and hang each axis name off an edge the
+         * learner can still see. Both answers change the moment the scene is turned, so both are
+         * settled here rather than once at build time.
+         */
+        const faceTheCamera = () => {
+          const behindX = camera.position.x > 0;
+          const behindZ = camera.position.z > 0;
+          for (const [group, shown] of [
+            [wallXLow, behindX],
+            [wallXHigh, !behindX],
+            [wallZLow, behindZ],
+            [wallZHigh, !behindZ],
+          ] as const) {
+            group.ruled.visible = shown;
+            group.framed.visible = shown;
+          }
+          const nearX = behindX ? 1 : -1;
+          const nearZ = behindZ ? 1 : -1;
+          xLabel?.position.set(0, floor - 0.12, nearZ * 1.3);
+          yLabel?.position.set(nearX * 1.3, floor - 0.12, 0);
+          zLabel?.position.set(-nearX, ceiling + 0.2, -nearZ);
+        };
+        faceTheCamera();
 
         // No lights: every material in this scene is unlit by choice (see the sheet above), so a
         // light here would cost a uniform upload per draw and change nothing on screen.
 
-        const draw = () => renderer.render(scene, camera);
+        // Which walls are the back walls is settled before each frame, never on a timer — the scene
+        // only moves when a hand moves it, so this runs exactly as often as the render does.
+        const draw = () => {
+          faceTheCamera();
+          renderer.render(scene, camera);
+        };
         let controls: { dispose: () => void } | null = null;
         if (orbit) {
           const spun = new orbit.OrbitControls(camera, renderer.domElement);
           spun.enablePan = false;
           spun.minDistance = 2;
           spun.maxDistance = 8;
+          // 🔴 THE CAMERA STAYS ABOVE THE FLOOR. Orbiting underneath puts the ground pane between the
+          // learner and the surface, so the drawing disappears behind its own grid and the only way
+          // back is to guess which way to drag.
+          spun.maxPolarAngle = Math.PI / 2 - 0.04;
           spun.addEventListener("change", draw);
           controls = spun;
         }
@@ -288,10 +413,9 @@ export function SurfacePlot({ visual }: { visual: SurfaceVisual }) {
           }
           wire.geometry.dispose();
           (wire.material as { dispose: () => void }).dispose();
-          outline.geometry.dispose();
-          (outline.material as { dispose: () => void }).dispose();
-          zAxis.geometry.dispose();
-          (zAxis.material as { dispose: () => void }).dispose();
+          for (const built of panes) built.geometry.dispose();
+          ruling.dispose();
+          edging.dispose();
           geometry.dispose();
           material.dispose();
           renderer.dispose();

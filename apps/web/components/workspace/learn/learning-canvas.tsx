@@ -16,6 +16,8 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
+import { ArtifactCard } from "./artifact-card";
+import { OutputPreview } from "./output-preview";
 import { ResearchPlanCard } from "./research-plan-card";
 import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { useAuth } from "@/components/AuthProvider";
@@ -28,7 +30,7 @@ import { CanvasCheck } from "./canvas-check";
 import { buildTestRun, isTestRefusal } from "@/lib/learn/test-run";
 import { lookAt } from "@/lib/mascot/attention";
 import { isTypingTarget, pressesContinue } from "@/lib/learn/canvas-hotkeys";
-import type { CanvasBlock } from "@/lib/learn/canvas-model";
+import type { CanvasBlock, CanvasOutput } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
 import type { TeachingStrategyId } from "@/lib/learn/teaching-strategy";
@@ -43,14 +45,23 @@ import { buildCanvasHistory, reconstructMoment } from "@/lib/learn/canvas-histor
 import type { TurnSurroundings } from "./canvas-chat";
 import { buildTranscript } from "@/lib/learn/session-transcript";
 import { CanvasComposer } from "./canvas-composer";
-import type { ComposerCapability } from "@/lib/learn/composer-capability";
+import { COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { planTerritories } from "@/lib/learn/curriculum-plan";
 
-/** The capabilities this surface offers. Module-level so the array's identity is stable. */
-// 🔴 TWO NOW, AND THE ORDER IS THE MENU'S ORDER. Course first because it is the one that changes
-// what the canvas BECOMES; Deep research second because it produces a document beside the canvas
-// rather than steering it.
-const CANVAS_CAPABILITIES: readonly ComposerCapability[] = ["course", "research"];
+/**
+ * The capabilities this surface offers: all of them.
+ *
+ * 🔴🔴 IT IS THE LIST ITSELF NOW, AND THE HAND-WRITTEN VERSION HAD ALREADY GONE WRONG ONCE. This
+ * read `["course", "research"]`, which was complete on the day it was written and silently stopped
+ * being so the moment `COMPOSER_CAPABILITIES` grew — the canvas offered two while the front door
+ * offered seven, and nothing failed. That is the SAME defect #831 fixed on the front door, in a
+ * second spelling: a hard-coded list cannot be wrong about itself, which is exactly what makes it
+ * dangerous.
+ *
+ * 🔴 STILL MODULE-LEVEL, because `CanvasComposer` takes it as a prop and a fresh array on every
+ * render would re-run the `useMemo` that builds the menu.
+ */
+const CANVAS_CAPABILITIES: readonly ComposerCapability[] = COMPOSER_CAPABILITIES;
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
@@ -59,6 +70,7 @@ import { CanvasHistoryView } from "./canvas-history-view";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
+import { ConfirmCard } from "./confirm-card";
 import { ReplyActions } from "./reply-actions";
 import { SpokenExample } from "./spoken-example";
 import { CanvasQuiet } from "./canvas-quiet";
@@ -233,6 +245,9 @@ export function LearningCanvas({
     return buildTranscript(policy.evidence, (key) => byKey.get(key) ?? null);
   }, [policy.evidence, policy.territories]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  /** The artifact open in the side panel, or null. Canvas-level rather than inside the card, so the
+   *  panel survives the card being replaced by the next make mid-read. */
+  const [openArtifact, setOpenArtifact] = useState<CanvasOutput | null>(null);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
   const [recording, setRecording] = useState(false);
@@ -888,6 +903,32 @@ export function LearningCanvas({
    * printed one sentence and then nothing, for the rest of the session. An opening is the first
    * sentence OF what follows; an answer is a turn INSTEAD of it.
    */
+  /**
+   * A check is on screen and it is what the learner is being held to.
+   *
+   * 🔴🔴🔴 OWNER, 2026-08-25: *"when the quiz is created, it should fit the canvas, deepseek should
+   * not say anything like 'here it is'. that way users do not have to scroll down."* The quiz
+   * renders in its own block BELOW the reply, so a turn that produced one printed a paragraph of
+   * preamble first and the learner had to scroll past it to reach the first question. Measured on
+   * the live app the same week, the paragraph was *"Ready. Five questions coming up covering the
+   * main parts of a neuron… The first one will ask you to identify a labelled part on a diagram."*
+   * Every word of that is the quiz describing itself to somebody already looking at it.
+   *
+   * 🔴🔴🔴 AND HIDING THE PROSE IS THE WRONG FIX, WHICH I TRIED FIRST. This file already records
+   * what happens when a check turn's answer goes missing: 2026-08-24, *"Teach me the three branches
+   * of the US government, then quiz me on it"* returned five good chips and an EMPTY answer, and the
+   * canvas printed "Nemesis had nothing to add." above a quiz on a lesson never given. Suppressing
+   * the prose whenever a check exists reproduces exactly that, for exactly that request: the learner
+   * asked for two things and would see only the second.
+   *
+   * So the answer stays and the SURFACE moves to the check instead. A preamble above it costs a
+   * scroll the learner never has to make; a hidden lesson costs the lesson.
+   *
+   * 🔴 A REFUSAL IS NOT A CHECK. "There is nothing to test yet" is the whole answer to that turn and
+   * has no questions under it, so it does not take the surface from anything.
+   */
+  const checkOwnsSurface = session.testRequested && !policy.awaitingAnswer && !isTestRefusal(testRun);
+
   const asideOnScreen: "none" | "opening" | "reply" =
     session.aside === null || session.aside.blockId !== null ? "none" : session.aside.kind;
 
@@ -949,7 +990,7 @@ export function LearningCanvas({
    * and the learner would hear the beginning of the answer over and over. It is the same signal the
    * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
    */
-  const voice = useCanvasVoice(policy, policy.judging, turnInFlight ? null : spokenReply);
+  const voice = useCanvasVoice(policy, turnInFlight ? null : spokenReply);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -966,6 +1007,8 @@ export function LearningCanvas({
     answerOwed: policy.awaitingAnswer,
     blocks: canvas.blocks.length,
     canvasState: canvas.state,
+    // 🔴 NOTHING WAS ATTACHED, SO NOTHING WAS SEARCHED. See `hasMaterial` in canvas-presence.ts.
+    hasMaterial: canvas.sources.length > 0,
     // 🔴 THE MATERIAL IS THE ACTION ONLY WHILE THAT ACTION IS STILL IN FLIGHT. Answering the
     // question lands evidence, the policy picks a different action, this flips to false and the
     // task has attention back — with no handler anywhere having to remember to clear anything.
@@ -1213,6 +1256,9 @@ export function LearningCanvas({
     phase: policy.phase,
     searching: turnInFlight && session.searchedDomains.length > 0,
     work: session.work,
+    // 🔴 THE MARK THE LABEL BROUGHT WITH IT, and nothing else. `thinkingMark` still refuses to
+    // invent one for a label that arrived bare — see the note on `workMark` there.
+    workMark: session.workMark,
   });
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
@@ -1388,6 +1434,7 @@ export function LearningCanvas({
         making={session.making}
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
         onMakeDeliverable={(kind) => void session.makeDeliverable(kind)}
+        replyAudio={voice.replyAudio}
         transcript={transcript}
         voice={voice.header}
         // 🔴 THE NARROW SLICE, NOT `policy` ITSELF — see the prop's own comment in
@@ -1655,6 +1702,17 @@ export function LearningCanvas({
                 ),
               )}
 
+              {/* 🔴🔴 THE CONFIRMATION CARD SITS UNDER THE SENTENCE THAT EXPLAINS IT, and above the
+                  copy/voice row rather than below it: what the learner has to decide must come
+                  before the controls for the answer they have finished reading. It is on the aside,
+                  so the next turn replaces the card with the answer it belonged to — a card that
+                  outlived its sentence would be a consent button attached to nothing.
+                  🔴 SAME `turnInFlight` GATE AS THE ROW BELOW. A "Delete" button under half an
+                  answer is a button under a sentence that is about to say something else. */}
+              {!turnInFlight && session.aside?.pending && (
+                <ConfirmCard onAnswer={(approve) => session.confirmPending(approve)} pending={session.aside.pending} />
+              )}
+
               {/* 🔴 AFTER THE ANSWER, AND ONLY ONCE IT HAS ARRIVED. Copying half an answer copies
                   half an answer, and a play button on a sentence about to be replaced reads as
                   broken. `turnInFlight` is the same signal the thinking screen keys on. */}
@@ -1789,7 +1847,19 @@ export function LearningCanvas({
             the turn produced, answered by tapping, with the composer below untouched. What it is
             NOT is a clarification — nothing was ambiguous, the learner declared the capability, and
             this is Nemesis showing what it understood rather than asking what they meant. */}
-        {session.researchPlan && presence !== "preparing" && (
+        {/* 🔴 THE FILE, HANDED BACK IN THE FLOW. Owner, 2026-08-25, with screenshots of the
+            reference: a finished document arrives in the conversation as an object with a name on
+            it, not as a line of notice text pointing at a panel. It sits in the same slot as the
+            plan card and the clarification because it is the same kind of thing — something this
+            turn produced, sitting above an untouched composer. */}
+        {session.madeArtifact && presence !== "preparing" && (
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
+            <ArtifactCard onOpen={() => setOpenArtifact(session.madeArtifact)} output={session.madeArtifact} />
+          </div>
+        )}
+{/* The reader, docked to the right. Mounted at canvas level so it outlives the card. */}
+        {openArtifact && <OutputPreview canvasId={canvas.id} onClose={() => setOpenArtifact(null)} output={openArtifact} />}
+                {session.researchPlan && presence !== "preparing" && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
             <ResearchPlanCard
               onCancel={session.cancelResearchPlan}
@@ -1915,7 +1985,7 @@ export function LearningCanvas({
             re-render with the same sources, so the knowledge key would be unchanged and the policy
             would NOT look again — the button would appear to work and change nothing. Re-mounting
             is the whole mechanism by which reopening from the Library recovered. */}
-        {presence === "quiet" && (
+        {presence === "quiet" && !checkOwnsSurface && (
           <CanvasQuiet
             // 🔴 `relook=1` IS WHAT MAKES THIS BUTTON DO ANYTHING. Without it the reload re-resolves
             // and a remembered empty answer short-circuits before a lane runs — the identical screen,
@@ -2155,7 +2225,6 @@ export function LearningCanvas({
           // safe ternary only because ownership was all-or-nothing. `sink` is a union that cannot
           // name two receivers, so there is no combination of states in which both branches are
           // live — see canvas-hosting.ts.
-          listenSignal={voice.listenSignal}
           onAnswer={(text, via, tookMs) => {
             acknowledgeAttachments();
             // 🔴 NEMESIS STOPS TALKING THE MOMENT THE LEARNER ANSWERS. Speech that outlives the

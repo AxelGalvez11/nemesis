@@ -208,6 +208,8 @@ async function main(): Promise<void> {
     source: SourceId,
     rename?: (name: string) => string,
   ): Promise<void> => {
+    /** Only Z-Anatomy's terms have been checked for its materials — see the note below. */
+    const keepMaterials = source === "z-anatomy";
     const root = document.getRoot();
 
     // 🔴 RENAMING HAPPENS IN THE MODEL, NOT ONLY IN THE REGISTRY, AND THAT IS THE WHOLE POINT. The
@@ -219,18 +221,57 @@ async function main(): Promise<void> {
       for (const node of root.listNodes()) node.setName(rename(node.getName() ?? ""));
     }
 
-    // 🔴 THE LICENCE ACT: no texture, no image, no UV channel survives the harvest. Open3DModel's
-    // textures are CC BY-NC-SA and NC is refused across this codebase by design, so nothing
-    // non-commercial ever reaches the repo, the deploy, or a learner. The bones and organs render
-    // in a material of our own instead.
+    // 🔴🔴 THE ATLAS SHIPS ITS OWN TITLE CARD AS GEOMETRY, AND IT WAS IN THE BUILD FOR MONTHS.
+    // Every Z-Anatomy system collection has one node suffixed `.g` — "Nervous system & Sense
+    // organs.g", "Joints.g" — carrying an extruded 3D TEXT mesh of the system's name. It went
+    // unnoticed while everything rendered in one flat grey; with the atlas's colours on, it is a
+    // lump of orange lettering floating beside the brain. It also sits well off to one side, so it
+    // inflated the bounding box and the camera framed the caption as much as the anatomy.
+    //
+    // 🔴 `setMesh(null)`, NEVER `dispose()`. That node is ALSO the system's root container — the
+    // nervous one has 372 children. Disposing it takes the entire subtree: joints fell from 414
+    // structures to 5 and the file from 2.8 MB to 9 KB, silently, with a cheerful success line.
+    // Strip the geometry off the node and leave the node where it is.
+    for (const node of root.listNodes()) {
+      if ((node.getName() ?? "").endsWith(".g")) node.setMesh(null);
+    }
+
+    // 🔴 THE LICENCE ACT: no texture, no image, no UV channel survives the harvest, from ANY
+    // source. Open3DModel's textures are CC BY-NC-SA and NC is refused across this codebase by
+    // design, so nothing non-commercial reaches the repo, the deploy, or a learner.
     for (const texture of root.listTextures()) texture.dispose();
-    for (const material of root.listMaterials()) material.dispose();
     for (const mesh of root.listMeshes()) {
       for (const primitive of mesh.listPrimitives()) {
-        primitive.setMaterial(null);
         for (const semantic of primitive.listSemantics()) {
           if (semantic.startsWith("TEXCOORD")) primitive.setAttribute(semantic, null);
         }
+      }
+    }
+
+    // 🔴🔴 MATERIALS ARE A PER-SOURCE DECISION, AND TREATING THEM AS ONE WAS A REAL BUG. This used
+    // to dispose every material from every source, justified by the texture note above — but a
+    // TEXTURE restriction on ONE atlas is not a reason to throw away ANOTHER atlas's colours.
+    // `anatomy-licence.ts` records all three sources as commercially usable, and Z-Anatomy is
+    // CC BY-SA 4.0. The result of the old rule was that arteries, veins, cardiac muscle and valve
+    // leaflets — coloured by anatomical convention in the source — all arrived as one flat grey.
+    //
+    // Colour is kept only where we are certain of the terms. Open3DModel's bones and HRA's organs
+    // still render in a material of ours; widening that needs the same check done on those two.
+    if (keepMaterials) {
+      for (const material of root.listMaterials()) {
+        // 🔴 THE EXPORT IS NOT USABLE RAW. Blender bakes Z-Anatomy's custom node groups as
+        // `emissiveFactor: [1,1,1]` — fully self-illuminated white — with a metallic factor near
+        // 0.5. Rendered untouched, every structure is a white silhouette and looks like a failed
+        // load. The base colour underneath is correct and is the thing worth keeping, so the two
+        // lies are zeroed here rather than in the viewer: one fix, in the file, for every reader.
+        material.setEmissiveFactor([0, 0, 0]);
+        material.setMetallicFactor(0);
+        material.setRoughnessFactor(0.45);
+      }
+    } else {
+      for (const material of root.listMaterials()) material.dispose();
+      for (const mesh of root.listMeshes()) {
+        for (const primitive of mesh.listPrimitives()) primitive.setMaterial(null);
       }
     }
 
@@ -243,7 +284,11 @@ async function main(): Promise<void> {
     // beneath it is askable, and the viewer highlights a parent by lighting its whole subtree.
     const hasGeometry = (node: ReturnType<typeof root.listNodes>[number]): boolean =>
       node.getMesh() !== null || node.listChildren().some((child) => hasGeometry(child));
-    const named = root.listNodes().filter((node) => (node.getName() ?? "").trim());
+    // `.g` is excluded here too: with its mesh stripped it still reports geometry through its
+    // children, so it would otherwise stay in the registry as a structure a model could ask for.
+    const named = root
+      .listNodes()
+      .filter((node) => (node.getName() ?? "").trim() && !(node.getName() ?? "").endsWith(".g"));
     const structures = [
       ...new Set(named.filter((node) => hasGeometry(node)).map((node) => node.getName().trim())),
     ].sort((a, b) => a.localeCompare(b));

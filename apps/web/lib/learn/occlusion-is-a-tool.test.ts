@@ -43,6 +43,9 @@ const EMPTY: TurnContext = {
   searchesLeft: 0,
   sources: 0,
   stagedPassage: "",
+  toolCatalogue: "",
+  toolContext: "",
+  toolRoundsLeft: 0,
   today: "Tuesday, 18 August 2026",
   webContext: "",
 };
@@ -140,6 +143,24 @@ test("🔴🔴🔴 the answer is NEVER revealed while the run is live", () => {
   // recognition, and the evidence then records neither.
   assert.match(CHECK_CARD, /revealed=\{false\}/, "the covered part is revealed before the learner answers");
   assert.ok(!/revealed=\{revealed\}|revealed=\{true\}/.test(CHECK_CARD), "the reveal became conditional on this screen");
+});
+
+test("🔴🔴 an untitled canvas names its deck after the diagram, not after nothing", () => {
+  // 🔴 MEASURED IN PRODUCTION, 2026-08-25. A nephron canvas opened from a deep link has an EMPTY
+  // title, so twenty nephron cards saved as "Untitled deck" — honest, and useless on a shelf. The
+  // model had just written `"figure": "nephron"`; that word was sitting in the reply while the
+  // deck was being named after nothing.
+  //
+  // 🔴 THE SUBJECT MUST BE READ BEFORE THE INSERT. It used to be read after, purely because the
+  // cards were built after — which is why the name could not use it.
+  const subjectAt = DELIVERABLES.indexOf("const subject = readFigureSubject(readCardsFigure(reply.text))");
+  const nameAt = DELIVERABLES.indexOf("const name = deckName(named)");
+  const insertAt = DELIVERABLES.indexOf('.from("study_decks")');
+  assert.ok(subjectAt > 0 && nameAt > 0 && insertAt > 0, "one of the three anchors is gone");
+  assert.ok(subjectAt < nameAt, "the figure subject is read after the deck is named");
+  assert.ok(nameAt < insertAt, "the name is decided after the deck row is written");
+  // …and the learner's own title still wins over it.
+  assert.match(DELIVERABLES, /canvas\.title\.trim\(\) \|\| \(subject/, "a learner's own canvas title stopped taking precedence");
 });
 
 test("🔴🔴 flashcards: the model names a subject and code makes the cards", () => {
