@@ -36,6 +36,7 @@ import { ThinkingMark } from "./thinking-mark";
 import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
 import { speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
+import { placeBeside } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
 
 // 🔴 THE STYLESHEET COMES IN HERE NOW, AND FORGETTING IT COST AN AFTERNOON. It used to be
@@ -289,14 +290,27 @@ export function CharacterDock({
         contain && host?.offsetParent instanceof HTMLElement
           ? host.offsetParent.getBoundingClientRect().bottom
           : window.innerHeight;
-      setOffset(Math.max(bottom, floor - top + gap));
-      // Lined up with the composer's left edge, in the same coordinate space the dock is
-      // positioned in. `left` survives only as the fallback for a composer that is not there.
+      // Measured against whatever the dock is positioned within, same as the floor.
       const originX =
         contain && host?.offsetParent instanceof HTMLElement
           ? host.offsetParent.getBoundingClientRect().left
           : 0;
-      setInset(Math.max(8, r.left - originX));
+
+      // 🔴🔴 BESIDE THE COMPOSER, NOT ON TOP OF IT (owner 2026-08-26: *"the mascot should be on
+      // the left side of composer"*). It used to stand on the composer's shoulder — lined up
+      // with its left edge and floating a gap above it — which put it in the text column, over
+      // the last line of whatever the learner was reading. The arithmetic lives in
+      // `placeBeside` so it can be checked without a browser.
+      const at = placeBeside({
+        anchor: { left: r.left - originX, top: r.top, height: r.height },
+        coveredTop: top,
+        floor,
+        size,
+        gap,
+        bottom,
+      });
+      setInset(at.inset);
+      setOffset(at.offset);
     };
     measure();
     const timer = window.setInterval(measure, MEASURE_MS);
@@ -305,7 +319,7 @@ export function CharacterDock({
       window.clearInterval(timer);
       window.removeEventListener("resize", measure);
     };
-  }, [anchor, bottom, gap, contain, left]);
+  }, [anchor, bottom, gap, contain, left, size]);
 
   // ── Where it stands ──────────────────────────────────────────────────────────
   const station = stationOverride ?? stationOf(shown);
