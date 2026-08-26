@@ -151,17 +151,15 @@ export function Mascot({ size = 168 }: { size?: number }) {
   const timer = useRef<number | null>(null);
 
   const { state, face } = beatAt(step);
-  // 🔴 A TURN HAPPENS AT REST, AND THAT IS A REQUIREMENT RATHER THAN A PREFERENCE. Only the
-  // resting-face states are steerable — everywhere else the gaze pose IS the measured animation,
-  // so `BloubBot` refuses to lay a look on top of it and the turn would silently not happen. A
-  // click during the ~1.7s of a beat would do nothing at all. Resting for the duration also
-  // means the poke cannot introduce a state the circle rule has not already cleared.
-  const shown: StateId = spinning ? REST : state;
 
   useEffect(() => {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    // Held for the turn, so the cycle does not step underneath it and land somewhere else the
-    // moment it finishes.
+    // 🔴 HELD FOR THE TURN, AND NOW FOR A SECOND REASON. The first was that the cycle must not
+    // step out from under a gesture and land somewhere else the moment it ends. The second is that
+    // `BloubBot` steers a resting face and merely offsets a beat, so a state change MID-turn would
+    // swap between those two treatments and jump the gaze. Holding whatever he is wearing keeps
+    // one treatment for the whole revolution — and holding is safe because both beats are static
+    // poses, so a held wink is simply a wink.
     if (spinning) return;
 
     const hold =
@@ -184,6 +182,11 @@ export function Mascot({ size = 168 }: { size?: number }) {
    * and the silhouette is never involved. `lib/character/spin.ts` owns the pacing and says why the
    * curve is not the arrival's.
    *
+   * 🔴 IT TURNS TWICE, AND IN WHATEVER FACE HE IS WEARING (owner, 2026-08-26: *"actually just make
+   * him double spin"*, and *"the spin should work regardless of its expression state"*). The turn
+   * used to force him back to `idle`, because only resting faces can be steered — `release` in
+   * `BloubBot` now carries the offset too, so a click during a wink turns the wink.
+   *
    * The brow machinery stays in `BloubBot` and `brow.ts` — it is NOT dead code left lying about.
    * The app's own character still waggles (`apps/web/components/bloub/use-poke.ts`), and the two
    * renderers are kept in step on purpose. What changed is only what this page asks for.
@@ -196,7 +199,7 @@ export function Mascot({ size = 168 }: { size?: number }) {
   return (
     <div className="mascot">
       <BloubBot
-        state={shown}
+        state={state}
         expression={face}
         size={size}
         color={INK}

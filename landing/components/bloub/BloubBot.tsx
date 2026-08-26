@@ -34,7 +34,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { NOTIF_BLUE } from "@/lib/bloub/decor";
 import { BotEngine, type BotFrame } from "@/lib/bloub/engine";
-import { SPIN, TURN_TIME, lookTarget } from "@/lib/bloub/gaze";
+import { TURN_TIME, lookTarget } from "@/lib/bloub/gaze";
 import { clamp, easings } from "@/lib/bloub/math";
 import { DEMI_VIEWBOX, RAYON } from "@/lib/bloub/repere";
 import { SHAPE_BY_ID, mixHex } from "@/lib/bloub/skins";
@@ -42,7 +42,7 @@ import { capsulePath } from "@/lib/bloub/shape";
 import { POSES, STATE_BY_ID, type StateId } from "@/lib/bloub/states";
 
 import { browFrame } from "@/lib/character/brow";
-import { SPIN_STEP, spinTour } from "@/lib/character/spin";
+import { SPIN_STEP, spinDegrees } from "@/lib/character/spin";
 import { restingFace } from "@/lib/character/face";
 import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@/lib/character/pool";
 
@@ -529,6 +529,23 @@ export function BloubBot({
     };
 
     const release = () => {
+      // 🔴🔴 A TURN SURVIVES A STATE THAT REFUSES TO BE STEERED, and that is the whole of "the spin
+      // should work regardless of its expression state" (owner, 2026-08-26). Releasing is how the
+      // gaze gets out of the way of an animation that carries its own — but a turn is not a gaze.
+      // It is an offset SUBTRACTED from whatever yaw the pose already produced, so it composes
+      // with a wink instead of overwriting it: `mix: 0` leaves the pose in charge of where the
+      // eyes are, and `spin` carries them round from there. Before this, a click during a beat
+      // did nothing, and the character had to be forced back to `idle` to be turned at all.
+      const turning = spinFromRef.current;
+      if (turning !== null) {
+        engine.setLook(
+          { yaw: 0, pitch: 0, mix: 0, spin: spinDegrees(clockRef.current - turning), wander: 1 },
+          clockRef.current,
+          SPIN_STEP,
+        );
+        aimingRef.current = false;
+        return;
+      }
       if (!aimingRef.current) return;
       engine.setLook(null, clockRef.current, TURN_TIME);
       aimingRef.current = false;
@@ -537,7 +554,8 @@ export function BloubBot({
     const aim = () => {
       // Only the resting-face states are steerable. Everywhere else the gaze pose IS
       // the measured animation — the orbit sends the eyes round the sphere — and
-      // laying a follow on top of it would smear both.
+      // laying a follow on top of it would smear both. `release` still turns the
+      // character when one has been asked for; what it declines is STEERING.
       if (!STATE_BY_ID.get(stateRef.current)?.baseFace) {
         release();
         return;
@@ -587,7 +605,7 @@ export function BloubBot({
       // Leaving `mix` where the arrival left it means the turn is a pure offset about whatever
       // direction the head is already holding, which is what was asked for.
       const spinning = spinFromRef.current;
-      if (spinning !== null) look.spin = SPIN * (1 - spinTour(clockRef.current - spinning));
+      if (spinning !== null) look.spin = spinDegrees(clockRef.current - spinning);
 
       // 🔴 AND IT IS SET INSTANTLY, NOT MORPHED, WHICH IS THE OTHER HALF OF THE SAME BUG. A full
       // turn's two ends are the same angle but not the same NUMBER: `spin` has to leave 0, travel

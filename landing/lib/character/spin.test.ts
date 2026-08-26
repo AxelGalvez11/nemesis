@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { SPIN_STEP, SPIN_TIME, spinTour } from "./spin";
+import { SPIN_STEP, SPIN_TIME, SPIN_TURNS, spinDegrees, spinTour } from "./spin";
 
 describe("the poke turn", () => {
   it("starts at nothing and finishes the full circuit", () => {
@@ -57,6 +57,30 @@ describe("the poke turn", () => {
     expect(SPIN_STEP).toBeGreaterThan(0);
     // 1/120s, the shortest frame worth planning for.
     expect(SPIN_STEP).toBeLessThan(1 / 120);
+  });
+
+  // 🔴 THE ONE THAT KEEPS THE LANDING EXACT. The turn only returns the character to where it set
+  // off because a whole number of revolutions is the same angle as none. A fractional count would
+  // leave him facing somewhere new after every click, drifting a little further each time.
+  it("turns a whole number of times, so it lands where it set off", () => {
+    expect(Number.isInteger(SPIN_TURNS)).toBe(true);
+    expect(SPIN_TURNS).toBeGreaterThan(0);
+    expect(spinDegrees(SPIN_TIME) % 360).toBe(0);
+    expect(spinDegrees(0) % 360).toBe(0);
+  });
+
+  it("is a double turn, and travels 720 degrees to do it", () => {
+    expect(SPIN_TURNS).toBe(2);
+    expect(spinDegrees(0)).toBe(720);
+    expect(spinDegrees(SPIN_TIME)).toBe(0);
+  });
+
+  // 🔴 IT COUNTS DOWN TO ZERO, NOT UP FROM IT. Zero is what the character rests at, so ending
+  // there is what makes handing back to normal tracking continuous. Reverse this and the
+  // discontinuity moves to the END, where it is no longer free.
+  it("finishes at the resting value rather than starting there", () => {
+    expect(spinDegrees(SPIN_TIME)).toBe(0);
+    expect(spinDegrees(0)).toBeGreaterThan(0);
   });
 
   it("takes longer than the entrance's arrival, which is the point of having its own", () => {
