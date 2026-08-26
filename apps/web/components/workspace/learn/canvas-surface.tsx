@@ -39,8 +39,30 @@ import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
 import { FileDropOverlay } from "./file-drop-overlay";
 
 /** The reading measure every part of the canvas is set to — document, question, diagnosis and
- *  composer — so the page reads as one column rather than four things that happen to be centred. */
-const CANVAS_COLUMN_PX = "680px";
+ *  composer — so the page reads as one column rather than four things that happen to be centred.
+ *
+ * 🔴🔴 822, WAS 680, AND THE NUMBER THAT MATTERS IS THE 768 INSIDE IT. Owner 2026-08-26: *"the
+ * learning doesnt match to how chatgpt does it."* Measured side by side, same request, same
+ * 1470px viewport:
+ *
+ *              reference   Nemesis (before)
+ *   text       768px       626px
+ *   composer   768px       768px
+ *   table      925px       686px, inside a 624px box
+ *
+ * So the lesson was being read at 626 while the composer under it was 768: the two halves of one
+ * column, 142px apart. The reference sets its prose to exactly the width of its composer, which is
+ * the number `--composer-max-width` in globals.css has held since it was measured.
+ *
+ * 🔴 THIS CONSTANT IS THE OUTSIDE OF THE BOX, NOT THE TEXT. Every part of the canvas wears
+ * `max-w-(--canvas-column) px-6`, and `px-6` is 1.5rem against this app's 112.5% root, so 27px a
+ * side: 822 - 54 = 768 of text. Change the padding and this number has to move with it.
+ *
+ * 🔴 AND IT IS WHAT MADE THE TABLES FIT. A five-column comparison table wanted 686px and had 624,
+ * so every cell wrapped onto four or five lines and the last column was cut off mid-word. It is
+ * the same table at 768. The reference goes further and lets a wide table break OUT of its prose
+ * column to 925; that is not done here, and a table wider than 768 still scrolls inside itself. */
+const CANVAS_COLUMN_PX = "822px";
 
 interface CanvasSurfaceProps {
   /** Leaves the canvas. Always wired; there is no state in which this control is absent. */

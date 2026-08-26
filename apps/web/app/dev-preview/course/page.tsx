@@ -40,10 +40,10 @@ export default function CoursePreviewPage() {
       <WorkspaceShell>
         <main
           className="relative h-full min-h-0 bg-(--ui-bg-editor)"
-          style={{ ["--canvas-column" as string]: "680px" }}
+          style={{ ["--canvas-column" as string]: "822px" }}
         >
           <div className="relative h-full overflow-y-auto pt-[72px]">
-            <div className="mx-auto flex w-full max-w-[680px] flex-col gap-4 px-6 pt-4 pb-40">
+            <div className="mx-auto flex w-full max-w-[822px] flex-col gap-4 px-6 pt-4 pb-40">
               <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
                 Press + and choose Course. The chip appears in the input row; send clears it.
               </p>
