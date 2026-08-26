@@ -20,7 +20,11 @@ import { WorkspacePreviewProvider } from "@/components/workspace/preview-context
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import type { CanvasSummary, Folder } from "@/lib/learn/canvas-store";
 
-const FOLDERS: Folder[] = [
+// 🔴 EXPORTED SO `[id]/page.tsx` CAN SHARE THEM. The project PAGE preview needs the identical
+// rows the LIST preview uses — "Torts" has to be the same project with the same two canvases in
+// both places, or a measurement taken by clicking from one into the other would be measuring two
+// different fixtures wearing one name.
+export const FOLDERS: Folder[] = [
   { createdAt: "2026-07-28T09:00:00.000Z", id: "f-fall", name: "Fall 2026", parentId: null },
   { createdAt: "2026-08-02T09:00:00.000Z", id: "f-torts", name: "Torts", parentId: "f-fall" },
   { createdAt: "2026-06-11T09:00:00.000Z", id: "f-thermo", name: "Thermodynamics", parentId: null },
@@ -29,7 +33,7 @@ const FOLDERS: Folder[] = [
   { createdAt: "2025-11-14T09:00:00.000Z", id: "f-empty", name: "Second year, unfiled", parentId: null },
 ];
 
-const CANVASES: CanvasSummary[] = [
+export const CANVASES: CanvasSummary[] = [
   { folderId: "f-torts", id: "c1", state: "learn", title: "Negligence: duty of care", updatedAt: "2026-08-25T11:00:00.000Z" },
   {
     courseTitle: "Torts, from first principles",

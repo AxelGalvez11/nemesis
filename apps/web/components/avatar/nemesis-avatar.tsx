@@ -117,6 +117,33 @@ export interface NemesisAvatarProps {
    */
   aimAt?: { x: number; y: number } | null;
   /**
+   * Which way is FORWARD for this instance.
+   *
+   * 🔴🔴 THE PRODUCT'S DECISION, NOT THE POSE'S, AND THAT IS WHY IT IS A PROP RATHER THAN AN EDIT
+   * TO A FACE (owner 2026-08-26: *"This should be forward facing, not just looking around … it
+   * looks like it's just looking behind … It should be looking at text, composer. Right now it's
+   * just sort of drifted off."*).
+   *
+   * Every pose in `lib/avatar` is measured off a reference that draws its character ALONE on a
+   * page, so its resting head is a three-quarter view: `neutral` — the pose `idle` holds, which is
+   * what the character wears whenever nothing is happening — points **28.5° to the side and 28.6°
+   * up**, and holds it, because `idle` has exactly one step. Beside a composer and a page of text
+   * that does not read as depth, it reads as a creature looking over its shoulder at nothing. Worse
+   * on top: tracking ADDS to the pose, and `TRACK_YAW` is 26 — so a pointer to that side put the
+   * head at **54.5°**, far enough round that an eye starts disappearing behind the body.
+   *
+   * `"authored"` keeps the measured pose exactly as it is, and is the default, so the landing
+   * page, the character studio and every preview are untouched by this. `"forward"` cancels the
+   * drawn pose's own yaw and pitch, which leaves the SHAPE of the face — the eye widths, the lids,
+   * the tilts, the roll — completely alone and only changes where it is pointed.
+   *
+   * 🔴 THE ROLL IS DELIBERATELY NOT CANCELLED. `curious` is the resting face with the head rolled
+   * fifteen degrees, and `expressions.ts` says outright that curiosity is carried by the roll and
+   * not by the eyes. Levelling that would delete the expression rather than aim it. `turn` has only
+   * ever carried yaw and pitch for the same reason.
+   */
+  facing?: "authored" | "forward";
+  /**
    * Open with a full turn of the head before it settles.
    *
    * 🔴 OFF BY DEFAULT. It is a lovely arrival — the eyes really do pass behind the body and
@@ -160,6 +187,7 @@ export function NemesisAvatar({
   offsetMs = 0,
   track = false,
   aimAt = null,
+  facing = "authored",
   entrance = false,
   onPoke,
   pokeAnimation = "surprised",
@@ -189,8 +217,8 @@ export function NemesisAvatar({
 
   // Read inside the frame loop rather than closed over, so changing an animation or a
   // colour does not tear down and restart the clock.
-  const latest = useRef({ animation, avatar, paused, speed, offsetMs, track, aimAt, entrance, face, ink, accent, eye });
-  latest.current = { animation, avatar, paused, speed, offsetMs, track, aimAt, entrance, face, ink, accent, eye };
+  const latest = useRef({ animation, avatar, paused, speed, offsetMs, track, aimAt, facing, entrance, face, ink, accent, eye });
+  latest.current = { animation, avatar, paused, speed, offsetMs, track, aimAt, facing, entrance, face, ink, accent, eye };
 
   /** Where the pointer is, in -1..1 of the element, and where the head has got to. */
   const aim = useRef({ x: 0, y: 0, atX: 0, atY: 0, pointer: false });
@@ -532,7 +560,26 @@ export function NemesisAvatar({
       const played = head.current.at(at, wanted);
       if (!played) return;
 
-      const turn = { x: a.atX, y: a.atY + spin };
+      // 🔴🔴 FORWARD IS SUBTRACTED FROM THE DRAWN POSE, NOT FROM THE AUTHORED ONE, and the
+      // difference matters at exactly one moment: a handover. `createPlayhead` blends the previous
+      // animation's face into the next one over `HANDOVER_MS`, so mid-handover the head on screen
+      // is neither pose's authored angle. Cancelling the TARGET's authored angle there would aim
+      // the character at a direction it is not currently pointing, and the error would be largest
+      // in the middle of the blend — a swing, on the one seam this engine exists to make smooth.
+      // `played.face.head` is what is actually being drawn this frame, so the correction is exact
+      // on every frame including those.
+      //
+      // 🔴 IT TAKES THE AMBIENT HEAD WANDER WITH IT, AND THAT IS ACCOUNTED FOR RATHER THAN
+      // OVERLOOKED. `livenFace` wanders yaw by about ±1.15° and pitch by ±0.8°; cancelling the
+      // drawn head cancels those too, so a levelled character would otherwise hold one angle
+      // exactly. The life is put back somewhere the learner can actually see it — `lib/character/
+      // gaze.ts` glances the whole head away and back on a slow schedule, which is the "it should
+      // look around occasionally" half of the same report. Roll keeps its own wander either way,
+      // because `turn` has never carried roll.
+      const level = state.facing === "forward" ? played.face.head : null;
+      const turn = level
+        ? { x: a.atX - level.x, y: a.atY + spin - level.y }
+        : { x: a.atX, y: a.atY + spin };
       const opts = { blink: played.blink, eyeDrift: played.eyeDrift, turn };
       const from = waggleFrom.current;
       paint(

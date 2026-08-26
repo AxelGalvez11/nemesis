@@ -64,11 +64,15 @@ export function CanvasThinking({ phase }: { phase: ThinkingPhase }) {
             opposite of what standing here is for. It plays continuously while the judgement runs
             and the sentence changes underneath it. */}
         <span className="shrink-0" style={{ height: THINKING_SIZE, width: THINKING_SIZE }}>
+          {/* Levelled like every other character in the app (`facing`) — at 28px an authored
+              three-quarter head does not read as depth, it reads as a blob with its eyes off one
+              edge. */}
           <NemesisAvatar
             accent={accent}
             animation={stateForCanvas({ listening: false, preparing: false, thinking: true })}
             ink={characterInk(accent, theme === "dark")}
             size={THINKING_SIZE}
+            facing="forward"
             track
           />
         </span>

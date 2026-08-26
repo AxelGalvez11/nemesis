@@ -706,7 +706,7 @@ export function CanvasComposer({
             textarea does not want a different corner. */}
         <div
           className={cn(
-            "flex flex-col bg-(--ui-bg-elevated)",
+            "flex flex-col bg-(--composer-fill)",
             // 🔴 THE TOKEN, NOT A LITERAL — THE FRONT DOOR FLIES ITS COMPOSER INTO THIS ONE'S PLACE.
             // These two pills are the same object to a learner: the front door's composer travels
             // down and the route swaps under it, so any difference between the two shapes is a pop
@@ -716,7 +716,7 @@ export function CanvasComposer({
             // The tokens carry the measured values (see globals.css, which records that 8px is what
             // the reference measures); a literal here is a copy that drifts and never fails a test.
             "rounded-[var(--composer-radius)]",
-            "shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)",
+            "shadow-[var(--composer-edge)]",
             selected.length > 0 && !listening && "ring-(--ui-action)/50",
           )}
         >

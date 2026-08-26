@@ -261,6 +261,37 @@ function when(iso: string): string {
 }
 
 /**
+ * Every folder id that holds an output directly, or that holds — at any depth — a folder that
+ * does. Exported so `library-outputs.test.ts` can assert on it directly, the same way
+ * `projects-model.ts` exports `buildProjects` for its own tests rather than asking a test to
+ * drive a rendered page to prove a tree-walk terminates.
+ *
+ * 🔴 WALKS UP FROM WHAT IS KNOWN, RATHER THAN DOWN FROM EVERY ROOT. Starting at each folder that
+ * `directCounts` says holds something and following `parentId` upward, marking every ancestor as
+ * "has content", needs no `folders_depth_guard`-aware children map and no separate recursion
+ * limit: the walk for one starting folder cannot outlive the folders that exist, because `seen`
+ * stops it revisiting one, and `result.has(current.id)` stops it re-walking a chain another
+ * starting folder already proved. A ring in `parent_id` (`setFolderParent`'s own header: the
+ * database allows one) hits `seen` on its second step and simply stops there — not a hang, and
+ * not a folder silently dropped either, since it was still marked before the ring was detected.
+ */
+export function foldersWithContent(folders: readonly Folder[], directCounts: ReadonlyMap<string, number>): ReadonlySet<string> {
+  const byId = new Map(folders.map((folder) => [folder.id, folder] as const));
+  const result = new Set<string>();
+  for (const folder of folders) {
+    if ((directCounts.get(folder.id) ?? 0) === 0) continue;
+    let current: Folder | undefined = folder;
+    const seen = new Set<string>();
+    while (current && !result.has(current.id) && !seen.has(current.id)) {
+      result.add(current.id);
+      seen.add(current.id);
+      current = current.parentId ? byId.get(current.parentId) : undefined;
+    }
+  }
+  return result;
+}
+
+/**
  * Rows handed in instead of read from the database, for the dev-only preview route.
  *
  * 🔴🔴 IT SUBSTITUTES THE ROWS, NOT THE COMPONENT, and that is the only thing that makes a
@@ -497,6 +528,38 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     return counts;
   }, [decks, notes, slides]);
 
+  /**
+   * 🔴🔴 THE FIX FOR THE OWNER'S REPORT: *"I created a new… project, but it's showed up in the
+   * library, and that's not where it should go."* A project made on `/projects` is a bare
+   * `folders` row with nothing filed into it yet — `createFolder` does not touch `study_decks`,
+   * `readable_library_documents` or `assets` — and this page rendered every row `listFolders`
+   * returned regardless. So a folder existing was enough to earn a spot on the Library's shelf,
+   * even though the Library's whole premise (this file's own header) is that it shows what
+   * Nemesis has MADE, and a folder holding nothing is not a thing Nemesis made yet.
+   *
+   * The fix is not "hide a folder with count 0": `folderCounts` counts DIRECT membership only,
+   * and a project can be a real, non-empty piece of the learner's work while its own direct count
+   * is honestly zero — "Fall 2026" holding nothing itself but its child "Torts" holding two decks
+   * is exactly the dev-preview fixture below. Filtering on `folderCounts` alone would have hidden
+   * Fall 2026 and buried Torts's own content one level below where the learner could find it,
+   * which is a worse defect than the one being fixed: an empty folder disappearing is correct, a
+   * non-empty one disappearing is data going missing. So visibility rolls UP the tree — a folder
+   * shows if it, or anything nested inside it at any depth, holds an output — while `folderCounts`
+   * keeps meaning exactly what it always meant, "how many outputs sit directly in this one", for
+   * the Items column that already prints it.
+   *
+   * 🔴 CYCLE-SAFE BY WALKING UP, NOT DOWN. `setFolderParent`'s own header records that the
+   * database accepts a `parent_id` ring; `projects-model.ts`'s `buildProjects` guards the same
+   * fact with a top-down `seen` set. This walks the other direction — from every folder KNOWN to
+   * hold something, up through its ancestors — so the loop only ever needs to notice it has
+   * already marked a node, which a ring makes happen on its second step rather than never.
+   */
+  const nonEmptyFolders = useMemo(() => foldersWithContent(folders, folderCounts), [folders, folderCounts]);
+  /** The rows the "Folders" section actually draws — see `nonEmptyFolders` just above. Every
+   *  OTHER reader of `folders` (the move-to-folder menu, the open-folder breadcrumb) keeps the
+   *  full list: a fresh, empty project has to be a legal place to file the first thing INTO. */
+  const visibleFolders = useMemo(() => folders.filter((folder) => nonEmptyFolders.has(folder.id)), [folders, nonEmptyFolders]);
+
   const showing = (which: OutputKind) => shelf === "all" || shelf === which;
 
   const toggleDeck = useCallback(
@@ -717,8 +780,13 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {/* 🔴 FOLDERS ARE ROWS, ABOVE THE SHELVES, THE WAY THE REFERENCE DOES IT. They are not
           filtered by the kind pills: a folder holds decks, slides and notes at once, so hiding it
-          because the learner is looking at slides would hide the slides inside it too. */}
-      {openFolder === null && (folders.length > 0 || naming !== null) && (
+          because the learner is looking at slides would hide the slides inside it too.
+
+          🔴 AND ONLY THE ONES WITH SOMETHING IN THEM — see `visibleFolders`, above. A project
+          made on `/projects` and never filed into is a real `folders` row with nothing pointing
+          at it, and showing it here was the owner's report: a brand-new project "showed up in
+          the library, and that's not where it should go." */}
+      {openFolder === null && (visibleFolders.length > 0 || naming !== null) && (
         <section className="pb-[24px]">
           <h2 className={SECTION_TITLE}>Folders</h2>
           <ul className="flex flex-col">
@@ -736,7 +804,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
               <span className={COL_COUNT}>Items</span>
               <span aria-hidden className={COL_ACTIONS} />
             </li>
-            {folders.map((folder) => (
+            {visibleFolders.map((folder) => (
               <li key={folder.id}>
                 <button className={cn(ROW, "w-full")} onClick={() => setOpenFolder(folder.id)} type="button">
                   <FolderIcon className={COL_ICON} size={20} strokeWidth={1.8} />

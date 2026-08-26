@@ -621,14 +621,142 @@
   font-size: inherit;
 }
 
-/* Typography's `.prose :where(p) { margin: 1.25em }` ties `my-*` on specificity
-   and wins on source order — paragraph spacing reclaimed here. */
-[data-slot='aui_assistant-message-content'] .aui-md :where(p) {
-  margin-block: var(--paragraph-gap) 0;
+/* ── The answer's own typography, measured against the reference ──────────────
+   🔴🔴 EVERY NUMBER BELOW WAS READ OFF chatgpt.com WHILE SIGNED IN, at a 1470px viewport on
+   2026-08-26, by cloning its `.markdown` container, injecting the SAME fragment into it and into
+   ours, and comparing the rendered gaps. Owner, that day: *"compare the font, spacing and coloring
+   of the output … compare with ChatGPT"*, and earlier: *"Don't just measure with vision. Make sure
+   that you actually grab the numbers too."* What that probe found:
+
+                       reference   ours (before)
+     paragraph → paragraph   16px      20px
+     paragraph → heading     16px      20px
+     heading → paragraph      8px      24px
+     paragraph → list         4px      20px
+     list → paragraph         8px      20px
+     bullet → bullet          0px       8px
+     h2                 20/600/28   24/700/32
+
+   The body text already matched exactly (16px, line-height 26px, #0d0d0d) — the whole visible
+   difference was SPACING and the heading scale. An answer with 20px between every block and 8px
+   between every bullet sprawls down the page, which is most of why it read as looser and wider
+   than the reference at an identical 768px column.
+
+   🔴 THE GAPS ARE SET AS ONE MARGIN PER ADJACENT PAIR, NEVER AS A MARGIN ON EACH BLOCK, and that
+   is what makes them exact rather than approximate. Two blocks each carrying a margin collapse to
+   the larger of the two in normal flow and do NOT collapse inside a flex or grid parent, so the
+   same stylesheet renders different gaps depending on a container the rule cannot see. Zeroing
+   everything and then setting exactly one `margin-top` on the second element of each pair gives
+   the measured number in every container.
+
+   🔴 THE SELECTOR IS DOUBLED ON PURPOSE. Tailwind Typography writes its defaults through
+   `:where(...)`, which has zero specificity, so a single class would already beat them — but the
+   markdown host carries a stack of its own utilities, and those are plain classes too, so the two
+   would be decided by stylesheet order rather than by intent. `.aui-md.aui-md` settles it
+   outright. The same trick, for the same reason, is used in character.css. The four utilities that
+   used to fight these rules (`[&>*+*]:mt-(--paragraph-gap)` and three `prose-code:*` sizes) were
+   REMOVED from `chat-markdown.tsx` rather than left to lose quietly.
+
+   🔴 EXPLICIT PIXELS, NEVER rem. `html { font-size: 112.5% }`, so `1rem` here is 18px and every
+   rem-based value renders 12.5% larger than it reads. That is exactly how the old `1rem` heading
+   margin above became the measured 20px, and how `--paragraph-gap: 0.89rem` became 16.02px. */
+
+.aui-md.aui-md > * {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
-[data-slot='aui_assistant-message-content'] .aui-md :where(h1, h2, h3, h4) {
-  margin-block: 1rem 0.25rem;
+/* The default pair: paragraph to paragraph, and paragraph to heading. */
+.aui-md.aui-md > * + * {
+  margin-top: 16px;
+}
+
+/* After a heading, the thing it introduces sits close to it. */
+.aui-md.aui-md > h1 + *,
+.aui-md.aui-md > h2 + *,
+.aui-md.aui-md > h3 + *,
+.aui-md.aui-md > h4 + * {
+  margin-top: 8px;
+}
+
+/* A list belongs to the sentence that introduced it, so it sits closer than a paragraph would. */
+.aui-md.aui-md > p + ul,
+.aui-md.aui-md > p + ol {
+  margin-top: 4px;
+}
+
+.aui-md.aui-md > ul + *,
+.aui-md.aui-md > ol + * {
+  margin-top: 8px;
+}
+
+/* 🔴 BULLETS DO NOT BREATHE. The reference sets zero between list items, and ours were 8px top and
+   bottom — so a six-bullet list stood 40px taller than the same list beside it, which is the
+   single biggest contributor to the answer reading as sprawling. Indents are already identical:
+   26px on the list, 6px on the item. */
+.aui-md.aui-md :where(li) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.aui-md.aui-md :where(ul, ol) {
+  padding-inline-start: 26px;
+}
+
+.aui-md.aui-md :where(li) {
+  padding-inline-start: 6px;
+}
+
+/* A nested list opens directly under its parent item. */
+.aui-md.aui-md :where(li) > :where(ul, ol) {
+  margin-top: 0;
+}
+
+/* 🔴 THE HEADING SCALE IS THE REFERENCE'S, INCLUDING THE WEIGHT. Ours ran a step large and a
+   weight heavy — an h2 at 24/700 against their 20/600 — which made every section break in an
+   answer shout. Line heights are theirs too; a heading set at the body's leading looks cramped at
+   20px and loose at 16px, so they are not derivable from the size. */
+.aui-md.aui-md :where(h1) {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.aui-md.aui-md :where(h2) {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.aui-md.aui-md :where(h3) {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.aui-md.aui-md :where(h4) {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+/* Bold inside a sentence is a weight, not a colour change: 600 against the body's 400. */
+.aui-md.aui-md :where(strong) {
+  font-weight: 600;
+}
+
+/* Inline code: 14px on a flat fill, 4px corners, and the padding is theirs to the tenth. */
+.aui-md.aui-md :where(:not(pre) > code) {
+  font-size: 14px;
+  border-radius: 4px;
+  padding: 2.4px 4.8px;
+}
+
+/* A rule between sections is a hairline with real air either side. */
+.aui-md.aui-md :where(hr) {
+  margin-top: 28px;
+  margin-bottom: 28px;
+  border-top: 1px solid var(--ui-stroke-secondary);
 }
 
 /* Tables read as data, not as a card dropped into the answer (owner

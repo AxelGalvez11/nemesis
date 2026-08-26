@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { buildProjects, matchesQuery, visibleProjects } from "./projects-model";
+import { buildProjects, findProject, matchesQuery, visibleProjects } from "./projects-model";
 import type { CanvasSummary, Folder } from "@/lib/learn/canvas-store";
 
 // 🔴🔴🔴 THE OWNER'S ACCEPTANCE CONDITION FOR THIS PAGE WAS A NUMBER, NOT A FEELING: "pixel,
@@ -167,18 +167,23 @@ test("🔴🔴 one 32, one meaning: the icon's lead IS the nesting indent", () =
   assert.ok(!/COLUMN_GAP_PX/.test(page), "a second, independent 32 came back");
 });
 
-test("🔴🔴 every row draws its left side through ONE helper, at every nesting depth", () => {
-  // Four call sites writing these widths by hand is how a list ends up with four column layouts.
+// 🔴 THIS USED TO CHECK THREE DEPTHS: `indent={0}`, `indent={indent}`, `indent={indent +
+// INDENT_PX}`, one per nesting level a row used to be able to open to. Nesting is gone from THIS
+// page (see the test above): every row `projects-page.tsx` still draws — the "naming" input and
+// `ProjectRow` — sits at the top level, so there is exactly one indent left to check. `NameCells`
+// itself is untouched and is still the one shared helper; only how many depths call into it
+// shrank, which is the point of the change, not a gap in this test.
+test("🔴🔴 every row still draws its left side through the ONE shared Name-cells helper", () => {
   const at = page.indexOf("function NameCells(");
   assert.notEqual(at, -1, "the shared cells are gone and each row now sizes its own columns");
   const cells = page.slice(at, page.indexOf("\n}", at));
   assert.match(cells, /style=\{\{ height: ICON_PX, width: INDENT_PX \}\}/, "the icon's lead is not held open");
-  // 🔴 THE INDENT IS GIVEN BACK. The row indents with padding, so the cell must subtract it or an
-  // opened project pushes its children's dates out of the column, one step per nesting level.
+  // 🔴 THE SUBTRACTION SURVIVES EVEN THOUGH NOTHING ON THIS PAGE NESTS ANY MORE, because
+  // `NameCells` is shared with nothing guaranteeing every future caller passes 0 — the formula
+  // being generally correct is cheaper than a second helper for "the un-nested case".
   assert.match(cells, /width: NAME_W_PX - indent/);
-  for (const site of [/indent=\{0\}/, /indent=\{indent\}/, /indent=\{indent \+ INDENT_PX\}/]) {
-    assert.match(page, site, `a row stopped going through the shared Name cells: ${site}`);
-  }
+  const sites = [...page.matchAll(/indent=\{[^}]+\}/g)].map((m) => m[0]);
+  assert.deepEqual(sites, ["indent={0}", "indent={0}"], "a row on this page is indenting to a depth that can no longer exist");
   assert.ok(!/<NameCell\b/.test(page.replace(/<NameCells/g, "")), "a stale single-cell helper is still in use");
 });
 
@@ -277,15 +282,18 @@ test("🔴 the page sits on the reference's #fcfcfc ground, which is our own sid
 
 // ── What a row does ──────────────────────────────────────────────────────────────────────────
 
-test("🔴🔴 a canvas opens where the sidebar opens it, character for character", () => {
-  // Two doors to the same canvas that disagree about the URL is how a deep link starts working
-  // from one place and not the other. sidebar-canvases.tsx pushes exactly this.
-  assert.match(page, /router\.push\(`\/learn\?c=\$\{id\}`\)/);
-});
-
-test("🔴 a project opens IN PLACE, and does not invent a detail route", () => {
-  assert.match(page, /aria-expanded=\{isOpen\}/);
-  assert.ok(!/\/projects\//.test(page), "a project detail route appeared; the sidebar would then have two truths");
+// 🔴 THIS USED TO ASSERT THE OPPOSITE: "a project opens IN PLACE, and does not invent a detail
+// route", on the grounds that there was nowhere else to send it. `project-page.tsx` is now that
+// somewhere else — see its own header for the owner's report this answers — and a row that both
+// expanded in place AND navigated would be two meanings for one click. The canvas-opens-where-the-
+// sidebar-opens-it assertion moved WITH the canvas rows themselves: `project-page.test.ts` is
+// where `/learn?c=` now lives, because `projects-page.tsx` no longer renders a canvas row at all.
+test("🔴🔴 a project row navigates to its own page — the ChatGPT behaviour this page didn't have", () => {
+  assert.match(page, /onOpen: \(id: string\) => void; project: ProjectNode/);
+  assert.match(page, /onOpen=\{\(id\) => router\.push\(`\/projects\/\$\{id\}`\)\}/);
+  // No leftover toggle machinery: a click either navigates or it expands, never both.
+  assert.ok(!/aria-expanded/.test(page), "the old expand/collapse state is still wired up alongside navigation");
+  assert.ok(!/onToggle|isOpen/.test(page), "toggle state survived the move to navigation and is now dead code");
 });
 
 test("🔴 the route is thin and mounts the real page", () => {
@@ -394,4 +402,21 @@ test("🔴 the list reads most-recently-worked first, which is what a Modified c
 test("🔴 a canvas filed nowhere belongs to no project", () => {
   const projects = buildProjects([folder("f")], [canvas({ folderId: null, id: "loose" })]);
   assert.equal(projects[0]?.canvases.length, 0);
+});
+
+// ── findProject: the new project PAGE's own lookup ──────────────────────────────────────────────
+
+test("🔴 findProject finds a root project by id", () => {
+  const projects = buildProjects([folder("a"), folder("b")], []);
+  assert.equal(findProject(projects, "b")?.id, "b");
+});
+
+test("🔴🔴 findProject finds a SUB-project too — the project page has to resolve one if linked to directly", () => {
+  const projects = buildProjects([folder("fall", { name: "Fall 2026" }), folder("torts", { name: "Torts", parentId: "fall" })], []);
+  assert.equal(findProject(projects, "torts")?.name, "Torts");
+});
+
+test("findProject returns null for an id that is not there, rather than throwing", () => {
+  const projects = buildProjects([folder("a")], []);
+  assert.equal(findProject(projects, "nope"), null);
 });

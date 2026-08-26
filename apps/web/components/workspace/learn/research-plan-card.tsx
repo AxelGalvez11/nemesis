@@ -24,7 +24,25 @@ export interface ResearchPlanCardProps {
   subQuestions: readonly string[];
   onStart: () => void;
   onCancel: () => void;
-  /** True once Start has been pressed, so the card cannot be fired twice. */
+  /**
+   * True once Start has been pressed, so the card cannot be fired twice.
+   *
+   * 🔴🔴 MEASURED 2026-08-26: IT IS WIRED AND IT CANNOT CURRENTLY BE TRUE, so nobody should read
+   * this card's disabled state as the thing preventing a second run. `learning-canvas.tsx` does pass
+   * it (`starting={session.making === "report"}`), but the card is rendered behind
+   * `session.researchPlan`, and `startResearchPlan` clears that plan BEFORE calling
+   * `makeDeliverable` — deliberately, so a second press has no plan left to start. The card is
+   * therefore unmounted in the same commit that sets `making`, and this prop never observes it.
+   *
+   * 🔴 WHAT ACTUALLY STOPS A SECOND RUN is that pair: the plan is gone, and `makeDeliverable`'s own
+   * `makingRef` refuses a second make in the same breath and now says so out loud. What the learner
+   * sees WHILE the run goes is the canvas busy caption the run sets for itself, naming each real
+   * step (see lib/research/research-progress.ts). The prop is left in place because it is correct
+   * for any surface that chooses to keep this card up during its own run; making it observable would
+   * mean holding the plan through the run, which collides with the canvas presence rule that hides
+   * everything in the flow while the surface reports `preparing`. That is a presentation decision
+   * and it belongs to the Canvas UI lane, not here.
+   */
   starting?: boolean;
 }
 
