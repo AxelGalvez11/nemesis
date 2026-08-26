@@ -120,6 +120,31 @@ test("🔴 the leading icon is 20x20 on `--icon-secondary`, and the name is 14px
   assert.match(page, /const META_TEXT = "text-\[14px\] leading-\[20px\] font-normal text-\(--ui-text-secondary\)";/);
 });
 
+test("🔴🔴🔴 the columns pack from the LEFT and stop — a right-aligned Modified is a 200px seam", () => {
+  // The reference's Library cells are Name 368 / Modified 160 / Size 88 (+16px pad) inside the
+  // same 768px column. They sum to 632, so over a hundred pixels of every Library row are
+  // deliberately empty at the right — which a right-aligned Modified cannot produce. Projects is
+  // that list minus Size, so Name and Modified hold their positions and the dead space grows.
+  //
+  // This page right-aligned Modified until both pages were measured in one browser: Library put
+  // its date 400px into the column and Projects put it at 600px, so the date column jumped 200px
+  // between two sibling pages. Calibration: give the Name cell `flex-1` again and this reddens.
+  assert.equal(measured("NAME_W_PX"), 368);
+  assert.equal(measured("COLUMN_GAP_PX"), 32);
+  const at = page.indexOf("function NameCell(");
+  assert.notEqual(at, -1, "the shared Name cell is gone and each row now sizes its own columns");
+  const cell = page.slice(at, page.indexOf("\n}", at));
+  // 🔴 THE INDENT IS GIVEN BACK. The row indents with padding, so the cell must subtract it or an
+  // opened project pushes its children's dates out of the column, one step per nesting level.
+  assert.match(cell, /width: NAME_W_PX - indent/);
+  assert.ok(
+    !/min-w-0 flex-1 truncate", NAME_TEXT\)\}>\{project\.name/.test(page.replace(/\s+/g, " ")) ||
+      /<NameCell indent=\{indent\}>/.test(page),
+    "the project row stopped going through the shared Name cell",
+  );
+  assert.match(page, /<NameCell indent=\{indent \+ INDENT_PX\}>/, "canvas rows left the Name column");
+});
+
 test("🔴 there are two columns, Name and Modified, and Modified is the measured 160px", () => {
   assert.equal(measured("MODIFIED_W_PX"), 160);
   assert.equal(measured("HEADINGS_H_PX"), 20);

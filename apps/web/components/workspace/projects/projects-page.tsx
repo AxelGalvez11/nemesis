@@ -74,6 +74,28 @@ const INDENT_PX = ICON_PX + ICON_GAP_PX;
 const SEARCH_W_PX = 240;
 /** The Modified column. Reference: the Library's own Modified cell measured 160px. */
 const MODIFIED_W_PX = 160;
+/**
+ * The Name column, and the gap from it to Modified.
+ *
+ * 🔴🔴 THE COLUMNS PACK FROM THE LEFT AND STOP — THEY ARE NOT RIGHT-ALIGNED, and the reference's
+ * own Library measurements are what settle it. It publishes Library's cells as Name 368 /
+ * Modified 160 / Size 88 (Size carrying `padding-left:16px`) inside the SAME 768px column this
+ * page uses. Those sum to 632: there are over a hundred pixels of deliberate dead space at the
+ * right of every Library row. A right-aligned Modified cannot produce that. So the reference's
+ * list packs its cells from the left edge and simply runs out.
+ *
+ * Projects is that list minus Size, which means Name and Modified keep the positions they hold on
+ * Library and the trailing space grows — it does not mean the date slides to the right margin.
+ * This page DID slide it there until it was measured beside the Library page in the same browser:
+ * Library put Modified's left edge 400px into the column and Projects put it at 600px, so the
+ * date column jumped 200px when a learner moved between two pages built the same week.
+ *
+ * 🔴 THE 32px GAP IS THE ONE NUMBER HERE THAT IS NOT MEASURED. 368 and 160 are the reference's;
+ * the gap is whatever lands Modified where the Library page lands it. If Library's cells move,
+ * this moves with them: the two pages agreeing is worth more than either one's private arithmetic.
+ */
+const NAME_W_PX = 368;
+const COLUMN_GAP_PX = 32;
 /** The column headings strip above the list. Reference: 20px tall, 14px/400 `--text-secondary`. */
 const HEADINGS_H_PX = 20;
 
@@ -120,6 +142,22 @@ function rowBox(indent: number): React.CSSProperties {
     paddingRight: ROW_PAD_RIGHT_PX,
     paddingTop: ROW_PAD_Y_PX,
   };
+}
+
+/**
+ * The Name cell: leading icon, 12px, then the name.
+ *
+ * 🔴 ITS RIGHT EDGE STAYS 368px INTO THE COLUMN AT EVERY NESTING DEPTH. The row indents with
+ * padding, so the cell gives back exactly what the padding took; without that subtraction an
+ * opened project would push its children's dates out of the Modified column, one step per level,
+ * and the list would read as three ragged columns instead of two.
+ */
+function NameCell({ children, indent }: { children: React.ReactNode; indent: number }) {
+  return (
+    <span className="flex min-w-0 shrink-0 items-center" style={{ columnGap: ICON_GAP_PX, width: NAME_W_PX - indent }}>
+      {children}
+    </span>
+  );
 }
 
 /** How a date reads in the Modified column. Same shape the Library uses, so the two agree. */
@@ -314,9 +352,16 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
               cells rather than near them. */}
           <div
             className={cn("mt-[24px] flex items-center", META_TEXT)}
-            style={{ height: HEADINGS_H_PX, paddingLeft: 0, paddingRight: ROW_PAD_RIGHT_PX }}
+            style={{
+              columnGap: COLUMN_GAP_PX,
+              height: HEADINGS_H_PX,
+              paddingLeft: 0,
+              paddingRight: ROW_PAD_RIGHT_PX,
+            }}
           >
-            <span className="min-w-0 flex-1">Name</span>
+            <span className="shrink-0" style={{ width: NAME_W_PX }}>
+              Name
+            </span>
             <span className="shrink-0" style={{ width: MODIFIED_W_PX }}>
               Modified
             </span>
@@ -324,31 +369,33 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
 
           <ul className="flex flex-col">
             {naming !== null && (
-              <li className={cn("flex items-center", DIVIDER)} style={{ ...rowBox(0), gap: ICON_GAP_PX }}>
-                <FolderIcon
-                  aria-hidden
-                  className="shrink-0 text-(--ui-text-secondary)"
-                  size={ICON_PX}
-                  strokeWidth={1.8}
-                />
-                <input
-                  aria-label="Name the new project"
-                  autoFocus
-                  className={cn("min-w-0 flex-1 bg-transparent outline-none", NAME_TEXT)}
-                  maxLength={120}
-                  onBlur={(event) => void addProject(event.currentTarget.value)}
-                  onChange={(event) => setNaming(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void addProject(event.currentTarget.value);
-                    if (event.key === "Escape") {
-                      // Empty the DOM node, not the state: whatever blur follows reads the node.
-                      event.currentTarget.value = "";
-                      setNaming(null);
-                    }
-                  }}
-                  placeholder="Project name"
-                  value={naming}
-                />
+              <li className={cn("flex items-center", DIVIDER)} style={{ ...rowBox(0), columnGap: COLUMN_GAP_PX }}>
+                <NameCell indent={0}>
+                  <FolderIcon
+                    aria-hidden
+                    className="shrink-0 text-(--ui-text-secondary)"
+                    size={ICON_PX}
+                    strokeWidth={1.8}
+                  />
+                  <input
+                    aria-label="Name the new project"
+                    autoFocus
+                    className={cn("min-w-0 flex-1 bg-transparent outline-none", NAME_TEXT)}
+                    maxLength={120}
+                    onBlur={(event) => void addProject(event.currentTarget.value)}
+                    onChange={(event) => setNaming(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void addProject(event.currentTarget.value);
+                      if (event.key === "Escape") {
+                        // Empty the DOM node, not the state: whatever blur follows reads the node.
+                        event.currentTarget.value = "";
+                        setNaming(null);
+                      }
+                    }}
+                    placeholder="Project name"
+                    value={naming}
+                  />
+                </NameCell>
               </li>
             )}
 
@@ -411,11 +458,13 @@ function ProjectRow({
         aria-expanded={isOpen}
         className={cn("flex w-full items-center text-left transition-colors", DIVIDER, ROW_HOVER)}
         onClick={() => onToggle(project.id)}
-        style={{ ...rowBox(indent), gap: ICON_GAP_PX }}
+        style={{ ...rowBox(indent), columnGap: COLUMN_GAP_PX }}
         type="button"
       >
-        <Glyph aria-hidden className="shrink-0 text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />
-        <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{project.name}</span>
+        <NameCell indent={indent}>
+          <Glyph aria-hidden className="shrink-0 text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />
+          <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{project.name}</span>
+        </NameCell>
         <span className={cn("shrink-0", META_TEXT)} style={{ width: MODIFIED_W_PX }}>
           {modified(project.modifiedAt)}
         </span>
@@ -438,19 +487,24 @@ function ProjectRow({
               <button
                 className={cn("flex w-full items-center text-left transition-colors", DIVIDER, ROW_HOVER)}
                 onClick={() => onOpenCanvas(canvas.id)}
-                style={{ ...rowBox(indent + INDENT_PX), gap: ICON_GAP_PX }}
+                style={{
+                  ...rowBox(indent + INDENT_PX),
+                  columnGap: COLUMN_GAP_PX,
+                }}
                 type="button"
               >
-                {/* 🔴 AN ORDINARY CANVAS CARRIES NO ICON, and that is the sidebar's rule rather
+                <NameCell indent={indent + INDENT_PX}>
+                  {/* 🔴 AN ORDINARY CANVAS CARRIES NO ICON, and that is the sidebar's rule rather
                     than a gap here: the mortar board alone says "this one holds a course" without
                     turning the list into a column of identical glyphs. The slot is still reserved
                     at the icon's width so every name in the list keeps one left edge. */}
-                <span aria-hidden className="shrink-0" style={{ height: ICON_PX, width: ICON_PX }}>
-                  {canvas.courseTitle ? (
-                    <GraduationCap className="text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />
-                  ) : null}
-                </span>
-                <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{canvas.title || "Untitled"}</span>
+                  <span aria-hidden className="shrink-0" style={{ height: ICON_PX, width: ICON_PX }}>
+                    {canvas.courseTitle ? (
+                      <GraduationCap className="text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />
+                    ) : null}
+                  </span>
+                  <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{canvas.title || "Untitled"}</span>
+                </NameCell>
                 <span className={cn("shrink-0", META_TEXT)} style={{ width: MODIFIED_W_PX }}>
                   {modified(canvas.updatedAt)}
                 </span>
@@ -458,10 +512,7 @@ function ProjectRow({
             </li>
           ))}
           {project.children.length === 0 && project.canvases.length === 0 && (
-            <li
-              className={cn("flex items-center", DIVIDER, META_TEXT)}
-              style={rowBox(indent + INDENT_PX * 2)}
-            >
+            <li className={cn("flex items-center", DIVIDER, META_TEXT)} style={rowBox(indent + INDENT_PX * 2)}>
               Empty
             </li>
           )}
