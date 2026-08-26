@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { placeBeside } from "./character-place";
+import { placeBeside, placeUnder } from "./character-place";
 
 /** A wide window: centred composer column with real margin either side. */
 const WIDE = {
@@ -59,4 +59,40 @@ test("it never sinks below the caller's own floor", () => {
   // the surface entirely.
   const at = placeBeside({ ...WIDE, anchor: { left: 320, top: 815, height: 64 }, floor: 820 });
   assert.ok(at.offset >= WIDE.bottom, `offset ${at.offset} is under the ${WIDE.bottom} floor`);
+});
+
+// ── Under the answer ───────────────────────────────────────────────────────────────────────────
+//
+// Owner 2026-08-26: *"make the mascot sit under the answer"*. Measured off claude.ai at a 1470px
+// viewport: their mark is 32x32, left-aligned with the answer's own text column, and its row
+// carries `margin-top: 24px`.
+
+/** A 76px character in a 800px-tall surface, resting 24px under an answer that ended at y=300. */
+const UNDER = { anchor: { left: 340, bottom: 300 }, floor: 800, size: 76, gap: 24, bottom: 24 } as const;
+
+test("🔴 it stands a measured 24px under where the answer ended, left-aligned with it", () => {
+  const at = placeUnder(UNDER);
+  assert.equal(at.inset, 340, "the character no longer lines up with the answer's left edge");
+  // `offset` is a CSS bottom: 800 - 300 - 24 - 76.
+  assert.equal(at.offset, 400);
+  // Restated as the thing a person can see: its top edge is 24px below the answer's last line.
+  assert.equal(UNDER.floor - at.offset - UNDER.size, UNDER.anchor.bottom + UNDER.gap);
+});
+
+test("🔴🔴 it scrolls away with its answer, but never out of its own container", () => {
+  // The anchor is inside a scroller, so it can be anywhere. Without the clamps the character rides
+  // the scroll straight out of the surface and is simply gone, which reads as a bug rather than as
+  // a character that scrolled away with the answer it belongs to.
+  const scrolledFar = placeUnder({ ...UNDER, anchor: { left: 340, bottom: 2000 } });
+  assert.equal(scrolledFar.offset, UNDER.bottom, "the character sank below the composer's shoulder");
+  const scrolledUp = placeUnder({ ...UNDER, anchor: { left: 340, bottom: -500 } });
+  assert.equal(scrolledUp.offset, UNDER.floor - UNDER.size - 8, "the character rose out of the top of the surface");
+});
+
+test("a cramped container still yields a placement rather than a negative one", () => {
+  // A surface shorter than the character itself: every clamp fights, and the answer must still be
+  // a number the dock can write.
+  const at = placeUnder({ ...UNDER, floor: 40 });
+  assert.ok(Number.isFinite(at.offset) && at.offset >= 0, `offset was ${at.offset}`);
+  assert.ok(at.inset >= 8, "the character is outside the left edge of its container");
 });

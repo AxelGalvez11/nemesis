@@ -133,11 +133,17 @@ export function ThinkingMark({ kind }: { kind: Mark }) {
   return (
     <svg
       aria-hidden="true"
-      className="shrink-0 text-(--ui-text-tertiary)"
+      // 🔴 18, WAS 13, AND `secondary` RATHER THAN `tertiary` (owner 2026-08-26: *"the icons
+      // beside the [thinking] preview don't even look like they're part of the thinking preview.
+      // and they look a bit small"*). Both halves of that are one cause: at 13px against a 14px
+      // caption it read as a stray pip rather than the sentence's own mark, and tertiary ink put it
+      // a full step behind the words it belongs to. Sized to the caption it now sits on (16px) and
+      // inked to sit in the same line, it reads as punctuation rather than as a separate object.
+      className="shrink-0 text-(--ui-text-secondary)"
       fill="none"
-      height="13"
+      height="18"
       viewBox="0 0 16 16"
-      width="13"
+      width="18"
     >
       <Glyph kind={kind} />
     </svg>

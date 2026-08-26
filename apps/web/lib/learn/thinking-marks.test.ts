@@ -120,6 +120,18 @@ test("🔴 the shimmer wraps the WORDS, so it cannot paint the mark out", () => 
     "🔴 the shimmer is back on the caption BOX, which paints everything that is not text transparent",
   );
   const mark = readFileSync(new URL("../../components/character/thinking-mark.tsx", import.meta.url), "utf8");
-  assert.match(mark, /text-\(--ui-text-tertiary\)/, "the mark inherits a colour it cannot rely on");
+  // 🔴 THE INVARIANT IS "ITS OWN COLOUR", NOT "THIS PARTICULAR TOKEN". This pinned
+  // `text-(--ui-text-tertiary)` and so went red on 2026-08-26 when the mark moved a step forward to
+  // `--ui-text-secondary` — a change that satisfies the rule completely. What must never happen is
+  // the mark taking `currentColor` from a caption the shimmer has painted transparent.
+  assert.match(mark, /className="shrink-0 text-\(--ui-text-[a-z]+\)"/, "the mark inherits a colour it cannot rely on");
+  // 🔴 AND THE GLYPHS THEMSELVES STROKE IN `currentColor`, WHICH IS CORRECT AND MUST NOT BE
+  // "FIXED". `stroke: "currentColor"` on the paths is what makes the root's one colour class reach
+  // every mark; the rule is about the ROOT, which the assertion above holds. A version of this test
+  // that banned the word outright failed on the paths doing exactly the right thing.
   assert.ok(!/height="1em"/.test(mark), "the mark is sized in em inside a counter-scaled box");
+  // 🔴 AND IT IS SIZED TO THE CAPTION IT SITS ON. Owner 2026-08-26: the icons "look a bit small".
+  // 13px beside 16px type read as a stray pip; the caption is `--canvas-text-body` now.
+  const side = Number(/height="(\d+)"/.exec(mark)?.[1]);
+  assert.ok(side >= 16, `the mark shrank back to ${side}px beside 16px type`);
 });
