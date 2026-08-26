@@ -261,3 +261,23 @@ test("🔴 the banner survives all of it, because the dangerous state is not kno
   assert.ok(VIEW.includes("Viewing earlier moment"), "the history banner is gone");
   assert.ok(VIEW.includes("Return to now"), "the way back to the live canvas is gone");
 });
+
+test("🔴🔴 the character stands down while a moment is being read", () => {
+  // Measured on production 2026-08-26, on the first rewind after the conversation view shipped: the
+  // character sat on top of the rewound answer's opening line.
+  //
+  // 🔴 THE CAUSE IS THE OVERLAY, AND IT IS DELIBERATE. `CanvasHistoryView` paints OVER a live
+  // surface that stays mounted, so unmounting nothing means `#canvas-answer-end` keeps measuring
+  // where the LIVE answer ended — and the character kept standing 24px under a paragraph nobody
+  // could see.
+  //
+  // 🔴 RE-ANCHORING IT AT THE REWOUND ANSWER WOULD BE THE WRONG FIX. At rest the character means
+  // "this is where Nemesis stopped talking", which is a claim about the live conversation. History
+  // is read-only, says so in a banner, and the character has nothing to add to it.
+  const CANVAS = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  assert.match(
+    CANVAS,
+    /hidden=\{judgingPhase !== null \|\| rewound !== null\}/,
+    "the character is back on top of the rewound answer",
+  );
+});

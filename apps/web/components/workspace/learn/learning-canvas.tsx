@@ -2236,7 +2236,20 @@ export function LearningCanvas({
         // terms of the station below, and a working one down by the caption. `hidden` returns null
         // after every hook, so this dock keeps its measurements and its place and does not walk in
         // from the corner when the judgement ends.
-        hidden={judgingPhase !== null}
+        //
+        // 🔴🔴 AND IT STANDS DOWN WHILE THE LEARNER IS LOOKING AT HISTORY. Measured on production
+        // 2026-08-26, on the first rewind after the conversation view shipped: the character sat on
+        // top of the rewound answer's opening line. `CanvasHistoryView` is an OPAQUE OVERLAY over a
+        // live surface that is still mounted (see its own note on why), so `#canvas-answer-end` was
+        // still measuring where the LIVE answer ended, and the character was standing 24px under a
+        // paragraph nobody could see.
+        //
+        // 🔴 THE FIX IS NOT TO RE-ANCHOR IT AT THE REWOUND ANSWER. What the character means at rest
+        // is "this is where Nemesis stopped talking", which is a claim about the live conversation;
+        // repeating it over a moment from an hour ago would be the character asserting something
+        // untrue, which is the whole reason its `?` / `!` mark was deleted after four reports.
+        // History is read-only and says so in a banner; the character has nothing to add.
+        hidden={judgingPhase !== null || rewound !== null}
         // 🔴 THE CAPTION RIDES THE CHARACTER. It used to be its own box on the page and ended up
         // against the right edge of the window, hundreds of pixels from the mascot it was meant to
         // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit

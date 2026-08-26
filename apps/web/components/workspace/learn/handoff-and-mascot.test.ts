@@ -102,7 +102,13 @@ test("🔴🔴 the policy wait has the character, and it is the ONLY character o
     "the placeholder dot is back beside the character",
   );
   // The dock stands down for exactly that span, or the canvas shows two characters at once.
-  assert.match(CANVAS, /hidden=\{judgingPhase !== null\}/);
+  //
+  // 🔴 A SECOND REASON JOINED IT ON 2026-08-26 AND THIS GUARD IS PHRASED FOR BOTH. The dock also
+  // stands down while the learner is reading a rewound moment, because `CanvasHistoryView` is an
+  // overlay over a live surface that stays mounted, so the character was resting 24px under a
+  // paragraph nobody could see. What this test protects is unchanged: `judgingPhase` must still be
+  // one of the conditions, so a judgement can never put two characters on one screen.
+  assert.match(CANVAS, /hidden=\{judgingPhase !== null(?: \|\| [^}]+)?\}/);
   assert.match(CANVAS, /const judgingPhase = regions\.policy && policy\.thinking \? policy\.phase : null;/);
   assert.match(CANVAS, /\{judgingPhase && <CanvasThinking phase=\{judgingPhase\} \/>\}/);
 });
