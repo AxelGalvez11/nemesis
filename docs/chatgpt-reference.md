@@ -110,6 +110,53 @@ pink `#f077af`, neutral `#8f8f8f`.
 - Projects columns: **Name / Modified** only
 - Meta cells (dates, sizes): 14px, `--text-secondary`
 
+### What these numbers do NOT settle (added 2026-08-26 — NOT a measurement)
+
+Everything above this heading was read off the live app. The two notes below were not: they are
+what the Library and Projects pages agreed to do where the measurements are silent. Do not cite
+them as ChatGPT's behaviour.
+
+1. **Does `Name 368` include the leading icon?** The measurements cannot say — the icon's 20x20
+   and "a gap to the name" are recorded separately, and both readings satisfy every published
+   width. It is not a detail: the two pages picked different answers and ended up 32px apart, and
+   the tell was that the `Name` column heading sat above a column of ICONS rather than above the
+   names it labels. **Both pages now put the icon OUTSIDE the Name column**, behind a 32px lead
+   (20px icon + 12px gap), so the heading and the names share one left edge and a title truncates
+   at the same character on either page.
+
+2. **The cells pack from the left and stop; they are not right-aligned.** Both pages were
+   measured by reading each row's own children off the live page, and both rows account for every
+   pixel of the 768px column:
+
+       Library   32 lead + 616 cells (368 + 160 + 88) + 112 empty tail + 8 right padding = 768
+       Projects  32 lead + 528 cells (368 + 160)      + 200 empty tail + 8 right padding = 768
+
+   Same 32px lead, same cell positions; the tail simply absorbs the column Projects does not have.
+   **Over a hundred pixels of every row is deliberately empty at the right**, which right-aligning
+   cannot produce. So a list with fewer columns keeps the remaining cells where they are and grows
+   the empty tail; it does not slide the last column to the right margin.
+
+   The cells total **616, not 632**: Size's `padding-left:16px` is already inside its 88 — both
+   pages measure it as one 88px box with the inset within it — so adding the 16 again
+   double-counts. That mistake shipped into a doc, a code comment and a test comment before anyone
+   caught it, because `+16` was the only term in the sum nobody had measured: every other number
+   came off a page, that one came off a reading of a parenthetical, and it survived because it
+   still made the total look plausible.
+
+   So: **measure every term, then state them as a sum that closes to the container width, never as
+   a remainder.** Both halves carry weight, and the closed form is the weaker one. It catches a
+   spare term. It does **not** catch a wrong model — the 32px lead in note 1 is the proof, because
+   icon-outside and icon-inside both close to 768 just as neatly:
+
+       icon outside   32 + 368 + 160 + 88 + 112 tail + 8 = 768
+       icon inside         368 + 160 + 88 + 144 tail + 8 = 768
+
+   Only measuring the rows separated those two. And keep the proportion in mind: of the three
+   defects this section exists to prevent, the arithmetic one was the cheapest. The two that
+   actually cost time — a column heading sitting over the wrong cells, and a name column 32px too
+   narrow — were both found by putting the two pages side by side in one browser, and neither was
+   reachable from this document at all.
+
 ## 4. THE PLUGINS PAGE
 
 - A segmented toggle centred at the very top ("Plugins | Skills"): font **14px / weight 500**,

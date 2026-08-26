@@ -135,9 +135,16 @@ test("🔴 the row's parts are the measured sizes: 20px icon, 14px name, 14px me
 });
 
 test("🔴🔴 the columns are the measured widths, and the header row exists at all", () => {
-  // Reference: Name 368 / Modified 160 / Size 88 (Size carries `padding-left:16px`). The Name
-  // column is the flexible one, and it lands on exactly 368 because everything around it is
-  // fixed: 768 − 8 (right pad) − 32 (icon + gap) − 160 − 88 − 112 (trailing controls).
+  // Reference: Name 368 / Modified 160 / Size 88, and the 16px `padding-left` on that third column
+  // is INSIDE its 88 — adding it again is what put a phantom term in the shared doc's arithmetic.
+  // The Name column is the flexible one and lands on exactly 368 because the row closes:
+  //
+  //   32 lead (20px icon + 12px gap) + 616 cells (368 + 160 + 88) + 112 tail + 8 right pad = 768
+  //
+  // 🔴 MEASURE EVERY TERM, THEN CLOSE THE SUM. `368 + 160 + 88 + 16 = 632` survived a doc, a code
+  // comment and a test comment because a remainder swallows a spare term and still looks right —
+  // but closing it is the weaker half of the rule, and these assertions are the stronger half:
+  // icon-outside and icon-inside both close to 768, so only a measured term tells them apart.
   assert.match(OUTPUTS, /const COL_MODIFIED = "w-\[160px\] shrink-0"/, "the Modified column stopped being 160px");
   assert.match(OUTPUTS, /const COL_COUNT = "w-\[88px\] shrink-0 pl-\[16px\]"/, "the third column stopped being 88px with a 16px inset");
   assert.match(OUTPUTS, /const COL_ACTIONS = "flex w-\[112px\] shrink-0 items-center justify-end"/, "the trailing slot stopped being the measured 112px");

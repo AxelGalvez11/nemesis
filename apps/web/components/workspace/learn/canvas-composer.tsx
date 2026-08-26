@@ -63,6 +63,7 @@ import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
+import { AttachmentCard, AttachmentRow } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 import { WrittenWorkSheet } from "./written-work-sheet";
 
@@ -729,23 +730,6 @@ export function CanvasComposer({
             🔴 2026-08-23: THE DISPLAY IS BACK, FED DIFFERENTLY — see `recentAttachments`. Chips now
             draw only files the learner picked this turn, so the machine's reading list can never
             reappear over the composer. */}
-        {recentAttachments.length > 0 && !listening && (
-          <div className="mb-1.5 ml-1 flex flex-wrap items-center gap-1.5">
-            {recentAttachments.map((file) => (
-              <span
-                className="flex max-w-[280px] items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-2 pr-3 shadow-sm ring-1 ring-(--ui-stroke-tertiary)"
-                key={file.id}
-                title={file.title}
-              >
-                <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
-                <span className="truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-                  {file.title}
-                </span>
-              </span>
-            ))}
-          </div>
-        )}
-
         {selected.length > 0 && !listening && (
           <div className="mb-1.5 ml-1 flex w-fit max-w-full items-center gap-2 rounded-full bg-(--ui-bg-elevated) py-1 pl-3 pr-2 shadow-sm ring-1 ring-(--ui-stroke-tertiary)">
             {/* 🔴 THE CHIP HAS TO SAY WHAT IT IS. It used to print the quoted words and nothing
@@ -794,6 +778,20 @@ export function CanvasComposer({
             selected.length > 0 && !listening && "ring-(--ui-action)/50",
           )}
         >
+          {/* 🔴🔴 THE ATTACHMENTS LIVE INSIDE THE BOX NOW (owner 2026-08-26: *"attaching docs to the
+              chat doesnt match chatgpt either"*, and on 2026-08-20: *"i dont want the attachments
+              to be above the chat composer at all"*). They had drifted back out to a detached row
+              of pills floating over the composer — the exact thing objected to, and the exact thing
+              the reference does not do. A staged file belongs to the message being written, so it
+              sits in the same container as the words. See `attachment-card.tsx` for the measured
+              geometry; the pill this replaces was ~30px tall with a 12px name and no type line. */}
+          {recentAttachments.length > 0 && !listening && (
+            <AttachmentRow>
+              {recentAttachments.map((file) => (
+                <AttachmentCard className="max-w-[260px] shrink-0" key={file.id} name={file.title} />
+              ))}
+            </AttachmentRow>
+          )}
           {/* The input row, on the same tokens the front door's composer uses. */}
           <div className="flex min-h-[var(--composer-min-height)] items-center gap-0 px-[var(--composer-pad-x)]">
             {/* Stays put through every state, including dictation: spatial continuity is the

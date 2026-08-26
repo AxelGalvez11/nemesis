@@ -66,7 +66,15 @@ const ROW_H_PX = 60;
 /** A row's padding. Reference: `10px 8px 10px 0` — nothing on the left, the divider does the work. */
 const ROW_PAD_Y_PX = 10;
 const ROW_PAD_RIGHT_PX = 8;
-/** The 20x20 leading icon plus the gap to the name: what a nested row indents by. */
+/**
+ * The 20x20 leading icon and the 12px gap after it, and the 32px lead those two make together.
+ *
+ * 🔴 ONE 32, TWO JOBS, AND THEY ARE THE SAME 32 BY CONSTRUCTION. It is what a nested row indents
+ * by, AND it is the lead in front of the Name column on every row and on the column headings.
+ * They were briefly two different numbers modelled from two different sides — a lead BEFORE the
+ * Name column on the Library page, a gap AFTER it here — which produced identical rows and a
+ * column heading in the wrong place. See NAME_W_PX.
+ */
 const ICON_PX = 20;
 const ICON_GAP_PX = 12;
 const INDENT_PX = ICON_PX + ICON_GAP_PX;
@@ -75,14 +83,18 @@ const SEARCH_W_PX = 240;
 /** The Modified column. Reference: the Library's own Modified cell measured 160px. */
 const MODIFIED_W_PX = 160;
 /**
- * The Name column, and the gap from it to Modified.
+ * The Name column: 368px wide, starting AFTER the icon's 32px lead.
  *
  * 🔴🔴 THE COLUMNS PACK FROM THE LEFT AND STOP — THEY ARE NOT RIGHT-ALIGNED, and the reference's
- * own Library measurements are what settle it. It publishes Library's cells as Name 368 /
- * Modified 160 / Size 88 (Size carrying `padding-left:16px`) inside the SAME 768px column this
- * page uses. Those sum to 632: there are over a hundred pixels of deliberate dead space at the
- * right of every Library row. A right-aligned Modified cannot produce that. So the reference's
- * list packs its cells from the left edge and simply runs out.
+ * own Library measurements are what settle it. Its cells are Name 368 / Modified 160 / Size 88,
+ * and at the SAME 768px column this page uses the row accounts exactly:
+ *
+ *     32 lead + 616 cells + 112 empty tail + 8 right padding = 768
+ *
+ * 112px of every Library row is deliberately empty at the right-hand end, which a right-aligned
+ * Modified cannot produce. So the reference's list packs its cells from the left edge and stops.
+ * (616, not 632: Size's `padding-left:16px` is already inside its 88 — measured on both pages as
+ * one 88px box with the inset within it. Adding the 16 again double-counts it.)
  *
  * Projects is that list minus Size, which means Name and Modified keep the positions they hold on
  * Library and the trailing space grows — it does not mean the date slides to the right margin.
@@ -90,12 +102,16 @@ const MODIFIED_W_PX = 160;
  * Library put Modified's left edge 400px into the column and Projects put it at 600px, so the
  * date column jumped 200px when a learner moved between two pages built the same week.
  *
- * 🔴 THE 32px GAP IS THE ONE NUMBER HERE THAT IS NOT MEASURED. 368 and 160 are the reference's;
- * the gap is whatever lands Modified where the Library page lands it. If Library's cells move,
- * this moves with them: the two pages agreeing is worth more than either one's private arithmetic.
+ * 🔴🔴🔴 AND THE ICON SITS OUTSIDE THIS COLUMN, WHICH IS THE HALF THAT WAS STILL WRONG AFTER THE
+ * DATES LINED UP. The reference publishes `Name 368` and, separately, "leading icon 20x20, then a
+ * gap to the name", and never says whether the 368 includes the icon. Both readings satisfy every
+ * published width, so the reference cannot decide it — but one of them is checkable without the
+ * reference at all: the column heading has to sit over the text it names. With the icon INSIDE
+ * the cell, this page drew "Name" at x=370 over a column of folder icons while the names it
+ * labelled began at x=402, and it also gave every name 336px before truncating where the Library
+ * gave 368. Icon outside: heading and names both start at 402, and both pages truncate alike.
  */
 const NAME_W_PX = 368;
-const COLUMN_GAP_PX = 32;
 /** The column headings strip above the list. Reference: 20px tall, 14px/400 `--text-secondary`. */
 const HEADINGS_H_PX = 20;
 
@@ -145,18 +161,25 @@ function rowBox(indent: number): React.CSSProperties {
 }
 
 /**
- * The Name cell: leading icon, 12px, then the name.
+ * A row's left side: the icon's 32px lead, then the Name column. Two cells, one helper, because
+ * four call sites writing these widths by hand is how a list ends up with four column layouts.
  *
- * 🔴 ITS RIGHT EDGE STAYS 368px INTO THE COLUMN AT EVERY NESTING DEPTH. The row indents with
+ * 🔴 THE NAME CELL'S RIGHT EDGE STAYS AT 402+368 AT EVERY NESTING DEPTH. The row indents with
  * padding, so the cell gives back exactly what the padding took; without that subtraction an
  * opened project would push its children's dates out of the Modified column, one step per level,
  * and the list would read as three ragged columns instead of two.
  */
-function NameCell({ children, indent }: { children: React.ReactNode; indent: number }) {
+function NameCells({ children, icon, indent }: { children: React.ReactNode; icon?: React.ReactNode; indent: number }) {
   return (
-    <span className="flex min-w-0 shrink-0 items-center" style={{ columnGap: ICON_GAP_PX, width: NAME_W_PX - indent }}>
-      {children}
-    </span>
+    <>
+      {/* 20px of icon and 12px of gap, held open whether or not this row draws a glyph. */}
+      <span className="flex shrink-0 items-center" style={{ height: ICON_PX, width: INDENT_PX }}>
+        {icon}
+      </span>
+      <span className="flex min-w-0 shrink-0 items-center" style={{ width: NAME_W_PX - indent }}>
+        {children}
+      </span>
+    </>
   );
 }
 
@@ -348,17 +371,14 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
             ))}
           </div>
 
-          {/* Column headings, sharing the rows' own padding so Name and Modified sit over their
-              cells rather than near them. */}
+          {/* 🔴 THE HEADINGS RUN THROUGH THE ROWS' OWN CELLS, INCLUDING THE ICON'S EMPTY LEAD.
+              Skipping the lead is what put "Name" over a column of folder icons while the names
+              it labels began 32px further right — a heading that is not above its own column. */}
           <div
             className={cn("mt-[24px] flex items-center", META_TEXT)}
-            style={{
-              columnGap: COLUMN_GAP_PX,
-              height: HEADINGS_H_PX,
-              paddingLeft: 0,
-              paddingRight: ROW_PAD_RIGHT_PX,
-            }}
+            style={{ height: HEADINGS_H_PX, paddingLeft: 0, paddingRight: ROW_PAD_RIGHT_PX }}
           >
+            <span aria-hidden className="shrink-0" style={{ width: INDENT_PX }} />
             <span className="shrink-0" style={{ width: NAME_W_PX }}>
               Name
             </span>
@@ -369,14 +389,18 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
 
           <ul className="flex flex-col">
             {naming !== null && (
-              <li className={cn("flex items-center", DIVIDER)} style={{ ...rowBox(0), columnGap: COLUMN_GAP_PX }}>
-                <NameCell indent={0}>
-                  <FolderIcon
-                    aria-hidden
-                    className="shrink-0 text-(--ui-text-secondary)"
-                    size={ICON_PX}
-                    strokeWidth={1.8}
-                  />
+              <li className={cn("flex items-center", DIVIDER)} style={rowBox(0)}>
+                <NameCells
+                  icon={
+                    <FolderIcon
+                      aria-hidden
+                      className="shrink-0 text-(--ui-text-secondary)"
+                      size={ICON_PX}
+                      strokeWidth={1.8}
+                    />
+                  }
+                  indent={0}
+                >
                   <input
                     aria-label="Name the new project"
                     autoFocus
@@ -395,7 +419,7 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
                     placeholder="Project name"
                     value={naming}
                   />
-                </NameCell>
+                </NameCells>
               </li>
             )}
 
@@ -458,13 +482,15 @@ function ProjectRow({
         aria-expanded={isOpen}
         className={cn("flex w-full items-center text-left transition-colors", DIVIDER, ROW_HOVER)}
         onClick={() => onToggle(project.id)}
-        style={{ ...rowBox(indent), columnGap: COLUMN_GAP_PX }}
+        style={rowBox(indent)}
         type="button"
       >
-        <NameCell indent={indent}>
-          <Glyph aria-hidden className="shrink-0 text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />
+        <NameCells
+          icon={<Glyph aria-hidden className="shrink-0 text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />}
+          indent={indent}
+        >
           <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{project.name}</span>
-        </NameCell>
+        </NameCells>
         <span className={cn("shrink-0", META_TEXT)} style={{ width: MODIFIED_W_PX }}>
           {modified(project.modifiedAt)}
         </span>
@@ -487,24 +513,28 @@ function ProjectRow({
               <button
                 className={cn("flex w-full items-center text-left transition-colors", DIVIDER, ROW_HOVER)}
                 onClick={() => onOpenCanvas(canvas.id)}
-                style={{
-                  ...rowBox(indent + INDENT_PX),
-                  columnGap: COLUMN_GAP_PX,
-                }}
+                style={rowBox(indent + INDENT_PX)}
                 type="button"
               >
-                <NameCell indent={indent + INDENT_PX}>
-                  {/* 🔴 AN ORDINARY CANVAS CARRIES NO ICON, and that is the sidebar's rule rather
+                {/* 🔴 AN ORDINARY CANVAS CARRIES NO ICON, and that is the sidebar's rule rather
                     than a gap here: the mortar board alone says "this one holds a course" without
-                    turning the list into a column of identical glyphs. The slot is still reserved
-                    at the icon's width so every name in the list keeps one left edge. */}
-                  <span aria-hidden className="shrink-0" style={{ height: ICON_PX, width: ICON_PX }}>
-                    {canvas.courseTitle ? (
-                      <GraduationCap className="text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />
-                    ) : null}
-                  </span>
+                    turning the list into a column of identical glyphs. `NameCells` holds the slot
+                    open regardless, so every name in the list keeps one left edge. */}
+                <NameCells
+                  icon={
+                    canvas.courseTitle ? (
+                      <GraduationCap
+                        aria-hidden
+                        className="text-(--ui-text-secondary)"
+                        size={ICON_PX}
+                        strokeWidth={1.8}
+                      />
+                    ) : null
+                  }
+                  indent={indent + INDENT_PX}
+                >
                   <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{canvas.title || "Untitled"}</span>
-                </NameCell>
+                </NameCells>
                 <span className={cn("shrink-0", META_TEXT)} style={{ width: MODIFIED_W_PX }}>
                   {modified(canvas.updatedAt)}
                 </span>

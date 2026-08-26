@@ -121,28 +121,65 @@ test("🔴 the leading icon is 20x20 on `--icon-secondary`, and the name is 14px
 });
 
 test("🔴🔴🔴 the columns pack from the LEFT and stop — a right-aligned Modified is a 200px seam", () => {
-  // The reference's Library cells are Name 368 / Modified 160 / Size 88 (+16px pad) inside the
-  // same 768px column. They sum to 632, so over a hundred pixels of every Library row are
-  // deliberately empty at the right — which a right-aligned Modified cannot produce. Projects is
-  // that list minus Size, so Name and Modified hold their positions and the dead space grows.
+  // The reference's Library cells are Name 368 / Modified 160 / Size 88 — 616 together, since
+  // Size's 16px of left padding sits INSIDE its 88 rather than beside it. At a 768px column the
+  // row then accounts exactly: 32 lead + 616 cells + 112 empty tail + 8 right padding = 768.
+  // 112px of every Library row is deliberately empty at the right, which a right-aligned Modified
+  // cannot produce. Projects is that list minus Size, so Name and Modified hold their positions
+  // and the empty tail grows.
   //
   // This page right-aligned Modified until both pages were measured in one browser: Library put
   // its date 400px into the column and Projects put it at 600px, so the date column jumped 200px
   // between two sibling pages. Calibration: give the Name cell `flex-1` again and this reddens.
   assert.equal(measured("NAME_W_PX"), 368);
-  assert.equal(measured("COLUMN_GAP_PX"), 32);
-  const at = page.indexOf("function NameCell(");
-  assert.notEqual(at, -1, "the shared Name cell is gone and each row now sizes its own columns");
-  const cell = page.slice(at, page.indexOf("\n}", at));
+  assert.equal(measured("MODIFIED_W_PX"), 160);
+});
+
+test("🔴🔴🔴 the column heading sits over ITS OWN column, which means it clears the icon too", () => {
+  // 🔴 THE HALF THAT WAS STILL WRONG AFTER THE DATES LINED UP. The reference gives `Name 368` and,
+  // separately, "leading icon 20x20, then a gap to the name", and never says whether the 368
+  // includes the icon. Both readings satisfy every published width — so the reference cannot
+  // settle it, but this can: a heading has to sit over the text it names. With the icon inside the
+  // cell, "Name" drew at x=370 above a column of FOLDER ICONS while the names it labelled began at
+  // x=402, and every name got 336px before truncating where the Library gave 368.
+  //
+  // Measured after the fix: heading (402, 368) and the depth-0 name cell (402, 368) — same box.
+  // Calibration: delete the empty lead span from the headings and this reddens alone.
+  const at = page.indexOf("Column headings") + 1 || page.indexOf('style={{ height: HEADINGS_H_PX');
+  const headings = page.slice(page.indexOf("style={{ height: HEADINGS_H_PX"), page.indexOf(">\n              Modified"));
+  assert.notEqual(at, -1, "the column headings are gone");
+  assert.match(
+    headings,
+    /<span aria-hidden className="shrink-0" style=\{\{ width: INDENT_PX \}\} \/>/,
+    "the headings skipped the icon's lead, so Name is above the icons instead of the names",
+  );
+  assert.match(headings, /style=\{\{ width: NAME_W_PX \}\}/, "the Name heading is not the Name column's width");
+});
+
+test("🔴🔴 one 32, one meaning: the icon's lead IS the nesting indent", () => {
+  // These were briefly two numbers modelled from opposite sides — a lead BEFORE the Name column on
+  // the Library page, a gap AFTER it here. Both produced identical ROWS, which is why it survived
+  // a row-by-row comparison, and they disagreed about where the Name column starts, which is what
+  // the heading exposed. Derived from the icon and its gap so the two can never drift again.
+  assert.equal(measured("ICON_PX"), 20);
+  assert.equal(measured("ICON_GAP_PX"), 12);
+  assert.match(page, /const INDENT_PX = ICON_PX \+ ICON_GAP_PX;/);
+  assert.ok(!/COLUMN_GAP_PX/.test(page), "a second, independent 32 came back");
+});
+
+test("🔴🔴 every row draws its left side through ONE helper, at every nesting depth", () => {
+  // Four call sites writing these widths by hand is how a list ends up with four column layouts.
+  const at = page.indexOf("function NameCells(");
+  assert.notEqual(at, -1, "the shared cells are gone and each row now sizes its own columns");
+  const cells = page.slice(at, page.indexOf("\n}", at));
+  assert.match(cells, /style=\{\{ height: ICON_PX, width: INDENT_PX \}\}/, "the icon's lead is not held open");
   // 🔴 THE INDENT IS GIVEN BACK. The row indents with padding, so the cell must subtract it or an
   // opened project pushes its children's dates out of the column, one step per nesting level.
-  assert.match(cell, /width: NAME_W_PX - indent/);
-  assert.ok(
-    !/min-w-0 flex-1 truncate", NAME_TEXT\)\}>\{project\.name/.test(page.replace(/\s+/g, " ")) ||
-      /<NameCell indent=\{indent\}>/.test(page),
-    "the project row stopped going through the shared Name cell",
-  );
-  assert.match(page, /<NameCell indent=\{indent \+ INDENT_PX\}>/, "canvas rows left the Name column");
+  assert.match(cells, /width: NAME_W_PX - indent/);
+  for (const site of [/indent=\{0\}/, /indent=\{indent\}/, /indent=\{indent \+ INDENT_PX\}/]) {
+    assert.match(page, site, `a row stopped going through the shared Name cells: ${site}`);
+  }
+  assert.ok(!/<NameCell\b/.test(page.replace(/<NameCells/g, "")), "a stale single-cell helper is still in use");
 });
 
 test("🔴 there are two columns, Name and Modified, and Modified is the measured 160px", () => {
