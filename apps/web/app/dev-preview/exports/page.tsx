@@ -58,6 +58,34 @@ const SHEET: SheetData = {
   ],
 };
 
+/** Draws a real molecule and reports the PNG's size, because "it compiled" says nothing about
+ *  whether smiles-drawer produced a picture. */
+async function structureCheck(): Promise<string | null> {
+  const { structurePng } = await import("@/lib/export/structure-image");
+  const data = await structurePng("smiles", "OCC1OC(O)C(O)C(O)C1O", 1);
+  if (!data?.startsWith("data:image/png;base64,")) return null;
+  return `${Math.round((data.length * 3) / 4 / 1024)}KB  OK (a real drawing)`;
+}
+
+/**
+ * Builds the real .pptx from the deck fixture and reports whether the molecule made it INSIDE.
+ *
+ * 🔴 A .pptx IS A ZIP, and a zip lists its entry names uncompressed — so `ppt/media/` appearing in
+ * the bytes is proof that a picture was embedded, not merely that the plan mentioned one. Checking
+ * the file size alone would pass on a deck that silently dropped every drawing.
+ */
+async function deckCheck(): Promise<string> {
+  const plan = MADE.find((output) => output.deck)?.deck;
+  if (!plan) return "BROKEN (no deck fixture)";
+  const { withStructures } = await import("@/lib/export/deck-download");
+  const { buildDeckPptx } = await import("@/lib/export/deck-pptx");
+  const drawn = await withStructures(plan);
+  const blob = (await buildDeckPptx(drawn, { credit: "Made with Nemesis" })) as Blob;
+  const raw = new TextDecoder("latin1").decode(await blob.arrayBuffer());
+  const media = (raw.match(/ppt\/media\//g) ?? []).length;
+  return `${Math.round(blob.size / 1024)}KB  ${drawn.figures.length} figure(s), ${media} media entr${media === 1 ? "y" : "ies"}  ${media > 0 ? "OK" : "BROKEN (no picture reached the file)"}`;
+}
+
 /** The first bytes of a file, as text, which is how a format is identified. */
 async function signature(blob: Blob, length = 5): Promise<string> {
   const head = new Uint8Array(await blob.slice(0, length).arrayBuffer());
@@ -103,6 +131,29 @@ const MADE: CanvasOutput[] = [
           takeaway: "Two ATP are spent before any are made.",
           title: "The pathway in three moves",
         },
+        {
+          ...SLIDE,
+          points: ["ATP is spent before any is made"],
+          structure: {
+            caption: "Hexokinase traps glucose in the cell",
+            notation: "reaction-smiles" as const,
+            resolvedFrom: { id: "5793", name: "glucose", provider: "pubchem" as const },
+            value: "OCC1OC(O)C(O)C(O)C1O>>OCC1OC(O)C(O)C(O)C1OP(=O)(O)O",
+          },
+          takeaway: "The phosphate is what stops glucose leaving again.",
+          title: "Step one: glucose is phosphorylated",
+        },
+        {
+          ...SLIDE,
+          points: ["Six carbons, one ring"],
+          structure: {
+            caption: "Glucose",
+            notation: "smiles" as const,
+            resolvedFrom: { id: "5793", name: "glucose", provider: "pubchem" as const },
+            value: "OCC1OC(O)C(O)C(O)C1O",
+          },
+          title: "The molecule itself",
+        },
         { ...SLIDE, layout: "closing", points: ["Net: 2 ATP, 2 NADH, 2 pyruvate"], title: "What to remember" },
       ],
       subtitle: "",
@@ -143,6 +194,8 @@ function ExportsPreview() {
       // LINE GOT IT WRONG. `text()` decodes as UTF-8, and a UTF-8 decoder STRIPS a leading BOM by
       // specification — so a perfectly good file reported "no BOM" and I nearly went and "fixed" a
       // writer that was already correct. In UTF-8 the mark is the three bytes EF BB BF.
+      `png   ${(await structureCheck()) ?? "BROKEN (no data URI)"}`,
+      `pptx  ${await deckCheck()}`,
       `csv   ${csv.size} bytes  ${(await signature(csv, 3)) === "\\xef\\xbb\\xbf" ? "OK (BOM present)" : "BROKEN (no BOM — Excel will mojibake)"}`,
     ];
     setReport(lines.join("\n"));
