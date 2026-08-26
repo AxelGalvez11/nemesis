@@ -40,6 +40,7 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
 import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
+import { canvasViewAction, type CanvasView } from "@/lib/learn/canvas-view";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { OutputPreview } from "./output-preview";
 import { SourcePreview } from "./source-preview";
@@ -105,8 +106,24 @@ function useDismiss(open: boolean, close: () => void) {
 // 🔴 THE COLOUR WAS ALREADY RIGHT AND IS LEFT ALONE. `--ui-text-tertiary` composites to ≈#969696;
 // ChatGPT's secondary header glyph is #8f8f8f. Within a hair, and both go to full-strength text on
 // hover. Changing it to chase three units of grey would be a change nobody could see.
+// 🔴🔴 `pointer-events-auto` IS LOAD-BEARING, AND ITS ABSENCE WAS A LIVE DEAD CONTROL. The strip
+// these sit in is `pointer-events-none` by design — `canvas-surface.tsx` explains why: an invisible
+// full-width band across the top of the sheet would otherwise swallow clicks meant for the document
+// scrolling underneath it. Every child therefore has to switch clicks back ON for itself, and the
+// exit `×` does so explicitly.
+//
+// This constant did not, and `OptionsControl` applies it directly — so the READ-ALOUD TOGGLE in the
+// canvas header could not be clicked at all. Measured in a browser on 2026-08-26: computed
+// `pointer-events: none`, `elementFromPoint` at its centre returning the strip instead of the
+// button. It looked correct, it hovered nothing, and it did nothing. `SourcesControl` and
+// `MinimapControl` were unaffected only by accident — each wraps itself in a `pointer-events-auto`
+// div for its panel, which is why three controls in one row disagreed about whether they worked.
+//
+// 🔴 FIXED IN THE SHARED CONSTANT RATHER THAN AT THE CALL SITE, because the call site is exactly
+// what forgot. A control added to this row tomorrow inherits a working one instead of inheriting
+// the bug; `canvas-conversation-view.test.ts` holds the property by name.
 const CONTROL =
-  "flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
+  "pointer-events-auto flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
 const PANEL =
@@ -1212,6 +1229,55 @@ function MenuItem({
  * its own, afterwards — a learner who left it on deserves to see that without opening anything.
  * Speaking, on-but-quiet and off are three distinct marks.
  */
+/**
+ * The view switch: one answer at a time, or the whole conversation.
+ *
+ * Owner, 2026-08-26: *"it shouldn't be a different mode. It should just be, like, a different view,
+ * a different way to view outputs."*
+ *
+ * 🔴🔴 A FOURTH GLYPH IN A ROW THE OWNER HAD FIXED AT THREE, AND THAT IS A DELIBERATE, NAMED COST.
+ * On 2026-08-19 he set this row himself — *"i only want icons for 'x' on left, 'source and outputs'
+ * and 'progress' for the minimap"*, then *"add a '⋯' for options"*. A switch needs a control and a
+ * control needs somewhere to live, so the later instruction wins over the earlier count; if the row
+ * is now too busy, this is the icon to move, not the feature to cut.
+ *
+ * 🔴 IT IS ABSENT UNTIL THERE IS A CONVERSATION TO READ, which is what keeps a fresh canvas exactly
+ * as busy as it is today. The Minimap already sets this precedent for the same reason (owner: *"the
+ * map icon should only appear if there is a course active"*) — a control whose only message is that
+ * it has nothing to show is this codebase's most-repeated defect.
+ *
+ * 🔴 ONE GLYPH, NOT TWO, AND `aria-pressed` CARRIES THE STATE. The label says what the NEXT CLICK
+ * does; a button labelled with where you already are is indistinguishable from one labelled with
+ * where it will take you. `canvasViewAction` owns that wording so the title and the accessible
+ * name cannot drift apart.
+ *
+ * 🔴 THE ON STATE IS `--ui-action`, THE SAME TINT THE READ-ALOUD TOGGLE USES. Two toggles in one
+ * row that signalled "on" differently would each have to be learned separately.
+ */
+export function ConversationControl({
+  onToggle,
+  view,
+}: {
+  onToggle: () => void;
+  view: CanvasView;
+}) {
+  const showingConversation = view === "conversation";
+  const action = canvasViewAction(view);
+
+  return (
+    <button
+      aria-label={action}
+      aria-pressed={showingConversation}
+      className={cn(CONTROL, showingConversation && "text-(--ui-action) hover:text-(--ui-action)")}
+      onClick={onToggle}
+      title={action}
+      type="button"
+    >
+      <Codicon name="comment-discussion" size="20px" />
+    </button>
+  );
+}
+
 export function OptionsControl({
   voice,
 }: {

@@ -22,7 +22,8 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
-import { MinimapControl, OptionsControl, SourcesControl } from "./canvas-controls";
+import { ConversationControl, MinimapControl, OptionsControl, SourcesControl } from "./canvas-controls";
+import type { CanvasView } from "@/lib/learn/canvas-view";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
 import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
@@ -81,6 +82,19 @@ interface CanvasHeaderProps {
    * up here and the start button stays down there.
    */
   replyAudio?: CanvasVoiceState["replyAudio"];
+  /**
+   * Which of the two views is on screen, and how to swap them.
+   *
+   * 🔴 THE HEADER IS TOLD, IT DOES NOT DECIDE. The preference is held by `learning-canvas.tsx`
+   * because the OVERLAY is rendered there; a header that owned it would be a control holding state
+   * that something else has to read back out of it.
+   *
+   * 🔴 OPTIONAL, AND ABSENT MEANS NO CONTROL. A canvas with nothing recorded yet passes neither,
+   * and the row is then exactly what it is today — see `ConversationControl`'s own note on why an
+   * empty control is worse than none.
+   */
+  view?: CanvasView;
+  onToggleView?: () => void;
 }
 
 export function CanvasHeader({
@@ -96,6 +110,8 @@ export function CanvasHeader({
   transcript = [],
   voice,
   replyAudio,
+  view,
+  onToggleView,
 }: CanvasHeaderProps) {
   return (
     <>
@@ -143,6 +159,10 @@ export function CanvasHeader({
               `grid-cols-[0fr]` note in canvas-audio-bar.tsx — so the canvas title keeps every pixel
               it has today and this row does not reflow when the audio ends. */}
           {replyAudio && <CanvasAudioBar audio={replyAudio} />}
+          {/* 🔴 FIRST OF THE GLYPHS, BECAUSE IT IS ABOUT THE PAGE ITSELF. Sources, the Minimap and
+              read-aloud all open onto something BESIDE the canvas; this one changes what the canvas
+              is showing, which makes it the one closest to the content. */}
+          {view && onToggleView && <ConversationControl onToggle={onToggleView} view={view} />}
           <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} />
           {/* 🔴🔴 THE MAP APPEARS ONLY WHERE THERE IS SOMETHING TO MAP — owner, 2026-08-24: "the map
               icon should only appear if there is a course active." On an ordinary conversation there
