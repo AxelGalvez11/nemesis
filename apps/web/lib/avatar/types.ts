@@ -141,7 +141,17 @@ export interface Face {
   readonly sparks?: SparkPlan | null;
 }
 
-export type EaseName = "smooth" | "snappy" | "bouncy";
+/**
+ * How a step's morph is shaped.
+ *
+ * 🔴 `linear` EXISTS FOR KEYFRAMES SAMPLED OFF A CONTINUOUS CURVE, AND WITHOUT IT THEY STOP.
+ * `smooth` is a smoothstep: zero velocity at BOTH ends. That is right for a pose arriving and
+ * settling, and wrong for one sample in the middle of a movement — the character comes to a
+ * complete halt at every sample it passes through. Measured on the first cut of the gestures:
+ * the nod stopped dead twice inside seven hundred milliseconds. When the curve already carries
+ * the easing, the step must not add its own.
+ */
+export type EaseName = "smooth" | "snappy" | "bouncy" | "linear";
 
 export interface Step {
   /** The face this step arrives at. */

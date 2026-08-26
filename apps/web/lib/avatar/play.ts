@@ -27,6 +27,8 @@ const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
  */
 export function ease(name: EaseName, at: number): number {
   const p = clamp01(at);
+  // Straight through, for a keyframe that is one sample of a movement rather than a pose.
+  if (name === "linear") return p;
   if (name === "snappy") return 1 - (1 - p) ** 3;
   if (name === "bouncy") {
     // A damped cosine, normalised so it still lands exactly on 1 at the end. Without the
