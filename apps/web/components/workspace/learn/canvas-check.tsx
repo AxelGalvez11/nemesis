@@ -151,18 +151,65 @@ export function CanvasCheck({
   }, []);
 
   return (
+    // 🔴🔴 THE CHROME IS CLAUDE'S, MEASURED (owner 2026-08-26: *"they should both bring up a proper
+    // component like in Claude code or like in Claude dot AI did"*, with a screenshot). Read off a
+    // live Learning-guidance quiz at a 1470px viewport: card radius 8px, 1px hairline, 28px of
+    // padding; question 22px/500 on a 28px line; option rows 46px tall, 8px apart, each with a
+    // radio circle; progress as numbered pips rather than a sentence.
+    //
+    // 🔴 WHAT IS DELIBERATELY *NOT* COPIED IS THEIR `Next` BUTTON. The owner's 2026-08-24 rule
+    // stands: one tap answers AND advances, because "it's not just like friction every time you
+    // click the answer". Their card needs Next because it marks as you go; ours marks at the end.
     <section
       aria-label={`Question ${index + 1} of ${run.questions.length}`}
-      className="canvas-swap mt-5 rounded-2xl p-4 ring-1 ring-(--ui-stroke-secondary)"
+      className="canvas-swap mt-5 rounded-[8px] p-[28px] ring-1 ring-(--ui-stroke-tertiary)"
       ref={frame}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary)">
-          Question {index + 1} of {run.questions.length}
-        </p>
+        {/* 🔴 PIPS, NOT A SENTENCE. "Question 3 of 8" is the same fact, and the row of numbers is
+            also the way BACK: the old card grew a separate "Back" button once you were past the
+            first question, which is a second control for something the progress display can simply
+            be. Answered questions are filled; the rest are outlines. */}
+        <ol className="flex list-none flex-wrap items-center gap-[6px]">
+          {run.questions.map((q, at) => {
+            // 🔴 `picks` IS POSITIONAL, and a question has no id of its own — `TestQuestion` carries
+            // an `objectiveIdentityKey`, which two questions in one run may share. The index is the
+            // key, and it is stable because `run` is replaced wholesale rather than edited.
+            const done = typeof picks[at] === "string";
+            const here = at === index;
+            return (
+              <li key={`${at}-${q.objectiveIdentityKey}`}>
+                <button
+                  aria-current={here ? "step" : undefined}
+                  aria-label={`Question ${at + 1}${done ? ", answered" : ""}`}
+                  className={[
+                    "flex size-[26px] items-center justify-center rounded-full text-[length:var(--canvas-text-meta)] tabular-nums transition-colors",
+                    here
+                      ? "bg-(--ui-bg-primary) text-(--ui-text-primary)"
+                      : done
+                        ? "bg-(--ui-bg-tertiary) text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)"
+                        : "text-(--ui-text-quaternary)",
+                    // 🔴 ONLY BACKWARDS. Jumping ahead would let a learner see question eight
+                    // before answering one, which is not a navigation preference, it is a way to
+                    // read the whole test before committing to any of it.
+                    at < index ? "cursor-pointer" : "cursor-default",
+                  ].join(" ")}
+                  disabled={at >= index}
+                  onClick={() => setIndex(at)}
+                  type="button"
+                >
+                  {at + 1}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
         <button
-          aria-label="Stop this test"
-          className="-mr-1 -mt-1 shrink-0 rounded-full bg-transparent px-2 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+          // 🔴 NEITHER "TEST" NOR "QUIZ" IN THE LABEL. Owner 2026-08-26: *"the term quiz and test
+          // should be similar"*. They already reach the same component; the label was the last
+          // place the product still called it one of the two.
+          aria-label="Stop this"
+          className="-mr-2 -mt-2 shrink-0 rounded-full bg-transparent px-2 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
           onClick={onDismiss}
           type="button"
         >
@@ -190,11 +237,15 @@ export function CanvasCheck({
         </div>
       )}
 
-      <h2 className="mt-2 text-[length:var(--canvas-text-body)] font-medium leading-snug text-(--ui-text-primary)">
+      {/* 🔴 22px ON A 28px LINE, MEASURED. It was `--canvas-text-body` (16px), the same size as the
+          options under it, so the question read as the first item in a list of five rather than as
+          the thing being asked. §46.3 exempt: this is a measured value from the reference.
+          §46.3-exempt: measured off claude.ai, 2026-08-26. */}
+      <h2 className="mt-[18px] text-[22px] font-medium leading-[28px] text-(--ui-text-primary)">
         {question.prompt}
       </h2>
 
-      <ul className="mt-3 flex list-none flex-col gap-1.5">
+      <ul className="mt-[18px] flex list-none flex-col gap-[8px]">
         {question.options.map((option) => {
           // 🔴 NOTHING HERE KNOWS WHICH OPTION IS CORRECT, AND THAT IS THE POINT OF THE CHANGE.
           // `option.correct` is deliberately not read on this screen: styling that varies with it
@@ -207,15 +258,31 @@ export function CanvasCheck({
               <button
                 aria-pressed={isPick}
                 className={[
-                  "w-full rounded-xl px-3 py-2.5 text-left transition-colors bg-transparent hover:bg-(--ui-bg-tertiary)",
-                  isPick ? "bg-(--ui-bg-tertiary) ring-1 ring-(--ui-stroke-primary)" : "",
+                  // 46px tall and a hairline round the row, both measured. A bare hover-fill row
+                  // reads as a menu item; a bordered row reads as a thing you choose.
+                  "flex min-h-[46px] w-full items-center gap-3 rounded-[8px] px-[14px] py-[10px] text-left transition-colors",
+                  "bg-transparent ring-1 hover:bg-(--ui-bg-quaternary)",
+                  isPick ? "bg-(--ui-bg-tertiary) ring-(--ui-stroke-primary)" : "ring-(--ui-stroke-tertiary)",
                 ]
                   .filter(Boolean)
                   .join(" ")}
                 onClick={() => answer(option.text)}
                 type="button"
               >
-                <span className="block text-[length:var(--canvas-text-body)] leading-snug text-(--ui-text-primary)">
+                {/* 🔴 A RADIO, AND IT SAYS "PICK ONE" BEFORE ANYTHING IS PICKED. The old row had no
+                    mark at all, so an untouched card gave no clue that the rows were choices rather
+                    than links. It is decoration for the mouse and nothing else: `aria-pressed` on
+                    the button is what a screen reader reads. */}
+                <span
+                  aria-hidden="true"
+                  className={[
+                    "flex size-[18px] shrink-0 items-center justify-center rounded-full ring-1 transition-colors",
+                    isPick ? "ring-(--ui-text-primary)" : "ring-(--ui-stroke-primary)",
+                  ].join(" ")}
+                >
+                  {isPick ? <span className="size-[9px] rounded-full bg-(--ui-text-primary)" /> : null}
+                </span>
+                <span className="block text-[length:var(--canvas-text-small)] leading-normal text-(--ui-text-primary)">
                   {option.text}
                 </span>
               </button>
@@ -224,17 +291,10 @@ export function CanvasCheck({
         })}
       </ul>
 
-      {/* 🔴 THE ONLY OTHER CONTROL, AND IT ONLY EXISTS ONCE THERE IS SOMETHING BEHIND. Deferring
-          the marking is what makes this necessary — see the header. */}
-      {index > 0 && (
-        <button
-          className="mt-3 rounded-xl bg-transparent px-3 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
-          onClick={() => setIndex((was) => Math.max(0, was - 1))}
-          type="button"
-        >
-          Back
-        </button>
-      )}
+      {/* 🔴 THE "Back" BUTTON IS GONE, AND ITS JOB MOVED UP. It appeared once you were past the
+          first question and did one thing: step back one. The numbered pips in the header do that
+          and also say where you are, which is the same control doing two jobs instead of two
+          controls doing one and a half. */}
     </section>
   );
 }
