@@ -129,16 +129,22 @@ test("🔴 the two composers are one shape, so the swap shows nothing", () => {
 });
 
 test("nothing is left behind at full opacity when the front door departs", () => {
-  // The help line and the day's strip sit outside `composerBox`, so the departure neither carried
-  // them nor faded them: they stood at full opacity while the composer flew out from between them,
-  // then hard-cut at the route swap.
-  const between = HOME.slice(HOME.indexOf("Type a topic, ask a question"), HOME.indexOf("<TodayStrip"));
-  assert.equal(between.includes("</section>"), false, "TodayStrip left the departing group");
+  // The help line sits outside `composerBox`, so the departure neither carried it nor faded it: it
+  // stood at full opacity while the composer flew out from under it, then hard-cut at the route
+  // swap. It shares the greeting's fade now.
+  //
+  // 🔴 THIS USED TO PIN `TodayStrip` INTO THE SAME GROUP AND THE STRIP IS GONE (owner 2026-08-26:
+  // *"the landing page has some previous chats in there, which I don't want that in there. It's
+  // the things that are below the chat composer, which I don't want."*). The negative assertion
+  // below is what is left of that: the front door must not grow a second thing under the composer
+  // by re-importing the component that was deleted.
   assert.match(
     HOME,
-    /THESE TWO LEAVE WITH THE GREETING[\s\S]{0,1200}opacity: departing \? 0 : 1/,
-    "the help line and the day's strip stopped departing with the greeting",
+    /LEAVE[SW]? WITH THE GREETING[\s\S]{0,1400}opacity: departing \? 0 : 1/,
+    "the help line stopped departing with the greeting",
   );
+  assert.equal(/<TodayStrip/.test(HOME), false, "the day's strip is back under the composer");
+  assert.equal(/from "\.\/today-strip"/.test(HOME), false, "the day's strip is back under the composer");
 });
 
 test("🔴 an answer arrives block by block, and the drill is untouched", () => {

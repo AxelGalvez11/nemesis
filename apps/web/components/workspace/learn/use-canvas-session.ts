@@ -39,11 +39,13 @@ import {
   questionAsTask,
   runCommand,
 } from "@/lib/learn/canvas-api";
+import { canvasNeedsName, firstExchange, nameCanvasFromExchange } from "@/lib/learn/canvas-naming";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, lastThingSaid, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
 import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
-import { isMakerCapability, type MakerCapability } from "@/lib/learn/composer-capability";
+import { isMakerCapability } from "@/lib/learn/composer-capability";
+import { researchStepLabel } from "@/lib/research/research-progress";
 import { planResearch } from "@/lib/research/run-research";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
@@ -435,9 +437,23 @@ export interface CanvasSession {
   /** Record a thing Nemesis made (a deck, a note); appends to `outputs` and persists. */
   addOutput: (output: CanvasOutput) => void;
   /** Make a deliverable from what the canvas holds and file it in the library — owner
-   *  2026-08-25. The deck/note lands in the library's own tables AND on `outputs`. */
-  makeDeliverable: (kind: DeliverableKind) => Promise<void>;
-  /** The deliverable currently being made, or null — drives the Outputs tab's busy row. */
+   *  2026-08-25. The deck/note lands in the library's own tables AND on `outputs`.
+   *
+   *  🔴 IT REPORTS WHETHER SOMETHING WAS MADE, and that is not decoration: a caller that cleared a
+   *  card to run this has to be able to put it back when nothing came of it. Every way out of this
+   *  function also writes a sentence the learner can read, so a `false` is always accompanied and
+   *  never has to be explained by whoever received it. */
+  makeDeliverable: (kind: DeliverableKind) => Promise<boolean>;
+  /**
+   * The deliverable currently being made, or null.
+   *
+   * 🔴 IT DRIVES NOTHING TODAY, AND SAYING SO IS THE POINT. This used to claim it drove "the Outputs
+   * tab's busy row"; `canvas-controls.tsx` accepts the prop and never reads it, so there is no such
+   * row. `learning-canvas.tsx` also hands it to `ResearchPlanCard` as `starting`, which cannot be
+   * true because that card is unmounted before this becomes `"report"`. What the learner actually
+   * sees while a run is going is the busy caption `makeDeliverable` now sets; this is left exposed
+   * because it is the honest signal a surface would need, not because a surface reads it.
+   */
   making: DeliverableKind | null;
   remove: () => Promise<void>;
   /** Record what the learner did. 🔴 Telemetry only — see canvas-events.ts. */
@@ -464,14 +480,45 @@ const MADE_NOTICE: Record<DeliverableKind, string> = {
   slides: "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks.",
 };
 
-/** What the busy line says while each maker runs. 🔴 A `Record` over the union, so a new maker is a
- *  compile error here rather than a blank caption at runtime. */
-const MAKER_LABELS: Record<MakerCapability, string> = {
+/**
+ * What the busy line says while each maker runs.
+ *
+ * 🔴 A `Record` over the union, so a new maker is a compile error here rather than a blank caption
+ * at runtime.
+ *
+ * 🔴🔴 IT COVERS `DeliverableKind`, NOT `MakerCapability`, AND THE THREE IT GAINED ARE THE WHOLE
+ * POINT (owner 2026-08-26: *"I also try to do a deep research, but then once I click start, the chip
+ * just disappeared"*). This used to be keyed by the four capabilities that reach a maker from the
+ * `+` menu, because those were the only four whose caption anybody had written. Every OTHER way of
+ * making something — the plan card's Start, an artifact the model decided to write, the outputs
+ * panel's own rows — therefore ran with no caption at all. `makeDeliverable` sets its own busy state
+ * now, so this has to name every kind it can be called with, and a `Record` over the full union is
+ * what makes "somebody added a maker and forgot the caption" impossible rather than unlikely.
+ */
+const MAKING_LABELS: Record<DeliverableKind, string> = {
   document: "Writing your document",
+  flashcards: "Making your flashcards",
+  note: "Writing your note",
   pdf: "Writing your PDF",
+  // 🔴 "Starting", NOT "Planning", AND THE DIFFERENCE IS WHETHER IT IS TRUE. A run reached from the
+  // plan card has ALREADY been planned and `runResearch` refuses to plan an approved plan again, so
+  // its first real step is a search. A run a turn decided on does begin by planning. One word covers
+  // both honestly, and `researchStepLabel` replaces it within a second either way.
+  report: "Starting the research",
   sheet: "Building your spreadsheet",
   slides: "Building your slides",
 };
+
+/**
+ * What the learner is told when they ask for a second thing while the first is still being made.
+ *
+ * 🔴🔴 THIS SENTENCE EXISTS BECAUSE THE GUARD WAS SILENT BY CONSTRUCTION. `makeDeliverable` opened
+ * with a bare `if (makingRef.current) return;`, which is correct about the machine and invisible to
+ * the person: pressing Start on the research plan card while anything else was being made cleared
+ * the card and produced NOTHING, for ever. A guard that refuses without saying it refused is
+ * indistinguishable from a broken button.
+ */
+const ALREADY_MAKING = "Something else is still being made. Wait for it to finish, then try again.";
 
 export function useCanvasSession(canvasId: string | null): CanvasSession {
   const { session } = useAuth();
@@ -807,6 +854,54 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       alive = false;
     };
   }, [canvasId, uid]);
+
+  /**
+   * The canvas names itself after the first thing said on it.
+   *
+   * 🔴🔴🔴 OWNER, 2026-08-26: *"the canvas doesn't rename itself properly. based on the chat's
+   * content."* It did not rename itself at all. The two automatic namers in the product are
+   * `mergeSourceIntoCanvas` (the first attached DOCUMENT) and `begin(topic)` (a topic string that
+   * nothing passes: `beginOrAnswer` sends every typed sentence to `converse` instead). `renameCanvas`
+   * has two callers and both are a person typing. So a canvas that was only ever a conversation read
+   * "New canvas" in its header and "Untitled canvas" in the Library, permanently.
+   *
+   * 🔴 AN EFFECT, NOT A LINE AT THE END OF `converse`, AND THE REASON IS COVERAGE. `converse` has
+   * seven early returns — research plans, declared makers, an inferred maker, a clarification, a
+   * refusal — and a turn that ended down any of them still put something on the canvas worth naming
+   * it after. Hanging the naming off the moment log instead means every route into a first exchange
+   * is covered by construction, including routes that do not exist yet.
+   *
+   * 🔴 IT SETTLES AT THE FIRST EXCHANGE AND THEN STOPS, WHICH IS AS IMPORTANT AS NAMING AT ALL. The
+   * ref holds the canvas id it fired for, so the call happens at most once per canvas per mount, and
+   * `firstExchange` reads the FIRST moment rather than the newest. A canvas whose name kept up with
+   * a growing conversation would rename its own row in the sidebar while somebody was pointing at
+   * it, which is a worse bug than a canvas called "New canvas".
+   *
+   * 🔴🔴 IT CANNOT OVERWRITE A NAME SOMEBODY ELSE GAVE IT, AND THE SECOND CHECK IS THE LOAD-BEARING
+   * ONE. `canvasNeedsName` is asked once before spending the call and AGAIN inside the state
+   * updater, because a model call is a second or two long and a document attached in that window has
+   * already named the canvas by the time the answer lands. Checking inside the updater makes the
+   * test and the write one atomic step against the freshest state React holds, so the loser of that
+   * race is always this, never the learner or their document.
+   *
+   * 🔴 SILENT ON FAILURE, BY DESIGN. `nameCanvasFromExchange` returns "" for everything that can go
+   * wrong and never throws. Nothing here was asked for, so nothing here may interrupt a lesson to
+   * report that it did not happen; "New canvas" is a true thing to be called.
+   */
+  const namedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!uid) return;
+    const current = latest.current;
+    if (namedRef.current === current.id) return;
+    if (!canvasNeedsName(current)) return;
+    const exchange = firstExchange(current.moments);
+    if (!exchange) return;
+    namedRef.current = current.id;
+    void nameCanvasFromExchange(uid, exchange).then((name) => {
+      if (!name) return;
+      update((latestCanvas) => (canvasNeedsName(latestCanvas) ? { ...latestCanvas, title: name } : latestCanvas));
+    });
+  }, [canvas.moments, uid, update]);
 
   // Time on task, for the completion state. Only counted while the tab is actually visible —
   // "14 min active learning" must not include an hour in a background tab.
@@ -1282,15 +1377,57 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * then vanished under the write would read as a glitch rather than as an answer.
    */
   const makeDeliverable = useCallback(
-    async (kind: DeliverableKind, topic?: string, plan?: readonly string[]) => {
-      // The ref, not the state: two clicks in one frame both see `making === null`.
-      if (makingRef.current) return;
+    async (
+      kind: DeliverableKind,
+      topic?: string,
+      plan?: readonly string[],
+      /**
+       * The run was not asked for by a press the learner is now waiting on.
+       *
+       * 🔴🔴 IT PICKS WHICH CAPTION CHANNEL NARRATES, AND THAT DECIDES WHETHER THE COMPOSER LOCKS.
+       * `busy` is the canvas saying "the whole surface is working": the character walks to the
+       * centre, the caption goes up, and the text box goes dead. That is exactly right when
+       * somebody pressed Start and is watching, and exactly wrong for the report a turn decided to
+       * write alongside a reply the learner can already read — `converse` says so in its own words
+       * at `decision.wantsReport`: *"the reply must not wait on a minute of searching."* Locking
+       * the composer for a minute after an answered question is that wait, moved.
+       *
+       * So a background run narrates through `work` instead, which is the channel this file already
+       * built for exactly this distinction (see the `work` state's own note: it is "DELIBERATELY NOT
+       * `busy`, AND THE REASON IS THE COMPOSER"). Same words on screen, nothing taken away.
+       */
+      background = false,
+    ): Promise<boolean> => {
+      /**
+       * 🔴🔴 IT SAYS WHY NOW. The ref is still the guard — the state is a frame behind, so two
+       * clicks in one frame would both see `making === null` — but a bare `return` here was the
+       * silent half of the owner's disappearing research card. See `ALREADY_MAKING`.
+       */
+      if (makingRef.current) {
+        setError(ALREADY_MAKING);
+        return false;
+      }
       if (!uid) {
         setError("Sign in to save things to your library.");
-        return;
+        return false;
       }
       makingRef.current = true;
       setMaking(kind);
+      /**
+       * The caption, and the only thing on the canvas that says a minute-long run is happening.
+       *
+       * 🔴 THE LAST LABEL IS REMEMBERED SO THE CLEAR CANNOT STEAL SOMEBODY ELSE'S. A background run
+       * outlives the turn that started it, and a turn that begins while one is still going writes
+       * its own `work`. Clearing unconditionally at the end would blank a caption belonging to a
+       * step that is still executing, which is the same lie as showing one for a step that is not.
+       */
+      let lastLabel: string | null = null;
+      const narrate = (label: string) => {
+        lastLabel = label;
+        if (background) setWork(label);
+        else setBusy({ blockIds: [], kind: "command", label });
+      };
+      narrate(MAKING_LABELS[kind]);
       try {
         const result =
           kind === "flashcards"
@@ -1307,11 +1444,23 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
                 // not have, so with nothing to research there is nothing to do. The canvas title
                 // is the fallback because "research this" on an open canvas plainly means its
                 // subject.
-                ? await makeReportDeliverable(uid, latest.current, topic || latest.current.title || "", undefined, plan)
+                // 🔴🔴 `onStep` IS PASSED NOW, AND IT USED TO BE `undefined`. `runResearch` has
+                // emitted a `ResearchStep` at every stage since it was written — planning,
+                // searching, reading, writing, checking — `makeReportDeliverable` has always
+                // forwarded them, and NOTHING had ever read one. So the single most expensive
+                // action in the product, about a minute of wall clock and several metered
+                // searches, ran behind one frozen word. See lib/research/research-progress.ts.
+                ? await makeReportDeliverable(
+                    uid,
+                    latest.current,
+                    topic || latest.current.title || "",
+                    (step) => narrate(researchStepLabel(step)),
+                    plan,
+                  )
                 : await makeNoteDeliverable(uid, latest.current);
         if ("error" in result) {
           setError(result.error);
-          return;
+          return false;
         }
         update((current) => ({ ...current, outputs: [...(current.outputs ?? []), result.output] }));
         // 🔴 IN THE FLOW AS WELL AS IN THE PANEL. Both, not either: the panel is the canvas's
@@ -1334,9 +1483,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // for one would send them somewhere it has never been.
           result.note ? `${result.note}. Saved to your Library.` : MADE_NOTICE[kind],
         );
+        return true;
       } finally {
         makingRef.current = false;
         setMaking(null);
+        // 🔴 ONLY IF IT IS STILL OURS — see `lastLabel` above.
+        if (background) setWork((current) => (current === lastLabel ? null : current));
+        else setBusy({ kind: null });
       }
     },
     [uid, update],
@@ -1408,13 +1561,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 THE LIST COMES FROM `composer-capability.ts`, NOT FROM A CHAIN OF `===` HERE. A condition
       // spelled out in this file stops being complete the moment the union grows, silently, with
       // the new capability falling through to an ordinary turn and appearing to do nothing.
+      //
+      // 🔴 THE BUSY WRAPPER THAT USED TO BE HERE IS GONE, AND ITS ABSENCE IS THE FIX. It read
+      // `setBusy(MAKER_LABELS[capability])` / `await` / `finally setBusy(null)`, which meant the
+      // caption belonged to the CALLER — so the two callers that never wrote one (the research plan
+      // card's Start, and the report a turn decides to write) ran a minute-long job behind a blank
+      // surface. `makeDeliverable` owns its own caption now, so every route into it narrates
+      // identically and a new route cannot forget to.
       if (capability && isMakerCapability(capability)) {
-        setBusy({ blockIds: [], kind: "command", label: MAKER_LABELS[capability] });
-        try {
-          await makeDeliverable(capability, said);
-        } finally {
-          setBusy({ kind: null });
-        }
+        await makeDeliverable(capability, said);
         return null;
       }
 
@@ -1425,12 +1580,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // through to the ordinary turn.
       const askedFor = readDeliverableAsk(said);
       if (askedFor) {
-        setBusy({ blockIds: [], kind: "command", label: askedFor === "slides" ? "Building your slides" : askedFor === "flashcards" ? "Making your flashcards" : "Writing your note" });
-        try {
-          await makeDeliverable(askedFor, said);
-        } finally {
-          setBusy({ kind: null });
-        }
+        // 🔴 THE THREE-WAY TERNARY THAT USED TO SPELL THE CAPTION HERE IS GONE WITH THE WRAPPER, and
+        // it was a second copy of `MAKING_LABELS` that only covered three of the seven kinds.
+        await makeDeliverable(askedFor, said);
         return null;
       }
       setError(null);
@@ -1532,7 +1684,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // already said something in `decision.say`; the run goes away, and the finished report
       // arrives in the outputs panel and the Library when it lands. Awaiting here would hold a
       // sentence the learner can already read hostage to a document they will read later.
-      if (decision.wantsReport) void makeDeliverable("report", decision.wantsReport);
+      //
+      // 🔴 AND IT NARRATES IN THE BACKGROUND CHANNEL, WHICH IS THE OTHER HALF OF NOT AWAITING IT.
+      // The fourth argument routes the caption to `work` rather than `busy`, so the run says what it
+      // is doing without taking the composer away from somebody who has just been answered and may
+      // want to ask the next thing. See `background` on `makeDeliverable`.
+      if (decision.wantsReport) void makeDeliverable("report", decision.wantsReport, undefined, true);
 
       // 🔴🔴 THE DIAGRAM ARRIVES AFTER THE CHIPS, AND THAT IS DELIBERATE (owner 2026-08-25: image
       // occlusion "as part of its testing tools"). Finding a licensed diagram and having vision
@@ -2466,15 +2623,44 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [recordEvent, update],
   );
 
-  /** Start the planned run, with the sub-questions the learner actually read. */
+  /**
+   * Start the planned run, with the sub-questions the learner actually read.
+   *
+   * 🔴🔴🔴 PRESSING START LEAVES SOMETHING TRUE ON SCREEN, ALWAYS, AND THAT IS THE INVARIANT THIS
+   * FUNCTION EXISTS TO HOLD. Owner, 2026-08-26: *"I also try to do a deep research, but then once I
+   * click start, the chip just disappeared."* That was the literal truth. The card was cleared here,
+   * and `makeDeliverable` then ran for about a minute with no caption, no character at the centre,
+   * no disabled composer and no progress. Nothing on the canvas distinguished a run that was really
+   * executing from a button that did nothing.
+   *
+   * Both halves are fixed, and it takes both:
+   *
+   *   · the RUN says it is running   — `makeDeliverable` sets `busy` and narrates every real step
+   *   · a FAILURE says it failed     — the plan comes back, pressable, beside the reason
+   *
+   * 🔴 STILL CLEARED BEFORE THE RUN, NOT AFTER. A second press must not start a second run;
+   * `makeDeliverable`'s ref guard would catch it, but a card that stays on screen looking pressable
+   * is its own bug. What changed is that the plan is not thrown away when it is cleared, so an
+   * unstarted run can put it back.
+   *
+   * 🔴 AND ONLY ON FAILURE. Success replaces the card with the artifact card carrying the finished
+   * report's name, which is the same handover every other maker does; putting the plan back beside
+   * it would offer to spend the money again on a question already answered.
+   */
   const startResearchPlan = useCallback(() => {
     const plan = researchPlan;
     if (!plan) return;
-    // 🔴 CLEARED BEFORE THE RUN, NOT AFTER. The card disappears the instant Start is pressed, so a
-    // second press cannot start a second run against the same plan; `makeDeliverable`'s own ref
-    // guard would catch it, but a card that stays on screen looking pressable is its own bug.
     setResearchPlan(null);
-    void makeDeliverable("report", plan.question, plan.subQuestions);
+    void makeDeliverable("report", plan.question, plan.subQuestions).then((made) => {
+      // 🔴 THE PLAN IS NOT RE-PLANNED, IT IS THE SAME OBJECT. Asking the model again would cost a
+      // call to produce a DIFFERENT list of sub-questions, and the learner would then be looking at
+      // a card they never approved. `run-research.ts` makes exactly this argument about an approved
+      // plan and refuses to re-plan one; the same reasoning applies to putting it back.
+      // 🔴 AND ONLY IF NOTHING ELSE HAS CLAIMED THE SLOT. A turn that started another research plan
+      // while this one was failing owns the card now, and overwriting it would replace a live offer
+      // with a dead one.
+      if (!made) setResearchPlan((current) => current ?? plan);
+    });
   }, [makeDeliverable, researchPlan]);
 
   /** Throw the plan away. Nothing was spent, so there is nothing to undo. */

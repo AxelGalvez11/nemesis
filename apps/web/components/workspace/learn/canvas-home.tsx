@@ -29,13 +29,11 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
-import { useAuth } from "@/components/AuthProvider";
 import { cn } from "@/lib/utils";
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
 import { AttachmentCard, AttachmentRow } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 import { FileDropOverlay } from "./file-drop-overlay";
-import { TodayStrip } from "./today-strip";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { putPending } from "./pending-attachment";
@@ -82,8 +80,6 @@ function canvasComposerInset(): number {
 const GREETER_SIZE = 80;
 
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
-  const { session: authSession } = useAuth();
-  const uid = authSession?.user.id ?? null;
   const router = useRouter();
   // The character's look is a device preference, the same as the theme and the scale.
   const { accent } = useTheme();
@@ -430,6 +426,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             }
           >
             <div className={greeter.motion === "jump" ? "character-jump" : greeter.motion === "spin" ? "character-spin" : undefined}>
+              {/* 🔴 `facing="forward"` IS THE SAME LEVELLING THE DOCK GETS, AND THE HAND-OFF IS WHY
+                  IT IS NOT OPTIONAL. This character flies into the canvas and BECOMES the dock's
+                  character; if one end were levelled and the other were not, the head would swing
+                  about 28° at the exact frame of the route swap — a fresh version of the glitch
+                  the whole handoff sequence was rebuilt to remove. See the prop's own note. */}
               <NemesisAvatar
                 accent={accent}
                 entrance
@@ -437,6 +438,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 onPoke={greeter.poke}
                 size={GREETER_SIZE}
                 animation={greeter.state}
+                facing="forward"
                 track
                 waggle={greeter.motion === "waggle"}
               />
@@ -489,7 +491,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         ) : (
         // Was 770 × 54 at radius 27, hand-tuned within 2px of the reference's 768 × 52 at 28.
         // Reading the tokens instead is what keeps it aligned with the Library frame below it.
-        <div className="pointer-events-auto flex w-full max-w-[var(--composer-max-width)] flex-col rounded-[var(--composer-radius)] bg-(--ui-bg-elevated) shadow-[0_1px_2px_rgba(0,0,0,0.03),0_8px_24px_rgba(0,0,0,0.05)] ring-1 ring-(--ui-stroke-tertiary)">
+        <div className="pointer-events-auto flex w-full max-w-[var(--composer-max-width)] flex-col rounded-[var(--composer-radius)] bg-(--composer-fill) shadow-[var(--composer-edge)]">
           {/* 🔴🔴 INSIDE THE BOX, LIKE THE CANVAS COMPOSER AND LIKE THE REFERENCE. These were a row
               of detached pills floating ABOVE the composer — which is both what the owner said he
               did not want on 2026-08-20 and what does not match. The pill became a card because a
@@ -696,12 +698,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           <p className="mt-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{dictation.error}</p>
         )}
           </div>
-          {/* 🔴 THESE TWO LEAVE WITH THE GREETING, BECAUSE THEY HAVE NOWHERE TO TRAVEL TO. They sit
-              OUTSIDE `composerBox`, so the departure did not carry them and did not fade them: the
-              help line and the day's strip stayed at full opacity while the composer flew out from
-              between them, and then vanished on the route swap. A hard cut at the end of a move the
-              learner was watching is the exact abruptness the rest of this sequence exists to
-              avoid. Same fade and same timing as the greeting above — one departure, not three. */}
+          {/* 🔴 THIS LEAVES WITH THE GREETING, BECAUSE IT HAS NOWHERE TO TRAVEL TO. It sits OUTSIDE
+              `composerBox`, so the departure did not carry it and did not fade it: the help line
+              stayed at full opacity while the composer flew out from under it, and then vanished on
+              the route swap. A hard cut at the end of a move the learner was watching is the exact
+              abruptness the rest of this sequence exists to avoid. Same fade and same timing as the
+              greeting above — one departure, not two. (It was TWO things until 2026-08-26; the
+              day's strip that used to sit below it is gone, see the note further down.) */}
           <div
             className="flex w-full flex-col items-center"
             style={{
@@ -723,12 +726,17 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             Type a topic, ask a question, dictate it, or drop your material in.
           </p>
 
-          {/* 🔴 UNDER THE COMPOSER, AND SILENT WHEN THERE IS NOTHING WAITING. Workstream D. The
-              composer stays the primary thing on this surface: someone arriving to type a question
-              must not have to look past a wall of status to find the box, and a learner with a
-              clear plate sees exactly what they saw before this shipped. `TodayStrip` renders null
-              unless something is genuinely due, unfinished, or dated. */}
-          <TodayStrip uid={uid} />
+          {/* 🔴🔴 NOTHING GOES HERE. There WAS a strip under the composer — workstream D's "what is
+              waiting": cards due, dates coming up, and a row per canvas the learner had left half
+              finished. The owner cut it on 2026-08-26: *"the landing page has some previous chats
+              in there, which I don't want that in there. It's the things that are below the chat
+              composer, which I don't want."* Those "previous chats" were the `Left unfinished`
+              rows.
+
+              The strip and its reader (`today-strip.tsx`, `lib/learn/today.ts`) are DELETED rather
+              than hidden behind a flag, because an unreachable surface that still passes its own
+              tests reads as shipped to everyone who greps for it later. Git has them if the front
+              door ever wants to report the day again. */}
           </div>
         </section>
 

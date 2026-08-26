@@ -387,7 +387,14 @@ test("🔴🔴 the composer chips only what the learner picked, never the canvas
   assert.ok(!/pendingSources/.test(composer), "the source-list prop is back on the composer");
   assert.ok(/recentAttachments\.map/.test(composer), "the picked-file chips are gone");
   // The box itself is still a column, because the textarea grows inside it.
-  assert.ok(composer.includes('"flex flex-col bg-(--ui-bg-elevated)"'), "the composer stopped being a column");
+  //
+  // 🔴 THE FILL IS A TOKEN OF ITS OWN NOW, AND THIS ASSERTION MOVED WITH IT (2026-08-26). It read
+  // `bg-(--ui-bg-elevated)`, which computes to #fdfdfd — one unit off the page against the
+  // reference's three. `--composer-fill` is #ffffff in light and #212121 in dark, both measured.
+  // What this line is actually guarding is the `flex flex-col`; the fill just happens to sit in the
+  // same string, so it has to be kept in step. See `answer-matches-reference.test.ts`, which owns
+  // the fill and the edge.
+  assert.ok(composer.includes('"flex flex-col bg-(--composer-fill)"'), "the composer stopped being a column");
 });
 
 test("🔴🔴 the canvas scrolls past the composer, which floats over it", () => {

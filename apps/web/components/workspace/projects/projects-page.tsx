@@ -33,7 +33,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Folder as FolderIcon, FolderOpen, GraduationCap, Plus, Search } from "lucide-react";
+import { Folder as FolderIcon, Plus, Search } from "lucide-react";
 
 import {
   CANVASES_CHANGED_EVENT,
@@ -217,7 +217,6 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
   const [loaded, setLoaded] = useState(false);
   const [filter, setFilter] = useState<ProjectFilter>("all");
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set<string>());
   /** The draft name of a project being created, or null when none is. */
   const [naming, setNaming] = useState<string | null>(null);
 
@@ -250,15 +249,6 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
 
   const projects = useMemo(() => buildProjects(folders, canvases), [canvases, folders]);
   const shown = useMemo(() => visibleProjects(projects, filter, query), [filter, projects, query]);
-
-  const toggle = useCallback((id: string) => {
-    setOpen((was) => {
-      const next = new Set(was);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   /**
    * 🔴 THE NAME IS AN ARGUMENT, NOT READ FROM STATE. Enter commits and blur commits, and Escape
@@ -424,14 +414,7 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
             )}
 
             {shown.map((project) => (
-              <ProjectRow
-                depth={0}
-                key={project.id}
-                onOpenCanvas={(id) => router.push(`/learn?c=${id}`)}
-                onToggle={toggle}
-                open={open}
-                project={project}
-              />
+              <ProjectRow key={project.id} onOpen={(id) => router.push(`/projects/${id}`)} project={project} />
             ))}
           </ul>
 
@@ -447,47 +430,35 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
 }
 
 /**
- * One project, and — once opened — what is inside it.
+ * One project. Clicking it goes to the project's own page — `/projects/<id>` — the way clicking
+ * a ChatGPT project row does.
  *
- * 🔴 IT OPENS IN PLACE BECAUSE THERE IS NOWHERE ELSE TO SEND IT. There is no project detail
- * route, and `/learn` has no folder filter to link to — the sidebar's own folder rows expand
- * inline for exactly the same reason. Inventing `/projects/<id>` would have meant a second
- * surface for a folder's contents that the sidebar would then have to be kept in step with.
- * Every canvas row navigates to `/learn?c=<id>`: the same destination, character for character,
- * that the sidebar pushes, so a canvas opened from here and one opened from there land alike.
+ * 🔴 IT USED TO OPEN IN PLACE, "BECAUSE THERE WAS NOWHERE ELSE TO SEND IT." That was true until
+ * `project-page.tsx` existed. Now there is somewhere else to send it, and a row that both expanded
+ * AND navigated would be two different meanings for one click — the reference's own row only ever
+ * does the second. See `project-page.tsx` for what the destination shows.
  *
- * 🔴 AND THE OPEN STATE IS THE LEADING ICON, NOT A NEW CONTROL. The reference's row is icon,
- * name, date and nothing else, so a chevron would have been an element it does not have. An open
- * folder simply draws an open folder — same 20x20 slot, same colour, nothing added.
+ * 🔴 A NESTED SUB-PROJECT LOSES ITS INLINE ROW HERE, AND THAT IS A DELIBERATE, NARROW GAP, NOT AN
+ * OVERSIGHT. `projects-model.ts` still rolls a sub-project's canvases up into its parent's
+ * Modified date and Pinned status — nothing about search or sorting changed — only the ONE THING
+ * that used to reveal a sub-project's own row on THIS page is gone. It is not stranded: the
+ * sidebar (`sidebar-canvases.tsx`) keeps its own, independent expand/collapse at every depth, so a
+ * project nested inside another is still reachable there today, exactly as it was before this
+ * change. What it does NOT get from this page is a click-through to ITS OWN `/projects/<id>` —
+ * ChatGPT has no nested projects to have measured that behaviour from, so nothing here invents one.
  */
-function ProjectRow({
-  depth,
-  onOpenCanvas,
-  onToggle,
-  open,
-  project,
-}: {
-  depth: number;
-  onOpenCanvas: (id: string) => void;
-  onToggle: (id: string) => void;
-  open: ReadonlySet<string>;
-  project: ProjectNode;
-}) {
-  const isOpen = open.has(project.id);
-  const indent = depth * INDENT_PX;
-  const Glyph = isOpen ? FolderOpen : FolderIcon;
+function ProjectRow({ onOpen, project }: { onOpen: (id: string) => void; project: ProjectNode }) {
   return (
     <li>
       <button
-        aria-expanded={isOpen}
         className={cn("flex w-full items-center text-left transition-colors", DIVIDER, ROW_HOVER)}
-        onClick={() => onToggle(project.id)}
-        style={rowBox(indent)}
+        onClick={() => onOpen(project.id)}
+        style={rowBox(0)}
         type="button"
       >
         <NameCells
-          icon={<Glyph aria-hidden className="shrink-0 text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />}
-          indent={indent}
+          icon={<FolderIcon aria-hidden className="shrink-0 text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />}
+          indent={0}
         >
           <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{project.name}</span>
         </NameCells>
@@ -495,59 +466,6 @@ function ProjectRow({
           {modified(project.modifiedAt)}
         </span>
       </button>
-
-      {isOpen && (
-        <ul className="flex flex-col">
-          {project.children.map((child) => (
-            <ProjectRow
-              depth={depth + 1}
-              key={child.id}
-              onOpenCanvas={onOpenCanvas}
-              onToggle={onToggle}
-              open={open}
-              project={child}
-            />
-          ))}
-          {project.canvases.map((canvas) => (
-            <li key={canvas.id}>
-              <button
-                className={cn("flex w-full items-center text-left transition-colors", DIVIDER, ROW_HOVER)}
-                onClick={() => onOpenCanvas(canvas.id)}
-                style={rowBox(indent + INDENT_PX)}
-                type="button"
-              >
-                {/* 🔴 AN ORDINARY CANVAS CARRIES NO ICON, and that is the sidebar's rule rather
-                    than a gap here: the mortar board alone says "this one holds a course" without
-                    turning the list into a column of identical glyphs. `NameCells` holds the slot
-                    open regardless, so every name in the list keeps one left edge. */}
-                <NameCells
-                  icon={
-                    canvas.courseTitle ? (
-                      <GraduationCap
-                        aria-hidden
-                        className="text-(--ui-text-secondary)"
-                        size={ICON_PX}
-                        strokeWidth={1.8}
-                      />
-                    ) : null
-                  }
-                  indent={indent + INDENT_PX}
-                >
-                  <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{canvas.title || "Untitled"}</span>
-                </NameCells>
-                <span className={cn("shrink-0", META_TEXT)} style={{ width: MODIFIED_W_PX }}>
-                  {modified(canvas.updatedAt)}
-                </span>
-              </button>
-            </li>
-          ))}
-          {project.children.length === 0 && project.canvases.length === 0 && (
-            <li className={cn("flex items-center", DIVIDER, META_TEXT)} style={rowBox(indent + INDENT_PX * 2)}>
-              Empty
-            </li>
-          )}
-        </ul>
-      )}
     </li>
   );
 }

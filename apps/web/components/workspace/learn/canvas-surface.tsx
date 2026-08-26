@@ -29,9 +29,26 @@
 // viewport's pixels at y≈54, which is what makes a workspace read as "an app page with a header"
 // instead of a document. The layer is also deliberately `pointer-events-none` with only its
 // children re-enabled, so the invisible strip cannot swallow clicks on the content underneath it.
+//
+// 🔴🔴 "SOMETIMES WON'T LET ME" (owner, 2026-08-26) WAS NEVER THIS FILE — every render branch this
+// component reaches DOES carry a working `×`; that was re-verified on screen against the loading
+// branch, a busy/turnInFlight surface, the Sources panel open, a docked and a full-screen reader,
+// the legacy `orient` shape, and a mobile viewport, and all of them exit correctly. The actual
+// defect was one layer out: `apps/web/app` has NO `error.tsx` anywhere, so a render exception
+// thrown by ANYTHING in the 2000+ line `learning-canvas.tsx` — over real, sometimes-irregular
+// session data — never reached this component at all, and fell through to Next's bare handling:
+// no `×`, no rail, nothing. Confirmed by throwing deliberately with no boundary present. The fix
+// is `app/(workspace)/learn/error.tsx`, which is safe to add one layer above `learning-canvas.tsx`
+// rather than inside it, precisely because Next scopes an `error.tsx` OUTSIDE the segment it
+// guards — `WorkspaceShell`, which owns the nav rail, stays mounted and interactive underneath it.
+//
+// 🔴 THE DEPARTURE IS NOW ANIMATED, AND `beginExit` BELOW IS WHERE. It reads as the arrival's own
+// motion played backwards rather than a new effect — see `.canvas-exit-out` in globals.css, which
+// is the arrival's curve, time-reversed. Capped at `EXIT_MS` so the press still feels instant, and
+// a second press while already leaving skips the remainder rather than queuing behind it.
 
 import type * as React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useDeclareImmersiveSurface } from "@/components/workspace/shell/immersive-surface";
 import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
@@ -64,6 +81,18 @@ import { FileDropOverlay } from "./file-drop-overlay";
  * column to 925; that is not done here, and a table wider than 768 still scrolls inside itself. */
 const CANVAS_COLUMN_PX = "822px";
 
+/**
+ * How long the departure is allowed to hold the press before the route actually changes.
+ *
+ * 🔴🔴 A CEILING, NOT A DESIGN CHOICE (owner: *"never make the exit slower to respond ... an
+ * animated departure must still feel instant to the press"*). `canvas-home.tsx`'s own arrival
+ * holds the navigation for `DOCK_MS` — 320ms — because that trip has somewhere real to land: a
+ * measured rectangle on the page about to mount. This one does not (see `.canvas-exit-out` in
+ * globals.css for why it does not try to fly the character to a guessed target), so there is
+ * nothing here worth 320ms of the learner's attention. 200 is the number the brief names.
+ */
+const EXIT_MS = 200;
+
 interface CanvasSurfaceProps {
   /** Leaves the canvas. Always wired; there is no state in which this control is absent. */
   onExit: () => void;
@@ -82,6 +111,39 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
   // toggle. This is what makes the exit below load-bearing rather than decorative, which is why
   // the two live in the same component: you cannot take the claim without taking the `×` with it.
   useDeclareImmersiveSurface();
+  // 🔴🔴 A SMOOTH DEPARTURE, WHERE THE ARRIVAL HAD ONE AND THE EXIT USED TO HARD-CUT. Owner:
+  // *"investigate exiting out of the canvas ... and make sure it has a smooth animation."* See
+  // `.canvas-exit-out` in globals.css for the motion itself and why it is the arrival's own curve
+  // played backwards rather than a new effect, and `EXIT_MS` above for why it is capped at 200ms.
+  //
+  // 🔴 A REF FOR THE TIMER, NOT A CLOSURE `setTimeout` DISCARDS. `beginExit` has to be able to
+  // CANCEL the wait it started — a second press must skip straight to leaving, never queue a
+  // second one behind the first.
+  const [leaving, setLeaving] = useState(false);
+  const exitTimer = useRef<number | null>(null);
+  // Cleared on unmount so a route change from anywhere else (the browser's own Back, say) cannot
+  // leave a stale timer calling `onExit` — i.e. `router.push` — a second time after the surface
+  // holding it is already gone.
+  useEffect(() => () => {
+    if (exitTimer.current !== null) window.clearTimeout(exitTimer.current);
+  }, []);
+  const beginExit = () => {
+    // 🔴 REDUCED MOTION SKIPS THE DEPARTURE, NOT THE EXIT — the identical rule the front door's
+    // own arrival follows (canvas-home.tsx's `start`). Checked live, not cached at mount: this is
+    // read once per press, so a preference changed mid-session is honoured on the very next one.
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // 🔴 A SECOND PRESS WHILE ALREADY LEAVING IS NOT A SECOND DEPARTURE — it is the learner telling
+    // this one to hurry up. Cancels whatever is left of the wait and leaves now, which is what
+    // stops a double-press (or an impatient learner holding the key) from ever being able to
+    // strand anyone mid-animation: the worst case is the animation getting skipped, never extended.
+    if (leaving || still) {
+      if (exitTimer.current !== null) window.clearTimeout(exitTimer.current);
+      onExit();
+      return;
+    }
+    setLeaving(true);
+    exitTimer.current = window.setTimeout(onExit, EXIT_MS);
+  };
   // 🔴 THE CANVAS ACCEPTED DROPS AND SHOWED NOTHING, which is a worse bug than refusing them. The
   // handlers below landed on 2026-08-20 and were correct; the surface simply never said it was a
   // target, so a learner holding a PDF over a canvas saw a page that looked inert and had no way
@@ -105,7 +167,10 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
 
   return (
     <main
-      className="relative h-full min-h-0 bg-(--ui-bg-editor)"
+      // 🔴 `.canvas-exit-out` ONLY, NEVER A THIRD CLASS FOR "ARRIVING". The masthead, the header's
+      // own `.canvas-chrome-in` fade and this share one surface without needing to coordinate: the
+      // arrival plays once at mount and is long finished by the time a learner can press the ×.
+      className={`relative h-full min-h-0 bg-(--ui-bg-editor)${leaving ? " canvas-exit-out" : ""}`}
       // 🔴🔴 DROPPING A FILE ON THE CANVAS DID NOTHING AT ALL UNTIL NOW. Owner, 2026-08-20: *"the
       // composer doesnt allow me to drop in multiple attachments before sending."* The FRONT DOOR
       // has had a drop handler since it was built (`canvas-home.tsx`); the canvas never did, so the
@@ -225,7 +290,7 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
         className="canvas-chrome-in pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
         style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
       >
-        <CanvasExit onExit={onExit} />
+        <CanvasExit onExit={beginExit} />
         {chrome}
       </header>
 
