@@ -119,6 +119,20 @@ export function lessonSeed(): LearningCanvas {
     level: "basics_known",
     sources: [SOURCE, WEB_SOURCE],
     concepts: CONCEPTS,
+    // 🔴 THE OUTPUTS SHELF HAD NOTHING IN ANY PREVIEW, so the reader that opens from it could only
+    // be checked against a hand-built fixture on a different page — and the CANVAS half of it,
+    // where the surface is pushed aside for the panel, could not be looked at at all. One made
+    // document costs nothing and makes that whole path reachable in the harness.
+    outputs: [
+      {
+        createdAt: NOW,
+        id: "o-preview-note",
+        kind: "document",
+        markdown:
+          "# Cardiac action potentials\n\n## The five phases\n\nResting myocytes sit near -90 mV, held there by a high potassium conductance.\n\n- Phase 0 is the fast sodium upstroke\n- Phase 2's plateau is calcium against potassium\n- Phase 3 repolarises as calcium channels shut\n\n## Why the plateau matters\n\n| Phase | Current | What it does |\n| --- | --- | --- |\n| 0 | Fast sodium in | Depolarises in about a millisecond |\n| 2 | Calcium in, potassium out | Holds the voltage, prolongs contraction |\n| 3 | Potassium out | Returns the cell to rest |\n",
+        title: "Cardiac action potentials, written up",
+      },
+    ],
     blocks: [
       { id: "b1", type: "heading", content: "Cardiac action potentials" },
       {

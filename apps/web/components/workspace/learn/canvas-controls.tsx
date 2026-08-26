@@ -236,7 +236,19 @@ export function SourcesControl({
               three rows returning behind an icon. `outputs-have-no-make-buttons.test.ts` holds it. */}
           <PanelSection label="Outputs">
             {outputs.map((output) => (
-              <OutputRow canvasId={canvas.id} key={output.id} onOpen={setOpenedOutput} onReviewDeck={setReviewingDeck} output={output} />
+              <OutputRow
+                canvasId={canvas.id}
+                key={output.id}
+                onOpen={(chosen) => {
+                  // 🔴 THE SHELF CLOSES BEHIND THE ARTIFACT. Left open it floats over the reader it
+                  // just launched, hiding the first screen of the document — which is what a
+                  // screenshot of this caught.
+                  setOpen(false);
+                  setOpenedOutput(chosen);
+                }}
+                onReviewDeck={setReviewingDeck}
+                output={output}
+              />
             ))}
           </PanelSection>
 

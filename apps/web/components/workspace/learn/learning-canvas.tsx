@@ -16,6 +16,7 @@ import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
+import { DeckReview } from "@/components/workspace/study/deck-review";
 import { ArtifactCard } from "./artifact-card";
 import { OutputPreview } from "./output-preview";
 import { ResearchPlanCard } from "./research-plan-card";
@@ -248,6 +249,35 @@ export function LearningCanvas({
   /** The artifact open in the side panel, or null. Canvas-level rather than inside the card, so the
    *  panel survives the card being replaced by the next make mid-read. */
   const [openArtifact, setOpenArtifact] = useState<CanvasOutput | null>(null);
+  /** A deck of cards being reviewed, which is a full-screen surface rather than a reader. */
+  const [reviewingDeck, setReviewingDeck] = useState<string | null>(null);
+
+  /**
+   * A finished artifact opens itself.
+   *
+   * 🔴🔴 THE OWNER'S OWN CONDITION FOR THIS BEING DONE (2026-08-25): *"user can click in the Canvas
+   * to create a PowerPoint or any artifact, and it should open a sidebar for it inside the
+   * Canvas."* Making a thing and then leaving a card to be clicked is one step too many — you asked
+   * for the document, so the document arrives.
+   *
+   * 🔴 FLASHCARDS GO FULL SCREEN INSTEAD, BY NAME. Owner: *"flashcards should be different. They
+   * should be one that can be full screen just like an Anki with an x on it."* A deck is not a
+   * document you read beside the conversation; it is a thing you sit down and do, and `ReviewSession`
+   * is already a `100dvh` surface with a close. So the one kind that is not a reader is routed away
+   * from the reader rather than squeezed into it.
+   *
+   * 🔴 KEYED ON THE ARTIFACT'S ID SO IT OPENS ONCE. Without the latch, closing the reader on an
+   * artifact still held in `madeArtifact` would re-open it on the next render — a panel that cannot
+   * be dismissed.
+   */
+  const openedArtifactId = useRef<string | null>(null);
+  useEffect(() => {
+    const made = session.madeArtifact;
+    if (!made || openedArtifactId.current === made.id) return;
+    openedArtifactId.current = made.id;
+    if (made.kind === "flashcards" && made.deckId) setReviewingDeck(made.deckId);
+    else setOpenArtifact(made);
+  }, [session.madeArtifact]);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
   const [recording, setRecording] = useState(false);
@@ -1854,11 +1884,24 @@ export function LearningCanvas({
             turn produced, sitting above an untouched composer. */}
         {session.madeArtifact && presence !== "preparing" && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
-            <ArtifactCard onOpen={() => setOpenArtifact(session.madeArtifact)} output={session.madeArtifact} />
+            <ArtifactCard
+              onOpen={() => {
+                const made = session.madeArtifact;
+                if (!made) return;
+                if (made.kind === "flashcards" && made.deckId) setReviewingDeck(made.deckId);
+                else setOpenArtifact(made);
+              }}
+              output={session.madeArtifact}
+            />
           </div>
         )}
 {/* The reader, docked to the right. Mounted at canvas level so it outlives the card. */}
         {openArtifact && <OutputPreview canvasId={canvas.id} onClose={() => setOpenArtifact(null)} output={openArtifact} />}
+        {/* 🔴 THE ONE ARTIFACT THAT IS NOT A READER. `ReviewSession` is already `h-[100dvh] w-screen`
+            with a close button — full screen with an `x`, which is what the owner asked flashcards
+            to be. Mounting it here rather than teaching the reader a third mode keeps "a deck is
+            something you do" and "a document is something you read" as two different objects. */}
+        {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
                 {session.researchPlan && presence !== "preparing" && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
             <ResearchPlanCard

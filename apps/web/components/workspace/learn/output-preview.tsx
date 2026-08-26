@@ -17,6 +17,7 @@
 // parser means what is on screen is what is in the file, including its limitations.
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
@@ -25,9 +26,48 @@ import { downloadDeck } from "@/lib/export/deck-download";
 import { downloadDocx, downloadPdf, downloadSheet, pdfBlob, type SheetData } from "@/lib/export/doc-file";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { readLibraryNote } from "@/lib/workspace/library-note-read";
+import { cn } from "@/lib/utils";
 
 import { DeckPreview } from "./deck-preview";
 import { PdfPages } from "./pdf-pages";
+
+/**
+ * The artifact chrome, measured in the owner's own browser against the reference (2026-08-25,
+ * viewport 1470x779). Owner: *"One to one spacing, coloring, font, sizing exactly."*
+ *
+ * 🔴 THESE ARE MEASUREMENTS, NOT PREFERENCES. Every number here was read off the running reference
+ * with `getBoundingClientRect` and `getComputedStyle`; none was eyeballed from a screenshot. If one
+ * looks wrong, re-measure before changing it — a screenshot at a different zoom is how a
+ * "one-to-one" match drifts.
+ */
+const CHROME = {
+  /**
+   * 🔴🔴 EXPLICIT PIXELS, NOT REM UTILITIES, AND MEASURING BOTH SIDES IS WHAT CAUGHT IT. This app
+   * sets `html { font-size: 112.5% }`, so every rem in Tailwind lands 1.125x too big. Written the
+   * obvious way — `size-9 rounded-lg gap-2 leading-5` — the panel measured 40.5x40.5 buttons at a
+   * 13.5px radius on a 49.5px pitch with a 22.5px line, against a reference of 36x36 at 8px on 40
+   * with a 20px line. Every one of those reads as "close enough" in a screenshot and none of them
+   * is the number.
+   *
+   * 36x36 at radius 8, holding a 20x20 glyph, on a 40px pitch: 36 + gap 4.
+   */
+  button: "flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[8px] transition-colors hover:bg-(--ui-bg-tertiary)",
+  icon: "20px",
+  /** Buttons sit at y=5.5 in the reference, so the band is 47px; the gap makes the 40px pitch. */
+  header: "flex items-center gap-[4px] px-[12px] py-[5.5px]",
+  /** 14px / 400 / 20px line. `--canvas-text-small` IS 14px (see desktop-ui.css), so the size comes
+   *  from the scale as §46.3 requires; only the line height needs stating. */
+  crumb: "truncate text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-primary)",
+} as const;
+
+/**
+ * How wide the docked panel is, as a fraction of the viewport.
+ *
+ * 🔴 MEASURED AT 980 OF 1470 = 0.667, NOT CHOSEN. The panel I shipped first was 38rem — 608px, a
+ * little over a third — which is a different object: a document at that width wraps every line
+ * twice and reads as a sidebar rather than as the thing you opened.
+ */
+const DOCK_FRACTION = 2 / 3;
 
 /** What each artifact kind is called, and what its download button says. */
 const DOWNLOAD_LABEL: Record<string, string> = {
@@ -41,18 +81,45 @@ const DOWNLOAD_LABEL: Record<string, string> = {
 
 export function OutputPreview({
   canvasId = "",
+  initialMode = "docked",
   onClose,
   output,
 }: {
   /** Needed only by a deck, whose full-page view is addressed by canvas. */
   canvasId?: string;
+  /**
+   * Which surface this is.
+   *
+   * 🔴 TWO SHAPES, BOTH THE REFERENCE'S, AND THEY DIFFER BY WHERE THEY ARE OPENED FROM. In a
+   * conversation the reader docks right and pushes the thread, because the thread is what you
+   * check the artifact against. Opened from the Library there is no thread, so it takes the whole
+   * surface with the close on the LEFT beside a breadcrumb — measured in the reference at x=193,
+   * against the docked panel's close at the far right.
+   */
+  initialMode?: "docked" | "full";
   onClose: () => void;
   output: CanvasOutput;
 }) {
   const card = useRef<HTMLDivElement>(null);
-  // Collapses the left sidebar to the rail while this is docked, and restores it on close without
-  // touching the learner's stored preference — see side-panel.tsx.
-  useDeclareSidePanel();
+  const [mode, setMode] = useState<"docked" | "full">(initialMode);
+  /**
+   * The docked width in pixels, so the surface underneath can be pushed by exactly that much.
+   *
+   * 🔴 MEASURED FROM THE VIEWPORT AT MOUNT AND ON RESIZE, not a fixed rem. The reference's panel is
+   * a FRACTION — two thirds — so at 1470 it is 980 and at 1100 it is 733. A fixed width would be
+   * right at one window size and wrong at every other, which is the opposite of a one-to-one match.
+   */
+  const [dock, setDock] = useState(0);
+  useEffect(() => {
+    const measure = () => setDock(Math.round(window.innerWidth * DOCK_FRACTION));
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  // Collapses the left sidebar to the rail while this is open, and pushes the surface by exactly
+  // the docked width — see side-panel.tsx. Full screen pushes nothing: it covers everything.
+  useDeclareSidePanel(mode === "docked" ? dock : 0);
   /**
    * A note's body, fetched on open.
    *
@@ -123,51 +190,97 @@ export function OutputPreview({
     void (output.kind === "pdf" ? downloadPdf(markdown, output.title) : downloadDocx(markdown, output.title));
   };
 
-  return (
-    // 🔴🔴 A SIDE PANEL, NOT A MODAL IN THE MIDDLE — owner, 2026-08-25, with the reference in frame.
-    // The difference is not decoration: a centred card covers the conversation that produced the
-    // document, so checking "does this say what I asked for" means closing it, reading, and opening
-    // it again. Docked to one side, the document and the thread that made it are on screen at once.
-    //
-    // 🔴 IT DOES NOT PUSH THE CANVAS OVER. Re-laying out the whole surface every time somebody
-    // glances at a document would reflow the text they are reading mid-sentence. It floats, and the
-    // canvas underneath is untouched.
-    <div
-      className="fixed inset-y-0 right-0 z-50 flex w-[min(38rem,100vw)] p-3"
-      onMouseDown={(event) => {
-        // The catcher, not a scrim: an outside press closes and nothing is painted over the canvas
-        // — the history card's ruling, which source-preview.tsx already follows.
-        if (!card.current?.contains(event.target as Node)) onClose();
-      }}
-      role="dialog"
-    >
-      <div
-        className="flex min-h-0 w-full flex-col overflow-hidden rounded-2xl bg-(--ui-bg-elevated) shadow-xl ring-1 ring-(--ui-stroke-secondary)"
-        ref={card}
-      >
-        <div className="flex items-center gap-2.5 px-4 py-3">
-          <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-primary)" title={output.title}>
-            {output.title}
-          </span>
-          <button
-            className="shrink-0 rounded-full bg-(--ui-action) px-3.5 py-1.5 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40"
-            disabled={!markdown && !output.sheet && !deck}
-            onClick={download}
-            type="button"
-          >
-            {DOWNLOAD_LABEL[output.kind] ?? "Download"}
-          </button>
-          <button
-            aria-label="Close preview"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-            onClick={onClose}
-            type="button"
-          >
-            <Codicon name="close" size="14px" />
-          </button>
-        </div>
+  const full = mode === "full";
 
-        <div className="min-h-0 overflow-auto border-t border-(--ui-stroke-tertiary) px-6 py-5">
+  /**
+   * 🔴🔴 PORTALLED TO THE BODY, AND WITHOUT IT THE PANEL COLLAPSES INTO A CORNER. `position: fixed`
+   * resolves against the viewport ONLY while no ancestor carries a transform, filter or perspective
+   * — any of those becomes the containing block instead. The canvas animates, so once its surface
+   * was narrowed to make room for this panel, `right-0` started meaning "the right edge of the
+   * narrowed canvas" and the reader rendered 980px wide inside a 490px box.
+   *
+   * 🔴 IT ONLY APPEARED AFTER THE PUSH LANDED. Before the surface was narrowed, the transformed
+   * ancestor happened to be the full width, so the bug was invisible and the layout was correct by
+   * coincidence. Seen on screen; it is not the kind of thing a diff shows.
+   */
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  useEffect(() => setHost(document.body), []);
+  if (!host) return null;
+
+  return createPortal(
+    // 🔴🔴 FLUSH, NOT FLOATING, AND SIZED BY MEASUREMENT. The first version was a rounded card with
+    // a shadow, inset by 12px, 38rem wide. The reference is none of those things: 980 of 1470 with
+    // no radius, no shadow and no inset, its right edge on the viewport's. A rounded card reads as
+    // something laid ON the page; this reads as part of it, which is what a document you are
+    // working against should be.
+    //
+    // 🔴 NO CATCHER, EITHER. The old outside-press-to-close came with the floating card. A panel
+    // that owns two thirds of the window and pushes the rest must not vanish because somebody
+    // clicked the conversation next to it — the close button is the way out, plus Escape.
+    <div
+      className={cn(
+        "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
+        full ? "left-0" : "border-l border-(--ui-stroke-tertiary)",
+      )}
+      // 🔴🔴 THE STAMP TRAVELS WITH THE PORTAL, AND WITHOUT IT EVERY BUTTON IN HERE GOES ACID GREEN.
+      // `globals.css` carries `button:where(:not([data-workspace] *)) { background: var(--acid) }`,
+      // so the moment this subtree moved to `document.body` it left the workspace scope and the
+      // global rule took the header controls: measured `rgb(64,64,64)` filled pills where the
+      // reference has transparent 36x36 squares. The dev-preview harnesses have hit this before;
+      // portalling is how it reaches real code.
+      data-workspace
+      role="dialog"
+      style={full ? undefined : { width: dock }}
+    >
+      <div className={CHROME.header} ref={card}>
+        {/* 🔴 FULL SCREEN PUTS THE CLOSE ON THE LEFT, DOCKED PUTS IT ON THE RIGHT, and that is the
+            reference's own arrangement rather than a preference: measured at x=193 beside the
+            breadcrumb in the Library reader, and at the far right in the conversation panel. The
+            control nearest the content is the one that dismisses it. */}
+        {full && (
+          <button aria-label="Close" className={CHROME.button} onClick={onClose} title="Close" type="button">
+            <Codicon name="close" size={CHROME.icon} />
+          </button>
+        )}
+        <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={output.title}>
+          {/* "Library / name" — the same two-part crumb, with the prefix muted. */}
+          <span className="text-(--ui-text-quaternary)">Library&nbsp;/&nbsp;</span>
+          {output.title}
+        </span>
+        <button
+          aria-label={DOWNLOAD_LABEL[output.kind] ?? "Download"}
+          className={cn(CHROME.button, "disabled:opacity-40")}
+          disabled={!markdown && !output.sheet && !deck}
+          onClick={download}
+          title={DOWNLOAD_LABEL[output.kind] ?? "Download"}
+          type="button"
+        >
+          {/* 🔴 `download`, NOT `desktop-download`. The latter is a MONITOR with an arrow — measured
+              against the reference's plain tray-and-arrow it reads as a different action entirely,
+              and it is the kind of thing only a side-by-side look catches. */}
+          <Codicon name="download" size={CHROME.icon} />
+        </button>
+        <button
+          aria-label={full ? "Exit full screen" : "Full screen"}
+          className={CHROME.button}
+          onClick={() => setMode(full ? "docked" : "full")}
+          title={full ? "Exit full screen" : "Full screen"}
+          type="button"
+        >
+          <Codicon name={full ? "screen-normal" : "screen-full"} size={CHROME.icon} />
+        </button>
+        {!full && (
+          <button aria-label="Close" className={CHROME.button} onClick={onClose} title="Close" type="button">
+            <Codicon name="close" size={CHROME.icon} />
+          </button>
+        )}
+      </div>
+
+      {/* 🔴 THE SHEET IS INSET 24px AND CARRIES THE REFERENCE'S OWN SHADOW, measured: 931 wide
+          inside 980, `0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1)`. It is a page on a
+          desk, not a panel with padding. */}
+      <div className="min-h-0 flex-1 overflow-auto px-[24px] pb-[24px] pt-[25px]">
+        <div className="mx-auto w-full bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-primary)">
           {deck ? (
             <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} />
           ) : output.sheet ? (
@@ -181,16 +294,16 @@ export function OutputPreview({
           ) : needsFetch && fetched === undefined ? (
             <p className="m-0 py-8 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Opening…</p>
           ) : needsFetch && fetched === null ? (
-            // Says so rather than showing an empty card, which reads as broken.
             <p className="m-0 py-8 text-center text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
               Couldn&apos;t open this one. It may have been deleted.
             </p>
           ) : (
-            <DocBody markdown={output.markdown ?? fetched ?? ""} />
+            <DocBody markdown={markdown} />
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    host,
   );
 }
 
