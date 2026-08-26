@@ -1,11 +1,11 @@
-// The slugs that have a real, hand-drawn brand mark, and nothing else.
+// The slugs that have a real brand mark, and nothing else.
 //
 // 🔴 A CLOSED MAP, MATCHING THE ROUTE'S CLOSED APP LIST. `/api/composio`'s `APPS` constant is the
 // only source of which apps exist at all (see plugins-page.tsx's header for why this codebase
 // never keeps a second copy of that list). This map only needs to cover what that list contains
 // today. An app that shows up here later without a drawn mark is not a bug: `plugin-icon.tsx`
 // falls back to the app's first letter for exactly that case, which is never blank and never
-// wrong, so nobody is blocked on someone finding time to draw a fifth triangle.
+// wrong, so nobody is blocked on someone finding time to add a fifth mark.
 //
 // 🔴 KEYED BY THE SAME SLUG THE SERVER SENDS, for the same reason the glyph map this replaced
 // was: the slug is the identifier the connect and disconnect calls already travel on, and it never
