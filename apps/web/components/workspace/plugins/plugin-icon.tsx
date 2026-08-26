@@ -1,10 +1,18 @@
 // The 40x40 tile that stands in for an app's logo.
 //
 // 🔴 NO HOTLINKING, EVER. A remote `<img>` pointed at a third party's own servers would be a
-// request to them on every page load, plus a broken square the day that address moves. Neither is
-// worth a prettier row, so every mark below is drawn as inline SVG in this repo's own source:
-// nothing fetched at runtime, nothing shipped as a binary asset. The shapes themselves live in
-// `marks/`, one file per app, each with its own note on why it looks the way it does.
+// request to them on every page load, a broken square the day that address moves, and a beacon
+// telling that third party which of our users opened this page. None of it is worth a prettier
+// row, so every mark below is inline SVG in this repo's own source: nothing fetched at runtime,
+// nothing shipped as a binary asset. The shapes live in `marks/`, one file per app.
+//
+// 🔴🔴 AND THEY ARE THE REAL MARKS, IN THEIR PUBLISHED GEOMETRY, AFTER THREE ROUNDS OF NOT BEING.
+// Each of these started as a shape drawn by eye and was redrawn twice, every round a genuine
+// improvement and none of them the thing being asked for. The owner said it twice, the second time
+// after the redraws had shipped: *"the plugins page still doesn't have the actual Gmail or Google
+// app icons, the real ones, not just a fake one."* The answer was never a better approximation. It
+// was to stop approximating. Each mark is now reproduced unaltered, in its own coordinate space,
+// to say "this connects to that product", which is what an integration icon is for.
 //
 // 🔴 AND AN UNKNOWN APP STILL GETS A TILE. The connectable list lives in `/api/composio` and is
 // the owner's to grow; a mark map that only covers today's four would draw an empty box for the

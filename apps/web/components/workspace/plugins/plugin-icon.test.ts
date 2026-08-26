@@ -5,7 +5,7 @@ import { test } from "node:test";
 // The icon lane, guarded the way `plugins-page.test.ts` guards layout: by reading source rather
 // than rendering it (this app has no DOM test harness; see that file's own header for why). This
 // file is the counterpart for `plugin-icon.tsx` and `marks/`, the module that replaced the old
-// "we do not ship logos" lucide glyphs with real, hand-drawn Google marks.
+// "we do not ship logos" lucide glyphs with the real Google marks, in their published geometry.
 //
 // Three things are worth a guard here.
 //
@@ -65,7 +65,7 @@ test("🔴 every app slug in the composio route's closed list has a real mark", 
     assert.match(
       marksIndexCode,
       new RegExp(`\\b${slug}:\\s*\\w+Mark\\b`),
-      `"${slug}" is offered by /api/composio but marks/index.ts draws it no mark`,
+      `"${slug}" is offered by /api/composio but marks/index.ts gives it no mark`,
     );
     assert.ok(slug in MARK_FILES, `"${slug}" has no marks/*-mark.tsx source file loaded by this test`);
   }
@@ -126,37 +126,74 @@ test("🔴 each drawn mark uses more than one brand colour", () => {
   }
 });
 
-// ── Two redraws, 2026-08-26: Calendar read as a binder and Gmail as a flat colour block ─────────
+// ── Three redraws, and the third one stopped drawing ──────────────────────────────────────────
+//
+// 🔴🔴🔴 THE TWO GUARDS THAT USED TO SIT HERE ARE REPOINTED, NOT DELETED, AND THE HISTORY IS THE
+// POINT. They pinned the SECOND draft of the Calendar and Gmail marks: a `<text>31</text>` in
+// Arial over a white square with a blue border, and a red checkmark STROKED across a white
+// envelope. Both were honest improvements on a first draft (a ring-bound binder; four solid colour
+// quadrants), both were reviewed, and both were still hand-drawn approximations. The owner said so
+// twice, the second time after the redraws had shipped: *"the plugins page still doesn't have the
+// actual Gmail or Google app icons, the real ones, not just a fake one."*
+//
+// 🔴 THE PATTERN IS THE LESSON, AND THIS CODEBASE HAS IT ON RECORD ELSEWHERE (`character-signals-
+// are-dead`): three rounds of redrawing a mark by eye, each one a true improvement, none of them
+// the thing being asked for. The answer was never a better approximation. It was to stop
+// approximating and draw the published geometry.
+//
+// So the guards below pin what a REAL mark has that a drawn-by-eye one does not, rather than the
+// details of any one attempt. A future "let me just simplify this shape" reddens them.
 
-test("🔴🔴 the Calendar mark actually draws its numeral, the one thing that makes it recognisable", () => {
-  // The first draft had a frame, two ring tabs and a four-colour header and still read as a
-  // generic desk calendar, because the one detail that says "Google Calendar" specifically, the
-  // date numeral, was not there. This checks the numeral is literally in the markup, not just
-  // decided in a comment somewhere.
-  assert.match(
-    MARK_FILES.googlecalendar ?? "",
-    /<text\b[^>]*>\s*31\s*<\/text>/,
-    "the Calendar mark no longer renders the \"31\" numeral",
-  );
-  assert.match(code(MARK_FILES.googlecalendar ?? ""), /fill="#4285F4"/, "the numeral is no longer Google Blue");
-  // And the ring tabs are gone for good: they were the single biggest reason the first draft read
-  // as a spiral-bound desk calendar rather than Google's mark, which has no binding at all.
-  assert.ok(!/rx="1\.5"/.test(code(MARK_FILES.googlecalendar ?? "")), "a ring-tab shape is back on the Calendar mark");
+test("🔴🔴 the Calendar numeral is DRAWN, never set in a font the machine happens to have", () => {
+  // `<text font-family="Arial">31</text>` renders as whatever that machine calls Arial, at whatever
+  // it interprets weight 700 as, and Google's numeral is neither. It is geometry, and geometry is
+  // the same shape on every device that has ever existed.
+  const calendar = code(MARK_FILES.googlecalendar ?? "");
+  assert.ok(!/<text\b/.test(calendar), "the Calendar numeral is set in a font again; it must be paths");
+  assert.ok(!/font-?[Ff]amily/.test(calendar), "the Calendar mark depends on a font being installed");
+  // Two glyphs, and they are the reason anyone recognises this mark at 16px.
+  const paths = calendar.match(/<path\b/g) ?? [];
+  assert.ok(paths.length >= 8, `the Calendar mark is down to ${paths.length} paths; the numeral or the border colours were dropped`);
 });
 
-test("🔴🔴 the Gmail mark is a white envelope with a stroked flap, not a solid four-colour block", () => {
-  // The first draft filled the whole envelope with four polygons meeting at one centre point,
-  // leaving no white at all: a colour-blocked rectangle, not an envelope. The fix keeps most of the
-  // tile white and draws the flap as a stroked path (a checkmark line, the way the real fold reads)
-  // instead of a filled triangle, so this checks for both halves of that shape.
-  const gmailCode = code(MARK_FILES.gmail ?? "");
-  assert.match(gmailCode, /fill="#FFFFFF"/i, "the Gmail mark lost its white interior");
-  assert.match(
-    gmailCode,
-    /<path\b[^>]*stroke="#EA4335"[^>]*\/>/,
-    "the red flap is no longer a stroked path; a filled polygon would solid-block the envelope again",
-  );
-  assert.match(gmailCode, /<path\b[^>]*fill="none"/, "the flap path is filled instead of stroked");
+test("🔴🔴 the Calendar sheet keeps all four of its border colours", () => {
+  // The draft before this one argued in its own comment that the real mark "is mostly blue and
+  // white" and drew exactly that. It is not: blue down the left and across the top, yellow down the
+  // right, green across the bottom, red in the corner. Strip them and it reads as any calendar
+  // rather than as this one, which is the failure the owner reported.
+  const calendar = code(MARK_FILES.googlecalendar ?? "").toUpperCase();
+  for (const [hex, edge] of [["#EA4335", "red corner"], ["#FBBC04", "yellow right edge"], ["#34A853", "green bottom"], ["#4285F4", "blue body"]] as const) {
+    assert.ok(calendar.includes(hex), `the Calendar mark lost its ${edge} (${hex})`);
+  }
+});
+
+test("🔴🔴 Gmail's red is the filled M, not a stroke of constant width", () => {
+  // The draft before this one traced the flap as one round-capped `stroke`, which is a good reading
+  // of the fold and not the shape: Gmail's red is two filled areas whose boundary IS the letter M,
+  // and a constant-width stroke cannot make that letter.
+  const gmail = code(MARK_FILES.gmail ?? "");
+  assert.ok(!/stroke=/.test(gmail), "the Gmail mark is stroking again; every part of it is a filled path");
+  assert.ok(!/fill="none"/.test(gmail), "a Gmail path has no fill, so something is being drawn as a line");
+  const paths = gmail.match(/<path\b/g) ?? [];
+  assert.equal(paths.length, 5, `Gmail's mark is ${paths.length} paths; the published mark is 5`);
+});
+
+test("🔴 no mark is refitted into a square grid by hand", () => {
+  // Every one of these logos is published in its own coordinate space, and re-fitting one to a
+  // shared 32x32 box by eye is how a mark ends up subtly wrong in a way nobody can name but
+  // everybody sees. Three of the four are not square; `preserveAspectRatio` centres them.
+  const boxes = Object.entries(MARK_FILES).map(([slug, source]) => {
+    const found = /viewBox="([^"]+)"/.exec(source);
+    return [slug, found?.[1] ?? ""] as const;
+  });
+  for (const [slug, box] of boxes) {
+    assert.ok(box.length > 0, `"${slug}" has no viewBox`);
+  }
+  const square = boxes.filter(([, box]) => {
+    const [, , w, h] = box.split(/\s+/);
+    return w === h;
+  });
+  assert.ok(square.length <= 1, `${square.length} marks share a square grid; they are being redrawn to fit rather than reproduced`);
 });
 
 // ── The tile a real mark sits on is fixed, not tinted by the workspace theme ────────────────────

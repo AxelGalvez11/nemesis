@@ -1,19 +1,21 @@
-// Google Docs's mark: a page with a folded top corner and white text rules, drawn as our own
-// vectors.
+// Google Docs's mark: the page, in its published geometry.
 //
-// 🔴 A RECREATION OF THE WELL KNOWN SHAPE, NOT A TRACED COPY. A blue page, a darker triangle
-// folded down at the top right corner, and three white rules standing in for text, the last one
-// shorter like a paragraph's last line. See plugin-icon.tsx's header for why nothing here is a
-// binary asset or a hotlink.
+// 🔴🔴 THIS REPLACED A HAND-DRAWN APPROXIMATION ON 2026-08-26 (see `google-drive-mark.tsx` for the
+// owner's words and the general rule). The version before it drew a full blue rectangle and then
+// laid a DARK blue triangle over the top-right corner. A folded corner is not an overlay: the page
+// itself is cut away there, and the fold is a LIGHTER shade of the page, because it is the back of
+// the paper catching the light. Drawn the other way round it reads as a sticker on a rectangle.
+//
+// 🔴 THE RULES ARE THREE, EVENLY SPACED, NOT THREE WITH A SHORT LAST ONE. The previous version
+// shortened the last rule "like a paragraph's last line", which is a nice idea and not what the
+// mark does.
 
 export function GoogleDocsMark({ size = 32 }: { size?: number }) {
   return (
-    <svg aria-hidden="true" focusable="false" height={size} viewBox="0 0 32 32" width={size}>
-      <rect fill="#4285F4" height="26" rx="2" width="18" x="7" y="3" />
-      <polygon fill="#185ABC" points="19,3 25,3 25,9" />
-      <rect fill="#FFFFFF" height="2" rx="1" width="12" x="10" y="13" />
-      <rect fill="#FFFFFF" height="2" rx="1" width="12" x="10" y="18" />
-      <rect fill="#FFFFFF" height="2" rx="1" width="8" x="10" y="23" />
+    <svg aria-hidden="true" focusable="false" height={size} viewBox="0 0 47 65" width={size}>
+      <path d="m29.375 0h-24.5c-2.681 0-4.875 2.194-4.875 4.875v55.25c0 2.681 2.194 4.875 4.875 4.875h37.25c2.681 0 4.875-2.194 4.875-4.875v-42.5z" fill="#4285F4" />
+      <path d="m29.375 0v13.625c0 2.694 2.181 4.875 4.875 4.875h12.75z" fill="#A1C2FA" />
+      <path d="m11.375 46.75h24.25v-3.25h-24.25zm0-8.125h24.25v-3.25h-24.25zm0-11.375v3.25h24.25v-3.25z" fill="#F1F1F1" />
     </svg>
   );
 }
