@@ -9,6 +9,7 @@
 // canvas assumes nothing about discipline — the same seed shape would hold for a case, a
 // proof, or a statute.
 
+import { makeMoment } from "./canvas-moment";
 import {
   emptyCanvas,
   type CanvasFreeQuestion,
@@ -31,7 +32,15 @@ export type PreviewSeed =
   | "complete"
   | "retest"
   /** A canvas stored at the deleted level picker — the one legacy shape that must not strand. */
-  | "orient";
+  | "orient"
+  /**
+   * A canvas with a RUN OF MOMENTS on it.
+   *
+   * 🔴 NO SEED HAD ANY, which meant the History Rail — shipped 2026-08-23 — has never once been
+   * openable without a signed-in account, and neither could the conversation view have been. A
+   * feature whose only witness is production is a feature nobody checks.
+   */
+  | "conversation";
 
 const NOW = "2026-08-06T12:00:00.000Z";
 
@@ -566,6 +575,37 @@ const JUDGED_RESPONSES: CanvasResponse[] = [
   },
 ];
 
+
+/**
+ * A short, ordinary session: three turns and an attachment, in the order they happened.
+ *
+ * 🔴 BUILT THROUGH `makeMoment`, NOT AS OBJECT LITERALS. That function applies the caps and the
+ * whitespace tidying every real moment goes through, so what the harness draws is the shape the
+ * product actually stores — a hand-written literal would let the preview show text no real canvas
+ * could hold. Ids and clocks are fixed: this file is deterministic by rule, no `Date.now()`.
+ *
+ * 🔴 ONE TURN IS DELIBERATELY LONGER THAN THE REST. A conversation of three equal paragraphs makes
+ * every spacing decision look right; the run of turns has to be checked against an uneven one.
+ */
+const CONVERSATION_MOMENTS = [
+  makeMoment(
+    { assistantText: "The upstroke is sodium rushing in. The long plateau after it is calcium coming in while potassium is on its way out, and the two roughly cancel — which is why the cell holds near zero for a couple of hundred milliseconds instead of repolarising straight away.", kind: "assistant", userText: "why does the plateau last so long" },
+    "2026-08-06T12:02:00.000Z",
+    "preview-moment-1",
+  ),
+  makeMoment({ kind: "source", sourceIds: [SOURCE.id] }, "2026-08-06T12:04:00.000Z", "preview-moment-2"),
+  makeMoment(
+    { assistantText: "Yes. Block the calcium channels and the plateau shortens, so the whole action potential does.", kind: "assistant", userText: "so would a calcium channel blocker shorten it" },
+    "2026-08-06T12:06:00.000Z",
+    "preview-moment-3",
+  ),
+  makeMoment(
+    { assistantText: "Refractoriness is about the sodium channels, not the plateau itself — they stay inactivated until the membrane has repolarised enough to reset them. The plateau just holds the cell there long enough that it matters.", kind: "assistant", userText: "and what about the refractory period" },
+    "2026-08-06T12:08:00.000Z",
+    "preview-moment-4",
+  ),
+];
+
 /** "retest" is served by canvas-preview-fixture-retest.ts, which has to run the real
  *  clear-evidence function and so cannot live in this literal. */
 export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>> = {
@@ -593,6 +633,9 @@ export const PREVIEW_CANVASES: Partial<Record<PreviewSeed, () => LearningCanvas>
     title: "Cardiac action potentials",
   }),
   lesson: lessonSeed,
+  // 🔴 THE ONE SEED WITH A HISTORY ON IT — see `PreviewSeed`. It opens on the ordinary answer view,
+  // exactly as production does; the switch in the header is what reveals the conversation.
+  conversation: () => ({ ...lessonSeed(), id: "preview-canvas-conversation", moments: CONVERSATION_MOMENTS }),
   recall: () => ({ ...lessonSeed(), state: "recall", recall: RECALL }),
   // Multiple choice is still reachable, because it still exists for exam simulation — but it is
   // no longer what "test" means.

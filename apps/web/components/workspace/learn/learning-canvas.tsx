@@ -66,8 +66,10 @@ const CANVAS_CAPABILITIES: readonly ComposerCapability[] = COMPOSER_CAPABILITIES
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
+import { CanvasConversationView } from "./canvas-conversation-view";
 import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
+import { useCanvasView } from "./use-canvas-view";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
@@ -600,34 +602,58 @@ export function LearningCanvas({
   const { session: authSession } = useAuth();
   const uid = authSession?.user.id ?? null;
 
+  /**
+   * The learner's sentence between pressing send and the answer landing.
+   *
+   * 🔴 DECLARED HERE, BESIDE THE ONE CALLBACK THAT SETS AND CLEARS IT, rather than with the other
+   * view state further down. Both ends of its life are in `converse`; a reader who finds it there
+   * should not have to go looking a thousand lines away to learn what it is.
+   */
+  const [pendingSaid, setPendingSaid] = useState<string | null>(null);
+
   const converse = useCallback(
     async (asked: string, staged: CanvasBlock | null = null, withCapability: ComposerCapability | null = null) => {
       const trimmed = asked.trim();
       if (!trimmed) return null;
-      const decision = await session.converse(trimmed, surroundings(), () => {
-        // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
-        // moves on. The action in flight is stamped rather than a bare `true`, which is what makes
-        // attention return by itself; see `materialOwnsAttention`.
-        setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
-      }, staged, withCapability);
-      remember({ replied: decision?.say ?? "", said: trimmed });
-      // 🔴🔴 THE ONE THING ON THIS CANVAS THAT EXISTED NOWHERE DURABLE. `conversation` above is a
-      // ref, capped at six turns, and its own comment says it is deliberately not persisted — so
-      // "what I asked and what Nemesis said" was gone on refresh, which is exactly the history the
-      // rail is for. Recording it here does NOT put a chat log back on the page: contract rule 2
-      // still takes the reply off the surface on the next turn. Attention and memory are different
-      // questions, and `session-transcript.ts` already made that distinction in this repo — *"that
-      // is a rule about ATTENTION, not about memory"*.
+      // 🔴🔴 HELD ONLY FOR THE CONVERSATION VIEW, AND ONLY WHILE THE REQUEST IS IN FLIGHT. A moment
+      // is recorded when the turn RESOLVES, so a learner reading the conversation would send a
+      // message and watch nothing happen to the list they are looking at. On the answer view this
+      // is invisible — the character walks and carries the caption over the top of it — so this is
+      // not a second thinking indicator, it is the half a transcript owes you: your own words
+      // joining the page. See `canvas-conversation-view.tsx`.
       //
-      // 🔴 `assistant` ONLY WHEN NEMESIS ACTUALLY SAID SOMETHING. A `study` turn answers by
-      // starting a lesson rather than by speaking, and marking that as an answer would put a
-      // marker on the rail that opens to an empty reconstruction.
-      session.recordMoment({
-        kind: decision?.say ? "assistant" : "user",
-        userText: trimmed,
-        ...(decision?.say ? { assistantText: decision.say } : {}),
-      });
-      return decision;
+      // 🔴 IT IS NOT RECORDED AND IT IS NOT A MOMENT. `finally` clears it in the same callback that
+      // writes the real one, so the pending line and its recorded moment can never both be drawn —
+      // and an exception on the way cannot strand a sentence on screen for the rest of the session.
+      setPendingSaid(trimmed);
+      try {
+        const decision = await session.converse(trimmed, surroundings(), () => {
+          // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
+          // moves on. The action in flight is stamped rather than a bare `true`, which is what makes
+          // attention return by itself; see `materialOwnsAttention`.
+          setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
+        }, staged, withCapability);
+        remember({ replied: decision?.say ?? "", said: trimmed });
+        // 🔴🔴 THE ONE THING ON THIS CANVAS THAT EXISTED NOWHERE DURABLE. `conversation` above is a
+        // ref, capped at six turns, and its own comment says it is deliberately not persisted — so
+        // "what I asked and what Nemesis said" was gone on refresh, which is exactly the history the
+        // rail is for. Recording it here does NOT put a chat log back on the page: contract rule 2
+        // still takes the reply off the surface on the next turn. Attention and memory are different
+        // questions, and `session-transcript.ts` already made that distinction in this repo — *"that
+        // is a rule about ATTENTION, not about memory"*.
+        //
+        // 🔴 `assistant` ONLY WHEN NEMESIS ACTUALLY SAID SOMETHING. A `study` turn answers by
+        // starting a lesson rather than by speaking, and marking that as an answer would put a
+        // marker on the rail that opens to an empty reconstruction.
+        session.recordMoment({
+          kind: decision?.say ? "assistant" : "user",
+          userText: trimmed,
+          ...(decision?.say ? { assistantText: decision.say } : {}),
+        });
+        return decision;
+      } finally {
+        setPendingSaid(null);
+      }
     },
     [policy.decision, remember, session, surroundings],
   );
@@ -1156,6 +1182,24 @@ export function LearningCanvas({
   const [rewound, setRewound] = useState<string | null>(null);
 
   /**
+   * WHICH OF THE TWO VIEWS IS ON SCREEN — owner, 2026-08-26: *"a different view, a different way to
+   * view outputs."*
+   *
+   * 🔴🔴 UNLIKE `rewound` ABOVE, THIS ONE PERSISTS, AND THE DIFFERENCE IS WHAT KIND OF FACT EACH IS.
+   * Where you scrolled BACK to is about this visit and must not survive it — reopening tomorrow has
+   * to land on now. How you like to read is about you, and a preference that reset on every reload
+   * would be a control rather than a preference. It is kept in the browser and never on the canvas,
+   * so looking at a canvas still cannot modify it; see `lib/learn/canvas-view.ts`.
+   *
+   * 🔴 PERSISTING IS ONLY SAFE BECAUSE THE CONVERSATION VIEW ENDS AT THE PRESENT. The dangerous
+   * state this feature could have — old content reading as live — is exactly what `rewound` guards
+   * against with a banner and a `turnInFlight` reset. There is no such state here: the newest thing
+   * on the page is the newest thing that happened, and a new answer lands at the bottom of it.
+   */
+  const { toggle: toggleView, view } = useCanvasView();
+
+
+  /**
    * The rail's rows.
    *
    * 🔴 MEMOISED ON THE FOUR ARRAYS IT ACTUALLY READS, NOT ON `canvas`. The canvas object is
@@ -1193,6 +1237,59 @@ export function LearningCanvas({
         : null,
     [canvas.createdAt, canvas.moments, canvas.questions, canvas.responses, canvas.sources, rewound],
   );
+
+  /**
+   * The whole session, reconstructed — what the conversation view reads.
+   *
+   * 🔴🔴 THE SAME PROJECTION THE RAIL AND THE REWIND ALREADY USE, RUN OVER EVERY ROW INSTEAD OF ONE.
+   * `buildCanvasHistory` decides WHICH moments a learner may see (it is where the synthesised
+   * "Canvas started" row was cut, among others) and `reconstructMoment` decides what each one
+   * contains. Walking `canvas.moments` directly here would be a second answer to both questions,
+   * free to disagree with the rail about what happened on the same canvas.
+   *
+   * 🔴 IT COSTS NOTHING IN THE DEFAULT VIEW. Reconstructing eighty moments on a canvas nobody has
+   * asked to read is work with no reader, and this memo re-runs whenever any of five arrays is
+   * replaced — which an autosave does on a keystroke. The early return is the whole optimisation.
+   *
+   * 🔴 `filter(Boolean)` BECAUSE `reconstructMoment` MAY RETURN NULL. It does that for a momentId
+   * that is no longer in the list — impossible from a row that was just built from that same list,
+   * but the signature says it can and a `null` reaching the view would blank a turn silently.
+   */
+  // 🔴 `conversationMoments`, NOT `conversation` — that name is taken, a few hundred lines up, by
+  // the six-turn ref the model packet carries. The compiler caught the collision; the reason to
+  // keep the longer name rather than shadowing is that the two are genuinely different things: one
+  // is what Nemesis is TOLD about recent turns, this is what the learner is SHOWN of all of them.
+  const conversationMoments = useMemo(() => {
+    if (view !== "conversation") return [];
+    const source = {
+      createdAt: canvas.createdAt,
+      moments: canvas.moments,
+      questions: canvas.questions,
+      responses: canvas.responses,
+      sources: canvas.sources,
+    };
+    return history
+      .map((entry) => reconstructMoment(source, entry.momentId))
+      .filter((moment): moment is NonNullable<typeof moment> => moment !== null);
+  }, [canvas.createdAt, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history, view]);
+
+  /**
+   * Whether the conversation is what is on screen.
+   *
+   * 🔴 A REWIND OUTRANKS IT, AND THAT IS NOT ARBITRARY. Both are overlays at `z-10`; without a rule
+   * they would stack. Clicking a marker is a DELIBERATE act aimed at one moment, and the preference
+   * is a standing habit — an explicit act beats a standing one. Returning to now drops back into
+   * whichever view the learner was reading, because nothing about the preference was touched.
+   *
+   * 🔴 AND IT NEVER PAINTS AN EMPTY SHEET. The preference is global, so a brand-new canvas would
+   * otherwise open onto a blank overlay with a control offering to take you back to a Canvas you
+   * could not see. Nothing recorded and nothing in flight means there is no conversation yet, and
+   * the answer view is the honest thing to show.
+   */
+  const conversationOpen = view === "conversation" && !viewing && (conversationMoments.length > 0 || Boolean(pendingSaid));
+
+  /** Whether there is anything to read back through at all — see `ConversationControl`. */
+  const conversationOffered = history.length > 0;
 
   /**
    * 🔴 A NEW TURN RETURNS THE LEARNER TO NOW. Leaving the canvas rewound while an answer arrives
@@ -1563,6 +1660,11 @@ export function LearningCanvas({
         // continuous across question and feedback, never quiet over a document.
         onFiles={attachWithChips}
         onRename={session.rename}
+        // 🔴 WITHHELD UNTIL THERE IS A CONVERSATION TO READ, which is what keeps a fresh canvas's
+        // control row exactly as it is today. `CanvasHeader` renders the control only when both
+        // arrive, so this is one condition rather than a prop the header has to second-guess.
+        onToggleView={conversationOffered ? toggleView : undefined}
+        view={conversationOffered ? view : undefined}
       />
       }
     >
@@ -1613,6 +1715,28 @@ export function LearningCanvas({
           <CanvasFade contentKey={`moment:${viewing.momentId}`}>
             <CanvasHistoryView moment={viewing} onReturn={() => setRewound(null)} />
           </CanvasFade>
+        </div>
+      )}
+
+      {/* ── the Canvas read end to end ─────────────────────────────────────────────────────
+          🔴 THE SAME OVERLAY THE REWIND USES, FOR THE SAME REASONS — `z-10` puts it over the
+          content and UNDER everything the learner acts with: the composer at `z-20`, the character,
+          the header controls, the exit `×` and the History Rail at `z-30`. That stacking is what
+          makes this a view rather than a mode: every verb on this surface still works, unchanged,
+          while you read. Ask something from here and the answer lands at the bottom of what you
+          are already reading.
+
+          🔴 NO `CanvasFade`, DELIBERATELY, AND IT IS THE ONE PLACE ON THIS SURFACE WITHOUT ONE.
+          That component exists for content SWAPPING — a question replacing a reply — where a hard
+          cut reads as a glitch. Nothing swaps here: the list grows at the bottom, and keying a fade
+          on a constant would only add a delay to the switch itself. A view that takes 220ms to
+          answer a click feels slower than one that does not move at all. */}
+      {conversationOpen && (
+        <div
+          className="absolute inset-0 z-10 overflow-y-auto overscroll-contain bg-(--ui-bg-editor) pb-[160px] pt-[64px]"
+          data-canvas-view="conversation"
+        >
+          <CanvasConversationView moments={conversationMoments} pendingSaid={pendingSaid} />
         </div>
       )}
 
@@ -2226,7 +2350,12 @@ export function LearningCanvas({
         // 🔴 THE ANSWER, NOT THE COMPOSER. It stood on the composer's shoulder for the whole
         // session; it now rests at the end of whatever Nemesis last put on the page, and travels to
         // the centre while it works exactly as before. `gap` is Claude's measured 24px.
-        anchor="#canvas-answer-end"
+        // 🔴 WHICHEVER SURFACE IS BEING READ OWNS THE MARKER. Both are zero-height last children
+        // wearing the same column classes, so the arithmetic in `character-place.ts` is identical
+        // and the character rests under the last answer in either view. Pointing at the answer
+        // view's marker while the conversation is open would stand the character at a spot on a
+        // page nobody can see, which is how it ended up against the window edge once before.
+        anchor={conversationOpen ? "#canvas-conversation-end" : "#canvas-answer-end"}
         gap={24}
         place="under"
         // 🔴🔴 ONE CHARACTER ON SCREEN, EVER. A policy judgement draws its own — small, at the foot

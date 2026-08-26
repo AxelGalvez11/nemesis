@@ -38,13 +38,19 @@
 // "NEMESIS" over the answer are stage directions: the bubble already says whose words those are,
 // which is the entire argument `LearnerUtterance` was written on. `Question` and `Correction` keep
 // theirs, because those come from the policy lane and are NOT the same object as a chat answer.
-
-import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
+//
+// 🔴🔴 ALL OF THAT NOW LIVES IN `canvas-moment-body.tsx`, AND THIS FILE KEEPS ONLY THE BANNER.
+// Owner, 2026-08-26: *"a different view, a different way to view outputs"* — which added a SECOND
+// surface that draws a recorded moment, the whole conversation read end to end. The paragraph above
+// is precisely the argument against letting the two style it independently, so the drawing moved to
+// one component the day the second caller existed. What is left here is the only thing that is
+// true of a REWIND and not of the conversation: this surface can be mistaken for the live Canvas,
+// so it carries a banner saying it is not, and a way back.
 
 import type { HistoricalMoment } from "@/lib/learn/canvas-history";
 import { momentClock } from "@/lib/learn/canvas-history";
 
-import { LearnerUtterance } from "./learner-utterance";
+import { CanvasMomentBody } from "./canvas-moment-body";
 
 export function CanvasHistoryView({
   moment,
@@ -71,87 +77,15 @@ export function CanvasHistoryView({
       </div>
 
       {/* ── what happened ───────────────────────────────────────────────────────────────── */}
-      <div className="canvas-swap space-y-5">
-        {moment.missing && (
-          <p className="text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-tertiary)">
-            {/* 🔴 NAMES THE CAUSE. "Nothing to show" reads as a bug; this reads as a fact about the
-                canvas, which is what it is. */}
-            This moment is on the record, but what it pointed at is no longer on this Canvas.
-          </p>
-        )}
-
-        {/* 🔴 THE ORDER IS THE ORDER IT HAPPENED IN, WHICH IS WHAT MAKES IT READ AS A CONVERSATION
-            RATHER THAN AS A RECORD: what they said, then what came back. It was already in this
-            order; what changed is that their half now looks like theirs.
-
-            🔴 `via={null}`, DELIBERATELY. `LearnerUtterance`'s default is `"typed"`, and a moment on
-            the record does not keep how the words arrived — stamping every rewound sentence as
-            typed would put a claim in the DOM that nothing established, which is exactly the quiet
-            fabrication that prop's own documentation refuses. */}
-        {moment.asked && <LearnerUtterance via={null}>{moment.asked}</LearnerUtterance>}
-        {moment.said && <Body text={moment.said} />}
-        {moment.question && <Body label="Question" text={moment.question} />}
-        {moment.answer && <LearnerUtterance via={null}>{moment.answer}</LearnerUtterance>}
-        {moment.feedback && <Body label="Correction" text={moment.feedback} />}
-
-        {moment.sourceTitles?.length && (
-          <div>
-            <Label>Attached</Label>
-            <ul className="space-y-1">
-              {moment.sourceTitles.map((title) => (
-                <li
-                  className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
-                  key={title}
-                >
-                  {title}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {moment.truncated && (
-          <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-            {/* 🔴 SAID PLAINLY RATHER THAN HIDDEN BY AN ELLIPSIS. A clipped answer that looks whole
-                is worse than a short one that admits it — see MAX_ASSISTANT_TEXT. */}
-            Only the start of this was kept.
-          </p>
-        )}
+      {/* 🔴🔴 THE SAME COMPONENT THE CONVERSATION VIEW DRAWS, AND THAT IS WHY THIS FILE IS SHORT
+          NOW. Both surfaces show one recorded moment; the only thing this one adds is the banner
+          above, because it is the one that can be mistaken for the live Canvas. The bubble, the
+          labels, the "Attached" list and the truncation notice all moved to
+          `canvas-moment-body.tsx` the day a second surface needed them — see that file's header for
+          the rule (§46.2: the learner's words must look the same every time they appear). */}
+      <div className="canvas-swap">
+        <CanvasMomentBody moment={moment} />
       </div>
-    </div>
-  );
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="mb-1 block text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-tertiary)">
-      {children}
-    </span>
-  );
-}
-
-/**
- * Anything Nemesis produced.
- *
- * 🔴 THE SAME RENDERER THE LIVE REPLY USES, so a rewound answer keeps its formatting and its maths
- * instead of turning into a wall of raw markdown.
- *
- * 🔴 THE LABEL IS OPTIONAL NOW, AND ITS ABSENCE IS THE COMMON CASE. A chat answer sitting under the
- * learner's bubble needs no "NEMESIS" over it for the same reason a chat interface does not print
- * one: the bubble above it already said who the other party was, and everything on this surface
- * that is not in a bubble is Nemesis. A `question` or a `feedback` keeps its label, because those
- * are objects from the policy lane rather than a reply, and without a word for it a correction
- * would read as a second answer.
- */
-function Body({ label, text }: { label?: string; text: string }) {
-  return (
-    <div>
-      {label && <Label>{label}</Label>}
-      <AssistantMarkdown
-        className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
-        singleDollarMath
-        text={text}
-      />
     </div>
   );
 }

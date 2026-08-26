@@ -222,23 +222,32 @@ test("🔴🔴 a rewound moment shows the learner's OWN words, in the learner's 
   // ChatGPT. We're pretty much just gonna hide the messaging bubble except when user goes back with
   // the rail. And then it pretty much just makes it easier to navigate."*
   //
-  // 🔴 THE LIVE SURFACE IS UNCHANGED AND MUST STAY UNCHANGED. Contract rule 2 keeps one exchange on
-  // the canvas with the learner's sentence unrendered; that rule is about ATTENTION, and it has
+  // 🔴 THE LIVE ANSWER VIEW IS UNCHANGED AND MUST STAY UNCHANGED. Contract rule 2 keeps one exchange
+  // on the canvas with the learner's sentence unrendered; that rule is about ATTENTION, and it has
   // nothing to say about a moment somebody has deliberately gone back to READ. There, the question
   // is what makes the answer legible at all.
   //
   // 🔴 `LearnerUtterance`, NOT A SECOND TREATMENT. §46.2: a learner must "distinguish instantly:
   // This came from me / This came from Nemesis", which only holds if their words look the same
   // every time they appear. What was here was a grey left-bordered quote invented for this screen.
-  const VIEW = readFileSync(new URL("./canvas-history-view.tsx", import.meta.url), "utf8");
-  assert.match(VIEW, /import \{ LearnerUtterance \}/, "the rewound view stopped using the learner's own treatment");
-  assert.match(VIEW, /<LearnerUtterance via=\{null\}>\{moment\.asked\}<\/LearnerUtterance>/, "what the learner asked is no longer in their bubble");
-  assert.match(VIEW, /<LearnerUtterance via=\{null\}>\{moment\.answer\}<\/LearnerUtterance>/, "what the learner answered is no longer in their bubble");
+  //
+  // 🔴🔴 REPOINTED 2026-08-26 FROM `canvas-history-view.tsx` TO `canvas-moment-body.tsx`, AND THE
+  // MOVE IS THE PARAGRAPH ABOVE BEING TAKEN SERIOUSLY RATHER THAN THE GUARD LOOSENING. A second
+  // surface now draws a recorded moment — the whole conversation, read end to end — and this file's
+  // own argument is that two call sites styling the learner's words independently is the failure
+  // mode. So the drawing moved to one component and BOTH surfaces render it; the assertions below
+  // are unchanged in substance, and the pair at the end is new: they hold that neither surface has
+  // grown its own copy back. Calibration: inline the bubble into either view and the last two
+  // reddens.
+  const BODY = readFileSync(new URL("./canvas-moment-body.tsx", import.meta.url), "utf8");
+  assert.match(BODY, /import \{ LearnerUtterance \}/, "the recorded moment stopped using the learner's own treatment");
+  assert.match(BODY, /<LearnerUtterance via=\{null\}>\{moment\.asked\}<\/LearnerUtterance>/, "what the learner asked is no longer in their bubble");
+  assert.match(BODY, /<LearnerUtterance via=\{null\}>\{moment\.answer\}<\/LearnerUtterance>/, "what the learner answered is no longer in their bubble");
 
   // 🔴 `via={null}` IS NOT A DETAIL. `LearnerUtterance` defaults to `"typed"`, and a moment on the
-  // record does not keep how the words arrived — stamping every rewound sentence as typed would put
+  // record does not keep how the words arrived — stamping every recorded sentence as typed would put
   // a claim in the DOM that nothing established.
-  assert.ok(!/<LearnerUtterance>/.test(VIEW), "a rewound sentence is being stamped with a modality nobody observed");
+  assert.ok(!/<LearnerUtterance>/.test(BODY), "a recorded sentence is being stamped with a modality nobody observed");
 
   // 🔴 AND THE STAGE DIRECTIONS WENT WITH IT. "YOU ASKED" over the learner's own sentence and
   // "NEMESIS" over the answer are labels a chat interface does not need: the bubble says whose
@@ -247,13 +256,26 @@ test("🔴🔴 a rewound moment shows the learner's OWN words, in the learner's 
   // 🔴 COMMENTS ARE STRIPPED FIRST, because the file cannot explain what it removed without naming
   // it. `canvas-policy-view.test.ts` learned the same lesson: a guard that cannot tell rendered copy
   // from a comment about it gets "fixed" by deleting the explanation.
-  const rendered = VIEW.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  for (const label of ["You asked", "You answered", "<Label>Nemesis</Label>", 'label="Nemesis"']) {
+  const rendered = strip(BODY);
+  for (const label of ["You asked", "You answered", "<MomentLabel>Nemesis</MomentLabel>", 'label="Nemesis"']) {
     assert.ok(!rendered.includes(label), `"${label}" is back — the exchange reads as a record again, not as a conversation`);
   }
   // Question and Correction keep theirs: they come from the policy lane and are not chat answers,
   // and an unlabelled correction reads as a second answer.
-  assert.match(VIEW, /label="Correction"/, "a correction lost the word that tells it apart from an answer");
+  assert.match(BODY, /label="Correction"/, "a correction lost the word that tells it apart from an answer");
+
+  // 🔴🔴 ONE TREATMENT, TWO SURFACES — the whole reason the component was extracted.
+  const CONVERSATION = strip(readFileSync(new URL("./canvas-conversation-view.tsx", import.meta.url), "utf8"));
+  assert.match(VIEW_CODE, /<CanvasMomentBody moment=\{moment\}/, "the rewind draws a recorded moment its own way again");
+  assert.match(CONVERSATION, /<CanvasMomentBody/, "the conversation draws a recorded moment its own way again");
+  // The learner's bubble belongs to the shared body. The ONE exception is the conversation's
+  // pending line — a sentence that has been sent and not yet answered, which is not a moment and
+  // has nowhere else to live; it is asserted on its own in canvas-conversation-view.test.ts.
+  assert.ok(
+    !/<LearnerUtterance[^>]*>\{moment\./.test(CONVERSATION),
+    "the conversation view is drawing a recorded moment's words itself instead of through the shared body",
+  );
+  assert.ok(!/LearnerUtterance/.test(VIEW_CODE), "the rewind view is drawing the learner's words itself again");
 });
 
 test("🔴 the banner survives all of it, because the dangerous state is not knowing this is old", () => {
