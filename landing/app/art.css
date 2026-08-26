@@ -708,11 +708,6 @@
   background: var(--bg);
   box-shadow: 0 20px 50px -30px rgba(var(--fg), 0.3);
 }
-.band-aside-mascot {
-  display: grid;
-  place-items: center;
-}
-
 @media (max-width: 900px) {
   /* Stacked: words first, then the thing they are about. */
   .band-in:has(.band-aside) {
@@ -720,7 +715,6 @@
     gap: clamp(24px, 5vw, 36px);
   }
   .band[data-side="left"] .band-in:has(.band-aside) .band-aside { order: 0; }
-  .band-aside-mascot { min-height: 180px; }
 }
 .band-in h3 {
   font-family: var(--sans);
@@ -958,10 +952,12 @@
 }
 
 /* ── THE CHARACTER ────────────────────────────────────────────────────────────
-   Two places now: the hero and `Built on evidence`. This reserves the height so a
-   section does not jump as the SVG mounts, and turns the cursor into an invitation.
-   (It closed the page too until 2026-08-24; the owner took the character and its
-   bloom back out of that section, so the close is words and a button again.) */
+   ONE PLACE: the hero. This reserves the height so a section does not jump as the SVG
+   mounts, and turns the cursor into an invitation.
+
+   It has been taken out of two sections by the owner, on the same reasoning both times:
+   the close on 2026-08-24 ("the close is words and a button"), and `Built on evidence`
+   on 2026-08-25. A band that is making a claim does not also need something to look at. */
 .mascot {
   display: grid;
   place-items: center;
