@@ -20,7 +20,11 @@
 // `wide`, `exclaim` and `play` states remain in the catalogue as a plain copy of upstream,
 // and nothing in this product schedules them — guarded in `lib/character/character.test.ts`.
 //
-// The five, in the order repeated clicks walk them:
+// 🔴 WHAT ACTUALLY PLAYS IS THE LIST IN `REACTIONS` BELOW, AND SINCE 2026-08-26 IT IS THE
+// REFERENCE'S OWN VOCABULARY RATHER THAN OURS. The descriptions that follow document the custom
+// gestures this file used to schedule — they are all still built, and nothing schedules them.
+//
+// The five customs, in the order repeated clicks used to walk them:
 //   jump   — leaves the ground and LANDS SQUISHY (owner's word): the body flattens wide on
 //            impact and rebounds. CSS on the wrapper; see `.character-jump` in character.css.
 //   waggle — both brows rise and fall twice. Drawn as holes in the body's own mask through
@@ -63,10 +67,16 @@ export const SPIN_MS = 760;
 /** How long the sigma face holds. Long enough to be seen, short enough to stay a joke. */
 export const SIGMA_MS = 1600;
 
-/** One pass of the wink, from the catalogue, so the hold and the animation cannot disagree. */
-function winkMs(): number {
-  const wink = ANIMATION_BY_ID.get("wink");
-  return wink ? animationDuration(wink) : 1600;
+/**
+ * How long one pass of an engine animation takes, read from the catalogue.
+ *
+ * 🔴 ASKED, NOT WRITTEN DOWN. A hold typed in here would be a second copy of a duration that
+ * already exists, and the two would part company the first time a timing was tuned — leaving
+ * the character either cut off mid-gesture or standing still at the end of one.
+ */
+function passMs(id: string, fallback: number): number {
+  const a = ANIMATION_BY_ID.get(id);
+  return a ? animationDuration(a) : fallback;
 }
 
 /**
@@ -80,11 +90,27 @@ function winkMs(): number {
  * `wink` is the opposite case — entirely a face — and `sigma` is a face from OUR layer.
  */
 const REACTIONS: readonly Reaction[] = [
+  // 🔴🔴 THE ORIGINAL CATALOGUE, NOT OUR OWN GESTURES (owner 2026-08-26: *"i said to put in the
+  // original animations and expressions NOT the custom built ones like the spin, waggle, sigma,
+  // nod, double-take, slow blink"*). Every state named below is measured off the reference; the
+  // spin, the waggle, the sigma face and the three new gestures are ours, and a poke is no
+  // longer where any of them plays.
+  //
+  // 🔴 UNSCHEDULED, NOT DELETED — which is the same treatment this file already gives the
+  // vendored pack, and for the same reason. `spin`, `waggle` and the sigma face were each asked
+  // for by name earlier in the year; the CSS, the brow layer and `FeatureFace` all stay exactly
+  // where they are. What changed is that nothing here reaches for them, so putting one back is
+  // one line rather than a rebuild.
+  //
+  // 🔴 THE HOP STAYS AND LEADS, DELIBERATELY. It is not in the owner's list, and
+  // `character.test.ts` pins it as the first reaction. It is also the only one of ours that is
+  // pure physics rather than a drawing — the body leaves the ground and lands squishy — so it
+  // does not compete with a face for meaning.
   { state: "idle", motion: "jump", face: null, hold: JUMP_MS },
-  { state: "idle", motion: "waggle", face: null, hold: WAGGLE_MS },
-  { state: "idle", motion: "spin", face: null, hold: SPIN_MS },
-  { state: "idle", motion: null, face: "sigma", hold: SIGMA_MS },
-  { state: "wink", motion: null, face: null, hold: winkMs() },
+  { state: "wink", motion: null, face: null, hold: passMs("wink", 1600) },
+  { state: "surprised", motion: null, face: null, hold: passMs("surprised", 3100) },
+  { state: "laughing", motion: null, face: null, hold: passMs("laughing", 3100) },
+  { state: "curious", motion: null, face: null, hold: passMs("curious", 3100) },
 ];
 
 export function usePoke(base: StateId): {

@@ -342,6 +342,38 @@ test("🔴 a click reaches the character", async () => {
   assert.match(poke, /motion: "jump"/, "a poke no longer leads with the hop");
 });
 
+test("🔴🔴 the product schedules the reference's vocabulary, never our own gestures", async () => {
+  // Owner, 2026-08-26: *"i said to put in the original animations and expressions NOT the custom
+  // built ones like the spin, waggle, sigma, nod, double-take, slow blink, etc."*
+  //
+  // 🔴 THE RULE IS ABOUT PROVENANCE, SO THE GUARD ASKS ABOUT PROVENANCE. The obvious version
+  // lists the six names the owner happened to say — and this very file records what that costs:
+  // a guard written as a literal list held four unwanted animations in place for a day, and
+  // production kept drawing them until the owner reported it a second time. `GESTURE_IDS` is the
+  // set of things WE built, so a gesture added next month is covered by a test written today.
+  //
+  // Calibration: point any ACTIVITY_STATE row, or any poke, at "nod" and this reddens.
+  const { GESTURE_IDS } = await import("@/lib/avatar");
+  const { ACTIVITY_STATE } = await import("./stations");
+
+  for (const [activity, id] of Object.entries(ACTIVITY_STATE)) {
+    assert.ok(
+      !GESTURE_IDS.includes(id),
+      `${activity} schedules "${id}", which is one of ours and not the reference's`,
+    );
+  }
+
+  const poke = await read("../../components/character/use-poke.ts");
+  const from = poke.indexOf("const REACTIONS");
+  const list = poke.slice(from, poke.indexOf("];", from));
+  for (const match of list.matchAll(/state:\s*"([^"]+)"/g)) {
+    const id = match[1]!;
+    assert.ok(!GESTURE_IDS.includes(id), `a poke draws "${id}", which is one of ours`);
+  }
+  // The sigma face is ours too, and it is a `face:` rather than a `state:`.
+  assert.ok(!/face:\s*"sigma"/.test(list), 'a poke wears the sigma face, which the owner named');
+});
+
 test("🔴 pressing Speak twice actually speaks twice", async () => {
   // 🔴 I SHIPPED THIS BUG INSIDE THE FEATURE THAT FIXES IT. `useCanvasSpeech.speak` keeps a set
   // of utterance keys and returns SILENTLY on a repeat — correct for the routed lane, where a

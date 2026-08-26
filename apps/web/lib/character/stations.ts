@@ -14,8 +14,9 @@
  * An animation's name, from the one catalogue.
  *
  * 🔴 A PLAIN STRING RATHER THAN A UNION, AND THAT IS A DELIBERATE LOOSENING. The catalogue
- * now holds forty-nine — sixteen feelings, ten routines and twenty-three gaze patterns —
- * and a union of all of them here would be a second list to keep in step with the first.
+ * now holds fifty-six — sixteen feelings, ten routines, twenty-three gaze patterns and seven
+ * gestures — and a union of all of them here would be a second list to keep in step with the
+ * first.
  * `lib/avatar/catalogue.ts` refuses an unknown name at load, and `character.test.ts` checks
  * that every id this file names exists, which is the same guarantee without the duplicate.
  */
@@ -127,8 +128,12 @@ export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   // content of listening. `attentive` differs from `idle` by 34 degrees of head and about a
   // tenth of eye — small, and the smallness is right. A character that gurns when you start
   // dictating is a character you stop dictating to.
+  //
+  // 🔴 THIS BRIEFLY SCHEDULED OUR OWN `leanIn` AND IT SHOULD NOT HAVE (owner 2026-08-26: *"i
+  // said to put in the original animations and expressions NOT the custom built ones"*). Every
+  // pose this table names is measured off the reference.
   listening: "attentive",
-  // The squint into arcs — a smile, on a face with no mouth.
+  // The squint into arcs — a smile, on a face with no mouth. (Also briefly `nod`, ours; see above.)
   arrived: "happy",
 };
 
