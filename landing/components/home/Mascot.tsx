@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BloubBot } from "@/components/bloub/BloubBot";
-import { WAGGLE_TIME } from "@/lib/character/brow";
 import { BEATS, CYCLE, REST, keepsTheCircle } from "@/lib/character/circle";
+import { SPIN_TIME } from "@/lib/character/spin";
 import { clampDuration, makeBlock } from "@/lib/bloub/cycles";
 import type { StateId } from "@/lib/bloub/states";
 
@@ -147,13 +147,22 @@ function beatAt(step: number): { state: StateId; face: string } {
 
 export function Mascot({ size = 168 }: { size?: number }) {
   const [step, setStep] = useState(0);
-  const [waggling, setWaggling] = useState(false);
+  const [spinning, setSpinning] = useState(false);
   const timer = useRef<number | null>(null);
 
   const { state, face } = beatAt(step);
+  // 🔴 A TURN HAPPENS AT REST, AND THAT IS A REQUIREMENT RATHER THAN A PREFERENCE. Only the
+  // resting-face states are steerable — everywhere else the gaze pose IS the measured animation,
+  // so `BloubBot` refuses to lay a look on top of it and the turn would silently not happen. A
+  // click during the ~1.7s of a beat would do nothing at all. Resting for the duration also
+  // means the poke cannot introduce a state the circle rule has not already cleared.
+  const shown: StateId = spinning ? REST : state;
 
   useEffect(() => {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    // Held for the turn, so the cycle does not step underneath it and land somewhere else the
+    // moment it finishes.
+    if (spinning) return;
 
     const hold =
       state === REST ? clampDuration(state, HOLD_SECONDS) : makeBlock(state).duration;
@@ -161,40 +170,39 @@ export function Mascot({ size = 168 }: { size?: number }) {
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
     };
-  }, [state, step]);
+  }, [spinning, state, step]);
 
   /**
-   * A poke raises the eyebrows twice.
+   * A poke turns him all the way round.
    *
-   * 🔴 IT REPLACES `burst`, WHICH THE CIRCLE RULE COST US. Burst was the right shape for a poke
-   * — an event rather than a pose — but it works by collapsing the body and spraying particles,
-   * which is exactly what the owner has now asked to stop.
+   * 🔴 OWNER, 2026-08-26: *"make him just spin around smoothly, remove the eye waggle"*. The brow
+   * waggle this replaces was itself a replacement — `burst` was the original reply and the circle
+   * rule cost us it, because bursting works by blowing the body apart.
    *
-   * 🔴 A BROW IS THE ONE GESTURE THAT CANNOT BREAK THE CIRCLE, and that is measured rather than
-   * assumed: `brow.ts` tuned its rest height and rise against a rendered contact strip
-   * specifically because an earlier pair BREACHED the silhouette at the top of each lift and cut
-   * a notch out of the crown. It is also drawn as another hole in the same mask as the eyes, so
-   * it turns and foreshortens with the face instead of sitting on top of it.
+   * 🔴 THE TURN IS THE ONE REPLY THAT NEEDS NOTHING NEW. It is the arrival's own gaze sweep
+   * replayed: the eyes travel a full circuit of the sphere and land exactly where they started,
+   * and the silhouette is never involved. `lib/character/spin.ts` owns the pacing and says why the
+   * curve is not the arrival's.
    *
-   * 🔴 AND IT RUNS OVER THE CYCLE RATHER THAN INTERRUPTING IT, which is why there is no longer a
-   * `poked` branch holding the timer. The waggle is a gesture on the face; whatever beat is
-   * playing keeps playing underneath, and nothing has to be resumed afterwards.
+   * The brow machinery stays in `BloubBot` and `brow.ts` — it is NOT dead code left lying about.
+   * The app's own character still waggles (`apps/web/components/bloub/use-poke.ts`), and the two
+   * renderers are kept in step on purpose. What changed is only what this page asks for.
    */
   const onPoke = useCallback(() => {
-    setWaggling(true);
-    window.setTimeout(() => setWaggling(false), WAGGLE_TIME * 1000);
+    setSpinning(true);
+    window.setTimeout(() => setSpinning(false), SPIN_TIME * 1000);
   }, []);
 
   return (
     <div className="mascot">
       <BloubBot
-        state={state}
+        state={shown}
         expression={face}
         size={size}
         color={INK}
         track
         entrance
-        waggle={waggling}
+        spin={spinning}
         onPoke={onPoke}
         label="Nemesis, the character. Click to poke it."
       />
