@@ -77,7 +77,7 @@ test("🔴 the preview fades out when the answer starts", () => {
   assert.match(CSS, /\.canvas-preview-out \{\s*animation: canvas-preview-out 220ms ease-out forwards;/);
   // The caption lives on the dock now — beside the character by construction, rather than in a
   // static box hoping to line up with a live transform. See `thinking-figure.test.ts`.
-  assert.match(readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8"), /canvas-preview-out/);
+  assert.match(readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8"), /canvas-preview-out/);
   // 🔴 AND REDUCED MOTION SHORTENS IT RATHER THAN REMOVING IT. `forwards` holds the end state, so
   // `animation: none` would leave the preview sitting over the answer for ever — the one case where
   // stopping the animation is not the safe reading of the preference.

@@ -1,122 +1,150 @@
 # The Nemesis character
 
-One body, morphing through fifteen animations. Eyes cut as holes through it. Gaze on a
-sphere. Shape and colour chosen by the learner.
+One engine. A solid turned in space, with a face painted on its skin and pushed through a
+lens. Forty-nine things it can do, and it morphs between any two of them.
 
-## What it is, plainly
+## Where it came from
 
-The engine is [jeremy-prt/bloub](https://github.com/jeremy-prt/bloub), MIT licensed,
-**vendored whole** into `apps/web/lib/bloub/`. It is not edited and should not be: every
-Nemesis opinion lives outside it, in `apps/web/lib/character/`.
+Two projects, and the difference between them matters — legally and practically.
 
-Two things follow that are worth stating outright.
+**[jeremy-prt/bloub](https://github.com/jeremy-prt/bloub) — MIT.** A recreation of the
+xAI/Grok avatar: one shape morphing through fourteen states, measured off the reference
+video frame by frame. Nemesis ran this engine, vendored whole, from August 2026. What
+survives of it is the part that took the work: the **measurements**. Silhouettes traced at
+the pixel, animation timings, sixteen expressions, and every gaze written as yaw/pitch/roll.
+Those live in `apps/web/lib/avatar/vendor/`, copied unchanged, with the MIT notice beside
+them — which is what MIT asks for and all it asks for.
 
-**bloub is a reconstruction of the xAI/Grok avatar.** Its own `package.json` says so in
-one line: *"SVG recreation of the x.ai bot avatar. One shape morphing through 14 states,
-measured off the reference video frame by frame."* The code is MIT and using it is fine;
-the character design is xAI's. Shape is a user-facing setting, so the default silhouette
-is a one-line decision rather than a rewrite.
+**[smontlouis/bible-strong-avatar-lab](https://github.com/smontlouis/bible-strong-avatar-lab)
+— AGPL-3.0.** A far more capable engine: real perspective, ten solid bodies, an eye that is
+laid on the skin point by point rather than transformed onto it. Nemesis's engine was
+written from a *reading* of that one, not from its code — see the note at the top of
+`lib/avatar/types.ts` for what that reading found and where the first attempt went wrong.
 
-**It was vendored rather than translated, and that was the decision that made this work.**
-bloub places its eyes on a *sphere*, through a tangent frame, with a 455-line eye-fitter;
-every state's gaze is written as a measured yaw/pitch/roll (`{yaw: -5.37, pitch: 4.55,
-roll: 6.7}`) and every eye as a capsule in body-radius units. Those numbers are
-meaningless in a flat 2D pose model. Porting the state table into one produces something
-that is not the same character — and the failure would only show up after all the work
-was done.
+> 🔴 **One thing here wants a lawyer's eye before this is public.** The twenty-three
+> `gaze-*` animations, the twenty-seven faces they play, and the ten bodies were IMPORTED
+> from a document that project's app produces (`scripts/avatar-import.mts` reads a path; the
+> document itself is not in this repo, but its numbers are, in the generated files). Whether
+> a user-made avatar document counts as part of an AGPL work is a real question and not one
+> to answer by assertion. Nothing else is affected: the sixteen expressions and the ten
+> routines are bloub's, under MIT, and the engine is ours.
+
+## Why there is only one engine now
+
+Owner, 2026-08-25: *"yes i need one shared layer and engine."*
+
+Nothing technical forced bloub out. It is TypeScript, like everything here; it worked; its
+licence is the permissive one. It was deleted because keeping it meant **two of everything**
+— two clocks, two ideas of where an eye is, two sets of bugs — and a character that drifted
+between the marketing page and the product. That is what the instruction was about.
+
+It is one command away if it is ever wanted back:
+
+```bash
+git checkout 2192eef0 -- apps/web/lib/bloub
+```
 
 ## Layout
 
 ```
-apps/web/lib/bloub/          vendored, untouched, MIT (LICENSE included)
-apps/web/lib/character/      Nemesis's opinions
-  stations.ts                  activity → animation, and corner vs centre
-  pool.ts                      how many decor nodes the renderer preallocates
-  character.test.ts            the guards
-apps/web/components/bloub/
-  bloub-bot.tsx                the renderer
-  bloub-dock.tsx               placement, and the walk to the middle
-  bloub.css                    two colour tokens, and the travel transition
+apps/web/lib/avatar/
+  space.ts             the solid, the lens, the maths. No time, no DOM.
+  render.ts            one pose → path strings, and `eyeFrames` for what rides on top
+  play.ts              the clock: morphs, blinks, handovers, sparks
+  expressions.ts       sixteen feelings, each one looking like its name
+  routines.ts          the ten that DO something — the body changes in six of them
+  animations.ts        twenty-three gaze patterns, generated (avatar-import.mts)
+  faces.ts             the faces those play, generated
+  avatars.ts           ten bodies, generated
+  catalogue.ts         the one door: everything, with a collision check at load
+  features.ts          OUR layer — spectacles, a brow, a smirk. Not the engine's.
+  vendor/              bloub's traced silhouettes + LICENSE.bloub (MIT)
+
+apps/web/components/avatar/nemesis-avatar.tsx   the ONLY thing that draws a character
+apps/web/components/character/
+  character-dock.tsx   placement, and the walk to the middle
+  use-poke.ts          what a click gets: hop, waggle, spin, sigma, wink
+  character.css        two colour tokens, and the travel transition
+apps/web/lib/character/stations.ts              activity → animation, corner vs centre
 ```
 
-Tests live under `lib/` because the suite's glob is `lib/*/*.test.ts`. Under
-`components/bloub/` they passed locally and were silently never collected — worth knowing
-before adding the next one.
+The marketing site holds a **copy**, because it is a separate deployment with its own
+workspace and cannot import from the app. The copy is made by a script, never by hand:
 
-## Where it appears
-
-| Surface | Placement | Why |
-|---|---|---|
-| Canvas landing | greeter, centred above the question | its composer is in normal flow near the top; a lower-left dock would park the character in an empty corner |
-| Canvas session | dock, lower-left, above `#canvas-composer` | beside the thing the learner returns to, clear of a composer that grows as they type |
-| Canvas loading | holding the middle | there is no composer yet to stand above |
-| Settings → Appearance | frozen preview beside the pickers | the real engine at `t=1`, not a picture of it |
-
-## Coming forward
-
-`thinking`, `orbit` and `comet` are the *busy* animations, and only they take the middle
-of the surface. The rule is not "anything eye-catching": coming forward says the learner
-handed something over and is waiting on real work, and it is worth nothing if a wink does
-it too.
-
-Both of the Canvas's waits are wired, not just the loud one. `policy.thinking` (the policy
-runtime working a turn) and `presence === "preparing"` (the session coming up) are
-different events with different captions, but to a learner they are one experience. Wiring
-only the first leaves the character in the corner through the second and then jumps it to
-the middle — and a jump with no cause a learner could name reads as a fault.
-
-The journey is a composited `transform`. The dock's own offsets never move. Animating
-those instead would lay the page out again on every frame of a 680ms trip.
-
-Under `prefers-reduced-motion` the travel shortens to 220ms but does **not** stop. *Where*
-the character is standing is the message; removing the travel removes the information, not
-just the motion.
+```bash
+pnpm --filter @pharmaorb/web character:sync
+```
 
 ## The catalogue
 
-Fifteen animations. `idle`, `thinking` (three dots), `wink`, `wide`, `alert` (a travelling
-"!"), `notify` (a pastille with a notch cut out of the body), `exclaim`, `sleep`, `egg`,
-`hexagon`, `play` (a triangle under a swoosh), `orbit` (six rings, the body relaxing from
-triangle to ball), `burst` (collapse and particles that pass *behind* the core), `comet`
-(collapse and ribbons), `swirl` (three rings, the settings entry).
+**Sixteen feelings** — neutral, attentive, surprised, excited, happy, laughing, angry, sad,
+scared, suspicious, confused, curious, proud, shy, unimpressed, sleepy. Drawn from the
+feeling backwards, which is why each one reads as its name.
 
-Eight shapes: circle, pebble, squircle, capsule, triangle, hexagon, cloud, droplet.
-Twelve colours. Sixteen expressions.
+**Ten routines** — idle, thinking (three dots, and the body becomes the middle one), wink,
+wide, notify (a badge with a bite taken out of the body), exclaim (the body becomes a "!"),
+sleep, egg, hexagon, burst (it scatters and gathers).
 
-Inspect all of it at `/dev-preview/bloub-lab`, or generate contact sheets with
-`pnpm mascot:board`'s sibling, `npx tsx scripts/bloub-board.mts`.
+**Twenty-three gaze patterns**, prefixed `gaze-`. They are named for where the eyes go, not
+for what the face means — the reference labelled them after the fact, so its `angry` has the
+tops of its eyes diverging, which by its own geometry is the shape of sadness. The plain
+words belong to the sixteen that keep their promise.
+
+## Where to look at it
+
+**Running, all forty-nine, on any of the ten bodies:**
+
+```bash
+open http://localhost:3242/dev-preview/avatar
+```
+
+**As files you can read and diff:**
+
+```bash
+pnpm --filter @pharmaorb/web character:faces /tmp    # spectacles and sigma, four head turns
+npx tsx apps/web/scripts/avatar-sheet.mts /tmp       # every animation as a filmstrip
+```
+
+**The numbers themselves:** `lib/avatar/vendor/silhouettes.ts` for the traced shapes,
+`lib/avatar/routines.ts` for the timings and gaze, `lib/avatar/expressions.ts` for the
+sixteen.
 
 ## Things that will bite
 
-**`--bloub-paper` is load-bearing.** The eyes are holes and the rings pass behind the
-body, so the body is backed by an opaque shape in exactly the page's colour. If that token
-does not match what is actually behind the character, a ring shows through its eyes.
+**`--character-paper` is load-bearing.** The eyes are holes, so the body is backed by an
+opaque shape in exactly the page's colour. It is defined in `character.css`, which the dock
+imports. When that import went missing the character rendered as a blank white disc with no
+face and nothing failed.
 
-**SVG has no z-index.** Paint order is document order, and the burst's particles go behind
-the core while every other dot goes in front. There are two dot pools, and one is shown.
+**The silhouette is applied in the PICTURE, not the body's frame.** The reference draws its
+shapes flat with the face on a ball behind them. Apply the shape to the solid instead and
+seventeen degrees of roll tips the egg over like a skittle — which is what the first attempt
+did, and the only way to hide it was to halve the reference's own gaze numbers.
 
-**The decor pool is measured, not chosen.** A cross-fade emits *both* states' decor at
-once, so the worst case lives between two animations rather than inside any one of them —
-5 dots and 10 arcs across all 225 ordered pairs. Overflow does not error; it just quietly
-drops particles.
+**An eye RIDES a silhouette; it is not reshaped by it.** The shape is a radial push. Push
+every point of an eye by its own angle and a hexagon comes out with six-sided eyes.
 
-**The entrance turn has no face.** The gaze can open with a full turn around the sphere,
-and during it the eyes really are behind the body. It is off by default. On the landing it
-is on, deliberately — that one is an arrival.
+**SVG has no z-index.** Paint order is document order. A scatter's sparks pass *behind* the
+body, so they are a separate path drawn before it.
 
-**The preview pane cannot verify motion.** Measured: 6 frames and 77ms of scene clock
-across roughly 40 seconds of real time, because `requestAnimationFrame` stalls whenever the
-pane is hidden. Frozen boards are real verification there; anything time-based has to be
-measured in Node or watched in a real browser.
+**The clock never restarts.** Changing what is playing is a morph, not a cut — the fix for
+*"the animations seem to cut abruptly"*. `animation`, `face` and `waggle` are deliberately
+not effect dependencies; the loop reads them from a ref. Listing any of them restarts the
+loop, which restarts the entrance turn, which is a second of no face.
+
+**The entrance turn has no face.** The eyes really do pass behind the body. Off by default;
+on for the landing greeter, deliberately, because that one is an arrival.
+
+**The preview pane cannot verify motion.** Measured: 6 frames and 77ms of scene clock across
+roughly 40 seconds of real time, because `requestAnimationFrame` stalls whenever the pane is
+hidden. Contact sheets rendered in Node are real verification there.
 
 ## Still open
 
-- **The montage editor.** `lib/bloub/cycles.ts` is vendored and complete — blocks, minimum
-  durations, a default cycle measured off the reference — but nothing in Nemesis authors or
-  stores a cycle yet. The lab plays the default one.
-- **Export.** Upstream can write GIF and video. Here there are SVG contact sheets, which
-  diff between iterations but are not a recording.
-- **The previous character.** `lib/mascot/` and `components/mascot/` are still present and
-  still have their own lab. `lib/mascot/attention.ts` is live — the dock uses it for
-  "look at this" targets — but the engine beside it is now unused. Removing it is a
-  separate decision, not a side effect of this one.
+- **Nothing in the app plays the ten routines.** Every activity resolves to `idle`, because
+  the owner cut the animated states by name in August (*"remove the three dots animation"*,
+  *"remove the big eyes"*, *"I don't want any rainbow swirls"*). Which of the ten the product
+  should use, and when, is an open decision.
+- **The AGPL question above.**
+- **The previous character.** `lib/mascot/` is still present. `lib/mascot/attention.ts` is
+  live — the dock uses it for "look at this" targets — but the engine beside it is unused.

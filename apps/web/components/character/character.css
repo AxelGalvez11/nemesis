@@ -1,0 +1,200 @@
+/* The character's two colour tokens, and the shell it travels in.
+ *
+ * 🔴 `--character-paper` IS NOT DECORATION. The eyes are holes cut through the body and the
+ * orbit rings pass behind it, so the body is backed by an opaque shape in exactly the
+ * page's colour. If this token does not match what is actually behind the character, a
+ * ring shows through its eyes and the backing reads as a plate it is standing on. */
+
+:root {
+  --character-paper: #f9f9f9;
+}
+
+:root[data-theme="dark"] {
+  --character-paper: #0b0b0d;
+}
+
+.nemesis-avatar {
+  /* The rings reach 1.4× the body radius; the viewBox already allows for them, but
+     nothing may be clipped by an ancestor that happens to be smaller. */
+  overflow: visible;
+  /* 🔴 IT NEVER TAKES A CLICK. A decorative character that swallows a press meant for
+     the composer behind it is worse than no character at all. */
+  pointer-events: none;
+  display: block;
+}
+
+/* 🔴 TWO CLASSES, AND THE SECOND ONE IS NOT DECORATION. This lived ABOVE `.nemesis-avatar` with a single
+   class selector, so `.nemesis-avatar`'s `pointer-events: none` — same specificity, later in the file —
+   won every time and the character silently ignored every click. Owner: "clicking on the mascot
+   doesn't do anything". Doubling the class outranks it regardless of order. */
+.nemesis-avatar.nemesis-avatar-pokeable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* The dock: fixed or absolute, never part of layout.
+ *
+ * 🔴 THE JOURNEY IS A `transform`, NOT A CHANGE OF OFFSETS. The corner→centre walk
+ * animates only a composited property, so a 680ms trip across the surface costs no
+ * layout. Animating `left`/`bottom` instead would lay the page out on every frame of it. */
+.character-dock {
+  pointer-events: none;
+  z-index: 30;
+  will-change: transform;
+  /* How long a CHANGE OF STATION takes — the walk to the middle and the walk back. It is a
+     variable rather than a literal so `prefers-reduced-motion` below can shorten the journey
+     without JavaScript having to ask about it. */
+  --character-travel: 680ms;
+  /* 🔴 `--character-travel-ms` IS AN OVERRIDE THE DOCK SETS PER MOVE, and it is unset most of the
+     time. Not every move is a journey: following the composer as it grows under the character
+     wants ~140ms, and the very first placement wants none at all so a canvas that opens
+     already thinking does not slide in from a corner it was never standing in. Falling back
+     to `--character-travel` keeps the reduced-motion rule below authoritative over the one move
+     that carries meaning. See character-dock.tsx. */
+  transition: transform var(--character-travel-ms, var(--character-travel)) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .character-dock {
+    /* 🔴 SHORTER, NOT CANCELLED. Where the character is standing IS the message — that
+       the system has taken the floor to think. Removing the travel would remove the
+       information, not just the motion. */
+    --character-travel: 220ms;
+  }
+}
+
+/* ── The hop ─────────────────────────────────────────────────────────────────
+ *
+ * Owner 2026-08-20: "the mascot should be able to jump when clicked on ... he should
+ * jump, wink, or do an eyebrow waggle."
+ *
+ * 🔴 A JUMP IS NOT A POSE, WHICH IS WHY IT IS HERE AND NOT IN THE ENGINE. The pose table in
+ * `lib/bloub` describes a face on a sphere — where the eyes sit, how wide they open, what the
+ * silhouette is. Leaving the ground is the whole body moving through space, which that model
+ * has no vocabulary for and which does not need one: it is a transform on the element the
+ * character is drawn in. The engine stays unedited and keeps being the single opinion about
+ * the face.
+ *
+ * 🔴 TRANSFORM AND NOTHING ELSE, for the same reason the dock's journey is a transform — this
+ * runs on a character floating over a live composer, and a decorative hop that lays the page
+ * out twenty times would make typing feel worse than no hop at all.
+ *
+ * The shape of it: a fast crouch, a quick rise to the top, a slower hang, then a fall that
+ * lands harder than it left (gravity is not symmetrical with a jump's push-off), and a small
+ * squash on landing. `translateY` is negative upward.
+ */
+.character-jump {
+  animation: character-jump var(--character-jump-ms, 620ms) cubic-bezier(0.33, 0, 0.2, 1) both;
+  /* Squash reads as weight only if the body flattens against the floor, not about its middle.
+     Without this the character shrinks symmetrically and looks like it is being scaled rather
+     than landing on something. */
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+
+@keyframes character-jump {
+  0% { transform: translateY(0) scale(1, 1); }
+  /* The crouch. Small — a deep one on a 52px character reads as a glitch. */
+  12% { transform: translateY(2%) scale(1.07, 0.9); }
+  /* Up, and stretched along the direction of travel — narrower as it rises. */
+  34% { transform: translateY(-58%) scale(0.95, 1.07); }
+  /* The hang, where a jump becomes readable at all. */
+  50% { transform: translateY(-66%) scale(1, 1); }
+  78% { transform: translateY(0) scale(1, 1); }
+  /* 🔴 THE LANDING IS THE POINT (owner 2026-08-23: "when it lands, it looks squishy").
+     Squash conserves volume: what the body loses in height it gains in width. The old
+     frame only shrank scaleY, which reads as scaling, not as weight meeting a floor. */
+  86% { transform: translateY(0) scale(1.18, 0.76); }
+  /* A small overshoot past neutral on the way back — jelly settles, it does not stop. */
+  94% { transform: translateY(-2%) scale(0.96, 1.05); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+
+/*
+ * One clean pirouette — the poke's third gesture.
+ *
+ * 🔴 THIS IS OUR SPIN, NOT THE VENDORED SWIRL. The swirl sent the eyes orbiting the body
+ * behind rainbow arcs; this turns the CREATURE, once, with a lean in and a jelly settle,
+ * and draws nothing that is not the body. Origin sits at the visual centre of mass.
+ */
+.character-spin {
+  animation: character-spin var(--character-spin-ms, 760ms) cubic-bezier(0.3, 0.05, 0.22, 1) both;
+  transform-origin: 50% 55%;
+  will-change: transform;
+}
+
+@keyframes character-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  /* The wind-up: a small counter-lean before committing, like any turn with weight in it. */
+  12% { transform: rotate(-16deg) scale(0.95); }
+  /* The turn itself, slightly narrowed by speed. */
+  62% { transform: rotate(300deg) scale(0.97); }
+  /* Overshoot… */
+  88% { transform: rotate(372deg) scale(1.03); }
+  /* …and settle. 360 and 0 are the same heading, so nothing snaps at the end. */
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+/*
+ * The mark over its head — ? while Nemesis waits on an answer, ! for a heads-up.
+ *
+ * 🔴 A GLYPH THAT ARRIVES, NOT A STICKER (owner 2026-08-24). It pops in with a small
+ * overshoot — same spring family as the poke gestures — then bobs gently for as long as
+ * the state holds, so a waiting question keeps feeling alive without shouting.
+ */
+.character-mark {
+  transform: translateX(-50%);
+  animation:
+    character-mark-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    character-mark-bob 2200ms ease-in-out 380ms infinite;
+  will-change: transform;
+}
+
+@keyframes character-mark-in {
+  0% { opacity: 0; transform: translateX(-50%) translateY(35%) scale(0.4); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+@keyframes character-mark-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-9%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 🔴 REMOVED, NOT SHORTENED, AND THAT DIFFERS FROM THE DOCK ABOVE. The dock's travel carries
+     information — where the character stands says whether Nemesis has taken the floor — so it
+     is only made quicker. A hop carries none: it is a reply to a poke, and the wink in the
+     same cycle still answers one. */
+  .character-ponder,
+  .character-jump,
+  .character-spin,
+  .character-mark {
+    animation: none;
+  }
+}
+
+/* ── The ponder ──────────────────────────────────────────────────────────────
+ *
+ * Owner 2026-08-25: "when it's thinking… make sure it's not just staring — have some
+ * movements as well." While the character holds the middle station the dock puts this on
+ * the hop wrapper: a slow shift of weight, side to side and slightly up on the crossing,
+ * the way anyone stands when they are working something out. Physics, not effects (rule 2),
+ * and pointed at itself, not the learner (rule 3). The wander of the eyes is the dock's —
+ * see the attention interval in character-dock.tsx; this is only the body.
+ *
+ * 🔴 SLOWER THAN EVERY GESTURE. A poke's jump is 620ms and reads as an event; this is
+ * 2900ms and must read as a state. If it ever reads as an event on a loop, it is wrong.
+ */
+.character-ponder {
+  animation: character-ponder 2900ms ease-in-out infinite;
+  transform-origin: 50% 82%;
+}
+@keyframes character-ponder {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1.7deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(1.7deg);
+  }
+}

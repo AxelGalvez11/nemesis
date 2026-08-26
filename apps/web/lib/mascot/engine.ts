@@ -22,6 +22,7 @@ import {
   applyExpression,
   blendExpression,
   EXPRESSIONS,
+  EYES_ALIKE,
   type ExpressionDef,
   type ExpressionId,
 } from "./expressions";
@@ -32,9 +33,12 @@ import {
   EYE_TRAVEL_V,
   SATELLITES,
   closedPath,
+  eyeOnSphere,
   fitGaze,
+  headIsRest,
   satellitePlacement,
   silhouette,
+  type Head,
   type Point,
 } from "./geometry";
 import { NO_LOOK, type Look } from "./gaze";
@@ -78,6 +82,24 @@ export interface SampleOptions {
    * across a state change that carries a big change of silhouette; see `blinkIn`.
    */
   readonly lidOverride?: number;
+  /**
+   * Overrides the pose's own `liveliness`, separately for eyes and body.
+   *
+   * 🔴 AN OVERRIDE, NOT A REPLACEMENT OF THE FIELD. States set `liveliness` as part of
+   * their pose and must keep doing so — `confusion` stares deliberately, at 0. This is
+   * for a caller that is authoring rather than playing back, and it is absent everywhere
+   * in the product.
+   */
+  readonly motion?: { readonly eyes: number; readonly body: number };
+  /**
+   * Turn the head, placing the eyes on a sphere instead of flat on the silhouette.
+   *
+   * 🔴 ABSENT OR ALL-ZERO TAKES THE FLAT PATH, BIT FOR BIT. The spherical placement is a
+   * separate branch rather than a generalisation that happens to reduce to the flat case,
+   * because "happens to reduce" is a claim nobody can check and this one is checkable:
+   * with no head, not one line of the sphere code runs. See `eyeOnSphere`.
+   */
+  readonly head?: Head;
 }
 
 const DEG = Math.PI / 180;
@@ -93,7 +115,10 @@ const DEG = Math.PI / 180;
 export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotFrame {
   const look = opts.look ?? NO_LOOK;
   const reduced = opts.reduced ?? false;
-  const live = liveliness(reduced ? 0 : (opts.clock ?? t), reduced ? 0 : pose.liveliness);
+  const clockNow = reduced ? 0 : (opts.clock ?? t);
+  const eyeLife = reduced ? 0 : (opts.motion?.eyes ?? pose.liveliness);
+  const bodyLife = reduced ? 0 : (opts.motion?.body ?? pose.liveliness);
+  const live = liveliness(clockNow, eyeLife, bodyLife);
 
   const b = pose.body;
   const cx = BODY.cx + b.dx;
@@ -146,7 +171,24 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
   // The waist takes room away exactly where the eyes live, so the fit has to know about
   // it — otherwise a gaze that is safe on the resting body clips through a pinched one.
   const limit = 0.8 - 0.22 * b.pinch;
-  const fit = fitGaze(eye.split, eye.rise, offU, offV, eye.w, Math.max(halfH, eye.h * 0.5), limit);
+  // 🔴 THE FIT IS COMPUTED FOR THE LARGER EYE, NOT FOR THE SHARED ONE. With a per-eye
+  // tweak in play the two eyes no longer have the same extents, and `fitGaze` returns a
+  // single scale for both — so feeding it `eye.w` alone would size the containment to a
+  // narrow left eye and let a wide right one push its corner straight through the
+  // silhouette. Taking the maximum makes the fit safe for whichever eye is bigger and
+  // merely conservative for the other, which is the error worth having. With no tweak
+  // both terms are 1 and this is exactly the previous behaviour.
+  const widest = eye.w * Math.max(eye.left?.w ?? 1, eye.right?.w ?? 1);
+  const tallest = eye.h * Math.max(eye.left?.h ?? 1, eye.right?.h ?? 1);
+  const fit = fitGaze(
+    eye.split,
+    eye.rise + Math.max(eye.left?.rise ?? 0, eye.right?.rise ?? 0),
+    offU,
+    offV,
+    widest,
+    Math.max(halfH * Math.max(eye.left?.h ?? 1, eye.right?.h ?? 1), tallest * 0.5),
+    limit,
+  );
   const u = offU * fit;
   const v = offV * fit;
 
@@ -159,30 +201,69 @@ export function renderPose(pose: Pose, opts: SampleOptions = {}, t = 0): MascotF
   const curveMag = Math.min(1, Math.abs(eye.curve));
   const curveDir = eye.curve >= 0 ? 1 : -1;
 
+  const head: Head = opts.head ?? { yaw: 0, pitch: 0, roll: 0 };
+  const flat = headIsRest(opts.head);
+
   const eyes = ([-1, 1] as const).map((side): EyeRender => {
     // A wink shuts ONE eye. The right one, always — a wink that changed sides would read
     // as a twitch rather than as a gesture.
     const shut = side > 0 ? 1 - clamp01(eye.wink) : 1;
+    // 🔴 THE PER-EYE TWEAK IS APPLIED HERE AND NOWHERE EARLIER, because this is the only
+    // point at which `side` exists. Merging it into the shared numbers upstream would
+    // have to pick one eye's values for both. Absent on both sides — which is every
+    // shipped face — this resolves to the identity and costs one property read.
+    const only = (side < 0 ? eye.left : eye.right) ?? EYES_ALIKE;
     // The asymmetry is a tilt AND a small height difference. A tilt alone is invisible
     // at 3px; the pair being visibly uneven is what survives the size.
-    const eh = Math.max(halfH * shut * (1 + 0.02 * eye.asym * side) * ry, 0.35);
-    const ew = eye.w * rx;
+    const eh = Math.max(halfH * only.h * shut * (1 + 0.02 * eye.asym * side) * ry, 0.35);
+    const ew = eye.w * only.w * rx;
     // 🔴 THE BOW IS SIZED OFF THE OPEN EYE, NOT THE BLINKING ONE. Tying it to `eh` meant
     // a blink — which takes the eye's height to nothing in 75ms — flung the bow ten mark
     // units and back every few seconds. Invisible, because the bow is clear of a shut
     // eye either way, and a real defect: it is motion nobody asked for, and it buried a
     // genuine shape-morph regression in the noise when the frames were measured.
-    const ehOpen = Math.max(eye.h * eye.open * shut * (1 + 0.02 * eye.asym * side) * ry, 0.35);
+    const ehOpen = Math.max(eye.h * only.h * eye.open * shut * (1 + 0.02 * eye.asym * side) * ry, 0.35);
     // Circular, and sized off the eye's WIDTH rather than its height: what makes the
     // leftover sliver read as an arch is the cutter's curvature across the eye, and a
     // cutter much wider than the eye presents an almost flat edge to it.
     const lidR = ew * 1.28;
+
+    // Where the eye sits on the face, as plain offsets in body-radius units.
+    const ex = eye.split * side + only.dx + u;
+    const ey = eye.rise + only.rise + v;
+
+    // ── The head, when there is one ────────────────────────────────────────────
+    //
+    // The flat offsets are read back as a point on the sphere — an orthographic
+    // projection sends a longitude to `sin(lon)`, so the inverse is `asin` — and the
+    // tangent frame then supplies both the foreshortening and the turn. Clamped inside
+    // the poles because `asin` is undefined past 1, and an eye is never placed there.
+    if (!flat) {
+      const unit = (n: number) => Math.min(0.985, Math.max(-0.985, n));
+      const s = eyeOnSphere(Math.asin(unit(ex)) / DEG, -Math.asin(unit(ey)) / DEG, head);
+      return {
+        cx: s.x * rx,
+        cy: s.y * ry,
+        rx: ew * s.sx,
+        ry: eh * s.sy,
+        tilt: eye.tilt + only.tilt + eye.asym * side + s.tilt,
+        // 🔴 THE BOW IS FORESHORTENED WITH THE EYE IT CUTS. Leaving `lidCy` alone lets a
+        // turned head keep a full-size cutter over a narrowed eye, which eats the whole
+        // thing and the character appears to shut one eye as it looks away.
+        lidCy:
+          curveDir *
+          (ehOpen * s.sy + lidR * s.sy - curveMag * (ehOpen * s.sy * 1.18 + lidR * s.sy * 0.42)),
+        lidRx: lidR * s.sx,
+        lidRy: lidR * s.sy,
+      };
+    }
+
     return {
-      cx: (eye.split * side + u) * rx,
-      cy: (eye.rise + v) * ry,
+      cx: ex * rx,
+      cy: ey * ry,
       rx: ew,
       ry: eh,
-      tilt: eye.tilt + eye.asym * side,
+      tilt: eye.tilt + only.tilt + eye.asym * side,
       // Offset along the eye's OWN axis, so a tilted eye keeps its bow square to itself.
       lidCy: curveDir * (ehOpen + lidR - curveMag * (ehOpen * 1.18 + lidR * 0.42)),
       lidRx: lidR,

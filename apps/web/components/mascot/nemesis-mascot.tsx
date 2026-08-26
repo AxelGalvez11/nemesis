@@ -33,6 +33,7 @@ import {
   PointerGaze,
   SATELLITES,
   UNIT_BLOB,
+  capsuleEyePath,
   UNIT_ROUND,
   VIEW,
   approach,
@@ -86,6 +87,16 @@ export interface NemesisMascotProps {
   present?: boolean;
   /** `undefined` follows the OS preference; the lab overrides it to compare. */
   reducedMotion?: boolean;
+  /**
+   * What the eyes are cut as.
+   *
+   * 🔴 `"blob"` IS THE CHARACTER AND NOTHING THE PRODUCT SHIPS SHOULD PASS ANYTHING ELSE.
+   * The eye being the body's own silhouette at a smaller scale is the identity — one
+   * shape, two scales. `"capsule"` exists for the character studio, which holds a
+   * transcription of a reference whose eyes are stadiums; drawing that reference with our
+   * eye would misrepresent it. See `capsuleEyePath`.
+   */
+  eyeShape?: "blob" | "capsule";
   /** Give this only when the mascot carries meaning on its own. */
   label?: string;
   className?: string;
@@ -108,9 +119,11 @@ export function NemesisMascot({
   frozenClock = null,
   present = true,
   reducedMotion,
+  eyeShape = "blob",
   label,
   className,
 }: NemesisMascotProps) {
+  const capsuleEyes = eyeShape === "capsule";
   // 🔴 UNIQUE PER INSTANCE. Two mascots on one page sharing a clip-path id means the
   // second silently clips with the first one's shape, and if the first ever unmounts
   // both lose their eyes. The state board puts twenty on one page, so this is not a
@@ -162,7 +175,16 @@ export function NemesisMascot({
       // transform per eye per frame, and the self-similarity is structural rather than
       // something a future edit has to remember to preserve.
       const seat = `translate(${n(e.cx)} ${n(e.cy)}) rotate(${n(e.tilt)})`;
-      eyeRefs.current[i]?.setAttribute("transform", `${seat} scale(${n(e.rx)} ${n(e.ry)})`);
+      if (capsuleEyes) {
+        // 🔴 THE CAPSULE CARRIES ITS SIZE IN THE PATH, NOT IN THE TRANSFORM, because its
+        // ends must stay circular — see `capsuleEyePath`. So this branch writes `d` and
+        // leaves the scale out of the transform; mixing the two would scale the path
+        // twice. Studio-only: `eyeShape` defaults to the character's own silhouette.
+        eyeRefs.current[i]?.setAttribute("d", capsuleEyePath(e.rx, e.ry));
+        eyeRefs.current[i]?.setAttribute("transform", seat);
+      } else {
+        eyeRefs.current[i]?.setAttribute("transform", `${seat} scale(${n(e.rx)} ${n(e.ry)})`);
+      }
       // The bow. Sits clear of the eye at rest and slides in to eat part of it.
       lidRefs.current[i]?.setAttribute(
         "transform",

@@ -11,7 +11,7 @@
 // rather than mocked. A domain that does not exist is the point, not an oversight.
 
 import { DomainChips } from "@/components/DomainChips";
-import { BloubDock } from "@/components/bloub/bloub-dock";
+import { CharacterDock } from "@/components/character/character-dock";
 
 const WELL_KNOWN = ["en.wikipedia.org", "www.bbc.co.uk", "arxiv.org", "www.nature.com"];
 const MANY = [...WELL_KNOWN, "pubmed.ncbi.nlm.nih.gov", "www.jstor.org", "plato.stanford.edu", "www.reuters.com", "openstax.org"];
@@ -66,7 +66,7 @@ export default function DomainChipsPreview() {
         <p className="p-3 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
           On the dock, centre station: phase mark + shimmering caption on one row, chips beneath. Both features landed the same day in different sessions; this is the merge.
         </p>
-        <BloubDock
+        <CharacterDock
           caption="Searching the web"
           captionMark="searching"
           contain

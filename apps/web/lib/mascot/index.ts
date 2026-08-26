@@ -25,6 +25,7 @@ export {
   UNIT_ROUND,
   VIEW,
   beadBounds,
+  capsuleEyePath,
   profileAt,
   silhouette,
 } from "./geometry";

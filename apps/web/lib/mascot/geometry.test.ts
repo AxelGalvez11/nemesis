@@ -17,7 +17,7 @@ import {
   silhouette,
 } from "./geometry";
 import { REST } from "./pose";
-import { SHAPES, SHAPE_ORDER } from "./shapes";
+import { ANGLES, SHAPES, SHAPE_ORDER } from "./shapes";
 import { STATE_ORDER, stateDuration } from "./states";
 
 const LOOKS = [
@@ -105,6 +105,40 @@ test("every shape is a single convex-enough outline, with no spikes", () => {
       assert.ok(r[i]! > 0.3 && r[i]! < 2, `${id} sample ${i} is ${r[i]}`);
     }
   }
+});
+
+test("🔴 every shape that has an up points it up", () => {
+  // 🔴 THIS EXISTS BECAUSE `triangle` SHIPPED UPSIDE DOWN. `polygon`'s vertices land at
+  // `-phase`, not at `+phase`, and the sign was wrong — which draws a perfectly valid
+  // triangle, passes the area guard and passes the spike guard, and is simply the wrong
+  // picture. Only a three-sided figure could show it: `square`, `diamond` and `crystal`
+  // are all symmetric about the horizontal, so the same slip is invisible on them.
+  //
+  // Screen y is DOWN, so the topmost point of a profile is its most-negative y.
+  const extremeY = (id: (typeof SHAPE_ORDER)[number]) => {
+    let top = Infinity;
+    let bottom = -Infinity;
+    let topX = 0;
+    for (let i = 0; i < SHAPES[id].length; i++) {
+      const y = SHAPES[id][i]! * Math.sin(ANGLES[i]!);
+      if (y < top) {
+        top = y;
+        topX = SHAPES[id][i]! * Math.cos(ANGLES[i]!);
+      }
+      if (y > bottom) bottom = y;
+    }
+    return { top, bottom, topX };
+  };
+
+  const tri = extremeY("triangle");
+  // A point up means the highest place on the outline is a single spot on the centre
+  // line, and it reaches further from the middle than the flat bottom does.
+  assert.ok(Math.abs(tri.topX) < 0.12, `the triangle's highest point is ${tri.topX.toFixed(3)} off centre`);
+  assert.ok(-tri.top > tri.bottom * 1.15, `the triangle reaches ${(-tri.top).toFixed(3)} up and ${tri.bottom.toFixed(3)} down`);
+
+  // The egg is the other shape with a top and a bottom, and its fuller end is the bottom.
+  const drop = extremeY("drop");
+  assert.ok(drop.bottom > -drop.top, "the egg is not fuller at the bottom");
 });
 
 test("the silhouette is closed and evenly sampled in every state", () => {

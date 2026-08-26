@@ -30,7 +30,15 @@ function superellipse(theta: number, n: number, minor = 1): number {
   return 1 / Math.pow(Math.pow(c, n) + Math.pow(s, n), 1 / n);
 }
 
-/** Regular polygon of `sides`, softened toward a circle by `soft` (0..1). */
+/**
+ * Regular polygon of `sides`, softened toward a circle by `soft` (0..1).
+ *
+ * 🔴 A VERTEX SITS AT `theta = -phase`, NOT AT `+phase`. `r` peaks where `a` is 0 — the
+ * cell edge — not at its centre, so the corners land on `-phase + k * step`. Getting the
+ * sign backwards points the shape the other way and still draws a perfectly good polygon,
+ * which is exactly why it went unnoticed: `triangle` shipped pointing DOWN under a
+ * comment that said point up. See the orientation guard in `geometry.test.ts`.
+ */
 function polygon(theta: number, sides: number, soft: number, phase = 0): number {
   const step = TAU / sides;
   const a = ((theta + phase) % step + step) % step;
@@ -46,6 +54,65 @@ const RAW = {
    * whole identity. See pose.ts on why 2.45 and not 2 or 3.
    */
   blob: (t) => superellipse(t, 2.45),
+
+  /**
+   * A true circle.
+   *
+   * 🔴 NOT THE CHARACTER'S OWN FORM, AND DELIBERATELY AVAILABLE ANYWAY. `blob` exists
+   * precisely so Nemesis is not a ball with eyes, so nothing the product ships should
+   * reach for this. It is here because the character studio holds a transcription of
+   * jeremy-prt/bloub, whose resting body IS `circle(1)` — and a reference set drawn on a
+   * superellipse is not a reference, it is our character wearing someone else's timings.
+   * Owner, 2026-08-25: *"why isn't it circular like bloub?"*
+   *
+   * Costs nothing: `r(theta) = 1` normalises to exactly 1 at every sample.
+   */
+  circle: () => 1,
+
+  /**
+   * A softened triangle, point up.
+   *
+   * The reference's `play` state is a spinning triangle, and the catalogue's nearest form
+   * was `crystal` — a six-sided figure, which reads as resolved rather than as playful.
+   *
+   * 🔴 `0.42`, AND THE FIRST ATTEMPT WAS `0.28`, WHICH THE SPIKE GUARD REFUSED. Three
+   * sides is the fewest a polygon can have, so its corners are the sharpest turn anything
+   * in this catalogue makes — at 48 samples that put 0.174 between two neighbouring
+   * radii, past the 0.16 the guard allows, and a jump that size is a visible facet rather
+   * than a corner. The guard was right and it is the shape that moved: 0.42 leaves the
+   * corners 43% further out than the flats, which still reads unmistakably as a triangle,
+   * with real margin under the limit.
+   *
+   * 🔴 `+PI/2`, AND IT SHIPPED AS `-PI/2`, WHICH POINTED IT DOWN. A three-sided figure is
+   * the one polygon here where up and down are different pictures — the other two are
+   * symmetric about the horizontal, so the same slip would have been invisible on them.
+   * Found by rendering the reference's `play` state and looking at it.
+   */
+  triangle: (t) => polygon(t, 3, 0.42, Math.PI / 2),
+
+  /**
+   * A rounded square, and the rest of this group exist for the same reason.
+   *
+   * 🔴 THIS GROUP IS THE REFERENCE CATALOGUE, NOT THE CHARACTER'S. bible-strong-avatar-lab
+   * builds bodies from eight named 3D surfaces — sphere, cube, capsule, cylinder, cone,
+   * diamond, plus two novelty shapes — and a transcription of its avatars drawn on our own
+   * catalogue is our character wearing someone else's colours. These are the flat
+   * counterparts, chosen so each reads as the same object in silhouette. Nothing the
+   * product ships should reach for them.
+   *
+   * Their `cube` is a superellipsoid at roundness ~0.76; `n = 5` is the flat profile with
+   * the same read — square with softened corners — and it clears the spike guard with room.
+   */
+  square: (t) => superellipse(t, 5),
+
+  /** Their `capsule`: 205 wide by 270 tall, fully round-ended. */
+  capsule: (t) => superellipse(t, 5, 1.32),
+
+  /** Their `cylinder`: straight sides, flatter ends than a capsule. */
+  cylinder: (t) => superellipse(t, 3, 1.06),
+
+  /** Their `diamond`: a square stood on its corner, softened enough to survive 18px. */
+  diamond: (t) => polygon(t, 4, 0.3, Math.PI / 4),
 
   /**
    * Organic and very slightly irregular. Two low-frequency bumps at fixed phases, so it
@@ -115,6 +182,12 @@ export const SHAPE_ORDER = Object.keys(SHAPES) as ShapeId[];
 /** Human labels, for the lab. Ids stay the contract; these are only ever displayed. */
 export const SHAPE_LABEL: Record<ShapeId, string> = {
   blob: "Blob",
+  circle: "Circle",
+  triangle: "Triangle",
+  square: "Square",
+  capsule: "Capsule",
+  cylinder: "Cylinder",
+  diamond: "Diamond",
   pebble: "Pebble",
   crystal: "Crystal",
   lens: "Lens",

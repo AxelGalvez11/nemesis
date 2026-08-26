@@ -201,11 +201,19 @@
        monochrome; the seven-colour picker in Settings overrides primary,
        midground and warm for anyone who wants a colour. Light theme takes a
        dark graphite so white button text stays legible on it. */
-    --theme-primary: #404040;
+    /* 🔴 THE ACCENT ARRIVES AS A LIGHT/DARK PAIR AND THIS BLOCK PICKS ONE.
+       lib/accent.ts writes --accent-fill-light and --accent-fill-dark onto :root, both at
+       once, and never decides which theme is on. It cannot: it runs from a pre-paint
+       script before React exists, from the provider after hydration, and from the picker
+       on click — three moments that would each have to agree about the current theme. The
+       stylesheet already knows, because the theme IS a stylesheet block. So the accent
+       supplies both renderings and the fallback here is what "Default" means: no variable
+       set, so these values apply unchanged. */
+    --theme-primary: var(--accent-fill-light, #404040);
     --theme-secondary: #f2f2f2;
     --theme-accent-soft: #ededed;
-    --theme-midground: #404040;
-    --theme-warm: #404040;
+    --theme-midground: var(--accent-fill-light, #404040);
+    --theme-warm: var(--accent-fill-light, #404040);
     /* 🔴 PAGE AND SIDEBAR ARE THE SAME GREY IN LIGHT MODE. The reference paints both #fcfcfc —
        there is no darker rail on paper, which is why its sidebar reads as part of the page rather
        than as a panel bolted to it. Ours seeded the page at pure #ffffff and the sidebar a step
@@ -283,11 +291,11 @@
        ground, same inversion as before. Glyph-on-fill ≈19:1 light, ≈17:1 dark —
        far above the green it replaces. accent.test.ts pins this file to inkFor
        so the two can never drift apart again. */
-    --ui-action: #0a0a0c;
+    --ui-action: var(--accent-fill-light, #0a0a0c);
     /* The glyph ON the action fill. accentProperties() computes this per accent;
        these are the defaults for the ink pair above, from the same accentGlyph
        rule (white on the near-black ink, near-black on the near-white one). */
-    --ui-action-glyph: #ffffff;
+    --ui-action-glyph: var(--accent-glyph-light, #ffffff);
     --ui-warm: var(--theme-warm);
     --ui-red: #cf2d56;
     --ui-orange: #db704b;
@@ -650,11 +658,11 @@
     /* Dark takes a LIGHTER graphite than light theme's: #404040 on a near-black
        background is almost invisible, and this still carries white button text
        at ~4.3:1. Same reasoning as the light block above. */
-    --theme-primary: #6e6e6e;
+    --theme-primary: var(--accent-fill-dark, #6e6e6e);
     --theme-secondary: #161616;
     --theme-accent-soft: #1c1c1c;
-    --theme-midground: #6e6e6e;
-    --theme-warm: #6e6e6e;
+    --theme-midground: var(--accent-fill-dark, #6e6e6e);
+    --theme-warm: var(--accent-fill-dark, #6e6e6e);
     --theme-background-seed: #000000;
     --theme-sidebar-seed: #000000;
     /* 🔴 DARK'S SURFACES ARE MEASURED, NOT INVENTED (owner, 2026-08-14: "copy the darkmode
@@ -699,8 +707,8 @@
        glyph. Same inversion the graphite pair already made (#404040 → #6e6e6e).
        Since 2026-08-23 the value is the character's own dark ink (see the light
        block's note): the send button and the mascot wear one colour. */
-    --ui-action: #f2f2f4;
-    --ui-action-glyph: #1a1a1a;
+    --ui-action: var(--accent-fill-dark, #f2f2f4);
+    --ui-action-glyph: var(--accent-glyph-dark, #1a1a1a);
 
     --dt-muted: #1e1e1e;
     --dt-primary-foreground: #1a1a1a;

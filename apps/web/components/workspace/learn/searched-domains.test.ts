@@ -21,7 +21,7 @@ const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^
 const CHAT = strip(readFileSync(new URL("./canvas-chat.ts", import.meta.url), "utf8"));
 const SESSION = strip(readFileSync(new URL("./use-canvas-session.ts", import.meta.url), "utf8"));
 const CANVAS = strip(readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8"));
-const DOCK = strip(readFileSync(new URL("../../bloub/bloub-dock.tsx", import.meta.url), "utf8"));
+const DOCK = strip(readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8"));
 
 test("hosts come back deduped, in the order the results arrived", () => {
   assert.deepEqual(
