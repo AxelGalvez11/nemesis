@@ -241,6 +241,31 @@ test("🔴🔴🔴 no size or space on this page is written in rem", () => {
   }
 });
 
+test("🔴🔴🔴 if anyone ever swaps these literals for the scale token, they cannot do it the broken way", () => {
+  // 🔴 THIS GUARD DEFENDS A CONVERSION I DID NOT MAKE, and that is the point. The Canvas's own
+  // §46.3 guard (canvas-shell.test.ts) bans bare `text-[14px]` on the surfaces it covers, and its
+  // roots are `learn/` and `shell/` — this page is out of scope, so its literals stand. But its
+  // roots may widen, or someone may simply tidy this file "to use the token like everywhere else".
+  //
+  // 🔴🔴 AND THE OBVIOUS SPELLING OF THAT TIDY-UP IS SILENTLY BROKEN. In Tailwind,
+  // `text-[var(--x)]` is a COLOUR utility: it emits `color: var(--canvas-text-small)` and applies
+  // NO font size at all. It has already shipped that way once in this repo — §46.3's own comment
+  // records it — and it was found by an unrelated CSS build error, not by review, because the
+  // class name reads correctly. The tree has since been swept: 336 correct
+  // `text-[length:var(--canvas-text-…)]` against 0 broken.
+  //
+  // 🔴 THIS PAGE IS WHERE IT WOULD HIDE LONGEST. 14px is close enough to the inherited body size
+  // that losing it does not scream, and the whole acceptance condition here is pixel parity — so
+  // the failure would read as "the 1:1 work regressed", with no sign of the cause.
+  //
+  // So: no opinion here on WHETHER to convert (that is an owner call between two mandates). Only
+  // that the broken spelling cannot land on this page unnoticed, whichever way that goes.
+  assert.ok(
+    !/text-\[var\(--canvas-text-/.test(OUTPUTS),
+    "`text-[var(--canvas-text-…)]` is a COLOUR utility in Tailwind and applies no size — it needs the `length:` hint",
+  );
+});
+
 test("🔴🔴 the page's one primary button is the product's accent, not a faint text link", () => {
   // The reference's shared frame puts exactly one filled pill on every page of it (its black
   // "New"). The Library's equivalent is "New folder", and it used to be `--ui-text-secondary` on

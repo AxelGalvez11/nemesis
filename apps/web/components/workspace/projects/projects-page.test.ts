@@ -207,6 +207,27 @@ test("🔴🔴🔴 no rem-based spacing class survives on this page — `px-4` i
   assert.deepEqual(type, [], `rem-based type on a page measured in pixels: ${type.join(", ")}`);
 });
 
+test("🔴🔴 the token spelling that silently applies NO font size cannot land here unnoticed", () => {
+  // 🔴 `text-[var(--canvas-text-small)]` IS A COLOUR UTILITY IN TAILWIND, NOT A SIZE. It compiles
+  // to `color: var(--canvas-text-small)`, applies no font size at all, and reviews clean. The
+  // Canvas guard's own header records that this shipped broken in this codebase once and was only
+  // found when the CSS build choked on an unrelated line. The correct spelling carries the hint —
+  // `text-[length:var(--canvas-text-small)]` — which `components/workspace` uses in 336 places and
+  // the broken form in none.
+  //
+  // 🔴 THIS TAKES NO POSITION ON WHETHER TO CONVERT. §46.3's roots are `learn/` and `shell/`, so
+  // this page is not in scope today, and whether they widen is an owner call between two of their
+  // own rules (measured 1:1 literals vs one declared scale). What this guards is the branch nobody
+  // owns: a conversion done on its own — "use the token like everywhere else" — lands here
+  // UNguarded precisely because this file sits outside those roots. And it would not announce
+  // itself: 14px is near enough the inherited body size that a page rendering no size at all still
+  // looks roughly right. Whichever way the decision goes, it cannot go there silently.
+  assert.ok(
+    !/text-\[var\(--canvas-text-/.test(page),
+    "a token font size is missing its `length:` hint — Tailwind reads that as a COLOUR, so the size never applies",
+  );
+});
+
 // ── The controls ─────────────────────────────────────────────────────────────────────────────
 
 test("🔴🔴 a filter pill is 36px tall, `0 16px`, rounded full, 14px/500 on a 20px line", () => {
