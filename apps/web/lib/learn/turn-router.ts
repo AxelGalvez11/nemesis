@@ -1282,6 +1282,28 @@ const DECISION_CONTRACT = [
   + "them either: no \"here it is\", no \"five questions coming up\", no describing what the quiz "
   + "is about to ask. The learner is looking at it. Answer whatever they actually asked, and if "
   + "they asked for nothing but the check, one short line is the whole answer.",
+  "",
+  // 🔴🔴 REPORTED ON PRODUCTION, 2026-08-26: *"i asked for a quiz and it put it in chat not as
+  // component."* The reply opened *"Here's your diagnostic quiz"* and then printed nine numbered
+  // open questions as prose. Nothing failed: `wantsTest` came back false, `check` came back null,
+  // and the whole chip surface below simply had nothing to render.
+  //
+  // 🔴 THE CAUSE IS THAT PROSE IS ALWAYS AVAILABLE AND `check` HAS A SHAPE. Open questions do not
+  // fit `check` (every question needs 2 to 5 options with exactly one correct), so a model that
+  // decides open questions suit the material has no channel for them and falls back to the one
+  // channel that accepts anything. Every instruction above tells it what to do WHEN it fills
+  // `check` in; none of them told it that writing questions in prose is not a thing it may do.
+  //
+  // 🔴 AND "ALREADY BEEN TAUGHT" WAS READ TOO NARROWLY. The learner had uploaded a table, been
+  // taught from it, and asked to be quizzed on it. Material they brought and have just worked
+  // through is material they have been taught, and the sentence now says so.
+  "🔴 QUESTIONS ARE NEVER PROSE. If you are putting questions to the learner, they go in \"check\" "
+  + "and nowhere else: a numbered list of questions in your answer is a broken quiz, because the "
+  + "learner cannot answer it by tapping and nothing records what they said. This holds however "
+  + "the questions are phrased. If the material really wants an open question rather than a "
+  + "choice, ask ONE, in a sentence, as part of what you are saying, and wait for the reply, "
+  + "rather than printing a list of them. Material the learner uploaded and has just been taught "
+  + "from counts as material they have been taught.",
 
   // 🔴🔴 THE CHIPS ACCOMPANY AN ANSWER; THEY NEVER REPLACE ONE, AND THE SENTENCE ABOVE CAUSED
   // EXACTLY THAT. "Do not also write them out in your prose" presupposes prose exists — the model

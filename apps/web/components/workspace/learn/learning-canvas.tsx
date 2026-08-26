@@ -2257,11 +2257,16 @@ export function LearningCanvas({
         // 🔴 THE ANIMATION IS UNCHANGED. `ACTIVITY_STATE` maps `thinking` and `preparing` onto the
         // same state, so this alters WHERE the character stands and WHEN, never what it plays.
         state={stateForCanvas({ thinking: turnInFlight, preparing: presence === "preparing" })}
-        // 🔴 THE GLASSES GO ON ONLY WHILE MATERIAL IS ACTUALLY BEING TAKEN IN — `busy` names an
-        // ingestion or a search that owns the surface, which is the one moment "reading" is the
-        // literal truth. Tied to anything broader (thinking, preparing) they would become a
-        // costume, and rule 4 of the language is that every face has a reason. See face.ts.
-        face={busy.kind !== null ? "reading" : undefined}
+        // 🔴🔴 NO `face` IS PASSED: THE CHARACTER DOES NOT PUT ON READING GLASSES (owner
+        // 2026-08-26: *"i added documents and the mascot still has 'glasses' which is not what we
+        // worked on"*).
+        //
+        // This was `face={busy.kind !== null ? "reading" : undefined}` — spectacles while material
+        // was being taken in. The reasoning was that "reading" is the one moment the costume is
+        // literally true. The owner's objection is not about the timing: a prop appearing on the
+        // character is a second thing happening on a screen where something is already happening,
+        // and the ingestion already says so in words. `lib/avatar/features.ts` keeps the glasses so
+        // the character studio can still draw them; the app does not put them on.
         // 🔴🔴 NEVER HIDDEN FOR THE PREVIEW ANY MORE (owner 2026-08-25: "It won't show the
         // mascot… it would just disappear"). This carried `hidden={presence === "preparing"}`
         // from the era when CanvasThinkingPreview drew its own character — the six-dot rule:

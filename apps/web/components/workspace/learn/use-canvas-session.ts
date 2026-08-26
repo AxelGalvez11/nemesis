@@ -14,6 +14,7 @@ import { coverageNoticeForModel, readCoverage } from "@nemesis/shared";
 import { useAuth } from "@/components/AuthProvider";
 import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
+import { documentTitle } from "@/lib/learn/document-title";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { ComposerCapability } from "@/lib/learn/composer-capability";
@@ -902,7 +903,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             // 🔴 THE DESCRIPTION IS NOT DISCARDED — it is the source's CONTENT, which is exactly
             // what a vision read produces and what the canvas learns from. Only the NAME changes,
             // to the one the learner recognises.
-            title: extracted.kind === "image" ? file.name : extracted.title ?? file.name,
+            // 🔴 THE OFFER IS CHECKED FOR ITS SHAPE, NOT TAKEN (owner 2026-08-26: *"the title of
+            // the canvas became really long after adding the docs"*). `extracted.title` is usually
+            // the first line of the parse, which is the title for most documents and a row of
+            // column names for one that opens on a table. `documentTitle` rejects a row, a rule
+            // and a first paragraph, and falls back to the file name — which is the name the
+            // learner already recognises. See lib/learn/document-title.ts.
+            title: extracted.kind === "image" ? file.name : documentTitle(extracted.title, file.name),
             kind: extracted.kind ?? "text",
             // Three inputs, in order of how much is known about them, and the fallbacks are
             // fallbacks rather than dead code: an image has no structural pass at all, and a PDF

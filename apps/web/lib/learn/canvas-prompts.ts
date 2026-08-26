@@ -157,7 +157,23 @@ const VISUAL_RULE =
   // layout arithmetic can always place; the surface is §45's computed channel with one more axis.
   '{"kind":"score","abc":"X:1\\nT:…\\nM:4/4\\nL:1/4\\nK:C\\nC D E F|G2 G2|"}: real staff notation engraved from ABC, for a melody, a rhythm, an interval or a chord voicing. Standard ABC with headers, K: required; no %%-directive or comment lines. Keep it an excerpt a learner reads at a glance, not a whole piece; ' +
   '{"kind":"circuit","supply":{"label":"12 V"},"elements":{"arrangement":"series","parts":[{"component":"resistor","label":"R1","value":"100 Ω","ohms":100},{"arrangement":"parallel","parts":[{"component":"resistor","label":"R2","value":"200 Ω","ohms":200},{"component":"lamp","label":"L1"}]}]},"equivalentOhms":…}: a schematic drawn from series/parallel structure alone, never coordinates. Components: resistor, capacitor, inductor, battery, switch, lamp, diode, ammeter, voltmeter. Give a resistor its "ohms" as a number whenever the lesson works with values; "equivalentOhms" is RECOMPUTED from the tree and verifies only when every part is a resistor with ohms, so state it only then and only after working it out; ' +
-  'or {"kind":"surface","expression":"x^2 - y^2","xFrom":-2,"xTo":2,"yFrom":-2,"yTo":2,"zLabel":"z"}: a rotatable 3D surface z = f(x,y). Write the FORMULA in x and y with the domain; trusted code evaluates it on a grid and draws it, exactly as a series expression becomes a curve. Never write grid values yourself. ' +
+  'or {"kind":"surface","expression":"x^2 - y^2","xFrom":-2,"xTo":2,"yFrom":-2,"yTo":2,"xLabel":"x","yLabel":"y","zLabel":"z"}: a rotatable 3D surface z = f(x,y), for a quantity that genuinely depends on TWO inputs you can name. Write the FORMULA in x and y with the domain, and label all three axes with what they measure; trusted code evaluates it on a grid and draws it, exactly as a series expression becomes a curve. Never write grid values yourself. ' +
+  // 🔴🔴 THIS PARAGRAPH EXISTS BECAUSE A DRUG LESSON GREW A 3D BUMP. Owner, 2026-08-26, reading
+  // about insulin secretagogues on production: *"it output a random math plot."* Under a paragraph
+  // on sulfonylureas sat a rotatable surface of
+  // `z = 10*exp(-0.15*((x-5)^2 + (y-5)^2))` over x 0-10, y 0-10, axes labelled x, y and z. That is
+  // the textbook demonstration bump: it is not wrong about anything, because it is not about
+  // anything.
+  //
+  // 🔴 AND THERE IS DELIBERATELY NO CODE GUARD FOR IT. Every structural test considered would have
+  // broken a real use: requiring axis labels passes the moment the model writes "x"; requiring a
+  // label that is not the bare letter is wrong for a maths lesson, where the axes ARE x, y and z;
+  // requiring the expression to appear in the prose refuses most legitimate plots, which are drawn
+  // precisely because the formula was not worth writing out. The failure is a judgement about
+  // whether the picture is of the IDEA, and judgements belong in the instruction, not in a
+  // validator pretending to make one. See `subject-visuals.ts` for what the validator does own:
+  // whether the thing can be DRAWN.
+  'A COMPUTED SHAPE DRAWS THE FORMULA YOU WRITE, so it is only ever right when the formula is one the material actually contains. Never write a formula to show what the plot can do, and never reach for a surface, a curve or a distribution because a passage feels as though it should have a picture. If the quantity, its two inputs and its units are not things you could name from the material in front of you, there is no surface to draw and the prose stands on its own. ' +
   'Every shape also takes "learningGoal" and "caption". ' +
   "A stated total, balance, angle, equilibrium or equivalent resistance is RECOMPUTED from the data you supply, and a claim that does not hold produces no visual at all, so state one only when you have worked it out. " +
   // 🔴 THE FUNCTION LIST IS THE PARSER'S OWN ALLOW LIST (`expression.ts`), NOT A SELECTION. Naming

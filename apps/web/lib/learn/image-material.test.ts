@@ -38,10 +38,18 @@ test("🔴 the accept list is a superset, not a copy — documents are still off
 });
 
 test("🔴🔴 an image is named by its FILE, never by what a model saw in it", () => {
-  // Calibration: put `extracted.title ?? file.name` back and this reddens.
+  // Calibration: send the image branch through the extractor's title and this reddens.
+  //
+  // 🔴 TWO CLAIMS, NOT ONE LITERAL. This matched the whole expression as a string, so the
+  // 2026-08-26 title work — which changed only the DOCUMENT half — reddened a test about IMAGES.
+  // A guard that fails for the thing it is not about teaches people to edit guards.
   const session = readFileSync(new URL("../../components/workspace/learn/use-canvas-session.ts", import.meta.url), "utf8");
   const code = session.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-  assert.match(code, /title: extracted\.kind === "image" \? file\.name : extracted\.title \?\? file\.name/);
+  assert.match(code, /title: extracted\.kind === "image" \? file\.name :/, "an image is named by something other than its file again");
+  assert.ok(!/extracted\.title \?\? file\.name/.test(code), "the extractor's title is being taken unchecked again");
+  // The other half: a document IS named from the extractor's offer, once that offer has passed the
+  // shape tests in `document-title.ts` (a table header row is not a title).
+  assert.match(code, /documentTitle\(extracted\.title, file\.name\)/, "a document no longer gets its name checked");
 });
 
 test("🔴 and the description is KEPT, because it is the source's content", () => {

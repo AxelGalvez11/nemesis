@@ -74,7 +74,11 @@ function canvasComposerInset(): number {
 
 /** How big the character is on the front door. Bigger than the canvas dock's resting size,
  *  because here it is the only thing on the page rather than a marker beside a composer. */
-const GREETER_SIZE = 64;
+// 🔴 IT TRACKS `DOCK_SIZE`, WHICH IS WHY IT MOVED TOO. 64 against a 60px dock; 80 against a 76px
+// one (owner 2026-08-26: "make the mascot bigger in the app"). The two are different components on
+// different surfaces and the hand-off between them is only invisible while their sizes keep the
+// same relationship — grow one alone and the character visibly changes size mid-flight.
+const GREETER_SIZE = 80;
 
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const { session: authSession } = useAuth();

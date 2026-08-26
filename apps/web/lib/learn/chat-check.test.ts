@@ -153,3 +153,30 @@ test("🔴🔴 the packet says a check never replaces the answer", () => {
   // The clause that caused it must survive too: it is right, it was just half a rule.
   assert.match(packet, /do not also write them out in your prose/, "the no-duplication clause was removed rather than completed");
 });
+
+test("🔴🔴 the contract forbids questions in prose, and says what to do instead", () => {
+  // Owner, on production 2026-08-26: *"i asked for a quiz and it put it in chat not as component."*
+  // The reply opened "Here's your diagnostic quiz" and printed nine numbered open questions.
+  // Nothing failed — `wantsTest` was false, `check` was null, and the chip surface had nothing to
+  // render. Every instruction told the model what to do WHEN it filled `check` in; none said that
+  // writing questions in prose is not a thing it may do, and prose accepts anything while `check`
+  // has a shape (2-5 options, exactly one correct). A model that decides open questions suit the
+  // material has no channel for them, so it takes the one that never refuses.
+  //
+  // Calibration: drop either half of the rule and this reddens.
+  // Built from the assembled packet, not from the source, for the reason the test above gives: the
+  // rule spans adjacent string literals and a source match tests where the `+` falls.
+  const packet = turnRouterMessages({ context: EMPTY_CONTEXT, utterance: "give me a quiz on this" })
+    .map((message) => message.content)
+    .join("\n")
+    .replace(/\s+/g, " ");
+  assert.match(packet, /QUESTIONS ARE NEVER PROSE/, "nothing stops a quiz being written as a numbered list");
+  assert.match(packet, /ask ONE, in a sentence/, "the open-question case has no answer, so prose stays the escape hatch");
+  // 🔴 AND THE ENTRY CONDITION COVERS MATERIAL THE LEARNER BROUGHT. "already been taught" was read
+  // as "taught by Nemesis from nothing"; the reported canvas had an uploaded table taught from it.
+  assert.match(
+    packet,
+    /Material the learner uploaded and has just been taught from counts as material they have been taught/,
+    "a quiz on uploaded material is outside the rule again",
+  );
+});
