@@ -23,9 +23,35 @@ const CANVAS = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "
 const BOT = readFileSync(new URL("../../avatar/nemesis-avatar.tsx", import.meta.url), "utf8");
 const CSS = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 
-test("🔴 the character keeps its face while it works", () => {
-  assert.match(STATIONS, /thinking: "idle"/, "the working pose is back to the one that IS three dots");
-  assert.match(STATIONS, /preparing: "idle"/, "the two waits no longer look like one experience");
+// 🔴 THIS GUARD USED TO PIN THE STRING `thinking: "idle"`, WHICH IS NOT WHAT IT MEANT. The rule
+// the owner set is that the character keeps its FACE while it works — `idle` was merely the pose
+// that happened to satisfy it in August. When the expression audit moved the working pose to
+// `curious` (2026-08-25), a correct change failed this test and no incorrect change would have.
+// So it now asks the question directly: resolve whatever the schedule names, and check every face
+// it can reach actually has eyes and is still the creature's own body.
+test("🔴 the character keeps its face while it works", async () => {
+  const { ACTIVITY_STATE } = await import("../../../lib/character/stations");
+  const { ANIMATION_BY_ID, FACE_BY_ID } = await import("../../../lib/avatar");
+
+  for (const wait of ["thinking", "preparing"] as const) {
+    const id = ACTIVITY_STATE[wait];
+    const animation = ANIMATION_BY_ID.get(id);
+    assert.ok(animation, `${wait} schedules "${id}", which is not in the catalogue`);
+    for (const step of animation.steps) {
+      const face = FACE_BY_ID.get(step.face)!;
+      // The dots fade the eyes to zero. That is the exact thing the owner removed by name.
+      assert.notEqual(face.eyeAlpha, 0, `${wait} → "${id}" reaches "${face.id}", which has no face`);
+      // The egg, the hexagon and the exclamation mark stop it being a creature.
+      assert.equal(face.body, undefined, `${wait} → "${id}" reaches "${face.id}", which changes the body`);
+    }
+  }
+
+  // And they are still ONE experience (owner 2026-08-20: "why is it only doing swirl?").
+  assert.equal(
+    ACTIVITY_STATE.thinking,
+    ACTIVITY_STATE.preparing,
+    "the two waits no longer look like one experience",
+  );
 });
 
 // 🔴🔴 THE BREAK THAT CAME WITH IT, AND WHY IT IS PASSED RATHER THAN DERIVED. `stationOf` reads the

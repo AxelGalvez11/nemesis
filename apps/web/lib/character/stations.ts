@@ -87,10 +87,20 @@ export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   // character dragged to the middle of the page would be far worse than dots. The station is passed
   // explicitly by the surface that knows (see the dock's `station`), and `stationOf` remains the
   // default for every caller that has no opinion.
-  thinking: "idle",
-  // 🔴 THE SAME POSE (owner 2026-08-20: "why is it only doing swirl?"). Both waits are one
-  // experience to a learner, so they get one animation.
-  preparing: "idle",
+  // 🔴🔴 `curious`, AND IT IS THE HEAD TILT DOING THE WORK. Owner 2026-08-25, after the
+  // expression audit: the character had ONE face for all seven activities, so nothing it did
+  // was legible as an activity. `curious` is the resting face with the head rolled fifteen
+  // degrees — the reference's own note says outright that curiosity is carried by the roll,
+  // not by the eyes. It reads as consideration, it keeps the eyes open and tracking, and it
+  // survives the pointer: `DrawOptions.turn` adds to yaw and pitch and leaves roll alone, so
+  // the tilt stays whatever the learner does with their mouse.
+  thinking: "curious",
+  // 🔴 THE SAME POSE, STILL (owner 2026-08-20: "why is it only doing swirl?"). Both waits are
+  // one experience to a learner, so they get one animation. The audit proposed splitting this
+  // — `sleepy` for a session coming up, on the grounds that it is literally waking — and that
+  // is a reversal of an explicit decision, so it is not taken here. It is a question for the
+  // owner, not a correction to make on the way past.
+  preparing: "curious",
   // 🔴🔴 THE LAST OF THE VENDORED PACK LEAVES THE SCHEDULE (owner 2026-08-23: *"I don't want
   // any rainbow swirls or animations from the GitHub that we used"*). `comet` and `burst`
   // were borrowed loading effects; `wide` is the enlarged-eyes pose the owner asked gone by
@@ -99,12 +109,40 @@ export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   // OUR OWN layer: while material is being taken in, the character puts its reading glasses
   // on (see `FeatureFace` in lib/avatar/features.ts and the `face` prop on the dock) and stays a creature doing
   // something, instead of becoming a different drawing.
-  retrieving: "idle",
-  ingesting: "idle",
+  //
+  // 🔴 WHAT REPLACES THEM IS THE SIXTEEN, AND THAT IS WHY THEY QUALIFY. The rule stated above
+  // is that the character stays a creature rather than becoming a different drawing. The
+  // sixteen feelings are exactly the poses that obey it — not one of them changes the body,
+  // hides the face, or bolts anything onto it. The ten routines mostly do all three.
+  //
+  // 🔴 AND THESE TWO SHARE A POSE ON PURPOSE. Fetching sources and taking a document in are
+  // one experience to a learner: their material is being handled. What tells them apart is
+  // OUR layer, not a different feeling — the reading glasses (`FeatureFace`, passed through
+  // the dock's `face` prop). A second face here would be a distinction the learner cannot
+  // read and the code would then have to keep.
+  retrieving: "attentive",
+  ingesting: "attentive",
   resting: "idle",
-  listening: "idle",
-  arrived: "idle",
+  // Head almost level and the eyes a little larger: turned toward you, which is the whole
+  // content of listening. `attentive` differs from `idle` by 34 degrees of head and about a
+  // tenth of eye — small, and the smallness is right. A character that gurns when you start
+  // dictating is a character you stop dictating to.
+  listening: "attentive",
+  // The squint into arcs — a smile, on a face with no mouth.
+  arrived: "happy",
 };
+
+/**
+ * 🔴 THREE OF THE SEVEN HAVE NO PRODUCER, AND THEY DID NOT BEFORE THIS EITHER.
+ * `stateForCanvas` below is the only route from the running product to this table, and it
+ * reads three facts: thinking, preparing, listening. So `retrieving`, `ingesting` and
+ * `arrived` are reachable through `stateFor` and nothing calls it. Naming that here rather
+ * than letting the table imply a schedule it does not have: the rows are correct and three of
+ * them are waiting on a surface to say when they are true.
+ *
+ * The fourth gap is worse and is not a row at all — there is no `failed`. A fetch that dies
+ * and a fetch that works currently look identical on the character.
+ */
 
 export function stateFor(activity: NemesisActivity): StateId {
   return ACTIVITY_STATE[activity];
