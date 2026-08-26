@@ -14,9 +14,16 @@
 // the web's `id="canvas-composer"` handle, and it is functional rather than cosmetic. Drop it and
 // the dock silently falls back to a fixed offset and starts overlapping the composer.
 //
-// 🔴 NEVER PART OF LAYOUT. Absolutely positioned, and transparent to touch — `BloubBot` sets
-// `pointerEvents="none"` on itself whenever no `onPoke` is given, which is the case here. Nothing
-// reserves space for it, so a growing composer pushes nothing around.
+// 🔴 NEVER PART OF LAYOUT. Absolutely positioned, so nothing reserves space for it and a growing
+// composer pushes nothing around.
+//
+// 🔴 AND IT IS TRANSPARENT TO TOUCH EXCEPT WHERE THERE IS SOMEWHERE FOR A PRESS TO GO. This note
+// used to end "`BloubBot` sets `pointerEvents='none'` on itself whenever no `onPoke` is given,
+// which is the case here" — the second half stopped being true the day the dock became pokeable,
+// and a comment that describes the opposite of what the file does is worse than none. With an
+// `onPoke` both this wrapper and `BloubBot` go to `box-none`, so the press reaches the character's
+// own Pressable and nothing else; without one, both stay `none` so a decorative dock cannot
+// swallow a press meant for the answer behind it. See the wrapper's own note below.
 //
 // 🔴 `paper` IS LOAD-BEARING. The eyes are holes cut in the body and the rings pass behind it, so
 // the backing colour must be EXACTLY the colour of the surface the character is standing on. The
@@ -52,17 +59,29 @@ export function CanvasDock({
   state,
   expression,
   gaze,
+  motion,
   composerHeight,
   bottomInset,
   paper,
   onPoke,
 }: {
   state: StateId;
-  /** The gesture's face, when a poke is playing one. Two of the four reactions are expressions
-   *  rather than animations, so this channel has to reach the character alongside `state`. */
+  /** The gesture's face, when a poke is playing one. One of the four reactions is an expression
+   *  rather than an animation, so this channel has to reach the character alongside `state`. */
   expression?: string;
   /** A gesture's scripted look, when it has one. */
   gaze?: ComponentProps<typeof BloubBot>["gaze"];
+  /**
+   * A gesture's whole-body movement, when it has one — today, the hop.
+   *
+   * 🔴 A FOURTH CHANNEL RATHER THAN A FIFTH STATE, BECAUSE A JUMP IS NOT A POSE (owner 2026-08-21:
+   * "the character still does not jump"). The vendored table describes a face on a sphere and has
+   * no vocabulary for the body leaving the ground; `BloubBot` draws it as a transform on its own
+   * wrapper, which is what web does too. This dock only forwards it — every opinion about which
+   * gesture a tap draws lives in `@nemesis/shared/character/poke`, and every opinion about how the
+   * hop moves lives in `BloubBot`.
+   */
+  motion?: ComponentProps<typeof BloubBot>["motion"];
   /** The composer's measured height, from its own `onLayout`. */
   composerHeight: number;
   /** Whatever sits below the composer — safe area plus the dock's own padding. */
@@ -87,6 +106,7 @@ export function CanvasDock({
         state={state}
         expression={expression}
         gaze={gaze}
+        motion={motion}
         size={DOCK_SIZE}
         paper={paper}
         // 🔴 `speedOf`, NOT 1. The playback rate is a product decision that lives in

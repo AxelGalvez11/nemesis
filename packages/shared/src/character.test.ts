@@ -6,9 +6,19 @@ import { lookTarget } from "./bloub/gaze.ts";
 import { DEMI_VIEWBOX, RAYON } from "./bloub/repere.ts";
 import { SEQUENCE, STATE_BY_ID, type StateId } from "./bloub/states.ts";
 
+import { browFrame, WAGGLE_TIME } from "./character/brow.ts";
+import { restingFace } from "./character/face.ts";
 import { centredLook, idleAim } from "./character/gaze.ts";
+import {
+  JUMP_EASE,
+  JUMP_KEYFRAMES,
+  JUMP_MS,
+  POKES,
+  POKE_BY_ID,
+  waggleLook,
+} from "./character/poke.ts";
 import { ARC_POOL, ARC_STOPS, DOT_POOL } from "./character/pool.ts";
-import { speedOf, stationOf } from "./character/stations.ts";
+import { ACTIVITY_STATE, speedOf, stateForCanvas, stationOf } from "./character/stations.ts";
 
 const ALL: StateId[] = [...SEQUENCE, "swirl"];
 
@@ -228,6 +238,327 @@ test("🔴 the idle target never reaches the edge of the cone", () => {
     worst = Math.max(worst, Math.abs(nx), Math.abs(ny));
   }
   assert.ok(worst < 0.98, `the idle gaze target reaches ${worst.toFixed(3)} and is clipping`);
+});
+
+// ── the brow waggle ─────────────────────────────────────────────────────────
+//
+// Owner asked for an eyebrow waggle by name (2026-08-20, quoted in `character/poke.ts`). The web
+// character had one from the day `character/brow.ts` shipped; the phone drew a substitute — the
+// eyes tilting — behind a comment claiming a real brow was impossible. These hold the ported
+// gesture to the two things `brow.ts` says a brow must be: a hole in the MASK beside its eye, and
+// present ONLY inside the gesture.
+
+test("🔴 the brow waggle is the real brow on both renderers, not an eye-tilt substitute", async () => {
+  // The substitute alternated the `colere` and `surpris` EXPRESSIONS, which slides the engine's
+  // brow-LINE by tilting the eyes. It is a defensible imitation and it is not what was asked for,
+  // and the way it comes back is not a revert of this test — it is somebody deleting the mask
+  // nodes and putting `surpris` back in the table, which is why both halves are checked.
+  for (const renderer of [
+    "apps/web/components/bloub/bloub-bot.tsx",
+    "apps/mobile/src/components/bloub/BloubBot.tsx",
+  ]) {
+    assert.match(
+      code(await read(renderer)),
+      /browFrame\(/,
+      `${renderer}: nothing resolves a brow any more — the waggle is drawing nothing at all`,
+    );
+  }
+  const beats = POKE_BY_ID.get("brows")?.beats ?? [];
+  assert.equal(beats.length, 1, "the waggle is a beat list again, which is a second clock beside `browFrame`'s own");
+  assert.equal(
+    beats[0]?.expression,
+    null,
+    "the waggle changes the face again — a brow rides over the caller's resting face, it does not replace it",
+  );
+});
+
+test("🔴 the phone hangs the brow off the EYE's matrix, in the mask", async () => {
+  // 🔴 THE TWO WAYS THIS GOES WRONG ARE BOTH INVISIBLE TO A UNIT TEST. A brow drawn as a stroke
+  // laid on top of the body would look right facing front and would fail to clip against the
+  // silhouette the moment the head turned; a brow positioned from the eye's SCREEN centre rather
+  // than through its matrix would not foreshorten or roll with the eye it belongs to. Both are
+  // what `character/brow.ts`'s header spends its length on. RNSVG's `matrix` prop takes one
+  // matrix and not a transform list, so on the phone the composition is arithmetic — and reading
+  // for the arithmetic is the only way to see that it happened.
+  const source = code(await read("apps/mobile/src/components/bloub/BloubBot.tsx"));
+  assert.match(
+    source,
+    /browRefs/,
+    "the phone has no brow nodes — see the `<Mask>` skeleton, where they must live beside the eyes",
+  );
+  assert.match(
+    source,
+    /liftMatrix\(matrix,/,
+    "the phone is no longer placing the brow through the eye's own matrix, so it has stopped foreshortening and rolling with the eye it belongs to",
+  );
+});
+
+test("🔴 `waggleLook` means the brow waggle and nothing else", () => {
+  // The phone renderer draws brows exactly while this script is driving the gaze
+  // (`BloubBot.tsx`: `script === waggleLook`), because a beat's other three fields are vendored
+  // vocabularies that cannot say "grow brows". The cost of that is this: a future gesture that
+  // reuses the script merely to face front would sprout eyebrows, and it would look like a bug in
+  // the brow code rather than in the gesture. So the table is pinned from both sides.
+  assert.equal(POKE_BY_ID.get("brows")?.beats[0]?.gaze, waggleLook, "the waggle no longer carries its own look");
+  for (const poke of POKES) {
+    if (poke.id === "brows") continue;
+    for (const beat of poke.beats) {
+      assert.notEqual(beat.gaze, waggleLook, `${poke.id} borrows \`waggleLook\` and will draw eyebrows`);
+    }
+  }
+});
+
+test("🔴 the phone reads the waggle's clock off the gaze, and a still draws no brows at all", async () => {
+  const source = code(await read("apps/mobile/src/components/bloub/BloubBot.tsx"));
+  // One clock. The brow's phase and the head's bearing are one gesture, and reading them off two
+  // clocks is how a gesture drifts apart on a slowed or paused character.
+  assert.match(
+    source,
+    /if \(script === waggleLook\) browAt = elapsed;/,
+    "the phone's waggle is no longer on the gaze script's own scene clock",
+  );
+  // A frozen board and reduced motion have no loop, so the only thing they could draw is one
+  // arbitrary instant of a gesture nobody asked for — a character with permanent eyebrows, which
+  // `brow.ts` is explicit is a different creature rather than a gesture.
+  assert.match(
+    source,
+    /paint\(engine\.sample\(frozenAt \?\? POSES\[state\] \?\? 1\)[^;]*, null\);/,
+    "a still frame is being handed a brow clock — a frozen board would grow permanent eyebrows",
+  );
+});
+
+test("🔴 no brow ever breaches the silhouette on the phone's own gaze path", () => {
+  // 🔴 THIS IS THE MEASUREMENT `brow.ts` SAYS TO TAKE RATHER THAN ARGUE ABOUT. Its `BROW_REST` and
+  // `BROW_RISE` are tuned against a render because the eyes sit high on the head and the diagonal
+  // to the body's edge is far shorter than the vertical numbers suggest — an earlier pair cut a
+  // notch out of the crown. Web reports 0.94 body radii facing front and 1.07 with the head turned
+  // hard, i.e. OUTSIDE the body, which is why its waggle suppresses the pointer.
+  //
+  // The phone's cone is `centredLook`, which is aimed further front, so the same geometry has more
+  // room — but "has more room" is exactly the kind of claim that survives the thing that made it
+  // true being reverted. So it is measured here, on the path the phone actually takes: the idle
+  // wander for a warm-up, then `waggleLook`, with each brow's four corners pushed through the real
+  // eye matrices at 60fps.
+  const worst = { front: 0, wandering: 0 };
+  for (let k = 0; k < 12; k += 1) {
+    const warm = 0.25 + k * 1.03;
+    for (const front of [true, false]) {
+      const engine = new BotEngine(RAYON, "idle", null, restingFace("neutre"));
+      let t = 0;
+      for (let i = 0; i < Math.round(warm * 60); i += 1) {
+        t += 1 / 60;
+        const { nx, ny } = idleAim(t);
+        engine.setLook(centredLook({ nx, ny, tour: 1, pointer: false }), t);
+        engine.sample(t);
+      }
+      const since = t;
+      for (let i = 0; i <= Math.round(WAGGLE_TIME * 60); i += 1) {
+        t = since + i / 60;
+        const elapsed = t - since;
+        if (front) engine.setLook(waggleLook(elapsed), t);
+        else {
+          const { nx, ny } = idleAim(t);
+          engine.setLook(centredLook({ nx, ny, tour: 1, pointer: false }), t);
+        }
+        const frame = engine.sample(t);
+        const brow = browFrame(elapsed);
+        if (!brow) continue;
+        for (const eye of frame.eyes) {
+          if (!eye) continue;
+          // matrix(a,b,c,d,e,f) is [[a c e],[b d f]] — the eye's own frame, already carrying the
+          // tangent plane, the head's roll and the foreshortening.
+          const m = eye.matrix.split("(")[1]!.split(",").map(parseFloat);
+          const hw = (brow.w * RAYON) / 2;
+          const hh = (brow.h * RAYON) / 2;
+          const ty = brow.dy * RAYON;
+          for (const sx of [-1, 1]) {
+            for (const sy of [-1, 1]) {
+              const x = m[0]! * sx * hw + m[2]! * (ty + sy * hh) + m[4]!;
+              const y = m[1]! * sx * hw + m[3]! * (ty + sy * hh) + m[5]!;
+              const reach = Math.hypot(x, y) / RAYON;
+              const key = front ? "front" : "wandering";
+              if (reach > worst[key]) worst[key] = reach;
+            }
+          }
+        }
+      }
+    }
+  }
+  // Measured 2026-08-21 over a 90-warm-up sweep: 0.771 facing front, 0.878 with the wander left
+  // running underneath. The floor below is well clear of both, so re-tuning `BROW_REST` or
+  // `BROW_RISE` a little does not fail this — what fails it is a brow reaching the limb.
+  assert.ok(worst.front < 0.9, `a brow reached ${worst.front.toFixed(3)} body radii facing front`);
+  // 🔴 AND THE BEARING IS MEASURED AS AN IMPROVEMENT RATHER THAN PINNED, which is the honest shape
+  // of the claim: on the phone, facing front is NOT what keeps the brow inside the body — both
+  // figures are inside it — it is worth about a tenth of a radius of margin, and the reason to
+  // hold it is that the gesture is aimed at somebody. Web's note says the opposite about web, and
+  // this is what stops that note being copied across as if it applied here.
+  assert.ok(
+    worst.front < worst.wandering,
+    `facing front (${worst.front.toFixed(3)}R) buys no margin over the wander (${worst.wandering.toFixed(3)}R) — `,
+  );
+});
+
+// ── the poke bag: no swirls, and a hop ──────────────────────────────────────
+//
+// Owner, 2026-08-20, about the WEB character: "remove the current one where it enlarges eyes,
+// turns into exclamation mark, turns into triangle, remove the swirls. he should jump, wink, or do
+// an eyebrow waggle." Web obeyed the same day. The phone did not — it had been given a different
+// list with "spin around" in it — so it kept a gesture built on `swirl`, which draws three arcs
+// coloured from `decor.ts`'s hue wheel. Owner, 2026-08-21, looking at the phone: "the character
+// still does not jump, also ... remove the colorful swirls around the mascot."
+//
+// Both halves are held here rather than in a code comment, because both are the kind of thing that
+// comes back: a swirl by somebody re-adding a gesture that "looks like spinning", and a missing hop
+// by somebody treating the transform as decoration and deleting it.
+
+test("🔴 the phone's poke bag is exactly the four gestures the owner named", () => {
+  assert.deepEqual(
+    POKES.map((p) => p.id).sort(),
+    ["angry", "brows", "jump", "wink"],
+    "the poke bag has changed membership — every entry in it is an owner instruction, not a taste call",
+  );
+  // The bag is what makes "different each time" true, and it can only do that if every gesture is
+  // in it exactly once. A duplicate would halve the odds of everything else.
+  assert.equal(new Set(POKES.map((p) => p.id)).size, POKES.length, "a gesture appears twice in the bag");
+});
+
+test("🔴 no gesture a poke can draw puts a coloured arc anywhere near the character", () => {
+  // 🔴 THIS IS MEASURED THROUGH THE ENGINE, NOT READ OFF THE LIST OF IDS, AND THAT DISTINCTION IS
+  // THE WHOLE VALUE OF THE TEST. Reading four ids and believing they are clean is exactly how
+  // `swirl` survived the 2026-08-20 instruction: nothing in the id `spin` says "three rings".
+  // Six vendored states carry arcs whose gradient stops come from `decor.ts`'s `wheel(hue)` — a
+  // full hue wheel at constant luminosity — and the only way to know a gesture draws none is to
+  // sample it. A cross-fade carries the OUTGOING state's decor too, so each beat is played from
+  // `idle` and sampled across the morph as well as the hold.
+  for (const poke of POKES) {
+    for (const beat of poke.beats) {
+      const engine = new BotEngine(RAYON, "idle", null, restingFace("neutre"));
+      engine.setState(beat.state, 0);
+      const span = beat.hold * speedOf(beat.state);
+      for (let i = 0; i <= Math.ceil(span * 60) + 120; i += 1) {
+        const frame = engine.sample(i / 60);
+        assert.equal(
+          frame.arcs.length,
+          0,
+          `poke "${poke.id}" draws ${frame.arcs.length} coloured arc(s) at ${(i / 60).toFixed(2)}s on state "${beat.state}"`,
+        );
+      }
+    }
+  }
+});
+
+test("🔴 nor does anything the phone's own surfaces ask for", () => {
+  // The instruction is about the character, not about one gesture, so the question "what else can
+  // this phone draw that has swirls in it?" has to be answered rather than assumed. Two front
+  // doors exist and both are enumerated here:
+  //
+  //   - `stateForCanvas`, which `app/(tabs)/learn.tsx` derives the canvas character's state
+  //     through, and which can only return `idle`, `thinking` or `wide`.
+  //   - `stateFor("thinking")`, which `components/canvas/CanvasThinking.tsx` asks for by name.
+  //
+  // 🔴 AND THE ARC-DRAWING STATES ARE STILL IN THE CATALOGUE, WHICH IS CORRECT AND IS WORTH SAYING.
+  // `orbit` (six rings), `comet` (four ribbons), `play` (the SWOOSH bouquet) and `swirl` (three
+  // rings) are all vendored, all still reachable from the web dev lab, and all unreachable from
+  // any phone surface. `ACTIVITY_STATE` maps `retrieving` → `comet` and `ingesting` → `burst`, but
+  // nothing anywhere calls `stateFor` with those two, so they are a vocabulary rather than a
+  // behaviour. Deleting them would be an edit to vendored code for no gain; keeping them behind
+  // this fence costs nothing.
+  const doors = new Set<StateId>([ACTIVITY_STATE.thinking]);
+  for (const thinking of [true, false])
+    for (const preparing of [true, false])
+      for (const listening of [true, false, undefined])
+        doors.add(stateForCanvas({ thinking, preparing, listening }));
+
+  for (const id of doors) {
+    const engine = new BotEngine(RAYON, "idle", null, restingFace("neutre"));
+    engine.setState(id, 0);
+    for (let i = 0; i <= 300; i += 1) {
+      assert.equal(
+        engine.sample(i / 60).arcs.length,
+        0,
+        `a phone surface can ask for "${id}", which draws coloured arcs`,
+      );
+    }
+  }
+});
+
+test("🔴 the phone's hop is web's hop, keyframe for keyframe", async () => {
+  // 🔴 THE TWO CHARACTERS MUST HOP IDENTICALLY, AND THE ONLY WAY TO KEEP THAT TRUE IS TO COMPARE
+  // THE ACTUAL SOURCES. Web's hop is a CSS `@keyframes`; the phone cannot read CSS, so the same
+  // curve is written as numbers in `character/poke.ts` and the two are held equal here. A hand port
+  // of a curve fails silently and permanently: nobody diffs a stylesheet against a TypeScript array
+  // by eye, and "the phone's jump feels a bit off" is not a bug report anyone can act on.
+  const css = await read("apps/web/components/bloub/bloub.css");
+
+  const ms = /--bloub-jump-ms,\s*(\d+)ms/.exec(css);
+  assert.ok(ms, "web's hop no longer declares a duration this test can read");
+  assert.equal(Number(ms[1]), JUMP_MS, "the two apps hop for different lengths of time");
+
+  const ease = /cubic-bezier\(([\d.\s,]+)\)/.exec(css.slice(css.indexOf(".bloub-jump")));
+  assert.ok(ease, "web's hop no longer declares an easing this test can read");
+  assert.deepEqual(
+    ease[1]!.split(",").map((n) => Number(n.trim())),
+    [...JUMP_EASE],
+    "the two apps ease the hop differently",
+  );
+
+  const block = /@keyframes bloub-jump\s*\{([\s\S]*?)\n\}/.exec(css);
+  assert.ok(block, "web's `@keyframes bloub-jump` is gone or has been reshaped");
+  const step = /(\d+(?:\.\d+)?)%\s*\{\s*transform:\s*translateY\((-?\d+(?:\.\d+)?)(%?)\)\s+scaleY\((\d+(?:\.\d+)?)\)/g;
+  const web: { at: number; y: number; scaleY: number }[] = [];
+  for (const m of block[1]!.matchAll(step)) {
+    // `translateY(0)` carries no unit; every non-zero offset is a percentage of the element's own
+    // height, which is what the phone multiplies its `size` by.
+    assert.ok(m[3] === "%" || Number(m[2]) === 0, `web's hop uses a unit this test cannot read: ${m[0]}`);
+    web.push({ at: Number(m[1]) / 100, y: Number(m[2]) / 100, scaleY: Number(m[4]) });
+  }
+  assert.deepEqual(
+    web,
+    JUMP_KEYFRAMES.map((k) => ({ at: k.at, y: k.y, scaleY: k.scaleY })),
+    "the phone's hop no longer matches web's `@keyframes bloub-jump`",
+  );
+});
+
+test("🔴 the hop is a transform on the wrapper, and never a pose", async () => {
+  // 🔴 THE FAILURE THIS GUARDS IS SOMEBODY "TIDYING" THE HOP INTO THE POSE TABLE. It looks like the
+  // obvious home — every other gesture names a state — and it cannot go there: the vendored table
+  // describes a face on a sphere, and putting a jump in it means editing vendored geometry, after
+  // which re-vendoring stops being a copy. Web's `use-poke.ts` header makes the same argument, and
+  // both apps therefore draw the hop one layer outside the engine.
+  const jump = POKE_BY_ID.get("jump")?.beats ?? [];
+  assert.equal(jump.length, 1, "the hop has become a beat list, which is a second clock beside the transform's own");
+  assert.equal(jump[0]?.motion, "jump", "the hop's beat no longer asks for the motion at all");
+  assert.equal(jump[0]?.state, "idle", "the hop replaces the character's pose — a jump is done WHILE wearing an ordinary face");
+  assert.equal(jump[0]?.expression, null, "the hop changes the face, which fights the gesture underneath it");
+  assert.equal(jump[0]?.gaze, null, "the hop has grown a look script — nothing about leaving the ground is a gaze");
+  // 🔴 AND THE HOLD IS THE HOP'S OWN WALL-CLOCK LENGTH, NOT A SCENE-CLOCK CONVERSION. Every other
+  // beat divides by `speedOf(state)` because its content is played on the engine's clock. This one
+  // is not on that clock at all, so if `idle` were ever slowed the way `swirl` was, a converted
+  // hold would stretch the beat past the transform and leave the character standing on the ground
+  // waiting for a timer — a hang, not a slower jump.
+  assert.equal(jump[0]?.hold, JUMP_MS / 1000, "the hop's hold has drifted from the transform's own length");
+
+  const source = code(await read("apps/mobile/src/components/bloub/BloubBot.tsx"));
+  assert.match(
+    source,
+    /<Animated\.View style=\{\[styles\.hop, hopStyle\]\}>/,
+    "the phone no longer draws the hop as a transform on its own wrapper",
+  );
+  // Squash reads as weight only if the body flattens against the floor. Scaled about its middle the
+  // character shrinks symmetrically and looks resized rather than landed — web says the same beside
+  // the same number.
+  assert.match(source, /transformOrigin: "50% 100%"/, "the phone's squash is no longer about the character's feet");
+  // 🔴 REMOVED UNDER REDUCED MOTION, NOT SHORTENED — and that is the opposite of what the dock's
+  // travel does, on purpose. Where the character STANDS is information (the system has taken the
+  // floor), so that motion is only made quicker; a hop is a reply to a tap and carries none, and
+  // the wink and the brow waggle in the same bag still answer one. `bloub.css` makes the identical
+  // split, in the same words, for the same two motions.
+  assert.match(
+    source,
+    /if \(motion !== "jump" \|\| still\) \{/,
+    "the phone's hop no longer stands down for reduced motion (or for a frozen board, which has no clock to hop on)",
+  );
 });
 
 test("every animation the lab lists is a real one", () => {

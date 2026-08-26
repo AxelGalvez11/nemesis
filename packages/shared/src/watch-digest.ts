@@ -68,7 +68,7 @@ interface DigestGroup {
  * Build the digest, or null when there is nothing loud to send. PURE: same events → same email.
  */
 export function buildWatchDigest(input: WatchDigestInput): WatchDigest | null {
-  const appName = input.appName ?? "PharmaOrb";
+  const appName = input.appName ?? "Nemesis";
 
   const groups: DigestGroup[] = [];
   let alertCount = 0;

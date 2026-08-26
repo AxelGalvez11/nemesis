@@ -240,7 +240,7 @@ function FolderRow({
   return (
     <div className="flex items-center gap-1 rounded-md pr-2 hover:bg-(--ui-control-hover-background)" style={{ paddingLeft: `${depth * INDENT_REM_PER_DEPTH}rem` }}>
       {/* Opening a folder and choosing a folder are separate targets: a student
-          browsing into "Pharmacology" should not silently attach all 40 notes. */}
+          browsing into "Contract law" should not silently attach all 40 notes. */}
       <button
         aria-expanded={expanded}
         aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}

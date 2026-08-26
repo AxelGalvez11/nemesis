@@ -114,7 +114,15 @@ export const FIGURE_PROMPT =
   "name@x,y where x and y are the centre of that label as decimals from 0 to 1 of the image width " +
   "and height, separated by semicolons. Only include labels whose text is actually printed in the " +
   "image. Omit the LABELS line entirely for photographs, charts without named parts, and anything " +
-  "you are not certain about.";
+  "you are not certain about. " +
+  // 🔴 THE CAP IS A COST CEILING, MEASURED ON A REAL FIGURE (2026-08-23). A molecular diagram
+  // prints a name on every one of its ~50 subunits, and an uncapped request enumerated all of
+  // them — 18,642 output tokens, ~$0.025 and 135 seconds for ONE picture, most of it the model
+  // reasoning its way down the list. Twelve labels is more than any occlusion exercise shows at
+  // once, and "the ones a teacher would ask about" keeps the choice pedagogical rather than
+  // positional in any discipline.
+  "List at most 12 labels per image; when a diagram names more parts than that, choose the ones " +
+  "a teacher would most likely ask a student to identify.";
 
 /**
  * Reading PAGES whose content is a picture — a slide exported as an image, a

@@ -10,6 +10,9 @@ import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
 
+/** The top-corner radius of a `solid` sheet. See `styles.sheetRounded` for why it is not a token. */
+const SHEET_RADIUS = 28;
+
 // A liquid-glass panel that slides up from the bottom edge — the Study screen's
 // Stats sheet, the chat screen's Sources/Deliverable/Upgrade/Attach sheets, and
 // several others all ride this. Mirrors AppDrawer's DrawerShell: always mounted,
@@ -26,6 +29,12 @@ import { control, radius, space, type } from "@/theme/tokens";
 //    down from collapsed to close. Consumers must NOT hard-cap their own scroll
 //    areas — the sheet is the one owner of "how tall".
 //
+// Owner ask 2026-08-21, and it is OPT-IN: `scrim` darkens the page behind the
+// sheet and `solid` backs the glass so nothing bleeds through it. Both default
+// to false, so every sheet that existed before that date looks exactly as it
+// did. Only the Sources drawer turns them on — see their prop notes below, and
+// `SourcesSheet.tsx` for the report that caused them.
+//
 // That drag lives in useSheetExpand.ts as of 2026-07-22, when the owner asked
 // for it on EVERY bottom sheet — NoteListSheet and NoteTabsSheet are
 // hand-rolled panels that never rode this component, so the behaviour had to
@@ -39,6 +48,8 @@ export function SlideUpSheet({
   fullScreen = false,
   page = false,
   portal = false,
+  scrim = false,
+  solid = false,
   hideClose = false,
   compactTitle = false,
   headerDivider = false,
@@ -67,6 +78,61 @@ export function SlideUpSheet({
    *  same escape hatch, added for the same reason one level down (see its
    *  `portal` prop). Only reach for it when the sheet really is nested. */
   portal?: boolean;
+  /** Darken the page behind the sheet, ChatGPT-style, instead of leaving it untouched.
+   *
+   *  🔴 OPT-IN, AND DEFAULTED TO TODAY'S BEHAVIOUR ON PURPOSE (owner 2026-08-21). `SlideUpSheet`
+   *  is the house sheet — nineteen call sites across notebooks, the calendar, Study, the library
+   *  and the chat surfaces ride it. The owner asked for a dimmed page behind ONE of them, the
+   *  Sources drawer, after seeing ChatGPT's; turning it on for all of them would be answering a
+   *  question he did not ask, and at least one sibling has the OPPOSITE decision already recorded
+   *  (`PhotoCaptureSheet`: "Deliberately not a scrim. ChatGPT leaves the chat above the panel
+   *  looking normal…"). So: false everywhere unless a caller says otherwise.
+   *
+   *  🔴 A SCRIM IS NOT A BLUR, WHICH IS WHY IT DOES NOT BREAK THE RULE BELOW. The tap-catcher
+   *  carries a recorded decision — "dismiss on an outside tap WITHOUT blurring the page. The
+   *  sheet's own glass supplies the only blur (owner: confine blur to the component)". That rule
+   *  is about where the BLUR lives, and it still holds to the letter: nothing here blurs anything,
+   *  and the sheet's own `GlassSurface` remains the only blurring thing on screen. What this adds
+   *  is a flat translucent black wash, which is the reference's own answer to the same problem. */
+  scrim?: boolean;
+  /** Back the glass with a near-opaque fill so the page cannot bleed through the panel.
+   *
+   *  🔴 THIS IS `GlassSurface`'s EXISTING `opaque`, NOT A NEW IDEA (owner 2026-07-20: "mini menus
+   *  still allow the background to bleed through"). That prop was added for exactly this complaint
+   *  one level down, and the Sources drawer is the same complaint a second time — the answer's own
+   *  paragraphs were legible THROUGH the drawer and colliding with the source rows. `fallbackColor`
+   *  moves to the same near-opaque tone on the blur path, because there the caller's fill is
+   *  painted UNDER the backing and a translucent one leaves a little of the page still coming
+   *  through. Opt-in for the same reason as `scrim`: it is a visible change to a shared surface.
+   *
+   *  🔴 IT ALSO LIFTS THE PANEL, AND ONLY IN DARK (owner 2026-08-21: "make the drawer be rounded
+   *  too like in the reference"). A radius was ALREADY set — see `styles.sheet` below — but the
+   *  first answer to that report was "the corners are already rounded, you just cannot see them",
+   *  and that was only two-thirds true. Both halves of the correction belong here:
+   *    1. THE CLIP WAS CONDITIONAL. `GlassSurface` applies `overflow: hidden` to the real iOS-26
+   *       `GlassView` as `opaque ? styles.clip : null`, and this sheet never passed `opaque`
+   *       before this change. So on a phone rendering true Liquid Glass the top corners were
+   *       genuinely SQUARE, and the radius was doing nothing at all. The blur fallback clips
+   *       unconditionally, which is why the corners were real everywhere else and why this was
+   *       easy to miss by reading `styles.sheet` alone. `solid` now sets `opaque`, so both paths
+   *       clip.
+   *    2. ON DARK THE SHAPE WAS INVISIBLE ANYWAY, even where it was clipped: page `bg` #000000,
+   *       `scrim` over it still #000000, and this prop's own `glassMenu` backing #080808 — a
+   *       measured 1.048:1, where 1.0 is "identical". Contrast, not geometry.
+   *  The lift is the answer to (2), spent through `c.sheetLift` / `c.sheetEdge`, which resolve to
+   *  `transparent` and to `line`'s own value in light so that light renders byte-identically.
+   *  Those two tokens carry the arithmetic and the rejected alternatives; read them there.
+   *
+   *  🔴 AND THE RADIUS WAS RAISED SEPARATELY, BECAUSE THE OWNER ASKED A SECOND TIME once he had
+   *  seen the contrast fix: "also acn you make the edges rounder please". That is an instruction,
+   *  not a measurement to argue with — the earlier pass had computed that 18pt already fell in the
+   *  4–5% of screen width it estimated off the reference and left it alone, which answered a
+   *  question the owner had not asked. See `SHEET_RADIUS`.
+   *
+   *  It rides `solid` rather than a fifth prop because a wash only makes sense on a panel that
+   *  is already near-opaque — laying white over translucent glass fogs it — and because that
+   *  keeps the whole change at the one call site that opted in. */
+  solid?: boolean;
   hideClose?: boolean;
   compactTitle?: boolean;
   headerDivider?: boolean;
@@ -137,6 +203,10 @@ export function SlideUpSheet({
     );
   };
 
+  // 🔴 `page` TAKES NEITHER `scrim` NOR `solid`, AND THAT IS NOT AN OVERSIGHT. A page sheet is
+  // edge-to-edge with an opaque `c.bg` fill and no outside tap target at all (see the prop's own
+  // note) — there is no page left visible to dim and no glass to back. Passing them is harmless
+  // and does nothing; if a page sheet ever needs a wash, it needs a different mechanism.
   if (page) {
     return wrap(
       <View style={[StyleSheet.absoluteFill, styles.layer]} pointerEvents={visible ? "auto" : "none"} testID={testID}>
@@ -174,11 +244,55 @@ export function SlideUpSheet({
 
   return wrap(
     <View style={[StyleSheet.absoluteFill, styles.layer]} pointerEvents={visible ? "auto" : "none"} testID={testID}>
+      {/* 🔴 THE DIM, WHEN THE CALLER ASKED FOR ONE — AND IT IS A SEPARATE VIEW FROM THE TAP TARGET
+          ON PURPOSE. `Pressable` is not an animated component, so the wash cannot ride `progress`
+          from inside it. TRIED AND REJECTED: a plain `backgroundColor` on the tap-catcher. An
+          INLINE sheet's layer is always mounted — only `pointerEvents` tracks `visible` (see
+          `styles.layer`) — so a static fill there would darken the screen permanently, closed
+          sheet and all; and on the portalled path, where the Modal really does mount and unmount,
+          it would snap to full strength and back while the sheet spent 260ms sliding.
+          This view carries the colour and an ANIMATED opacity, sits UNDER the Pressable, and is
+          `pointerEvents="none"` — so every touch still lands on the catcher below and dismissal
+          behaves exactly as it did when the layer was empty. `opacity` is one of the props the
+          native driver handles, so it shares `progress`'s driver rather than crossing the bridge,
+          and the dim therefore arrives and leaves on the same curve as the slide.
+          Nothing renders at all when `scrim` is false, so the other eighteen call sites get the
+          identical layer they had. */}
+      {scrim ? (
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim, opacity: progress }]}
+          pointerEvents="none"
+        />
+      ) : null}
       {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.
-          The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
+          The sheet's own glass supplies the only blur (owner: confine blur to the component).
+          🔴 STILL TRUE AFTER THE SCRIM ABOVE (owner 2026-08-21). That recorded rule is about BLUR,
+          and it is untouched: the catcher blurs nothing, and the sheet's `GlassSurface` is still
+          the only thing on screen that blurs. A `scrim` caller adds a flat translucent black wash
+          — dimming, not defocusing — which the rule never spoke to. Recorded rather than silently
+          overridden, because the next reader will ask the same question. */}
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
       <Animated.View style={[styles.sheetWrap, { bottom: keyboardHeight, transform: [{ translateY }] }]}>
-        <GlassSurface style={styles.sheet} fallbackColor={c.glassPanel}>
+        <GlassSurface
+          style={[styles.sheet, solid && styles.sheetRaised, solid && styles.sheetRounded]}
+          opaque={solid}
+          fallbackColor={solid ? c.glassMenu : c.glassPanel}
+        >
+          {/* 🔴 THE LIFT, AND IT HAS TO BE A CHILD VIEW RATHER THAN A FILL ON `styles.sheet`.
+              `solid` sends `opaque` into `GlassSurface`, which paints its OWN near-opaque
+              `c.glassMenu` backing at 94% over both glass paths — so anything set underneath
+              that (a `backgroundColor` here, or `fallbackColor`, which the blur path draws
+              beneath the backing) survives at 6% strength and moves the composite by about one
+              code value. TRIED AND REJECTED for exactly that reason. `GlassSurface` is not ours
+              to edit, and its backing colour is not a prop, so the wash goes ON TOP of it: this
+              view is the first child, which places it above the backing and below the grabber,
+              header and body.
+              It is clipped to the rounded top corners, because `opaque` also switches on
+              `GlassSurface`'s `styles.clip` (overflow hidden) on the liquid-glass path and the
+              blur path applies it unconditionally — so the wash stops at the arc and the corner
+              reads as page-black outside it, #212121 inside. That step is the whole fix.
+              `pointerEvents="none"` so it cannot eat a tap meant for a source row. */}
+          {solid ? <View style={[StyleSheet.absoluteFill, styles.sheetLift]} pointerEvents="none" /> : null}
           <GestureDetector gesture={headerPan}>
             <View>
               <View style={styles.grabberRow}>
@@ -228,6 +342,28 @@ const createStyles = (c: ThemeColors) =>
     flex: { flex: 1 },
     sheetWrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
     sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: 1, borderColor: c.line, borderBottomWidth: 0 },
+    // 🔴 THE ROUNDER CORNER, AND IT IS OPT-IN WITH `solid` RATHER THAN A NEW `radius.xl`
+    // (owner 2026-08-21: "also acn you make the edges rounder please"). `radius.xl` is 18 and has
+    // fifteen consumers across the app — cards, tiles, menus — so raising the token to round one
+    // drawer would silently restyle all of them. `SHEET_RADIUS` overrides only the two top corners
+    // of the sheets that opted in.
+    //   TRIED AND REJECTED: leaving it at 18 and arguing the point. The pass before this one
+    //   measured 18pt as 4.1-4.8% of screen width across current iPhones, decided that already sat
+    //   inside the 4-5% band it had estimated off the reference, and changed nothing. The owner
+    //   then asked a second time, in plainer words, having already seen the contrast fix. A
+    //   measurement is not a rebuttal to someone telling you what they want it to look like.
+    //   THE FLOOR AND CEILING, so the next adjustment is not blind: below ~14 the curve stops
+    //   reading as a sheet corner at this width; above ~34 the grabber and the "Sources" title
+    //   start to sit visibly inboard of the curve and the header looks indented rather than
+    //   aligned. 28 is iOS's own large-sheet feel and leaves both clear.
+    sheetRounded: { borderTopLeftRadius: SHEET_RADIUS, borderTopRightRadius: SHEET_RADIUS },
+    // Applied only when the caller asked for `solid`, so the other eighteen call sites keep the
+    // 9% `c.line` outline they have always had. `c.sheetEdge` is `line2`'s 16% in dark and
+    // `line`'s own value in light, so this restyles nothing in light mode either.
+    sheetRaised: { borderColor: c.sheetEdge },
+    // `c.sheetLift` is `transparent` in light: the view mounts and paints nothing, which is how
+    // light mode stays pixel-for-pixel what the owner already signed off on.
+    sheetLift: { backgroundColor: c.sheetLift },
     pageWrap: { position: "absolute", left: 0, right: 0, top: 0 },
     page: { flex: 1, backgroundColor: c.bg },
     pageHeader: {

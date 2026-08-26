@@ -41,11 +41,32 @@ import { useTheme } from "@/theme/ThemeProvider";
  *  the list is actually moving. */
 export const BOTTOM_FADE_SPAN = 12;
 
-export function BottomFadeBlur({ height, intensity = 52 }: { height: number; intensity?: number }) {
+export function BottomFadeBlur({
+  height,
+  intensity = 52,
+  span = BOTTOM_FADE_SPAN,
+}: {
+  height: number;
+  intensity?: number;
+  /**
+   * How softly the band's TOP edge eases in. Defaults to `BOTTOM_FADE_SPAN`, which is chat's
+   * settled number and is not to be lowered — see the constant's own note.
+   *
+   * 🔴 A PROP BECAUSE THE CANVAS TRADES THE TWO NUMBERS DIFFERENTLY, NOT BECAUSE 12 IS WRONG
+   * (owner 2026-08-21: "the fade to blur is too high up"). Chat's band ends inside the composer
+   * card, so a 12pt ramp is invisible against it. The Canvas has a 52pt character standing 14pt
+   * ABOVE the composer, and its band has to reach past prose the character would otherwise be
+   * drawn on top of. Started at the character's midpoint with a 12pt ramp, that put a
+   * near-hard blur edge 40pt above the composer, which is the band the owner is looking at.
+   * Lowering the start alone re-exposes the sentence under the character; softening alone
+   * leaves the edge where it is. The Canvas does both, and this is the half that lives here.
+   */
+  span?: number;
+}) {
   const { resolvedMode } = useTheme();
-  const total = Math.max(1, height + BOTTOM_FADE_SPAN);
+  const total = Math.max(1, height + span);
   // Where the ease-in finishes: everything below this offset is full strength.
-  const solidStop = Math.min(0.95, BOTTOM_FADE_SPAN / total);
+  const solidStop = Math.min(0.95, span / total);
   const tint: BlurTint = resolvedMode === "dark" ? "systemChromeMaterialDark" : "systemChromeMaterialLight";
 
   return (

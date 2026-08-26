@@ -38,12 +38,32 @@ const EASE = Easing.out(Easing.ease);
 interface CanvasFadeProps {
   /** Changing this fades the current subtree out and the new one in. Same value = no transition. */
   contentKey: string;
+  /**
+   * Fires with the key this component is actually PAINTING — at mount, and again each time a
+   * fade-out finishes and the swap commits. It therefore LAGS `contentKey` by `FADE_OUT_MS`.
+   *
+   * 🔴 THIS EXISTS SO SIBLINGS OUTSIDE THE FADE CAN STOP CONTRADICTING WHAT IS INSIDE IT
+   * (owner 2026-08-22: two mascots on screen at once). The module's whole trick is that the
+   * outgoing subtree is HELD and painted for 160ms after the caller's state has already moved on
+   * — see the 🔴 block at the top. Anything the caller mounts as a sibling of this component and
+   * gates on that same state therefore appears 160ms EARLY, next to content that has not left yet.
+   * On the Canvas that put the 52pt dock character beside the 128pt waiting character for the
+   * length of the swap, which is the one thing `learn.tsx`'s "ONE CHARACTER AT A TIME" header
+   * promises never happens.
+   *
+   * TRIED AND REJECTED: having the caller run its own `setTimeout(FADE_OUT_MS)`. It would be a
+   * second copy of this module's timing, and `canvas-metrics.ts` exists specifically so there is
+   * one. It would also drift on the two paths that do not take the full 160ms — reduced motion
+   * commits immediately, and an interrupted fade hands the commit to whichever change replaced it.
+   * Reporting the painted key covers all three because it IS the commit.
+   */
+  onShown?: (key: string) => void;
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
 
-export function CanvasFade({ contentKey, children, style, testID }: CanvasFadeProps) {
+export function CanvasFade({ contentKey, onShown, children, style, testID }: CanvasFadeProps) {
   const reduced = useReducedMotion();
   // The key currently PAINTED, which lags `contentKey` for the 160ms of the fade-out.
   const [shownKey, setShownKey] = useState(contentKey);
@@ -81,6 +101,16 @@ export function CanvasFade({ contentKey, children, style, testID }: CanvasFadePr
       if (finished) runOnJS(commit)();
     });
   }, [settled, reduced, commit, opacity]);
+
+  // 🔴 HELD IN A REF AND READ FROM AN EFFECT, so the effect below depends on `shownKey` ALONE. A
+  // caller that passes an inline arrow — which `learn.tsx` does not, but the next caller might —
+  // would otherwise hand this a new function identity every render and re-announce the same key
+  // forever.
+  const onShownRef = useRef(onShown);
+  onShownRef.current = onShown;
+  useEffect(() => {
+    onShownRef.current?.(shownKey);
+  }, [shownKey]);
 
   const animated = useAnimatedStyle(() => ({ opacity: opacity.value }));
 

@@ -17,8 +17,8 @@
 // exact dead-lane shape web removed from this very surface." So —
 //   * `+`    opens the system file picker and attaches the text of a real PDF/Word/PowerPoint,
 //            which `sendChat` receives as `attachedDoc`.
-//   * dial   cycles `lib/chat-effort.ts`'s Instant / Medium / High, which `sendChat` receives as
-//            `effort` and genuinely routes on.
+//   * (a thinking dial sat between `+` and the mic until 2026-08-21; see the comment in row 2
+//            for why it went and why `lib/chat-effort.ts` stayed.)
 //   * mic    is on-device dictation through `hooks/useSpeechInput.ts` — the same hook the Chat
 //            composer uses, so a phrase dictated here behaves exactly as one dictated there.
 //   * send   is ALWAYS DRAWN, never unmounted. It dims to 0.4 when there is nothing to send. A
@@ -35,13 +35,13 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { ArrowUpIcon, CloseIcon, MicIcon, PlusIcon } from "@/components/icons";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
-import { CHAT_EFFORTS, CHAT_EFFORT_LABEL, type ChatEffort } from "@/lib/chat-effort";
+import { type ChatEffort } from "@/lib/chat-effort";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space } from "@/theme/tokens";
 
 import { COMPOSER } from "./canvas-metrics";
-import { DialGlyph, DocumentGlyph } from "./canvas-glyphs";
+import { DocumentGlyph } from "./canvas-glyphs";
 
 export interface CanvasComposerProps {
   value: string;
@@ -113,11 +113,6 @@ export function CanvasComposer({
 
   const canSend = value.trim().length > 0 && !busy;
 
-  const cycleEffort = useCallback(() => {
-    const index = CHAT_EFFORTS.indexOf(effort);
-    onEffortChange(CHAT_EFFORTS[(index + 1) % CHAT_EFFORTS.length]!);
-  }, [effort, onEffortChange]);
-
   const send = useCallback(() => {
     // 🔴 `cancel()`, NOT `stop()`. This read `stop()` under a comment about not losing the words
     // being spoken as the learner reaches for send — but `useSpeechInput.stop()` deliberately
@@ -134,8 +129,6 @@ export function CanvasComposer({
     dictationBase.current = "";
     onSend();
   }, [cancel, listening, onListeningChange, onSend]);
-
-  const effortLabel = useMemo(() => CHAT_EFFORT_LABEL[effort], [effort]);
 
   return (
     <View
@@ -193,21 +186,21 @@ export function CanvasComposer({
 
         <View style={styles.spacer} />
 
-        <Pressable
-          style={({ pressed }) => [styles.control, pressed && styles.pressed]}
-          onPress={cycleEffort}
-          hitSlop={4}
-          accessibilityRole="button"
-          // The dial has three positions and no room for a label at 36pt, so the position is
-          // spoken rather than drawn. Sighted learners get the same answer from the toast-free
-          // route: pressing it changes how the next answer is thought about, and the next answer
-          // is the feedback.
-          accessibilityLabel={`Thinking: ${effortLabel}. Change.`}
-          accessibilityHint="Cycles Instant, Medium and High"
-          testID="canvas-effort"
-        >
-          <DialGlyph size={COMPOSER.glyph} color={effort === "medium" ? c.text2 : c.text} />
-        </Pressable>
+        {/* 🔴 THE THINKING DIAL WAS HERE AND IS GONE (owner 2026-08-21: "what does this do? can
+            you remove it?"). It cycled Instant / Medium / High. The reason it went is that TWO OF
+            ITS THREE POSITIONS WERE NOT SETTINGS: `applyChatEffort` returns the routed decision
+            untouched for `medium`, so "Medium" was a label on the default, and the owner's own
+            reading was the correct one — "its supposed to be auto so that deepseek can think or
+            reason more when it needs to". That is exactly what the router already does per turn;
+            the dial existed only to OVERRIDE it.
+            🔴 AND THE OVERRIDE WAS NOT RELIABLE EITHER, which is the second half of the argument.
+            `applyChatEffort` silently drops High on any turn that saves to the workspace or reads
+            it, because thinking mode cannot carry tool calls — so the control cancelled itself on
+            exactly the turns a learner would most expect it to bite.
+            NOT DELETED, DELIBERATELY: `lib/chat-effort.ts`, the stored preference and the screen's
+            `effort` prop all remain, and the screen still sends `DEFAULT_CHAT_EFFORT`. That keeps
+            the phone's wire shape identical to web's, which still has its picker — a thread moves
+            between the two — and makes restoring the button a one-component change. */}
 
         <Pressable
           style={({ pressed }) => [

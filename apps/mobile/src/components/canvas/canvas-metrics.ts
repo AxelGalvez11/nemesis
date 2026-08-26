@@ -90,15 +90,174 @@ export const FADE_OUT_MS = 160;
 export const FADE_IN_MS = 220;
 
 /** `.canvas-phrase` (globals.css:881-935) — the ambient captions. Deliberately SLOWER than the
- *  140ms `.canvas-swap`, because a fast flicker between phase captions reads as churn. */
+ *  140ms `.canvas-swap`, because a fast flicker between phase captions reads as churn.
+ *
+ *  🔴 RECORDED, NOT PLAYED, AND SAYING SO IS THE POINT (2026-08-21). Nothing on the phone consumes
+ *  this: both captions arrive through `CanvasFadeIn`, which runs at `FADE_IN_MS` (220). A comment
+ *  in `CanvasThinking.tsx` claimed the 260 from the day it was written and the code never did it.
+ *  It is kept as the
+ *  measured web value — this file's job is to hold the numbers the two surfaces were measured
+ *  against — but a caller reaching for it is adding a SECOND fade timing to a surface whose one
+ *  crossfade module exists to prevent exactly that. Read `CanvasFade.tsx` before using it. */
 export const PHRASE_MS = 260;
 
-/** The ambient thinking dot — `canvas-thinking.tsx`. Tailwind's `animate-pulse`: 2s, opacity
- *  1 → .5 → 1. Deliberately the least interesting thing on screen. */
+/** The thinking dot — `canvas-thinking.tsx`. Tailwind's `animate-pulse`: 2s, opacity
+ *  1 → .5 → 1. On the ambient line it is deliberately the least interesting thing on screen.
+ *
+ *  🔴 THERE IS EXACTLY ONE DOT LEFT ON THIS SURFACE, AND THIS IS THE RECORD OF THE THREE THAT WENT
+ *  (owner 2026-08-21, and both halves of that day belong here or the next reader re-adds them).
+ *  In the morning: "i need a better thinking animation, remove the colorful swirls around the
+ *  mascot. i need the thinking to have the mascot in it too like the attached reference" — the
+ *  reference image being characters with faces and, beside them, a separate group of three
+ *  animated dots. A trio was built to it, staggered so it read as a wave, and it shared this
+ *  timing with the ambient line's single dot. Later the same day, after seeing it on the device:
+ *  "also remove the three dots animation, i only want the mascot and the thinking words". The trio
+ *  is gone from `CanvasThinkingPreview`; the ambient dot in `CanvasThinkingLine` was never in
+ *  scope and still pulses on these numbers.
+ *
+ *  🔴 THE REFERENCE IMAGE IS STILL THE AUTHORITY ON THE MASCOT AND IS NO LONGER THE AUTHORITY ON
+ *  THE DOTS. It is what settled `WAITING_FACE` (a character with its face on, no coloured rings)
+ *  and that half stands. Finding the image later and "restoring" the dots to match it would be
+ *  undoing an instruction, not fixing an omission.
+ *
+ *  TRIED AND REJECTED ALONG THE WAY, kept because these are the answers to the obvious next ideas:
+ *    - a second, faster wave for the trio, to make it "better". `components/ThinkingDots.tsx`
+ *      already exists as exactly that — a 480ms bounce with its own easing, used by the notebook —
+ *      and two indicators pulsing at different rates in one app is how a surface stops reading as
+ *      one thing. What made the trio read as a wave was the stagger, not a shorter period.
+ *    - `PULSE_STAGGER_MS = 140`, deleted with the trio. It was the web's own number
+ *      (`apps/web/components/workspace/learn/canvas-thinking-preview.tsx` staggers three forming
+ *      lines by `index * 140ms`, on the grounds that three things pulsing in lockstep read as ONE
+ *      flashing block). Measured under plain node against the same cubic-bezier: 140ms is 7% of
+ *      the 2000ms cycle and the leading and trailing dot were furthest apart at 0.224 of opacity,
+ *      640ms in — a visible gradient across three 6pt dots, nowhere near a strobe.
+ *    - `PULSE_TRIO_GAP = 6.75`, deleted with it: `gap-1.5` at 1rem = 18px, the same step the
+ *      source pill uses, tight enough that three dots read as one object rather than three marks.
+ *  Both constants had exactly one caller each and nothing else in the app referenced them, so they
+ *  are deleted rather than left as furniture. The numbers above are what a reinstated row would
+ *  need; `PulseDot`'s own note in `CanvasThinking.tsx` holds the `withDelay`/`withRepeat` ordering
+ *  that made the stagger a wave instead of a limp. */
 export const PULSE_MS = 2000;
 export const PULSE_DOT = 6;
 /** `gap-2.5` between the dot and the phrase. */
 export const PULSE_GAP = 11.25;
+/**
+ * What a pulsing dot holds at when the system's Reduce Motion is on.
+ *
+ * 🔴 THE DOT STAYS AND HOLDS ITS RESTING CONTRAST; ONLY THE SWEEP STOPS. `useReducedMotion.ts`
+ * carries the rule and `apps/web/app/globals.css`'s `prefers-reduced-motion` block is where it
+ * comes from. Someone who asked the system to stop moving still has to be able to see that the
+ * region is busy, so the element never vanishes and never fades to nothing.
+ *
+ * It is still a shared constant with one caller, which is deliberate. It was a literal 0.6 inside
+ * `CanvasThinkingLine` until the trio above needed the same number, and the trio is now gone —
+ * folding it back into that component would only have to be undone the next time anything else on
+ * this surface rests. The cost of leaving it here is one exported number; the cost of inlining it
+ * is two copies drifting to different greys, which is what it was pulled out to prevent.
+ */
+export const PULSE_REST = 0.6;
+
+/**
+ * The caption's travelling highlight — `.canvas-rewriting` (`apps/web/app/globals.css:930-944`),
+ * measured off the web rather than re-invented (owner 2026-08-21, on a screenshot of the phone's
+ * thinking screen with a red circle drawn around THE CAPTION TEXT and nothing else: "this should
+ * be pulsing from left to right"). The three dots in that screenshot were outside the circle and
+ * were left alone at the time; the owner removed them outright later the same day (see `PULSE_MS`
+ * above), which changed nothing here — the sweep was always about the words, and it is now the
+ * only moving thing under the character.
+ *
+ * 🔴 THE NUMBERS ARE THE WEB'S, EXPRESSED AS MULTIPLES OF THE TEXT'S OWN WIDTH — which is what the
+ * CSS is already doing, in units the phone has no equivalent for. The web writes the band as a
+ * background image on the text element itself:
+ *
+ *     background-size: 200% 100%          the gradient tile is 2× the element's width  → SWEEP_TILE
+ *     200% 0 → -200% 0                    the tile travels 4× the element's width      → SWEEP_TRAVEL
+ *     1900ms linear infinite                                                           → SWEEP_MS
+ *
+ * A percentage `background-position` resolves against (element − image) width, which here is
+ * (W − 2W) = −W, so `200%` puts the tile's left edge at −2W and `−200%` puts it at +2W: four
+ * element-widths of travel, moving RIGHTWARDS, at a constant rate. LINEAR is not an oversight to be
+ * softened into an ease — an eased sweep slows down in the middle of the words and reads as a
+ * hesitation.
+ *
+ * 🔴 A HIGHLIGHT CROSSES ANY GIVEN LETTER EVERY 950ms, AND 1900 IS STILL THE NUMBER TO COPY. CSS
+ * backgrounds repeat by default, so the 2W tile is laid end to end and the element sees a fresh
+ * peak every time the pattern advances one whole tile: 1900ms × (2W ÷ 4W) = 950ms. Halving
+ * `SWEEP_MS` to "fix" the apparent mismatch was the obvious move and is wrong — it would run the
+ * phone's sweep at twice the desktop's speed. Reproduced under plain node rather than reasoned
+ * about: sampling the CSS's own `background-position` arithmetic and the phone's translated layer
+ * across four caption widths, 401 frames and 201 points per frame, the two alpha profiles agree to
+ * 1.3e-15.
+ */
+export const SWEEP_MS = 1900;
+
+/** `background-size: 200%` — the gradient tile, in multiples of the text's measured width. */
+export const SWEEP_TILE = 2;
+
+/**
+ * `200% → -200%` — the distance the tile travels in one cycle, in multiples of the text's width.
+ *
+ * 🔴 THIS IS ALSO WHY THE LOOP HAS NO JUMP IN IT, AND THE PROOF IS ONE DIVISION: 4W of travel over
+ * a 2W tile is exactly TWO whole tiles, and a repeating pattern shifted by a whole number of its
+ * own periods paints the identical image. So the frame at t = 1900ms and the frame at t = 0 are the
+ * same picture and the restart is invisible. Checked under node at 1001 sample points across two
+ * caption widths: the largest difference between the two frames is 8.9e-16. Any travel that is not
+ * a whole multiple of `SWEEP_TILE` snaps.
+ */
+export const SWEEP_TRAVEL = 4;
+
+/**
+ * How many tiles the phone actually paints. CSS repeats its background forever; a React Native
+ * view has edges, so the layer must be long enough to cover the words for the whole cycle.
+ *
+ * Three, and the arithmetic is tight rather than generous: the layer starts with its left edge at
+ * −4W (`-SWEEP_TRAVEL × W`) and finishes at 0, so at its worst moment it spans [−4W, 2W] and the
+ * text sits at [0, W] inside it. Two tiles (4W long) span [−4W, 0] at the start of the cycle and
+ * would leave the entire caption unpainted; four would paint a tile that is never on screen.
+ */
+export const SWEEP_TILES = 3;
+
+/**
+ * What the words rest at between passes, as a fraction of their own colour.
+ *
+ * 🔴 0.55 IS THE WEB'S OWN NUMBER FOR EXACTLY THIS — `.canvas-rewriting > * { opacity: 0.55 }`
+ * (globals.css:944), the wording of a passage that is being reworked: "Not hidden: the learner
+ * asked for THIS paragraph to change and needs to keep seeing which one it is." It is not
+ * `PULSE_REST` (0.6) beside it and the two must not be merged; that one is where a DOT holds when
+ * Reduce Motion stops it, this one is where WORDS sit while a band is passing over them.
+ *
+ * 🔴 THE BAND ADDS, IT NEVER SUBTRACTS. The peak of the sweep is exactly the text's resting colour
+ * — never brighter, never a different hue — so the caption swings between 0.55 and 1.0 of `c.text3`
+ * and is legible at every point of the cycle. Measured under node in sRGB: at the trough the
+ * caption is 6.27:1 against the black page and 4.76:1 against the white one, both above the 4.5:1
+ * floor. It is also very close to the deepest trough that clears it: the same measurement puts 0.45
+ * at 3.35:1 on the white page and 0.35 at 2.44:1. A deeper trough makes the band more dramatic and
+ * spends most of every cycle below the contrast floor, which is the "dims the words to
+ * near-invisible and back" the owner did not ask for. Going the other way — a shallower 0.75 — is
+ * the sweep the eye stops noticing, and then the only honest fix is to make the band brighter than
+ * the text, which nothing on this surface is allowed to be (`.canvas-forming`: "LOW CONTRAST BY
+ * CONSTRUCTION … a bright sweep on a quiet page becomes the most interesting thing on screen").
+ *
+ * 🔴 AND UNDER REDUCE MOTION THIS NUMBER IS NOT USED AT ALL — WHICH IS A DELIBERATE DIVERGENCE
+ * FROM WEB, NOT PARITY WITH IT (owner 2026-08-21). Say it plainly, because the rest of this file
+ * matches web number for number and a reader will assume this does too. Web's
+ * `prefers-reduced-motion` block (globals.css) drops only the `background-image` and KEEPS
+ * `.canvas-rewriting > * { opacity: 0.55 }`, on the stated grounds that "the dimmed wording is
+ * what says this paragraph is being rewritten, and it is not motion".
+ * That argument is sound WHERE IT WAS WRITTEN and does not carry here. On web the dimming marks
+ * out one paragraph of an article as the one being rewritten — it is a contrast against the
+ * surrounding prose, which is the whole of its meaning. The phone's caption has no surrounding
+ * prose: it is a standalone status line under the character, and since 2026-08-21 it is the only
+ * writing on that screen at all (`PULSE_MS` above records the dots that used to sit beside it).
+ * Holding it permanently dim would therefore convey nothing — there is nothing for it to be dim
+ * IN CONTRAST TO — and would only make the one status message on the screen harder to read for
+ * someone who has asked for less motion. Removing the dots strengthens this rather than weakening
+ * it: they were the other visible sign that the region was busy, so the caption now has to stay
+ * readable on its own.
+ *   TRIED AND REJECTED: keeping the 0.55 for parity. It fails the one test that matters — a
+ *   learner who turns on Reduce Motion is not asking for lower contrast.
+ */
+export const SWEEP_TROUGH = 0.55;
 
 /** The source pill — `canvas-source-pills.tsx`, resolved from 1rem = 18px. */
 export const PILL = {
@@ -121,11 +280,16 @@ export const PILL = {
 } as const;
 
 /**
- * The thinking mascot's drawn size — `<BloubBot size={128} state="thinking" />`.
+ * The thinking mascot's drawn size — `<BloubBot size={128} … />` in `CanvasThinking.tsx`.
  *
  * 🔴 IT REPLACES THE SURFACE, IT DOES NOT SIT UNDER IT (owner call, both halves, 2026-08-20).
  * Rendering it as a small inline spinner above the answer would look like a reasonable
  * simplification and would be the wrong one.
+ *
+ * 🔴 THIS LINE USED TO READ `state="thinking"` AND THAT IS NO LONGER WHAT IS DRAWN (owner
+ * 2026-08-21). At 128pt the engine's `thinking` state has no face at all — see the long note in
+ * `CanvasThinking.tsx` for the evidence and the decision. The SIZE is untouched by that: 128pt is
+ * still what "the system has the floor" looks like, on both surfaces.
  */
 export const THINKING_MASCOT = 128;
 

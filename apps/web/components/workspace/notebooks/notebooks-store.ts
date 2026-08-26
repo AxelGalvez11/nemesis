@@ -54,34 +54,40 @@ const EMPTY_STATE: StoreState = {
   activeChatId: null,
 };
 
+// 🔴 THE DEV PREVIEW IS A PICTURE OF WHO THIS IS FOR. It used to seed a pharmacy student's
+// workspace (NAPLEX prep, beta-blockers, MedlinePlus), which is the product Nemesis stopped being.
+// Anyone opening the preview, including a new engineer, learned the wrong audience from it. Three
+// notebooks, three unrelated fields, on purpose.
 const PREVIEW_NOTEBOOKS: Notebook[] = [
-  { id: "preview-notebook", name: "Cardiovascular pharmacology", description: null, instructions: "You are my pharmacology tutor. Quiz me on mechanisms and keep answers exam-focused.", updatedAt: "2026-07-15T10:00:00.000Z" },
-  { id: "preview-nb-2", name: "Renal system — NAPLEX prep", description: null, instructions: null, updatedAt: "2026-07-11T09:00:00.000Z" },
-  { id: "preview-nb-3", name: "Antibiotics review", description: null, instructions: null, updatedAt: "2026-06-28T09:00:00.000Z" },
+  { id: "preview-notebook", name: "Constitutional law: the Commerce Clause", description: null, instructions: "You are my tutor for this course. Quiz me on the tests the Court applies, and keep answers exam-focused.", updatedAt: "2026-07-15T10:00:00.000Z" },
+  { id: "preview-nb-2", name: "Thermodynamics: the second law", description: null, instructions: null, updatedAt: "2026-07-11T09:00:00.000Z" },
+  { id: "preview-nb-3", name: "Renaissance painting review", description: null, instructions: null, updatedAt: "2026-06-28T09:00:00.000Z" },
 ];
 
 const PREVIEW_SOURCES: NotebookSource[] = [
-  { id: "ps1", notebookId: "preview-notebook", kind: "library", name: "ACE inhibitors", content: null, sourceUrl: null, libraryPath: "Pharmacology/Cardiovascular/ACE inhibitors.md", bytes: null, createdAt: "" },
-  { id: "ps2", notebookId: "preview-notebook", kind: "pdf", name: "2023 Hypertension guideline", content: null, sourceUrl: null, libraryPath: null, bytes: 428_000, createdAt: "" },
-  { id: "ps3", notebookId: "preview-notebook", kind: "url", name: "MedlinePlus: Beta blockers", content: null, sourceUrl: "https://medlineplus.gov/betablockers.html", libraryPath: null, bytes: null, createdAt: "" },
+  { id: "ps1", notebookId: "preview-notebook", kind: "library", name: "Wickard v. Filburn", content: null, sourceUrl: null, libraryPath: "Constitutional law/Commerce Clause/Wickard v. Filburn.md", bytes: null, createdAt: "" },
+  { id: "ps2", notebookId: "preview-notebook", kind: "pdf", name: "Course reader, chapter 4", content: null, sourceUrl: null, libraryPath: null, bytes: 428_000, createdAt: "" },
+  { id: "ps3", notebookId: "preview-notebook", kind: "url", name: "Wikipedia: Commerce Clause", content: null, sourceUrl: "https://en.wikipedia.org/wiki/Commerce_Clause", libraryPath: null, bytes: null, createdAt: "" },
 ];
 
 const PREVIEW_SOURCES_BY_ID: Record<string, NotebookSource[]> = { "preview-notebook": PREVIEW_SOURCES };
 
 const PREVIEW_CHATS: NotebookChat[] = [
-  { id: "preview-chat-1", notebookId: "preview-notebook", title: "Beta-blocker contraindications", updatedAt: "2026-07-16T14:00:00.000Z" },
-  { id: "preview-chat-2", notebookId: "preview-notebook", title: "ACE vs ARB — key differences", updatedAt: "2026-07-14T09:00:00.000Z" },
+  { id: "preview-chat-1", notebookId: "preview-notebook", title: "The substantial effects test", updatedAt: "2026-07-16T14:00:00.000Z" },
+  { id: "preview-chat-2", notebookId: "preview-notebook", title: "Wickard and Lopez, key differences", updatedAt: "2026-07-14T09:00:00.000Z" },
 ];
 
 const PREVIEW_CHATS_BY_ID: Record<string, NotebookChat[]> = { "preview-notebook": PREVIEW_CHATS };
 
 const PREVIEW_CHAT_MESSAGES: Record<string, SessionMessage[]> = {
   "preview-chat-1": [
-    { role: "user", content: "From my sources, when are beta-blockers contraindicated?", at: "2026-07-16T14:00:00.000Z" },
+    { role: "user", content: "From my sources, when does an activity fall outside the commerce power?", at: "2026-07-16T14:00:00.000Z" },
     {
       role: "assistant",
+      // No em dash: this fixture stands in for Nemesis's own writing, and the owner rule holds
+      // wherever Nemesis appears to be speaking.
       content:
-        "Based on the sources you added:\n\n- **Severe bradycardia or high-degree AV block** — they slow conduction further.\n- **Decompensated heart failure** — start only once stable, low and slow.\n- **Asthma / severe reactive airway disease** — avoid non-selective agents.\n\nWant the exact lines from the Hypertension guideline for any of these?",
+        "Based on the sources you added:\n\n- **It is not economic activity.** Lopez turned on gun possession near a school not being commerce in any ordinary sense.\n- **The link to interstate commerce is a chain of inferences.** Morrison rejected reasoning that would reach almost anything.\n- **It is not part of a broader regulatory scheme.** Wickard survives because the wheat quota only works if home-grown wheat counts too.\n\nWant the exact lines from chapter 4 for any of these?",
       at: "2026-07-16T14:00:05.000Z",
     },
   ],

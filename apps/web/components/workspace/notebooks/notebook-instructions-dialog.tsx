@@ -41,7 +41,7 @@ export function NotebookInstructionsDialog({ open, onOpenChange, initialValue, o
           autoFocus
           className="min-h-44 resize-y rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-3 py-2.5 text-[0.95rem] leading-relaxed text-foreground outline-none placeholder:text-(--ui-text-quaternary)"
           onChange={(e) => setValue(e.target.value)}
-          placeholder="e.g. You're my pharmacology tutor — keep answers exam-focused and cite the guideline I added."
+          placeholder="e.g. You're my tutor for this course. Keep answers exam-focused and cite the readings I added."
           value={value}
         />
         <DialogFooter>

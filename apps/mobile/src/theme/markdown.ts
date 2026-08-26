@@ -86,4 +86,11 @@ export const createMarkdownStyles = (c: ThemeColors) =>
     mark: { backgroundColor: rgba(c.accent, 0.24), color: c.text, borderRadius: 4 },
     tag: { backgroundColor: c.accentFaint, color: c.accent, fontWeight: "600" as const, borderRadius: 4 },
     u: { textDecorationLine: "underline" as const },
+    // The fallback drawing of <sub>/<sup>, used only for a run Unicode cannot spell — see
+    // lib/sub-sup.ts and the rules in MessageBody.tsx. 13 against the body's 18 is the ~0.72 ratio
+    // a browser uses for these, and there is deliberately no lineHeight: leaving it inherited
+    // keeps the smaller run on the paragraph's own line box, so a sentence containing one does not
+    // get a taller line than the sentence above it.
+    sub: { fontSize: 13 },
+    sup: { fontSize: 13 },
   }) as const;

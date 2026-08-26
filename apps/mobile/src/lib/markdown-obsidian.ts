@@ -1,5 +1,5 @@
-// The three Obsidian-flavoured rules the WEB note editor renders and the phone
-// did not: ==highlight==, #tag, and <u>underline</u>.
+// The raw-ish inline rules the WEB renders and the phone did not: ==highlight==, #tag,
+// <u>underline</u>, and <sub>/<sup>.
 //
 // Why this exists (owner 2026-07-22: "the ios app does feel like a notepad and
 // it does not recognize some custom rules that are present in the webapp"):
@@ -23,6 +23,8 @@
 // "mark", "tag" and "u", which MessageBody supplies render rules for.
 
 import type { MarkdownItInstance, StateInline } from "markdown-it";
+
+import { toUnicodeScript, type ScriptKind } from "./sub-sup.ts";
 
 /** A tag is "#" followed by letters (any script), digits, "_", "-" or "/" —
  *  matching web's own /(?:^|\s)(#[\p{L}\d_-]+)/u, plus "/" so Obsidian's
@@ -95,10 +97,64 @@ function underlineRule(state: StateInline, silent: boolean): boolean {
   return true;
 }
 
-/** Install all three on a markdown-it instance. */
+/** <sub>2</sub> and <sup>-9</sup> — the other two raw tags that reach this parser.
+ *
+ *  Why they are here rather than handled by turning on `html`: the same reason the underline rule
+ *  gives. Note text syncs from the cloud, so raw HTML would let a note inject arbitrary markup.
+ *  This handles the two tags that actually turn up and nothing else.
+ *
+ *  WHERE THEY COME FROM (owner 2026-08-22: "<sub> tags render as literal text"). Two sources, and
+ *  neither is going to stop: study cards imported from Anki keep chemistry as bare tags — the same
+ *  case `apps/web/lib/workspace/chat-markdown.tsx` records for its own `htmlSubSup` option — and a
+ *  model writing about water or an ion reaches for `H<sub>2</sub>O` unprompted, because that is
+ *  what the web is written in. The phone printed both verbatim.
+ *
+ *  🔴 THE COMMON CASE EMITS A PLAIN TEXT TOKEN AND NO NODE AT ALL. When every character has a
+ *  Unicode sub/superscript form — which covers all of chemistry and all of exponents — the run is
+ *  pushed as ordinary text spelled in those characters. That is not a shortcut, it is the only way
+ *  the phone can genuinely RAISE or LOWER anything: React Native has no baseline offset, so a
+ *  styled node could only ever be smaller, not lower. See `lib/sub-sup.ts`, which checked the
+ *  engine before concluding it. The paired token is the FALLBACK, for a run Unicode cannot spell,
+ *  and `MessageBody` draws it as small same-baseline text.
+ */
+function scriptRule(kind: ScriptKind): (state: StateInline, silent: boolean) => boolean {
+  const open = `<${kind}>`;
+  const close = `</${kind}>`;
+  return (state, silent) => {
+    const { src, pos } = state;
+    if (!src.startsWith(open, pos)) return false;
+    const end = src.indexOf(close, pos + open.length);
+    if (end === -1) return false;
+    const content = src.slice(pos + open.length, end);
+    // Empty would render as nothing while still eating the tags; a newline would swallow a
+    // paragraph break. Both match the underline rule's guards above.
+    if (!content.trim() || content.includes("\n")) return false;
+    if (!silent) {
+      const unicode = toUnicodeScript(content, kind);
+      if (unicode !== null) {
+        const token = state.push("text", "", 0);
+        token.content = unicode;
+      } else {
+        state.push(`${kind}_open`, kind, 1);
+        const token = state.push("text", "", 0);
+        token.content = content;
+        state.push(`${kind}_close`, kind, -1);
+      }
+    }
+    state.pos = end + close.length;
+    return true;
+  };
+}
+
+/** Install all five on a markdown-it instance. */
 export function obsidianInline(md: MarkdownItInstance): void {
   md.inline.ruler.before("emphasis", "obsidian_mark", markRule);
   md.inline.ruler.before("emphasis", "obsidian_underline", underlineRule);
+  // Before emphasis for the same reason underline is: these run on "<", which markdown-it treats
+  // as a text terminator, so the inline ruler is entered there and one of these rules can claim it
+  // before the autolink/html rules get a look at the angle bracket.
+  md.inline.ruler.before("emphasis", "obsidian_sub", scriptRule("sub"));
+  md.inline.ruler.before("emphasis", "obsidian_sup", scriptRule("sup"));
   // After emphasis: "#" is not an emphasis character, so ordering only has to
   // keep tags out of links, which linkify/link rules have already consumed.
   md.inline.ruler.push("obsidian_tag", tagRule);

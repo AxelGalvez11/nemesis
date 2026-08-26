@@ -6,7 +6,6 @@ import {
   InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -46,6 +45,7 @@ import {
 } from "@/api/cloudLibrary";
 import { fileKindOf } from "@/lib/library-row-meta";
 import { outlineOf, splitSections } from "@/lib/note-outline";
+import { openLink } from "@/lib/open-link";
 import { arriveAt, closeTab, noteNavHolder, openTabIds, plainTextOf, previewOf, selectTab } from "@/lib/note-tabs";
 import { buildNoteResolver, isExternalUrl, preprocessWikilinks, resolveInternalHref } from "@/lib/wikilinks";
 import { createMarkdownStyles } from "@/theme/markdown";
@@ -781,8 +781,20 @@ export default function NoteScreen() {
         if (targetId !== noteId) router.setParams({ id: targetId });
         return false;
       }
+      // 🔴 THIS SCREEN OPENS ITS OWN EXTERNAL LINKS, SO IT HAD TO BE FIXED WITH `MessageBody`, NOT
+      // AFTER IT (owner 2026-08-21, "instead of taking the user to safari, can the app do a mini
+      // viewer?"). Returning `false` here means "leave it to me, do not open it" — see the
+      // `onLinkPress` contract quoted in full on `MessageBody`'s prop — so the opener that
+      // `InlineLink` now uses is never reached from a note. Had only that file been switched to
+      // the in-app viewer, notes would have been the one surface still ejecting to Safari, and the
+      // fix would have looked done while the commonest place to keep a reference link was not.
+      //   🔴 AND `isExternalUrl` IS EXACTLY WHY THE OPENER BRANCHES ON SCHEME. It matches
+      // `/^(https?|mailto|tel):/i` (`lib/wikilinks.ts:61`), so this branch takes `mailto:` and
+      // `tel:` as well as web pages. `openLink` sends only http(s) to the in-app viewer — which
+      // cannot present a mail composer or a dialler, and whose native side outright rejects any
+      // other scheme — and hands the rest to `Linking.openURL` exactly as this line used to.
       if (isExternalUrl(url)) {
-        void Linking.openURL(url).catch(() => {});
+        void openLink(url, c);
         return false;
       }
       const name = (() => {
@@ -795,7 +807,9 @@ export default function NoteScreen() {
       flashNotice(`"${name}" isn't in your library yet.`);
       return false;
     },
-    [resolver, flashNotice, noteId],
+    // `c` joins the deps because the viewer is opened in the app's own colours; a theme change
+    // has to reach the next tap, and rebuilding this callback is the whole cost of that.
+    [resolver, flashNotice, noteId, c],
   );
 
   return (

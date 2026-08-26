@@ -29,7 +29,7 @@
 // whose real icon was visible in the prose above it. That resolver is gone. `sourcePills` is also
 // what drops anything that is not an openable http(s) address, so no row here can be a dead end.
 
-import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { SlideUpSheet } from "./StudySheet";
 import {
@@ -41,8 +41,10 @@ import {
   type SourcePill,
 } from "@/components/canvas/canvas-sources";
 import type { ChatSource } from "@/lib/chat-thread";
+import { cleanSourceSummary } from "@/lib/source-summary";
+import { openLink } from "@/lib/open-link";
 import type { ThemeColors } from "@/theme/palette";
-import { useThemedStyles } from "@/theme/ThemeProvider";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
 /**
@@ -172,12 +174,16 @@ export function SourcesPillSheet({
   visible: boolean;
   onClose: () => void;
   pills: readonly SourcePill[];
-  /** Optional one-line summary per URL, when the surface has one. */
+  /** Optional one-line summary per URL, when the surface has one. ALREADY CLEANED — build it with
+   *  `descriptionsByUrl` below, never straight off `source.description`, which is page markdown. */
   descriptions?: Map<string, string>;
   portal?: boolean;
   testID?: string;
 }) {
   const styles = useThemedStyles(createStyles);
+  // The viewer below wears the app's own bar and control colours, so this component needs the
+  // palette as well as the stylesheet built from it. See `lib/open-link.ts`'s `viewerOptions`.
+  const { colors: c } = useTheme();
   return (
     <SlideUpSheet
       compactTitle
@@ -185,6 +191,36 @@ export function SourcesPillSheet({
       hideClose
       onClose={onClose}
       portal={portal}
+      // 🔴 SOLID PANEL, PAGE DIMMED BEHIND — THE OWNER PICKED THIS SHAPE BY NAME (2026-08-21). He
+      // sent ChatGPT's sources drawer as the reference and, asked to choose between the options,
+      // said: "Solid panel, page dimmed behind — the drawer is a clean solid panel, and the page
+      // behind is simply darkened by a scrim. No bleed-through at all." What he was looking at was
+      // this sheet over a FULLY TRANSPARENT tap-catcher with `GlassSurface` left translucent, and
+      // on device the answer's own paragraphs read straight through the drawer and collided with
+      // the source rows — the same "background bleeds through" complaint that produced
+      // `GlassSurface`'s `opaque` prop on 2026-07-20, arriving a second time on a bigger surface.
+      //
+      // 🔴 TWO PROPS, TURNED ON HERE AND NOWHERE ELSE. `SlideUpSheet` is the whole app's sheet —
+      // nineteen call sites, counted 2026-08-21 across the calendar, notebooks, Study, the two
+      // library bodies, the chat sheets and the auth/upgrade sheets. Both flags default to the
+      // old behaviour precisely so this decision stops at this drawer. Whether the others should
+      // follow is the owner's call, not this file's — do not go turning them on to "make it
+      // consistent".
+      //
+      // 🔴 "MAKE THE DRAWER BE ROUNDED TOO LIKE IN THE REFERENCE" (owner 2026-08-21) WAS NOT A
+      // RADIUS BUG, AND NOTHING ABOUT THE RADIUS CHANGED. It was already `radius.xl` (18pt) on
+      // both top corners, `GlassSurface` was already clipping to it, and 18pt is 4.1%-4.8% of the
+      // screen width on every current iPhone — inside the 4-5% the owner measured off the
+      // reference himself. The curve was being drawn correctly and was invisible: in DARK the
+      // page composites to #000000 (its own #000000 under a black scrim, which cannot darken it
+      // at any alpha) and this panel to #080808, a measured 1.048:1. In LIGHT the identical stack
+      // gives #ffffff on #a6a6a6, 2.439:1 — the reference exactly, which is why he only ever saw
+      // it go wrong on one theme. `solid` now also spends `c.sheetLift` to raise the dark panel
+      // to #212121 (1.299:1) and `c.sheetEdge` to give the arc a rim brighter than its own fill;
+      // both tokens are inert in light. The arithmetic and the four levers that were considered
+      // are recorded on `c.sheetLift` in theme/palette.ts.
+      scrim
+      solid
       title="Sources"
       visible={visible}
       testID={testID}
@@ -197,7 +233,15 @@ export function SourcesPillSheet({
               key={pill.key}
               accessibilityRole="link"
               accessibilityLabel={`${pill.label}. ${pill.title}`}
-              onPress={() => void Linking.openURL(pill.url).catch(() => {})}
+              // 🔴 THE TAP THAT STARTED THIS (owner 2026-08-21): "instead of taking the user to
+              // safari, can the app do a mini viewer?" — asked with this drawer open, having just
+              // pressed one of these rows and been backgrounded into Safari. `openLink` presents
+              // SFSafariViewController over Nemesis instead, so Done returns to this drawer, still
+              // open, still scrolled where they left it. `pill.url` is already known-openable —
+              // `sourcePills` builds rows only from what `hostOf` accepts — so this row always
+              // takes the viewer branch; the opener is still the shared one, because a second way
+              // to open a link is how the drawer and the citation chips drift apart again.
+              onPress={() => void openLink(pill.url, c)}
               style={({ pressed }) => [
                 styles.row,
                 index > 0 && styles.rowDivider,
@@ -257,11 +301,27 @@ function displayHost(host: string): string {
 /**
  * The per-URL blurb, when the surface carried one. Kept out of `SourcePill` on purpose: a pill is
  * a thing you press, and the blurb is only ever read inside the popup.
+ *
+ * 🔴 THE BLURB IS CLEANED HERE, BECAUSE `source.description` IS PAGE MARKDOWN (owner 2026-08-21,
+ * from a screenshot). This function used to hand `source.description` through untouched, and the
+ * <Text> below drew whatever the scraper found — on device that read "# Fusion / ## LLNL and
+ * Pacific Fusion achieve 3,000-sho…" under ans.org and "# Fusion Energy News / ### UK's MAST
+ * Upgrade achieves record fusi…" under innovationnewsnetwork.com. The search backend
+ * (`supabase/functions/nemesis-search/brave.ts`) asks Brave for pre-extracted PAGE CHUNKS rather
+ * than a SERP snippet, so heading markers, bullets, tables and link syntax are the ordinary case,
+ * not an edge case. `cleanSourceSummary` is the one place that knows how to undo it and what it
+ * must never touch — see `lib/source-summary.ts` for why "#1 ranked" and "C#" come through whole.
+ *
+ * 🔴 A SOURCE WHOSE BLURB CLEANS DOWN TO NOTHING GETS NO ENTRY AT ALL. A snippet that was only a
+ * horizontal rule and a table border is not a summary; storing "" would put an empty third line in
+ * the row, which is exactly the "control with nothing behind it" this file rules out elsewhere.
  */
 function descriptionsByUrl(sources: readonly ChatSource[] | undefined): Map<string, string> {
   const map = new Map<string, string>();
   for (const source of sources ?? []) {
-    if (source.url && source.description) map.set(source.url.trim(), source.description);
+    if (!source.url) continue;
+    const summary = cleanSourceSummary(source.description);
+    if (summary) map.set(source.url.trim(), summary);
   }
   return map;
 }

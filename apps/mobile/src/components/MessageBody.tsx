@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { Image, Linking, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 import type { ASTNode } from "react-native-markdown-display";
 import MarkdownIt from "markdown-it";
@@ -22,6 +22,7 @@ import {
 } from "@/components/canvas/citation-markers";
 import type { ChatSource } from "@/lib/chat-thread";
 import { obsidianInline } from "@/lib/markdown-obsidian";
+import { openLink } from "@/lib/open-link";
 import { createMarkdownStyles } from "@/theme/markdown";
 import { useTheme } from "@/theme/ThemeProvider";
 
@@ -80,6 +81,20 @@ const MARKDOWN_RULES = {
   ),
   u: (node: ASTNode, children: ReactNode, _parent: unknown, styles: MarkdownStyles) => (
     <Text key={node.key} style={styles.u}>{children}</Text>
+  ),
+  // 🔴 THESE TWO ARE THE FALLBACK PATH AND ALMOST NEVER RUN. `markdown-obsidian.ts` spells a
+  // sub/superscript in Unicode's own raised and lowered characters wherever it can, and that emits
+  // ordinary text — no node, so no rule. A node arrives only when the run contains a character
+  // Unicode has no such form for (there is no subscript "b" or "y", no superscript "q"). All this
+  // can then do is make it smaller, because React Native has no baseline offset at all — the
+  // engine check is written out in `lib/sub-sup.ts`. Smaller-but-level is wrong; it is also
+  // legible, and it is what the reader gets instead of a literal "<sub>" in the middle of a
+  // sentence, which is what they got before.
+  sub: (node: ASTNode, children: ReactNode, _parent: unknown, styles: MarkdownStyles) => (
+    <Text key={node.key} style={styles.sub}>{children}</Text>
+  ),
+  sup: (node: ASTNode, children: ReactNode, _parent: unknown, styles: MarkdownStyles) => (
+    <Text key={node.key} style={styles.sup}>{children}</Text>
   ),
 };
 
@@ -253,8 +268,11 @@ export function MessageBody({ content, styles, onLinkPress, sources }: MessageBo
         }
 
         // 3. An ordinary written link. A chip only when it points at one of this
-        //    answer's own sources, and it keeps the words the model wrote.
-        const isSource = sourceUrls.has(normalizedUrl(href));
+        //    answer's own sources, and it keeps the words the model wrote — up
+        //    to the length a pill can physically hold. See `CHIP_AUTHORED_MAX`.
+        const authored = nodeText(node);
+        const isSource =
+          sourceUrls.has(normalizedUrl(href)) && authored.length <= CHIP_AUTHORED_MAX;
         return (
           <InlineLink
             key={node.key}
@@ -342,11 +360,70 @@ function citationSite(sources: ChatSource[] | undefined, index: number): { url: 
  * had icons since it was built; the chips inside the prose were bare text, so the same source
  * looked like two different things on one screen.
  *
- * 🔴 <Image> NESTED INSIDE <Text>, AND IT HAS TO BE. This is returned from a markdown-display
- * `link` rule, which means it lands inside a paragraph's textgroup; returning a <View> there
- * breaks the paragraph into blocks — the same trap the `mark`/`tag`/`u` rules note above. React
- * Native draws an inline image inside <Text> on both platforms provided width and height are
- * explicit, which is why they are literals here and not derived from the font.
+ * 🔴 THE CHIP IS A <View> NESTED INSIDE A <Text>, AND BOTH HALVES OF THAT SENTENCE ARE LOAD-BEARING
+ * (owner 2026-08-21: "the inline sources dont look like pills or bubbles, fix"). The <Text> wrapper
+ * is NOT decoration. This is returned from a markdown-display `link` rule, so it lands inside a
+ * paragraph's textgroup, and `node_modules/react-native-markdown-display/src/lib/renderRules.js`
+ * is explicit about what that means: `textgroup` is `<Text style={styles.textgroup}>{children}</Text>`
+ * but `paragraph` is `<View style={styles._VIEW_SAFE_paragraph}>{children}</View>` — a column flex
+ * container. Return a bare <View> from this rule and it becomes a direct child of that column, i.e.
+ * its own block row, and the sentence is cut into "words above / box / words below". Keeping the
+ * <Text> wrapper is what makes the <View> an INLINE view instead. Same trap the `mark`/`tag`/`u`
+ * rules note above.
+ *
+ * 🔴 AND THE <View> IS THE FIX, BECAUSE A NESTED <Text> CANNOT BE A PILL ON iOS — READ FROM THE
+ * ENGINE, NOT FROM FOLKLORE (owner 2026-08-21). What used to stand here was a <Text> carrying
+ * `borderRadius: 999`, `paddingHorizontal` and `paddingVertical`, and the phone drew a SQUARE grey
+ * rectangle welded to the glyphs. The reason is in React Native 0.85.3's own source, which this
+ * repo pins:
+ *   • A <Text> nested inside another <Text> is not a view at all. It is folded into the parent
+ *     paragraph's attributed string, and the ONLY styling that survives is the field list of
+ *     `ReactCommon/react/renderer/attributedstring/TextAttributes.h`. That struct has
+ *     `backgroundColor` — and NO border, NO borderRadius and NO padding of any kind. There is
+ *     nowhere for those three properties to go, so they are dropped before layout ever runs.
+ *   • `backgroundColor` becomes `NSBackgroundColorAttributeName`
+ *     (`…/textlayoutmanager/platform/ios/…/RCTAttributedTextUtils.mm`, in
+ *     `RCTNSTextAttributesFromTextAttributes`), which UIKit paints as a plain filled rectangle
+ *     behind the glyph run. Square corners, and tight to the glyphs because the padding was
+ *     dropped. That is the screenshot, exactly.
+ *   • The favicon sitting OUTSIDE the grey box is the SAME file, thirty lines down. A non-Text
+ *     child of a <Text> — our <Image> — is turned into an ATTACHMENT
+ *     (`ReactCommon/react/renderer/components/text/BaseTextShadowNode.cpp`: "Any *other* kind of
+ *     ShadowNode" → `AttachmentCharacter`), and `RCTNSAttributedStringFragmentFromFragment` builds
+ *     that fragment as `[NSMutableAttributedString attributedStringWithAttachment:]` with NO
+ *     attribute dictionary at all — `fragment.textAttributes` is used only on the `else` branch.
+ *     So the icon's slice of the line carried no background attribute and the fill simply stopped
+ *     and restarted around it. One root cause, two symptoms.
+ * A <View> has none of those limits: it is a real Yoga box with real padding and a real corner
+ * radius, and requirement 4 — one fill under the icon AND the label — falls out of it for free,
+ * because both are now children of the box rather than neighbouring runs of text.
+ *
+ * 🔴 THE INLINE VIEW IS THE MECHANISM THAT ALREADY WORKED HERE. It is not a new bet: the <Image>
+ * this chip has drawn since 2026-08-20 goes down the identical attachment path, which is why the
+ * icon has always flowed with the words. `ParagraphShadowNode::layout` measures each attachment
+ * with the PARAGRAPH's own width constraint, hands its size to the text layout as a placeholder,
+ * then repositions the real view at the frame the text layout chose — so the pill wraps with the
+ * sentence and never widens past the column. Vertically, `RCTTextLayoutManager.mm` places an
+ * attachment at `glyphRect.bottom - attachmentHeight + font.descender`, i.e. its bottom edge on
+ * the text baseline; an 18pt pill therefore rises 18pt off the baseline inside a 28pt body line
+ * (`theme/markdown.ts`), with room to spare and no line-height inflation.
+ *   TRIED AND REJECTED: faking round ends on the <Text> with characters (a U+E0B6-style pair, or
+ * two half-disc glyphs) or a nine-slice background image. Both draw a shape that cannot track the
+ * fill colour through a theme change, and neither gives back the padding — which is the other half
+ * of what was missing.
+ *   TRIED AND REJECTED: `marginHorizontal: 2` on the pill to port the web's `mx-[2px]`. An
+ * attachment's size comes from `LayoutableShadowNode::measure`, which returns
+ * `getLayoutMetrics().frame.size` — a frame EXCLUDES its own margin — and the attachment's position
+ * is then overwritten by the text layout. So the margin would be honoured on react-native-web and
+ * silently do nothing on the phone: worse than not having it, because the two surfaces would drift.
+ * The pill's own left/right padding is the separation on both.
+ *
+ * 🔴 react-native-web GETS THE SAME SHAPE BY THE SAME NAME. `react-native-web@0.21`'s View reads
+ * `TextAncestorContext` and, when it has one, adds `display: inline-flex`
+ * (`dist/exports/View/index.js`, `styles.inline`). That is character-for-character the technique
+ * `apps/web/lib/workspace/chat-markdown.tsx` uses for its own named pill — `inline-flex ... rounded
+ * ... align-baseline` — so the phone's web build and the real web app now round their corners
+ * through the same CSS box model instead of two different ones.
  *
  * 🔴 WHOSE WORDS THE CHIP SHOWS IS DECIDED BY THE CALLER, AND THE RULE HAS TWO HALVES (owner
  * 2026-08-20). The original half stands and is not withdrawn: A CHIP BUILT OVER AN AUTHORED LINK
@@ -416,12 +493,32 @@ function InlineLink({
   // was corrected before it was committed. It is NOT what any released build did — the shipped
   // version of this file never ran this rule on a screen that passes `onLinkPress`, for the reason
   // set out beside the early-out in `MessageBody` above.
+  //   🔴 THE OPENER CHANGED HERE ON 2026-08-21; THE CONTRACT ABOVE DID NOT. Owner: "instead of
+  // taking the user to safari, can the app do a mini viewer?" `Linking.openURL` — which
+  // backgrounds Nemesis — was replaced by `lib/open-link.ts`, which presents the address in an
+  // in-app viewer over the app and falls back to the OS for anything that is not http(s). That is
+  // a swap of the ACTION only: both branches below still fire on exactly the conditions they fired
+  // on before, `=== true` is still `=== true`, and a handler returning `false`/`undefined` still
+  // opens nothing. The two are independent, and conflating them is the defect the block above
+  // records — if the viewer ever needs removing, it is the two `openLink` calls below that revert
+  // to `Linking.openURL`, and nothing about the shape around them moves.
+  //   🔴 AND THE CHIPS ARE WHY THIS FILE IS IN SCOPE AT ALL. The owner reported the Sources
+  // drawer, because that is where he was standing. But a well-cited answer carries a dozen of
+  // these chips inside its sentences, they are the commoner tap by a wide margin, and being thrown
+  // to Safari from the middle of a paragraph is the more jarring exit of the two. Fixing only the
+  // drawer would have answered the report and not the complaint.
+  //   The `onLinkPress` branch is not dead, even though every current caller returns `false`
+  // everywhere: it is the library's contract, so it stays honoured. `app/note.tsx` is the case
+  // that proves the two ends had to be fixed together — its handler returns `false` for an
+  // external URL and opens that URL ITSELF, so this branch stays silent and the note's own call
+  // site had to be routed through `openLink` as well, or a note's links would have been the one
+  // place still leaving for Safari.
   const open = () => {
     if (onLinkPress) {
-      if (url && onLinkPress(url) === true) void Linking.openURL(url).catch(() => {});
+      if (url && onLinkPress(url) === true) void openLink(url, c);
       return;
     }
-    if (url) void Linking.openURL(url).catch(() => {});
+    if (url) void openLink(url, c);
   };
 
   if (!chip) {
@@ -432,37 +529,81 @@ function InlineLink({
     );
   }
 
+  // The bare <Text> is the inline anchor and nothing else — no fill, no padding, no press handler.
+  // See the 🔴 block above for why removing it would cut the paragraph in two.
   return (
-    <Text
-      accessibilityRole="link"
-      // The chip shows a site name; the reader of a screen reader gets the page it opens.
-      accessibilityLabel={label ? (extra > 0 ? `${label}, and ${extra} more sources` : label) : undefined}
-      accessibilityHint={label ? url : undefined}
-      onPress={open}
-      style={[
-        inlineCitation.chip,
-        { backgroundColor: c.surface2, color: c.textHint },
-        host ? inlineCitation.chipWithMark : null,
-      ]}
-    >
-      {host ? (
-        iconFailed ? (
-          <Text style={[inlineCitation.initial, { color: c.text2 }]}>{siteInitial(host)}</Text>
-        ) : (
-          <Image
-            source={faviconSource(host)}
-            style={inlineCitation.icon}
-            onError={() => noteFaviconFailed(host)}
-            accessibilityIgnoresInvertColors
-          />
-        )
-      ) : null}
-      {host ? " " : null}
-      {label ?? children}
-      {extra > 0 ? <Text style={[inlineCitation.extra, { color: c.text3 }]}>{` +${extra}`}</Text> : null}
+    <Text>
+      {/* 🔴 Pressable, NOT the wrapper <Text>, OWNS THE TAP (owner 2026-08-21). The pill is a real
+          view sitting on top of the paragraph, so it is what a finger actually lands on. React
+          Native's responder negotiation starts at the deepest touched node and the first one that
+          claims the touch wins, so exactly one handler fires — putting `open` on the wrapper <Text>
+          as well would not double-open, but it WOULD give VoiceOver two elements for one chip
+          (a pressable text range and a pressable view) and read the source name twice.
+          Requirement, unchanged since the in-app viewer landed: the press goes through `openLink`. */}
+      <Pressable
+        accessibilityRole="link"
+        // The chip shows a site name; the reader of a screen reader gets the page it opens.
+        accessibilityLabel={label ? (extra > 0 ? `${label}, and ${extra} more sources` : label) : undefined}
+        accessibilityHint={label ? url : undefined}
+        onPress={open}
+        style={[
+          inlineCitation.pill,
+          { backgroundColor: c.surface2 },
+          host ? inlineCitation.pillWithMark : inlineCitation.pillPlain,
+        ]}
+      >
+        {host ? (
+          iconFailed ? (
+            <Text style={[inlineCitation.initial, { color: c.text2 }]}>{siteInitial(host)}</Text>
+          ) : (
+            <Image
+              source={faviconSource(host)}
+              style={inlineCitation.icon}
+              onError={() => noteFaviconFailed(host)}
+              accessibilityIgnoresInvertColors
+            />
+          )
+        ) : null}
+        {/* The label is its own <Text> now that the fill lives on the box. `children` is a markdown
+            subtree (rule 3 keeps the model's own words), so it has to stay inside a <Text>. */}
+        <Text style={[inlineCitation.label, { color: c.textHint }]}>{label ?? children}</Text>
+        {extra > 0 ? <Text style={[inlineCitation.extra, { color: c.text3 }]}>{`+${extra}`}</Text> : null}
+      </Pressable>
     </Text>
   );
 }
+
+/**
+ * How many characters of AUTHORED link text a citation pill may carry before the caller gives up
+ * on the pill and draws an ordinary underlined link instead.
+ *
+ * 🔴 THIS CAP EXISTS ON THE PHONE AND DOES NOT EXIST ON THE WEB, AND THAT IS CORRECT — IT IS NOT
+ * DRIFT TO BE "FIXED" BY COPYING ONE SIDE ONTO THE OTHER. `apps/web/lib/workspace/chat-markdown.tsx`
+ * needs no cap because its pill is an `inline-flex` box in normal flow: text inside it wraps, so a
+ * long linked phrase simply makes a taller rounded box and the paragraph carries on. The phone's
+ * pill is a <Pressable> — a real view — living inside the paragraph's attributed string as a text
+ * ATTACHMENT (see the 🔴 block on `InlineLink`). An attachment is one indivisible rectangle. iOS
+ * will move it to the next line when it does not fit in the space remaining, but it cannot break it
+ * across lines, so an attachment wider than the WHOLE column has nowhere to go and runs off the
+ * edge. The cap is measured against full column width for exactly that reason.
+ *
+ * WHY 40. The label draws at 12pt (`inlineCitation.label`); the system face averages a shade under
+ * 6pt per character at that size for mixed-case prose, and the pill's own chrome — 12pt icon, 3pt
+ * gap, 3+6 padding — costs 24pt. 40 characters is therefore ≈ 264pt against a reading column that
+ * is a little over 340pt on a 402pt-wide phone. That is a deliberately loose fit, not a measured
+ * limit: the arithmetic is an estimate, the text scale is user-adjustable, and the number should
+ * stay well inside the column rather than tuned up to touch it.
+ *
+ * 🔴 WHAT HAPPENS PAST THE CAP IS A PLAIN LINK, NEVER A SHORTENED ONE. Two shortcuts were
+ * available and both were rejected: replacing the words with the site name is forbidden outright by
+ * the owner's 2026-08-20 rule recorded on `InlineLink` ("according to [the 2019 trial](…)" becoming
+ * "according to Nature" mangles the sentence to gain nothing), and ellipsising to "the 2019 Nature
+ * trial on beta bl…" mangles it the same way for the same nothing. Dropping back to an underlined
+ * link keeps every word the model wrote and is precisely what this renderer did before pills
+ * existed, so the failure mode is the old behaviour rather than a new one. The only thing lost is
+ * the favicon, on the rare long link where there was no room to draw it honestly anyway.
+ */
+const CHIP_AUTHORED_MAX = 40;
 
 /**
  * The visible text of a link node, flattened.
@@ -476,24 +617,40 @@ function nodeText(node: ASTNode): string {
   return (node.children ?? []).map(nodeText).join("");
 }
 
+// 🔴 THESE ARE VIEW STYLES NOW, AND THAT IS THE WHOLE POINT (owner 2026-08-21). Every number below
+// except the two font sizes used to be set on a nested <Text>, where React Native's engine has
+// nowhere to put a radius or a padding — see the 🔴 block on `InlineLink`. On a <View> they all
+// mean what they say.
+//
+// GEOMETRY, BESIDE THE WEB'S OWN NAMED PILL (`apps/web/lib/workspace/chat-markdown.tsx`, the
+// `namedCitations` branch: `h-[18px] rounded-[12px] gap-[3px] pl-[3px] pr-[6px]`, `size-[12px]`
+// icon, `text-[9px] leading-none`):
+//   height   18 = the label's 18pt line box, the icon's 12pt centred inside it → web's h-[18px].
+//   radius   999 → React Native clamps a radius to half the shorter side, so 9 on an 18-high box:
+//            fully round ends, where the web's literal 12px on 18px is round-ish. Same intent, and
+//            999 keeps its promise if the label's line box ever grows.
+//   gap      3 → web's gap-[3px]. It replaces the literal `" "` that used to sit between the icon
+//            and the label, which was a space at the BODY font size (18pt) and so far too wide.
+//   padding  3 left / 6 right → web's pl-[3px] pr-[6px], and asymmetric for the same reason there:
+//            the favicon is a filled disc that already reads as its own margin, so matching the
+//            text side's 6 would look like a hole punched in the left end of the pill.
+//   label    12pt, not the web's 9px, because the phone's body text is 18/28 against the web's ~15
+//            (`theme/markdown.ts`). The 12pt icon is what both sides hold fixed.
 const inlineCitation = StyleSheet.create({
-  chip: {
-    borderRadius: 999,
-    fontSize: 12,
-    lineHeight: 18,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    textDecorationLine: "none",
-  },
-  // The web's named pill is `pl-[3px] pr-[6px]`: tight on the icon side, open on the text side, so
-  // the round icon is not double-padded by its own whitespace. Listed after the shorthand above so
-  // the flattener takes these.
-  chipWithMark: { paddingLeft: 3, paddingRight: 6 },
+  pill: { flexDirection: "row", alignItems: "center", gap: 3, borderRadius: 999 },
+  pillWithMark: { paddingLeft: 3, paddingRight: 6 },
+  // No icon, no asymmetry to justify: a chip with nothing openable to name (rule 3 over a source
+  // whose href `hostOf` refused) is just a worded pill, so both ends get the text side's padding.
+  pillPlain: { paddingHorizontal: 6 },
   // 12pt against 12/18 text — the web's named pill draws a 12px `rounded-full` icon at the same
   // ratio. Exempt from the text scale for the reason `canvas-metrics.ts` gives: it is a glyph.
   icon: { width: 12, height: 12, borderRadius: 6 },
-  initial: { fontSize: 9, lineHeight: 18, fontWeight: "700" },
-  // Quieter than the label it trails: "+2" is a count, not the name of anything.
+  // Pinned to the icon's 12pt width and centred so the pill does not visibly resize when a host's
+  // favicon turns out to be missing and the letter takes over mid-session.
+  initial: { width: 12, fontSize: 9, lineHeight: 18, fontWeight: "700", textAlign: "center" },
+  label: { fontSize: 12, lineHeight: 18 },
+  // Quieter than the label it trails: "+2" is a count, not the name of anything. The leading space
+  // it used to carry is now the flex `gap`.
   extra: { fontSize: 10, lineHeight: 18, fontWeight: "600" },
 });
 

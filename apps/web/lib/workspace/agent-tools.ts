@@ -312,7 +312,7 @@ export const AGENT_TOOLS = [
             description: "Markdown outline: one '# Topic' root heading, then nested '- ' bullets (2-space indents, at most 3 levels, at most ~35 nodes)",
             type: "string",
           },
-          title: { description: "Mind map title, e.g. 'RAAS pathway'", type: "string" },
+          title: { description: "Mind map title, e.g. 'Causes of the French Revolution'", type: "string" },
         },
         required: ["title", "outline"],
         type: "object",
@@ -384,7 +384,7 @@ export const AGENT_TOOLS = [
       name: "move_library_source",
       parameters: {
         properties: {
-          folder: { description: "Destination folder, e.g. 'PHCY 2114'. Empty string moves it to the Library root.", type: "string" },
+          folder: { description: "Destination folder, e.g. 'ME 240'. Empty string moves it to the Library root.", type: "string" },
           source_id: { description: "The source's id from plan_library_migration", type: "string" },
         },
         required: ["source_id"],
@@ -416,7 +416,7 @@ export const AGENT_TOOLS = [
       parameters: {
         properties: {
           folder: {
-            description: "Folder path to expand, e.g. 'Pharmacy/Unit 2'. Empty string expands the Library root. Omit for the whole tree.",
+            description: "Folder path to expand, e.g. 'Statistics/Unit 2'. Empty string expands the Library root. Omit for the whole tree.",
             type: "string",
           },
         },

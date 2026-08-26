@@ -538,7 +538,7 @@ function blocksFrom(document: unknown): StoredCanvasBlock[] {
  * `sourcePills` refuses any source it cannot resolve to an http(s) address, so no pill is built for
  * one; `MessageBody`'s citation branch refuses a chip over an empty url and leaves the bare number
  * in the prose. So the slot is invisible on both halves of the surface and visible only to the
- * arithmetic that needs it. Nothing else reads `StoredCanvas.sources`.
+ * arithmetic that needs it. `CanvasDocument` is the only reader of `StoredCanvas.sources` there is.
  *   TRIED AND REJECTED: keeping the skip here and compensating at save time by numbering markers
  *   against the post-skip list. That makes the phone's stored numbering depend on the phone's own
  *   reader, so the SAME document would resolve differently in a build whose skip rule differs — and
@@ -815,10 +815,11 @@ export interface MergedTurnSources {
  * rendering a chip that confidently names the wrong publication when the canvas is reopened:
  *   1. TURN BOUNDARIES. On a two-turn canvas, turn two's `[1]` sat beside turn one's first source,
  *      so it resolved to a page the sentence had never seen. This is the one the owner reproduced.
- *   2. THE `continue`s BELOW. A page whose URL is not http(s) is not stored, and a page already in
- *      the canvas is not stored twice — but `usableWebResults`, the list the MODEL counted over,
- *      neither drops nor de-duplicates. So even WITHIN one turn the two lists disagreed by
- *      construction, and every skip shifted every later marker by one.
+ *   2. THE TWO SKIPS BELOW. A page whose URL is not http(s) is not stored, and a page already in
+ *      the canvas is not stored twice. `usableWebResults` (lib/chat-thread.ts), the list the MODEL
+ *      counted over, applies NEITHER rule — it keeps anything with a url plus a title or a
+ *      description, in the order the search returned it. So even WITHIN one turn the two lists
+ *      disagreed by construction, and every skip shifted every later marker by one.
  *   3. THE READ SIDE. `sourcesFrom` used to skip a stored entry with neither title nor address,
  *      shifting again on the way back out. That skip is gone; see its own comment.
  * The answer to all three is the same: the marker's number is rewritten AT SAVE TIME into the

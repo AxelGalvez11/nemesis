@@ -19,6 +19,10 @@ test("the request is one user message: the image as a data URL, then the prompt"
   assert.equal(image.image_url.url, "data:image/png;base64,QUJD");
   assert.equal(text.type, "text");
   assert.equal(text.text, "Read this.");
+  // 🔴 THE OUTPUT CEILING RIDES EVERY REQUEST. This model bills its own reasoning as output —
+  // one uncapped figure read burned 18,642 tokens enumerating a diagram's fifty labels — so a
+  // request without the cap is an unbounded bill. See DEEPSEEK_VISION_MAX_OUTPUT.
+  assert.equal(body.max_tokens, 8192);
 });
 
 test("🔴 HEIC is not readable, and that routes iPhone photos to the fallback, not to a wasted call", () => {

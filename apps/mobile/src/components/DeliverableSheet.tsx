@@ -1,4 +1,4 @@
-import { ActivityIndicator, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { usePulse } from "./usePulse";
 import { router } from "expo-router";
 import { SlideUpSheet } from "./StudySheet";
@@ -6,6 +6,7 @@ import { MissionButton } from "./mission-ui";
 import { CalendarIcon, ChevronIcon, FileIcon, LibraryIcon, MicIcon, StudyIcon } from "./icons";
 import { artifactCard } from "@/lib/artifact-card";
 import type { ChatOutput } from "@/lib/chat-thread";
+import { openLink } from "@/lib/open-link";
 import { polishState } from "@/lib/recording";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -134,6 +135,9 @@ function ArtifactRow(
 
 export function DeliverableSheet({ visible, onClose, output }: { visible: boolean; onClose: () => void; output: ChatOutput | null }) {
   const styles = useThemedStyles(createStyles);
+  // The palette itself, not just the stylesheet built from it: the in-app viewer this sheet's
+  // "Open" button presents takes the app's bar and control colours. See `lib/open-link.ts`.
+  const { colors: c } = useTheme();
   // NEVER early-return before the SlideUpSheet render: `output` goes null the
   // SAME render pass `visible` flips to false (chat.tsx's onClose clears both
   // together), and SlideUpSheet is designed to stay mounted through its own
@@ -193,7 +197,16 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
             <MissionButton
               label="Open"
               variant="secondary"
-              onPress={() => void Linking.openURL(output.url as string).catch(() => {})}
+              // 🔴 THE ONE CALL SITE IN THIS PASS WHOSE ADDRESS IS NOT PRE-VETTED (owner
+              // 2026-08-21). `output.url` arrives on `chat_messages.meta.outputs` — written by the
+              // phone's tools, the Record screen and web's Record mode — and nothing between there
+              // and this button asserts it is http(s), unlike a Sources row (filtered by
+              // `sourcePills`) or a citation chip (filtered by `hostOf`). Routing it through the
+              // shared opener is what makes that safe rather than lucky: `openLink` runs the same
+              // `hostOf` judgement, so a stored address that is not an openable web page cannot
+              // reach the in-app web engine, and one that merely uses another scheme still opens
+              // through the OS exactly as it did before.
+              onPress={() => void openLink(output.url as string, c)}
               testID="chat-deliverable-open-url"
             />
           ) : null}

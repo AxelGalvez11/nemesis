@@ -135,6 +135,18 @@ import { space, type } from "@/theme/tokens";
  */
 type Presence = "landing" | "thinking" | "reading";
 
+/**
+ * How softly the bottom blur eases in on THIS surface, in points. See the `BottomFadeBlur` call.
+ *
+ * 🔴 IT IS THE HEIGHT OF THE CHARACTER PLUS THE GAP IT STANDS ABOVE THE COMPOSER, WHICH IS THE
+ * WHOLE DERIVATION. The band's solid part now stops at the composer's top edge, so this ramp is
+ * exactly the stretch the character occupies — it starts clear at the character's crown and is
+ * fully solid by its feet. Picking a round number instead would put the edge somewhere arbitrary
+ * on the character's face, which is the shape of the complaint being fixed. Derived rather than
+ * typed so it follows the dock if either measurement ever changes.
+ */
+const CANVAS_FADE_SPAN = DOCK_SIZE + DOCK_GAP;
+
 export default function CanvasScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -492,6 +504,31 @@ export default function CanvasScreen() {
   // the streamed text are not in here.
   const surfaceKey = useMemo(() => `${presence}|${canvasId ?? "-"}`, [canvasId, presence]);
 
+  // 🔴 WHAT THE SURFACE IS ACTUALLY PAINTING, WHICH IS NOT ALWAYS `presence` — AND EVERY FLOATING
+  // SIBLING BELOW IS GATED ON THIS ONE, NOT ON `presence` (owner 2026-08-22: two characters on
+  // screen at once). `CanvasFade` HOLDS the outgoing subtree for its 160ms fade-out, so for that
+  // long the surface is still showing the previous presence while this component's `presence` has
+  // already moved on. The dock, the fade band and anything else mounted OUTSIDE the fade would
+  // otherwise switch 160ms early and stand next to content that has not left yet:
+  //
+  //   thinking → reading  the 128pt waiting character is still painted, and the 52pt dock
+  //                       character pops in beside it. TWO CHARACTERS, for 160ms. That is the one
+  //                       thing this file's "ONE CHARACTER AT A TIME" header promises never
+  //                       happens, and it happened on every single answer.
+  //   reading → landing   the dock character vanishes instantly while the answer is still fading,
+  //                       so the character blinks out rather than leaving with the page.
+  //
+  // 🔴 IT IS SEEDED FROM `presence`, NOT FROM A CONSTANT. First paint has no fade — see
+  // `CanvasFade`'s "NO TRANSITION AT REST" — so a canvas opened straight from the Library must
+  // start already agreeing with the surface. `onShown` fires on mount too and would correct it a
+  // frame later, but a frame of a wrong dock is still a frame of a wrong dock.
+  const [shownPresence, setShownPresence] = useState<Presence>(presence);
+  // The key's own shape, read back. Built one line above and parsed here so the two stay adjacent;
+  // `presence` never contains "|", so the first field is the whole of it.
+  const noteShown = useCallback((key: string) => {
+    setShownPresence(key.split("|")[0] as Presence);
+  }, []);
+
   // `phaseLabel` returning "" is a real answer meaning "show nothing" — the writing phase, and a
   // Library recall that found no notes. It is not a missing string to be papered over.
   const label = useMemo(() => {
@@ -509,9 +546,20 @@ export default function CanvasScreen() {
   const canvasState = stateForCanvas({ listening, preparing: storedLoading, thinking: busy });
 
   // 🔴 THE POKE NEVER OUTRANKS A WAIT. `usePoke` hands `canvasState` straight back the moment the
-  // system takes the floor, so a tap can never hide `thinking`. It owns the EXPRESSION channel as
-  // well as the state one, because two of the four gestures are expressions rather than
-  // animations — if this screen also wrote `expression`, the two would fight every render.
+  // system takes the floor, so a tap can never hide `thinking`.
+  //
+  // 🔴 AND IT OWNS FOUR CHANNELS, NOT ONE — WHICH IS WHY ALL FOUR ARE SPREAD ONTO THE CHARACTER
+  // BELOW AND NONE OF THEM IS WRITTEN BY THIS SCREEN. The four gestures reach the character four
+  // different ways: `wink` is an engine STATE, `angry` is an EXPRESSION (`colere`), the brow
+  // waggle rides the GAZE channel (its script is also the signal to cut brows into the mask at
+  // all), and the hop rides MOTION, a transform on the wrapper because leaving the ground is not
+  // something the vendored pose model has any vocabulary for. If this screen wrote any of those
+  // props itself, the two writers would fight every render.
+  //   🔴 FORGETTING ONE IS SILENT, AND IT ALREADY HAPPENED ONCE (owner 2026-08-21: "the character
+  //   still does not jump"). Every one of these props is OPTIONAL, so a missing one typechecks
+  //   clean and simply never draws: the hop was drawn from the bag, held its 620ms, and never left
+  //   the ground because `motion` was not passed here or to `CanvasDock`. There is no compiler
+  //   error to catch that — only this comment and the reader.
   const greeter = usePoke(canvasState);
 
   const pills = useMemo(() => sourcePills(sources), [sources]);
@@ -527,7 +575,7 @@ export default function CanvasScreen() {
       style={styles.root}
       testID="canvas-surface"
     >
-      <CanvasFade contentKey={surfaceKey} testID="canvas-fade">
+      <CanvasFade contentKey={surfaceKey} onShown={noteShown} testID="canvas-fade">
         {presence === "landing" ? (
           <View style={[styles.centre, { paddingTop: contentTop }]} testID="canvas-home">
             {/* The character stands above the question, where the eye already is — the same
@@ -541,11 +589,15 @@ export default function CanvasScreen() {
               state={greeter.state}
               expression={greeter.expression}
               gaze={greeter.gaze}
+              motion={greeter.motion}
               size={112}
               paper={c.bg}
-              // 🔴 `speedOf(greeter.state)`, NOT `speedOf(canvasState)`. The spin gesture publishes
-              // its own playback rate; reading the base state's rate instead would play it at full
-              // speed and lose the very thing that makes it read as a gesture.
+              // 🔴 `speedOf(greeter.state)`, NOT `speedOf(canvasState)`. A gesture may run at a
+              // different playback rate from the state underneath it, and reading the base state's
+              // rate would then play it at the wrong speed. No gesture is retimed today — the one
+              // that was, the spin on `swirl` at 0.55, was removed on 2026-08-21 — so this
+              // currently resolves to 1 either way. It stays because `SPEED` in stations.ts is a
+              // dial the owner has already turned once.
               speed={speedOf(greeter.state)}
               onPoke={greeter.poke}
               style={styles.character}
@@ -646,12 +698,30 @@ export default function CanvasScreen() {
           it for this since the composer started floating — so this is reusing the app's answer, not
           inventing a second one. It sits BELOW the dock in z-order so the character stays crisp on
           top of the fade, and it is `pointerEvents="none"` so it cannot eat a press. */}
-      {presence === "reading" ? (
+      {shownPresence === "reading" ? (
         <View
           style={[styles.fadeBand, { bottom: 0 }]}
           pointerEvents="none"
         >
-          <BottomFadeBlur height={dockPaddingBottom + composerHeight + DOCK_GAP + DOCK_SIZE / 2} />
+          {/* 🔴 THE TOP OF THE BAND IS THE TOP OF THE COMPOSER, AND THE RAMP CARRIES THE CHARACTER
+              (owner 2026-08-21: "the fade to blur is too high up"). This read
+              `+ DOCK_GAP + DOCK_SIZE / 2`, which started the band at the CHARACTER'S MIDPOINT —
+              40pt clear of the composer — and with the default 12pt ramp that top edge was a
+              visible horizontal line most of the way up the character. `BottomFadeBlur`'s own
+              constant predicted this exact report: "if the band ever looks too tall again, look
+              at the caller's height", after the same complaint was made four times about chat.
+              TRIED AND REJECTED: chat's formula unchanged (`composerHeight / 2 + inset`), which
+              is the settled answer THERE. It ends inside the composer card, so on this surface it
+              would leave the whole 52pt character standing on unfaded prose — the defect the
+              band was added for, observed on device with the mascot sitting on top of "something
+              up or does something in exchange". The character's opaque `paper` backing hides the
+              words directly behind it but does nothing for the ones beside it.
+              So: start at the composer's top edge, and spend `CANVAS_FADE_SPAN` easing in rather
+              than 12, so the character stands in a gradient instead of on a line. */}
+          <BottomFadeBlur
+            height={dockPaddingBottom + composerHeight}
+            span={CANVAS_FADE_SPAN}
+          />
         </View>
       ) : null}
 
@@ -663,11 +733,12 @@ export default function CanvasScreen() {
         sources={sourcesSheetFor ?? []}
       />
 
-      {presence === "reading" ? (
+      {shownPresence === "reading" ? (
         <CanvasDock
           state={greeter.state}
           expression={greeter.expression}
           gaze={greeter.gaze}
+          motion={greeter.motion}
           composerHeight={composerHeight}
           bottomInset={dockPaddingBottom}
           paper={c.bg}
@@ -715,7 +786,19 @@ const createStyles = (c: ThemeColors) =>
     waitFill: { flex: 1, justifyContent: "center" },
     doc: { paddingHorizontal: space(4) },
     fadeBand: { position: "absolute", left: 0, right: 0, justifyContent: "flex-end" },
-    dock: { paddingTop: space(2), backgroundColor: c.bg },
+    // 🔴 NO FILL — THE COMPOSER FLOATS ON THE BLUR (owner 2026-08-21: "the composer is supposed to
+    // not have the black shading around it, its supposed to only be the copmoser and blur").
+    // This carried `backgroundColor: c.bg`, which painted an opaque slab from the composer's top
+    // edge to the bottom of the screen. The band behind it is `BottomFadeBlur`, whose whole job is
+    // to dissolve the answer gradually — and a solid rectangle drawn on top of a gradient ends it
+    // in a hard horizontal line, which is what the owner circled. Dropping the fill lets the blur
+    // run the full height, so the prose fades once, continuously, behind a composer that is the
+    // only solid thing down here.
+    // WHY IT WAS SAFE TO DROP, rather than needing a replacement: the composer card draws its own
+    // background, so nothing behind it shows through the field, and the scroller already reserves
+    // this whole block's height (see the ScrollView's `paddingBottom`), so no text comes to rest
+    // under it. The fill was doing no work that anything else was not already doing.
+    dock: { paddingTop: space(2) },
     error: {
       ...type.small,
       color: c.text2,

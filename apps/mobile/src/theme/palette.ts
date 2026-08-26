@@ -180,6 +180,57 @@ export interface ThemeColors {
    *  gray — a black scrim would be invisible. Light mode stays transparent:
    *  those pages are pure white by owner mandate and dimming them fights it. */
   pageDim: string;
+  /** 🔴 THE WHITE WASH THAT LIFTS A SOLID SHEET OFF THE PAGE (owner 2026-08-21, from "make the
+   *  drawer be rounded too like in the reference").
+   *
+   *  THE CORNERS WERE NEVER THE PROBLEM. `StudySheet`'s `styles.sheet` has set `radius.xl` on
+   *  the top corners all along and `GlassSurface` clips to it, so the curve was drawn every
+   *  time — it was black on black. Composited with this file's own `contrastRatio`, in dark:
+   *  page `bg` #000000, `scrim` rgba(0,0,0,0.58) over it STILL #000000, panel `glassMenu`
+   *  #080808 => 1.048:1. In light the same stack gives a #a6a6a6 page under a #ffffff panel
+   *  => 2.439:1, which is why only dark ever looked broken and why light must not be touched.
+   *
+   *  WHITE, NOT MORE SCRIM — and `pageDim` three tokens up already records why: over a
+   *  true-black page "a black scrim would be invisible". It is worse than invisible, it is
+   *  arithmetically inert. rgba(0,0,0,a) over #000000 resolves to #000000 for EVERY a up to
+   *  and including 1.0, so no scrim value can separate a panel from this page. The whole
+   *  separation budget has to be spent on the panel.
+   *
+   *  TRIED AND REJECTED:
+   *   - Deepening `scrim`. Cannot work at any alpha; see above.
+   *   - Reusing `pageDim` (dark rgba(255,255,255,0.11)) rather than adding a token. Right
+   *     idea, wrong owner: it is tuned against the drawer's full-screen pushed page, and a
+   *     later retune there would silently retune this sheet.
+   *   - Retuning `glassMenu` (#080808) upward. It backs every MiniMenu in the app; the owner
+   *     scoped this change to the one drawer.
+   *   - `GlassSurface`'s `shadow` prop. Its dark shadow colour is `#000000`. A black shadow
+   *     cast on a black page separates nothing.
+   *   - Raising `radius.xl`. Measured instead: 18pt is 4.09%-4.80% of the screen width on
+   *     every current iPhone (440pt Pro Max down to 375pt SE), i.e. already inside the 4-5%
+   *     the owner measured off the reference screenshot. Changing it would have been motion
+   *     without a reason.
+   *
+   *  0.10 over the #080808 backing composites to #212121 => 1.299:1 against the page. That is
+   *  a step above iOS's own elevated-dark-sheet tone (#1c1c1e over black, 1.234:1), and the
+   *  extra margin is deliberate: iOS renders that step under a real drop shadow over textured
+   *  content, whereas here the page is bare #000 and the sheet casts nothing.
+   *
+   *  LIGHT IS `transparent` ON PURPOSE. Light already matches the reference, so the wash must
+   *  paint literally nothing there rather than be re-tuned to a smaller number. */
+  sheetLift: string;
+  /** The outline of a sheet that `sheetLift` has raised.
+   *
+   *  Dark carries `line2`'s 16% rather than `line`'s 9%, and that is a CONSEQUENCE of the lift,
+   *  not extra polish: a 9% hairline composites over the black page to #151515, which once the
+   *  panel sits at #212121 is DARKER than the panel — so the very pixels that trace the rounded
+   *  corner would read as a groove cut into the page instead of the panel's edge. At 16% they
+   *  composite to #252526 (1.378:1 vs the page), a rim marginally brighter than the fill it
+   *  encloses, which is what makes a curve legible.
+   *
+   *  The values are `line2`'s and `line`'s exactly; they are a separate token so the sheet's
+   *  edge can be retuned without moving every divider and hairline in the app. Light is
+   *  byte-identical to `line` for the same reason `sheetLift` is transparent there. */
+  sheetEdge: string;
   line: string;
   line2: string;
   /** tokens.json `mutedBorder` twin. */
@@ -241,6 +292,10 @@ const DARK_BASE = {
   glassMenu: "rgba(8,8,8,0.94)",
   pageShadow: "rgba(0,0,0,0.5)",
   pageDim: "rgba(255,255,255,0.11)",
+  // #080808 + 10% white = #212121, 1.299:1 against the #000000 page. See the token docs.
+  sheetLift: "rgba(255,255,255,0.10)",
+  // `line2`'s value. `line`'s 9% would land the sheet's outline BELOW its own fill — see docs.
+  sheetEdge: "rgba(233,234,238,0.16)",
   line: "rgba(233,234,238,0.09)",
   line2: "rgba(233,234,238,0.16)",
   lineMuted: "rgba(154,157,166,0.20)",
@@ -270,6 +325,10 @@ const LIGHT_BASE = {
   glassMenu: "rgba(255,255,255,0.96)",
   pageShadow: "rgba(24,26,32,0.16)",
   pageDim: "transparent",
+  // Light already reads exactly like the reference (#ffffff panel on a #a6a6a6 page, 2.439:1),
+  // so the lift paints nothing and the edge is `line`'s own value, byte for byte.
+  sheetLift: "transparent",
+  sheetEdge: "rgba(22,24,29,0.10)",
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",
   lineMuted: "rgba(90,94,104,0.22)",

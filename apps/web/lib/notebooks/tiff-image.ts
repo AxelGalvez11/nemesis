@@ -8,10 +8,18 @@
 // with 8 bits a sample. That is the simplest thing TIFF can be — the pixels are
 // already sitting there in strips — so they only need copying into a PNG.
 //
-// WHAT THIS DELIBERATELY DOES NOT DO. LZW, PackBits, JPEG-in-TIFF, CMYK, 16-bit
+// WHAT THIS DELIBERATELY DOES NOT DO. PackBits, JPEG-in-TIFF, CMYK, 16-bit
 // samples, tiled layouts: all return null and are reported unreadable. A partly
 // implemented decoder that produces a sheared or false-coloured figure is worse than
 // an honest "couldn't read this one" — the model would describe the wrong picture.
+//
+// LZW IS NO LONGER ON THAT LIST. A real pharmacogenomics course carried three
+// lecture figures as LZW-compressed TIFF — among them a 2420×1870 slide-sized
+// diagram — every one chunky 8-bit RGB differing from the uncompressed case ONLY
+// in the strip encoding. TIFF's LZW is fully specified (12-bit codes, early
+// change, optional horizontal-differencing predictor), so decoding it is exact,
+// not approximate: a wrong bit fails the strip-length check and returns null
+// rather than shearing the picture.
 //
 // PURE: bytes in, bytes out.
 import { downscaleRgb, encodePng, MAX_PIXELS } from "./emf-bitmap";
@@ -27,10 +35,139 @@ const TAG_ROWS_PER_STRIP = 278;
 const TAG_STRIP_BYTE_COUNTS = 279;
 const TAG_PLANAR = 284;
 
+const TAG_PREDICTOR = 317;
+
 const COMPRESSION_NONE = 1;
+const COMPRESSION_LZW = 5;
 const PHOTOMETRIC_WHITE_IS_ZERO = 0;
 const PHOTOMETRIC_BLACK_IS_ZERO = 1;
 const PHOTOMETRIC_RGB = 2;
+const PREDICTOR_NONE = 1;
+const PREDICTOR_HORIZONTAL = 2;
+
+/** LZW's three fixed codes. Everything from 258 up is learned per strip. */
+const LZW_CLEAR = 256;
+const LZW_EOI = 257;
+const LZW_FIRST_FREE = 258;
+const LZW_MAX_WIDTH = 12;
+
+/**
+ * One TIFF LZW strip, decoded — or null when the stream is malformed.
+ *
+ * TIFF's variant, exactly: codes are packed MSB-first, start at 9 bits, and the
+ * width grows with the table — one code EARLY ("early change": the width bumps
+ * when the next free entry is `2^width - 1`, not `2^width`), which is the single
+ * detail that separates a clean decode from a sheared one. The table resets on
+ * every Clear code, and every strip begins with one.
+ *
+ * `expected` bounds the output: a strip never legitimately decodes past the
+ * rows it covers, so a stream that tries is corrupt and refused rather than
+ * allowed to allocate without limit. PURE.
+ */
+export function tiffLzwDecode(src: Uint8Array, expected: number): Uint8Array | null {
+  const out = new Uint8Array(expected);
+  let written = 0;
+
+  // The table maps code → byte string. Entries 0-255 are their own byte.
+  let entries: Uint8Array[] = [];
+  let next = LZW_FIRST_FREE;
+  let width = 9;
+  const reset = () => {
+    entries = [];
+    next = LZW_FIRST_FREE;
+    width = 9;
+  };
+  reset();
+  const stringOf = (code: number): Uint8Array | null => {
+    if (code < 256) return Uint8Array.of(code);
+    const learned = entries[code - LZW_FIRST_FREE];
+    return learned ?? null;
+  };
+
+  let bitAt = 0;
+  const totalBits = src.length * 8;
+  const readCode = (): number | null => {
+    if (bitAt + width > totalBits) return null;
+    let value = 0;
+    for (let i = 0; i < width; i += 1) {
+      const byte = src[bitAt >> 3]!;
+      value = (value << 1) | ((byte >> (7 - (bitAt & 7))) & 1);
+      bitAt += 1;
+    }
+    return value;
+  };
+
+  let previous: Uint8Array | null = null;
+  // Every strip a real encoder writes begins with a Clear code. Data that does
+  // not is not an LZW stream at all — zeroed bytes, for instance, would
+  // otherwise "decode" into a run of literal zeros and paint a black picture.
+  let cleared = false;
+  for (;;) {
+    const code = readCode();
+    if (code === null) return null; // Ran out of bits before EOI: truncated stream.
+    if (code === LZW_EOI) break;
+    if (code === LZW_CLEAR) {
+      reset();
+      previous = null;
+      cleared = true;
+      continue;
+    }
+    if (!cleared) return null;
+
+    let emit: Uint8Array;
+    if (previous === null) {
+      // The first code after a Clear must be a literal; anything else is corrupt.
+      const literal = stringOf(code);
+      if (!literal || code >= LZW_FIRST_FREE) return null;
+      emit = literal;
+    } else {
+      const known = stringOf(code);
+      if (known) {
+        emit = known;
+      } else if (code === next) {
+        // The one legal not-yet-defined code: previous + its own first byte.
+        emit = new Uint8Array(previous.length + 1);
+        emit.set(previous);
+        emit[previous.length] = previous[0]!;
+      } else {
+        return null;
+      }
+      const learned = new Uint8Array(previous.length + 1);
+      learned.set(previous);
+      learned[previous.length] = emit[0]!;
+      entries.push(learned);
+      next += 1;
+      // Early change: TIFF writers widen one code before the table is actually
+      // full, so the reader must too or every code after that point shifts.
+      if (next === (1 << width) - 1 && width < LZW_MAX_WIDTH) width += 1;
+    }
+
+    if (written + emit.length > expected) return null; // Decodes past its rows: corrupt.
+    out.set(emit, written);
+    written += emit.length;
+    previous = emit;
+    if (written === expected) break; // Strip complete; trailing EOI is optional in practice.
+  }
+  return written === expected ? out : null;
+}
+
+/**
+ * Undo horizontal differencing in place: each byte was stored as the delta from
+ * the same sample one pixel to the left. PURE, given its buffer.
+ */
+export function undoHorizontalPredictor(
+  strip: Uint8Array,
+  rows: number,
+  rowBytes: number,
+  samples: number,
+): void {
+  for (let y = 0; y < rows; y += 1) {
+    const start = y * rowBytes;
+    for (let x = samples; x < rowBytes; x += 1) {
+      strip[start + x] = (strip[start + x]! + strip[start + x - samples]!) & 0xff;
+    }
+  }
+}
 
 export interface DecodedImage {
   bytes: Uint8Array;
@@ -113,7 +250,13 @@ export function tiffImage(bytes: Uint8Array): DecodedImage | null {
   const bits = ifd[TAG_BITS_PER_SAMPLE] ?? [8];
   const photometric = first(TAG_PHOTOMETRIC, PHOTOMETRIC_RGB)!;
   if (!width || !height || width <= 0 || height <= 0) return null;
-  if (first(TAG_COMPRESSION, COMPRESSION_NONE) !== COMPRESSION_NONE) return null;
+  const compression = first(TAG_COMPRESSION, COMPRESSION_NONE)!;
+  if (compression !== COMPRESSION_NONE && compression !== COMPRESSION_LZW) return null;
+  const predictor = first(TAG_PREDICTOR, PREDICTOR_NONE)!;
+  // The predictor is defined alongside LZW; a differenced uncompressed strip is
+  // not a thing any writer produces, so it is refused rather than guessed at.
+  if (predictor !== PREDICTOR_NONE && predictor !== PREDICTOR_HORIZONTAL) return null;
+  if (predictor === PREDICTOR_HORIZONTAL && compression !== COMPRESSION_LZW) return null;
   if (first(TAG_PLANAR, 1) !== 1) return null;
   if (bits.some((depth) => depth !== 8)) return null;
   if (samples < 1 || samples > 4) return null;
@@ -134,21 +277,33 @@ export function tiffImage(bytes: Uint8Array): DecodedImage | null {
     const length = counts[strip]!;
     if (from + length > bytes.length) return null;
     const rowsHere = Math.min(rowsPerStrip, height - row);
-    if (length < rowsHere * rowBytes) return null;
+    // One buffer per strip whichever encoding it arrived in: the raw bytes for an
+    // uncompressed strip, the decoded ones for LZW. The pixel copy below reads
+    // strip-local offsets either way.
+    let data: Uint8Array | null;
+    if (compression === COMPRESSION_LZW) {
+      data = tiffLzwDecode(bytes.subarray(from, from + length), rowsHere * rowBytes);
+      if (data && predictor === PREDICTOR_HORIZONTAL) {
+        undoHorizontalPredictor(data, rowsHere, rowBytes, samples);
+      }
+    } else {
+      data = length >= rowsHere * rowBytes ? bytes.subarray(from, from + length) : null;
+    }
+    if (!data) return null;
     for (let y = 0; y < rowsHere; y += 1) {
-      let at = from + y * rowBytes;
+      let at = y * rowBytes;
       let to = (row + y) * width * 3;
       for (let x = 0; x < width; x += 1) {
         if (isGrey) {
           // WhiteIsZero stores light as low numbers, which renders as a negative.
-          const value = photometric === PHOTOMETRIC_WHITE_IS_ZERO ? 255 - bytes[at]! : bytes[at]!;
+          const value = photometric === PHOTOMETRIC_WHITE_IS_ZERO ? 255 - data[at]! : data[at]!;
           rgb[to] = value;
           rgb[to + 1] = value;
           rgb[to + 2] = value;
         } else {
-          rgb[to] = bytes[at]!;
-          rgb[to + 1] = bytes[at + 1]!;
-          rgb[to + 2] = bytes[at + 2]!;
+          rgb[to] = data[at]!;
+          rgb[to + 1] = data[at + 1]!;
+          rgb[to + 2] = data[at + 2]!;
         }
         at += samples; // A fourth sample is alpha or unused; either way it is dropped.
         to += 3;

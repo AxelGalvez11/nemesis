@@ -19,17 +19,25 @@
 // 🔴 REACT RENDERS THE SKELETON ONCE; THE LOOP WRITES NATIVE PROPS. Same rule as web and for a
 // sharper reason: sixty reconciliations a second on a phone, for a decoration floating over the
 // composer, competes with the very thing it is decorating — parsing and rendering the reply. So
-// React mounts a fixed skeleton (a mask, a body, two eyes, two circles, 8+8 dots, 12+12 arcs and
-// 12 gradients) and after that `paint()` writes onto nodes held in refs. There is no `setState`
-// anywhere in the loop. The in-repo precedent is `app/(tabs)/graph.tsx`, whose loop comment says
+// React mounts a fixed skeleton (a mask, a body, two eyes, two brows, two circles, 8+8 dots, 12+12
+// arcs and 12 gradients) and after that `paint()` writes onto nodes held in refs. There is no
+// `setState` anywhere in the loop. The in-repo precedent is `app/(tabs)/graph.tsx`, whose loop comment says
 // the same thing in the same words: no setState, so React does not run.
 //
-// 🔴 NOT REANIMATED, AND THAT IS NOT AN OVERSIGHT. Reanimated would put this on the UI thread,
-// which is where it belongs — but the engine is 3,200 lines of vendored code that must not be
-// edited, so it cannot carry `'worklet'` directives and `sample(t)` cannot run on the UI runtime.
-// Vendoring the engine and forking it to add worklets is the same decision as not vendoring it.
-// So it runs on the JS thread, exactly as it does on web, and the mitigations are the two gates
-// below rather than a thread move.
+// 🔴 THE ENGINE IS NOT ON REANIMATED, AND THAT IS NOT AN OVERSIGHT. Reanimated would put the
+// per-frame work on the UI thread, which is where it belongs — but the engine is 3,200 lines of
+// vendored code that must not be edited, so it cannot carry `'worklet'` directives and `sample(t)`
+// cannot run on the UI runtime. Vendoring the engine and forking it to add worklets is the same
+// decision as not vendoring it. So the loop runs on the JS thread, exactly as it does on web, and
+// the mitigations are the two gates below rather than a thread move.
+//
+// 🔴 THE FILE DOES IMPORT REANIMATED NOW, FOR EXACTLY ONE THING, AND THE PARAGRAPH ABOVE STILL
+// HOLDS (owner 2026-08-21: "the character still does not jump"). The hop is a transform on a
+// wrapper view — two shared values, no engine sampling, nothing vendored — so it is precisely the
+// case the objection above does not cover: there is no `sample(t)` to worklet-ise, because the
+// engine is not involved in it at all. Nothing about the pose, the face, the decor or the gaze
+// moved onto the UI thread, and if a future change tries to take the engine there, the argument
+// above is the one it has to answer. See `motion` and the `── The hop ──` block.
 //
 // 🔴 THE DECOR IS A FIXED POOL AND ITS SIZE IS MEASURED. A frame carries a variable number of dots
 // and arcs, and during a cross-fade it carries BOTH states' decor at once — which is where the
@@ -49,6 +57,14 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
+import Animated, {
+  Easing,
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import Svg, {
   Circle,
   Defs,
@@ -66,15 +82,24 @@ import { BotEngine, type BotFrame } from "@nemesis/shared/bloub/engine";
 import { TURN_TIME, type GazeScript } from "@nemesis/shared/bloub/gaze";
 import { clamp, easings } from "@nemesis/shared/bloub/math";
 import { DEMI_VIEWBOX, RAYON } from "@nemesis/shared/bloub/repere";
+import { capsulePath } from "@nemesis/shared/bloub/shape";
 import { COLOR_BY_ID, SHAPE_BY_ID, mixHex } from "@nemesis/shared/bloub/skins";
 import { POSES, STATE_BY_ID, type StateId } from "@nemesis/shared/bloub/states";
+import { browFrame } from "@nemesis/shared/character/brow";
 import { restingFace } from "@nemesis/shared/character/face";
 import { centredLook, idleAim } from "@nemesis/shared/character/gaze";
+import {
+  JUMP_EASE,
+  JUMP_KEYFRAMES,
+  JUMP_MS,
+  waggleLook,
+  type PokeMotion,
+} from "@nemesis/shared/character/poke";
 import { ARC_POOL, ARC_STOPS as STOPS, DOT_POOL } from "@nemesis/shared/character/pool";
 
 import { useTheme } from "@/theme/ThemeProvider";
 
-import { argb, discPath, dotMatrix, parseMatrix } from "./bloub-frame";
+import { argb, discPath, dotMatrix, liftMatrix, parseMatrix } from "./bloub-frame";
 
 // Pool sizes live in the shared package so the guard that keeps them honest can run in plain Node,
 // without React, RNSVG or a device. Re-exported because callers reach for them through the
@@ -85,6 +110,24 @@ const VB = DEMI_VIEWBOX;
 
 /** How often the wrapper's position on screen is re-measured while the loop runs, in ms. */
 const BOX_MS = 120;
+
+const styles = StyleSheet.create({
+  /**
+   * The layer the hop moves, between the layout box and the character.
+   *
+   * 🔴 `transformOrigin` AT THE FEET IS LOAD-BEARING, NOT A FLOURISH. It is web's
+   * `transform-origin: 50% 100%`, and its stylesheet gives the reason: squash reads as weight only
+   * if the body flattens AGAINST the floor. About its middle the character shrinks symmetrically
+   * and reads as being resized rather than as landing on something. RN has supported this style
+   * since 0.76 and it needs no plugin.
+   *
+   * 🔴 IT FILLS THE WRAPPER RATHER THAN WRAPPING THE `<Svg>` ALONE, SO THE PRESS TARGET HOPS WITH
+   * THE CHARACTER. Web's hop wrapper contains the whole clickable character; a phone version that
+   * left the Pressable behind would leave a learner tapping a square of empty space while the
+   * character is in the air above it.
+   */
+  hop: { height: "100%", transformOrigin: "50% 100%", width: "100%" },
+});
 
 /**
  * 🔴 `gradient` IS A REAL NATIVE PROP OF RNSVGLinearGradient AND IS MISSING FROM THE PUBLIC TYPES.
@@ -123,8 +166,10 @@ export interface BloubBotProps {
    * resting pose's, leaves the other fifteen moods alone, and hands back a stable reference so
    * `setExpression`'s identity check still short-circuits. Its header carries the numbers.
    *
-   * It also carries the poke's `colere` and `surpris` — see `use-poke.ts`: one owner per channel,
-   * or the tilt fix and the angry gesture overwrite each other every render.
+   * It also carries the poke's `colere` — see `use-poke.ts`: one owner per channel, or the tilt fix
+   * and the angry gesture overwrite each other every render. The brow waggle used to be a second
+   * expression on this channel and is not one any more; it is drawn as mask geometry now, and
+   * arrives through `gaze`.
    */
   expression?: string;
   /**
@@ -160,13 +205,17 @@ export interface BloubBotProps {
    * A SCRIPTED look, evaluated every frame with the seconds elapsed since it was given, or null
    * for the ordinary steering. It outranks both `aimAt` and the idle wandering while it is set.
    *
-   * 🔴 THIS EXISTS FOR ONE GESTURE, AND WITHOUT IT THAT GESTURE SHIPS LOOKING BROKEN WHILE EVERY
-   * TEST STAYS GREEN (owner 2026-08-20: "spin around"). Measured on the real engine, the `swirl`
+   * 🔴 IT WAS BUILT FOR A GESTURE THAT NO LONGER EXISTS, AND THE MEASUREMENT IS KEPT BECAUSE IT IS
+   * WHY THE CHANNEL IS SHAPED THIS WAY (owner 2026-08-20: "spin around"; removed 2026-08-21:
+   * "remove the colorful swirls around the mascot"). Measured on the real engine, the `swirl`
    * state ALONE moves the inner eye 55px on a 100px-radius body — the same as ordinary idle
    * wander — and never sends an eye behind the sphere: its pose is three rings laid over the
    * resting face, and the rotation in upstream's settings entrance comes from the LOOK, not from
-   * the state. Driving the vendored `tourLook` script instead, the inner eye travels 184px and
-   * passes behind the body for about half a second. That is a spin.
+   * the state. Driving the vendored `tourLook` script instead, the inner eye travelled 184px and
+   * passed behind the body for about half a second. That was the spin, and it was the only way to
+   * build one — which is exactly why a "spin" cannot be rebuilt without the swirls coming with it.
+   * `@nemesis/shared/character/poke` holds the removal record. TODAY THIS CHANNEL HAS ONE USER:
+   * the brow waggle, below.
    *
    * 🔴 IT IS A SCRIPT, NOT AN ANIMATION WRITTEN HERE. Same rule the idle wandering follows: what
    * this file may do is hand the engine a target every frame. `@nemesis/shared/bloub/gaze`'s
@@ -175,10 +224,44 @@ export interface BloubBotProps {
    *
    * 🔴 AND IT KEEPS `aimingRef` SET, so handing the gaze back to the steering afterwards does not
    * fire a second entry turn. The engine's own catch-up (`LOOK_MORPH`, 0.24s) smooths the script
-   * exactly as it smooths a cursor, which for a 2.7s rotation is a lag of about a frame and a
-   * half — invisible, and it converges because the script lands where it started.
+   * exactly as it smooths a cursor, which over a gesture of a second or more is a lag of about a
+   * frame and a half — invisible, and it converges because the script lands where it started.
+   *
+   * 🔴 THE GESTURE IT CARRIES IS THE BROW WAGGLE, AND THIS CHANNEL CARRIES IT WHOLE. `waggleLook`
+   * turns the character to face front for the length of the gesture — a waggle is aimed at
+   * somebody — and the loop reads that same script, by identity, as the instruction to cut two
+   * brows into the mask, on the script's own clock. See the `script === waggleLook` branch in
+   * `tick` for why the signal is the script rather than a flag beside it, and
+   * `@nemesis/shared/character/poke` for the measurements behind the bearing.
    */
   gaze?: GazeScript | null;
+  /**
+   * A movement of the WHOLE CHARACTER for the current beat, or null. Today the only one is the hop.
+   *
+   * 🔴 IT IS A TRANSFORM ON THIS COMPONENT'S OWN WRAPPER, NOT A POSE, AND THAT IS THE ONLY PLACE
+   * IT COULD BE (owner 2026-08-20 "he should jump", again 2026-08-21 "the character still does not
+   * jump"). The vendored pose table describes a face on a sphere — where the eyes sit, how wide
+   * they open, what the silhouette is. Leaving the ground is the whole body moving through space,
+   * which that model has no vocabulary for and does not need one for: a jump is a transform on the
+   * element the character is drawn in. So the engine stays unedited and keeps being the single
+   * opinion about the face, exactly as `apps/web/components/bloub/bloub.css` argues for the same
+   * hop on the same character.
+   *
+   * 🔴 AND THAT MAKES IT THE DOCUMENTED EXCEPTION TO "NO HAND-ROLLED ANIMATION BESIDE THE ENGINE",
+   * WHICH IS WORTH SAYING OUT LOUD RATHER THAN LEAVING A READER TO THINK THE RULE WAS BROKEN.
+   * `@nemesis/shared/character/poke` states the rule — a beat is a pose plus a duration, never a
+   * curve — because a second animator driving the FACE would compete with `StateDef.morph` and
+   * `BotEngine.SHAPE_MORPH`, which are measured. The hop drives no face. It moves the box the face
+   * is inside, one layer outside everything the engine owns, in the same place `character/gaze.ts`
+   * puts a look target and `character/brow.ts` puts a brow. Measured: during a hop the eye centre
+   * moves 0.6 viewBox units per frame — the ordinary idle wander — because there is no channel
+   * through which the transform could reach the engine at all.
+   *
+   * 🔴 IT IS A PROP RATHER THAN SOMETHING THIS FILE DERIVES FROM `onPoke`, because which gesture a
+   * tap draws is `@nemesis/shared/character/poke`'s opinion and this file is a renderer. Web makes
+   * the same split: `usePoke` returns `motion`, and the call site puts the class on.
+   */
+  motion?: PokeMotion;
   /**
    * Open the gaze with a full turn around the sphere before the eyes settle.
    *
@@ -225,6 +308,7 @@ export function BloubBot({
   paper,
   aimAt = null,
   gaze = null,
+  motion = null,
   entrance = false,
   onPoke,
   frozenAt,
@@ -249,6 +333,9 @@ export function BloubBot({
   // to this group — the body's cross-fade alpha — so the ref is held at exactly that shape.
   const bodyGroupRef = useRef<OpacityNode | null>(null);
   const eyeRefs = useRef<(Path | null)[]>([]);
+  // One per eye, and they live in the MASK beside them — `@nemesis/shared/character/brow` carries
+  // the argument for why a brow is a hole cut in the body rather than a stroke laid on the face.
+  const browRefs = useRef<(Path | null)[]>([]);
   const notchRef = useRef<Circle | null>(null);
   const notifRef = useRef<Circle | null>(null);
   // 🔴 TWO DOT POOLS, NOT ONE MOVED BETWEEN LAYERS. The burst's particles pass BEHIND the core
@@ -303,7 +390,7 @@ export function BloubBot({
    * given — it replaces `fill`/`stroke` in place with the output of `extractBrush` — so a reused
    * scratch object would be poisoned after its first use.
    */
-  const paint = (frame: BotFrame, inkHex: string, paperFill: string) => {
+  const paint = (frame: BotFrame, inkHex: string, paperFill: string, browAt: number | null) => {
     maskBodyRef.current?.setNativeProps({ d: frame.bodyPath });
     paperBodyRef.current?.setNativeProps({ d: frame.bodyPath, fill: paperFill });
     inkRectRef.current?.setNativeProps({ fill: inkHex });
@@ -311,17 +398,48 @@ export function BloubBot({
     // alone leaves the group's transform untouched.
     bodyGroupRef.current?.setNativeProps({ opacity: frame.bodyAlpha });
 
+    // 🔴 THE BROW IS RESOLVED ONCE, NOT PER EYE. Both brows are the same capsule at the same
+    // height — a waggle raises them together — so building the path twice would be two calls to
+    // `capsulePath` a frame for one string. `browAt` is null except during a waggle, and
+    // `browFrame` itself returns null at both ends of that window, so the ordinary case costs one
+    // comparison. Same split web's `bloub-bot.tsx` makes, for the same reason.
+    const brow = browAt === null ? null : browFrame(browAt);
+    const browPath = brow ? capsulePath(brow.w * RAYON, brow.h * RAYON) : "";
+
     for (let i = 0; i < 2; i += 1) {
       const node = eyeRefs.current[i];
+      const browNode = browRefs.current[i];
       const eye = frame.eyes[i];
+      // 🔴 THE ENGINE'S EYE TRANSFORM IS AN SVG STRING AND HAS TO BE PARSED. See
+      // `bloub-frame.ts`: nothing in RNSVG parses `matrix(...)` arriving through setNativeProps.
+      // Parsed ONCE per eye and shared with the brow, which is built from the same six numbers.
+      const matrix = eye ? parseMatrix(eye.matrix) : null;
+      if (browNode) {
+        // 🔴 NO EYE MEANS NO BROW, AND THAT FALLS OUT OF THE SAME TEST. An eye is dropped from
+        // the frame once it has gone round the back of the sphere (`engine.ts`: `depth <= 0.02`),
+        // and a brow that outlived it would hang unattached over the body's edge. The `alpha` it
+        // copies covers the other half without naming a state: driven through the real engine,
+        // `thinking`, `alert`, `exclaim`, `sleep`, `burst` and `comet` each reach an instant with
+        // no face at all, and a brow floating over a faceless body is the same bug seen twice.
+        if (!eye || !matrix || !brow) {
+          browNode.setNativeProps({ d: "", opacity: 0 });
+        } else {
+          browNode.setNativeProps({
+            d: browPath,
+            // Placed THROUGH the eye's own matrix, then lifted in the eye's local frame. That is
+            // the whole trick: the tangent frame, the head's roll and the foreshortening are all
+            // already in that matrix, so the brow inherits them instead of re-deriving them.
+            matrix: liftMatrix(matrix, brow.dy * RAYON),
+            opacity: eye.alpha,
+          });
+        }
+      }
       if (!node) continue;
-      if (!eye) {
+      if (!eye || !matrix) {
         node.setNativeProps({ d: "", opacity: 0 });
         continue;
       }
-      // 🔴 THE ENGINE'S EYE TRANSFORM IS AN SVG STRING AND HAS TO BE PARSED. See
-      // `bloub-frame.ts`: nothing in RNSVG parses `matrix(...)` arriving through setNativeProps.
-      node.setNativeProps({ d: eye.d, matrix: parseMatrix(eye.matrix), opacity: eye.alpha });
+      node.setNativeProps({ d: eye.d, matrix, opacity: eye.alpha });
     }
 
     const notch = notchRef.current;
@@ -463,6 +581,90 @@ export function BloubBot({
   const reduced = reducedMotion ?? systemReduced;
   const still = frozenAt !== undefined || reduced;
 
+  // ── The hop ──────────────────────────────────────────────────────────────────
+  //
+  // 🔴 IT IS THE ONLY THING IN THIS FILE THAT IS NOT DRIVEN BY THE ENGINE, AND IT SAYS SO HERE
+  // RATHER THAN LEAVING A READER TO CATCH IT. Everything else below samples `BotEngine` and writes
+  // the result onto native nodes; this drives two Reanimated shared values and never touches the
+  // engine at all. That is the whole reason a jump can exist without editing vendored code — see
+  // the `motion` prop's note, and `@nemesis/shared/character/poke`, which states the "a beat is a
+  // pose plus a duration, never a curve" rule and names this as its one exception.
+  //
+  // 🔴 THE KEYFRAMES ARE WEB'S, TO THE PERCENTAGE, AND THEY COME FROM THE SHARED TABLE SO THEY CAN
+  // BE PINNED THERE. `apps/web/components/bloub/bloub.css` holds `@keyframes bloub-jump`; nothing
+  // here can read CSS, so the same shape lives in `@nemesis/shared/character/poke` as numbers and
+  // `character.test.ts` parses that stylesheet and asserts the two agree. Retyping a curve by eye
+  // is how the two characters end up hopping differently with nothing failing.
+  //
+  // 🔴 ONE `withTiming` PER KEYFRAME INTERVAL, NOT ONE ACROSS THE WHOLE HOP, BECAUSE THAT IS WHAT
+  // CSS DOES. An `animation-timing-function` on a CSS animation is applied to EVERY segment
+  // between adjacent keyframes, so web's hop is six eased segments. Easing the whole 620ms once
+  // would pass through the same six positions at the same six instants and travel between them
+  // differently — a difference nobody can point at and everybody can see.
+  //
+  // 🔴 TWO SHARED VALUES RATHER THAN ONE PROGRESS VALUE AND AN `interpolate`. CSS interpolates the
+  // two components of `translateY(...) scaleY(...)` independently under one eased progress, which
+  // is exactly two sequences with identical durations and identical easings. A single progress
+  // value would need a lookup table of its own on the UI thread to get back to the same numbers,
+  // and would be one more place for the two curves to disagree.
+  //
+  // 🔴 `y` IS SCALED BY `size` BECAUSE WEB'S IS A PERCENTAGE OF THE ELEMENT'S OWN HEIGHT. The
+  // character is 52pt in the dock and 112pt on the landing; a hop written in points would be a
+  // twitch on one and a leap on the other.
+  const hopY = useSharedValue(0);
+  const hopScaleY = useSharedValue(1);
+
+  useEffect(() => {
+    // 🔴 REMOVED UNDER REDUCED MOTION, NOT SHORTENED, AND THAT DIFFERS FROM THE CANVAS FADE AND
+    // FROM WEB'S DOCK TRAVEL ON PURPOSE. `bloub.css` makes the same call in the same words: the
+    // dock's corner→centre journey is only made quicker, because WHERE the character stands is
+    // the message — it says the system has taken the floor. A hop carries no such information. It
+    // is a reply to a tap, and the wink and the brow waggle in the same bag still answer one, so
+    // a learner who has asked for less motion loses nothing they needed. `still` also covers
+    // `frozenAt`, where there is no loop and a mid-air character would simply be stuck.
+    if (motion !== "jump" || still) {
+      // 🔴 CANCEL, THEN RETURN TO THE GROUND IN ONE FRAME. This is the path a gesture cut mid-air
+      // takes — `usePoke` hands back `motion: null` the moment the next gesture starts, or the
+      // instant a wait takes the floor — and it is web's behaviour rather than a compromise:
+      // removing `.bloub-jump` removes the animation and the element snaps back. Easing it out
+      // would be a landing curve nobody asked for, played over a tap that has already been
+      // answered. Without the `cancelAnimation` the old sequence would keep writing over these
+      // assignments and the character would finish a hop it had been told to abandon.
+      cancelAnimation(hopY);
+      cancelAnimation(hopScaleY);
+      hopY.value = 0;
+      hopScaleY.value = 1;
+      return;
+    }
+    const ease = Easing.bezier(JUMP_EASE[0], JUMP_EASE[1], JUMP_EASE[2], JUMP_EASE[3]);
+    /** Milliseconds of the segment that ENDS at keyframe `i + 1`. */
+    const span = (i: number) => (JUMP_KEYFRAMES[i + 1]!.at - JUMP_KEYFRAMES[i]!.at) * JUMP_MS;
+    const steps = JUMP_KEYFRAMES.slice(1);
+    // Start from the ground every time, so a hop that follows a cancelled one begins at 0 rather
+    // than wherever the last one was abandoned.
+    hopY.value = 0;
+    hopScaleY.value = 1;
+    hopY.value = withSequence(
+      ...steps.map((k, i) => withTiming(k.y * size, { duration: span(i), easing: ease })),
+    );
+    hopScaleY.value = withSequence(
+      ...steps.map((k, i) => withTiming(k.scaleY, { duration: span(i), easing: ease })),
+    );
+    // 🔴 NO CLEANUP FUNCTION, BECAUSE THE BRANCH ABOVE IS THE CLEANUP. It runs whenever `motion`
+    // leaves `"jump"` or `still` becomes true, which are the only two ways a hop ends early, and
+    // it is the same code path either way. A cleanup returned from here would be a THIRD copy of
+    // the same two assignments, and the one that runs on unmount is unnecessary: the shared values
+    // and the animation die with the component.
+    //
+    // `size` is in the dependency list because the hop's height is derived from it. Changing it
+    // mid-hop restarts the hop at the new size, which is the only sensible answer and is also
+    // unreachable today — both call sites pass a constant (52 in `CanvasDock`, 112 on the landing).
+  }, [motion, still, size, hopY, hopScaleY]);
+
+  const hopStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: hopY.value }, { scaleY: hopScaleY.value }],
+  }));
+
   // ── Paint ────────────────────────────────────────────────────────────────────
   //
   // Two effects, and the split is deliberate — it is the same split web makes, for the same reason.
@@ -477,7 +679,12 @@ export function BloubBot({
     // 🔴 HELD AT ITS CHARACTERISTIC INSTANT, NOT FROZEN AT ZERO. Every animation publishes the
     // moment it reads best (`POSES`), and holding that is what keeps `thinking` legible as three
     // dots rather than as a ball caught before it split.
-    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, live.current.paper);
+    // 🔴 NO BROWS ON A STILL, AND THAT IS THE SAME CALL WEB MAKES. A waggle is two lifts across
+    // 0.9s of scene clock and a still has no clock at all, so the only thing a frozen board could
+    // draw is one arbitrary instant of a gesture nobody asked it for — a character with permanent
+    // eyebrows, which `character/brow.ts` is explicit is a different creature rather than a
+    // gesture. Reduced motion lands here too, which is the right answer for the same reason.
+    paint(engine.sample(frozenAt ?? POSES[state] ?? 1), live.current.ink, live.current.paper, null);
     // Redrawn whenever the look changes, since nothing else will redraw it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [still, frozenAt, state, shape, color, expression, paperHex]);
@@ -602,6 +809,10 @@ export function BloubBot({
       // would smear both. It is also why the wandering never fights a wait: `thinking`, `orbit`,
       // `comet`, `burst`, `wide` and `notify` all release, and the character goes back to looking
       // around the moment it is idle again.
+      // How far into a brow waggle this frame is, or null when there is no waggle. See the
+      // `script === waggleLook` branch below for why it is derived from the gaze rather than from
+      // a channel of its own.
+      let browAt: number | null = null;
       if (!STATE_BY_ID.get(stateRef.current)?.baseFace) {
         release();
       } else {
@@ -610,11 +821,40 @@ export function BloubBot({
         if (script) {
           // 🔴 A SCRIPTED LOOK OUTRANKS EVERYTHING, because the only thing that sets one is a
           // gesture the learner just asked for by tapping. It is evaluated on the SCENE clock, so
-          // it slows with the animation it belongs to — the spin plays at `swirl`'s 0.55 and its
-          // 1.5s of rotation take 2.7s of real time, which is exactly what the poke holds it for.
+          // it slows with the animation it belongs to, and the poke's own hold is divided by the
+          // same rate — the two stay the same length whatever `SPEED` becomes. (The example that
+          // used to stand here was the removed spin: `swirl` at 0.55, so 1.5s of rotation took
+          // 2.7s of real time. Every surviving gesture runs at 1 today, so the division is a
+          // no-op — see `held` in `@nemesis/shared/character/poke`, which keeps it as a guard.)
           // `aimingRef` stays set so handing back to the steering fires no second entry turn.
-          engine.setLook(script(clockRef.current - gazeRef.current.since), clockRef.current);
+          const elapsed = clockRef.current - gazeRef.current.since;
+          engine.setLook(script(elapsed), clockRef.current);
           aimingRef.current = true;
+          // 🔴 THE BROWS ARE DRAWN EXACTLY WHILE THE WAGGLE'S OWN LOOK SCRIPT IS DRIVING THE GAZE,
+          // AND THAT IS THE SIGNAL RATHER THAN A SEPARATE FLAG. A beat carries a state id, an
+          // expression id, a look script and a duration; the first two are vendored vocabularies
+          // that cannot say "grow brows", so the script is the one thing a gesture hands this loop
+          // per frame. It is also the right clock: the brow's phase and the head's bearing are one
+          // gesture, and reading them off two clocks is how they drift. `waggleLook` therefore
+          // MEANS the brow waggle — a future gesture that merely wants the character to face front
+          // must not reuse it, and `character.test.ts` pins that from the other side.
+          //
+          // 🔴 AND IT IS THE SCENE CLOCK, NOT A WALL CLOCK. `browFrame`'s window is in scene
+          // seconds, so the gesture slows with `speed` and stops with it. A waggle on its own
+          // timer would keep running on a paused character and would finish early on a slowed one,
+          // and on this app it would also keep running while the tab is unfocused or the app is in
+          // the background, where this loop is stopped outright.
+          //
+          // 🔴 THE ONE COST OF `gazeRef` BEING AN EFFECT RATHER THAN A RENDER-TIME REF IS PAID
+          // HERE, AND IT IS PAID IN NOTHING. `bloub-bot.tsx` stamps its waggle's start DURING
+          // render, because an effect can land a frame after the browser has painted and web draws
+          // `elapsed = 0` in that frame. Here `since` is stamped by the same effect that picks the
+          // script up, so a late effect moves BOTH and `elapsed` still starts at zero — and
+          // `browFrame(0)` is null by construction (its reveal is zero-width at both ends), so the
+          // frame that would have shown a full-height brow at no width does not exist. Replayed at
+          // 60fps: the first frame that draws anything is elapsed 0.0167 at 4.45px of width, the
+          // last is 0.883 at the same 4.45px, and both are about 0.7pt on the 52pt dock.
+          if (script === waggleLook) browAt = elapsed;
         } else if (at) {
           // A surface that named a target outranks the character's own curiosity.
           aim(at);
@@ -627,7 +867,7 @@ export function BloubBot({
           steer(nx, ny, false);
         }
       }
-      paint(engine.sample(clockRef.current), live.current.ink, live.current.paper);
+      paint(engine.sample(clockRef.current), live.current.ink, live.current.paper, browAt);
     };
 
     const start = () => {
@@ -709,188 +949,218 @@ export function BloubBot({
       accessibilityElementsHidden={label || onPoke ? undefined : true}
       importantForAccessibility={label || onPoke ? undefined : "no-hide-descendants"}
     >
-      <Svg width={size} height={size} viewBox={`${-VB} ${-VB} ${VB * 2} ${VB * 2}`}>
-        <Defs>
-          {/* 🔴 THE EYES ARE HOLES, NOT WHITE SHAPES LAID ON TOP. That is what makes them clip
-              themselves against the silhouette when they slide toward its edge. RNSVG defaults
-              maskType to luminance, matching SVG, and derives maskContentUnits from maskUnits —
-              landing on userSpaceOnUse, which is what these viewBox coordinates need. */}
-          <Mask
-            id={maskId}
-            maskUnits="userSpaceOnUse"
-            x={-VB}
-            y={-VB}
-            width={VB * 2}
-            height={VB * 2}
-          >
-            <Path
-              ref={(el) => {
-                maskBodyRef.current = el;
-              }}
-              d=""
-              fill="#fff"
-            />
-            {[0, 1].map((i) => (
-              <Path
-                key={i}
-                ref={(el) => {
-                  eyeRefs.current[i] = el;
-                }}
-                d=""
-                fill="#000"
-              />
-            ))}
-            <Circle
-              ref={(el) => {
-                notchRef.current = el;
-              }}
-              cx={0}
-              cy={0}
-              r={0}
-              fill="#000"
-            />
-          </Mask>
-          {Array.from({ length: ARC_POOL }, (_, i) => (
-            <LinearGradient
-              key={i}
-              id={`${uid}-arc-${i}`}
-              ref={(el) => {
-                gradRefs.current[i] = el;
-              }}
-              gradientUnits="userSpaceOnUse"
-            >
-              {/* Present so `extractGradient` builds the flat array at mount; never written to
-                  afterwards — see LinearGradientNativeWrite above. LinearGradient's children type
-                  is ReactElement[], so a lone child would be a type error; this is a map. */}
-              {Array.from({ length: STOPS }, (_, s) => (
-                <Stop key={s} offset={s / (STOPS - 1)} stopColor="transparent" />
-              ))}
-            </LinearGradient>
-          ))}
-        </Defs>
+      {/* 🔴 THE HOP IS ITS OWN LAYER, INSIDE THE ONE THAT IS MEASURED — the same arrangement web
+          uses, for a reason that survives the move to RN. `wrapRef` is what `measureInWindow`
+          reads every 120ms to normalise a look target, and the character's RESTING position is
+          what a gaze should be computed from; putting the hop's transform on that same view would
+          make the gaze read a box that is 66% of a body height too high for a third of a second.
+          The outer view also owns the caller's `style`, the pointer rules and the accessibility
+          decision, none of which should move when the character jumps.
 
-        {/* Back halves of the orbits, drawn first so the body occludes them. */}
-        <G>
-          {Array.from({ length: ARC_POOL }, (_, i) => (
-            <Path
-              key={i}
-              ref={(el) => {
-                backRefs.current[i] = el;
-              }}
-              d=""
-              fill="none"
-              strokeLinecap="round"
-              stroke={`url(#${uid}-arc-${i})`}
-            />
-          ))}
-        </G>
-
-        {/* The burst's particles: behind the core, so the body occludes them. */}
-        <G>
-          {Array.from({ length: DOT_POOL }, (_, i) => (
-            <Path
-              key={i}
-              ref={(el) => {
-                dotBackRefs.current[i] = el;
-              }}
-              d=""
-            />
-          ))}
-        </G>
-
-        <G
-          ref={(el) => {
-            bodyGroupRef.current = el as unknown as OpacityNode | null;
-          }}
-        >
-          {/* Opaque backing in the surface's own colour. Without it the rings that pass behind the
-              body show through the eye holes. */}
-          <Path
-            ref={(el) => {
-              paperBodyRef.current = el;
-            }}
-            d=""
-            fill={paperHex}
-          />
-          <G mask={`url(#${maskId})`}>
-            <Rect
-              ref={(el) => {
-                inkRectRef.current = el;
-              }}
+          🔴 AND IT IS NOT KEYED, WHICH IT MUST NOT BE. Re-mounting to restart the animation is the
+          obvious trick and it would take the whole renderer down with it — the engine, its clock,
+          the pooled nodes and the gaze's entry turn all live in this subtree, so every second poke
+          would restart the character rather than move it. It does not need the trick: `usePoke`
+          returns `motion: null` between gestures and the bag never draws the same gesture twice
+          running, so the effect above always sees a real null → "jump" transition. Web's dock
+          carries this same warning about the same mistake. */}
+      <Animated.View style={[styles.hop, hopStyle]}>
+        <Svg width={size} height={size} viewBox={`${-VB} ${-VB} ${VB * 2} ${VB * 2}`}>
+          <Defs>
+            {/* 🔴 THE EYES ARE HOLES, NOT WHITE SHAPES LAID ON TOP. That is what makes them clip
+                themselves against the silhouette when they slide toward its edge. RNSVG defaults
+                maskType to luminance, matching SVG, and derives maskContentUnits from maskUnits —
+                landing on userSpaceOnUse, which is what these viewBox coordinates need. */}
+            <Mask
+              id={maskId}
+              maskUnits="userSpaceOnUse"
               x={-VB}
               y={-VB}
               width={VB * 2}
               height={VB * 2}
-              fill={ink}
-            />
+            >
+              <Path
+                ref={(el) => {
+                  maskBodyRef.current = el;
+                }}
+                d=""
+                fill="#fff"
+              />
+              {[0, 1].map((i) => (
+                <Path
+                  key={i}
+                  ref={(el) => {
+                    eyeRefs.current[i] = el;
+                  }}
+                  d=""
+                  fill="#000"
+                />
+              ))}
+              {/* The brows, cut out of the same mask and parked until a waggle asks for them. They
+                  are mounted with the rest of the skeleton and never unmounted, so the node count
+                  stays constant — the same rule the decor pools follow. */}
+              {[0, 1].map((i) => (
+                <Path
+                  key={`brow-${i}`}
+                  ref={(el) => {
+                    browRefs.current[i] = el;
+                  }}
+                  d=""
+                  fill="#000"
+                />
+              ))}
+              <Circle
+                ref={(el) => {
+                  notchRef.current = el;
+                }}
+                cx={0}
+                cy={0}
+                r={0}
+                fill="#000"
+              />
+            </Mask>
+            {Array.from({ length: ARC_POOL }, (_, i) => (
+              <LinearGradient
+                key={i}
+                id={`${uid}-arc-${i}`}
+                ref={(el) => {
+                  gradRefs.current[i] = el;
+                }}
+                gradientUnits="userSpaceOnUse"
+              >
+                {/* Present so `extractGradient` builds the flat array at mount; never written to
+                    afterwards — see LinearGradientNativeWrite above. LinearGradient's children type
+                    is ReactElement[], so a lone child would be a type error; this is a map. */}
+                {Array.from({ length: STOPS }, (_, s) => (
+                  <Stop key={s} offset={s / (STOPS - 1)} stopColor="transparent" />
+                ))}
+              </LinearGradient>
+            ))}
+          </Defs>
+
+          {/* Back halves of the orbits, drawn first so the body occludes them. */}
+          <G>
+            {Array.from({ length: ARC_POOL }, (_, i) => (
+              <Path
+                key={i}
+                ref={(el) => {
+                  backRefs.current[i] = el;
+                }}
+                d=""
+                fill="none"
+                strokeLinecap="round"
+                stroke={`url(#${uid}-arc-${i})`}
+              />
+            ))}
           </G>
-        </G>
 
-        {/* Every other dot — the thinking trio, the tear of the "!" — sits in front. */}
-        <G>
-          {Array.from({ length: DOT_POOL }, (_, i) => (
+          {/* The burst's particles: behind the core, so the body occludes them. */}
+          <G>
+            {Array.from({ length: DOT_POOL }, (_, i) => (
+              <Path
+                key={i}
+                ref={(el) => {
+                  dotBackRefs.current[i] = el;
+                }}
+                d=""
+              />
+            ))}
+          </G>
+
+          <G
+            ref={(el) => {
+              bodyGroupRef.current = el as unknown as OpacityNode | null;
+            }}
+          >
+            {/* Opaque backing in the surface's own colour. Without it the rings that pass behind the
+                body show through the eye holes. */}
             <Path
-              key={i}
               ref={(el) => {
-                dotFrontRefs.current[i] = el;
+                paperBodyRef.current = el;
               }}
               d=""
+              fill={paperHex}
             />
-          ))}
-        </G>
+            <G mask={`url(#${maskId})`}>
+              <Rect
+                ref={(el) => {
+                  inkRectRef.current = el;
+                }}
+                x={-VB}
+                y={-VB}
+                width={VB * 2}
+                height={VB * 2}
+                fill={ink}
+              />
+            </G>
+          </G>
 
-        <Circle
-          ref={(el) => {
-            notifRef.current = el;
-          }}
-          cx={0}
-          cy={0}
-          r={0}
-          fill={NOTIF_BLUE}
-        />
+          {/* Every other dot — the thinking trio, the tear of the "!" — sits in front. */}
+          <G>
+            {Array.from({ length: DOT_POOL }, (_, i) => (
+              <Path
+                key={i}
+                ref={(el) => {
+                  dotFrontRefs.current[i] = el;
+                }}
+                d=""
+              />
+            ))}
+          </G>
 
-        <G>
-          {Array.from({ length: ARC_POOL }, (_, i) => (
-            <Path
-              key={i}
-              ref={(el) => {
-                frontRefs.current[i] = el;
-              }}
-              d=""
-              fill="none"
-              strokeLinecap="round"
-              stroke={`url(#${uid}-arc-${i})`}
-            />
-          ))}
-        </G>
-      </Svg>
+          <Circle
+            ref={(el) => {
+              notifRef.current = el;
+            }}
+            cx={0}
+            cy={0}
+            r={0}
+            fill={NOTIF_BLUE}
+          />
 
-      {onPoke ? (
-        /*
-         * 🔴 THE PRESS AREA IS THE DRAWN SQUARE, AND IT IS MEASURED RATHER THAN ASSUMED (owner
-         * 2026-08-21). `absoluteFill` inside a `size × size` wrapper makes the target exactly
-         * `size`, so the two pokeable characters in the app are 52pt (`CanvasDock.DOCK_SIZE`) and
-         * 112pt (the landing greeter). Both clear Apple's 44pt minimum, so nothing here is short
-         * and nothing here is padded.
-         *
-         * 🔴 NO `hitSlop`, AND THAT IS THE DECISION RATHER THAN AN OMISSION. Adding one to
-         * guarantee 44pt for some future caller was considered and rejected: `hitSlop` grows the
-         * target OUTSIDE the drawn square, and this character floats over the composer, so the
-         * slop would land on the text input — reinstating the exact failure the wrapper's
-         * `pointer-events` note exists to prevent, except intermittently and only near the edges.
-         * A character too small to press is a caller passing a `size` under 44, and the honest fix
-         * for that is a bigger character, not an invisible one.
-         */
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={onPoke}
-          accessibilityRole="button"
-          // The name a screen reader reads. `label` when the caller gave the character one,
-          // otherwise the product's name — never "" and never the empty default, because an
-          // unnamed button is announced as "button" and there is no way to guess what it does.
-          accessibilityLabel={label ?? "Nemesis"}
-        />
-      ) : null}
+          <G>
+            {Array.from({ length: ARC_POOL }, (_, i) => (
+              <Path
+                key={i}
+                ref={(el) => {
+                  frontRefs.current[i] = el;
+                }}
+                d=""
+                fill="none"
+                strokeLinecap="round"
+                stroke={`url(#${uid}-arc-${i})`}
+              />
+            ))}
+          </G>
+        </Svg>
+
+        {onPoke ? (
+          /*
+           * 🔴 THE PRESS AREA IS THE DRAWN SQUARE, AND IT IS MEASURED RATHER THAN ASSUMED (owner
+           * 2026-08-21). `absoluteFill` inside a `size × size` wrapper makes the target exactly
+           * `size`, so the two pokeable characters in the app are 52pt (`CanvasDock.DOCK_SIZE`) and
+           * 112pt (the landing greeter). Both clear Apple's 44pt minimum, so nothing here is short
+           * and nothing here is padded.
+           *
+           * 🔴 NO `hitSlop`, AND THAT IS THE DECISION RATHER THAN AN OMISSION. Adding one to
+           * guarantee 44pt for some future caller was considered and rejected: `hitSlop` grows the
+           * target OUTSIDE the drawn square, and this character floats over the composer, so the
+           * slop would land on the text input — reinstating the exact failure the wrapper's
+           * `pointer-events` note exists to prevent, except intermittently and only near the edges.
+           * A character too small to press is a caller passing a `size` under 44, and the honest fix
+           * for that is a bigger character, not an invisible one.
+           */
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={onPoke}
+            accessibilityRole="button"
+            // The name a screen reader reads. `label` when the caller gave the character one,
+            // otherwise the product's name — never "" and never the empty default, because an
+            // unnamed button is announced as "button" and there is no way to guess what it does.
+            accessibilityLabel={label ?? "Nemesis"}
+          />
+        ) : null}
+      </Animated.View>
     </View>
   );
 }
