@@ -19,8 +19,9 @@
 // still has the deck or the note; if the CONTENT write fails, the whole deliverable failed
 // and says so.
 
+import { readModelJson } from "../model-json";
 import { supabase } from "@/lib/supabase";
-import { postChatCompletion } from "@/lib/workspace/chat-api";
+import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 
@@ -58,6 +59,21 @@ export interface DeliverableResult {
 export interface DeliverableFailure {
   error: string;
 }
+
+/**
+ * Output headroom for the makers whose answer a PARSER reads.
+ *
+ * 🔴🔴 THESE EXIST BECAUSE NOTHING IN THIS APP EVER SET ONE, and the default cap is well below what
+ * a full deck costs. A truncated sentence is still readable; a truncated JSON object is not, so the
+ * whole answer was discarded and the learner told it "came back unusable" — a message that blames
+ * the model for a limit we never raised. The owner hit it asking for a glycolysis deck.
+ *
+ * Sized to the artifact: a twelve-slide deck with notes and takeaways is the largest, a table of
+ * short cells the smallest.
+ */
+const DECK_MAX_TOKENS = 8192;
+const CARDS_MAX_TOKENS = 8192;
+const TABLE_MAX_TOKENS = 4096;
 
 /** How much of the canvas the model sees. Enough for a study artifact; not the whole
  *  transcript of a long session. */
@@ -123,18 +139,23 @@ export function canvasHasMaterial(canvas: LearningCanvas): boolean {
  *  preamble tolerated, anything else refused. Exported for its tests — this is the seam
  *  where a chatty model turns into bad rows. */
 export function readCardsJson(text: string): { front: string; back: string }[] | null {
-  const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start === -1 || end <= start) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(parsed)) return null;
+  // Structure-only repair, so a long pack that ran past the cap keeps the cards that arrived whole.
+  // A half-written card survives the repair and is dropped by the front/back check below, which is
+  // where that judgement belongs. See lib/model-json.ts.
+  const parsed = readModelJson(text);
+  // 🔴🔴 TWO REPLY SHAPES, AND THE SECOND ONE IS EASY TO LOSE. The model answers either with a bare
+  // array of cards or with `{"cards": [...], "figure": "..."}` when it wants a figure occluded. The
+  // old parser sliced from the first `[` to the last `]`, which read the array out of BOTH by
+  // accident. `readModelJson` returns the real root, so the object form has to be unwrapped on
+  // purpose — and a guard caught this the moment it was not.
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as { cards?: unknown } | null)?.cards)
+      ? ((parsed as { cards: unknown[] }).cards)
+      : null;
+  if (!list) return null;
   const cards: { front: string; back: string }[] = [];
-  for (const entry of parsed) {
+  for (const entry of list) {
     if (typeof entry !== "object" || entry === null) continue;
     const front = String((entry as { front?: unknown }).front ?? "").trim();
     const back = String((entry as { back?: unknown }).back ?? "").trim();
@@ -215,10 +236,14 @@ export async function makeFlashcardsDeliverable(
   canvas: LearningCanvas,
 ): Promise<DeliverableResult | DeliverableFailure> {
   if (!canvasHasMaterial(canvas)) return { error: "There's nothing on the canvas to make cards from yet." };
-  const reply = await postChatCompletion(uid, [
-    { content: CARDS_SYSTEM, role: "system" },
-    { content: canvasBrief(canvas), role: "user" },
-  ]);
+  const reply = await postChatCompletion(
+    uid,
+    [
+      { content: CARDS_SYSTEM, role: "system" },
+      { content: canvasBrief(canvas), role: "user" },
+    ],
+    { maxTokens: CARDS_MAX_TOKENS },
+  );
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const cards = readCardsJson(reply.text);
   if (!cards) return { error: "The cards came back unusable, so nothing was saved. Try again." };
@@ -346,6 +371,33 @@ export async function makeNoteDeliverable(
   };
 }
 
+// ---------------------------------------------------------------- what the model is working from
+
+/**
+ * Pages from the web, when the canvas has nothing of its own to build from.
+ *
+ * 🔴🔴 OWNER, 2026-08-25: *"it should be able to use websearch to build documents or other
+ * artifacts if it needs information."* A maker on an empty canvas was writing entirely from the
+ * model's own memory — which is fine for what a model knows well and silently thin for anything
+ * recent, contested or specific. One search costs what an ordinary chat turn that searches costs,
+ * and the learner already asked for the artifact.
+ *
+ * 🔴 ONLY WHEN THERE IS NOTHING ATTACHED, AND THAT LIMIT IS THE POINT. A canvas WITH material has
+ * already been told what to build from: the learner's own lecture, their own slides. Searching
+ * anyway would spend a metered unit to add pages nobody asked for, and would let the web argue
+ * with the source somebody uploaded. Grounded canvases are untouched.
+ *
+ * 🔴 IT CANNOT FAIL THE ARTIFACT. `searchWebContext` swallows its own errors and returns an empty
+ * context, so a search outage means a deck built from model knowledge — exactly what happened
+ * before this existed — rather than an error where a deck should be.
+ */
+async function webContextForTopic(uid: string, subject: string): Promise<string> {
+  if (!subject.trim()) return "";
+  const found = await searchWebContext(uid, subject);
+  if (!found.context.trim()) return "";
+  return `Recent pages on this topic, to build from where they are useful:\n\n${found.context}`;
+}
+
 // ---------------------------------------------------------------- document, PDF and spreadsheet
 
 const DOC_SYSTEM =
@@ -385,7 +437,7 @@ export async function makeDocumentDeliverable(
   }
   const brief = canvasHasMaterial(canvas)
     ? canvasBrief(canvas)
-    : `Write this document about: ${subject}`;
+    : [`Write this document about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
   const reply = await postChatCompletion(uid, [
     { content: DOC_SYSTEM, role: "system" },
     { content: brief, role: "user" },
@@ -420,16 +472,9 @@ export async function makeDocumentDeliverable(
  * refusing. Padding and truncating means the grid is always rectangular.
  */
 export function readSheetJson(text: string): { columns: string[]; rows: string[][]; title?: string } | null {
-  const body = text.replace(/^```(?:json)?/i, "").replace(/```\s*$/, "").trim();
-  const start = body.indexOf("{");
-  const end = body.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body.slice(start, end + 1));
-  } catch {
-    return null;
-  }
+  // Structure-only repair, so a long table that ran past the cap keeps the rows that arrived
+  // whole rather than becoming nothing. See lib/model-json.ts.
+  const parsed = readModelJson(text);
   if (!parsed || typeof parsed !== "object") return null;
   const raw = parsed as { columns?: unknown; rows?: unknown; title?: unknown };
   const columns = Array.isArray(raw.columns) ? raw.columns.map((c) => String(c ?? "").trim()).filter(Boolean) : [];
@@ -453,11 +498,17 @@ export async function makeSheetDeliverable(
   if (!canvasHasMaterial(canvas) && !subject) {
     return { error: "Tell me what the spreadsheet should cover, and I'll build it." };
   }
-  const brief = canvasHasMaterial(canvas) ? canvasBrief(canvas) : `Build this table about: ${subject}`;
-  const reply = await postChatCompletion(uid, [
-    { content: SHEET_SYSTEM, role: "system" },
-    { content: brief, role: "user" },
-  ]);
+  const brief = canvasHasMaterial(canvas)
+    ? canvasBrief(canvas)
+    : [`Build this table about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
+  const reply = await postChatCompletion(
+    uid,
+    [
+      { content: SHEET_SYSTEM, role: "system" },
+      { content: brief, role: "user" },
+    ],
+    { maxTokens: TABLE_MAX_TOKENS },
+  );
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const table = readSheetJson(reply.text);
   if (!table) return { error: "The table came back in a shape I couldn't use. Try asking again." };
@@ -507,14 +558,23 @@ export async function makeSlidesDeliverable(
     grounded
       ? canvasBrief(canvas)
       : `Topic: ${subject}\n\nThere is no attached material. Build the deck from your own knowledge of the topic, accurately and at student level.`,
+    grounded ? "" : await webContextForTopic(uid, subject),
     menu,
   ]
     .filter(Boolean)
     .join("\n\n");
-  const reply = await postChatCompletion(uid, [
-    { content: deckSystemPrompt(), role: "system" },
-    { content: brief, role: "user" },
-  ]);
+  // 🔴 THE HEADROOM IS THE FIRST FIX FOR "the slide plan came back unusable". A twelve-slide deck
+  // is a large JSON object and every call in this app ran at the provider's default output cap, so
+  // the answer was cut off mid-object and the parser could only report failure. See
+  // `ChatCompletionOptions.maxTokens`.
+  const reply = await postChatCompletion(
+    uid,
+    [
+      { content: deckSystemPrompt(), role: "system" },
+      { content: brief, role: "user" },
+    ],
+    { maxTokens: DECK_MAX_TOKENS },
+  );
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const plan = readDeckJson(reply.text);
   if (!plan) return { error: "The slide plan came back unusable, so nothing was saved. Try again." };

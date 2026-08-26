@@ -618,6 +618,15 @@ export interface ChatCompletionOptions {
   /** OpenAI-format tool schemas; the valve forwards them verbatim. */
   tools?: readonly unknown[];
   /**
+   * How many tokens the answer may run to.
+   *
+   * 🔴 ABSENT MEANS THE PROVIDER'S DEFAULT, which is right for conversation and wrong for anything
+   * that has to come back as one complete JSON object: a truncated sentence is still readable, a
+   * truncated object is unparseable. Set it wherever a parser, rather than a person, reads the
+   * result.
+   */
+  maxTokens?: number;
+  /**
    * This call is INTERNAL — the student never asked for it and must never be
    * interrupted by it.
    *
@@ -654,6 +663,14 @@ export async function postChatCompletion(
     // to stream even when it does not want the answer token by token.
     ...(options.onDelta || options.onReasoning ? { stream: true } : {}),
     ...(options.tools?.length ? { tools: options.tools } : {}),
+    // 🔴🔴 A LONG STRUCTURED ANSWER NEEDS THE HEADROOM ASKED FOR, AND NOTHING HERE EVER ASKED.
+    // Every call in this app ran at the provider's DEFAULT output cap, which is far below what a
+    // twelve-slide deck's JSON costs. The failure mode is the worst kind: the model does its work,
+    // the answer is cut off mid-object, `JSON.parse` throws, and the learner is told "the slide
+    // plan came back unusable" — a message that blames the model for a limit we never raised.
+    // Owner hit exactly that asking for a glycolysis deck. `lib/vision/deepseek.ts` had already
+    // learned this lesson and sets its own 8192.
+    ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
   });
   const call = (bearer: string) =>
     fetch(`${LLM_BASE}/v1/chat/completions`, {

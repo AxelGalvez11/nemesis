@@ -133,9 +133,11 @@ export function CanvasHeader({
           {/* 🔴 THREE GLYPHS AND A MENU — owner call, 2026-08-19: "i only want icons for 'x' on
               left, 'source and outputs' and 'progress' for the minimap of objectives", then "add a
               '⋯' for options". The `×` is `canvas-surface.tsx`'s and is not in this row.
-              Objectives, the session record and voice moved INSIDE `OptionsControl`; none of them
-              was deleted, and voice especially could not be, because that button was the only way
-              into voice mode. */}
+              🔴 THE `⋯` IS NOW THE READ-ALOUD TOGGLE ITSELF, not a menu (owner, 2026-08-25,
+              circling it). Objectives and the session record had already left that menu on
+              2026-08-20 and the mic option on 2026-08-25, so what the click revealed was a single
+              row. The toggle moved OUT rather than being deleted with the menu — voice was only
+              ever reachable from there. */}
           {/* 🔴 BEFORE THE ICONS, WHICH IS WHERE THE OWNER PUT IT (2026-08-25, choosing between the
               two edges of this row). It takes no width at all while nothing is playing — see the
               `grid-cols-[0fr]` note in canvas-audio-bar.tsx — so the canvas title keeps every pixel
@@ -161,12 +163,7 @@ export function CanvasHeader({
               territories={minimap.territories}
             />
           )}
-          <OptionsControl
-            activeTaskId={activeTaskId}
-            canvas={canvas}
-            entries={transcript}
-            voice={voice}
-          />
+          <OptionsControl voice={voice} />
       </>
     </>
   );

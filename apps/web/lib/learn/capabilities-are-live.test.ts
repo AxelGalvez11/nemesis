@@ -232,3 +232,40 @@ test("🔴 the docked panel collapses the sidebar without writing the preference
   assert.ok(!/localStorage/.test(registry), "🔴 the side-panel claim reaches storage — it must be transient");
   assert.match(registry, /return \(\) => registry\.release\(id\)/, "the claim is not released on unmount");
 });
+
+test("🔴🔴 a long artifact is not thrown away for running long", () => {
+  // Owner, 2026-08-25, asking for a glycolysis deck: *"The slide plan came back unusable, so
+  // nothing was saved."* Nothing in this app had ever set an output cap, so a twelve-slide deck ran
+  // past the provider's default, the answer was cut off mid-object, `JSON.parse` threw, and the
+  // learner was told the model failed — at a limit we never raised.
+  //
+  // Two fixes, and the guard holds both: the headroom, and the salvage for when it still runs long.
+  const deliverables = code("./canvas-deliverables.ts");
+  assert.match(deliverables, /maxTokens: DECK_MAX_TOKENS/, "the deck call has no output headroom");
+  assert.match(deliverables, /maxTokens: CARDS_MAX_TOKENS/, "the cards call has no output headroom");
+  assert.match(deliverables, /maxTokens: TABLE_MAX_TOKENS/, "the table call has no output headroom");
+  assert.match(code("../workspace/chat-api.ts"), /max_tokens: options\.maxTokens/, "maxTokens never reaches the wire");
+
+  // 🔴 EVERY PARSER THAT READS A MODEL'S JSON GOES THROUGH THE SALVAGE. Leaving one on the old
+  // `JSON.parse` would be the same truncation bug still live in one place, behind a fix that reads
+  // as complete — which is exactly what nearly happened to the flashcards parser, whose root is a
+  // bare array rather than an object.
+  assert.match(deliverables, /const parsed = readModelJson\(text\)/, "a maker still parses raw");
+  assert.match(code("../export/deck-plan.ts"), /readModelJson\(text\)/, "the deck plan still parses raw");
+});
+
+test("🔴 a maker with nothing attached can go and look it up", () => {
+  // Owner, 2026-08-25: *"it should be able to use websearch to build documents or other artifacts
+  // if it needs information."*
+  const deliverables = code("./canvas-deliverables.ts");
+  assert.match(deliverables, /async function webContextForTopic/, "no maker can reach the web");
+  assert.match(deliverables, /searchWebContext\(uid, subject\)/, "the topic never reaches a search");
+  // 🔴 AND ONLY WHEN THERE IS NOTHING ATTACHED. A canvas WITH material has already been told what
+  // to build from; searching anyway spends a metered unit to add pages nobody asked for, and lets
+  // the web argue with the source the learner uploaded.
+  assert.match(deliverables, /grounded \? "" : await webContextForTopic/, "the deck searches even when grounded");
+  assert.ok(
+    /canvasHasMaterial\(canvas\)\s*\?\s*canvasBrief\(canvas\)\s*:\s*\[/.test(deliverables),
+    "a prose maker searches even when the canvas has material",
+  );
+});
