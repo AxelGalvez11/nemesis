@@ -249,7 +249,8 @@ test("a plain decision is read", () => {
     // searches and a written file. `undefined` there is indistinguishable from "not shipped yet",
     // and a greeting is exactly the turn that must say "no report" out loud rather than by omission.
     wantsReport: null,
-    wantsTest: false,
+    wantsCards: false,
+      wantsTest: false,
     webFreshness: null,
     webQuery: null,
     webResults: null,

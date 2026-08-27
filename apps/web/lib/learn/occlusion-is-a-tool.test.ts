@@ -78,7 +78,15 @@ test("🔴🔴🔴 link 2: its shape is stated, and stated FILLED IN", () => {
 });
 
 test("🔴🔴 link 3: it survives parsing, and only when a test was asked for", () => {
-  assert.match(ROUTER, /checkFigure: parsed\.wantsTest === true \? readFigureSubject\(parsed\.checkFigure\) : null/, "checkFigure is read some other way");
+  // 🔴 REPOINTED 2026-08-26: "asked for" now includes flashcards, which open the same card and can
+  // carry the same covered diagram. The PROPERTY is unchanged and is the one that matters — a
+  // `checkFigure` is only read when the learner actually asked to be checked or to review, so a
+  // turn that asked for neither never buys a vision read for a picture nothing will show.
+  assert.match(
+    ROUTER,
+    /checkFigure: parsed\.wantsTest === true \|\| parsed\.wantsCards === true \? readFigureSubject\(parsed\.checkFigure\) : null/,
+    "checkFigure is read some other way",
+  );
   // 🔴 A `checkFigure` WITHOUT `wantsTest` WOULD BUY A VISION READ FOR A PICTURE NOTHING SHOWS.
   // Vision is the one primitive with no entitlement and no counter; a field that spends money on a
   // turn with nothing to render it is a bill with no product.

@@ -71,6 +71,7 @@ export function CanvasCheck({
   run,
   onDismiss,
   onFinished,
+  offer = "quiz",
 }: {
   run: TestRun;
   /** They closed the test. Nothing is scored and nothing is kept. */
@@ -90,16 +91,49 @@ export function CanvasCheck({
    * for them in words, which is the same rule §38 applies to everything else here.
    */
   onFinished: (account: string) => void;
+  /**
+   * What the learner actually asked for.
+   *
+   * 🔴🔴 THE OWNER'S RULE LIVES ON THIS PROP — 2026-08-26: *"don't give the user both tests and
+   * flashcards at the same time unless they specifically ask for it."* `offer` is what they asked
+   * for and nothing else: "quiz" and "cards" render ONE mode with no toggle at all, and only
+   * "both" draws the segmented control. Defaulting to "both" would hand everybody the toggle, which
+   * is the exact thing he ruled out; defaulting to "quiz" keeps every existing caller unchanged.
+   */
+  offer?: "quiz" | "cards" | "both";
 }) {
   const [index, setIndex] = useState(0);
   const [picks, setPicks] = useState<(string | null)[]>([]);
+  /**
+   * 🔴 SEEDED FROM WHAT WAS ASKED FOR, AND ONLY MOVABLE WHEN BOTH WERE. With one mode offered there
+   * is no control that can change this, so it is a constant in everything but type.
+   */
+  const [mode, setMode] = useState<"quiz" | "cards">(offer === "cards" ? "cards" : "quiz");
+  /** Flashcards only: whether this card is face up. Reset by the same effect that resets the run. */
+  const [faceUp, setFaceUp] = useState(false);
 
   // A different run is a different test. Without this, opening a second test after a first would
   // resume halfway through the old one's answers.
   useEffect(() => {
     setIndex(0);
     setPicks([]);
-  }, [run]);
+    setFaceUp(false);
+    // 🔴🔴 THE MODE FOLLOWS THE NEW REQUEST, AND LEAVING IT OUT WAS A REAL DEFECT — found by
+    // opening the preview at `?offer=cards` and getting a quiz. `useState` seeds ONCE; this card
+    // survives from turn to turn, so a learner who asked for a quiz and then asked for flashcards
+    // got the same graded card back with the same options on it. The request changed and the
+    // surface did not.
+    //
+    // 🔴 IT DOES NOT FIGHT THE TOGGLE. This runs only when `run` or `offer` actually changes, so a
+    // learner who switched to Flashcards by hand stays there for the rest of that set.
+    setMode(offer === "cards" ? "cards" : "quiz");
+  }, [offer, run]);
+
+  // 🔴 TURNING THE CARD OVER IS PER-CARD. Without this, flipping card one and moving on would show
+  // card two already answered — which is not a review, it is a list of answers.
+  useEffect(() => {
+    setFaceUp(false);
+  }, [index, mode]);
 
   const question = run.questions[index];
   const picked = picks[index] ?? null;
@@ -115,6 +149,10 @@ export function CanvasCheck({
    * straight forward again and making the back button impossible to use.
    */
   const answer = (text: string) => {
+    // 🔴 FLASHCARDS ARE NOT MARKED. `describeAttempt` writes an account of a GRADED run; sending one
+    // for a review pass would have Nemesis report a score for something the learner was never
+    // scored on. In cards mode nothing here runs — the face-up/next controls own the advance.
+    if (mode === "cards") return;
     const answered = Object.assign([...picks], { [index]: text }) as (string | null)[];
     setPicks(answered);
     // 🔴 THE ACCOUNT IS BUILT FROM `answered`, NOT FROM `picks`. `setPicks` does not update the
@@ -165,6 +203,36 @@ export function CanvasCheck({
       className="canvas-swap mt-5 rounded-[8px] p-[28px] ring-1 ring-(--ui-stroke-tertiary)"
       ref={frame}
     >
+      {/* 🔴🔴 THE SEGMENTED TOGGLE, AND IT IS ABSENT UNLESS BOTH WERE ASKED FOR — owner, 2026-08-26:
+          *"don't give the user both tests and flashcards at the same time unless they specifically
+          ask for it."* So the common case renders exactly the card that shipped yesterday, with no
+          extra row and no extra decision, and the control appears only for the learner who asked
+          for both.
+
+          🔴 MEASURED OFF claude.ai (2026-08-26): the track is 32px tall at radius 8px on a 5% white
+          ground with 1px of padding; each tab is 30px at radius 6px, 12px of side padding, 14px
+          type on a 20px line; the active tab carries the surface and full-strength text while the
+          other is transparent and secondary. */}
+      {offer === "both" && (
+        <div className="mb-[18px] inline-flex items-center gap-0 rounded-[8px] bg-(--ui-bg-tertiary) p-px">
+          {(["quiz", "cards"] as const).map((which) => (
+            <button
+              aria-pressed={mode === which}
+              className={[
+                "h-[30px] rounded-[6px] px-[12px] text-[length:var(--canvas-text-small)] leading-[20px] transition-colors",
+                mode === which
+                  ? "bg-(--ui-bg-elevated) text-(--ui-text-primary)"
+                  : "bg-transparent text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)",
+              ].join(" ")}
+              key={which}
+              onClick={() => setMode(which)}
+              type="button"
+            >
+              {which === "quiz" ? "Quiz" : "Flashcards"}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         {/* 🔴 PIPS, NOT A SENTENCE. "Question 3 of 8" is the same fact, and the row of numbers is
             also the way BACK: the old card grew a separate "Back" button once you were past the
@@ -266,6 +334,59 @@ export function CanvasCheck({
           {question.prompt}
         </h2>
 
+        {/* ── flashcards ────────────────────────────────────────────────────────────────────
+            🔴🔴 THE SAME PROMPT, WITHOUT THE DISTRACTORS. A flashcard and a question are the same
+            object seen twice: a card is a prompt with its answer, a question is a prompt with its
+            answer among tempting wrong ones. Reading the answer straight off `options` is what
+            keeps them one object — a second list would let a card and its question disagree about
+            the same material.
+
+            🔴 NOTHING IS SCORED, AND NOTHING IS RECORDED. `describeAttempt` writes an account of a
+            GRADED run; sending one for a review pass would have Nemesis report a mark for something
+            the learner was never marked on. Finishing simply closes the card.
+
+            🔴 FACE DOWN FIRST, ALWAYS. Showing the answer beside the prompt turns retrieval into
+            recognition — the same rule `FigureOcclusion` states for a covered diagram, and the same
+            reason this card refuses to mark anything mid-run. */}
+        {mode === "cards" ? (
+          <div className="mt-[18px]">
+            <div
+              className={[
+                "flex min-h-[92px] items-center rounded-[8px] px-[14px] py-[12px] ring-1 transition-colors",
+                faceUp ? "bg-(--ui-bg-tertiary) ring-(--ui-stroke-primary)" : "bg-transparent ring-(--ui-stroke-tertiary)",
+              ].join(" ")}
+            >
+              {faceUp ? (
+                <p className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
+                  {question.options.find((option) => option.correct)?.text ?? "No answer was written for this card."}
+                </p>
+              ) : (
+                <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+                  Answer it in your head, then turn the card over.
+                </p>
+              )}
+            </div>
+            <div className="mt-[18px] flex items-center justify-between gap-3">
+              <button
+                className="rounded-[8px] px-[14px] py-[8px] text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                onClick={() => setFaceUp((was) => !was)}
+                type="button"
+              >
+                {faceUp ? "Hide the answer" : "Show the answer"}
+              </button>
+              {/* 🔴 THE LAST CARD CLOSES THE SET RATHER THAN REPORTING ONE. There is no score to
+                  report, so a "finished" account would be Nemesis narrating a thing that did not
+                  happen. */}
+              <button
+                className="rounded-[8px] px-[14px] py-[8px] text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                onClick={() => (last ? onDismiss() : setIndex((was) => was + 1))}
+                type="button"
+              >
+                {last ? "Done" : "Next card"}
+              </button>
+            </div>
+          </div>
+        ) : (
         <ul className="mt-[18px] flex list-none flex-col gap-[8px]">
           {question.options.map((option) => {
             // 🔴 NOTHING HERE KNOWS WHICH OPTION IS CORRECT, AND THAT IS THE POINT OF THE CHANGE.
@@ -311,6 +432,7 @@ export function CanvasCheck({
             );
           })}
         </ul>
+        )}
       </div>
 
       {/* 🔴 THE "Back" BUTTON IS GONE, AND ITS JOB MOVED UP. It appeared once you were past the

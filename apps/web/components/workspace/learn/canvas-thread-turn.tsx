@@ -26,16 +26,20 @@ import type { CanvasThreadTurn } from "@/lib/learn/canvas-thread";
 import { replySegments } from "@/lib/learn/reply-visuals";
 
 import { ArtifactCard } from "./artifact-card";
+import { CanvasAnswerActions } from "./canvas-answer-actions";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { LearnerUtterance } from "./learner-utterance";
 import { SemanticVisual } from "./semantic-visual";
 
 export function CanvasThreadTurnView({
   onOpenOutput,
+  onRetry,
   turn,
 }: {
   /** Opening what the turn produced. The card is not a dead control in the thread. */
   onOpenOutput: (output: NonNullable<CanvasThreadTurn["output"]>) => void;
+  /** Re-asks this turn's question. Absent when the turn carries no question to re-ask. */
+  onRetry?: (said: string) => void;
   turn: CanvasThreadTurn;
 }) {
   return (
@@ -112,6 +116,21 @@ export function CanvasThreadTurnView({
         <p className="mt-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
           Only the start of this was kept.
         </p>
+      )}
+
+      {/* 🔴 THE ACTION ROW, ON EVERY ANSWER THAT HAS ONE. Owner, 2026-08-26, with a screenshot:
+          *"add these at the end of every answer too"* — the toolbar, not the cards.
+          🔴 NOT ON A TURN WITH NO ANSWER. A `source` moment is "material attached"; a copy button
+          under it would copy an empty string, and read-aloud would read silence.
+          🔴 NO READ-ALOUD HERE, DELIBERATELY. The speech controller is keyed to the ONE reply on
+          screen — mounting a speaker per past turn would put a column of them down the thread all
+          competing for a single voice, which is the same reason `SpokenExample` is not drawn here. */}
+      {turn.reply.trim() && (
+        <CanvasAnswerActions
+          at={turn.at}
+          onRetry={onRetry && turn.said?.trim() ? () => onRetry(turn.said!) : undefined}
+          text={turn.reply}
+        />
       )}
     </div>
   );

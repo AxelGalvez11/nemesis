@@ -13,7 +13,7 @@
 // `button:where(:not([data-workspace] *)) { background: var(--acid) }`, so every option row would
 // render as a filled acid pill here and nowhere else.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CanvasCheck } from "@/components/workspace/learn/canvas-check";
 import type { TestRun } from "@/lib/learn/test-run";
@@ -55,6 +55,21 @@ const RUN: TestRun = {
 export default function CheckPreviewPage() {
   const [account, setAccount] = useState<string | null>(null);
   const [open, setOpen] = useState(true);
+  /**
+   * WHICH OF THE THREE SHAPES A LEARNER CAN ASK FOR — `?offer=quiz | cards | both`.
+   *
+   * 🔴 THE OWNER'S RULE MADE VISIBLE, 2026-08-26: *"don't give the user both tests and flashcards
+   * at the same time unless they specifically ask for it."* Only `both` draws the segmented
+   * control; the other two are single-mode with no extra decision on screen.
+   *
+   * 🔴 READ AFTER MOUNT, following this harness family's own convention — a Suspense boundary
+   * around `useSearchParams` left a preview subtree unhydrated once, with no effects running.
+   */
+  const [offer, setOffer] = useState<"quiz" | "cards" | "both">("quiz");
+  useEffect(() => {
+    const asked = new URLSearchParams(window.location.search).get("offer");
+    if (asked === "cards" || asked === "both") setOffer(asked);
+  }, []);
   return (
     <main className="mx-auto flex min-h-dvh max-w-[822px] flex-col gap-6 px-6 py-16" data-workspace>
       <div>
@@ -63,10 +78,14 @@ export default function CheckPreviewPage() {
           One question at a time. A tap answers and advances; the numbers go back. Nothing is marked
           until the last tap, which hands the whole account to the conversation.
         </p>
+        <p className="mt-1 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
+          offer={offer} — append <code>?offer=quiz</code>, <code>?offer=cards</code> or <code>?offer=both</code>.
+        </p>
       </div>
 
       {open ? (
         <CanvasCheck
+          offer={offer}
           onDismiss={() => setOpen(false)}
           onFinished={(said) => {
             setAccount(said);

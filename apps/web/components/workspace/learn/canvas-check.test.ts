@@ -54,7 +54,15 @@ test("🔴🔴 a test is never a mode: every turn re-answers the question", () =
   // §38 permits a test as a PHRASE precisely because it cannot become a state the learner sits
   // inside. Assigning the decision's value (rather than only ever setting it true) is what makes
   // that structural: the next turn clears it whether or not anyone remembered to.
-  assert.match(SESSION, /setTestRequested\(decision\.wantsTest\)/, "a test request can now survive into the next turn");
+  // 🔴 REPOINTED 2026-08-26: the flag is now assigned from `wantsTest || wantsCards`, because
+  // "make me flashcards" opens the same card. The PROPERTY is unchanged and is the only thing that
+  // matters here — it is ASSIGNED from the decision on every turn rather than only ever set true,
+  // so the next turn clears it whether or not anyone remembered to.
+  assert.match(
+    SESSION,
+    /setTestRequested\(decision\.wantsTest \|\| decision\.wantsCards\)/,
+    "a test request can now survive into the next turn",
+  );
   assert.ok(!/setTestRequested\(true\)/.test(SESSION), "something sets the test flag without a decision behind it");
 });
 
@@ -67,7 +75,23 @@ test("🔴🔴 no question is marked while the test is still running", () => {
   // the right row grew a ring, the wrong rows faded to 45% opacity, and every row went `disabled`.
   // A learner could see which one was right without reading anything. So: the question screen must
   // not branch on correctness, and the marking must live in `CheckResult`.
-  assert.ok(!/option\.correct/.test(CHECK), "the question screen reads which option is correct — the answer leaks through styling");
+  // 🔴🔴 REPOINTED 2026-08-26, AND THE GUARD GOT STRONGER RATHER THAN WEAKER. A flashcard's whole
+  // job is to show the answer once the learner has turned it over, so `option.correct` now appears
+  // in this file legitimately — a blanket ban would have to be deleted, which is how a real
+  // guarantee gets "fixed" out of existence. What must stay true is narrower and exact: the QUIZ's
+  // option rows must not branch on correctness. So the check is scoped to that list.
+  const optionList = CHECK.slice(CHECK.indexOf('<ul className="mt-[18px] flex list-none flex-col gap-[8px]">'));
+  const listEnd = optionList.indexOf("</ul>");
+  assert.ok(listEnd > 0, "the option list moved; re-point this check");
+  assert.ok(
+    !/correct/.test(optionList.slice(0, listEnd)),
+    "the question screen reads which option is correct — the answer leaks through styling",
+  );
+  // 🔴 AND THE FLASHCARD FACE MAY ONLY REVEAL IT ONCE TURNED OVER. Showing the answer beside the
+  // prompt turns retrieval into recognition, which is the same rule the covered-diagram question
+  // obeys two screens away.
+  assert.match(CHECK, /faceUp \? \(/, "the flashcard shows its answer without being turned over");
+  assert.match(CHECK, /if \(mode === "cards"\) return;/, "a flashcard can be graded — review is not an attempt");
   assert.ok(!/verdictFor\(/.test(CHECK), "the question screen is scoring a tap as it happens");
   assert.ok(!/groundedMiss\(/.test(CHECK), "a verdict sentence is back on the question screen");
 

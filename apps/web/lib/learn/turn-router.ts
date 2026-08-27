@@ -182,7 +182,27 @@ export interface TurnDecision {
    */
   wantsTest: boolean;
   /**
-   * The questions this turn wrote, when `wantsTest` is true and the model supplied usable ones.
+   * The learner asked to REVIEW rather than to be graded: flashcards.
+   *
+   * 🔴🔴 A SEPARATE FIELD FROM `wantsTest`, AND THE PAIR IS WHAT LETS THE CARD OBEY THE OWNER'S
+   * RULE — 2026-08-26: *"don't give the user both tests and flashcards at the same time unless they
+   * specifically ask for it."* One true is one mode and no toggle; both true is the toggle. Deriving
+   * "cards" from `wantsTest` could never express "they asked for both", and defaulting the toggle on
+   * would hand everybody both every time.
+   *
+   * 🔴 IT SHARES `check`, BECAUSE A FLASHCARD AND A QUESTION ARE THE SAME OBJECT SEEN TWICE. A card
+   * is a prompt with its answer; a question is a prompt with its answer among distractors. Writing
+   * a second list would let the two disagree about the same material, and would double what the
+   * model has to produce for a turn that asked for both.
+   *
+   * 🔴 IT IS NOT THE DECK. Asking to SAVE or EXPORT cards still makes the durable, Anki-ready deck
+   * through `makeDeliverable("flashcards")` — that path is untouched. This is the thing you flip
+   * through in the conversation, which is what the reference does and what the owner asked for.
+   */
+  wantsCards: boolean;
+  /**
+   * The questions this turn wrote, when `wantsTest` or `wantsCards` is true and the model supplied
+   * usable ones.
    *
    * 🔴 THE FALLBACK, NOT THE AUTHORITY. A canvas with real objectives still builds its run from
    * them — grounded distractors, evidence, balanced answer seats. This carries the case that path
@@ -960,7 +980,7 @@ const DECISION_CONTRACT = [
   + ' "needsPapers": true | false,'
   + ' "wantsReport": "the question to research" | null,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,'
-  + ' "wantsTest": true | false, "check": [{"prompt": "...", "options": [{"text": "...", "correct": true}, {"text": "..."}]}],'
+  + ' "wantsTest": true | false, "wantsCards": true | false, "check": [{"prompt": "...", "options": [{"text": "...", "correct": true}, {"text": "..."}]}],'
   // 🔴 SHOWN FILLED IN, for the same reason `visuals` is one line below: a field displayed as
   // `null` in the contract's highest-signal position is a field the model sends as null forever.
   + ' "checkFigure": "nephron" | null,'
@@ -1265,6 +1285,16 @@ const DECISION_CONTRACT = [
   + 'questions", "quiz me before my exam". Read what they mean, not the words they used, the same '
   + "request in any language, and phrased any way, is this. It rides WITH your other answers.",
   "",
+  // 🔴🔴 THE OWNER'S RULE IS ENFORCED HERE FIRST, IN THE MODEL'S OWN INSTRUCTIONS, AND AGAIN IN THE
+  // CARD. 2026-08-26: *"don't give the user both tests and flashcards at the same time unless they
+  // specifically ask for it."* A model that sets both on "quiz me" would put a toggle in front of
+  // somebody who asked for one thing, and no amount of UI care downstream can un-ask that.
+  '"wantsCards" is true when the learner is asking to REVIEW rather than to be graded: "make me '
+  + 'flashcards", "give me some cards for this", "let me drill these". Read what they mean in any '
+  + "language. It is a DIFFERENT request from being tested, and the difference is whether they want "
+  + "to be marked. Set exactly the one they asked for. Set BOTH only when they actually asked for "
+  + 'both ("flashcards and a test"); never set both because either would do.',
+  "",
   // 🔴🔴 THE QUESTIONS THEMSELVES, BECAUSE THE POOL THEY CAME FROM NO LONGER EXISTS HERE.
   // `buildTestRun` draws on a canvas's OBJECTIVES, which the retired teaching lane minted. A named
   // topic is taught in the conversation now (2026-08-24), and a conversation has no objectives — so
@@ -1273,7 +1303,7 @@ const DECISION_CONTRACT = [
   // conversation, so the questions come from the turn that taught it. A course canvas still uses
   // its own grounded pool and ignores this; `chat-check.ts` bounds every field, because a model
   // wrote them.
-  '"check" is the questions themselves, written whenever "wantsTest" is true: [{"prompt": "…", '
+  '"check" is the questions themselves, written whenever "wantsTest" OR "wantsCards" is true: [{"prompt": "…", '
   + '"options": [{"text": "…", "correct": true}, {"text": "…"}]}]. Two to five options each, '
   + "EXACTLY ONE marked correct, up to twelve questions, three to five makes a good check. Ask "
   + "about what was actually said in this conversation, make the wrong options genuinely tempting "
@@ -1884,10 +1914,11 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // re-answers it, and nothing persists it.
     wantsReport,
     wantsTest: parsed.wantsTest === true,
+    wantsCards: parsed.wantsCards === true,
     check: readChatCheck(parsed.check),
     // 🔴 ONLY WHEN A TEST WAS ACTUALLY ASKED FOR. A `checkFigure` on a turn with `wantsTest: false`
     // would buy a vision read for a picture nothing is going to show.
-    checkFigure: parsed.wantsTest === true ? readFigureSubject(parsed.checkFigure) : null,
+    checkFigure: parsed.wantsTest === true || parsed.wantsCards === true ? readFigureSubject(parsed.checkFigure) : null,
     remember: readRemembered(parsed.remember),
     needsWeb: parsed.needsWeb === true,
     question,
@@ -1967,13 +1998,15 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
+      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false,
+  wantsCards: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
+  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false,
+  wantsCards: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
 }
 
 function looksLikeEnvelope(prose: string): boolean {
