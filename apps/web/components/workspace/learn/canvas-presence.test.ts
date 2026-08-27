@@ -263,7 +263,13 @@ test("🔴 the recovery goes to THIS canvas, by a full load", async () => {
   //    key is unchanged and the policy does not look again. The button would appear to work and
   //    change nothing. Re-mounting is the whole mechanism by which reopening from the Library
   //    recovered, and only a document load does it.
-  const retry = /onRetry=\{[\s\S]*?\}\}/.exec(source);
+  // 🔴 SCOPED TO `CanvasQuiet`, NOT TO THE FIRST `onRetry` IN THE FILE. 2026-08-26 added a Retry to
+  // the answer action row, and an unscoped regex matched THAT instead — a guard silently pointed at
+  // a different control, which is worse than a failing one because it would have gone green again
+  // on its own. Find the mount, then read its prop.
+  const quietAt = source.indexOf("<CanvasQuiet");
+  assert.ok(quietAt > 0, "the quiet state is no longer mounted");
+  const retry = /onRetry=\{[\s\S]*?\}\}/.exec(source.slice(quietAt));
   assert.ok(retry, "the quiet state no longer offers a way forward");
   assert.match(
     retry[0],

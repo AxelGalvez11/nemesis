@@ -66,6 +66,7 @@ const CANVAS_CAPABILITIES: readonly ComposerCapability[] = COMPOSER_CAPABILITIES
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
+import { CanvasAnswerActions } from "./canvas-answer-actions";
 import { CanvasThreadTurnView } from "./canvas-thread-turn";
 import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
@@ -1366,6 +1367,16 @@ export function LearningCanvas({
   const threadOpen = view === "conversation" && !viewing;
 
   /** Whether there is anything to read back through at all — see `ConversationControl`. */
+  /**
+   * Re-ask a question and let the answer land as a new turn.
+   *
+   * 🔴 IT IS AN ORDINARY TURN, NOT A REWIND. Re-running through `converse` means the retry is
+   * recorded, appears in the thread, and can be argued with — exactly like asking again by hand,
+   * which is what it is. Editing the previous answer in place would leave the moment log claiming
+   * something was said that no longer is.
+   */
+  const retryTurn = useCallback((said: string) => { void converse(said); }, [converse]);
+
   const conversationOffered = history.length > 0 || thread.length > 0 || Boolean(currentSaid);
 
   /**
@@ -1812,7 +1823,7 @@ export function LearningCanvas({
         {threadOpen && thread.length > 0 && (
           <div className="flex flex-col gap-10 pb-10" data-canvas-thread="">
             {thread.map((turn) => (
-              <CanvasThreadTurnView key={turn.id} onOpenOutput={setOpenArtifact} turn={turn} />
+              <CanvasThreadTurnView key={turn.id} onOpenOutput={setOpenArtifact} onRetry={retryTurn} turn={turn} />
             ))}
           </div>
         )}
@@ -2069,6 +2080,28 @@ export function LearningCanvas({
                 />
               )}
 
+              {/* 🔴🔴 THE ACTION ROW ON THE LIVE ANSWER, AND IT IS THE ONE THAT CARRIES READ-ALOUD.
+                  The speech controller is keyed to the single reply on screen, so this is the only
+                  place a speaker can be mounted without a column of them competing for one voice —
+                  see the note in `canvas-thread-turn.tsx`, which deliberately omits it.
+
+                  🔴 NOT WHILE THE ANSWER IS STILL ARRIVING. Copying half a sentence or reading a
+                  paragraph that is still being written is worse than waiting a beat; `turnInFlight`
+                  is the same signal the character's caption keys on.
+
+                  🔴 NO RETRY WITHOUT A QUESTION TO RE-ASK. An opening line Nemesis wrote by itself
+                  has no learner turn behind it, and a Retry there would silently re-send nothing. */}
+              {!turnInFlight && replyText.trim() && (
+                <CanvasAnswerActions
+                  onReadAloud={() =>
+                    voice.header.speaking ? voice.stopSpeaking() : voice.speakAloud(replyText)
+                  }
+                  onRetry={currentSaid?.trim() ? () => retryTurn(currentSaid) : undefined}
+                  reading={voice.header.speaking}
+                  text={replyText}
+                />
+              )}
+
               {/* 🔴🔴 "LEARN THIS" IS GONE, 2026-08-20. Owner: *"why does nemesis still show
                   'learn this'?"*, having already said once before that it was clutter they had not
                   asked for.
@@ -2251,7 +2284,7 @@ export function LearningCanvas({
                   : "Not enough of this canvas can carry a fair question yet. Keep going a little longer and ask again."}
               </p>
             ) : (
-              <CanvasCheck onDismiss={session.clearTest} onFinished={(account) => void finishCheck(account)} run={testRun} />
+              <CanvasCheck offer={session.testOffer} onDismiss={session.clearTest} onFinished={(account) => void finishCheck(account)} run={testRun} />
             )}
           </div>
         )}

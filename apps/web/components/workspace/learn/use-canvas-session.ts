@@ -363,6 +363,15 @@ export interface CanvasSession {
    *  `learning-canvas.tsx` builds the questions, because the objectives live in the policy
    *  runtime and this hook does not know what an objective is. */
   testRequested: boolean;
+  /**
+   * WHAT THE LEARNER ASKED FOR — a quiz, cards, or both.
+   *
+   * 🔴 A THIRD VALUE RATHER THAN A SECOND BOOLEAN, because the card needs to distinguish "cards"
+   * from "both" and two booleans downstream would let a caller express neither-nor. Owner,
+   * 2026-08-26: *"don't give the user both tests and flashcards at the same time unless they
+   * specifically ask for it."*
+   */
+  testOffer: "quiz" | "cards" | "both";
   /** The questions the TURN wrote, when it wrote usable ones.
    *
    *  🔴 CARRIED BESIDE `testRequested` RATHER THAN REPLACING IT, because the two answer different
@@ -629,6 +638,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * because it cannot become a state the learner is left sitting inside.
    */
   const [testRequested, setTestRequested] = useState(false);
+  const [testOffer, setTestOffer] = useState<"quiz" | "cards" | "both">("quiz");
   /**
    * How many things this turn just remembered, for the "Memory updated" line.
    *
@@ -1668,10 +1678,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // the rigid lane. A "quiz me" is an ordinary reply now, so gating on `study` made the chips
       // unreachable — a feature that shipped and could never fire again. What stops it becoming a
       // mode is the clearing above, not the turn's kind.
-      setTestRequested(decision.wantsTest);
+      // 🔴 EITHER REQUEST OPENS THE CARD; `testOffer` is what it shows. Keying the card on
+      // `wantsTest` alone would leave "make me flashcards" with nowhere to land.
+      setTestRequested(decision.wantsTest || decision.wantsCards);
+      setTestOffer(
+        decision.wantsTest && decision.wantsCards ? "both" : decision.wantsCards ? "cards" : "quiz",
+      );
       // 🔴 CLEARED ON EVERY TURN, LIKE THE REQUEST ITSELF. Questions from two turns ago answering
       // under a third turn's ask is the "mode" shape §38 exists to prevent.
-      setTestQuestions(decision.wantsTest ? decision.check : null);
+      setTestQuestions(decision.wantsTest || decision.wantsCards ? decision.check : null);
       const thisTurn = (checkTurn.current += 1);
 
       // 🔴🔴 A REPORT IS A DECISION THE MODEL MAKES, NOT A PHRASE THE CODE MATCHES. This used to be
@@ -2721,6 +2736,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     clarified,
     answerClarification,
     dismissClarification,
+    testOffer,
     testQuestions,
     testRequested,
     clearTest,
