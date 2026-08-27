@@ -144,6 +144,16 @@ export interface NemesisAvatarProps {
    */
   facing?: "authored" | "forward";
   /**
+   * The body's outline at rest — the shape the character IS, when the pose does not say.
+   *
+   * 🔴 A PROP RATHER THAN A DEFAULT, FOR THE SAME REASON `facing` IS ONE. This component draws
+   * all ten vendored bodies for the catalogue browser, and a squircle pushed onto a cone or a
+   * capsule is a shape that exists in no reference and that nobody chose. Nemesis's own surfaces
+   * pass `CHARACTER_SILHOUETTE` (see `lib/character/body.ts`); a preview of the catalogue passes
+   * nothing and gets the body as it was measured.
+   */
+  silhouette?: readonly number[] | null;
+  /**
    * Open with a full turn of the head before it settles.
    *
    * 🔴 OFF BY DEFAULT. It is a lovely arrival — the eyes really do pass behind the body and
@@ -188,6 +198,7 @@ export function NemesisAvatar({
   track = false,
   aimAt = null,
   facing = "authored",
+  silhouette = null,
   entrance = false,
   onPoke,
   pokeAnimation = "surprised",
@@ -217,8 +228,8 @@ export function NemesisAvatar({
 
   // Read inside the frame loop rather than closed over, so changing an animation or a
   // colour does not tear down and restart the clock.
-  const latest = useRef({ animation, avatar, paused, speed, offsetMs, track, aimAt, facing, entrance, face, ink, accent, eye });
-  latest.current = { animation, avatar, paused, speed, offsetMs, track, aimAt, facing, entrance, face, ink, accent, eye };
+  const latest = useRef({ animation, avatar, paused, speed, offsetMs, track, aimAt, facing, silhouette, entrance, face, ink, accent, eye });
+  latest.current = { animation, avatar, paused, speed, offsetMs, track, aimAt, facing, silhouette, entrance, face, ink, accent, eye };
 
   /** Where the pointer is, in -1..1 of the element, and where the head has got to. */
   const aim = useRef({ x: 0, y: 0, atX: 0, atY: 0, pointer: false });
@@ -461,10 +472,18 @@ export function NemesisAvatar({
     const at = (frozenAt ?? 0) + offsetMs;
     const played = head.current.at(at, animation, { reduced: reduced && frozenAt == null });
     if (!played) return;
-    const drawn = drawFace(avatar.surface, played.face, { blink: played.blink, eyeDrift: played.eyeDrift });
-    paint(drawn, eyeFrames(avatar.surface, played.face), inkOf(), paperOf(), null, face, null);
+    // 🔴 ONE OPTIONS OBJECT FOR BOTH CALLS, AND THREADING THE OUTLINE IS WHAT EXPOSED WHY IT HAS
+    // TO BE. This line read `eyeFrames(avatar.surface, played.face)` with no options at all, while
+    // `drawFace` beside it was handed the blink and the eye drift — so on a STILL character the
+    // spectacles and brows were placed through a wide-open, undrifted eye while the eye underneath
+    // them was drawn blinking and drifted. Invisible on the live surfaces, which never freeze, and
+    // wrong in every contact sheet and preview that does. The outline has exactly the same bug
+    // available to it (a squircle body wearing eyes that ride a ball), so the two calls now share
+    // one object rather than two argument lists that merely look alike.
+    const opts = { blink: played.blink, eyeDrift: played.eyeDrift, rest: silhouette };
+    paint(drawFace(avatar.surface, played.face, opts), eyeFrames(avatar.surface, played.face, opts), inkOf(), paperOf(), null, face, null);
     // Redrawn whenever the look changes, since nothing else will redraw it.
-  }, [still, frozenAt, offsetMs, animation, avatar, ink, accent, eye, face, reduced, paint, inkOf, paperOf]);
+  }, [still, frozenAt, offsetMs, animation, avatar, silhouette, ink, accent, eye, face, reduced, paint, inkOf, paperOf]);
 
   useLayoutEffect(() => {
     if (still) return;
@@ -580,7 +599,7 @@ export function NemesisAvatar({
       const turn = level
         ? { x: a.atX - level.x, y: a.atY + spin - level.y }
         : { x: a.atX, y: a.atY + spin };
-      const opts = { blink: played.blink, eyeDrift: played.eyeDrift, turn };
+      const opts = { blink: played.blink, eyeDrift: played.eyeDrift, turn, rest: state.silhouette };
       const from = waggleFrom.current;
       paint(
         drawFace(state.avatar.surface, played.face, opts),

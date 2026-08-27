@@ -68,6 +68,51 @@ test("🔴🔴 the character never stands in the corner during the handover", ()
   assert.match(CANVAS, /const \[handedOver, setHandedOver\] = useState\(Boolean\(openingAsk\)\)/);
 });
 
+test("🔴🔴🔴 the character's FIRST painted frame is where it belongs, not a swoop into it", () => {
+  // 🔴 THE THIRD ROUND ON "the transition is glitchy", AND THE ONE THAT WAS HIDING BEHIND CODE THAT
+  // LOOKED CORRECT. `durationFor` has always returned 0 for the first move and `character.css` has
+  // documented that intent since the override existed — "the very first placement wants none at
+  // all". It never reached the screen.
+  //
+  // Measured on 2026-08-26 in real headless Chrome at 1456x900, sampling the dock's computed style
+  // every frame across the route swap:
+  //
+  //   before   frame 0: transform matrix(1,0,0,1,0,0), transition-duration 0.14s
+  //            → the character appeared at REST SIZE at its resting spot and eased 400px into the
+  //              middle over 140ms, a beat after the greeter had finished flying to that exact
+  //              spot at that exact size. Two arrivals, opposite directions, one send.
+  //   after    frame 0: transform matrix(2.1,0,0,2.1,346,-400), transition-duration 0s
+  //            → greeter's last frame (754, 378, w 159) against the dock's first (752, 378, w 164).
+  //
+  // The cause: `measure()` runs TWICE inside one commit, because the placement effect's
+  // `setInset`/`setOffset` force a synchronous re-render before the browser paints. The second run
+  // sees `placed === true` and returns the 140ms follow duration, so the 0ms style was never the
+  // one painted. `placed` means "a measurement has landed"; several of those land between frames.
+  //
+  // 🔴 SO THE FLAG HAS TO BE THE BROWSER'S, NOT REACT'S — two nested animation frames, because a
+  // single frame fires BEFORE the paint it is meant to be waiting for.
+  assert.match(
+    DOCK,
+    /if \(!paintedRef\.current \|\| !placed \|\| !anchoredRef\.current\) return 0;/,
+    "the first move can ease again, and the character swoops into the middle it was already at",
+  );
+  assert.match(
+    DOCK,
+    /requestAnimationFrame\(\(\) => \{\s*second = window\.requestAnimationFrame\(\(\) => \{\s*paintedRef\.current = true;/,
+    "the painted flag is set on one frame instead of two, which fires before the paint it waits for",
+  );
+});
+
+test("🔴🔴 the character holds its place when the composer is swapped for another control", () => {
+  // Found by reading the surface rather than by looking at it: the canvas renders
+  // `{showComposer && !recording && <CanvasComposer/>}`, so pressing record removes the element the
+  // character is anchored to for as long as a lecture is being captured, and a completed canvas
+  // renders no composer at all. Without this the character walks to the bottom-left of the window
+  // and back for a control swap in the same slot.
+  assert.match(CANVAS, /\{showComposer && !recording && \(/, "the composer's render condition changed; re-check the anchor's lifetime");
+  assert.match(DOCK, /if \(everPlacedRef\.current\) return;/, "a missing anchor re-corners a character that has already been placed");
+});
+
 test("a correction is not a journey — the dock has a follow duration at last", () => {
   // `character.css` documented ~140ms for following the anchor from the day the override existed,
   // and nothing ever passed it: `--character-travel-ms` was only ever `0ms` or unset, so every

@@ -225,6 +225,10 @@ test("🔴 there is exactly ONE thing that turns the engine into pixels", async 
     "lib/avatar/index.ts",
     "lib/avatar/render.ts",
     "lib/avatar/avatar.test.ts",
+    // Asks for a frame and MEASURES it — the squircle has to be checked against real path data,
+    // because a silhouette that is wired up but never reaches the picture draws a perfectly good
+    // ball and nothing complains. No DOM, which is the line this guard actually draws.
+    "lib/character/body.test.ts",
     "scripts/avatar-sheet.mts",
     "scripts/character-faces.mts",
   ];

@@ -2434,6 +2434,14 @@ export function LearningCanvas({
             div it stretched the full width of the scroller, so its `left` was 0 and the character
             lined up with the edge of the WINDOW instead of the edge of the text. Claude's mark sits
             on the answer's own left edge; this is the element that decides ours does too. */}
+        {/* 🔴 PARKED, NOT DEAD. Nothing anchors to this today: the character moved onto the composer
+            on 2026-08-26 (see its `place="above"` below). It is one zero-height div, `place="under"`
+            is kept beside it in `character-place.ts`, and between them they are the whole cost of
+            the owner changing his mind about this again — which he has now done three times in
+            three days. Deleting it to tidy up would make the next reversal a rebuild.
+            🔴 IF IT DOES COME BACK: it must stay the LAST CHILD of the scroller and keep
+            `max-w-(--canvas-column) px-6`, or the character lines up with the window rather than
+            with the text. Both are pinned by `character-place.test.ts`. */}
         <div aria-hidden="true" className="mx-auto h-0 w-full max-w-(--canvas-column) px-6" id="canvas-answer-end" />
       </div>
 
@@ -2469,17 +2477,23 @@ export function LearningCanvas({
           outside the flow — it cannot reflow the lesson it is sitting on, and it cannot swallow
           a press meant for the composer behind it. */}
       <CharacterDock
-        // 🔴 THE ANSWER, NOT THE COMPOSER. It stood on the composer's shoulder for the whole
-        // session; it now rests at the end of whatever Nemesis last put on the page, and travels to
-        // the centre while it works exactly as before. `gap` is Claude's measured 24px.
-        // 🔴 WHICHEVER SURFACE IS BEING READ OWNS THE MARKER. Both are zero-height last children
-        // wearing the same column classes, so the arithmetic in `character-place.ts` is identical
-        // and the character rests under the last answer in either view. Pointing at the answer
-        // view's marker while the conversation is open would stand the character at a spot on a
-        // page nobody can see, which is how it ended up against the window edge once before.
-        anchor="#canvas-answer-end"
-        gap={24}
-        place="under"
+        // 🔴 THE COMPOSER, AND ON TOP OF IT (owner 2026-08-26, evening: *"I want it to be on top on
+        // the left of the chat composer"*, and then, asked to be exact: *"make sure its on top of
+        // the composer not in inside it, top left"*). This reverses that same morning's *"make the
+        // mascot sit under the answer"*, which anchored it to `#canvas-answer-end`.
+        //
+        // 🔴 WHY THE REVERSAL IS AN IMPROVEMENT AND NOT JUST A CHANGE, so nobody "fixes" it back:
+        // the end of the answer is INSIDE the scroller, so the character rode the scroll and spent
+        // most of a long lesson off screen — and after #881 made the canvas a running thread, the
+        // end of the newest answer is wherever the learner happens to have scrolled to. The
+        // composer is chrome. It is in one place, it is the thing the learner keeps returning to,
+        // and a character above it is visible for the whole session rather than for the moment
+        // after an answer lands.
+        //
+        // `gap` is the shoulder's own tuned 14px, from the months this arrangement shipped before.
+        anchor="#canvas-composer"
+        gap={14}
+        place="above"
         // 🔴🔴 ONE CHARACTER ON SCREEN, EVER. A policy judgement draws its own — small, at the foot
         // of the page, beside the step it is narrating (see `CanvasThinking`, which explains why it
         // cannot simply be this dock moved to the centre). Without this the learner would get two:
@@ -2488,18 +2502,17 @@ export function LearningCanvas({
         // after every hook, so this dock keeps its measurements and its place and does not walk in
         // from the corner when the judgement ends.
         //
-        // 🔴🔴 AND IT STANDS DOWN WHILE THE LEARNER IS LOOKING AT HISTORY. Measured on production
-        // 2026-08-26, on the first rewind after the conversation view shipped: the character sat on
-        // top of the rewound answer's opening line. `CanvasHistoryView` is an OPAQUE OVERLAY over a
-        // live surface that is still mounted (see its own note on why), so `#canvas-answer-end` was
-        // still measuring where the LIVE answer ended, and the character was standing 24px under a
-        // paragraph nobody could see.
+        // 🔴🔴 AND IT STANDS DOWN WHILE THE LEARNER IS LOOKING AT HISTORY. This began as a fix for
+        // a specific collision — measured on production 2026-08-26, the character was anchored to
+        // the end of the LIVE answer, `CanvasHistoryView` is an opaque overlay over a live surface
+        // that is still mounted, and so it stood 24px under a paragraph nobody could see.
         //
-        // 🔴 THE FIX IS NOT TO RE-ANCHOR IT AT THE REWOUND ANSWER. What the character means at rest
-        // is "this is where Nemesis stopped talking", which is a claim about the live conversation;
-        // repeating it over a moment from an hour ago would be the character asserting something
-        // untrue, which is the whole reason its `?` / `!` mark was deleted after four reports.
-        // History is read-only and says so in a banner; the character has nothing to add.
+        // 🔴 THAT COLLISION IS GONE AND THE HIDE IS KEPT ON PURPOSE. Anchored to the composer the
+        // character no longer lands on the rewound text at all, so this could be dropped. It is
+        // not, because the reason was always two reasons and only the first one moved: history is
+        // a read-only detour that says so in its own banner, and a character animating over it
+        // implies a live conversation that is not what the learner is looking at. Dropping it is a
+        // product call for the owner, not a tidy-up to take on the way past.
         hidden={judgingPhase !== null || rewound !== null}
         // 🔴 THE CAPTION RIDES THE CHARACTER. It used to be its own box on the page and ended up
         // against the right edge of the window, hundreds of pixels from the mascot it was meant to

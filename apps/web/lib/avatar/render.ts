@@ -22,6 +22,31 @@ import type { AvatarFrame, BodyPose, EyeSpec, Face, Surface } from "./types";
 /** Where the body sits when a routine has not moved it. */
 export const REST_BODY: BodyPose = { scale: 1, x: 0, y: 0, profile: null };
 
+/**
+ * The pose a face is actually drawn at, once the character's own outline is taken into account.
+ *
+ * 🔴 THE ENGINE'S ANSWER TO "NO SILHOUETTE" HAS ALWAYS BEEN "A BALL", AND THAT IS AN ASSUMPTION
+ * RATHER THAN A LAW. Every avatar in the catalogue is a solid whose outline the lens works out,
+ * so a pose that names no silhouette means "leave the solid alone" — which draws a ball for the
+ * ball. Nemesis is a squircle (see `lib/character/body.ts`), which is not a solid this engine can
+ * make: it is an outline pushed onto one, exactly as `egg` and `hexagon` are. So the character's
+ * resting outline is what "no silhouette" means FOR IT.
+ *
+ * 🔴 A POSE'S OWN SILHOUETTE STILL WINS, and there is a trap behind that which is why it is
+ * spelled out here rather than left to read off the `??`. `blendFaces` mixes a missing silhouette
+ * against a table of ones — a ball — so the FIRST frame of a morph from a resting face into
+ * `egg` produces a partial blend that starts round, and the character would jump from squircle to
+ * ball before growing into an egg. Nothing in the product can reach that: the four animations it
+ * schedules all rest at no silhouette, and `character.test.ts` reddens if a fifth arrives that
+ * does not. If one ever legitimately has to, the fix is upstream of here — `mixProfile` needs the
+ * resting outline as its baseline — and not another branch in this function.
+ */
+function posedAt(face: Face, rest: readonly number[] | null | undefined): BodyPose {
+  const pose = face.body ?? REST_BODY;
+  if (!rest || pose.profile) return pose;
+  return { ...pose, profile: rest };
+}
+
 /** The avatar's own body at a routine's size. The SHAPE is applied later; see `reshape`. */
 export function posedSurface(base: Surface, pose: BodyPose = REST_BODY): Surface {
   if (pose.scale === 1) return base;
@@ -222,7 +247,7 @@ export function eyeFrames(surface: Surface, face: Face, opts: DrawOptions = {}):
     ? { x: face.head.x + opts.turn.x, y: face.head.y + opts.turn.y, z: face.head.z }
     : face.head;
   const orientation = quatFromTurn(head);
-  const pose = face.body ?? REST_BODY;
+  const pose = posedAt(face, opts.rest);
   const body = posedSurface(surface, pose);
   const drift = opts.eyeDrift ?? NO_DRIFT;
 
@@ -405,6 +430,15 @@ export interface DrawOptions {
    * says PLUS where the pointer is, which is the thing being asked for.
    */
   readonly turn?: { readonly x: number; readonly y: number };
+  /**
+   * The body's outline when the pose does not give one — the character's own shape.
+   *
+   * 🔴 OPTIONAL, AND ABSENT MEANS A BALL, WHICH KEEPS EVERY PREVIEW HONEST. The catalogue
+   * browser and the character studio draw the ten vendored bodies as they were measured; pushing
+   * Nemesis's squircle onto a cone or a capsule would draw a shape that is neither of them and
+   * is in no reference. Product surfaces pass it, previews of the catalogue do not.
+   */
+  readonly rest?: readonly number[] | null;
 }
 
 export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): AvatarFrame {
@@ -414,7 +448,7 @@ export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): 
   const orientation = quatFromTurn(head);
   const blink = Math.min(1, Math.max(0, opts.blink ?? 1));
   const drift = opts.eyeDrift ?? NO_DRIFT;
-  const pose = face.body ?? REST_BODY;
+  const pose = posedAt(face, opts.rest);
   const body = posedSurface(surface, pose);
   const eyeAlpha = Math.min(1, Math.max(0, face.eyeAlpha ?? 1));
 

@@ -143,7 +143,14 @@ test("🔴🔴🔴 nothing a learner can DO is conditioned on the view", () => {
 test("🔴🔴 the composer was not touched, and neither was the character or the rail", () => {
   // There is no second surface for them to be missing from — that is the dividend of sharing one
   // scroller. Calibration: give the character a per-view anchor again and this reddens.
-  assert.match(CANVAS, /anchor="#canvas-answer-end"/, "the character anchors per view again — there is only one scroller now");
+  //
+  // 🔴 THE ANCHOR MOVED AND THE INVARIANT DID NOT. This pinned `#canvas-answer-end` because that
+  // was where the character stood when #881 landed; it now stands on the composer (owner, hours
+  // later: *"on top on the left of the chat composer"*). What this test is actually about is that
+  // there is exactly ONE anchor, because a per-VIEW anchor is the shape of the bug it was written
+  // against — so it pins the count and the absence, and names the anchor only to say which one.
+  assert.match(CANVAS, /anchor="#canvas-composer"/, "the character stopped anchoring to the composer");
+  assert.equal(CANVAS.match(/\n\s*anchor="#[^"]+"/g)?.length, 1, "the character has more than one anchor again — there is only one scroller now");
   assert.ok(!/canvas-conversation-end/.test(CANVAS), "a second character anchor survives");
 });
 

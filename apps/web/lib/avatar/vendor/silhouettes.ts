@@ -109,3 +109,52 @@ export function radiusAtAngle(radii: number[], angle: number): number {
   const i = Math.floor(t)
   return lerp(radii[i % n] ?? 1, radii[(i + 1) % n] ?? 1, t - i)
 }
+
+// ── The customiser's shapes ──────────────────────────────────────────────────
+//
+// 🔴 A SECOND SET, FROM THE SAME REPO, AND UPSTREAM KEEPS THEM APART ON PURPOSE. Everything
+// above is TRACED off the reference video, frame by frame, and belongs to an animation: the
+// egg is what `egg` looks like. What follows is upstream's `skins.ts` — the shapes its bot
+// CUSTOMISER offers, built analytically rather than measured, because a resting shape is a
+// choice somebody makes rather than a moment somebody filmed.
+//
+// The distinction is the whole reason this compiles as one file without confusing the two:
+// an animation's silhouette says what the body is DOING, a customiser shape says what the
+// body IS. Ours is now one of theirs (owner, 2026-08-26: *"use squircle like in the github
+// repo for bloub"*), and `lib/character/body.ts` is where that choice is recorded.
+//
+// Copied unedited, same licence, same notice: © 2026 Jérémy Perret, MIT. See ./LICENSE.bloub.
+
+/**
+ * Superellipse: |x/sx|^n + |y/sy|^n = 1.
+ *
+ * n = 2 is an ellipse; n ≈ 4 is the customiser's squircle. Upstream's wording, kept because
+ * it is the sentence that tells you what changing the exponent does.
+ */
+export function superellipseProfile(n: number, sx = 1, sy = 1): number[] {
+  return ANGLES.map((_unused, i) => {
+    const c = Math.abs((COS[i] ?? 0) / sx) ** n;
+    const s = Math.abs((SIN[i] ?? 0) / sy) ** n;
+    return (c + s) ** (-1 / n);
+  });
+}
+
+/** Brings the largest radius back to `max`, so every shape weighs the same to the eye. */
+export function normaliseProfile(radii: readonly number[], max = 1): number[] {
+  const peak = Math.max(...radii);
+  if (peak <= 0) return [...radii];
+  const k = max / peak;
+  return radii.map((r) => r * k);
+}
+
+/**
+ * The squircle, exactly as the customiser builds it.
+ *
+ * 🔴 1.15 AND NOT 1.02, AND UPSTREAM LEAVES A NOTE SAYING WHY: on a superellipse the largest
+ * radius is the DIAGONAL, so normalising on it shrinks the flat sides and the shape reads as
+ * smaller than the circle it replaced. Both numbers are theirs. Ours would have been the
+ * wrong one.
+ *
+ * What it comes out as: flat sides at 0.959 of the ball's radius, corners at 1.15.
+ */
+export const SQUIRCLE: readonly number[] = normaliseProfile(superellipseProfile(4.2), 1.15);
