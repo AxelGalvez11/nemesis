@@ -19,7 +19,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { CHROME, DOCK_FRACTION } from "./reader-chrome";
+import { CHROME } from "./reader-chrome";
+import { useDockWidth } from "./use-dock-width";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
@@ -80,19 +81,16 @@ export function OutputPreview({
   const card = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"docked" | "full">(initialMode);
   /**
-   * The docked width in pixels, so the surface underneath can be pushed by exactly that much.
+   * The docked width, and the drag that changes it.
    *
-   * 🔴 MEASURED FROM THE VIEWPORT AT MOUNT AND ON RESIZE, not a fixed rem. The reference's panel is
-   * a FRACTION — two thirds — so at 1470 it is 980 and at 1100 it is 733. A fixed width would be
-   * right at one window size and wrong at every other, which is the opposite of a one-to-one match.
+   * 🔴 THE SAME HOOK THE SOURCE READER USES — owner, 2026-08-27: *"allow user to slide the sidebar
+   * width like in chatgpt."* Two docked readers on one surface that resized differently would be
+   * two objects; one hook means a width dragged on either is the width both open at.
+   *
+   * 🔴 THE FRACTION, NOT THE PIXELS, IS WHAT PERSISTS — see `use-dock-width.ts`. A panel dragged
+   * wide on a large monitor would otherwise cover the whole canvas on a laptop.
    */
-  const [dock, setDock] = useState(0);
-  useEffect(() => {
-    const measure = () => setDock(Math.round(window.innerWidth * DOCK_FRACTION));
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
+  const { dragging, onDragStart, width: dock } = useDockWidth();
 
   // Collapses the left sidebar to the rail while this is open, and pushes the surface by exactly
   // the docked width — see side-panel.tsx. Full screen pushes nothing: it covers everything.
@@ -198,6 +196,9 @@ export function OutputPreview({
       className={cn(
         "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
         full ? "left-0" : "border-l border-(--ui-stroke-tertiary)",
+        // 🔴 THE SLIDE IS DROPPED WHILE DRAGGING: an animation running during a resize makes the
+        // edge lag the pointer by its own duration, which reads as the panel fighting you.
+        !dragging && "reader-dock-in",
       )}
       // 🔴🔴 THE STAMP TRAVELS WITH THE PORTAL, AND WITHOUT IT EVERY BUTTON IN HERE GOES ACID GREEN.
       // `globals.css` carries `button:where(:not([data-workspace] *)) { background: var(--acid) }`,
@@ -209,6 +210,16 @@ export function OutputPreview({
       role="dialog"
       style={full ? undefined : { width: dock }}
     >
+      {/* 🔴 THE GRIP IS ON THE LEFT EDGE, WHICH IS THE EDGE THAT MOVES, and only while docked —
+          full screen has no edge to drag. Same handle and same hook as the source reader. */}
+      {!full && (
+        <div
+          aria-label="Resize the panel"
+          className="absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-(--ui-action)/40"
+          onPointerDown={onDragStart}
+          role="separator"
+        />
+      )}
       <div className={CHROME.header} ref={card}>
         {/* 🔴 FULL SCREEN PUTS THE CLOSE ON THE LEFT, DOCKED PUTS IT ON THE RIGHT, and that is the
             reference's own arrangement rather than a preference: measured at x=193 beside the

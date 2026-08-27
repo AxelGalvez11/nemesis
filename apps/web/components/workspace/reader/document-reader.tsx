@@ -59,7 +59,16 @@ export interface DocumentReaderProps {
   onBack?: () => void;
   /** Fires with the message an AI action produced and the document itself, as
    *  an attachment. The host sends both. */
-  onSendToChat: (prompt: string, files: File[]) => void;
+  /**
+   * Fires with the message an AI action produced and the document itself, as an attachment.
+   *
+   * 🔴 OPTIONAL SINCE 2026-08-27, AND ITS ABSENCE HIDES THE ACTIONS RATHER THAN NO-OPPING THEM.
+   * The canvas's source sidebar mounts this reader to SHOW a file; it has no chat lane of its own
+   * to send a selection into. Passing an empty function would leave a highlight toolbar that looks
+   * live and does nothing, which is this codebase's most-repeated defect — so the toolbar is not
+   * mounted at all when there is nowhere for it to send.
+   */
+  onSendToChat?: (prompt: string, files: File[]) => void;
   /** "dialog" trims the chrome for the chat popup: no back button, no rails. */
   variant?: "page" | "dialog";
 }
@@ -257,7 +266,7 @@ export function DocumentReader({
         selection: selection?.text ?? null,
         region: region?.region ?? null,
       });
-      onSendToChat(prompt, documentAttachment());
+      onSendToChat?.(prompt, documentAttachment());
     },
     [documentAttachment, onSendToChat, region, selection, source.fileName, unitLabel],
   );
@@ -516,7 +525,8 @@ export function DocumentReader({
         )}
       </div>
 
-      {selection && <SelectionActions anchor={selection.anchor} onAction={runAction} />}
+      {/* 🔴 ONLY WHERE THERE IS SOMEWHERE TO SEND. See `onSendToChat`. */}
+      {selection && onSendToChat && <SelectionActions anchor={selection.anchor} onAction={runAction} />}
     </div>
   );
 }

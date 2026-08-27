@@ -165,7 +165,12 @@ test("🔴🔴 there is no 'Now' mark, and the way back to live is still there",
   // 🔴 AND AN EMPTY HISTORY NOW DRAWS NOTHING. "Now" used to guarantee the column had at least one
   // mark; without it, a canvas with no moments rendered an empty `<nav>` — invisible, and still
   // holding a hover target down the right edge that opened a panel with nothing in it.
-  assert.match(RAIL_CODE, /if \(entries\.length === 0\) return null;/, "an empty history still paints a rail");
+  // 🔴 REPOINTED 2026-08-27: a docked reader now also silences the rail. Owner: *"hide the rail
+  // when sidebar is open."* The rail is pinned to the RIGHT EDGE and the panel covers that edge, so
+  // the two were stacked — a column of markers painted underneath a document. Same reasoning §38.1
+  // uses for the nav rail inside a canvas: a surface that owns the screen owns the edges too.
+  assert.match(RAIL_CODE, /if \(entries\.length === 0 \|\| inset > 0\) return null;/, "an empty history still paints a rail, or a docked reader no longer hides it");
+  assert.match(RAIL_CODE, /const inset = useSidePanelInset\(\);/, "the rail is reading something other than the panel's own inset");
   const view = readFileSync(new URL("./canvas-history-view.tsx", import.meta.url), "utf8");
   assert.match(view, /Return to now/, "🔴 nothing returns the learner to live — the rail's Now is gone too");
 });

@@ -1180,6 +1180,8 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .canvas-forming,
   .canvas-rewriting,
   .canvas-thinking-word,
+  /* Somebody who asked the system to stop moving still gets the docked reader, without the slide. */
+  .reader-dock-in,
   [data-workspace] .animate-pulse {
     animation: none;
   }
@@ -1223,3 +1225,38 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   --composer-edge: inset 0 0 1px 0 rgba(255, 255, 255, 0.2);
   --composer-fill: #212121;
 }
+
+/* The docked reader sliding in from the right edge.
+ *
+ * Owner, 2026-08-27: *"make sure to add smooth animation to the sidebar when sources are open."*
+ * The panel used to appear between two frames, which at two thirds of the window reads as the page
+ * being replaced rather than as something opening beside it.
+ *
+ * 🔴 A TRANSFORM, NEVER A WIDTH. Animating `width` relayouts the document inside the panel on every
+ * frame — a PDF or a slide deck re-flowing sixty times while it opens — and it also fights the
+ * resize drag, whose whole job is to change the width. The transform costs one composited layer.
+ *
+ * 🔴 ON MOUNT ONLY, WHICH IS WHAT `animation` GIVES AND `transition` DOES NOT. It runs when the
+ * element is created and never again, so a drag or a re-render mid-read cannot replay it.
+ *
+ * 🔴 220ms AND AN EASE-OUT, matching `.canvas-swap`'s own timing on this surface: fast enough not
+ * to be a wait, slow enough to read as a movement rather than a cut. */
+.reader-dock-in {
+  animation: reader-dock-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes reader-dock-in {
+  from { transform: translateX(4%); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* 🔴🔴 ITS REDUCED-MOTION RULE JOINS THE CANVAS BLOCK'S OWN SELECTOR LIST FURTHER UP, AND MUST NOT
+ * BE A NEW BLOCK AT THE END OF THIS FILE. `canvas-motion.test.ts` finds the LAST reduced-motion
+ * query in the stylesheet and reads the selector list of the first rule inside it that switches
+ * animation off. A second such block appended down here becomes that last one, and `.canvas-swap`,
+ * `.canvas-phrase`, `.canvas-forming` and the pulse all read as unguarded.
+ *
+ * 🔴 AND THE PROSE MUST NOT SPELL THAT QUERY OUT EITHER, WHICH COST A SECOND ROUND. The guard
+ * searches the RAW stylesheet, so an earlier version of this very comment — which quoted the query
+ * verbatim in order to explain the rule — became the last match, and every class read as unguarded
+ * again. Comments in this file are part of the text a guard reads. */
