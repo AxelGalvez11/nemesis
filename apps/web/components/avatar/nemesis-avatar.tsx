@@ -40,6 +40,7 @@ import {
   createPlayhead,
   MAX_SPARKS,
   drawFace,
+  sparkScaleFor,
   mixHex,
   eyeFrames,
   type Avatar,
@@ -533,7 +534,7 @@ export function NemesisAvatar({
     // wrong in every contact sheet and preview that does. The outline has exactly the same bug
     // available to it (a squircle body wearing eyes that ride a ball), so the two calls now share
     // one object rather than two argument lists that merely look alike.
-    const opts = { blink: played.blink, eyeDrift: played.eyeDrift, rest: silhouette };
+    const opts = { blink: played.blink, eyeDrift: played.eyeDrift, rest: silhouette, sparkScale: sparkScaleFor(size) };
     paint(drawFace(avatar.surface, played.face, opts), eyeFrames(avatar.surface, played.face, opts), inkOf(), paperOf(), null, face, null);
     // Redrawn whenever the look changes, since nothing else will redraw it.
   }, [still, frozenAt, offsetMs, animation, avatar, silhouette, ink, accent, eye, face, reduced, paint, inkOf, paperOf]);
@@ -658,7 +659,7 @@ export function NemesisAvatar({
       const turn = level
         ? { x: a.atX - level.x, y: a.atY + spin - level.y }
         : { x: a.atX, y: a.atY + spin };
-      const opts = { blink: played.blink, eyeDrift: played.eyeDrift, turn, rest: state.silhouette };
+      const opts = { blink: played.blink, eyeDrift: played.eyeDrift, turn, rest: state.silhouette, sparkScale: sparkScaleFor(size) };
       const from = waggleFrom.current;
       paint(
         drawFace(state.avatar.surface, played.face, opts),

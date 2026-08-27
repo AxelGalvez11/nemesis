@@ -21,6 +21,36 @@
 // breaking in the way that matters.
 
 /**
+ * Every face the montage can be asked to wear, with a word a person can read.
+ *
+ * 🔴🔴 THE OWNER PICKS FROM THIS, WHICH IS WHY IT CARRIES LABELS (2026-08-27: *"its still not doing
+ * the expression montage i want, allow me to pick the expressions for the montage"*). The ids are
+ * the catalogue's; the words are for the settings card, and they are the only place in this file
+ * that is a matter of taste rather than fact.
+ *
+ * All SIXTEEN are offered, including the two the default leaves out — the default is a
+ * recommendation, not a cage, and someone who wants a grumpy character should be able to have one.
+ */
+export const MONTAGE_CHOICES: readonly { readonly id: string; readonly label: string }[] = [
+  { id: "neutral", label: "Neutral" },
+  { id: "curious", label: "Curious" },
+  { id: "attentive", label: "Attentive" },
+  { id: "happy", label: "Happy" },
+  { id: "proud", label: "Proud" },
+  { id: "surprised", label: "Surprised" },
+  { id: "shy", label: "Shy" },
+  { id: "sleepy", label: "Sleepy" },
+  { id: "suspicious", label: "Suspicious" },
+  { id: "confused", label: "Confused" },
+  { id: "excited", label: "Excited" },
+  { id: "laughing", label: "Laughing" },
+  { id: "unimpressed", label: "Unimpressed" },
+  { id: "sad", label: "Sad" },
+  { id: "angry", label: "Angry" },
+  { id: "scared", label: "Scared" },
+];
+
+/**
  * The resting faces, in the catalogue's own order.
  *
  * 🔴 FOURTEEN OF THE SIXTEEN, AND THE TWO LEFT OUT ARE NAMED RATHER THAN QUIETLY DROPPED. Rule
@@ -52,12 +82,32 @@ export const MONTAGE_LEFT_OUT: readonly string[] = ["angry", "scared"];
 /**
  * How long one face is held before the next.
  *
- * 🔴 SLOW, AND ON THE SAME REASONING AS THE DOZE THRESHOLD. The commonest thing a learner does here
- * is read; a face changing every couple of seconds in the corner of their eye is a thing pulling at
- * their attention while they are trying to concentrate. Long enough that noticing it is a pleasant
- * surprise rather than a flicker.
+ * 🔴 9s → 5s ON REPORT (owner 2026-08-27: *"its still not doing the expression montage i want"*).
+ * The first number came from the doze threshold's reasoning — the commonest thing a learner does
+ * here is read, and a face changing every couple of seconds in the corner of their eye pulls at
+ * attention they are trying to spend elsewhere. That reasoning holds and nine seconds overshot it:
+ * an expression here moves the EYES ONLY, on a 76px character, so it is a quiet change to begin
+ * with and at nine seconds most people never catch two in a row.
  */
-export const MONTAGE_HOLD_MS = 9_000;
+export const MONTAGE_HOLD_MS = 5_000;
+
+/**
+ * A chosen list, made safe to draw.
+ *
+ * 🔴 IT CAN COME OUT OF `localStorage`, SO IT CAN BE ANYTHING — a list from an older build naming
+ * a face that has since been renamed, a hand-edited value, an empty array left by a learner who
+ * unticked everything. Every one of those has to resolve to something drawable, because the
+ * alternative is a character with no face and no explanation.
+ *
+ * An empty choice means the DEFAULT rather than nothing: "no expressions" is already expressible by
+ * leaving one ticked, and a character frozen on one face is a better failure than a blank one.
+ */
+export function resolveMontage(chosen: readonly string[] | null | undefined): readonly string[] {
+  if (!chosen) return MONTAGE;
+  const known = new Set(MONTAGE_CHOICES.map((c) => c.id));
+  const kept = chosen.filter((id) => known.has(id));
+  return kept.length > 0 ? kept : MONTAGE;
+}
 
 /**
  * Which face is worn `ms` into a rest, or null when the character is not resting.
@@ -73,9 +123,12 @@ export function montageFace(input: {
   readonly busy: boolean;
   /** Varies the starting face per character so two on one page are never in step. */
   readonly seed?: number;
+  /** The learner's own choice, or nothing for the default set. */
+  readonly chosen?: readonly string[] | null;
 }): string | null {
-  const { restingMs, atRest, busy, seed = 0 } = input;
+  const { restingMs, atRest, busy, seed = 0, chosen } = input;
   if (!atRest || busy || restingMs < 0) return null;
+  const faces = resolveMontage(chosen);
   const step = Math.floor(restingMs / MONTAGE_HOLD_MS) + seed;
-  return MONTAGE[((step % MONTAGE.length) + MONTAGE.length) % MONTAGE.length] ?? null;
+  return faces[((step % faces.length) + faces.length) % faces.length] ?? null;
 }

@@ -25,6 +25,7 @@ import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { DOCK_CENTRE_SCALE, DOCK_SIZE, centreStation } from "@/components/character/character-dock";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { stateForCanvas } from "@/lib/character/stations";
+import { useMontage } from "@/components/character/use-montage";
 import { usePoke } from "@/components/character/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
@@ -124,6 +125,16 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // travelling alone while a SECOND character faded in on the far side. It stays put and starts
   // thinking instead, so one character carries the whole handoff.
   const greeter = usePoke(stateForCanvas({ thinking: departing, preparing: false, listening }));
+  // 🔴🔴 THE MONTAGE RUNS HERE TOO, AND ITS ABSENCE IS MOST OF WHY THE OWNER KEPT SAYING HE COULD
+  // NOT SEE IT (2026-08-27: *"its still not doing the expression montage i want"*). It was wired
+  // into `CharacterDock` only — the canvas — and this page, the front door, is the surface anyone
+  // sees first and sits on longest before typing anything. The character was doing its montage on
+  // the one screen the owner was not looking at.
+  //
+  // 🔴 THE GREETER IS NOT THE DOCK. It renders `NemesisAvatar` directly, so every layer the dock
+  // composes has to be repeated here or it does not apply. That is a real seam and this is the
+  // second thing to fall through it; `montage.test.ts` now pins both surfaces.
+  const greeterFace = useMontage(greeter.state, !departing && !listening, greeter.poking);
   /**
    * Where the composer travels, in px. Measured at the moment of the send; see `start`.
    *
@@ -438,7 +449,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 face={greeter.face}
                 onPoke={greeter.poke}
                 size={GREETER_SIZE}
-                animation={greeter.state}
+                animation={greeterFace}
                 facing="forward"
                 silhouette={CHARACTER_SILHOUETTE}
                 track

@@ -29,6 +29,7 @@ export {
 } from "./play";
 export {
   MAX_SPARKS,
+  MIN_SPARK_PX,
   REST_BODY,
   SHUT_HEIGHT,
   VIEW_BOX,
@@ -37,6 +38,7 @@ export {
   drawFace,
   eyeFrames,
   posedSurface,
+  sparkScaleFor,
   type EyeFrame,
 } from "./render";
 export {

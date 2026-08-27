@@ -41,6 +41,15 @@ const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
 // dark-theme selectors read it, so it is inert in light mode.
 export type DarkTone = "black" | "charcoal";
 const DARK_TONE_STORAGE_KEY = "nemesis.web.dark-tone";
+/**
+ * Which expressions the character wears while nothing is happening.
+ *
+ * 🔴 A PREFERENCE, NOT A CONSTANT, ON THE OWNER'S OWN ASK (2026-08-27: *"allow me to pick the
+ * expressions for the montage"*). Stored beside the theme and the accent because it is the same
+ * kind of thing: a per-device choice about how the app looks, with a sensible default nobody has
+ * to touch. Absent means the default set, which is what everyone gets until they open Settings.
+ */
+const MONTAGE_STORAGE_KEY = "nemesis.web.character-montage";
 const isDarkTone = (v: unknown): v is DarkTone => v === "black" || v === "charcoal";
 
 // Owner 2026-07-28: "i need the default scaling size to match chatgpt".
@@ -104,6 +113,9 @@ interface ThemeContextValue {
   libraryFullScreen: boolean;
   setTheme: (t: ThemePreference) => void;
   setAccent: (accent: AccentPreference) => void;
+  /** Null until read from storage, and null MEANS "the default set" — see `resolveMontage`. */
+  montage: readonly string[] | null;
+  setMontage: (faces: readonly string[]) => void;
   setScale: (scale: number) => void;
   setDarkTone: (tone: DarkTone) => void;
   setLibraryFullScreen: (fullScreen: boolean) => void;
@@ -119,6 +131,8 @@ const ThemeContext = createContext<ThemeContextValue>({
   libraryFullScreen: false,
   setTheme: () => {},
   setAccent: () => {},
+  montage: null,
+  setMontage: () => {},
   setScale: () => {},
   setDarkTone: () => {},
   setLibraryFullScreen: () => {},
@@ -158,6 +172,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("light");
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
   const [accent, setAccentState] = useState<AccentPreference>("default");
+  const [montage, setMontageState] = useState<readonly string[] | null>(null);
   const [scale, setScaleState] = useState(DEFAULT_SCALE);
   const [darkTone, setDarkToneState] = useState<DarkTone>("black");
   const [libraryFullScreen, setLibraryFullScreenState] = useState(false);
@@ -197,6 +212,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // malformed) keeps the nav rail beside Library. Inverted 2026-07-30 with
     // the default — see the storage-key comment.
     setLibraryFullScreenState(localStorage.getItem(LIBRARY_FULL_SCREEN_STORAGE_KEY) === "true");
+    // 🔴 PARSED DEFENSIVELY AND NEVER TRUSTED. Anything in storage may be from an older build, or
+    // hand-edited; `resolveMontage` drops unknown ids and falls back rather than drawing nothing.
+    try {
+      const raw = localStorage.getItem(MONTAGE_STORAGE_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed)) setMontageState(parsed.filter((v): v is string => typeof v === "string"));
+    } catch {
+      /* best effort */
+    }
   }, []);
 
   useEffect(() => {
@@ -221,6 +245,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* private mode / storage disabled — theme still applies for the session */
     }
+  };
+
+  const setMontage = (faces: readonly string[]) => {
+    setMontageState(faces);
+    try { localStorage.setItem(MONTAGE_STORAGE_KEY, JSON.stringify(faces)); } catch { /* best effort */ }
   };
 
   const setAccent = (next: AccentPreference) => {
@@ -250,7 +279,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // The topbar button toggles light ↔ dark; Settings offers System/Light/Dark explicitly.
   const toggle = () => setTheme(theme === "light" ? "dark" : "light");
 
-  return <ThemeContext.Provider value={{ preference, theme, accent, scale, darkTone, libraryFullScreen, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ preference, theme, accent, scale, darkTone, libraryFullScreen, montage, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setMontage, toggle }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {

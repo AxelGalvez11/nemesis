@@ -13,6 +13,7 @@ import { VoiceSettings } from "@/components/workspace/shell/voice-settings";
 import { ACCENT_COLORS, ACCENT_LABELS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH, useTheme, type AccentPreference, type DarkTone, type ThemePreference } from "@/components/theme-provider";
 import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
+import { MONTAGE, MONTAGE_CHOICES, resolveMontage } from "@/lib/character/montage";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
 import { cn } from "@/lib/utils";
 
@@ -148,7 +149,11 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
   const [preferences, setPreferences] = useState<AssistantPreferences>(DEFAULT_PREFERENCES);
   const [usageBars, setUsageBars] = useState<UsageBar[] | null>(null);
   const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null);
-  const { preference, accent, scale, darkTone, libraryFullScreen, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen } = useTheme();
+  const { preference, accent, scale, darkTone, libraryFullScreen, montage, setTheme, setAccent, setScale, setDarkTone, setLibraryFullScreen, setMontage } = useTheme();
+  // 🔴 THE RESOLVED LIST, NOT THE RAW ONE. `montage` is null until storage has been read and may
+  // hold ids from an older build; the card has to show what the character will ACTUALLY wear, or
+  // the ticks and the behaviour disagree. Same function the hook uses, so they cannot drift.
+  const montageChosen = resolveMontage(montage);
   const router = useRouter();
 
   useEffect(() => {
@@ -309,6 +314,65 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
                   while Nemesis is thinking, and follows your cursor. Click it and it reacts.
                   <br />
                   Its colour is the accent colour above.
+                </p>
+              </div>
+
+              {/* 🔴🔴 A PICKER, AND IT IS THE ONE CONTROL THIS CARD WAS BUILT TO REFUSE. The note at
+                  the top explains why the character has no colour and no shape of its own: those
+                  are decisions about what the product's character IS, and two controls that both
+                  change "the colour" can disagree. This is a different kind of choice — WHICH of
+                  the sixteen faces it pulls while it is waiting for you — and the owner asked for
+                  it by name (2026-08-27: *"allow me to pick the expressions for the montage"*).
+                  Nothing here can put the character in a state it could not already reach. */}
+              <div className="mt-5 border-t border-(--ui-stroke-secondary) pt-4">
+                <p className="text-xs font-medium text-(--ui-text-primary)">Faces it pulls while it waits</p>
+                <p className="mt-1 text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">
+                  It wears one of these for a few seconds at a time, and only when nothing is
+                  running. Tap to turn one off or on. Each one below is the real face, not a picture
+                  of it.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {MONTAGE_CHOICES.map((choice) => {
+                    const on = montageChosen.includes(choice.id);
+                    return (
+                      <button
+                        aria-pressed={on}
+                        className={cn(
+                          "flex w-[76px] flex-col items-center gap-1 rounded-xl border border-(--ui-stroke-secondary) bg-background px-1 py-2 text-[0.65rem] hover:bg-(--ui-control-hover-background)",
+                          on ? "border-(--theme-primary) ring-1 ring-(--theme-primary)" : "opacity-45",
+                        )}
+                        key={choice.id}
+                        onClick={() => setMontage(on ? montageChosen.filter((id) => id !== choice.id) : [...montageChosen, choice.id])}
+                        title={choice.label}
+                        type="button"
+                      >
+                        {/* 🔴 FROZEN, NOT LIVE. Sixteen running avatars on one card is sixteen
+                            animation loops and sixteen engines; the faces are held poses anyway, so
+                            a frozen frame IS the face. `frozenAt` past the morph so it has settled. */}
+                        <NemesisAvatar
+                          accent={accent}
+                          animation={choice.id}
+                          frozenAt={2400}
+                          silhouette={CHARACTER_SILHOUETTE}
+                          size={44}
+                        />
+                        <span className="text-(--ui-text-secondary)">{choice.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">
+                  {montageChosen.length} of {MONTAGE_CHOICES.length} on.{" "}
+                  <button
+                    className="underline underline-offset-2 hover:text-(--ui-text-primary)"
+                    onClick={() => setMontage([...MONTAGE])}
+                    type="button"
+                  >
+                    Back to the usual set
+                  </button>
+                  {/* Turning everything off is not "no faces" — see `resolveMontage`. Said here so
+                      the number above never reads as a promise the character cannot keep. */}
+                  {montageChosen.length === 0 && " With none on it keeps the usual set."}
                 </p>
               </div>
             </SettingsCard>
