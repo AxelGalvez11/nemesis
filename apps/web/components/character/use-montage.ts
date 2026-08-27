@@ -9,12 +9,17 @@
 import { useEffect, useRef, useState } from "react";
 
 import { MONTAGE_HOLD_MS, montageFace } from "@/lib/character/montage";
+import { useTheme } from "@/components/theme-provider";
 import type { StateId } from "@/lib/character/stations";
 
 /** Checked more often than the hold, so a face changes near its own moment rather than late. */
 const TICK_MS = 1_000;
 
 export function useMontage(base: StateId, atRest: boolean, busy: boolean): StateId {
+  // 🔴 THE LEARNER'S OWN LIST, OR NULL FOR THE DEFAULT SET. Read here rather than passed down,
+  // because every caller would otherwise have to remember to thread it and forgetting one gives a
+  // character that ignores the setting on exactly one surface.
+  const { montage: chosen } = useTheme();
   const [face, setFace] = useState<string | null>(null);
   const sinceRef = useRef(0);
   // 🔴 SEEDED FROM A REF SET ONCE, NOT FROM A RENDER. Two characters mounted in the same second
@@ -44,11 +49,12 @@ export function useMontage(base: StateId, atRest: boolean, busy: boolean): State
         atRest,
         busy,
         seed: seedRef.current,
+        chosen,
       });
       setFace((was) => (was === next ? was : next));
     }, TICK_MS);
     return () => window.clearInterval(timer);
-  }, [atRest, busy]);
+  }, [atRest, busy, chosen]);
 
   return face ?? base;
 }

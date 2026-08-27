@@ -130,18 +130,17 @@ const REACTIONS: readonly Reaction[] = [
   // These three are all things the character DOES.
   { state: "burst", motion: null, face: null, hold: BURST_MS },
   { state: "idle", motion: "spin", face: null, hold: SPIN_MS },
-  // 🔴🔴 `notify` BOLTS A BADGE ON AND CUTS A NOTCH OUT OF THE BODY TO SEAT IT, WHICH BREAKS TWO
-  // STANDING RULES AT ONCE — the body is one shape (`lib/character/body.ts`, and the site's rule in
-  // `landing/lib/character/body.ts`), and rule one of the language is *a creature, never an icon*
-  // (`lib/avatar/features.ts`). Put to the owner in those words on 2026-08-27, with the alternative
-  // of taking the motion and timing without the badge; he chose *"use it as bloub draws it"*.
-  //
-  // 🔴 SO THE SHAPE RULE NOW HAS A NAMED EXCEPTION RATHER THAN A HOLE. It still holds for everything
-  // the SCHEDULE plays — `body.test.ts` walks `ACTIVITY_STATE` and reddens if any of it reshapes.
-  // A poke is a reaction the learner asked for by clicking, which is a different thing from the
-  // character deciding to change shape while they read.
-  { state: "notify", motion: null, face: null, hold: passMs("notify", 2200) },
 ];
+
+// 🔴🔴 `notify` WAS HERE FOR ONE DAY AND IS GONE AGAIN (owner 2026-08-27: *"remove the
+// 'notification' animation"*). It arrived that morning on his own list and with his explicit ruling
+// that it could keep bloub's badge even though a badge breaks two standing rules — the body is one
+// shape, and *a creature, never an icon*. Both rules are whole again and there is no longer a named
+// exception to either.
+//
+// 🔴 UNSCHEDULED, NOT DELETED: the routine and its three faces are measured off the reference and
+// stay in the catalogue, exactly like the other vendored routines nobody plays. Putting it back is
+// one row. `character.test.ts` no longer names it.
 
 export function usePoke(base: StateId): {
   state: StateId;

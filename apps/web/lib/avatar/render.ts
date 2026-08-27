@@ -439,6 +439,21 @@ export interface DrawOptions {
    * is in no reference. Product surfaces pass it, previews of the catalogue do not.
    */
   readonly rest?: readonly number[] | null;
+  /**
+   * Multiplies the size of the sparks, and nothing else.
+   *
+   * 🔴🔴 THE REFERENCE DRAWS ITS CHARACTER AT ABOUT 500px AND WE DRAW IT AT 76. Every measured
+   * number in this engine is a fraction of the body, which is exactly right for the shapes and
+   * exactly wrong for the specks: a spark is 0.04 to 0.068 of the body's radius, which at 76px is
+   * **one screen pixel**. Owner, 2026-08-27: *"the burst animation is not working well, it just
+   * shrinks transiently"* — and it did, because the half of it that is a burst was a pixel wide.
+   *
+   * 🔴 SO THIS IS OURS, NOT A CORRECTION TO A MEASUREMENT. The proportion is the reference's and
+   * stays the reference's; this is a readability floor applied at the size we happen to draw at,
+   * decided by the only place that knows that size. Sparks only — a body scaled for legibility
+   * would be a different character.
+   */
+  readonly sparkScale?: number;
 }
 
 export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): AvatarFrame {
@@ -466,12 +481,12 @@ export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): 
   const sparks: { d: string; depth: number }[] = [];
   for (const dot of dots) {
     if (dot.opacity <= 0.01 || dot.r <= 0.05) continue;
-    const d = dotPath(dot.x + pose.x, dot.y + pose.y, dot.r);
     if (dot.depth !== undefined) {
-      if (sparks.length < MAX_SPARKS) sparks.push({ d, depth: dot.depth });
+      const grown = dotPath(dot.x + pose.x, dot.y + pose.y, dot.r * (opts.sparkScale ?? 1));
+      if (sparks.length < MAX_SPARKS) sparks.push({ d: grown, depth: dot.depth });
       continue;
     }
-    (dot.behind ? behind : inFront).push(d);
+    (dot.behind ? behind : inFront).push(dotPath(dot.x + pose.x, dot.y + pose.y, dot.r));
   }
 
   return {
@@ -499,6 +514,38 @@ const EMPTY_DOTS: readonly never[] = [];
  * lives that overlap by at most three, so six is slack rather than a limit anyone will hit.
  */
 export const MAX_SPARKS = 6;
+
+/**
+ * The smallest a spark may be drawn, in real screen pixels.
+ *
+ * 🔴 THREE, BECAUSE TWO IS A DUST MOTE AND FOUR IS A BUBBLE. Below about three pixels a pale speck
+ * on a dark body does not survive anti-aliasing, which is what made the scatter read as nothing
+ * happening even after it was drawn in the right place and the right colour.
+ */
+export const MIN_SPARK_PX = 3;
+
+/** A spark's smallest authored radius in view units: `r0` of the one plan in the catalogue. */
+const SMALLEST_SPARK_UNITS = 4.8;
+
+/**
+ * How much to grow the sparks so the smallest clears `MIN_SPARK_PX` at a given rendered size.
+ *
+ * 🔴🔴 HERE RATHER THAN IN THE COMPONENT, AND THAT IS THE THIRD TIME THIS LESSON HAS COST SOMETHING
+ * IN THIS FEATURE. A rule living inside a React component cannot be asked a question, so the guard
+ * ends up testing the option the component passes rather than the number it chooses — which is
+ * exactly what happened: breaking the scale left every test green. Same reason `character-place.ts`
+ * and `gazeTarget` exist.
+ *
+ * 🔴 CAPPED, SO A TINY CHARACTER IS NOT A BODY WEARING FOUR BUBBLES. At the dock's 76px this comes
+ * out near 3; at the centre station's 160px, near 1.5; at the studio's several hundred it is 1 and
+ * the reference's own proportion is drawn untouched.
+ */
+export function sparkScaleFor(sizePx: number): number {
+  const perUnit = sizePx / VIEW_SIZE;
+  const smallest = SMALLEST_SPARK_UNITS * perUnit;
+  if (!(smallest > 0)) return 1;
+  return Math.min(4, Math.max(1, MIN_SPARK_PX / smallest));
+}
 
 /**
  * The box every avatar is drawn into.

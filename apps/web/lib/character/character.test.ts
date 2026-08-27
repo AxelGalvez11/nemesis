@@ -355,8 +355,10 @@ test("🔴 a click reaches the character", async () => {
   // What is pinned now is the INVARIANT rather than the choice: exactly one reaction, so a poke
   // stops being five different things depending on how many times you have poked it.
   assert.match(poke, /const REACTIONS: readonly Reaction\[\] = \[[\s\S]*?\n\];/, "REACTIONS is not a list any more");
-  // The three the owner named on 2026-08-27, in the order he gave them.
-  for (const wanted of ["burst", "spin", "notify"]) {
+  // 🔴 `notify` WAS IN THIS LIST FOR ONE DAY. The owner added it on the morning of 2026-08-27 and
+  // removed it the same evening (*"remove the 'notification' animation"*), which also closes the
+  // named exception to the one-shape rule that it needed. The routine stays in the catalogue.
+  for (const wanted of ["burst", "spin"]) {
     assert.ok(new RegExp(`"${wanted}"`).test(poke), `a poke no longer draws ${wanted}`);
   }
   // 🔴🔴 THE COUNT HAS BEEN 5 → 1 → 3 IN TWENTY-FOUR HOURS, SO THE COUNT IS NOT THE RULE. This
