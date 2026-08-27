@@ -86,18 +86,69 @@ export function glanceAt(ms: number): { x: number; y: number } {
   return { x: lift * GLANCE_PITCH * swing, y: side * GLANCE_YAW * swing };
 }
 
+// ── How far away is "all the way over there" ──────────────────────────────────
+//
+// 🔴🔴 THIS WAS `character size x 2.5`, AND IT IS WHY THE OWNER KEPT REPORTING THAT THE CHARACTER
+// DOES NOT FOLLOW THE MOUSE — three times, and twice I replied that it did.
+//
+// The renderer normalises the pointer's offset against a reach and clamps to ±1. At a 76px
+// character that reach was **190px**, so the head hit full deflection 190px away and every pointer
+// position beyond it drew the identical frame. Measured against the real layout, character above
+// the composer at x=389 in a 1470px window:
+//
+//   pointer x   450   550   700   900   1400
+//   head yaw     8°   22°   26°   26°    26°
+//
+// **61% of the window is one frozen position**, and it is the 61% holding the answer and the
+// composer — where a pointer actually spends its time. Moving between two far corners, which is how
+// I "verified" this, samples two saturated extremes and misses that everything between them is a
+// step rather than a slope.
+//
+// The 2.5 came from the reference, where the character is drawn nearly full-screen and 2.5 of its
+// widths IS most of the view. At 76px on a laptop it is a thumbnail's worth of screen.
+//
+// 🔴 SO THE REACH IS A PROPERTY OF THE SCREEN, NOT OF THE CHARACTER. Measuring to the furthest
+// corner means nothing on the page is ever clamped: every pixel of pointer movement anywhere
+// changes the head by a little, which is what "follows the mouse" means.
+
+/** Below this a reach is meaningless — a pane a few hundred pixels wide. */
+const MIN_REACH = 260;
+
+/**
+ * How far the pointer has to be before the head is turned as far as it goes.
+ *
+ * The distance to the furthest corner of the viewport, so full deflection happens exactly at the
+ * corner the pointer is least often in, and every position short of it is proportional.
+ */
+export function trackReach(input: {
+  readonly centre: { readonly x: number; readonly y: number };
+  readonly viewport: { readonly width: number; readonly height: number };
+}): number {
+  const { centre, viewport } = input;
+  return Math.max(
+    MIN_REACH,
+    Math.hypot(centre.x, centre.y),
+    Math.hypot(viewport.width - centre.x, centre.y),
+    Math.hypot(centre.x, viewport.height - centre.y),
+    Math.hypot(viewport.width - centre.x, viewport.height - centre.y),
+  );
+}
+
 /**
  * The glance as a client-coordinate offset to add to whatever the character is watching.
  *
  * 🔴 IT GOES THROUGH THE AIM POINT RATHER THAN STRAIGHT ONTO THE HEAD ANGLE, so a glance eases in
  * and out on `TRACK_EASE` exactly like every other change of attention, and there is no second
- * motion path to keep in step with the first. `NemesisAvatar` normalises an aim against
- * `max(width, height) * 2.5`, so one full deflection is 2.5 character-widths away — which is where
- * the multiplier comes from and why this needs the character's size rather than guessing pixels.
+ * motion path to keep in step with the first.
+ *
+ * 🔴 IT TAKES THE REACH, NOT THE CHARACTER'S SIZE, AND THAT CHANGED WITH `trackReach`. A glance is
+ * a FRACTION OF FULL DEFLECTION — `glanceAt` returns one — so it has to be multiplied by whatever
+ * full deflection currently costs in pixels. Written against the character's own size, as it was,
+ * it would have shrunk to a sixth of itself the moment the reach became a property of the screen,
+ * and nothing would have failed.
  */
-export function glanceOffset(ms: number, size: number): { x: number; y: number } {
+export function glanceOffset(ms: number, reach: number): { x: number; y: number } {
   const g = glanceAt(ms);
-  const reach = size * 2.5;
   return { x: g.y * reach, y: g.x * reach };
 }
 

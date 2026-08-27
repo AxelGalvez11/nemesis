@@ -61,6 +61,7 @@ import {
   ringPath,
   type FeatureFace,
 } from "@/lib/avatar/features";
+import { trackReach } from "@/lib/character/gaze";
 
 export interface NemesisAvatarProps {
   /** Which of the animations to play. Any of the forty-nine; see `lib/avatar/catalogue.ts`. */
@@ -199,6 +200,17 @@ export interface NemesisAvatarProps {
 
 /** How fast the head catches up with the pointer, per frame at 60fps. */
 const TRACK_EASE = 0.12;
+
+/**
+ * How long a POKE takes to cut in, against the 500ms every other change of animation eases over.
+ *
+ * 🔴 OWNER 2026-08-27: *"the burst is not reactive it takes about 1 seconds to start"*. Half of that
+ * second was this blend: `burst`'s collapse began from a face that was still half `idle`, so the
+ * opening of a click read as nothing happening. Not zero — a hard cut is the "animations seem to
+ * cut abruptly" complaint that `HANDOVER_MS` exists to answer — but short enough to read as the
+ * click landing.
+ */
+const POKE_HANDOVER_MS = 90;
 
 /** How long the entrance turn takes, in milliseconds. */
 const ENTRANCE_MS = 1100;
@@ -541,11 +553,13 @@ export function NemesisAvatar({
       // would be 0/0, and one NaN settles in for good. A hidden pane returns exactly zeros.
       if (!box || box.width === 0) return;
       const target = latest.current.aimAt ?? { x: event.clientX, y: event.clientY };
-      // Normalised against a generous radius rather than the element, so the head is not
-      // already at full deflection the moment the pointer leaves the character.
-      const reach = Math.max(box.width, box.height) * 2.5;
-      aim.current.x = clamp((target.x - (box.left + box.width / 2)) / reach);
-      aim.current.y = clamp((target.y - (box.top + box.height / 2)) / reach);
+      const centre = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      // 🔴 THE REACH IS A PROPERTY OF THE SCREEN, NOT OF THE CHARACTER — see `trackReach`, which
+      // carries the measurement. It was `max(width, height) * 2.5`: 190px at this size, so the head
+      // was at full deflection 190px away and 61% of the window drew one identical frame.
+      const reach = trackReach({ centre, viewport: { width: window.innerWidth, height: window.innerHeight } });
+      aim.current.x = clamp((target.x - centre.x) / reach);
+      aim.current.y = clamp((target.y - centre.y) / reach);
       aim.current.pointer = true;
     };
     const release = () => {
@@ -572,9 +586,10 @@ export function NemesisAvatar({
       if (state.track && state.aimAt) {
         const box = svgRef.current?.getBoundingClientRect();
         if (box && box.width > 0) {
-          const reach = Math.max(box.width, box.height) * 2.5;
-          aim.current.x = clamp((state.aimAt.x - (box.left + box.width / 2)) / reach);
-          aim.current.y = clamp((state.aimAt.y - (box.top + box.height / 2)) / reach);
+          const centre = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+          const reach = trackReach({ centre, viewport: { width: window.innerWidth, height: window.innerHeight } });
+          aim.current.x = clamp((state.aimAt.x - centre.x) / reach);
+          aim.current.y = clamp((state.aimAt.y - centre.y) / reach);
           aim.current.pointer = true;
         }
       }
@@ -617,7 +632,10 @@ export function NemesisAvatar({
       // clock back to zero, so the character both snapped to a new face AND lost its place — a
       // blink schedule that had been running for a minute began again. One clock runs for the
       // life of the component; the playhead turns "which animation" into a morph, not a jump.
-      const played = head.current.at(at, wanted);
+      // 🔴 A CLICK CUTS IN, EVERYTHING ELSE DRIFTS IN. `active` is only set while a poke is playing,
+      // so the fast handover applies to the frame a reaction starts and to nothing else — the
+      // character still eases between resting, thinking and preparing over the full 500ms.
+      const played = head.current.at(at, wanted, active ? { handoverMs: POKE_HANDOVER_MS } : undefined);
       if (!played) return;
 
       // 🔴🔴 FORWARD IS SUBTRACTED FROM THE DRAWN POSE, NOT FROM THE AUTHORED ONE, and the

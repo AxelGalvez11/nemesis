@@ -23,6 +23,7 @@ import {
   POINTER_MEMORY_MS,
   gazeTarget,
   glanceAt,
+  trackReach,
   glanceOffset,
 } from "./gaze";
 
@@ -234,4 +235,57 @@ test("🔴 the boundary is POINTER_MEMORY_MS exactly, and it is inclusive of 'st
   const args = { declared: null, focused: HERE, resting: COMPOSER, working: null } as const;
   assert.equal(gazeTarget({ ...args, pointerAgeMs: POINTER_MEMORY_MS - 1 }), null, "still counts as moving");
   assert.deepEqual(gazeTarget({ ...args, pointerAgeMs: POINTER_MEMORY_MS }), HERE, "the memory never expires");
+});
+
+// ── How far the pointer has to be before the head stops responding ───────────
+//
+// Owner, three times: *"the mascot is not following the mouse at all"*, *"it still does not follow
+// mouse movements"*. Twice I answered that it did, on the strength of moving a pointer between two
+// far corners and seeing a big swing. Both corners were SATURATED. Everything between them was a
+// step, not a slope.
+
+/** The real layout, measured on production: character above the composer, 1470px window. */
+const REAL = { centre: { x: 389, y: 657 }, viewport: { width: 1470, height: 830 } };
+const yawAt = (x: number) => {
+  const reach = trackReach(REAL);
+  return Math.max(-1, Math.min(1, (x - REAL.centre.x) / reach)) * 26;
+};
+
+test("🔴🔴🔴 no position on the page is clamped — which is what 'follows the mouse' means", () => {
+  // The old reach was `character size x 2.5` = 190px at 76px, so the head was at full deflection
+  // 190px away and 61% of the window drew the identical frame — the 61% holding the answer and the
+  // composer. Calibration: put `2.5 * 76` back as the reach and every case below collapses to 26.
+  const seen = [450, 550, 700, 900, 1100, 1400].map(yawAt);
+  for (let i = 1; i < seen.length; i += 1) {
+    assert.ok(seen[i]! > seen[i - 1]! + 0.5, `the head stopped responding between the last two samples: ${seen.join(", ")}`);
+  }
+});
+
+test("🔴 the far corner is full deflection, so the range is actually used", () => {
+  const reach = trackReach(REAL);
+  const corners = [
+    Math.hypot(REAL.centre.x, REAL.centre.y),
+    Math.hypot(REAL.viewport.width - REAL.centre.x, REAL.centre.y),
+    Math.hypot(REAL.centre.x, REAL.viewport.height - REAL.centre.y),
+    Math.hypot(REAL.viewport.width - REAL.centre.x, REAL.viewport.height - REAL.centre.y),
+  ];
+  assert.equal(reach, Math.max(...corners), "the reach is not the distance to the furthest corner");
+  // And it is nowhere near the old number, which is the whole point.
+  assert.ok(reach > 190 * 4, `reach ${reach} is still character-sized`);
+});
+
+test("a tiny pane does not make the character hypersensitive", () => {
+  // A few hundred pixels of viewport would otherwise mean a full head turn for a nudge.
+  assert.ok(trackReach({ centre: { x: 40, y: 40 }, viewport: { width: 80, height: 80 } }) >= 260);
+});
+
+test("🔴 the glance is a FRACTION of full deflection, so it moved with the reach", () => {
+  // Written in character-widths, as it was, a glance would have shrunk to a sixth of itself the
+  // moment the reach became a property of the screen — and nothing would have failed.
+  const reach = trackReach(REAL);
+  const biggest = Math.max(
+    ...Array.from({ length: 400 }, (_unused, i) => Math.abs(glanceOffset((i * GLANCE_EVERY_MS) / 40, reach).x)),
+  );
+  assert.ok(biggest > reach * 0.2, `the largest glance is ${Math.round(biggest)}px against a ${Math.round(reach)}px reach`);
+  assert.ok(biggest < reach, "a glance reaches full deflection, which is a stare rather than a glance");
 });

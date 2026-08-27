@@ -355,40 +355,28 @@ test("🔴 a click reaches the character", async () => {
   // What is pinned now is the INVARIANT rather than the choice: exactly one reaction, so a poke
   // stops being five different things depending on how many times you have poked it.
   assert.match(poke, /const REACTIONS: readonly Reaction\[\] = \[[\s\S]*?\n\];/, "REACTIONS is not a list any more");
-  const rows = (poke.match(/^\s*\{ state: "/gm) ?? []).length;
-  assert.equal(rows, 1, `a poke draws ${rows} different things again; the owner asked for one`);
-  // 🔴 THE CHOICE MOVED AGAIN THE SAME EVENING AND THE INVARIANT DID NOT. Spin for a few hours,
-  // then `burst` — which the owner named twice: *"just make him jump or do burst animation"* and
-  // *"bloub has nice animations called burst, sleep, thinking, i want those"*. What is pinned above
-  // is the COUNT; this line only says which one, so the next reversal is one string.
-  assert.match(poke, /state: "burst"/, "the one reaction is no longer the burst");
-
-  // 🔴🔴🔴 THERE IS EXACTLY ONE THING THAT DECIDES WHAT A CLICK DRAWS, AND FOR MONTHS THERE WERE
-  // TWO. `NemesisAvatar` has its own poke: a `pokeAnimation` prop that overrode the animation for
-  // its own duration, defaulting to `"surprised"` — the widest face in the set, eyes 0.45 x 0.47
-  // against `neutral`'s 0.186 x 0.412, about two and a half times the area. The dock passes
-  // `onPoke` and no `pokeAnimation`, so BOTH fired on every click and the renderer's default was
-  // painted over whatever `usePoke` had been carefully set to.
+  // The three the owner named on 2026-08-27, in the order he gave them.
+  for (const wanted of ["burst", "spin", "notify"]) {
+    assert.ok(new RegExp(`"${wanted}"`).test(poke), `a poke no longer draws ${wanted}`);
+  }
+  // 🔴🔴 THE COUNT HAS BEEN 5 → 1 → 3 IN TWENTY-FOUR HOURS, SO THE COUNT IS NOT THE RULE. This
+  // pinned "exactly one reaction" on 2026-08-26 (*"clicking on the mascot should just make him
+  // just jump or do burst animation"*); on 2026-08-27 the owner asked for the walk back, naming
+  // what he wanted in it: *"it should also have the 'notification' animation and a spin animation
+  // where it spins around"*.
   //
-  // Owner, 2026-08-26, after the reaction list had already been cut to one thing: *"it still has
-  // the wide eyes when clicked on"*. Cutting the list could not have helped — the second mechanism
-  // was never reading it.
-  //
-  // 🔴 CALIBRATION MATTERS HERE MORE THAN ANYWHERE ELSE IN THIS FILE. Every other guard around the
-  // poke was green while this bug was live, because they all read `use-poke.ts` and the bug was in
-  // the renderer. Put the default back and this reddens; nothing else does.
-  const avatar = await rf(new URL("../../components/avatar/nemesis-avatar.tsx", import.meta.url), "utf8");
-  assert.match(avatar, /^\s*pokeAnimation = null,$/m, "the renderer plays a face of its own on a click again, over the surface's");
-  assert.match(avatar, /if \(pokeAnimation\) poke\.current =/, "the renderer fires its own poke unconditionally again");
-
-  // 🔴🔴 ONE PASS, NOT ONE LOOP. `burst` loops, and holding it for its own published duration
-  // (2600ms) plays the collapse TWICE — measured: radius 140 → 23 at 577ms → 140 by 1376ms → 102
-  // again by 1776ms. A second collapse with no cause reads as a glitch, not a reaction.
-  const { animationDuration: dur, ANIMATION_BY_ID: byId } = await import("../avatar");
-  const burstMs = Number(poke.match(/export const BURST_MS = (\d+);/)?.[1]);
-  const loopMs = dur(byId.get("burst")!);
-  assert.ok(burstMs > 0 && burstMs < loopMs, `the burst is held ${burstMs}ms of a ${loopMs}ms loop — it will collapse twice`);
-  assert.ok(burstMs > loopMs / 2, `the burst is held ${burstMs}ms and will be cut before it comes back`);
+  // 🔴 WHAT HE WAS ACTUALLY CUTTING IS THE RULE THAT SURVIVED BOTH. The old five were jump, wink,
+  // surprised, laughing, curious — FOUR of them plain faces, so a click mostly changed an
+  // expression and read as nothing happening. Every reaction must be something the character DOES.
+  // That is checkable: none of them may be one of the sixteen resting feelings, which are held
+  // poses and nothing else.
+  const { EXPRESSION_IDS } = await import("../avatar/expressions");
+  const reactionStates = [...poke.matchAll(/\{ state: "([^"]+)", motion: (null|"[a-z]+")/g)].map((m) => ({ state: m[1]!, motion: m[2]! }));
+  assert.ok(reactionStates.length >= 1, "the reaction list is empty");
+  for (const row of reactionStates) {
+    const doesSomething = row.motion !== "null" || !EXPRESSION_IDS.includes(row.state);
+    assert.ok(doesSomething, `a poke draws "${row.state}", which is a face and not a thing the character does`);
+  }
 
   // 🔴 THE SPIN IS PARKED, NOT DELETED, AND ITS SMOOTHING STAYS GUARDED BELOW. It was the click for
   // a few hours on 2026-08-26 and the work that made it smooth (no wind-up, no overshoot, no scale,
