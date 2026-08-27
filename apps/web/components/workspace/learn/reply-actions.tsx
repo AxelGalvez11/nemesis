@@ -19,11 +19,12 @@
 // and grow into it while there is audio — see `response-audio-controls.tsx` for why there is no
 // border, no background and no toolbar anywhere in this feature.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 
+import { timeSince } from "./answer-time";
 import { ResponseAudioControls } from "./response-audio-controls";
 import type { ResponseAudio } from "./use-response-audio";
 
@@ -31,10 +32,21 @@ import type { ResponseAudio } from "./use-response-audio";
 const COPIED_MS = 1600;
 
 export function ReplyActions({
+  at,
   audio,
+  onRetry,
   spoken,
   text,
 }: {
+  /**
+   * When this answer arrived, for the "5 minutes ago" the reference carries at the end of the row.
+   *
+   * 🔴 OPTIONAL, AND ABSENT MEANS NO TIMESTAMP. The live answer has no recorded time until its
+   * moment is written; printing "just now" for it would be a fact the surface invented.
+   */
+  at?: string;
+  /** Re-asks the question that produced this answer. Absent when there is no question to re-ask. */
+  onRetry?: () => void;
   /**
    * This answer's audio — generation and playback both.
    *
@@ -42,8 +54,15 @@ export function ReplyActions({
    * plus a separate `speed` and `onCycleSpeed` that belonged to a different concept entirely
    * (synthesis rate, posted to the provider). Passing the controller keeps play, pause, seek, rate
    * and progress reading from one state rather than from five props that can disagree.
+   *
+   * 🔴🔴 OPTIONAL SINCE 2026-08-26, AND THAT IS WHAT LET THIS BECOME THE ONE ROW. A turn in the
+   * thread has no audio controller — the speech lane is keyed to the single reply on screen — so
+   * before this it could not use this component at all, and a SECOND row got written for it. The
+   * owner saw both under one answer: *"each output has double the action toolbar items at the
+   * bottom."* With `audio` optional there is one row, and the playback half is simply absent for a
+   * turn that cannot play.
    */
-  audio: ResponseAudio;
+  audio?: ResponseAudio;
   /**
    * The answer as the MODEL wrote it, marks and all, for the synthesiser.
    *
@@ -58,6 +77,18 @@ export function ReplyActions({
   text: string;
 }) {
   const [copied, setCopied] = useState(false);
+  /**
+   * 🔴 READ ONCE PER MOUNT, NOT ON A TICKING CLOCK — a thread can hold eighty of these, and eighty
+   * timers re-rendering every second to move "3 minutes" to "4 minutes" is a real cost for a fact
+   * nobody is watching. It refreshes whenever the thread does, which is whenever anything happens.
+   *
+   * 🔴 AND IN AN EFFECT, because `Date.now()` during render differs between the server and the
+   * client and React discards the tree for it.
+   */
+  const [since, setSince] = useState("");
+  useEffect(() => {
+    if (at) setSince(timeSince(at, Date.now()));
+  }, [at]);
 
   const copy = async () => {
     try {
@@ -85,7 +116,17 @@ export function ReplyActions({
         <Codicon name={copied ? "check" : "copy"} size="15px" />
       </button>
 
-      <ResponseAudioControls audio={audio} text={spoken} />
+      {audio && <ResponseAudioControls audio={audio} text={spoken} />}
+
+      {onRetry && (
+        <button aria-label="Retry" className={cn(button)} onClick={onRetry} title="Retry" type="button">
+          <Codicon name="refresh" size="15px" />
+        </button>
+      )}
+
+      {/* 🔴 11px, MEASURED off claude.ai (2026-08-26), and it sits AFTER the controls rather than
+          opposite them. §46.3-exempt: measured value from the reference. */}
+      {since && <span className="ml-2 shrink-0 text-[11px] leading-none text-(--ui-text-quaternary)">{since}</span>}
     </div>
   );
 }

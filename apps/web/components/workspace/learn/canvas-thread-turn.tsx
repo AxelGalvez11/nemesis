@@ -26,7 +26,7 @@ import type { CanvasThreadTurn } from "@/lib/learn/canvas-thread";
 import { replySegments } from "@/lib/learn/reply-visuals";
 
 import { ArtifactCard } from "./artifact-card";
-import { CanvasAnswerActions } from "./canvas-answer-actions";
+import { ReplyActions } from "./reply-actions";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { LearnerUtterance } from "./learner-utterance";
 import { SemanticVisual } from "./semantic-visual";
@@ -125,10 +125,18 @@ export function CanvasThreadTurnView({
           🔴 NO READ-ALOUD HERE, DELIBERATELY. The speech controller is keyed to the ONE reply on
           screen — mounting a speaker per past turn would put a column of them down the thread all
           competing for a single voice, which is the same reason `SpokenExample` is not drawn here. */}
+      {/* 🔴🔴 THE SAME ROW THE LIVE ANSWER USES, AND THAT IS THE FIX FOR A DEFECT THE OWNER SAW ON
+          PRODUCTION: *"each output has double the action toolbar items at the bottom."* This file
+          shipped its own row without checking, and the canvas already had one — his own, from
+          2026-08-20 — so the live answer carried BOTH, 42px apart.
+          🔴 NO `audio`. The speech lane is keyed to the single reply on screen; the playback half
+          is simply absent here rather than being a second controller fighting for one voice.
+          🔴 NOT ON A TURN WITH NO ANSWER: a `source` moment would copy an empty string. */}
       {turn.reply.trim() && (
-        <CanvasAnswerActions
+        <ReplyActions
           at={turn.at}
           onRetry={onRetry && turn.said?.trim() ? () => onRetry(turn.said!) : undefined}
+          spoken={turn.reply}
           text={turn.reply}
         />
       )}

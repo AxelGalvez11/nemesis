@@ -66,7 +66,6 @@ const CANVAS_CAPABILITIES: readonly ComposerCapability[] = COMPOSER_CAPABILITIES
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
-import { CanvasAnswerActions } from "./canvas-answer-actions";
 import { CanvasThreadTurnView } from "./canvas-thread-turn";
 import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
@@ -2037,6 +2036,16 @@ export function LearningCanvas({
                   broken. `turnInFlight` is the same signal the thinking screen keys on. */}
               {!turnInFlight && replyText.trim() && (
                 <ReplyActions
+                  // 🔴 NO `at`. The live answer has no recorded time until its moment is written,
+                  // and printing "just now" for it would be a fact the surface invented. It gains
+                  // its timestamp the moment it files into the thread.
+                  //
+                  // 🔴 RETRY RE-ASKS AS AN ORDINARY TURN through `converse`, so it is recorded,
+                  // joins the thread and can be argued with. Rewriting this answer in place would
+                  // leave the moment log claiming something was said that no longer is. Absent when
+                  // there is no learner question behind the answer — an opening line Nemesis wrote
+                  // by itself would silently re-send nothing.
+                  onRetry={currentSaid?.trim() ? () => retryTurn(currentSaid) : undefined}
                   // 🔴 THE CONTROLLER FOR *THIS ANSWER'S* AUDIO (§48), not a shared "something is
                   // playing" boolean. Play, pause, seek, speed and progress all read from one state,
                   // so an example row speaking elsewhere can never turn this into a stop button.
@@ -2077,28 +2086,6 @@ export function LearningCanvas({
                 <CanvasSourceCards
                   cards={replySources.map((source) => ({ title: source.title || source.url, url: source.url }))}
                   onAdd={(url) => void session.attachUrl(url)}
-                />
-              )}
-
-              {/* 🔴🔴 THE ACTION ROW ON THE LIVE ANSWER, AND IT IS THE ONE THAT CARRIES READ-ALOUD.
-                  The speech controller is keyed to the single reply on screen, so this is the only
-                  place a speaker can be mounted without a column of them competing for one voice —
-                  see the note in `canvas-thread-turn.tsx`, which deliberately omits it.
-
-                  🔴 NOT WHILE THE ANSWER IS STILL ARRIVING. Copying half a sentence or reading a
-                  paragraph that is still being written is worse than waiting a beat; `turnInFlight`
-                  is the same signal the character's caption keys on.
-
-                  🔴 NO RETRY WITHOUT A QUESTION TO RE-ASK. An opening line Nemesis wrote by itself
-                  has no learner turn behind it, and a Retry there would silently re-send nothing. */}
-              {!turnInFlight && replyText.trim() && (
-                <CanvasAnswerActions
-                  onReadAloud={() =>
-                    voice.header.speaking ? voice.stopSpeaking() : voice.speakAloud(replyText)
-                  }
-                  onRetry={currentSaid?.trim() ? () => retryTurn(currentSaid) : undefined}
-                  reading={voice.header.speaking}
-                  text={replyText}
                 />
               )}
 
