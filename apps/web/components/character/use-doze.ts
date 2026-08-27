@@ -18,7 +18,7 @@ import { ACTIVITY_STATE, type StateId } from "@/lib/character/stations";
 /** How often the clock is checked. Coarse on purpose: this fires once every few minutes at most. */
 const TICK_MS = 5_000;
 
-export function useDoze(base: StateId, away: boolean): StateId {
+export function useDoze(base: StateId, away: boolean, working: boolean): StateId {
   const [dozing, setDozing] = useState(false);
   const lastRef = useRef(0);
   // 🔴 `performance.now()` IS READ INSIDE AN EFFECT, NOT AT MODULE OR RENDER TIME. Rendered on the
@@ -48,9 +48,15 @@ export function useDoze(base: StateId, away: boolean): StateId {
     };
   }, []);
 
+  // 🔴🔴 `working` IS PASSED IN NOW, NOT DERIVED FROM `base`, AND THE MONTAGE IS WHY. This read
+  // `base !== ACTIVITY_STATE.resting` — true the moment `useMontage` put `happy` on the character,
+  // so a resting face read as "Nemesis is working" and the doze clock reset every nine seconds. It
+  // would never have slept again, and nothing would have failed.
+  //
+  // The caller knows the real answer because it holds the SURFACE's own state, before any layer.
+  //
   // 🔴 A CHANGE OF WHAT NEMESIS IS DOING IS ALSO A WAKE-UP, and it has to be, because a turn can
   // arrive from somewhere the learner did not touch — a document finishing, a scheduled lesson.
-  const working = base !== ACTIVITY_STATE.resting;
   useEffect(() => {
     if (!working) return;
     lastRef.current = performance.now();

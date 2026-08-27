@@ -33,10 +33,11 @@ import type { ThinkingMark as ThinkingMarkKind } from "@/lib/learn/thinking-phas
 import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { ThinkingMark } from "./thinking-mark";
 import { useDoze } from "./use-doze";
+import { useMontage } from "./use-montage";
 import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
-import { speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
-import { gazeTarget, glanceOffset } from "@/lib/character/gaze";
+import { ACTIVITY_STATE, speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
+import { gazeTarget, glanceOffset, trackReach } from "@/lib/character/gaze";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { placeAbove, placeBeside, placeUnder } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
@@ -283,11 +284,24 @@ export function CharacterDock({
   const { accent } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   // `motion` is the half the engine has no pose for — the hop. See `use-poke.ts`.
-  const { state: poked, motion, face: pokeFace, poke } = usePoke(state);
-  // 🔴 OUTSIDE `usePoke`, NOT INSIDE IT, AND THE ORDER IS THE POINT. A poke is a wake-up: clicking
-  // a sleeping character has to play the click rather than be swallowed by the sleep it just
-  // ended. `hidden` counts as away — the character is not on screen to fall asleep on.
-  const shown = useDoze(poked, hidden);
+  const { state: poked, motion, face: pokeFace, poke, poking } = usePoke(state);
+  // 🔴🔴 THREE LAYERS OVER ONE BASE STATE, AND THE ORDER IS THE WHOLE BEHAVIOUR:
+  //
+  //   usePoke      what a click asked for. Beats everything: a click must be answered.
+  //   useMontage   the resting faces, which only ever run when nothing else is happening.
+  //   useDoze      asleep, which beats a montage — a sleeping character is not pulling faces.
+  //
+  // 🔴 EACH ONE ANSWERS A QUESTION ONLY IT CAN. What the SYSTEM is doing arrives as a prop; what
+  // the LEARNER has been doing (nothing, for minutes) only the browser knows; what they just did
+  // (clicked) only the component knows. Three hooks that each take a state and hand back a state
+  // compose without any of them knowing about the others.
+  //
+  // `atRest` and `busy` are read from the SURFACE's own `state`, never from the layered result —
+  // otherwise the montage's own face would read as "something is happening" and stop itself.
+  const atRest = state === ACTIVITY_STATE.resting;
+  const varied = useMontage(poked, atRest, poking);
+  // `hidden` counts as away: the character is not on screen to fall asleep on.
+  const shown = useDoze(varied, hidden, !atRest);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState(bottom);
   const [inset, setInset] = useState(left);
@@ -630,7 +644,16 @@ export function CharacterDock({
       const now = performance.now();
       // The glance rides on TOP of whatever is being watched, so the character looks away from the
       // composer and back to the composer rather than away from and back to a fixed direction.
-      const glance = glanceOffset(now, size);
+      // 🔴 THE GLANCE AND THE SWEEP ARE FRACTIONS OF FULL DEFLECTION, so both are measured in the
+      // same reach the renderer normalises against. They used to be written in CHARACTER WIDTHS,
+      // which was the same thing only while the reach was `size * 2.5` — see `trackReach`. Left
+      // alone, this change would have shrunk a glance to a sixth of itself, silently.
+      const host = hostRef.current;
+      const centre = host
+        ? (() => { const r = host.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()
+        : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      const reach = trackReach({ centre, viewport: { width: window.innerWidth, height: window.innerHeight } });
+      const glance = glanceOffset(now, reach);
       // 🔴🔴 TWO KINDS OF "SOMETHING ELSE IS WORTH WATCHING", AND MERGING THEM STOPPED THE
       // CHARACTER FOLLOWING THE MOUSE AT ALL (owner 2026-08-26: *"the mascot is not following the
       // mouse at all"*).
@@ -671,11 +694,12 @@ export function CharacterDock({
       // staring"). At the middle the eyes drift on two slow, unsynchronised arcs, mostly upward,
       // the way anyone's do when recalling, rather than falling through to the pointer.
       const workingBox = (() => {
-        if (stationRef.current !== "centre" || !hostRef.current) return null;
-        const r = hostRef.current.getBoundingClientRect();
+        if (stationRef.current !== "centre") return null;
+        // The same sweep it always was, now stated as the fraction of full deflection it always
+        // meant: ±0.64 of the reach is ±16.6° of yaw, which is what "searching" was tuned at.
         return {
-          x: r.left + r.width / 2 + Math.sin(now / 1700) * r.width * 1.6,
-          y: r.top + r.height / 2 - r.height * 0.9 + Math.sin(now / 1150) * r.height * 0.55,
+          x: centre.x + Math.sin(now / 1700) * reach * 0.64,
+          y: centre.y - reach * 0.36 + Math.sin(now / 1150) * reach * 0.22,
         };
       })();
       const want = gazeTarget({

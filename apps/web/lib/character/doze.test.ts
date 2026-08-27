@@ -49,11 +49,21 @@ test("🔴🔴 sleeping is scheduled, reaches a real animation, and shuts its ey
   );
 });
 
-test("🔴 a poke wakes it — the hooks compose in the order that makes a click land", () => {
-  // `useDoze(usePoke(state))`, never the other way round: a click on a sleeping character must play
-  // the click, not be swallowed by the sleep it just ended. Source-text, because the order is the
-  // whole of the behaviour and it lives in one expression.
+test("🔴🔴 the three layers compose in the order that makes a click land", () => {
+  // 🔴 REPOINTED 2026-08-27 when the montage went in between them. The order IS the behaviour:
+  //
+  //   usePoke      what a click asked for. Beats everything: a click must be answered.
+  //   useMontage   the resting faces, which only run when nothing else is happening.
+  //   useDoze      asleep, which beats a montage — a sleeping character is not pulling faces.
+  //
+  // Source-text, because the order lives in three lines and no test can reach a hook chain.
   const dock = readFileSync(new URL("../../components/character/character-dock.tsx", import.meta.url), "utf8");
   assert.match(dock, /const \{ state: poked[^}]*\} = usePoke\(state\);/, "usePoke stopped taking the surface's own state");
-  assert.match(dock, /const shown = useDoze\(poked, hidden\);/, "the doze layer no longer wraps the poke, so a click on a sleeping character is lost");
+  assert.match(dock, /const varied = useMontage\(poked, atRest, poking\);/, "the montage no longer wraps the poke, so a click is overwritten by a resting face");
+  assert.match(dock, /const shown = useDoze\(varied, hidden, !atRest\);/, "the doze layer no longer wraps the montage, or is deriving `working` from a layered state");
+
+  // 🔴🔴 AND `atRest` COMES FROM THE SURFACE'S OWN STATE, NEVER FROM A LAYERED ONE. Derived from
+  // the result, a montage face reads as "Nemesis is working": the doze clock resets every nine
+  // seconds and the character never sleeps again. Nothing would fail.
+  assert.match(dock, /const atRest = state === ACTIVITY_STATE\.resting;/, "`atRest` is being derived from something other than the surface's own state");
 });

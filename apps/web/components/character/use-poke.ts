@@ -119,29 +119,28 @@ function passMs(id: string, fallback: number): number {
  * `wink` is the opposite case — entirely a face — and `sigma` is a face from OUR layer.
  */
 const REACTIONS: readonly Reaction[] = [
-  // 🔴🔴 ONE REACTION, AND THE LIST IS A LIST OF ONE (owner 2026-08-26: *"clicking on the mascot
-  // should just make him jump or do burst animation"*, then *"or spin"*). The cycling is what he
-  // was cutting: repeated clicks used to run jump → wink → surprised → laughing → curious, so the
-  // answer to "what happens when I poke it" was five different things depending on how many times
-  // you had poked it before.
+  // 🔴🔴 THREE, WALKED IN ORDER, AND THE COUNT HAS BEEN 5 → 1 → 3 IN TWENTY-FOUR HOURS. The owner
+  // cut the walk on 2026-08-26 (*"clicking on the mascot should just make him jump or do burst
+  // animation"*) and restored it on 2026-08-27, naming what he wanted in it: *"it should also have
+  // the 'notification' animation and a spin animation where it spins around"*. Asked where each
+  // should go, since a click can only play one thing, he chose the cycle.
   //
-  // 🔴 BURST, AND IT IS A REVERSAL HE MADE HIMSELF, TWICE. `burst` is the vendored routine that
-  // collapses the body to a sixth of its size, throws five sparks off it and pulls itself back
-  // together. It was cut on 2026-08-23 (*"I don't want any rainbow swirls or animations from the
-  // GitHub that we used"*) and again by the shape rule. Then, 2026-08-26: *"clicking on the mascot
-  // should just make him jump or do burst animation"*, and, naming it in a list of what he wants
-  // back: *"bloub has nice animations called burst, sleep, thinking, i want those"*. Asked for by
-  // name twice in one evening beats a general rule written three days earlier.
-  //
-  // 🔴 AND IT DOES NOT ACTUALLY BREAK THE SHAPE RULE, WHICH IS WORTH KNOWING BEFORE SOMEBODY
-  // "RESTORES" IT. `burstIn` carries `body({ scale })` and no `profile`, so the silhouette is
-  // SCALED, not reshaped: a small squircle, not a ball. The rule is that the body does not become
-  // a different shape, and it does not. `body.test.ts` checks exactly that and stays green.
-  //
-  // 🔴 THE SPIN GOES BACK IN THE DRAWER, NOT IN THE BIN. It was the click for a few hours this
-  // evening and its smoothing (no wind-up, no overshoot, no scale, centred origin) is real work
-  // that stays in `character.css`. One row is all it costs to put back.
+  // What he was cutting the first time was five reactions of which four were FACES — wink,
+  // surprised, laughing, curious — so a click mostly changed an expression and read as nothing.
+  // These three are all things the character DOES.
   { state: "burst", motion: null, face: null, hold: BURST_MS },
+  { state: "idle", motion: "spin", face: null, hold: SPIN_MS },
+  // 🔴🔴 `notify` BOLTS A BADGE ON AND CUTS A NOTCH OUT OF THE BODY TO SEAT IT, WHICH BREAKS TWO
+  // STANDING RULES AT ONCE — the body is one shape (`lib/character/body.ts`, and the site's rule in
+  // `landing/lib/character/body.ts`), and rule one of the language is *a creature, never an icon*
+  // (`lib/avatar/features.ts`). Put to the owner in those words on 2026-08-27, with the alternative
+  // of taking the motion and timing without the badge; he chose *"use it as bloub draws it"*.
+  //
+  // 🔴 SO THE SHAPE RULE NOW HAS A NAMED EXCEPTION RATHER THAN A HOLE. It still holds for everything
+  // the SCHEDULE plays — `body.test.ts` walks `ACTIVITY_STATE` and reddens if any of it reshapes.
+  // A poke is a reaction the learner asked for by clicking, which is a different thing from the
+  // character deciding to change shape while they read.
+  { state: "notify", motion: null, face: null, hold: passMs("notify", 2200) },
 ];
 
 export function usePoke(base: StateId): {

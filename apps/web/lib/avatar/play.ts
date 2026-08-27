@@ -407,6 +407,13 @@ export interface PlayedFace {
 export interface PlayOptions {
   /** Off, the face is held exactly as authored: no morph easing life, no wander, no blink. */
   readonly reduced?: boolean;
+  /**
+   * How long the blend into a NEW animation takes. Default `HANDOVER_MS`.
+   *
+   * 🔴 ONLY READ ON THE FRAME THE ANIMATION CHANGES; passing it later does nothing to a morph
+   * already running, which is deliberate — see `handoverMs` in `createPlayhead`.
+   */
+  readonly handoverMs?: number;
 }
 
 /**
@@ -448,6 +455,19 @@ export function createPlayhead(initial: string): Playhead {
   let onScreen: Face | null = null;
   let from: Face | null = null;
   let startedAt = -Infinity;
+  /**
+   * How long THIS handover takes, fixed at the moment the animation changed.
+   *
+   * 🔴🔴 A REACTION HAS TO BE REACTIVE, AND 500ms OF BLEND IS NOT (owner 2026-08-27: *"the burst is
+   * not reactive it takes about 1 seconds to start"*). Every change of animation eased over
+   * `HANDOVER_MS`, which is right for the character drifting from resting to thinking and wrong for
+   * a click: `burst`'s own collapse then starts from a face that is still half `idle`, so the first
+   * half-second of a click reads as nothing happening.
+   *
+   * 🔴 READ ONCE, AT THE CHANGE, NOT PER FRAME. A blend whose duration moves under it would ease
+   * at a rate that changes mid-morph, which is a different jerk from the one this fixes.
+   */
+  let handoverMs = HANDOVER_MS;
 
   return {
     get playing() {
@@ -458,13 +478,14 @@ export function createPlayhead(initial: string): Playhead {
         from = onScreen;
         startedAt = ms;
         playing = animationId;
+        handoverMs = Math.max(0, opts.handoverMs ?? HANDOVER_MS);
       }
       const target = playedFaceAt(playing, ms, opts);
       if (!target) return null;
 
       let face = target.face;
       if (from && !opts.reduced) {
-        const p = (ms - startedAt) / HANDOVER_MS;
+        const p = handoverMs <= 0 ? 1 : (ms - startedAt) / handoverMs;
         if (p >= 1) from = null;
         else {
           // 🔴 CLAMPED AT ZERO RATHER THAN SKIPPED. The first frame of a handover arrives at
