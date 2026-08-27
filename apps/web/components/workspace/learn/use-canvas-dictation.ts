@@ -25,6 +25,7 @@ import {
   MAX_DICTATION_SECONDS,
   pickDictationMime,
 } from "@/lib/voice/dictation-engine";
+import { joinSpoken, readHeard } from "@/lib/voice/dictation-transcript";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import { publishMicLevel, resetMicLevel } from "@/lib/workspace/mic-level";
@@ -40,7 +41,10 @@ interface SpeechRecognitionLike {
   start: () => void;
   stop: () => void;
   abort: () => void;
-  onresult: ((event: { resultIndex: number; results: ArrayLike<SpeechResult> }) => void) | null;
+  // 🔴 `resultIndex` IS ON THE REAL EVENT AND IS DELIBERATELY NOT ON THIS TYPE. Reading it is what
+  // made every dictated sentence arrive twice (see the handler, and `readHeard`), so the shape this
+  // file consumes does not offer it. Somebody who wants it back has to add it, and will read this.
+  onresult: ((event: { results: ArrayLike<SpeechResult> }) => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
 }
@@ -127,6 +131,37 @@ export function useCanvasDictation(): Dictation {
   const [error, setError] = useState<string | null>(null);
 
   const engine = useRef<SpeechRecognitionLike | null>(null);
+  /**
+   * The phrase still in flight, mirrored outside React.
+   *
+   * 🔴🔴 THIS IS HALF OF THE "EVERY DICTATED SENTENCE WENT OUT TWICE" DEFECT (2026-08-26). `stop`
+   * used to reach for the in-flight phrase the only way it had, through the state itself:
+   *
+   *     setInterim((current) => {
+   *       if (current.trim()) setSettled((done) => …);   // ← a WRITE, inside an updater
+   *       return "";
+   *     });
+   *
+   * A state updater must be a pure function of its argument, and React is free to run one more than
+   * once for a single update — it evaluates eagerly to see whether it can skip the render, then
+   * again while rendering, and re-runs updaters whenever a render is thrown away and restarted.
+   * Every one of those runs appended the sentence again. Nothing about it is visible in the diff:
+   * it reads like an assignment.
+   *
+   * 🔴 A REF IS NOT A CACHE HERE, IT IS THE ONLY HONEST READ. `stop` is called from a click, a
+   * keyup, an unmount and an error handler, none of which are renders, so there is no "current
+   * state" available to them except one kept deliberately. Writing both states plainly from the ref
+   * also makes a second `stop` harmless: the ref is empty by then, so nothing is appended twice.
+   */
+  const pendingPhrase = useRef("");
+  /**
+   * How many results of the CURRENT recogniser run are already written down. See `readHeard`.
+   *
+   * 🔴 RESET WHEN A RUN STARTS, AND NOWHERE ELSE. `continuous` recognition ends itself on a pause
+   * and restarts below, and each run begins a fresh result list at index zero, so a count carried
+   * across a restart would silently swallow the first phrase of every run after the first.
+   */
+  const written = useRef(0);
   const wanted = useRef(false);
   const meter = useRef<{ context: AudioContext; stream: MediaStream; timer: number } | null>(null);
   /** The recorder, its pieces, and when it started — the xAI lane only. */
@@ -249,7 +284,7 @@ export function useCanvasDictation(): Dictation {
       }
       // Appended, not replaced: someone may dictate twice into the same answer, exactly as the
       // browser lane accumulates its own final phrases.
-      setSettled((current) => `${current}${current ? " " : ""}${heard}`);
+      setSettled((current) => joinSpoken(current, heard));
     } catch {
       if (alive.current && clip.current === ticket) {
         setError("Dictation is unavailable right now. You can type instead.");
@@ -291,10 +326,16 @@ export function useCanvasDictation(): Dictation {
     closeMeter();
     setListening(false);
     // Whatever was mid-phrase when they stopped is still something they said.
-    setInterim((current) => {
-      if (current.trim()) setSettled((done) => `${done}${done ? " " : ""}${current.trim()}`);
-      return "";
-    });
+    //
+    // 🔴🔴 READ FROM THE REF AND WRITE BOTH STATES PLAINLY. This was one `setInterim` updater with a
+    // `setSettled` inside it, and that is why a dictated sentence arrived twice: React may run an
+    // updater more than once per update, and each run appended the phrase again. See
+    // `pendingPhrase` above. Clearing the ref FIRST is what makes a second `stop` a no-op.
+    const trailing = pendingPhrase.current.trim();
+    pendingPhrase.current = "";
+    written.current = 0;
+    setInterim("");
+    if (trailing) setSettled((done) => joinSpoken(done, trailing));
   }, [closeMeter]);
 
   const start = useCallback(() => {
@@ -354,20 +395,24 @@ export function useCanvasDictation(): Dictation {
     active.interimResults = true;
     active.lang = navigator.language || "en-US";
 
+    // 🔴🔴 `event.resultIndex` IS DELIBERATELY NOT READ, AND THAT IS THE OTHER HALF OF THE DOUBLING.
+    // This loop used to start at `resultIndex` and append every final it found, which is what every
+    // Web Speech example does. It is correct only while that index is strictly ahead of everything
+    // already consumed, and Chrome does not promise it: with `continuous` and `interimResults` both
+    // on, an event carrying interim words for the NEXT phrase can arrive pointing back at the final
+    // one before it. `readHeard` counts instead, so a result is written down once and never again.
     active.onresult = (event) => {
-      let flushed = "";
-      let pending = "";
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const result = event.results[i];
-        const said = result?.[0]?.transcript ?? "";
-        if (!said) continue;
-        if (result?.isFinal) flushed += said;
-        else pending += said;
-      }
-      if (flushed.trim()) {
-        setSettled((current) => `${current}${current ? " " : ""}${flushed.trim()}`);
-      }
-      setInterim(pending.trim());
+      const heard = readHeard({
+        results: Array.from({ length: event.results.length }, (_unused, index) => {
+          const result = event.results[index];
+          return { isFinal: result?.isFinal, transcript: result?.[0]?.transcript ?? "" };
+        }),
+        settledCount: written.current,
+      });
+      written.current = heard.settledCount;
+      if (heard.settled) setSettled((current) => joinSpoken(current, heard.settled));
+      pendingPhrase.current = heard.pending;
+      setInterim(heard.pending);
     };
 
     active.onerror = (event) => {
@@ -385,6 +430,9 @@ export function useCanvasDictation(): Dictation {
     active.onend = () => {
       if (!wanted.current) return;
       try {
+        // 🔴 A NEW RUN, SO A NEW RESULT LIST STARTING AT ZERO. Carrying the count across would make
+        // `readHeard` skip the first phrase of every run after the first.
+        written.current = 0;
         active.start();
       } catch {
         setListening(false);
@@ -393,6 +441,8 @@ export function useCanvasDictation(): Dictation {
 
     engine.current = active;
     try {
+      written.current = 0;
+      pendingPhrase.current = "";
       active.start();
       setListening(true);
       void openMeter();
@@ -404,6 +454,10 @@ export function useCanvasDictation(): Dictation {
   }, [lane, openMeter, sendClip, stop]);
 
   const reset = useCallback(() => {
+    // 🔴 THE MIRROR GOES WITH THE STATE. A `pendingPhrase` left behind by a discarded capture would
+    // be appended by the NEXT `stop`, which is the doubling bug wearing a different hat.
+    pendingPhrase.current = "";
+    written.current = 0;
     setSettled("");
     setInterim("");
     setError(null);
@@ -423,7 +477,7 @@ export function useCanvasDictation(): Dictation {
     supported,
     listening,
     transcribing,
-    transcript: [settled, interim].filter(Boolean).join(" "),
+    transcript: joinSpoken(settled, interim),
     error,
     start,
     stop,
