@@ -20,11 +20,11 @@
 // `wide`, `exclaim` and `play` states remain in the catalogue as a plain copy of upstream,
 // and nothing in this product schedules them — guarded in `lib/character/character.test.ts`.
 //
-// 🔴 WHAT ACTUALLY PLAYS IS THE LIST IN `REACTIONS` BELOW, AND SINCE 2026-08-26 IT IS THE
-// REFERENCE'S OWN VOCABULARY RATHER THAN OURS. The descriptions that follow document the custom
-// gestures this file used to schedule — they are all still built, and nothing schedules them.
+// 🔴 WHAT ACTUALLY PLAYS IS THE LIST IN `REACTIONS` BELOW, AND SINCE 2026-08-26 (EVENING) IT IS
+// ONE THING: THE SPIN. The descriptions that follow document every gesture this file has
+// scheduled at some point — they are all still built, and only one of them is reached.
 //
-// The five customs, in the order repeated clicks used to walk them:
+// The five customs, in the order repeated clicks used to walk them before the list was cut to one:
 //   jump   — leaves the ground and LANDS SQUISHY (owner's word): the body flattens wide on
 //            impact and rebounds. CSS on the wrapper; see `.character-jump` in character.css.
 //   waggle — both brows rise and fall twice. Drawn as holes in the body's own mask through
@@ -62,8 +62,18 @@ interface Reaction {
 export const JUMP_MS = 620;
 /** Up, down, up, down, gone. Must match WAGGLE_MS in lib/avatar/features.ts. */
 export const WAGGLE_MS = 900;
-/** One full turn, lean-in to settle. Must match `--character-spin-ms` in character.css. */
-export const SPIN_MS = 760;
+/**
+ * One clean turn. Must match `--character-spin-ms` in character.css.
+ *
+ * 🔴 760 → 520 ON REPORT (owner 2026-08-26: *"make sure it's quick once clicked on"*). The old
+ * number bought a wind-up and an overshoot that have both been removed; without them there is
+ * nothing for the extra quarter-second to do but make the turn slow.
+ *
+ * 🔴 TWO COPIES OF ONE DURATION, AND THAT IS UNAVOIDABLE RATHER THAN SLOPPY: the CSS owns the
+ * animation and this owns how long the reaction is held. If they part company the character
+ * either stops mid-turn or stands still at the end of one. `character.test.ts` pins them equal.
+ */
+export const SPIN_MS = 520;
 /** How long the sigma face holds. Long enough to be seen, short enough to stay a joke. */
 export const SIGMA_MS = 1600;
 
@@ -80,37 +90,44 @@ function passMs(id: string, fallback: number): number {
 }
 
 /**
- * Reactions a poke can draw, in order.
+ * What a poke draws.
  *
- * Repeated clicks walk the list rather than replaying one gesture, so leaning on the
- * character is rewarded rather than flat.
+ * 🔴 ONE ENTRY SINCE 2026-08-26, AND IT IS STILL A LIST. `turn` walks it, so restoring a second
+ * reaction is adding a row rather than rebuilding the walk. See the note on the row itself.
  *
  * 🔴 THE MOTIONS HOLD `idle`, THEY DO NOT REPLACE IT. A hop, a waggle and a spin are things
  * done WHILE wearing an ordinary face; swapping the pose underneath would fight the gesture.
  * `wink` is the opposite case — entirely a face — and `sigma` is a face from OUR layer.
  */
 const REACTIONS: readonly Reaction[] = [
-  // 🔴🔴 THE ORIGINAL CATALOGUE, NOT OUR OWN GESTURES (owner 2026-08-26: *"i said to put in the
-  // original animations and expressions NOT the custom built ones like the spin, waggle, sigma,
-  // nod, double-take, slow blink"*). Every state named below is measured off the reference; the
-  // spin, the waggle, the sigma face and the three new gestures are ours, and a poke is no
-  // longer where any of them plays.
+  // 🔴🔴 ONE REACTION, AND THE LIST IS NOW A LIST OF ONE (owner 2026-08-26: *"clicking on the
+  // mascot should just make him jump or do burst animation"*, then *"or spin"*, then *"when
+  // clickin on mascot"*). Three options offered; the cycling is what he was actually cutting.
   //
-  // 🔴 UNSCHEDULED, NOT DELETED — which is the same treatment this file already gives the
-  // vendored pack, and for the same reason. `spin`, `waggle` and the sigma face were each asked
-  // for by name earlier in the year; the CSS, the brow layer and `FeatureFace` all stay exactly
-  // where they are. What changed is that nothing here reaches for them, so putting one back is
-  // one line rather than a rebuild.
+  // 🔴 SPIN, AND HERE IS THE REASONING SO IT CAN BE ARGUED WITH RATHER THAN GUESSED AT:
   //
-  // 🔴 THE HOP STAYS AND LEADS, DELIBERATELY. It is not in the owner's list, and
-  // `character.test.ts` pins it as the first reaction. It is also the only one of ours that is
-  // pure physics rather than a drawing — the body leaves the ground and lands squishy — so it
-  // does not compete with a face for meaning.
-  { state: "idle", motion: "jump", face: null, hold: JUMP_MS },
-  { state: "wink", motion: null, face: null, hold: passMs("wink", 1600) },
-  { state: "surprised", motion: null, face: null, hold: passMs("surprised", 3100) },
-  { state: "laughing", motion: null, face: null, hold: passMs("laughing", 3100) },
-  { state: "curious", motion: null, face: null, hold: passMs("curious", 3100) },
+  //   burst  breaks two standing rules at once. It is the vendored routine that collapses the
+  //          body and sprays particles — every vendored loading effect was cut by name on
+  //          2026-08-23 (*"I don't want any rainbow swirls or animations from the GitHub that we
+  //          used"*) — and the body is one shape that does not morph (`lib/character/body.ts`,
+  //          and the site's rule in `landing/lib/character/body.ts`).
+  //   jump   breaks nothing and was the first reaction already. Small, quick, easy to miss.
+  //   spin   breaks nothing either: a rotated squircle is the SAME silhouette at a different
+  //          heading, not a different shape, and the keyframes land back on 0. It is the most
+  //          visible of the three, and — the tiebreak — **poking the character on the marketing
+  //          site already spins it**. One creature, one reaction to being poked, both places.
+  //
+  // 🔴 IT LOOKS DIFFERENT NOW THAN IT DID, AND THAT IS WHY IT WAS LOOKED AT RATHER THAN ASSUMED.
+  // `.character-spin` is a CSS `rotate()` on the wrapper. On a ball that was invisible except for
+  // the eyes going round; on the squircle the corners tumble, and it reads as a small cube turning
+  // over. Rendered and checked before choosing it, because "spin" meant something else yesterday.
+  //
+  // 🔴 THE OTHER FOUR ARE UNSCHEDULED, NOT DELETED — the same treatment this file already gives
+  // the waggle and the sigma face. They are measured off the reference and still in the catalogue;
+  // putting one back is one row. What went is the WALK: repeated clicks used to run jump → wink →
+  // surprised → laughing → curious, so the answer to "what happens when I poke it" was five
+  // different things depending on how many times you had poked it before.
+  { state: "idle", motion: "spin", face: null, hold: SPIN_MS },
 ];
 
 export function usePoke(base: StateId): {

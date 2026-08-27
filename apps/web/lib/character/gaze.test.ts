@@ -21,6 +21,7 @@ import {
   GLANCE_PITCH,
   GLANCE_YAW,
   POINTER_MEMORY_MS,
+  gazeTarget,
   glanceAt,
   glanceOffset,
 } from "./gaze";
@@ -131,10 +132,17 @@ test("🔴🔴 a still pointer stops claiming the gaze, and the composer gets it
   // avatar releases the head to `turn = 0` when the pointer stops crossing the window, and before
   // the levelling above, `turn = 0` meant the authored three-quarter pose. So the one state the
   // character was guaranteed to be in was also the one where it looked away from the page.
+  //
+  // 🔴 REPOINTED 2026-08-26 EVENING, AND THE RULE IT PINNED IS NOW ARITHMETIC. These three source
+  // matches described a run of early returns inside the dock's attention interval — which is
+  // exactly why the precedence bug below them went unnoticed for weeks: a rule expressed as
+  // control flow inside an effect cannot be asked a question. The order lives in `gazeTarget` now
+  // and is tested directly at the bottom of this file; what is left here is that the dock still
+  // MEASURES the two facts that rule needs.
   assert.ok(POINTER_MEMORY_MS > 1000 && POINTER_MEMORY_MS < 6000, "the pointer memory is not a few seconds");
-  assert.match(DOCK, /now - pointerAtRef\.current < POINTER_MEMORY_MS/, "a stopped pointer holds the gaze again");
-  assert.match(DOCK, /const watching = anchor \? document\.querySelector\(anchor\) : null;/, "the composer stopped being the fallback");
-  assert.match(DOCK, /aimTo\(\{ x: box\.left \+ box\.width \/ 2 \+ glance\.x/, "the resting gaze stopped landing on the composer");
+  assert.match(DOCK, /pointerAgeMs: now - pointerAtRef\.current/, "the dock stopped telling gazeTarget how stale the pointer is");
+  assert.match(DOCK, /const el = anchor \? document\.querySelector\(anchor\) : null;/, "the composer stopped being measured as the fallback");
+  assert.match(DOCK, /resting: restingBox/, "the resting gaze stopped landing on the composer");
 });
 
 test("the dock does not re-render eight times a second to follow something that has not moved", () => {
@@ -145,4 +153,85 @@ test("the dock does not re-render eight times a second to follow something that 
   assert.match(DOCK, /const AIM_SETTLED_PX = 1;/);
   assert.match(DOCK, /Math\.abs\(was\.x - next\.x\) < AIM_SETTLED_PX/);
   assert.match(DOCK, /return was;/);
+});
+
+// ── What the character looks at, and in what order ───────────────────────────
+//
+// Owner, 2026-08-26: *"the mascot is not following the mouse at all. And in the app, it should
+// follow the mouse … but also have moments where it does its own animations and expressions."*
+//
+// 🔴 THE CAUSE WAS A PRECEDENCE, NOT A BROKEN TRACKER. `resolveAttention` of an explicit `lookAt()`
+// and `resolveAttention` of the FOCUSED ELEMENT were one value, checked above the pointer — so any
+// focused field beat a moving cursor, for ever. The canvas's composer keeps focus after every send.
+//
+// Measured on the real component before the fix, averaging the drawn eye centres over 60 frames:
+// with a field focused the gaze read **+58.9 with the pointer far LEFT and +58.4 far RIGHT**;
+// with nothing focused the same sweep ran **-56.9 to +56.2**. After: **-57.2 to +56.0** focused.
+
+const HERE = { x: 100, y: 100 };
+const THERE = { x: 900, y: 400 };
+const COMPOSER = { x: 500, y: 800 };
+
+test("🔴🔴 a moving pointer beats a focused text field — the report this rule was written for", () => {
+  assert.equal(
+    gazeTarget({ declared: null, focused: HERE, resting: COMPOSER, pointerAgeMs: 0, working: null }),
+    null,
+    "a focused field still freezes the gaze; the character will not follow the mouse",
+  );
+});
+
+test("🔴 an explicit lookAt() still beats the pointer, because a surface asked", () => {
+  // The one thing that outranks the cursor: Nemesis pointing at something it just drew.
+  assert.deepEqual(
+    gazeTarget({ declared: THERE, focused: HERE, resting: COMPOSER, pointerAgeMs: 0, working: null }),
+    THERE,
+  );
+});
+
+test("🔴 working outranks the pointer too, but not a declared target", () => {
+  // Thinking eyes search, they do not follow (owner 2026-08-25).
+  const sweep = { x: 300, y: 200 };
+  assert.deepEqual(
+    gazeTarget({ declared: null, focused: HERE, resting: COMPOSER, pointerAgeMs: 0, working: sweep }),
+    sweep,
+  );
+  assert.deepEqual(
+    gazeTarget({ declared: THERE, focused: null, resting: COMPOSER, pointerAgeMs: 0, working: sweep }),
+    THERE,
+    "a drawing Nemesis just made lost to its own thinking sweep",
+  );
+});
+
+test("a pointer that has stopped rests on the focused field, then on the composer", () => {
+  const still = POINTER_MEMORY_MS + 1;
+  assert.deepEqual(
+    gazeTarget({ declared: null, focused: HERE, resting: COMPOSER, pointerAgeMs: still, working: null }),
+    HERE,
+    "a focused field is not merely demoted, it is dropped",
+  );
+  assert.deepEqual(
+    gazeTarget({ declared: null, focused: null, resting: COMPOSER, pointerAgeMs: still, working: null }),
+    COMPOSER,
+  );
+});
+
+test("a pointer that has never moved does not leave the character staring ahead", () => {
+  // Touch devices, and a page opened without the mouse being touched. Before the composer
+  // fall-back existed the head released to `turn = 0`, which is the authored three-quarter pose —
+  // so the commonest state was the one that looked away. See the note at the top of this file.
+  assert.deepEqual(
+    gazeTarget({ declared: null, focused: null, resting: COMPOSER, pointerAgeMs: Infinity, working: null }),
+    COMPOSER,
+  );
+  assert.equal(
+    gazeTarget({ declared: null, focused: null, resting: null, pointerAgeMs: Infinity, working: null }),
+    null,
+    "with nothing to rest on, the honest answer is to hand the pointer back",
+  );
+});
+
+test("🔴 the boundary is POINTER_MEMORY_MS exactly, and it is inclusive of 'still moving'", () => {
+  const args = { declared: null, focused: HERE, resting: COMPOSER, working: null } as const;
+  assert.equal(gazeTarget({ ...args, pointerAgeMs: POINTER_MEMORY_MS - 1 }), null, "still counts as moving");
+  assert.deepEqual(gazeTarget({ ...args, pointerAgeMs: POINTER_MEMORY_MS }), HERE, "the memory never expires");
 });

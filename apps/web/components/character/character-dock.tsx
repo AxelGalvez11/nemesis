@@ -35,7 +35,7 @@ import { ThinkingMark } from "./thinking-mark";
 import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
 import { speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
-import { POINTER_MEMORY_MS, glanceOffset } from "@/lib/character/gaze";
+import { gazeTarget, glanceOffset } from "@/lib/character/gaze";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { placeAbove, placeBeside, placeUnder } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
@@ -626,54 +626,65 @@ export function CharacterDock({
       // The glance rides on TOP of whatever is being watched, so the character looks away from the
       // composer and back to the composer rather than away from and back to a fixed direction.
       const glance = glanceOffset(now, size);
-      const claimed =
-        resolveAttention(targetRef.current) ??
-        (focusedRef.current ? resolveAttention({ kind: "element", el: focusedRef.current }) : null);
-      // 🔴 THINKING EYES SEARCH, THEY DO NOT FOLLOW (owner 2026-08-25: working must not be
-      // "just staring"). At the middle, with nothing explicitly claiming the gaze, the eyes
-      // drift on two slow, unsynchronised arcs — mostly upward, the way anyone's do when
-      // recalling — rather than falling through to the pointer.
+      // 🔴🔴 TWO KINDS OF "SOMETHING ELSE IS WORTH WATCHING", AND MERGING THEM STOPPED THE
+      // CHARACTER FOLLOWING THE MOUSE AT ALL (owner 2026-08-26: *"the mascot is not following the
+      // mouse at all"*).
       //
-      // 🔴 THE ARCS ARE UNCHANGED AND THEY NOW MEAN SOMETHING DIFFERENT, which is the point. They
-      // are ±1.6 character-widths, and the avatar normalises an aim against 2.5 widths, so this
-      // sweep is ±16.6° of yaw. It used to be added to `curious`'s own 16° and so ran from level
-      // to 33° off — a sweep that spent its whole time on one side and reached far enough round to
-      // read as looking away. Levelled (`facing="forward"` below) the identical arithmetic swings
-      // ±16.6° AROUND FORWARD, which is what "searching" was always supposed to look like.
-      if (!claimed && stationRef.current === "centre" && hostRef.current) {
+      //   declared  the surface called `lookAt()` — "attend to THIS", a drawing it just made, a
+      //             question it is asking. Deliberate, rare, and it still outranks everything.
+      //   focused   a field the learner happens to have clicked into. Nobody declared anything;
+      //             it is a guess about where they are looking.
+      //
+      // These were one value and it was checked ABOVE the pointer, so a focused field beat a
+      // moving cursor — permanently. On the canvas the composer keeps focus after every send, so
+      // the character stared at the composer for the rest of the session and the mouse did
+      // nothing. Measured: with a field focused the averaged gaze reads +58.9 with the pointer far
+      // LEFT and +58.4 with it far RIGHT; unfocused the same sweep runs -56.9 to +56.2.
+      //
+      // 🔴 A FOCUSED FIELD IS NOT DELETED, IT IS DEMOTED. It is a better resting target than the
+      // composer when the learner is typing somewhere else, so it takes the composer's place in
+      // the fall-back below rather than losing its turn.
+      const declared = resolveAttention(targetRef.current);
+      const focused = focusedRef.current ? resolveAttention({ kind: "element", el: focusedRef.current }) : null;
+      // 🔴 THE ORDER LIVES IN `gazeTarget`, NOT HERE. Everything this block does now is MEASURE —
+      // where the composer is, where the focused field is, where the searching sweep is up to —
+      // and hand those four facts to one pure function. The precedence used to be a run of early
+      // returns in this interval, which is why "does a moving mouse beat a focused text box?" was
+      // unanswerable without opening a browser, and why the answer was wrong for weeks.
+      const restingBox = (() => {
+        const el = anchor ? document.querySelector(anchor) : null;
+        const box = el?.getBoundingClientRect();
+        if (!box || box.height === 0) return null;
+        return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      })();
+      // 🔴 THE ARCS ARE UNCHANGED AND THEY MEAN SOMETHING DIFFERENT LEVELLED, which is the point.
+      // They are ±1.6 character-widths, and the avatar normalises an aim against 2.5 widths, so
+      // this sweep is ±16.6° of yaw. Added to `curious`'s own 16° it used to run from level to 33°
+      // off — a sweep that spent its whole time on one side. Levelled (`facing="forward"`) the
+      // identical arithmetic swings ±16.6° AROUND FORWARD, which is what "searching" always meant.
+      // 🔴 THINKING EYES SEARCH, THEY DO NOT FOLLOW (owner 2026-08-25: working must not be "just
+      // staring"). At the middle the eyes drift on two slow, unsynchronised arcs, mostly upward,
+      // the way anyone's do when recalling, rather than falling through to the pointer.
+      const workingBox = (() => {
+        if (stationRef.current !== "centre" || !hostRef.current) return null;
         const r = hostRef.current.getBoundingClientRect();
-        aimTo({
+        return {
           x: r.left + r.width / 2 + Math.sin(now / 1700) * r.width * 1.6,
           y: r.top + r.height / 2 - r.height * 0.9 + Math.sin(now / 1150) * r.height * 0.55,
-        });
-        return;
-      }
-      if (claimed) {
-        aimTo({ x: claimed.x + glance.x, y: claimed.y + glance.y });
-        return;
-      }
-      // 🔴🔴 NOTHING HAS CLAIMED THE GAZE, AND THIS IS THE BRANCH THE OWNER WAS LOOKING AT. It used
-      // to hand straight back to the pointer — and the avatar releases the head to `turn = 0` as
-      // soon as the pointer stops crossing the window, which meant the authored three-quarter pose.
-      // So the commonest state on this surface, a learner reading with their hand off the mouse,
-      // was also the one state where the character stared away from the page.
-      //
-      // Now: a pointer that is genuinely moving still wins, because following the cursor is alive
-      // and the learner is plainly the thing worth watching. A pointer that has been still for a
-      // few seconds stops counting, and the gaze falls to the composer — `anchor` is already the
-      // composer's selector, measured every tick by the placement effect above, so there is no
-      // second idea of where the composer is to keep in step.
-      if (now - pointerAtRef.current < POINTER_MEMORY_MS) {
-        aimTo(null);
-        return;
-      }
-      const watching = anchor ? document.querySelector(anchor) : null;
-      const box = watching?.getBoundingClientRect();
-      if (!box || box.height === 0) {
-        aimTo(null);
-        return;
-      }
-      aimTo({ x: box.left + box.width / 2 + glance.x, y: box.top + box.height / 2 + glance.y });
+        };
+      })();
+      const want = gazeTarget({
+        declared,
+        focused,
+        resting: restingBox,
+        pointerAgeMs: now - pointerAtRef.current,
+        working: workingBox,
+      });
+      // 🔴 THE GLANCE RIDES ON TOP OF WHATEVER IS BEING WATCHED, so the character looks away from
+      // the composer and back to the composer rather than away from and back to a fixed direction.
+      // 🔴 AND NEVER ON TOP OF THE SEARCHING SWEEP, which is already a wander of its own — two
+      // wanders on one head is a head that cannot decide.
+      aimTo(want && !workingBox ? { x: want.x + glance.x, y: want.y + glance.y } : want);
     }, MEASURE_MS);
 
     return () => {

@@ -118,21 +118,38 @@
  * and draws nothing that is not the body. Origin sits at the visual centre of mass.
  */
 .character-spin {
-  animation: character-spin var(--character-spin-ms, 760ms) cubic-bezier(0.3, 0.05, 0.22, 1) both;
-  transform-origin: 50% 55%;
+  animation: character-spin var(--character-spin-ms, 520ms) cubic-bezier(0.4, 0.05, 0.2, 1) both;
+  /* 🔴 50% 50%, AND IT WAS 55%. Turning about a point below the body's centre swings the body
+     through a small arc as well as rotating it — a third source of the reported wobble, and the
+     one that is invisible in the keyframes because it is not in them. Harmless on a ball; on a
+     squircle the corners trace the arc and you can see it. */
+  transform-origin: 50% 50%;
   will-change: transform;
 }
 
+/* 🔴🔴 ONE CLEAN TURN, AND EVERY OTHER KEYFRAME WAS REMOVED ON REPORT (owner 2026-08-26: *"make
+   sure it's quick once clicked on because there's, like, a pause and slow turn when he's about to
+   spin. And it looks like he's wobbling as he does it. I want it to be smooth."*).
+   Both complaints were literally in the keyframes, and both were deliberate craft that stopped
+   working the day the body became a squircle:
+
+     the pause    a wind-up at 12% that rotated -16deg — the character genuinely turned BACKWARDS
+                  for the first ninety milliseconds. On a ball that reads as weight gathering.
+                  On a shape with corners it reads as hesitating, because you can SEE the corners
+                  go the wrong way first.
+     the wobble   two things at once. A scale that ran 1 → 0.95 → 0.97 → 1.03 → 1, and an
+                  OVERSHOOT to 372deg at 88% before settling back to 360. A squircle overshooting
+                  its own heading and coming back is a visible rock; a ball doing it is invisible.
+
+   🔴 SO THE SILHOUETTE IS WHY THIS CHANGED, NOT TASTE. Every one of those beats was tuned against
+   a body whose outline is identical at every angle. Do not restore them without re-watching them
+   on the squircle.
+
+   What is left is 0 to 360 and nothing else: no counter-turn, no overshoot, no scale. The ends are
+   the same heading, so nothing snaps. 760ms → 520ms, because "quick" was the other half. */
 @keyframes character-spin {
-  0% { transform: rotate(0deg) scale(1); }
-  /* The wind-up: a small counter-lean before committing, like any turn with weight in it. */
-  12% { transform: rotate(-16deg) scale(0.95); }
-  /* The turn itself, slightly narrowed by speed. */
-  62% { transform: rotate(300deg) scale(0.97); }
-  /* Overshoot… */
-  88% { transform: rotate(372deg) scale(1.03); }
-  /* …and settle. 360 and 0 are the same heading, so nothing snaps at the end. */
-  100% { transform: rotate(360deg) scale(1); }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* 🔴 THERE IS NO `.character-mark` HERE ANY MORE (owner 2026-08-26: "remove the random question
