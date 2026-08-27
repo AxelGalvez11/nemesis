@@ -40,9 +40,27 @@ const MAX_BAR = 41;
 /** Height of a dot in the not-yet-spoken run. */
 const IDLE_BAR = 3;
 
+/**
+ * How far the strip travels per sample: a 3px bar plus the 3px gap beside it.
+ *
+ * 🔴 IT IS THE ANIMATION'S DISTANCE, NOT A LAYOUT VALUE, AND IT MUST MATCH THE MARKUP. The bars are
+ * `w-[3px]` in a `gap-[3px]` row; if either changes, the glide below travels the wrong distance and
+ * the strip visibly slips backwards on every tick.
+ */
+const BAR_PITCH = 6;
+
 export function CanvasVoiceBars({ live }: { live: boolean }) {
-  const [samples, setSamples] = useState<number[]>([]);
+  const [samples, setSamples] = useState<{ height: number; id: number }[]>([]);
   const track = useRef<HTMLDivElement>(null);
+  /**
+   * 🔴 A MONOTONIC ID PER BAR, BECAUSE THE INDEX IS NOT AN IDENTITY HERE AND THAT WAS HALF THE
+   * "LAGGY". `samples` is a sliding window (`.slice(-capacity)`), so once it is full every bar's
+   * index shifts by one on every tick — and with `key={index}` React kept the same DOM nodes and
+   * REWROTE all sixty-odd heights each time. The strip did not move; it morphed, sixty inline
+   * styles at a time, ten times a second. With a stable id React does the one thing that actually
+   * happened: append a node, drop a node.
+   */
+  const nextId = useRef(0);
   const [capacity, setCapacity] = useState(64);
   // Smoothed across ticks: raw RMS jitters hard enough to read as flicker rather than speech.
   const smoothed = useRef(0);
@@ -87,13 +105,59 @@ export function CanvasVoiceBars({ live }: { live: boolean }) {
       const height = heard.current
         ? Math.round(MIN_BAR + Math.min(1, smoothed.current) * (MAX_BAR - MIN_BAR))
         : IDLE_BAR;
-      setSamples((current) => [...current, height].slice(-capacity));
+      setSamples((current) => [...current, { height, id: nextId.current++ }].slice(-capacity));
     }, SAMPLE_MS);
     return () => {
       stop();
       window.clearInterval(timer);
     };
   }, [live, capacity]);
+
+  /**
+   * 🔴🔴 THE STRIP GLIDES BETWEEN SAMPLES INSTEAD OF JUMPING A WHOLE BAR — owner, 2026-08-26: *"the
+   * dictation waveform is at a higher frames per second because right now it just feels not smooth
+   * and laggy."*
+   *
+   * 🔴 AND THE SAMPLING CADENCE IS UNTOUCHED, DELIBERATELY. Earlier the SAME DAY he asked for the
+   * opposite-sounding thing — *"the dictation animation needs to be a little bit slower… a bit too
+   * fast right now"* — and `SAMPLE_MS = 100` plus the re-derived 0.395/0.605 blend are pinned by
+   * `canvas-voice-bars.test.ts`. Both asks are satisfiable at once because they are about different
+   * things: how often the strip LEARNS something (10Hz, a measured integration window) versus how
+   * often it PAINTS (the display's own refresh). Raising the sample rate to smooth the motion would
+   * have quietly undone the earlier instruction; this does not touch it.
+   *
+   * How: each new bar is appended with the track pushed one pitch to the right and no transition,
+   * then released to zero on the next frame over exactly one sample period, linearly. The content
+   * shift and the animation are equal and opposite, so the strip travels at a constant 60px/s
+   * instead of standing still for 100ms and then teleporting 6px.
+   *
+   * 🔴 `transform`, NOT `margin` OR `left` — it composites on the GPU and never triggers layout,
+   * which matters on a strip that is animating while a microphone, a recogniser and the composer
+   * are all live.
+   */
+  const shift = useRef<HTMLDivElement>(null);
+  /** The pending rAF, so a re-render mid-glide cannot leave two of them fighting. */
+  const frame = useRef(0);
+  useEffect(() => {
+    const el = shift.current;
+    if (!el || !live || samples.length === 0) return;
+    // 🔴 SOMEBODY WHO ASKED THE SYSTEM TO STOP MOVING STILL HAS TO SEE THAT IT IS LISTENING, so the
+    // bars stay and only the glide is dropped. `globals.css` makes the same trade for `.canvas-forming`.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.style.transition = "none";
+    el.style.transform = `translate3d(${BAR_PITCH}px, 0, 0)`;
+    // Two frames: one to commit the un-transitioned offset, one to animate away from it. A single
+    // rAF is sometimes coalesced with the style write and the transition never runs.
+    const outer = requestAnimationFrame(() => {
+      const inner = requestAnimationFrame(() => {
+        el.style.transition = `transform ${SAMPLE_MS}ms linear`;
+        el.style.transform = "translate3d(0, 0, 0)";
+      });
+      frame.current = inner;
+    });
+    frame.current = outer;
+    return () => cancelAnimationFrame(frame.current);
+  }, [live, samples]);
 
   // The strip fills from the right, so the not-yet-recorded head reads as the quiet dots the
   // reference shows before speech starts.
@@ -105,20 +169,25 @@ export function CanvasVoiceBars({ live }: { live: boolean }) {
       className="flex h-[41px] min-w-0 flex-1 items-center justify-start gap-[3px] overflow-hidden"
       ref={track}
     >
-      {Array.from({ length: pad }, (_, index) => (
-        <span
-          className="w-[3px] shrink-0 rounded-full bg-(--ui-text-quaternary)"
-          key={`idle-${index}`}
-          style={{ height: `${IDLE_BAR}px` }}
-        />
-      ))}
-      {samples.map((height, index) => (
-        <span
-          className="w-[3px] shrink-0 rounded-full bg-(--ui-text-tertiary)"
-          key={`bar-${index}`}
-          style={{ height: `${height}px` }}
-        />
-      ))}
+      <div
+        className="flex min-w-0 items-center gap-[3px] will-change-transform"
+        ref={shift}
+      >
+        {Array.from({ length: pad }, (_, index) => (
+          <span
+            className="w-[3px] shrink-0 rounded-full bg-(--ui-text-quaternary)"
+            key={`idle-${index}`}
+            style={{ height: `${IDLE_BAR}px` }}
+          />
+        ))}
+        {samples.map((sample) => (
+          <span
+            className="w-[3px] shrink-0 rounded-full bg-(--ui-text-tertiary)"
+            key={sample.id}
+            style={{ height: `${sample.height}px` }}
+          />
+        ))}
+      </div>
     </div>
   );
 }
