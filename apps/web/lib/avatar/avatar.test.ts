@@ -563,8 +563,17 @@ test("🔴 sparks are addressed from the start of the loop, not from the clock",
   const later = playedFaceAt("burst", total * 4 + 300)!.face.dots ?? [];
   assert.ok(first.length > 0, "the scatter never scattered");
   assert.deepEqual(later, first);
-  // They are behind the body, which is what makes it read as gathering rather than blowing up.
-  assert.ok(first.every((d) => d.behind), "the sparks flew over the body");
+  // 🔴🔴 REPOINTED 2026-08-27, AND THE OLD ASSERTION WAS TRUE OF CODE THAT DREW NOTHING. It pinned
+  // `behind: true` on the reasoning that passing behind the body is what makes a scatter read as
+  // GATHERING rather than blowing up. The reasoning is right and the mechanism was wrong: measured
+  // over the whole animation, a spark never once leaves the body's own silhouette, so "behind an
+  // opaque body" is the same as "not drawn". The owner had never seen a spark.
+  //
+  // What carries "gathering" now is the reference's own device, which this port had dropped: each
+  // spark is painted `mixHex(paper, ink, depth)`, so it starts pale on the dark body and DARKENS
+  // into the ink as it falls to the core. Same read, and visible. See `sparks.test.ts`.
+  assert.ok(first.every((d) => d.depth !== undefined), "a spark lost its depth, so it is painted flat ink");
+  assert.ok(first.every((d) => !d.behind), "the sparks are behind the body again, where nothing can see them");
   // And a plan at no strength is no dots at all, which is what makes the plan blendable.
   assert.deepEqual(sparkDots({ ...FACE_BY_ID.get("burstIn")!.sparks!, amount: 0 }, 300), []);
 });

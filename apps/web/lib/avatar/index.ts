@@ -28,6 +28,7 @@ export {
   type PlayOptions,
 } from "./play";
 export {
+  MAX_SPARKS,
   REST_BODY,
   SHUT_HEIGHT,
   VIEW_BOX,
@@ -43,6 +44,7 @@ export {
   RADIUS,
   faceToSkin,
   frontOfSkin,
+  mixHex,
   project,
   quatFromTurn,
   rotate,

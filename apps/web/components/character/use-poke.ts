@@ -78,6 +78,25 @@ export const SPIN_MS = 520;
 export const SIGMA_MS = 1600;
 
 /**
+ * How long a burst is held for, which is NOT the same as how long `burst` lasts.
+ *
+ * 🔴🔴 THE CATALOGUE'S DURATION IS THE LOOP, AND A POKE WANTS ONE PASS. `animationDuration("burst")`
+ * is 2600ms — the sum of every step — and holding for that plays the collapse **twice**: measured
+ * frame by frame, the body radius runs 140 → 23 at 577ms → back to 140 by 1376ms → and is already
+ * down at 102 again by 1776ms. The second collapse has no cause a learner can name, so it reads as
+ * the character glitching rather than reacting.
+ *
+ * 1500ms is one clean pass with a beat at full size on the end. Measured, not guessed, and
+ * `character.test.ts` pins it inside one cycle so a future retiming cannot quietly restore the
+ * double.
+ *
+ * 🔴 THIS IS WHY `passMs` IS NOT USED HERE, AND `passMs` IS STILL RIGHT FOR EVERYTHING ELSE: the
+ * expressions are single held poses whose published duration IS one pass. `burst` is the first
+ * scheduled thing that loops.
+ */
+export const BURST_MS = 1500;
+
+/**
  * How long one pass of an engine animation takes, read from the catalogue.
  *
  * 🔴 ASKED, NOT WRITTEN DOWN. A hold typed in here would be a second copy of a duration that
@@ -100,34 +119,29 @@ function passMs(id: string, fallback: number): number {
  * `wink` is the opposite case — entirely a face — and `sigma` is a face from OUR layer.
  */
 const REACTIONS: readonly Reaction[] = [
-  // 🔴🔴 ONE REACTION, AND THE LIST IS NOW A LIST OF ONE (owner 2026-08-26: *"clicking on the
-  // mascot should just make him jump or do burst animation"*, then *"or spin"*, then *"when
-  // clickin on mascot"*). Three options offered; the cycling is what he was actually cutting.
+  // 🔴🔴 ONE REACTION, AND THE LIST IS A LIST OF ONE (owner 2026-08-26: *"clicking on the mascot
+  // should just make him jump or do burst animation"*, then *"or spin"*). The cycling is what he
+  // was cutting: repeated clicks used to run jump → wink → surprised → laughing → curious, so the
+  // answer to "what happens when I poke it" was five different things depending on how many times
+  // you had poked it before.
   //
-  // 🔴 SPIN, AND HERE IS THE REASONING SO IT CAN BE ARGUED WITH RATHER THAN GUESSED AT:
+  // 🔴 BURST, AND IT IS A REVERSAL HE MADE HIMSELF, TWICE. `burst` is the vendored routine that
+  // collapses the body to a sixth of its size, throws five sparks off it and pulls itself back
+  // together. It was cut on 2026-08-23 (*"I don't want any rainbow swirls or animations from the
+  // GitHub that we used"*) and again by the shape rule. Then, 2026-08-26: *"clicking on the mascot
+  // should just make him jump or do burst animation"*, and, naming it in a list of what he wants
+  // back: *"bloub has nice animations called burst, sleep, thinking, i want those"*. Asked for by
+  // name twice in one evening beats a general rule written three days earlier.
   //
-  //   burst  breaks two standing rules at once. It is the vendored routine that collapses the
-  //          body and sprays particles — every vendored loading effect was cut by name on
-  //          2026-08-23 (*"I don't want any rainbow swirls or animations from the GitHub that we
-  //          used"*) — and the body is one shape that does not morph (`lib/character/body.ts`,
-  //          and the site's rule in `landing/lib/character/body.ts`).
-  //   jump   breaks nothing and was the first reaction already. Small, quick, easy to miss.
-  //   spin   breaks nothing either: a rotated squircle is the SAME silhouette at a different
-  //          heading, not a different shape, and the keyframes land back on 0. It is the most
-  //          visible of the three, and — the tiebreak — **poking the character on the marketing
-  //          site already spins it**. One creature, one reaction to being poked, both places.
+  // 🔴 AND IT DOES NOT ACTUALLY BREAK THE SHAPE RULE, WHICH IS WORTH KNOWING BEFORE SOMEBODY
+  // "RESTORES" IT. `burstIn` carries `body({ scale })` and no `profile`, so the silhouette is
+  // SCALED, not reshaped: a small squircle, not a ball. The rule is that the body does not become
+  // a different shape, and it does not. `body.test.ts` checks exactly that and stays green.
   //
-  // 🔴 IT LOOKS DIFFERENT NOW THAN IT DID, AND THAT IS WHY IT WAS LOOKED AT RATHER THAN ASSUMED.
-  // `.character-spin` is a CSS `rotate()` on the wrapper. On a ball that was invisible except for
-  // the eyes going round; on the squircle the corners tumble, and it reads as a small cube turning
-  // over. Rendered and checked before choosing it, because "spin" meant something else yesterday.
-  //
-  // 🔴 THE OTHER FOUR ARE UNSCHEDULED, NOT DELETED — the same treatment this file already gives
-  // the waggle and the sigma face. They are measured off the reference and still in the catalogue;
-  // putting one back is one row. What went is the WALK: repeated clicks used to run jump → wink →
-  // surprised → laughing → curious, so the answer to "what happens when I poke it" was five
-  // different things depending on how many times you had poked it before.
-  { state: "idle", motion: "spin", face: null, hold: SPIN_MS },
+  // 🔴 THE SPIN GOES BACK IN THE DRAWER, NOT IN THE BIN. It was the click for a few hours this
+  // evening and its smoothing (no wind-up, no overshoot, no scale, centred origin) is real work
+  // that stays in `character.css`. One row is all it costs to put back.
+  { state: "burst", motion: null, face: null, hold: BURST_MS },
 ];
 
 export function usePoke(base: StateId): {

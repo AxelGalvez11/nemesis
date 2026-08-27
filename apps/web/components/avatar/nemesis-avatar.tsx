@@ -38,7 +38,9 @@ import {
   VIEW_SIZE,
   animationDuration,
   createPlayhead,
+  MAX_SPARKS,
   drawFace,
+  mixHex,
   eyeFrames,
   type Avatar,
   type AvatarFrame,
@@ -162,9 +164,28 @@ export interface NemesisAvatarProps {
    * parked above a composer that appears many times a session.
    */
   entrance?: boolean;
-  /** Click to poke. Plays `pokeAnimation` once through, then returns to `animation`. */
+  /** Click to poke. */
   onPoke?: () => void;
-  pokeAnimation?: string;
+  /**
+   * An animation this component plays itself on a poke, once through.
+   *
+   * 🔴🔴 OFF BY DEFAULT SINCE 2026-08-26, AND IT USED TO DEFAULT TO `"surprised"` — WHICH IS WHY
+   * THE OWNER KEPT SEEING WIDE EYES ON A CLICK (*"it still has the wide eyes when clicked on"*).
+   *
+   * There are TWO poke mechanisms and nobody had reconciled them. The surface decides what a click
+   * does through `usePoke`, which hands back a `state` and a `motion`; this one is internal to the
+   * renderer and overrode the animation for its own duration. Both fired on the same click. So
+   * whatever `usePoke` had been carefully set to — a hop, a spin, a burst — the renderer played
+   * `surprised` over the top of it, and `surprised` is the widest face in the set: eyes 0.45 x 0.47
+   * against `neutral`'s 0.186 x 0.412, about two and a half times the area.
+   *
+   * Cutting the reaction list to one thing did not help, and could not have: the second mechanism
+   * was never reading that list.
+   *
+   * 🔴 THE DEFAULT IS THE FIX, NOT A CALLER PASSING `null`. A caller who forgets is exactly how
+   * this survived; absent has to mean nothing happens.
+   */
+  pokeAnimation?: string | null;
   /** Run the brow waggle once. Scene-clocked, so it slows with `speed` and pauses with it. */
   waggle?: boolean;
   /** A face from OUR layer — reading glasses, the sigma. Omitted is the plain face. */
@@ -201,7 +222,7 @@ export function NemesisAvatar({
   silhouette = null,
   entrance = false,
   onPoke,
-  pokeAnimation = "surprised",
+  pokeAnimation = null,
   waggle = false,
   face = null,
   reducedMotion,
@@ -224,6 +245,8 @@ export function NemesisAvatar({
   const bridgeRef = useRef<SVGPathElement | null>(null);
   const mouthRef = useRef<SVGPathElement | null>(null);
   const frontRef = useRef<SVGPathElement | null>(null);
+  /** One node per possible spark, made once. See `MAX_SPARKS` and `Dot.depth`. */
+  const sparkRefs = useRef<Array<SVGPathElement | null>>([]);
   const backRef = useRef<SVGPathElement | null>(null);
 
   // Read inside the frame loop rather than closed over, so changing an animation or a
@@ -260,7 +283,9 @@ export function NemesisAvatar({
 
   const fire = useCallback(() => {
     if (!onPoke) return;
-    poke.current = { id: pokeAnimation, at: 0 };
+    // Only when the caller asked for one. See `pokeAnimation`: the default used to be a face, and
+    // it played on top of whatever the surface's own `usePoke` had chosen.
+    if (pokeAnimation) poke.current = { id: pokeAnimation, at: 0 };
     onPoke();
   }, [onPoke, pokeAnimation]);
 
@@ -310,6 +335,22 @@ export function NemesisAvatar({
       inkRectRef.current?.setAttribute("fill", inkHex);
       frontRef.current?.setAttribute("d", f.dots);
       frontRef.current?.setAttribute("fill", inkHex);
+      // 🔴 ONE FILL PER SPARK, MIXED BETWEEN THE PAPER AND THE INK BY ITS DEPTH. That ramp IS the
+      // effect: a spark just thrown off is nearly paper and reads as a bright speck on the dark
+      // body, and one that has spiralled into the core is ink and has been swallowed. Painted in
+      // ink like the rest of the decor — which is what this port did — five sparks that never
+      // leave the body's own silhouette are five invisible dots.
+      for (let i = 0; i < MAX_SPARKS; i += 1) {
+        const node = sparkRefs.current[i];
+        if (!node) continue;
+        const spark = f.sparks[i];
+        if (!spark) {
+          node.setAttribute("d", "");
+          continue;
+        }
+        node.setAttribute("d", spark.d);
+        node.setAttribute("fill", mixHex(paperHex, inkHex, spark.depth));
+      }
       backRef.current?.setAttribute("d", f.dotsBehind);
       backRef.current?.setAttribute("fill", inkHex);
 
@@ -713,6 +754,17 @@ export function NemesisAvatar({
           fixed blue; here the character IS the learner's accent, and a second colour they did
           not choose arguing with the one they did is what that rule exists to stop. */}
       <path ref={frontRef} d="" />
+      {/* The scatter. In FRONT of the body, because that is the only place they are ever visible:
+          measured, a spark never once leaves the body's own silhouette during the whole animation. */}
+      {Array.from({ length: MAX_SPARKS }, (_unused, i) => (
+        <path
+          key={`spark-${i}`}
+          ref={(el) => {
+            sparkRefs.current[i] = el;
+          }}
+          d=""
+        />
+      ))}
 
       <g
         ref={specsRef}

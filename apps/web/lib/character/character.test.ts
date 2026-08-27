@@ -229,6 +229,9 @@ test("🔴 there is exactly ONE thing that turns the engine into pixels", async 
     // because a silhouette that is wired up but never reaches the picture draws a perfectly good
     // ball and nothing complains. No DOM, which is the line this guard actually draws.
     "lib/character/body.test.ts",
+    // Draws frames and reads their `sparks` — the scatter is only checkable off real frame data,
+    // because the bug it guards was an effect the engine computed and no renderer could show.
+    "lib/avatar/sparks.test.ts",
     "scripts/avatar-sheet.mts",
     "scripts/character-faces.mts",
   ];
@@ -354,7 +357,43 @@ test("🔴 a click reaches the character", async () => {
   assert.match(poke, /const REACTIONS: readonly Reaction\[\] = \[[\s\S]*?\n\];/, "REACTIONS is not a list any more");
   const rows = (poke.match(/^\s*\{ state: "/gm) ?? []).length;
   assert.equal(rows, 1, `a poke draws ${rows} different things again; the owner asked for one`);
-  assert.match(poke, /motion: "spin"/, "the one reaction is no longer the spin");
+  // 🔴 THE CHOICE MOVED AGAIN THE SAME EVENING AND THE INVARIANT DID NOT. Spin for a few hours,
+  // then `burst` — which the owner named twice: *"just make him jump or do burst animation"* and
+  // *"bloub has nice animations called burst, sleep, thinking, i want those"*. What is pinned above
+  // is the COUNT; this line only says which one, so the next reversal is one string.
+  assert.match(poke, /state: "burst"/, "the one reaction is no longer the burst");
+
+  // 🔴🔴🔴 THERE IS EXACTLY ONE THING THAT DECIDES WHAT A CLICK DRAWS, AND FOR MONTHS THERE WERE
+  // TWO. `NemesisAvatar` has its own poke: a `pokeAnimation` prop that overrode the animation for
+  // its own duration, defaulting to `"surprised"` — the widest face in the set, eyes 0.45 x 0.47
+  // against `neutral`'s 0.186 x 0.412, about two and a half times the area. The dock passes
+  // `onPoke` and no `pokeAnimation`, so BOTH fired on every click and the renderer's default was
+  // painted over whatever `usePoke` had been carefully set to.
+  //
+  // Owner, 2026-08-26, after the reaction list had already been cut to one thing: *"it still has
+  // the wide eyes when clicked on"*. Cutting the list could not have helped — the second mechanism
+  // was never reading it.
+  //
+  // 🔴 CALIBRATION MATTERS HERE MORE THAN ANYWHERE ELSE IN THIS FILE. Every other guard around the
+  // poke was green while this bug was live, because they all read `use-poke.ts` and the bug was in
+  // the renderer. Put the default back and this reddens; nothing else does.
+  const avatar = await rf(new URL("../../components/avatar/nemesis-avatar.tsx", import.meta.url), "utf8");
+  assert.match(avatar, /^\s*pokeAnimation = null,$/m, "the renderer plays a face of its own on a click again, over the surface's");
+  assert.match(avatar, /if \(pokeAnimation\) poke\.current =/, "the renderer fires its own poke unconditionally again");
+
+  // 🔴🔴 ONE PASS, NOT ONE LOOP. `burst` loops, and holding it for its own published duration
+  // (2600ms) plays the collapse TWICE — measured: radius 140 → 23 at 577ms → 140 by 1376ms → 102
+  // again by 1776ms. A second collapse with no cause reads as a glitch, not a reaction.
+  const { animationDuration: dur, ANIMATION_BY_ID: byId } = await import("../avatar");
+  const burstMs = Number(poke.match(/export const BURST_MS = (\d+);/)?.[1]);
+  const loopMs = dur(byId.get("burst")!);
+  assert.ok(burstMs > 0 && burstMs < loopMs, `the burst is held ${burstMs}ms of a ${loopMs}ms loop — it will collapse twice`);
+  assert.ok(burstMs > loopMs / 2, `the burst is held ${burstMs}ms and will be cut before it comes back`);
+
+  // 🔴 THE SPIN IS PARKED, NOT DELETED, AND ITS SMOOTHING STAYS GUARDED BELOW. It was the click for
+  // a few hours on 2026-08-26 and the work that made it smooth (no wind-up, no overshoot, no scale,
+  // centred origin) is real and cheap to keep. The assertions that follow still hold whether or not
+  // anything schedules it — which is the point of keeping them.
 
   // 🔴 THE HOLD AND THE ANIMATION ARE TWO COPIES OF ONE DURATION, in two languages, and nothing
   // else can notice when they part company: the character either stops mid-turn (hold shorter) or
