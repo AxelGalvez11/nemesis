@@ -43,6 +43,8 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
+import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
+
 import { cn } from "@/lib/utils";
 
 import type { CanvasHistoryEntry } from "@/lib/learn/canvas-history";
@@ -137,12 +139,23 @@ export function CanvasHistoryRail({
 
   const peeking = display === "peek";
 
+  // 🔴🔴 NO RAIL WHILE A READER IS DOCKED — owner, 2026-08-27: *"hide the rail when sidebar is
+  // open."* The rail is pinned to the RIGHT EDGE of the window and the panel now covers that edge,
+  // so the two were stacked: a column of markers painted underneath a document, reachable only by
+  // hovering over the reader. It is the same reasoning §38.1 uses for the nav rail inside a canvas
+  // — a surface that owns the screen owns the edges too.
+  //
+  // 🔴 THE INSET IS THE SIGNAL, NOT A PROP THREADED DOWN. `useSidePanelInset` is already what the
+  // canvas is pushed by; a boolean passed from the panel to this component would be a second answer
+  // to "is a panel open", free to disagree with the first.
+  const inset = useSidePanelInset();
+
   // 🔴 A CANVAS WITH NO MOMENTS DRAWS NO RAIL, AND THIS GUARD ARRIVED WITH THE "NOW" MARK'S
   // REMOVAL. Until then the column always had at least that one mark, so it was always a real
   // object. Without it an empty history renders an empty `<nav>` — invisible, and still holding a
   // hover target down the right edge that opens a panel with nothing in it. A control that reacts
   // and then shows nothing reads as broken, which is worse than an edge that is simply quiet.
-  if (entries.length === 0) return null;
+  if (entries.length === 0 || inset > 0) return null;
 
   return (
     <>

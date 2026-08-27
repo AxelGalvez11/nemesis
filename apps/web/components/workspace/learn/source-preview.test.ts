@@ -34,29 +34,48 @@ test("🔴🔴 a document row opens the preview card, and the old library link s
   assert.match(CONTROLS, /<SourcePreview /, "the preview card is not mounted");
 });
 
-test("🔴🔴 the preview shows the ORIGINAL document — bytes, pdf.js, page thumbnails — never the extraction", () => {
-  // The same door and the same lazy thumbnail the Reader uses; no second pipeline.
+test("🔴🔴 the preview shows the ORIGINAL document, whatever kind it is — never the extraction", () => {
+  // 🔴🔴 REPOINTED 2026-08-27, AND THE PROPERTY GOT STRONGER RATHER THAN THE GUARD LOOSER. This
+  // pinned `openPdf` and `<PdfThumbnail>` — this file rendering pages ITSELF — which is precisely
+  // why it could only ever show PDFs and images. Owner: *"it still won't let me view the attachment
+  // I put in, it's a docx, users should be able to view slides, docs, pdf, xlsx, etc."*
+  //
+  // The renderers already existed: `DocumentReader` dispatches to the docx, slides, PDF and image
+  // views and has had a trimmed `variant="dialog"` the whole time. It was never mounted here. So
+  // the panel stopped rendering anything itself, and "shows the original" now holds for every kind
+  // instead of two.
   assert.match(PREVIEW, /loadLibrarySource\(/, "the preview does not resolve the library row");
-  assert.match(PREVIEW, /librarySourceUrl\(/, "the preview does not sign a URL for the original");
-  assert.match(PREVIEW, /openPdf\(/, "the preview does not open the real bytes");
-  assert.match(PREVIEW, /<PdfThumbnail/, "the preview does not render page thumbnails");
+  assert.match(PREVIEW, /readerSourceFromLibrary\(row\)/, "the preview builds its own idea of the file's kind instead of the Library's");
+  assert.match(PREVIEW, /<DocumentReader source=\{state\.source\} variant="dialog" \/>/, "the preview no longer mounts the real reader");
+  // 🔴 AND IT MUST NOT GO BACK TO RENDERING PAGES ITSELF, which is the shape that excluded docx.
+  assert.ok(!/openPdf\(/.test(PREVIEW), "the panel is opening PDF bytes itself again — that path cannot show a docx");
+  assert.ok(!/<PdfThumbnail/.test(PREVIEW), "the panel is drawing its own thumbnails again");
   // And no extracted text: rendering `excerpts` here is exactly the badly-rendering markdown the
   // owner reported. The excerpt count belongs to the panel row, not to this card.
   assert.ok(!/excerpts/.test(PREVIEW), "the preview reaches for the extraction");
 });
 
-test("🔴 every page press does something real — the original opens at that page", () => {
-  // PdfThumbnail is a button; a button that does nothing is this codebase's most-repeated defect.
-  assert.match(PREVIEW, /#page=/, "a thumbnail press goes nowhere");
+test("🔴🔴 no highlight toolbar with nowhere to send", () => {
+  // `DocumentReader`'s selection actions send a prompt and the document into a chat lane. This
+  // panel has none — it exists to SHOW the file — so the prop is omitted and the reader hides the
+  // toolbar rather than offering a control that does nothing, which is this codebase's
+  // most-repeated defect. Calibration: pass an empty function and this reddens.
+  assert.ok(!/onSendToChat/.test(PREVIEW), "the panel hands the reader a chat lane it does not have");
+  const reader = strip(readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8"));
+  assert.match(reader, /onSendToChat\?: \(prompt: string, files: File\[\]\) => void;/, "the reader requires a chat lane again, which forces a dead toolbar here");
+  assert.match(reader, /\{selection && onSendToChat && <SelectionActions/, "the toolbar mounts without somewhere to send");
 });
 
 test("🔴 a source with no kept bytes gets a sentence, not a blank card", () => {
   assert.match(PREVIEW, /wasn't filed to your Library/, "the ephemeral case says nothing");
 });
 
-test("🔴 the worker's copy of the document is freed with the card", () => {
-  // openPdf's own contract: skipping close() leaks a pdf.js worker per preview opened.
-  assert.match(PREVIEW, /opened\?\.close\(\)/, "nothing closes the opened document on unmount");
+test("🔴 the panel owns no document lifetime, because it opens no document", () => {
+  // This held `opened?.close()` — openPdf's contract, one leaked worker per preview otherwise.
+  // The panel no longer opens bytes at all; the reader owns that, and its own guards cover it.
+  // What must stay true here is that this file does not grow a second pipeline with a second
+  // lifetime to forget about.
+  assert.ok(!/OpenedPdf|opened\?\.close\(\)/.test(PREVIEW), "the panel is managing a pdf.js document again");
 });
 
 test("🔴 loadLibrarySource serves the fixtures to the preview harness, and misses honestly", async () => {

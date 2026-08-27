@@ -324,9 +324,11 @@ export function SourcesControl({
       {/* The real document, in a card, over the canvas — see source-preview.tsx's header for the
           owner ruling. Mounted beside the panel rather than inside it so closing the panel does
           not tear the preview down mid-read. */}
-      {previewing && (
-        <SourcePreview onClose={() => setPreviewing(null)} source={previewing} uid={session?.user.id ?? null} />
-      )}
+      {/* 🔴 MOUNTED UNCONDITIONALLY, `source` CARRIES THE OPEN/CLOSED STATE. The panel owns the
+          learner's dragged width and the inset the canvas is pushed by; both live in hooks, and
+          hooks cannot run in a component that only exists while it is open. It returns null when
+          `source` is null and declares a zero inset, so a closed panel costs nothing. */}
+      <SourcePreview onClose={() => setPreviewing(null)} source={previewing} uid={session?.user.id ?? null} />
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
       {openedOutput && <OutputPreview canvasId={canvas.id} onClose={() => setOpenedOutput(null)} output={openedOutput} />}
     </div>

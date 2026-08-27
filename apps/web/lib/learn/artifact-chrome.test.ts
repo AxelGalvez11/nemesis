@@ -31,12 +31,26 @@ test("🔴🔴 the docked panel is two thirds of the viewport, measured — not 
   assert.match(CHROME, /const DOCK_FRACTION = 2 \/ 3;/, "the dock width is no longer the measured fraction");
   // 🔴 BOTH READERS, because both dock. A panel that measured its own width would be the drift this
   // shared module exists to stop.
+  // 🔴 REPOINTED 2026-08-27: the measurement moved into `use-dock-width.ts` when the panel became
+  // DRAGGABLE (owner: *"allow user to slide the sidebar width like in chatgpt"*). Both readers take
+  // the hook now, so a width dragged on either is the width both open at — two docked readers that
+  // resized differently would be two objects.
+  const DOCK = code("../../components/workspace/learn/use-dock-width.ts");
+  assert.match(DOCK, /Math\.round\(viewport \* fraction\)/, "the width is not measured from the viewport");
+  assert.match(DOCK, /window\.addEventListener\("resize", measure\)/, "the width does not follow a resize");
+  // 🔴 THE FRACTION PERSISTS, NOT THE PIXELS. A panel dragged wide on a large monitor would
+  // otherwise cover the whole canvas on a laptop; the proportion is what the learner chose.
+  assert.match(DOCK, /String\(current\)/, "the dragged width is not remembered");
+  assert.ok(!/setItem\([^)]*width/i.test(DOCK), "pixels are being stored instead of the fraction");
   for (const [name, source] of [["output-preview", PREVIEW], ["source-preview", SOURCE]] as const) {
-    assert.match(source, /Math\.round\(window\.innerWidth \* DOCK_FRACTION\)/, `${name}: the width is not measured from the viewport`);
-    assert.match(source, /window\.addEventListener\("resize", measure\)/, `${name}: the width does not follow a resize`);
+    assert.match(source, /useDockWidth\(\)/, `${name}: the reader measures its own width instead of sharing the hook`);
+    assert.match(source, /cursor-col-resize/, `${name}: the panel cannot be resized`);
     // 🔴 NOT PINNED TO THE ARGUMENT: the artifact reader passes 0 while full-screen, which is
     // correct — full screen covers everything and pushes nothing. What matters is that it declares.
     assert.match(source, /useDeclareSidePanel\(/, `${name}: the panel covers the canvas instead of pushing it`);
+    // 🔴 AND THE OPENING SLIDE IS DROPPED WHILE DRAGGING, or the edge lags the pointer by the
+    // animation's own duration and reads as the panel fighting you.
+    assert.match(source, /!dragging && "reader-dock-in"/, `${name}: the slide runs during a resize`);
   }
 });
 
