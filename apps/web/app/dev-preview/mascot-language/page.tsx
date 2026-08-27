@@ -17,6 +17,7 @@ import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { CharacterDock } from "@/components/character/character-dock";
 import { usePoke } from "@/components/character/use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
+import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import type { Station } from "@/lib/character/stations";
 import type { ThinkingMark } from "@/lib/learn/thinking-phases";
 import { lookAt } from "@/lib/mascot/attention";
@@ -197,8 +198,13 @@ function Stage() {
           captionMark={captionMark}
           contain
           face={face}
-          gap={10}
+          gap={14}
           left={24}
+          // 🔴 THE PRODUCT'S ARRANGEMENT, SO THIS STAGE KEEPS BEING WORTH LOOKING AT. The canvas
+          // moved the character on top of the composer at its left edge on 2026-08-26; a preview
+          // still showing it in the left margin would be a picture of a surface that no longer
+          // exists, which is worse than no preview. `gap` matches the canvas's too.
+          place="above"
           station={station}
           state="idle"
         />
@@ -249,6 +255,7 @@ function LivePokeable() {
           onPoke={poke.poke}
           size={148}
           animation={poke.state}
+          silhouette={CHARACTER_SILHOUETTE}
           track
           waggle={poke.motion === "waggle"}
         />
@@ -288,7 +295,7 @@ export default function MascotLanguagePage() {
       <section className="flex flex-wrap items-end gap-14">
         <LivePokeable />
         <figure className="flex flex-col items-center gap-3">
-          <NemesisAvatar face="reading" size={148} animation="idle" track />
+          <NemesisAvatar animation="idle" face="reading" silhouette={CHARACTER_SILHOUETTE} size={148} track />
           <figcaption className="text-xs text-(--ui-text-secondary)">
             Reading, live — the glasses ride the gaze. Move your cursor.
           </figcaption>

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { placeBeside, placeUnder } from "./character-place";
+import { placeAbove, placeBeside, placeUnder } from "./character-place";
 
 /** A wide window: centred composer column with real margin either side. */
 const WIDE = {
@@ -19,6 +19,53 @@ const WIDE = {
   gap: 14,
   bottom: 24,
 };
+
+// ── On top of the composer, at its left edge — the canvas's arrangement since 2026-08-26 ────
+//
+// Owner: *"I want it to be on top on the left of the chat composer"*, then, asked to be exact:
+// *"make sure its on top of the composer not in inside it, top left"*. Both halves of that
+// sentence are assertions below: the left edges line up, and the character clears the composer's
+// top edge rather than sitting over it.
+
+test("🔴🔴 above means ON TOP of the composer, clear of its top edge", () => {
+  const at = placeAbove(WIDE);
+  // Its own bottom edge sits `gap` above where the composer starts. Measured from the same floor:
+  // the character's bottom is `offset`, the composer's top is `floor - coveredTop`.
+  assert.equal(at.offset, WIDE.floor - WIDE.coveredTop + WIDE.gap);
+  assert.ok(at.offset > WIDE.floor - WIDE.anchor.top, "it is sitting inside the composer, not on top of it");
+});
+
+test("🔴🔴 and at the composer's LEFT EDGE, not the window's", () => {
+  const at = placeAbove(WIDE);
+  assert.equal(at.inset, WIDE.anchor.left);
+  // Calibration: this is the failure that has already happened once, with the answer-end marker.
+  // A character lined up with the window instead of with the text sits hundreds of pixels away.
+  assert.notEqual(at.inset, 0);
+});
+
+test("an open menu counts as part of the composer, so the character stands above THAT", () => {
+  // The `+` popover is absolutely positioned inside the composer, so the composer's own rect never
+  // grows when it opens and the character would stand on the menu. Owner, 2026-08-25.
+  const open = { ...WIDE, coveredTop: WIDE.anchor.top - 180 };
+  assert.equal(placeAbove(open).offset, placeAbove(WIDE).offset + 180);
+});
+
+test("it never leaves its container, however narrow the window", () => {
+  const at = placeAbove({ ...WIDE, anchor: { left: -40 } });
+  assert.ok(at.inset >= 8, `it is outside its own container at ${at.inset}`);
+});
+
+test("🔴 `beside` falls back to exactly `above`, rather than to a second copy of it", () => {
+  // On a narrow window the composer runs full width and there is no margin to stand in, so the
+  // margin arrangement climbs onto the shoulder. That fallback IS this placement; it was written,
+  // tested and shipped months before it had a name, and two copies would be two clamps to fix.
+  const narrow = { ...WIDE, anchor: { ...WIDE.anchor, left: 8 } };
+  const fell = placeBeside(narrow);
+  const direct = placeAbove({ ...narrow, anchor: { left: narrow.anchor.left } });
+  assert.equal(fell.beside, false);
+  assert.equal(fell.inset, direct.inset);
+  assert.equal(fell.offset, direct.offset);
+});
 
 test("on a wide page it stands to the LEFT of the composer, clear of it", () => {
   const at = placeBeside(WIDE);
@@ -99,6 +146,12 @@ test("a cramped container still yields a placement rather than a negative one", 
 });
 
 test("🔴🔴🔴 nothing empty sits between the answer and the marker the character stands under", () => {
+  // 🔴 REPOINTED 2026-08-26 EVENING, AND NOT WEAKENED. The canvas character moved off this marker
+  // onto the composer that same evening (*"on top on the left of the chat composer"*), so nothing
+  // stands under `#canvas-answer-end` today and the defect below cannot currently be seen. The
+  // guard is kept whole because `place="under"` is kept whole: the owner has now put the character
+  // in three places in three days, and the day this mode comes back is exactly the day nobody will
+  // remember that an empty document reserves 180px above its own end marker.
   // Measured on production, 2026-08-26: a three-line answer, then a 180px gap, then the character.
   // Everything about the character was right — it rested exactly 24px under `#canvas-answer-end`,
   // which is what #874 asked of it. What was wrong is what the marker was standing at the bottom of.

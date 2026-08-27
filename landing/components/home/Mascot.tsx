@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BloubBot } from "@/components/bloub/BloubBot";
-import { BEATS, CYCLE, REST, keepsTheCircle } from "@/lib/character/circle";
+import { BEATS, CYCLE, REST, SHAPE, keepsItsShape } from "@/lib/character/body";
 import { SPIN_TIME } from "@/lib/character/spin";
 import { clampDuration, makeBlock } from "@/lib/bloub/cycles";
 import type { StateId } from "@/lib/bloub/states";
@@ -21,20 +21,27 @@ import type { StateId } from "@/lib/bloub/states";
  * engine is therefore COPIED here rather than imported, and it is copied unedited so
  * the three renderers stay in agreement about what a frame means.
  *
- * ── THE BODY STAYS A CIRCLE, AND THAT IS THE OWNER REVERSING HIMSELF ──────────
+ * ── THE BODY IS A SQUIRCLE AND NEVER CHANGES SHAPE ────────────────────────────
  *
- * 🔴 OWNER, 2026-08-25: *"make it stay circle shaped only"*. This OVERRIDES the tile-by-tile
+ * Two instructions, a day apart, and the second is easy to misread as cancelling the first:
+ *
+ * 🔴 OWNER, 2026-08-25: *"make it stay circle shaped only"*. This OVERRODE the tile-by-tile
  * gallery sheet of 2026-08-24, where he kept nine animations including `egg` and `hexagon` —
  * two states whose whole content is that the body stops being a circle. The sheet was him
- * choosing from what he was shown; this is him watching it run on the page. The later
- * instruction wins, exactly as the sheet won over the circle rule before it.
+ * choosing from what he was shown; this was him watching it run on the page.
  *
- * 🔴 SO DO NOT "RESTORE" THE NINE FROM GIT HISTORY OR FROM THE MEMORY NOTE. Both exist, both
- * are from the day before, and both are superseded. Adding a state back needs him to ask.
+ * 🔴 OWNER, 2026-08-26: *"could you make the character, the mascot, a cube? instead of the
+ * circle?"*, resolved to *"use squircle like in the github repo for bloub"* and applied to this
+ * site as well as the app. That changes the shape the body RESTS in. It does not re-open the
+ * nine: what he objected to on the 25th was the body morphing while it played, and all six of
+ * the states cut that day still do exactly that.
  *
- * WHAT "CIRCLE" MEANS IS CHECKABLE, AND `lib/character/circle.ts` CHECKS IT by reading the
- * vendored state table rather than carrying a second hand-written list beside this one. Run that
- * rule over all fifteen states and exactly three survive: `idle`, `wink`, `wide`.
+ * 🔴 SO DO NOT "RESTORE" THE NINE FROM GIT HISTORY OR FROM THE MEMORY NOTE. Both exist and both
+ * are superseded. Adding a state back needs him to ask.
+ *
+ * THE RULE IS CHECKABLE, AND `lib/character/body.ts` CHECKS IT by reading the vendored state
+ * table rather than carrying a second hand-written list beside this one. Run that rule over all
+ * fifteen states and exactly three survive: `idle`, `wink`, `wide`.
  *
  * That is not as thin as it sounds, because the VARIETY ON THIS PAGE WAS NEVER IN THE
  * ANIMATIONS — it is in the sixteen resting faces, all of which he kept, and all of which are
@@ -91,10 +98,10 @@ const HOLD_SECONDS = 6;
  * itself be wrong about which states reshape: it reads the same table they come from.
  */
 if (process.env.NODE_ENV !== "production") {
-  const breaks = CYCLE.filter((state) => !keepsTheCircle(state));
+  const breaks = CYCLE.filter((state) => !keepsItsShape(state));
   if (breaks.length > 0) {
     throw new Error(
-      `Mascot: ${breaks.join(", ")} does not keep the body a circle, and the owner asked for circle only.`,
+      `Mascot: ${breaks.join(", ")} changes the body's shape, and the owner asked for one shape only.`,
     );
   }
 }
@@ -198,11 +205,15 @@ export function Mascot({ size = 168 }: { size?: number }) {
 
   return (
     <div className="mascot">
+      {/* 🔴 `shape` IS THE RESTING SILHOUETTE, AND THE APP DRAWS THE SAME ONE FROM THE SAME
+          UPSTREAM TABLE. See `lib/character/body.ts` for the id and why it is not a literal
+          here: a string typed in place would be a fourth copy that nothing can check. */}
       <BloubBot
         state={state}
         expression={face}
         size={size}
         color={INK}
+        shape={SHAPE}
         track
         entrance
         spin={spinning}

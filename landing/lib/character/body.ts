@@ -1,6 +1,22 @@
-// The circle rule, and the two states that survive it.
+// What shape the character is, and the rule that keeps it that shape.
 //
-// Owner, 2026-08-25: *"make it stay circle shaped only"*.
+// 🔴 THIS FILE WAS `circle.ts` AND THE RULE IN IT IS UNCHANGED — ONLY WHAT IT IS A RULE ABOUT.
+// Read the two instructions in order, because the second is easy to misread as undoing the first:
+//
+//   2026-08-25: *"make it stay circle shaped only"*
+//   2026-08-26: *"could you make the character, the mascot, a cube? instead of the circle?"*,
+//               and, asked how far that goes, *"use squircle like in the github repo for bloub"*,
+//               applied to the site as well as the app.
+//
+// The first was never really about circles. Watching the page run, the owner was objecting to the
+// body CHANGING SHAPE while it played — an egg, then a hexagon, then a spray of dots — and
+// "circle only" was the shape it happened to rest in at the time. The second changes the resting
+// shape and says nothing about states that reshape, so the rule survives its own rename intact:
+// **the body is one shape and stays that shape.** Every state this file refused, it still refuses.
+//
+// So `keepsTheCircle` is `keepsItsShape` and the checks inside it are untouched, to the line. If
+// a future instruction really does mean "let it morph again", that is a change to the RULE and
+// the whole of this file should go, rather than a shape being quietly added to `CYCLE`.
 //
 // 🔴 IT LIVES HERE, NEXT TO `brow.ts`, AND NOT IN `lib/bloub/`. That folder is jeremy-prt/bloub
 // copied unedited so the site, the app and the phone stay in agreement about what a frame means;
@@ -17,7 +33,7 @@
 import { STATE_BY_ID, type StateId } from "../bloub/states";
 
 /**
- * Does this state leave the body a plain circle?
+ * Does this state leave the body the shape it rests in?
  *
  * Four ways a state can stop being one, and all four are in the vendored data:
  *
@@ -33,7 +49,7 @@ import { STATE_BY_ID, type StateId } from "../bloub/states";
  * for its opening frames and only then collapses and sprays, so a single sample at the start
  * clears the most obvious violation in the table.
  */
-export function keepsTheCircle(id: StateId): boolean {
+export function keepsItsShape(id: StateId): boolean {
   const def = STATE_BY_ID.get(id);
   if (!def || !def.baseBody) return false;
   const SAMPLES = 32;
@@ -43,6 +59,17 @@ export function keepsTheCircle(id: StateId): boolean {
   }
   return true;
 }
+
+/**
+ * The shape the body rests in.
+ *
+ * 🔴 ONE OF THE CUSTOMISER'S OWN, NOT A SHAPE OF OURS (owner, 2026-08-26: *"use squircle like in
+ * the github repo for bloub"*). `SHAPE_BY_ID` in `lib/bloub/skins.ts` is upstream's own table,
+ * vendored unedited like everything else in that folder, and this is the id of one of its rows.
+ * The app draws the same character from the same numbers — see `apps/web/lib/character/body.ts`
+ * — which is the whole reason the engine was copied rather than reimplemented three times.
+ */
+export const SHAPE = "squircle";
 
 /**
  * The rest the cycle returns to between beats, wearing a different face each time.
@@ -57,9 +84,12 @@ export const REST: StateId = "idle";
  *
  * 🔴 THIS IS A REVERSAL THE OWNER MADE, NOT A TIDY-UP. On 2026-08-24 he went through the bloub
  * gallery tile by tile and kept nine animations, `egg` and `hexagon` among them; on 2026-08-25,
- * watching it run on the page, he asked for circle only. The later instruction wins, exactly as
- * the gallery sheet won over the circle rule before it. Both earlier positions are in git and in
+ * watching it run on the page, he asked for one shape only. The later instruction wins, exactly as
+ * the gallery sheet won over the shape rule before it. Both earlier positions are in git and in
  * the project memory note, and both are superseded — do not "restore" from either.
+ *
+ * 🔴 AND THE 2026-08-26 SQUIRCLE DID NOT RE-OPEN THIS. It changed what the body rests as; these
+ * six still reshape it mid-animation, which is the thing that was actually objected to.
  *
  * What he kept is intact: nothing here was crossed out on his sheet. What went is every state he
  * kept that reshapes — `thinking`, `sleep`, `egg`, `hexagon`, `notify`, `burst`.

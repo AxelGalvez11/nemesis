@@ -283,8 +283,18 @@ test("🔴🔴 and the dock does not walk in from a corner it was never standing
   // since the override was added, and nothing had ever passed it.
   //
   // The first placement is still instant, which is what this test is actually about.
+  //
+  // 🔴 REPOINTED 2026-08-26, AND THE CLAUSE ADDED IS WHY THE SENTENCE ABOVE WAS ONLY HALF TRUE.
+  // `!placed || !anchoredRef.current` returns 0 for the first move, as it always has — and the
+  // browser never painted that style. `measure()` runs twice inside one commit (the placement
+  // effect's `setInset` forces a synchronous re-render before paint), so the second run saw
+  // `placed === true` and wrote the 140ms duration over the 0ms one. Measured across the route
+  // swap in real Chrome: frame 0 was `matrix(1,0,0,1,0,0)` easing over 140ms — the character
+  // appearing at rest size and swooping into a middle the greeter had just finished flying to.
+  // `paintedRef` is set by the browser's own clock rather than React's, so it cannot be beaten
+  // by a re-render. Full workings in `handoff-and-mascot.test.ts`.
   const dock = code(readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8"));
-  assert.match(dock, /if \(!placed \|\| !anchoredRef\.current\) return 0;/);
+  assert.match(dock, /if \(!paintedRef\.current \|\| !placed \|\| !anchoredRef\.current\) return 0;/);
   assert.match(dock, /return from === null \|\| from === station \? FOLLOW_MS : null;/);
   assert.match(dock, /visibility: travel\.placed \? undefined : "hidden"/);
 });

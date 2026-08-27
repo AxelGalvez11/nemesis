@@ -38,6 +38,7 @@ import { useTheme } from "@/components/theme-provider";
 import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { characterInk } from "@/lib/accent";
 import { stateForCanvas } from "@/lib/character/stations";
+import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { THINKING_COPY, type ThinkingPhase } from "@/lib/learn/thinking-phases";
 
 /**
@@ -73,6 +74,7 @@ export function CanvasThinking({ phase }: { phase: ThinkingPhase }) {
             ink={characterInk(accent, theme === "dark")}
             size={THINKING_SIZE}
             facing="forward"
+            silhouette={CHARACTER_SILHOUETTE}
             track
           />
         </span>

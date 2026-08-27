@@ -36,7 +36,8 @@ import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
 import { speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
 import { POINTER_MEMORY_MS, glanceOffset } from "@/lib/character/gaze";
-import { placeBeside, placeUnder } from "./character-place";
+import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
+import { placeAbove, placeBeside, placeUnder } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
 
 // 🔴 THE STYLESHEET COMES IN HERE NOW, AND FORGETTING IT COST AN AFTERNOON. It used to be
@@ -192,13 +193,22 @@ export interface CharacterDockProps {
   /**
    * How the character stands relative to `anchor`.
    *
-   * 🔴 "under" IS CLAUDE'S ARRANGEMENT, MEASURED (owner 2026-08-26: *"make the mascot sit under the
-   * answer"*). "beside" is the composer's shoulder, which is where it stood before and where it
-   * still stands on the front door. The mode is a prop rather than a second component because
-   * everything else — the travel, the caption, the poke, the gaze, the centre station it takes
-   * while thinking — is identical, and two components would be two characters.
+   * 🔴 THREE ARRANGEMENTS, ALL THE OWNER'S, AND THE CANVAS HAS WORN EACH OF THEM. In order:
+   *
+   *   "beside"  the composer's left MARGIN, level with its middle (2026-08-26 morning: *"the
+   *             mascot should be on the left side of composer"*). Still the front door's.
+   *   "under"   Claude's arrangement, at the end of the answer (2026-08-26 afternoon: *"make the
+   *             mascot sit under the answer"*). Nothing passes it today; kept because it is
+   *             fifteen lines and the owner has reversed this three times in three days.
+   *   "above"   ON TOP of the composer, at its left edge (2026-08-26 evening: *"I want it to be
+   *             on top on the left of the chat composer"*, then, when asked to be exact, *"make
+   *             sure its on top of the composer not in inside it, top left"*). The canvas's.
+   *
+   * The mode is a prop rather than three components because everything else — the travel, the
+   * caption, the poke, the gaze, the centre station it takes while thinking — is identical, and
+   * three components would be three characters.
    */
-  place?: "beside" | "under";
+  place?: "beside" | "under" | "above";
   /**
    * Distance from the left edge, px — used only when the anchor cannot be measured.
    *
@@ -302,6 +312,45 @@ export function CharacterDock({
    * painted is already in the right place. Starts true when there is no anchor to wait for.
    */
   const anchoredRef = useRef(false);
+  /**
+   * Whether a real anchor has ever been measured — which is NOT the same question as `anchoredRef`.
+   *
+   * 🔴🔴 THE ANCHOR CAN GO AWAY MID-SESSION, AND WITHOUT THIS THE CHARACTER FALLS OFF THE PAGE INTO
+   * THE CORNER WHEN IT DOES. Found before shipping, by reading the surface rather than by looking
+   * at it: the canvas renders `{showComposer && !recording && <CanvasComposer/>}`, so pressing
+   * record REPLACES the composer with the recorder panel and `#canvas-composer` stops existing for
+   * as long as the lecture is being captured. The same hole opens on a completed canvas, which
+   * renders no composer at all.
+   *
+   * The fallback corner is the right answer for a character that has never been placed. It is the
+   * wrong answer for one that HAS: a control being swapped for another control in the same slot is
+   * not a reason for the character to walk to the bottom-left of the window and back.
+   */
+  const everPlacedRef = useRef(false);
+  /**
+   * Whether the browser has actually PAINTED the character where it belongs, at least once.
+   *
+   * 🔴🔴 THIS IS THE FIX FOR THE HAND-OFF THE OWNER KEPT CALLING GLITCHY, AND THE REASON IT SURVIVED
+   * TWO ROUNDS OF FIXES IS THAT THE CODE ALREADY LOOKED LIKE IT HANDLED IT. `durationFor` returns 0
+   * for the first move — "be there already" — and `character.css` has documented that intent since
+   * the override existed. Measured on a real Chrome across the swap, the first painted frame was
+   * `transform: matrix(1,0,0,1,0,0)` with `transition-duration: 0.14s`, easing over 140ms into the
+   * centre. The character therefore appeared at REST SIZE at its resting spot and swooped to the
+   * middle — a fraction of a second after the front door's greeter had finished flying to that
+   * exact spot at that exact size. Two arrivals, in opposite directions, for one send.
+   *
+   * 🔴 WHY `ms: 0` DID NOT REACH THE SCREEN. `measure()` runs, sets travel with ms 0 — and then runs
+   * AGAIN in the same commit, because the placement effect's `setInset`/`setOffset` re-render before
+   * the browser paints. The second run sees `was.placed === true` and returns FOLLOW_MS, so the
+   * only style the browser ever saw was the 140ms one. `placed` was standing in for "has this been
+   * painted", and it is not that: it is "has a measurement landed", and several of those can land
+   * between two frames.
+   *
+   * 🔴 SO THE FLAG HAS TO BE SET BY THE BROWSER'S CLOCK, NOT BY REACT'S. Two nested frames: the
+   * first callback runs before the paint that shows the placed character, the second after it.
+   * A single frame flips it too early and the bug comes straight back.
+   */
+  const paintedRef = useRef(false);
   const [aimAt, setAimAt] = useState<{ x: number; y: number } | null>(null);
   const targetRef = useRef<AttentionTarget>(getAttention());
   const focusedRef = useRef<Element | null>(null);
@@ -331,6 +380,9 @@ export function CharacterDock({
       // which is a real answer, not a pending one.
       anchoredRef.current = true;
       if (!el) {
+        // Held, not re-cornered — see `everPlacedRef`. The slot the anchor lived in is still there;
+        // it is holding a different control for a moment.
+        if (everPlacedRef.current) return;
         setOffset(bottom);
         return;
       }
@@ -343,6 +395,8 @@ export function CharacterDock({
       // while looking implemented. A marker that has not been laid out has no WIDTH; it wears the
       // reading column, so width is the honest emptiness test for it.
       if (place === "under" ? r.width === 0 : r.height === 0) {
+        // (`above` and `beside` both measure the composer, so height is the honest test for both.)
+        if (everPlacedRef.current) return;
         setOffset(bottom);
         setInset(left);
         return;
@@ -381,14 +435,17 @@ export function CharacterDock({
             // alone samples that at roughly 8fps — the character visibly stepping down the page
             // behind the text. See the rAF-throttled scroll handler.
             placeUnder({ anchor: { left: r.left - originX, bottom: r.bottom }, floor, size, gap, bottom })
-          : placeBeside({
-              anchor: { left: r.left - originX, top: r.top, height: r.height },
-              coveredTop: top,
-              floor,
-              size,
-              gap,
-              bottom,
-            });
+          : place === "above"
+            ? placeAbove({ anchor: { left: r.left - originX }, coveredTop: top, floor, size, gap, bottom })
+            : placeBeside({
+                anchor: { left: r.left - originX, top: r.top, height: r.height },
+                coveredTop: top,
+                floor,
+                size,
+                gap,
+                bottom,
+              });
+      everPlacedRef.current = true;
       setInset(at.inset);
       setOffset(at.offset);
     };
@@ -430,7 +487,10 @@ export function CharacterDock({
      * never mutated from within it.
      */
     const durationFor = (placed: boolean, from: Station | null) => {
-      if (!placed || !anchoredRef.current) return 0;
+      // 🔴 `paintedRef` FIRST, AND IT IS NOT REDUNDANT WITH `placed` — see its own note. Until the
+      // character has been on screen for one frame there is nothing to travel FROM, so every
+      // duration is zero and the first thing the learner sees is the character already in place.
+      if (!paintedRef.current || !placed || !anchoredRef.current) return 0;
       return from === null || from === station ? FOLLOW_MS : null;
     };
     const settled = (was: Travel, dx: number, dy: number, k: number, ms: number | null, placed: boolean) =>
@@ -491,9 +551,23 @@ export function CharacterDock({
     measure();
     const timer = window.setInterval(measure, MEASURE_MS);
     window.addEventListener("resize", measure);
+    // One frame to let the placed character be painted, a second to be past that paint. Only then
+    // does a move become a journey. Re-armed on every run of this effect and cancelled on cleanup,
+    // which costs two frames of nothing once and cannot leak.
+    let first = 0;
+    let second = 0;
+    if (!paintedRef.current) {
+      first = window.requestAnimationFrame(() => {
+        second = window.requestAnimationFrame(() => {
+          paintedRef.current = true;
+        });
+      });
+    }
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("resize", measure);
+      if (first) window.cancelAnimationFrame(first);
+      if (second) window.cancelAnimationFrame(second);
     };
   }, [station, contain, inset, offset, size, centreScale]);
 
@@ -658,6 +732,7 @@ export function CharacterDock({
           speed={speedOf(shown)}
           animation={shown}
           facing="forward"
+          silhouette={CHARACTER_SILHOUETTE}
           track
           waggle={motion === "waggle"}
         />

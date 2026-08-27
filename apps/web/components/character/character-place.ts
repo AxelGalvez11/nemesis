@@ -17,6 +17,41 @@
  * `inset` is a CSS `left` and `offset` is a CSS `bottom`, both measured inside whatever the
  * dock is positioned within.
  */
+/**
+ * Where the character stands ON TOP OF the composer, at its left edge.
+ *
+ * 🔴 THE OWNER'S THIRD ARRANGEMENT IN THREE DAYS, AND ALL THREE ARE STILL HERE ON PURPOSE. The
+ * shoulder (2026-08-20), then the composer's left margin (2026-08-26 morning), then under the
+ * answer (2026-08-26 afternoon), now this (2026-08-26 evening: *"I want it to be on top on the
+ * left of the chat composer"*, then *"make sure its on top of the composer not in inside it, top
+ * left"*). Each is a handful of lines and they share every other behaviour, so keeping the
+ * arithmetic for all of them costs almost nothing and makes the next reversal a prop change.
+ *
+ * 🔴 AND IT IS THE ARITHMETIC `placeBeside` ALREADY FELL BACK TO, NOT A SECOND COPY OF IT. The
+ * margin arrangement has always had to climb onto the composer's shoulder on a narrow window,
+ * where there is no margin to stand in — so this shape was written, tested and shipped months
+ * before it had a name. Two copies would be two chances to fix a clamp in one of them.
+ *
+ * `coveredTop` rather than the composer's own top: an open `+` menu is absolutely positioned
+ * inside the composer, so the composer's rect never grows to include it and the character would
+ * stand on the menu.
+ */
+export function placeAbove(input: {
+  /** The composer's left edge, in the dock's own coordinate space. */
+  readonly anchor: { readonly left: number };
+  /** The top of the composer INCLUDING an open menu. */
+  readonly coveredTop: number;
+  /** Bottom edge of the container the dock sits in. */
+  readonly floor: number;
+  readonly size: number;
+  readonly gap: number;
+  /** Floor for `offset`, from the caller's `bottom` prop. */
+  readonly bottom: number;
+}): { readonly inset: number; readonly offset: number } {
+  const { anchor, coveredTop, floor, gap, bottom } = input;
+  return { inset: Math.max(EDGE, anchor.left), offset: Math.max(bottom, floor - coveredTop + gap) };
+}
+
 export function placeBeside(input: {
   /** The composer, in the dock's own coordinate space. */
   readonly anchor: { readonly left: number; readonly top: number; readonly height: number };
@@ -42,8 +77,9 @@ export function placeBeside(input: {
   }
   // 🔴 NO ROOM BESIDE IT, SO IT GOES BACK ON TOP. On a narrow window the composer runs the full
   // width and there is no margin to stand in; clamped to the left edge there, the character
-  // would sit ON the composer rather than beside it. Above is the old arrangement, unchanged.
-  return { inset: Math.max(EDGE, anchor.left), offset: Math.max(bottom, floor - coveredTop + gap), beside: false };
+  // would sit ON the composer rather than beside it. Above is the old arrangement, unchanged —
+  // and it is now `placeAbove`, called rather than repeated, so the two cannot drift.
+  return { ...placeAbove({ anchor, coveredTop, floor, size, gap, bottom }), beside: false };
 }
 
 /**

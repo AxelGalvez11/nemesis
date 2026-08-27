@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 
 import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { DOCK_CENTRE_SCALE, DOCK_SIZE, centreStation } from "@/components/character/character-dock";
+import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { stateForCanvas } from "@/lib/character/stations";
 import { usePoke } from "@/components/character/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -439,6 +440,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 size={GREETER_SIZE}
                 animation={greeter.state}
                 facing="forward"
+                silhouette={CHARACTER_SILHOUETTE}
                 track
                 waggle={greeter.motion === "waggle"}
               />
