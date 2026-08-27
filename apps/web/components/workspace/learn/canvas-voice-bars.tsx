@@ -43,33 +43,46 @@ const IDLE_BAR = 3;
 /**
  * How far the strip travels per sample: a 3px bar plus the 3px gap beside it.
  *
- * 🔴 IT IS THE ANIMATION'S DISTANCE, NOT A LAYOUT VALUE, AND IT MUST MATCH THE MARKUP. The bars are
- * `w-[3px]` in a `gap-[3px]` row; if either changes, the glide below travels the wrong distance and
- * the strip visibly slips backwards on every tick.
+ * 🔴 IT IS THE ANIMATION'S DISTANCE AND IT MUST MATCH THE MARKUP. If the two disagree the strip
+ * slides the wrong distance every sample and visibly creeps; `canvas-voice-bars.test.ts` reads both
+ * numbers off this file and refuses a mismatch.
  */
 const BAR_PITCH = 6;
 
 export function CanvasVoiceBars({ live }: { live: boolean }) {
-  const [samples, setSamples] = useState<{ height: number; id: number }[]>([]);
   const track = useRef<HTMLDivElement>(null);
-  /**
-   * 🔴 A MONOTONIC ID PER BAR, BECAUSE THE INDEX IS NOT AN IDENTITY HERE AND THAT WAS HALF THE
-   * "LAGGY". `samples` is a sliding window (`.slice(-capacity)`), so once it is full every bar's
-   * index shifts by one on every tick — and with `key={index}` React kept the same DOM nodes and
-   * REWROTE all sixty-odd heights each time. The strip did not move; it morphed, sixty inline
-   * styles at a time, ten times a second. With a stable id React does the one thing that actually
-   * happened: append a node, drop a node.
-   */
-  const nextId = useRef(0);
+  const shift = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState(64);
-  // Smoothed across ticks: raw RMS jitters hard enough to read as flicker rather than speech.
+
+  /**
+   * 🔴🔴🔴 THE STRIP IS DRIVEN BY ONE ANIMATION FRAME LOOP, AND NOTHING HERE IS REACT STATE.
+   *
+   * Owner, twice: *"it should be, like, sixty frames per second or more because it still looks a
+   * bit laggy."* The version this replaces held the samples in `useState` and glided with a CSS
+   * transition restarted on every one — so ten times a second React reconciled sixty-odd spans AND
+   * a transition was cancelled and re-declared mid-flight. Both are frame-droppers, and neither is
+   * fixed by an easing curve.
+   *
+   * Now: samples live in a ref, the spans are a FIXED POOL rendered once, and a single `rAF` writes
+   * `style.height` and one `transform` per frame. While the microphone is open this component does
+   * not re-render at all. That is what "sixty or more" actually costs — the browser paints at its
+   * own refresh rate because nothing is competing with it.
+   *
+   * 🔴 THE SAMPLING CADENCE IS UNTOUCHED, AND THAT IS DELIBERATE. Earlier the same day the owner
+   * asked for the strip to be SLOWER, and `SAMPLE_MS = 100` plus the re-derived 0.395/0.605 blend
+   * are pinned to it. How often the strip LEARNS something and how often it PAINTS are different
+   * questions; raising the sample rate to buy smoothness would quietly reverse that instruction.
+   */
+  const heights = useRef<number[]>([]);
   const smoothed = useRef(0);
   const heard = useRef(false);
+  const sampledAt = useRef(0);
+  const frame = useRef(0);
 
   useEffect(() => {
     const measure = () => {
-      const width = track.current?.clientWidth ?? 0;
-      if (width > 0) setCapacity(Math.max(8, Math.floor(width / 6)));
+      const width = shift.current?.clientWidth ?? 0;
+      if (width > 0) setCapacity(Math.max(8, Math.floor(width / BAR_PITCH)));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -78,113 +91,104 @@ export function CanvasVoiceBars({ live }: { live: boolean }) {
 
   useEffect(() => {
     if (!live) {
-      setSamples([]);
+      heights.current = [];
       smoothed.current = 0;
       heard.current = false;
       return;
     }
+
     let level = 0;
     const stop = subscribeMicLevel((value) => {
       level = value;
     });
+
     const timer = window.setInterval(() => {
-      // 🔴 RE-DERIVED FOR THE NEW CADENCE, NOT CARRIED OVER FROM IT. This line is a discrete
-      // first-order low-pass filter — `y = y*(1-a) + level*a`, run once per SAMPLE_MS — and a
-      // filter like that has a real, wall-clock time constant: `tau = -SAMPLE_MS / ln(1-a)`. At
-      // the old 55ms tick with a=0.4, tau is ~108ms. Slowing SAMPLE_MS to 100ms while leaving
-      // a=0.4 untouched would have nearly doubled tau to ~216ms — the strip would take almost
-      // twice as long to show a real word arriving, which is exactly the "responsiveness
-      // accidentally halved" this constant's coupling to the sample rate warns about. Only the
-      // strip's own step rate should slow down, not how fast it notices you speaking. Solving
-      // `1-a' = exp(-SAMPLE_MS / tau)` for the new 100ms cadence holds tau at ~108ms again, so a
-      // real amplitude change surfaces on the bars exactly as fast as it did before this fix.
+      // 🔴 RE-DERIVED FOR THIS CADENCE, NOT CARRIED OVER FROM THE OLD ONE. This line is a discrete
+      // first-order low-pass filter — `y = y*(1-a) + level*a`, run once per SAMPLE_MS — and such a
+      // filter has a real, wall-clock time constant: `tau = -SAMPLE_MS / ln(1-a)`. At the original
+      // 55ms tick with a=0.4, tau is ~108ms. Slowing to 100ms while leaving a=0.4 alone would have
+      // nearly doubled tau to ~216ms, so the strip would take twice as long to show a real word
+      // arriving. Only the STEP RATE was meant to slow, never the responsiveness. Solving
+      // `1-a' = exp(-SAMPLE_MS / tau)` holds tau at ~108ms again.
       smoothed.current = smoothed.current * 0.395 + level * 0.605;
-      // Below this the room is quiet; recording it as a tall bar would claim speech that did
-      // not happen. The pre-speech run stays dots until something is actually said.
+      // Below this the room is quiet; recording it as a tall bar would claim speech that did not
+      // happen. The pre-speech run stays dots until something is actually said.
       if (smoothed.current > 0.06) heard.current = true;
       const height = heard.current
         ? Math.round(MIN_BAR + Math.min(1, smoothed.current) * (MAX_BAR - MIN_BAR))
         : IDLE_BAR;
-      setSamples((current) => [...current, { height, id: nextId.current++ }].slice(-capacity));
+      heights.current = [...heights.current, height].slice(-capacity);
+      sampledAt.current = performance.now();
     }, SAMPLE_MS);
+
+    // 🔴 SOMEBODY WHO ASKED THE SYSTEM TO STOP MOVING STILL HAS TO SEE THAT IT IS LISTENING, so the
+    // bars keep updating and only the between-sample easing is dropped. `globals.css` makes the
+    // same trade for `.canvas-forming`.
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const draw = () => {
+      frame.current = requestAnimationFrame(draw);
+      const bars = track.current?.children;
+      if (!bars) return;
+      // 0 at the instant a sample lands, 1 by the time the next one is due.
+      const t = still ? 1 : Math.min(1, (performance.now() - sampledAt.current) / SAMPLE_MS);
+      const pad = Math.max(0, capacity - heights.current.length);
+
+      // 🔴🔴 THE TRANSFORM AND THE CONTENT SHIFT ARE EQUAL AND OPPOSITE, AND THE SIGN IS THE WHOLE
+      // TRICK. A sample moves every bar one place LEFT in the list, so at the instant it lands the
+      // track is pushed one pitch RIGHT — putting every bar back where the eye last saw it — and
+      // eased to zero over exactly one sample period. The result is a constant 60px/s glide instead
+      // of a 6px jump every 100ms. Getting this sign backwards doubles the jump instead of
+      // cancelling it.
+      // 🔴🔴 ON THE TRACK, NOT ON THE FRAME AROUND IT — measured in a real browser, where the frame
+      // reported `transform: none` and the strip was sliding its own clipping box 6px sideways
+      // instead of scrolling the bars inside it. `shift` is the fixed, overflow-hidden window the
+      // strip is read through; `track` is the row that moves behind it. Transforming the window
+      // moves the window.
+      if (track.current) {
+        track.current.style.transform = `translate3d(${(1 - t) * BAR_PITCH}px, 0, 0)`;
+      }
+
+      for (let at = 0; at < bars.length; at += 1) {
+        const bar = bars[at] as HTMLElement;
+        const index = at - pad;
+        const spoken = index >= 0;
+        // 🔴🔴 ONLY THE NEWEST BAR EASES, AND THAT FALLS OUT OF THE TRANSFORM RATHER THAN BEING A
+        // SEPARATE ANIMATION. Because the track is pushed a full pitch right at t=0, every existing
+        // bar is drawn exactly where its own value was already showing — so it needs no easing at
+        // all and gets none. The last bar is the one slot that was off the right edge a moment ago,
+        // so it is the only thing that would POP. It grows from the idle dot as it slides in.
+        const to = spoken ? heights.current[index] ?? IDLE_BAR : IDLE_BAR;
+        const newest = spoken && index === heights.current.length - 1;
+        bar.style.height = `${newest ? IDLE_BAR + (to - IDLE_BAR) * t : to}px`;
+        bar.dataset.spoken = spoken ? "true" : "false";
+      }
+    };
+    frame.current = requestAnimationFrame(draw);
+
     return () => {
       stop();
       window.clearInterval(timer);
+      cancelAnimationFrame(frame.current);
     };
   }, [live, capacity]);
-
-  /**
-   * 🔴🔴 THE STRIP GLIDES BETWEEN SAMPLES INSTEAD OF JUMPING A WHOLE BAR — owner, 2026-08-26: *"the
-   * dictation waveform is at a higher frames per second because right now it just feels not smooth
-   * and laggy."*
-   *
-   * 🔴 AND THE SAMPLING CADENCE IS UNTOUCHED, DELIBERATELY. Earlier the SAME DAY he asked for the
-   * opposite-sounding thing — *"the dictation animation needs to be a little bit slower… a bit too
-   * fast right now"* — and `SAMPLE_MS = 100` plus the re-derived 0.395/0.605 blend are pinned by
-   * `canvas-voice-bars.test.ts`. Both asks are satisfiable at once because they are about different
-   * things: how often the strip LEARNS something (10Hz, a measured integration window) versus how
-   * often it PAINTS (the display's own refresh). Raising the sample rate to smooth the motion would
-   * have quietly undone the earlier instruction; this does not touch it.
-   *
-   * How: each new bar is appended with the track pushed one pitch to the right and no transition,
-   * then released to zero on the next frame over exactly one sample period, linearly. The content
-   * shift and the animation are equal and opposite, so the strip travels at a constant 60px/s
-   * instead of standing still for 100ms and then teleporting 6px.
-   *
-   * 🔴 `transform`, NOT `margin` OR `left` — it composites on the GPU and never triggers layout,
-   * which matters on a strip that is animating while a microphone, a recogniser and the composer
-   * are all live.
-   */
-  const shift = useRef<HTMLDivElement>(null);
-  /** The pending rAF, so a re-render mid-glide cannot leave two of them fighting. */
-  const frame = useRef(0);
-  useEffect(() => {
-    const el = shift.current;
-    if (!el || !live || samples.length === 0) return;
-    // 🔴 SOMEBODY WHO ASKED THE SYSTEM TO STOP MOVING STILL HAS TO SEE THAT IT IS LISTENING, so the
-    // bars stay and only the glide is dropped. `globals.css` makes the same trade for `.canvas-forming`.
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    el.style.transition = "none";
-    el.style.transform = `translate3d(${BAR_PITCH}px, 0, 0)`;
-    // Two frames: one to commit the un-transitioned offset, one to animate away from it. A single
-    // rAF is sometimes coalesced with the style write and the transition never runs.
-    const outer = requestAnimationFrame(() => {
-      const inner = requestAnimationFrame(() => {
-        el.style.transition = `transform ${SAMPLE_MS}ms linear`;
-        el.style.transform = "translate3d(0, 0, 0)";
-      });
-      frame.current = inner;
-    });
-    frame.current = outer;
-    return () => cancelAnimationFrame(frame.current);
-  }, [live, samples]);
-
-  // The strip fills from the right, so the not-yet-recorded head reads as the quiet dots the
-  // reference shows before speech starts.
-  const pad = Math.max(0, capacity - samples.length);
 
   return (
     <div
       aria-hidden
-      className="flex h-[41px] min-w-0 flex-1 items-center justify-start gap-[3px] overflow-hidden"
-      ref={track}
+      className="flex h-[41px] min-w-0 flex-1 items-center justify-start overflow-hidden"
+      ref={shift}
     >
-      <div
-        className="flex min-w-0 items-center gap-[3px] will-change-transform"
-        ref={shift}
-      >
-        {Array.from({ length: pad }, (_, index) => (
+      {/* 🔴 A FIXED POOL, RENDERED ONCE. The spans never move, are never added and are never
+          removed while the microphone is open — the loop above only writes their heights. That is
+          what takes React off the hot path entirely; the previous version rebuilt this list ten
+          times a second. */}
+      <div className="flex min-w-0 items-center gap-[3px] will-change-transform" ref={track}>
+        {Array.from({ length: capacity }, (_, index) => (
           <span
-            className="w-[3px] shrink-0 rounded-full bg-(--ui-text-quaternary)"
-            key={`idle-${index}`}
+            className="w-[3px] shrink-0 rounded-full bg-(--ui-text-quaternary) data-[spoken=true]:bg-(--ui-text-tertiary)"
+            key={index}
             style={{ height: `${IDLE_BAR}px` }}
-          />
-        ))}
-        {samples.map((sample) => (
-          <span
-            className="w-[3px] shrink-0 rounded-full bg-(--ui-text-tertiary)"
-            key={sample.id}
-            style={{ height: `${sample.height}px` }}
           />
         ))}
       </div>

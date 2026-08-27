@@ -62,48 +62,75 @@ test("live microphone geometry is untouched — only the cadence moved", () => {
 
 // ── the strip is smooth without being faster ────────────────────────────────────────────────
 
-test("🔴🔴 the strip GLIDES between samples, and the sampling cadence is untouched", () => {
-  // Owner, 2026-08-26: *"the dictation waveform is at a higher frames per second because right now
-  // it just feels not smooth and laggy."* — hours after the opposite-sounding *"the dictation
-  // animation needs to be a little bit slower."*
+test("🔴🔴🔴 the strip is driven by ONE animation frame loop, and React is off the hot path", () => {
+  // Owner, TWICE: *"make the dictation animation even more smooth… it should be, like, sixty
+  // frames per second or more because it still looks a bit laggy."*
   //
-  // 🔴 BOTH ARE SATISFIED BECAUSE THEY ARE ABOUT DIFFERENT THINGS: how often the strip LEARNS
-  // something (10Hz, the measured integration window, asserted above and unchanged) versus how
-  // often it PAINTS (the display's refresh). Raising SAMPLE_MS to smooth the motion would have
-  // quietly reversed the earlier instruction — which is exactly what this pair of tests prevents.
-  assert.match(SOURCE, /transform \$\{SAMPLE_MS\}ms linear/, "the glide no longer lasts exactly one sample period");
-  assert.match(SOURCE, /translate3d\(\$\{BAR_PITCH\}px, 0, 0\)/, "the strip no longer starts a sample-width to the right");
-  assert.match(SOURCE, /translate3d\(0, 0, 0\)/, "the strip never releases back to zero");
-  // 🔴 TWO FRAMES, NOT ONE. A single rAF is sometimes coalesced with the style write and the
-  // transition simply does not run — the strip would jump exactly as it did before.
-  assert.match(SOURCE, /requestAnimationFrame\([\s\S]{0,200}requestAnimationFrame\(/, "the two-frame commit is gone; the transition may never fire");
+  // 🔴 REPOINTED FROM A CSS TRANSITION, WHICH WAS THE FIRST ANSWER AND WAS NOT ENOUGH. That version
+  // held the samples in `useState` and restarted a `transform` transition on every one — so ten
+  // times a second React reconciled sixty-odd spans AND a transition was cancelled and re-declared
+  // mid-flight. Both drop frames, and no easing curve fixes either. The samples now live in a ref,
+  // the spans are a fixed pool rendered once, and a single `requestAnimationFrame` writes heights
+  // and one transform per frame. While the microphone is open this component does not re-render.
+  //
+  // Calibration: put the samples back in `useState` and the first assertion reddens.
+  assert.ok(!/useState<\{ height: number; id: number \}\[\]>|setSamples/.test(SOURCE), "the samples are React state again, so every tick reconciles the strip");
+  assert.match(SOURCE, /const heights = useRef<number\[\]>\(\[\]\)/, "the samples are not held in a ref");
+  assert.match(SOURCE, /frame\.current = requestAnimationFrame\(draw\)/, "there is no per-frame loop");
+  assert.match(SOURCE, /bar\.style\.height =/, "heights are not written directly; they are going back through a render");
+  assert.ok(!/transition: `transform/.test(SOURCE), "the per-sample CSS transition is back");
+});
+
+test("🔴🔴 the glide cancels the content shift, and the SIGN is the whole trick", () => {
+  // A sample moves every bar one place LEFT, so at the instant it lands the track is pushed one
+  // pitch RIGHT and eased to zero across exactly one sample period. Backwards, this doubles the
+  // jump instead of cancelling it. Calibration: flip to `(t - 1)` and the strip stutters twice as
+  // hard as it did before any of this.
+  assert.match(SOURCE, /translate3d\(\$\{\(1 - t\) \* BAR_PITCH\}px, 0, 0\)/, "the glide is the wrong distance or the wrong direction");
+  assert.match(SOURCE, /performance\.now\(\) - sampledAt\.current\) \/ SAMPLE_MS/, "the eased fraction is not measured against the sample period");
 });
 
 test("🔴🔴 the glide distance IS the bar pitch, read off the markup", () => {
   // If `BAR_PITCH` and the rendered bar stop agreeing, the strip slides the wrong distance every
-  // tick and visibly creeps. Both numbers are read from the source rather than restated here.
+  // sample and visibly creeps. Both numbers are read from the source rather than restated here.
   const pitch = /const BAR_PITCH = (\d+);/.exec(SOURCE);
   assert.ok(pitch, "BAR_PITCH is gone");
-  const bar = /className="w-\[(\d+)px\] shrink-0 rounded-full bg-\(--ui-text-tertiary\)"/.exec(SOURCE);
-  assert.ok(bar, "the sampled bar's width moved; re-point this check");
+  const bar = /className="w-\[(\d+)px\] shrink-0 rounded-full/.exec(SOURCE);
+  assert.ok(bar, "the bar's width moved; re-point this check");
   const gap = /className="flex min-w-0 items-center gap-\[(\d+)px\] will-change-transform"/.exec(SOURCE);
   assert.ok(gap, "the gliding track's gap moved; re-point this check");
   assert.equal(
     Number(pitch[1]),
     Number(bar[1]) + Number(gap[1]),
-    `BAR_PITCH is ${pitch[1]} but a bar occupies ${bar[1]}+${gap[1]} — the strip will creep on every tick`,
+    `BAR_PITCH is ${pitch[1]} but a bar occupies ${bar[1]}+${gap[1]} — the strip will creep on every sample`,
   );
 });
 
-test("🔴 a sampled bar is keyed by identity, never by its index", () => {
-  // The other half of "laggy", and it was not the animation. `samples` is a sliding window, so once
-  // it is full every index shifts each tick — with `key={index}` React kept the nodes and REWROTE
-  // every height, ten times a second. The strip morphed instead of moving.
-  assert.match(SOURCE, /key=\{sample\.id\}/, "sampled bars are keyed by index again");
-  assert.ok(!/key=\{`bar-\$\{index\}`\}/.test(SOURCE), "the index key is back");
+test("🔴🔴 only the newest bar eases, and that falls out of the transform", () => {
+  // Because the track is pushed a FULL pitch right at t=0, every existing bar is drawn exactly
+  // where its own value was already showing — so it needs no easing and gets none. The last bar is
+  // the one slot that was off the right edge a moment ago, so it is the only thing that would pop.
+  // Easing all of them would be a second animation fighting the first.
+  assert.match(SOURCE, /const newest = spoken && index === heights\.current\.length - 1;/, "the newest bar is no longer singled out");
+  assert.match(SOURCE, /newest \? IDLE_BAR \+ \(to - IDLE_BAR\) \* t : to/, "either every bar eases, or none does");
 });
 
-test("🔴 reduced motion keeps the bars and drops only the glide", () => {
+test("🔴 the fixed pool is keyed by position, which is now correct rather than a defect", () => {
+  // 🔴 THIS INVERTS AN EARLIER GUARD, DELIBERATELY. When the list was a sliding window in React
+  // state, `key={index}` was the bug: every index shifted each tick, so React kept the nodes and
+  // rewrote all sixty heights. The pool never reorders, never grows and never shrinks while live —
+  // its position IS its identity — and React does not touch it at all between capacity changes.
+  assert.match(SOURCE, /key=\{index\}/, "the fixed pool is keyed by something other than its position");
+  assert.ok(!/key=\{sample\.id\}/.test(SOURCE), "the identity key is back, and there are no sample objects to carry one");
+});
+
+test("🔴 reduced motion keeps the bars and drops only the easing", () => {
   // Somebody who asked the system to stop moving still has to see that it is listening.
   assert.match(SOURCE, /prefers-reduced-motion: reduce/, "the glide ignores a reduced-motion preference");
+  assert.match(SOURCE, /still \? 1 :/, "reduced motion still eases between samples");
+});
+
+test("🔴 the loop is cancelled when the microphone closes", () => {
+  // An orphaned rAF runs for the life of the page, writing styles onto detached nodes.
+  assert.match(SOURCE, /cancelAnimationFrame\(frame\.current\)/, "the animation loop outlives the microphone");
 });

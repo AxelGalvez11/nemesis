@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
+
+import { timeSince } from "./answer-time";
 
 // ── The row of controls under an answer, and where voice lives now (§48) ─────────────────────
 //
@@ -128,9 +130,13 @@ test("🔴🔴 the row does NOT appear while the turn is still arriving", () => 
 test("🔴🔴 it copies the PROSE, not the wire format", () => {
   // `replySegments` splits drawings out of the text. Pasting "[figure 1]" into someone's notes is
   // pasting our own wire format at them, and a synthesiser reading it aloud is worse.
-  // 1600, not 900: the mount now carries `spoken={replyText}` and its comment ahead of the copy
-  // expression, and a window that ends before the expression it asserts on reddens on honesty.
-  const mount = CANVAS.slice(CANVAS.indexOf("<ReplyActions"), CANVAS.indexOf("<ReplyActions") + 1600);
+  // 🔴 THE WHOLE ELEMENT, NOT A FIXED WINDOW. This was 900 characters, then 1600, and it reddened
+  // BOTH times because a prop or a comment was added ahead of the expression it asserts on — a
+  // guard that has to be re-tuned every time the element grows is measuring the wrong thing. It now
+  // slices to the element's own closing `/>`, so it cannot fail on length again.
+  const at = CANVAS.indexOf("<ReplyActions");
+  assert.ok(at > 0, "the reply actions row is not mounted");
+  const mount = CANVAS.slice(at, CANVAS.indexOf("/>", at) + 2);
   assert.match(mount, /replySegments\(replyText, replyVisualList\)/, "the copy text is not derived from the split");
   assert.match(mount, /segment\.kind === "prose"/, "drawings are being copied as their markers");
 });
@@ -271,4 +277,59 @@ test("🔴🔴 the canvas menu asks ONE voice question, with no explanation unde
   assert.ok(!/listenSignal\?:|\[listenSignal\]/.test(COMPOSER), "the composer still listens for a signal nothing can send");
   // 🔴 DICTATION ITSELF IS UNTOUCHED — the button, and hold-space-to-talk.
   assert.match(COMPOSER, /startDictation/, "the microphone button went with the preference");
+});
+
+// ── one row, and only one ───────────────────────────────────────────────────────────────────
+
+test("🔴🔴🔴 there is exactly ONE actions row under an answer", () => {
+  // THE DEFECT THIS GUARDS, REPORTED ON PRODUCTION 2026-08-26: *"each output has double the action
+  // toolbar items at the bottom."* A second row (`canvas-answer-actions.tsx`) was written for the
+  // thread without checking whether the canvas already had one — it did, this one, the owner's own
+  // from 2026-08-20 — and the live answer carried both, 42px apart.
+  //
+  // The fix was to make `audio` optional so a turn with no speech controller can use THIS row.
+  // Calibration: recreate the second component and this reddens before anyone sees two.
+  assert.ok(
+    !existsSync(new URL("./canvas-answer-actions.tsx", import.meta.url)),
+    "a second actions row is back on disk",
+  );
+  const canvas = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  const turn = readFileSync(new URL("./canvas-thread-turn.tsx", import.meta.url), "utf8");
+  assert.equal(
+    (canvas.match(/<ReplyActions/g) ?? []).length,
+    1,
+    "the live answer mounts a different number of action rows than one",
+  );
+  assert.equal(
+    (turn.match(/<ReplyActions/g) ?? []).length,
+    1,
+    "a thread turn mounts a different number of action rows than one",
+  );
+  assert.ok(!/CanvasAnswerActions/.test(canvas + turn), "the retired second row is still referenced");
+});
+
+test("🔴🔴 a turn with no speech controller still gets the row, without the playback half", () => {
+  // What made one row possible. `audio` optional, and the controls gated on it — otherwise a thread
+  // turn renders a player with nothing behind it.
+  assert.match(ACTIONS, /audio\?: ResponseAudio;/, "audio is required again, which forces a second row for the thread");
+  assert.match(ACTIONS, /\{audio && <ResponseAudioControls/, "the playback half is mounted without a controller");
+  const turn = readFileSync(new URL("./canvas-thread-turn.tsx", import.meta.url), "utf8");
+  assert.ok(!/audio=\{/.test(turn), "a thread turn is handing the row an audio controller");
+});
+
+test("🔴 nothing is offered on a turn that cannot do it", () => {
+  const turn = readFileSync(new URL("./canvas-thread-turn.tsx", import.meta.url), "utf8");
+  assert.match(turn, /\{turn\.reply\.trim\(\) && \(/, "the row is drawn on a turn with no answer to copy");
+  assert.match(turn, /turn\.said\?\.trim\(\) \? \(\) => onRetry\(turn\.said!\) : undefined/, "Retry is offered with no question behind it");
+});
+
+test("🔴 the clock never says zero, and never ticks", () => {
+  const now = Date.parse("2026-08-26T12:00:00.000Z");
+  assert.equal(timeSince("2026-08-26T11:59:59.000Z", now), "just now");
+  assert.equal(timeSince("2026-08-26T11:59:00.000Z", now), "1 minute ago");
+  assert.equal(timeSince("2026-08-26T11:00:00.000Z", now), "1 hour ago");
+  assert.equal(timeSince("2026-08-25T12:00:00.000Z", now), "1 day ago");
+  assert.equal(timeSince("not a date", now), "", "an unparseable time renders nothing rather than NaN");
+  assert.ok(!/setInterval/.test(ACTIONS), "the timestamp is on a ticking clock");
+  assert.match(ACTIONS, /useEffect\(\(\) => \{\s*if \(at\) setSince\(timeSince\(at, Date\.now\(\)\)\);/, "the time is read during render, which differs between server and client");
 });

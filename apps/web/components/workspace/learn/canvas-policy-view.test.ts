@@ -247,28 +247,35 @@ test("🔴 §35.1: the learner's words are BLUE in every case — blue is author
   assert.match(rendered, /\{feedback\.answer\}/);
   const quoteLine = /<LearnerUtterance[^>]*>\{feedback\.answer\}<\/LearnerUtterance>/.exec(rendered);
   assert.ok(quoteLine, "the learner's words must render through LearnerUtterance");
-  // 🔴🔴 REPOINTED 2026-08-26 FROM `text-` TO `bg-`, AND THE RULE IS UNCHANGED — ARGUABLY STATED
-  // HARDER. Owner: *"for the chat bubbles, make sure the user text bubble font is white."* Measured
-  // off ChatGPT, whose user bubble is a SOLID fill with light text. White could not simply be
-  // dropped onto the old 10% wash of the authorship blue — it is unreadable on it in light mode —
-  // so the ground took the token at full strength and the text went white.
+  // 🔴🔴 REPOINTED TWICE ON 2026-08-26, AND THE RULE SURVIVED BOTH BECAUSE IT WAS NEVER ABOUT THE
+  // HUE. First from `text-` to `bg-` (*"make sure the user text bubble font is white"* — a 10% wash
+  // cannot carry white in light mode, so the ground took the colour at full strength). Then from
+  // the fixed blue to the ACCENT: *"the bubble should follow the accent from settings, like does
+  // the mascot and send button."* That is the same ruling `--ui-action` already records from
+  // 2026-08-23 — one accent, *"no second colour to disagree"* — and a hard-coded blue here was
+  // exactly that second colour.
   //
-  // §35.1 is about what BLUE MEANS ("this came from you", never "correct"), not about which CSS
-  // property carries it. The bubble is now that blue undiluted. What must never come back is a
-  // colour keyed to a verdict, and the two checks below are what hold that.
+  // §35.1 says what the learner's ground MEANS ("this came from you", never "correct"), not which
+  // hue carries it or which property paints it. What must hold is that their words wear a distinct,
+  // UNCONDITIONAL ground — and the two checks below are what stop it ever being keyed to a verdict.
   assert.match(
     utterance,
-    /bg-\(--ui-learner\)/,
-    "LearnerUtterance stopped painting the learner's words with the ownership token",
+    /bg-\(--ui-action\)/,
+    "LearnerUtterance stopped painting the learner's words with the product accent",
   );
+  // 🔴🔴 THE PAIRED FOREGROUND, AND A LITERAL WHITE HERE WOULD GO INVISIBLE. `--ui-action` is the
+  // near-black ink in light mode and the near-WHITE one in dark; `accentGlyph()` computes the
+  // partner per accent so the contrast holds for every accent a learner can choose. Calibration:
+  // put `text-white` back and the bubble disappears in dark mode on the default accent.
   assert.match(
     utterance,
-    /text-white/,
-    "the learner's bubble lost the light text the solid ground requires — check the contrast before changing this",
+    /text-\(--ui-action-glyph\)/,
+    "the bubble's text is not the accent's own glyph colour — check it in dark mode before changing this",
   );
+  assert.ok(!/text-white/.test(utterance), "a literal white is back on a ground that is white in dark mode");
   assert.ok(
-    !/text-\(--ui-learner\)/.test(utterance),
-    "the ownership blue is back on the TEXT as well as the ground; one of them is now unreadable",
+    !/text-\(--ui-action\)/.test(utterance),
+    "the accent is on the TEXT as well as the ground; one of them is now invisible",
   );
 
   // 🔴 AND THE COMPONENT MUST NOT BE ABLE TO TAKE A VERDICT AT ALL. This is stronger than the

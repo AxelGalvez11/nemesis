@@ -65,12 +65,28 @@ export function LearnerUtterance({ children, className, via = "typed" }: Learner
         // unreadable in light mode — the instruction is only satisfiable with a ground dark enough
         // to carry it, which is exactly what the reference uses.
         //
-        // 🔴 §35.1 IS UNTOUCHED AND IS ARGUABLY STATED HARDER. *"Blue means: this came from you."*
-        // The bubble is now that blue at full strength rather than a wash of it. What it must still
-        // never mean is CORRECT — there is no verdict prop here and there must not be one.
+        // 🔴🔴 IT FOLLOWS THE ACCENT FROM SETTINGS — owner, 2026-08-26: *"the bubble should follow
+        // the accent from settings, like does the mascot and send button."* Which is the third time
+        // he has made the same ruling: `--ui-action`'s own note in desktop-ui.css records
+        // 2026-08-23, *"the send button and the mascot should be following the same accent color"*,
+        // and *"there is no second colour to disagree"*. A fixed blue here was that second colour.
+        //
+        // 🔴🔴 THE TEXT IS `--ui-action-glyph`, NOT WHITE, AND THAT IS NOT A DETAIL — WHITE WOULD
+        // GO INVISIBLE. `--ui-action` is the near-black ink in light mode and the near-WHITE one in
+        // dark, because the accent has to carry a glyph against the editor ground and the two sit
+        // on opposite sides of the lightness midpoint. `accentGlyph()` computes the partner per
+        // accent ("white on the near-black ink, near-black on the near-white one"), so the pair
+        // holds its contrast for every accent a learner can pick rather than for the one I looked
+        // at. The owner asked for white on 2026-08-26 and got it; that was against a fixed blue,
+        // and honouring the LETTER of it here would break the instruction that replaced it.
+        //
+        // 🔴 §35.1 SURVIVES THE HUE CHANGE, because it was never about the hue. *"Blue means: this
+        // came from you. It does NOT mean correct."* What has to hold is that the learner's words
+        // carry a distinct, unconditional ground that is never keyed to a verdict — and they do.
+        // There is no verdict prop here and there must not be one.
         "inline-block max-w-[70%] rounded-[22px] px-4 py-2.5 text-left",
-        "text-[length:var(--canvas-text-body)] leading-relaxed text-white",
-        "bg-(--ui-learner)",
+        "text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-action-glyph)",
+        "bg-(--ui-action)",
         className,
       )}
       data-learner-utterance=""
