@@ -68,7 +68,17 @@ export type NemesisActivity =
   /** The learner is talking to it. */
   | "listening"
   /** Something landed and it is worth a beat of acknowledgement. */
-  | "arrived";
+  | "arrived"
+  /**
+   * Nothing has happened for a long time.
+   *
+   * 🔴 THE ONE ROW HERE THAT IS ABOUT THE LEARNER RATHER THAN THE SYSTEM, and the only one whose
+   * producer could not be a fact the surface already holds — nothing on a page knows that nothing
+   * has happened. `lib/character/doze.ts` is that fact; `components/character/use-doze.ts` measures
+   * it. Added on the owner's own list, 2026-08-26: *"bloub has nice animations called burst, sleep,
+   * thinking, i want those"*.
+   */
+  | "dozing";
 
 export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   // 🔴🔴 `waiting`, NOT `thinking`, AND THE NAMES ARE THE OPPOSITE WAY ROUND FROM WHAT THEY LOOK.
@@ -135,10 +145,24 @@ export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
   listening: "attentive",
   // The squint into arcs — a smile, on a face with no mouth. (Also briefly `nod`, ours; see above.)
   arrived: "happy",
+  // 🔴🔴 THE FIRST BODY-CHANGING ROUTINE TO REACH THE SCHEDULE, AND IT IS THE OWNER'S OWN REVERSAL
+  // (2026-08-26: *"bloub has nice animations called burst, sleep, thinking, i want those"*). Every
+  // vendored routine was cut on 2026-08-23; this is one coming back by name.
+  //
+  // 🔴 IT FADES THE EYES TO ZERO, AND HERE THAT IS CORRECT RATHER THAN A PROBLEM. `sleepHigh` and
+  // `sleepLow` both carry `eyeAlpha: 0` — which is the exact property that made `thinking` wrong
+  // while the character was supposed to be working beside a caption (see thinking-figure.test.ts).
+  // A sleeping creature has its eyes shut. The rule was never "eyes always"; it was that the
+  // character keeps its face WHILE IT WORKS, and this row is the opposite of working.
+  //
+  // 🔴 AND IT DOES NOT RESHAPE THE BODY. Both faces are `body({ scale, y })` and no `profile`, so
+  // the squircle is scaled and bounced, not morphed into something else. `body.test.ts` checks the
+  // whole of this table for exactly that and stays green.
+  dozing: "sleep",
 };
 
 /**
- * 🔴 THREE OF THE SEVEN HAVE NO PRODUCER, AND THEY DID NOT BEFORE THIS EITHER.
+ * 🔴 THREE OF THE EIGHT HAVE NO PRODUCER, AND THEY DID NOT BEFORE THIS EITHER.
  * `stateForCanvas` below is the only route from the running product to this table, and it
  * reads three facts: thinking, preparing, listening. So `retrieving`, `ingesting` and
  * `arrived` are reachable through `stateFor` and nothing calls it. Naming that here rather
@@ -147,6 +171,10 @@ export const ACTIVITY_STATE: Record<NemesisActivity, StateId> = {
  *
  * The fourth gap is worse and is not a row at all — there is no `failed`. A fetch that dies
  * and a fetch that works currently look identical on the character.
+ *
+ * 🔴 `dozing` IS THE FIRST ROW TO ARRIVE WITH ITS PRODUCER ATTACHED, which is the shape the other
+ * three should copy: a row here, a pure rule beside it saying when it is true, and a hook that
+ * measures it. See `lib/character/doze.ts`.
  */
 
 export function stateFor(activity: NemesisActivity): StateId {

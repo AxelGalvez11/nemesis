@@ -32,6 +32,7 @@ import type { ThinkingMark as ThinkingMarkKind } from "@/lib/learn/thinking-phas
 
 import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { ThinkingMark } from "./thinking-mark";
+import { useDoze } from "./use-doze";
 import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
 import { speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
@@ -282,7 +283,11 @@ export function CharacterDock({
   const { accent } = useTheme();
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   // `motion` is the half the engine has no pose for — the hop. See `use-poke.ts`.
-  const { state: shown, motion, face: pokeFace, poke } = usePoke(state);
+  const { state: poked, motion, face: pokeFace, poke } = usePoke(state);
+  // 🔴 OUTSIDE `usePoke`, NOT INSIDE IT, AND THE ORDER IS THE POINT. A poke is a wake-up: clicking
+  // a sleeping character has to play the click rather than be swallowed by the sleep it just
+  // ended. `hidden` counts as away — the character is not on screen to fall asleep on.
+  const shown = useDoze(poked, hidden);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState(bottom);
   const [inset, setInset] = useState(left);

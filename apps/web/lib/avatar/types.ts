@@ -53,6 +53,24 @@ export interface Dot {
   readonly opacity: number;
   /** Drawn before the body, so the body covers it. */
   readonly behind?: boolean;
+  /**
+   * How far INTO the body this dot has fallen, 0 at the rim and 1 at the core.
+   *
+   * 🔴🔴 IT IS A COLOUR, NOT A Z-ORDER, AND LEAVING IT OUT IS WHY THE SCATTER WAS INVISIBLE FOR
+   * WEEKS. The reference paints a spark as a mix between the PAPER and the ink by exactly this
+   * number — `mixHex(paper, ink, depth)` — so a spark that has just been thrown off is nearly
+   * paper-coloured and reads as a bright speck ON the dark body, and one that has spiralled into
+   * the core is ink and has been swallowed. That is the whole effect.
+   *
+   * Our port carried `x`, `y`, `r` and `opacity` and dropped this, so every spark was drawn in
+   * ink. Measured: the sparks never leave the body's own silhouette at any point in the animation
+   * (spark bounding box inside the body's on every sampled frame), so ink sparks on an ink body
+   * are five invisible dots. The engine was computing an effect nobody could ever see.
+   *
+   * Absent means "not a spark": the notification badge and the pause-for-thought dots are solid
+   * ink and are not being swallowed by anything.
+   */
+  readonly depth?: number;
 }
 
 /**
@@ -219,6 +237,15 @@ export interface AvatarFrame {
   /** All the decor in front of the body, as one path; and all the decor behind it. */
   readonly dots: string;
   readonly dotsBehind: string;
+  /**
+   * Sparks, which need one fill EACH — see `Dot.depth`.
+   *
+   * 🔴 A LIST, WHERE EVERY OTHER PIECE OF DECOR IS ONE JOINED PATH, AND THE REASON IS THE COLOUR.
+   * Dots are joined into a single `d` precisely so the renderer can write one attribute onto one
+   * node it made once; sparks cannot be, because each is a different mix of paper and ink. Bounded
+   * by `MAX_SPARKS` so the node count is still fixed and nothing is created or destroyed per frame.
+   */
+  readonly sparks: readonly { readonly d: string; readonly depth: number }[];
   /** A disc taken out of the body, or nothing. */
   readonly notch: { readonly x: number; readonly y: number; readonly r: number } | null;
   /**

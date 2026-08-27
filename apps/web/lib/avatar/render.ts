@@ -461,9 +461,17 @@ export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): 
   const dots = face.dots ?? EMPTY_DOTS;
   const inFront: string[] = [];
   const behind: string[] = [];
+  // 🔴 SPARKS COME OUT SEPARATELY BECAUSE THEY NEED ONE FILL EACH — see `Dot.depth`. Everything
+  // else is joined into a single path precisely so the renderer writes one attribute onto one node.
+  const sparks: { d: string; depth: number }[] = [];
   for (const dot of dots) {
     if (dot.opacity <= 0.01 || dot.r <= 0.05) continue;
-    (dot.behind ? behind : inFront).push(dotPath(dot.x + pose.x, dot.y + pose.y, dot.r));
+    const d = dotPath(dot.x + pose.x, dot.y + pose.y, dot.r);
+    if (dot.depth !== undefined) {
+      if (sparks.length < MAX_SPARKS) sparks.push({ d, depth: dot.depth });
+      continue;
+    }
+    (dot.behind ? behind : inFront).push(d);
   }
 
   return {
@@ -475,11 +483,22 @@ export function drawFace(surface: Surface, face: Face, opts: DrawOptions = {}): 
     eyeAlpha,
     dots: inFront.join(""),
     dotsBehind: behind.join(""),
+    sparks,
     notch: face.notch ? { x: face.notch.x + pose.x, y: face.notch.y + pose.y, r: face.notch.r } : null,
   };
 }
 
 const EMPTY_DOTS: readonly never[] = [];
+
+/**
+ * The most sparks that can be on screen at once.
+ *
+ * 🔴 A CAP RATHER THAN A COUNT, SO THE NODE COUNT IS FIXED. `NemesisAvatar` makes this many spark
+ * paths once and writes attributes onto them; creating and destroying elements sixty times a second
+ * is the thing this renderer is built to avoid. The one plan in the catalogue asks for five, with
+ * lives that overlap by at most three, so six is slack rather than a limit anyone will hit.
+ */
+export const MAX_SPARKS = 6;
 
 /**
  * The box every avatar is drawn into.

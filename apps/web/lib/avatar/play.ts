@@ -13,6 +13,7 @@ import { hash01, hashSigned } from "./noise";
 
 import { ANIMATION_BY_ID, FACE_BY_ID } from "./catalogue";
 import { REST_BODY } from "./render";
+import { RADIUS } from "./space";
 import { PROFILE_SAMPLES } from "./vendor/silhouettes";
 import type { Animation, BodyPose, Dot, EaseName, EyeSpec, Face, Notch, SparkPlan, Step } from "./types";
 
@@ -180,6 +181,7 @@ function mixDots(a: readonly Dot[], b: readonly Dot[], p: number): readonly Dot[
       r: mix(from.r, to.r, p),
       opacity: mix(from.opacity, to.opacity, p),
       behind: to.behind ?? from.behind,
+      depth: to.depth === undefined && from.depth === undefined ? undefined : mix(from.depth ?? 0, to.depth ?? 0, p),
     });
   }
   return out;
@@ -243,6 +245,14 @@ export function blendFaces(a: Face, b: Face, p: number): Face {
  * what makes a scatter read as the body pulling itself back together rather than as an
  * explosion.
  */
+/**
+ * The distance, in body radii, at which a spark counts as fully outside the core.
+ *
+ * The reference's own `0.8`. Below it a spark is being swallowed and darkens toward the ink;
+ * at it and beyond it is paper-bright.
+ */
+const SWALLOWED_AT = 0.8;
+
 export function sparkDots(plan: SparkPlan | null | undefined, ms: number): readonly Dot[] {
   if (!plan || plan.amount <= 0.01 || plan.count <= 0) return EMPTY_DOTS;
   const out: Dot[] = [];
@@ -261,7 +271,16 @@ export function sparkDots(plan: SparkPlan | null | undefined, ms: number): reado
       r: mix(plan.r0, plan.r1, Math.min(1, life * 1.8)),
       // In quickly, out quickly, so nothing pops into or out of existence at full size.
       opacity: plan.amount * clamp01(life * 11) * clamp01((1 - life) * 8),
-      behind: true,
+      // 🔴🔴 THE COLOUR RAMP, WHICH THIS PORT ORIGINALLY DROPPED — see `Dot.depth`. The reference
+      // is explicit: `depth: clamp(1 - rho / 0.8)`, and it paints the spark as a mix between the
+      // paper and the ink by that number. A freshly thrown spark is nearly paper and reads as a
+      // bright speck on the dark body; one that has fallen to the core is ink and has been
+      // swallowed. `plan.from` is our `rho` in mark units, so the 0.8 is in the same units.
+      depth: clamp01(1 - rho / (SWALLOWED_AT * RADIUS)),
+      // 🔴 NOT `behind` ANY MORE, AND IT WAS NEVER DOING WHAT IT SAID. Behind an OPAQUE body, a
+      // spark that never leaves that body's silhouette — measured: none of them ever does — is
+      // simply not drawn. In front, with the ramp above, it is the effect the reference draws.
+      behind: false,
     });
   }
   return out;

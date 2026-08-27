@@ -1,0 +1,59 @@
+// When the character falls asleep, and the two things that must never let it.
+//
+// Owner, 2026-08-26: *"bloub has nice animations called burst, sleep, thinking, i want those"*.
+// `sleep` had been in the catalogue for weeks with nothing able to make it true.
+
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+
+import { ANIMATION_BY_ID, FACE_BY_ID } from "@/lib/avatar";
+
+import { DOZE_AFTER_MS, isDozing } from "./doze";
+import { ACTIVITY_STATE } from "./stations";
+
+const awake = { idleMs: 0, working: false, away: false };
+
+test("🔴🔴 it never sleeps while Nemesis is working, however long the learner has sat still", () => {
+  // A learner who asked a question and then took their hands off the mouse is the ORDINARY case:
+  // they are waiting. A character asleep through the wait says nobody is home.
+  assert.equal(isDozing({ ...awake, idleMs: DOZE_AFTER_MS * 100, working: true }), false);
+});
+
+test("🔴 nor while the character is away, because 'nothing happened' is true by definition there", () => {
+  assert.equal(isDozing({ ...awake, idleMs: DOZE_AFTER_MS * 100, away: true }), false);
+});
+
+test("it sleeps once nothing has happened for long enough, and not a moment before", () => {
+  assert.equal(isDozing({ ...awake, idleMs: DOZE_AFTER_MS - 1 }), false);
+  assert.equal(isDozing({ ...awake, idleMs: DOZE_AFTER_MS }), true);
+});
+
+test("🔴 the threshold is minutes, because the commonest thing a learner does is READ", () => {
+  // Reading a page of a lesson involves no pointer, no key and no turn. Anything close to a
+  // minute is a character that falls asleep in the middle of the actual work. The risk is
+  // entirely one-sided: too long and nobody sees it, which costs nothing.
+  assert.ok(DOZE_AFTER_MS >= 120_000, `${DOZE_AFTER_MS}ms is short enough to sleep through reading`);
+});
+
+test("🔴🔴 sleeping is scheduled, reaches a real animation, and shuts its eyes", () => {
+  const id = ACTIVITY_STATE.dozing;
+  const animation = ANIMATION_BY_ID.get(id);
+  assert.ok(animation, `dozing schedules "${id}", which is not in the catalogue`);
+  // 🔴 THE EYES CLOSING IS THE FEATURE HERE, AND IT IS THE SAME PROPERTY THAT MADE `thinking` WRONG
+  // WHILE WORKING (see thinking-figure.test.ts). The rule was never "eyes always": it is that the
+  // character keeps its face while it WORKS, and this is the opposite of working.
+  assert.ok(
+    animation.steps.every((step) => FACE_BY_ID.get(step.face)?.eyeAlpha === 0),
+    "the sleeping character has its eyes open",
+  );
+});
+
+test("🔴 a poke wakes it — the hooks compose in the order that makes a click land", () => {
+  // `useDoze(usePoke(state))`, never the other way round: a click on a sleeping character must play
+  // the click, not be swallowed by the sleep it just ended. Source-text, because the order is the
+  // whole of the behaviour and it lives in one expression.
+  const dock = readFileSync(new URL("../../components/character/character-dock.tsx", import.meta.url), "utf8");
+  assert.match(dock, /const \{ state: poked[^}]*\} = usePoke\(state\);/, "usePoke stopped taking the surface's own state");
+  assert.match(dock, /const shown = useDoze\(poked, hidden\);/, "the doze layer no longer wraps the poke, so a click on a sleeping character is lost");
+});

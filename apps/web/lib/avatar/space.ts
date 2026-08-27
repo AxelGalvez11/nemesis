@@ -288,3 +288,23 @@ export function faceToSkin(x: number, y: number): { x: number; y: number } {
   const lat = y / RADIUS;
   return { x: RADIUS * Math.cos(lat) * Math.sin(lon), y: RADIUS * Math.sin(lat) };
 }
+
+/**
+ * Two colours, blended.
+ *
+ * 🔴 HERE RATHER THAN IN A UI HELPER BECAUSE THE ENGINE'S OWN GEOMETRY ASKS FOR IT. A spark's
+ * `depth` is a position that has to become a colour, and the reference does exactly this mix
+ * (`mixHex(paper, ink, depth)`). Same arithmetic as `landing/lib/bloub/skins.ts`, which is where
+ * it is vendored for the site.
+ */
+export function mixHex(from: string, to: string, t: number): string {
+  const parse = (h: string): readonly number[] => {
+    const v = Number.parseInt(h.slice(1), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  };
+  const a = parse(from);
+  const b = parse(to);
+  const k = Math.min(1, Math.max(0, t));
+  const c = a.map((x, i) => Math.round(x + ((b[i] ?? x) - x) * k));
+  return `#${c.map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+}
