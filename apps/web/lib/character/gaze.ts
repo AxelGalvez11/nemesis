@@ -100,3 +100,70 @@ export function glanceOffset(ms: number, size: number): { x: number; y: number }
   const reach = size * 2.5;
   return { x: g.y * reach, y: g.x * reach };
 }
+
+// ── What the character is looking at ─────────────────────────────────────────
+//
+// 🔴🔴 THIS IS ARITHMETIC BECAUSE THE BUG IT FIXES WAS INVISIBLE IN A DIFF AND OBVIOUS ON SCREEN,
+// which is the same reason `character-place.ts` exists. The precedence lived inside the dock's
+// attention interval as a run of early returns, so "does a moving mouse beat a focused text box?"
+// could only be answered by opening a browser and staring at a character's eyes — and for weeks
+// the answer was no, on the one surface where a text box is focused nearly all the time.
+//
+// Owner, 2026-08-26: *"the mascot is not following the mouse at all."* Measured on the real
+// component, averaging the drawn eye centres over 60 frames: with a field focused the gaze read
+// **+58.9 with the pointer far LEFT and +58.4 with it far RIGHT** — pinned, ignoring the mouse
+// completely. With nothing focused the identical sweep runs **-56.9 to +56.2**.
+
+/** A point in client coordinates. */
+export interface AimPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface GazeInput {
+  /**
+   * The surface called `lookAt()`: "attend to THIS". Deliberate and rare.
+   *
+   * 🔴 THE ONLY THING THAT OUTRANKS THE POINTER. A drawing Nemesis just made, or a question it is
+   * asking, is worth more than the cursor. Nothing else is.
+   */
+  readonly declared: AimPoint | null;
+  /**
+   * Where the field the learner has focused is.
+   *
+   * 🔴🔴 NOT A CLAIM, AND TREATING IT AS ONE IS THE WHOLE BUG. Nobody declared anything: a focused
+   * field is a guess about where someone is looking, and it is a much worse guess than a cursor
+   * they are actively moving. On the canvas the composer keeps focus after every send, so ranking
+   * this above the pointer froze the gaze for the rest of the session.
+   */
+  readonly focused: AimPoint | null;
+  /** Where the composer is — the resting target when nothing else applies. */
+  readonly resting: AimPoint | null;
+  /** Milliseconds since the pointer last moved. `Infinity` when it never has. */
+  readonly pointerAgeMs: number;
+  /**
+   * The character is at the middle of the surface, working.
+   *
+   * 🔴 THINKING EYES SEARCH, THEY DO NOT FOLLOW (owner 2026-08-25: working must not be "just
+   * staring"). This outranks the pointer too — but NOT a declared target, because a surface that
+   * has just drawn something still gets to point at it.
+   */
+  readonly working: AimPoint | null;
+}
+
+/**
+ * Where to aim, or `null` for "let the avatar follow the cursor itself".
+ *
+ * 🔴 `null` IS AN ANSWER, NOT AN ABSENCE. `NemesisAvatar` tracks the pointer on its own; handing it
+ * an aim point is how a surface takes that over. So "follow the mouse" is expressed by giving it
+ * nothing, and every branch below that returns a point is a branch that stops it.
+ */
+export function gazeTarget(input: GazeInput): AimPoint | null {
+  const { declared, focused, resting, pointerAgeMs, working } = input;
+  if (declared) return declared;
+  if (working) return working;
+  // A pointer that is genuinely moving wins. This is the line the owner's report was about.
+  if (pointerAgeMs < POINTER_MEMORY_MS) return null;
+  // Still pointer: rest on whatever they are typing into, else on the composer.
+  return focused ?? resting;
+}

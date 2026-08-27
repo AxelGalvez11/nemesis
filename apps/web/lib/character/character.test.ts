@@ -343,7 +343,40 @@ test("🔴 a click reaches the character", async () => {
       `a poke draws "${gone}" again — the owner removed it`,
     );
   }
-  assert.match(poke, /motion: "jump"/, "a poke no longer leads with the hop");
+  // 🔴 REPOINTED 2026-08-26 EVENING, THE SECOND REVERSAL THIS ONE GUARD HAS SEEN. It pinned the
+  // hop as the first of five reactions; the owner then asked for a single reaction — *"clicking on
+  // the mascot should just make him jump or do burst animation"*, *"or spin"* — and the spin is the
+  // one of the three that breaks no standing rule and matches the marketing site's own poke. The
+  // reasoning is written out in full beside the row in `use-poke.ts`.
+  //
+  // What is pinned now is the INVARIANT rather than the choice: exactly one reaction, so a poke
+  // stops being five different things depending on how many times you have poked it.
+  assert.match(poke, /const REACTIONS: readonly Reaction\[\] = \[[\s\S]*?\n\];/, "REACTIONS is not a list any more");
+  const rows = (poke.match(/^\s*\{ state: "/gm) ?? []).length;
+  assert.equal(rows, 1, `a poke draws ${rows} different things again; the owner asked for one`);
+  assert.match(poke, /motion: "spin"/, "the one reaction is no longer the spin");
+
+  // 🔴 THE HOLD AND THE ANIMATION ARE TWO COPIES OF ONE DURATION, in two languages, and nothing
+  // else can notice when they part company: the character either stops mid-turn (hold shorter) or
+  // stands still at the end of one (hold longer).
+  const spinCss = await rf(new URL("../../components/character/character.css", import.meta.url), "utf8");
+  const holdMs = Number(poke.match(/export const SPIN_MS = (\d+);/)?.[1]);
+  const cssMs = Number(spinCss.match(/--character-spin-ms,\s*(\d+)ms/)?.[1]);
+  assert.equal(holdMs, cssMs, `the spin holds ${holdMs}ms and animates ${cssMs}ms`);
+
+  // 🔴 NO WIND-UP, NO OVERSHOOT, NO SCALE (owner 2026-08-26: *"there's, like, a pause and slow turn
+  // when he's about to spin. And it looks like he's wobbling"*). Each was a real keyframe: a -16deg
+  // counter-turn at 12%, a 372deg overshoot at 88%, and a scale running 1 → 0.95 → 0.97 → 1.03 → 1.
+  // They were tuned against a BALL, whose outline is identical at every angle; on the squircle you
+  // can see the corners go the wrong way and rock back. Calibration: add any keyframe between the
+  // two below and this reddens.
+  const frames = spinCss.match(/@keyframes character-spin \{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(frames.includes("from { transform: rotate(0deg); }"), "the spin no longer starts at its own heading");
+  assert.ok(frames.includes("to { transform: rotate(360deg); }"), "the spin no longer lands on its own heading");
+  assert.ok(!/scale\(/.test(frames), "the spin scales again, which reads as a wobble on a squircle");
+  // Every angle it passes through, so "never goes backwards" and "never goes past" are one check.
+  const angles = [...frames.matchAll(/rotate\((-?\d+(?:\.\d+)?)deg\)/g)].map((m) => Number(m[1]));
+  assert.deepEqual(angles, [0, 360], `the spin turns through ${angles.join(", ")} — it should be one clean turn`);
 });
 
 test("🔴🔴 the product schedules the reference's vocabulary, never our own gestures", async () => {
