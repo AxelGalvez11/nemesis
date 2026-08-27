@@ -1305,8 +1305,21 @@ const DECISION_CONTRACT = [
   // wrote them.
   '"check" is the questions themselves, written whenever "wantsTest" OR "wantsCards" is true: [{"prompt": "…", '
   + '"options": [{"text": "…", "correct": true}, {"text": "…"}]}]. Two to five options each, '
-  + "EXACTLY ONE marked correct, up to twelve questions, three to five makes a good check. Ask "
-  + "about what was actually said in this conversation, make the wrong options genuinely tempting "
+  + "EXACTLY ONE marked correct, up to twelve questions, three to five makes a good check. "
+  // 🔴🔴 REPORTED 2026-08-27: *"I asked for a test for my attachment and it worked but the test did
+  // not relate at all to the attachment."* The plumbing was never broken — `groundingBlock` has
+  // been putting the attached document's title and excerpts in this same packet the whole time.
+  // This LINE was the bug: it said "ask about what was actually said in this conversation", so a
+  // learner who dropped a PDF and said "test me on this" got questions about the two sentences of
+  // chat around it, and the document sitting right there in the packet was ignored by instruction.
+  //
+  // 🔴 THE MATERIAL WINS WHEN THERE IS ANY, and the fallback is what the old line said. Written as
+  // "what they are pointing at" rather than as a rule about file types, so it holds for a lecture
+  // PDF, a pasted page, a web source and a conversation alike — no list of kinds to keep current.
+  + "Ask about the material the learner means: when there is a SOURCE above, the questions come "
+  + "from ITS content and nowhere else, and when there is none they come from what was actually "
+  + "said in this conversation. A question the attached material cannot answer is the wrong "
+  + "question, however good it is. Make the wrong options genuinely tempting "
   + "rather than obviously silly, and vary which seat the right answer sits in. They are shown as "
   + "tappable chips under your answer, so do not also write them out in your prose. Do not announce "
   + "them either: no \"here it is\", no \"five questions coming up\", no describing what the quiz "
