@@ -138,7 +138,29 @@ test("🔴🔴🔴 settings open as a POPUP — nothing inside the workspace nav
     assert.ok(!/href=["']\/settings/.test(source), `${file} navigates to /settings instead of opening the popup`);
     assert.ok(!/push\(["']\/settings|replace\(["']\/settings/.test(source), `${file} routes to /settings instead of opening the popup`);
   }
+  // 🔴 REPOINTED 2026-08-27. These two pinned the MEMORY NOTICE's door — the one exception this
+  // test was written about — and the owner has since deleted the notice itself: *"remove 'memory
+  // updated', that should be in the background."* With it gone the canvas has no settings door at
+  // all, which satisfies this test's actual subject more completely than opening the popup did.
+  //
+  // 🔴 THE LOOP ABOVE IS THE PROPERTY AND IT IS UNTOUCHED: nothing inside the workspace navigates
+  // to /settings. What follows just holds that the canvas did not keep a dead hook for a control
+  // that no longer exists.
   const canvas = strip(readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8"));
-  assert.match(canvas, /openSettings\("memory"\)/, "the memory notice stopped opening the popup at the Memory section");
-  assert.match(canvas, /useSettingsModal\(\)/, "the canvas lost the hook that opens the popup");
+  assert.ok(!/useSettingsModal/.test(canvas), "the canvas holds a settings hook with nothing left to open");
+  // And the popup is still reachable from the shell, which is where that door belongs. The sidebar
+  // hands the opener down to its footer rather than calling it, so the honest check is that both
+  // surfaces still take the hook.
+  //
+  // 🔴 UNSTRIPPED, DELIBERATELY, AND I CHASED THIS FOR A WHILE. `strip` removes `/* … */` blocks
+  // non-greedily, and these two files carry enough of them that the hook line itself came back
+  // missing — the probe said the raw text contains `useSettingsModal` and the stripped text does
+  // not. Stripping exists so a guard cannot be satisfied by a COMMENT ABOUT the thing; that risk is
+  // real for a positive match on prose, and negligible for an import-and-call pair that no comment
+  // in these files writes out. The negative assertions above stay stripped, where it matters.
+  for (const shell of ["../../components/workspace/shell/chat-sidebar.tsx", "../../components/workspace/shell/nav-rail.tsx"]) {
+    const source = readFileSync(new URL(shell, import.meta.url), "utf8");
+    assert.match(source, /import \{ useSettingsModal \}/, `${shell} lost the import for the settings popup`);
+    assert.match(source, /= useSettingsModal\(\);/, `${shell} lost the door into settings`);
+  }
 });

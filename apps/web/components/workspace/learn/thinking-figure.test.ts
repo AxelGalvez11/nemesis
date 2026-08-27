@@ -68,7 +68,12 @@ test("🔴 the surface says where the character stands, because the pose no long
   // real page at (493, 648) arriving at the surface centre (728, 378). `handedOver` is exactly
   // "this canvas was opened by pressing send on the front door", and it clears the moment anything
   // real happens.
-  assert.match(CANVAS, /station=\{handedOver \|\| turnInFlight \|\| presence === "preparing" \? "centre" : "corner"\}/);
+  // 🔴 REPOINTED 2026-08-27: the THINKING terms are gated on the view now (owner: *"when in chat
+  // mode, the mascot should not be in the middle for thinking, it should be in the left side like
+  // in a regular chat"*), while `handedOver` stays outside the gate for exactly the reason the
+  // paragraph above gives — it is the front door's character already at the centre, and gating it
+  // would reproduce that measured walk mirrored.
+  assert.match(CANVAS, /station=\{handedOver \|\| \(!threadOpen && \(turnInFlight \|\| presence === "preparing"\)\) \? "centre" : "corner"\}/);
   // 🔴 AND THE DERIVED DEFAULT SURVIVES FOR EVERY CALLER WITH NO OPINION. A prop that silently
   // became mandatory would move the character on surfaces nobody had looked at.
   assert.match(STATIONS, /export function stationOf/);

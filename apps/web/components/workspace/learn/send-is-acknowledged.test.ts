@@ -82,7 +82,13 @@ test("🔴 the canvas keys the thinking screen on the SESSION's busy, not the po
   // `busy` is set by `converse`, `command` and `attachFiles` — things the learner just did. The
   // three policy flags in `working` are background. Naming the derivation here rather than its
   // shape, so a future edit that widens it has to walk past this.
-  assert.match(canvasCode, /const turnInFlight = busy\.kind !== null;/);
+  // 🔴 REPOINTED 2026-08-27. The property this guards is unchanged and is the one in the comment
+  // above: the thinking screen keys on the SESSION's busy, never on the policy's background flags.
+  // What was added is the one busy kind that is not a turn — reading attached material — because
+  // treating a file drop as a turn walked the character to the middle and blanked the page. Owner:
+  // *"attaching a document mid chat should not immediately make the chat go into processing mode."*
+  assert.match(canvasCode, /const turnInFlight = busy\.kind !== null && !readingMaterial;/);
+  assert.match(canvasCode, /const readingMaterial = busy\.kind === "source";/, "attaching material is a turn again");
   assert.ok(
     !/const turnInFlight = working/.test(canvasCode),
     "the thinking screen is keyed on background work and will blank a lesson mid-read",

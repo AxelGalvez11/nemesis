@@ -60,9 +60,16 @@ test("🔴🔴 the character never stands in the corner during the handover", ()
   );
   // 2. Between `session.ready` and the turn actually starting, both terms of the main dock's
   //    station are false. Measured: the character appeared at (493, 648) and walked to (728, 378).
+  // 🔴 REPOINTED 2026-08-27, AND THE HANDOVER TERM IS THE HALF THAT DID NOT MOVE. Owner: *"when in
+  // chat mode, the mascot should not be in the middle for thinking, it should be in the left side
+  // like in a regular chat."* So the THINKING terms are now gated on the view — but `handedOver` is
+  // not, and must never be: it is the front door's own character arriving, already at the centre on
+  // the previous screen. Gating it would reproduce the measured walk above, mirrored, for every
+  // learner in the chat. Calibration: move `handedOver` inside the `!threadOpen` group and this
+  // reddens.
   assert.match(
     CANVAS,
-    /station=\{handedOver \|\| turnInFlight \|\| presence === "preparing" \? "centre" : "corner"\}/,
+    /station=\{handedOver \|\| \(!threadOpen && \(turnInFlight \|\| presence === "preparing"\)\) \? "centre" : "corner"\}/,
     "the handover window stopped holding the centre",
   );
   assert.match(CANVAS, /const \[handedOver, setHandedOver\] = useState\(Boolean\(openingAsk\)\)/);

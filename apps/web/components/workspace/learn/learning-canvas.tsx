@@ -20,7 +20,6 @@ import { DeckReview } from "@/components/workspace/study/deck-review";
 import { ArtifactCard } from "./artifact-card";
 import { OutputPreview } from "./output-preview";
 import { ResearchPlanCard } from "./research-plan-card";
-import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { useAuth } from "@/components/AuthProvider";
 import { CanvasCheck } from "./canvas-check";
 // 🔴 `ensureCanvasDeck` / `writeRecallCards` / `cardsFromMisses` LEFT WITH THE RESULTS SCREEN
@@ -201,7 +200,6 @@ export function LearningCanvas({
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
   // A no-op outside the workspace provider, so an isolated preview of this canvas never throws.
-  const { openSettings } = useSettingsModal();
   /**
    * The judge decided a submission was not an attempt at the question on screen.
    *
@@ -1080,8 +1078,28 @@ export function LearningCanvas({
   // `ready`, no phase is narrated, and `busy` is the session's rather than the policy's — so none of
   // the three flags below held, `canvasPresentation` fell through to `quiet`, and the learner read
   // "Nemesis hasn't found anything to ask you about yet" with a Try again button, mid-lesson.
+  /**
+   * 🔴🔴 READING ATTACHED MATERIAL IS NOT A TURN, AND TREATING IT AS ONE PUT THE WHOLE CANVAS INTO
+   * A PROCESSING SCREEN FOR A FILE DROP. Owner, 2026-08-27: *"attaching a document mid chat should
+   * not immediately make the chat go into processing mode, it should just attach to the composer."*
+   *
+   * `attachFiles` sets `busy.kind = "source"`, and every "is something happening" signal on this
+   * surface read `busy.kind !== null` — so picking a PDF walked the character to the middle of the
+   * screen, put a thinking caption beside it, and (with nothing else on the surface) dropped the
+   * presence ladder all the way to `preparing`, blanking the page. None of that is a lie about what
+   * is running; it is the wrong SIZE of announcement. The learner asked for the file to be attached,
+   * not for the canvas to be taken over.
+   *
+   * What still reports it, and is enough: the chip in the composer appears on the PICK (see
+   * `attachWithChips`), and `session.error` says so on this same screen if ingest fails.
+   *
+   * 🔴 IT IS EXCLUDED FROM BOTH SIGNALS OR FROM NEITHER. `working` feeds the presence ladder and
+   * `turnInFlight` feeds the character, the caption and the action row; excluding it from one would
+   * leave the canvas half-announcing an attachment, which is harder to explain than either extreme.
+   */
+  const readingMaterial = busy.kind === "source";
   const working =
-    busy.kind !== null || policy.phase !== null || policy.status === "loading" || policy.deciding;
+    (busy.kind !== null && !readingMaterial) || policy.phase !== null || policy.status === "loading" || policy.deciding;
 
   /**
    * The learner just sent something and Nemesis is making the answer to it.
@@ -1093,7 +1111,7 @@ export function LearningCanvas({
    * lesson off the screen of someone reading it, for minutes, which is #690's blank screen with a
    * drawing on top.
    */
-  const turnInFlight = busy.kind !== null;
+  const turnInFlight = busy.kind !== null && !readingMaterial;
   /**
    * Voice, once the answer has actually finished arriving.
    *
@@ -2233,34 +2251,15 @@ export function LearningCanvas({
             surprise.
 
             🔴 AND IT IS DISMISSIBLE, because a notice that cannot be put away is an alert. */}
-        {session.memoryNotice > 0 && (
-          <div className="mx-auto w-full max-w-(--canvas-column) px-6">
-            <p className="canvas-swap mt-4 flex items-center gap-2 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary)">
-              <span className="flex-1">
-                Memory updated.{" "}
-                {/* 🔴🔴 IT OPENS THE POPUP; IT DOES NOT NAVIGATE (owner 2026-08-24: settings are
-                    *"supposed to be a pop up, not supposed to be a replaced chat or the Canvas
-                    page"*). This shipped as `<a href="/settings">`, which is a full page load: a
-                    learner mid-lesson who wanted to glance at what had just been remembered lost
-                    the canvas they were reading and had to find their way back to it. Every other
-                    door into settings in the shell already calls `openSettings`; this one was the
-                    single exception, and it was the one attached to a notice that appears WHILE
-                    the learner is working — the worst possible moment to take the page away. */}
-                <button className="underline" onClick={() => openSettings("memory")} type="button">
-                  See what Nemesis remembers
-                </button>
-              </span>
-              <button
-                aria-label="Dismiss"
-                className="shrink-0 rounded-md bg-transparent px-1.5 py-0.5 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                onClick={session.clearMemoryNotice}
-                type="button"
-              >
-                ✕
-              </button>
-            </p>
-          </div>
-        )}
+        {/* 🔴🔴 "MEMORY UPDATED" IS GONE FROM THE CANVAS — owner, 2026-08-27: *"remove 'memory
+            updated', that should be in the background."*
+            🔴 THE REMEMBERING IS UNTOUCHED. `session.memoryNotice` still counts what a turn stored
+            and `learner-memory.ts` still writes it; what is removed is the surface announcing it.
+            A notice that appears WHILE somebody is working interrupts them to report a background
+            bookkeeping step they did not ask about and cannot act on from there.
+            🔴 AND IT IS NOT SILENT, IT IS ELSEWHERE. Settings › Memory lists everything Nemesis
+            holds, with the delete beside each one — which is where a person goes when they actually
+            want to know, rather than a line that arrives when they do not. */}
 
         {session.testRequested && presence !== "preparing" && !policy.awaitingAnswer && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
@@ -2520,7 +2519,25 @@ export function LearningCanvas({
         // 🔴 THE SURFACE KNOWS, BECAUSE THE POSE NO LONGER DOES. The character works in `idle` now
         // that the dots are gone, and `idle` is also how it rests — so "come forward" has to be
         // said by whoever knows a turn is in flight rather than inferred from the animation.
-        station={handedOver || turnInFlight || presence === "preparing" ? "centre" : "corner"}
+        // 🔴🔴 IT DOES NOT WALK TO THE MIDDLE IN THE CHAT — owner, 2026-08-27: *"when in chat mode,
+        // the mascot should not be in the middle for thinking, it should be in the left side like
+        // in a regular chat."* The centre station was designed for the one-answer Canvas, where
+        // there is a single thing on an otherwise empty sheet and the character standing in the
+        // middle of it reads as Nemesis working on THAT. In a thread the middle of the surface is
+        // just the middle of a scrolling conversation — it has no owner — and a character standing
+        // there covers the answers either side of it.
+        //
+        // 🔴 THE WORKING STATE ITSELF IS UNTOUCHED. It still grows, still carries the caption, still
+        // takes a poke; only the journey is dropped. `stateForCanvas` below is not conditioned on
+        // the view, because what the character IS doing has not changed — only where it stands.
+        // 🔴 THE HANDOVER TERM IS OUTSIDE THE VIEW GATE, DELIBERATELY, AND THE FIRST DRAFT HAD IT
+        // INSIDE. `handedOver` is the front door's own character arriving here — it is already at
+        // the centre station on the previous screen, and `handoff-and-mascot.test.ts` records the
+        // measurement from when this broke: it appeared at (493, 648) and walked to (728, 378) in
+        // full view. Gating that on the view would have reproduced exactly that walk, mirrored,
+        // for every learner in the chat — which is now every learner by default. It clears the
+        // moment anything real happens, and from then on the rule above applies.
+        station={handedOver || (!threadOpen && (turnInFlight || presence === "preparing")) ? "centre" : "corner"}
         contain
         // 🔴🔴 NO `marker` IS PASSED, AND THAT IS THE WHOLE OF IT (owner 2026-08-26: *"remove the
         // random question mark, exclamation mark above the mascot"*).

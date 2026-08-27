@@ -199,33 +199,24 @@ test("🔴🔴 the notice fires only when something was actually written", () =>
   assert.match(SESSION, /if \(saved > 0\) setMemoryNotice\(saved\);/, "the notice fires regardless of whether anything was kept");
 });
 
-test("🔴🔴 the notice never prints the remembered sentence into the canvas", () => {
-  // That would put a claim about the learner on their screen mid-lesson. The place to read and
-  // delete them is Settings, where all of them are together and none is a surprise.
+test("🔴🔴🔴 the canvas does not announce that memory was updated", () => {
+  // Owner, 2026-08-27: *"remove 'memory updated', that should be in the background."*
+  //
+  // 🔴 THIS INVERTS THE TWO GUARDS IT REPLACES, AND THE REVERSAL IS HIS. They held a notice that
+  // existed to answer *"does memory work like it does in ChatGPT where you basically can see the
+  // memory prompt and the updates?"* (2026-08-24) — that it must never print the remembered
+  // sentence, that it must open Settings rather than navigate, that it must be dismissible. Every
+  // one of those was about making the notice safe. The ruling now is that the notice should not be
+  // there at all: it interrupts somebody mid-task to report a background bookkeeping step they did
+  // not ask about and cannot act on from there.
+  //
+  // 🔴 THE REMEMBERING IS UNTOUCHED, AND THE TEST ABOVE STILL HOLDS IT. `memoryNotice` is still
+  // counted from real writes; what is gone is the surface reading it out. Settings › Memory lists
+  // everything with a delete beside each, which is where a person goes when they want to know.
   const canvas = strip(readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8"));
-  // 🔴 THE END ANCHOR IS THE CHECK BLOCK'S OWN OPENING LINE, NOT JUST `session.testRequested &&`.
-  // That shorter string matched a NEW `checkOwnsSurface` derivation added higher up the file, so
-  // the slice ran backwards and came back empty: the guard reported "the notice moved" about a
-  // notice that had not moved. A boundary search has to name something that appears once.
-  const notice = canvas.slice(
-    canvas.indexOf("session.memoryNotice > 0"),
-    canvas.indexOf('session.testRequested && presence !== "preparing"'),
-  );
-  assert.ok(notice.length > 0, "the notice moved — this guard is pointed at nothing");
-  assert.ok(!/\.statement|remember\[/.test(notice), "the notice started printing the fact itself");
-  assert.match(notice, /Memory updated\./);
-  assert.match(notice, /See what Nemesis remembers/, "the notice stopped saying where to read them");
-  // 🔴🔴 THIS LINE USED TO PIN `href="/settings"`, AND THE OWNER REVERSED IT (2026-08-24: settings
-  // are *"supposed to be a pop up, not supposed to be a replaced chat or the Canvas page"*). The
-  // anchor was a full page load fired at the worst moment there is — the notice appears WHILE a
-  // lesson is running, so a learner glancing at what had just been remembered lost the canvas they
-  // were reading. The requirement it was really defending is "the notice says where to go", and
-  // that survives; only the mechanism changed, from navigating to opening the popup in place.
-  assert.ok(!/href="\/settings"/.test(notice), "the notice navigates away from the lesson again instead of opening the popup");
-  assert.match(notice, /openSettings\("memory"\)/, "the notice no longer opens anywhere");
+  assert.ok(!/Memory updated/.test(canvas), "the canvas announces memory writes again");
+  assert.ok(!/See what Nemesis remembers/.test(canvas), "the notice's link is back on the canvas");
+  assert.ok(!/session\.memoryNotice/.test(canvas), "the canvas is reading the notice count again");
+  assert.ok(!/clearMemoryNotice/.test(canvas), "a dismiss for a notice that no longer exists");
 });
 
-test("🔴 the notice can be dismissed, because a notice that cannot be is an alert", () => {
-  const canvas = strip(readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8"));
-  assert.match(canvas, /onClick=\{session\.clearMemoryNotice\}/, "the memory notice cannot be put away");
-});
