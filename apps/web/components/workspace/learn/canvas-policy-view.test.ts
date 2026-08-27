@@ -247,10 +247,28 @@ test("🔴 §35.1: the learner's words are BLUE in every case — blue is author
   assert.match(rendered, /\{feedback\.answer\}/);
   const quoteLine = /<LearnerUtterance[^>]*>\{feedback\.answer\}<\/LearnerUtterance>/.exec(rendered);
   assert.ok(quoteLine, "the learner's words must render through LearnerUtterance");
+  // 🔴🔴 REPOINTED 2026-08-26 FROM `text-` TO `bg-`, AND THE RULE IS UNCHANGED — ARGUABLY STATED
+  // HARDER. Owner: *"for the chat bubbles, make sure the user text bubble font is white."* Measured
+  // off ChatGPT, whose user bubble is a SOLID fill with light text. White could not simply be
+  // dropped onto the old 10% wash of the authorship blue — it is unreadable on it in light mode —
+  // so the ground took the token at full strength and the text went white.
+  //
+  // §35.1 is about what BLUE MEANS ("this came from you", never "correct"), not about which CSS
+  // property carries it. The bubble is now that blue undiluted. What must never come back is a
+  // colour keyed to a verdict, and the two checks below are what hold that.
   assert.match(
     utterance,
-    /text-\(--ui-learner\)/,
+    /bg-\(--ui-learner\)/,
     "LearnerUtterance stopped painting the learner's words with the ownership token",
+  );
+  assert.match(
+    utterance,
+    /text-white/,
+    "the learner's bubble lost the light text the solid ground requires — check the contrast before changing this",
+  );
+  assert.ok(
+    !/text-\(--ui-learner\)/.test(utterance),
+    "the ownership blue is back on the TEXT as well as the ground; one of them is now unreadable",
   );
 
   // 🔴 AND THE COMPONENT MUST NOT BE ABLE TO TAKE A VERDICT AT ALL. This is stronger than the

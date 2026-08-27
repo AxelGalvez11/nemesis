@@ -6,7 +6,8 @@
 // anywhere added later. Two call sites styling it independently is the failure mode, and it starts
 // the day the second call site is written.
 //
-// 🔴 THE TREATMENT IS A TINTED BUBBLE, AND IT REPLACED A PAIR OF QUOTE MARKS AT 24.75px. Quotation
+// 🔴 THE TREATMENT IS A SOLID BUBBLE (WAS A TINT UNTIL 2026-08-26), AND IT REPLACED A PAIR OF
+// QUOTE MARKS AT 24.75px. Quotation
 // marks are punctuation, not ownership: they read as "someone said this", which is also true of
 // every line Nemesis renders. Size was doing the rest of the work, and §46.3 rules that out —
 // "Large fonts are not a semantic tool in Nemesis." A container with its own ground says
@@ -52,11 +53,24 @@ export function LearnerUtterance({ children, className, via = "typed" }: Learner
   return (
     <p
       className={cn(
-        "inline-block rounded-2xl px-4 py-2.5 text-left",
-        "text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-learner)",
-        // A tint of the authorship colour rather than a grey: the ground and the text then say the
-        // same thing, so the bubble still reads as theirs if the text colour ever fails to load.
-        "bg-[color-mix(in_srgb,var(--ui-learner)_10%,transparent)]",
+        // 🔴🔴 A SOLID GROUND WITH WHITE TEXT, MEASURED OFF ChatGPT — owner, 2026-08-26: *"for the
+        // chat bubbles, make sure the user text bubble font is white."* Their bubble is a solid
+        // fill at `max-width: 70%`, radius 22px, padding 10px 16px, text 16px on a 24px line and
+        // effectively white. Ours matched none of it: blue text on a 10% tint, no max-width, 27px
+        // radius, 11.25/18 padding.
+        //
+        // 🔴 THE TINT COULD NOT SIMPLY GAIN WHITE TEXT, AND THAT IS WHY THE GROUND CHANGED TOO.
+        // What was here was a 10% wash of the authorship blue, chosen so "the ground and the text
+        // say the same thing… if the text colour ever fails to load". White on a 10% wash is
+        // unreadable in light mode — the instruction is only satisfiable with a ground dark enough
+        // to carry it, which is exactly what the reference uses.
+        //
+        // 🔴 §35.1 IS UNTOUCHED AND IS ARGUABLY STATED HARDER. *"Blue means: this came from you."*
+        // The bubble is now that blue at full strength rather than a wash of it. What it must still
+        // never mean is CORRECT — there is no verdict prop here and there must not be one.
+        "inline-block max-w-[70%] rounded-[22px] px-4 py-2.5 text-left",
+        "text-[length:var(--canvas-text-body)] leading-relaxed text-white",
+        "bg-(--ui-learner)",
         className,
       )}
       data-learner-utterance=""

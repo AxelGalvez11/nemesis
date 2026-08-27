@@ -59,3 +59,51 @@ test("live microphone geometry is untouched — only the cadence moved", () => {
   assert.match(SOURCE, /const IDLE_BAR = 3;/);
   assert.match(SOURCE, /w-\[3px\] shrink-0 rounded-full/, "the 3px bar width changed");
 });
+
+// ── the strip is smooth without being faster ────────────────────────────────────────────────
+
+test("🔴🔴 the strip GLIDES between samples, and the sampling cadence is untouched", () => {
+  // Owner, 2026-08-26: *"the dictation waveform is at a higher frames per second because right now
+  // it just feels not smooth and laggy."* — hours after the opposite-sounding *"the dictation
+  // animation needs to be a little bit slower."*
+  //
+  // 🔴 BOTH ARE SATISFIED BECAUSE THEY ARE ABOUT DIFFERENT THINGS: how often the strip LEARNS
+  // something (10Hz, the measured integration window, asserted above and unchanged) versus how
+  // often it PAINTS (the display's refresh). Raising SAMPLE_MS to smooth the motion would have
+  // quietly reversed the earlier instruction — which is exactly what this pair of tests prevents.
+  assert.match(SOURCE, /transform \$\{SAMPLE_MS\}ms linear/, "the glide no longer lasts exactly one sample period");
+  assert.match(SOURCE, /translate3d\(\$\{BAR_PITCH\}px, 0, 0\)/, "the strip no longer starts a sample-width to the right");
+  assert.match(SOURCE, /translate3d\(0, 0, 0\)/, "the strip never releases back to zero");
+  // 🔴 TWO FRAMES, NOT ONE. A single rAF is sometimes coalesced with the style write and the
+  // transition simply does not run — the strip would jump exactly as it did before.
+  assert.match(SOURCE, /requestAnimationFrame\([\s\S]{0,200}requestAnimationFrame\(/, "the two-frame commit is gone; the transition may never fire");
+});
+
+test("🔴🔴 the glide distance IS the bar pitch, read off the markup", () => {
+  // If `BAR_PITCH` and the rendered bar stop agreeing, the strip slides the wrong distance every
+  // tick and visibly creeps. Both numbers are read from the source rather than restated here.
+  const pitch = /const BAR_PITCH = (\d+);/.exec(SOURCE);
+  assert.ok(pitch, "BAR_PITCH is gone");
+  const bar = /className="w-\[(\d+)px\] shrink-0 rounded-full bg-\(--ui-text-tertiary\)"/.exec(SOURCE);
+  assert.ok(bar, "the sampled bar's width moved; re-point this check");
+  const gap = /className="flex min-w-0 items-center gap-\[(\d+)px\] will-change-transform"/.exec(SOURCE);
+  assert.ok(gap, "the gliding track's gap moved; re-point this check");
+  assert.equal(
+    Number(pitch[1]),
+    Number(bar[1]) + Number(gap[1]),
+    `BAR_PITCH is ${pitch[1]} but a bar occupies ${bar[1]}+${gap[1]} — the strip will creep on every tick`,
+  );
+});
+
+test("🔴 a sampled bar is keyed by identity, never by its index", () => {
+  // The other half of "laggy", and it was not the animation. `samples` is a sliding window, so once
+  // it is full every index shifts each tick — with `key={index}` React kept the nodes and REWROTE
+  // every height, ten times a second. The strip morphed instead of moving.
+  assert.match(SOURCE, /key=\{sample\.id\}/, "sampled bars are keyed by index again");
+  assert.ok(!/key=\{`bar-\$\{index\}`\}/.test(SOURCE), "the index key is back");
+});
+
+test("🔴 reduced motion keeps the bars and drops only the glide", () => {
+  // Somebody who asked the system to stop moving still has to see that it is listening.
+  assert.match(SOURCE, /prefers-reduced-motion: reduce/, "the glide ignores a reduced-motion preference");
+});
