@@ -2,14 +2,15 @@
 
 // One recorded moment, drawn as the exchange it was.
 //
-// 🔴🔴 IT IS ONE COMPONENT BECAUSE THERE ARE NOW TWO SURFACES THAT SHOW A MOMENT, AND THE RULE IS
-// ABOUT RECOGNITION. `learner-utterance.tsx` states it at the level below this one: §46.2 asks that
-// a learner "be able to distinguish instantly: This came from me / This came from Nemesis", and
-// that only holds if their words look the same every time they appear — *"Two call sites styling it
-// independently is the failure mode, and it starts the day the second call site is written."* This
-// file exists because that day arrived: the rewound single moment (`canvas-history-view.tsx`) and
-// the whole conversation (`canvas-conversation-view.tsx`) draw the same object, and a copy in each
-// would drift the first time one of them was adjusted.
+// 🔴 IT DRAWS A MOMENT FROM THE DURABLE LOG — flat text, whatever survived the round trip. Its one
+// caller today is the REWIND (`canvas-history-view.tsx`), which is a deliberate look at a single
+// past moment.
+//
+// 🔴🔴 IT IS NOT WHAT THE THREAD USES, AND THE DIFFERENCE IS THE POINT. A turn in the thread carries
+// its real payload — the drawings, the source pills, the artifact it made — and renders with the
+// components the live answer uses (`canvas-thread-turn.tsx`). This renders a RECORD. Pointing the
+// thread at this file is what the owner rejected on 2026-08-26: the conversation was drawn from
+// stored text and everything richer than a sentence was missing from it.
 //
 // 🔴 THE ORDER IS THE ORDER IT HAPPENED IN, WHICH IS WHAT MAKES IT READ AS A CONVERSATION RATHER
 // THAN AS A RECORD: what they said, then what came back.

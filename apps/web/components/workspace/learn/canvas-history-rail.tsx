@@ -177,8 +177,12 @@ export function CanvasHistoryRail({
               // 800px viewport — but the previous cap in this comment was ESTIMATED too and was
               // 2.2× wrong; measure after changing any metric here. `h-2` is 9px in this app
               // (`html { font-size: 112.5% }`), not 8.
+              // 🔴 OPEN, THE ROWS TOUCH: the air lives inside each row now (see RailMarker), which
+              // is how the reference list is built and why it reads as places rather than as a
+              // ladder. The panel keeps 6px of its own padding so the first and last rows are not
+              // flush against the ring.
               peeking
-                ? "gap-[8px] bg-(--ui-bg-elevated)/95 px-2 shadow-lg ring-1 ring-(--ui-stroke-secondary) backdrop-blur-sm"
+                ? "gap-0 bg-(--ui-bg-elevated)/95 p-[6px] shadow-lg ring-1 ring-(--ui-stroke-secondary) backdrop-blur-sm"
                 : "gap-[3px] px-0",
             )}
           >
@@ -226,7 +230,12 @@ function RailMarker({
       // buttons, which is exactly as useful as it sounds.
       aria-label={label}
       className={cn(
-        "group flex items-center justify-end gap-2 transition-[height] duration-200 ease-out focus-visible:outline-none",
+        "group flex shrink-0 items-center transition-[height] duration-200 ease-out focus-visible:outline-none",
+        // 🔴 THE MARK LEADS WHEN OPEN AND TRAILS WHEN CLOSED, WHICH IS ONE DOM ORDER AND TWO
+        // ALIGNMENTS RATHER THAN TWO LAYOUTS. Closed, the label is clipped to zero width, so
+        // `justify-end` leaves the mark alone against the right edge of the screen — the quiet
+        // ladder the owner kept on 2026-08-23. Open, `justify-start` puts the mark at the head of
+        // the row with the label beside it, which is the arrangement in his reference picture.
         // 🔴 A HIT TARGET, NOT A HAIRLINE. The rule itself is 1px; a 1px button cannot be clicked,
         // so the collapsed row is 8px of transparent space around it. With the nav's 3px gap the
         // column has no dead pixels — every point on the strip belongs to a marker or the gap
@@ -236,20 +245,20 @@ function RailMarker({
         // to nothing horizontally but leaves a full 12px line box behind, which is what made the
         // collapsed rail 2.2× taller than its own comment claimed. Height is stated here rather
         // than inherited from something invisible.
-        peeking ? "h-auto" : "h-2",
+        // 🔴🔴 36px OPEN, MEASURED OFF ChatGPT'S OWN SIDEBAR LIST IN THE OWNER'S BROWSER on
+        // 2026-08-26 at his instruction ("if you need actual numbers for the spacing, open up
+        // ChatGPT"): rows 36px tall and CONTIGUOUS, label 14px on a 20px line, padding 6px 10px,
+        // radius 10px, hover a soft pill. `h-auto` was a 12px line with an 8px gap around it — the
+        // same air, but between the rows instead of inside them, which is what made it read as a
+        // tight ladder rather than a list. Owner: *"the spacing… I feel like that's better than
+        // what's current."*
+        peeking
+          ? "h-[36px] justify-start gap-[10px] rounded-[10px] px-[10px] hover:bg-(--ui-bg-tertiary)"
+          : "h-2 justify-end gap-2",
       )}
       onClick={onSelect}
       type="button"
     >
-      <span
-        className={cn(
-          "min-w-0 truncate text-right text-[length:var(--canvas-text-meta)] leading-none transition-[max-width,opacity] duration-200 ease-out",
-          peeking ? "max-w-[11rem] opacity-100" : "max-w-0 opacity-0",
-          active ? "text-(--ui-text-primary)" : "text-(--ui-text-tertiary) group-hover:text-(--ui-text-secondary)",
-        )}
-      >
-        {label}
-      </span>
       <span
         aria-hidden
         className={cn(
@@ -259,6 +268,28 @@ function RailMarker({
             : "h-px w-2.5 bg-(--ui-text-tertiary) opacity-50 group-hover:w-4 group-hover:opacity-90",
         )}
       />
+      {/* 🔴 14px ON A 20px LINE, NOT 12px ON `leading-none` — the reference's list type, measured.
+          🔴 THROUGH THE TOKEN, NEVER AS A BARE LENGTH. `--canvas-text-small` IS 14px, and §46.3's
+          guard in canvas-shell.test.ts refuses a raw size precisely so a sixth type step cannot be
+          introduced by whoever happened to measure one. It caught this line — twice: once for the
+          size itself, and once for an earlier version of THIS COMMENT, which spelled the banned
+          utility out. That is not the guard being clumsy. Its own note records a literal utility
+          written in prose being emitted as a real CSS rule and breaking the build, so the class
+          name must not appear here even to explain its absence.
+          🔴 `max-w-[200px]`: ChatGPT's sidebar is 260px wide with 10px of row padding a side, so
+          200 keeps the same share of the label readable before it truncates.
+          🔴 THE HIDDEN LABEL'S LINE BOX IS NOW 20px, NOT 12px, AND THE ROW'S EXPLICIT `h-2` IS WHAT
+          KEEPS THAT HARMLESS. The note above already records what an inherited height cost here:
+          the collapsed rail measured 2.2× its own comment. Do not replace `h-2` with `h-auto`. */}
+      <span
+        className={cn(
+          "min-w-0 truncate text-left text-[length:var(--canvas-text-small)] leading-[20px] transition-[max-width,opacity] duration-200 ease-out",
+          peeking ? "max-w-[200px] opacity-100" : "max-w-0 opacity-0",
+          active ? "text-(--ui-text-primary)" : "text-(--ui-text-tertiary) group-hover:text-(--ui-text-secondary)",
+        )}
+      >
+        {label}
+      </span>
     </button>
   );
 }

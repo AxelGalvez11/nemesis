@@ -30,11 +30,18 @@
 export type CanvasView = "answer" | "conversation";
 
 /**
- * 🔴 `answer` IS THE DEFAULT AND STAYS THE DEFAULT. Everything measured against ChatGPT and
- * Claude — the column, the character's place, the reply's typography — was measured on it, and a
- * learner who has never asked for anything must land on the Canvas the product is designed around.
+ * 🔴🔴 `conversation` IS THE DEFAULT — OWNER REVERSAL, 2026-08-26, HOURS AFTER THE VIEW SHIPPED
+ * WITH `answer` AS THE DEFAULT: *"it should be a chatbot first. That's what makes sense. And the
+ * Canvas should just be a different way to view the chatbot history, or not even the history, just
+ * to focus it… the user could switch back to the classic chat mode."*
+ *
+ * So Nemesis is a chatbot you can focus, not a focused surface you can unfold. The note this
+ * replaces argued that everything had been MEASURED on the one-answer view — the column, the
+ * character's place, the typography. All of that is still true and none of it changed: the thread
+ * is the same column with the turns above it left on the page, which is why the flip is a default
+ * and not a rebuild.
  */
-export const DEFAULT_CANVAS_VIEW: CanvasView = "answer";
+export const DEFAULT_CANVAS_VIEW: CanvasView = "conversation";
 
 /**
  * Where the choice is kept.
@@ -76,5 +83,5 @@ export function otherCanvasView(view: CanvasView): CanvasView {
  * to anybody who did not write it. `aria-pressed` carries the state; the words carry the action.
  */
 export function canvasViewAction(view: CanvasView): string {
-  return view === "conversation" ? "Show one answer at a time" : "Show the whole conversation";
+  return view === "conversation" ? "Focus on the latest output" : "Show the whole conversation";
 }
