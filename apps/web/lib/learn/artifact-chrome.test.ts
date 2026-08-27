@@ -17,14 +17,27 @@ const code = (path: string): string =>
     .join("\n");
 
 const PREVIEW = code("../../components/workspace/learn/output-preview.tsx");
+// 🔴 THE NUMBERS MOVED TO A SHARED MODULE ON 2026-08-27, when the source preview became a second
+// docked reader (owner: *"file preview should open with sidebar not as popup"*). Two hand-written
+// copies of a measured geometry drift the first time one is adjusted, so there is one set and both
+// import it — which also means these guards now cover both readers instead of one.
+const CHROME = code("../../components/workspace/learn/reader-chrome.ts");
+const SOURCE = code("../../components/workspace/learn/source-preview.tsx");
 
 test("🔴🔴 the docked panel is two thirds of the viewport, measured — not a fixed rem", () => {
   // 980 of 1470. The first version was 38rem (608px, a little over a third), which is a different
   // object: a document at that width wraps every line twice and reads as a sidebar rather than as
   // the thing you opened. A fixed width is also right at exactly one window size.
-  assert.match(PREVIEW, /const DOCK_FRACTION = 2 \/ 3;/, "the dock width is no longer the measured fraction");
-  assert.match(PREVIEW, /Math\.round\(window\.innerWidth \* DOCK_FRACTION\)/, "the width is not measured from the viewport");
-  assert.match(PREVIEW, /window\.addEventListener\("resize", measure\)/, "the width does not follow a resize");
+  assert.match(CHROME, /const DOCK_FRACTION = 2 \/ 3;/, "the dock width is no longer the measured fraction");
+  // 🔴 BOTH READERS, because both dock. A panel that measured its own width would be the drift this
+  // shared module exists to stop.
+  for (const [name, source] of [["output-preview", PREVIEW], ["source-preview", SOURCE]] as const) {
+    assert.match(source, /Math\.round\(window\.innerWidth \* DOCK_FRACTION\)/, `${name}: the width is not measured from the viewport`);
+    assert.match(source, /window\.addEventListener\("resize", measure\)/, `${name}: the width does not follow a resize`);
+    // 🔴 NOT PINNED TO THE ARGUMENT: the artifact reader passes 0 while full-screen, which is
+    // correct — full screen covers everything and pushes nothing. What matters is that it declares.
+    assert.match(source, /useDeclareSidePanel\(/, `${name}: the panel covers the canvas instead of pushing it`);
+  }
 });
 
 test("🔴 flush: no radius, no shadow, no inset, right edge on the viewport", () => {
@@ -42,12 +55,22 @@ test("🔴 the header is the measured one: 36x36 buttons, 8px radius, 20px glyph
   // 🔴 EXPLICIT PIXELS. `html { font-size: 112.5% }` in this app, so `size-9 rounded-lg gap-2`
   // measured 40.5x40.5 at radius 13.5 on a 49.5 pitch — against 36x36 at 8 on 40. Measuring BOTH
   // sides is what caught it; each of those reads as correct in a screenshot.
-  assert.match(PREVIEW, /button: "flex h-\[36px\] w-\[36px\]/, "the button is not 36x36");
-  assert.match(PREVIEW, /rounded-\[8px\]/, "the button radius is not the measured 8px");
-  assert.ok(!/size-9|rounded-lg/.test(PREVIEW), "a rem utility is back — it lands 1.125x too big here");
-  assert.match(PREVIEW, /icon: "20px"/, "the header glyph is not 20px");
-  assert.match(PREVIEW, /header: "flex items-center gap-\[4px\] px-\[12px\] py-\[5\.5px\]"/, "the header band is not the measured 47px on a 40px pitch");
-  assert.match(PREVIEW, /leading-\[20px\] text-\(--ui-text-primary\)/, "the filename is not 14px on a 20px line");
+  assert.ok(!/size-9|rounded-lg|gap-2\b|leading-5/.test(CHROME), "a rem utility is back in the shared chrome — every one lands 1.125x too big here");
+  assert.match(CHROME, /button: "flex h-\[36px\] w-\[36px\]/, "the button is not 36x36");
+  assert.match(CHROME, /rounded-\[8px\]/, "the button radius is not the measured 8px");
+  assert.match(CHROME, /icon: "20px"/, "the header glyph is not 20px");
+  assert.match(CHROME, /header: "flex items-center gap-\[4px\] px-\[12px\] py-\[5\.5px\]"/, "the header band is not the measured 47px on a 40px pitch");
+  assert.match(CHROME, /leading-\[20px\] text-\(--ui-text-primary\)/, "the filename is not 14px on a 20px line");
+  // 🔴 AND NEITHER READER MAY WRITE ITS OWN. A rem utility lands 1.125x too big here, and a second
+  // hand-written copy of the header is how the two panels stop matching.
+  for (const [name, source] of [["output-preview", PREVIEW], ["source-preview", SOURCE]] as const) {
+    assert.match(source, /from "\.\/reader-chrome"/, `${name}: the reader stopped sharing the measured chrome`);
+    // 🔴 NEITHER MAY DEFINE ITS OWN. This replaces a blanket ban on rem utilities across the whole
+    // file, which was the wrong shape: it caught a `rounded-lg` on a preview IMAGE — decoration,
+    // not a measured control — while a hand-written header constant would have slipped past it.
+    assert.ok(!/^\s*button: "flex h-/m.test(source), `${name}: the reader writes its own header chrome again`);
+    assert.ok(!/^\s*header: "flex items-center/m.test(source), `${name}: the reader writes its own header band again`);
+  }
 });
 
 test("🔴🔴 close is on the RIGHT when docked and on the LEFT when full, as the reference has it", () => {
