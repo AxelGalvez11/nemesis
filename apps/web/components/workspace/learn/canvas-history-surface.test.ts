@@ -60,11 +60,32 @@ test("🔴🔴 the 'All history' drawer stays deleted — one history surface, t
   assert.ok(!/"expanded"/.test(RAIL_CODE), "the display union has an expanded state again");
 });
 
-test("🔴 the marks sit at the owner's opened-up pitch, in both states", () => {
-  // Owner: "keep this one that's compact, but just increase the spacing a bit." From 1px/5px of
-  // gap to 3px/8px. Calibration: tidy either back to the old value and this reddens.
-  assert.ok(/gap-\[8px\]/.test(RAIL_CODE), "the peeked gap closed up again");
+test("🔴🔴 the open rail is ChatGPT's list geometry, measured, and the collapsed pitch is untouched", () => {
+  // 🔴 REPOINTED 2026-08-26, AND THE NUMBERS CAME FROM A BROWSER RATHER THAN FROM TASTE. Owner,
+  // with a reference picture: *"I would like to make the rail exactly like this… when it's opened.
+  // The spacing… I feel like that's better than what's current."* Then: *"if you need actual
+  // numbers for the spacing, open up ChatGPT."* Measured in his own Chrome, on ChatGPT's sidebar
+  // conversation list: rows 36px tall, pitch 36 (so CONTIGUOUS — gap 0), label 14px on a 20px
+  // line, row radius 10px, row padding 6px 10px, sidebar 260px wide.
+  //
+  // What this replaces: `gap-[8px]` around a 12px label on `leading-none`. Same air, but between
+  // the rows instead of inside them, which is what made it read as a ladder rather than a list.
+  // The air moving INSIDE the row is the whole change, so the assertion is a pair: gap gone, row
+  // height arrived. Calibration: restore either and this reddens alone.
+  assert.ok(/gap-0 bg-\(--ui-bg-elevated\)/.test(RAIL_CODE), "the open rail has gaps between its rows again");
+  assert.ok(/h-\[36px\]/.test(RAIL_CODE), "the open row is not the reference's 36px");
+  assert.ok(/rounded-\[10px\]/.test(RAIL_CODE), "the open row lost the reference's radius");
+  assert.ok(/leading-\[20px\]/.test(RAIL_CODE), "the label is not on the reference's 20px line");
+  // 🔴 THE TOKEN, NOT A BARE LENGTH. §46.3's guard bans `text-[14px]` outright — see
+  // canvas-shell.test.ts — and `--canvas-text-small` already IS 14px.
+  assert.ok(/text-\[length:var\(--canvas-text-small\)\]/.test(RAIL_CODE), "the label stopped using the type scale");
+  assert.ok(!/text-\[14px\]/.test(RAIL_CODE), "a bare length is back, and it is a sixth type step");
+
+  // 🔴 THE COLLAPSED PITCH IS A SEPARATE RULING AND IT DID NOT CHANGE. Owner, 2026-08-23: "keep
+  // this one that's compact, but just increase the spacing a bit" — that is the quiet edge, and he
+  // asked about the rail "when it's opened".
   assert.ok(/gap-\[3px\]/.test(RAIL_CODE), "the collapsed gap closed up again");
+  assert.ok(/"h-2 justify-end gap-2"/.test(RAIL_CODE), "the collapsed row is no longer an 8px hit target at the edge");
 });
 
 test("🔴 no synthesised 'Canvas started' row reaches any surface", () => {
@@ -160,7 +181,10 @@ test("🔴 nothing but marks is painted while the rail is collapsed", () => {
   // Owner: "Do not show message bubbles, timestamps, labels, avatars or text while collapsed."
   // The labels exist in the DOM for screen readers and are clipped to zero width until peek.
   assert.ok(/max-w-0 opacity-0/.test(RAIL_CODE), "labels are not collapsed away");
-  assert.ok(/peeking \? "max-w-\[11rem\] opacity-100"/.test(RAIL_CODE), "labels do not open on peek");
+  // 🔴 REPOINTED with the measured spacing: 200px, which keeps the same share of the label readable
+  // as ChatGPT's 260px sidebar does inside its 10px row padding. It was `11rem`, and a rem in this
+  // app paints 1.125× its number — the exact class of value §46.3's guard exists to remove.
+  assert.ok(/peeking \? "max-w-\[200px\] opacity-100"/.test(RAIL_CODE), "labels do not open on peek");
 });
 
 test("🔴 a collapsed marker still has an accessible name", () => {
@@ -264,18 +288,22 @@ test("🔴🔴 a rewound moment shows the learner's OWN words, in the learner's 
   // and an unlabelled correction reads as a second answer.
   assert.match(BODY, /label="Correction"/, "a correction lost the word that tells it apart from an answer");
 
-  // 🔴🔴 ONE TREATMENT, TWO SURFACES — the whole reason the component was extracted.
-  const CONVERSATION = strip(readFileSync(new URL("./canvas-conversation-view.tsx", import.meta.url), "utf8"));
+  // 🔴 THE REWIND DRAWS THROUGH THE SHARED BODY AND NOT ITSELF.
   assert.match(VIEW_CODE, /<CanvasMomentBody moment=\{moment\}/, "the rewind draws a recorded moment its own way again");
-  assert.match(CONVERSATION, /<CanvasMomentBody/, "the conversation draws a recorded moment its own way again");
-  // The learner's bubble belongs to the shared body. The ONE exception is the conversation's
-  // pending line — a sentence that has been sent and not yet answered, which is not a moment and
-  // has nowhere else to live; it is asserted on its own in canvas-conversation-view.test.ts.
-  assert.ok(
-    !/<LearnerUtterance[^>]*>\{moment\./.test(CONVERSATION),
-    "the conversation view is drawing a recorded moment's words itself instead of through the shared body",
-  );
   assert.ok(!/LearnerUtterance/.test(VIEW_CODE), "the rewind view is drawing the learner's words itself again");
+
+  // 🔴🔴 AND THE THREAD DOES NOT USE THIS PATH AT ALL, WHICH IS THE POINT OF THE 2026-08-26 REBUILD.
+  // A recorded moment is FLAT TEXT — the log stores what was said, never the drawing beside it. The
+  // first chat view drew the conversation from exactly this projection, and the owner's answer was
+  // to name everything it lost: *"bring over the artifacts, rendering chips, the visualizations…
+  // the pill shapes for the sources and favicon thumbnails… the component chips for tests."* The
+  // thread now carries each turn's real payload and renders it with the live answer's own
+  // components. Pointing it back at `CanvasMomentBody` would silently strip all of that again.
+  const THREAD = strip(readFileSync(new URL("./canvas-thread-turn.tsx", import.meta.url), "utf8"));
+  assert.ok(!/CanvasMomentBody/.test(THREAD), "the thread is drawing turns from the flat record again");
+  assert.match(THREAD, /<SemanticVisual/, "a turn in the thread cannot draw");
+  assert.match(THREAD, /<CanvasSourceCards/, "a turn in the thread lost its source pills");
+  assert.match(THREAD, /<ArtifactCard/, "a turn in the thread lost what it made");
 });
 
 test("🔴 the banner survives all of it, because the dangerous state is not knowing this is old", () => {

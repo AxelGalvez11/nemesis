@@ -66,9 +66,11 @@ const CANVAS_CAPABILITIES: readonly ComposerCapability[] = COMPOSER_CAPABILITIES
 import { nextExplanationState, type ExplanationEvent } from "./canvas-explanation-turn";
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
-import { CanvasConversationView } from "./canvas-conversation-view";
+import { CanvasThreadTurnView } from "./canvas-thread-turn";
 import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
+import { fileTurn, turnHasContent, type CanvasThreadTurn } from "@/lib/learn/canvas-thread";
+import { LearnerUtterance } from "./learner-utterance";
 import { useCanvasView } from "./use-canvas-view";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
@@ -603,13 +605,42 @@ export function LearningCanvas({
   const uid = authSession?.user.id ?? null;
 
   /**
-   * The learner's sentence between pressing send and the answer landing.
+   * THE THREAD: every finished turn EXCEPT the one the live region is showing.
    *
-   * 🔴 DECLARED HERE, BESIDE THE ONE CALLBACK THAT SETS AND CLEARS IT, rather than with the other
-   * view state further down. Both ends of its life are in `converse`; a reader who finds it there
-   * should not have to go looking a thousand lines away to learn what it is.
+   * 🔴🔴 THE CHAT IS NOT A REPLAY, IT IS THE CANVAS WITH ITS HISTORY LEFT ON THE PAGE. The first
+   * version of this drew the conversation from `canvas.moments`, which stores flat text — so the
+   * drawings, the source pills, the artifact cards and the quiz all vanished the moment a turn
+   * scrolled out of the live region. Owner, 2026-08-26: the chat is the product now, and those
+   * things have to come with it.
+   *
+   * So a turn keeps its PAYLOAD and the thread draws it with the same components the answer below
+   * it uses. Nothing is re-rendered from a string.
+   *
+   * 🔴 THE HAND-OFF IS AT THE START OF THE NEXT TURN, NOT AT THE END OF THIS ONE. "Finished" is not
+   * an event a surface can observe — an answer streams and its last token is not a signal. So the
+   * outgoing turn is filed when a new one begins, which is also what guarantees the newest answer
+   * is drawn exactly once: by the live region, never also by the thread.
    */
-  const [pendingSaid, setPendingSaid] = useState<string | null>(null);
+  const [thread, setThread] = useState<CanvasThreadTurn[]>([]);
+  /**
+   * The learner's words for the turn the live region is showing.
+   *
+   * 🔴 IT OUTLIVES THE REQUEST, unlike the pending line it replaces. In a chat your message stays
+   * above the answer it produced; it does not disappear the instant the answer arrives.
+   */
+  const [currentSaid, setCurrentSaid] = useState<string | null>(null);
+  /**
+   * What is on screen right now, mirrored where `converse` can read it without going stale.
+   *
+   * 🔴 A REF BECAUSE `converse` IS A `useCallback` AND MUST NOT RE-CREATE ON EVERY ANSWER. Listing
+   * `session.aside` in its dependencies would rebuild the callback on every streamed token, and
+   * every consumer holding it would re-render with it.
+   */
+  const onScreen = useRef<{ said: string | null; aside: typeof session.aside; output: CanvasOutput | null }>({
+    aside: null,
+    output: null,
+    said: null,
+  });
 
   const converse = useCallback(
     async (asked: string, staged: CanvasBlock | null = null, withCapability: ComposerCapability | null = null) => {
@@ -620,12 +651,31 @@ export function LearningCanvas({
       // message and watch nothing happen to the list they are looking at. On the answer view this
       // is invisible — the character walks and carries the caption over the top of it — so this is
       // not a second thinking indicator, it is the half a transcript owes you: your own words
-      // joining the page. See `canvas-conversation-view.tsx`.
+      // joining the page. See `canvas-thread-turn.tsx`.
       //
       // 🔴 IT IS NOT RECORDED AND IT IS NOT A MOMENT. `finally` clears it in the same callback that
       // writes the real one, so the pending line and its recorded moment can never both be drawn —
       // and an exception on the way cannot strand a sentence on screen for the rest of the session.
-      setPendingSaid(trimmed);
+      // File whatever the live region is showing, then take the surface for this turn.
+      const outgoing = onScreen.current;
+      const outgoingReply = outgoing.aside?.blockId === null ? outgoing.aside.text : "";
+      if (outgoing.said?.trim() || outgoingReply.trim() || outgoing.output) {
+        setThread((past) => [
+          ...past,
+          fileTurn({
+            at: new Date().toISOString(),
+            attached: [],
+            id: `turn-${past.length}-${outgoing.said?.slice(0, 24) ?? ""}`,
+            output: outgoing.output,
+            reply: outgoingReply,
+            said: outgoing.said,
+            sources: outgoing.aside?.sources ?? outgoing.aside?.consulted ?? [],
+            visuals: outgoing.aside?.visuals ?? [],
+          }),
+        ]);
+      }
+      onScreen.current = { aside: null, output: null, said: trimmed };
+      setCurrentSaid(trimmed);
       try {
         const decision = await session.converse(trimmed, surroundings(), () => {
           // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
@@ -652,7 +702,8 @@ export function LearningCanvas({
         });
         return decision;
       } finally {
-        setPendingSaid(null);
+        // 🔴 NOTHING TO CLEAR. The learner's words stay above the answer they produced, which is
+        // what a chat does; they are filed into the thread when the NEXT turn starts.
       }
     },
     [policy.decision, remember, session, surroundings],
@@ -1239,28 +1290,25 @@ export function LearningCanvas({
   );
 
   /**
-   * The whole session, reconstructed — what the conversation view reads.
+   * The thread, seeded from the durable log so a refresh does not open on an empty conversation.
    *
-   * 🔴🔴 THE SAME PROJECTION THE RAIL AND THE REWIND ALREADY USE, RUN OVER EVERY ROW INSTEAD OF ONE.
-   * `buildCanvasHistory` decides WHICH moments a learner may see (it is where the synthesised
-   * "Canvas started" row was cut, among others) and `reconstructMoment` decides what each one
-   * contains. Walking `canvas.moments` directly here would be a second answer to both questions,
-   * free to disagree with the rail about what happened on the same canvas.
+   * 🔴🔴 SEEDED ONCE PER CANVAS, NOT DERIVED. Everything after the seed is LIVE: a turn taken in
+   * this sitting is filed with its drawings, its source pills and whatever it made. Recomputing the
+   * thread from `canvas.moments` on every render would throw all of that away the instant the next
+   * autosave replaced the canvas object, which is precisely the defect the payload exists to fix.
    *
-   * 🔴 IT COSTS NOTHING IN THE DEFAULT VIEW. Reconstructing eighty moments on a canvas nobody has
-   * asked to read is work with no reader, and this memo re-runs whenever any of five arrays is
-   * replaced — which an autosave does on a keystroke. The early return is the whole optimisation.
+   * 🔴 THE LAST STORED TURN IS LEFT OUT, because `use-canvas-session.ts` already puts it back into
+   * the live region on load (`lastThingSaid`) — seeding it here as well would draw it twice, once
+   * in the thread and once as the answer underneath.
    *
-   * 🔴 `filter(Boolean)` BECAUSE `reconstructMoment` MAY RETURN NULL. It does that for a momentId
-   * that is no longer in the list — impossible from a row that was just built from that same list,
-   * but the signature says it can and a `null` reaching the view would blank a turn silently.
+   * 🔴 A RESTORED TURN IS TEXT. The log stores what was said, not the pictures beside it; its own
+   * header says so. `restored` records that rather than letting a thread that quietly lost its
+   * drawings read as them having been deleted.
    */
-  // 🔴 `conversationMoments`, NOT `conversation` — that name is taken, a few hundred lines up, by
-  // the six-turn ref the model packet carries. The compiler caught the collision; the reason to
-  // keep the longer name rather than shadowing is that the two are genuinely different things: one
-  // is what Nemesis is TOLD about recent turns, this is what the learner is SHOWN of all of them.
-  const conversationMoments = useMemo(() => {
-    if (view !== "conversation") return [];
+  const seededFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (seededFor.current === canvas.id) return;
+    seededFor.current = canvas.id;
     const source = {
       createdAt: canvas.createdAt,
       moments: canvas.moments,
@@ -1268,28 +1316,57 @@ export function LearningCanvas({
       responses: canvas.responses,
       sources: canvas.sources,
     };
-    return history
+    const restored = history
       .map((entry) => reconstructMoment(source, entry.momentId))
-      .filter((moment): moment is NonNullable<typeof moment> => moment !== null);
-  }, [canvas.createdAt, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history, view]);
+      .filter((moment): moment is NonNullable<typeof moment> => moment !== null)
+      .map((moment) => ({
+        ...fileTurn({
+          at: moment.occurredAt,
+          attached: moment.sourceTitles ?? [],
+          id: moment.momentId,
+          reply: moment.said ?? "",
+          said: moment.asked ?? null,
+        }),
+        restored: true,
+        ...(moment.truncated ? { truncated: true } : {}),
+      }))
+      .filter(turnHasContent);
+    // 🔴🔴 THE LAST TURN IS HELD BACK ONLY WHEN THE SESSION ACTUALLY PUT IT BACK ON SCREEN, AND
+    // GETTING THAT WRONG DELETED A TURN. `use-canvas-session.ts` restores `lastThingSaid` into the
+    // live region ONLY on a canvas with no blocks ("a canvas with blocks already reopens on the
+    // thing the learner was reading"). Holding it back unconditionally meant that on a canvas
+    // holding a lesson — the common case — the newest exchange was dropped from the thread and
+    // restored nowhere. Found on screen: four moments, three turns, and the last question gone.
+    const liveShowsLast = canvas.blocks.length === 0;
+    setThread(liveShowsLast ? restored.slice(0, Math.max(0, restored.length - 1)) : restored);
+  }, [canvas.blocks.length, canvas.createdAt, canvas.id, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history]);
 
   /**
-   * Whether the conversation is what is on screen.
+   * What the live region is showing, mirrored for `converse` to file when the next turn starts.
    *
-   * 🔴 A REWIND OUTRANKS IT, AND THAT IS NOT ARBITRARY. Both are overlays at `z-10`; without a rule
-   * they would stack. Clicking a marker is a DELIBERATE act aimed at one moment, and the preference
-   * is a standing habit — an explicit act beats a standing one. Returning to now drops back into
-   * whichever view the learner was reading, because nothing about the preference was touched.
-   *
-   * 🔴 AND IT NEVER PAINTS AN EMPTY SHEET. The preference is global, so a brand-new canvas would
-   * otherwise open onto a blank overlay with a control offering to take you back to a Canvas you
-   * could not see. Nothing recorded and nothing in flight means there is no conversation yet, and
-   * the answer view is the honest thing to show.
+   * 🔴 AN EFFECT RATHER THAN A READ INSIDE `converse`, so the callback keeps a stable identity —
+   * see the ref's own note. Writing a ref in an effect is safe here because nothing renders from
+   * it; it is only ever read by the next turn.
    */
-  const conversationOpen = view === "conversation" && !viewing && (conversationMoments.length > 0 || Boolean(pendingSaid));
+  useEffect(() => {
+    onScreen.current.aside = session.aside;
+    onScreen.current.output = session.madeArtifact;
+  }, [session.aside, session.madeArtifact]);
+
+  /**
+   * Whether the thread is on screen.
+   *
+   * 🔴 A REWIND STILL OUTRANKS IT. `CanvasHistoryView` is an opaque overlay aimed at ONE moment;
+   * leaving the thread painting underneath would put two readings of the same canvas on screen.
+   *
+   * 🔴 IT IS NOT GATED ON HAVING CONTENT. The thread is the DEFAULT surface now, and an empty one
+   * is simply a new conversation — the same thing an empty chat looks like anywhere. What is gated
+   * is the SWITCH, below, which has nothing to offer until a turn has happened.
+   */
+  const threadOpen = view === "conversation" && !viewing;
 
   /** Whether there is anything to read back through at all — see `ConversationControl`. */
-  const conversationOffered = history.length > 0;
+  const conversationOffered = history.length > 0 || thread.length > 0 || Boolean(currentSaid);
 
   /**
    * 🔴 A NEW TURN RETURNS THE LEARNER TO NOW. Leaving the canvas rewound while an answer arrives
@@ -1718,29 +1795,41 @@ export function LearningCanvas({
         </div>
       )}
 
-      {/* ── the Canvas read end to end ─────────────────────────────────────────────────────
-          🔴 THE SAME OVERLAY THE REWIND USES, FOR THE SAME REASONS — `z-10` puts it over the
-          content and UNDER everything the learner acts with: the composer at `z-20`, the character,
-          the header controls, the exit `×` and the History Rail at `z-30`. That stacking is what
-          makes this a view rather than a mode: every verb on this surface still works, unchanged,
-          while you read. Ask something from here and the answer lands at the bottom of what you
-          are already reading.
-
-          🔴 NO `CanvasFade`, DELIBERATELY, AND IT IS THE ONE PLACE ON THIS SURFACE WITHOUT ONE.
-          That component exists for content SWAPPING — a question replacing a reply — where a hard
-          cut reads as a glitch. Nothing swaps here: the list grows at the bottom, and keying a fade
-          on a constant would only add a delay to the switch itself. A view that takes 220ms to
-          answer a click feels slower than one that does not move at all. */}
-      {conversationOpen && (
-        <div
-          className="absolute inset-0 z-10 overflow-y-auto overscroll-contain bg-(--ui-bg-editor) pb-[160px] pt-[64px]"
-          data-canvas-view="conversation"
-        >
-          <CanvasConversationView moments={conversationMoments} pendingSaid={pendingSaid} />
-        </div>
-      )}
-
       <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
+        {/* ── the thread ─────────────────────────────────────────────────────────────────────
+            🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
+            THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
+            redrew the conversation from stored text, so the drawings, the source pills, the
+            artifact cards and the quiz were all missing from it. Here the newest turn IS the
+            canvas — every one of those things renders as itself, because it is itself — and the
+            history simply sits above it. Canvas mode is this same page with the history not drawn.
+
+            🔴 WHICH ALSO MEANS THE COMPOSER, THE CHARACTER, THE RAIL AND THE `×` NEEDED NO CHANGE
+            AT ALL. Owner, 2026-08-26: *"keep the composer the same. Don't make a new composer and
+            all the modes as well."* There is no second surface for them to be missing from.
+
+            🔴 EACH TURN KEEPS ITS OWN KEY so a streamed answer never remounts the turns above it. */}
+        {threadOpen && thread.length > 0 && (
+          <div className="flex flex-col gap-10 pb-10" data-canvas-thread="">
+            {thread.map((turn) => (
+              <CanvasThreadTurnView key={turn.id} onOpenOutput={setOpenArtifact} turn={turn} />
+            ))}
+          </div>
+        )}
+
+        {/* 🔴🔴 THE LEARNER'S OWN MESSAGE FOR THE TURN ON SCREEN, AND ONLY IN THE THREAD. Owner,
+            2026-08-26: *"just make the canvas the one where it doesn't show the user's prompt. It
+            just shows the output."* That is the one difference between the two views, and it is
+            expressed exactly once, here.
+
+            🔴 IT IS OUTSIDE `CanvasFade`. The fade swaps what NEMESIS is showing — a question
+            replacing a reply. The learner's sentence does not swap; it stands while the answer
+            beneath it forms, which is also what makes a send feel acknowledged. */}
+        {threadOpen && currentSaid?.trim() && (
+          <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) justify-end px-6">
+            <LearnerUtterance via={null}>{currentSaid}</LearnerUtterance>
+          </div>
+        )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
             below what anyone notices; the owner's reading ("there are also no fade in or fade out
@@ -2355,7 +2444,7 @@ export function LearningCanvas({
         // and the character rests under the last answer in either view. Pointing at the answer
         // view's marker while the conversation is open would stand the character at a spot on a
         // page nobody can see, which is how it ended up against the window edge once before.
-        anchor={conversationOpen ? "#canvas-conversation-end" : "#canvas-answer-end"}
+        anchor="#canvas-answer-end"
         gap={24}
         place="under"
         // 🔴🔴 ONE CHARACTER ON SCREEN, EVER. A policy judgement draws its own — small, at the foot
