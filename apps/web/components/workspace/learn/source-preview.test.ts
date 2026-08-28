@@ -29,9 +29,51 @@ test("🔴🔴 a document row opens the preview card, and the old library link s
   // calls the prop and the panel supplies the setter. Both halves, because a prop nothing passes is
   // a row that opens nothing.
   assert.match(CONTROLS, /onClick=\{\(\) => onPreview\(source\)\}/, "a document row no longer opens the preview");
-  assert.match(CONTROLS, /onPreview=\{setPreviewing\}/, "the row is never given a way to open the preview");
+  // Repointed 2026-08-28: the setter became `openDocument`, which also brings an already-open
+  // document forward instead of listing it twice. The property is that the row has a way to open.
+  assert.match(CONTROLS, /onPreview=\{openDocument\}/, "the row is never given a way to open the preview");
   assert.ok(!CONTROLS.includes("/library/source/"), "the sources panel navigates to the old library again");
-  assert.match(CONTROLS, /<SourcePreview /, "the preview card is not mounted");
+  assert.match(CONTROLS, /<SourcePreview[\s>]/, "the preview card is not mounted");
+});
+
+test("🔴🔴 several documents stay open, and only the front one is mounted", () => {
+  // Owner, 2026-08-28: *"it'd be nice if it could have, like, multiple tabs so that they could have
+  // different PowerPoints or documents open at the same time."*
+  //
+  // 🔴 ONLY THE FRONT ONE RENDERS, and that is the design rather than an optimisation. A deck held
+  // in memory costs about 20 MB per full-size slide — `slides-document-view.tsx` measured it — so
+  // six background tabs rendering quietly is a seized browser. A tab that is not in front is a name
+  // and a remembered page, which costs nothing and is why no cap is needed.
+  //
+  // Calibration: render `open.map(source => <DocumentReader …>)` and this reddens.
+  assert.ok(!/open\.map\([\s\S]{0,400}?<DocumentReader/.test(PREVIEW), "every open tab is mounting its own reader");
+  assert.match(PREVIEW, /const active = open\.find\(/, "the panel no longer picks one document to show");
+  assert.match(PREVIEW, /key=\{active\.id\}/, "switching tabs hands one reader a different document, keeping the last one's zoom and mode");
+});
+
+test("🔴🔴 the list and the front tab move together, in one updater", () => {
+  // Closing the front tab has to CHOOSE a new front tab, so the list and the choice are one fact.
+  // Held apart they become a `setActive` nested inside a `setOpen` updater, which is a defect this
+  // codebase has already paid for once: invisible in a diff, and wrong under StrictMode because the
+  // updater runs twice. Calibration: split them into two `useState` calls and this reddens.
+  assert.match(CONTROLS, /useState<\{ open: CanvasSource\[\]; activeId: string \| null \}>/, "the open list and the front tab are separate state again");
+  // The lookahead is not cosmetic: `setDocs` itself matches `set[A-Z]…`, so without it this guard
+  // fails on two consecutive well-formed calls and says nothing about nesting at all.
+  assert.ok(!/setDocs\([\s\S]{0,300}?set(?!Docs)[A-Z][A-Za-z]*\(/.test(CONTROLS), "a setState is nested inside the docs updater");
+});
+
+test("🔴 a tab remembers the page it was left on", () => {
+  // It is what makes a tab a tab rather than a bookmark. Only the front document is mounted, so
+  // coming back to one is a fresh open; without this, a learner who marked something on page 40,
+  // checked another file and came back would land on page 1 with no idea why. It arrives through
+  // the same anchor a citation link uses, so there is one door into "open at this page".
+  assert.match(PREVIEW, /lastUnit\[active\.id\] \?\? null/, "a reopened tab no longer starts where it was left");
+  assert.match(PREVIEW, /onUnitChange=\{\(unit\) => rememberUnit\(active\.id, unit\)\}/, "nothing records the page a tab was on");
+  const reader = strip(readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8"));
+  // 🔴 AND IT COUNTS SCROLLING. Three things change the unit — the toolbar, a search step, and
+  // simply scrolling — so a host told about only the first two reopens a scrolled document at the
+  // top and reads as broken rather than forgetful.
+  assert.match(reader, /onUnitChange=\{noteUnit\}/, "the views no longer report the page they scrolled to");
 });
 
 test("🔴🔴 the preview shows the ORIGINAL document, whatever kind it is — never the extraction", () => {

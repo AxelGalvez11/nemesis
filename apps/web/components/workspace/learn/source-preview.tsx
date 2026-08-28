@@ -1,10 +1,10 @@
 "use client";
 
-// The source a learner clicked, opened as a docked reader beside the canvas.
+// The documents a learner opened, as a docked reader beside the canvas.
 //
-// 🔴🔴 IT SHOWS THE REAL DOCUMENT NOW, WHATEVER KIND IT IS — owner, 2026-08-27: *"it still won't
-// let me view the attachment I put in, it's a docx, users should be able to view slides, docs, pdf,
-// xlsx, etc."*
+// 🔴🔴 IT SHOWS THE REAL DOCUMENT, WHATEVER KIND IT IS — owner, 2026-08-27: *"it still won't let me
+// view the attachment I put in, it's a docx, users should be able to view slides, docs, pdf, xlsx,
+// etc."*
 //
 // This file used to render pages ITSELF, through pdf.js, and could therefore only ever show PDFs
 // and images. Everything else fell to a sentence apologising for it — which is what he was looking
@@ -12,11 +12,18 @@
 // `DocxDocumentView`, `SlidesDocumentView`, `PdfDocumentView` and `ImageDocumentView`, and has had
 // a trimmed `variant="dialog"` for embedding the whole time. It was never mounted here.
 //
-// So this is now the PANEL and nothing else: it resolves the library row, hands it to the reader,
-// and owns where the panel sits and how wide it is.
+// So this is now the PANEL and nothing else: it resolves library rows, hands the open one to the
+// reader, and owns where the panel sits, how wide it is, and which document is in front.
 //
 // 🔴 A SIDEBAR, NOT A POPUP (owner, same day). It docks right, pushes the canvas rather than
 // covering it, and its width is a drag the learner owns — see `use-dock-width.ts`.
+//
+// 🔴🔴 SEVERAL DOCUMENTS AT ONCE — owner, 2026-08-28: *"it'd be nice if it could have, like,
+// multiple tabs so that they could have different PowerPoints or documents open at the same time."*
+// ONLY THE FRONT ONE IS MOUNTED, and that is the whole design rather than an optimisation: a deck
+// held in memory costs about 20 MB per full-size slide (`slides-document-view.tsx` measured it), so
+// six background tabs rendering quietly is a seized browser. A tab that is not in front is a name
+// and a remembered page, which costs nothing and needs no cap.
 //
 // 🔴 NO OUTSIDE-PRESS CLOSE: a panel owning most of the window must not vanish because somebody
 // clicked the conversation next to it. Close button, plus Escape.
@@ -25,7 +32,7 @@
 // `button:where(:not([data-workspace] *)) { background: var(--acid) }`, so a subtree moved to
 // `document.body` leaves the workspace scope and every button in it goes acid green.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -47,12 +54,19 @@ type PreviewState =
   | { readonly kind: "ready"; readonly source: ReaderSource };
 
 export function SourcePreview({
+  activeId,
   onClose,
+  onCloseTab,
+  onSelect,
   onSendToChat,
-  source,
+  open,
   uid,
 }: {
+  /** Which open document is in front. Null closes the panel. */
+  activeId: string | null;
   onClose: () => void;
+  onCloseTab: (id: string) => void;
+  onSelect: (id: string) => void;
   /**
    * Fires when the learner runs one of the reader's actions on a highlighted passage or a marked
    * area: the message it produced, and any material that exists nowhere else (the cut-out picture).
@@ -61,8 +75,8 @@ export function SourcePreview({
    * nowhere to send — see `document-reader.tsx`.
    */
   onSendToChat?: (prompt: string, files: File[]) => void;
-  /** Null closes the panel; the component is mounted unconditionally by its owner. */
-  source: CanvasSource | null;
+  /** Every document the learner has open, oldest first. Empty closes the panel. */
+  open: readonly CanvasSource[];
   uid: string | null;
 }) {
   const [state, setState] = useState<PreviewState>({ kind: "loading" });
@@ -72,27 +86,42 @@ export function SourcePreview({
   // lookup went to the database, found nothing under a fixture id, and the one place this panel's
   // design is reviewed showed "the original file couldn't be reached" instead of a document.
   const preview = useWorkspacePreview() !== null;
+  /**
+   * The page each open document was last on.
+   *
+   * 🔴 IT IS WHAT MAKES A TAB A TAB. Only the front document is mounted, so coming back to one is a
+   * fresh open; without this, a learner who marked something on page 40, checked another file and
+   * came back would land on page 1 with no idea why. Kept here rather than in the reader because
+   * the reader is the thing being unmounted.
+   */
+  const [lastUnit, setLastUnit] = useState<Readonly<Record<string, number>>>(
+    {},
+  );
 
-  // 🔴 THE CANVAS IS PUSHED, NOT COVERED — see side-panel.tsx. It is what makes this a sidebar
-  // rather than a popup wearing a sidebar's shape. Zero while closed, so nothing is inset.
-  useDeclareSidePanel(source ? width : 0);
+  const active = open.find((source) => source.id === activeId) ?? null;
 
   useEffect(() => {
-    if (!source) return;
+    if (!active) return;
     let live = true;
     setState({ kind: "loading" });
     void (async () => {
-      if (!source.librarySourceId) {
+      if (!active.librarySourceId) {
         setState({
           kind: "unavailable",
-          reason: "This source wasn't filed to your Library, so the original file isn't kept to view.",
+          reason:
+            "This source wasn't filed to your Library, so the original file isn't kept to view.",
         });
         return;
       }
-      const row = await loadLibrarySource(uid, source.librarySourceId, { preview });
+      const row = await loadLibrarySource(uid, active.librarySourceId, {
+        preview,
+      });
       if (!live) return;
       if (!row) {
-        setState({ kind: "unavailable", reason: "The original file couldn't be reached just now." });
+        setState({
+          kind: "unavailable",
+          reason: "The original file couldn't be reached just now.",
+        });
         return;
       }
       // 🔴 THE LIBRARY'S OWN PROJECTION, NOT A SECOND READING OF THE FILENAME. `readerSourceFromLibrary`
@@ -103,19 +132,31 @@ export function SourcePreview({
     return () => {
       live = false;
     };
-  }, [preview, source, uid]);
+  }, [active, preview, uid]);
 
   // Escape closes, same as every transient surface on the canvas.
   useEffect(() => {
-    if (!source) return;
+    if (!active) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, source]);
+  }, [active, onClose]);
 
-  if (!source) return null;
+  const rememberUnit = useCallback(
+    (id: string, unit: number) =>
+      setLastUnit((current) =>
+        current[id] === unit ? current : { ...current, [id]: unit },
+      ),
+    [],
+  );
+
+  // 🔴 THE CANVAS IS PUSHED, NOT COVERED — see side-panel.tsx. It is what makes this a sidebar
+  // rather than a popup wearing a sidebar's shape. Zero while closed, so nothing is inset.
+  useDeclareSidePanel(active ? width : 0);
+
+  if (!active) return null;
 
   return createPortal(
     <div
@@ -141,14 +182,72 @@ export function SourcePreview({
         role="separator"
       />
 
+      {/* 🔴 ONE ROW WHETHER THERE IS ONE DOCUMENT OR SIX. A strip that appears only on the second
+          document would move the title the learner is reading, and the single-tab case is exactly
+          the header this panel already had.
+
+          🔴🔴 THE CLOSE BUTTON IS OUTSIDE THE SCROLLING STRIP, AND THE FIRST VERSION WAS NOT — found
+          on screen with two tabs on a narrowed panel: the tabs are `shrink-0` inside the scroller,
+          so they pushed the one control that closes the panel off the right edge and out of reach.
+          The strip scrolls inside its own box; the button is its sibling and never moves. */}
       <div className={CHROME.header}>
-        <Codicon className="ml-[8px] shrink-0 text-(--ui-text-tertiary)" name="file" size="16px" />
-        <span className={cn(CHROME.crumb, "ml-[8px] min-w-0 flex-1")} title={source.title}>
-          {source.title}
-        </span>
+        <div
+          className="flex min-w-0 flex-1 items-center gap-[2px] overflow-x-auto"
+          role="tablist"
+        >
+          {open.map((source) => {
+            const current = source.id === activeId;
+            return (
+              <div
+                className={cn(
+                  "flex min-w-0 max-w-[220px] shrink-0 items-center gap-[6px] rounded-[8px] pl-[8px] pr-[4px] transition-colors",
+                  current
+                    ? "bg-(--ui-bg-tertiary)"
+                    : "hover:bg-(--ui-bg-tertiary)/60",
+                )}
+                key={source.id}
+              >
+                <button
+                  aria-selected={current}
+                  className="flex min-w-0 items-center gap-[6px] py-[7px]"
+                  onClick={() => onSelect(source.id)}
+                  role="tab"
+                  title={source.title}
+                  type="button"
+                >
+                  <Codicon
+                    className="shrink-0 text-(--ui-text-tertiary)"
+                    name="file"
+                    size="14px"
+                  />
+                  <span
+                    className={cn(
+                      CHROME.crumb,
+                      current ? undefined : "text-(--ui-text-tertiary)",
+                    )}
+                  >
+                    {source.title}
+                  </span>
+                </button>
+                <button
+                  aria-label={`Close ${source.title}`}
+                  className="grid size-[20px] shrink-0 place-items-center rounded-[5px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-elevated) hover:text-(--ui-text-primary)"
+                  onClick={() => onCloseTab(source.id)}
+                  type="button"
+                >
+                  <Codicon name="close" size="12px" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
         <button
           aria-label="Close preview"
-          className={cn(CHROME.button, "text-(--ui-text-quaternary) hover:text-(--ui-text-primary)")}
+          className={cn(
+            CHROME.button,
+            "text-(--ui-text-quaternary) hover:text-(--ui-text-primary)",
+          )}
           onClick={onClose}
           title="Close preview"
           type="button"
@@ -175,9 +274,22 @@ export function SourcePreview({
             the cut-out of a marked area. See `DocumentReader`'s prop.
 
             🔴 The action bar appears only because `onSendToChat` is passed. Without it the reader
-            hides the bar rather than offering controls with nowhere to send. */}
+            hides the bar rather than offering controls with nowhere to send.
+
+            🔴 KEYED BY THE SOURCE, so switching tabs is a clean remount rather than one reader
+            being handed a different document with the previous one's zoom, mode and outline still
+            in its state. The remembered page comes back in as an anchor, which is the same door a
+            citation link uses. */}
         {state.kind === "ready" && (
-          <DocumentReader grounded onSendToChat={onSendToChat} source={state.source} variant="dialog" />
+          <DocumentReader
+            anchor={{ query: null, unit: lastUnit[active.id] ?? null }}
+            grounded
+            key={active.id}
+            onSendToChat={onSendToChat}
+            onUnitChange={(unit) => rememberUnit(active.id, unit)}
+            source={state.source}
+            variant="dialog"
+          />
         )}
       </div>
     </div>,
