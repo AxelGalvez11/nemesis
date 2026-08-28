@@ -30,7 +30,10 @@ import type { ReaderBlock } from "@/lib/reader/pdf-blocks";
 import type { OutlineEntry } from "@/lib/reader/pdf-outline";
 import type { PdfDocument } from "@/lib/reader/pdfjs";
 import { readerActionPrompt, type ReaderActionId } from "@/lib/reader/reader-actions";
+import { mayOverflow, partText, replacePart, spliceLine } from "@/lib/reader/ooxml-edit";
+import type { ParsedSlide } from "@/lib/reader/pptx-slides";
 import { cropFileName, fileFromDataUrl } from "@/lib/reader/region-crop";
+import type { Span } from "@/lib/reader/xml-tree";
 import { parseReaderAnchor, resolveAnchorUnit, type ReaderAnchor } from "@/lib/reader/reader-anchor";
 import { findInDocument, stepMatch, type SearchMatch } from "@/lib/reader/reader-search";
 import { describeCoverage } from "@nemesis/shared";
@@ -134,6 +137,19 @@ export function DocumentReader({
    */
   const [marking, setMarking] = useState(false);
 
+  /**
+   * The file as it was opened, kept beside the file as it now stands.
+   *
+   * 🔴 AN EDIT NEVER TOUCHES THE STORED ORIGINAL, and this ref is why Discard is a real button
+   * rather than a reload. Nemesis holds the changed bytes in memory and hands them to the learner
+   * as a download; what is in the Library is exactly what they uploaded until they decide
+   * otherwise. That is a deliberate first shape: replacing the stored file would leave the parse,
+   * the citations and the flashcards made from it describing text that no longer exists.
+   */
+  const opened = useRef<ArrayBuffer | null>(null);
+  const [edits, setEdits] = useState(0);
+  const [overflowWarning, setOverflowWarning] = useState(false);
+
   const viewRef = useRef<ReaderViewHandle>(null);
   const slideElements = useRef(new Map<number, HTMLElement>());
   const anchorApplied = useRef(false);
@@ -170,6 +186,9 @@ export function DocumentReader({
         if (!response.ok) throw new Error(`The file could not be fetched (${response.status}).`);
         const buffer = await response.arrayBuffer();
         if (cancelled) return;
+        opened.current = buffer;
+        setEdits(0);
+        setOverflowWarning(false);
         setBytes(buffer);
         setLoadState("ready");
       } catch (fetchError) {
@@ -400,14 +419,64 @@ export function DocumentReader({
   const showZoom = source.kind === "pdf" || source.kind === "image" || source.kind === "slides";
   const trimmedQuery = query.trim() || null;
 
+  /**
+   * One line, rewritten inside the real file.
+   *
+   * 🔴 IT IS A SPLICE, NOT A REBUILD — see `ooxml-edit.ts` for why that distinction is the whole
+   * feature. Everything here is arithmetic on the part that holds the line; every other part of the
+   * archive is carried across as the bytes it already was.
+   *
+   * 🔴 A FAILURE LEAVES THE FILE ALONE. `replacePart` returns null rather than throwing when the
+   * archive will not reopen, and a null here means the edit simply does not land — never a
+   * half-written deck.
+   */
+  const editLine = useCallback(
+    (slide: ParsedSlide, runs: readonly Span[], text: string) => {
+      const current = bytes;
+      if (!current || runs.length === 0) return;
+      const xml = partText(current, slide.part);
+      if (xml === null) return;
+      const next = replacePart(current, slide.part, spliceLine(xml, runs, text));
+      if (!next) return;
+      // 🔴 SAID OUT LOUD, BECAUSE NEMESIS CANNOT SEE WHETHER IT STILL FITS. PowerPoint owns text-box
+      // layout; a longer line can look right here and spill off the slide over there.
+      const before = xml.slice(runs[0]!.start, runs[runs.length - 1]!.end);
+      if (mayOverflow(before, text)) setOverflowWarning(true);
+      setBytes(next.buffer.slice(next.byteOffset, next.byteOffset + next.byteLength) as ArrayBuffer);
+      setEdits((count) => count + 1);
+    },
+    [bytes],
+  );
+
+  const discardEdits = useCallback(() => {
+    if (!opened.current) return;
+    setBytes(opened.current);
+    setEdits(0);
+    setOverflowWarning(false);
+  }, []);
+
   const download = useCallback(() => {
+    // 🔴 AN EDITED FILE IS DOWNLOADED FROM MEMORY, NOT FROM THE BUCKET. The signed URL still points
+    // at the original, which is the one thing the learner does NOT want at this moment.
+    if (edits > 0 && bytes) {
+      const dot = source.fileName.lastIndexOf(".");
+      const name = dot > 0 ? `${source.fileName.slice(0, dot)} (edited)${source.fileName.slice(dot)}` : `${source.fileName} (edited)`;
+      const objectUrl = URL.createObjectURL(new Blob([bytes]));
+      const edited = document.createElement("a");
+      edited.href = objectUrl;
+      edited.download = name;
+      edited.click();
+      // Freed on the next frame: revoking synchronously can beat the browser to the download.
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+      return;
+    }
     if (!url) return;
     const link = document.createElement("a");
     link.href = url;
     link.download = source.fileName;
     link.rel = "noopener noreferrer";
     link.click();
-  }, [source.fileName, url]);
+  }, [bytes, edits, source.fileName, url]);
 
   return (
     // data-load-state is a testing affordance, not decoration: "is the document
@@ -488,6 +557,14 @@ export function DocumentReader({
               {tab === "notes" ? "Speaker notes" : tab}
             </button>
           ))}
+          {/* 🔴 SAID OUT LOUD, BECAUSE A DOUBLE-CLICK IS NOT DISCOVERABLE. Nothing on a slide looks
+              like a field until the pointer is over it, and a feature nobody finds is a feature
+              nobody has. It is offered only on the slides tab, where the lines are. */}
+          {slideTab === "slides" && edits === 0 && (
+            <p className="ml-auto self-center text-[0.6875rem] text-(--ui-text-quaternary)">
+              Double-click a line to edit it
+            </p>
+          )}
         </div>
       )}
 
@@ -495,6 +572,33 @@ export function DocumentReader({
         <p className="shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-4 py-1.5 text-[0.6875rem] text-(--ui-text-secondary)">
           That link points at {unitLabel} {anchor?.unit}, but this document has {unitCount}. Showing it from the start.
         </p>
+      )}
+
+      {/* 🔴🔴 THE ONE THING THIS BAR MUST NEVER LET HAPPEN IS A LEARNER BELIEVING THEY SAVED. The
+          edit lives in this browser tab; the file in the Library is still the file they uploaded,
+          and closing the reader ends the edit. So the bar says where the change is, and the way to
+          keep it is the button on it. */}
+      {edits > 0 && (
+        <div
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-4 py-1.5 text-[0.6875rem] text-(--ui-text-secondary)"
+          data-testid="reader-edit-bar"
+        >
+          <span>
+            {edits === 1 ? "1 line changed" : `${edits} lines changed`}, here only. Download to keep it.
+          </span>
+          {overflowWarning && (
+            <span className="text-(--ui-text-primary)">
+              One line is longer than it was, and PowerPoint decides whether it still fits.
+            </span>
+          )}
+          <span className="flex-1" />
+          <button className="underline underline-offset-2 hover:text-foreground" onClick={download} type="button">
+            Download edited copy
+          </button>
+          <button className="underline underline-offset-2 hover:text-foreground" onClick={discardEdits} type="button">
+            Discard changes
+          </button>
+        </div>
       )}
 
       <div className="flex min-h-0 flex-1">
@@ -538,6 +642,7 @@ export function DocumentReader({
           ) : source.kind === "slides" && bytes ? (
             <SlidesDocumentView
               bytes={bytes}
+              onEditLine={editLine}
               onError={onViewError}
               onReady={onSlidesReady}
               onUnitChange={noteUnit}

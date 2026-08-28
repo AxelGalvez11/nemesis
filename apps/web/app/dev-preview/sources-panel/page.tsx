@@ -46,16 +46,17 @@ const page = (id: string, title: string, url: string): CanvasSource => ({
 // reads it as what Nemesis is for. CLAUDE.md's test — would this work for a law student and a
 // mechanical engineering student — applies to the sample data too.
 const INPUTS: CanvasSource[] = [
-  // 🔴 TWO OF THESE POINT AT REAL LIBRARY FIXTURES, so the docked reader opens an actual document
+  // 🔴 THREE OF THESE POINT AT REAL LIBRARY FIXTURES, so the docked reader opens an actual document
   // here rather than the "wasn't filed to your Library" sentence. It is the only way to check the
-  // panel end to end — highlight, mark an area, and watch what the action sends — without an
-  // account and a real upload. One PDF and one Word file, because those are the two renderers that
-  // behave differently: pages that can be cut out, and flowing text that cannot.
+  // panel end to end — highlight, mark an area, edit a line, and watch what the action sends —
+  // without an account and a real upload. One of each renderer that behaves differently: a PDF
+  // whose pages can be cut out, a Word file of flowing text that cannot, and a deck whose lines
+  // can be rewritten.
   doc("d1", "Contracts_II_Consideration_and_Promissory_Estoppel.pdf", 12, "preview-src-conlaw-slides"),
   doc("d2", "Supplemental_Beam Deflection Comparisons.pdf", 4),
   doc("d3", "STUDENT_Thermodynamics_Second_Law_notes.pdf", 9),
   doc("d4", "Reformation and Counter-Reformation lecture notes.pdf", 1, "preview-src-brief"),
-  doc("d5", "Nursing Pharmacokinetics Slides Chapter 4.pptx", 7),
+  doc("d5", "Nursing Pharmacokinetics Slides Chapter 4.pptx", 7, "preview-src-deck"),
   doc("d6", "MAT3_Linear_Algebra_Practice_Questions.pdf", 3),
   doc("d7", "Okonkwo_Statutory_Interpretation_and_Purpose.pdf", 5),
   doc("d8", "Okonkwo_Fluid_Mechanics_Boundary_Layers.pdf", 6),
