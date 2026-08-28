@@ -35,6 +35,9 @@ interface CanvasHeaderProps {
   /** Threaded straight to SourcesControl — see its own prop comments. */
   onMakeDeliverable?: (kind: DeliverableKind) => void;
   making?: DeliverableKind | null;
+  /** A question asked from inside the open document. Threaded through rather than resolved here:
+   *  the header knows nothing about turns, and the canvas already owns exactly one route for one. */
+  onSendToChat?: (prompt: string, files: File[]) => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** The card or question being answered right now, so the objectives panel can say which one
@@ -102,6 +105,7 @@ export function CanvasHeader({
   onFiles,
   onMakeDeliverable,
   making,
+  onSendToChat,
   onRename,
   onDelete,
   activeTaskId,
@@ -163,7 +167,7 @@ export function CanvasHeader({
               read-aloud all open onto something BESIDE the canvas; this one changes what the canvas
               is showing, which makes it the one closest to the content. */}
           {view && onToggleView && <ConversationControl onToggle={onToggleView} view={view} />}
-          <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} />
+          <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onSendToChat={onSendToChat} />
           {/* 🔴🔴 THE MAP APPEARS ONLY WHERE THERE IS SOMETHING TO MAP — owner, 2026-08-24: "the map
               icon should only appear if there is a course active." On an ordinary conversation there
               is no plan, no territory worth narrowing and nothing to recommend from, so the panel

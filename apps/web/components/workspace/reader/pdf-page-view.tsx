@@ -17,10 +17,12 @@
 //  3. **Only what is on screen renders.** An IntersectionObserver decides;
 //     a 300-page PDF otherwise tries to rasterise 300 pages at once.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PdfDocument } from "@/lib/reader/pdfjs";
 import { rasterScale } from "@/lib/reader/reader-zoom";
+
+import { cropFrom, useRegionDrag, type RegionAnchor, type RegionBox } from "./use-region-drag";
 
 export interface PageHighlight {
   /** Offsets into this page's text, as `findInUnit` reports them. */
@@ -41,10 +43,23 @@ interface PdfPageViewProps {
    *  it can be selected, searched or quoted. Said out loud rather than left for
    *  the student to discover by getting no results. */
   isImageOnly?: boolean;
+  /**
+   * Marking mode: drag a box over the page instead of selecting text.
+   *
+   * 🔴 IT IS A MODE, AND IT HAS TO BE. The invisible text layer sits on top of the page and IS what
+   * makes selection work; an overlay that catches drags necessarily takes those events away from
+   * it. One drag cannot mean both "highlight these words" and "cut out this area", so the learner
+   * says which — the same bargain every PDF tool makes.
+   */
+  marking?: boolean;
+  /** A box the learner drew on this page: fractions of the page, the cut-out, and where the box
+   *  landed on screen so the action bar can be put beside it. */
+  onRegion?: (pageNumber: number, region: RegionBox, cropDataUrl: string | null, anchor: RegionAnchor) => void;
 }
 
 export function PdfPageView({
   document: pdf, pageNumber, scale, highlights, onVisible, registerElement, isImageOnly = false,
+  marking = false, onRegion,
 }: PdfPageViewProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -57,6 +72,18 @@ export function PdfPageView({
    *  without it, a highlight that arrives with the document (a ?q= link) is
    *  measured against an empty layer once and never retried. */
   const [textLayerVersion, setTextLayerVersion] = useState(0);
+  /**
+   * Whether this page's canvas holds a rendered page, as opposed to the 300×150 blank every canvas
+   * element starts life as.
+   *
+   * 🔴🔴 FOUND ON SCREEN, AND `canvas.width > 0` DOES NOT CATCH IT. An unrendered canvas is not
+   * empty, it is 300 by 150 — so a crop taken before the page paints succeeds, produces a real PNG
+   * of nothing, and the message then says "attached as a picture" about a blank rectangle. Falling
+   * back to the coordinate wording is worse than a picture and far better than a lie.
+   *
+   * A ref, not state: it is read at drag time and must not re-render the page to record itself.
+   */
+  const painted = useRef(false);
 
   // Natural size first, so the page reserves its space in the scroll column
   // before it has rendered — otherwise every render shifts the scroll position
@@ -100,6 +127,9 @@ export function PdfPageView({
     if (!onScreen || !size) return;
     let cancelled = false;
     let task: { cancel: () => void } | null = null;
+    // A zoom re-renders at a new raster size; until that lands the canvas holds the OLD scale's
+    // pixels, which crop to the wrong part of the page.
+    painted.current = false;
 
     void (async () => {
       const page = await pdf.getPage(pageNumber);
@@ -130,6 +160,7 @@ export function PdfPageView({
         return; // Cancelled by the next zoom — expected, not a failure.
       }
       if (cancelled) return;
+      painted.current = true;
 
       // The text layer is laid out in CSS pixels, so it uses the CSS scale, not
       // the raster scale. Rebuilt on every scale change because pdf.js sizes
@@ -233,6 +264,20 @@ export function PdfPageView({
     // textLayerVersion both mean the spans moved and must be re-measured.
   }, [highlightKey, highlights, scale, textLayerVersion]);
 
+  // 🔴 THE CUT-OUT COMES OFF THE CANVAS THAT IS ALREADY DRAWN, at its own resolution — which is
+  // device pixels, not CSS pixels, so a retina screen yields a crop at twice the layout size. There
+  // is no second render: re-rasterising the page at crop time would double the most expensive thing
+  // this component does, for a picture the learner is looking at already.
+  const picked = useCallback(
+    (region: RegionBox, anchor: RegionAnchor) => {
+      const canvas = canvasRef.current;
+      const crop = canvas && painted.current ? cropFrom(canvas, region, { height: canvas.height, width: canvas.width }) : null;
+      onRegion?.(pageNumber, region, crop, anchor);
+    },
+    [onRegion, pageNumber],
+  );
+  const { box: markBox, onPointerDown } = useRegionDrag({ enabled: marking, onPicked: picked, target: wrapperRef });
+
   const width = size ? Math.floor(size.width * scale) : 0;
   const height = size ? Math.floor(size.height * scale) : 0;
 
@@ -267,6 +312,19 @@ export function PdfPageView({
         />
       ))}
       <div className="nemesis-text-layer" ref={textRef} />
+
+      {/* 🔴 ABOVE THE TEXT LAYER, AND ONLY WHILE MARKING. Mounted conditionally rather than left in
+          place with `pointer-events-none`: an element covering the page is exactly the thing that
+          silently kills text selection, and "it is there but inert" is the state nobody can see. */}
+      {marking && (
+        <div
+          className="absolute inset-0 z-10 cursor-crosshair"
+          data-testid={`reader-page-${pageNumber}-marking`}
+          onPointerDown={onPointerDown}
+        >
+          {markBox && <div className="nemesis-reader-region" style={markBox} />}
+        </div>
+      )}
     </div>
   );
 }

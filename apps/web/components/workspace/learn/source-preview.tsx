@@ -29,6 +29,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { DocumentReader } from "@/components/workspace/reader/document-reader";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import type { CanvasSource } from "@/lib/learn/canvas-model";
@@ -47,16 +48,30 @@ type PreviewState =
 
 export function SourcePreview({
   onClose,
+  onSendToChat,
   source,
   uid,
 }: {
   onClose: () => void;
+  /**
+   * Fires when the learner runs one of the reader's actions on a highlighted passage or a marked
+   * area: the message it produced, and any material that exists nowhere else (the cut-out picture).
+   *
+   * Absent means the reader hides its action bar entirely rather than offering controls with
+   * nowhere to send — see `document-reader.tsx`.
+   */
+  onSendToChat?: (prompt: string, files: File[]) => void;
   /** Null closes the panel; the component is mounted unconditionally by its owner. */
   source: CanvasSource | null;
   uid: string | null;
 }) {
   const [state, setState] = useState<PreviewState>({ kind: "loading" });
   const { dragging, onDragStart, width } = useDockWidth();
+  // 🔴 THE HARNESS MAKES NO NETWORK CALLS — `preview-context.tsx` says so in as many words, and this
+  // panel was quietly breaking it: the dev preview signs a mock session, so `uid` is set, so the row
+  // lookup went to the database, found nothing under a fixture id, and the one place this panel's
+  // design is reviewed showed "the original file couldn't be reached" instead of a document.
+  const preview = useWorkspacePreview() !== null;
 
   // 🔴 THE CANVAS IS PUSHED, NOT COVERED — see side-panel.tsx. It is what makes this a sidebar
   // rather than a popup wearing a sidebar's shape. Zero while closed, so nothing is inset.
@@ -74,7 +89,7 @@ export function SourcePreview({
         });
         return;
       }
-      const row = await loadLibrarySource(uid, source.librarySourceId);
+      const row = await loadLibrarySource(uid, source.librarySourceId, { preview });
       if (!live) return;
       if (!row) {
         setState({ kind: "unavailable", reason: "The original file couldn't be reached just now." });
@@ -88,7 +103,7 @@ export function SourcePreview({
     return () => {
       live = false;
     };
-  }, [source, uid]);
+  }, [preview, source, uid]);
 
   // Escape closes, same as every transient surface on the canvas.
   useEffect(() => {
@@ -153,10 +168,17 @@ export function SourcePreview({
             {state.reason}
           </p>
         )}
-        {/* 🔴 NO `onSendToChat`. This panel exists to SHOW the file; it has no chat lane of its own
-            to send a selection into, and the reader hides its highlight toolbar when there is
-            nowhere for it to go rather than offering a control that does nothing. */}
-        {state.kind === "ready" && <DocumentReader source={state.source} variant="dialog" />}
+        {/* 🔴🔴 `grounded`, BECAUSE THIS PANEL CAN ONLY EVER OPEN A SOURCE THE CANVAS ALREADY HOLDS.
+            The reader's default is to attach its own extracted text to every action, which is right
+            in the Library — that chat has never read the file. Here it would file the same document
+            into the same canvas twice on every "Explain this". Only genuinely new material travels:
+            the cut-out of a marked area. See `DocumentReader`'s prop.
+
+            🔴 The action bar appears only because `onSendToChat` is passed. Without it the reader
+            hides the bar rather than offering controls with nowhere to send. */}
+        {state.kind === "ready" && (
+          <DocumentReader grounded onSendToChat={onSendToChat} source={state.source} variant="dialog" />
+        )}
       </div>
     </div>,
     document.body,

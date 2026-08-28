@@ -85,3 +85,50 @@ test("every listed action produces a non-empty prompt in every shape", () => {
     }
   }
 });
+
+test("🔴🔴 an attached cut-out replaces the coordinates, and never sits beside them", () => {
+  // The whole reason the region branch exists is a question about a picture, and the coordinate
+  // wording is what that question sounds like when the picture could not be cut out: "the region at
+  // 40%,30%" is not something a vision model can look at, so the answer comes from the surrounding
+  // text or from nothing. When the crop really travels, the message points AT it — and the numbers
+  // must NOT be appended as well, because a model given both will try to reconcile a picture it can
+  // see with a coordinate frame it cannot.
+  const attached = readerActionPrompt("ask", {
+    fileName: "circuit.pdf",
+    unitLabel: "page",
+    unit: 4,
+    selection: null,
+    region: { x: 0.25, y: 0.5, width: 0.2, height: 0.1 },
+    regionAttached: true,
+  });
+  assert.ok(attached.includes("attached as a picture"), attached);
+  assert.ok(attached.includes("page 4"), attached);
+  assert.ok(!attached.includes("%"), attached);
+
+  // Calibration: the fallback must keep working, because a tainted canvas is a real outcome.
+  const fallback = readerActionPrompt("ask", {
+    fileName: "circuit.pdf",
+    unitLabel: "page",
+    unit: 4,
+    selection: null,
+    region: { x: 0.25, y: 0.5, width: 0.2, height: 0.1 },
+    regionAttached: false,
+  });
+  assert.ok(fallback.includes("25%,50%"), fallback);
+  assert.ok(!fallback.includes("attached as a picture"), fallback);
+});
+
+test("every action names the file when the cut-out is attached", () => {
+  for (const action of READER_ACTIONS) {
+    const prompt = readerActionPrompt(action.id, {
+      fileName: "deck.pdf",
+      unitLabel: "page",
+      unit: 2,
+      selection: null,
+      region: { x: 0, y: 0, width: 0.5, height: 0.5 },
+      regionAttached: true,
+    });
+    assert.ok(prompt.includes("deck.pdf"), `${action.id} lost the file name: ${prompt}`);
+    assert.ok(prompt.trim().length > 20, `${action.id} produced "${prompt}"`);
+  }
+});

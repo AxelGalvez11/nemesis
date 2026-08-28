@@ -20,8 +20,15 @@ export interface ReaderActionContext {
   unit: number | null;
   /** The exact text the student selected, or null for a whole-document action. */
   selection: string | null;
-  /** Set when the student boxed a region of an image instead of selecting text. */
+  /** Set when the student boxed a region of a page instead of selecting text. */
   region?: { x: number; y: number; width: number; height: number } | null;
+  /** True when the cut-out of that region travels WITH this message as a picture.
+   *
+   *  🔴 IT CHANGES THE WORDS, NOT JUST THE ATTACHMENT. Describing a box by its coordinates is only
+   *  ever a fallback: a model cannot look at "40%, 30%", so the percentage wording below is what an
+   *  unanswerable question sounds like. When the picture is really attached the message points AT
+   *  it, and the coordinates are left out entirely rather than sent alongside as noise. */
+  regionAttached?: boolean;
 }
 
 export const READER_ACTIONS: ReadonlyArray<{ id: ReaderActionId; label: string; icon: string; hint: string }> = [
@@ -53,18 +60,20 @@ export function readerActionPrompt(action: ReaderActionId, context: ReaderAction
 
   if (context.region && !context.selection) {
     const percent = (value: number) => Math.round(value * 100);
-    const area = `the region at ${percent(context.region.x)}%,${percent(context.region.y)}% (${percent(context.region.width)}% wide, ${percent(context.region.height)}% tall)`;
+    const area = context.regionAttached
+      ? `the area I marked on ${from}, attached as a picture`
+      : `the region at ${percent(context.region.x)}%,${percent(context.region.y)}% (${percent(context.region.width)}% wide, ${percent(context.region.height)}% tall) of ${from}`;
     switch (action) {
       case "ask":
-        return `Looking at ${from} — ${area}. What is this showing?`;
+        return `Looking at ${area}. What is this showing?`;
       case "explain":
-        return `Explain what is in ${area} of ${from}, in plain terms.`;
+        return `Explain what is in ${area}, in plain terms.`;
       case "note":
-        return `Write a short note about ${area} of ${from} and save it to my Library, citing the file.`;
+        return `Write a short note about ${area} and save it to my Library, citing the file.`;
       case "flashcards":
-        return `Make flashcards from ${area} of ${from}, citing the file on each card.`;
+        return `Make flashcards from ${area}, citing the file on each card.`;
       case "related":
-        return `What concepts connect to ${area} of ${from}? Point me at my own notes where they exist.`;
+        return `What concepts connect to ${area}? Point me at my own notes where they exist.`;
     }
   }
 

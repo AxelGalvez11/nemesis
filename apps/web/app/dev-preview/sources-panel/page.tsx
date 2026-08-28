@@ -17,7 +17,7 @@ import { WorkspacePreviewProvider } from "@/components/workspace/preview-context
 import type { CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
 import { lessonSeed } from "@/lib/learn/canvas-preview-fixture";
 
-const doc = (id: string, title: string, excerpts: number): CanvasSource => ({
+const doc = (id: string, title: string, excerpts: number, librarySourceId?: string): CanvasSource => ({
   excerpts: Array.from({ length: excerpts }, (_, index) => ({
     id: `${id}:e${index}`,
     label: `Slide ${index + 1}`,
@@ -25,6 +25,7 @@ const doc = (id: string, title: string, excerpts: number): CanvasSource => ({
   })),
   id,
   kind: "pdf",
+  librarySourceId,
   title,
 });
 
@@ -45,10 +46,15 @@ const page = (id: string, title: string, url: string): CanvasSource => ({
 // reads it as what Nemesis is for. CLAUDE.md's test — would this work for a law student and a
 // mechanical engineering student — applies to the sample data too.
 const INPUTS: CanvasSource[] = [
-  doc("d1", "Contracts_II_Consideration_and_Promissory_Estoppel.pdf", 12),
+  // 🔴 TWO OF THESE POINT AT REAL LIBRARY FIXTURES, so the docked reader opens an actual document
+  // here rather than the "wasn't filed to your Library" sentence. It is the only way to check the
+  // panel end to end — highlight, mark an area, and watch what the action sends — without an
+  // account and a real upload. One PDF and one Word file, because those are the two renderers that
+  // behave differently: pages that can be cut out, and flowing text that cannot.
+  doc("d1", "Contracts_II_Consideration_and_Promissory_Estoppel.pdf", 12, "preview-src-conlaw-slides"),
   doc("d2", "Supplemental_Beam Deflection Comparisons.pdf", 4),
   doc("d3", "STUDENT_Thermodynamics_Second_Law_notes.pdf", 9),
-  doc("d4", "Reformation and Counter-Reformation lecture notes.pdf", 1),
+  doc("d4", "Reformation and Counter-Reformation lecture notes.pdf", 1, "preview-src-brief"),
   doc("d5", "Nursing Pharmacokinetics Slides Chapter 4.pptx", 7),
   doc("d6", "MAT3_Linear_Algebra_Practice_Questions.pdf", 3),
   doc("d7", "Okonkwo_Statutory_Interpretation_and_Purpose.pdf", 5),
@@ -107,6 +113,8 @@ type Shelf = "everything" | "empty" | "no-sources";
 
 export default function SourcesPanelPreview() {
   const [shelf, setShelf] = useState<Shelf>("everything");
+  /** The last thing the open document asked, printed below — the canvas would send this as a turn. */
+  const [asked, setAsked] = useState<{ prompt: string; files: string[] } | null>(null);
   const seed = lessonSeed();
   const canvas: LearningCanvas = {
     ...seed,
@@ -143,9 +151,27 @@ export default function SourcesPanelPreview() {
           for free by putting this control in its top-right strip. */}
       <div className="ml-auto w-[21rem]">
         <WorkspacePreviewProvider value={{ email: "student@preview.dev" }}>
-          <SourcesControl canvas={canvas} modelKnowledge onFiles={() => {}} />
+          <SourcesControl
+            canvas={canvas}
+            modelKnowledge
+            onFiles={() => {}}
+            onSendToChat={(prompt, files) => setAsked({ files: files.map((file) => `${file.name} · ${file.type} · ${file.size} bytes`), prompt })}
+          />
         </WorkspacePreviewProvider>
       </div>
+
+      {/* What the canvas would send. Printed rather than swallowed, because the words and the
+          attachment are the whole feature: a marked area whose picture did not travel produces a
+          message that reads perfectly and is answered from nothing. */}
+      {asked && (
+        <div className="mt-8 rounded-xl bg-(--ui-bg-elevated) p-4 ring-1 ring-(--ui-stroke-tertiary)" data-testid="sources-panel-asked">
+          <p className="text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">Sent to the canvas</p>
+          <p className="mt-2 whitespace-pre-wrap text-[length:var(--canvas-text-body)] text-(--ui-text-primary)">{asked.prompt}</p>
+          <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
+            {asked.files.length === 0 ? "No attachment" : asked.files.join(", ")}
+          </p>
+        </div>
+      )}
     </main>
   );
 }

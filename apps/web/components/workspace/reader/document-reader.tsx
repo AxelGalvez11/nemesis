@@ -30,6 +30,7 @@ import type { ReaderBlock } from "@/lib/reader/pdf-blocks";
 import type { OutlineEntry } from "@/lib/reader/pdf-outline";
 import type { PdfDocument } from "@/lib/reader/pdfjs";
 import { readerActionPrompt, type ReaderActionId } from "@/lib/reader/reader-actions";
+import { cropFileName, fileFromDataUrl } from "@/lib/reader/region-crop";
 import { parseReaderAnchor, resolveAnchorUnit, type ReaderAnchor } from "@/lib/reader/reader-anchor";
 import { findInDocument, stepMatch, type SearchMatch } from "@/lib/reader/reader-search";
 import { describeCoverage } from "@nemesis/shared";
@@ -71,10 +72,20 @@ export interface DocumentReaderProps {
   onSendToChat?: (prompt: string, files: File[]) => void;
   /** "dialog" trims the chrome for the chat popup: no back button, no rails. */
   variant?: "page" | "dialog";
+  /**
+   * The host ALREADY holds this file as material.
+   *
+   * 🔴 IT SUPPRESSES THE TEXT DUMP, AND ONLY THE TEXT DUMP. `documentAttachment` exists because the
+   * Library's chat has never read the file being asked about (see its own comment). The canvas is
+   * the opposite case: its source panel can only open a document this canvas is already grounded
+   * on, so sending the whole text again files the same material twice into one body of knowledge.
+   * A cut-out of a boxed region is NOT covered by that and still travels — it exists nowhere else.
+   */
+  grounded?: boolean;
 }
 
 export function DocumentReader({
-  source, anchor, linkedNotes = [], onOpenNote, onBack, onSendToChat, variant = "page",
+  source, anchor, linkedNotes = [], onOpenNote, onBack, onSendToChat, variant = "page", grounded = false,
 }: DocumentReaderProps) {
   const isDialog = variant === "dialog";
   const unitLabel = UNIT_LABELS[source.kind] ?? "part";
@@ -105,7 +116,19 @@ export function DocumentReader({
   // component — so a document opens without losing the tree it was filed in.
   const [railOpen, setRailOpen] = useState(!isDialog);
   const [selection, setSelection] = useState<{ text: string; unit: number | null; anchor: SelectionAnchor } | null>(null);
-  const [region, setRegion] = useState<{ region: ImageRegion; preview: string | null } | null>(null);
+  /** A boxed part of a page: the box in fractions, the cut-out, and the page it was cut from.
+   *  `unit` is null on a single picture, where "image 1" would be furniture rather than a location. */
+  const [region, setRegion] = useState<{ region: ImageRegion; preview: string | null; unit: number | null; anchor: SelectionAnchor } | null>(null);
+  /**
+   * Marking mode, for documents where a drag has to choose between text and area.
+   *
+   * 🔴 OFFERED ON PDFs ONLY, and the omissions are each for their own reason. A picture has no text
+   * layer to compete with, so its drag is always a box and a toggle there would be a control that
+   * does nothing. A SLIDE is a reconstruction rather than a render (see `pptx-slides.ts`), so a
+   * crop of one would be a picture of our own layout — truthful about the words, wrong about the
+   * thing, and passed to a vision model as though it were the deck.
+   */
+  const [marking, setMarking] = useState(false);
 
   const viewRef = useRef<ReaderViewHandle>(null);
   const slideElements = useRef(new Map<number, HTMLElement>());
@@ -243,6 +266,7 @@ export function DocumentReader({
   // and carries the measured unit markers with it. The chat's own attachment
   // budget decides how much of a long document survives.
   const documentAttachment = useCallback((): File[] => {
+    if (grounded) return [];
     const parts =
       unitTexts.length > 0
         ? unitTexts.map((page) => `## ${unitLabel} ${page.unit}\n\n${page.text}`)
@@ -252,24 +276,46 @@ export function DocumentReader({
     if (parts.length === 0) return [];
     const safeName = source.fileName.replace(/[\\/:]/g, "-");
     return [new File([parts.join("\n\n")], `${safeName}.txt`, { type: "text/plain" })];
-  }, [docxText, source.fileName, unitLabel, unitTexts]);
+  }, [docxText, grounded, source.fileName, unitLabel, unitTexts]);
 
   const runAction = useCallback(
     (action: ReaderActionId) => {
+      // 🔴 THE CUT-OUT IS THE ATTACHMENT, AND IT IS BUILT BEFORE THE WORDS ARE CHOSEN. Whether the
+      // picture actually exists decides how the message reads: with it, the question points at a
+      // picture; without it (a tainted canvas, an unrenderable page) it falls back to describing
+      // the box in coordinates, which is honest about being a worse question rather than claiming
+      // an attachment that is not there.
+      const cropped = region?.preview ? fileFromDataUrl(region.preview, cropFileName(source.fileName, unitLabel, region.unit)) : null;
       const prompt = readerActionPrompt(action, {
         fileName: source.fileName,
         unitLabel,
-        // Only a SELECTION has a measured location. A whole-document action
-        // must not carry "(page 1)" just because that is what is on screen —
-        // it reads as "flashcards from page 1" and is simply untrue.
-        unit: selection?.unit ?? null,
+        // Only a SELECTION or a BOXED REGION has a measured location. A whole-document action must
+        // not carry "(page 1)" just because that is what is on screen — it reads as "flashcards
+        // from page 1" and is simply untrue.
+        unit: selection?.unit ?? region?.unit ?? null,
         selection: selection?.text ?? null,
         region: region?.region ?? null,
+        regionAttached: cropped !== null,
       });
-      onSendToChat?.(prompt, documentAttachment());
+      onSendToChat?.(prompt, [...documentAttachment(), ...(cropped ? [cropped] : [])]);
     },
     [documentAttachment, onSendToChat, region, selection, source.fileName, unitLabel],
   );
+
+  /**
+   * A box the learner drew, from whichever view drew it.
+   *
+   * 🔴 IT CLEARS THE BROWSER'S OWN SELECTION, NOT JUST OUR STATE, AND THAT WAS FOUND ON SCREEN. A
+   * highlight made a moment earlier stays PAINTED by the browser until its range is dropped, so
+   * marking an area left a grey highlight and a box on the page at once while the action bar
+   * silently acted on only one of them. `setSelection(null)` moves our own bar; only
+   * `removeAllRanges` moves the paint.
+   */
+  const takeRegion = useCallback((picked: ImageRegion, preview: string | null, anchor: SelectionAnchor, at: number | null) => {
+    setRegion({ anchor, preview, region: picked, unit: at });
+    setSelection(null);
+    if (typeof window !== "undefined") window.getSelection()?.removeAllRanges();
+  }, []);
 
   const onPdfReady = useCallback((payload: PdfReadyPayload) => {
     setUnitCount(payload.unitCount);
@@ -334,7 +380,7 @@ export function DocumentReader({
   const actionScope = selection
     ? `the passage you selected${selection.unit === null ? "" : ` on ${unitLabel} ${selection.unit}`}`
     : region
-      ? "the part of the picture you boxed"
+      ? `the area you marked${region.unit === null ? "" : ` on ${unitLabel} ${region.unit}`}`
       : "this whole document";
   /** Only some documents have anything to list in a contents rail. */
   const hasContents = source.kind === "pdf" || source.kind === "slides" || source.kind === "document";
@@ -381,6 +427,13 @@ export function DocumentReader({
         onRotate={source.kind === "image" ? () => setRotation((current) => (current + 90) % 360) : undefined}
         onStepMatch={stepToMatch}
         onToggleRail={hasContents ? () => setRailOpen((open) => !open) : undefined}
+        marking={marking}
+        onToggleMarking={
+          // 🔴 AND ONLY WHERE THE ACTION BAR HAS SOMEWHERE TO SEND. Marking an area whose only
+          // outcome is a message nobody receives is a control that does nothing, which is the same
+          // rule the highlight bar already follows two hundred lines below.
+          source.kind === "pdf" && onSendToChat ? () => setMarking((current) => !current) : undefined
+        }
         onUnitChange={goToUnit}
         onZoomIn={() => setZoom({ kind: "fixed", scale: zoomIn(scale) })}
         onZoomOut={() => setZoom({ kind: "fixed", scale: zoomOut(scale) })}
@@ -459,10 +512,12 @@ export function DocumentReader({
             <PdfDocumentView
               bytes={bytes}
               currentMatch={matchIndex}
+              marking={marking}
               matches={matches}
               onDocumentOpen={setPdfDocument}
               onError={onViewError}
               onReady={onPdfReady}
+              onRegion={(page, picked, preview, anchor) => takeRegion(picked, preview, anchor, page)}
               onScaleChange={setScale}
               onUnitChange={setUnit}
               ref={viewRef}
@@ -486,10 +541,7 @@ export function DocumentReader({
             <ImageDocumentView
               fileName={source.fileName}
               onNaturalSize={() => setUnitCount(1)}
-              onRegion={(picked, preview) => {
-                setRegion({ region: picked, preview });
-                setSelection(null);
-              }}
+              onRegion={(picked, preview, anchor) => takeRegion(picked, preview, anchor, null)}
               rotation={rotation}
               scale={zoom.kind === "fixed" ? zoom.scale : 1}
               url={url}
@@ -526,7 +578,13 @@ export function DocumentReader({
       </div>
 
       {/* 🔴 ONLY WHERE THERE IS SOMEWHERE TO SEND. See `onSendToChat`. */}
-      {selection && onSendToChat && <SelectionActions anchor={selection.anchor} onAction={runAction} />}
+      {/* 🔴 A MARKED AREA GETS THE SAME BAR A HIGHLIGHT DOES. Its actions used to live only in the
+          "…" menu, which meant boxing part of a diagram and then hunting through a dropdown for
+          what to do with it. One selection can only be one thing, so the two anchors are exclusive
+          and the text one wins — `setRegion(null)` runs on every selection change. */}
+      {onSendToChat && (selection ?? region) && (
+        <SelectionActions anchor={(selection ?? region)!.anchor} onAction={runAction} />
+      )}
     </div>
   );
 }
