@@ -16,14 +16,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { officeImageUrl, openOfficeArchive, unzipOne } from "@/lib/reader/office-zip";
 import { notesPathFor, parseSlide, slideOrder, slideText, type ParsedSlide } from "@/lib/reader/pptx-slides";
-import type { Span } from "@/lib/reader/xml-tree";
 import { findInUnit, highlightRuns } from "@/lib/reader/reader-search";
 import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
 import { resolveSlidePictures } from "@/lib/reader/slide-pictures";
 import { isTiff, tiffObjectUrl } from "@/lib/reader/tiff-image";
 import { cn } from "@/lib/utils";
-
-import { EditableLine } from "./editable-line";
 
 export type SlideTab = "slides" | "outline" | "notes";
 
@@ -42,11 +39,6 @@ interface SlidesDocumentViewProps {
   onUnitChange: (unit: number) => void;
   onError: (message: string) => void;
   registerElement: (unit: number, element: HTMLElement | null) => void;
-  /**
-   * A line the learner rewrote: which slide it is on, which text spans in that slide's part make it
-   * up, and the new words. Absent means the deck is read-only and no line offers an edit cursor.
-   */
-  onEditLine?: (slide: ParsedSlide, runs: readonly Span[], text: string) => void;
 }
 
 /** A 16:9 slide is drawn at this width and scaled from there — the same role
@@ -57,7 +49,7 @@ const SLIDE_WIDTH = 880;
 const MAX_SLIDE_PICTURES = 3;
 
 export function SlidesDocumentView({
-  bytes, tab, query, zoom, onScaleChange, onReady, onUnitChange, onError, registerElement, onEditLine,
+  bytes, tab, query, zoom, onScaleChange, onReady, onUnitChange, onError, registerElement,
 }: SlidesDocumentViewProps) {
   const [slides, setSlides] = useState<ParsedSlide[] | null>(null);
   const [images, setImages] = useState<Map<string, string>>(new Map());
@@ -306,7 +298,6 @@ export function SlidesDocumentView({
             failedTargets={failedTargets}
             images={images}
             key={slide.index}
-            onEditLine={onEditLine}
             onNeedsPictures={ensurePictures}
             onVisible={onUnitChange}
             query={query}
@@ -337,10 +328,9 @@ function Disclaimer() {
 
 /** A slide-shaped canvas, 16:9, holding the slide's real contents. */
 function SlideCanvas({
-  slide, images, failedTargets, query, scale, onVisible, onNeedsPictures, registerElement, onEditLine,
+  slide, images, failedTargets, query, scale, onVisible, onNeedsPictures, registerElement,
 }: {
   slide: ParsedSlide;
-  onEditLine?: (slide: ParsedSlide, runs: readonly Span[], text: string) => void;
   images: Map<string, string>;
   /** Pictures whose decode already failed — no longer "on the way". */
   failedTargets: ReadonlySet<string>;
@@ -392,15 +382,7 @@ function SlideCanvas({
       >
         {slide.title && (
           <h3 className="text-[1.35em] font-semibold leading-tight" style={{ fontSize: `${1.35 * scale}rem` }}>
-            <EditableLine
-              className="block font-semibold leading-tight"
-              editable={Boolean(onEditLine) && slide.titleRuns.length > 0}
-              onCommit={(text) => onEditLine?.(slide, slide.titleRuns, text)}
-              style={{ fontSize: `${1.35 * scale}rem` }}
-              text={slide.title}
-            >
-              <Painted query={query} text={slide.title} />
-            </EditableLine>
+            <Painted query={query} text={slide.title} />
           </h3>
         )}
         <div className="flex min-h-0 flex-1 gap-5">
@@ -412,15 +394,9 @@ function SlideCanvas({
                 style={{ fontSize: `${(0.95 - paragraph.level * 0.07) * scale}rem`, paddingInlineStart: `${paragraph.level * 1.1}rem` }}
               >
                 <span aria-hidden className="mt-[0.6em] size-1 shrink-0 rounded-full" style={{ background: "#9aa0a8" }} />
-                <EditableLine
-                  className="block min-w-0 flex-1 leading-snug"
-                  editable={Boolean(onEditLine) && paragraph.runs.length > 0}
-                  onCommit={(text) => onEditLine?.(slide, paragraph.runs, text)}
-                  style={{ fontSize: `${(0.95 - paragraph.level * 0.07) * scale}rem` }}
-                  text={paragraph.text}
-                >
+                <span className="min-w-0 flex-1">
                   <Painted query={query} text={paragraph.text} />
-                </EditableLine>
+                </span>
               </li>
             ))}
           </ul>

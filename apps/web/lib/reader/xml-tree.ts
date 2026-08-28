@@ -21,43 +21,12 @@ export interface XmlElement {
   name: string;
   attrs: Record<string, string>;
   children: XmlNode[];
-  /** Where this element's OPEN tag sits in the string that was parsed, half-open. See `XmlText`. */
-  open: Span;
 }
 
-/**
- * Text, and where it came from.
- *
- * 🔴🔴 THE OFFSETS ARE WHAT MAKE AN EDIT SURGICAL. A .pptx is a zip of XML parts, one per slide, so
- * changing a line on slide 4 is a change to a few characters inside `ppt/slides/slide4.xml` and
- * nothing else. Knowing WHERE those characters are means an edit can be a splice into the original
- * string: every byte outside it is carried across untouched, including the parts of the file this
- * reader never understood. Re-serialising the tree instead would put every attribute, namespace and
- * whitespace decision in the file at the mercy of this 150-line parser — a bug there would corrupt
- * a document rather than damage a sentence.
- *
- * `start`/`end` bracket the RAW text, before entities were decoded, which is the form a splice has
- * to write back.
- */
-export interface XmlText {
-  text: string;
-  start: number;
-  end: number;
-}
-
-export interface Span {
-  start: number;
-  end: number;
-}
-
-export type XmlNode = XmlElement | XmlText;
+export type XmlNode = XmlElement | { text: string };
 
 export function isElement(node: XmlNode): node is XmlElement {
   return "name" in node;
-}
-
-export function isText(node: XmlNode): node is XmlText {
-  return !("name" in node);
 }
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
@@ -87,7 +56,7 @@ function parseAttrs(raw: string): Record<string, string> {
  *  element — a truncated or non-XML part, which callers treat as "this part
  *  isn't there" rather than as an error. */
 export function parseXml(xml: string): XmlElement | null {
-  const root: XmlElement = { name: "#document", attrs: {}, children: [], open: { start: 0, end: 0 } };
+  const root: XmlElement = { name: "#document", attrs: {}, children: [] };
   const stack: XmlElement[] = [root];
   const tagPattern = /<(\/)?([\w:.-]+)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/)?>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!\[CDATA\[([\s\S]*?)\]\]>|<![^>]*>/g;
   let cursor = 0;
@@ -96,16 +65,13 @@ export function parseXml(xml: string): XmlElement | null {
     const parent = stack[stack.length - 1] ?? root;
     if (match.index > cursor) {
       const text = xml.slice(cursor, match.index);
-      if (text) parent.children.push({ text: decodeEntities(text), start: cursor, end: match.index });
+      if (text) parent.children.push({ text: decodeEntities(text) });
     }
-    const tagStart = match.index;
     cursor = match.index + match[0].length;
 
     const cdata = match[5];
     if (cdata !== undefined) {
-      // The span is the payload, not the wrapper: a splice writes between the markers.
-      const open = match[0].indexOf("[CDATA[") + "[CDATA[".length + tagStart;
-      parent.children.push({ text: cdata, start: open, end: open + cdata.length });
+      parent.children.push({ text: cdata });
       continue;
     }
     const name = match[2];
@@ -123,14 +89,14 @@ export function parseXml(xml: string): XmlElement | null {
       continue;
     }
 
-    const element: XmlElement = { name, attrs: parseAttrs(match[3] ?? ""), children: [], open: { start: tagStart, end: cursor } };
+    const element: XmlElement = { name, attrs: parseAttrs(match[3] ?? ""), children: [] };
     parent.children.push(element);
     if (!match[4]) stack.push(element);
   }
 
   if (cursor < xml.length) {
     const tail = xml.slice(cursor);
-    if (tail.trim()) (stack[stack.length - 1] ?? root).children.push({ text: decodeEntities(tail), start: cursor, end: xml.length });
+    if (tail.trim()) (stack[stack.length - 1] ?? root).children.push({ text: decodeEntities(tail) });
   }
 
   return root.children.find(isElement) ?? null;

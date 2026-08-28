@@ -48,10 +48,10 @@ const page = (id: string, title: string, url: string): CanvasSource => ({
 const INPUTS: CanvasSource[] = [
   // 🔴 THREE OF THESE POINT AT REAL LIBRARY FIXTURES, so the docked reader opens an actual document
   // here rather than the "wasn't filed to your Library" sentence. It is the only way to check the
-  // panel end to end — highlight, mark an area, edit a line, and watch what the action sends —
+  // panel end to end — highlight, mark an area, and watch what the action sends —
   // without an account and a real upload. One of each renderer that behaves differently: a PDF
-  // whose pages can be cut out, a Word file of flowing text that cannot, a deck whose lines can be
-  // rewritten, and a workbook that is a grid.
+  // whose pages can be cut out, a Word file of flowing text that cannot, a deck of rebuilt slides,
+  // and a workbook that is a grid.
   doc("d1", "Contracts_II_Consideration_and_Promissory_Estoppel.pdf", 12, "preview-src-conlaw-slides"),
   doc("d2", "Supplemental_Beam Deflection Comparisons.pdf", 4),
   doc("d3", "STUDENT_Thermodynamics_Second_Law_notes.pdf", 9),
