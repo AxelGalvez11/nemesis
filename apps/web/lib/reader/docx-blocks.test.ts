@@ -7,9 +7,19 @@ import { at, ofKind } from "./test-helpers";
 const wrap = (body: string) => `<w:document><w:body>${body}</w:body></w:document>`;
 const para = (text: string, properties = "") => `<w:p>${properties}<w:r><w:t>${text}</w:t></w:r></w:p>`;
 
-test("a plain paragraph is a paragraph", () => {
-  const blocks = docxBlocks(wrap(para("Ordinary running text.")));
-  assert.deepEqual(blocks, [{ kind: "paragraph", runs: [{ text: "Ordinary running text." }], quote: false }]);
+test("a plain paragraph is a paragraph, and it knows where its words live", () => {
+  const xml = wrap(para("Ordinary running text."));
+  const blocks = docxBlocks(xml);
+  // 🔴 THE SPANS ARE PART OF THE SHAPE NOW, because an edit is a splice into the original part
+  // rather than a rewrite of it — see `ooxml-edit.ts`. Asserted by slicing the source rather than
+  // by writing the numbers down, which would say nothing about whether they point at the text.
+  const line = ofKind(blocks[0], "paragraph");
+  assert.deepEqual({ kind: line.kind, runs: line.runs, quote: line.quote }, {
+    kind: "paragraph",
+    runs: [{ text: "Ordinary running text." }],
+    quote: false,
+  });
+  assert.deepEqual(line.spans.map((span) => xml.slice(span.start, span.end)), ["Ordinary running text."]);
 });
 
 test("a heading style becomes a heading at its level", () => {

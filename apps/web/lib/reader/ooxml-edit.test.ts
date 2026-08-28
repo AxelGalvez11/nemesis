@@ -4,8 +4,9 @@ import { test } from "node:test";
 import { strFromU8, unzipSync, zipSync } from "fflate";
 
 import { mayOverflow, partText, replacePart, spliceLine, textSpansIn } from "./ooxml-edit";
+import { docxBlocks } from "./docx-blocks";
 import { parseSlide, slideOrder } from "./pptx-slides";
-import { at } from "./test-helpers";
+import { at, ofKind } from "./test-helpers";
 import { firstNamed, parseXml } from "./xml-tree";
 
 const slide = (body: string) => `<p:sld><p:cSld><p:spTree>${body}</p:spTree></p:cSld></p:sld>`;
@@ -186,3 +187,26 @@ function slideOrderOf(bytes: ArrayBuffer): string[] {
   for (const name of Object.keys(files)) names[name] = true;
   return slideOrder(names, partText(bytes, "ppt/presentation.xml"), partText(bytes, "ppt/_rels/presentation.xml.rels"));
 }
+
+test("🔴🔴 a Word line is spliced too, and deleted text is never written over", () => {
+  // `w:del` is text the author removed with track-changes on and `w:instrText` is a field
+  // instruction; neither is on screen, so a replacement line written across them would put the
+  // learner's words into machinery they never saw. The exclusions match `runsOf`'s exactly, which
+  // is what keeps "what I can see" and "what I can change" the same set.
+  const paragraph =
+    "<w:p>" +
+    "<w:r><w:t>Consideration must be </w:t></w:r>" +
+    '<w:del><w:r><w:delText>never </w:delText></w:r></w:del>' +
+    "<w:r><w:t>sufficient</w:t></w:r>" +
+    "</w:p>";
+  const xml = `<w:document><w:body>${paragraph}</w:body></w:document>`;
+  const blocks = docxBlocks(xml);
+  const line = ofKind(blocks[0], "paragraph");
+  assert.equal(line.runs.map((run) => run.text).join(""), "Consideration must be sufficient", "deleted text leaked into the reader");
+  assert.equal(line.spans.length, 2, "the deleted run was offered as editable");
+
+  const edited = spliceLine(xml, line.spans, "Consideration must be real");
+  assert.equal(ofKind(docxBlocks(edited)[0], "paragraph").runs.map((run) => run.text).join(""), "Consideration must be real");
+  // The deletion is still recorded in the file exactly as Word wrote it.
+  assert.ok(edited.includes("<w:delText>never </w:delText>"), edited);
+});

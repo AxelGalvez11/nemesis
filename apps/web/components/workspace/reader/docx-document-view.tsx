@@ -17,7 +17,10 @@ import { docxBlocks, docxBlockText, type DocxBlock, type DocxRun } from "@/lib/r
 import { officeImageUrl, openOfficeArchive } from "@/lib/reader/office-zip";
 import { findInUnit, highlightRuns } from "@/lib/reader/reader-search";
 import { resolveRelationships } from "@/lib/reader/pptx-slides";
+import type { Span } from "@/lib/reader/xml-tree";
 import { cn } from "@/lib/utils";
+
+import { EditableLine } from "./editable-line";
 
 export interface DocxReadyPayload {
   blocks: DocxBlock[];
@@ -38,11 +41,15 @@ export function DocxDocumentView({
   query,
   onReady,
   onError,
+  onEditLine,
 }: {
   bytes: ArrayBuffer;
   query: string | null;
   onReady: (payload: DocxReadyPayload) => void;
   onError: (message: string) => void;
+  /** A line the learner rewrote: the text spans in `word/document.xml` that make it up, and the
+   *  new words. Absent means the document is read-only and no line offers an edit cursor. */
+  onEditLine?: (spans: readonly Span[], text: string) => void;
 }) {
   const [blocks, setBlocks] = useState<DocxBlock[] | null>(null);
   const [images, setImages] = useState<Map<string, string>>(new Map());
@@ -89,6 +96,9 @@ export function DocxDocumentView({
   return (
     <div className="h-full min-h-0 overflow-auto overscroll-contain px-8 py-8" data-testid="reader-docx-scroll">
       <article className="nemesis-reading-view mx-auto text-(--ui-text-secondary)">
+        {/* 🔴 ONE WRAPPER FOR THE THREE EDITABLE KINDS. A heading, a paragraph and a list item are
+            the same thing to the file — a `w:p` — and differ only in how they are drawn. Writing
+            the edit affordance three times is how two of them quietly stop offering it. */}
         {grouped.map((group, index) => {
           if (group.kind === "list") {
             const List = group.ordered ? "ol" : "ul";
@@ -100,7 +110,7 @@ export function DocxDocumentView({
               >
                 {group.items.map((item, itemIndex) => (
                   <li className="pl-1" key={itemIndex}>
-                    <Runs query={query} runs={item.runs} />
+                    <Line block={item} onEditLine={onEditLine} query={query} />
                   </li>
                 ))}
               </List>
@@ -112,17 +122,17 @@ export function DocxDocumentView({
             case "heading":
               return (
                 <h2 className={cn(HEADING_CLASS[block.level] ?? HEADING_CLASS[3], "text-foreground")} key={index}>
-                  <Runs query={query} runs={block.runs} />
+                  <Line block={block} onEditLine={onEditLine} query={query} />
                 </h2>
               );
             case "paragraph":
               return block.quote ? (
                 <blockquote className="mt-4 border-l-2 border-(--ui-stroke-secondary) pl-4 italic" key={index}>
-                  <Runs query={query} runs={block.runs} />
+                  <Line block={block} onEditLine={onEditLine} query={query} />
                 </blockquote>
               ) : (
                 <p className="mt-4" key={index}>
-                  <Runs query={query} runs={block.runs} />
+                  <Line block={block} onEditLine={onEditLine} query={query} />
                 </p>
               );
             case "table":
@@ -183,7 +193,7 @@ export function DocxDocumentView({
 }
 
 type BlockGroup =
-  | { kind: "list"; ordered: boolean; level: number; items: { runs: DocxRun[] }[] }
+  | { kind: "list"; ordered: boolean; level: number; items: { runs: DocxRun[]; spans: readonly Span[] }[] }
   | { kind: "block"; block: DocxBlock };
 
 function groupBlocks(blocks: readonly DocxBlock[]): BlockGroup[] {
@@ -195,15 +205,38 @@ function groupBlocks(blocks: readonly DocxBlock[]): BlockGroup[] {
     }
     const last = groups.at(-1);
     if (last?.kind === "list" && last.ordered === block.ordered && last.level === block.level) {
-      last.items.push({ runs: block.runs });
+      last.items.push({ runs: block.runs, spans: block.spans });
       continue;
     }
-    groups.push({ kind: "list", ordered: block.ordered, level: block.level, items: [{ runs: block.runs }] });
+    groups.push({ kind: "list", ordered: block.ordered, level: block.level, items: [{ runs: block.runs, spans: block.spans }] });
   }
   return groups;
 }
 
 /** Formatted runs, with the searched phrase painted wherever it falls. */
+/** A paragraph, a heading or a list item: drawn as its runs, and rewritable in place. */
+function Line({
+  block,
+  onEditLine,
+  query,
+}: {
+  /** Just the two things a line is: what it says, and where those words live in the part. */
+  block: { runs: DocxRun[]; spans: readonly Span[] };
+  onEditLine?: (spans: readonly Span[], text: string) => void;
+  query: string | null;
+}) {
+  return (
+    <EditableLine
+      className="block"
+      editable={Boolean(onEditLine) && block.spans.length > 0}
+      onCommit={(text) => onEditLine?.(block.spans, text)}
+      text={block.runs.map((run) => run.text).join("")}
+    >
+      <Runs query={query} runs={block.runs} />
+    </EditableLine>
+  );
+}
+
 function Runs({ runs, query }: { runs: readonly DocxRun[]; query: string | null }) {
   return (
     <>

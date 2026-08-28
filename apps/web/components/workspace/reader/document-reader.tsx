@@ -50,6 +50,10 @@ import { ReadingView } from "./reading-view";
 import { SelectionActions, type SelectionAnchor } from "./selection-actions";
 import { SlidesDocumentView, type SlideTab } from "./slides-document-view";
 
+/** The hint that says a line can be rewritten. One constant, because it is printed on the slides
+ *  strip and on the Word document and a second copy is how one of them silently loses it. */
+const EDIT_HINT = "ml-auto self-center text-[0.6875rem] text-(--ui-text-quaternary)";
+
 const UNIT_LABELS: Record<string, string> = { pdf: "page", slides: "slide", image: "image", document: "section", audio: "track", file: "part" };
 const KIND_LABELS: Record<string, string> = { pdf: "PDF", slides: "Slides", document: "Document", image: "Image", audio: "Recording", file: "File" };
 
@@ -431,12 +435,12 @@ export function DocumentReader({
    * half-written deck.
    */
   const editLine = useCallback(
-    (slide: ParsedSlide, runs: readonly Span[], text: string) => {
+    (part: string, runs: readonly Span[], text: string) => {
       const current = bytes;
       if (!current || runs.length === 0) return;
-      const xml = partText(current, slide.part);
+      const xml = partText(current, part);
       if (xml === null) return;
-      const next = replacePart(current, slide.part, spliceLine(xml, runs, text));
+      const next = replacePart(current, part, spliceLine(xml, runs, text));
       if (!next) return;
       // 🔴 SAID OUT LOUD, BECAUSE NEMESIS CANNOT SEE WHETHER IT STILL FITS. PowerPoint owns text-box
       // layout; a longer line can look right here and spill off the slide over there.
@@ -560,11 +564,14 @@ export function DocumentReader({
           {/* 🔴 SAID OUT LOUD, BECAUSE A DOUBLE-CLICK IS NOT DISCOVERABLE. Nothing on a slide looks
               like a field until the pointer is over it, and a feature nobody finds is a feature
               nobody has. It is offered only on the slides tab, where the lines are. */}
-          {slideTab === "slides" && edits === 0 && (
-            <p className="ml-auto self-center text-[0.6875rem] text-(--ui-text-quaternary)">
-              Double-click a line to edit it
-            </p>
-          )}
+          {slideTab === "slides" && edits === 0 && <p className={EDIT_HINT}>Double-click a line to edit it</p>}
+        </div>
+      )}
+
+      {/* A Word document has no tab strip of its own, and the gesture still needs saying. */}
+      {source.kind === "document" && loadState === "ready" && edits === 0 && (
+        <div className="flex shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-chrome) px-3 py-1.5">
+          <p className={EDIT_HINT}>Double-click a line to edit it</p>
         </div>
       )}
 
@@ -642,7 +649,7 @@ export function DocumentReader({
           ) : source.kind === "slides" && bytes ? (
             <SlidesDocumentView
               bytes={bytes}
-              onEditLine={editLine}
+              onEditLine={(slide, runs, text) => editLine(slide.part, runs, text)}
               onError={onViewError}
               onReady={onSlidesReady}
               onUnitChange={noteUnit}
@@ -653,7 +660,16 @@ export function DocumentReader({
               zoom={zoom}
             />
           ) : source.kind === "document" && bytes ? (
-            <DocxDocumentView bytes={bytes} onError={onViewError} onReady={onDocxReady} query={trimmedQuery} />
+            <DocxDocumentView
+              bytes={bytes}
+              // 🔴 ONE PART, ALWAYS. A Word document's body is `word/document.xml`; headers,
+              // footnotes and comments live in parts of their own and none of them is on screen
+              // here, so there is nothing to choose between.
+              onEditLine={(runs, text) => editLine("word/document.xml", runs, text)}
+              onError={onViewError}
+              onReady={onDocxReady}
+              query={trimmedQuery}
+            />
           ) : source.kind === "image" && url ? (
             <ImageDocumentView
               fileName={source.fileName}
