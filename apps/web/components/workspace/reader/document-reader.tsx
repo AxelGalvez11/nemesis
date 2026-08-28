@@ -82,10 +82,14 @@ export interface DocumentReaderProps {
    * A cut-out of a boxed region is NOT covered by that and still travels — it exists nowhere else.
    */
   grounded?: boolean;
+  /** The page/slide the reader is on, as it changes. A host that unmounts this to show another
+   *  document (see the canvas's document tabs) uses it to reopen where the learner left off. */
+  onUnitChange?: (unit: number) => void;
 }
 
 export function DocumentReader({
   source, anchor, linkedNotes = [], onOpenNote, onBack, onSendToChat, variant = "page", grounded = false,
+  onUnitChange,
 }: DocumentReaderProps) {
   const isDialog = variant === "dialog";
   const unitLabel = UNIT_LABELS[source.kind] ?? "part";
@@ -192,8 +196,16 @@ export function DocumentReader({
 
   useEffect(() => setMatchIndex(0), [query]);
 
-  const goToUnit = useCallback((next: number) => {
+  // 🔴 ONE PLACE RECORDS WHICH UNIT IS ON SCREEN, because there are three ways to change it: the
+  // toolbar, a search step, and simply scrolling. A host remembering the page only for the first
+  // two would reopen a scrolled document at the top and look broken rather than forgetful.
+  const noteUnit = useCallback((next: number) => {
     setUnit(next);
+    onUnitChange?.(next);
+  }, [onUnitChange]);
+
+  const goToUnit = useCallback((next: number) => {
+    noteUnit(next);
     viewRef.current?.goToUnit(next);
     slideElements.current.get(next)?.scrollIntoView({ block: "start" });
   }, []);
@@ -519,7 +531,7 @@ export function DocumentReader({
               onReady={onPdfReady}
               onRegion={(page, picked, preview, anchor) => takeRegion(picked, preview, anchor, page)}
               onScaleChange={setScale}
-              onUnitChange={setUnit}
+              onUnitChange={noteUnit}
               ref={viewRef}
               zoom={zoom}
             />
@@ -528,7 +540,7 @@ export function DocumentReader({
               bytes={bytes}
               onError={onViewError}
               onReady={onSlidesReady}
-              onUnitChange={setUnit}
+              onUnitChange={noteUnit}
               onScaleChange={setScale}
               query={trimmedQuery}
               registerElement={registerSlide}

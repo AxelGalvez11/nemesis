@@ -28,7 +28,7 @@
 // two different truths that happen to sit in the same corner. Do not "unify" them here — ask
 // Brain, this is a substrate question, not a presentation one.
 
-import { Children, useEffect, useRef, useState } from "react";
+import { Children, useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -165,8 +165,33 @@ export function SourcesControl({
   // remove the paste URL part because that's not really necessary."* The `onUrl` prop, the draft
   // state and the inline form left with it. `attachUrl` itself survives untouched: grounding and
   // the reply's source cards still file pages through it; only this panel's manual door closed.
-  /** The source whose ORIGINAL document is open in the preview card, or null. */
-  const [previewing, setPreviewing] = useState<CanvasSource | null>(null);
+  /**
+   * The documents open in the docked reader, and which one is in front.
+   *
+   * 🔴 ONE PIECE OF STATE, NOT TWO, AND THAT IS DELIBERATE. Closing the front tab has to choose a
+   * new front tab, which means the list and the choice change together. Held apart, that becomes a
+   * `setActive` nested inside a `setOpen` updater — a defect this codebase has already paid for
+   * once (see `dictation-doubled-every-sentence`), invisible in a diff and impossible to reason
+   * about because the updater runs twice under StrictMode.
+   */
+  const [docs, setDocs] = useState<{ open: CanvasSource[]; activeId: string | null }>({ activeId: null, open: [] });
+  const openDocument = useCallback((source: CanvasSource) => {
+    setDocs((current) => ({
+      activeId: source.id,
+      // Opening something already open brings it forward rather than listing it twice.
+      open: current.open.some((entry) => entry.id === source.id) ? current.open : [...current.open, source],
+    }));
+  }, []);
+  const closeDocument = useCallback((id: string) => {
+    setDocs((current) => {
+      const open = current.open.filter((entry) => entry.id !== id);
+      // Closing the front tab falls back to the most recently opened one still there, not to the
+      // first: the learner's attention was at the end of the strip, which is where they put it.
+      return { activeId: current.activeId === id ? (open[open.length - 1]?.id ?? null) : current.activeId, open };
+    });
+  }, []);
+  const selectDocument = useCallback((id: string) => setDocs((current) => ({ ...current, activeId: id })), []);
+  const closePanel = useCallback(() => setDocs({ activeId: null, open: [] }), []);
   /** The one file input both `+` buttons drive. */
   const filePicker = useRef<HTMLInputElement>(null);
   // 🔴 A DECK MADE HERE IS REVIEWED HERE. Owner 2026-08-24: the cards are "an artifact
@@ -298,13 +323,13 @@ export function SourcesControl({
               </div>
             )}
             {websites.map((source) => (
-              <SourceRow key={source.id} onPreview={setPreviewing} source={source} />
+              <SourceRow key={source.id} onPreview={openDocument} source={source} />
             ))}
           </PanelSection>
 
           <PanelSection label="Inputs" onAdd={() => filePicker.current?.click()}>
             {documents.map((source) => (
-              <SourceRow key={source.id} onPreview={setPreviewing} source={source} />
+              <SourceRow key={source.id} onPreview={openDocument} source={source} />
             ))}
           </PanelSection>
 
@@ -333,7 +358,15 @@ export function SourcesControl({
           learner's dragged width and the inset the canvas is pushed by; both live in hooks, and
           hooks cannot run in a component that only exists while it is open. It returns null when
           `source` is null and declares a zero inset, so a closed panel costs nothing. */}
-      <SourcePreview onClose={() => setPreviewing(null)} onSendToChat={onSendToChat} source={previewing} uid={session?.user.id ?? null} />
+      <SourcePreview
+        activeId={docs.activeId}
+        onClose={closePanel}
+        onCloseTab={closeDocument}
+        onSelect={selectDocument}
+        onSendToChat={onSendToChat}
+        open={docs.open}
+        uid={session?.user.id ?? null}
+      />
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
       {openedOutput && <OutputPreview canvasId={canvas.id} onClose={() => setOpenedOutput(null)} output={openedOutput} />}
     </div>
