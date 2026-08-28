@@ -25,7 +25,7 @@ import {
 
 import { supabase } from "@/lib/supabase";
 
-export type LibrarySourceKind = "pdf" | "slides" | "document" | "image" | "audio" | "file";
+export type LibrarySourceKind = "pdf" | "slides" | "document" | "sheet" | "image" | "audio" | "file";
 
 export interface LibrarySource {
   id: string;
@@ -63,6 +63,7 @@ const KIND_META: Record<LibrarySourceKind, { label: string; icon: string }> = {
   pdf: { label: "PDF", icon: "file-pdf" },
   slides: { label: "Slides", icon: "file-media" },
   document: { label: "Document", icon: "file" },
+  sheet: { label: "Spreadsheet", icon: "table" },
   image: { label: "Image", icon: "file-media" },
   audio: { label: "Recording", icon: "mic" },
   file: { label: "File", icon: "file" },
@@ -83,6 +84,10 @@ export function librarySourceKind(fileName: string): LibrarySourceKind {
   if (extension === "pdf") return "pdf";
   if (extension === "ppt" || extension === "pptx" || extension === "key") return "slides";
   if (extension === "doc" || extension === "docx" || extension === "rtf" || extension === "odt") return "document";
+  // 🔴 `.xls` IS NOT HERE, AND THAT IS DELIBERATE. The old binary format is not a zip of XML and
+  // `readWorkbook` cannot open it, so calling it a spreadsheet would promise a viewer that then
+  // says it cannot read the file. It stays a plain file, which is the truth.
+  if (extension === "xlsx" || extension === "xlsm") return "sheet";
   if (["png", "jpg", "jpeg", "webp", "heic", "heif", "gif"].includes(extension)) return "image";
   if (["mp3", "m4a", "wav", "aac", "ogg", "flac"].includes(extension)) return "audio";
   return "file";
@@ -184,6 +189,22 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     // read, with gaps — the fixtures cover every state on purpose, so the
     // preview harness is where a status style is reviewed.
     status: { kind: "partially_parsed", units: 57, unitsUnread: 2 },
+  },
+  {
+    id: "preview-src-hours",
+    folderPath: "Structural engineering/Mechanics",
+    fileName: "Study hours by week.xlsx",
+    kind: "sheet",
+    sizeBytes: 2_629,
+    createdAt: "2026-08-02T08:15:00.000Z",
+    // public/reader-sample.xlsx — see the note on the PDF fixture above. Two sheets, a merged
+    // title, a hidden column and formulas with cached results, because those are the four things
+    // the sheet view has to get right.
+    storagePath: "/reader-sample.xlsx",
+    coverage: null,
+    // read completely — the fixtures cover every state on purpose, so the
+    // preview harness is where a status style is reviewed.
+    status: { kind: "parsed" },
   },
   {
     id: "preview-src-mech-ch6",

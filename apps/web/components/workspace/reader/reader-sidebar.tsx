@@ -36,7 +36,7 @@ interface ReaderSidebarProps {
 export function ReaderSidebar({
   tab, onTabChange, outline, outlineIsAuthored, document: pdf, unitCount, unit, unitLabel, onGoToUnit,
 }: ReaderSidebarProps) {
-  const pagesTabLabel = unitLabel === "slide" ? "Slides" : "Pages";
+  const pagesTabLabel = unitLabel === "slide" ? "Slides" : unitLabel === "sheet" ? "Sheets" : "Pages";
   // A Word file is one flowing document: it has no pages to show as pictures,
   // and every outline entry would carry a meaningless "1".
   const hasUnits = unitCount > 1;

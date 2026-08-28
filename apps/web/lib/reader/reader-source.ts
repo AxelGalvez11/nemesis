@@ -17,7 +17,7 @@ import { librarySourceKind, librarySourceUrl, type LibrarySource, type LibrarySo
  *  "slides" and "document" are separate lanes because they are rendered
  *  completely differently, and everything unrecognised lands on "file", which
  *  is an honest metadata page rather than a broken viewer. */
-export type ReaderKind = "pdf" | "slides" | "document" | "image" | "audio" | "file";
+export type ReaderKind = "pdf" | "slides" | "document" | "sheet" | "image" | "audio" | "file";
 
 export interface ReaderSource {
   /** Stable identity — `library_sources.id` for a filed document. Used in the
@@ -69,6 +69,8 @@ const EXTENSION_KINDS: Record<string, ReaderKind> = {
   odt: "document",
   md: "document",
   txt: "document",
+  xlsx: "sheet",
+  xlsm: "sheet",
 };
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "heic", "heif", "gif", "avif", "bmp", "tif", "tiff"]);
@@ -92,6 +94,7 @@ export function readerKind(fileName: string, mime?: string | null): ReaderKind {
   if (type.startsWith("audio/")) return "audio";
   if (type.includes("presentation") || type.includes("powerpoint")) return "slides";
   if (type.includes("word") || type.startsWith("text/")) return "document";
+  if (type.includes("sheet") || type.includes("excel")) return "sheet";
   return "file";
 }
 
@@ -99,6 +102,7 @@ const STORAGE_TO_READER: Record<LibrarySourceKind, ReaderKind> = {
   pdf: "pdf",
   slides: "slides",
   document: "document",
+  sheet: "sheet",
   image: "image",
   audio: "audio",
   file: "file",

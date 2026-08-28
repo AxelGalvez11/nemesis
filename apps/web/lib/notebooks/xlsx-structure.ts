@@ -41,7 +41,10 @@
 
 import { strFromU8 } from "fflate";
 
-import { unzipBounded } from "./office";
+// 🔴 FROM `office-unzip`, NOT `office`. This parser is imported by the READER, which runs in the
+// browser; `office.ts` imports `node:crypto` at module scope and would take the whole
+// extraction pipeline into the client bundle with it — or fail to build at all.
+import { unzipBounded } from "./office-unzip";
 
 /** One cell, as the file has it. */
 export interface SheetCell {

@@ -48,14 +48,15 @@ import { ReaderSidebar, type SidebarTab } from "./reader-sidebar";
 import { ReaderTopBar, type LinkedNote, type ReaderMode } from "./reader-top-bar";
 import { ReadingView } from "./reading-view";
 import { SelectionActions, type SelectionAnchor } from "./selection-actions";
+import { SheetDocumentView, type SheetsReadyPayload } from "./sheet-document-view";
 import { SlidesDocumentView, type SlideTab } from "./slides-document-view";
 
 /** The hint that says a line can be rewritten. One constant, because it is printed on the slides
  *  strip and on the Word document and a second copy is how one of them silently loses it. */
 const EDIT_HINT = "ml-auto self-center text-[0.6875rem] text-(--ui-text-quaternary)";
 
-const UNIT_LABELS: Record<string, string> = { pdf: "page", slides: "slide", image: "image", document: "section", audio: "track", file: "part" };
-const KIND_LABELS: Record<string, string> = { pdf: "PDF", slides: "Slides", document: "Document", image: "Image", audio: "Recording", file: "File" };
+const UNIT_LABELS: Record<string, string> = { pdf: "page", slides: "slide", sheet: "sheet", image: "image", document: "section", audio: "track", file: "part" };
+const KIND_LABELS: Record<string, string> = { pdf: "PDF", slides: "Slides", document: "Document", sheet: "Spreadsheet", image: "Image", audio: "Recording", file: "File" };
 
 export interface DocumentReaderProps {
   source: ReaderSource;
@@ -378,6 +379,15 @@ export function DocumentReader({
     setOutlineIsAuthored(true);
   }, []);
 
+  const onSheetsReady = useCallback((payload: SheetsReadyPayload) => {
+    setUnitCount(payload.sheets.length);
+    setUnitTexts(payload.unitTexts);
+    // The sheet names ARE the contents list. A workbook has no headings, and inventing an outline
+    // from the first row of each sheet would present a guess as the document's own structure.
+    setOutline(payload.sheets.map((sheet) => ({ id: `sheet-${sheet.index}`, title: sheet.name, depth: 0, dest: null, unit: sheet.index })));
+    setOutlineIsAuthored(true);
+  }, []);
+
   const onSlidesReady = useCallback((payload: { slides: { index: number; title: string | null }[]; unitTexts: { unit: number; text: string }[] }) => {
     setUnitCount(payload.slides.length);
     setUnitTexts(payload.unitTexts);
@@ -418,7 +428,7 @@ export function DocumentReader({
       ? `the area you marked${region.unit === null ? "" : ` on ${unitLabel} ${region.unit}`}`
       : "this whole document";
   /** Only some documents have anything to list in a contents rail. */
-  const hasContents = source.kind === "pdf" || source.kind === "slides" || source.kind === "document";
+  const hasContents = source.kind === "pdf" || source.kind === "slides" || source.kind === "document" || source.kind === "sheet";
   const readingAvailable = source.kind === "pdf" && blocks.length > 0;
   const showZoom = source.kind === "pdf" || source.kind === "image" || source.kind === "slides";
   const trimmedQuery = query.trim() || null;
@@ -658,6 +668,15 @@ export function DocumentReader({
               registerElement={registerSlide}
               tab={slideTab}
               zoom={zoom}
+            />
+          ) : source.kind === "sheet" && bytes ? (
+            <SheetDocumentView
+              bytes={bytes}
+              onError={onViewError}
+              onReady={onSheetsReady}
+              onUnitChange={noteUnit}
+              query={trimmedQuery}
+              registerElement={registerSlide}
             />
           ) : source.kind === "document" && bytes ? (
             <DocxDocumentView
