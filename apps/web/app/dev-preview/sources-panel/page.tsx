@@ -50,8 +50,8 @@ const INPUTS: CanvasSource[] = [
   // here rather than the "wasn't filed to your Library" sentence. It is the only way to check the
   // panel end to end — highlight, mark an area, edit a line, and watch what the action sends —
   // without an account and a real upload. One of each renderer that behaves differently: a PDF
-  // whose pages can be cut out, a Word file of flowing text that cannot, and a deck whose lines
-  // can be rewritten.
+  // whose pages can be cut out, a Word file of flowing text that cannot, a deck whose lines can be
+  // rewritten, and a workbook that is a grid.
   doc("d1", "Contracts_II_Consideration_and_Promissory_Estoppel.pdf", 12, "preview-src-conlaw-slides"),
   doc("d2", "Supplemental_Beam Deflection Comparisons.pdf", 4),
   doc("d3", "STUDENT_Thermodynamics_Second_Law_notes.pdf", 9),
@@ -62,6 +62,7 @@ const INPUTS: CanvasSource[] = [
   doc("d8", "Okonkwo_Fluid_Mechanics_Boundary_Layers.pdf", 6),
   doc("d9", "10. Welding Symbols and Joint Prep.pdf", 2),
   doc("d10", "9. Art History - Quattrocento Perspective.pdf", 8),
+  doc("d11", "Study_hours_by_week.xlsx", 2, "preview-src-hours"),
 ];
 
 const SOURCES: CanvasSource[] = [

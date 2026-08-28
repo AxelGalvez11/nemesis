@@ -169,6 +169,7 @@ export function describeCitation(subject: CitationSubject, anchor: CitationAncho
 const UNIT_NOUN: Record<string, string> = {
   pdf: "Page",
   slides: "Slide",
+  sheet: "Sheet",
   image: "Image",
   document: "Section",
   audio: "Track",

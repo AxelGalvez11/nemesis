@@ -86,6 +86,7 @@ export function resolveAnchorUnit(anchor: ReaderAnchor, unitCount: number): numb
 const UNIT_NOUNS: Record<string, string> = {
   pdf: "page",
   slides: "slide",
+  sheet: "sheet",
   image: "image",
   document: "section",
   audio: "track",
