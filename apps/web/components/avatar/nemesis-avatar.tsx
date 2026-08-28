@@ -32,8 +32,6 @@ import {
   ANIMATION_BY_ID,
   DEFAULT_AVATAR,
   RADIUS,
-  TRACK_PITCH,
-  TRACK_YAW,
   VIEW_BOX,
   VIEW_SIZE,
   animationDuration,
@@ -62,7 +60,7 @@ import {
   ringPath,
   type FeatureFace,
 } from "@/lib/avatar/features";
-import { cappedTurn, trackReach } from "@/lib/character/gaze";
+import { cappedTurn, trackReach, trackTurn } from "@/lib/character/gaze";
 
 export interface NemesisAvatarProps {
   /** Which of the animations to play. Any of the forty-nine; see `lib/avatar/catalogue.ts`. */
@@ -610,10 +608,21 @@ export function NemesisAvatar({
       // exactly reads as a cursor with a face, not as something noticing you.
       const a = aim.current;
       const looking = state.track && a.pointer;
-      const wantX = looking ? a.y * TRACK_PITCH : 0;
-      const wantY = looking ? a.x * TRACK_YAW : 0;
-      a.atX += (wantX - a.atX) * TRACK_EASE;
-      a.atY += (wantY - a.atY) * TRACK_EASE;
+      // 🔴🔴 THE SIGNS LIVE IN `trackTurn`, AND THAT IS THE WHOLE OF THE 2026-08-28 FIX. These were
+      // two multiplies written inline — `a.y * TRACK_PITCH` and `a.x * TRACK_YAW` — which look
+      // symmetrical and are not: screen y runs DOWN and head pitch runs UP, so the vertical needs a
+      // negation the horizontal must not have. Written here, nothing in the file stated the
+      // convention and nothing could test it; the character looked up when the pointer went down for
+      // as long as this engine has tracked anything. See `trackTurn` for the measurement and for the
+      // vendored engine's own comment saying the same thing in French.
+      //
+      // 🔴 AND `looking` STILL EASES TO ZERO RATHER THAN FREEZING. When the surface takes tracking
+      // away — which it now does on a clock, see `gaze.ts` — the head slides back to the pose's own
+      // angle over `TRACK_EASE` instead of cutting, so becoming absorbed is a movement rather than a
+      // jump.
+      const want = looking ? trackTurn(a) : { x: 0, y: 0 };
+      a.atX += (want.x - a.atX) * TRACK_EASE;
+      a.atY += (want.y - a.atY) * TRACK_EASE;
 
       // The entrance is a whole turn of the head that decays to nothing, so the eyes really
       // do pass behind the body and come back. Nothing else in the product spins.

@@ -37,7 +37,8 @@ import { useMontage } from "./use-montage";
 import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
 import { ACTIVITY_STATE, speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
-import { gazeTarget, glanceOffset, trackReach } from "@/lib/character/gaze";
+import { absorbedAt, gazeTarget, glanceOffset, trackReach } from "@/lib/character/gaze";
+import { isMontageLoop } from "@/lib/character/montage";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { placeAbove, placeBeside, placeUnder } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
@@ -371,6 +372,15 @@ export function CharacterDock({
    */
   const paintedRef = useRef(false);
   const [aimAt, setAimAt] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * Whether the pointer is allowed to turn the head at all right now.
+   *
+   * 🔴 A BOOLEAN SET FROM A 120ms INTERVAL IS NOT THE CHURN `aimAt` HAD TO GUARD AGAINST. React
+   * bails out of a `setState` that lands on the same value, so this re-renders twice per
+   * twenty-second cycle rather than eight times a second. `aimAt` needed `AIM_SETTLED_PX` because a
+   * fresh object is never the same value however little it moved.
+   */
+  const [tracking, setTracking] = useState(true);
   const targetRef = useRef<AttentionTarget>(getAttention());
   const focusedRef = useRef<Element | null>(null);
   /**
@@ -385,6 +395,17 @@ export function CharacterDock({
   const pointerAtRef = useRef(-Infinity);
   // The station, readable from inside the attention interval without re-arming it.
   const stationRef = useRef<Station>("corner");
+  /**
+   * Whether the character currently has business of its own worth ignoring the pointer for.
+   *
+   * 🔴🔴 BOTH HALVES, AND THE SECOND ONE IS WHY THIS IS A REF RATHER THAN JUST A CLOCK. Being
+   * absorbed is a stretch of time (`absorbedAt`) AND a montage entry that actually moves
+   * (`isMontageLoop`). The default list runs twelve movement loops and eleven held feelings; take
+   * the pointer away during a held feeling and the character stops following and then does nothing
+   * for five seconds, which is precisely the report this answers, manufactured on purpose. A loop
+   * carries the head 13-30px on its own, so there is always something to watch.
+   */
+  const absorbableRef = useRef(false);
 
   // ── Where the dock sits ──────────────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -496,6 +517,9 @@ export function CharacterDock({
   // ── Where it stands ──────────────────────────────────────────────────────────
   const station = stationOverride ?? stationOf(shown);
   stationRef.current = station;
+  // Read from the SURFACE's own state and the shown entry, during render, exactly like the station
+  // above: the attention interval must be able to ask without being re-armed every few seconds.
+  absorbableRef.current = atRest && !poking && isMontageLoop(shown);
   useLayoutEffect(() => {
     /**
      * How long this move takes: null = the stylesheet's 680ms walk, 0 = be there already,
@@ -710,12 +734,33 @@ export function CharacterDock({
         resting: restingBox,
         pointerAgeMs: now - pointerAtRef.current,
         working: workingBox,
+        absorbed: absorbableRef.current && absorbedAt(now),
       });
+      // 🔴🔴 `self` IS THE ONLY THING THAT TURNS TRACKING OFF, AND TURNING IT OFF IS THE ONLY WAY TO
+      // SAY IT (owner 2026-08-28: *"there are moments where it's tracking mouse movement, but other
+      // moments where it's just doing its own thing"*). Every other answer here is a PLACE, and
+      // handing the avatar any place at all is still a stare. With `track` false the renderer eases
+      // its tracking turn back to zero and `facing="free"` draws the loop's own authored head — so
+      // the character is moving, on its own schedule, and the cursor is simply not in it.
+      //
+      // 🔴 NO GLANCE EITHER. A glance is a departure from something being watched; there is nothing
+      // being watched. Two wanders on one head is a head that cannot decide — the same reason the
+      // searching sweep is exempt below.
+      if (want.kind === "self") {
+        setTracking(false);
+        aimTo(null);
+        return;
+      }
+      setTracking(true);
+      if (want.kind === "pointer") {
+        aimTo(null);
+        return;
+      }
       // 🔴 THE GLANCE RIDES ON TOP OF WHATEVER IS BEING WATCHED, so the character looks away from
       // the composer and back to the composer rather than away from and back to a fixed direction.
       // 🔴 AND NEVER ON TOP OF THE SEARCHING SWEEP, which is already a wander of its own — two
       // wanders on one head is a head that cannot decide.
-      aimTo(want && !workingBox ? { x: want.x + glance.x, y: want.y + glance.y } : want);
+      aimTo(workingBox ? want.point : { x: want.point.x + glance.x, y: want.point.y + glance.y });
     }, MEASURE_MS);
 
     return () => {
@@ -775,7 +820,7 @@ export function CharacterDock({
           animation={shown}
           facing="free"
           silhouette={CHARACTER_SILHOUETTE}
-          track
+          track={tracking}
           waggle={motion === "waggle"}
         />
       </div>

@@ -20,9 +20,9 @@
 // `wide`, `exclaim` and `play` states remain in the catalogue as a plain copy of upstream,
 // and nothing in this product schedules them — guarded in `lib/character/character.test.ts`.
 //
-// 🔴 WHAT ACTUALLY PLAYS IS THE LIST IN `REACTIONS` BELOW, AND SINCE 2026-08-26 (EVENING) IT IS
-// ONE THING: THE SPIN. The descriptions that follow document every gesture this file has
-// scheduled at some point — they are all still built, and only one of them is reached.
+// 🔴 WHAT ACTUALLY PLAYS IS THE LIST IN `REACTIONS` BELOW, AND SINCE 2026-08-28 IT IS ONE THING:
+// THE BURST. The descriptions that follow document every gesture this file has scheduled at some
+// point — they are all still built, and only one of them is reached.
 //
 // The five customs, in the order repeated clicks used to walk them before the list was cut to one:
 //   jump   — leaves the ground and LANDS SQUISHY (owner's word): the body flattens wide on
@@ -119,17 +119,27 @@ function passMs(id: string, fallback: number): number {
  * `wink` is the opposite case — entirely a face — and `sigma` is a face from OUR layer.
  */
 const REACTIONS: readonly Reaction[] = [
-  // 🔴🔴 THREE, WALKED IN ORDER, AND THE COUNT HAS BEEN 5 → 1 → 3 IN TWENTY-FOUR HOURS. The owner
-  // cut the walk on 2026-08-26 (*"clicking on the mascot should just make him jump or do burst
-  // animation"*) and restored it on 2026-08-27, naming what he wanted in it: *"it should also have
-  // the 'notification' animation and a spin animation where it spins around"*. Asked where each
-  // should go, since a click can only play one thing, he chose the cycle.
+  // 🔴🔴 ONE, AND THE COUNT HAS NOW BEEN 5 → 1 → 3 → 1 IN THREE DAYS, SO THE COUNT IS NOT THE RULE
+  // AND NEVER WAS. The walk was cut on 2026-08-26 (*"clicking on the mascot should just make him
+  // jump or do burst animation"*), restored on 2026-08-27 (*"it should also have the 'notification'
+  // animation and a spin animation where it spins around"*), had `notify` removed the same evening,
+  // and is cut again on 2026-08-28: *"remove the spinning animation. It should only burst whenever
+  // it's clicked on."*
   //
-  // What he was cutting the first time was five reactions of which four were FACES — wink,
-  // surprised, laughing, curious — so a click mostly changed an expression and read as nothing.
-  // These three are all things the character DOES.
+  // 🔴 A CLICK IS ONE THING AGAIN, WHICH IS THE PART WORTH KEEPING WHATEVER THE LIST HOLDS NEXT. A
+  // reaction that alternates means a learner clicking twice gets two different answers to one
+  // gesture, and cannot tell whether the second one was the click or the character. The invariant
+  // the guard pins is that every entry is something the character DOES rather than a face it wears
+  // — the original five were four faces, which is why clicking used to read as nothing happening.
+  //
+  // 🔴 THE SPIN IS UNSCHEDULED, NOT DELETED. `SPIN_MS` above, `.character-spin` in character.css and
+  // the `"spin"` motion all stay exactly as they were, still guarded, still one row from returning —
+  // the owner has moved this three times in three days and the version that gets deleted is the one
+  // that cannot be gone back to. Nothing in the app reaches it. 🔴 The marketing site's spin is a
+  // SEPARATE character on a separate engine (`landing/components/home/Mascot.tsx`, deployed on its
+  // own) with its own standing ruling from 2026-08-26 (*"make him just spin around smoothly"*), and
+  // this change does not touch it.
   { state: "burst", motion: null, face: null, hold: BURST_MS },
-  { state: "idle", motion: "spin", face: null, hold: SPIN_MS },
 ];
 
 // 🔴🔴 `notify` WAS HERE FOR ONE DAY AND IS GONE AGAIN (owner 2026-08-27: *"remove the

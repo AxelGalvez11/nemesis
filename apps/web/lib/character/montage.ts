@@ -161,6 +161,25 @@ export const MONTAGE_LEFT_OUT: readonly string[] = MONTAGE_CHOICES.map((c) => c.
 );
 
 /**
+ * Is `id` one of the entries that MOVES, rather than a face that is merely held?
+ *
+ * 🔴 THE DIFFERENCE IS 30px AGAINST 0.8px, WHICH IS THE DIFFERENCE BETWEEN "DOING ITS OWN THING"
+ * AND "STANDING STILL" (the table at the top of this file has the measurements). The dock uses this
+ * to decide when the character has something of its own worth taking the pointer away for — see
+ * `absorbedAt` in `gaze.ts`. Dropping the cursor while a held feeling is on would produce, exactly,
+ * the complaint that change exists to answer: a character that stopped following and then did
+ * nothing.
+ *
+ * Unknown ids are not loops. `resolveMontage` has already dropped anything unknown, so reaching
+ * here with one means the catalogue moved under a stored list, and the safe answer is to keep
+ * following the pointer.
+ */
+export function isMontageLoop(id: string | null | undefined): boolean {
+  if (!id) return false;
+  return MONTAGE_CHOICES.some((c) => c.id === id && c.kind === "loop");
+}
+
+/**
  * How long a HELD FACE stays on, before the next entry.
  *
  * 🔴 9s → 5s ON REPORT (owner 2026-08-27: *"its still not doing the expression montage i want"*).
