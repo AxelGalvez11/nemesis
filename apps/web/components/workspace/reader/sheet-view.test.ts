@@ -82,3 +82,16 @@ test("🔴🔴 the real fixture workbook reads back as sheets, merges, hidden co
   // And a sheet is searchable as one unit of text, the way a page is.
   assert.match(sheetText(marks), /Week 1\t4\t2\t6/);
 });
+
+test("🔴 a citation into a workbook says Sheet, in both places that name a unit", async () => {
+  // The note's pill and the reader's own sentence must call the same thing by the same name — the
+  // two tables say so in their comments. Adding a kind to one and not the other is how "Sheet 2"
+  // becomes "Part 2" on exactly one surface.
+  const { unitNoun } = await import("@/lib/reader/reader-anchor");
+  const { describeCitation } = await import("@/lib/workspace/note-citations");
+  assert.equal(unitNoun("sheet"), "sheet");
+  assert.equal(
+    describeCitation({ kind: "sheet", name: "Study hours by week.xlsx" }, { unit: 2, seconds: null, query: null }),
+    "Study hours by week · Sheet 2",
+  );
+});
